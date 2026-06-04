@@ -12,6 +12,7 @@ owner: workflow
 > **定位**：本篇是 `C-PET` 这一**产品呈现模式**的端级规格。**后端契约**（路由/事件/鉴权）见 [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)；**进程边界与事件总线拓扑**见 [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md)；**实体/状态机**见 [`../01-architecture/data-model.md`](../01-architecture/data-model.md)；**用户用语/去黑话**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威；**Web 端页面规划**见 [`./web-app.md`](./web-app.md)（同源信息架构，本篇只写差异）；**共享设计系统/类型化 client** 见 [`./shared-ui-kit.md`](./shared-ui-kit.md)。交叉处用相对链接引用，不重复。
 >
 > **扎根**：本篇从现有「需求管理大师」桌面客户端真实代码演进而来。Rust 壳代码锚点贯穿全文（`client-tauri/src-tauri/src/{lib,sse,sync,spec_watch,tray,deep_link,reminders,window,config,http,upload,delivery,operation_locks}.rs` 与 `commands/*.rs`）；webview 页面锚点为 `client-tauri/web-src/src/{App.tsx,lib/tauri.ts,routes/*,components/*}`。**严禁臆造 IPC/命令**——本篇列出的每个 Tauri command 都对应 `lib.rs:84-135` 的 `invoke_handler!` 注册表。
+> **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
 
 本篇小节：
 
