@@ -604,4 +604,86 @@ C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/d
 
 ---
 
+## 9. 实现架构路线（WorkHub 施工版）
+
+### 9.1 总体分层
+
+```text
+C-PET Tauri process
+  Rust shell
+    - config/device token
+    - SSE/reminder workers
+    - tray/deep-link/notification
+    - local file/sync/delivery commands
+  WebView main window
+    - React routes
+    - local work desk / settings / sync / delivery
+  WebView pet window
+    - Cuu runtime
+    - lightweight bubbles/cards
+    - event -> animation state mapping
+  daemon
+    - REST truth
+    - SSE hints
+    - agent/proposal/permission/sync APIs
+```
+
+Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态和用户输入；daemon 仍是唯一真相源。
+
+### 9.2 宠物窗口落地
+
+- **窗口创建**：新增 `pet` label，配置 `transparent:true`、`decorations:false`、`alwaysOnTop:true`、`skipTaskbar:true`、初始尺寸约 120x160，展开卡片时扩到 380x560。
+- **权限**：若前端创建窗口，需要 Tauri capability 允许创建 webview window；更稳妥的 MVP 是 Rust setup 阶段创建 pet window，前端只发 `open_pet/hide_pet` 命令。
+- **点击模型**：idle 时窗口可小尺寸跟随 Cuu 外接矩形；展开时扩大交互区域。真正的 click-through 需要谨慎，MVP 先用最小窗口避免挡事。
+- **位置**：用 window-state 记忆桌宠位置；多显示器时保存 monitor id + logical position，失效则回到底部右侧。
+- **降噪**：支持静音/勿扰/隐藏到托盘；高优先级审批仍可系统通知。
+
+### 9.3 客户端页面施工顺序
+
+| 阶段 | Rust 壳 | React 主窗 | Cuu/pet | 验收 |
+|---|---|---|---|---|
+| P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 主窗内 Cuu bubble + sprite | 用户能不打字完成澄清和审批 |
+| P2 | 新增 `pet` window、窗口状态、open/hide 命令 | 设置页增加桌宠显隐/自启动/诊断 | 独立桌宠窗 + Rive state machine | 关闭主窗后 Cuu 仍可提醒 |
+| P3 | permission/proposal IPC、deep-link 更完整 | 交付物变更包、审批中心联动 | 审批气泡 / 证据气泡 | 变更申请能通过/打回/记住规则 |
+| P4 | 双向 sync、冲突检测、delivery 安全校验 | 同步中心、冲突解决、交付向导 | sync/conflict 动作状态 | 本地/云端冲突可安全处理 |
+| P5 | updater/autostart、崩溃日志、性能采样 | 设置/诊断/帮助完善 | 性能降级与可访问性 | 长时间常驻稳定 |
+
+### 9.4 本地同步与冲突
+
+![本地同步与冲突解决](./assets/desktop/desktop-sync-conflict-resolver.png)
+
+实现边界：
+
+- `sync_root` 下所有写盘操作继续做路径 containment。
+- 同一项目/工作项使用 operation lock，禁止两个同步/交付任务并发撞车。
+- 冲突对象统一成 `ConflictCandidate[]`：local、cloud、ai_suggested_merge。
+- AI 合并建议必须带证据、风险、回滚计划；用户选择后再写入正式态。
+- 低风险文本/表格变更可自动生成建议，高风险交付物只能请求确认。
+
+### 9.5 部署、更新与诊断
+
+![设备设置与部署入口](./assets/desktop/desktop-device-setup-update.png)
+
+- **LAN-first**：安装包仍由 daemon `/downloads` 分发，首启配置 server address。
+- **设备令牌**：onboarding 后注册设备；设置页展示设备信任态与 token 尾号，支持重新注册。
+- **自启动**：接线 autostart 插件，默认可选，不强制。
+- **更新**：P5 接 `tauri-plugin-updater` 或自有 manifest；LAN 内先由 daemon 托管 manifest 和安装包。
+- **诊断**：设置页提供连接、文件系统、权限、磁盘空间、SSE、托盘、Cuu runtime 的检查项；日志落 `%APPDATA%/WorkHub` 或兼容现有 `%APPDATA%/yqgl`。
+
+### 9.6 Cuu runtime 选型
+
+桌宠动画技术的详细方案见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。本端级规格只固定工程边界：
+
+- MVP 必须能不依赖专业绑定工具运行，因此 sprite atlas 是首选。
+- Rive 可作为 P2 推荐路线，因为 state machine 与 WorkHub 的事件映射天然契合。
+- Live2D 只作为高表现力路线，不能阻塞 P1/P2。
+- Lottie 适合小动效和过渡，不建议承载复杂桌宠人格。
+
+### 9.7 相关官方资料
+
+- [Tauri v2 window API](https://v2.tauri.app/reference/javascript/api/namespacewindow/) / [window customization](https://v2.tauri.app/learn/window-customization/)：用于透明、无边框、多窗口、always-on-top 配置。
+- [Rive Web runtime](https://rive.app/docs/runtimes/web) / [Rive React runtime](https://rive.app/docs/runtimes/react)：用于 `.riv`、state machine 和 input trigger。
+- [`lottie-web`](https://github.com/airbnb/lottie-web)：用于 JSON 动画、SVG/Canvas/HTML renderer 与 `playSegments`。
+- [Live2D Cubism SDK manual](https://docs.live2d.com/en/cubism-sdk-manual/top/) / [CubismWebFramework](https://github.com/Live2D/CubismWebFramework)：用于可选的高表现力 2D rig，需关注 Cubism Core 包和许可。
+
 *本篇定位：C-PET 端级页面规划的单一来源。后端契约 → `api-contract.md`；架构形状 → `system-architecture.md`；术语口径 → `glossary-dejargon.md`；Web 端 → `web-app.md`。所有 IPC/命令/事件均扎根 `client-tauri/` 真实代码，新增项已显式标注 *(新增/建议)* 并对齐 api-contract。*

@@ -97,3 +97,110 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - **Cuu 桌宠**：提醒、澄清、项目检索、证据气泡、轻审批和陪伴。
 
 结论：Cuu 是 WorkHub 的 AI-native 入口。用户不应该先学会看板或复杂页面，而是先看到 Cuu 把当前需要处理的一件事递到面前。
+
+## 7. 动画实现架构选型
+
+![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
+
+桌宠动画不要一开始锁死单一技术。Cuu 建议按阶段选择运行时：
+
+| 方案 | 资产形态 | 优点 | 风险/代价 | 建议阶段 |
+|---|---|---|---|---|
+| **PNG Sprite Atlas** | 多帧透明 PNG + JSON 帧配置 | 最简单、最可靠、最容易由 GPT Image 生成，适合先跑起来 | 文件体积偏大，状态切换不够丝滑 | **MVP/P1** |
+| **Lottie** | After Effects/Bodymovin JSON，Web 端 `lottie-web` 渲染 | 轻量、SVG/Canvas/HTML 多渲染器，适合简单循环和 UI 动效 | 角色形变/交互状态有限，美术需 AE 流程 | P1 兜底 |
+| **Rive** | `.riv` 文件 + state machine | Web/React 运行时支持 state machine input，适合把 `push-event` 映射成动作 | 需要 Rive 制作流程，初期资产准备成本高于 sprite | **P2 推荐** |
+| **Live2D Cubism** | `.moc3` + texture + physics/motion config | 表现力强，适合呼吸、眼神、脸部、轻微身体形变 | 美术/绑定/许可/运行时复杂度最高，Cubism Core 需官方包 | P3/Premium |
+
+推荐路线：**先 sprite，让 Cuu 真的出现在桌面；再 Rive，让 Cuu 具备状态机和自然过渡；最后按价值评估 Live2D。**
+
+官方资料锚点：
+
+- [Tauri v2 window API](https://v2.tauri.app/reference/javascript/api/namespacewindow/) / [window customization](https://v2.tauri.app/learn/window-customization/)：支持 `transparent`、`decorations`、`alwaysOnTop` 等窗口属性；多窗口创建需要相应 capability。
+- [Rive Web runtime](https://rive.app/docs/runtimes/web) / [Rive React runtime](https://rive.app/docs/runtimes/react)：支持 canvas/WebGL 渲染、state machine 和 input trigger。
+- [`lottie-web`](https://github.com/airbnb/lottie-web)：支持 SVG/Canvas/HTML renderer，并可通过 `playSegments` 播放片段。
+- [Live2D Cubism SDK manual](https://docs.live2d.com/en/cubism-sdk-manual/top/) / [CubismWebFramework](https://github.com/Live2D/CubismWebFramework)：可作为高表现力路线；注意 Cubism Core 与许可/分发约束。
+- [OpenAI image generation guide](https://platform.openai.com/docs/guides/image-generation)：用于规划正式图片生成接口；若当前生成链路不支持原生透明，则走 chroma-key + 本地抠图兜底。
+
+## 8. 美术资产生产流水线
+
+![Cuu 资产生产流水线](./assets/cuu/cuu-asset-production-pipeline.png)
+
+建议把美术流水线分成 6 步：
+
+1. **风格定稿**：固定 Cuu 的橘猫毛色、蕾丝围兜、黑色蝴蝶结、珍珠/红珠、眼睛比例、轮廓比例。
+2. **GPT Image 生图**：用统一 prompt 生成状态帧，不直接要求透明背景时，优先生成纯色 chroma-key 背景。
+3. **抠图/去底**：
+   - 如果调用的图片模型/接口支持透明背景，直接输出 PNG/WebP 透明图。
+   - 如果当前工具链不支持原生透明，用纯色背景 + 本地 `remove_chroma_key.py` 做 alpha，必要时人工修边。
+4. **一致性修正**：统一眼睛大小、围兜位置、蝴蝶结朝向、红珠数量、阴影边缘和色温。
+5. **打包**：
+   - MVP：`cuu.sprite.json` + `*.png` frames。
+   - P2：`.riv` + state machine input。
+   - P3：Live2D `.moc3` + texture + physics/motion。
+6. **运行时验收**：在 Tauri 透明窗口中检查边缘、帧率、CPU/GPU、点击区域、HiDPI、多显示器和低电量表现。
+
+### 8.1 目录建议
+
+```text
+client-tauri/web-src/src/assets/cuu/
+  sprites/
+    idle/
+    walk/
+    thinking/
+    approval/
+  cuu.sprite.json
+  cuu.riv
+  live2d/
+    cuu.model3.json
+    textures/
+docs/workhub/05-clients/assets/cuu/
+  *.png  # 概念图与设计说明用，不作为运行时生产资产
+```
+
+### 8.2 Sprite 配置草案
+
+```json
+{
+  "version": 1,
+  "defaultState": "idle",
+  "states": {
+    "idle": { "frames": ["idle-000.png", "idle-001.png"], "fps": 8, "loop": true },
+    "approval": { "frames": ["approval-000.png"], "fps": 8, "loop": false },
+    "syncing": { "frames": ["sync-000.png", "sync-001.png"], "fps": 10, "loop": true }
+  }
+}
+```
+
+## 9. 事件到 Cuu 状态映射
+
+| WorkHub 事件/状态 | Cuu 状态 | UI 呈现 | 用户动作 |
+|---|---|---|---|
+| `agent.run.started` / `ai.thinking` | thinking | Cuu 思考/转圈 | 可点开看执行步骤 |
+| `permission.ask` | asking approval | Cuu 轻敲审批气泡 | 通过 / 打回 / 委派 / 永远允许 |
+| `proposal.ready` | carrying document | Cuu 抱文件出现 | 查看变更包 |
+| `knowledge.evidence.ready` | searching evidence | Cuu 放大镜/证据气泡 | 打开证据 / 用于当前任务 |
+| `sync.progress` | syncing files | Cuu 同步动作 | 查看同步队列 |
+| `sync.conflict` | worried / sync conflict | Cuu 紧张 + 冲突卡 | 应用 AI 合并 / 保留本地 / 保留云端 |
+| `revision.requested` | revision requested | Cuu 委屈/拿笔 | 查看打回原因 |
+| `work.completed` | celebrating | Cuu 庆祝 | 查看交付物 |
+| `sse-status:disconnected` | offline | Cuu 灰态/重连 | 打开诊断 |
+
+## 10. Tauri 部署与运行时边界
+
+Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
+
+- `pet` 窗口：透明、无边框、always-on-top、skip-taskbar、记忆位置。
+- `main` 窗口：承载完整客户端页面；复杂操作由 Cuu deep-link 唤起。
+- Rust 侧：SSE worker / reminders / tray / deep-link 发事件；不承担动画逻辑。
+- React 侧：`CuuController` 管状态机、动画 runtime、气泡卡片和用户输入。
+- 资源加载：生产资产打入 Tauri bundle；概念图只放文档目录。
+- 更新：Cuu 资产版本跟随客户端版本；未来可做独立 asset manifest，但 P1 不需要。
+
+## 11. 施工顺序建议
+
+1. P1：CSS/PNG sprite 版 Cuu，能 idle、thinking、approval、completed、offline。
+2. P1：Cuu 气泡承接选项式澄清和项目检索 chips。
+3. P2：独立 `pet` Tauri window，支持拖动、收起、静音、托盘显隐。
+4. P2：引入 Rive state machine，把事件映射为自然过渡。
+5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。
+6. P4：性能/电量/多屏/HiDPI/透明边缘 QA，形成桌宠发布 checklist。

@@ -29,11 +29,23 @@ owner: workflow
 
 默认首页不应是重型看板，而是 AI 整理后的「需要你决定什么 / AI 正在做什么 / 哪里可能出事」。
 
+### 1.1.1 项目工作台细化
+
+![Web 项目工作台细化](./assets/web/web-project-attention-workspace.png)
+
+项目页默认不是全量任务管理，而是「本项目现在需要注意什么」。左侧保留项目上下文，中间展示需要判断的一件事与 AI 正在做的背景任务，右侧由 Cuu 提供证据和下一步建议。
+
 ### 1.2 P0-P5 核心页面图谱
 
 ![Web 核心页面图谱](./assets/web/web-core-pages-atlas.png)
 
 覆盖登录门、项目列表、项目工作台、提需求、AI 澄清、工作项详情。后续实现时，澄清页应继续收敛为选项优先，而不是聊天墙。
+
+### 1.2.1 选项优先提需求
+
+![Web 选项优先提需求](./assets/web/web-option-first-intake-wizard.png)
+
+提需求阶段不应先要求长篇输入。默认由 Cuu 把意图拆成可点选项，用户只补附件、DDL、负责人和验收项；大文本域只作为「其他 / 补充」折叠项。
 
 ### 1.3 P6-P11 运营页面图谱
 
@@ -71,6 +83,18 @@ owner: workflow
 
 项目资料页聚合网盘、会议和知识证据。后续可把「主动查询」下沉给 Cuu，把完整资料管理留在 Web。
 
+### 1.8.1 会议洞察转需求草稿
+
+![会议洞察转需求草稿](./assets/web/web-meeting-insight-to-draft.png)
+
+会议页要把 ASR、纪要、洞察、证据和需求草稿串起来。原则是：AI 可以发现变化，但绝不直接改正式状态；必须先变成草稿或审批项。
+
+### 1.8.2 网盘预览与变更草稿
+
+![网盘预览与变更草稿](./assets/web/web-drive-preview-change-draft.png)
+
+网盘页不仅是文件管理器。文件评论、版本变化、文件夹重命名都可能触发 Cuu 的「这像是变更申请」提示，用户确认后才进入澄清或提议。
+
 ### 1.9 早期工作台探索
 
 ![早期 Web 工作台探索](./assets/web/web-workbench-dashboard-early.png)
@@ -107,6 +131,18 @@ Rust 客户端的默认主窗不应是 dashboard，而是被唤起时处理一�
 
 覆盖接活、权限询问、交付物变更包、冲突解决、交付向导、托盘/通知/deep-link。
 
+### 2.4.1 本地同步与冲突解决
+
+![本地同步与冲突解决](./assets/desktop/desktop-sync-conflict-resolver.png)
+
+Rust 客户端是本地文件与云端事实之间的安全阀。冲突页必须给出本地版本、云端版本、AI 合并建议、证据、风险和回滚方案。
+
+### 2.4.2 设备设置与部署入口
+
+![设备设置与部署入口](./assets/desktop/desktop-device-setup-update.png)
+
+设置页承接 LAN-first 部署、设备令牌、本地目录、同步模式、自启动、桌宠显隐、更新通道、托盘和诊断日志。
+
 ### 2.5 辅助上下文页面图谱
 
 ![客户端辅助上下文图谱](./assets/desktop/desktop-support-pages-atlas.png)
@@ -129,6 +165,24 @@ Rust 客户端的默认主窗不应是 dashboard，而是被唤起时处理一�
 
 Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目，展开后承接审批卡、证据卡和澄清选项。
 
+### 3.1.1 Cuu 资产生产流水线
+
+![Cuu 资产生产流水线](./assets/cuu/cuu-asset-production-pipeline.png)
+
+这张图定义美术资产从 AI 生图到透明 PNG、精修、sprite / Rive / Live2D / Lottie 运行时的可选路线。
+
+### 3.1.2 Cuu 动画架构选型
+
+![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
+
+桌宠动画不宜一开始锁死 Live2D。推荐路径是：MVP 用 PNG sprite atlas，P2 用 Rive state machine，Live2D 作为后续高表现力路线。
+
+### 3.1.3 WorkHub 实现路线图
+
+![WorkHub 实现路线图](./assets/cuu/cuu-implementation-roadmap.png)
+
+这张图把 Web、Rust/Tauri、daemon、Cuu 资产、QA/部署放到同一个阶段视图里，便于后续从概念进入施工。
+
 ### 3.2 早期桌宠交互探索
 
 ![早期桌宠交付物变更包探索](./assets/pet/pet-deliverable-change-package.png)
@@ -147,5 +201,14 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 - `assets/desktop/`：Rust/Tauri 客户端主窗、本地执行、同步与托盘概念图。
 - `assets/pet/`：早期桌宠交互探索图。
 - `assets/cuu/`：Cuu 最终桌宠形象与交互概念图。
+- `assets/shared/`：跨端组件与交互元件图谱。
+
+## 5. 共享组件图谱
+
+对应文档：[`shared-ui-kit.md`](./shared-ui-kit.md)
+
+![共享组件图谱](./assets/shared/shared-component-atlas.png)
+
+共享组件图谱把「单件事卡」「审批卡」「证据 chip」「选项卡」「Cuu 气泡」「文件行」「风险徽标」「回滚面板」「同步进度」「冲突选择」「托盘通知」「空态」收成一套跨端 UI 语言。后续实现优先落 C-UIKIT，Web 与 Rust 客户端只组合，不各自复制。
 
 后续新增概念图时，优先放在对应端的资产目录，并在本页补一段说明，避免概念散落在生成目录里。

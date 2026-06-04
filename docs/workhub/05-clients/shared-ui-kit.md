@@ -398,3 +398,104 @@ WorkHub 的命门（AI 自治 + 分层审批 + 去黑话协作）需要 C-UIKIT 
 | **OQ3** | 两个 stream hook 手写重复 SSE line parser | 复制粘贴（§5 末） | 抽 `parseSSE()` 公共解析器，新流式 hook 复用 |
 | **OQ4** | 组件库无可视化文档/Storybook，新人靠读源 | 无 | 评估接 Storybook 或最小自托管画廊 |
 | **OQ5** | 包名 `@yqgl/shared` 与 WorkHub 品牌不一致 | 迁移期并存（见 [glossary §9 YQGL](../00-overview/glossary-dejargon.md)） | 切 `@workhub/shared`，保留 export 形态 |
+
+---
+
+## 11. 共享组件实现架构（WorkHub 施工版）
+
+![共享组件图谱](./assets/shared/shared-component-atlas.png)
+
+WorkHub 的页面设计已经收敛到「一件事 + 证据 + 人确认」。因此 C-UIKIT 要优先补齐以下组件，而不是让 Web 与 Rust 客户端各自手写。
+
+### 11.1 组件分层
+
+```text
+shared/src/design/
+  tokens.css
+  status-vocab.ts
+  motion-vocab.ts        # 新增：Cuu/AI 状态动效名
+
+shared/src/components/
+  primitives/
+    Button / Badge / Card / Modal / Drawer / Tabs
+  workhub/
+    OneThingCard
+    ApprovalCard
+    OptionCard
+    EvidenceChip
+    EvidencePanel
+    ProposalFileRow
+    RiskBadge
+    RollbackPanel
+    SyncProgressItem
+    ConflictChoice
+    CuuBubble
+    EmptyState
+
+shared/src/types/
+  proposal.ts
+  approval.ts
+  evidence.ts
+  clarify.ts
+  cuu.ts
+```
+
+### 11.2 关键组件契约
+
+| 组件 | 输入 | 输出/动作 | 两端复用 |
+|---|---|---|---|
+| `OneThingCard` | title、summary、status、primaryAction、secondaryAction | 用户处理当前一件事 | Web 首页 / Rust Hub / Cuu 展开卡 |
+| `ApprovalCard` | permission/proposal、evidence、risk、rollback | approve / request changes / delegate / remember | Web 审批中心 / Cuu 审批气泡 |
+| `OptionCard` | option、recommended、selected | select option | 提需求 / 澄清 / Cuu chips |
+| `EvidencePanel` | evidence items、source links | open source / use in task | 知识页 / 会议 / 提议详情 / Cuu 检索 |
+| `ProposalFileRow` | file kind、change kind、preview link | open preview / compare / restore | 提议详情 / 交付物卡 |
+| `RiskBadge` | low/medium/high + human wording | 无 | 审批 / 提议 / 冲突 |
+| `RollbackPanel` | snapshots、selected rollback | preview / restore | 提议详情 / 冲突解决 |
+| `CuuBubble` | Cuu state、message、actions | open card / dismiss | Web 浮层 / pet window |
+
+### 11.3 类型草案
+
+```ts
+export type EvidenceItem = {
+  id: string;
+  title: string;
+  kind: "file" | "meeting" | "workitem" | "comment" | "knowledge";
+  sourceUrl: string;
+  date?: string;
+  quote?: string;
+};
+
+export type ProposalFileChange = {
+  id: string;
+  name: string;
+  kind: "document" | "spreadsheet" | "presentation" | "image" | "folder" | "other";
+  change: "added" | "updated" | "renamed" | "deleted" | "modified";
+  previewUrl?: string;
+};
+
+export type CuuState =
+  | "idle"
+  | "thinking"
+  | "asking_approval"
+  | "carrying_document"
+  | "searching_evidence"
+  | "syncing"
+  | "worried"
+  | "revision_requested"
+  | "celebrating"
+  | "offline";
+```
+
+### 11.4 实现顺序
+
+1. **P1**：`OptionCard`、`OneThingCard`、`CuuBubble`、`EvidenceChip`。
+2. **P2**：`ApprovalCard`、`EvidencePanel`、`ProposalFileRow`、`RiskBadge`、`RollbackPanel`。
+3. **P3**：`SyncProgressItem`、`ConflictChoice`、完整 `ProposalReviewPanel`。
+4. **P4**：可视化组件画廊或 Storybook，把概念图中的状态做成可交互样例。
+
+### 11.5 可访问性与动效
+
+- 图标按钮全部有 `aria-label`。
+- OptionCard 支持键盘选择，箭头键/Tab 顺序与视觉顺序一致。
+- Cuu 动效尊重 `prefers-reduced-motion`，在低电量/后台/离线时降帧。
+- 所有风险/状态不能只靠颜色表达，必须有文字。

@@ -686,4 +686,112 @@ L1 项目列表 (/)                          ← 一切的入口
 
 ---
 
+## 9. 实现架构路线（WorkHub 施工版）
+
+### 9.1 Web 端角色边界
+
+C-WEB 继续保持「瘦视图」：
+
+- 不接活、不交付、不做本地同步。
+- 负责项目、资料、审批、提议、管理和完整检索兜底。
+- 复杂操作尽量转成「需要你决定的一件事」。
+- 与 Cuu 的关系：Web 提供完整页面，Cuu 负责轻入口、提醒、证据气泡和选项澄清。
+
+### 9.2 页面施工优先级
+
+| 优先级 | 页面/能力 | 施工目标 | 概念图 |
+|---|---|---|---|
+| P1 | 项目工作台 | 由项目上下文 + Needs attention + AI background rows 构成，替代默认看板 | `web-project-attention-workspace.png` |
+| P1 | 选项优先提需求 | 让小白用选项完成 80% 输入，文本输入折叠为兜底 | `web-option-first-intake-wizard.png` |
+| P1 | 选项优先澄清 | 把聊天墙改为 QuestionCard + OptionCard + progress stack | `cuu-option-first-clarify.png` |
+| P2 | 审批中心 / 提议详情 | 支持任意交付物变更包、证据、风险、回滚、打回 | `web-approval-center.png` / `web-deliverable-change-request.png` |
+| P2 | 会议洞察 | 会议 → 洞察 → 需求草稿，AI 不直接改正式态 | `web-meeting-insight-to-draft.png` |
+| P2 | 网盘预览 | 文件预览 + 评论 + Cuu 变更草稿提示 | `web-drive-preview-change-draft.png` |
+| P3 | 运营/健康/成本 | 作为负责人兜底视图，不做默认首页 | `web-operations-pages-atlas.png` |
+
+### 9.3 组件拆分建议
+
+新增页面不要直接在 page 里堆 JSX，应先沉到 C-UIKIT 或本端 feature component：
+
+```text
+web/src/pages/
+  ProjectView.tsx
+  NewRequirement.tsx
+  Clarify.tsx
+  ApprovalsCenter.tsx
+  ProposalDetail.tsx
+
+web/src/features/
+  attention/
+    NeedsAttentionStack.tsx
+    BackgroundWorkRows.tsx
+  intake/
+    OptionFirstWizard.tsx
+    IntakeSummaryPanel.tsx
+  proposal/
+    ProposalSummaryCard.tsx
+    DeliverableFileList.tsx
+    EvidencePanel.tsx
+    RollbackPanel.tsx
+  meetings/
+    MeetingInsightDraftPanel.tsx
+  drive/
+    ChangeDraftSuggestion.tsx
+
+shared/src/components/
+  OneThingCard
+  ApprovalCard
+  OptionCard
+  EvidenceChip
+  RiskBadge
+  RollbackPanel
+```
+
+### 9.4 数据与事件流
+
+- 页面加载仍以 REST 为真相：`GET project/workitem/proposal/drive/meeting`。
+- SSE 只作为增量提示：收到 `proposal.ready`、`permission.ask`、`meeting.insight.ready`、`drive.changed` 后重拉对应 REST。
+- Cuu 气泡与 Web 页面共享同一事件来源，但显示不同：
+  - Web：完整页面、完整列表、完整审核记录。
+  - Cuu：一张轻卡、一个问题、三个选项、少量证据。
+
+### 9.5 选项优先澄清模型
+
+提需求和澄清统一使用 `QuestionCard` 数据结构：
+
+```ts
+type ClarifyQuestion = {
+  id: string;
+  title: string;
+  reason?: string;
+  options: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    recommended?: boolean;
+    payload?: unknown;
+  }>;
+  other?: { enabled: boolean; placeholder: string };
+  progress: Array<{ key: string; label: string; state: "done" | "active" | "pending" }>;
+};
+```
+
+前端只渲染选项，不自己推理；AI/daemon 负责生成问题和推荐项。用户选择后提交 answer，daemon 返回下一题或 summary。
+
+### 9.6 项目检索归属
+
+知识检索在 Web 仍保留完整页，但默认用户入口应在 Cuu：
+
+- Cuu chips：找相关文件 / 总结上次会议 / 这次改了什么。
+- Web 知识页：完整搜索、筛选、索引状态、历史 run。
+- 两者共用 `EvidencePanel`，且必须显示来源、日期、可打开链接。
+
+### 9.7 验收标准
+
+- 小白能不打字完成提需求和澄清主路径。
+- Web 默认页不出现多列 Kanban。
+- 每个 AI 建议都能看到证据或说明「没有找到证据」。
+- 交付物变更申请能覆盖 `.docx/.pptx/.xlsx/image/folder`。
+- 浏览器端看到接活/同步/交付动作时，只能引导到 Rust 客户端。
+
 *本篇定位：C-WEB 页面规划的单一来源。接口级 → `api-contract.md`；桌宠端 → `desktop-pet-tauri.md`；组件级 → `shared-ui-kit.md`。所有页面/绑定均扎根 `web/src/*` 与 `shared/src/*` 现有真实代码。*
