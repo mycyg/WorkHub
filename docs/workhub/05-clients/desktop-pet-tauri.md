@@ -1,0 +1,604 @@
+---
+module: 05-clients
+layer: C-PET（桌宠客户端 / 瘦客户端入口层 L4）
+status: 🚧
+owner: workflow
+---
+
+# 桌面宠物客户端（C-PET，Tauri v2 + Rust，页面规划）
+
+> **范围**：`C-PET` 全量——Rust 侧能力清单（spec_watch / 双向 sync / 通知 / 托盘 / deep-link / 自动更新）、窗口类型（桌宠窗 / 主窗 / 托盘）、Tauri 事件、webview↔Rust IPC 契约、桌宠人格/状态/动效、webview 页面规划（接活 / 工作台 / 对话 / 同步状态），以及安装/更新。**本篇深度=页面规划级**：逐页给「布局（顶栏/侧栏/主区/面板/弹层）+ 关键组件 + 数据/API 绑定 + SSE 实时订阅 + 空/加载/错误/无权限四态 + 关键交互与跳转流 + web↔桌宠差异」，并尽量给「文字版 wireframe」。
+>
+> **定位**：本篇是 `C-PET` 这一**产品呈现模式**的端级规格。**后端契约**（路由/事件/鉴权）见 [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)；**进程边界与事件总线拓扑**见 [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md)；**实体/状态机**见 [`../01-architecture/data-model.md`](../01-architecture/data-model.md)；**用户用语/去黑话**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威；**Web 端页面规划**见 [`./web-app.md`](./web-app.md)（同源信息架构，本篇只写差异）；**共享设计系统/类型化 client** 见 [`./shared-ui-kit.md`](./shared-ui-kit.md)。交叉处用相对链接引用，不重复。
+>
+> **扎根**：本篇从现有「需求管理大师」桌面客户端真实代码演进而来。Rust 壳代码锚点贯穿全文（`client-tauri/src-tauri/src/{lib,sse,sync,spec_watch,tray,deep_link,reminders,window,config,http,upload,delivery,operation_locks}.rs` 与 `commands/*.rs`）；webview 页面锚点为 `client-tauri/web-src/src/{App.tsx,lib/tauri.ts,routes/*,components/*}`。**严禁臆造 IPC/命令**——本篇列出的每个 Tauri command 都对应 `lib.rs:84-135` 的 `invoke_handler!` 注册表。
+
+本篇小节：
+
+1. C-PET 是什么 / 与 C-WEB 的根本差异（一图一表）
+2. 窗口类型（桌宠窗 / 主窗 / 托盘 / 弹层）
+3. Rust 侧能力清单（command / 后台 worker / 事件发射器）
+4. webview↔Rust IPC 契约（invoke 命令表 + 事件订阅表）
+5. 桌宠人格 / 状态机 / 动效
+6. webview 页面规划（逐页：路由清单 + 四态 wireframe）
+   - 6.0 路由总表 + 信息架构
+   - 6.1 安装引导（Onboarding，4 步）
+   - 6.2 工作台 / 大厅（Hub，接活 ↔ 派活 双 Space）
+   - 6.3 工单详情（TaskDetail，含 AI 实时进度 / 交付 / 同步）
+   - 6.4 对话（Clarify 澄清 + FloatingAssistant 桌宠对话 + 升级简报）
+   - 6.5 同步状态（spec 投放 / 网盘同步 / 交付下载的进度面板）
+   - 6.6 通知收件箱（Inbox）
+   - 6.7 项目网盘 / 会议 / 其余视角页
+   - 6.8 设置（Settings，设备/同步/外观）
+7. 安装与更新（NSIS 安装、设备令牌门、自动更新缺口）
+8. 与其他文档的边界
+
+---
+
+## 1. C-PET 是什么 / 与 C-WEB 的根本差异
+
+`C-PET`（[glossary §8](../00-overview/glossary-dejargon.md)「桌面宠物（Desktop Pet）」、`README §1` 的客户端代号）是**接活/干活专属的瘦客户端**：一个 Tauri v2 应用 = **Rust 壳**（窗口/托盘/文件同步/通知/deep-link/设备令牌持有者）+ **React webview**（与 `C-WEB` 共享 `@yqgl/shared` 设计系统，但承载桌面专属能力）。它不含业务逻辑——所有真相在 daemon（见 [`system-architecture.md`](../01-architecture/system-architecture.md)）。
+
+**根本差异：设备令牌门**（[glossary §8](../00-overview/glossary-dejargon.md)「设备令牌门」、[`api-contract.md §3.2`](../01-architecture/api-contract.md)）。`C-WEB` 走 cookie，只能**派活/审批**；`C-PET` 持注册过的设备令牌（`X-YQGL-Client-Token`，`http.rs:73`），才能**接活/干活/同步**。这条不是 UI 偏好而是服务端硬约束：`clientFetch`（`lib/tauri.ts:111`）对同源请求注入令牌头，后端 `require_local_client` 据此放行 `claim`/`sync`/`delivery`。
+
+```
+┌──────────────────────── C-PET 进程（Tauri v2）────────────────────────┐
+│                                                                       │
+│  Rust 壳 (lib.rs)  ── manage(ConfigState) 共享配置（Arc<Mutex<Config>>）│
+│   ├─ 后台 worker: sse::spawn ─ 双流（global + /me）→ emit "push-event" │
+│   ├─ 后台 worker: reminders::spawn ─ 60s 轮询 due/unread → OS toast    │
+│   ├─ 后台 worker: spec_watch ─ 监视 spec/ 文件夹 → 自动上传            │
+│   ├─ tray::install ─ 托盘菜单（接单状态/同步/交付/设置/退出）         │
+│   ├─ deep_link ─ yqgl://r|p|inbox|settings|me → emit "navigate"       │
+│   └─ invoke_handler! ─ 40+ 命令（auth/requirements/sync/submitter/…）  │
+│                                                                       │
+│  WebView2 (web-src, React + react-router)                             │
+│   ├─ App.tsx ─ TitleBar + Sidebar + <Routes> + FloatingAssistant      │
+│   ├─ invoke()/useEvent() ── lib/tauri.ts ── IPC 桥                     │
+│   └─ clientFetch()/clientJson() ── 直连 daemon HTTP（带令牌头）        │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+        │ invoke(cmd)              │ clientFetch(/api/*)        ▲ emit(event)
+        ▼                          ▼                            │
+   Rust commands ── reqwest ──► C-DAEMON（OpenAPI）── SSE ──────┘
+```
+
+| 维度 | C-WEB（浏览器） | C-PET（桌宠，本篇） | 锚点 |
+|---|---|---|---|
+| **权限层级** | 派活 / 审批 | + 接活 / 干活 / 同步（设备门） | `commands/auth.rs:94` `register_device`、`lib/tauri.ts:122` |
+| **实时通道** | `EventSource` 直连 SSE | Rust `sse.rs` 解析字节流 → `emit("push-event")` → `useEvent` | `sse.rs:148`、`lib/tauri.ts:41` |
+| **本地文件** | 无（仅上传选择器） | spec 投放自动上传 + 网盘下载同步 + 交付打包 | `spec_watch.rs`、`sync.rs`、`delivery.rs` |
+| **常驻入口** | 浏览器标签 | 托盘 + 桌宠浮窗（隐藏到托盘不退出） | `tray.rs`、`TitleBar.tsx:53`（关闭=`hide()`） |
+| **通知** | 页内 toast | 页内 toast **+ OS 系统通知**（右下角弹窗） | `App.tsx:66` `osNotify`、`reminders.rs:76` |
+| **唤起** | URL | `yqgl://` deep-link + 托盘菜单 + 单实例聚焦 | `deep_link.rs`、`lib.rs:31`（single-instance） |
+| **窗口** | 浏览器 chrome | 无边框 + Mica/Acrylic 毛玻璃 + 自绘标题栏 | `tauri.conf.json:21`（`decorations:false`）、`window.rs:22` |
+| **身份持久化** | cookie | `config.json`（昵称/令牌/同步根/dedup 态，原子写） | `config.rs:390`（`save_to_path` atomic rename） |
+
+> **演进基线**：今天「桌宠」尚未独立成窗——它是右下角的 `FloatingAssistant`（`components/FloatingAssistant.tsx`）气泡 + 系统托盘（`tray.rs`）。WorkHub 的 C-PET 把这两者**升级为一等「桌宠」呈现层**（[glossary §8](../00-overview/glossary-dejargon.md) 标注 *(新增,L4)*），并补齐双向同步（现状 `sync.rs:227` 明注单向占位）与升级简报（PM 模式人话简报，`FR-PM-001`）。
+
+---
+
+## 2. 窗口类型
+
+C-PET 用 **三类窗口 + 一类弹层**。现状只有 `main` 一个窗口（`tauri.conf.json:13`），WorkHub 新增独立桌宠窗。
+
+### 2.1 主窗（`main`，现有）
+
+- **形态**：无边框（`decorations:false`）、透明（`transparent:true`）、有阴影、`titleBarStyle:"Overlay"`、`hiddenTitle:true`，1280×800、最小 920×600、居中、**启动隐藏**（`visible:false`）（`tauri.conf.json:14-28`）。
+- **毛玻璃**：`window::decorate`（`window.rs:11`）在 Win11 上 `apply_acrylic`（半透明实时模糊，回退 `apply_mica`），macOS 上 `apply_vibrancy(HudWindow)`；应用后才 `window.show()`（`window.rs:40`）——避免白闪。
+- **自绘标题栏**：`TitleBar.tsx` 提供 `data-tauri-drag-region` 拖拽区 + 最小化/最大化/隐藏按钮 + 主题切换 + **SSE 连接绿点**（`TitleBar.tsx:26`，`sseConnected ? bg-success : bg-ink-faint`）。**关闭按钮 = `window.hide()` 而非退出**（`TitleBar.tsx:53`，「隐藏到托盘」）——只有托盘「退出」或 `app.exit(0)` 真退出（`tray.rs:44`）。
+- **承载**：除桌宠对话外的全部 webview 页面（§6 路由）。
+
+### 2.2 桌宠窗（`pet`，**新增**）
+
+> 现状的 `FloatingAssistant` 是**主窗内的浮层**（`fixed bottom-5 right-5`，`FloatingAssistant.tsx:236`），随主窗显隐。WorkHub 把它抽成**独立 always-on-top 小窗**，主窗隐藏到托盘后桌宠仍在桌面常驻——这是「桌宠是常驻入口」的关键。
+
+- **形态（建议）**：小尺寸（约 96×96 收起 / 380×560 展开）、`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（复用 `tauri-plugin-window-state`，已在 `lib.rs:50` 注册）。
+- **两态**：
+  - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
+  - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
+- **唤起/隐藏**：托盘新增「显示/隐藏桌宠」项（扩展 `tray.rs` 菜单）；deep-link `yqgl://me` 可点亮桌宠。
+- **IPC**：桌宠窗与主窗共享同一 `ConfigState`（`lib.rs:67` `handle.state()`）与同一 `push-event` 事件流（`emit` 默认广播到所有窗口），无需新通道。
+- **MVP 降级**：P0–P3 可继续用主窗内浮层（`FloatingAssistant`），独立 `pet` 窗作为 P4「桌宠」里程碑交付（对齐 PRD `P0–P5` 的 P4=桌宠）。
+
+### 2.3 系统托盘（现有，`tray.rs`）
+
+- **图标**：`icons/icon.png`（`tauri.conf.json:33`）；`with_id("main-tray")`（`tray.rs:11`），可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`（`tray.rs:260`、`submitter.rs:248`）。
+- **左键**：显示+聚焦主窗（`tray.rs:51`，`show_menu_on_left_click(false)` 故左键不弹菜单）。
+- **右键菜单**（动态重建，`build_menu`，`tray.rs:65`）：
+  ```
+  用户：<昵称|未登录>   (禁用，仅展示)
+  ──────────────
+  打开主窗口            → navigate("/")
+  打开需求大厅          → navigate("/")
+  打开待办收件箱        → navigate("/inbox")
+  ──────────────
+  立即拉新需求          → emit tray-action {pull_new}
+  立即同步网盘          → emit tray-action {sync_drive}
+  完成并交付…           → emit tray-action {do_deliver}
+  ──────────────
+  接单状态 ▸ 空闲/忙碌/自定义…   → set_availability / tray-action
+  网盘同步 ▸ 关/仅下载           → set_drive_mode
+  ⏸暂停同步 / ▶恢复同步          → toggle_pause
+  ──────────────
+  设置…                 → navigate("/settings")
+  退出                  → app.exit(0)
+  ```
+- **未读角标**：Win11 无托盘红点公共 API，故用 **tooltip + title 文案**承载（`update_tray_unread`，`submitter.rs:242`：`需求管理大师 · N 条新通知`）；由 webview 侧 `refreshUnreadBadge`（`App.tsx:50`，250ms 防抖）拉 `/api/notifications?status=unread` 后 `invoke("update_tray_unread")`。
+- **WorkHub 扩展**：菜单新增「显示/隐藏桌宠」「待审批 N」（`permission.ask` 计数）；「网盘同步」子菜单在双向同步落地后增「双向」项（现状 `two_way` 被强制降级，`config.rs:155` `normalize_drive_mode`）。
+
+### 2.4 弹层（webview 内，非原生窗口）
+
+由 webview 用 `@yqgl/shared` 组件渲染，覆盖在主窗/桌宠窗之上：
+
+- **Toast**：`ToastHost`（`App.tsx:330`），全局右上角；`osNotify` 同时触发 OS 系统通知。
+- **欢迎引导（WelcomeTour）**：`App.tsx:290`，首次进主壳自动开（`useFirstRun` 持久化），6 张卡（Sparkles/切换 Space/Bot/Bell/Folder/Command）。
+- **审批询问卡 / 升级简报**：WorkHub 新增（`permission.ask` / `escalation.created` 事件驱动），优先在桌宠窗展开态呈现，详见 §6.4。
+- **原生对话框**：`@tauri-apps/plugin-dialog`（`capabilities/default.json` 授权 `dialog:allow-open/save/message`）用于文件/文件夹选择（交付打包选目录、网盘上传选文件）。
+
+---
+
+## 3. Rust 侧能力清单
+
+C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+ **后台 worker**（长驻、主动 `emit` 事件）+ **平台集成**（托盘/deep-link/窗口/通知）。下表给全量，均对应真实模块。
+
+### 3.1 后台 worker（长驻，`setup` 启动）
+
+| worker | 职责 | 启动 | 发射事件 | 锚点 |
+|---|---|---|---|---|
+| **SSE 双流** | 并行连 `/api/push/stream`（全局非 PII）+ `/api/push/stream/me`（本人私有），字节级解析 SSE 帧，统一转 `push-event` | `lib.rs:69` `sse::spawn` | `push-event`、`sse-status`（仅全局流，避免双闪标题栏点） | `sse.rs:28/65/148` |
+| **提醒/通知轮询** | 60s tick 拉 `/api/reminders/due` + `/api/notifications?status=unread`，severity high/urgent → OS toast，本地 dedup（`known_reminders`/`known_notifications`，按 `id:updated_at` 去重，无 id 则跳过) | `lib.rs:72` `reminders::spawn` | `reminder`、`notification` + OS 通知 | `reminders.rs:13/28/105` |
+| **spec_watch（按需）** | 监视 `{sync_root}/{slug}/{code}/spec/` 文件夹，文件落定后 sha256 去重、稳定性快照、分片上传为附件；append-only（本地删不删远端） | `start_spec_watcher` 命令（`submitter.rs:553`）→ `spec_watch::start`（`spec_watch.rs:122`） | `upload-progress`（pending/chunk/done/error） | `spec_watch.rs` 全文 |
+
+> **共享配置铁律**（`lib.rs:61-72` 注释）：后台 worker 与命令**共享同一个 `ConfigState`**（`ConfigState::clone` = 廉价 Arc bump，`config.rs:449`）。历史 bug：worker 曾持快照副本，导致 `register_device` 写入的 `client_token` 对 SSE/reminders 不可见→鉴权头空、通知静默。**任何新 worker 必须 `ConfigState::clone(state.inner())`，不得新建 ConfigState。**
+
+### 3.2 平台集成
+
+| 能力 | 职责 | 锚点 |
+|---|---|---|
+| **托盘** | 动态菜单 + 左键聚焦 + tooltip 未读 | `tray.rs`（§2.3） |
+| **deep-link** | `yqgl://{host}/...` → 校验白名单 host（`r/p/inbox/settings/me`）+ 清洗 `..`/`//` 路径穿越 → `emit("navigate")` + `emit("deep-link")`（只发净化后路径，防 XSS） | `deep_link.rs:9/29/41` |
+| **单实例** | 第二次启动 → 聚焦已有主窗 + 把 `yqgl://` 参数转 deep-link | `lib.rs:31` `single_instance` |
+| **窗口装饰** | Mica/Acrylic/vibrancy + 延迟 show | `window.rs`（§2.1） |
+| **窗口状态记忆** | 位置/尺寸持久化 | `tauri_plugin_window_state`（`lib.rs:50`） |
+| **OS 通知** | 系统级 toast | `notify.rs:10` `toast` + `reminders.rs:76` + webview `osNotify`（`App.tsx:66`） |
+| **进程控制** | 退出/relaunch（自动更新重启用） | `tauri_plugin_process`（`lib.rs:51`） |
+| **自启动** | 开机自启（**已声明依赖但未在 `lib.rs` 注册**——latent，WorkHub 待接线） | `Cargo.toml:23` `tauri-plugin-autostart`（未 `.plugin(...)`） |
+
+### 3.3 命令分组（被 webview `invoke`）
+
+全部注册于 `lib.rs:84-135` 的 `invoke_handler!`。按域分组（见 §4 详表）：
+
+- **auth**：`identify` / `me` / `validate_device` / `register_device`（`commands/auth.rs`）
+- **requirements（接活侧）**：`list_my` / `list_public_pool` / `get_requirement` / `claim` / `patch_status`（`commands/requirements.rs`）
+- **workspace（个人工作面=Branch 雏形）**：`list_workspaces` / `patch_my_workspace` / `add_workspace_item` / `patch_workspace_item` / `add_workspace_update`（`commands/workspace.rs`）
+- **submitter（派活侧 + 文件 + 管理）**：`list_my_projects` / `create_requirement` / `patch_planning` / `put_assignees` / `submit_requirement` / `finalize_and_submit` / `accept_requirement` / `request_revision` / `auto_process` / `chat_messages` / `post_chat_answer` / 网盘 / spec 监视 / 交付下载 / admin（`commands/submitter.rs`）
+- **sync**：`trigger_sync`（单需求文件） / `trigger_drive_sync`（项目网盘）（`commands/sync.rs`）
+- **delivery**：`start_delivery`（打包文件夹 → 分片上传）（`commands/delivery.rs`）
+- **config/shell/tray**：`get_config` / `set_config` / `set_availability_status` / `test_server` / `open_folder` / `update_tray_unread`
+
+### 3.4 安全护栏（Rust 侧，迁移期原样保留）
+
+- **路径containment**：所有写盘命令把目标限定在 `sync_root` 内（`ensure_dir_inside_root`/`ensure_parent_inside_root`，`sync.rs:596/635`；`start_delivery` 也补了这道，`delivery.rs:38`）；`safe_component`/`safe_relative_path` 拒绝 `..`/`:`/分隔符（`sync.rs:767/787`）。
+- **off-server 下载拒绝**：`resolve_server_url_base`（`sync.rs:498`）确保 download_url 同 scheme/host/port，否则拒绝。
+- **原子文件替换**：下载/交付写 `.tmp` 再 rename，保留 backup，拒绝覆盖符号链接/目录（`replace_file_preserving_existing`，`sync.rs:648`）；config 用 `MoveFileExW(WRITE_THROUGH)` 原子替换（`config.rs:411`）。
+- **操作互斥锁**：同一 req/project 的同步/上传/交付串行化（`RequirementOpGuard`/`ProjectDriveOpGuard`，`operation_locks.rs`）——避免双击撞车。
+- **校验完整性**：下载校 size + sha256，不符删除（`sync.rs:171/181`、`submitter.rs:704/712`）。
+- **picker 路径不 containment 的理由**：`upload_drive_item`/`upload_attachment` 的 `file_path` 来自原生 picker，是任意用户文件；防 XSS 伪造路径靠 CSP `script-src 'self'` + 零 `dangerouslySetInnerHTML`（`submitter.rs:371` 注释）。
+
+> **WorkHub 演进**：上述护栏**全部保留**。双向同步（`sync.rs:227` 现单向）复用 `spec_watch` 的 sha256 去重 + append-only 思路，上传走 `sync-push`（`api-contract.md §2.13`），冲突回 `conflicts[]` 由 AI 调解、人择一，详见 [`../03-collaboration/sync-and-spec.md`](../03-collaboration/sync-and-spec.md)。
+
+---
+
+## 4. webview↔Rust IPC 契约
+
+IPC 双向：**webview → Rust** 走 `invoke(cmd, args)`（`lib/tauri.ts:11`）；**Rust → webview** 走 `app.emit(event, payload)` + webview `useEvent(event, handler)`（`lib/tauri.ts:41`）。两者都有 dev/mock 降级（非 Tauri 环境 invoke 抛错、listen 返回 no-op；`__YQGL_MOCK_INVOKE__`/`__YQGL_MOCK_LISTEN__` 供 E2E）。
+
+**关键设计**：业务读写**不全走 invoke**——直连 daemon 的 HTTP 走 `clientFetch`/`clientJson`（`lib/tauri.ts:111/144`），它在 Tauri 内**前缀配置的 `server_url`**（webview origin 是 `tauri://localhost`，裸 `/api` 会 404）并**注入令牌头 + credentials**。invoke 命令主要用于：① Rust 独占能力（文件/托盘/spec_watch/同步/打包）；② 需要 Rust 持有 cookie jar 的鉴权动作（identify/register_device）。
+
+### 4.1 invoke 命令表（webview → Rust，全量）
+
+> 参数名为 Tauri 自动 camelCase 转换后的 JS 侧名（`req_id`→`reqId` 等由 Tauri 处理；下表给 Rust 签名内部名）。返回除注明外为 `serde_json::Value`（透传 daemon 响应，前端按 `@yqgl/shared` 类型消费）。
+
+| 命令 | 入参 | 出参 | 副作用 / 设备门 | 锚点 |
+|---|---|---|---|---|
+| `get_config` | — | `Config`（含 `server_url/nickname/client_token/sync_root/...`） | 读 ConfigState | `commands/config.rs:8` |
+| `set_config` | `patch: Value` | `Config` | 校验+写盘；改 endpoint/身份清 dedup 态 | `commands/config.rs:57` |
+| `set_availability_status` | `status, availability_text?` | `Config` | PUT `/api/users/me/status` + 写盘 | `commands/config.rs:211` |
+| `test_server` | — | `{ok, status}` | GET `/api/health`（不带令牌） | `commands/config.rs:220` |
+| `identify` | `nickname, admin_secret?` | `Identity{id,nickname,created,is_admin}` | POST `/api/auth/identify`（签 cookie 入 jar） | `commands/auth.rs:18` |
+| `me` | — | `Identity?` | GET `/api/auth/me`（401→None，区分登出与坏响应） | `commands/auth.rs:45` |
+| `validate_device` | — | `bool` | GET `/api/client-devices/current`（401/403→false） | `commands/auth.rs:77` |
+| `register_device` | `device_name` | `DeviceToken{token,device_id}` | POST `/api/client-devices/register` + 持久化令牌 | `commands/auth.rs:94` |
+| `list_my` | `assigned_to_me?, mine?` | 工单数组 | GET `/api/requirements?...` | `commands/requirements.rs:8` |
+| `list_public_pool` | — | 工单数组 | GET `?status=ready` | `commands/requirements.rs:30` |
+| `get_requirement` | `req_id` | 工单 | GET `/api/requirements/{id}` | `commands/requirements.rs:42` |
+| `claim` | `req_id` | 工单 | POST `/claim` **【设备门】** | `commands/requirements.rs:57` |
+| `patch_status` | `req_id, status` | 工单 | PATCH `/status`（worker 跃迁**【设备门】**） | `commands/requirements.rs:69` |
+| `list_workspaces` | `req_id` | 工作面数组 | GET `/workspaces` | `commands/workspace.rs:7` |
+| `patch_my_workspace` | `req_id, patch` | 工作面 | PATCH `/workspaces/me` | `commands/workspace.rs:22` |
+| `add_workspace_item` | `req_id, title` | item | POST `/workspaces/me/items` | `commands/workspace.rs:39` |
+| `patch_workspace_item` | `item_id, patch` | item | PATCH `/workspace-items/{id}` | `commands/workspace.rs:59` |
+| `add_workspace_update` | `req_id, body` | update | POST `/workspaces/me/updates` | `commands/workspace.rs:76` |
+| `list_my_projects` | — | 项目数组 | GET `/api/projects?state=active` | `commands/submitter.rs:43` |
+| `list_users` | `search?` | 用户数组 | GET `/api/users?search=` | `commands/submitter.rs:55` |
+| `create_requirement` | `project_id, body` | 工单 | POST `.../requirements` | `commands/submitter.rs:76` |
+| `patch_planning` | `req_id, body` | 工单 | PATCH `/planning` | `commands/submitter.rs:93` |
+| `patch_schedule` | `req_id, body` | 工单 | PATCH `/schedule` | `commands/submitter.rs:110` |
+| `put_assignees` | `req_id, lead_user_id?, collaborator_user_ids[]` | 指派数组 | PUT `/assignees` | `commands/submitter.rs:127` |
+| `submit_requirement` | `req_id` | 工单 | POST `/submit` + **停 spec 监视** | `commands/submitter.rs:148` |
+| `finalize_and_submit` | `req_id, summary_md?, title?` | 工单 | finalize-summary + submit + 停监视 | `commands/submitter.rs:169` |
+| `accept_requirement` | `req_id, note?` | 结果 | POST `/accept`（采纳/通过）**【设备门】** | `commands/submitter.rs:451` |
+| `request_revision` | `req_id, reason_md` | 结果 | POST `/revisions`（**打回带理由**） | `commands/submitter.rs:729` |
+| `auto_process` | `req_id` | 结果 | POST `/auto-process`（触发 AI 工人）+ 停监视 | `commands/submitter.rs:292` |
+| `chat_messages` | `req_id` | 消息数组 | GET `/chat/messages` | `commands/submitter.rs:260` |
+| `post_chat_answer` | `req_id, body` | 结果 | POST `/chat/answer` | `commands/submitter.rs:275` |
+| `list_attachments` | `req_id` | 附件数组 | GET `/attachments` | `commands/submitter.rs:467` |
+| `upload_attachment` | `req_id, file_path, op_id?` | 附件 | 分片上传**【op 锁】** → `upload-progress` | `commands/submitter.rs:486` |
+| `download_delivery` | `req_id, delivery_id?` | `{delivery_id,round,saved_path}` | 校验+落盘交付 zip**【op 锁】** | `commands/submitter.rs:603` |
+| `list_drive_root` | `project_id` | 网盘树 | GET `.../drive` | `commands/submitter.rs:356` |
+| `upload_drive_item` | `project_id, file_path, op_id?` | 网盘项 | 分片上传**【op 锁】** → `drive-upload-progress` | `commands/submitter.rs:379` |
+| `trigger_sync` | `req_id` | — | 拉 manifest + 下载文件 + ack**【op 锁】** → `sync-progress` | `commands/sync.rs:8` |
+| `trigger_drive_sync` | `project_id, op_id?` | — | 单向下载网盘**【op 锁,需开启同步】** → `drive-sync-progress` | `commands/sync.rs:23` |
+| `start_delivery` | `req_id, folder` | — | 打包文件夹+上传**【op 锁,sync_root 内】** → `delivery-progress` | `commands/delivery.rs:10` |
+| `start_spec_watcher` | `req_id` | 文件夹路径 | 启动 spec 监视 | `commands/submitter.rs:553` |
+| `stop_spec_watcher` | `req_id` | — | 停监视 | `commands/submitter.rs:564` |
+| `spec_watcher_status` | `req_id` | `bool` | 查监视中 | `commands/submitter.rs:569` |
+| `open_spec_folder` | `req_id` | — | 在文件管理器打开 spec 文件夹 | `commands/submitter.rs:574` |
+| `open_folder` | `path` | — | 打开本地文件夹 | `commands/shell.rs` |
+| `create_project`/`delete_project`/`delete_requirement`/`set_user_admin`/`delete_user` | — | — | 管理动作 | `commands/submitter.rs` |
+| `update_tray_unread` | `count` | — | 改托盘 tooltip/title | `commands/submitter.rs:242` |
+
+**WorkHub 新增命令（建议，对齐 §6.4 / api-contract）**：`open_session`（开桌宠对话 session，`api-contract.md §2.3`）、`send_session_message`、`respond_approval`（回审批 allow/deny+理由，`§2.8`）、`abort_agent_run`、`open_pet`/`hide_pet`（桌宠窗显隐）、`check_update`/`install_update`（自动更新，§7）。新命令一律遵循 §3.1 共享 ConfigState 与 §3.4 护栏。
+
+### 4.2 事件订阅表（Rust → webview，全量）
+
+webview 用 `useEvent(name, handler)` 订阅。事件由 Rust `app.emit(name, payload)` 广播到所有窗口。
+
+| 事件 | payload | 发射方 | webview 消费处 | 锚点 |
+|---|---|---|---|---|
+| `push-event` | `{event, data}`（包裹后端 SSE 帧：`requirement.ready`/`requirement.updated`/`notification.created`/`ai.*` 等） | `sse.rs:148` | `App.tsx:213/238`（toast+OS 通知+角标）、`AILiveView`、各页 reconcile | `sse.rs`、`App.tsx` |
+| `sse-status` | `{status:"connected"\|"disconnected"}` | `sse.rs:90`（仅全局流） | `App.tsx:174` → `TitleBar` 绿点 | `TitleBar.tsx:26` |
+| `navigate` | `{path}` | `tray.rs:129`、`deep_link.rs:41` | `App.tsx:170` → `nav(path)` | `App.tsx:169` |
+| `deep-link` | `{path}`（净化后） | `deep_link.rs:45` | （可选）页内深链处理 | `deep_link.rs` |
+| `tray-action` | `{action: pull_new\|sync_drive\|do_deliver\|avail_custom\|availability_*\|drive_sync_*}` | `tray.rs:140` 及各 setter | `App.tsx:178`（toast + 导航 + setSpace） | `App.tsx:178` |
+| `availability-change` | `{status, availability_text}` | `tray.rs:162` | 接单状态 UI 同步 | `tray.rs` |
+| `reminder` | `{kind, title, requirement_id}` | `reminders.rs:82` | 提醒 UI | `reminders.rs` |
+| `notification` | 通知对象 | `reminders.rs:148` | Inbox/角标 | `reminders.rs` |
+| `upload-progress` | `{req_id, op_id?, phase, sent, total}` | `upload.rs:413`、`spec_watch.rs:345` | TaskDetail / spec 投放面板进度条 | `upload.rs` |
+| `drive-upload-progress` | 同上结构 | `upload.rs`（经 `upload_drive_item`） | 网盘上传进度 | `submitter.rs:441` |
+| `sync-progress` | `{req_id, phase, percent, message?}` | `sync.rs:216` | TaskDetail 同步进度 | `sync.rs:60` |
+| `drive-sync-progress` | `{project_id, op_id?, phase, percent}` | `sync.rs:276/345/353` | 网盘同步进度 | `sync.rs` |
+| `delivery-progress` | `{req_id, ...}`（打包/上传阶段） | `delivery.rs`（经 `upload`） | DeliveryWizard 进度 | `delivery.rs` |
+
+**WorkHub 新增事件（建议）**：`agent-run-step`（对外化 `ai.*` trace）、`confidence-assessed`（人话档位，不暴露数值）、`escalation-created`（升级简报，点亮桌宠红点）、`permission-ask`（审批询问 → 桌宠/Inbox 卡片）、`proposal-*`/`conflict-detected`。这些与 daemon 的 SSE 事件（`api-contract.md §5.2`）一一对应，Rust 侧仍走 `sse.rs` 统一转 `push-event`（无需新 Tauri 事件名，按 `data.event` 分发即可）——保持现有「单一 `push-event` 入口」的简洁。
+
+> **状态获取双通道（铁律，沿用 [`api-contract.md §7`](../01-architecture/api-contract.md)）**：**REST 拉取为真相，SSE/事件为增量提示**。SSE 会丢（背压队列满则丢，`push_bus` 侧）；webview 收到 `push-event` 后**按需重拉**对应资源 reconcile（如 `SidebarDispatch.tsx:74` 收 `requirement.updated` 后 `loadCounts()`），不把事件当唯一数据源。
+
+---
+
+## 5. 桌宠人格 / 状态 / 动效
+
+> 桌宠是 WorkHub 「AI 是默认劳动力」的**拟人化入口**：它替你干活（工人模式），卡住了替你找人（PM 模式），全程说人话（[glossary §3](../00-overview/glossary-dejargon.md)）。**人格不进 git 黑话**——桌宠永远说「AI 拟好了，确认?」而非 `merge`/`PR`。
+
+### 5.1 人格基调
+
+- **定位**：能干、克制、会请示。默认闷头干活，只在三种时刻主动出声：① 做好了请你扫一眼 / 采纳；② 拿不准请你拍板（审批/升级）；③ 你打回了它接着改（理由回灌）。
+- **文案口径**：严格走 [glossary §3](../00-overview/glossary-dejargon.md) 三档语气——「我比较有把握 / 我大致有谱，建议你扫一眼 / 我不太确定，想请你拍板」；**绝不显示置信度数值或 `escalation`/`merge` 等内部词**（落地 §1.2 硬规则、`auto_agent.py` 的「user's language」约定）。
+- **去打扰**：通知去重沿用 `reminders.rs` 的 dedup（`id:updated_at` 键 + 上限裁剪 `prune_seen_map`）；only severity high/urgent 弹 OS 通知（`reminders.rs:135`）。「永远允许」学习（`api-contract.md §2.8` `remember:always`）让桌宠「以后这类不用再问」。
+
+### 5.2 桌宠状态机（视觉态，映射真实事件）
+
+> 桌宠的视觉态由 `push-event` 流驱动。状态枚举与用户标签**复用** `shared/src/design/status-vocab.ts`（[glossary §7](../00-overview/glossary-dejargon.md)），不另造一套。
+
+| 桌宠态 | 触发（事件/状态） | 视觉 | 动效 | 文案示例 |
+|---|---|---|---|---|
+| **空闲** | 无活跃工单 | 静态头像，偶尔眨眼 | 轻微呼吸缩放 | 「在的，随时叫我」 |
+| **干活中** | `ai.started`/`ai.thinking`/`ai.tool_call`；状态 `ai_processing` | 头像旁转圈 + 工具图标闪 | 旋转 loader（呼应 `AILiveView.tsx:42` 的 `animate-spin`） | 「AI 在帮你做…（第 N 步）」 |
+| **做好了等确认** | 状态 `delivered`；`delivery.doc_ready` | 头像带 ✓ 角标，accent 色 | 弹一下 + 高亮 | 「做好了，扫一眼？通过 / 打回」 |
+| **请你拍板** | `permission-ask`/`confidence-assessed`(低档) | 头像带 ? 角标，warn 色 | 脉动红点 | 「这步我拿不准，要继续吗？」 |
+| **请人来接手** | `escalation-created`；状态 `escalated`/`pm_mode` | 头像带「找人」角标 | 脉动 | 「这个我请人来接手了，简报在这」 |
+| **被打回·接着改** | 状态 `revision_requested`→续做 | 头像「重做」角标，error→accent | 渐变回干活态 | 「按你说的原因，我接着改」 |
+| **撞车了** | `conflict-detected` | 头像「撞车」角标 | 抖动一次 | 「和别人的改动撞车了，AI 给了方案，你选一个」 |
+| **离线/连不上** | `sse-status:disconnected` 持续 | 头像灰、半透明 | 无 | 「和服务器断开了，重连中…」 |
+
+- **现状锚点**：今天 `AILiveView.tsx` 已把 `ai.started/thinking/text/tool_call/done/failed` 渲染成实时进度行（带 spinner/扳手/勾/警告图标）；`TitleBar.tsx:26` 用 `sseConnected` 绿点表达连接态。桌宠状态机 = 把这套「事件→视觉」的映射**收口到一个拟人形象**。
+
+### 5.3 动效与实现约束
+
+- **承载**：桌宠头像建议用轻量 Lottie/CSS sprite；动效用 CSS transition/keyframes（复用 `@yqgl/shared` 已有的 `anim-fade-up`/`animate-spin`/脉动类，见 `FloatingAssistant.tsx:245`、`AILiveView.tsx`）。
+- **性能**：桌宠窗 always-on-top 但极小、`skipTaskbar`；空闲态降帧/暂停动画避免占 GPU；连接断开停转圈。
+- **可达性**：所有角标有 `aria-label`/`title`（沿用 `TitleBar`/`AILiveView` 的 `aria-hidden` + 文本并存做法）。
+- **MVP**：P0–P3 用 `FloatingAssistant` 的渐变气泡（`linear-gradient(135deg,#6B5BFF,#FF6E8E)`，`FloatingAssistant.tsx:237`）+ Bot/Sparkles 图标承载基本「在思考/可点击」两态；完整状态机在 P4 桌宠里程碑落地。
+
+---
+
+## 6. webview 页面规划（逐页）
+
+### 6.0 路由总表 + 信息架构
+
+路由在 `App.tsx:308-324`（react-router v6 扁平路由，避开嵌套 `<Routes>` 重匹配坑）。**主壳 = `TitleBar`(顶) + `Sidebar`(左) + `<Routes>`(主区) + `FloatingAssistant`(右下桌宠浮层)**（`App.tsx:287-332`）。未完成 onboarding 时**只有** `/onboarding` 可达（`App.tsx:296`，其余 `Navigate→/onboarding`）。
+
+| 路由 | 页面组件 | Space 相关 | 设备门 | 锚点 | 本篇小节 |
+|---|---|---|---|---|---|
+| `/onboarding` | `Onboarding` | — | 建立设备门 | `routes/Onboarding.tsx` | §6.1 |
+| `/` | `HubRouter`→`Hub`(接活)/`HubDispatch`(派活) | **双 Space** | 接活动作需 | `App.tsx:89`、`routes/Hub.tsx`/`HubDispatch.tsx` | §6.2 |
+| `/r/new` | `NewRequirement` | 派活 | — | `routes/NewRequirement.tsx` | §6.2 |
+| `/r/:id` | `TaskDetail` | 两侧 | 接活/交付需 | `routes/TaskDetail.tsx` | §6.3 |
+| `/r/:id/clarify` | `Clarify` | 派活 | — | `routes/Clarify.tsx` | §6.4 |
+| `/p` `/p/:projectId` | `ProjectDrive` | 派活为主 | 上传/同步需 | `routes/ProjectDrive.tsx` | §6.7 |
+| `/p/:projectId/meetings` | `ProjectMeetings` | 派活 | — | `routes/ProjectMeetings.tsx` | §6.7 |
+| `/inbox` | `Inbox` | 两侧 | — | `routes/Inbox.tsx` | §6.6 |
+| `/settings` | `Settings` | 两侧 | — | `routes/Settings.tsx` | §6.8 |
+| `/me/workload` | `MyWorkload` | 接活 | — | `routes/MyWorkload.tsx` | §6.7 |
+| `/me/knowledge` | `Knowledge` | 接活 | — | `routes/Knowledge.tsx` | §6.7 |
+| `/me/pulse` | `ProjectPulse` | 两侧 | — | `routes/ProjectPulse.tsx` | §6.7 |
+| `/me/calendar` | `Calendar` | 接活 | — | `routes/Calendar.tsx` | §6.7 |
+
+**双 Space 切换**（C-PET 特有信息架构，`App.tsx:89` `HubRouter` + `useSpace`）：同一 `/` 路由按 `space` 渲染「接活（work）」或「派活（dispatch）」两套侧栏+主区——URL 不变，内容切换。快捷键 `Ctrl+1`=接活 / `Ctrl+2`=派活（`App.tsx:112-122`，输入框内不拦截）；顶栏 `SpaceSwitcher` 药丸切换。侧栏分别是 `SidebarWork`（公共池/派给我的/进行中/待返工/近期交付 + 视角）与 `SidebarDispatch`（起草/待澄清/投递池/跟进中/待我验收/已通过 + 项目）。
+
+> **与 Web 端差异**：C-WEB 信息架构同源但**砍掉接活侧的设备门动作**（claim/交付/同步按钮在 Web 上禁用或引导「请在桌面客户端操作」）。逐页差异在各小节「web↔桌宠差异」标注；Web 端完整规划见 [`./web-app.md`](./web-app.md)。
+
+---
+
+### 6.1 安装引导（Onboarding，4 步）
+
+> 锚点 `routes/Onboarding.tsx`。**这是设备令牌门的建立现场**——走完才拿到 `client_token`，才能接活/干活/同步。
+
+**布局**（无侧栏，居中卡片 + Stepper）：
+```
+┌──────────────── 主窗（TitleBar 仍在顶部）────────────────┐
+│                  ✦  欢迎来到需求管理大师                   │
+│              4 步把客户端连上服务器，开始接单              │
+│   [① 服务地址]——[② 我是谁]——[③ 文件放哪]——[④ 完成]      │ ← Stepper
+│  ┌────────────────────────────────────────────────────┐ │
+│  │  当前步骤内容（min-h 280）                            │ │
+│  └────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────┘
+```
+- **① 服务地址**：IP + 端口输入 → 「测试连接」(`invoke test_server` → GET `/api/health`)。成功显「✓ 服务器可达」，失败显「✗ 连不上，检查 IP/端口/防火墙」。**「下一步」按钮 disabled 直到 `serverVerified`**（`Onboarding.tsx:49`，且 endpoint 改动会 `invalidateEndpoint` 失效校验）。
+- **② 我是谁**：昵称 + 管理员口令（可空）→ `invoke identify` + `set_config{nickname,cookie_token:"session"}` + **`register_device`**（拿令牌）。昵称占用提示「请用已有设备登录或联系管理员」。
+- **③ 文件放哪**：本地工作目录（默认 `D:\工作需求`）+ 网盘同步模式（关 / 仅下载；**双向标注「保护性内测」未开放**，`Onboarding.tsx:280`）→ `set_config{sync_root,drive_sync_root,drive_sync_mode,drive_sync_enabled}`。
+- **④ 完成**：勾选清单（已连接 / 已注册设备 / 工作目录 / 网盘同步模式）→「打开主窗口 →」调 `onComplete`（`App.tsx:260` `finishOnboarding`：`resetClientTokenCache` + 重读 config + `nav("/")`）。
+
+**四态**：
+- **加载**：每步按钮 `loading={busy}`，`busyRef` 防双击重入（`Onboarding.tsx:86`）。
+- **空**：fresh install 无预填（`get_config` catch 静默，`Onboarding.tsx:78`）。
+- **错误**：每步 try/catch → `toast(error)`；**关键修复**：`set_config` 失败**不**前进（旧 bug 会带坏配置进 Hub 致全 IPC 401，`Onboarding.tsx:171` 注释）。
+- **无权限**：昵称是 admin 但无口令 → identify 抛错 → toast「登录失败」。
+
+**跳转流**：完成 → `/`。**web↔桌宠差异**：Onboarding 是 **C-PET 独有**——C-WEB 用 cookie 即身份，无设备注册步骤；故只有桌宠能走完「拿令牌」这步，这正是设备门的物理体现。
+
+---
+
+### 6.2 工作台 / 大厅（Hub，接活 ↔ 派活）
+
+> 同一 `/` 路由，`HubRouter`（`App.tsx:89`）按 Space 二选一。
+
+**布局（通用骨架）**：
+```
+┌─ TitleBar：[SpaceSwitcher ●SSE点]      [主题][－][▢][✕→hide] ─┐
+├──────────┬───────────────────────────────────────────────────┤
+│ Sidebar  │  主区：工单分组列表（按 ?tab=/?dtab= 切分组）        │
+│ (Work或   │   ┌─ TaskCard ─┐ ┌─ TaskCard ─┐ ...               │
+│  Dispatch)│   │ code 标题   │ │            │                   │
+│  分组导航 │   │ 状态徽章    │ │            │                   │
+│  +视角/项目│   │ 负责人/DDL  │ │            │                   │
+│          │   └────────────┘ └────────────┘                   │
+├──────────┴───────────────────────────────────────────────────┤
+│                                          [✦ 桌宠浮层(右下)]    │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**接活 Space（`SidebarWork` + `Hub`）**：
+- 侧栏分组（`SidebarWork.tsx:19`）：公共池(`?tab=public`)/派给我的/进行中/待返工/近期交付；视角：我的负载/日程/历史检索/项目快报；底部：通知/设置。**激活态按 `tab` 值判断**（pathname 全是 `/`，`SidebarWork.tsx:43`）。
+- 主区：工单卡列表（`TaskCard`），公共池里点卡 → 详情可「接单」(`claim`【设备门】)。
+- 数据：`invoke list_public_pool` / `list_my{assigned_to_me}`。
+
+**派活 Space（`SidebarDispatch` + `HubDispatch`）**：
+- 侧栏分组（`SidebarDispatch.tsx:32`）：起草/待澄清/投递池/跟进中/**待我验收**(emphasize,珊瑚渐变角标)/已通过；顶部「+ 新建需求」→`/r/new`；项目入口。
+- **角标实时**：侧栏**自取数据**（`list_my{mine}`）并 `useEvent("push-event")` 收 `requirement.updated/ready` 后 `loadCounts()`——**即使不在该页**，「待我验收」数也实时反映（`SidebarDispatch.tsx:74`）。
+
+**四态**（列表通用）：
+- **加载**：骨架/「加载中」。
+- **空**：分组无工单 → 空提示（如「公共池暂时没有可接的活」）。
+- **错误**：`clientJson` 4xx/5xx 抛错 → 页内错误条（`lib/tauri.ts:144` 注释强调用 `clientJson` 防 `setItems(error_body)` 崩树）。
+- **无权限**：接活动作（claim）在无设备门时后端 403 → toast「这个操作要在桌面客户端里做」（C-PET 本身有门，故主要发生在 C-WEB）。
+
+**关键交互/跳转**：托盘「立即拉新需求」→ `tray-action{pull_new}` → `App.tsx:179` toast + `nav("/inbox")`；「完成并交付」→ `setSpace("work")` + `nav("/?tab=mine")`（`App.tsx:187`）。点工单卡 → `/r/:id`。
+
+**web↔桌宠差异**：双 Space + `Ctrl+1/2` 快捷键 + 托盘联动是 C-PET 体验；C-WEB 同样有派活/接活视图但接活侧动作受限（设备门）。
+
+---
+
+### 6.3 工单详情（TaskDetail）
+
+> 锚点 `routes/TaskDetail.tsx`。接活/派活双方的工单工作面，**AI 实时进度 + 交付 + 同步**的主舞台。
+
+**布局**：
+```
+┌─ 顶部：← 返回  code/标题  [状态徽章]  [操作区按角色变] ─────────┐
+├───────────────────────────────┬───────────────────────────────┤
+│ 主区（左）                     │ 面板（右）                     │
+│  · 需求说明页(SpecDoc/summary) │  · 验收标准清单                │
+│  · 附件列表 / spec 投放入口    │  · 个人工作面(workspace=Branch) │
+│  · AILiveView（status=        │  · 交付历史（按 round）         │
+│    ai_processing 时挂载）      │  · 同步/下载进度面板            │
+│  · 交付包 / 评论                │                               │
+└───────────────────────────────┴───────────────────────────────┘
+```
+
+**关键组件 + 数据/API**：
+- **AILiveView**（`components/AILiveView.tsx`）：mount 于 `status==="ai_processing"`，渲染 `req:<id>` topic 的 `ai.*` 事件（started/thinking/text/tool_call/done/failed），逐行带时间戳+图标。这是「AI 都做了哪些步骤」（[glossary §3.2](../00-overview/glossary-dejargon.md) trace 人话）。
+- **接活动作**：`claim`【设备门】→ `patch_status`(doing/...)；触发 AI：`auto_process`（POST `/auto-process`，原子 CAS `ready/summary_ready→ai_processing`，`api-contract.md §2.6`）。
+- **交付（DeliveryWizard）**：选文件夹 → `start_delivery`（打包 zip + 分片上传，`delivery.rs`）→ `delivery-progress` 事件驱动进度；或 `upload_attachment` 传单文件。
+- **同步**：`trigger_sync`（拉本工单 manifest + 下载附件，`sync.rs:68`）→ `sync-progress`。
+- **审阅（派活侧）**：由 `components/ActionRailDispatch.tsx` 承载（验收/打回是显眼的 hero 卡片，`ActionRailDispatch.tsx:32` 头注 + `:206` hero banner「交付来了，等你验收」）：`accept_requirement`（通过/采纳，`ActionRailDispatch.tsx:133`，弹「验收通过」Modal 填 note）/ `request_revision`（**打回必带 `reason_md`**，`ActionRailDispatch.tsx:151` → 后端 `submitter.rs:729`，弹「打回返工」Modal 填理由）。理由**回灌**给 AI 续做（`api-contract.md §2.5`，`FR-ESC-003`）。
+- **个人工作面**：`list_workspaces`/`patch_my_workspace`/`add_workspace_item`/...（`commands/workspace.rs`）——这是 Branch（[glossary §4 易混词](../00-overview/glossary-dejargon.md)：`RequirementWorkspace` = WorkHub「工作分支」雏形）。
+
+**SSE 实时订阅**：`useEvent("push-event")` 过滤 `req:<id>`/本工单的 `ai.*`、`requirement.updated`、`comment.added`、`delivery.doc_ready`；收到后 reconcile（重拉详情）。`useEvent` 用 `handlerRef` 保证 `id`/`refresh` 闭包不陈旧（`lib/tauri.ts:46` 注释，TaskDetail 切换工单的真实坑）。
+
+**四态**：
+- **加载**：`get_requirement` 期间骨架。
+- **空**：无附件/无交付/无评论各自空提示。
+- **错误**：详情 404/403 → 错误页；同步/交付失败 → 进度面板 error 态（Rust 侧 `emit ...progress{phase:"error"}`）。
+- **无权限**：非可见性门内 → 404；非接活人点交付按钮 → 后端 403。
+
+**WorkHub 新增**：`confidence-assessed`→详情顶部「AI 把握程度」人话条（三档语气，不显数值）；`escalation-created`→「为什么需要人 + 建议谁 + 计划」简报卡（`FR-PM-001`）；`permission-ask`→审批询问卡（allow/deny+理由+「永远允许」）；proposal/conflict 区呈现「提交确认/撞车了选方案」。
+
+**web↔桌宠差异**：接活、触发 AI、交付、同步按钮在 C-PET 可用（设备门）；C-WEB 上这些禁用并提示去桌面端。AILiveView/审阅两端一致。
+
+---
+
+### 6.4 对话（澄清 Clarify + 桌宠对话 FloatingAssistant + 升级简报）
+
+C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/done` 帧）：
+
+**(a) 澄清对话（Clarify，`routes/Clarify.tsx`）**——派活侧，把粗描述澄清成需求说明页：
+- 布局：主区聊天流（用户/AI 气泡）+ 底部输入；右侧可呈现「正在成形的需求说明」。
+- 数据：`chat_messages`（读历史）+ POST `/chat`（流式，webview 直接 fetch+ReadableStream，`submitter.rs:255` 注释说明流式不走 invoke）+ `post_chat_answer`；完成→`finalize_and_submit`。
+
+**(b) 桌宠对话（FloatingAssistant，`components/FloatingAssistant.tsx`）**——常驻右下，问功能/问项目/提需求：
+```
+                                   ┌─ AI 助理 ───────────── ✕ ─┐
+                                   │ 问功能·问项目·帮你提需求    │
+                                   │ ┌────────────────────────┐ │
+                                   │ │ (对话流，user右/AI左)    │ │
+                                   │ │ AI 草稿 → [新建为需求]   │ │
+                                   │ │ 思考中… (spinner+thinking)│ │
+                                   │ └────────────────────────┘ │
+                                   │ [textarea  Enter发送] [发送]│
+                                   └────────────────────────────┘
+                                              ✦ ← 收起态气泡(右下)
+```
+- 数据：POST `/api/assistant/chat`（流式，`FloatingAssistant.tsx:109`），带当前 `project_id`（从 `/p/<id>` 路由提取，grep 接地）；45s 超时（`DEFAULT_ASSISTANT_TIMEOUT_MS`）。
+- 关键交互：AI 回 `draft_requirement` 时给「新建为需求」按钮 → `create_requirement` → `nav("/r/:id/clarify")`（`FloatingAssistant.tsx:194`，`creatingRef` 防双击双建）。停止生成：`stopSend` abort。
+- **WorkHub 升级**：这就是**桌宠展开态**的内核——再叠加升级简报 + 审批询问。
+
+**(c) 升级简报 / 审批询问（WorkHub 新增）**——桌宠主动出声：
+- **升级简报**（`escalation-created`）：卡片呈现「为什么需要人 + 建议谁来做 + 计划」（不暴露 `escalation` 字眼，说「这个我请人来接手了」），对应 `EscalationEvent`（`api-contract.md §2.7`）。
+- **审批询问**（`permission-ask`）：卡片「AI 想做 X，允许吗？」→ allow/deny + 可填理由 + 「以后这类不用再问我」（`remember:always`）→ `respond_approval`（POST `/api/approvals/{id}/respond`，`api-contract.md §2.8`）。deny 理由回灌 AI。
+
+**四态**（对话通用）：加载=「思考中…」+ thinking 流（`FloatingAssistant.tsx:276`）；空=引导语（`:255`）；错误=「连接失败/超时」气泡（`:173`，区分 abort/timeout）；无权限=后端拒答时 AI 返回人话理由。
+
+**web↔桌宠差异**：FloatingAssistant 两端都有；桌宠对话在 C-PET 是独立 always-on-top 窗（主窗隐藏仍在），C-WEB 是页内浮层随标签存活。升级简报/审批两端都收（按身份路由），但桌宠用 OS 通知 + 红点更醒目。
+
+---
+
+### 6.5 同步状态（spec 投放 / 网盘同步 / 交付下载）
+
+> C-PET 独有——本地文件同步是桌宠的核心差异能力。没有独立「同步页」，而是**散布在相关页的进度面板 + 托盘入口**，由 Rust worker 发进度事件驱动。
+
+**(a) spec 文件夹投放（spec_watch）**：
+- 入口：TaskDetail 在 draft/clarifying/summary_ready 态显「打开 spec 文件夹」(`open_spec_folder`) + 「开始/停止监视」(`start_spec_watcher`/`stop_spec_watcher`，状态 `spec_watcher_status`)。
+- 行为：用户把文件丢进 `{sync_root}/{slug}/{code}/spec/` → Rust 监视（debounce 1.5s + 稳定性快照）→ sha256 去重（跳过远端已有）→ 分片上传为附件 → `upload-progress` 事件（pending/chunk/done/error）。**append-only**（本地删不删远端，`spec_watch.rs` 头注）；状态离开可监视态自动停（`spec_watch.rs:487`）。
+- 面板：spec 投放区列出 pending/uploading/done 文件，进度条由 `upload-progress` 的 `op_id`（`spec-watch-pending-{gen}-{hash}`）对应。
+
+**(b) 项目网盘同步（单向下载）**：
+- 入口：ProjectDrive 页内「同步」按钮 + 托盘「立即同步网盘」(`tray-action{sync_drive}`→`nav("/p")`，`App.tsx:182`)。
+- 行为：`trigger_drive_sync`（**需 `drive_sync_enabled && !paused && mode!="off"`**，否则报错；`two_way` 被拒，`commands/sync.rs:37`）→ 拉 `/drive/manifest` → 逐项 sha256 缓存命中跳过、墓碑删本地、流式下载校验 → `drive-sync-progress`。可暂停（托盘 `toggle_pause`，`drive_sync_active` 检查贯穿下载循环可中断，`sync.rs:431`）。
+- **现状=单向占位**（`sync.rs:227` 明注）。**WorkHub 演进→双向**：复用 sha256 去重 + append-only，本地改动经 `sync-push` 上传，冲突回 `conflicts[]` AI 调解（[`sync-and-spec.md`](../03-collaboration/sync-and-spec.md)）。
+
+**(c) 交付下载 / 打包**：
+- 下载：`download_delivery`（选 round 或最新，校验 size+sha256，落 `{sync_root}/{slug}/{code}/deliveries/round-N.zip`，`submitter.rs:603`）→ 可 `open_folder` 打开。
+- 打包上传：`start_delivery`（zip 文件夹排除 `.git/node_modules/...` → 分片上传，`EXCLUDE` 表见 `delivery.rs:17`，含 `.venv/__pycache__/.idea/.vscode`；symlink/越界条目跳过）。
+
+**四态**：加载=进度条 0；空=「还没有可同步的内容」；错误=进度面板 error（size/sha256 不符、off-server URL、同步被暂停/关闭、op 锁占用「正在同步中，请稍候」）；无权限=同步类后端 `require_local_client` 403。
+
+**互斥**：同 req/project 的同步/上传/交付串行（`operation_locks.rs`），重入报人话「正在同步或交付中，请稍候」。
+
+**web↔桌宠差异**：整块同步能力 **C-PET 独有**；C-WEB 无本地文件系统访问，只能在浏览器内下载单文件。
+
+---
+
+### 6.6 通知收件箱（Inbox）
+
+> 锚点 `routes/Inbox.tsx`。
+
+**布局**：单栏列表（通知卡：标题/正文/时间/severity 色 + 「去看看」跳转）。
+**数据/API**：`/api/notifications`（列表）+ `/read`/`/read-all`（标记已读，`api-contract.md §2.12`）。通知**按身份私有**（`user:{id}` topic，严禁全局广播，`api-contract.md §5.3`）。
+**SSE**：`notification.created`（`App.tsx:238`）→ 入列 + toast + OS 通知 + `refreshUnreadBadge`（更新托盘 tooltip）。
+**四态**：加载=骨架；空=「没有新通知」；错误=`clientJson` 错误条；无权限=N/A（只发本人）。
+**跳转**：点通知带 `requirement_id` → `/r/:id`；托盘「打开待办收件箱」→`nav("/inbox")`。
+**web↔桌宠差异**：C-PET 额外把高优通知弹成 OS 系统通知（窗口最小化也能看到，`App.tsx:226`）+ 托盘未读文案；C-WEB 仅页内。
+
+---
+
+### 6.7 项目网盘 / 会议 / 其余视角页
+
+> 这些页两端信息架构同源，C-PET 仅在「上传/同步」处接 Rust 能力。详细规划归 [`./web-app.md`](./web-app.md) 与对应模块文档；本篇只给桌宠差异锚点。
+
+- **ProjectDrive（`/p`、`/p/:projectId`，`routes/ProjectDrive.tsx`）**：文件树 + 版本 + 回收站 + 操作日志 + 文件夹评论触发 LLM（模块见 [`../04-modules/projects-and-drive.md`](../04-modules/projects-and-drive.md)）。**桌宠差异**：`list_drive_root` 浏览；`upload_drive_item`（picker 选文件 → 分片上传，`conflict:rename` 永不阻塞）→ `drive-upload-progress`；`trigger_drive_sync` 下载到本地。
+- **ProjectMeetings（`/p/:projectId/meetings`，`routes/ProjectMeetings.tsx`）**：录音/上传→ASR→纪要→洞察→需求草稿（模块见 [`../04-modules/meetings-and-insights.md`](../04-modules/meetings-and-insights.md)）。两端一致（上传走分片）。
+- **MyWorkload / Calendar / Knowledge / ProjectPulse（`/me/*`）**：负载/日程/grep 引用问答/项目快报，纯读视图 + `clientJson`，两端一致。
+
+**四态/SSE**：各页沿用「`clientJson` 防崩 + `push-event` reconcile（如 `drive.changed`/`meeting.ready`）」范式。
+
+---
+
+### 6.8 设置（Settings）
+
+> 锚点 `routes/Settings.tsx`。C-PET 设置比 C-WEB 多「本地目录/同步/服务器地址」。
+
+**布局**：分组卡片，现状真实顺序为 身份+外观 / 接单状态 / 本地目录+网盘同步 / 服务器 / 帮助（重看引导）/ 关于 / 管理（`AdminPanel`，非管理员渲染 `null`，`Settings.tsx:437`）。
+**数据/API**：`get_config`/`set_config`（本地配置，`commands/config.rs`）+ `test_server` + `set_availability_status`（PUT `/api/users/me/status`）。改 endpoint/身份 → `set_config` 内部清 dedup 态（`commands/config.rs:177` `clear_dedup_state`）并清令牌（endpoint 变时，`commands/config.rs:169`）。
+**关键交互**：
+- 服务器地址/端口 → `set_config` + `resetClientTokenCache`（`lib/tauri.ts:133`，让下次 `clientFetch` 用新 baseUrl/token；`Settings.tsx:384`「保存并重新连接」）。
+- 本地工作目录/网盘目录（`onBlur` 触发 `saveRootField`，`Settings.tsx:180`；后端 `validated_root` 校验非空，`commands/config.rs:31`）。
+- 网盘同步模式（关/仅下载；两向被强制降级，`config.rs:155` `normalize_drive_mode`）+ 暂停开关（`Settings.tsx:352`，与托盘 `toggle_pause` 同源）。
+- 接单状态（空闲/忙碌/自定义文案，`set_availability_status` → 同步后端 + 托盘菜单 `refresh_menu`）。
+- 外观主题（auto/light/dark，`theme` 字段 + `useTheme`，`Settings.tsx:13`）。
+- 重看新手引导（`useFirstRun` 的 `reset()`，`Settings.tsx:414`「再看一遍新手引导」→ App 级 `WelcomeTour` 在 `!tourSeen` 时重开，`App.tsx:106/276`）。
+- 关于：版本/配置文件路径（`Settings.tsx:429`，纯展示）。
+
+> **WorkHub 新增（设备管理，建议）**：现状 Settings **没有**设备列表/吊销 UI——客户端只有 `register_device`/`validate_device`（`commands/auth.rs:94/77`）用于建立/校验设备门，**无** `/api/client-devices/me` 列表或 `/{id}/revoke` 吊销调用（webview 与 Rust 侧均查无）。WorkHub 补「列设备 / 吊销」卡片，对齐 [`api-contract.md §2.2`](../01-architecture/api-contract.md)，新增 webview 调用 + 必要时 Rust 命令。
+
+**四态**：加载=读 config；空=N/A；错误=校验失败 toast（端口越界/协议非 http(s)/URL 非法/目录空，`commands/config.rs:66-89`）；无权限=admin-only 项（如设他人 admin）非管理员隐藏（`AdminPanel` 返回 `null`）。
+**web↔桌宠差异**：服务器地址/本地目录/网盘同步模式 **C-PET 独有**（C-WEB 无本地配置概念）；外观/接单状态两端都有；设备管理待 WorkHub 落地（见上方新增说明）。
+
+---
+
+## 7. 安装与更新
+
+### 7.1 安装（NSIS）
+
+- **打包**：`bundle.targets: ["nsis"]`（`tauri.conf.json:49`），`installMode:"currentUser"`（免管理员，`:60`）、语言 `SimpChinese`/`English`（`:61`）、WebView2 `embedBootstrapper`（按需拉运行时，`:58`）。标识符 `com.mycyg.yqgl`，产品名「需求管理大师」，版本 `0.2.0`。
+- **分发**：daemon 托管安装包，客户端从 `/api/downloads/manifest` + `/downloads/*` 取（`api-contract.md §1` downloads 组）。
+- **deep-link 注册**：NSIS 装时注册 `yqgl://` scheme（`tauri.conf.json:41` `deep-link.desktop.schemes:["yqgl"]`）。
+- **配置迁移**：首启从旧 Python 客户端配置（`%APPDATA%/yqgl/config.json` 等）迁移并备份（`config.rs:294` `legacy_config_candidates` + `config.migrated-to-tauri.json` 备份）；字段名刻意与旧版一致以无损迁移（`config.rs:1` 头注）。配置坏/锁/权限错时**保留 `.broken-/.recover-` 备份再回退默认**，绝不静默清令牌（`config.rs:264/463` 注释强调：静默重置 = 重新 onboarding = 吊销服务端设备记录 = 单向数据丢失）。
+
+### 7.2 首次运行 → 设备门建立
+
+启动 → `window::decorate` + 延迟 show（避免白闪）→ `App.tsx` 读 config：
+- 无昵称 → onboarding（§6.1）。
+- 有昵称 → **每次启动自动重认证**（`App.tsx:144`）：`identify`（幂等）→ `validate_device`，无效则 `register_device` 刷新令牌（reqwest cookie jar 进程内、重启即空，故 `cookie_token` 只是「曾 onboarding」哨兵，不可信）→ `resetClientTokenCache` → 进主壳。
+
+### 7.3 自动更新（**当前缺口 → WorkHub 待补**）
+
+- **现状**：`Cargo.toml` **无 `tauri-plugin-updater`**；`tauri.conf.json` **无 `updater` 配置**；故**目前无应用内自动更新**——升级靠重新下载安装包（NSIS 覆盖装，`currentUser` 模式）。`tauri-plugin-process`（`lib.rs:51`）已在，具备 relaunch 能力；`tauri-plugin-autostart`（`Cargo.toml:23`）已声明但**未在 `lib.rs` 注册**（latent）。
+- **WorkHub 演进（建议）**：
+  - 接 `tauri-plugin-updater`：daemon 暴露 update manifest（与 `/api/downloads/manifest` 同源或扩展），客户端启动/定时 `check_update` → 有新版提示 → `install_update` → 用 `tauri_plugin_process` relaunch。新增命令 `check_update`/`install_update`（§4.1）+ 事件 `update-available`/`update-progress`。
+  - LAN-first 形态下 update 源 = daemon 自身（无需公网 CDN）；云就绪时可移到对象存储/CDN（对齐 [`system-architecture.md §4`](../01-architecture/system-architecture.md)）。
+  - 接线 `autostart` 插件实现「开机自启 + 静默到托盘」（桌宠常驻语义）。
+  - **签名**：updater 需 artifact 签名密钥；LAN 内可先用自签，公网（P5）走正式签名 + 威胁模型重审（[`security-and-permissions.md`](../01-architecture/security-and-permissions.md)）。
+
+---
+
+## 8. 与其他文档的边界（避免重复）
+
+| 想找 | 去哪 |
+|---|---|
+| daemon 路由组逐条、SSE 事件类型完整清单、鉴权依赖、设备令牌门契约 | [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md) |
+| 进程边界、事件总线拓扑、部署形态、桌宠↔daemon 数据流（含双向同步切分） | [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md) |
+| 实体字段、WorkItem 状态机全转移、软删除/审计、Branch/Proposal/AgentRun/Escalation | [`../01-architecture/data-model.md`](../01-architecture/data-model.md) |
+| 用户用语 / 去黑话 / 状态标签映射 / AI 把握程度三档语气 | [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) |
+| Web 端逐页规划（信息架构同源，本篇只写差异） | [`./web-app.md`](./web-app.md) |
+| 设计 tokens、组件库、类型化 API client、共享 hooks/types | [`./shared-ui-kit.md`](./shared-ui-kit.md) |
+| 双向同步协议、冲突 AI 调解、离线、README=规格活文档 | [`../03-collaboration/sync-and-spec.md`](../03-collaboration/sync-and-spec.md) |
+| 审批阻塞原语、路由、SLA、委派、"永远允许"学习 | [`../03-collaboration/review-and-approval.md`](../03-collaboration/review-and-approval.md) |
+| AI 工人循环/trace/置信度/风险/升级/doom-loop（桌宠状态机的事件源头） | [`../02-ai-engine/agent-loop-and-tools.md`](../02-ai-engine/agent-loop-and-tools.md) · [`../02-ai-engine/confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md) |
+| 网盘 / 会议模块全功能（两端 UI） | [`../04-modules/projects-and-drive.md`](../04-modules/projects-and-drive.md) · [`../04-modules/meetings-and-insights.md`](../04-modules/meetings-and-insights.md) |
+
+---
+
+*本篇定位：C-PET 端级页面规划的单一来源。后端契约 → `api-contract.md`；架构形状 → `system-architecture.md`；术语口径 → `glossary-dejargon.md`；Web 端 → `web-app.md`。所有 IPC/命令/事件均扎根 `client-tauri/` 真实代码，新增项已显式标注 *(新增/建议)* 并对齐 api-contract。*

@@ -1,0 +1,28 @@
+# 参考代码:仅本地保留,绝不入库(当前项目源码 + opencode)
+/reference/
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+target/
+.vite/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 数据与密钥
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
