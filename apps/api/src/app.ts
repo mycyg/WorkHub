@@ -9,7 +9,9 @@ import { createApprovalRoutes } from "./routes/approvals.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
+import { createNotificationRoutes } from "./routes/notifications.js";
 import { ApprovalServiceError } from "./services/approvals.js";
+import { NotificationServiceError } from "./services/notifications.js";
 
 export const app = new Hono();
 
@@ -38,6 +40,7 @@ app.route("/api/push", createPushRoutes());
 app.route("/api/approvals", createApprovalRoutes());
 app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
+app.route("/api/notifications", createNotificationRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {
@@ -74,6 +77,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ApprovalServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof NotificationServiceError) {
     return c.json(
       {
         ok: false,
