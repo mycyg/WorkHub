@@ -381,7 +381,7 @@ P1 过的判据是**「一条真实需求能被 AI 默认干完并自动汇入�
 6. **全量按身份审计 + 可回滚**(`FR-PERM-004` / `NFR-03`):所有 AI/人动作落 `AuditLog`(`actor_kind=human|ai|system` + `entity_type/entity_id/action` + `snapshot_id` 回滚点),**append-only 不可篡改、不软删**([data-model §8.3](../01-architecture/data-model.md));演进自 `ActivityLog` + `ProjectDriveOperation.undone_at`。
 7. **三级成本治理**(`NFR-05`):用户/团队/任务三级预算与配额;低风险任务路由更便宜模型(P0 立的 provider registry 在此接入路由逻辑);`AgentRun` 的 `token_in/out`/`cost_estimate` 已为此埋点([data-model §7.1](../01-architecture/data-model.md))。
 8. **多租户 / 云就绪兑现**(D-3 / `NFR-02`):`Org/Workspace`(P0 预留)启用真实租户隔离;daemon 多副本(无状态,真相在 PG)置于 LB 后;事件总线从进程内 `push_bus` 升级为外部 broker(Redis pub/sub / PG `LISTEN/NOTIFY`,topic 契约不变,[system-architecture §5.3](../01-architecture/system-architecture.md));**威胁模型从「可信局域网」重审**——公网下设备令牌门、CORS、cookie secret 全面收紧。
-9. **治理看板**(M-DASHBOARD):自治率、升级精准度、回滚率、成本(`GET /api/dashboard/autonomy`/`cost`,[api-contract §2.14](../01-architecture/api-contract.md));指标定义见 [`dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。
+9. **治理看板**(M-DASHBOARD):自治率、升级精准度、回滚率、成本。自治指标可先走 `GET /api/dashboard/autonomy`;成本页面主口径必须走 `GET /api/pages/cost -> CostDashboardVM`,轻量预算摘要走 `GET /api/cost/usage -> CostSummaryVM`([api-contract §2.14/§2.15](../01-architecture/api-contract.md));指标定义见 [`dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。
 
 ### 9.2 进入标准(entry)
 

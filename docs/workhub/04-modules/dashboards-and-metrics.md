@@ -146,7 +146,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 | D1 | `GET /api/project-health` | `ProjectHealthOut[]` | **[现]** | DASH-1 / DASH-P | `health.py:99`、`schemas.py:503` |
 | D2 | `GET /api/projects/{id}/health` | `ProjectHealthOut` | **[现]** | DASH-4 内嵌 | `health.py:108` |
 | D3 | `GET /api/dashboard/autonomy?range=&project_id=` | `{autonomy_rate, ai_touch_rate, handoff_breakdown, avg_turns, escalation_precision, false_neg, false_pos, trigger_breakdown, spotcheck_pass, trust:{first_pass, rework_rate, rollback_rate, hit_rate, reserved_rate}, trend[]}` | **[新]** | DASH-2 | api-contract §2.14 |
-| D4 | `GET /api/dashboard/cost?range=&group_by=&project_id=` | `{total_cost, token_in, token_out, by_user[], by_team[], by_workitem[], model_breakdown[], budget:{scope,used,quota}[], unit_cost, trend[]}` | **[新]** | DASH-3 | api-contract §2.14 |
+| D4 | `GET /api/pages/cost?range=&group_by=&project_id=` | `CostDashboardVM`（`total_cost_cny/token_in/token_out/trend/by_user/by_team/by_workitem/model_breakdown/budget/notices/top_exhaustion_risks`） | **[新]** | DASH-3 | api-contract §2.14/§2.15 + P-COST |
 | D5 | `GET /api/projects` | `Project[]` | **[现]** | 项目筛选器（全页复用） | `HealthPage.tsx:23` |
 | D6 | `GET /api/planning/workload` | `UserWorkloadOut[]` | **[现]** | DASH-1「负载」联动 | `planning.py:22` |
 | D7 | `GET /api/agent-runs/{id}` + `/trace` | `AgentRunOut` / `TraceStep[]` | **[新]** | 任意指标**钻取**到单次 AI 执行 | api-contract §2.6 |
@@ -328,16 +328,17 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 关键组件 + 数据绑定（D4 `GET /api/dashboard/cost`）
+### 7.2 关键组件 + 数据绑定（D4 `GET /api/pages/cost` → `CostDashboardVM`）
 
 | 区 | 组件 | 数据 |
 |---|---|---|
-| 概览四卡 | 计数卡 | `total_cost` / `token_in,token_out` / `unit_cost` / `model_breakdown.length` |
-| 花费趋势 | **自绘面积图**（§10） | `trend[].cost` |
-| 维度排行 | **自绘横向条形** + 切换 Tabs（按人/团队/项目） | `by_user[] / by_team[]`（`{label, cost, token}`） |
-| 烧钱榜 | 排行表（`Card` 行，可钻取 D7） | `by_workitem[]`（Top-N，`{work_item_id, code, cost, turns}`） |
-| 预算用量 | 三级 `Progress`（超额 tone=error + 告警条） | `budget[]`（`{scope:"user/team/workitem", label, used, quota}`） |
-| 模型分布 | **自绘环形** + 图例 | `model_breakdown[]`（`{model, count, cost}`） |
+| 概览四卡 | 计数卡 | `total_cost_cny` / `token_in,token_out` / `unit_cost_cny` / `model_breakdown.length` |
+| 花费趋势 | **自绘面积图**（§10） | `trend[].cost_cny` |
+| 维度排行 | **自绘横向条形** + 切换 Tabs（按人/团队/项目） | `by_user[] / by_team[]`（`{label, cost_cny, tokens}`）;普通用户不返回全员 `by_user` |
+| 烧钱榜 | 排行表（`Card` 行，可钻取 D7） | `by_workitem[]`（Top-N，`{workitem_id, code, cost_cny, turns}`） |
+| 预算用量 | 三级 `Progress`（超额 tone=error + 告警条） | `budget[]: BudgetUsage[]` + `notices[]: BudgetNotice[]` |
+| 模型分布 | **自绘环形** + 图例 | `model_breakdown[]`（`{provider, model, count, cost_cny}`） |
+| 即将耗尽 | 轻量风险列表 | `top_exhaustion_risks[]`（只展示当前 actor 可见范围） |
 
 ### 7.3 四态
 
@@ -348,7 +349,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 
 ### 7.4 交互与跳转流
 
-切维度（按人/团队/项目）→ 重排主区条形。烧钱榜某行 → 钻取该工作项的 `AgentRun` 列表 + 单次 trace（D7）。预算超额 → 红条 + 顶部告警「团队 A 本期 AI 预算已超」，**链接到 P-COST 配额配置**（不在本模块）。**导出**：右上「导出 CSV」按当前筛选导明细（管理刚需）。
+切维度（按人/团队/项目）→ 重排主区条形。烧钱榜某行 → 钻取该工作项的 `AgentRun` 列表 + 单次 trace（D7）。预算超额 → 红条 + 顶部告警「团队 A 本期 AI 预算已超」，告警动作直接来自 `BudgetNotice.options/action_href`，**链接到 P-COST 配额配置**（不在本模块）。**导出**：右上「导出 CSV」按当前筛选导明细（管理刚需）。
 
 ---
 

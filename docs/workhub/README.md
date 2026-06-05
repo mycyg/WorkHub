@@ -22,7 +22,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 
 | 代号 | 呈现模式 | 技术 | 职责 | 用户 |
 |---|---|---|---|---|
-| **C-DAEMON** | 后端核心(Agent 守护进程) | Python/FastAPI(演进)→ OpenAPI + SSE/WS | 所有业务逻辑、AI 引擎、权限、事件流。唯一真相源。 | (无 UI) |
+| **C-DAEMON** | 后端核心(Agent 守护进程) | **TypeScript / Hono / Node 22** + OpenAPI + SSE;现有 Python/FastAPI 只作行为锚点与可选 worker 来源 | 所有业务逻辑、AI 引擎、权限、事件流。唯一真相源。 | (无 UI) |
 | **C-WEB** | Web 应用 | React + Vite + TS | 派活/管理/审批/看板;浏览器可达的一切。 | 负责人 / 提交者 / 管理员 |
 | **C-PET** | 桌面宠物客户端 | Tauri v2 + Rust + React webview | 接活/干活专属;桌宠入口、本地同步、本地 Agent 能力、托盘/通知/deep-link。 | 协作人 / 小白 |
 | **C-UIKIT** | 共享设计系统 | `@yqgl/shared`(演进) | 跨端组件、tokens、API client、类型。 | (内部) |

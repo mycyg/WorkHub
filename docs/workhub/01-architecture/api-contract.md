@@ -246,10 +246,10 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 |---|---|---|
 | `GET /api/project-health` | `ProjectHealthOut[]` | `health.py:99` |
 | `GET /api/projects/{id}/health` | `ProjectHealthOut` | `health.py:108` |
-| **[新]** `GET /api/dashboard/autonomy` | `{autonomy_rate, escalation_precision, rollback_rate, ...}` | (PRD §13 度量) |
-| **[新]** `GET /api/dashboard/cost` | `{by_user, by_team, by_workitem, model_breakdown}` | (NFR-05/11) |
+| **[新]** `GET /api/dashboard/autonomy` | `{autonomy_rate, escalation_precision, rollback_rate, ...}` 或后续 `AIOperationsVM` | (PRD §13 度量;可作为页面 VM 的原始指标源) |
+| **[新]** `GET /api/pages/cost` | `CostDashboardVM` | (NFR-05/11;权威成本页面 VM,字段见 §2.15 与 P-COST) |
 
-指标定义见 [`../04-modules/dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。
+指标定义见 [`../04-modules/dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。成本不再让客户端拼散字段;页面主口径统一走 `GET /api/pages/cost`,轻量摘要走 `GET /api/cost/usage`。
 
 ### 2.15 cost governance **[新]**
 

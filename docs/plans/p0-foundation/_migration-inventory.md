@@ -34,7 +34,7 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 
 ## 3. FastAPI daemon
 - **EXISTS:** `app/main.py` `FastAPI(title="需求管理大师", lifespan=lifespan)`(`:270`);**26 routers** `include_router`(`:280-305`);CORS(`:272-278`);`lifespan`(`:236-267`)做 data-dir mkdir、`create_all`、`ensure_runtime_schema`、`cleanup_stale_partials`、`await _resume_stuck_jobs()`(`:255`)、两个周期任务(`:257-258`);静态托管 `/downloads`(`:340`)、`/client/{name}`(`:325`)、`/assets`+SPA fallback(`:469-498`);`GET /api/health`(`:308`)。`app/routers/auto.py` AI 运行为进程内 `asyncio.create_task(_run_and_finalize)`(`:103`)。
-- **PORT:** FastAPI/ASGI/uvicorn、`include_router` 前缀分组、CORS+生产门、`/api/health`、lifespan 周期任务(`asyncio.to_thread` 卸载,`main.py:77,96`)、`/downloads`+`/client` 安装包托管。
+- **PORT:** 旧 Python API daemon/uvicorn 的行为锚点迁到 TS/Hono:路由前缀分组、CORS+生产门、`/api/health`、lifespan 周期任务(`asyncio.to_thread` 卸载,`main.py:77,96`)对应为 Node 后台任务/leader job、`/downloads`+`/client` 安装包托管。
 - **REFACTOR:** 路由按域重组(session/workitem/proposal/permission/event/sync);**剥离 SPA 静态托管**(`:469-498`)→ daemon headless;`_resume_stuck_jobs` 语义移入 AgentRun worker 心跳;周期任务多 worker 下需 leader 选举;AI 执行移出请求进程。
 - **NEW:** OpenAPI-first 生成类型化客户端;AgentRun 队列(Redis/PG)替 `asyncio.create_task`;单例 leader 选举。
 - **RISK:** **单 worker 硬约束**(`DEPLOY.md:97` 明确为正确性而非容量):4 个进程内单例在第 2 worker 下**静默坏**——①`push_bus` SSE;②`presence`;③AI 澄清并发槽;④后台去重。解除须 **DB 行锁 + broker 同时**,只换库会 split-brain。此约束 gate 了 §2/3/4/8。

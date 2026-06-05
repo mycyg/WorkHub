@@ -32,7 +32,7 @@ WorkHub 把今天的单体拆成**一个核心进程 + 三类外围**,边界以�
 
 | 边界 | 代号 | 进程形态 | 拥有什么 | 现状对应 |
 |---|---|---|---|---|
-| **Agent Daemon(核心)** | C-DAEMON | 长驻服务进程(FastAPI/ASGI) | 业务真相、状态机、权限/审批、事件总线、API 契约 | 演进自 `app/`(去掉「在请求进程里跑 AI」) |
+| **Agent Daemon(核心)** | C-DAEMON | 长驻服务进程(TypeScript / Hono / Node 22) | 业务真相、状态机、权限/审批、事件总线、API 契约 | 以现有 `app/` 行为为锚点迁移,不把 FastAPI 作为新实现默认路径 |
 | **Agent Runner(执行)** | C-DAEMON 内的执行域 | daemon 内的 worker(MVP)→ 可抽出独立进程池(P1+) | AgentRun 生命周期、工具调用、沙箱、预算、快照 | 演进自 `services/auto_agent.py` |
 | **PostgreSQL** | — | 独立 DB 服务 | 全量持久化、行级锁、合并并发控制 | 替换 `sqlite:///…`(`app/config.py:9`) |
 | **Web 客户端** | C-WEB | 浏览器 SPA(React/Vite) | 仅视图 + 订阅;无业务逻辑 | 演进自 `web/`(今天已是瘦的) |
@@ -72,7 +72,7 @@ WorkHub 把今天的单体拆成**一个核心进程 + 三类外围**,边界以�
        │ /event   │                    C-DAEMON (核心进程)                    │
        └─────────►│                                                          │
                   │  ┌────────────────────────────────────────────────┐    │
-┌──────────────┐  │  │  API 层 (FastAPI 路由组, OpenAPI 契约)            │    │
+┌──────────────┐  │  │  API 层 (Hono 路由组, OpenAPI 契约)               │    │
 │   C-PET      │  │  │  session·workitem·proposal·permission·event·sync │    │
 │ Tauri v2     │  │  └───────────────┬────────────────────────────────┘    │
 │ Rust 壳+webview │  │  ┌─────────────▼──────────┐  ┌──────────────────────┐ │
@@ -253,7 +253,7 @@ Runner 触到高风险工具 ──► 编排域查分层策略(org→workspace�
 
 | # | 现状(单体) | 现状代码锚点 | WorkHub 形态 | 切分动作 / 差异 |
 |---|---|---|---|---|
-| M1 | FastAPI 单体应用 + 全部路由 `include_router` | `app/main.py:270-305` | C-DAEMON 的 API 层,按业务域重组路由组 | **保留** FastAPI/ASGI;路由按 session/workitem/proposal/permission/event/sync 重切;OpenAPI 契约显式化 |
+| M1 | FastAPI 单体应用 + 全部路由 `include_router` | `app/main.py:270-305` | C-DAEMON 的 API 层,按业务域重组路由组 | **迁移到 TypeScript/Hono**;旧 FastAPI 只保留为行为锚点。新路由按 session/workitem/proposal/permission/event/sync 重切;OpenAPI 契约显式化 |
 | M2 | AI 在请求进程内跑(asyncio task) | `services/auto_agent.py`(顶部注释) | 抽出 **Agent Runner 执行域** | MVP 仍在 daemon 内但由 `AgentRun` 表显式拥有;契约与 API 解耦,云就绪可平移进程池 |
 | M3 | 崩溃恢复靠启动扫孤儿 | `app/main.py:102 _resume_stuck_jobs` + `:176` 无主 finalize 注释 | **每个 AgentRun 必有持久行**,生命周期显式 | 收编「无主后台 task」;恢复从「猜哪些卡住」变为「按 AgentRun 状态精确恢复」 |
 | M4 | SQLite 单 writer + WAL/busy_timeout 补丁 | `app/db.py:8-39` | **PostgreSQL** | 删 `check_same_thread`/SQLite PRAGMA 分支;`pool_pre_ping` 注释(`db.py:14`)早已为换库埋点;启用多 worker;行级锁/乐观锁支撑对象合并 |
