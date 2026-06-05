@@ -7,7 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import { createMemoryBudgetPolicyStore } from "@workhub/cost";
+import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -17,6 +17,7 @@ import type {
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createCostRoutes } from "./routes/cost.js";
+import { createPageRoutes } from "./routes/pages.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const adminId = "10000000-0000-4000-8000-0000000000a1";
@@ -203,4 +204,90 @@ test("cost policy routes fail closed for non-admins and invalid policy updates",
     body: JSON.stringify({ enabled: false })
   });
   assert.equal(missing.status, 404);
+});
+
+test("cost usage route reads budget usage from the shared ledger", async () => {
+  const runtimeSettings = settings();
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000b1",
+    workItemId: "50000000-0000-4000-8000-0000000000b1",
+    userId,
+    inputTokens: 450000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore
+  }));
+
+  const response = await app.request("/api/cost/usage", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      me: { token_in: number; status: string; remaining_tokens: number };
+      team?: { token_in: number };
+      active_notices: { code: string; options?: unknown[] }[];
+    };
+  };
+  assert.equal(body.data.me.token_in, 450000);
+  assert.equal(body.data.me.status, "warning");
+  assert.equal(body.data.me.remaining_tokens, 50000);
+  assert.equal(body.data.team?.token_in, 450000);
+  assert.equal(body.data.active_notices[0]?.code, "budget_warning");
+  assert.equal((body.data.active_notices[0]?.options?.length ?? 0) >= 2, true);
+});
+
+test("cost dashboard page aggregates ledger entries without exposing all users to non-admins", async () => {
+  const runtimeSettings = settings();
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000b2",
+    workItemId: "50000000-0000-4000-8000-0000000000b2",
+    userId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore
+  }));
+
+  const userResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+
+  assert.equal(userResponse.status, 200);
+  assert.equal(adminResponse.status, 200);
+  const userBody = await userResponse.json() as {
+    ok: true;
+    data: { total_cost_cny: string; token_in: number; by_user: unknown[]; model_breakdown: { provider: string }[] };
+  };
+  const adminBody = await adminResponse.json() as { ok: true; data: { by_user: unknown[] } };
+  assert.equal(userBody.data.total_cost_cny, "0.006");
+  assert.equal(userBody.data.token_in, 1000);
+  assert.equal(userBody.data.by_user.length, 0);
+  assert.equal(userBody.data.model_breakdown[0]?.provider, "deepseek");
+  assert.equal(adminBody.data.by_user.length, 1);
 });

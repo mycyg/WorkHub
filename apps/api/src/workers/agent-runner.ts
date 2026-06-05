@@ -10,9 +10,11 @@ import {
   type BudgetPolicyStore,
   type BudgetScope,
   type BudgetUsageSnapshot,
+  type CostLedgerStore,
   type RunBudget
 } from "@workhub/cost";
 
+import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -103,6 +105,7 @@ export function createInMemoryAgentRunQueue(options: {
   id?: () => string;
   settings?: Settings;
   policyStore?: BudgetPolicyStore;
+  ledgerStore?: CostLedgerStore;
   usage?: (input: EnqueueAgentRunInput) => BudgetUsageSnapshot[];
   decideBudget?: BudgetDecisionProvider;
 } = {}): AgentRunQueue {
@@ -110,15 +113,21 @@ export function createInMemoryAgentRunQueue(options: {
   const nextId = options.id ?? randomUUID;
   const settings = options.settings ?? runtimeSettings;
   const policyStore = options.policyStore ?? getDefaultBudgetPolicyStore();
+  const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
       scopeIds: {
         workItemId: input.workItemId,
-        userId: input.actorId
+        userId: input.actorId,
+        teamId: input.settings.auth.defaultWorkspaceId
       },
       policies: policyStore.listPolicies(input.settings),
-      usage: options.usage?.(input) ?? [],
+      usage: options.usage?.(input) ?? ledgerStore.usageSnapshots({
+        workItemId: input.workItemId,
+        userId: input.actorId,
+        teamId: input.settings.auth.defaultWorkspaceId
+      }),
       modelRoute: {
         provider: input.settings.llm.defaultProvider,
         model: input.settings.llm.model,

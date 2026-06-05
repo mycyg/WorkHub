@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import { buildUsageRecord, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -228,4 +229,39 @@ test("agent run enqueue returns budget_exhausted before queueing new work", asyn
   assert.equal(body.error.details?.remaining_cost_cny, "0");
   assert.equal(body.error.details?.recommended_action, "ask_admin");
   assert.equal((await queue.listActive()).length, 0);
+});
+
+test("agent run enqueue uses ledger snapshots when no usage fixture is injected", async () => {
+  const runtimeSettings = settings();
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-000000000023",
+    workItemId: "50000000-0000-4000-8000-000000000023",
+    userId,
+    inputTokens: 475000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    ledgerStore,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000024"
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Weekly report" })
+  });
+
+  assert.equal(response.status, 202);
+  const body = await response.json() as { ok: true; data: { budget: { max_tokens: number } } };
+  assert.equal(body.data.budget.max_tokens, 25000);
 });

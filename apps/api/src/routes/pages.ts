@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import { settings } from "@workhub/config";
+import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
 
 import {
   createCurrentUserMiddleware,
@@ -32,12 +33,16 @@ import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
 } from "../workers/agent-runner.js";
+import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
+import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
   proposals?: ProposalService;
   queue?: AgentRunQueue;
+  policyStore?: BudgetPolicyStore;
+  ledgerStore?: CostLedgerStore;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -49,6 +54,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const approvals = deps.approvals ?? createApprovalService();
   const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
+  const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
+  const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const activeRuns = await queue.listActive();
@@ -89,10 +96,22 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {
+    const teamId = settings.auth.defaultWorkspaceId;
+    const decision = decideRunBudget({
+      settings,
+      scopeIds: {
+        userId: c.var.currentUser.id,
+        teamId
+      },
+      policies: policyStore.listPolicies(settings),
+      usage: ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
+    });
     const data = buildCostDashboardPage({
       settings,
       isAdmin: c.var.currentUser.isAdmin,
-      userId: c.var.currentUser.id
+      userId: c.var.currentUser.id,
+      budgetUsages: decision.usages,
+      ledgerEntries: ledgerStore.entries
     });
     return c.json({ ok: true, data });
   });

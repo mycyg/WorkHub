@@ -10,9 +10,11 @@ import {
   type BudgetPolicyUpdate as ApiBudgetPolicyUpdate
 } from "@workhub/contracts";
 import {
+  decideRunBudget,
   type BudgetPolicy as CostBudgetPolicy,
   type BudgetPolicyPatch,
-  type BudgetPolicyStore
+  type BudgetPolicyStore,
+  type CostLedgerStore
 } from "@workhub/cost";
 
 import {
@@ -22,11 +24,13 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildCostSummary } from "../pages/cost.js";
+import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type CostRoutesDependencies = {
   auth?: AuthDependencySource;
   policyStore?: BudgetPolicyStore;
+  ledgerStore?: CostLedgerStore;
 };
 
 const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
@@ -35,6 +39,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
+  const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
 
   routes.get("/policies", createCurrentUserMiddleware(authSource), (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
@@ -61,10 +66,21 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   });
 
   routes.get("/usage", createCurrentUserMiddleware(authSource), (c) => {
+    const teamId = settings.auth.defaultWorkspaceId;
+    const decision = decideRunBudget({
+      settings,
+      scopeIds: {
+        userId: c.var.currentUser.id,
+        teamId
+      },
+      policies: policyStore.listPolicies(settings),
+      usage: ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
+    });
     const data = buildCostSummary({
       settings,
       isAdmin: c.var.currentUser.isAdmin,
-      userId: c.var.currentUser.id
+      userId: c.var.currentUser.id,
+      budgetUsages: decision.usages
     });
     return c.json({ ok: true, data });
   });

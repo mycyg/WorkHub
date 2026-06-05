@@ -102,6 +102,7 @@ export type CostLedgerEntry = {
   estimatedCostCny: string;
   unitPriceCny?: string;
   currency: "CNY";
+  provider?: string;
   model: string;
   source: UsageSource;
   createdAt: string;

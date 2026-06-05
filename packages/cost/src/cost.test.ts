@@ -9,6 +9,7 @@ import {
   buildUsageRecord,
   chooseModelRoute,
   createMemoryBudgetPolicyStore,
+  createMemoryCostLedgerStore,
   createMemoryUsageSink,
   decideRunBudget,
   defaultBudgetPoliciesFromSettings,
@@ -141,4 +142,55 @@ test("budget decision blocks exhausted scopes with traceable details", () => {
   assert.equal(decision.limitingUsage?.status, "exhausted");
   assert.equal(decision.limitingUsage?.remainingTokens, 0);
   assert.equal(decision.limitingUsage?.remainingCostCny, "0");
+});
+
+test("cost ledger reconciles usage into scoped entries and budget snapshots", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  const record = buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "run-1",
+    workItemId: "workitem-1",
+    userId: "user-1",
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date("2026-06-05T00:00:00.000Z")
+  });
+
+  await ledger.recordUsage(record);
+  await ledger.recordUsage(record);
+
+  assert.equal(ledger.records.length, 1);
+  assert.equal(ledger.entries.length, 3);
+  assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), ["team", "user", "workitem"]);
+
+  const snapshots = ledger.usageSnapshots({
+    workItemId: "workitem-1",
+    userId: "user-1",
+    teamId: "team-1"
+  });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "user")?.tokenIn, 1000);
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "team")?.estimatedCostCny, "0.006");
+});
+
+test("eval usage is reconciled separately from user and team quota", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1", evalSuite: "nightly" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "eval",
+    userId: "user-1",
+    inputTokens: 1000,
+    outputTokens: 1000,
+    source: "eval",
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-06-05T00:00:00.000Z")
+  }));
+
+  assert.equal(ledger.entries.length, 1);
+  assert.deepEqual(ledger.entries[0]?.scope, { kind: "eval", suite: "nightly" });
+  assert.equal(ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" }).every((snapshot) => snapshot.tokenIn === 0), true);
+  assert.equal(ledger.usageSnapshots({ evalSuite: "nightly" })[0]?.estimatedCostCny, "0.002");
 });
