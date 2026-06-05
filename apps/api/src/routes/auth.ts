@@ -42,7 +42,7 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
     }
 
     await issueUserCookie(c, user, getAuthSettings(deps));
-    deps.touchUser?.(user.id);
+    await deps.touchUser?.(user.id);
 
     return c.json(toIdentityResponse(user, created), created ? 201 : 200);
   });
@@ -81,12 +81,12 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
         (deps.now ?? (() => new Date()))()
       );
       if (revokedDevice && revokedDevice.userId !== user.id) {
-        deps.forgetUser?.(revokedDevice.userId);
+        await deps.forgetUser?.(revokedDevice.userId);
       }
     }
 
     forgetUserCookie(c, runtimeSettings);
-    deps.forgetUser?.(user.id);
+    await deps.forgetUser?.(user.id);
 
     return c.json({ ok: true });
   });

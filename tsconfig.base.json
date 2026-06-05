@@ -9,7 +9,8 @@
       "@workhub/config": ["packages/config/src/index.ts"],
       "@workhub/contracts": ["packages/contracts/src/index.ts"],
       "@workhub/db": ["packages/db/src/index.ts"],
-      "@workhub/db/schema": ["packages/db/src/schema/index.ts"]
+      "@workhub/db/schema": ["packages/db/src/schema/index.ts"],
+      "@workhub/events": ["packages/events/src/index.ts"]
     },
     "strict": true,
     "noUncheckedIndexedAccess": true,

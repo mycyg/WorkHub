@@ -18,6 +18,8 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
+import { getDefaultPresenceStore } from "../broker/presence.js";
+
 export const COOKIE_NAME = authDefaults.cookieName;
 export const LOCAL_CLIENT_HEADER = authDefaults.localClientHeader;
 
@@ -51,8 +53,8 @@ export type AuthDependencies = {
   devices: ClientDeviceRepository;
   settings?: Settings;
   now?: () => Date;
-  touchUser?: (userId: string) => void;
-  forgetUser?: (userId: string) => void;
+  touchUser?: (userId: string) => void | Promise<void>;
+  forgetUser?: (userId: string) => void | Promise<void>;
 };
 
 export type AuthDependencySource = AuthDependencies | (() => AuthDependencies);
@@ -61,9 +63,12 @@ let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultAuthDependencies(): AuthDependencies {
   defaultDbClient ??= createDatabaseClient();
+  const presence = getDefaultPresenceStore();
   return {
     users: createUserRepository(defaultDbClient.db),
-    devices: createClientDeviceRepository(defaultDbClient.db)
+    devices: createClientDeviceRepository(defaultDbClient.db),
+    touchUser: (userId) => presence.touchUser(userId),
+    forgetUser: (userId) => presence.forgetUser(userId)
   };
 }
 
@@ -232,7 +237,7 @@ async function resolveUserFromClientToken(deps: AuthDependencies, rawToken: stri
 export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
   const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
   if (byToken) {
-    deps.touchUser?.(byToken.user.id);
+    await deps.touchUser?.(byToken.user.id);
     return byToken.user;
   }
 
@@ -240,7 +245,7 @@ export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
   if (cookieToken) {
     const user = await deps.users.findActiveByCookieToken(cookieToken);
     if (user) {
-      deps.touchUser?.(user.id);
+      await deps.touchUser?.(user.id);
       return user;
     }
   }
@@ -284,7 +289,7 @@ export async function resolveOptionalLocalClient(c: Context, deps: AuthDependenc
 export async function resolveStreamUser(c: Context, deps: AuthDependencies): Promise<StreamUser> {
   const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
   if (byToken) {
-    deps.touchUser?.(byToken.user.id);
+    await deps.touchUser?.(byToken.user.id);
     return { id: byToken.user.id, nickname: byToken.user.nickname };
   }
 
@@ -292,7 +297,7 @@ export async function resolveStreamUser(c: Context, deps: AuthDependencies): Pro
   if (cookieToken) {
     const user = await deps.users.findActiveByCookieToken(cookieToken);
     if (user) {
-      deps.touchUser?.(user.id);
+      await deps.touchUser?.(user.id);
       return { id: user.id, nickname: user.nickname };
     }
   }

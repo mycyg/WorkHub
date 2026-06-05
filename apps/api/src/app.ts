@@ -5,6 +5,7 @@ import { settings } from "@workhub/config";
 
 import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
+import { createPushRoutes } from "./routes/push.js";
 
 export const app = new Hono();
 
@@ -29,6 +30,7 @@ app.get("/api/health", (c) =>
 
 app.route("/api/auth", createAuthRoutes());
 app.route("/api/client-devices", createClientDeviceRoutes());
+app.route("/api/push", createPushRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {
