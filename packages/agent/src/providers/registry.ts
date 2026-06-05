@@ -6,6 +6,8 @@ import type {
   ProviderRoute,
   TaskClass
 } from "./types.js";
+import type { UsageSink } from "@workhub/cost";
+import { createAnthropicCompatibleTransport } from "./anthropic-compatible.js";
 import { MeasuredLlmClient } from "./measured-client.js";
 
 function requireProviderRoute(options: ProviderRegistryOptions, task: TaskClass): ProviderRoute {
@@ -24,7 +26,11 @@ function requireProviderRoute(options: ProviderRegistryOptions, task: TaskClass)
 }
 
 export class ProviderRegistry {
-  constructor(private readonly options: ProviderRegistryOptions) {}
+  private usageSink: UsageSink | undefined;
+
+  constructor(private readonly options: ProviderRegistryOptions) {
+    this.usageSink = options.usageSink;
+  }
 
   isConfigured(providerName = this.options.config.defaultProvider) {
     const provider = this.options.config.providers[providerName];
@@ -33,13 +39,18 @@ export class ProviderRegistry {
 
   get(actor: LlmActor | undefined, task: TaskClass) {
     const route = requireProviderRoute(this.options, task);
-    const transport = this.options.transportFactory(route.provider);
+    const transportFactory = this.options.transportFactory ?? createAnthropicCompatibleTransport;
+    const transport = transportFactory(route.provider);
     return new MeasuredLlmClient({
       route,
       transport,
       ...(actor ? { actor } : {}),
-      ...(this.options.usageSink ? { usageSink: this.options.usageSink } : {})
+      ...(this.usageSink ? { usageSink: this.usageSink } : {})
     });
+  }
+
+  setUsageSink(sink: UsageSink) {
+    this.usageSink = sink;
   }
 
   routeFor(task: TaskClass) {
@@ -60,9 +71,9 @@ export function createProviderRegistry(options: ProviderRegistryOptions) {
   return new ProviderRegistry(options);
 }
 
-export function createDefaultProviderRegistry(transportFactory: ProviderRegistryOptions["transportFactory"]) {
+export function createDefaultProviderRegistry(transportFactory?: ProviderRegistryOptions["transportFactory"]) {
   return createProviderRegistry({
     config: createProviderRegistryConfig(defaultSettings),
-    transportFactory
+    ...(transportFactory ? { transportFactory } : {})
   });
 }

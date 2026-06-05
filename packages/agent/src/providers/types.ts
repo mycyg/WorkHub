@@ -66,7 +66,7 @@ export type TransportFactory = (provider: LlmProviderConfig) => LlmTransport;
 
 export type ProviderRegistryOptions = {
   config: LlmProviderRegistryConfig;
-  transportFactory: TransportFactory;
+  transportFactory?: TransportFactory;
   usageSink?: UsageSink;
 };
 
