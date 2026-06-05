@@ -388,22 +388,38 @@ type WorkHubEvent<T> = {
 
 ```ts
 type BudgetNotice = {
+  code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
   scope: {
     kind: "workitem" | "user" | "team" | "eval";
     id?: string;
   };
+  usage_ratio: number;
+  recommended_action: "continue" | "downgrade_model" | "pause" | "ask_admin";
+  options?: { id: string; label: string; action_href: string }[];
   action_href?: string;
 };
 
+type BudgetUsage = {
+  scope: { kind: "workitem" | "user" | "team" | "eval"; id?: string };
+  scope_label: string;
+  total_tokens: number;
+  max_tokens: number;
+  remaining_tokens: number;
+  estimated_cost_cny: string;
+  max_cost_cny: string;
+  remaining_cost_cny: string;
+  warning_ratio: number;
+  status: "ok" | "warning" | "critical" | "exhausted";
+};
+
 type CostSummaryVM = {
-  me: {
-    total_tokens: number;
-    estimated_cost_cny: string;
-    warning_ratio: number;
-  };
+  me: BudgetUsage;
+  team?: BudgetUsage;
+  scopes: BudgetUsage[];
   active_notices: BudgetNotice[];
+  generated_at: string;
 };
 ```
 
@@ -413,6 +429,7 @@ type CostSummaryVM = {
 - 私有事件不得发 `all`。
 - `cuu_state` 是提示,客户端可以按本地状态机覆盖。
 - `attention` 可选;用于一件事卡片和 Cuu 气泡。
+- `BudgetNotice.options` 必须是可点击选项;Cuu/Rust 不要求用户输入预算处理命令。
 
 ### 4.3 Cuu State
 

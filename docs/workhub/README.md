@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-05):**32 篇文档已落盘**(31 篇规格/概念 + 1 篇 P-COST 专篇;详见各篇 frontmatter)。
+> 状态(2026-06-05):**32 篇文档已落盘**(含 P-COST 专篇;详见各篇 frontmatter)。
 
 ---
 
@@ -53,7 +53,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | 身份 | **P-IDENTITY** | 用户 / 技能档案 / 协作图 / Org / 角色 |
 | 权限与审批 | **P-PERM** | 分层 allow/deny/ask 策略 / 审批路由 / SLA / 委派 |
 | 审计与回滚 | **P-AUDIT** | 按身份全量审计 / AI 副作用快照与 revert |
-| 成本治理 | **P-COST** | 用户/团队/任务三级预算配额 / 模型路由 |
+| 成本治理 | **P-COST** | 用户/团队/任务三级预算配额 / 模型路由 / 成本计量 / 超额动作 |
 
 ---
 

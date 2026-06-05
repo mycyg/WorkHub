@@ -98,23 +98,40 @@ type BudgetPolicy = {
 ```ts
 type BudgetUsage = {
   scope: BudgetScope;
+  scope_label: string;
+  policy_id: string;
+  period: "run" | "day" | "month";
   period_start: string;
   period_end: string;
   token_in: number;
   token_out: number;
   total_tokens: number;
+  max_tokens: number;
+  remaining_tokens: number;
   estimated_cost_cny: string;
+  max_cost_cny: string;
+  remaining_cost_cny: string;
   warning_ratio: number;
+  status: "ok" | "warning" | "critical" | "exhausted";
 };
 ```
 
 ### 3.4 `BudgetDecision`
 
 ```ts
+type RunBudget = {
+  max_steps: number;
+  total_timeout_s: number;
+  max_tokens: number;
+  max_cost_cny: string;
+};
+
 type BudgetDecision = {
+  decision_id: string;
   allowed: boolean;
   reason?: "ok" | "warning" | "critical" | "budget_exhausted";
   run_budget: RunBudget;
+  limiting_scope?: BudgetScope;
   model_route: {
     provider: string;
     model: string;
@@ -145,14 +162,18 @@ type UsageRecord = {
 type CostLedgerEntry = {
   id: string;
   usage_record_id: string;
+  policy_id?: string;
   run_id?: string;
   workitem_id?: string;
   user_id?: string;
   team_id?: string;
   scope: BudgetScope;
+  period_bucket: string;
   token_in: number;
   token_out: number;
   estimated_cost_cny: string;
+  unit_price_cny?: string;
+  currency: "CNY";
   model: string;
   source: UsageRecord["source"];
   created_at: string;
@@ -165,17 +186,25 @@ type CostLedgerEntry = {
 type CostSummaryVM = {
   me: BudgetUsage;
   team?: BudgetUsage;
+  scopes: BudgetUsage[];
   active_notices: BudgetNotice[];
+  generated_at: string;
 };
 
 type BudgetNotice = {
+  code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
   scope: BudgetScope;
+  usage_ratio: number;
+  recommended_action: "continue" | "downgrade_model" | "pause" | "ask_admin";
+  options?: { id: string; label: string; action_href: string }[];
   action_href?: string;
 };
 
 type CostDashboardVM = {
+  generated_at: string;
+  currency: "CNY";
   total_cost_cny: string;
   token_in: number;
   token_out: number;
@@ -187,6 +216,8 @@ type CostDashboardVM = {
   model_breakdown: { provider: string; model: string; count: number; cost_cny: string }[];
   budget: BudgetUsage[];
   notices: BudgetNotice[];
+  top_exhaustion_risks: { scope: BudgetScope; label: string; remaining_cost_cny: string; status: BudgetUsage["status"] }[];
+  empty_state?: "no_agent_runs" | "usage_not_connected";
 };
 ```
 
@@ -229,14 +260,21 @@ type CostDashboardVM = {
 |---|---|---|
 | `GET /api/cost/policies` | `BudgetPolicy[]` | admin / team owner |
 | `PUT /api/cost/policies/:scope/:id` | `BudgetPolicy` | admin / team owner |
-| `GET /api/cost/usage` | `BudgetUsage[]` | admin 看全局；普通用户只看自己 |
+| `GET /api/cost/usage` | `CostSummaryVM` | admin 看全局摘要；普通用户只看自己 |
 | `GET /api/pages/cost` | `CostDashboardVM` | admin / owner 全量；普通用户降级为个人视图 |
 
 | Event | Payload | Topic | 用途 |
 |---|---|---|---|
-| `usage.recorded` | `{run_id, cost, tokens, model}` | `run:{id}` / admin metrics | Replay 与成本看板 reconcile。 |
+| `usage.recorded` | `{usage_record_id, run_id?, workitem_id?, provider, model, input_tokens, output_tokens, estimated_cost_cny, source}` | `run:{id}` / admin metrics | Replay 与成本看板 reconcile。 |
 | `budget.warning` | `BudgetNotice` | `user:{id}` / admin | Cuu 气泡或 Web 条幅。 |
 | `budget.exhausted` | `BudgetNotice` | `user:{id}` / admin | 阻断新 run 或当前 run 交接。 |
+
+### 6.1 API 返回口径
+
+- `GET /api/cost/usage` 是轻量摘要，面向 Attention/Cuu/Rust one thing。它必须返回 `CostSummaryVM`，不得让客户端自己拼 `BudgetUsage[]`。
+- `GET /api/pages/cost` 是页面 VM，面向 Web 成本看板。admin/owner 可见 `by_user/by_team/by_workitem`；普通用户只保留个人切片，`by_user` 不返回全员榜。
+- `PUT /api/cost/policies/:scope/:id` 只能更新 `BudgetPolicy`，不得绕过审计；调参只改 policy，不改 AgentLoop 常量。
+- 预算拒绝统一返回 `ApiErr.code="budget_exhausted"`，`details` 至少包含 `scope`, `policy_id`, `remaining_tokens`, `remaining_cost_cny`, `recommended_action`。
 
 ---
 
@@ -249,6 +287,17 @@ type CostDashboardVM = {
 | Rust 主窗 | 只显示当前 run 的预算状态和交接动作。 |
 | Cuu | `budget.warning` 时轻提示；`budget.exhausted` 时变为 `asking_approval` 或 `worried`，引导用户点选「暂停 / 降级模型 / 找管理员」。 |
 | Replay | footer 显示本次 run 的 cost summary；raw token 只给可见权限用户展开。 |
+
+### 7.1 看板数据来源
+
+| `CostDashboardVM` 字段 | 数据来源 | 权限/空态 |
+|---|---|---|
+| `total_cost_cny`, `token_in`, `token_out` | `CostLedgerEntry` 按查询区间聚合 | 无 run 时 `empty_state="no_agent_runs"`。 |
+| `trend` | `CostLedgerEntry.period_bucket` 日/周聚合 | usage sink 未接入时 `empty_state="usage_not_connected"`。 |
+| `by_user`, `by_team`, `by_workitem` | ledger + identity/project/workitem label join | 普通用户不返回全员 `by_user`。 |
+| `model_breakdown` | `UsageRecord.provider/model` + ledger cost | provider key 不进入 VM。 |
+| `budget` | `BudgetPolicy` + ledger 汇总后的 `BudgetUsage` | 显示用户/团队/任务三层中与当前 actor 有关的切片。 |
+| `notices`, `top_exhaustion_risks` | `BudgetDecision` / `BudgetUsage.status` | `warning` 轻提示，`exhausted` 给暂停/降级/找管理员选项。 |
 
 ---
 

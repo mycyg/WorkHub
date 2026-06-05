@@ -193,7 +193,7 @@ owner: workflow
 | **AL-3** | 快照成本：每步文件快照在大 `workdir` 下开销；是否只对净变更增量、只读步跳过？ | 🟢 已倾向后者 | 已倾向"只读步不打快照（`side_effect=False`）+ 内容寻址去重（沿用 `sha256`/`spec_watch.rs` append-only）"。属实现优化。 | [`agent-loop-and-tools.md §7`](./02-ai-engine/agent-loop-and-tools.md) |
 | **AL-4** | compact 阈值与摘要保真：0.8 窗口阈值、保留近 K 步的 K；摘要丢信息致回灌失效风险？ | 🟠 待标定 | 现状无 compact（靠 `MAX_TURNS=15` 短跑兜底）；WorkHub 新增。阈值待实测。 | [`agent-loop-and-tools.md §8.2`](./02-ai-engine/agent-loop-and-tools.md) |
 | **AL-5** | 业务对象回滚的反向 op 完备性：哪些业务写天然不可逆（如已发外部通知），需标"不可回滚"并前置 `ask`？ | 🟠 与风险门耦合 | 与 OQ-3 `reversibility` 维度 + 宪法 5 快照红线耦合：不可快照的动作 `reversibility=1` → 几乎必 `high` 风险 → 前置 `ask`/升级。需逐工具标注可逆性。 | [`agent-loop-and-tools.md §7.2`](./02-ai-engine/agent-loop-and-tools.md)、[`confidence-risk-escalation.md §5.1`](./02-ai-engine/confidence-risk-escalation.md) |
-| **AL-6** | token/cost 计入预算的口径：重试、压缩自身的 token 是否计入 `max_cost`？ | 🟡 待定 | OQ-7 的细化。建议：重试/压缩 token **计入** `max_cost`（真实花费），但 doom-loop/超预算的判定可单列口径。 | [`agent-loop-and-tools.md §4`](./02-ai-engine/agent-loop-and-tools.md) |
+| **AL-6** | token/cost 计入预算的口径：重试、压缩自身的 token 是否计入 `max_cost`？ | ✅ 已收敛 | OQ-7 的细化已落到 [`cost-governance.md §5`](./02-ai-engine/cost-governance.md#5-计入口径)：重试、compact、review、schema repair 都按真实花费计入 run 成本；nightly eval 单独进 eval scope。 | [`agent-loop-and-tools.md §4`](./02-ai-engine/agent-loop-and-tools.md) · [`cost-governance.md`](./02-ai-engine/cost-governance.md) |
 
 ### 2.5 画像与 JTBD（`personas-and-jtbd §10`：PJ-1 ~ PJ-4）
 
@@ -210,6 +210,16 @@ owner: workflow
 |---|---|---|---|---|
 | **SY-1** | 增量 cursor：`updated_at` wall-clock 游标 → 单调序列（`xmin`/专用 `change_seq` + `LISTEN/NOTIFY`）的升级时点？ | 🟠 PG 化后 | 现状 `/drive/changes` 用 `updated_at > since`（`project_drive.py:798`），同毫秒并发/时钟回拨有漏/重边界（sha256 去重可吞，[`sync-and-spec.md §2.7 B-3`](./03-collaboration/sync-and-spec.md)）。**协议形状不变，PG 化后换 cursor 语义即可**。建议：随 D-2 一并升级。 | [`sync-and-spec.md §2.1.1`](./03-collaboration/sync-and-spec.md) |
 | **SY-2** | 客户端本地状态库：进程内 `HashMap`（`spec_watch.rs` 的 `INFLIGHT_SHAS` 等）→ 持久化本地 sync DB（Tauri 侧 SQLite/sled）的落地？ | 🟠 双向同步前置 | 双向同步需持久 `LocalSyncEntry`（含 `base_sha256` 基线）做离线合并/冲突检测——这是 `sync.rs:227` 单向→双向的前置工程（FR-SYNC-*）。 | [`sync-and-spec.md §2.1.2`](./03-collaboration/sync-and-spec.md) |
+
+### 2.7 看板与度量（`dashboards-and-metrics §14`：OQ-DASH-1 ~ OQ-DASH-5）
+
+| 编号 | 问题 | 收敛状态 | 现状基线 / 建议 | 归属篇 |
+|---|---|---|---|---|
+| **OQ-DASH-1** | 成本采集前置：`AgentRun.token_in/out/cost_estimate` 何时采集？模型单价表归属？ | 🟡 采集待实现；单价归属已定 | 采集必须在 provider usage sink 落 `UsageRecord` / `CostLedgerEntry` 后才有数。模型单价表归 P-COST provider/model 配置，业务逻辑不得硬编码。 | [`dashboards-and-metrics.md §14`](./04-modules/dashboards-and-metrics.md) · [`cost-governance.md`](./02-ai-engine/cost-governance.md) |
+| **OQ-DASH-2** | 「好升级 / 误升级」的判据怎么定义？ | 🟡 与命门标定共定 | 建议以 `Review` 结果、后续打回、人工确认风险点共同判定，不只用「人秒过」。 | [`confidence-risk-escalation.md`](./02-ai-engine/confidence-risk-escalation.md) |
+| **OQ-DASH-3** | 跨项目/全员自治率与成本榜的可见范围？ | 🟢 倾向 admin/owner 全量，普通用户降级 | 与 `CostDashboardVM` 权限分层一致：admin/owner 可看全员榜，普通用户只看自己或参与项目聚合。 | [`security-and-permissions.md`](./01-architecture/security-and-permissions.md) · [`api-contract.md §2.15`](./01-architecture/api-contract.md#215-cost-governance-新) |
+| **OQ-DASH-4** | 区间默认值、历史留存与预聚合策略？ | 🟠 待真实数据 | v0 可用近 30 天 + 直接聚合；AgentRun/ledger 增长后再引入物化视图或预聚合表。 | [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md) |
+| **OQ-DASH-5** | 操作型 `/dashboard` 与分析看板长期是否合并入口？ | 🟢 建议不合并 | 操作面会让小白看到过重看板；分析看板保留在管理入口，AI-first Home 只显示当前需要处理的一件事。 | [`web-app.md`](./05-clients/web-app.md) |
 
 ---
 

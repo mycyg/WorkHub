@@ -257,7 +257,7 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 |---|---|---|---|
 | `GET /api/cost/policies` | `BudgetPolicy[]` | admin / team owner | 三级预算策略。 |
 | `PUT /api/cost/policies/:scope/:id` | `BudgetPolicy` | admin / team owner | 更新用户/团队/任务配额;写审计。 |
-| `GET /api/cost/usage` | `BudgetUsage[]` | current user / admin | 普通用户只看自己;admin 可看全局。 |
+| `GET /api/cost/usage` | `CostSummaryVM` | current user / admin | 普通用户只看自己;admin 可看全局摘要;原始 `BudgetUsage` 嵌在 `me/team/scopes` 中。 |
 | `GET /api/pages/cost` | `CostDashboardVM` | current user / admin | Page VM;admin 含全员榜,普通用户降级为个人视图。 |
 
 成本裁决、默认配额和计入口径见 [`../02-ai-engine/cost-governance.md`](../02-ai-engine/cost-governance.md)。预算拒绝统一返回 `ApiErr.code="budget_exhausted"`;客户端不得自行推断是否还能跑 Agent。

@@ -144,7 +144,7 @@ workers/
 | `permissions` | `POST /api/permissions/ask` | `routes/permissions.ts` | `ApprovalRequest`, `AttentionItem` |
 | `approvals` | `GET /api/approvals` | `routes/approvals.ts` | `ApprovalCenterVM` |
 | `proposals` | `GET /api/proposals/:id` | `routes/proposals.ts` | `DeliverableChangeManifest` |
-| `cost` | `GET /api/cost/usage` | `routes/cost.ts` | `BudgetUsage`, `CostSummaryVM`, `BudgetNotice` |
+| `cost` | `GET /api/cost/usage` | `routes/cost.ts` | `CostSummaryVM`（内含 `BudgetUsage[]`）, `BudgetNotice` |
 | `knowledge` | `POST /api/knowledge/search` | `routes/knowledge.ts` | `EvidenceRef`, `EvidenceBubble` |
 | `drive` | `GET /api/drive/items` | `routes/drive.ts` | `DriveItem`, `DeliverableTarget` |
 | `meetings` | `GET /api/meetings/:id` | `routes/meetings.ts` | `EvidenceRef`, insight draft |
@@ -200,7 +200,7 @@ AI-native 产品不应该让前端拼十几个接口才知道「现在要处理�
 | 同步冲突解决 | `GET /api/pages/sync/conflicts` | `SyncConflictResolverVM` | `conflicts`, `choices`, `recommended_choice` | worried |
 | Agent 实时轨迹 | `GET /api/pages/agent-runs/:id` + SSE | `AgentRunTraceVM` | `steps`, `current_step`, `budget`, `snapshot_refs` | thinking |
 | Agent 回放 | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | `steps`, `evidence_refs`, `snapshots`, `cost` | deep-link 打开,复杂 trace 不塞气泡 |
-| 成本治理 | `GET /api/pages/cost` | `CostDashboardVM` | `total_cost`, `trend`, `budget`, `model_breakdown`, `notices` | `budget.warning` 轻气泡;`budget.exhausted` 审批/暂停卡 |
+| 成本治理 | `GET /api/pages/cost` | `CostDashboardVM` | `total_cost_cny`, `trend`, `budget`, `model_breakdown`, `notices` | `budget.warning` 轻气泡;`budget.exhausted` 审批/暂停卡 |
 
 ### 5.1 `AttentionHomeVM`
 

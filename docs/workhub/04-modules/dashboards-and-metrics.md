@@ -495,7 +495,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 5. **无图表库**：图表用自绘 SVG/div 原语收敛进 `C-UIKIT`（§10），不引重依赖。
 
 **开放问题（待收敛，登记到 [07-open-questions](../07-open-questions.md)）**：
-- **OQ-DASH-1（采集前置）**：`AgentRun.token_in/out/cost_estimate` 何时在 `auto_agent` 收口处采集 `resp.usage`？成本看板（DASH-3）**强依赖**此项，否则永远空态。模型单价表（¥/token）归 P-COST 配置还是硬编码？
+- **OQ-DASH-1（采集前置）**：`AgentRun.token_in/out/cost_estimate` 何时在 `auto_agent` 收口处采集 `resp.usage`？成本看板（DASH-3）**强依赖**此项，否则永远空态。模型单价表已收口到 P-COST 的 provider/model 配置，业务逻辑不得硬编码单价。
 - **OQ-DASH-2（精准度判据）**：「好升级 / 误升级」的判据需 confidence-risk 引擎共定——「误升级=人秒过」是否过严？是否要引入「人虽 approve 但确认了 AI 提的风险点」的中间态？（与 [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md) 对齐。）
 - **OQ-DASH-3（全局视图权限）**：跨项目/全员的自治率与成本榜，是否仅 admin/管理者可见？非管理者的「全局」是否退化为「我参与项目的聚合」？（与 [security-and-permissions](../01-architecture/security-and-permissions.md) 的 RBAC 对齐。）
 - **OQ-DASH-4（区间与留存）**：区间下拉的默认值（近30天？）与历史留存窗口；`AgentRun`/`EscalationEvent` 量大后，看板聚合是否需要预聚合表/物化视图（对齐 `CollaborationGraph` 的物化视图思路，data-model §3.3）。
