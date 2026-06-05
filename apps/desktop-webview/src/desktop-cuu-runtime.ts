@@ -1,5 +1,6 @@
 import type { CuuCard, CuuCardAction, CuuCardChip } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
+import { eventTypes, type GoldPathSurfaceVM } from "@workhub/contracts";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
 
@@ -23,6 +24,19 @@ export type DesktopCuuNotice = {
 export type DesktopShellCuuRuntime = {
   subscribed: boolean;
   dispose: () => Promise<void>;
+};
+
+export type DesktopShellScriptedEvent = {
+  eventName: "push-event" | "sse-status";
+  payload: unknown;
+  delayMs: number;
+};
+
+export type DesktopShellScriptedListener = {
+  listen: DesktopShellListen;
+  start: () => void;
+  stop: () => void;
+  dispatched: () => number;
 };
 
 export type DesktopCuuActionRequest =
@@ -50,6 +64,9 @@ type DesktopShellGlobal = {
   __YQGL_MOCK_LISTEN__?: DesktopShellListen;
 };
 
+type TimerId = ReturnType<typeof globalThis.setTimeout>;
+type GoldPathEvent = GoldPathSurfaceVM["events"][number];
+
 export const desktopCuuNoticeCss = [
   ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;font-weight:650}",
   ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}",
@@ -68,6 +85,106 @@ export const desktopCuuNoticeCss = [
 export function resolveDesktopShellListen(input: unknown = globalThis): DesktopShellListen | undefined {
   const target = input as DesktopShellGlobal;
   return target.__TAURI__?.event?.listen ?? target.__YQGL_MOCK_LISTEN__;
+}
+
+export function createDesktopShellScriptedListener(
+  script: DesktopShellScriptedEvent[],
+  timers: {
+    setTimeout?: (handler: () => void, timeout: number) => TimerId;
+    clearTimeout?: (id: TimerId) => void;
+  } = {}
+): DesktopShellScriptedListener {
+  const handlers = new Map<DesktopShellScriptedEvent["eventName"], Set<(event: DesktopShellEventEnvelope) => void>>();
+  const timerIds: TimerId[] = [];
+  const setTimer = timers.setTimeout ?? globalThis.setTimeout.bind(globalThis);
+  const clearTimer = timers.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
+  let started = false;
+  let stopped = false;
+  let dispatched = 0;
+
+  const listen: DesktopShellListen = (eventName, handler) => {
+    if (stopped) {
+      return () => {};
+    }
+    const bucket = handlers.get(eventName) ?? new Set<(event: DesktopShellEventEnvelope) => void>();
+    bucket.add(handler);
+    handlers.set(eventName, bucket);
+    return () => {
+      bucket.delete(handler);
+    };
+  };
+
+  return {
+    listen,
+    start() {
+      if (started || stopped) {
+        return;
+      }
+      started = true;
+      for (const item of script) {
+        const timerId = setTimer(() => {
+          if (stopped) {
+            return;
+          }
+          const bucket = handlers.get(item.eventName);
+          if (!bucket?.size) {
+            return;
+          }
+          dispatched += 1;
+          for (const handler of [...bucket]) {
+            handler({ payload: item.payload });
+          }
+        }, Math.max(0, item.delayMs));
+        timerIds.push(timerId);
+      }
+    },
+    stop() {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      for (const timerId of timerIds.splice(0)) {
+        clearTimer(timerId);
+      }
+      handlers.clear();
+    },
+    dispatched() {
+      return dispatched;
+    }
+  };
+}
+
+export function createDesktopCuuDemoScript(
+  surface: Pick<GoldPathSurfaceVM, "events">,
+  input: {
+    initialDelayMs?: number;
+    intervalMs?: number;
+    includeOfflineStatus?: boolean;
+  } = {}
+): DesktopShellScriptedEvent[] {
+  const initialDelayMs = input.initialDelayMs ?? 500;
+  const intervalMs = input.intervalMs ?? 1100;
+  const events = selectDemoEvents(surface.events);
+  const script = events.map<DesktopShellScriptedEvent>((event, index) => ({
+    eventName: "push-event",
+    delayMs: initialDelayMs + index * intervalMs,
+    payload: desktopShellPayloadFromWorkHubEvent(event)
+  }));
+
+  if (input.includeOfflineStatus) {
+    script.push({
+      eventName: "sse-status",
+      delayMs: initialDelayMs + events.length * intervalMs,
+      payload: {
+        stream_kind: "global",
+        stream_path: "/api/push/stream",
+        state: "retrying",
+        message: "开发预览：daemon 连接不稳定，Cuu 正在重试。"
+      }
+    });
+  }
+
+  return script;
 }
 
 export async function bindDesktopShellCuuRuntime(input: {
@@ -197,6 +314,58 @@ function renderAction(action: CuuCardAction) {
     return `<span class="wh-cuu-action" data-tone="${escapeHtml(action.tone)}">${escapeHtml(action.label)}</span>`;
   }
   return `<a class="wh-cuu-action" href="${escapeHtml(action.href)}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
+}
+
+function selectDemoEvents(events: GoldPathEvent[]) {
+  const selected = [
+    events.find((event) => event.type === eventTypes.permissionAsk && Boolean(event.session_id)),
+    events.find((event) => event.type === eventTypes.agentRunStarted),
+    events.find((event) => event.type === eventTypes.knowledgeEvidenceReady),
+    events.find((event) => event.type === eventTypes.budgetWarning || event.type === eventTypes.budgetExhausted),
+    events.find((event) => event.type === eventTypes.proposalOpened),
+    events.find((event) => event.type === eventTypes.permissionAsk && (event.attention?.kind === "approval" || Boolean(event.proposal_id))),
+    events.find((event) => event.type === eventTypes.proposalMerged)
+  ].filter((event): event is GoldPathEvent => Boolean(event));
+
+  const seen = new Set<string>();
+  const unique = selected.filter((event) => {
+    if (seen.has(event.event_id)) {
+      return false;
+    }
+    seen.add(event.event_id);
+    return true;
+  });
+  return unique.length > 0 ? unique : events.slice(0, 6);
+}
+
+function desktopShellPayloadFromWorkHubEvent(event: GoldPathEvent) {
+  const stream = streamFromTopic(event.topic);
+  return {
+    event: event.type,
+    data: JSON.stringify(event),
+    stream_kind: stream.kind,
+    stream_path: stream.path
+  };
+}
+
+function streamFromTopic(topic: string) {
+  const [kind, id] = topic.split(":", 2);
+  if (kind === "user") {
+    return { kind: "me", path: "/api/push/stream/me" };
+  }
+  if (kind === "workitem" && id) {
+    return { kind, path: `/api/push/stream/workitem/${encodeURIComponent(id)}` };
+  }
+  if (kind === "run" && id) {
+    return { kind, path: `/api/push/stream/run/${encodeURIComponent(id)}` };
+  }
+  if (kind === "session" && id) {
+    return { kind, path: `/api/push/stream/session/${encodeURIComponent(id)}` };
+  }
+  if (kind === "proposal" && id) {
+    return { kind, path: `/api/push/stream/proposal/${encodeURIComponent(id)}` };
+  }
+  return { kind: "global", path: "/api/push/stream" };
 }
 
 function approvalDecisionFromAction(actionId: string | undefined, requiresReason: boolean): "allow" | "deny" {

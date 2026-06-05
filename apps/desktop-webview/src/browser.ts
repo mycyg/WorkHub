@@ -10,8 +10,11 @@ import {
 
 import {
   bindDesktopShellCuuRuntime,
+  createDesktopCuuDemoScript,
+  createDesktopShellScriptedListener,
   desktopCuuNoticeCss,
   resolveDesktopCuuAction,
+  resolveDesktopShellListen,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest
 } from "./desktop-cuu-runtime.js";
@@ -74,6 +77,17 @@ function reviewReasonButtons() {
 
 function actionMessage(error: unknown) {
   return error instanceof Error ? error.message : "动作提交失败，请稍后再试。";
+}
+
+function cuuDemoMode() {
+  const value = new URLSearchParams(window.location.search).get("cuuDemo");
+  if (value === "1" || value === "true") {
+    return "on";
+  }
+  if (value === "offline") {
+    return "offline";
+  }
+  return "off";
 }
 
 function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient) {
@@ -227,10 +241,24 @@ async function boot() {
     });
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}</style>${shell.html}`;
     bindGoldPathNavigation(root, shell, client);
+    const realShellListen = resolveDesktopShellListen();
+    const demoMode = cuuDemoMode();
+    const demoListener =
+      !realShellListen && demoMode !== "off"
+        ? createDesktopShellScriptedListener(createDesktopCuuDemoScript(surfaceVm, {
+            includeOfflineStatus: demoMode === "offline"
+          }))
+        : undefined;
     void bindDesktopShellCuuRuntime({
+      listen: realShellListen ?? demoListener?.listen,
       notify(notice) {
         const timeoutMs = notice.card.priority === "urgent" || notice.card.state === "asking_approval" ? 12000 : 7200;
         showNotice(root, notice.message, notice.html, timeoutMs);
+      }
+    }).then((runtime) => {
+      if (runtime.subscribed && demoListener) {
+        showNotice(root, "Cuu 事件预览已开启。", undefined, 2400);
+        demoListener.start();
       }
     });
   } catch (error) {
