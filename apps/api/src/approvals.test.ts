@@ -353,6 +353,32 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
 });
 
+test("remember always does not create a learned policy after an approval race", async () => {
+  const deps = serviceDeps();
+  const approval = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想更新文件，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+
+  await deps.approvals.respondPending(approval.id, "allow", approverId, null, now);
+
+  await assert.rejects(
+    () => deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" }),
+    (error) => error instanceof ApprovalServiceError && error.status === 409
+  );
+
+  assert.equal(deps.policyRepo.rows.length, 0);
+  assert.equal(deps.auditLogs.rows.length, 0);
+  assert.equal(deps.bus.events.length, 0);
+});
+
 test("approval decisions, delegation, and expiry are audited with identity anchors", async () => {
   const deps = serviceDeps();
   const denied = await deps.approvals.createApprovalRequest({

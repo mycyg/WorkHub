@@ -326,20 +326,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       ensureCanActOnApproval(approval, actor);
       ensureDenyReason(payload.decision, payload.reason_md);
 
-      const learnedPolicy =
-        shouldLearnAlways(approval, payload)
-          ? await deps.policies.createPermissionPolicy({
-              scopeKind: "session",
-              scopeId: approval.agentRunId ?? actor.id,
-              actionPattern: approval.actionPattern,
-              effect: "allow",
-              priority: 0,
-              learnedFromSession: true,
-              ...(actor.userId ? { createdByUserId: actor.userId } : {}),
-              orgId: actor.orgId,
-              workspaceId: actor.workspaceId
-            })
-          : undefined;
+      const shouldLearn = shouldLearnAlways(approval, payload);
 
       const updated = await deps.approvals.respondPending(
         id,
@@ -351,6 +338,20 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (!updated) {
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
+
+      const learnedPolicy = shouldLearn
+        ? await deps.policies.createPermissionPolicy({
+            scopeKind: "session",
+            scopeId: updated.agentRunId ?? actor.id,
+            actionPattern: updated.actionPattern,
+            effect: "allow",
+            priority: 0,
+            learnedFromSession: true,
+            ...(actor.userId ? { createdByUserId: actor.userId } : {}),
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId
+          })
+        : undefined;
 
       await auditApprovalAction(updated, {
         action: "approval.decided",
