@@ -9,8 +9,10 @@ import {
 } from "@workhub/contracts";
 import {
   createApprovalRequestRepository,
+  createAuditLogRepository,
   createDatabaseClient,
   createPermissionPolicyRepository,
+  type AuditLogRepository,
   type ApprovalRequestRepository,
   type ApprovalRequestRow,
   type CreateApprovalRequestInput,
@@ -69,11 +71,20 @@ export type CreateApprovalInput = {
 export type ApprovalServiceDependencies = {
   approvals: ApprovalRequestRepository;
   policies: PermissionPolicyRepository;
+  auditLogs: AuditLogRepository;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
 
 export type ApprovalService = ReturnType<typeof createApprovalService>;
+
+type AuditApprovalActor = {
+  kind: "human" | "ai" | "system";
+  label: string;
+  orgId?: string;
+  workspaceId?: string;
+  userId?: string;
+};
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
@@ -81,6 +92,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
   defaultDbClient ??= createDatabaseClient();
   return {
     approvals: createApprovalRequestRepository(defaultDbClient.db),
+    auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
   };
@@ -196,8 +208,48 @@ function expirationEventData(row: ApprovalRequestRow, nextAction: ApprovalExpira
   };
 }
 
+function actorNickname(actor: AuthActor) {
+  return actor.label;
+}
+
+function auditEntity(row: ApprovalRequestRow) {
+  if (row.workItemId) {
+    return { entityType: "work_item", entityId: row.workItemId };
+  }
+  return { entityType: "approval_request", entityId: row.id };
+}
+
 export function createApprovalService(deps: ApprovalServiceDependencies = getDefaultApprovalServiceDependencies()) {
   const now = deps.now ?? (() => new Date());
+
+  async function auditApprovalAction(
+    row: ApprovalRequestRow,
+    input: {
+      action: string;
+      actor: AuditApprovalActor;
+      detail: Record<string, unknown>;
+    }
+  ) {
+    const entity = auditEntity(row);
+    await deps.auditLogs.createAuditLog({
+      actorKind: input.actor.kind,
+      actorNickname: input.actor.label,
+      entityType: entity.entityType,
+      entityId: entity.entityId,
+      action: input.action,
+      ...(input.actor.orgId ? { orgId: input.actor.orgId } : {}),
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
+      ...(input.actor.userId ? { actorUserId: input.actor.userId } : {}),
+      detailJson: {
+        approval_id: row.id,
+        action_pattern: row.actionPattern,
+        status: row.status,
+        ...(row.agentRunId ? { agent_run_id: row.agentRunId } : {}),
+        ...(row.workItemId ? { work_item_id: row.workItemId } : {}),
+        ...input.detail
+      }
+    });
+  }
 
   async function publishAsk(row: ApprovalRequestRow, attention: AttentionItem) {
     await publishIfAvailable(deps.bus, row.routedToUserId ? topics.user(row.routedToUserId).topic : undefined, eventTypes.permissionAsk, {
@@ -300,6 +352,23 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
+      await auditApprovalAction(updated, {
+        action: "approval.decided",
+        actor: {
+          kind: "human",
+          label: actorNickname(actor),
+          orgId: actor.orgId,
+          workspaceId: actor.workspaceId,
+          ...(actor.userId ? { userId: actor.userId } : {})
+        },
+        detail: {
+          decision: payload.decision,
+          decided_by_user_id: approverId(actor),
+          ...(payload.reason_md ? { reason_preview: payload.reason_md.trim().slice(0, 160) } : {}),
+          ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {})
+        }
+      });
+
       const eventData = {
         approval_id: updated.id,
         decision: payload.decision,
@@ -329,6 +398,22 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
+      await auditApprovalAction(updated, {
+        action: "approval.delegated",
+        actor: {
+          kind: "human",
+          label: actorNickname(actor),
+          orgId: actor.orgId,
+          workspaceId: actor.workspaceId,
+          ...(actor.userId ? { userId: actor.userId } : {})
+        },
+        detail: {
+          from_user_id: previousUserId,
+          to_user_id: toUserId,
+          delegated_by_user_id: approverId(actor)
+        }
+      });
+
       const attention = toApprovalAttentionItem(toRecord(updated));
       const eventData = {
         approval_id: updated.id,
@@ -357,6 +442,15 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         }
         const nextAction = expirationAction(updated);
         const eventData = expirationEventData(updated, nextAction);
+        await auditApprovalAction(updated, {
+          action: "approval.expired",
+          actor: { kind: "system", label: "WorkHub" },
+          detail: {
+            next_action: nextAction,
+            escalated: nextAction === "escalate_pm",
+            routed_to_user_id: updated.routedToUserId
+          }
+        });
         await publishIfAvailable(
           deps.bus,
           updated.routedToUserId ? topics.user(updated.routedToUserId).topic : undefined,

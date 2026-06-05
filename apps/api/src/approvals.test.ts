@@ -8,6 +8,8 @@ import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
 import type {
+  AuditLogRepository,
+  AuditLogRow,
   ApprovalRequestRepository,
   ApprovalRequestRow,
   ClientDeviceAuthRow,
@@ -191,16 +193,60 @@ class RecordingBus {
   }
 }
 
+class MemoryAuditLogs implements AuditLogRepository {
+  public rows: AuditLogRow[] = [];
+
+  async createAuditLog(input: Parameters<AuditLogRepository["createAuditLog"]>[0]) {
+    const log: AuditLogRow = {
+      id: input.id ?? `81000000-0000-4000-8000-${String(this.rows.length + 1).padStart(12, "0")}`,
+      orgId: input.orgId ?? null,
+      workspaceId: input.workspaceId ?? null,
+      actorKind: input.actorKind,
+      actorUserId: input.actorUserId ?? null,
+      actorNickname: input.actorNickname ?? null,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: input.action,
+      detailJson: input.detailJson ?? {},
+      snapshotId: input.snapshotId ?? null,
+      undoneAt: null,
+      createdAt: now
+    };
+    this.rows.push(log);
+    return log;
+  }
+
+  async listAuditLogsForEntity(entityType: string, entityId: string) {
+    return this.rows.filter((row) => row.entityType === entityType && row.entityId === entityId);
+  }
+
+  async listAuditLogsForWorkItem(workItemId: string) {
+    return this.listAuditLogsForEntity("work_item", workItemId);
+  }
+
+  async markAuditLogUndone(id: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id) ?? null;
+    if (!row) {
+      return null;
+    }
+    row.undoneAt = at;
+    return row;
+  }
+}
+
 function serviceDeps(policies: PermissionPolicyRecord[] = []) {
   const approvals = new MemoryApprovals();
   const policyRepo = new MemoryPolicies(policies);
+  const auditLogs = new MemoryAuditLogs();
   const bus = new RecordingBus();
   return {
     approvals,
     policyRepo,
+    auditLogs,
     bus,
     service: createApprovalService({
       approvals,
+      auditLogs,
       policies: policyRepo,
       bus,
       now: () => now
@@ -305,6 +351,51 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
 
   assert.equal(deps.policyRepo.rows.length, 1);
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
+});
+
+test("approval decisions, delegation, and expiry are audited with identity anchors", async () => {
+  const deps = serviceDeps();
+  const denied = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+  await deps.service.respond(denied.id, actor, {
+    decision: "deny",
+    remember: "once",
+    reason_md: "请先确认预算附件。"
+  });
+
+  const delegated = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+  await deps.service.delegate(delegated.id, actor, "10000000-0000-4000-8000-000000000003");
+
+  const due = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId,
+    slaDueAt: new Date("2026-06-04T23:59:00.000Z")
+  });
+  await deps.service.expireDueApprovals();
+
+  const actions = deps.auditLogs.rows.map((log) => log.action);
+  assert.deepEqual(actions, ["approval.decided", "approval.delegated", "approval.expired"]);
+  assert.equal(deps.auditLogs.rows[0]?.actorUserId, approverId);
+  assert.equal(deps.auditLogs.rows[0]?.entityType, "work_item");
+  assert.equal(deps.auditLogs.rows[0]?.entityId, denied.workItemId);
+  assert.equal(deps.auditLogs.rows[0]?.detailJson["approval_id"], denied.id);
+  assert.equal(deps.auditLogs.rows[0]?.detailJson["decision"], "deny");
+  assert.equal(deps.auditLogs.rows[0]?.detailJson["decided_by_user_id"], approverId);
+  assert.match(String(deps.auditLogs.rows[0]?.detailJson["reason_preview"]), /预算附件/);
+  assert.equal(deps.auditLogs.rows[1]?.actorUserId, approverId);
+  assert.equal(deps.auditLogs.rows[1]?.detailJson["to_user_id"], "10000000-0000-4000-8000-000000000003");
+  assert.equal(deps.auditLogs.rows[2]?.actorKind, "system");
+  assert.equal(deps.auditLogs.rows[2]?.actorUserId, null);
+  assert.equal(deps.auditLogs.rows[2]?.detailJson["approval_id"], due.id);
+  assert.equal(deps.auditLogs.rows[2]?.detailJson["next_action"], "escalate_pm");
 });
 
 test("SLA expiry never auto-allows approvals and emits private expiration events", async () => {
