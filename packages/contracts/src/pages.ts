@@ -15,7 +15,10 @@ import {
   costSummaryVmSchema,
   cuuStateSchema,
   deliverableChangeManifestSchema,
-  evidenceRefSchema
+  evidenceBubbleSchema,
+  evidenceRefSchema,
+  questionCardSchema,
+  workHubEventSchema
 } from "./experience.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
 
@@ -121,3 +124,27 @@ export const costDashboardVmSchema = z.object({
   by_user: z.array(z.unknown()).optional()
 });
 export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
+
+export const goldPathSurfaceVmSchema = z.object({
+  fixture_id: z.literal("weekly_report_manifest_doc"),
+  routes: z.object({
+    home: z.string().min(1),
+    intake: z.string().min(1),
+    workitem: z.string().min(1),
+    proposal: z.string().min(1),
+    replay: z.string().min(1),
+    cost: z.string().min(1)
+  }),
+  page_vms: z.object({
+    attention: attentionHomeVmSchema,
+    question: questionCardSchema,
+    evidence: evidenceBubbleSchema,
+    workitem: workItemDetailVmSchema,
+    proposal: proposalDetailVmSchema,
+    replay: replayTraceVmSchema,
+    cost: costDashboardVmSchema
+  }),
+  events: z.array(workHubEventSchema(z.unknown())),
+  cuu_states: z.array(cuuStateSchema)
+});
+export type GoldPathSurfaceVM = z.infer<typeof goldPathSurfaceVmSchema>;

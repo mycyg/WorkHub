@@ -14,6 +14,10 @@ import {
   type AgentRunQueue
 } from "../workers/agent-runner.js";
 import { buildReplayTracePage } from "../pages/replay.js";
+import {
+  getP05GoldPathFixture,
+  isP05AgentRunId
+} from "../pages/gold-path.js";
 
 const startAgentRunSchema = z.object({
   mode: z.enum(["worker", "pm"]).optional(),
@@ -90,6 +94,9 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
 
   routes.get("/agent-runs/:id/replay", createCurrentUserMiddleware(authSource), async (c) => {
     const run = await queue.get(c.req.param("id"));
+    if (!run && isP05AgentRunId(c.req.param("id"))) {
+      return c.json({ ok: true, data: getP05GoldPathFixture().replay });
+    }
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }

@@ -2,8 +2,14 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  EvidenceBubble,
+  GoldPathSurfaceVM,
   NotificationList,
-  RespondApprovalRequest
+  ProposalDetailVM,
+  QuestionCard,
+  ReplayTraceVM,
+  RespondApprovalRequest,
+  WorkItemDetailVM
 } from "@workhub/contracts";
 
 export type ApiOk<T> = {
@@ -65,6 +71,9 @@ export type PageClient = {
   attention: () => Promise<AttentionHomeVM>;
   approvals: () => Promise<ApprovalCenterVM>;
   cost: () => Promise<CostDashboardVM>;
+  goldPath: () => Promise<GoldPathSurfaceVM>;
+  workItem: (id: string) => Promise<WorkItemDetailVM>;
+  proposal: (id: string) => Promise<ProposalDetailVM>;
 };
 
 export type WorkHubApiClient = {
@@ -74,6 +83,9 @@ export type WorkHubApiClient = {
   me: () => Promise<IdentityResponse | null>;
   notifications: () => Promise<NotificationList>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  nextQuestion: (sessionId: string) => Promise<QuestionCard>;
+  searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
+  replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streamUrl: (path: string) => string;
   request: <T>(path: string, init?: RequestInit) => Promise<T>;

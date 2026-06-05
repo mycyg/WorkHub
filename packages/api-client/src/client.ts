@@ -136,10 +136,23 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    nextQuestion: (sessionId) =>
+      request(`/api/sessions/${sessionId}/next-question`, {
+        method: "POST"
+      }),
+    searchKnowledge: (payload = {}) =>
+      request("/api/knowledge/search", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    replayAgentRun: (runId) => request(`/api/agent-runs/${runId}/replay`),
     pages: {
       attention: () => request("/api/pages/attention"),
       approvals: () => request("/api/pages/approvals"),
-      cost: () => request("/api/pages/cost")
+      cost: () => request("/api/pages/cost"),
+      goldPath: () => request("/api/pages/gold-path"),
+      workItem: (id) => request(`/api/pages/workitems/${id}`),
+      proposal: (id) => request(`/api/pages/proposals/${id}`)
     }
   };
 }

@@ -13,6 +13,8 @@ import { createPushRoutes } from "./routes/push.js";
 import { createNotificationRoutes } from "./routes/notifications.js";
 import { createAuditRoutes } from "./routes/audit.js";
 import { createPageRoutes } from "./routes/pages.js";
+import { createSessionRoutes } from "./routes/sessions.js";
+import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 
@@ -48,6 +50,8 @@ app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
 app.route("/api/notifications", createNotificationRoutes());
 app.route("/api", createAuditRoutes());
+app.route("/api", createSessionRoutes());
+app.route("/api/knowledge", createKnowledgeRoutes());
 app.route("/api/pages", createPageRoutes());
 
 app.onError((error, c) => {

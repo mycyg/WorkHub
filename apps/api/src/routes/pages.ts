@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 import { settings } from "@workhub/config";
 
@@ -10,6 +11,12 @@ import {
 } from "../middleware/auth.js";
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
+import {
+  buildP05GoldPathSurfacePage,
+  getP05GoldPathFixture,
+  isP05ProposalId,
+  isP05WorkItemId
+} from "../pages/gold-path.js";
 import {
   createApprovalService,
   type ApprovalService
@@ -36,9 +43,27 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json({ ok: true, data: buildAttentionHomePage({ backgroundRuns: activeRuns }) });
   });
 
+  routes.get("/gold-path", createCurrentUserMiddleware(authSource), (c) => {
+    return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
+  });
+
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
     const data = await approvals.listPendingForUser(c.var.currentUser);
     return c.json({ ok: true, data });
+  });
+
+  routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), (c) => {
+    if (!isP05WorkItemId(c.req.param("id"))) {
+      throw new HTTPException(404, { message: "没有找到这个事项页面。" });
+    }
+    return c.json({ ok: true, data: getP05GoldPathFixture().workItemDetail });
+  });
+
+  routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), (c) => {
+    if (!isP05ProposalId(c.req.param("id"))) {
+      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+    }
+    return c.json({ ok: true, data: getP05GoldPathFixture().proposalDetail });
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {

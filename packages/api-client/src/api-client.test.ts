@@ -45,6 +45,35 @@ test("api client converts error envelopes to WorkHubApiError", async () => {
   );
 });
 
+test("api client exposes P0.5 gold path page and replay endpoints", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${input}`);
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.pages.goldPath();
+  await client.pages.workItem("work-1");
+  await client.pages.proposal("proposal-1");
+  await client.nextQuestion("session-1");
+  await client.searchKnowledge({ q: "weekly" });
+  await client.replayAgentRun("run-1");
+
+  assert.deepEqual(calls, [
+    "GET /api/pages/gold-path",
+    "GET /api/pages/workitems/work-1",
+    "GET /api/pages/proposals/proposal-1",
+    "POST /api/sessions/session-1/next-question",
+    "POST /api/knowledge/search",
+    "GET /api/agent-runs/run-1/replay"
+  ]);
+});
+
 test("SSE parser keeps event names and parses JSON payloads", () => {
   const events = parseWorkHubSse<{ topic: string }>('event: connected\ndata: {"topic":"user:1"}\n\n: ping\n\n');
   assert.equal(events.length, 1);

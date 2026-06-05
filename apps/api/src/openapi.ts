@@ -18,6 +18,24 @@ export function getOpenApiDocument() {
           summary: "AI-first attention home page"
         }
       },
+      "/api/pages/gold-path": {
+        get: {
+          tags: ["pages"],
+          summary: "P0.5 gold path page VM bundle"
+        }
+      },
+      "/api/pages/workitems/{id}": {
+        get: {
+          tags: ["pages"],
+          summary: "Work item detail page VM"
+        }
+      },
+      "/api/pages/proposals/{id}": {
+        get: {
+          tags: ["pages"],
+          summary: "Proposal detail page VM"
+        }
+      },
       "/api/pages/approvals": {
         get: {
           tags: ["pages"],
@@ -34,6 +52,24 @@ export function getOpenApiDocument() {
         post: {
           tags: ["agent-runs"],
           summary: "Start an AI worker run for a work item"
+        }
+      },
+      "/api/sessions": {
+        post: {
+          tags: ["sessions"],
+          summary: "Create a P0.5 intake session"
+        }
+      },
+      "/api/sessions/{id}/next-question": {
+        post: {
+          tags: ["sessions"],
+          summary: "Return an option-first clarification card"
+        }
+      },
+      "/api/knowledge/search": {
+        post: {
+          tags: ["knowledge"],
+          summary: "Search project knowledge and return an evidence bubble"
         }
       },
       "/api/agent-runs/{id}/replay": {
