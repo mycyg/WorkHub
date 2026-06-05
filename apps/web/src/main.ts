@@ -1,6 +1,7 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderProposalDetail } from "@workhub/ui/proposal";
 
 export const webSurface = {
   name: "C-WEB",
@@ -30,4 +31,12 @@ export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient) 
 
 export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApiClient) {
   return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web");
+}
+
+export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
+  return client.pages.proposal(proposalId);
+}
+
+export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
+  return renderProposalDetail(await loadWebProposalDetail(client, proposalId), "web");
 }

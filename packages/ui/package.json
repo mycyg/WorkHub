@@ -11,6 +11,10 @@
     "./gold-path": {
       "types": "./src/gold-path/index.ts",
       "import": "./src/gold-path/index.ts"
+    },
+    "./proposal": {
+      "types": "./src/proposal/index.ts",
+      "import": "./src/proposal/index.ts"
     }
   },
   "scripts": {

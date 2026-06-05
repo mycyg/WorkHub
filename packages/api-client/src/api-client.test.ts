@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { deliverableManifestFixtures } from "@workhub/contracts";
+
 import { createApiClient, joinApiUrl, parseWorkHubSse, WorkHubApiError } from "./index.js";
 
 test("joinApiUrl preserves relative mode and absolute daemon base URLs", () => {
@@ -60,6 +62,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.goldPath();
   await client.pages.workItem("work-1");
   await client.pages.proposal("proposal-1");
+  await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
+  await client.listWorkItemProposals("work-1");
+  await client.getProposal("proposal-1");
   await client.nextQuestion("session-1");
   await client.searchKnowledge({ q: "weekly" });
   await client.costUsage();
@@ -71,6 +76,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/gold-path",
     "GET /api/pages/workitems/work-1",
     "GET /api/pages/proposals/proposal-1",
+    "POST /api/workitems/work-1/proposals",
+    "GET /api/workitems/work-1/proposals",
+    "GET /api/proposals/proposal-1",
     "POST /api/sessions/session-1/next-question",
     "POST /api/knowledge/search",
     "GET /api/cost/usage",

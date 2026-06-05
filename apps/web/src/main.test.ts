@@ -4,7 +4,12 @@ import test from "node:test";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { GoldPathSurfaceVM } from "@workhub/contracts";
 
-import { loadWebGoldPathSurface, renderWebGoldPathSurface, webSurface } from "./main.js";
+import {
+  loadWebGoldPathSurface,
+  renderWebGoldPathSurface,
+  renderWebProposalDetail,
+  webSurface
+} from "./main.js";
 
 function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
   return {
@@ -24,6 +29,15 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
       throw new Error("not needed");
     },
     async respondApproval() {
+      throw new Error("not needed");
+    },
+    async createProposalFromManifest() {
+      throw new Error("not needed");
+    },
+    async listWorkItemProposals() {
+      throw new Error("not needed");
+    },
+    async getProposal() {
       throw new Error("not needed");
     },
     async reviewProposal() {
@@ -61,7 +75,7 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
         throw new Error("not needed");
       },
       async proposal() {
-        throw new Error("not needed");
+        return surface.page_vms.proposal;
       }
     },
     streamUrl: (path) => path,
@@ -158,31 +172,44 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
         evidence_refs: []
       },
       proposal: {
+        proposal_id: "proposal",
+        work_item_id: "work",
         title: "周报草稿变更申请",
+        status: "opened",
         manifest: {
+          version: 0,
+          work_item_id: "work",
+          title: "周报草稿变更申请",
           summary_md: "新增一份周报草稿。",
-          risk: { human_label: "低风险" },
-          rollback: { description: "删除生成草稿即可回滚。" },
+          author: { actor_kind: "ai", label: "Cuu" },
+          base: {},
+          risk: { level: "low", human_label: "低风险", reversible: true },
+          rollback: { available: true, description: "删除生成草稿即可回滚。" },
           evidence_refs: [],
+          review: { reason_required_on_reject: true },
           changes: [
             {
+              id: "change",
               human_summary: "新增 weekly-report.md",
-              target_kind: "file",
-              target_ref: { path: "docs/weekly-report.md" }
+              target_kind: "text_doc",
+              change_type: "generated",
+              target_ref: { entity_type: "drive_item", path: "docs/weekly-report.md" }
             }
           ],
-          checks: [{ label: "范围检查", status: "pass", detail: "仅文件改动。" }]
+          checks: [{ id: "scope", label: "范围检查", status: "passed", detail: "仅文件改动。" }]
         },
         review_actions: {
-          approve: { id: "approve", label: "批准", href: "/approvals/approve" },
+          approve: { id: "approve", label: "批准", method: "POST", href: "/approvals/approve" },
           request_changes: {
             id: "changes",
             label: "要求修改",
+            method: "POST",
             href: "/approvals/changes",
             requires_reason: true
           }
         },
-        evidence_refs: []
+        evidence_refs: [],
+        comments: []
       },
       replay: {
         run: { handoff_md: "Cuu 完成了草稿生成。" },
@@ -239,4 +266,6 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal(webSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface))).surface, "web");
+  assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
+  assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
 });

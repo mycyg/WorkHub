@@ -3,9 +3,11 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   CostSummaryVM,
+  CreateProposalFromManifestRequest,
   EvidenceBubble,
   GoldPathSurfaceVM,
   NotificationList,
+  Proposal,
   ProposalDetailVM,
   ProposalMergeResult,
   ProposalReviewResult,
@@ -88,6 +90,9 @@ export type WorkHubApiClient = {
   me: () => Promise<IdentityResponse | null>;
   notifications: () => Promise<NotificationList>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
+  listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
+  getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string) => Promise<QuestionCard>;

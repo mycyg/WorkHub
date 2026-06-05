@@ -136,6 +136,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    createProposalFromManifest: (workItemId, payload) =>
+      request(`/api/workitems/${workItemId}/proposals`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    listWorkItemProposals: (workItemId) => request(`/api/workitems/${workItemId}/proposals`),
+    getProposal: (id) => request(`/api/proposals/${id}`),
     reviewProposal: (id, payload) =>
       request(`/api/proposals/${id}/review`, {
         method: "POST",

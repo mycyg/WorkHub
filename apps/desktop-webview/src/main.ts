@@ -1,6 +1,7 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderProposalDetail } from "@workhub/ui/proposal";
 
 export const desktopWebviewSurface = {
   name: "C-PET webview",
@@ -36,4 +37,12 @@ export function loadDesktopGoldPathSurface(client: WorkHubApiClient) {
 
 export async function renderDesktopGoldPathSurface(client: WorkHubApiClient) {
   return renderGoldPathSurface(await loadDesktopGoldPathSurface(client), "desktop");
+}
+
+export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
+  return client.pages.proposal(proposalId);
+}
+
+export async function renderDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
+  return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId), "desktop");
 }
