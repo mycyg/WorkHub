@@ -53,6 +53,12 @@ const requiredPaths = [
   "packages/tools/src/registry.ts",
   "packages/tools/src/sandbox.ts",
   "packages/tools/src/file-tools.ts",
+  "packages/audit/src/types.ts",
+  "packages/audit/src/file-snapshot.ts",
+  "packages/audit/src/policy.ts",
+  "packages/audit/src/manifest-facts.ts",
+  "packages/audit/src/snapshot-service.ts",
+  "packages/audit/src/index.ts",
   "packages/cost/src/types.ts",
   "packages/cost/src/usage-sink.ts",
   "packages/cost/src/ledger.ts",
@@ -60,6 +66,7 @@ const requiredPaths = [
   "packages/db/src/repositories/approval-requests.ts",
   "packages/db/src/repositories/permission-policies.ts",
   "packages/db/src/repositories/notifications.ts",
+  "packages/db/src/repositories/audit.ts",
   "packages/db/drizzle.config.ts",
   "apps/api/src/middleware/auth.ts",
   "apps/api/src/routes/auth.ts",
@@ -77,7 +84,11 @@ const requiredPaths = [
   "apps/api/src/services/notifications.ts",
   "apps/api/src/routes/notifications.ts",
   "apps/api/src/routes/agent-runs.ts",
+  "apps/api/src/routes/audit.ts",
+  "apps/api/src/pages/replay.ts",
   "apps/api/src/workers/agent-runner.ts",
+  "packages/contracts/src/audit.ts",
+  "packages/contracts/src/replay.ts",
   "scripts/dev/check-portable-config.ts"
 ];
 

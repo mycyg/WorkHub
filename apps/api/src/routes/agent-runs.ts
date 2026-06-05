@@ -13,6 +13,7 @@ import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
 } from "../workers/agent-runner.js";
+import { buildReplayTracePage } from "../pages/replay.js";
 
 const startAgentRunSchema = z.object({
   mode: z.enum(["worker", "pm"]).optional(),
@@ -92,23 +93,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    return c.json({
-      ok: true,
-      data: {
-        run,
-        steps: run.trace,
-        evidence_refs: [],
-        snapshots: [],
-        cost: {
-          me: {
-            total_tokens: run.usage.token_in + run.usage.token_out,
-            estimated_cost_cny: run.usage.estimated_cost_cny,
-            warning_ratio: 0
-          },
-          active_notices: []
-        }
-      }
-    });
+    return c.json({ ok: true, data: buildReplayTracePage({ run }) });
   });
 
   return routes;

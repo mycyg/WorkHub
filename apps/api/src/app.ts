@@ -10,6 +10,7 @@ import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
 import { createNotificationRoutes } from "./routes/notifications.js";
+import { createAuditRoutes } from "./routes/audit.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 
@@ -41,6 +42,7 @@ app.route("/api/approvals", createApprovalRoutes());
 app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
 app.route("/api/notifications", createNotificationRoutes());
+app.route("/api", createAuditRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {

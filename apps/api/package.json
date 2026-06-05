@@ -15,6 +15,7 @@
     "@hono/node-server": "^1.14.4",
     "@workhub/config": "workspace:*",
     "@workhub/contracts": "workspace:*",
+    "@workhub/audit": "workspace:*",
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",
     "@workhub/permissions": "workspace:*",

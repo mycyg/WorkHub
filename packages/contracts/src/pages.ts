@@ -6,6 +6,7 @@ import {
   snapshotSchema,
   structuredHandoffSchema
 } from "./domain/agent.js";
+import { auditLogFactSchema, manifestFactsSchema } from "./audit.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
 import {
@@ -85,6 +86,8 @@ export const replayTraceVmSchema = z.object({
   steps: z.array(agentStepSchema),
   evidence_refs: z.array(evidenceRefSchema),
   snapshots: z.array(snapshotSchema),
+  audit_logs: z.array(auditLogFactSchema).optional(),
+  manifest_facts: manifestFactsSchema.optional(),
   cost: costSummaryVmSchema.optional()
 });
 export type ReplayTraceVM = z.infer<typeof replayTraceVmSchema>;

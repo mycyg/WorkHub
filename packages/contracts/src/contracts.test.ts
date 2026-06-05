@@ -8,6 +8,7 @@ import {
   createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
+  replayTracePageVmSchema,
   respondApprovalRequestSchema,
   deliverableChangeManifestSchema,
   deliverableManifestFixtures,
@@ -57,6 +58,60 @@ test("agent trace VM carries F08 replay and structured handoff fields", () => {
   });
 
   assert.equal(parsed.handoff?.budget_hit, "doom_loop");
+});
+
+test("replay pages carry F10 audit facts and rollback state", () => {
+  const parsed = replayTracePageVmSchema.parse({
+    run: {
+      id: "71000000-0000-4000-8000-000000000001",
+      work_item_id: "71000000-0000-4000-8000-000000000002",
+      mode: "worker",
+      actor: "ai-worker",
+      status: "succeeded",
+      model: "deepseek-v4-flash",
+      turns_used: 2,
+      max_turns: 15,
+      token_in: 20,
+      token_out: 30,
+      created_at: "2026-06-05T00:00:00.000Z",
+      updated_at: "2026-06-05T00:00:00.000Z"
+    },
+    steps: [],
+    evidence_refs: [],
+    snapshots: [
+      {
+        id: "71000000-0000-4000-8000-000000000003",
+        work_item_id: "71000000-0000-4000-8000-000000000002",
+        kind: "pre_step",
+        ref: "snapshots/71000000-0000-4000-8000-000000000003",
+        created_by_kind: "ai",
+        created_at: "2026-06-05T00:00:00.000Z"
+      }
+    ],
+    audit_logs: [
+      {
+        id: "71000000-0000-4000-8000-000000000004",
+        actor: { actor_kind: "ai" },
+        entity: { entity_type: "work_item", entity_id: "71000000-0000-4000-8000-000000000002" },
+        action: "tool.write_file",
+        detail_json: {},
+        snapshot_id: "71000000-0000-4000-8000-000000000003",
+        created_at: "2026-06-05T00:00:00.000Z"
+      }
+    ],
+    manifest_facts: {
+      checks: { snapshot_exists: "passed", revert_available: "passed" },
+      rollback: {
+        available: true,
+        snapshot_id: "71000000-0000-4000-8000-000000000003",
+        description: "可以还原到本次改动前。"
+      },
+      risk: { reversible: true, irreversible_reasons: [] },
+      evidence_refs: [{ source_type: "audit_log", source_id: "71000000-0000-4000-8000-000000000004", title: "tool.write_file audit" }]
+    }
+  });
+
+  assert.equal(parsed.manifest_facts?.rollback.available, true);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

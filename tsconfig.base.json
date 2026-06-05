@@ -9,6 +9,7 @@
       "@workhub/config": ["packages/config/src/index.ts"],
       "@workhub/contracts": ["packages/contracts/src/index.ts"],
       "@workhub/cost": ["packages/cost/src/index.ts"],
+      "@workhub/audit": ["packages/audit/src/index.ts"],
       "@workhub/agent": ["packages/agent/src/index.ts"],
       "@workhub/agent/loop": ["packages/agent/src/loop/index.ts"],
       "@workhub/agent/providers": ["packages/agent/src/providers/index.ts"],

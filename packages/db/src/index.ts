@@ -11,3 +11,4 @@ export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";
 export * from "./repositories/permission-policies.js";
 export * from "./repositories/notifications.js";
+export * from "./repositories/audit.js";
