@@ -36,7 +36,7 @@ depends:
 | F04 Auth/identity | `app/auth.py` | `apps/api/src/middleware/auth.ts`, `packages/contracts/src/auth.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token middleware | token-beats-cookie 行为回归 |
 | F05 Event broker | `push_bus.py`, `push.py`, `presence.py` | `packages/events`, `apps/api/src/sse`, `apps/api/src/broker`, `packages/contracts/src/events.ts` | WorkHubEvent helper, Redis pub/sub, SSE writer | 不手写事件名;订阅边界鉴权 |
 | F06 Permission | `permissions.py` | `packages/permissions`, `apps/api/src/services/approvals.ts`, `packages/contracts/src/approval.ts` | policy evaluator, ApprovalRequest, AttentionItem UI slice | admin 读/写/设备不对称回归 |
-| F07 Provider registry | 7 处 `AsyncAnthropic` | `packages/agent/src/providers`, `packages/config/src/providers.ts` | provider registry, usage sink | grep 无裸 SDK client in services/tools |
+| F07 Provider registry | 7 处 `AsyncAnthropic` | `packages/agent/src/providers`, `packages/config/src/providers.ts`, `packages/cost` | provider registry, usage sink, BudgetDecision 输入 | grep 无裸 SDK client in services/tools |
 | F08 Agent engine | `auto_agent.py`, `auto.py`, `llm_review` | `packages/agent`, `packages/tools`, `apps/api/src/workers/agent-runner.ts` | AgentLoop, ToolRegistry, AgentRun queue, replay trace | side-effect gate; AgentStep persisted |
 | F09 Lifecycle/notifications | `lifecycle.py`, `notifications.py` | `packages/events/src/lifecycle.ts`, `apps/api/src/services/notifications.ts` | milestones, notification routing | 新状态必须登记,不发 `all` 私有内容 |
 | F10 Audit/snapshot | `ActivityLog`, drive undo | `packages/audit`, `packages/db/src/schema/audit.ts`, `packages/contracts/src/replay.ts` | AuditLog, Snapshot, manifest facts | 快照失败 fail-closed |
@@ -51,9 +51,9 @@ depends:
 必须包含:
 
 - domain DTO: `User`, `Project`, `WorkItem`, `AgentRun`, `Proposal`, `ApprovalRequest`
-- UX DTO: `AttentionItem`, `QuestionCard`, `EvidenceRef`, `EvidenceBubble`, `DeliverableChangeManifest`
+- UX DTO: `AttentionItem`, `QuestionCard`, `EvidenceRef`, `EvidenceBubble`, `DeliverableChangeManifest`, `BudgetNotice`
 - event DTO: `WorkHubEvent<T>`, `eventTypes`
-- page VM: `AttentionHomeVM`, `WorkItemDetailVM`, `ProposalDetailVM`, `ApprovalCenterVM`, `ReplayTraceVM`
+- page VM: `AttentionHomeVM`, `WorkItemDetailVM`, `ProposalDetailVM`, `ApprovalCenterVM`, `ReplayTraceVM`, `CostSummaryVM`, `CostDashboardVM`
 - action DTO: `ActionSpec`, `ReviewAction`, `ConflictChoice`
 
 禁止:
@@ -106,6 +106,22 @@ depends:
 - tool 直接绕过 permission/snapshot gate
 - LLM 输出绕过 schema parse
 
+### 3.5 `packages/cost`
+
+必须包含:
+
+- `BudgetPolicy`, `BudgetScope`, `BudgetUsage`, `BudgetDecision`
+- `UsageRecord`, `CostLedgerEntry`, `CostSummaryVM`, `BudgetNotice`, `CostDashboardVM`
+- `decideRunBudget(actor, workItem, risk)` 裁决入口
+- provider registry 的 usage sink;每次真实模型调用必须进入账本
+- `budget_exhausted` ApiErr helper 与 `budget.warning` / `budget.exhausted` event builder
+
+禁止:
+
+- AgentLoop 自行硬编码 `max_cost` 或三级配额
+- Dashboard 直接从 provider usage 临时聚合全员成本
+- eval/nightly 成本混入用户或团队配额
+
 ---
 
 ## 4. PR 检查清单
@@ -118,6 +134,7 @@ depends:
 - [ ] 新/改 DTO 是否在 `packages/contracts`?
 - [ ] 新/改 DB schema 是否在 `packages/db`?
 - [ ] 新/改事件是否在 `packages/events`?
+- [ ] 新/改成本口径是否在 `packages/cost`?
 - [ ] Web/Tauri/Cuu 是否消费同一类型?
 - [ ] 是否需要 Gold Path fixture?
 - [ ] 是否需要 Eval/Replay fixture?

@@ -268,3 +268,18 @@ F10 为 `_experience-deliverable-contracts.md` §3 的 `DeliverableChangeManifes
 - **F9 生命周期/通知**:状态变更审计(`action='status_change'`)与 F9 的 `_MILESTONES` 通知共享 queue-in-tx/flush-post-commit 范式(P-4);新状态(`escalated/pm_mode/in_review/merged`)的审计行由 F10 落,通知由 F9 发。
 - **F11 daemon 拆分 / 客户端**:审计/revert API(`GET /api/workitems/{id}/audit`、`POST /api/agent-runs/{run_id}/revert`)随 F11 OpenAPI-first 暴露;drive undo 端点兼容由 F11 客户端消费。
 - **P3 branch-proposal-merge**:已合并改动的回滚走 Proposal 反向流程,以 F10 的 `Snapshot.merge` 快照(`merge_snapshot_id`)为锚点(Out,但 P0 预留字段)。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `ActivityLog`、drive undo 与 operation log 是 behavior source;新实现落审计/快照 package 与 DB schema。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| audit package | `packages/audit/src/*` | `AuditLogService`, `SnapshotService`, revert helpers | 快照失败 fail-closed |
+| DB schema | `packages/db/src/schema/audit.ts`, `packages/db/src/repositories/audit.ts` | `audit_logs`, `snapshots`, snapshot refs | 同事务写入 |
+| contracts | `packages/contracts/src/audit.ts`, `packages/contracts/src/replay.ts` | `AuditLogVM`, `SnapshotRef`, `ReplayTraceVM` facts | raw log 默认脱敏 |
+| API/page | `apps/api/src/routes/audit.ts`, `apps/api/src/pages/replay.ts` | audit/revert/replay endpoints | revert 行锁/幂等 |
+
+**PR 必答**:列出 side-effect 工具的 `requires_snapshot` 策略;不可逆写若 F06 未就位必须硬拒绝,不得降级成仅告警。

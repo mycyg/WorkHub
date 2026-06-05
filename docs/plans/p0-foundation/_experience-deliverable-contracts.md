@@ -8,7 +8,7 @@ depends: [F02, F05, F06, F08, F10, F11]
 
 # P0 体验与交付物契约
 
-> 本文是 P0 的横切补充契约:不施工 Web 完整页面、不施工 Cuu 桌宠、不施工完整协作合并,但先把后续不可返工的 **数据结构 / 事件名 / 客户端最小 payload / 验收红线** 定住。  
+> 本文是 P0 的横切补充契约:不施工 Web 完整页面、不施工 Cuu 桌宠、不施工完整协作合并,但先把后续不可返工的 **数据结构 / 事件名 / 客户端最小 payload / 验收红线** 定住。
 > 目的只有一个:后续施工可以推迟 UI,但不能再长回重看板、聊天墙、代码 PR 心智或冷冰冰的符号化桌宠。
 
 上游体验基线:
@@ -352,6 +352,9 @@ P0 代码实现必须使用下表 **正式名**。概念图/旧文档中的别�
 | `knowledge.evidence.ready` | same | `session:{id}`, `user:{id}` | Cuu evidence bubble |
 | `sync.progress` | same | `workitem:{id}` or `user:{id}` | Rust sync |
 | `sync.conflict` | `conflict.detected` for sync | `workitem:{id}`, `user:{id}` | Rust conflict UI, Cuu worried |
+| `usage.recorded` | cost usage event | `run:{id}` | Replay footer, cost reconcile |
+| `budget.warning` | cost warning | `user:{id}` | Web attention banner, Cuu light bubble |
+| `budget.exhausted` | cost hard stop | `user:{id}` | Agent handoff, Cuu approval/pause card |
 | `notification.created` | same | `user:{id}` | Web toast, Rust OS notify |
 
 ### 4.2 Event Envelope
@@ -378,6 +381,29 @@ type WorkHubEvent<T> = {
   cuu_state?: CuuState;
   attention?: AttentionItem;
   data: T;
+};
+```
+
+成本治理 payload 统一来自 P-COST:
+
+```ts
+type BudgetNotice = {
+  severity: "info" | "warning" | "critical";
+  message: string;
+  scope: {
+    kind: "workitem" | "user" | "team" | "eval";
+    id?: string;
+  };
+  action_href?: string;
+};
+
+type CostSummaryVM = {
+  me: {
+    total_tokens: number;
+    estimated_cost_cny: string;
+    warning_ratio: number;
+  };
+  active_notices: BudgetNotice[];
 };
 ```
 
@@ -412,6 +438,8 @@ type CuuState =
 | `permission.ask` | `asking_approval` | 审批卡 |
 | `proposal.opened` | `carrying_document` | 交付物变更申请 |
 | `knowledge.evidence.ready` | `searching_evidence` | 证据气泡 |
+| `budget.warning` | `worried` | 预算轻提示 |
+| `budget.exhausted` | `asking_approval` | 暂停/降级/找管理员选项 |
 | `sync.progress` | `syncing_files` | 同步队列 |
 | `sync.conflict`, `agent_run.escalated`, `agent_run.failed` | `worried` | 冲突/升级卡 |
 | `proposal.reviewed` with reject | `revision_requested` | 打回理由 |
@@ -505,6 +533,7 @@ P0 不交付完整 Cuu,但必须做到:
 | F08 Agent 引擎 | 生成 manifest 草案;side-effect 分级;正式事件名;Cuu state hint |
 | F09 通知 | `AttentionItem` 可由 notification/escalation 映射;文案人话 |
 | F10 审计快照 | manifest 中 rollback/snapshot/checks 的真相源 |
+| P-COST 成本治理 | `BudgetNotice` / `CostSummaryVM` / `usage.recorded` 的真相源;AgentLoop 只消费 `BudgetDecision` |
 | F11 客户端改接 | OpenAPI generated types 覆盖 payload;Web/Tauri 能力差异;SSE hook 消费正式事件 |
 
 ---
@@ -514,11 +543,12 @@ P0 不交付完整 Cuu,但必须做到:
 1. **选项式澄清契约**:`QuestionCard` 类型出现在 OpenAPI schema 或 shared TS 类型中;澄清主路径不只返回纯文本。
 2. **证据气泡契约**:`EvidenceRef` 可被知识检索、Proposal、升级理由复用;无证据时有 `missing_evidence_note`。
 3. **交付物变更契约**:至少 5 类非代码交付物 fixture 生成 `DeliverableChangeManifest`。
-4. **事件命名契约**:新代码中正式事件名来自集中常量;grep 不新增 `agent.run.started` / `proposal.ready` 等旧名实现。
-5. **Cuu state 契约**:`permission.ask` / `proposal.opened` / `knowledge.evidence.ready` / `sync.conflict` 至少四类事件能映射到 `CuuState`。
-6. **红线契约**:F10 未就位时 side-effect 工具硬拒绝;F10 就位后快照失败拒绝副作用。
-7. **端侧边界**:generated client / action payload 能标记 `requires_desktop`;Web 不渲染本地高权限执行按钮。
-8. **去黑话**:用户可见 payload 有 `title` / `summary_text` / `human_label`,不要求客户端直接展示内部 enum。
+4. **成本治理契约**:`BudgetNotice` / `CostSummaryVM` 出现在 shared TS 或 OpenAPI schema;`budget_exhausted` 统一走 `ApiErr.code`。
+5. **事件命名契约**:新代码中正式事件名来自集中常量;grep 不新增 `agent.run.started` / `proposal.ready` 等旧名实现。
+6. **Cuu state 契约**:`permission.ask` / `proposal.opened` / `knowledge.evidence.ready` / `budget.exhausted` / `sync.conflict` 至少五类事件能映射到 `CuuState`。
+7. **红线契约**:F10 未就位时 side-effect 工具硬拒绝;F10 就位后快照失败拒绝副作用。
+8. **端侧边界**:generated client / action payload 能标记 `requires_desktop`;Web 不渲染本地高权限执行按钮。
+9. **去黑话**:用户可见 payload 有 `title` / `summary_text` / `human_label`,不要求客户端直接展示内部 enum。
 
 ---
 

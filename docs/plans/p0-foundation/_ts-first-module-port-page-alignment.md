@@ -144,6 +144,7 @@ workers/
 | `permissions` | `POST /api/permissions/ask` | `routes/permissions.ts` | `ApprovalRequest`, `AttentionItem` |
 | `approvals` | `GET /api/approvals` | `routes/approvals.ts` | `ApprovalCenterVM` |
 | `proposals` | `GET /api/proposals/:id` | `routes/proposals.ts` | `DeliverableChangeManifest` |
+| `cost` | `GET /api/cost/usage` | `routes/cost.ts` | `BudgetUsage`, `CostSummaryVM`, `BudgetNotice` |
 | `knowledge` | `POST /api/knowledge/search` | `routes/knowledge.ts` | `EvidenceRef`, `EvidenceBubble` |
 | `drive` | `GET /api/drive/items` | `routes/drive.ts` | `DriveItem`, `DeliverableTarget` |
 | `meetings` | `GET /api/meetings/:id` | `routes/meetings.ts` | `EvidenceRef`, insight draft |
@@ -198,6 +199,8 @@ AI-native 产品不应该让前端拼十几个接口才知道「现在要处理�
 | 会议洞察转草稿 | `POST /api/meetings/:id/insights/:id/draft` | `QuestionCard` or `WorkItemDraftVM` | `source_evidence`, `suggested_options` | thinking / asking |
 | 同步冲突解决 | `GET /api/pages/sync/conflicts` | `SyncConflictResolverVM` | `conflicts`, `choices`, `recommended_choice` | worried |
 | Agent 实时轨迹 | `GET /api/pages/agent-runs/:id` + SSE | `AgentRunTraceVM` | `steps`, `current_step`, `budget`, `snapshot_refs` | thinking |
+| Agent 回放 | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | `steps`, `evidence_refs`, `snapshots`, `cost` | deep-link 打开,复杂 trace 不塞气泡 |
+| 成本治理 | `GET /api/pages/cost` | `CostDashboardVM` | `total_cost`, `trend`, `budget`, `model_breakdown`, `notices` | `budget.warning` 轻气泡;`budget.exhausted` 审批/暂停卡 |
 
 ### 5.1 `AttentionHomeVM`
 
@@ -245,6 +248,7 @@ type ProposalDetailVM = {
 | Approval | `permission.ask` + `GET /api/pages/approvals` | `AttentionItem` | Approval Center | OneThingCard | `asking_approval` |
 | Proposal | `proposal.opened` + `GET /api/pages/proposals/:id` | `DeliverableChangeManifest` | Proposal Detail | Deliverable card | `carrying_document` |
 | Knowledge | `knowledge.evidence.ready` | `EvidenceBubble` | Knowledge / Evidence panel | Cuu bubble + detail deep-link | `searching_evidence` |
+| Cost | `usage.recorded`, `budget.warning`, `budget.exhausted` | `CostSummaryVM` / `BudgetNotice` | Cost Dashboard / Attention banner | OneThing budget strip | `thinking` / `worried` / `asking_approval` |
 | Sync | `sync.conflict` | `ConflictChoice[]` | Conflict Resolver | Local sync panel | `worried` |
 | Agent run | `agent_run.step` | `WorkHubEvent<AgentStep>` | Live trace | Live trace compact | `thinking` |
 | Merge done | `proposal.merged` | `AttentionItem` | Timeline + notification | Summary card | `celebrating` |
@@ -273,6 +277,9 @@ export const eventTypes = {
   permissionAsk: "permission.ask",
   proposalOpened: "proposal.opened",
   knowledgeEvidenceReady: "knowledge.evidence.ready",
+  usageRecorded: "usage.recorded",
+  budgetWarning: "budget.warning",
+  budgetExhausted: "budget.exhausted",
   syncConflict: "sync.conflict",
 } as const;
 ```
@@ -291,7 +298,7 @@ export const eventTypes = {
 | F4 | FastAPI auth deps | Hono middleware + signed cookie + device token repositories |
 | F5 | PushBus broker | Redis pub/sub + `packages/events` + SSE stream writer |
 | F6 | PermissionPolicy/ApprovalRequest | `packages/permissions` evaluator + `ApprovalRequest` repositories |
-| F7 | Python provider registry | `packages/agent/providers` TS adapters for OpenAI/Anthropic-compatible endpoints |
+| F7 | Python provider registry | `packages/agent/providers` TS adapters + `packages/cost` usage sink |
 | F8 | Python AgentLoop | `packages/agent` TS AgentLoop + ToolRegistry + queue worker |
 | F9 | lifecycle.py milestones | `packages/events/lifecycle.ts` + notification service |
 | F10 | audit/snapshot | `packages/audit` transaction wrapper + snapshot facts |
@@ -307,12 +314,13 @@ export const eventTypes = {
 2. **TS-X2 API skeleton**:创建 `apps/api`,Hono route groups + `/api/health` + `/api/openapi.json` + SSE helper。
 3. **TS-X3 DB skeleton**:创建 `packages/db`,Drizzle schema 最小表:users/projects/work_items/agent_runs/agent_steps/proposals/approval_requests/audit_logs/snapshots。
 4. **TS-X4 typed client**:创建 `packages/api-client`,Web/Tauri 只从这里发请求。
-5. **TS-X5 page VM layer**:创建 `apps/api/src/pages`,先落 `attention/proposal/workitem/approvals` 四个页面 VM。
+5. **TS-X5 page VM layer**:创建 `apps/api/src/pages`,先落 `attention/proposal/workitem/approvals/cost` 五个页面 VM。
 6. **TS-X6 Cuu adapters**:创建 `packages/events/toAttentionItem.ts` 和 `packages/cuu/toCuuState.ts`。
 7. **TS-X7 Agent worker**:创建 TS queue worker,只跑 read-only/mock tools;F10 snapshot gate 未就位前拒绝 side-effect。
 8. **TS-X8 Rust shell minimal rewire**:Tauri 只改 base URL、token 注入、`push-event` 分发和本地能力命令。
 9. **TS-X9 Gold Path fixture**:创建 P0.5 fixture,打通 intake → AgentRun → Manifest → Proposal → Replay。
 10. **TS-X10 Eval/Replay gate**:把 `ReplayTraceVM` 和 manifest/evidence fixtures 接进 CI/nightly。
+11. **TS-X11 Cost governance**:创建 `packages/cost`,让 AgentRun 启动前消费 `BudgetDecision`,provider usage 写 `CostLedgerEntry`。
 
 ---
 
@@ -328,6 +336,8 @@ export const eventTypes = {
 - [ ] Rust 侧不得复制权限判断;本地动作失败必须显示服务端返回的人话 `message`。
 - [ ] Gold Path fixture 能经同一 typed client 在 Web 与 desktop-webview 渲染。
 - [ ] Replay fixture 能生成 `ReplayTraceVM`,且 `AgentStep` / `Snapshot` / `EvidenceRef` 关联完整。
+- [ ] `GET /api/pages/cost` 返回 `CostDashboardVM`;普通用户不含全员 `by_user`,admin 才能看全量。
+- [ ] `budget.warning` / `budget.exhausted` 能经 `toAttentionItem` 与 `toCuuState` 映射。
 
 ---
 

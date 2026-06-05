@@ -20,7 +20,7 @@ P0「地基」把现有 **需求管理大师**(FastAPI 单体 + SQLite 单 worke
 
 > **2026-06-05 技术路线修正**:后续施工默认以 TypeScript 为主语言。F1-F11 中仍出现的 FastAPI/SQLAlchemy/Alembic 口径保留为现有系统的行为锚点;真正新仓模块/端口/页面返回以 [`p0-foundation/_ts-first-module-port-page-alignment.md`](./p0-foundation/_ts-first-module-port-page-alignment.md) 为准。
 
-**P0 不做**上层产品功能(智能派活、协作分支-提议-合并、桌宠 Cuu、双向同步、看板)——这些是 P1–P5。P0 只做"让上面这些能被稳地建起来"的地基。  
+**P0 不做**上层产品功能(智能派活、协作分支-提议-合并、桌宠 Cuu、双向同步、看板)——这些是 P1–P5。P0 只做"让上面这些能被稳地建起来"的地基。
 但 P0 **必须先冻结体验与交付物契约**:选项式澄清、证据气泡、任意交付物变更申请、Cuu 事件状态、side-effect 快照红线的 payload/事件/验收门禁见 [`p0-foundation/_experience-deliverable-contracts.md`](./p0-foundation/_experience-deliverable-contracts.md)。这些不是 UI 施工,而是防止后续返工的 API/事件/数据契约。
 
 > 决策依据(见 brainstorm):AI-native = 「Agent 提议 → 人确认」为默认;AI 一人两顶帽子;升级 = 置信度/风险分级。地基必须先支撑这套范式的**并发、事件、权限、审计**四根柱子。
@@ -171,12 +171,13 @@ F1 ──► F2 ──► F3 ──┬─► F5 ─┐
 | Agent Eval / Replay | `p0-foundation/_agent-eval-replay-plan.md` |
 | TS 目标路径审计 | `p0-foundation/_ts-target-path-audit.md` |
 | 交互改善与拓展 backlog | `p0-foundation/_interaction-extension-backlog.md` |
+| P-COST 成本治理专篇 | `../workhub/02-ai-engine/cost-governance.md` |
 
 ## 12. 来源与参考
 
 - **Origin brainstorm:** [docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md) —— 关键决策:AI-native 默认驾驶、一人两顶帽子、升级=置信度/风险分级、迁移而非重写、PG、LAN-first。
 - **PRD:** [docs/prd/2026-06-04-workhub-prd.md](../prd/2026-06-04-workhub-prd.md)(§7 数据模型、§8 机制、§10 NFR、§12 分期)。
-- **规格树:** [docs/workhub/](../workhub/README.md) —— 尤其 `01-architecture/*`、`02-ai-engine/agent-loop-and-tools.md`。
+- **规格树:** [docs/workhub/](../workhub/README.md) —— 尤其 `01-architecture/*`、`02-ai-engine/agent-loop-and-tools.md`、`02-ai-engine/cost-governance.md`。
 - **概念图:** [`05-clients/page-concepts.md`](../workhub/05-clients/page-concepts.md)、[`cuu-desktop-pet-concept.md`](../workhub/05-clients/cuu-desktop-pet-concept.md)、[`ts-first-runtime-concept.png`](../workhub/05-clients/assets/shared/ts-first-runtime-concept.png)、[`endpoint-page-cuu-alignment.png`](../workhub/05-clients/assets/shared/endpoint-page-cuu-alignment.png)(P0 仅取事件 taxonomy、共享类型、端口与页面返回边界;Cuu/页面完整施工属 P3/P4)。
 - **P0 体验与交付物契约:** [`p0-foundation/_experience-deliverable-contracts.md`](./p0-foundation/_experience-deliverable-contracts.md) —— P0 必须冻结的 `QuestionCard`、`EvidenceRef`、`DeliverableChangeManifest`、正式事件名、`CuuState`、side-effect 红线门禁。
 - **P0 TS-first 对齐计划:** [`p0-foundation/_ts-first-module-port-page-alignment.md`](./p0-foundation/_ts-first-module-port-page-alignment.md) —— P0 默认 TS 技术栈、模块目录、端口、路由组、Page VM、Endpoint→Page→Cuu 映射。

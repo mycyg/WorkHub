@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-04):**28/28 篇已起草并经独立复审 ✅**(详见各篇 frontmatter)。
+> 状态(2026-06-05):**32 篇文档已落盘**(31 篇规格/概念 + 1 篇 P-COST 专篇;详见各篇 frontmatter)。
 
 ---
 
@@ -81,6 +81,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | 文档 | 范围 | 状态 |
 |---|---|---|
 | `agent-loop-and-tools.md` | 工人循环、控制信号、工具契约与注册表、沙箱、预算、doom-loop、快照 | ✅ |
+| `cost-governance.md` | **P-COST**:三级预算、模型路由、成本计量、超额动作、成本 Page VM / 事件契约 | ✅ |
 | `confidence-risk-escalation.md` | **命门**:置信度来源与算法、风险维度与评分、分级阈值、三触发器、打回回灌 | ✅ |
 | `pm-mode-orchestration.md` | 项目经理模式:激活、简报、排期、催办、再审 | ✅ |
 | `smart-staffing.md` | **旗舰**:输入信号、匹配逻辑、提议格式、冷启动降级、纠正回流 | ✅ |

@@ -312,14 +312,14 @@ RunBudget
   total_timeout_s: int   = 300           # 现状 TOTAL_TIMEOUT_DEFAULT(5min)
   per_step_timeout_s:int = 计算值          # 现状: max(30, total - elapsed)(auto_agent.py:424)
   max_tokens:      int                   # token 预算(成本治理,NFR-05;现状未限,新增)
-  max_cost:        float                 # 成本上限(用户/团队/任务三级配额裁出;见 P-COST)
+  max_cost:        float                 # 成本上限(用户/团队/任务三级配额裁出;见 cost-governance)
   # ── 沙箱物理上限(现状常量,见 §4.2)──
   max_files:       int   = 800           # MAX_SANDBOX_FILES
   max_bytes:       int   = 200*1024*1024 # MAX_SANDBOX_BYTES
   command_timeout_s:int  = 45            # COMMAND_TIMEOUT(单条命令,上限硬截 60)
 ```
 
-`max_tokens / max_cost` 由成本治理三级配额(用户/团队/任务)裁定,低风险任务可路由更便宜模型(NFR-05);裁决规则在 P-COST 文档,本篇只消费一个已算好的 `RunBudget`。
+`max_tokens / max_cost` 由成本治理三级配额(用户/团队/任务)裁定,低风险任务可路由更便宜模型(NFR-05);裁决规则见 [`cost-governance.md`](./cost-governance.md),本篇只消费一个已算好的 `RunBudget`。
 
 ### 4.2 `RunUsage`(累计计量)
 
@@ -563,7 +563,7 @@ compact_context(run):
 | **NFR-01**(逃离单 worker) | §3.5 行级锁演进(D-2) |
 | **NFR-02**(沙箱+权限+高风险门) | §4.5 双层边界;§2.5 ask |
 | **NFR-03/04**(审计/回滚) | §6.3 审计;§7 回滚 |
-| **NFR-05**(成本治理) | §4.1 `max_tokens/max_cost`(消费 P-COST 配额) |
+| **NFR-05**(成本治理) | §4.1 `max_tokens/max_cost`(消费 [`cost-governance.md`](./cost-governance.md) 配额) |
 | **NFR-06**(瞬时重试+优雅降级) | §8.3 |
 | **NFR-07/08**(SSE 实时 + 身份隔离) | §6.1 topic + 隔离 |
 
@@ -576,4 +576,4 @@ compact_context(run):
 3. **快照成本**:每步文件快照在大 `workdir` 下的开销;是否只对"净变更"增量快照、只读步彻底跳过(已倾向后者)。
 4. **compact 阈值与摘要保真**:0.8 窗口阈值、保留近 K 步的 K 值;摘要丢信息导致回灌纠偏失效的风险。
 5. **业务对象回滚的反向 op 完备性**:哪些业务写操作天然不可逆(如已发外部通知),需在 §7.2 标"不可回滚"并前置 `ask`。
-6. **token/cost 计入预算的口径**:重试、压缩自身的 token 是否计入 `max_cost`。
+6. **token/cost 计入预算的口径**:已由 [`cost-governance.md §5`](./cost-governance.md#5-计入口径) 收敛为真实花费均计入,nightly eval 单独记账;本篇后续只验证 `RunUsage` 是否正确消费。

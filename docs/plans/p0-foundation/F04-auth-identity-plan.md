@@ -179,3 +179,18 @@ spec: ../../workhub/01-architecture/security-and-permissions.md
 - **F8 Agent 引擎**:每个 AgentRun 持有一个 N1 的 AI `Actor`;`require_actor` 是工具执行权限的身份入口。
 - **F10 审计/快照**:据 `actor_kind`/`actor_label` 区分人/AI 并冻结当时身份(`actor_label` 冗余,防改名失真)。
 - **F11 daemon 拆分/客户端改接**:跨域 CORS + cookie `SameSite/secure` 重解、生产门不被削弱,基于 F4 的 cookie 签发与设备令牌不变式。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `app/auth.py` 是安全敏感 behavior source;TS 实现必须逐项回归 token-beats-cookie、设备令牌门与 admin fail-closed 语义。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| middleware | `apps/api/src/middleware/auth.ts` | `currentUser`, `optionalCurrentUser`, `currentClientDevice`, `requireStreamUser` | token 优先于 cookie 回归 |
+| repositories | `packages/db/src/repositories/users.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token 查找、软删过滤、revoked 过滤 | 软删用户视为不存在 |
+| contracts | `packages/contracts/src/auth.ts`, `packages/contracts/src/identity.ts` | `Identity`, `ClientDevice`, `Actor` DTO | AI actor 不进入 cookie 路径 |
+| config | `packages/config/src/auth.ts` | cookie secret/secure/admin claim/touch device 开关 | 空 admin secret fail-closed |
+
+**PR 必答**:列出旧 `auth.py` 中每条安全不变式的 TS 回归测试。Rust 只保存/注入设备令牌,不得复制身份判定。

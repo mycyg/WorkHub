@@ -307,3 +307,18 @@ resolve(actor, tool, args) -> effect:
 **成对/协同约束**
 
 - 审批私有事件依赖 **F5** broker 化的订阅边界鉴权门(单 worker→多 worker 不得在 F5 落地前 `--workers N`,Master §6 铁律3)。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `permissions.py` 是资源门、admin 不对称、设备门正交性的 behavior source;新实现落 policy package 与 approval service。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| policy engine | `packages/permissions/src/evaluate.ts`, `packages/permissions/src/policies.ts` | allow/deny/ask 分层 evaluator | deny > ask > allow 单测 |
+| approval service | `apps/api/src/services/approvals.ts`, `apps/api/src/routes/permissions.ts` | `ApprovalRequest` 创建/路由/裁决 | SLA 到期不自动放行 |
+| contracts | `packages/contracts/src/approval.ts`, `packages/contracts/src/attention.ts` | `ApprovalRequest`, `ReviewAction`, `AttentionItem` | 用户面 action payload 人话 |
+| persistence | `packages/db/src/repositories/approval-requests.ts` | 审批请求、委派、永远允许规则 | 高风险不可学习 |
+
+**PR 必答**:说明每个高权限 endpoint 的设备门要求。Rust/Web 只展示服务端返回 action,不得本地重算 permission。

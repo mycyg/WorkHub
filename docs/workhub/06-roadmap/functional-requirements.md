@@ -58,11 +58,11 @@ owner: workflow
 
 每条 FR 给「验收(AC)」=**可观测、可测试**的判定;凡涉及现有行为的演进,AC 锚定现有代码的真实约束(如 CAS、`reason_md` 非空、`dedupe_key` 去重),确保迁移**不回退**已修复的缺陷。
 
-### 0.4 全量索引(共 **97** 条 FR)
+### 0.4 全量索引(共 **98** 条 FR)
 
 | 域 | 编号区间 | 条数 |
 |---|---|---|
-| AI 工人引擎 | FR-WORKER-001..007 | 7 |
+| AI 工人引擎 | FR-WORKER-001..008 | 8 |
 | 置信度/升级 | FR-ESC-001..008 | 8 |
 | 项目经理模式 | FR-PM-001..005 | 5 |
 | 智能派活 | FR-STAFF-001..006 | 6 |
@@ -84,7 +84,7 @@ owner: workflow
 | Web 端 | FR-WEB-001..004 | 4 |
 | 设计系统 | FR-UIKIT-001..003 | 3 |
 | daemon/平台 | FR-PLAT-001..004 | 4 |
-| **合计** | — | **97** |
+| **合计** | — | **98** |
 
 ---
 
@@ -102,6 +102,7 @@ owner: workflow
 | **FR-WORKER-005** | P0 | P1 | [补] | 工具系统为最小契约 `{id, 描述, 参数 schema, execute}`;入参 schema 校验失败时回灌「请改输入」可恢复错误(不崩溃、不中断 run)。 |
 | **FR-WORKER-006** | P0 | P1 | [补] | AI 工人执行全程沙箱化:路径限定在 per-WorkItem workdir、文件数/字节数上限、命令白名单、子进程 rlimit;越界一律拒绝并回灌。 |
 | **FR-WORKER-007** | P1 | P1 | [补] | 工具注册表按「当前 actor 权限」过滤模型可见的工具菜单(同一引擎不同 actor 看到不同工具集),为 [`FR-PERM-001`](#5-权限与审批-fr-perm--p-perm) 的分层策略提供执行面落点。 |
+| **FR-WORKER-008** | P0 | P1 | [补] | L2 首发覆盖 **file-only 数字可交付物白名单**：文档/周报/方案草稿、结构化 JSON/YAML/CSV/config、小型代码或模板改动、CSV/TSV 分析报告、会议/网盘证据生成的需求草稿。 |
 
 **验收(AC)**
 
@@ -113,6 +114,7 @@ owner: workflow
 - **FR-WORKER-005**:工具异常以可恢复错误文本回灌(沿用现状 `content = f"[error] …"`,[`auto_agent.py:490`](../../../app/services/auto_agent.py)),`AgentStep.phase=tool_result` 记录;**不**让单个工具异常终止整个 run。
 - **FR-WORKER-006**:`run_command` 仅放行 `ALLOWED_COMMANDS`(`python/node/npm/pnpm/bun/pytest/ruff/tsc`,[`auto_agent.py:42`](../../../app/services/auto_agent.py)),`npm/pnpm/bun install` 被显式禁用([`auto_agent.py:296`](../../../app/services/auto_agent.py));文件数 > `MAX_SANDBOX_FILES=800` 或字节 > `MAX_SANDBOX_BYTES=200MB` 抛错;子进程 rlimit(CPU/AS/FSIZE/NOFILE,[`auto_agent.py:282-285`](../../../app/services/auto_agent.py))生效(POSIX);路径逃逸(`_safe_path`)被拒。**威胁模型重审**:现状 network egress 未阻断,基于「可信 LAN」假设([`auto_agent.py:268-279`](../../../app/services/auto_agent.py) 注释),上云前须重审(见 [`security-and-permissions.md`](../01-architecture/security-and-permissions.md) 与 [PRD NFR-02](../../prd/2026-06-04-workhub-prd.md))。
 - **FR-WORKER-007**:模型每轮收到的 `tools=` 列表由 actor 权限过滤;现状为静态 `TOOLS` 全集([`auto_agent.py:418`](../../../app/services/auto_agent.py)),WorkHub 改为按 `PermissionPolicy` 计算可见集。
+- **FR-WORKER-008**:首发白名单只允许「文件型/文本型/可由沙箱命令本地算出」的交付物。允许子类包括:需求/方案/周报/纪要草稿,结构化 JSON/YAML/CSV/config,小型代码或模板改动,CSV/TSV 轻分析报告,会议/网盘证据生成的需求草稿。明确排除:外部发送、付款、生产部署、法律/医疗/财务专业判断、联网装包、不可逆删除。命中排除项时不得自动执行,必须走风险门 `domain_gate` 或权限 `ask`。
 
 ---
 
@@ -348,7 +350,7 @@ owner: workflow
 
 ## 12. 成本治理(`FR-COST-*` · P-COST)
 
-> 上游 [PRD NFR-05/§11](../../prd/2026-06-04-workhub-prd.md);实体见 [data-model §7.1](../01-architecture/data-model.md)(`AgentRun.token_in/out`/`cost_estimate`/`model`)。
+> 上游 [PRD NFR-05/§11](../../prd/2026-06-04-workhub-prd.md);治理专篇见 [`02-ai-engine/cost-governance.md`](../02-ai-engine/cost-governance.md);实体见 [data-model §7.1](../01-architecture/data-model.md)(`AgentRun.token_in/out`/`cost_estimate`/`model`)。
 > **现状锚点**:统一 provider `AsyncAnthropic(base_url=settings.llm_base_url)`([`auto_agent.py:34`](../../../app/services/auto_agent.py))、模型 `settings.llm_model`、端点配置 [`config.py`](../../../app/config.py);硬预算 `MAX_TURNS`/`TOTAL_TIMEOUT_DEFAULT`([`auto_agent.py:36-37`](../../../app/services/auto_agent.py))。
 
 | 编号 | 优先级 | 阶段 | 来源 | 需求 |
@@ -360,10 +362,10 @@ owner: workflow
 
 **验收(AC)**
 
-- **FR-COST-001**:`AgentRun.max_turns` 必填([data-model §7.1](../01-architecture/data-model.md));沿用 `MAX_TURNS=15`/超时默认。
-- **FR-COST-002**:三级配额耗尽时阻断新 `AgentRun` 并提示。*(新增治理表/字段,详见 [`security-and-permissions.md`](../01-architecture/security-and-permissions.md))*
-- **FR-COST-003**:`AgentRun.model` 记录实际模型;低风险走廉价模型由 provider 注册表路由([PRD §11 LLM 抽象](../../prd/2026-06-04-workhub-prd.md))。
-- **FR-COST-004**:`AgentRun.token_in/token_out/cost_estimate` 聚合到看板。
+- **FR-COST-001**:`AgentRun.max_turns` 必填([data-model §7.1](../01-architecture/data-model.md));v0 默认 `15 steps / 300s / 120k tokens / 5 CNY`,具体数值由 [`cost-governance.md §2`](../02-ai-engine/cost-governance.md#2-v0-默认值) 配置化裁出。
+- **FR-COST-002**:三级配额耗尽时阻断新 `AgentRun` 并提示;v0 默认用户日 `500k tokens / 20 CNY`,团队日 `5M tokens / 200 CNY`,团队月 `50M tokens / 2000 CNY`,合并规则见 [`cost-governance.md §4`](../02-ai-engine/cost-governance.md#4-裁决流程)。
+- **FR-COST-003**:`AgentRun.model` 记录实际模型;低风险或接近预算时走廉价模型,由 provider 注册表 + `BudgetDecision.model_route` 裁决([PRD §11 LLM 抽象](../../prd/2026-06-04-workhub-prd.md))。
+- **FR-COST-004**:`AgentRun.token_in/token_out/cost_estimate` 聚合到看板;重试、compact、review token 计入真实成本,nightly eval 单独进 `scope.kind="eval"`。
 
 ---
 

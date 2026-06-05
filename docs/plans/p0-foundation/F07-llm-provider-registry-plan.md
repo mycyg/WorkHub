@@ -206,3 +206,18 @@ registry.set_usage_sink(sink: UsageSink) -> None              # F8/P-COST 注入
 ### 协同约束
 - **与 F8 边界:** 本组件提供「取 client + 产计量 + 路由骨架 + 重试骨架」;F8 提供「何时重试 / 是否超预算阻断 / 把 usage 聚合进 AgentRun」。两者通过 `set_usage_sink` 与 `with_retry` 挂点解耦,可独立推进。
 - **与 F1 边界:** 配置 schema 的 owner 是 F1;本组件提供字段诉求(provider/model/成本档/路由表),F1 落进 `config.py` 并守生产门。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 7 处 `AsyncAnthropic` 是 behavior source;新实现统一落 provider registry 与成本 usage sink。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| providers | `packages/agent/src/providers/*` | Anthropic-compatible adapter、stream/create wrapper | grep 无裸 SDK client in services/tools |
+| config | `packages/config/src/providers.ts` | provider/model/cost tier/env schema | key 不进入可序列化 usage |
+| cost sink | `packages/cost/src/usage-sink.ts`, `packages/cost/src/ledger.ts` | `UsageRecord`, `CostLedgerEntry` 写入挂点 | 每次真实调用均可计量 |
+| retry/model route | `packages/agent/src/providers/retry.ts`, `packages/cost/src/model-route.ts` | transient retry skeleton、低风险/近预算降级模型 | F07 不做预算阻断,只暴露输入 |
+
+**PR 必答**:7 处旧调用点逐一列出改接状态;`.stream` 必须保留 async context manager 语义。预算 enforcement 归 F08/P-COST,不可在 provider wrapper 内直接阻断。

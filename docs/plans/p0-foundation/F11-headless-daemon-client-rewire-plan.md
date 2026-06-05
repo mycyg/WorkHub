@@ -249,3 +249,20 @@ specs:
 - **P0 整体验收**(Master §8):「web + Tauri 经 OpenAPI 生成客户端 + 跨域成功访问 daemon」是 P0 出口门禁,F11 是其唯一交付者。
 - **P0c 端到端冒烟**(Master §5.2):一条 work_item 经 AI 引擎产出 → 审计有快照 → 客户端经 OpenAPI/SSE 看到事件——客户端侧由 F11 提供。
 - **P1+ 产品页**(web W1/W2 审批中心、提议详情;Tauri 桌宠窗/双向同步):全部建立在 F11 暴露的端点契约 + SSE topic 之上。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `app/main.py` 与 `shared/src/api/client.ts` 是 behavior source;新实现落 Hono routes/pages、OpenAPI generated client 与瘦客户端改接。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| API routes | `apps/api/src/routes/*` | Hono route groups、OpenAPI registry | daemon 只服务 API/SSE/download |
+| Page VM | `apps/api/src/pages/*` | `AttentionHomeVM`, `ProposalDetailVM`, `ReplayTraceVM`, `CostDashboardVM` | 新页面不直接读 ORM row |
+| API client | `packages/api-client/src/*` | generated fetch + SSE parser | Web/Tauri 同源类型 |
+| Web app | `apps/web/src/*` | AI-first 首页、审批/提议/回放/成本页入口 | 不默认落重看板 |
+| Tauri webview | `apps/desktop-webview/src/*` | one thing work desk、bubble/card 消费 | 不复制业务状态机 |
+| Rust shell | `client-tauri/src-tauri/src/*` | base URL、设备令牌、SSE worker、本地命令 | Rust 只做本地能力 |
+
+**PR 必答**:列出 Web 与 Tauri 是否消费同一 `packages/api-client` 类型。跨域 cookie/CORS 是 F11 责任,不得把 SPA 重新塞回 daemon。

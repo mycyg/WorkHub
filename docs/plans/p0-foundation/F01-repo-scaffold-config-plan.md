@@ -218,3 +218,18 @@ specs:
   - **F08** 消费三级预算默认(N4)。
   - **F11** 消费 `web_dist_dir`/`downloads_dir`(N5),并在 F01 去硬编码基础上**剥离** SPA 托管、重解跨域 CORS/cookie。
 - **成对/顺序约束:** F01 不触发任何"单 worker→多 worker"动作(Master §6 铁律 3);B5 仅**预埋**多 worker fail-closed 门,真正解除单 worker 由 **F3+F5 成对**完成。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `app/config.py` 与现有根目录文件只作为 behavior source;新仓默认落 TS-first 路径。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| root workspace | `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json` | Node 22 + pnpm workspace | `pnpm install --frozen-lockfile` 可跑 |
+| config | `packages/config/src/env.ts`, `packages/config/src/ports.ts` | Zod env schema、端口表、默认值 | 无 `/srv/yqgl` 硬编码 |
+| apps scaffold | `apps/api`, `apps/web`, `apps/desktop-webview` | API/Web/Tauri webview 最小入口 | 不托管 SPA 到 API daemon |
+| CI/dev scripts | `.github/workflows/*`, `scripts/dev/*` | typecheck/test/audit 命令 | 不重写已有 CI 语义 |
+
+**PR 必答**:Behavior source = `app/config.py` / 现有 CI/root package;Target TS paths 必须列上述目录。F01 不改业务 DTO、不改 DB schema、不解禁多 worker。

@@ -195,3 +195,18 @@ specs:
 - **F10 审计/快照**:依赖 F3 的"同事务"能力(PG 事务)实现"快照与业务写同一事务""快照失败⇒拒绝副作用"(Master §6 铁律 6)。
 - **F9 生命周期/通知**:依赖 F3 的 `timestamptz` 正确性(SLA/cutoff 时间数学)。
 - **F11 daemon 拆分**:lifespan 重排(F3 已摘 schema 步骤、留 head 校验 hook),多 worker leader 选举建立在 F3+F5 地基上。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `app/db.py` / `services/schema_migrations.py` 只作为迁移行为来源;新仓默认使用 Drizzle Kit。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| DB package | `packages/db/src/client.ts`, `packages/db/src/migrate.ts` | PG client、transaction helper、health check | 不再 runtime `create_all` / ALTER |
+| migrations | `packages/db/drizzle.config.ts`, `packages/db/migrations/*` | 首版 migration、seed fixture、drift check | `drizzle-kit check` 或等价 drift gate |
+| type mapping | `packages/db/src/types.ts` | UUID/JSONB/timestamptz/citext 口径 | SQLite-only 默认值清零 |
+| concurrency primitives | `packages/db/src/locks.ts`, `packages/db/src/sequences.ts` | WorkItem 行锁、Project 编号 sequence | 2-worker 前置门禁只在 F3+F5 后解 |
+
+**PR 必答**:列出每个从 SQLite/SQLAlchemy 迁到 PG/Drizzle 的类型转换。若迁移期临时保留 Alembic,必须明确为兼容层,不得成为新仓默认路径。

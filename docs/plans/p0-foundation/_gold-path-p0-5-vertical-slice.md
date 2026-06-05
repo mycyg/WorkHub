@@ -38,6 +38,7 @@ depends:
 | 2. 选项澄清 | Cuu/页面问一个问题,给选项 | `POST /api/sessions/:id/next-question` | `QuestionCard` | Option Wizard / Cuu chips | 契约,F11 |
 | 3. 创建工作项 | “我开始处理了” | `POST /api/workitems` | `WorkItemDetailVM` | WorkItem detail | F2,F6,F11 |
 | 4. Agent 开跑 | 进度流、工具步骤、人话摘要 | `POST /api/workitems/:id/agent-runs`, `agent_run.started/step` | `WorkHubEvent<AgentStep>` | Live Trace / Cuu thinking | F5,F7,F8 |
+| 4a. 预算检查 | 若预算快用完,先轻提示;若耗尽,停下交接 | `budget.warning` / `budget.exhausted` | `BudgetNotice` | Attention banner / Cuu worried or asking | P-COST,F7,F8 |
 | 5. 证据查找 | “我找到这些来源” | `knowledge.evidence.ready` | `EvidenceBubble` | Evidence panel / Cuu search bubble | F8,P1 knowledge |
 | 6. 产出变更包 | 非代码 PR 页面 | `proposal.opened` | `DeliverableChangeManifest` | Proposal Detail / Cuu carrying doc | F2,F8,F10,F11 |
 | 7. 审批/打回 | 审批卡、理由、记住规则 | `POST /api/proposals/:id/review` | `AttentionItem` | Approval Center / Cuu approval | F6,F9,F11 |
@@ -85,12 +86,14 @@ P0.5 是 P0 和 P1 之间的产品验证切片。目标不是完整功能,而是
 | `POST /api/sessions/:id/next-question` | 选项澄清 | `QuestionCard` |
 | `POST /api/workitems` | 创建工作项 | `WorkItemDetailVM` |
 | `GET /api/pages/attention` | 当前一件事 | `AttentionHomeVM` |
+| `GET /api/cost/usage` | 当前用户/团队预算摘要 | `CostSummaryVM` |
 | `POST /api/workitems/:id/agent-runs` | 开始 Agent | `AgentRun` |
 | `GET /api/push/stream/run/:id` | Agent SSE | `WorkHubEvent<T>` |
 | `GET /api/pages/proposals/:id` | 提议详情 | `ProposalDetailVM` |
 | `POST /api/proposals/:id/review` | 通过/打回 | `ReviewResult` |
 | `POST /api/proposals/:id/merge` | 合并 | `MergeResult` |
 | `GET /api/agent-runs/:id/replay` | 回放 | `ReplayTraceVM` |
+| `GET /api/pages/cost` | 成本看板页面 VM | `CostDashboardVM` |
 
 ### 2.4 最小页面
 
@@ -101,6 +104,7 @@ P0.5 是 P0 和 P1 之间的产品验证切片。目标不是完整功能,而是
 | WorkItem Detail | `/workitems/:id` | 工作项状态 + live trace preview |
 | Proposal Detail | `/proposals/:id` | 非代码 PR |
 | Replay Work | `/agent-runs/:id/replay` | AI 关键步骤回放 |
+| Cost Dashboard | `/dashboard/cost` | 管理者看成本与预算;普通用户只看个人切片 |
 | Approval Center | `/approvals` | 阻塞收件箱 |
 
 ### 2.5 最小 Cuu 状态
@@ -109,6 +113,8 @@ P0.5 是 P0 和 P1 之间的产品验证切片。目标不是完整功能,而是
 |---|---|---|
 | session question ready | `asking_approval` | `QuestionCard` |
 | agent running | `thinking` | 进度气泡 |
+| budget warning | `worried` | 预算轻提示 |
+| budget exhausted | `asking_approval` | 暂停/降级/找管理员选项 |
 | evidence ready | `searching_evidence` | `EvidenceBubble` |
 | proposal opened | `carrying_document` | Proposal summary |
 | sync/conflict/low confidence | `worried` | 风险卡 |
@@ -152,11 +158,13 @@ Agent 不必一开始真调用 LLM。P0.5 可用 scripted trace:
 - [ ] 用户从 `/` 进入,能完成一次 option-first intake,全程不需要长篇打字。
 - [ ] Cuu 至少经历 `asking_approval → thinking → carrying_document → celebrating`。
 - [ ] AgentRun replay 页面能展示不少于 5 个关键步骤。
+- [ ] Replay footer 能展示本次 run 的 `CostSummaryVM` 切片;非 admin 不显示全员成本。
 - [ ] Proposal Detail 能显示非代码变更包,含 `summary/targets/evidence/risk/rollback/checks`。
 - [ ] 用户打回时必须填写理由;理由出现在下一轮 Agent context 中。
 - [ ] 用户采纳后能看到 `proposal.merged`、通知、审计记录和回滚入口。
 - [ ] Web 与 Tauri webview 渲染同一 Page VM fixture。
 - [ ] 所有用户可见 payload 来自 `packages/contracts` 或 OpenAPI generated types。
+- [ ] 若 fixture 成本超过 80%,必须发 `budget.warning`;超过 100%,必须走 `budget_exhausted` 或结构化交接。
 
 ---
 

@@ -186,3 +186,18 @@ specs:
 - **F6 权限引擎 / 审批**(P2 完整化):`ApprovalRequest` 路由产物 `routed_to_user_id` 喂给 F09 的 `approver` 解析;反向 F09 提供「审批待办落收件箱」的通知出口。
 - **P2 PM 模式编排**(`pm-mode-orchestration.md`):其简报/派活/催办全部经 F09 扩展后的中枢通知中枢外发(规格 §0「经理模式所有外发走 `flush_status_notifications`」);F09 是 PM 模式的通知地基。
 - **F11 客户端改接**:`/stream/me` 订阅、`notification.created` 事件、`target_url` work_item 路径的最终收口。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `lifecycle.py` / `notifications.py` 是里程碑、去重和私有通知 behavior source;新实现落生命周期 helper 与通知服务。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| lifecycle | `packages/events/src/lifecycle.ts` | milestone map、状态→通知规则 | 新状态必须登记 |
+| notification service | `apps/api/src/services/notifications.ts`, `apps/api/src/routes/notifications.ts` | `notification.created`、收件箱、dedupe key | 私有通知不发 `all` |
+| contracts | `packages/contracts/src/notification.ts`, `packages/contracts/src/attention.ts` | `Notification`, `AttentionItem` | 文案人话,不裸露内部 enum |
+| Cuu/Web adapters | `packages/events/src/toAttentionItem.ts`, `packages/cuu/src/notification-card.ts` | 通知→一件事/气泡 | `budget.warning` 等治理事件能降级为轻提示 |
+
+**PR 必答**:说明新增状态是否进入 `_MILESTONES` 等价表。通知只负责投递,审批路由归 F06,业务状态写归对应 service。

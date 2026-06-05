@@ -147,7 +147,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 - **接入形态不变**:DeepSeek-via-Anthropic 仍是「一个 `AsyncAnthropic(base_url, api_key)`」,只是从 7 处各自 `new` 收成注册表里 `provider="deepseek"` 的**一个**条目,各 service 改向注册表取。
 - **可路由**:高风险/复杂任务走强模型,低风险任务路由更便宜模型(直接服务 NFR-05 成本治理 + PRD §11 LLM 抽象决策)。
 - **可扩展**:未来接 Anthropic 原生 / OpenAI 兼容端点只是新增注册条目,`auto_agent` / `llm_agent` 不动。
-- **预算挂钩**:每个 provider 调用挂 token 计量,喂给 P-COST 的三级预算(用户/团队/任务)。
+- **预算挂钩**:每个 provider 调用挂 token 计量,喂给 [`cost-governance.md`](../02-ai-engine/cost-governance.md) 的三级预算(用户/团队/任务)。
 
 > 迁移成本可控但**面广**:7 个模块(`auto_agent` / `llm_agent` / `drive_comment_agent` / `meeting_agent` / `delivery_doc` / `task_decomposition` / `routers/assistant`)都要把模块级 `_client = AsyncAnthropic(...)` 改成 `client = registry.get(actor, task)`。调用点(`messages.stream` / `messages.create`)签名不变,改动是机械的;plan 阶段按这 7 个落点逐一领任务。
 

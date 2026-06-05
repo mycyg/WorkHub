@@ -251,6 +251,17 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 指标定义见 [`../04-modules/dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。
 
+### 2.15 cost governance **[新]**
+
+| 方法 路径 | 出参 | 鉴权 | 说明 |
+|---|---|---|---|
+| `GET /api/cost/policies` | `BudgetPolicy[]` | admin / team owner | 三级预算策略。 |
+| `PUT /api/cost/policies/:scope/:id` | `BudgetPolicy` | admin / team owner | 更新用户/团队/任务配额;写审计。 |
+| `GET /api/cost/usage` | `BudgetUsage[]` | current user / admin | 普通用户只看自己;admin 可看全局。 |
+| `GET /api/pages/cost` | `CostDashboardVM` | current user / admin | Page VM;admin 含全员榜,普通用户降级为个人视图。 |
+
+成本裁决、默认配额和计入口径见 [`../02-ai-engine/cost-governance.md`](../02-ai-engine/cost-governance.md)。预算拒绝统一返回 `ApiErr.code="budget_exhausted"`;客户端不得自行推断是否还能跑 Agent。
+
 ---
 
 ## 3. 鉴权与设备令牌门
@@ -357,6 +368,8 @@ topic 命名空间与可订阅性如下——**隔离是安全约束,不是性�
 ### 6.1 错误体(沿用 FastAPI `HTTPException`)
 
 所有错误返回 `{"detail": <message|structured>}`,HTTP 状态码语义化。`detail` 为**人话**(中文优先,沿用现有风格,如 `"DDL is required before dispatch"`、`"该昵称是管理员账号，需要管理员口令才能在新设备登录"`)。Pydantic 入参校验失败由 FastAPI 自动返回 `422` + 字段级 `detail` 数组。
+
+成本治理统一错误码为 `budget_exhausted`:当用户/团队/任务任一硬配额耗尽时,新 TS-first endpoint 返回 `ApiErr.code="budget_exhausted"` + 人话 `message` + `details.scope/action`;现有 FastAPI 迁移期可先放入 `detail` 结构体,但用户面文案不得要求客户端解析内部 budget enum。
 
 ### 6.2 状态码语义表(从现有 routers 归纳)
 

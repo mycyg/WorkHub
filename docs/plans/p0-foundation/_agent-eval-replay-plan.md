@@ -96,6 +96,8 @@ type ReplayStepVM = {
 | `low_confidence_escalation` | 低置信升级 | `agent_run.escalated` + `AttentionItem` |
 | `permission_required_tool` | 权限 ask gate | 生成 `permission.ask`,不执行副作用 |
 | `snapshot_fail_closed` | 快照失败红线 | side-effect 被拒绝,Replay 说明原因 |
+| `budget_threshold_warning` | 成本接近阈值 | 触发 `budget.warning`,Replay footer 显示 cost summary |
+| `budget_exhausted_handoff` | 成本硬上限耗尽 | `ApiErr.code=budget_exhausted` 或当前 run 结构化交接 |
 | `revision_feedback_loop` | 打回理由回灌 | 下一轮 context 包含用户理由 |
 | `sync_conflict_choice` | 冲突调解 | 返回 `ConflictChoice[]` + recommended choice |
 
@@ -128,6 +130,7 @@ evals/
 | Permission safety | side-effect 前必须 ask/snapshot | 权限文案是否清楚 |
 | Replay readability | steps 关键字段齐全 | 回放是否能解释过程 |
 | Cost/latency | token/耗时阈值 | 是否值得自动跑 |
+| Budget policy | warning/exhausted 事件与 `CostLedgerEntry` | 是否该降级或停 |
 | Cuu mapping | event → CuuState | 动作是否符合语境 |
 
 ---
@@ -145,6 +148,7 @@ evals/
 | `Snapshot` | DB + object storage | 回滚点 |
 | `DeliverableChangeManifest` | `Proposal.diff_manifest` | 产出说明 |
 | `EvidenceRef` | DB/json | 证据来源 |
+| `CostLedgerEntry` | DB | cost footer、预算阈值、模型路由依据 |
 
 ### 5.2 Replay endpoint
 
@@ -161,6 +165,7 @@ evals/
 - API keys / tokens / cookies
 - 文件绝对路径中的用户名
 - 邮箱/手机号
+- 成本明细中的全员排行:非 admin 只保留当前用户切片
 - 不属于当前用户权限范围的证据内容
 - tool raw stdout 中的密钥模式
 

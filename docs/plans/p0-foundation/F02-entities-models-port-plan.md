@@ -236,3 +236,18 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 ---
 
 *本 plan 只定 ORM 模型层与横切列/枚举/约束;读写它们的迁移在 F3、路由/事件在 F5/F11、权限/审计/快照运行时在 F6/F10。字段语义以 [data-model.md](../../workhub/01-architecture/data-model.md) 为唯一真相。*
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `app/models.py` 只作为 behavior source;实体真相落在 Drizzle schema 与 shared contracts。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| DB schema | `packages/db/src/schema/*.ts` | users/projects/work_items/agent_runs/proposals/approval_requests/audit/snapshots 等表 | 新实体不得只存在 route local type |
+| relations | `packages/db/src/relations/*.ts` | Drizzle relation helpers | FK 与 data-model 对齐 |
+| domain DTO | `packages/contracts/src/domain/*.ts` | `User`, `Project`, `WorkItem`, `AgentRun`, `Proposal` 等 Zod DTO | API/Page VM 只能 import contracts |
+| enums/constants | `packages/contracts/src/enums.ts` | 状态机、事件目标、target_kind、risk/verdict 枚举 | 禁止页面/route 手写状态字符串 |
+
+**PR 必答**:说明 `Requirement`→`WorkItem` 的物理表名决策;新增字段必须同时在 `packages/db` 与 `packages/contracts` 出现。Rust 不得直接访问 DB schema。

@@ -15,7 +15,7 @@ owner: workflow
 > - 指标背后的**算法定义**（置信度怎么算、风险怎么评、三触发器、doom-loop）→ [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md)。本模块只**消费**其裁决结果并可视化。
 > - 看板的 HTTP/SSE **接口契约**（`/api/project-health` §2.14、新增 `/api/dashboard/*`、事件清单 §5、`job.updated`/`user:{id}` 隔离 §5.3）→ [api-contract](../01-architecture/api-contract.md)。
 > - 度量所依赖的**实体字段**（`AgentRun.token_in/out/cost_estimate/turns_used`、`ConfidenceRecord.grade/verdict`、`EscalationEvent.trigger`、`Review.decision`、`CollaborationGraph.hit_rate`、`Snapshot.reverted_at`）→ [data-model](../01-architecture/data-model.md)。
-> - 成本治理的**预算配额/模型路由策略**（三级预算、超额动作）→ [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md) 与 P-COST。本模块只**呈现**用量与配额对比。
+> - 成本治理的**预算配额/模型路由策略**（三级预算、超额动作）→ [cost-governance](../02-ai-engine/cost-governance.md) 与 [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md)。本模块只**呈现**用量与配额对比。
 > - 术语（健康分 / 自治 / 升级 / 信任 / 设备令牌门 / 置信度三档语气）以 [glossary-dejargon](../00-overview/glossary-dejargon.md) 为权威。**去黑话铁律在本篇尤其关键**：看板**绝不显示** `confidence=0.82` / `risk 7/10` 这类裸数值，只显示比率、计数与人话档位。
 >
 > **扎根**：本篇由现有「需求管理大师」真实实现演进而来。后端：`app/routers/health.py`（`_health_for_project` 全量评分逻辑）、`app/schemas.py:503`（`ProjectHealthOut`）、`app/services/auto_agent.py`（AI 执行循环，**注意：现状未采集 token/cost，本篇明确标为新增字段**）、`app/models.py:554`（`ActivityLog`，自治率/变更的事实源）。前端：`web/src/pages/HealthPage.tsx`（C-WEB 健康度现状）、`web/src/pages/Dashboard.tsx`（C-WEB 派活看板现状）、`client-tauri/web-src/src/routes/ProjectPulse.tsx`（C-PET「项目快报」现状）、`web/src/pages/PlanningPage.tsx`（负载现状）。共享件：`shared/src/ui/`（`Card`/`Progress`/`CircularProgress`/`Badge`/`EmptyState`/`Skeleton`/`Tabs`/`Tooltip`）、`shared/src/design/status-vocab.ts`（标签/色调权威）。所有路径与行号锚点贯穿全文。

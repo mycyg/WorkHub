@@ -399,3 +399,19 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 - **P1 confidence-risk-escalation** — 在本组件 `llm_review`(P7)+ `AgentStep` trace 之上扩连续置信度 +
   风险二维裁决 + 回灌闭环 + doom-loop/budget 触发器裁决(本组件只产 `escalate` 信号 + handoff,不裁决)。
 - **P2 pm-mode-orchestration** — 消费 `AgentRun.mode=pm` + `EscalationEvent`(本组件建 `mode` 字段但不实现 pm)。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `auto_agent.py` / `routers/auto.py` / `llm_review` 是 loop 与工具行为来源;新实现落 TS AgentLoop、ToolRegistry、queue worker 与 typed page/route。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| loop | `packages/agent/src/loop/*` | `AgentLoop`, control signals, structured handoff | 超预算不静默 failed |
+| tools | `packages/tools/src/*` | ToolSpec、schema parse、sandbox file tools | side-effect 前 permission/snapshot gate |
+| runner | `apps/api/src/workers/agent-runner.ts`, `apps/api/src/routes/agent-runs.ts` | queue runner、start/resume/cancel endpoints | AgentStep 持久化 |
+| replay/page contracts | `packages/contracts/src/agent.ts`, `apps/api/src/pages/agent-runs.ts` | `AgentRunTraceVM`, `ReplayTraceVM`, `BudgetNotice` | Replay fixture 过门 |
+| cost consumption | `packages/cost/src/decision.ts` | consume `BudgetDecision` → `RunBudget` | AgentLoop 不硬编码三级配额 |
+
+**PR 必答**:列出本 PR 解禁的 tool side_effect 等级。F10 未就位前所有写类工具必须 fail-closed。

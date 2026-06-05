@@ -39,8 +39,8 @@ owner: workflow
 
 - **地基三决策已落定**（D-1 迁移 / D-2 PostgreSQL / D-3 LAN-first），原 PRD `[建议·待确认]` / `[开放]` 现已转 `[决策]`——OQ-1 关闭。
 - **命门级机制（置信度/风险/升级、对象合并、审批路由）的"设计骨架"已完成**，剩下的是**参数标定**（OQ-2/3/7）与**字段收口**（落到 [`data-model.md`](./01-architecture/data-model.md)）。
-- **真正还要"拍板"的产品级问题集中在 OQ-5（桌宠人格/打扰边界）与 OQ-6（L2 首发领域清单）**——两条的**落点篇均已落盘**（桌宠篇已给"克制优先"基调、FR 清单已在），规格树给的是建议默认，等产品确认/列白名单。
-- **文档落点复核（本次修订重点）**：原列为"待写"的 `05-clients/*`、`06-roadmap/*`、`dashboards-and-metrics.md` **现已全部落盘**，相关开放问题的"无处落定"障碍解除；唯一仍空缺的落点是 **P-COST 三级配额专篇**（见 §4.2）。
+- **真正还要"拍板"的产品级问题集中在 OQ-5（桌宠人格/打扰边界）**；OQ-6 的 L2 首发 file-only 子类已落到 `FR-WORKER-008`，OQ-7 的 v0 默认配额已落到 `cost-governance.md`。
+- **文档落点复核（本次修订重点）**：原列为"待写"的 `05-clients/*`、`06-roadmap/*`、`dashboards-and-metrics.md` 与 P-COST 专篇**均已落盘**，相关开放问题的"无处落定"障碍解除。
 
 ---
 
@@ -124,13 +124,13 @@ owner: workflow
 | 维度 | 内容 |
 |---|---|
 | **PRD 原文** | "L2 可做领域清单：首发覆盖哪些数字可交付物？（范围）"（[PRD §16.6](../prd/2026-06-04-workhub-prd.md)） |
-| **收敛状态** | 🟢 **有强约束的边界（沙箱能力 + 非目标），但首发"领域白名单"未明确列举** |
+| **收敛状态** | ✅ **已收敛：v0 首发白名单已落 `FR-WORKER-008`** |
 | **边界已被三道约束圈定** | ① **非目标**：L2 只覆盖**数字可交付物**，不做"线下/需专业资质判断的事"（[vision-and-principles §6](./00-overview/vision-and-principles.md#6-非目标non-goals--v1-明确不做)），命中 `domain_gate` 即强制升级（见 OQ-3）。② **沙箱能力**：现有工具集 `list/read/write/run_command/zip/submit` + 命令白名单 `ALLOWED_COMMANDS={python,python3,py,node,npm,pnpm,bun,pytest,ruff,tsc}`（`auto_agent.py:42`）、**禁装包/禁网依赖**（`auto_agent.py:296`）——这天然把首发 L2 限定在"**文件型/文本型/可用上述运行时本地算出来的**交付物"。③ **现状起点**：`auto_agent` 今天**仅对 file-only 需求可选启用**（[vision-and-principles §1.1](./00-overview/vision-and-principles.md)），P1 是把它升格为默认路径，而非扩工具面。 |
 | **PRD 分期已隐含建议** | [PRD §12](../prd/2026-06-04-workhub-prd.md) P1 旗舰明写"AI 默认执行（**先 file 类**）"——即首发就锚定 file-only 类交付物。 |
-| **FR 清单已落盘但白名单未列举（更新）** | [`functional-requirements.md`](./06-roadmap/functional-requirements.md) 已撰写（非"待写"），并已补 `FR-WORKER-006`（沙箱化执行的硬约束）；**但仍未把 file-only 大类拆成可追溯的"首发子类白名单"**——这正是 OQ-6 尚未收口的实质。 |
-| **待拍板项（🟢）** | 在 file-only 大类内，**首发明确支持哪些子类**（如：需求/方案文档、数据分析脚本与报表、代码片段、配置/清单类）需产品列一张白名单，并在 [`functional-requirements.md`](./06-roadmap/functional-requirements.md) 内挂为可追溯 FR（目前该篇有 `FR-WORKER-*` 但无领域白名单条目）。 |
-| **建议** | 首发严守"**file-only + 现有沙箱白名单算得出**"边界，先覆盖文档类与轻分析类（最贴合 `auto_agent` 现状能力），其余领域随沙箱/工具扩展（如新增"读业务对象""提 Proposal""查知识库"工具，见 [`agent-loop-and-tools.md §5.2`](./02-ai-engine/agent-loop-and-tools.md)）逐步解锁。 |
-| **归属篇** | 边界 [`vision-and-principles §6`](./00-overview/vision-and-principles.md)；工具能力 [`agent-loop-and-tools.md §4.5/§5`](./02-ai-engine/agent-loop-and-tools.md)；FR 清单 [`functional-requirements.md`](./06-roadmap/functional-requirements.md)（**已落盘 🚧**，白名单 FR 待补条目）。 |
+| **FR 清单收敛（更新）** | [`functional-requirements.md`](./06-roadmap/functional-requirements.md) 已新增 `FR-WORKER-008`：首发覆盖文档/周报/方案草稿、结构化 JSON/YAML/CSV/config、小型代码或模板改动、CSV/TSV 分析报告、会议/网盘证据生成的需求草稿。 |
+| **排除项（已定）** | 外部发送、付款、生产部署、法律/医疗/财务专业判断、联网装包、不可逆删除不进入 L2 自动执行；命中时走风险门 `domain_gate` 或权限 `ask`。 |
+| **建议** | 首发严守"**file-only + 现有沙箱白名单算得出**"边界，其余领域随沙箱/工具扩展（如新增"读业务对象""提 Proposal""查知识库"工具，见 [`agent-loop-and-tools.md §5.2`](./02-ai-engine/agent-loop-and-tools.md)）逐步解锁。 |
+| **归属篇** | 边界 [`vision-and-principles §6`](./00-overview/vision-and-principles.md)；工具能力 [`agent-loop-and-tools.md §4.5/§5`](./02-ai-engine/agent-loop-and-tools.md)；FR 清单 [`functional-requirements.md FR-WORKER-008`](./06-roadmap/functional-requirements.md#1-ai-工人引擎fr-worker--p-ai--l2-旗舰)。 |
 
 ---
 
@@ -139,12 +139,12 @@ owner: workflow
 | 维度 | 内容 |
 |---|---|
 | **PRD 原文** | "成本预算默认值：用户/团队/任务三级初始配额？（NFR-05）"（[PRD §16.7](../prd/2026-06-04-workhub-prd.md)） |
-| **收敛状态** | 🟡 **机制框架已定（硬上限 + provider 路由 + 三级配额接口），初始配额数值待业务方定** |
+| **收敛状态** | ✅ **已收敛 v0 默认值；后续可按真实成本数据调参** |
 | **机制已定** | ① **每个 AgentRun 必有硬预算上限**（[决策]，[PRD §8.1](../prd/2026-06-04-workhub-prd.md)）：现状常量 `MAX_TURNS=15`（`auto_agent.py:36`）/ `TOTAL_TIMEOUT_DEFAULT=5min`（`:37`）已是雏形，WorkHub 泛化为 `RunBudget`，新增 `max_tokens`/`max_cost`（[`agent-loop-and-tools.md §4.1`](./02-ai-engine/agent-loop-and-tools.md)）。② **provider 注册表**支持低风险任务路由更便宜模型（[`tech-stack-and-migration.md §4`](./01-architecture/tech-stack-and-migration.md)，现状 DeepSeek-via-Anthropic 硬编码两处 `AsyncAnthropic`，收进注册表）。③ 超预算→**结构化交接件 + 升级**（FR-WORKER-003），非静默截断。 |
-| **看板已落盘但配额规则仍缺（更新）** | [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md) 已撰写（非"待写"），其 **DASH-3 成本看板**已定义"用户/团队/任务三级用量 vs 预算"对比（`AgentRun.cost_estimate`、三级进度条超额变红，§2.5/§7），但该篇**明确把"预算配额数值/超额动作"下放给 `agent-loop-and-tools` 与 P-COST**（[`dashboards-and-metrics.md §0` 边界声明](./04-modules/dashboards-and-metrics.md)，只呈现不裁决）。 |
-| **待标定项（🟡）** | 用户/团队/任务三级**初始配额具体数值**与超额处置（硬停 vs 降级模型 vs 升级人工）——`RunBudget.max_cost` 注释明写"由用户/团队/任务三级配额裁出，规则在 P-COST 文档"，但 **P-COST 三级配额数值与合并规则的专篇仍未撰写**（看板篇只负责呈现，不含数值与裁决规则）。 |
-| **建议** | 先用"任务级硬上限（步数/超时已有）+ 全局月度 token 软上限告警"起步，三级精细配额随成本看板（[`api-contract.md §2.14 /dashboard/cost`](./01-architecture/api-contract.md)、[`dashboards-and-metrics.md DASH-3`](./04-modules/dashboards-and-metrics.md)）数据沉淀后再定；初值由业务方按"每条已交付需求的 AI token 成本"（[PRD §13 成本度量](../prd/2026-06-04-workhub-prd.md)）反推。 |
-| **归属篇** | 预算上限 [`agent-loop-and-tools.md §4`](./02-ai-engine/agent-loop-and-tools.md)；provider/路由 [`tech-stack-and-migration.md §4`](./01-architecture/tech-stack-and-migration.md)；三级配额（P-COST）**仍待补专篇**；看板呈现 [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md)（**已落盘 🚧**）。 |
+| **配额规则已补（更新）** | [`cost-governance.md`](./02-ai-engine/cost-governance.md) 已给 v0 默认：单 run `15 steps / 300s / 120k tokens / 5 CNY`，用户日 `500k tokens / 20 CNY`，团队日 `5M tokens / 200 CNY`，团队月 `50M tokens / 2000 CNY`。 |
+| **计入口径（已定）** | 正常 step、review、retry、compact、schema repair 均计入真实 run 成本；nightly eval 单独进 `scope.kind="eval"`，不污染用户/team 配额。 |
+| **建议** | v0 数值先作为可配置默认值上线，成本看板沉淀真实「每条已交付需求 token 成本」后再调参；调参只改 `BudgetPolicy`，不改 AgentLoop。 |
+| **归属篇** | 预算裁决 [`cost-governance.md`](./02-ai-engine/cost-governance.md)；Agent 消费 [`agent-loop-and-tools.md §4`](./02-ai-engine/agent-loop-and-tools.md)；provider/路由 [`tech-stack-and-migration.md §4`](./01-architecture/tech-stack-and-migration.md)；看板呈现 [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md)。 |
 
 ---
 
@@ -229,7 +229,7 @@ owner: workflow
 
 ## 4. 文档落点状态（开放问题的"落点缺口"复核）
 
-> 开放问题的部分落点曾指向"尚未撰写"的规格篇。**本节经磁盘复核后更新**：原先列为"待写"的 05-clients / 06-roadmap / dashboards 诸篇**现已全部落盘（status 🚧，磁盘真实存在）**，相关开放问题的"无处落定"障碍已解除；真正仍空缺的只剩 **P-COST 三级配额专篇**一处。
+> 开放问题的部分落点曾指向"尚未撰写"的规格篇。**本节经磁盘复核后更新**：原先列为"待写"的 05-clients / 06-roadmap / dashboards 诸篇与 **P-COST 三级配额专篇**现已全部落盘，相关开放问题的"无处落定"障碍已解除。
 
 ### 4.1 已落盘（原"待写"障碍已解除）
 
@@ -239,17 +239,18 @@ owner: workflow
 |---|---|---|
 | [`05-clients/desktop-pet-tauri.md`](./05-clients/desktop-pet-tauri.md) | **OQ-5**（桌宠人格/打扰边界）、PJ-1 | §5.1 已给"能干/克制/会请示"人格基调 + dedup/severity 节流锚点；OQ-5 仅剩数值与最终拍板 |
 | [`04-modules/dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md) | **OQ-7**（成本看板）、EX-3（signals 展示边界） | DASH-3 成本看板 + admin/桌宠分层呈现已落；EX-3 转 🟢 |
-| [`06-roadmap/functional-requirements.md`](./06-roadmap/functional-requirements.md) | **OQ-6**（L2 白名单 FR）、OQ-4（合并语义 FR） | 已挂 `FR-WORKER-006`/`FR-COLLAB-006` 等；OQ-6 白名单**子类条目**仍待补，但落点已在 |
+| [`06-roadmap/functional-requirements.md`](./06-roadmap/functional-requirements.md) | **OQ-6**（L2 白名单 FR）、OQ-4（合并语义 FR） | 已挂 `FR-WORKER-008`（file-only 首发白名单）与 `FR-COLLAB-006`（合并语义）；OQ-6 已有可追溯需求锚点 |
+| [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) | **OQ-7**（三级配额数值与合并规则） | v0 默认配额、超额动作、计入口径、`BudgetDecision` / `CostDashboardVM` 已落盘 |
 | [`06-roadmap/phasing-p0-p5.md`](./06-roadmap/phasing-p0-p5.md) | 多数 🔵 延后项的出入口标准（KB-2、EX-4、PJ-2 等） | 已落盘；🔵 项的出入口锚点应回该篇核对 |
 | [`05-clients/web-app.md`](./05-clients/web-app.md) · [`05-clients/shared-ui-kit.md`](./05-clients/shared-ui-kit.md) | EX-3 的 UI 落点、去黑话渲染层 | 已落盘；去黑话"在客户端翻译"（[`api-contract.md §7`](./01-architecture/api-contract.md)）有了 UI 落点 |
 
-### 4.2 仍空缺（真空缺，需补）
+### 4.2 已关闭缺口（本次补齐）
 
-| 仍缺文档 | 阻塞的开放问题 | 优先级理由 |
+| 已补文档 | 原阻塞的开放问题 | 当前状态 |
 |---|---|---|
-| **P-COST 三级配额专篇**（README 未单列，散见 provider 注册表 / `agent-loop-and-tools`） | **OQ-7**（三级配额**数值**与合并规则） | `RunBudget.max_cost` 注释指向"P-COST 文档"；[`dashboards-and-metrics.md §0`](./04-modules/dashboards-and-metrics.md) 已把数值/超额动作下放给 P-COST，但该专篇尚不存在——这是 OQ-7 数值层唯一的真空缺 |
+| [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) | **OQ-7**（三级配额**数值**与合并规则） | 已给 v0 默认值、合并规则、计入口径、API/事件与验收门禁；后续只需按真实数据调参 |
 
-> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 三篇全在）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标"程度；**剩余真空缺仅 P-COST 配额专篇一处**，其余开放问题的落点均已就位，状态从"无处落定"收敛为"待标定/待拍板"。
+> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 三篇全在）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标"程度；开放问题已从"无处落定"收敛为"已给 v0 默认 / 待真实数据标定 / 待产品拍板"。
 
 ---
 
@@ -260,9 +261,9 @@ owner: workflow
 | 优先级 | 开放问题 | 为什么先做 | 谁拍板 |
 |---|---|---|---|
 | **P1 阻塞·必须先定** | **OQ-2 / OQ-3**（置信度信号权重 + 风险维度权重的 v1 初值与标定责任人） | 分级裁决是 P1 旗舰命门，无初值则"AI 干、人把关"的反转无法跑通 | 产品 owner + 业务方共签 |
-| **P1 阻塞·必须先定** | **OQ-6**（首发 L2 领域白名单，至少锁定 file-only 子类） | P1"AI 默认执行（先 file 类）"需明确覆盖范围 | 产品 owner |
+| **P1 已收敛·实现时验证** | **OQ-6**（首发 L2 file-only 白名单） | 已落 `FR-WORKER-008`;P1 验证 Agent 只在白名单内自动执行 | 工程 + 产品复核 |
 | **P1 阻塞·执行级** | **MG-1~MG-5**（迁移工序：表名/Alembic/类型/broker/编号） | P0 地基阶段第一道闸（[`system-architecture.md §7` 判断 3](./01-architecture/system-architecture.md)：多 worker 前必须收口 AgentRun 拥有权/恢复/事件路由） | 工程 + plan |
-| **P1 收尾·边定边调** | **OQ-7 / AL-2 / AL-6**（预算上限口径 + doom-loop N） | 可用规格树建议值上线，靠真实 trace 调 | 工程 + 数据 |
+| **P1 收尾·边定边调** | **OQ-7 / AL-2**（预算默认值 + doom-loop N） | OQ-7 v0 已落 `cost-governance.md`;上线后靠真实 trace / 成本看板调参 | 工程 + 数据 |
 | **P3 前定** | **OQ-4**（对象合并语义：先做 STRUCT 字段级 + DOC 二进制指针） | P3 协作铺开前的深设计专题 | 归属篇 owner |
 | **P4 前定** | **OQ-5 / PJ-1**（桌宠人格/打扰边界） | `desktop-pet-tauri.md` 已落盘并给"克制优先"基调，剩频率数值与最终拍板；P4 桌宠阶段产品命题 | 产品 owner |
 | **随分期/数据** | EX-2/3/4、KB-1/2/3、PJ-2/4、SY-1/2、RA-1~6 | 多为字段收口或 P2/P3 延后项，不阻塞反转验证 | 各归属篇 |
@@ -274,7 +275,8 @@ owner: workflow
 | 想了解 | 看哪篇 |
 |---|---|
 | 置信度算法/风险维度/分级阈值/三触发器/打回回灌（OQ-2/3 机制） | [`02-ai-engine/confidence-risk-escalation.md`](./02-ai-engine/confidence-risk-escalation.md) |
-| 工人循环/控制信号/doom-loop/快照/预算（OQ-7、AL-* 机制） | [`02-ai-engine/agent-loop-and-tools.md`](./02-ai-engine/agent-loop-and-tools.md) |
+| 工人循环/控制信号/doom-loop/快照/预算消费（OQ-7、AL-* 机制） | [`02-ai-engine/agent-loop-and-tools.md`](./02-ai-engine/agent-loop-and-tools.md) |
+| 成本治理/三级配额/模型路由/计入口径（P-COST） | [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) |
 | 对象合并语义/冲突 AI 调解（OQ-4 机制） | [`03-collaboration/branch-proposal-merge.md`](./03-collaboration/branch-proposal-merge.md) |
 | 审批阻塞/路由/SLA/委派/"永远允许"（RA-* 机制） | [`03-collaboration/review-and-approval.md`](./03-collaboration/review-and-approval.md) · [`01-architecture/security-and-permissions.md`](./01-architecture/security-and-permissions.md) |
 | 双向同步/cursor/冲突检测（SY-* 机制） | [`03-collaboration/sync-and-spec.md`](./03-collaboration/sync-and-spec.md) |

@@ -223,3 +223,18 @@ F05 提供 topic + 扇出 + 鉴权，**不发布业务事件**。产出方与归
 
 - **F3 ⇄ F5 成对铁律**（Master §6 铁律 3、§5.1）：单独任一落地后**仍 `--workers 1`**；2 worker 冒烟（AC-2/AC-7）过门禁才解禁 N。
 - F05 只交付 **pub/sub + presence**；**work-queue（F8）、里程碑通知中枢（F9）、行级锁（F8）** 各归其组件——F05 不越界发业务事件、不实现队列/锁。
+
+---
+
+## Target TS paths
+
+> 本组件施工时,旧 `push_bus.py` / `push.py` / `presence.py` 是 topic、背压和身份隔离行为来源;新实现落 `packages/events` 与 API SSE/broker。
+
+| 类别 | 目标路径 | 必须产物 | 审计门禁 |
+|---|---|---|---|
+| event contracts | `packages/events/src/types.ts`, `packages/events/src/event-types.ts` | `WorkHubEvent<T>`、正式事件名常量 | 页面/Cuu 不手写事件字符串 |
+| adapters | `packages/events/src/toAttentionItem.ts`, `packages/events/src/toCuuState.ts` | 事件→一件事/Cuu 状态映射 | `budget.warning`/`proposal.opened` 等均可映射 |
+| broker | `apps/api/src/broker/*` | Redis pub/sub 或 dev in-memory backend | Redis 关闭时 fail-closed 或显式 single-worker dev |
+| SSE | `apps/api/src/sse/*`, `apps/api/src/routes/push.ts` | `/api/push/stream/me`, `/run/:id`, topic 鉴权 | 私有事件不发 `all` |
+
+**PR 必答**:新增 topic 必须登记鉴权谓词;大 payload 只发 ref/preview。F05 不实现 work queue,AgentRun queue 归 F08。
