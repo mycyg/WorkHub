@@ -6,6 +6,8 @@ const eventTypeToCuuState: Partial<Record<EventType, CuuState>> = {
   [eventTypes.agentRunCompacting]: "thinking",
   [eventTypes.agentRunFailed]: "worried",
   [eventTypes.agentRunEscalated]: "worried",
+  [eventTypes.confidenceScored]: "thinking",
+  [eventTypes.escalationOpened]: "worried",
   [eventTypes.permissionAsk]: "asking_approval",
   [eventTypes.permissionDecided]: "thinking",
   [eventTypes.permissionReassigned]: "asking_approval",

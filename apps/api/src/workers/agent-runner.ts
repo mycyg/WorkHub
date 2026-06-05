@@ -38,6 +38,10 @@ import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { createAgentRunSnapshotHook } from "../services/agent-run-snapshots.js";
+import {
+  createAgentRunConfidenceRecorder,
+  type AgentRunConfidenceRecorder
+} from "../services/agent-run-confidence.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -155,6 +159,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshotId?: () => string;
   snapshots?: SnapshotRepository;
   auditLogs?: AuditLogRepository;
+  confidence?: AgentRunConfidenceRecorder | false;
   notifications?: AgentRunNotificationPublisher | false;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
@@ -285,9 +290,11 @@ export function createInMemoryAgentRunQueue(options: {
         now
       });
       current = updateRun(finalizeExecutedRun(current, result, now()));
+      await recordRunConfidence(current, result);
       await notifyRunMilestone(current, result.reason);
       return current;
     } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
       current = updateRun({
         ...current,
         status: "failed",
@@ -300,15 +307,40 @@ export function createInMemoryAgentRunQueue(options: {
             id: `${current.run_id}:final:error`,
             step_no: Math.max(current.trace.at(-1)?.step_no ?? 0, 0) + 1,
             phase: "final",
-            output_excerpt: error instanceof Error ? error.message : String(error),
+            output_excerpt: failureReason,
             control_signal: "escalate",
             created_at: now().toISOString()
           }
         ],
         updated_at: now().toISOString()
       });
+      await recordRunConfidence(current, {
+        status: "failed",
+        reason: failureReason,
+        control: "escalate",
+        usage: {
+          stepsUsed: current.usage.steps_used,
+          secondsUsed: 0,
+          tokenIn: current.usage.token_in,
+          tokenOut: current.usage.token_out,
+          totalTokens: current.usage.token_in + current.usage.token_out,
+          estimatedCostCny: current.usage.estimated_cost_cny
+        },
+        steps: []
+      });
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
       return current;
+    }
+  }
+
+  async function recordRunConfidence(run: AgentRunQueueRecord, result: AgentLoopResult) {
+    if (options.confidence === false || !options.confidence) {
+      return;
+    }
+    try {
+      await options.confidence({ run, result });
+    } catch (error) {
+      console.warn("WorkHub AgentRun confidence recording failed", error);
     }
   }
 
@@ -630,6 +662,8 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
 let defaultQueue: AgentRunQueue | undefined;
 
 export function getDefaultAgentRunQueue() {
-  defaultQueue ??= createInMemoryAgentRunQueue();
+  defaultQueue ??= createInMemoryAgentRunQueue({
+    confidence: createAgentRunConfidenceRecorder()
+  });
   return defaultQueue;
 }

@@ -1,0 +1,238 @@
+import type {
+  ConfidenceGrade,
+  ConfidenceVerdict,
+  EscalationTrigger,
+  RiskLevel
+} from "@workhub/contracts";
+
+import type { AgentLoopResult, AgentLoopStep, StructuredHandoff } from "../loop/types.js";
+
+export type ConfidenceAssessment = {
+  confidenceScore: number;
+  riskScore: number;
+  grade: ConfidenceGrade;
+  riskLevel: RiskLevel;
+  verdict: ConfidenceVerdict;
+  signalsJson: Record<string, unknown>;
+  rationaleMd: string;
+  escalation?: {
+    trigger: EscalationTrigger;
+    reasonMd: string;
+    handoffJson: Record<string, unknown>;
+  };
+};
+
+export type EvaluateAgentRunConfidenceInput = {
+  runId: string;
+  workItemId: string;
+  model: string;
+  result: AgentLoopResult;
+  policyVersion?: string;
+  autoMergeAllowed?: boolean;
+};
+
+type RiskDimensions = {
+  reversibility: number;
+  external: number;
+  monetary: number;
+  blast_radius: number;
+  domain_gate: number;
+};
+
+const DEFAULT_POLICY_VERSION = "confidence-v0-file-only";
+
+function clamp01(value: number) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function round3(value: number) {
+  return Math.round(clamp01(value) * 1000) / 1000;
+}
+
+function hasSnapshot(steps: AgentLoopStep[]) {
+  return steps.some((step) => Boolean(step.snapshotId) || step.toolResults.some((result) => Boolean(result.snapshotId)));
+}
+
+function gradeFor(score: number): ConfidenceGrade {
+  if (score >= 0.85) {
+    return "high";
+  }
+  if (score >= 0.6) {
+    return "medium";
+  }
+  return "low";
+}
+
+function riskDimensionsFor(input: EvaluateAgentRunConfidenceInput): RiskDimensions {
+  const reversible = hasSnapshot(input.result.steps);
+  return {
+    reversibility: reversible ? 0.2 : 0.5,
+    external: 0,
+    monetary: 0,
+    blast_radius: input.result.status === "succeeded" ? 0.15 : 0.25,
+    domain_gate: 0
+  };
+}
+
+function riskScoreFor(dimensions: RiskDimensions) {
+  const values = Object.values(dimensions);
+  const max = Math.max(...values);
+  const mean = values.reduce((total, value) => total + value, 0) / values.length;
+  return round3(0.6 * max + 0.4 * mean);
+}
+
+function riskLevelFor(score: number, dimensions: RiskDimensions): RiskLevel {
+  if (dimensions.external >= 1 || dimensions.monetary >= 1 || dimensions.domain_gate >= 1 || score >= 0.6) {
+    return "high";
+  }
+  if (score >= 0.3) {
+    return "medium";
+  }
+  return "low";
+}
+
+function matrixVerdict(grade: ConfidenceGrade, riskLevel: RiskLevel): ConfidenceVerdict {
+  if (grade === "low" || riskLevel === "high") {
+    return "escalate";
+  }
+  if (grade === "high" && riskLevel === "low") {
+    return "auto_merge";
+  }
+  return "human_spotcheck";
+}
+
+function confidenceScoreFor(result: AgentLoopResult) {
+  if (result.status === "succeeded") {
+    return result.manifest ? 0.88 : 0.72;
+  }
+  if (result.status === "escalated") {
+    return 0.35;
+  }
+  return 0.2;
+}
+
+function downgradeAutoMerge(verdict: ConfidenceVerdict, autoMergeAllowed: boolean | undefined) {
+  return verdict === "auto_merge" && !autoMergeAllowed ? "human_spotcheck" : verdict;
+}
+
+function handoffToJson(handoff: StructuredHandoff | undefined): Record<string, unknown> {
+  if (!handoff) {
+    return {
+      done: [],
+      remaining: ["需要查看 AgentRun trace 后确认下一步。"],
+      next_steps: ["查看执行过程", "决定继续、打回或转人工处理"],
+      blockers: [],
+      artifacts: [],
+      budget_hit: "unknown"
+    };
+  }
+  return {
+    done: handoff.done,
+    remaining: handoff.remaining,
+    next_steps: handoff.nextSteps,
+    blockers: handoff.blockers,
+    artifacts: handoff.artifacts,
+    budget_hit: handoff.budgetHit
+  };
+}
+
+function triggerFor(result: AgentLoopResult): EscalationTrigger {
+  if (result.handoff?.budgetHit === "doom_loop" || result.reason === "doom_loop") {
+    return "doom_loop";
+  }
+  if (result.handoff && ["steps", "timeout", "tokens", "cost"].includes(result.handoff.budgetHit)) {
+    return "budget_exhausted";
+  }
+  return "unqualified";
+}
+
+function rationaleFor(input: {
+  result: AgentLoopResult;
+  verdict: ConfidenceVerdict;
+  riskLevel: RiskLevel;
+}) {
+  if (input.verdict === "human_spotcheck") {
+    return input.riskLevel === "low"
+      ? "AI 已产出交付物，我比较有把握，建议你快速扫一眼后确认。"
+      : "AI 已产出交付物，但影响面不小，建议你先看一眼再确认。";
+  }
+  if (input.verdict === "auto_merge") {
+    return "AI 已产出交付物，风险较低，可以按当前策略自动采纳。";
+  }
+  if (input.result.handoff?.budgetHit === "doom_loop" || input.result.reason === "doom_loop") {
+    return "AI 卡住了，反复尝试同类动作没有进展，建议请人接手。";
+  }
+  if (input.result.handoff) {
+    return "AI 的执行预算已经用尽，已整理交接信息，建议请人接手或调整预算后继续。";
+  }
+  return `AI 没有完成可用交付：${input.result.reason}。建议请人查看执行过程后决定继续或转人工。`;
+}
+
+export function evaluateAgentRunConfidence(input: EvaluateAgentRunConfidenceInput): ConfidenceAssessment {
+  const policyVersion = input.policyVersion ?? DEFAULT_POLICY_VERSION;
+  const confidenceScore = round3(confidenceScoreFor(input.result));
+  const dimensions = riskDimensionsFor(input);
+  const riskScore = riskScoreFor(dimensions);
+  const grade = gradeFor(confidenceScore);
+  const riskLevel = riskLevelFor(riskScore, dimensions);
+  const baseVerdict = input.result.status === "succeeded"
+    ? matrixVerdict(grade, riskLevel)
+    : "escalate";
+  const verdict = downgradeAutoMerge(baseVerdict, input.autoMergeAllowed);
+  const rationaleMd = rationaleFor({ result: input.result, verdict, riskLevel });
+  const signalsJson = {
+    policy_version: policyVersion,
+    run_id: input.runId,
+    work_item_id: input.workItemId,
+    model: input.model,
+    result: {
+      status: input.result.status,
+      control: input.result.control,
+      reason: input.result.reason
+    },
+    sources: {
+      review: {
+        score: confidenceScore,
+        reason: input.result.reason
+      },
+      acceptance: {
+        score: input.result.status === "succeeded" ? 1 : 0,
+        reason: input.result.status === "succeeded" ? "交付物已生成" : "交付物未通过执行终态"
+      },
+      self: {
+        score: null,
+        reason: "当前 AgentRun 未提供自评"
+      },
+      history: {
+        calibration_factor: 1,
+        reason: "冷启动或样本不足时不做历史缩放"
+      }
+    },
+    risk: {
+      dimensions,
+      has_revert_snapshot: hasSnapshot(input.result.steps)
+    },
+    usage: input.result.usage
+  };
+
+  const assessment: ConfidenceAssessment = {
+    confidenceScore,
+    riskScore,
+    grade,
+    riskLevel,
+    verdict,
+    signalsJson,
+    rationaleMd
+  };
+
+  if (verdict === "escalate") {
+    const trigger = triggerFor(input.result);
+    assessment.escalation = {
+      trigger,
+      reasonMd: rationaleMd,
+      handoffJson: handoffToJson(input.result.handoff)
+    };
+  }
+
+  return assessment;
+}

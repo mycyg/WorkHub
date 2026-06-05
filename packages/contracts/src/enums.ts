@@ -140,6 +140,8 @@ export const eventTypes = {
   agentRunCompacting: "agent_run.compacting",
   agentRunFailed: "agent_run.failed",
   agentRunEscalated: "agent_run.escalated",
+  confidenceScored: "confidence.scored",
+  escalationOpened: "escalation.opened",
   permissionAsk: "permission.ask",
   permissionDecided: "permission.decided",
   permissionReassigned: "permission.reassigned",

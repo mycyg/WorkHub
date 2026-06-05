@@ -81,6 +81,23 @@ test("budget events become actionable attention items for Web and Cuu", () => {
   assert.equal(exhaustedAttention?.title, "预算用完了");
 });
 
+test("escalation opened events become Cuu handoff attention", () => {
+  const event = makeWorkHubEvent({
+    event_id: "30000000-0000-4000-8000-000000000005",
+    type: eventTypes.escalationOpened,
+    topic: topics.workitem("50000000-0000-4000-8000-000000000001").topic,
+    ts: new Date("2026-06-05T00:02:00.000Z"),
+    work_item_id: "50000000-0000-4000-8000-000000000001",
+    preview_text: "AI 觉得这事需要请人接手。",
+    data: { escalation_id: "73000000-0000-4000-8000-000000000025" }
+  });
+  const attention = toAttentionItem(event);
+
+  assert.equal(toCuuState(event), "worried");
+  assert.equal(attention?.kind, "escalation");
+  assert.equal(attention?.source_ref.entity_type, "escalation_event");
+});
+
 test("SSE formatting prefixes every data line and round-trips multiline payloads", () => {
   const frame = formatSseEvent("agent_run.step", "line 1\r\nline 2");
 

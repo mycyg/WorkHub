@@ -23,6 +23,10 @@
     "./deliverables": {
       "types": "./src/deliverables/index.ts",
       "import": "./src/deliverables/index.ts"
+    },
+    "./evaluation": {
+      "types": "./src/evaluation/index.ts",
+      "import": "./src/evaluation/index.ts"
     }
   },
   "scripts": {

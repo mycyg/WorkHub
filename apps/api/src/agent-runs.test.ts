@@ -15,8 +15,11 @@ import { buildUsageRecord, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
   AuditLogRepository,
   AuditLogRow,
+  AiDecisionRepository,
   ClientDeviceAuthRow,
   ClientDeviceRepository,
+  ConfidenceRecordRow,
+  EscalationEventRow,
   SnapshotRepository,
   SnapshotRow,
   UserAuthRow,
@@ -25,6 +28,7 @@ import type {
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
+import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
@@ -35,6 +39,8 @@ const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000021";
 const workItemId = "50000000-0000-4000-8000-000000000021";
 const snapshotId = "70000000-0000-4000-8000-000000000025";
+const confidenceId = "72000000-0000-4000-8000-000000000025";
+const escalationId = "73000000-0000-4000-8000-000000000025";
 
 function user(): UserAuthRow {
   return {
@@ -143,6 +149,40 @@ function auditLogRow(partial: Partial<AuditLogRow> = {}): AuditLogRow {
   };
 }
 
+function confidenceRecordRow(partial: Partial<ConfidenceRecordRow> = {}): ConfidenceRecordRow {
+  return {
+    id: confidenceId,
+    workItemId,
+    proposalId: null,
+    agentRunId: null,
+    confidenceScore: 0.88,
+    riskScore: 0.16,
+    grade: "high",
+    riskLevel: "low",
+    verdict: "human_spotcheck",
+    signalsJson: {},
+    rationaleMd: null,
+    createdAt: now,
+    ...partial
+  };
+}
+
+function escalationEventRow(partial: Partial<EscalationEventRow> = {}): EscalationEventRow {
+  return {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    confidenceId: null,
+    trigger: "unqualified",
+    reasonMd: "AI 没有完成可用交付。",
+    handoffJson: {},
+    suggestedLeadUserId: null,
+    resolvedAt: null,
+    createdAt: now,
+    ...partial
+  };
+}
+
 class MemorySnapshots implements SnapshotRepository {
   public rows: SnapshotRow[] = [];
 
@@ -214,6 +254,56 @@ class MemoryAuditLogs implements AuditLogRepository {
     }
     row.undoneAt = at;
     return row;
+  }
+}
+
+class MemoryAiDecisions implements AiDecisionRepository {
+  public confidenceRows: ConfidenceRecordRow[] = [];
+  public escalationRows: EscalationEventRow[] = [];
+
+  async createConfidenceRecord(input: Parameters<AiDecisionRepository["createConfidenceRecord"]>[0]) {
+    const row = confidenceRecordRow({
+      id: input.id ?? `72000000-0000-4000-8000-${String(this.confidenceRows.length + 25).padStart(12, "0")}`,
+      workItemId: input.workItemId,
+      proposalId: input.proposalId ?? null,
+      agentRunId: input.agentRunId ?? null,
+      confidenceScore: input.confidenceScore,
+      riskScore: input.riskScore,
+      grade: input.grade,
+      riskLevel: input.riskLevel,
+      verdict: input.verdict,
+      signalsJson: input.signalsJson ?? {},
+      rationaleMd: input.rationaleMd ?? null
+    });
+    this.confidenceRows.push(row);
+    return row;
+  }
+
+  async listConfidenceRecordsForWorkItem(id: string) {
+    return this.confidenceRows.filter((row) => row.workItemId === id);
+  }
+
+  async findConfidenceRecordForAgentRun(id: string) {
+    return this.confidenceRows.find((row) => row.agentRunId === id) ?? null;
+  }
+
+  async createEscalationEvent(input: Parameters<AiDecisionRepository["createEscalationEvent"]>[0]) {
+    const row = escalationEventRow({
+      id: input.id ?? `73000000-0000-4000-8000-${String(this.escalationRows.length + 25).padStart(12, "0")}`,
+      workItemId: input.workItemId,
+      agentRunId: input.agentRunId ?? null,
+      confidenceId: input.confidenceId ?? null,
+      trigger: input.trigger,
+      reasonMd: input.reasonMd,
+      handoffJson: input.handoffJson ?? {},
+      suggestedLeadUserId: input.suggestedLeadUserId ?? null
+    });
+    this.escalationRows.push(row);
+    return row;
+  }
+
+  async listEscalationEventsForWorkItem(id: string) {
+    return this.escalationRows.filter((row) => row.workItemId === id);
   }
 }
 
@@ -315,6 +405,32 @@ function executableAgentClient(): AgentLoopClient {
           throw new Error("No fake AgentLoop response queued");
         }
         return response;
+      }
+    }
+  };
+}
+
+function noDeliverableAgentClient(): AgentLoopClient {
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        return {
+          id: "msg-failed-1",
+          stopReason: "end_turn",
+          usage: { inputTokens: 3, outputTokens: 4 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 3,
+            outputTokens: 4,
+            estimatedCostCny: "0.001",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:00.000Z"
+          },
+          content: [{ type: "text", text: "我没有可交付文件。" }]
+        };
       }
     }
   };
@@ -447,6 +563,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-snapshot-test-"));
   const snapshots = new MemorySnapshots();
   const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
   const milestoneNotifications: { newStatus: string; approverUserId?: string }[] = [];
   const notifications: AgentRunNotificationPublisher = {
     async notifyMilestone(context) {
@@ -467,6 +584,11 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     snapshotId: () => snapshotId,
     snapshots,
     auditLogs,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings
+    }),
     notifications
   });
   const app = withErrors(new Hono<AuthEnv>());
@@ -490,8 +612,13 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
   assert.equal(snapshots.rows.length, 1);
   assert.equal(snapshots.rows[0]?.contentSha256?.length, 64);
-  assert.equal(auditLogs.rows.length, 1);
-  assert.equal(auditLogs.rows[0]?.action, "tool.write_file.snapshot");
+  assert.equal(auditLogs.rows.some((row) => row.action === "tool.write_file.snapshot"), true);
+  assert.equal(auditLogs.rows.some((row) => row.action === "confidence.scored"), true);
+  assert.equal(decisions.confidenceRows.length, 1);
+  assert.equal(decisions.confidenceRows[0]?.agentRunId, startBody.data.run_id);
+  assert.equal(decisions.confidenceRows[0]?.verdict, "human_spotcheck");
+  assert.equal(decisions.confidenceRows[0]?.grade, "high");
+  assert.equal(decisions.escalationRows.length, 0);
   assert.deepEqual(milestoneNotifications, [{ newStatus: "in_review", approverUserId: userId }]);
 
   const runResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}`, {
@@ -527,8 +654,47 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(traceBody.data.some((step) => step.output_excerpt?.includes("交付完成")), true);
   assert.equal(replayBody.data.cost.me.estimated_cost_cny, "0.003");
   assert.deepEqual(replayBody.data.snapshots.map((snapshot) => snapshot.id), [snapshotId]);
-  assert.deepEqual(replayBody.data.audit_logs.map((log) => log.action), ["tool.write_file.snapshot"]);
+  assert.equal(replayBody.data.audit_logs.some((log) => log.action === "tool.write_file.snapshot"), true);
+  assert.equal(replayBody.data.audit_logs.some((log) => log.action === "confidence.scored"), true);
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);
+});
+
+test("agent run confidence recording opens an escalation for failed deliverables", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-failed-test-"));
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000026",
+    workdir: () => workdir,
+    client: () => noDeliverableAgentClient(),
+    notifications: false,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings
+    })
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Failed worker run"
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  assert.equal(decisions.confidenceRows.length, 1);
+  assert.equal(decisions.confidenceRows[0]?.verdict, "escalate");
+  assert.equal(decisions.confidenceRows[0]?.grade, "low");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(decisions.escalationRows[0]?.trigger, "unqualified");
+  assert.equal(decisions.escalationRows[0]?.confidenceId, decisions.confidenceRows[0]?.id);
+  assert.equal(auditLogs.rows.some((row) => row.action === "confidence.scored"), true);
+  assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
 });

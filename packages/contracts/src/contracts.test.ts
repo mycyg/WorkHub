@@ -151,6 +151,8 @@ test("formal event names are the only exported implementation names", () => {
   const exportedEventTypes = Object.values(eventTypes) as string[];
 
   assert.equal(eventTypes.agentRunStarted, "agent_run.started");
+  assert.equal(eventTypes.confidenceScored, "confidence.scored");
+  assert.equal(eventTypes.escalationOpened, "escalation.opened");
   assert.equal(eventTypes.proposalOpened, "proposal.opened");
   assert.equal(exportedEventTypes.includes("agent.run.started"), false);
   assert.equal(exportedEventTypes.includes("proposal.ready"), false);
