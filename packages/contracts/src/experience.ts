@@ -65,6 +65,7 @@ export const attentionItemSchema = z.object({
     "escalation",
     "sync_conflict",
     "knowledge_result",
+    "budget",
     "delivery_ready",
     "system_health"
   ]),
@@ -78,7 +79,8 @@ export const attentionItemSchema = z.object({
       "agent_run",
       "notification",
       "escalation_event",
-      "knowledge_run"
+      "knowledge_run",
+      "budget_notice"
     ]),
     entity_id: idSchema
   }),

@@ -1,6 +1,7 @@
 import {
   eventTypes,
   type AttentionItem,
+  budgetNoticeSchema,
   type EventType,
   type WorkHubEvent
 } from "@workhub/contracts";
@@ -23,6 +24,9 @@ function sourceRefFor(event: WorkHubEvent<unknown>): AttentionItem["source_ref"]
       return { entity_type: "agent_run", entity_id: event.run_id ?? fallback };
     case eventTypes.knowledgeEvidenceReady:
       return { entity_type: "knowledge_run", entity_id: findUuid(event.data, ["run_id"]) ?? fallback };
+    case eventTypes.budgetWarning:
+    case eventTypes.budgetExhausted:
+      return { entity_type: "budget_notice", entity_id: fallback };
     default:
       return { entity_type: "notification", entity_id: fallback };
   }
@@ -55,8 +59,60 @@ function kindFor(event: WorkHubEvent<unknown>): AttentionItem["kind"] {
       return "sync_conflict";
     case eventTypes.knowledgeEvidenceReady:
       return "knowledge_result";
+    case eventTypes.budgetWarning:
+    case eventTypes.budgetExhausted:
+      return "budget";
     default:
       return "system_health";
+  }
+}
+
+function priorityFor(event: WorkHubEvent<unknown>): AttentionItem["priority"] {
+  if (event.type === eventTypes.budgetExhausted) {
+    return "urgent";
+  }
+  const budgetNotice = budgetNoticeSchema.safeParse(event.data);
+  if (budgetNotice.success && budgetNotice.data.severity === "critical") {
+    return "high";
+  }
+  return "normal";
+}
+
+function budgetActions(event: WorkHubEvent<unknown>): AttentionItem["actions"] | undefined {
+  const budgetNotice = budgetNoticeSchema.safeParse(event.data);
+  if (!budgetNotice.success) {
+    return undefined;
+  }
+
+  const actions = budgetNotice.data.options?.map<AttentionItem["actions"][number]>((option) => ({
+    id: option.id,
+    label: option.label,
+    style: option.id === budgetNotice.data.recommended_action ? "primary" : "secondary",
+    method: "POST",
+    href: option.action_href
+  })) ?? [];
+
+  if (actions.length === 0 && budgetNotice.data.action_href) {
+    actions.push({
+      id: "open_budget",
+      label: budgetNotice.data.code === "budget_exhausted" ? "处理预算" : "查看预算",
+      style: budgetNotice.data.code === "budget_exhausted" ? "danger" : "secondary",
+      method: "GET",
+      href: budgetNotice.data.action_href
+    });
+  }
+
+  return actions;
+}
+
+function titleFor(event: WorkHubEvent<unknown>, summary: string) {
+  switch (event.type as EventType) {
+    case eventTypes.budgetWarning:
+      return "预算快到线了";
+    case eventTypes.budgetExhausted:
+      return "预算用完了";
+    default:
+      return summary;
   }
 }
 
@@ -69,13 +125,13 @@ export function toAttentionItem(event: WorkHubEvent<unknown>): AttentionItem | u
   return {
     id: event.event_id,
     kind: kindFor(event),
-    priority: event.type === eventTypes.budgetExhausted ? "urgent" : "normal",
+    priority: priorityFor(event),
     ...(event.work_item_id ? { work_item_id: event.work_item_id } : {}),
     ...(event.project_id ? { project_id: event.project_id } : {}),
     source_ref: sourceRefFor(event),
-    title: summary,
+    title: titleFor(event, summary),
     summary_text: summary,
-    actions: [],
+    actions: budgetActions(event) ?? [],
     cuu_state: toCuuState(event),
     created_at: event.ts
   };

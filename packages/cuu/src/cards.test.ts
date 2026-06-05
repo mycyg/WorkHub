@@ -13,6 +13,7 @@ import {
 import {
   allCuuMotionHints,
   cardFromBudgetNotice,
+  cardFromAttentionItem,
   cardFromEvent,
   cardFromProposalDetail,
   cardFromQuestionCard
@@ -146,6 +147,25 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
 
 test("budget notices and budget events become actionable Cuu cards", () => {
   const card = cardFromBudgetNotice(budgetNotice, "budget-card");
+  const attentionCard = cardFromAttentionItem({
+    id: "30000000-0000-4000-8000-000000000009",
+    kind: "budget",
+    priority: "urgent",
+    source_ref: { entity_type: "budget_notice", entity_id: "30000000-0000-4000-8000-000000000009" },
+    title: "预算用完了",
+    summary_text: budgetNotice.message,
+    actions: [
+      {
+        id: "pause",
+        label: "先暂停",
+        style: "primary",
+        method: "POST",
+        href: `/api/workitems/${workItemId}/pause`
+      }
+    ],
+    cuu_state: "asking_approval",
+    created_at: ts
+  });
   const event: WorkHubEvent<BudgetNotice> = {
     event_id: "event-budget",
     type: eventTypes.budgetExhausted,
@@ -159,6 +179,8 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(card.kind, "budget");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.actions[0]?.tone, "primary");
+  assert.equal(attentionCard.kind, "budget");
+  assert.equal(attentionCard.state, "asking_approval");
   assert.equal(eventCard.id, "event-budget");
   assert.equal(eventCard.kind, "budget");
   assert.equal(eventCard.actions[0]?.href, `/api/workitems/${workItemId}/pause`);

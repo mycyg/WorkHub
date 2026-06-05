@@ -125,6 +125,7 @@ const stateByAttentionKind: Record<AttentionItem["kind"], CuuState> = {
   escalation: "worried",
   sync_conflict: "worried",
   knowledge_result: "searching_evidence",
+  budget: "worried",
   delivery_ready: "carrying_document",
   system_health: "idle"
 };
@@ -218,6 +219,8 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
       return "proposal";
     case "knowledge_result":
       return "evidence";
+    case "budget":
+      return "budget";
     case "sync_conflict":
       return "sync";
     case "escalation":

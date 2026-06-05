@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   allowedWorkItemTransitions,
   agentRunTraceVmSchema,
+  attentionItemSchema,
   authContextSchema,
   budgetDecisionSchema,
   budgetNoticeSchema,
@@ -267,6 +268,26 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.equal(policy.scope_kind, "workitem");
   assert.equal(usage.status, "warning");
   assert.equal(notice.options?.length, 2);
+  const attention = attentionItemSchema.parse({
+    id: "75000000-0000-4000-8000-000000000001",
+    kind: "budget",
+    priority: "normal",
+    source_ref: { entity_type: "budget_notice", entity_id: "75000000-0000-4000-8000-000000000001" },
+    title: "预算快到线了",
+    summary_text: notice.message,
+    actions: [
+      {
+        id: "continue_low_cost",
+        label: "继续但降级模型",
+        style: "primary",
+        method: "POST",
+        href: "/api/workitems/demo/agent-runs"
+      }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-06-05T00:00:00.000Z"
+  });
+  assert.equal(attention.kind, "budget");
   assert.equal(decision.reason, "budget_exhausted");
   assert.throws(() => budgetPolicySchema.parse({ ...policy, warning_ratio: 0.96 }));
   assert.throws(() => budgetPolicyUpdateSchema.parse({}));

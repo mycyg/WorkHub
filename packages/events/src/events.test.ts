@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { z } from "zod";
 
-import { eventTypes, workHubEventSchema } from "@workhub/contracts";
+import { eventTypes, type BudgetNotice, workHubEventSchema } from "@workhub/contracts";
 
 import { formatSseEvent, makeWorkHubEvent, parseSseFrames, toAttentionItem, toCuuState, topics } from "./index.js";
 
@@ -29,6 +29,56 @@ test("WorkHubEvent envelope uses formal event names and trims Cuu preview text",
   assert.equal(parsed.preview_text?.length, 200);
   assert.equal(toCuuState(event), "asking_approval");
   assert.equal(toAttentionItem(event)?.kind, "approval");
+});
+
+test("budget events become actionable attention items for Web and Cuu", () => {
+  const notice: BudgetNotice = {
+    code: "budget_warning",
+    severity: "warning",
+    message: "这次任务预算快用完了，建议降级模型继续。",
+    scope: { kind: "workitem", workitem_id: "30000000-0000-4000-8000-000000000002" },
+    usage_ratio: 0.84,
+    recommended_action: "downgrade_model",
+    options: [
+      {
+        id: "downgrade_model",
+        label: "降级模型继续",
+        action_href: "/api/workitems/30000000-0000-4000-8000-000000000002/agent-runs"
+      },
+      { id: "pause", label: "先暂停", action_href: "/workitems/30000000-0000-4000-8000-000000000002" }
+    ],
+    action_href: "/dashboard/cost"
+  };
+  const warning = makeWorkHubEvent({
+    event_id: "30000000-0000-4000-8000-000000000003",
+    type: eventTypes.budgetWarning,
+    topic: topics.user("10000000-0000-4000-8000-000000000001").topic,
+    ts: new Date("2026-06-05T00:00:00.000Z"),
+    preview_text: notice.message,
+    data: notice
+  });
+  const warningAttention = toAttentionItem(warning);
+
+  assert.equal(toCuuState(warning), "worried");
+  assert.equal(warningAttention?.kind, "budget");
+  assert.equal(warningAttention?.source_ref.entity_type, "budget_notice");
+  assert.equal(warningAttention?.title, "预算快到线了");
+  assert.equal(warningAttention?.actions[0]?.id, "downgrade_model");
+  assert.equal(warningAttention?.actions[0]?.style, "primary");
+
+  const exhausted = makeWorkHubEvent({
+    event_id: "30000000-0000-4000-8000-000000000004",
+    type: eventTypes.budgetExhausted,
+    topic: topics.user("10000000-0000-4000-8000-000000000001").topic,
+    ts: new Date("2026-06-05T00:01:00.000Z"),
+    preview_text: "AI 预算已经用完。",
+    data: { ...notice, code: "budget_exhausted", severity: "critical", recommended_action: "pause", usage_ratio: 1 }
+  });
+  const exhaustedAttention = toAttentionItem(exhausted);
+
+  assert.equal(toCuuState(exhausted), "asking_approval");
+  assert.equal(exhaustedAttention?.priority, "urgent");
+  assert.equal(exhaustedAttention?.title, "预算用完了");
 });
 
 test("SSE formatting prefixes every data line and round-trips multiline payloads", () => {
