@@ -237,6 +237,8 @@ test("proposal review requires reasons for changes and feeds them back into the 
       next_agent_context?: { correction: string; reason_fed_back: boolean };
       attention: { cuu_state?: string };
       event: { type: string };
+      feedback_event?: { type: string; cuu_state?: string; data: { reason_fed_back?: boolean } };
+      audit_logs?: { action: string; detail_json: { reason_fed_back?: boolean } }[];
     };
   };
   assert.equal(body.data.status, "revision_requested");
@@ -244,6 +246,11 @@ test("proposal review requires reasons for changes and feeds them back into the 
   assert.equal(body.data.next_agent_context?.reason_fed_back, true);
   assert.equal(body.data.attention.cuu_state, "revision_requested");
   assert.equal(body.data.event.type, "proposal.reviewed");
+  assert.equal(body.data.feedback_event?.type, "revision.fedback");
+  assert.equal(body.data.feedback_event?.cuu_state, "revision_requested");
+  assert.equal(body.data.feedback_event?.data.reason_fed_back, true);
+  assert.equal(body.data.audit_logs?.some((log) => log.action === "reason_fed_back"), true);
+  assert.equal(body.data.audit_logs?.[0]?.detail_json.reason_fed_back, true);
 });
 
 test("approved proposal can be merged with proposal events, audit facts, and rollback payload", async () => {

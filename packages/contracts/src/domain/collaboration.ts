@@ -108,7 +108,9 @@ export const proposalReviewResultSchema = z.object({
     })
     .optional(),
   attention: attentionItemSchema,
-  event: workHubEventSchema(z.unknown())
+  event: workHubEventSchema(z.unknown()),
+  feedback_event: workHubEventSchema(z.unknown()).optional(),
+  audit_logs: z.array(auditLogFactSchema).optional()
 });
 export type ProposalReviewResult = z.infer<typeof proposalReviewResultSchema>;
 

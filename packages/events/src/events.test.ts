@@ -98,6 +98,27 @@ test("escalation opened events become Cuu handoff attention", () => {
   assert.equal(attention?.source_ref.entity_type, "escalation_event");
 });
 
+test("revision feedback events keep Cuu in revision-requested handoff mode", () => {
+  const event = makeWorkHubEvent({
+    event_id: "30000000-0000-4000-8000-000000000006",
+    type: eventTypes.revisionFedback,
+    topic: topics.workitem("50000000-0000-4000-8000-000000000001").topic,
+    ts: new Date("2026-06-05T00:03:00.000Z"),
+    work_item_id: "50000000-0000-4000-8000-000000000001",
+    proposal_id: "60000000-0000-4000-8000-000000000001",
+    preview_text: "打回原因已回灌给下一轮 AI。",
+    data: {
+      proposal_id: "60000000-0000-4000-8000-000000000001",
+      reason_fed_back: true
+    }
+  });
+  const attention = toAttentionItem(event);
+
+  assert.equal(toCuuState(event), "revision_requested");
+  assert.equal(attention?.kind, "proposal_review");
+  assert.equal(attention?.source_ref.entity_type, "proposal");
+});
+
 test("SSE formatting prefixes every data line and round-trips multiline payloads", () => {
   const frame = formatSseEvent("agent_run.step", "line 1\r\nline 2");
 

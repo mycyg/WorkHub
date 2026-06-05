@@ -15,6 +15,7 @@ const eventTypeToCuuState: Partial<Record<EventType, CuuState>> = {
   [eventTypes.proposalOpened]: "carrying_document",
   [eventTypes.proposalReviewed]: "carrying_document",
   [eventTypes.proposalMerged]: "celebrating",
+  [eventTypes.revisionFedback]: "revision_requested",
   [eventTypes.knowledgeEvidenceReady]: "searching_evidence",
   [eventTypes.syncProgress]: "syncing_files",
   [eventTypes.syncConflict]: "worried",

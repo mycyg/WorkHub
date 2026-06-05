@@ -154,6 +154,7 @@ test("formal event names are the only exported implementation names", () => {
   assert.equal(eventTypes.confidenceScored, "confidence.scored");
   assert.equal(eventTypes.escalationOpened, "escalation.opened");
   assert.equal(eventTypes.proposalOpened, "proposal.opened");
+  assert.equal(eventTypes.revisionFedback, "revision.fedback");
   assert.equal(exportedEventTypes.includes("agent.run.started"), false);
   assert.equal(exportedEventTypes.includes("proposal.ready"), false);
 });

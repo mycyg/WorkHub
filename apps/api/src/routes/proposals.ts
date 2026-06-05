@@ -12,6 +12,7 @@ import {
   proposalMergeResultSchema,
   proposalReviewResultSchema,
   reviewProposalRequestSchema,
+  type AuditLogFact,
   type AttentionItem,
   type ProposalReviewResult
 } from "@workhub/contracts";
@@ -81,6 +82,75 @@ function proposalActorFor(actor?: AuthActor): ProposalActor {
     ...(resolved.actor_user_id ? { actor_user_id: resolved.actor_user_id } : {}),
     ...(resolved.label ? { label: resolved.label } : {})
   };
+}
+
+function auditActorFor(actor: ReturnType<typeof actorFor>): AuditLogFact["actor"] {
+  return {
+    actor_kind: actor.actor_kind,
+    ...(actor.actor_user_id ? { actor_user_id: actor.actor_user_id } : {}),
+    ...(actor.label ? { actor_nickname: actor.label } : {})
+  };
+}
+
+function latestReview(proposal: StoredProposal) {
+  return proposal.reviews.at(-1);
+}
+
+function reasonFeedbackAudit(input: {
+  actor: ReturnType<typeof actorFor>;
+  proposal: StoredProposal;
+  reasonMd: string;
+  createdAt: string;
+}): AuditLogFact {
+  const review = latestReview(input.proposal);
+  return {
+    id: randomUUID(),
+    actor: auditActorFor(input.actor),
+    entity: { entity_type: "proposal", entity_id: input.proposal.id },
+    action: "reason_fed_back",
+    detail_json: {
+      proposal_id: input.proposal.id,
+      work_item_id: input.proposal.work_item_id,
+      ...(review?.id ? { review_id: review.id } : {}),
+      reason_fed_back: true,
+      reason_preview: input.reasonMd.slice(0, 160)
+    },
+    created_at: input.createdAt
+  };
+}
+
+function reasonFeedbackEvent(input: {
+  actor: ReturnType<typeof actorFor>;
+  proposalId: string;
+  workItemId: string;
+  reasonMd: string;
+  createdAt: string;
+  attention: AttentionItem;
+  reviewId?: string;
+  runId?: string;
+  projectId?: string;
+}) {
+  return makeWorkHubEvent({
+    event_id: randomUUID(),
+    type: eventTypes.revisionFedback,
+    topic: topics.workitem(input.workItemId).topic,
+    ts: new Date(input.createdAt),
+    actor: input.actor,
+    work_item_id: input.workItemId,
+    ...(input.projectId ? { project_id: input.projectId } : {}),
+    ...(input.runId ? { run_id: input.runId } : {}),
+    proposal_id: input.proposalId,
+    preview_text: "打回原因已回灌给下一轮 AI。",
+    attention: input.attention,
+    cuu_state: "revision_requested",
+    data: {
+      proposal_id: input.proposalId,
+      work_item_id: input.workItemId,
+      correction: input.reasonMd,
+      reason_fed_back: true,
+      ...(input.reviewId ? { review_id: input.reviewId } : {})
+    }
+  });
 }
 
 function reviewAttention(input: {
@@ -344,11 +414,28 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
           href: `/api/proposals/${proposal.id}/merge`
         };
       } else if (payload.reason_md) {
+        const review = latestReview(proposal);
+        const auditLog = reasonFeedbackAudit({
+          actor,
+          proposal,
+          reasonMd: payload.reason_md,
+          createdAt
+        });
         resultBase.next_agent_context = {
           work_item_id: proposal.work_item_id,
           correction: payload.reason_md,
           reason_fed_back: true
         };
+        resultBase.feedback_event = reasonFeedbackEvent({
+          actor,
+          proposalId: proposal.id,
+          workItemId: proposal.work_item_id,
+          reasonMd: payload.reason_md,
+          createdAt,
+          attention,
+          ...(review?.id ? { reviewId: review.id } : {})
+        });
+        resultBase.audit_logs = [auditLog];
       }
       return c.json({ ok: true, data: proposalReviewResultSchema.parse(resultBase) });
     }
@@ -378,6 +465,37 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         ...(payload.reason_md ? { reason_md: payload.reason_md } : {})
       }
     });
+    const feedbackEvent = payload.decision === "request_changes" && payload.reason_md
+      ? reasonFeedbackEvent({
+          actor,
+          proposalId: p05GoldPathIds.proposal,
+          workItemId: p05GoldPathIds.workItem,
+          runId: p05GoldPathIds.run,
+          projectId: p05GoldPathIds.project,
+          reasonMd: payload.reason_md,
+          createdAt,
+          attention
+        })
+      : undefined;
+    const feedbackAuditLogs: AuditLogFact[] = payload.decision === "request_changes" && payload.reason_md
+      ? [
+          {
+            id: randomUUID(),
+            workspace_id: p05GoldPathIds.workspace,
+            actor: auditActorFor(actor),
+            entity: { entity_type: "proposal", entity_id: p05GoldPathIds.proposal },
+            action: "reason_fed_back",
+            detail_json: {
+              proposal_id: p05GoldPathIds.proposal,
+              work_item_id: p05GoldPathIds.workItem,
+              run_id: p05GoldPathIds.run,
+              reason_fed_back: true,
+              reason_preview: payload.reason_md.slice(0, 160)
+            },
+            created_at: createdAt
+          }
+        ]
+      : [];
 
     const data = proposalReviewResultSchema.parse({
       proposal_id: p05GoldPathIds.proposal,
@@ -403,7 +521,9 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
             }
           }),
       attention,
-      event
+      event,
+      ...(feedbackEvent ? { feedback_event: feedbackEvent } : {}),
+      ...(feedbackAuditLogs.length > 0 ? { audit_logs: feedbackAuditLogs } : {})
     });
 
     return c.json({ ok: true, data });

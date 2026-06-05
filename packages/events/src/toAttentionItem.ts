@@ -18,6 +18,7 @@ function sourceRefFor(event: WorkHubEvent<unknown>): AttentionItem["source_ref"]
     case eventTypes.proposalOpened:
     case eventTypes.proposalReviewed:
     case eventTypes.proposalMerged:
+    case eventTypes.revisionFedback:
       return { entity_type: "proposal", entity_id: event.proposal_id ?? fallback };
     case eventTypes.escalationOpened:
       return { entity_type: "escalation_event", entity_id: findUuid(event.data, ["escalation_id"]) ?? fallback };
@@ -54,6 +55,7 @@ function kindFor(event: WorkHubEvent<unknown>): AttentionItem["kind"] {
       return "approval";
     case eventTypes.proposalOpened:
     case eventTypes.proposalReviewed:
+    case eventTypes.revisionFedback:
       return "proposal_review";
     case eventTypes.agentRunEscalated:
     case eventTypes.escalationOpened:

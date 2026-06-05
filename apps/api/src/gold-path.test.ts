@@ -311,6 +311,8 @@ test("P0.5 proposal review requires a reason on request changes and feeds it bac
       decision: string;
       next_agent_context?: { correction: string; reason_fed_back: boolean };
       event: { type: string; attention?: { cuu_state?: string } };
+      feedback_event?: { type: string; cuu_state?: string; data: { reason_fed_back?: boolean } };
+      audit_logs?: { action: string; detail_json: { reason_fed_back?: boolean } }[];
     };
   };
   assert.equal(body.data.status, "revision_requested");
@@ -319,6 +321,11 @@ test("P0.5 proposal review requires a reason on request changes and feeds it bac
   assert.equal(body.data.next_agent_context?.reason_fed_back, true);
   assert.equal(body.data.event.type, "proposal.reviewed");
   assert.equal(body.data.event.attention?.cuu_state, "revision_requested");
+  assert.equal(body.data.feedback_event?.type, "revision.fedback");
+  assert.equal(body.data.feedback_event?.cuu_state, "revision_requested");
+  assert.equal(body.data.feedback_event?.data.reason_fed_back, true);
+  assert.equal(body.data.audit_logs?.some((log) => log.action === "reason_fed_back"), true);
+  assert.equal(body.data.audit_logs?.[0]?.detail_json.reason_fed_back, true);
 });
 
 test("P0.5 proposal approve and merge expose merged event, notification, audit facts, and rollback entry", async () => {

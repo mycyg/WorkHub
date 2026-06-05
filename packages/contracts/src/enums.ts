@@ -149,6 +149,7 @@ export const eventTypes = {
   proposalOpened: "proposal.opened",
   proposalReviewed: "proposal.reviewed",
   proposalMerged: "proposal.merged",
+  revisionFedback: "revision.fedback",
   stepSnapshot: "step.snapshot",
   knowledgeEvidenceReady: "knowledge.evidence.ready",
   syncProgress: "sync.progress",
