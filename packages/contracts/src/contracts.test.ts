@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentRunTraceVmSchema,
   authContextSchema,
   createApprovalRequestSchema,
   confidenceGrades,
@@ -23,6 +24,39 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("agent trace VM carries F08 replay and structured handoff fields", () => {
+  const parsed = agentRunTraceVmSchema.parse({
+    run: {
+      id: "70000000-0000-4000-8000-000000000001",
+      work_item_id: "70000000-0000-4000-8000-000000000002",
+      mode: "worker",
+      actor: "ai-worker",
+      status: "escalated",
+      model: "deepseek-v4-flash",
+      turns_used: 3,
+      max_turns: 15,
+      token_in: 12,
+      token_out: 8,
+      created_at: "2026-06-05T00:00:00.000Z",
+      updated_at: "2026-06-05T00:00:00.000Z"
+    },
+    steps: [],
+    budget: { max_steps: 15 },
+    snapshot_refs: [],
+    handoff: {
+      done: ["read the draft"],
+      remaining: ["confirm"],
+      next_steps: ["open replay"],
+      blockers: ["budget"],
+      artifacts: [],
+      budget_hit: "doom_loop"
+    },
+    replay_href: "/api/agent-runs/70000000-0000-4000-8000-000000000001/replay"
+  });
+
+  assert.equal(parsed.handoff?.budget_hit, "doom_loop");
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { agentRunSchema, agentStepSchema, snapshotSchema } from "./domain/agent.js";
+import {
+  agentRunSchema,
+  agentStepSchema,
+  snapshotSchema,
+  structuredHandoffSchema
+} from "./domain/agent.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
 import {
@@ -83,6 +88,17 @@ export const replayTraceVmSchema = z.object({
   cost: costSummaryVmSchema.optional()
 });
 export type ReplayTraceVM = z.infer<typeof replayTraceVmSchema>;
+
+export const agentRunTraceVmSchema = z.object({
+  run: agentRunSchema,
+  steps: z.array(agentStepSchema),
+  current_step: agentStepSchema.optional(),
+  budget: z.record(z.string(), z.unknown()),
+  snapshot_refs: z.array(snapshotSchema),
+  handoff: structuredHandoffSchema.optional(),
+  replay_href: z.string().optional()
+});
+export type AgentRunTraceVM = z.infer<typeof agentRunTraceVmSchema>;
 
 export const costDashboardVmSchema = z.object({
   total_cost: costSummaryVmSchema,

@@ -60,6 +60,9 @@ importers:
       '@workhub/cost':
         specifier: workspace:*
         version: link:../cost
+      '@workhub/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/config:
     dependencies:
@@ -115,6 +118,12 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/tools:
+    dependencies:
+      zod:
+        specifier: ^4.0.1
+        version: 4.4.3
 
 packages:
 

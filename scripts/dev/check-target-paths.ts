@@ -45,6 +45,12 @@ const requiredPaths = [
   "packages/agent/src/providers/registry.ts",
   "packages/agent/src/providers/measured-client.ts",
   "packages/agent/src/providers/retry.ts",
+  "packages/agent/src/loop/loop.ts",
+  "packages/agent/src/loop/control.ts",
+  "packages/agent/src/loop/handoff.ts",
+  "packages/tools/src/registry.ts",
+  "packages/tools/src/sandbox.ts",
+  "packages/tools/src/file-tools.ts",
   "packages/cost/src/types.ts",
   "packages/cost/src/usage-sink.ts",
   "packages/cost/src/ledger.ts",
@@ -65,6 +71,8 @@ const requiredPaths = [
   "apps/api/src/services/approvals.ts",
   "apps/api/src/routes/approvals.ts",
   "apps/api/src/routes/permissions.ts",
+  "apps/api/src/routes/agent-runs.ts",
+  "apps/api/src/workers/agent-runner.ts",
   "scripts/dev/check-portable-config.ts"
 ];
 

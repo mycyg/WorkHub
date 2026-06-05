@@ -6,6 +6,7 @@ import { settings } from "@workhub/config";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
+import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
 import { ApprovalServiceError } from "./services/approvals.js";
@@ -36,6 +37,7 @@ app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
 app.route("/api/approvals", createApprovalRoutes());
 app.route("/api/permissions", createPermissionRoutes());
+app.route("/api", createAgentRunRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {

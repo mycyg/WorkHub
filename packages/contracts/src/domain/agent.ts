@@ -47,6 +47,33 @@ export const agentStepSchema = z.object({
 });
 export type AgentStep = z.infer<typeof agentStepSchema>;
 
+export const agentToolCallSchema = z.object({
+  id: z.string().min(1),
+  tool_id: z.string().min(1),
+  input: z.unknown(),
+  visible: z.boolean()
+});
+export type AgentToolCall = z.infer<typeof agentToolCallSchema>;
+
+export const agentToolResultSchema = z.object({
+  tool_use_id: z.string().min(1).optional(),
+  ok: z.boolean(),
+  content: z.string(),
+  is_error: z.boolean(),
+  snapshot_id: idSchema.optional()
+});
+export type AgentToolResult = z.infer<typeof agentToolResultSchema>;
+
+export const structuredHandoffSchema = z.object({
+  done: z.array(z.string()),
+  remaining: z.array(z.string()),
+  next_steps: z.array(z.string()),
+  blockers: z.array(z.string()),
+  artifacts: z.array(z.string()),
+  budget_hit: z.enum(["steps", "timeout", "tokens", "cost", "doom_loop", "snapshot_gate", "unknown"])
+});
+export type StructuredHandoff = z.infer<typeof structuredHandoffSchema>;
+
 export const confidenceRecordSchema = z.object({
   id: idSchema,
   work_item_id: idSchema,

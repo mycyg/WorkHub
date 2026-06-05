@@ -1,0 +1,119 @@
+import crypto from "node:crypto";
+
+import type {
+  AgentAssistantBlock,
+  AgentLoopBudget,
+  AgentLoopControlSignal,
+  AgentLoopStep,
+  AgentLoopUsage
+} from "./types.js";
+
+export type BudgetCheckResult =
+  | { signal: "escalate"; budgetHit: "steps" | "timeout" | "tokens" | "cost"; reason: string }
+  | { signal: "compact"; reason: string }
+  | null;
+
+function numericCny(value: string | undefined) {
+  return Number.parseFloat(value ?? "0");
+}
+
+export function createInitialUsage(): AgentLoopUsage {
+  return {
+    stepsUsed: 0,
+    secondsUsed: 0,
+    tokenIn: 0,
+    tokenOut: 0,
+    totalTokens: 0,
+    estimatedCostCny: "0"
+  };
+}
+
+export function checkLoopBudget(usage: AgentLoopUsage, budget: AgentLoopBudget): BudgetCheckResult {
+  if (usage.secondsUsed >= budget.totalTimeoutSeconds) {
+    return { signal: "escalate", budgetHit: "timeout", reason: "总耗时预算已耗尽" };
+  }
+  if (usage.stepsUsed >= budget.maxSteps) {
+    return { signal: "escalate", budgetHit: "steps", reason: "步数预算已耗尽" };
+  }
+  if (usage.totalTokens >= budget.maxTokens) {
+    return { signal: "escalate", budgetHit: "tokens", reason: "token 预算已耗尽" };
+  }
+  if (numericCny(usage.estimatedCostCny) >= numericCny(budget.maxCostCny)) {
+    return { signal: "escalate", budgetHit: "cost", reason: "成本预算已耗尽" };
+  }
+  if (
+    budget.contextWindowTokens &&
+    usage.totalTokens > budget.contextWindowTokens * (budget.compactThreshold ?? 0.8)
+  ) {
+    return { signal: "compact", reason: "上下文接近窗口上限" };
+  }
+  return null;
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonical).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
+      .join(",")}}`;
+  }
+  if (typeof value === "string") {
+    return JSON.stringify(value.length > 500 ? value.slice(0, 500) : value.trim());
+  }
+  return JSON.stringify(value);
+}
+
+export function fingerprintAssistantBlocks(blocks: AgentAssistantBlock[]) {
+  const toolCalls = blocks.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
+  const source = toolCalls.length > 0
+    ? toolCalls.map((tool) => ({ name: tool.name, input: tool.input }))
+    : blocks.map((block) => {
+        if (block.type === "text" || block.type === "thinking") {
+          return block.text;
+        }
+        if (block.type === "unknown") {
+          return block.raw;
+        }
+        return { name: block.name, input: block.input };
+      }).join("\n");
+  return crypto.createHash("sha256").update(canonical(source)).digest("hex");
+}
+
+export class DoomLoopDetector {
+  private readonly signatures: string[] = [];
+
+  constructor(private readonly windowSize = 3) {}
+
+  push(step: Pick<AgentLoopStep, "assistant">) {
+    const signature = fingerprintAssistantBlocks(step.assistant);
+    this.signatures.push(signature);
+    if (this.signatures.length > this.windowSize) {
+      this.signatures.shift();
+    }
+    return this.isLooping() ? signature : null;
+  }
+
+  private isLooping() {
+    if (this.signatures.length < this.windowSize) {
+      return false;
+    }
+    const first = this.signatures[0];
+    return this.signatures.every((signature) => signature === first);
+  }
+}
+
+export function controlFromAssistant(blocks: AgentAssistantBlock[], stopReason: string | undefined): AgentLoopControlSignal {
+  if (blocks.some((block) => block.type === "tool_use")) {
+    return "continue";
+  }
+  if (!stopReason || stopReason === "end_turn") {
+    return "stop";
+  }
+  if (stopReason === "max_tokens") {
+    return "compact";
+  }
+  return "stop";
+}

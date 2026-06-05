@@ -45,6 +45,7 @@ export type LlmCreateResponse = {
   id: string;
   content: unknown[];
   usage?: LlmUsage;
+  stopReason?: "tool_use" | "end_turn" | "max_tokens" | string;
 };
 
 export type LlmStreamEvent = {
