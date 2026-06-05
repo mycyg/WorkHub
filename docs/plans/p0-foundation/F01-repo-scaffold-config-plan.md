@@ -91,7 +91,7 @@ specs:
 | N1 | PG pool 配置块 | `config.py` 新字段 | F03 | `db_pool_size:int=5`、`db_max_overflow:int=10`、`db_pool_timeout:int=30`(tech-stack §6.3 步骤 1 "补 pool_size/max_overflow")。F01 只声明,F03 喂给 `create_engine` |
 | N2 | broker 连接配置 | `config.py` 新字段 | F05 | `broker_url:str=""`、`broker_backend:str="memory"`(`memory`\|`redis`\|`pg_listen`)。空 + 多 worker 在生产 → P2 追加 fail-closed(防 split-brain,Master §6 铁律 3) |
 | N3 | provider-registry 配置块 | `config.py` 新字段 / 嵌套模型 | F07 | 把现 `llm_base_url/model/api_key`(`config.py:22-24`)收编为 `providers` 结构的默认 `deepseek` 条目(端点+鉴权+模型+成本档占位);**保持向后兼容**(7 处现仍读旧字段,F07 才改接) |
-| N4 | 三级预算默认 | `config.py` 新字段 | F08 | `budget_default_user_tokens`、`budget_default_team_tokens`、`budget_default_task_tokens`(NFR-05)。F01 只给默认数值,F08 消费 |
+| N4 | P-COST v0 预算 seed | `packages/config/src/cost.ts` / env schema | F08 / P-COST | 单 run `15 steps / 300s / 120000 tokens / 5 CNY`;用户日 `500000 tokens / 20 CNY`;团队日 `5000000 tokens / 200 CNY`;团队月 `50000000 tokens / 2000 CNY`。F01 只给可覆盖默认值,业务裁决在 `packages/cost` |
 | N5 | 派生路径设置项 | `config.py` 新字段 | F01 自身(R3/R4) | `downloads_dir`、`web_dist_dir`,默认派生自 `data_dir` 或 `None` |
 | N6 | `.env.example` | 新文件(根或 `app/`) | 全部 | 列全部 env 键 + Windows/Linux 注释样例;**不含真实密钥** |
 | N7 | greenfield README 起步段 | `README` / `docs` | 全部 | Windows 与 Linux 双平台 `pnpm install` + `pnpm typecheck` + 起 Hono daemon 的最小步骤;声明"生产须 Linux(沙箱 rlimit POSIX-only,安全篇 §6.1)" |
@@ -156,7 +156,16 @@ specs:
 | `BROKER_URL` / `broker_url` | str | `""` | F05 | N2 |
 | `BROKER_BACKEND` / `broker_backend` | enum | `memory` | F05 | `memory`\|`redis`\|`pg_listen` |
 | `providers`(嵌套) | model | `{deepseek: {...}}` | F07 | N3,收编 `llm_base_url/model/api_key` |
-| `budget_default_*_tokens` | int | (待业务标定) | F08 | N4,NFR-05 三级预算 |
+| `BUDGET_RUN_MAX_STEPS` / `budget.run.max_steps` | int | `15` | F08 / P-COST | 单 run 硬步数上限;由 `BudgetPolicy` seed 覆盖,AgentLoop 不硬编码 |
+| `BUDGET_RUN_TIMEOUT_S` / `budget.run.total_timeout_s` | int | `300` | F08 / P-COST | 单 run 总超时;结构化交接而非静默失败 |
+| `BUDGET_RUN_MAX_TOKENS` / `budget.run.max_tokens` | int | `120000` | F08 / P-COST | input/output/retry/compact 均计入 |
+| `BUDGET_RUN_MAX_COST_CNY` / `budget.run.max_cost_cny` | decimal string | `5` | F08 / P-COST | 单 run 硬成本上限 |
+| `BUDGET_USER_DAY_TOKENS` / `budget.user.day.max_tokens` | int | `500000` | P-COST | 用户日配额 |
+| `BUDGET_USER_DAY_COST_CNY` / `budget.user.day.max_cost_cny` | decimal string | `20` | P-COST | 用户日成本配额 |
+| `BUDGET_TEAM_DAY_TOKENS` / `budget.team.day.max_tokens` | int | `5000000` | P-COST | 团队日配额 |
+| `BUDGET_TEAM_DAY_COST_CNY` / `budget.team.day.max_cost_cny` | decimal string | `200` | P-COST | 团队日成本配额 |
+| `BUDGET_TEAM_MONTH_TOKENS` / `budget.team.month.max_tokens` | int | `50000000` | P-COST | 团队月配额 |
+| `BUDGET_TEAM_MONTH_COST_CNY` / `budget.team.month.max_cost_cny` | decimal string | `2000` | P-COST | 团队月成本配额 |
 | `COOKIE_SECRET` / `cookie_secret` | str | `dev-change-me` | F04 + 生产门 | **不改**;生产门拒弱默认(`main.py:230`) |
 | `ADMIN_CLAIM_SECRET` / `admin_claim_secret` | str | `""` | F04 | **不改**;安全篇 §2.3 提权门 |
 | `CORS_ALLOW_ORIGINS` / `cors_allow_origins` | list[str] | `["*"]` | F11 + 生产门 | **不改**;生产门拒 `*`(`main.py:232`) |

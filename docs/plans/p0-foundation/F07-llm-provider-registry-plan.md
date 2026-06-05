@@ -29,7 +29,7 @@ specs:
 3. **模型路由骨架(NFR-05):** 按任务风险/复杂度把低风险任务路由到更廉价模型;P0 提供**骨架 + 默认直通**,真正的多模型成本优化策略留 P1+。
 4. **token/成本计量喂三级预算:** 每次调用产出 `UsageRecord`(input/output tokens + 估算成本),通过**注入式 sink**喂给 P0 的预算计量入口;预算**强制裁决(enforcement)**本身属 F8/P-COST,本组件只保证「每调用必计量、计量可被消费」。
 
-非目标:不改变 DeepSeek/Anthropic-compatible endpoint 作为首发 provider 的事实;不在页面或 tool 中直接 new SDK client;不引入 DB 表(计量落库属 F8 AgentRun / F10 审计)。
+非目标:不改变 DeepSeek/Anthropic-compatible endpoint 作为首发 provider 的事实;不在页面或 tool 中直接 new SDK client;不在 provider registry 内直接建 usage 表或拼成本看板。真实持久化由 P-COST 的 `packages/cost` usage sink / ledger 统一处理。
 
 ---
 
@@ -41,12 +41,12 @@ specs:
 - **改接全部 7 处**裸 `AsyncAnthropic`(逐文件领任务,见「现状→改动」)。
 - F1 配置块:`config.py` 增 provider-registry 声明(provider 列表 + 默认 provider + 模型路由档 + 成本档),向后兼容现有 `llm_base_url/model/api_key`。
 - 模型路由骨架:`TaskClass`(风险/复杂度档)→ `ModelSpec` 选择函数,P0 默认全部走 `default` 模型。
-- token/成本计量:`UsageRecord` + 可注入 `UsageSink`(默认 no-op + 结构化日志);从 `.create` 的 `resp.usage` 与 `.stream` 的 `get_final_message().usage` 采集。
+- token/成本计量:`UsageRecord` + 可注入 `UsageSink`;从 `.create` 的 `resp.usage` 与 `.stream` 的 `get_final_message().usage` 采集。单测可用 no-op/log sink,产品态必须注入 `packages/cost/src/usage-sink.ts` 并能归集到 `CostLedgerEntry`。
 - 瞬时错误重试骨架(尊重 `Retry-After`):注册表层提供**可选**退避包装,默认关闭(保持现有「失败即上抛」语义不变),为 F8 接管重试预留挂点。
 
 ### Out(明确推迟到 P1+)
 - **预算的强制裁决/阻断**(超预算→结构化交接):属 **F8 Agent 引擎核心 + P-COST**;本组件只产计量,不做 enforcement。
-- **计量落库 / 成本看板 / 度量**:属 F10 审计 + P4 度量;P0 仅 in-process sink + 结构化日志埋点。
+- **成本账本 reconcile / 成本看板 / 度量页面**:属 P-COST + F10/F11;F07 只产 `UsageRecord` 并调用注入式 sink,不得在 provider wrapper 内直接聚合 Dashboard 数据。
 - **真正的多 provider/多模型路由策略**(Anthropic 原生 / OpenAI 兼容端点、按 token 价动态选模):P0 只留可扩展骨架与一个 `deepseek` 条目。
 - **per-actor/per-workspace 配额配置面**(Org/Workspace scoping):依赖 F2/F6,P0 仅在 `registry.get` 签名上预留 `actor` 参数。
 - **流式 usage 的逐 token 实时累计**:P0 取流结束后 `final_message.usage` 即可;增量计量留 P1+。
@@ -80,7 +80,7 @@ specs:
 - **N-1 `app/llm/` 注册表模块**(无现成代码,清单 §7 NEW):`Provider`(端点+鉴权+SDK 形态)、`ModelSpec`(model 名 + 能力位 streaming/tools/context_window + 成本档 input/output 单价)、`ProviderRegistry`、模块单例 `registry`、`registry.get(actor, task)`。
 - **N-2 `LlmClient` 薄包装:** 持有底层 `AsyncAnthropic` + 绑定的 `ModelSpec` + `UsageSink`;`.messages.stream(...)`/`.messages.create(...)` 透传,出口处构造 `UsageRecord` 投 sink。**关键约束:** 包装层对 `.stream` 必须返回原生 stream context manager(`auto_agent.py:413`、`assistant.py:126`、`llm_agent.py:154` 都用 `async with ... as stream`),不能破坏 `get_final_message()` / `async for event` 语义。
 - **N-3 模型路由骨架:** `TaskClass`(枚举:如 `CLARIFY`/`WORKER`/`REVIEW`/`MEETING`/`DRIVE_COMMENT`/`DELIVERY_DOC`/`DECOMPOSE`/`ASSISTANT`,或更粗的 `LOW_RISK`/`STANDARD`/`HIGH`)→ `select_model(task) -> ModelSpec`。P0 实现:全部映射到 `default` 模型(等价现状),但**路由点已存在**,P1 改映射即生效(NFR-05)。
-- **N-4 token/成本计量:** `UsageRecord{provider, model, task, actor, input_tokens, output_tokens, est_cost, ts}`;`UsageSink` 协议(`record(usage)`)。P0 默认 sink = 结构化日志(`logger.info("llm.usage", extra={...})`)+ 可被 F8/P-COST 替换的注入点。成本估算 = `ModelSpec` 成本档 × tokens。**事件埋点(Master §6.8):** 计量可选发 `agent.run.step` 维度的 usage 字段(由 F8 在 run 上下文聚合;本组件只产数据,不直接发 `run:{id}`,避免越界 F5/F8)。
+- **N-4 token/成本计量:** `UsageRecord{provider, model, task, actor, input_tokens, output_tokens, est_cost, source, ts}`;`UsageSink` 协议(`record(usage)`)。单元测试可用结构化日志或 no-op sink;产品态 sink 必须来自 `packages/cost/src/usage-sink.ts`,并能幂等写入 `usage_records` / `cost_ledger_entries`。成本估算 = `ModelSpec` 成本档 × tokens。**事件埋点(Master §6.8):** 计量可选发 `usage.recorded` 或作为 `agent_run.step` 的 cost ref(由 F8/P-COST 在 run 上下文聚合;本组件只产数据,不直接发 `run:{id}`,避免越界 F5/F8)。
 - **N-5 瞬时错误重试骨架(Retry-After):** 现状所有 LLM 错误直接上抛/转 `failed`(`auto_agent.py:428` `except Exception` → `failed`;无 `Retry-After` 处理,清单 §7/§8)。注册表提供 `with_retry`(尊重 `anthropic.APIStatusError` 的 `Retry-After`、指数退避、上限)作为**可选包装,P0 默认不启用**(保持现有语义),挂点交 F8 在 AgentLoop 内决定何时重试(Master §7「错误传播」)。
 
 ---
@@ -91,7 +91,7 @@ specs:
 
 - [ ] **S0 前置(F1):** 在 `app/config.py` 落 provider-registry 配置块(R-3 / N-1 契约),保留旧三字段向后兼容;补 `.env.example` 注释。
 - [ ] **S1 建注册表骨架(N-1/N-2):** 新建 `app/llm/__init__.py`(导出 `registry`)、`app/llm/registry.py`(`Provider`/`ModelSpec`/`ProviderRegistry`/`registry.get`)、`app/llm/client.py`(`LlmClient` 薄包装)。内部仍 `AsyncAnthropic(base_url, api_key)`。单测:`registry.get(actor, TaskClass.X)` 返回可用 client,`.model` 等于路由结果。
-- [ ] **S2 计量与路由骨架(N-3/N-4):** 实现 `select_model(task)`(P0 全直通 default)、`UsageRecord`/`UsageSink`(默认日志 sink)、`LlmClient` 出口采集 usage。单测:create/stream 两路均产 `UsageRecord`,key 不出现在 record 字段。
+- [ ] **S2 计量与路由骨架(N-3/N-4):** 实现 `select_model(task)`(P0 全直通 default)、`UsageRecord`/`UsageSink` 协议、`LlmClient` 出口采集 usage。单测:create/stream 两路均产 `UsageRecord`,key 不出现在 record 字段;集成时 sink 指向 `packages/cost`。
 - [ ] **S3 改接 `.create` 4 处(机械,低风险先行):**
   - [ ] `meeting_agent.py:12 + :103`(保留 `:100` 无 key fallback → `registry.is_configured`)
   - [ ] `drive_comment_agent.py:12 + :67`(保留 `:64` fallback)
@@ -155,7 +155,7 @@ registry.set_usage_sink(sink: UsageSink) -> None              # F8/P-COST 注入
 > **P0 不新增任何对外 HTTP 端点**;daemon API 面变化属 F11。
 
 ### Alembic
-- **本组件无迁移**(P0 计量不落库)。若 P1 将 `UsageRecord` 持久化,迁移归 F8 AgentRun/AgentStep 或 F10 审计的迁移,不在 F07 内新建表。
+- **本组件无 provider-local 迁移**。`UsageRecord` / `CostLedgerEntry` 的持久化 schema 由 P-COST 所属 `packages/db/src/schema/cost.ts` 负责;F07 不新建自己的 usage 表,只调用注入式 sink。
 
 ### 事件 topic(对齐 Master §6.8 taxonomy)
 - 本组件**不直接 publish**。usage 维度(task/model/tokens/cost)作为字段,由 **F8** 在 `agent_run.step` 事件(SSE 事件 type 权威以 [api-contract §5.2] 为准;对应 Master §6.8 taxonomy 的 `agent.run.step`)上携带;`auto_agent.py` 现有 `ai.tool_call`/`ai.text` 事件(`req:{id}`)不受影响(其 topic 改名 `req:{id}`→`run:{run_id}` 属 F8,经 **F5** broker 扇出)。
@@ -199,9 +199,9 @@ registry.set_usage_sink(sink: UsageSink) -> None              # F8/P-COST 注入
 
 ### 被依赖(谁需要本组件)
 - **F8 Agent 引擎核心:** 通过 `registry.get(actor, task)` 取 client;接管**重试决策**(消费 N-5 骨架)与**预算 enforcement / usage sink 注入**(消费 N-4);worker loop 与 `llm_review` 是本组件最敏感的改接点(`auto_agent.py:413/:558`)。
-- **F10 审计 / P4 度量:** 若 P1+ 将 usage 落库 / 上看板,以本组件 `UsageRecord` 为数据源。
+- **P-COST / F10 审计 / 度量:** usage 落库、账本 reconcile、Replay footer 与成本看板均以本组件 `UsageRecord` 为原始事实,由 `packages/cost` 归集为 `CostLedgerEntry`。
 - **F9 / 其余 service 路径:** 会议、网盘评论、交付文档、任务分解、澄清、助手 6 条非 worker 路径在 P0 即改接完成,后续这些 service 的任何演进都经注册表。
-- **P-COST(P1+):** 三级预算(用户/团队/任务)以本组件计量为输入(规格 §4.2「预算挂钩」)。
+- **AgentRun 成本 source 标注:** F8 在 run 上下文注入 usage sink,把 `retry` / `compact` / `review` 等 source 明确标入 run 成本(规格 §4.2「预算挂钩」)。
 
 ### 协同约束
 - **与 F8 边界:** 本组件提供「取 client + 产计量 + 路由骨架 + 重试骨架」;F8 提供「何时重试 / 是否超预算阻断 / 把 usage 聚合进 AgentRun」。两者通过 `set_usage_sink` 与 `with_retry` 挂点解耦,可独立推进。
