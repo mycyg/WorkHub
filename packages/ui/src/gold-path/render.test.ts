@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
+import { toCuuState } from "@workhub/events";
+
+import { renderGoldPathSurface } from "./render.js";
+
+function surfaceVm() {
+  const fixture = createP05GoldPathFixture();
+  return {
+    fixture_id: fixture.id,
+    routes: {
+      home: "/",
+      intake: "/intake/demo",
+      workitem: "/workitems/demo",
+      proposal: "/proposals/demo",
+      replay: "/agent-runs/demo/replay",
+      cost: "/dashboard/cost"
+    },
+    page_vms: {
+      attention: fixture.attentionHome,
+      question: fixture.question,
+      evidence: fixture.evidenceBubble,
+      workitem: fixture.workItemDetail,
+      proposal: fixture.proposalDetail,
+      replay: fixture.replay,
+      cost: fixture.costDashboard
+    },
+    events: fixture.events,
+    cuu_states: fixture.events.map((event) => toCuuState(event))
+  } as const;
+}
+
+test("gold path renderer creates the six P0.5 pages from one shared VM", () => {
+  const rendered = renderGoldPathSurface(surfaceVm(), "web");
+
+  assert.equal(rendered.fixtureId, "weekly_report_manifest_doc");
+  assert.deepEqual(rendered.pages.map((page) => page.key), [
+    "home",
+    "intake",
+    "workitem",
+    "proposal",
+    "replay",
+    "cost"
+  ]);
+  assert.equal(rendered.pages.every((page) => page.html.includes("wh-shell")), true);
+});
+
+test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
+  const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
+
+  assert.equal(intake?.html.includes("data-option-id"), true);
+  assert.equal(intake?.html.includes("<textarea"), false);
+  assert.equal(intake?.html.includes("message-list"), false);
+});
+
+test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {
+  const rendered = renderGoldPathSurface(surfaceVm(), "web");
+  const proposal = rendered.pages.find((page) => page.key === "proposal");
+  const replay = rendered.pages.find((page) => page.key === "replay");
+
+  assert.equal(proposal?.html.includes("回滚"), true);
+  assert.equal(proposal?.html.includes("data-requires-reason=\"true\""), true);
+  assert.equal(replay?.html.includes("估算成本"), true);
+  assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
+});

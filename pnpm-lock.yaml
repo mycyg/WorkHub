@@ -65,6 +65,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@workhub/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
 
   apps/web:
     dependencies:
@@ -77,6 +80,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@workhub/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
 
   packages/agent:
     dependencies:
@@ -177,6 +183,19 @@ importers:
       zod:
         specifier: ^4.0.1
         version: 4.4.3
+
+  packages/ui:
+    dependencies:
+      '@workhub/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@workhub/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@workhub/events':
+        specifier: workspace:*
+        version: link:../events
 
 packages:
 

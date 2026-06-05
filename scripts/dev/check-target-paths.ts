@@ -71,6 +71,8 @@ const requiredPaths = [
   "packages/cost/src/usage-sink.ts",
   "packages/cost/src/ledger.ts",
   "packages/cost/src/model-route.ts",
+  "packages/ui/src/gold-path/render.ts",
+  "packages/ui/src/index.ts",
   "packages/db/src/repositories/approval-requests.ts",
   "packages/db/src/repositories/permission-policies.ts",
   "packages/db/src/repositories/notifications.ts",

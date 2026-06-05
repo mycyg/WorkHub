@@ -4,7 +4,7 @@ import test from "node:test";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { GoldPathSurfaceVM } from "@workhub/contracts";
 
-import { desktopWebviewSurface, loadDesktopGoldPathSurface } from "./main.js";
+import { desktopWebviewSurface, loadDesktopGoldPathSurface, renderDesktopGoldPathSurface } from "./main.js";
 
 function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
   return {
@@ -73,11 +73,91 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
       replay: "/agent-runs/run/replay",
       cost: "/dashboard/cost"
     },
-    page_vms: {},
+    page_vms: {
+      attention: {
+        cuu_state: "carrying_document",
+        primary: {
+          title: "确认周报变更申请",
+          summary_text: "Cuu 已整理好一份 file-only 交付物。",
+          reason_text: "只需要点选批准或要求修改。",
+          actions: [{ id: "review", label: "查看申请", href: "/proposals/proposal" }],
+          evidence_refs: []
+        },
+        background_runs: [{ preview_text: "正在等待你的确认。" }]
+      },
+      question: {
+        title: "这次周报偏向哪种口吻？",
+        body: "选一个方向即可。",
+        options: [{ id: "brief", label: "简洁版", description: "更适合快速同步。" }],
+        recommended_option_ids: ["brief"],
+        progress: [{ id: "tone", label: "口吻", state: "done" }],
+        free_text: { collapsed_by_default: true, placeholder: "需要时再补一句。" },
+        evidence_refs: [],
+        submit: { id: "continue", label: "继续", href: "/intake/session/continue" }
+      },
+      evidence: { query: "weekly report", results: [] },
+      workitem: {
+        workitem: {
+          id: "work",
+          code: "WH-001",
+          title: "生成周报草稿",
+          status: "needs_review",
+          summary_md: "准备一份周报草稿。"
+        },
+        latest_proposal: { title: "周报草稿变更申请" },
+        agent_trace_preview: [{ step_no: 1, phase: "plan", output_excerpt: "确认 file-only 范围。" }],
+        evidence_refs: []
+      },
+      proposal: {
+        title: "周报草稿变更申请",
+        manifest: {
+          summary_md: "新增一份周报草稿。",
+          risk: { human_label: "低风险" },
+          rollback: { description: "删除生成草稿即可回滚。" },
+          evidence_refs: [],
+          changes: [
+            {
+              human_summary: "新增 weekly-report.md",
+              target_kind: "file",
+              target_ref: { path: "docs/weekly-report.md" }
+            }
+          ],
+          checks: [{ label: "范围检查", status: "pass", detail: "仅文件改动。" }]
+        },
+        review_actions: {
+          approve: { id: "approve", label: "批准", href: "/approvals/approve" },
+          request_changes: {
+            id: "changes",
+            label: "要求修改",
+            href: "/approvals/changes",
+            requires_reason: true
+          }
+        },
+        evidence_refs: []
+      },
+      replay: {
+        run: { handoff_md: "Cuu 完成了草稿生成。" },
+        steps: [
+          { step_no: 1, phase: "plan", output_excerpt: "列出章节。" },
+          { step_no: 2, phase: "draft", output_excerpt: "生成草稿。" }
+        ],
+        cost: {
+          me: { total_tokens: 1200, estimated_cost_cny: "0.08", warning_ratio: 0.12 },
+          active_notices: []
+        },
+        snapshots: [],
+        evidence_refs: []
+      },
+      cost: {
+        total_cost: { me: { total_tokens: 1200, estimated_cost_cny: "0.08", warning_ratio: 0.12 } },
+        notices: []
+      }
+    },
     events: [],
     cuu_states: ["carrying_document"]
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
+  assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
 });

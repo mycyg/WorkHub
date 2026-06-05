@@ -12,6 +12,7 @@
   "dependencies": {
     "@workhub/api-client": "workspace:*",
     "@workhub/contracts": "workspace:*",
-    "@workhub/config": "workspace:*"
+    "@workhub/config": "workspace:*",
+    "@workhub/ui": "workspace:*"
   }
 }

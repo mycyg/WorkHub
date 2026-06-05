@@ -11,6 +11,8 @@
       "@workhub/api-client": ["packages/api-client/src/index.ts"],
       "@workhub/cost": ["packages/cost/src/index.ts"],
       "@workhub/audit": ["packages/audit/src/index.ts"],
+      "@workhub/ui": ["packages/ui/src/index.ts"],
+      "@workhub/ui/gold-path": ["packages/ui/src/gold-path/index.ts"],
       "@workhub/agent": ["packages/agent/src/index.ts"],
       "@workhub/agent/loop": ["packages/agent/src/loop/index.ts"],
       "@workhub/agent/providers": ["packages/agent/src/providers/index.ts"],

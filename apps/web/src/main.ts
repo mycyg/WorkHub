@@ -1,5 +1,6 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
+import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 
 export const webSurface = {
   name: "C-WEB",
@@ -25,4 +26,8 @@ export const webApiClient = createApiClient({
 
 export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient) {
   return client.pages.goldPath();
+}
+
+export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApiClient) {
+  return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web");
 }
