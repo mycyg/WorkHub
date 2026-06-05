@@ -19,6 +19,13 @@ const requiredPaths = [
   "packages/contracts/src/domain/governance.ts",
   "packages/db/src/schema/core.ts",
   "packages/db/src/relations/core.ts",
+  "packages/db/src/client.ts",
+  "packages/db/src/migrate.ts",
+  "packages/db/src/types.ts",
+  "packages/db/src/locks.ts",
+  "packages/db/src/sequences.ts",
+  "packages/db/src/seed.ts",
+  "packages/db/drizzle.config.ts",
   "scripts/dev/check-portable-config.ts"
 ];
 

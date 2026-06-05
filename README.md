@@ -31,6 +31,7 @@ pnpm dev
 - Web SPA 规划端口: `5173`。
 - Tauri webview 规划端口: `1420`。
 - 默认配置来自 [`packages/config`](packages/config);复制 [`.env.example`](.env.example) 到 `.env` 后填入本地密钥。
+- PostgreSQL/Redis 可用 `docker compose up -d postgres redis` 启动;Drizzle 迁移命令为 `pnpm db:generate`、`pnpm db:check`、`pnpm db:migrate`。
 - 生产沙箱与 Agent 执行后续要求 Linux；Windows 当前用于开发、文档与地基验证。
 
 ## 许可证与商业授权 ⚖️
