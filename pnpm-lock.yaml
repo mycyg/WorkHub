@@ -74,12 +74,21 @@ importers:
       '@workhub/config':
         specifier: workspace:*
         version: link:../config
+      '@workhub/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@workhub/cost':
         specifier: workspace:*
         version: link:../cost
+      '@workhub/events':
+        specifier: workspace:*
+        version: link:../events
       '@workhub/tools':
         specifier: workspace:*
         version: link:../tools
+      zod:
+        specifier: ^4.0.1
+        version: 4.4.3
 
   packages/api-client:
     dependencies:

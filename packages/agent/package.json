@@ -8,6 +8,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./fixtures": {
+      "types": "./src/fixtures/index.ts",
+      "import": "./src/fixtures/index.ts"
+    },
     "./providers": {
       "types": "./src/providers/index.ts",
       "import": "./src/providers/index.ts"
@@ -25,7 +29,10 @@
   },
   "dependencies": {
     "@workhub/config": "workspace:*",
+    "@workhub/contracts": "workspace:*",
     "@workhub/cost": "workspace:*",
-    "@workhub/tools": "workspace:*"
+    "@workhub/events": "workspace:*",
+    "@workhub/tools": "workspace:*",
+    "zod": "^4.0.1"
   }
 }

@@ -52,6 +52,8 @@ const requiredPaths = [
   "packages/agent/src/loop/loop.ts",
   "packages/agent/src/loop/control.ts",
   "packages/agent/src/loop/handoff.ts",
+  "packages/agent/src/fixtures/gold-path.ts",
+  "packages/agent/src/fixtures/index.ts",
   "packages/tools/src/registry.ts",
   "packages/tools/src/sandbox.ts",
   "packages/tools/src/file-tools.ts",
