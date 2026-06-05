@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import { settings } from "@workhub/config";
 
+import { getOpenApiDocument } from "./openapi.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
@@ -11,6 +12,7 @@ import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
 import { createNotificationRoutes } from "./routes/notifications.js";
 import { createAuditRoutes } from "./routes/audit.js";
+import { createPageRoutes } from "./routes/pages.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 
@@ -35,6 +37,9 @@ app.get("/api/health", (c) =>
   })
 );
 
+app.get("/openapi.json", (c) => c.json(getOpenApiDocument()));
+app.get("/api/openapi.json", (c) => c.json(getOpenApiDocument()));
+
 app.route("/api/auth", createAuthRoutes());
 app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
@@ -43,6 +48,7 @@ app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
 app.route("/api/notifications", createNotificationRoutes());
 app.route("/api", createAuditRoutes());
+app.route("/api/pages", createPageRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {

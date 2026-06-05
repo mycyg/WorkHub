@@ -8,6 +8,7 @@
     "paths": {
       "@workhub/config": ["packages/config/src/index.ts"],
       "@workhub/contracts": ["packages/contracts/src/index.ts"],
+      "@workhub/api-client": ["packages/api-client/src/index.ts"],
       "@workhub/cost": ["packages/cost/src/index.ts"],
       "@workhub/audit": ["packages/audit/src/index.ts"],
       "@workhub/agent": ["packages/agent/src/index.ts"],

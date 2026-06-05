@@ -8,5 +8,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node ../../scripts/dev/noop-test.mjs @workhub/desktop-webview",
     "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workhub/api-client": "workspace:*",
+    "@workhub/config": "workspace:*"
   }
 }

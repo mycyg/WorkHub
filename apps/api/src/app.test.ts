@@ -26,6 +26,15 @@ test("GET /api/health returns the daemon health payload", async () => {
   assert.equal(body.runtime, "node");
 });
 
+test("GET /api/openapi.json exposes the headless daemon contract seed", async () => {
+  const response = await app.request("/api/openapi.json");
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { openapi: string; paths: Record<string, unknown> };
+  assert.equal(body.openapi, "3.1.0");
+  assert.equal(Boolean(body.paths["/api/pages/attention"]), true);
+});
+
 test("unknown endpoints use the shared error shape", async () => {
   const response = await app.request("/missing");
 
