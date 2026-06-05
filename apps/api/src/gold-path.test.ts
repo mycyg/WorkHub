@@ -19,6 +19,7 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createPageRoutes } from "./routes/pages.js";
+import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
@@ -225,6 +226,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   app.route("/api/knowledge", createKnowledgeRoutes({ auth }));
   app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
   app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue() }));
+  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
   const headers = { Cookie: await cookie(runtimeSettings) };
 
   const question = await app.request(`/api/sessions/${p05GoldPathIds.session}/next-question`, {
@@ -255,4 +257,87 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
   assert.equal(workItemBody.data.latest_proposal !== undefined, true);
   assert.equal((replayBody.data.cost?.me.warning_ratio ?? 0) >= 0.8, true);
+});
+
+test("P0.5 proposal review requires a reason on request changes and feeds it back to the next Agent context", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const missingReason = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "request_changes" })
+  });
+  assert.equal(missingReason.status, 422);
+
+  const response = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "request_changes", reason_md: "证据不足，请补充客户风险列表。" })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      status: string;
+      decision: string;
+      next_agent_context?: { correction: string; reason_fed_back: boolean };
+      event: { type: string; attention?: { cuu_state?: string } };
+    };
+  };
+  assert.equal(body.data.status, "revision_requested");
+  assert.equal(body.data.decision, "request_changes");
+  assert.equal(body.data.next_agent_context?.correction, "证据不足，请补充客户风险列表。");
+  assert.equal(body.data.next_agent_context?.reason_fed_back, true);
+  assert.equal(body.data.event.type, "proposal.reviewed");
+  assert.equal(body.data.event.attention?.cuu_state, "revision_requested");
+});
+
+test("P0.5 proposal approve and merge expose merged event, notification, audit facts, and rollback entry", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const review = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(review.status, 200);
+  const reviewBody = await review.json() as { ok: true; data: { next_action?: { href: string } } };
+  assert.equal(reviewBody.data.next_action?.href, `/api/proposals/${p05GoldPathIds.proposal}/merge`);
+
+  const merge = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(merge.status, 200);
+  const mergeBody = await merge.json() as {
+    ok: true;
+    data: {
+      status: string;
+      merge_snapshot_id: string;
+      rollback_available: boolean;
+      rollback: { available: boolean };
+      events: { type: string }[];
+      audit_logs: { action: string; snapshot_id?: string }[];
+      attention: { cuu_state?: string };
+    };
+  };
+  assert.equal(mergeBody.data.status, "merged");
+  assert.equal(mergeBody.data.merge_snapshot_id, p05GoldPathIds.mergeSnapshot);
+  assert.equal(mergeBody.data.rollback_available, true);
+  assert.equal(mergeBody.data.rollback.available, true);
+  assert.equal(mergeBody.data.events.some((event) => event.type === "proposal.merged"), true);
+  assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
+  assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id === p05GoldPathIds.mergeSnapshot), true);
+  assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
 });

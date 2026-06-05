@@ -136,6 +136,16 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    reviewProposal: (id, payload) =>
+      request(`/api/proposals/${id}/review`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    mergeProposal: (id, payload = {}) =>
+      request(`/api/proposals/${id}/merge`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     nextQuestion: (sessionId) =>
       request(`/api/sessions/${sessionId}/next-question`, {
         method: "POST"

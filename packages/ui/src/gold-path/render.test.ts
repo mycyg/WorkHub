@@ -74,6 +74,7 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
 
   assert.equal(proposal?.html.includes("回滚"), true);
   assert.equal(proposal?.html.includes("data-requires-reason=\"true\""), true);
+  assert.equal(proposal?.html.includes("data-action-id=\"merge\""), true);
   assert.equal(replay?.html.includes("估算成本"), true);
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
 });

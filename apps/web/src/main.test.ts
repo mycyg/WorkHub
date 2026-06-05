@@ -26,6 +26,12 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
     async respondApproval() {
       throw new Error("not needed");
     },
+    async reviewProposal() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },

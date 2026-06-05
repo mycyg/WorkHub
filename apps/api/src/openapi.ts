@@ -36,6 +36,18 @@ export function getOpenApiDocument() {
           summary: "Proposal detail page VM"
         }
       },
+      "/api/proposals/{id}/review": {
+        post: {
+          tags: ["proposals"],
+          summary: "Review a deliverable change proposal"
+        }
+      },
+      "/api/proposals/{id}/merge": {
+        post: {
+          tags: ["proposals"],
+          summary: "Merge an approved deliverable change proposal"
+        }
+      },
       "/api/pages/approvals": {
         get: {
           tags: ["pages"],

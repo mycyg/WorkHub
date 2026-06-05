@@ -6,9 +6,13 @@ import type {
   GoldPathSurfaceVM,
   NotificationList,
   ProposalDetailVM,
+  ProposalMergeResult,
+  ProposalReviewResult,
   QuestionCard,
   ReplayTraceVM,
+  ReviewProposalRequest,
   RespondApprovalRequest,
+  MergeProposalRequest,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -83,6 +87,8 @@ export type WorkHubApiClient = {
   me: () => Promise<IdentityResponse | null>;
   notifications: () => Promise<NotificationList>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
+  mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;

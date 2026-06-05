@@ -101,7 +101,7 @@ function actions(actions: (AttentionAction | ActionSpec)[]) {
             : "wh-btn";
       const reason = action.requires_reason ? " data-requires-reason=\"true\"" : "";
       const method = "method" in action ? ` data-method="${escapeHtml(action.method)}"` : "";
-      return `<a class="${style}" href="${href(actionHref(action))}"${reason}${method}>${escapeHtml(action.label)}</a>`;
+      return `<a class="${style}" href="${href(actionHref(action))}" data-action-id="${escapeHtml(action.id)}"${reason}${method}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -280,6 +280,11 @@ function checkRow(check: DeliverableCheck) {
 function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
   const proposal = vm.page_vms.proposal;
   const manifest: DeliverableChangeManifest = proposal.manifest;
+  const proposalActions = [
+    proposal.review_actions.approve,
+    proposal.review_actions.request_changes,
+    ...(proposal.review_actions.merge ? [proposal.review_actions.merge] : [])
+  ];
   const main = `<span class="wh-kicker">Deliverable change request</span>
     <h1 class="wh-title">${escapeHtml(proposal.title)}</h1>
     <p class="wh-subtle">${escapeHtml(manifest.summary_md.replace(/[#*_`-]/gu, " ").slice(0, 220))}</p>
@@ -290,13 +295,13 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): 
     </div>
     <h2>改了什么</h2><div class="wh-card">${manifest.changes.map(changeRow).join("")}</div>
     <h2>检查结果</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
-    ${actions([proposal.review_actions.approve, proposal.review_actions.request_changes])}`;
+    ${actions(proposalActions)}`;
   return {
     key: "proposal",
     route: vm.routes.proposal,
     title: "Proposal Detail",
     html: pageShell(surface, "Proposal Detail", main, cuuRail({ state: "carrying_document", evidenceRefs: proposal.evidence_refs })),
-    primaryHrefs: [proposal.review_actions.approve.href, proposal.review_actions.request_changes.href],
+    primaryHrefs: proposalActions.map((action) => action.href),
     cuuState: "carrying_document"
   };
 }

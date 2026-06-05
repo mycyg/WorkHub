@@ -9,6 +9,7 @@ import {
 } from "@workhub/ui/gold-path";
 
 const root = document.getElementById("root");
+type BrowserApiClient = ReturnType<typeof createApiClient>;
 
 function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string) {
   const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
@@ -38,7 +39,26 @@ function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey:
   }
 }
 
-function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell) {
+function proposalActionFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/proposals\/([^/]+)\/(review|merge)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
+}
+
+function reviewReasonButtons() {
+  return '<div class="wh-app-action-row"><button type="button" data-review-reason="证据不足">证据不足</button><button type="button" data-review-reason="口吻要改">口吻要改</button><button type="button" data-review-reason="范围太大">范围太大</button></div>';
+}
+
+function actionMessage(error: unknown) {
+  return error instanceof Error ? error.message : "动作提交失败，请稍后再试。";
+}
+
+function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient) {
+  let pendingReviewHref: string | undefined;
+
   const activateFromHash = () => {
     const hashRoute = window.location.hash.slice(1) || "/";
     const pageKey = resolveGoldPathPageKey(shell.routeMap, hashRoute);
@@ -47,7 +67,25 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell)
     }
   };
 
-  shellRoot.addEventListener("click", (event) => {
+  shellRoot.addEventListener("click", async (event) => {
+    const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
+    if (reasonButton && pendingReviewHref) {
+      const proposalAction = proposalActionFromHref(pendingReviewHref);
+      if (proposalAction?.action === "review") {
+        try {
+          const result = await client.reviewProposal(proposalAction.proposalId, {
+            decision: "request_changes",
+            reason_md: reasonButton.dataset.reviewReason ?? "需要调整",
+            remember: "once"
+          });
+          showNotice(shellRoot, result.attention.summary_text);
+        } catch (error) {
+          showNotice(shellRoot, actionMessage(error));
+        }
+      }
+      return;
+    }
+
     const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-option-id]") : null;
     if (option) {
       showNotice(shellRoot, `已选择「${option.querySelector("strong")?.textContent ?? option.dataset.optionId}」，Cuu 会继续推进。`);
@@ -70,15 +108,32 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell)
     }
     if (action.kind === "api-action") {
       event.preventDefault();
-      if (action.requiresReason) {
-        showNotice(
-          shellRoot,
-          "打回必须说明原因。P0.5 页面壳先展示原因选项，真实提交由审批服务后续接线。",
-          '<div class="wh-app-action-row"><button type="button">证据不足</button><button type="button">口吻要改</button><button type="button">范围太大</button></div>'
-        );
-      } else {
-        showNotice(shellRoot, "已记录采纳动作。真实 merge、通知和审计状态会由后端流程落地。");
+      const proposalAction = proposalActionFromHref(href);
+      if (proposalAction?.action === "review") {
+        if (action.requiresReason) {
+          pendingReviewHref = href;
+          showNotice(shellRoot, "打回必须说明原因。先点一个原因，Cuu 会带着它继续改。", reviewReasonButtons());
+          return;
+        }
+        try {
+          const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
+          const merge = await client.mergeProposal(proposalAction.proposalId);
+          showNotice(shellRoot, `${review.attention.summary_text} ${merge.attention.summary_text}`);
+        } catch (error) {
+          showNotice(shellRoot, actionMessage(error));
+        }
+        return;
       }
+      if (proposalAction?.action === "merge") {
+        try {
+          const merge = await client.mergeProposal(proposalAction.proposalId);
+          showNotice(shellRoot, merge.attention.summary_text);
+        } catch (error) {
+          showNotice(shellRoot, actionMessage(error));
+        }
+        return;
+      }
+      showNotice(shellRoot, "这个动作还在等待对应服务接线。");
     }
   });
 
@@ -114,7 +169,7 @@ async function boot() {
       apiBaseLabel: "/api/pages/gold-path"
     });
     root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
-    bindGoldPathNavigation(root, shell);
+    bindGoldPathNavigation(root, shell, client);
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
       title: "API daemon 还没连上",
