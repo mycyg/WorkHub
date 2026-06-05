@@ -421,6 +421,23 @@ type CostSummaryVM = {
   active_notices: BudgetNotice[];
   generated_at: string;
 };
+
+type CostDashboardVM = {
+  generated_at: string;
+  currency: "CNY";
+  total_cost_cny: string;
+  token_in: number;
+  token_out: number;
+  trend: { date: string; cost_cny: string; tokens: number }[];
+  by_user: { user_id: string; label: string; cost_cny: string; tokens: number }[];
+  by_team: { team_id: string; label: string; cost_cny: string; tokens: number }[];
+  by_workitem: { workitem_id: string; code: string; cost_cny: string; turns: number }[];
+  model_breakdown: { provider: string; model: string; count: number; cost_cny: string }[];
+  budget: BudgetUsage[];
+  notices: BudgetNotice[];
+  top_exhaustion_risks: { scope: BudgetUsage["scope"]; label: string; remaining_cost_cny: string; status: BudgetUsage["status"] }[];
+  empty_state?: "no_agent_runs" | "usage_not_connected";
+};
 ```
 
 约束:
@@ -430,6 +447,8 @@ type CostSummaryVM = {
 - `cuu_state` 是提示,客户端可以按本地状态机覆盖。
 - `attention` 可选;用于一件事卡片和 Cuu 气泡。
 - `BudgetNotice.options` 必须是可点击选项;Cuu/Rust 不要求用户输入预算处理命令。
+- `CostSummaryVM` 是轻量摘要,可进入 Attention/Cuu/Rust one thing;`CostDashboardVM` 是页面 VM,只由 `GET /api/pages/cost` 返回,不得塞进 SSE 事件或 Cuu 气泡。
+- `BudgetDecision` 只给 AgentLoop/API 裁决使用;端侧只消费 `BudgetNotice`、`CostSummaryVM` 或 `CostDashboardVM`。
 
 ### 4.3 Cuu State
 

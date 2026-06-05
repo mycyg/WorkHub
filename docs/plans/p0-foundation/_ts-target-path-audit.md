@@ -1,7 +1,7 @@
 ---
 title: WorkHub TS Target Path Audit
 type: cross-cutting-audit
-status: draft
+status: ready
 date: 2026-06-05
 depends:
   - ./_ts-first-module-port-page-alignment.md
@@ -36,8 +36,8 @@ depends:
 | F04 Auth/identity | `app/auth.py` | `apps/api/src/middleware/auth.ts`, `packages/contracts/src/auth.ts`, `packages/db/src/schema/identity.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token middleware + identity schema | token-beats-cookie 行为回归 |
 | F05 Event broker | `push_bus.py`, `push.py`, `presence.py` | `packages/events`, `apps/api/src/sse`, `apps/api/src/broker`, `packages/contracts/src/events.ts` | WorkHubEvent helper, Redis pub/sub, SSE writer | 不手写事件名;订阅边界鉴权 |
 | F06 Permission | `permissions.py` | `packages/permissions`, `apps/api/src/services/approvals.ts`, `packages/contracts/src/approval.ts` | policy evaluator, ApprovalRequest, AttentionItem UI slice | admin 读/写/设备不对称回归 |
-| F07 Provider registry | 7 处 `AsyncAnthropic` | `packages/agent/src/providers`, `packages/config/src/providers.ts`, `packages/cost` | provider registry, usage sink, BudgetDecision 输入 | grep 无裸 SDK client in services/tools |
-| F08 Agent engine | `auto_agent.py`, `auto.py`, `llm_review` | `packages/agent`, `packages/tools`, `apps/api/src/workers/agent-runner.ts` | AgentLoop, ToolRegistry, AgentRun queue, replay trace | side-effect gate; AgentStep persisted |
+| F07 Provider registry | 7 处 `AsyncAnthropic` | `packages/agent/src/providers`, `packages/config/src/providers.ts`, `packages/cost/src/usage-sink.ts`, `packages/cost/src/ledger.ts`, `packages/cost/src/model-route.ts` | provider registry, usage sink, BudgetDecision 输入 | grep 无裸 SDK client in services/tools |
+| F08 Agent engine | `auto_agent.py`, `auto.py`, `llm_review` | `packages/agent`, `packages/tools`, `apps/api/src/workers/agent-runner.ts`, `packages/cost/src/decision.ts` | AgentLoop, ToolRegistry, AgentRun queue, replay trace, BudgetDecision 消费 | side-effect gate;AgentStep persisted;AgentLoop 不硬编码配额 |
 | F09 Lifecycle/notifications | `lifecycle.py`, `notifications.py` | `packages/events/src/lifecycle.ts`, `apps/api/src/services/notifications.ts` | milestones, notification routing | 新状态必须登记,不发 `all` 私有内容 |
 | F10 Audit/snapshot | `ActivityLog`, drive undo | `packages/audit`, `packages/db/src/schema/audit.ts`, `packages/contracts/src/replay.ts` | AuditLog, Snapshot, manifest facts | 快照失败 fail-closed |
 | F11 Daemon/client | `app/main.py`, `shared/src/api/client.ts` | `apps/api/src/routes`, `apps/api/src/pages`, `packages/api-client`, `apps/web`, `apps/desktop-webview` | Hono routes, OpenAPI, generated client, Page VM | Web/Tauri consume same types |
@@ -189,7 +189,7 @@ pnpm audit:python-boundary
 
 ## 8. 下一步
 
-1. 在 F01-F11 每份计划的实施步骤里补 `Target TS paths` 小节。
-2. 为 `packages/contracts` 先建类型索引草案。
-3. 为 Gold Path 创建第一个 fixture。
-4. 在 PR 模板里加入本审计表的必答项。
+1. 将本审计表固化进 PR 模板:每个组件 PR 必答 Behavior source、Target TS paths、contracts/db/events/cost 落点。
+2. 为 `packages/contracts` 建类型索引草案,先覆盖 `QuestionCard`、`DeliverableChangeManifest`、`BudgetNotice`、`ReplayTraceVM`。
+3. 为 Gold Path 创建第一个 fixture,并让 `budget_threshold_warning` 与 `budget_exhausted_handoff` 成为 P0.5 必跑。
+4. 增加脚本化审计:禁止 route/page local DTO、禁止页面手写事件名、禁止 Rust 复制业务状态机。

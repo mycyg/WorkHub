@@ -166,6 +166,16 @@ Agent 不必一开始真调用 LLM。P0.5 可用 scripted trace:
 - [ ] 所有用户可见 payload 来自 `packages/contracts` 或 OpenAPI generated types。
 - [ ] 若 fixture 成本超过 80%,必须发 `budget.warning`;超过 100%,必须走 `budget_exhausted` 或结构化交接。
 
+### 4.1 预算与 Replay 字段验收
+
+| 验收点 | 必须字段 | 判定 |
+|---|---|---|
+| 启动前预算裁决 | `BudgetDecision.allowed`, `run_budget`, `model_route`, `notice?` | AgentRun 启动 endpoint 不得自行拼 `max_steps/max_cost`;只消费 P-COST 裁决结果 |
+| warning 轻提示 | `BudgetNotice.code="budget_warning"`, `usage_ratio`, `recommended_action`, `options[]` | Cuu/Web 只能给点选项,不得要求用户输入预算处理命令 |
+| exhausted 交接 | `ApiErr.code="budget_exhausted"` 或 `AgentRun.status="budget_exhausted"` + `handoff_md` | 超额不得静默失败;当前 run 必须能解释已做/未做/下一步 |
+| Replay cost footer | `ReplayTraceVM.cost.input_tokens`, `output_tokens`, `estimated_cost`, `latency_ms` | raw token 可按权限折叠,但 footer 摘要必须存在 |
+| 成本页对齐 | `GET /api/pages/cost` 返回 `CostDashboardVM.notices` 与 `budget[]` | warning/exhausted 事件重放后,页面 reconcile 能看到同一状态 |
+
 ---
 
 ## 5. 禁止事项

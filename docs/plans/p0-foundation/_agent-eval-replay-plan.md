@@ -116,6 +116,45 @@ evals/
 
 `expected.*.partial.json` 使用局部匹配,避免对 LLM 文案做脆弱精确比较。
 
+### 3.3 成本阈值 fixture 契约
+
+成本 fixture 不调用真实模型,只喂 provider usage mock 和 policy seed,验证 P-COST 的账本、阈值、事件与 Replay footer。
+
+| Fixture | 输入 | 必断言 |
+|---|---|---|
+| `budget_threshold_warning` | `BudgetPolicy(workitem/run)=120000 tokens / 5 CNY`,已用 `96000 tokens` 或 `4.00 CNY` | `UsageRecord` 写入后生成 `CostLedgerEntry`;`BudgetUsage.status="warning"`;发 `budget.warning`;`BudgetNotice.options` 至少含「继续低成本模型」「暂停」两项;Replay footer 显示当前 run cost summary |
+| `budget_critical_model_route` | 已用比例 `>=95%` 且还有剩余 | `BudgetDecision.allowed=true`;`model_route.reason="near_budget_downgrade"`;不得阻断当前低风险 run;Cuu state 可为 `worried` |
+| `budget_exhausted_handoff` | 已用 `>=120000 tokens` 或 `>=5 CNY`,或下一步预估会越过硬上限 | 启动前返回 `ApiErr.code="budget_exhausted"`;运行中命中则 `AgentRun.status="budget_exhausted"` 并生成结构化交接;发 `budget.exhausted` |
+| `eval_cost_isolated` | nightly fixture 产生真实/模拟 usage | ledger scope 必须为 `{kind:"eval", suite:"nightly"}`;不增加 user/team `BudgetUsage.total_tokens`;Eval report 单独展示成本 |
+
+最小文件结构:
+
+```text
+evals/
+  fixtures/
+    budget_threshold_warning/
+      input.json
+      policies.json
+      usage-records.json
+      expected.cost.partial.json
+      expected.events.json
+      expected.replay.partial.json
+```
+
+`expected.cost.partial.json` 至少包含:
+
+```json
+{
+  "budget_status": "warning",
+  "events": ["usage.recorded", "budget.warning"],
+  "cost_footer": {
+    "has_tokens": true,
+    "has_estimated_cost": true,
+    "redacts_team_cost_for_non_admin": true
+  }
+}
+```
+
 ---
 
 ## 4. Eval 维度

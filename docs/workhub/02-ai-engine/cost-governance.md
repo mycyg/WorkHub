@@ -1,7 +1,7 @@
 ---
 module: 02-ai-engine/cost-governance
 layer: L2（P-COST / 成本治理）
-status: 🚧
+status: ✅
 owner: workflow
 ---
 
@@ -325,7 +325,43 @@ type CostDashboardVM = {
 
 ---
 
-## 9. 与其他文档的边界
+## 9. 实现路线
+
+### 9.1 目标 TS 路径
+
+| 层 | 目标路径 | 产物 | 不允许 |
+|---|---|---|---|
+| contracts | `packages/contracts/src/cost.ts` | `BudgetPolicy`、`BudgetScope`、`BudgetUsage`、`BudgetDecision`、`UsageRecord`、`CostLedgerEntry`、`CostSummaryVM`、`BudgetNotice`、`CostDashboardVM` Zod schema | route/page local type |
+| cost package | `packages/cost/src/policies.ts`, `packages/cost/src/decision.ts`, `packages/cost/src/ledger.ts`, `packages/cost/src/model-route.ts` | policy merge、预算裁决、账本写入、模型路由建议 | AgentLoop 内硬编码三级配额 |
+| DB | `packages/db/src/schema/cost.ts`, `packages/db/src/repositories/cost.ts` | `budget_policies`、`usage_records`、`cost_ledger_entries` 表与查询 helper | Dashboard 直接读 provider usage |
+| API | `apps/api/src/routes/cost.ts`, `apps/api/src/pages/cost.ts` | `/api/cost/*` 与 `/api/pages/cost` | 客户端拼多个散接口生成成本页 |
+| events | `packages/events/src/event-types.ts`, `packages/events/src/toAttentionItem.ts`, `packages/events/src/toCuuState.ts` | `usage.recorded`、`budget.warning`、`budget.exhausted` 常量与映射 | 页面/Cuu 手写事件字符串 |
+| client | `packages/api-client/src/*`, `apps/web/src/pages/*`, `apps/desktop-webview/src/*` | typed client、成本页、OneThing budget strip、Cuu budget bubble | Rust/Web 本地重算预算状态 |
+
+### 9.2 施工切片
+
+| 切片 | 目标 | 验收 |
+|---|---|---|
+| C1 contracts first | 先把 §3 的全部类型落入 `packages/contracts/src/cost.ts` | OpenAPI 能生成 `BudgetNotice`、`CostSummaryVM`、`CostDashboardVM`;`budget_exhausted` 错误结构有 schema |
+| C2 default policy seed | 将 §2 默认值写成可配置 seed,启动时生成 `BudgetPolicy` | 单 run `15/300s/120k/5 CNY`、用户日、团队日、团队月四条 policy 可查;业务逻辑不写死数值 |
+| C3 usage sink | provider registry 每次真实调用写 `UsageRecord` | 正常 step、review、retry、compact、schema repair 都能被 fixture 计入 |
+| C4 ledger reconcile | `UsageRecord` 归集到 workitem/user/team/eval scope 的 `CostLedgerEntry` | nightly eval 只进 `eval` scope;用户/team 配额不被污染 |
+| C5 budget decision | AgentRun 启动前调用 `decideRunBudget()` | `BudgetDecision.allowed=false` 时统一返回 `ApiErr.code="budget_exhausted"`;allowed=true 近阈值时给 `BudgetNotice` |
+| C6 page/API | 补 `/api/cost/policies`、`/api/cost/usage`、`/api/pages/cost` | 普通用户只看个人切片;admin/team owner 可看策略和全量成本页 |
+| C7 event/Cuu | 将 warning/exhausted 事件映射为 Attention 和 Cuu 状态 | `budget.warning` → `worried`;`budget.exhausted` → `asking_approval` 且必须有可点选项 |
+
+### 9.3 持久化策略
+
+- P0 允许用配置 seed 初始化默认 policy,但产品态必须落 `budget_policies` 表并记录 `version`。
+- policy 更新只改 `BudgetPolicy`,不得改 AgentLoop 常量;每次更新写 `AuditLog(action="budget_policy.updated")`。
+- `CostLedgerEntry` 是看板和 replay 的真相源;`UsageRecord` 是 provider 原始调用事实,两者都要可追溯。
+- 账本 reconcile 必须幂等:同一个 `usage_record_id + scope + period_bucket` 不得重复记账。
+- provider 单价表属于 P-COST/model route 配置;业务 route、页面和 Cuu 不得硬编码模型单价。
+- P0 可先同步写 ledger;多 worker 后改为事件/queue reconcile,但 API 契约不变。
+
+---
+
+## 10. 与其他文档的边界
 
 | 文档 | 边界 |
 |---|---|
