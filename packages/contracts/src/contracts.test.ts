@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  authContextSchema,
   confidenceGrades,
+  identifyRequestSchema,
   deliverableChangeManifestSchema,
   deliverableManifestFixtures,
   escalationTriggers,
@@ -19,6 +21,33 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("auth contracts expose F04 identity and device shapes", () => {
+  const request = identifyRequestSchema.parse({ nickname: " 小云 " });
+  assert.equal(request.nickname, " 小云 ");
+
+  const parsed = authContextSchema.parse({
+    user: {
+      id: "10000000-0000-4000-8000-000000000001",
+      nickname: "小云",
+      display_name: "小云",
+      created: false,
+      is_admin: false,
+      availability_status: "free"
+    },
+    identity: {
+      actor_kind: "human",
+      actor_id: "10000000-0000-4000-8000-000000000001",
+      actor_label: "小云",
+      user_id: "10000000-0000-4000-8000-000000000001",
+      org_id: "00000000-0000-4000-8000-000000000001",
+      workspace_id: "00000000-0000-4000-8000-000000000002",
+      is_admin: false
+    }
+  });
+
+  assert.equal(parsed.identity.actor_kind, "human");
 });
 
 test("formal event names are the only exported implementation names", () => {

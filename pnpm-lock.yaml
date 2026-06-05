@@ -26,9 +26,18 @@ importers:
       '@workhub/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@workhub/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@workhub/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       hono:
         specifier: ^4.8.0
         version: 4.12.23
+      zod:
+        specifier: ^4.0.1
+        version: 4.4.3
 
   apps/desktop-webview: {}
 

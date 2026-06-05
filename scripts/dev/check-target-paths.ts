@@ -10,9 +10,12 @@ const requiredPaths = [
   "apps/web/src/main.ts",
   "apps/desktop-webview/src/main.ts",
   "packages/config/src/env.ts",
+  "packages/config/src/auth.ts",
   "packages/config/src/ports.ts",
   "packages/contracts/src/enums.ts",
   "packages/contracts/src/experience.ts",
+  "packages/contracts/src/auth.ts",
+  "packages/contracts/src/identity.ts",
   "packages/contracts/src/domain/work-item.ts",
   "packages/contracts/src/domain/collaboration.ts",
   "packages/contracts/src/domain/agent.ts",
@@ -25,7 +28,12 @@ const requiredPaths = [
   "packages/db/src/locks.ts",
   "packages/db/src/sequences.ts",
   "packages/db/src/seed.ts",
+  "packages/db/src/repositories/users.ts",
+  "packages/db/src/repositories/devices.ts",
   "packages/db/drizzle.config.ts",
+  "apps/api/src/middleware/auth.ts",
+  "apps/api/src/routes/auth.ts",
+  "apps/api/src/routes/client-devices.ts",
   "scripts/dev/check-portable-config.ts"
 ];
 

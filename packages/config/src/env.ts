@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { authDefaults } from "./auth.js";
+
 type EnvInput = Record<string, string | undefined>;
 
 const emptyToUndefined = (value: unknown) => {
@@ -11,6 +13,22 @@ const emptyToUndefined = (value: unknown) => {
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const cnyString = z.string().regex(/^\d+(\.\d+)?$/, "Expected a numeric CNY string");
+const booleanString = z.preprocess((value) => {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return value;
+}, z.boolean());
 
 export const brokerBackendSchema = z.enum(["memory", "redis", "pg_listen"]);
 export type BrokerBackend = z.infer<typeof brokerBackendSchema>;
@@ -37,8 +55,12 @@ export const envSchema = z.object({
   BROKER_URL: z.string().default(""),
 
   COOKIE_SECRET: z.string().default("dev-change-me"),
+  COOKIE_SECURE: booleanString.default(false),
   ADMIN_CLAIM_SECRET: z.string().default(""),
   CORS_ALLOW_ORIGINS: z.string().default("*"),
+  TOUCH_DEVICE_ON_AUTH: booleanString.default(true),
+  DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
+  DEFAULT_WORKSPACE_ID: z.string().uuid().default(authDefaults.defaultWorkspaceId),
 
   LLM_PROVIDER_DEFAULT: z.string().min(1).default("deepseek"),
   LLM_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
@@ -82,8 +104,12 @@ export type Settings = {
   };
   auth: {
     cookieSecret: string;
+    cookieSecure: boolean;
     adminClaimSecret: string;
     corsAllowOrigins: string[];
+    touchDeviceOnAuth: boolean;
+    defaultOrgId: string;
+    defaultWorkspaceId: string;
   };
   llm: {
     defaultProvider: string;
@@ -138,8 +164,12 @@ export function loadSettings(env: EnvInput = process.env): Settings {
     },
     auth: {
       cookieSecret: parsed.COOKIE_SECRET,
+      cookieSecure: parsed.COOKIE_SECURE,
       adminClaimSecret: parsed.ADMIN_CLAIM_SECRET,
-      corsAllowOrigins: parseCorsOrigins(parsed.CORS_ALLOW_ORIGINS)
+      corsAllowOrigins: parseCorsOrigins(parsed.CORS_ALLOW_ORIGINS),
+      touchDeviceOnAuth: parsed.TOUCH_DEVICE_ON_AUTH,
+      defaultOrgId: parsed.DEFAULT_ORG_ID,
+      defaultWorkspaceId: parsed.DEFAULT_WORKSPACE_ID
     },
     llm: {
       defaultProvider: parsed.LLM_PROVIDER_DEFAULT,
@@ -182,6 +212,10 @@ export function validateRuntimeConfig(value: Settings) {
 
   if (value.auth.cookieSecret === "dev-change-me") {
     throw new Error("COOKIE_SECRET must be changed in production");
+  }
+
+  if (!value.auth.cookieSecure) {
+    throw new Error("COOKIE_SECURE must be true in production");
   }
 
   if (value.auth.corsAllowOrigins.includes("*")) {
