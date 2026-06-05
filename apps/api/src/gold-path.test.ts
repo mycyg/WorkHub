@@ -125,6 +125,9 @@ function emptyQueue(): AgentRunQueue {
     async get() {
       return null;
     },
+    async workdir() {
+      return null;
+    },
     async trace() {
       return [];
     },

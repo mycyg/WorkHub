@@ -131,6 +131,7 @@ export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMil
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
+  workdir: (runId: string) => Promise<string | null>;
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
   abort: (runId: string, actorId: string) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
@@ -188,6 +189,7 @@ export function createInMemoryAgentRunQueue(options: {
       now: now()
     }));
   const runs = new Map<string, AgentRunQueueRecord>();
+  const runWorkdirs = new Map<string, string>();
 
   function activeForWorkItem(workItemId: string) {
     return [...runs.values()].find(
@@ -244,6 +246,7 @@ export function createInMemoryAgentRunQueue(options: {
     const executionInput = { run: current, settings };
     const client = await (options.client ?? defaultClient)(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
+    runWorkdirs.set(current.run_id, workdir);
     const tools = options.tools?.(executionInput) ?? defaultTools;
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
       run: current,
@@ -381,6 +384,10 @@ export function createInMemoryAgentRunQueue(options: {
 
     async get(runId) {
       return runs.get(runId) ?? null;
+    },
+
+    async workdir(runId) {
+      return runWorkdirs.get(runId) ?? null;
     },
 
     async trace(runId, after = 0) {

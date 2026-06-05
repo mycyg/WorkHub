@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { Hono } from "hono";
@@ -18,7 +21,13 @@ import type {
   UserRepository
 } from "@workhub/db";
 
-import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import {
+  COOKIE_NAME,
+  LOCAL_CLIENT_HEADER,
+  hashClientToken,
+  type AuthDependencies,
+  type AuthEnv
+} from "./middleware/auth.js";
 import { createAuditRoutes } from "./routes/audit.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -26,6 +35,7 @@ const userId = "81000000-0000-4000-8000-000000000001";
 const workItemId = "81000000-0000-4000-8000-000000000002";
 const snapshotId = "81000000-0000-4000-8000-000000000003";
 const auditLogId = "81000000-0000-4000-8000-000000000004";
+const agentRunId = "81000000-0000-4000-8000-000000000005";
 
 function user(): UserAuthRow {
   return {
@@ -73,6 +83,20 @@ function auditLog(partial: Partial<AuditLogRow> = {}): AuditLogRow {
     undoneAt: null,
     createdAt: now,
     ...partial
+  };
+}
+
+function clientDevice(token: string): ClientDeviceAuthRow {
+  return {
+    id: "81000000-0000-4000-8000-000000000006",
+    userId,
+    deviceName: "Cuu desktop",
+    platform: "windows",
+    clientTokenHash: hashClientToken(token),
+    lastSeenAt: now,
+    revokedAt: null,
+    createdAt: now,
+    updatedAt: now
   };
 }
 
@@ -175,12 +199,18 @@ class MemoryUsers implements UserRepository {
 }
 
 class MemoryDevices implements ClientDeviceRepository {
-  async findActiveByTokenHash() {
-    return null;
+  constructor(private readonly rows: ClientDeviceAuthRow[] = []) {}
+
+  async findActiveByTokenHash(tokenHash: string) {
+    return this.rows.find((row) => row.clientTokenHash === tokenHash && row.revokedAt === null) ?? null;
   }
 
-  async findActiveByTokenHashForUser() {
-    return null;
+  async findActiveByTokenHashForUser(tokenHash: string, id: string) {
+    return this.rows.find((row) =>
+      row.clientTokenHash === tokenHash &&
+      row.userId === id &&
+      row.revokedAt === null
+    ) ?? null;
   }
 
   async createClientDevice(): Promise<ClientDeviceAuthRow> {
@@ -191,8 +221,14 @@ class MemoryDevices implements ClientDeviceRepository {
     return [];
   }
 
-  async touchLastSeen() {
-    return null;
+  async touchLastSeen(deviceId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === deviceId) ?? null;
+    if (!row) {
+      return null;
+    }
+    row.lastSeenAt = at;
+    row.updatedAt = at;
+    return row;
   }
 
   async revokeByIdForUser() {
@@ -211,10 +247,10 @@ function settings(): Settings {
   });
 }
 
-function authDeps(runtimeSettings: Settings): AuthDependencies {
+function authDeps(runtimeSettings: Settings, devices: ClientDeviceAuthRow[] = []): AuthDependencies {
   return {
     users: new MemoryUsers(),
-    devices: new MemoryDevices(),
+    devices: new MemoryDevices(devices),
     settings: runtimeSettings,
     now: () => now
   };
@@ -286,4 +322,71 @@ test("revert route keeps the local-client gate", async () => {
   });
 
   assert.equal(response.status, 403);
+});
+
+test("revert route restores the agent run workdir from the selected snapshot", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshotDir = await mkdtemp(path.join(os.tmpdir(), "workhub-revert-snapshot-"));
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-revert-workdir-"));
+  await mkdir(path.join(snapshotDir, "outputs"), { recursive: true });
+  await writeFile(path.join(snapshotDir, "outputs", "result.md"), "before change");
+  await mkdir(path.join(workdir, "outputs"), { recursive: true });
+  await writeFile(path.join(workdir, "outputs", "result.md"), "dirty change");
+  await writeFile(path.join(workdir, "scratch.tmp"), "should disappear");
+
+  const snapshots = new MemorySnapshots();
+  snapshots.rows = [snapshot({ ref: snapshotDir })];
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [
+    auditLog({
+      action: "tool.write_file.snapshot",
+      detailJson: { run_id: agentRunId },
+      snapshotId
+    })
+  ];
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workdirForRun: (runId) => runId === agentRunId ? workdir : null,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [LOCAL_CLIENT_HEADER]: token
+    },
+    body: JSON.stringify({ snapshot_id: snapshotId, reason_md: "测试还原" })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      status: string;
+      snapshot: { id: string; reverted_at?: string };
+    };
+  };
+  assert.equal(body.data.status, "reverted");
+  assert.equal(body.data.snapshot.id, snapshotId);
+  assert.equal(body.data.snapshot.reverted_at, now.toISOString());
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "before change");
+  await assert.rejects(() => readFile(path.join(workdir, "scratch.tmp"), "utf8"), /ENOENT/);
+  assert.equal(snapshots.rows[0]?.revertedAt?.toISOString(), now.toISOString());
+  const revertLog = auditLogs.rows.at(-1);
+  assert.equal(revertLog?.action, "snapshot.reverted");
+  assert.equal(revertLog?.entityType, "agent_run");
+  assert.equal(revertLog?.entityId, agentRunId);
+  assert.equal(revertLog?.snapshotId, snapshotId);
+  assert.deepEqual(revertLog?.detailJson, {
+    snapshot_id: snapshotId,
+    run_id: agentRunId,
+    workdir_restored: true,
+    reason_md: "测试还原"
+  });
 });

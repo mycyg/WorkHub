@@ -483,6 +483,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
 
   const executed = await queue.runNext();
   assert.equal(executed?.status, "succeeded");
+  assert.equal(await queue.workdir(startBody.data.run_id), workdir);
   assert.equal(executed?.usage.token_in, 15);
   assert.equal(executed?.usage.token_out, 25);
   assert.equal(executed?.usage.estimated_cost_cny, "0.003");
