@@ -267,6 +267,56 @@ export const budgetUsageSchema = z.object({
 });
 export type BudgetUsage = z.infer<typeof budgetUsageSchema>;
 
+export const budgetPolicySchema = z
+  .object({
+    id: z.string().min(1),
+    scope_kind: z.enum(["workitem", "user", "team", "eval"]),
+    period: z.enum(["run", "day", "month"]),
+    max_tokens: z.number().int().positive(),
+    max_cost_cny: z.string().regex(/^\d+(\.\d+)?$/),
+    warning_ratio: z.number().min(0).max(1),
+    critical_ratio: z.number().min(0).max(1),
+    on_warning: z.enum(["notify", "downgrade_model"]),
+    on_exhausted: z.enum(["block_new_run", "handoff_current_run"]),
+    model_route_hint: z.enum(["cheapest_safe", "balanced", "premium"]).optional(),
+    enabled: z.boolean(),
+    version: z.number().int().positive()
+  })
+  .superRefine((policy, ctx) => {
+    if (policy.warning_ratio >= policy.critical_ratio) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["warning_ratio"],
+        message: "warning_ratio must be lower than critical_ratio"
+      });
+    }
+  });
+export type BudgetPolicy = z.infer<typeof budgetPolicySchema>;
+
+export const budgetPolicyUpdateSchema = z
+  .object({
+    max_tokens: z.number().int().positive().optional(),
+    max_cost_cny: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+    warning_ratio: z.number().min(0).max(1).optional(),
+    critical_ratio: z.number().min(0).max(1).optional(),
+    on_warning: z.enum(["notify", "downgrade_model"]).optional(),
+    on_exhausted: z.enum(["block_new_run", "handoff_current_run"]).optional(),
+    model_route_hint: z.enum(["cheapest_safe", "balanced", "premium"]).optional(),
+    enabled: z.boolean().optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "budget policy update must include at least one field"
+  });
+export type BudgetPolicyUpdate = z.infer<typeof budgetPolicyUpdateSchema>;
+
+export const runBudgetSchema = z.object({
+  max_steps: z.number().int().positive(),
+  total_timeout_s: z.number().int().positive(),
+  max_tokens: z.number().int().positive(),
+  max_cost_cny: z.string().regex(/^\d+(\.\d+)?$/)
+});
+export type RunBudget = z.infer<typeof runBudgetSchema>;
+
 export const budgetNoticeSchema = z.object({
   code: z.enum(["budget_warning", "budget_exhausted"]),
   severity: z.enum(["info", "warning", "critical"]),
@@ -284,6 +334,21 @@ export const budgetNoticeSchema = z.object({
   action_href: z.string().optional()
 });
 export type BudgetNotice = z.infer<typeof budgetNoticeSchema>;
+
+export const budgetDecisionSchema = z.object({
+  decision_id: z.string().min(1),
+  allowed: z.boolean(),
+  reason: z.enum(["ok", "warning", "critical", "budget_exhausted"]).optional(),
+  run_budget: runBudgetSchema,
+  limiting_scope: budgetScopeSchema.optional(),
+  model_route: z.object({
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    reason: z.enum(["default", "low_risk_cheaper", "near_budget_downgrade"])
+  }),
+  notice: budgetNoticeSchema.optional()
+});
+export type BudgetDecision = z.infer<typeof budgetDecisionSchema>;
 
 export const costSummaryVmSchema = z.object({
   me: budgetUsageSchema,

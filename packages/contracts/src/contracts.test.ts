@@ -5,7 +5,10 @@ import {
   allowedWorkItemTransitions,
   agentRunTraceVmSchema,
   authContextSchema,
+  budgetDecisionSchema,
   budgetNoticeSchema,
+  budgetPolicySchema,
+  budgetPolicyUpdateSchema,
   budgetUsageSchema,
   createApprovalRequestSchema,
   confidenceGrades,
@@ -191,6 +194,20 @@ test("question cards prefer clickable choices but retain a collapsed fallback", 
 });
 
 test("cost governance contracts expose clickable budget notices and scoped usage", () => {
+  const policy = budgetPolicySchema.parse({
+    id: "pcost-workitem-run-v0",
+    scope_kind: "workitem",
+    period: "run",
+    max_tokens: 120000,
+    max_cost_cny: "5",
+    warning_ratio: 0.8,
+    critical_ratio: 0.95,
+    on_warning: "downgrade_model",
+    on_exhausted: "handoff_current_run",
+    model_route_hint: "balanced",
+    enabled: true,
+    version: 1
+  });
   const usage = budgetUsageSchema.parse({
     scope: { kind: "workitem", workitem_id: "74000000-0000-4000-8000-000000000001" },
     scope_label: "生成周报模板",
@@ -221,9 +238,38 @@ test("cost governance contracts expose clickable budget notices and scoped usage
       { id: "open_cost", label: "查看预算", action_href: "/dashboard/cost" }
     ]
   });
+  const decision = budgetDecisionSchema.parse({
+    decision_id: "decision-budget",
+    allowed: false,
+    reason: "budget_exhausted",
+    run_budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: policy.max_tokens,
+      max_cost_cny: policy.max_cost_cny
+    },
+    limiting_scope: usage.scope,
+    model_route: {
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      reason: "near_budget_downgrade"
+    },
+    notice: {
+      code: "budget_exhausted",
+      severity: "critical",
+      message: "AI 预算已经用完，先暂停新的自动执行。",
+      scope: usage.scope,
+      usage_ratio: 1,
+      recommended_action: "pause"
+    }
+  });
 
+  assert.equal(policy.scope_kind, "workitem");
   assert.equal(usage.status, "warning");
   assert.equal(notice.options?.length, 2);
+  assert.equal(decision.reason, "budget_exhausted");
+  assert.throws(() => budgetPolicySchema.parse({ ...policy, warning_ratio: 0.96 }));
+  assert.throws(() => budgetPolicyUpdateSchema.parse({}));
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

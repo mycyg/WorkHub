@@ -57,6 +57,12 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
     async costUsage() {
       throw new Error("not needed");
     },
+    async costPolicies() {
+      throw new Error("not needed");
+    },
+    async updateCostPolicy() {
+      throw new Error("not needed");
+    },
     async replayAgentRun() {
       throw new Error("not needed");
     },

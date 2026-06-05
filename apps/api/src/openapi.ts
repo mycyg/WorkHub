@@ -82,6 +82,18 @@ export function getOpenApiDocument() {
           summary: "Current user's lightweight AI budget and usage summary"
         }
       },
+      "/api/cost/policies": {
+        get: {
+          tags: ["cost"],
+          summary: "List AI budget policies"
+        }
+      },
+      "/api/cost/policies/{scope}/{id}": {
+        put: {
+          tags: ["cost"],
+          summary: "Update an AI budget policy"
+        }
+      },
       "/api/workitems/{id}/agent-runs": {
         post: {
           tags: ["agent-runs"],

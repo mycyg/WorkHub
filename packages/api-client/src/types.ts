@@ -1,6 +1,8 @@
 import type {
   ApprovalCenterVM,
   AttentionHomeVM,
+  BudgetPolicy,
+  BudgetPolicyUpdate,
   CostDashboardVM,
   CostSummaryVM,
   CreateProposalFromManifestRequest,
@@ -98,6 +100,8 @@ export type WorkHubApiClient = {
   nextQuestion: (sessionId: string) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   costUsage: () => Promise<CostSummaryVM>;
+  costPolicies: () => Promise<BudgetPolicy[]>;
+  updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
   replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streamUrl: (path: string) => string;
