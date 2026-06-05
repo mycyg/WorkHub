@@ -60,6 +60,12 @@ export function getOpenApiDocument() {
           summary: "Cost dashboard page"
         }
       },
+      "/api/cost/usage": {
+        get: {
+          tags: ["cost"],
+          summary: "Current user's lightweight AI budget and usage summary"
+        }
+      },
       "/api/workitems/{id}/agent-runs": {
         post: {
           tags: ["agent-runs"],

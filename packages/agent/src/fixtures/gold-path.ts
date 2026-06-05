@@ -274,19 +274,90 @@ const evidenceBubble: EvidenceBubble = {
 };
 
 const budgetNotice = {
+  code: "budget_warning",
   severity: "warning",
   message: "本次运行已接近单次预算上限，我会保留回放并优先使用便宜模型继续。",
-  scope: { kind: "workitem", id: p05GoldPathIds.workItem },
+  scope: { kind: "workitem", workitem_id: p05GoldPathIds.workItem },
+  usage_ratio: 0.84,
+  recommended_action: "downgrade_model",
+  options: [
+    {
+      id: "continue_low_cost",
+      label: "继续但降级模型",
+      action_href: `/api/workitems/${p05GoldPathIds.workItem}/agent-runs`
+    },
+    {
+      id: "open_cost",
+      label: "查看预算",
+      action_href: `/dashboard/cost?workItemId=${p05GoldPathIds.workItem}`
+    }
+  ],
   action_href: `/dashboard/cost?workItemId=${p05GoldPathIds.workItem}`
 } satisfies CostSummaryVM["active_notices"][number];
 
+const workItemBudgetUsage: CostSummaryVM["scopes"][number] = {
+  scope: { kind: "workitem", workitem_id: p05GoldPathIds.workItem },
+  scope_label: "生成客户周报模板",
+  policy_id: "pcost-workitem-run-v0",
+  period: "run",
+  period_start: at(2),
+  period_end: at(8),
+  token_in: 80000,
+  token_out: 24000,
+  total_tokens: 104000,
+  max_tokens: 120000,
+  remaining_tokens: 16000,
+  estimated_cost_cny: "4.2",
+  max_cost_cny: "5",
+  remaining_cost_cny: "0.8",
+  warning_ratio: 0.84,
+  status: "warning"
+};
+
+const userBudgetUsage: CostSummaryVM["me"] = {
+  scope: { kind: "user", user_id: p05GoldPathIds.user },
+  scope_label: "我的今日 AI 预算",
+  policy_id: "pcost-user-day-v0",
+  period: "day",
+  period_start: at(0),
+  period_end: at(1440),
+  token_in: 80000,
+  token_out: 24000,
+  total_tokens: 104000,
+  max_tokens: 500000,
+  remaining_tokens: 396000,
+  estimated_cost_cny: "4.2",
+  max_cost_cny: "20",
+  remaining_cost_cny: "15.8",
+  warning_ratio: 0.21,
+  status: "ok"
+};
+
+const teamBudgetUsage: NonNullable<CostSummaryVM["team"]> = {
+  scope: { kind: "team", team_id: p05GoldPathIds.team },
+  scope_label: "团队今日 AI 预算",
+  policy_id: "pcost-team-day-v0",
+  period: "day",
+  period_start: at(0),
+  period_end: at(1440),
+  token_in: 80000,
+  token_out: 24000,
+  total_tokens: 104000,
+  max_tokens: 5000000,
+  remaining_tokens: 4896000,
+  estimated_cost_cny: "4.2",
+  max_cost_cny: "200",
+  remaining_cost_cny: "195.8",
+  warning_ratio: 0.021,
+  status: "ok"
+};
+
 const costSummary: CostSummaryVM = {
-  me: {
-    total_tokens: 104000,
-    estimated_cost_cny: "4.2",
-    warning_ratio: 0.84
-  },
-  active_notices: [budgetNotice]
+  me: userBudgetUsage,
+  team: teamBudgetUsage,
+  scopes: [workItemBudgetUsage, userBudgetUsage, teamBudgetUsage],
+  active_notices: [budgetNotice],
+  generated_at: at(8)
 };
 
 const usageRecord = buildUsageRecord({
@@ -847,23 +918,57 @@ const replay: ReplayTraceVM = {
 };
 
 const costDashboard: CostDashboardVM = {
-  total_cost: costSummary,
+  generated_at: at(8),
+  currency: "CNY",
+  total_cost_cny: usageRecord.estimatedCostCny,
+  token_in: usageRecord.inputTokens,
+  token_out: usageRecord.outputTokens,
+  unit_cost_cny: "4.2",
   trend: [
-    { date: "2026-06-05", estimated_cost_cny: usageRecord.estimatedCostCny, total_tokens: 104000 }
+    { date: "2026-06-05", cost_cny: usageRecord.estimatedCostCny, tokens: 104000 }
   ],
-  budget: {
-    run: { max_steps: 15, max_tokens: 120000, max_cost_cny: "5" },
-    user_day: { max_tokens: 500000, max_cost_cny: "20" }
-  },
+  by_user: [
+    {
+      user_id: p05GoldPathIds.user,
+      label: "客户成功负责人",
+      cost_cny: usageRecord.estimatedCostCny,
+      tokens: 104000
+    }
+  ],
+  by_team: [
+    {
+      team_id: p05GoldPathIds.team,
+      label: "客户成功团队",
+      cost_cny: usageRecord.estimatedCostCny,
+      tokens: 104000
+    }
+  ],
+  by_workitem: [
+    {
+      workitem_id: p05GoldPathIds.workItem,
+      code: workItem.code,
+      cost_cny: usageRecord.estimatedCostCny,
+      turns: run.turns_used
+    }
+  ],
   model_breakdown: [
     {
       provider: usageRecord.provider,
       model: usageRecord.model,
-      total_tokens: usageRecord.inputTokens + usageRecord.outputTokens,
-      estimated_cost_cny: usageRecord.estimatedCostCny
+      count: 1,
+      cost_cny: usageRecord.estimatedCostCny
     }
   ],
-  notices: [budgetNotice]
+  budget: costSummary.scopes,
+  notices: [budgetNotice],
+  top_exhaustion_risks: [
+    {
+      scope: workItemBudgetUsage.scope,
+      label: workItemBudgetUsage.scope_label,
+      remaining_cost_cny: workItemBudgetUsage.remaining_cost_cny,
+      status: workItemBudgetUsage.status
+    }
+  ]
 };
 
 const events: WorkHubEvent<unknown>[] = [

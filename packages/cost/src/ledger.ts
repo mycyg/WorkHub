@@ -11,9 +11,11 @@ export function usageToLedgerEntry(
     id: options.id ?? randomUUID(),
     usageRecordId: `${usage.provider}:${usage.model}:${usage.createdAt}`,
     scope,
+    periodBucket: usage.createdAt.slice(0, 10),
     tokenIn: usage.inputTokens,
     tokenOut: usage.outputTokens,
     estimatedCostCny: usage.estimatedCostCny,
+    currency: "CNY",
     model: usage.model,
     source: usage.source,
     createdAt: usage.createdAt

@@ -333,13 +333,14 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): Go
 function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
   const cost = vm.page_vms.cost;
   const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(notice.severity)}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
+  const nearestRisk = cost.top_exhaustion_risks[0];
   const main = `<span class="wh-kicker">Cost governance</span>
     <h1 class="wh-title">预算与成本</h1>
     <p class="wh-subtle">普通用户只看个人切片；管理者再看团队视图。</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>本次 token</strong><p class="wh-subtle">${cost.total_cost.me.total_tokens}</p></article>
-      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost.me.estimated_cost_cny)}</p></article>
-      <article class="wh-card"><strong>预警比例</strong><p class="wh-subtle">${Math.round(cost.total_cost.me.warning_ratio * 100)}%</p></article>
+      <article class="wh-card"><strong>本期 token</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
+      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost_cny)}</p></article>
+      <article class="wh-card"><strong>预算状态</strong><p class="wh-subtle">${escapeHtml(nearestRisk?.status ?? cost.empty_state ?? "ok")}</p></article>
     </div>
     <div class="wh-list">${noticeCards}</div>`;
   return {

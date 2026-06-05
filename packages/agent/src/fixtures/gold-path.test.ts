@@ -55,12 +55,16 @@ test("P0.5 fixture refuses hallucinated evidence source ids", () => {
 test("P0.5 budget threshold produces a warning event and replay cost footer", () => {
   const fixture = createP05GoldPathFixture();
   const warningEvents = fixture.events.filter((event) => event.type === eventTypes.budgetWarning);
+  const workItemUsage = fixture.costSummary.scopes.find((usage) => usage.scope.kind === "workitem");
+  const warningNotice = fixture.costSummary.active_notices[0];
 
-  assert.equal(fixture.costSummary.me.warning_ratio >= fixture.evalGate.warningRatioThreshold, true);
-  assert.equal(fixture.costSummary.active_notices.some((notice) => notice.severity === "warning"), true);
+  assert.equal((workItemUsage?.warning_ratio ?? 0) >= fixture.evalGate.warningRatioThreshold, true);
+  assert.equal(warningNotice?.severity, "warning");
+  assert.equal(warningNotice?.code, "budget_warning");
+  assert.equal((warningNotice?.options?.length ?? 0) >= 2, true);
   assert.equal(warningEvents.length, 1);
   assert.equal(fixture.replay.cost?.active_notices.length, 1);
-  assert.equal(fixture.usageRecord.estimatedCostCny, fixture.costSummary.me.estimated_cost_cny);
+  assert.equal(fixture.usageRecord.estimatedCostCny, workItemUsage?.estimated_cost_cny);
   assert.equal(fixture.ledgerEntry.estimatedCostCny, fixture.usageRecord.estimatedCostCny);
 });
 

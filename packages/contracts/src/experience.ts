@@ -227,24 +227,70 @@ export const deliverableChangeManifestSchema = z.object({
 });
 export type DeliverableChangeManifest = z.infer<typeof deliverableChangeManifestSchema>;
 
+export const budgetScopeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("workitem"),
+    workitem_id: idSchema
+  }),
+  z.object({
+    kind: z.literal("user"),
+    user_id: idSchema
+  }),
+  z.object({
+    kind: z.literal("team"),
+    team_id: idSchema
+  }),
+  z.object({
+    kind: z.literal("eval"),
+    suite: z.enum(["nightly", "release"])
+  })
+]);
+export type BudgetScope = z.infer<typeof budgetScopeSchema>;
+
+export const budgetUsageSchema = z.object({
+  scope: budgetScopeSchema,
+  scope_label: z.string().min(1),
+  policy_id: z.string().min(1),
+  period: z.enum(["run", "day", "month"]),
+  period_start: isoDateTimeSchema,
+  period_end: isoDateTimeSchema,
+  token_in: z.number().int().nonnegative(),
+  token_out: z.number().int().nonnegative(),
+  total_tokens: z.number().int().nonnegative(),
+  max_tokens: z.number().int().nonnegative(),
+  remaining_tokens: z.number().int().nonnegative(),
+  estimated_cost_cny: z.string(),
+  max_cost_cny: z.string(),
+  remaining_cost_cny: z.string(),
+  warning_ratio: z.number().min(0),
+  status: z.enum(["ok", "warning", "critical", "exhausted"])
+});
+export type BudgetUsage = z.infer<typeof budgetUsageSchema>;
+
 export const budgetNoticeSchema = z.object({
+  code: z.enum(["budget_warning", "budget_exhausted"]),
   severity: z.enum(["info", "warning", "critical"]),
   message: z.string().min(1),
-  scope: z.object({
-    kind: z.enum(["workitem", "user", "team", "eval"]),
-    id: z.string().optional()
-  }),
+  scope: budgetScopeSchema,
+  usage_ratio: z.number().min(0),
+  recommended_action: z.enum(["continue", "downgrade_model", "pause", "ask_admin"]),
+  options: z
+    .array(z.object({
+      id: z.string().min(1),
+      label: z.string().min(1),
+      action_href: z.string().min(1)
+    }))
+    .optional(),
   action_href: z.string().optional()
 });
 export type BudgetNotice = z.infer<typeof budgetNoticeSchema>;
 
 export const costSummaryVmSchema = z.object({
-  me: z.object({
-    total_tokens: z.number().int().nonnegative(),
-    estimated_cost_cny: z.string(),
-    warning_ratio: z.number().min(0)
-  }),
-  active_notices: z.array(budgetNoticeSchema)
+  me: budgetUsageSchema,
+  team: budgetUsageSchema.optional(),
+  scopes: z.array(budgetUsageSchema),
+  active_notices: z.array(budgetNoticeSchema),
+  generated_at: isoDateTimeSchema
 });
 export type CostSummaryVM = z.infer<typeof costSummaryVmSchema>;
 

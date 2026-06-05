@@ -21,6 +21,7 @@ import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
+import { createCostRoutes } from "./routes/cost.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -227,6 +228,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
   app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue() }));
   app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
+  app.route("/api/cost", createCostRoutes({ auth }));
   const headers = { Cookie: await cookie(runtimeSettings) };
 
   const question = await app.request(`/api/sessions/${p05GoldPathIds.session}/next-question`, {
@@ -237,12 +239,14 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   const proposal = await app.request(`/api/pages/proposals/${p05GoldPathIds.proposal}`, { headers });
   const workitem = await app.request(`/api/pages/workitems/${p05GoldPathIds.workItem}`, { headers });
   const replay = await app.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
+  const costUsage = await app.request("/api/cost/usage", { headers });
 
   assert.equal(question.status, 200);
   assert.equal(evidence.status, 200);
   assert.equal(proposal.status, 200);
   assert.equal(workitem.status, 200);
   assert.equal(replay.status, 200);
+  assert.equal(costUsage.status, 200);
 
   const questionBody = await question.json() as { data: { free_text: { collapsed_by_default: boolean } } };
   const evidenceBody = await evidence.json() as { data: { evidence_refs: unknown[] } };
@@ -250,13 +254,24 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
     data: { review_actions: { request_changes: { requires_reason?: boolean } } };
   };
   const workItemBody = await workitem.json() as { data: { latest_proposal?: unknown } };
-  const replayBody = await replay.json() as { ok: true; data: { cost?: { me: { warning_ratio: number } } } };
+  const replayBody = await replay.json() as {
+    ok: true;
+    data: { cost?: { active_notices: { usage_ratio: number; options?: unknown[] }[] } };
+  };
+  const costUsageBody = await costUsage.json() as {
+    ok: true;
+    data: { me: { max_tokens: number }; scopes: unknown[]; active_notices: unknown[]; generated_at: string };
+  };
 
   assert.equal(questionBody.data.free_text.collapsed_by_default, true);
   assert.equal(evidenceBody.data.evidence_refs.length, 3);
   assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
   assert.equal(workItemBody.data.latest_proposal !== undefined, true);
-  assert.equal((replayBody.data.cost?.me.warning_ratio ?? 0) >= 0.8, true);
+  assert.equal((replayBody.data.cost?.active_notices[0]?.usage_ratio ?? 0) >= 0.8, true);
+  assert.equal((replayBody.data.cost?.active_notices[0]?.options?.length ?? 0) >= 2, true);
+  assert.equal(costUsageBody.data.me.max_tokens, 500000);
+  assert.equal(costUsageBody.data.scopes.length >= 2, true);
+  assert.equal(typeof costUsageBody.data.generated_at, "string");
 });
 
 test("P0.5 proposal review requires a reason on request changes and feeds it back to the next Agent context", async () => {

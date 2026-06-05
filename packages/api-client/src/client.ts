@@ -155,6 +155,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    costUsage: () => request("/api/cost/usage"),
     replayAgentRun: (runId) => request(`/api/agent-runs/${runId}/replay`),
     pages: {
       attention: () => request("/api/pages/attention"),

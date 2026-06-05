@@ -38,6 +38,9 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
     async searchKnowledge() {
       throw new Error("not needed");
     },
+    async costUsage() {
+      throw new Error("not needed");
+    },
     async replayAgentRun() {
       throw new Error("not needed");
     },
@@ -188,15 +191,45 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
           { step_no: 2, phase: "draft", output_excerpt: "生成草稿。" }
         ],
         cost: {
-          me: { total_tokens: 1200, estimated_cost_cny: "0.08", warning_ratio: 0.12 },
-          active_notices: []
+          me: {
+            scope: { kind: "user", user_id: "10000000-0000-4000-8000-000000000001" },
+            scope_label: "我的今日 AI 预算",
+            policy_id: "pcost-user-day-v0",
+            period: "day",
+            period_start: "2026-06-05T00:00:00.000Z",
+            period_end: "2026-06-06T00:00:00.000Z",
+            token_in: 900,
+            token_out: 300,
+            total_tokens: 1200,
+            max_tokens: 500000,
+            remaining_tokens: 498800,
+            estimated_cost_cny: "0.08",
+            max_cost_cny: "20",
+            remaining_cost_cny: "19.92",
+            warning_ratio: 0.12,
+            status: "ok"
+          },
+          scopes: [],
+          active_notices: [],
+          generated_at: "2026-06-05T01:00:00.000Z"
         },
         snapshots: [],
         evidence_refs: []
       },
       cost: {
-        total_cost: { me: { total_tokens: 1200, estimated_cost_cny: "0.08", warning_ratio: 0.12 } },
-        notices: []
+        generated_at: "2026-06-05T01:00:00.000Z",
+        currency: "CNY",
+        total_cost_cny: "0.08",
+        token_in: 900,
+        token_out: 300,
+        trend: [],
+        by_user: [],
+        by_team: [],
+        by_workitem: [],
+        model_breakdown: [],
+        budget: [],
+        notices: [],
+        top_exhaustion_risks: []
       }
     },
     events: [],

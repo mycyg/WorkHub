@@ -2,6 +2,7 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  CostSummaryVM,
   EvidenceBubble,
   GoldPathSurfaceVM,
   NotificationList,
@@ -91,6 +92,7 @@ export type WorkHubApiClient = {
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
+  costUsage: () => Promise<CostSummaryVM>;
   replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streamUrl: (path: string) => string;

@@ -133,13 +133,62 @@ export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[]): EvidenceRef[
 }
 
 export function buildReplayCostSummary(run: AgentRunQueueRecord): CostSummaryVM {
+  const totalTokens = run.usage.token_in + run.usage.token_out;
+  const maxTokens = run.budget.max_tokens;
+  const remainingTokens = Math.max(maxTokens - totalTokens, 0);
+  const maxCostCny = Number.parseFloat(run.budget.max_cost_cny);
+  const usedCostCny = Number.parseFloat(run.usage.estimated_cost_cny);
+  const remainingCostCny = Number.isFinite(maxCostCny) && Number.isFinite(usedCostCny)
+    ? Math.max(maxCostCny - usedCostCny, 0).toFixed(3).replace(/0+$/u, "").replace(/\.$/u, "")
+    : "0";
+  const usageRatio = maxTokens > 0 ? totalTokens / maxTokens : 0;
+  const status = usageRatio >= 1 ? "exhausted" : usageRatio >= 0.95 ? "critical" : usageRatio >= 0.8 ? "warning" : "ok";
+  const workitemUsage: CostSummaryVM["scopes"][number] = {
+    scope: { kind: "workitem", workitem_id: run.work_item_id },
+    scope_label: run.title,
+    policy_id: "pcost-workitem-run-v0",
+    period: "run",
+    period_start: run.created_at,
+    period_end: run.updated_at,
+    token_in: run.usage.token_in,
+    token_out: run.usage.token_out,
+    total_tokens: totalTokens,
+    max_tokens: maxTokens,
+    remaining_tokens: remainingTokens,
+    estimated_cost_cny: run.usage.estimated_cost_cny,
+    max_cost_cny: run.budget.max_cost_cny,
+    remaining_cost_cny: remainingCostCny,
+    warning_ratio: usageRatio,
+    status
+  };
+  const userUsage: CostSummaryVM["me"] = {
+    ...workitemUsage,
+    scope: { kind: "user", user_id: run.actor_id },
+    scope_label: "我的当前 AI 执行预算",
+    policy_id: "pcost-user-run-summary-v0"
+  };
+
   return {
-    me: {
-      total_tokens: run.usage.token_in + run.usage.token_out,
-      estimated_cost_cny: run.usage.estimated_cost_cny,
-      warning_ratio: 0
-    },
-    active_notices: []
+    me: userUsage,
+    scopes: [workitemUsage, userUsage],
+    active_notices:
+      usageRatio >= 0.8
+        ? [
+            {
+              code: usageRatio >= 1 ? "budget_exhausted" : "budget_warning",
+              severity: usageRatio >= 1 ? "critical" : "warning",
+              message: usageRatio >= 1 ? "本次 AI 预算已经用完。" : "本次 AI 预算快用完了。",
+              scope: workitemUsage.scope,
+              usage_ratio: usageRatio,
+              recommended_action: usageRatio >= 1 ? "pause" : "downgrade_model",
+              options: [
+                { id: "open_cost", label: "查看预算", action_href: `/dashboard/cost?workItemId=${run.work_item_id}` }
+              ],
+              action_href: `/dashboard/cost?workItemId=${run.work_item_id}`
+            }
+          ]
+        : [],
+    generated_at: run.updated_at
   };
 }
 

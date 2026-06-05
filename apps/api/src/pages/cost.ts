@@ -1,34 +1,99 @@
-import type { CostDashboardVM } from "@workhub/contracts";
+import type { BudgetUsage, CostDashboardVM, CostSummaryVM } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 
-export function buildCostDashboardPage(input: {
+type CostPageInput = {
   settings: Settings;
   isAdmin: boolean;
   userId: string;
-}): CostDashboardVM {
-  const budget = {
-    run_tokens: input.settings.budgets.runTokens,
-    user_daily_tokens: input.settings.budgets.userDailyTokens,
-    team_daily_tokens: input.settings.budgets.teamDailyTokens,
-    team_monthly_tokens: input.settings.budgets.teamMonthlyTokens,
-    run_cost_cny: input.settings.budgets.runCostCny,
-    user_daily_cost_cny: input.settings.budgets.userDailyCostCny,
-    team_daily_cost_cny: input.settings.budgets.teamDailyCostCny,
-    team_monthly_cost_cny: input.settings.budgets.teamMonthlyCostCny
-  };
+  generatedAt?: Date;
+};
+
+const defaultTeamId = "00000000-0000-4000-8000-000000000101";
+
+function isoAtDayBoundary(date: Date, offsetDays: number) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + offsetDays)).toISOString();
+}
+
+function makeZeroUsage(input: {
+  scope: BudgetUsage["scope"];
+  scopeLabel: string;
+  policyId: string;
+  period: BudgetUsage["period"];
+  maxTokens: number;
+  maxCostCny: string;
+  generatedAt: Date;
+}): BudgetUsage {
   return {
-    total_cost: {
-      me: {
-        total_tokens: 0,
-        estimated_cost_cny: "0",
-        warning_ratio: 0
-      },
-      active_notices: []
-    },
+    scope: input.scope,
+    scope_label: input.scopeLabel,
+    policy_id: input.policyId,
+    period: input.period,
+    period_start: isoAtDayBoundary(input.generatedAt, 0),
+    period_end: isoAtDayBoundary(input.generatedAt, input.period === "month" ? 31 : 1),
+    token_in: 0,
+    token_out: 0,
+    total_tokens: 0,
+    max_tokens: input.maxTokens,
+    remaining_tokens: input.maxTokens,
+    estimated_cost_cny: "0",
+    max_cost_cny: input.maxCostCny,
+    remaining_cost_cny: input.maxCostCny,
+    warning_ratio: 0,
+    status: "ok"
+  };
+}
+
+export function buildCostSummary(input: CostPageInput): CostSummaryVM {
+  const generatedAt = input.generatedAt ?? new Date();
+  const me = makeZeroUsage({
+    scope: { kind: "user", user_id: input.userId },
+    scopeLabel: "我的今日 AI 预算",
+    policyId: "pcost-user-day-v0",
+    period: "day",
+    maxTokens: input.settings.budgets.userDailyTokens,
+    maxCostCny: input.settings.budgets.userDailyCostCny,
+    generatedAt
+  });
+  const team = makeZeroUsage({
+    scope: { kind: "team", team_id: defaultTeamId },
+    scopeLabel: "团队今日 AI 预算",
+    policyId: "pcost-team-day-v0",
+    period: "day",
+    maxTokens: input.settings.budgets.teamDailyTokens,
+    maxCostCny: input.settings.budgets.teamDailyCostCny,
+    generatedAt
+  });
+
+  return {
+    me,
+    team,
+    scopes: [me, team],
+    active_notices: [],
+    generated_at: generatedAt.toISOString()
+  };
+}
+
+export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
+  const generatedAt = input.generatedAt ?? new Date();
+  const summary = buildCostSummary({ ...input, generatedAt });
+
+  return {
+    generated_at: summary.generated_at,
+    currency: "CNY",
+    total_cost_cny: "0",
+    token_in: 0,
+    token_out: 0,
+    unit_cost_cny: "0",
     trend: [],
-    budget,
+    by_user: input.isAdmin
+      ? [{ user_id: input.userId, label: "当前用户", cost_cny: "0", tokens: 0 }]
+      : [],
+    by_team: [],
+    by_workitem: [],
     model_breakdown: [],
-    notices: [],
-    ...(input.isAdmin ? { by_user: [{ user_id: input.userId, total_tokens: 0, estimated_cost_cny: "0" }] } : {})
+    budget: summary.scopes,
+    notices: summary.active_notices,
+    top_exhaustion_risks: [],
+    empty_state: "no_agent_runs"
   };
 }

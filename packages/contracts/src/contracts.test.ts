@@ -5,6 +5,8 @@ import {
   allowedWorkItemTransitions,
   agentRunTraceVmSchema,
   authContextSchema,
+  budgetNoticeSchema,
+  budgetUsageSchema,
   createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
@@ -186,6 +188,42 @@ test("question cards prefer clickable choices but retain a collapsed fallback", 
 
   assert.equal(parsed.options.length, 2);
   assert.equal(parsed.free_text.collapsed_by_default, true);
+});
+
+test("cost governance contracts expose clickable budget notices and scoped usage", () => {
+  const usage = budgetUsageSchema.parse({
+    scope: { kind: "workitem", workitem_id: "74000000-0000-4000-8000-000000000001" },
+    scope_label: "生成周报模板",
+    policy_id: "pcost-workitem-run-v0",
+    period: "run",
+    period_start: "2026-06-05T00:00:00.000Z",
+    period_end: "2026-06-05T00:05:00.000Z",
+    token_in: 80000,
+    token_out: 24000,
+    total_tokens: 104000,
+    max_tokens: 120000,
+    remaining_tokens: 16000,
+    estimated_cost_cny: "4.2",
+    max_cost_cny: "5",
+    remaining_cost_cny: "0.8",
+    warning_ratio: 0.84,
+    status: "warning"
+  });
+  const notice = budgetNoticeSchema.parse({
+    code: "budget_warning",
+    severity: "warning",
+    message: "预算快用完了。",
+    scope: usage.scope,
+    usage_ratio: usage.warning_ratio,
+    recommended_action: "downgrade_model",
+    options: [
+      { id: "continue_low_cost", label: "继续但降级模型", action_href: "/api/workitems/demo/agent-runs" },
+      { id: "open_cost", label: "查看预算", action_href: "/dashboard/cost" }
+    ]
+  });
+
+  assert.equal(usage.status, "warning");
+  assert.equal(notice.options?.length, 2);
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

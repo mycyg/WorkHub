@@ -33,6 +33,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   const body = await response.json() as { openapi: string; paths: Record<string, unknown> };
   assert.equal(body.openapi, "3.1.0");
   assert.equal(Boolean(body.paths["/api/pages/attention"]), true);
+  assert.equal(Boolean(body.paths["/api/cost/usage"]), true);
 });
 
 test("unknown endpoints use the shared error shape", async () => {

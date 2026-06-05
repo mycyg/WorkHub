@@ -11,6 +11,8 @@ import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
 import {
   attentionItemSchema,
+  budgetScopeSchema,
+  budgetUsageSchema,
   budgetNoticeSchema,
   costSummaryVmSchema,
   cuuStateSchema,
@@ -107,21 +109,50 @@ export const agentRunTraceVmSchema = z.object({
 export type AgentRunTraceVM = z.infer<typeof agentRunTraceVmSchema>;
 
 export const costDashboardVmSchema = z.object({
-  total_cost: costSummaryVmSchema,
+  generated_at: isoDateTimeSchema,
+  currency: z.literal("CNY"),
+  total_cost_cny: z.string(),
+  token_in: z.number().int().nonnegative(),
+  token_out: z.number().int().nonnegative(),
+  unit_cost_cny: z.string().optional(),
   trend: z.array(z.object({
     date: z.string(),
-    estimated_cost_cny: z.string(),
-    total_tokens: z.number().int().nonnegative()
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative()
   })),
-  budget: z.record(z.string(), z.unknown()),
+  by_user: z.array(z.object({
+    user_id: idSchema,
+    label: z.string().min(1),
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative()
+  })),
+  by_team: z.array(z.object({
+    team_id: idSchema,
+    label: z.string().min(1),
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative()
+  })),
+  by_workitem: z.array(z.object({
+    workitem_id: idSchema,
+    code: z.string().min(1),
+    cost_cny: z.string(),
+    turns: z.number().int().nonnegative()
+  })),
   model_breakdown: z.array(z.object({
     provider: z.string(),
     model: z.string(),
-    total_tokens: z.number().int().nonnegative(),
-    estimated_cost_cny: z.string()
+    count: z.number().int().nonnegative(),
+    cost_cny: z.string()
   })),
+  budget: z.array(budgetUsageSchema),
   notices: z.array(budgetNoticeSchema),
-  by_user: z.array(z.unknown()).optional()
+  top_exhaustion_risks: z.array(z.object({
+    scope: budgetScopeSchema,
+    label: z.string().min(1),
+    remaining_cost_cny: z.string(),
+    status: budgetUsageSchema.shape.status
+  })),
+  empty_state: z.enum(["no_agent_runs", "usage_not_connected"]).optional()
 });
 export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
 

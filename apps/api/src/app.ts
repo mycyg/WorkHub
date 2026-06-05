@@ -16,6 +16,7 @@ import { createPageRoutes } from "./routes/pages.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createProposalRoutes } from "./routes/proposals.js";
+import { createCostRoutes } from "./routes/cost.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 
@@ -54,6 +55,7 @@ app.route("/api", createAuditRoutes());
 app.route("/api", createSessionRoutes());
 app.route("/api/knowledge", createKnowledgeRoutes());
 app.route("/api/proposals", createProposalRoutes());
+app.route("/api/cost", createCostRoutes());
 app.route("/api/pages", createPageRoutes());
 
 app.onError((error, c) => {

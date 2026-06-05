@@ -28,26 +28,40 @@ export type BudgetPolicy = {
 
 export type BudgetUsage = {
   scope: BudgetScope;
+  scopeLabel: string;
+  policyId: string;
+  period: "run" | "day" | "month";
   periodStart: string;
   periodEnd: string;
   tokenIn: number;
   tokenOut: number;
   totalTokens: number;
+  maxTokens: number;
+  remainingTokens: number;
   estimatedCostCny: string;
+  maxCostCny: string;
+  remainingCostCny: string;
   warningRatio: number;
+  status: "ok" | "warning" | "critical" | "exhausted";
 };
 
 export type BudgetNotice = {
+  code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
   scope: BudgetScope;
+  usageRatio: number;
+  recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin";
+  options?: { id: string; label: string; actionHref: string }[];
   actionHref?: string;
 };
 
 export type BudgetDecision = {
+  decisionId: string;
   allowed: boolean;
   reason?: "ok" | "warning" | "critical" | "budget_exhausted";
   runBudget: RunBudget;
+  limitingScope?: BudgetScope;
   modelRoute: {
     provider: string;
     model: string;
@@ -76,14 +90,18 @@ export type UsageRecord = {
 export type CostLedgerEntry = {
   id: string;
   usageRecordId: string;
+  policyId?: string;
   runId?: string;
   workItemId?: string;
   userId?: string;
   teamId?: string;
   scope: BudgetScope;
+  periodBucket: string;
   tokenIn: number;
   tokenOut: number;
   estimatedCostCny: string;
+  unitPriceCny?: string;
+  currency: "CNY";
   model: string;
   source: UsageSource;
   createdAt: string;

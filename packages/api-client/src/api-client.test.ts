@@ -62,6 +62,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.proposal("proposal-1");
   await client.nextQuestion("session-1");
   await client.searchKnowledge({ q: "weekly" });
+  await client.costUsage();
   await client.reviewProposal("proposal-1", { decision: "approve", remember: "once" });
   await client.mergeProposal("proposal-1");
   await client.replayAgentRun("run-1");
@@ -72,6 +73,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions/session-1/next-question",
     "POST /api/knowledge/search",
+    "GET /api/cost/usage",
     "POST /api/proposals/proposal-1/review",
     "POST /api/proposals/proposal-1/merge",
     "GET /api/agent-runs/run-1/replay"
