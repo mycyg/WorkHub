@@ -8,26 +8,36 @@ import {
   type GoldPathAppShell
 } from "@workhub/ui/gold-path";
 
+import { bindDesktopShellCuuRuntime, desktopCuuNoticeCss } from "./desktop-cuu-runtime.js";
+
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+let noticeTimer: number | undefined;
 
 function clientToken() {
   return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
 }
 
-function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string) {
+function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string, timeoutMs = 4600) {
   const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
   if (!notice) {
     return;
+  }
+  if (noticeTimer !== undefined) {
+    window.clearTimeout(noticeTimer);
+    noticeTimer = undefined;
   }
   notice.textContent = message;
   if (extraHtml) {
     notice.insertAdjacentHTML("beforeend", extraHtml);
   }
   notice.hidden = false;
-  window.setTimeout(() => {
-    notice.hidden = true;
-  }, 4600);
+  if (timeoutMs > 0) {
+    noticeTimer = window.setTimeout(() => {
+      notice.hidden = true;
+      noticeTimer = undefined;
+    }, timeoutMs);
+  }
 }
 
 function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey: string) {
@@ -175,8 +185,14 @@ async function boot() {
       surfaceLabel: "Tauri Webview P0.5",
       apiBaseLabel: "device-token aware client"
     });
-    root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
+    root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}</style>${shell.html}`;
     bindGoldPathNavigation(root, shell, client);
+    void bindDesktopShellCuuRuntime({
+      notify(notice) {
+        const timeoutMs = notice.card.priority === "urgent" || notice.card.state === "asking_approval" ? 12000 : 7200;
+        showNotice(root, notice.message, notice.html, timeoutMs);
+      }
+    });
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
       title: "daemon 还没连上",

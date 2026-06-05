@@ -15,7 +15,8 @@ import {
   type ReplayTraceVM,
   type WorkHubEvent
 } from "@workhub/contracts";
-import { toAttentionItem, toCuuState } from "@workhub/events";
+import { toAttentionItem } from "@workhub/events/toAttentionItem";
+import { toCuuState } from "@workhub/events/toCuuState";
 
 import { cuuMotionForState, type CuuMotionHint } from "./motion.js";
 
