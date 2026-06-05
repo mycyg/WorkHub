@@ -10,6 +10,7 @@
       "@workhub/contracts": ["packages/contracts/src/index.ts"],
       "@workhub/api-client": ["packages/api-client/src/index.ts"],
       "@workhub/api-client/client": ["packages/api-client/src/client.ts"],
+      "@workhub/cuu": ["packages/cuu/src/index.ts"],
       "@workhub/cost": ["packages/cost/src/index.ts"],
       "@workhub/audit": ["packages/audit/src/index.ts"],
       "@workhub/ui": ["packages/ui/src/index.ts"],

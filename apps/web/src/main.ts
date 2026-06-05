@@ -1,5 +1,7 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
+import type { WorkHubEvent } from "@workhub/contracts";
+import { cardFromEvent, cardFromProposalDetail, type CuuCard } from "@workhub/cuu";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 import { renderProposalDetail } from "@workhub/ui/proposal";
 
@@ -18,7 +20,8 @@ export const webSurface = {
     "/api/pages/cost",
     "/api/agent-runs/:id/replay"
   ],
-  consumesTypedClient: "@workhub/api-client"
+  consumesTypedClient: "@workhub/api-client",
+  cuuCardAdapter: "@workhub/cuu"
 } as const;
 
 export const webApiClient = createApiClient({
@@ -39,4 +42,15 @@ export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: stri
 
 export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return renderProposalDetail(await loadWebProposalDetail(client, proposalId), "web");
+}
+
+export function webCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
+  return cardFromEvent(event);
+}
+
+export async function loadWebProposalCuuCard(
+  client: WorkHubApiClient = webApiClient,
+  proposalId: string
+): Promise<CuuCard> {
+  return cardFromProposalDetail(await loadWebProposalDetail(client, proposalId));
 }

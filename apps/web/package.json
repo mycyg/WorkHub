@@ -15,6 +15,7 @@
     "@workhub/api-client": "workspace:*",
     "@workhub/config": "workspace:*",
     "@workhub/contracts": "workspace:*",
+    "@workhub/cuu": "workspace:*",
     "@workhub/ui": "workspace:*"
   },
   "devDependencies": {

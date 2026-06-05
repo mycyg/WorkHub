@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import type { GoldPathSurfaceVM } from "@workhub/contracts";
+import { eventTypes, type GoldPathSurfaceVM, type WorkHubEvent } from "@workhub/contracts";
 
 import {
+  desktopCuuCardFromEvent,
   desktopWebviewSurface,
+  loadDesktopProposalCuuCard,
   loadDesktopGoldPathSurface,
   renderDesktopGoldPathSurface,
   renderDesktopProposalDetail
@@ -264,8 +266,27 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
+  assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
+  assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
+});
+
+test("desktop webview exposes the shared Cuu event adapter for the Rust shell", () => {
+  const event: WorkHubEvent<unknown> = {
+    event_id: "event-permission",
+    type: eventTypes.permissionAsk,
+    topic: "user:user",
+    ts: "2026-06-05T01:00:00.000Z",
+    preview_text: "Cuu 需要你批准这次变更。",
+    data: {}
+  };
+
+  const card = desktopCuuCardFromEvent(event);
+
+  assert.equal(card.kind, "approval");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.motion.sprite_state, "asking_approval_bounce");
 });

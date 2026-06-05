@@ -65,6 +65,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@workhub/cuu':
+        specifier: workspace:*
+        version: link:../../packages/cuu
       '@workhub/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -84,6 +87,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@workhub/cuu':
+        specifier: workspace:*
+        version: link:../../packages/cuu
       '@workhub/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -148,6 +154,15 @@ importers:
       '@workhub/config':
         specifier: workspace:*
         version: link:../config
+
+  packages/cuu:
+    dependencies:
+      '@workhub/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@workhub/events':
+        specifier: workspace:*
+        version: link:../events
 
   packages/db:
     dependencies:

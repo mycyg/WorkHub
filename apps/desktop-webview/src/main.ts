@@ -1,5 +1,7 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
+import type { WorkHubEvent } from "@workhub/contracts";
+import { cardFromEvent, cardFromProposalDetail, type CuuCard } from "@workhub/cuu";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 import { renderProposalDetail } from "@workhub/ui/proposal";
 
@@ -18,6 +20,7 @@ export const desktopWebviewSurface = {
     "/api/agent-runs/:id/replay"
   ],
   consumesTypedClient: "@workhub/api-client",
+  cuuCardAdapter: "@workhub/cuu",
   rustOwns: ["device_token", "tray", "deep_link", "local_sync", "system_notification"]
 } as const;
 
@@ -45,4 +48,12 @@ export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: 
 
 export async function renderDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId), "desktop");
+}
+
+export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
+  return cardFromEvent(event);
+}
+
+export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string): Promise<CuuCard> {
+  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId));
 }
