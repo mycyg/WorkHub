@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
+import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
+
 import {
   createCurrentUserMiddleware,
   getDefaultAuthDependencies,
@@ -12,26 +14,44 @@ import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
 } from "../workers/agent-runner.js";
-import { buildReplayTracePage } from "../pages/replay.js";
+import { buildReplayTracePage, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
 import {
   getP05GoldPathFixture,
   isP05AgentRunId
 } from "../pages/gold-path.js";
+import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 const startAgentRunSchema = z.object({
   mode: z.enum(["worker", "pm"]).optional(),
   title: z.string().min(1).max(256).optional()
 });
 
+function auditLogRunId(detailJson: unknown) {
+  if (!detailJson || typeof detailJson !== "object") {
+    return undefined;
+  }
+  const value = (detailJson as Record<string, unknown>).run_id;
+  return typeof value === "string" ? value : undefined;
+}
+
 export type AgentRunRoutesDependencies = {
   auth?: AuthDependencySource;
   queue?: AgentRunQueue;
+  auditLogs?: AuditLogRepository;
+  snapshots?: SnapshotRepository;
 };
 
 export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const queue = deps.queue ?? getDefaultAgentRunQueue();
+
+  function auditStores() {
+    if (deps.auditLogs && deps.snapshots) {
+      return { auditLogs: deps.auditLogs, snapshots: deps.snapshots };
+    }
+    return getDefaultAuditStores();
+  }
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = startAgentRunSchema.parse(await c.req.json().catch(() => ({})));
@@ -80,7 +100,15 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    return c.json({ ok: true, data: buildReplayTracePage({ run }) });
+    const stores = auditStores();
+    const snapshotRows = await stores.snapshots.listSnapshotsForWorkItem(run.work_item_id, { includeReverted: true });
+    const auditRows = await stores.auditLogs.listAuditLogsForWorkItem(run.work_item_id);
+    const runAuditRows = auditRows.filter((row) => auditLogRunId(row.detailJson) === run.run_id);
+    const runSnapshotIds = new Set(runAuditRows.map((row) => row.snapshotId).filter((id): id is string => Boolean(id)));
+    const runSnapshotRows = snapshotRows.filter((row) => runSnapshotIds.has(row.id));
+    const snapshots = runSnapshotRows.map(toSnapshotVm);
+    const auditLogs = runAuditRows.map(toAuditLogFact);
+    return c.json({ ok: true, data: buildReplayTracePage({ run, snapshots, auditLogs }) });
   });
 
   return routes;

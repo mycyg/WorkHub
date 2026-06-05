@@ -3,12 +3,8 @@ import { HTTPException } from "hono/http-exception";
 
 import { revertAgentRunRequestSchema } from "@workhub/contracts";
 import {
-  createAuditLogRepository,
-  createDatabaseClient,
-  createSnapshotRepository,
   type AuditLogRepository,
-  type SnapshotRepository,
-  type WorkHubDatabaseClient
+  type SnapshotRepository
 } from "@workhub/db";
 
 import {
@@ -19,6 +15,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildReplayManifestFacts, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
+import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 export type AuditRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -27,20 +24,10 @@ export type AuditRoutesDependencies = {
   now?: () => Date;
 };
 
-let defaultDbClient: WorkHubDatabaseClient | undefined;
-
-function getDefaultAuditRepositories() {
-  defaultDbClient ??= createDatabaseClient();
-  return {
-    auditLogs: createAuditLogRepository(defaultDbClient.db),
-    snapshots: createSnapshotRepository(defaultDbClient.db)
-  };
-}
-
 export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
-  const defaults = deps.auditLogs && deps.snapshots ? null : getDefaultAuditRepositories();
+  const defaults = deps.auditLogs && deps.snapshots ? null : getDefaultAuditStores();
   const auditLogs = deps.auditLogs ?? defaults?.auditLogs;
   const snapshots = deps.snapshots ?? defaults?.snapshots;
   const now = deps.now ?? (() => new Date());

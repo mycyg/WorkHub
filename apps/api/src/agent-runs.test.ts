@@ -13,8 +13,12 @@ import { ZodError } from "zod";
 import { loadSettings, type Settings } from "@workhub/config";
 import { buildUsageRecord, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
+  AuditLogRepository,
+  AuditLogRow,
   ClientDeviceAuthRow,
   ClientDeviceRepository,
+  SnapshotRepository,
+  SnapshotRow,
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
@@ -29,6 +33,7 @@ import {
 const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000021";
 const workItemId = "50000000-0000-4000-8000-000000000021";
+const snapshotId = "70000000-0000-4000-8000-000000000025";
 
 function user(): UserAuthRow {
   return {
@@ -100,6 +105,114 @@ class MemoryDevices implements ClientDeviceRepository {
 
   async revokeByTokenHash() {
     return null;
+  }
+}
+
+function snapshotRow(partial: Partial<SnapshotRow> = {}): SnapshotRow {
+  return {
+    id: snapshotId,
+    workItemId,
+    branchId: null,
+    kind: "pre_step",
+    ref: "snapshot-ref",
+    contentSha256: null,
+    createdByKind: "ai",
+    revertedAt: null,
+    createdAt: now,
+    ...partial
+  };
+}
+
+function auditLogRow(partial: Partial<AuditLogRow> = {}): AuditLogRow {
+  return {
+    id: "71000000-0000-4000-8000-000000000025",
+    orgId: null,
+    workspaceId: null,
+    actorKind: "ai",
+    actorUserId: null,
+    actorNickname: "WorkHub AI",
+    entityType: "work_item",
+    entityId: workItemId,
+    action: "tool.write_file.snapshot",
+    detailJson: {},
+    snapshotId,
+    undoneAt: null,
+    createdAt: now,
+    ...partial
+  };
+}
+
+class MemorySnapshots implements SnapshotRepository {
+  public rows: SnapshotRow[] = [];
+
+  async createSnapshot(input: Parameters<SnapshotRepository["createSnapshot"]>[0]) {
+    const row = snapshotRow({
+      id: input.id ?? snapshotId,
+      workItemId: input.workItemId,
+      branchId: input.branchId ?? null,
+      kind: input.kind,
+      ref: input.ref,
+      contentSha256: input.contentSha256 ?? null,
+      createdByKind: input.createdByKind
+    });
+    this.rows.push(row);
+    return row;
+  }
+
+  async findSnapshotById(id: string) {
+    return this.rows.find((row) => row.id === id) ?? null;
+  }
+
+  async listSnapshotsForWorkItem(id: string) {
+    return this.rows.filter((row) => row.workItemId === id);
+  }
+
+  async markSnapshotReverted(id: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id) ?? null;
+    if (!row) {
+      return null;
+    }
+    row.revertedAt = at;
+    return row;
+  }
+}
+
+class MemoryAuditLogs implements AuditLogRepository {
+  public rows: AuditLogRow[] = [];
+
+  async createAuditLog(input: Parameters<AuditLogRepository["createAuditLog"]>[0]) {
+    const row = auditLogRow({
+      id: input.id ?? `71000000-0000-4000-8000-${String(this.rows.length + 25).padStart(12, "0")}`,
+      orgId: input.orgId ?? null,
+      workspaceId: input.workspaceId ?? null,
+      actorKind: input.actorKind,
+      actorUserId: input.actorUserId ?? null,
+      actorNickname: input.actorNickname ?? null,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: input.action,
+      detailJson: input.detailJson ?? {},
+      snapshotId: input.snapshotId ?? null
+    });
+    this.rows.push(row);
+    return row;
+  }
+
+  async listAuditLogsForEntity(entityType: string, entityId: string) {
+    return this.rows.filter((row) => row.entityType === entityType && row.entityId === entityId);
+  }
+
+  async listAuditLogsForWorkItem(id: string) {
+    return this.listAuditLogsForEntity("work_item", id);
+  }
+
+  async markAuditLogUndone(id: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id) ?? null;
+    if (!row) {
+      return null;
+    }
+    row.undoneAt = at;
+    return row;
   }
 }
 
@@ -330,17 +443,22 @@ test("agent run enqueue uses ledger snapshots when no usage fixture is injected"
 test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-test-"));
-  const snapshotId = "70000000-0000-4000-8000-000000000025";
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
   const queue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
     now: () => now,
     id: () => "40000000-0000-4000-8000-000000000025",
     workdir: () => workdir,
     client: () => executableAgentClient(),
-    snapshot: () => ({ snapshotId })
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs }));
 
   const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -357,6 +475,10 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(executed?.usage.token_out, 25);
   assert.equal(executed?.usage.estimated_cost_cny, "0.003");
   assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
+  assert.equal(snapshots.rows.length, 1);
+  assert.equal(snapshots.rows[0]?.contentSha256?.length, 64);
+  assert.equal(auditLogs.rows.length, 1);
+  assert.equal(auditLogs.rows[0]?.action, "tool.write_file.snapshot");
 
   const runResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}`, {
     headers: { Cookie: await cookie(runtimeSettings) }
@@ -378,12 +500,21 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   };
   const replayBody = await replayResponse.json() as {
     ok: true;
-    data: { cost: { me: { estimated_cost_cny: string } } };
+    data: {
+      cost: { me: { estimated_cost_cny: string } };
+      snapshots: { id: string }[];
+      audit_logs: { action: string; snapshot_id?: string }[];
+      manifest_facts: { rollback: { available: boolean; snapshot_id?: string } };
+    };
   };
   assert.equal(runBody.data.status, "succeeded");
   assert.deepEqual(traceBody.data.map((step) => step.phase), ["tool_call", "tool_result", "think", "final"]);
   assert.equal(traceBody.data[0]?.snapshot_id, snapshotId);
   assert.equal(traceBody.data.some((step) => step.output_excerpt?.includes("交付完成")), true);
   assert.equal(replayBody.data.cost.me.estimated_cost_cny, "0.003");
+  assert.deepEqual(replayBody.data.snapshots.map((snapshot) => snapshot.id), [snapshotId]);
+  assert.deepEqual(replayBody.data.audit_logs.map((log) => log.action), ["tool.write_file.snapshot"]);
+  assert.equal(replayBody.data.manifest_facts.rollback.available, true);
+  assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);
 });

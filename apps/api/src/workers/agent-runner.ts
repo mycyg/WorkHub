@@ -32,10 +32,12 @@ import {
   type ToolExecutionContext,
   type ToolResult
 } from "@workhub/tools";
+import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
 
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
+import { createAgentRunSnapshotHook } from "../services/agent-run-snapshots.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -146,6 +148,10 @@ export function createInMemoryAgentRunQueue(options: {
   workdir?: AgentRunWorkdirProvider;
   tools?: AgentRunToolsProvider;
   snapshot?: SnapshotHook;
+  snapshotRoot?: string;
+  snapshotId?: () => string;
+  snapshots?: SnapshotRepository;
+  auditLogs?: AuditLogRepository;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -236,6 +242,15 @@ export function createInMemoryAgentRunQueue(options: {
     const client = await (options.client ?? defaultClient)(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
     const tools = options.tools?.(executionInput) ?? defaultTools;
+    const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
+      run: current,
+      settings,
+      ...(options.snapshotRoot ? { snapshotRoot: options.snapshotRoot } : {}),
+      ...(options.snapshotId ? { id: options.snapshotId } : {}),
+      ...(options.snapshots ? { snapshots: options.snapshots } : {}),
+      ...(options.auditLogs ? { auditLogs: options.auditLogs } : {}),
+      now
+    });
     const loop = createAgentLoop();
 
     try {
@@ -250,7 +265,7 @@ export function createInMemoryAgentRunQueue(options: {
         tools,
         budget: toAgentLoopBudget(current.budget),
         requireDeliverable: options.requireDeliverable ?? true,
-        ...(options.snapshot ? { snapshot: options.snapshot } : {}),
+        snapshot,
         recorder: {
           recordStep: (step) => {
             current = updateRun({
