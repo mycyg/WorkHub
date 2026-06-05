@@ -66,10 +66,20 @@ async function hasDeliverables(workdir: string) {
   }
 }
 
-function addUsage(usage: AgentLoopUsage, inputTokens: number, outputTokens: number) {
+function parseCny(value: string | undefined) {
+  const parsed = Number.parseFloat(value ?? "0");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCny(value: number) {
+  return value.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "") || "0";
+}
+
+function addUsage(usage: AgentLoopUsage, inputTokens: number, outputTokens: number, estimatedCostCny?: string) {
   usage.tokenIn += inputTokens;
   usage.tokenOut += outputTokens;
   usage.totalTokens += inputTokens + outputTokens;
+  usage.estimatedCostCny = formatCny(parseCny(usage.estimatedCostCny) + parseCny(estimatedCostCny));
 }
 
 function elapsedSeconds(startedAt: number) {
@@ -294,7 +304,7 @@ export class AgentLoop {
         maxTokens: input.maxTokensPerStep ?? 4096
       });
       const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
-      addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens);
+      addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
 
       const assistant = response.content.map(parseBlock);
       await emitAssistantTrace(input, stepNo, assistant);

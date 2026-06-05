@@ -89,6 +89,16 @@ test("AgentLoop completes when the model stops after writing outputs", async () 
         id: "m1",
         stopReason: "tool_use",
         usage: { inputTokens: 10, outputTokens: 20 },
+        usageRecord: {
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          task: "worker",
+          inputTokens: 10,
+          outputTokens: 20,
+          estimatedCostCny: "0.001",
+          source: "agent_step",
+          createdAt: "2026-06-05T00:00:00.000Z"
+        },
         content: [
           {
             type: "tool_use",
@@ -102,6 +112,16 @@ test("AgentLoop completes when the model stops after writing outputs", async () 
         id: "m2",
         stopReason: "end_turn",
         usage: { inputTokens: 5, outputTokens: 5 },
+        usageRecord: {
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          task: "worker",
+          inputTokens: 5,
+          outputTokens: 5,
+          estimatedCostCny: "0.002",
+          source: "agent_step",
+          createdAt: "2026-06-05T00:00:01.000Z"
+        },
         content: [{ type: "text", text: "交付完成" }]
       }
     ]),
@@ -113,6 +133,7 @@ test("AgentLoop completes when the model stops after writing outputs", async () 
   assert.equal(result.status, "succeeded");
   assert.equal(result.steps.length, 2);
   assert.equal(result.usage.totalTokens, 40);
+  assert.equal(result.usage.estimatedCostCny, "0.003");
   assert.equal(result.steps[0]?.snapshotId, "60000000-0000-4000-8000-000000000001");
   assert.equal(result.manifest?.work_item_id, "50000000-0000-4000-8000-000000000001");
   assert.equal(result.manifest?.base.snapshot_id, "60000000-0000-4000-8000-000000000001");

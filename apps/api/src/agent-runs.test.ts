@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
+import type { AgentLoopClient } from "@workhub/agent/loop";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -145,6 +149,63 @@ async function cookie(runtimeSettings: Settings) {
   return generateSignedCookie(COOKIE_NAME, "cookie-agent-run", runtimeSettings.auth.cookieSecret);
 }
 
+function executableAgentClient(): AgentLoopClient {
+  const responses = [
+    {
+      id: "msg-run-1",
+      stopReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 20 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 10,
+        outputTokens: 20,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:00.000Z"
+      },
+      content: [
+        {
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/result.md", content: "done" }
+        }
+      ]
+    },
+    {
+      id: "msg-run-2",
+      stopReason: "end_turn",
+      usage: { inputTokens: 5, outputTokens: 5 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 5,
+        outputTokens: 5,
+        estimatedCostCny: "0.002",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:01.000Z"
+      },
+      content: [{ type: "text", text: "交付完成" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake AgentLoop response queued");
+        }
+        return response;
+      }
+    }
+  };
+}
+
 test("agent run enqueue consumes P-COST decisions before creating a run", async () => {
   const runtimeSettings = settings();
   const queue = createInMemoryAgentRunQueue({
@@ -264,4 +325,65 @@ test("agent run enqueue uses ledger snapshots when no usage fixture is injected"
   assert.equal(response.status, 202);
   const body = await response.json() as { ok: true; data: { budget: { max_tokens: number } } };
   assert.equal(body.data.budget.max_tokens, 25000);
+});
+
+test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-test-"));
+  const snapshotId = "70000000-0000-4000-8000-000000000025";
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000025",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshot: () => ({ snapshotId })
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+
+  const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Executable worker run" })
+  });
+  assert.equal(start.status, 202);
+  const startBody = await start.json() as { ok: true; data: { run_id: string; status: string } };
+  assert.equal(startBody.data.status, "queued");
+
+  const executed = await queue.runNext();
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(executed?.usage.token_in, 15);
+  assert.equal(executed?.usage.token_out, 25);
+  assert.equal(executed?.usage.estimated_cost_cny, "0.003");
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
+
+  const runResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const traceResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}/trace`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const replayResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}/replay`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(runResponse.status, 200);
+  assert.equal(traceResponse.status, 200);
+  assert.equal(replayResponse.status, 200);
+  const runBody = await runResponse.json() as { ok: true; data: { status: string } };
+  const traceBody = await traceResponse.json() as {
+    ok: true;
+    data: { phase: string; snapshot_id?: string; output_excerpt?: string }[];
+  };
+  const replayBody = await replayResponse.json() as {
+    ok: true;
+    data: { cost: { me: { estimated_cost_cny: string } } };
+  };
+  assert.equal(runBody.data.status, "succeeded");
+  assert.deepEqual(traceBody.data.map((step) => step.phase), ["tool_call", "tool_result", "think", "final"]);
+  assert.equal(traceBody.data[0]?.snapshot_id, snapshotId);
+  assert.equal(traceBody.data.some((step) => step.output_excerpt?.includes("交付完成")), true);
+  assert.equal(replayBody.data.cost.me.estimated_cost_cny, "0.003");
+  assert.equal(await queue.runNext(), null);
 });

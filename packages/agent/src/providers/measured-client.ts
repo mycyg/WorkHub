@@ -78,7 +78,7 @@ class MeasuredStream implements LlmStream {
       this.usageRecord = makeUsageRecord(this.route, this.actor, final, this.source);
       await this.sink.recordUsage(this.usageRecord);
     }
-    return final;
+    return { ...final, usageRecord: this.usageRecord };
   }
 }
 
@@ -92,7 +92,7 @@ export class MeasuredLlmClient {
       const response = await this.transport.create({ ...params, model: this.model });
       const usageRecord = makeUsageRecord(this.route, this.actor, response, params.source);
       await this.usageSink.recordUsage(usageRecord);
-      return response;
+      return { ...response, usageRecord };
     },
     stream: async (params: LlmCreateParams) => {
       const stream = await this.transport.stream({ ...params, model: this.model });

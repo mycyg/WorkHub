@@ -133,6 +133,12 @@ function emptyQueue(): AgentRunQueue {
     },
     async listActive() {
       return [];
+    },
+    async run(): Promise<AgentRunQueueRecord> {
+      throw new Error("not needed");
+    },
+    async runNext() {
+      return null;
     }
   };
 }

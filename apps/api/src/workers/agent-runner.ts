@@ -1,5 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
+import {
+  createAgentLoop,
+  type AgentLoopClient,
+  type AgentLoopEvent,
+  type AgentLoopResult,
+  type AgentLoopStep,
+  type AgentLoopUsage,
+  type StructuredHandoff
+} from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import type { WorkItemMode } from "@workhub/contracts";
 import {
@@ -13,9 +25,17 @@ import {
   type CostLedgerStore,
   type RunBudget
 } from "@workhub/cost";
+import {
+  createBuiltInFileTools,
+  createToolRegistry,
+  type SnapshotHook,
+  type ToolExecutionContext,
+  type ToolResult
+} from "@workhub/tools";
 
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
+import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -92,12 +112,26 @@ export type BudgetDecisionInput = EnqueueAgentRunInput & {
 
 export type BudgetDecisionProvider = (input: BudgetDecisionInput) => BudgetDecisionTrace | Promise<BudgetDecisionTrace>;
 
+export type AgentRunExecutionInput = {
+  run: AgentRunQueueRecord;
+  settings: Settings;
+};
+
+export type AgentRunClientProvider = (input: AgentRunExecutionInput) => AgentLoopClient | Promise<AgentLoopClient>;
+export type AgentRunWorkdirProvider = (input: AgentRunExecutionInput) => string | Promise<string>;
+export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
+  toModelTools: (ctx: ToolExecutionContext) => Promise<unknown[]> | unknown[];
+  execute: (toolId: string, input: unknown, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;
+};
+
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
   abort: (runId: string, actorId: string) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
+  run: (runId: string) => Promise<AgentRunQueueRecord>;
+  runNext: () => Promise<AgentRunQueueRecord | null>;
 };
 
 export function createInMemoryAgentRunQueue(options: {
@@ -108,12 +142,21 @@ export function createInMemoryAgentRunQueue(options: {
   ledgerStore?: CostLedgerStore;
   usage?: (input: EnqueueAgentRunInput) => BudgetUsageSnapshot[];
   decideBudget?: BudgetDecisionProvider;
+  client?: AgentRunClientProvider;
+  workdir?: AgentRunWorkdirProvider;
+  tools?: AgentRunToolsProvider;
+  snapshot?: SnapshotHook;
+  systemPrompt?: string;
+  initialUserMessage?: (run: AgentRunQueueRecord) => string;
+  requireDeliverable?: boolean;
+  emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
   const settings = options.settings ?? runtimeSettings;
   const policyStore = options.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
+  const defaultTools = createToolRegistry(createBuiltInFileTools());
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -143,6 +186,107 @@ export function createInMemoryAgentRunQueue(options: {
         run.work_item_id === workItemId &&
         (run.status === "queued" || run.status === "running")
     );
+  }
+
+  function queuedRun() {
+    return [...runs.values()].find((run) => run.status === "queued") ?? null;
+  }
+
+  async function defaultWorkdir(input: AgentRunExecutionInput) {
+    return mkdtemp(path.join(os.tmpdir(), `workhub-agent-${input.run.run_id}-`));
+  }
+
+  async function defaultClient(input: AgentRunExecutionInput) {
+    return getDefaultProviderRegistry().get({
+      id: input.run.actor_id,
+      userId: input.run.actor_id,
+      runId: input.run.run_id,
+      workItemId: input.run.work_item_id
+    }, "worker");
+  }
+
+  function defaultInitialUserMessage(run: AgentRunQueueRecord) {
+    return [
+      `请处理这个 WorkHub 事项: ${run.title}`,
+      `work_item_id: ${run.work_item_id}`,
+      "请先理解目标，必要时使用工具生成 outputs/ 下的交付物，完成后自然结束。"
+    ].join("\n");
+  }
+
+  function updateRun(run: AgentRunQueueRecord) {
+    runs.set(run.run_id, run);
+    return run;
+  }
+
+  async function executeRun(runId: string) {
+    const run = runs.get(runId);
+    if (!run) {
+      throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
+    }
+    if (run.status !== "queued") {
+      throw new AgentRunnerError(409, "agent_run_not_queued", "这次 AI 执行已经不是排队状态。");
+    }
+
+    let current = updateRun({
+      ...run,
+      status: "running",
+      updated_at: now().toISOString()
+    });
+    const executionInput = { run: current, settings };
+    const client = await (options.client ?? defaultClient)(executionInput);
+    const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
+    const tools = options.tools?.(executionInput) ?? defaultTools;
+    const loop = createAgentLoop();
+
+    try {
+      const result = await loop.run({
+        runId: current.run_id,
+        workItemId: current.work_item_id,
+        actorId: current.actor_id,
+        workdir,
+        systemPrompt: options.systemPrompt ?? "You are WorkHub's AI worker. Produce concise, reviewable deliverables.",
+        initialUserMessage: options.initialUserMessage?.(current) ?? defaultInitialUserMessage(current),
+        client,
+        tools,
+        budget: toAgentLoopBudget(current.budget),
+        requireDeliverable: options.requireDeliverable ?? true,
+        ...(options.snapshot ? { snapshot: options.snapshot } : {}),
+        recorder: {
+          recordStep: (step) => {
+            current = updateRun({
+              ...current,
+              trace: [...current.trace, ...traceRecordsFromStep(current.run_id, step)],
+              updated_at: now().toISOString()
+            });
+          }
+        },
+        emit: (event) => options.emit?.(event, current),
+        now
+      });
+      current = updateRun(finalizeExecutedRun(current, result, now()));
+      return current;
+    } catch (error) {
+      current = updateRun({
+        ...current,
+        status: "failed",
+        usage: {
+          ...current.usage
+        },
+        trace: [
+          ...current.trace,
+          {
+            id: `${current.run_id}:final:error`,
+            step_no: Math.max(current.trace.at(-1)?.step_no ?? 0, 0) + 1,
+            phase: "final",
+            output_excerpt: error instanceof Error ? error.message : String(error),
+            control_signal: "escalate",
+            created_at: now().toISOString()
+          }
+        ],
+        updated_at: now().toISOString()
+      });
+      return current;
+    }
   }
 
   return {
@@ -215,6 +359,13 @@ export function createInMemoryAgentRunQueue(options: {
 
     async listActive() {
       return [...runs.values()].filter((run) => run.status === "queued" || run.status === "running");
+    },
+
+    run: executeRun,
+
+    async runNext() {
+      const run = queuedRun();
+      return run ? executeRun(run.run_id) : null;
     }
   };
 }
@@ -242,6 +393,120 @@ function toQueueRunBudget(budget: RunBudget): AgentRunQueueRecord["budget"] {
     total_timeout_s: budget.totalTimeoutSeconds,
     max_tokens: budget.maxTokens,
     max_cost_cny: budget.maxCostCny
+  };
+}
+
+function toAgentLoopBudget(budget: AgentRunQueueRecord["budget"]) {
+  return {
+    maxSteps: budget.max_steps,
+    totalTimeoutSeconds: budget.total_timeout_s,
+    maxTokens: budget.max_tokens,
+    maxCostCny: budget.max_cost_cny
+  };
+}
+
+function preview(value: unknown, maxLength = 200) {
+  if (typeof value === "string") {
+    return value.slice(0, maxLength);
+  }
+  try {
+    return JSON.stringify(value).slice(0, maxLength);
+  } catch {
+    return String(value).slice(0, maxLength);
+  }
+}
+
+function textPreview(step: AgentLoopStep) {
+  return step.assistant
+    .filter((block) => block.type === "text" || block.type === "thinking")
+    .map((block) => block.text)
+    .join("\n")
+    .trim()
+    .slice(0, 200);
+}
+
+function traceRecordsFromStep(runId: string, step: AgentLoopStep): AgentRunTraceStepRecord[] {
+  const records: AgentRunTraceStepRecord[] = [];
+  const text = textPreview(step);
+  if (text) {
+    records.push({
+      id: `${runId}:step:${step.index}:think`,
+      step_no: step.index,
+      phase: "think",
+      output_excerpt: text,
+      control_signal: step.control,
+      ...(step.snapshotId ? { snapshot_id: step.snapshotId } : {}),
+      created_at: step.endedAt
+    });
+  }
+  for (const toolCall of step.toolCalls) {
+    records.push({
+      id: `${runId}:step:${step.index}:tool:${toolCall.id}`,
+      step_no: step.index,
+      phase: "tool_call",
+      output_excerpt: `${toolCall.name} ${preview(toolCall.input)}`.slice(0, 200),
+      control_signal: step.control,
+      ...(step.snapshotId ? { snapshot_id: step.snapshotId } : {}),
+      created_at: step.endedAt
+    });
+  }
+  step.toolResults.forEach((result, index) => {
+    records.push({
+      id: `${runId}:step:${step.index}:result:${index + 1}`,
+      step_no: step.index,
+      phase: "tool_result",
+      output_excerpt: result.content.slice(0, 200),
+      control_signal: step.control,
+      ...(result.snapshotId ?? step.snapshotId ? { snapshot_id: result.snapshotId ?? step.snapshotId } : {}),
+      created_at: step.endedAt
+    });
+  });
+  return records;
+}
+
+function toQueueUsage(usage: AgentLoopUsage): AgentRunQueueRecord["usage"] {
+  return {
+    steps_used: usage.stepsUsed,
+    token_in: usage.tokenIn,
+    token_out: usage.tokenOut,
+    estimated_cost_cny: usage.estimatedCostCny
+  };
+}
+
+function toQueueHandoff(handoff: StructuredHandoff): NonNullable<AgentRunQueueRecord["handoff"]> {
+  return {
+    done: handoff.done,
+    remaining: handoff.remaining,
+    next_steps: handoff.nextSteps,
+    blockers: handoff.blockers,
+    artifacts: handoff.artifacts,
+    budget_hit: handoff.budgetHit
+  };
+}
+
+function finalizeExecutedRun(
+  run: AgentRunQueueRecord,
+  result: AgentLoopResult,
+  endedAt: Date
+): AgentRunQueueRecord {
+  const trace = [
+    ...run.trace,
+    {
+      id: `${run.run_id}:final:${result.status}`,
+      step_no: result.usage.stepsUsed + 1,
+      phase: "final" as const,
+      output_excerpt: result.reason.slice(0, 200),
+      control_signal: result.control,
+      created_at: endedAt.toISOString()
+    }
+  ];
+  return {
+    ...run,
+    status: result.status,
+    usage: toQueueUsage(result.usage),
+    trace,
+    ...(result.handoff ? { handoff: toQueueHandoff(result.handoff) } : {}),
+    updated_at: endedAt.toISOString()
   };
 }
 
