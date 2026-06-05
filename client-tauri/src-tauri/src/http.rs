@@ -1,15 +1,17 @@
+use serde::{Deserialize, Serialize};
+
 use crate::config::{normalize_server_url, WorkHubShellConfig};
 
 pub const WORKHUB_CLIENT_TOKEN_HEADER: &str = "X-WorkHub-Client-Token";
 pub const LEGACY_CLIENT_TOKEN_HEADER: &str = "X-YQGL-Client-Token";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellHeader {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellRequestPlan {
     pub url: String,
     pub headers: Vec<ShellHeader>,
@@ -40,5 +42,30 @@ pub fn plan_daemon_request(config: &WorkHubShellConfig, path: &str) -> ShellRequ
     ShellRequestPlan {
         url: daemon_url(config, path),
         headers,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_request_plan_prefixes_base_url_and_injects_device_token_headers() {
+        let config = WorkHubShellConfig {
+            server_url: " http://127.0.0.1:8787/ ".to_string(),
+            client_token: Some("token-1".to_string()),
+            device_name: "desktop".to_string(),
+        };
+
+        let plan = plan_daemon_request(&config, "api/health");
+
+        assert_eq!(plan.url, "http://127.0.0.1:8787/api/health");
+        assert_eq!(
+            plan.headers
+                .iter()
+                .map(|header| header.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![WORKHUB_CLIENT_TOKEN_HEADER, LEGACY_CLIENT_TOKEN_HEADER]
+        );
     }
 }
