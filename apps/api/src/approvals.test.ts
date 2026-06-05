@@ -87,6 +87,16 @@ class MemoryApprovals implements ApprovalRequestRepository {
     return this.rows.find((approval) => approval.id === id) ?? null;
   }
 
+  async listPendingDue(at: Date, limit = 50) {
+    return this.rows
+      .filter((approval) => approval.status === "pending" && approval.slaDueAt != null && approval.slaDueAt <= at)
+      .sort((a, b) => {
+        const dueDelta = (a.slaDueAt?.getTime() ?? 0) - (b.slaDueAt?.getTime() ?? 0);
+        return dueDelta === 0 ? a.createdAt.getTime() - b.createdAt.getTime() : dueDelta;
+      })
+      .slice(0, limit);
+  }
+
   async listPendingForUser(id: string, options: { includeAll?: boolean } = {}) {
     return this.rows.filter(
       (approval) => approval.status === "pending" && (options.includeAll || approval.routedToUserId === id)
@@ -295,6 +305,78 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
 
   assert.equal(deps.policyRepo.rows.length, 1);
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
+});
+
+test("SLA expiry never auto-allows approvals and emits private expiration events", async () => {
+  const deps = serviceDeps();
+  const dueTool = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    agentRunId: "60000000-0000-4000-8000-000000000001",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId,
+    slaDueAt: new Date("2026-06-04T23:59:00.000Z"),
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想修改交付包，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+  const futureTool = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.delete_file",
+    agentRunId: "60000000-0000-4000-8000-000000000002",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId,
+    slaDueAt: new Date("2026-06-05T00:10:00.000Z")
+  });
+
+  const expired = await deps.service.expireDueApprovals();
+
+  assert.equal(expired.length, 1);
+  assert.equal(expired[0]?.approval.id, dueTool.id);
+  assert.equal(expired[0]?.approval.status, "expired");
+  assert.equal(expired[0]?.next_action, "escalate_pm");
+  assert.equal(expired[0]?.escalated, true);
+  assert.equal(dueTool.status, "expired");
+  assert.equal(dueTool.decidedByUserId, null);
+  assert.equal(futureTool.status, "pending");
+  assert.equal(deps.bus.events.some((event) => event.topic === "all"), false);
+  assert.deepEqual(
+    deps.bus.events.map((event) => [event.topic, event.type]).sort(),
+    [
+      [`session:${dueTool.agentRunId}`, "permission.expired"],
+      [`user:${approverId}`, "permission.expired"],
+      [`workitem:${dueTool.workItemId}`, "permission.expired"]
+    ].sort()
+  );
+  assert.equal((deps.bus.events[0]?.data as { escalated?: boolean }).escalated, true);
+});
+
+test("proposal expiry asks for reviewer follow-up instead of merging", async () => {
+  const deps = serviceDeps();
+  const proposal = await deps.approvals.createApprovalRequest({
+    actionPattern: "proposal.review",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId,
+    slaDueAt: new Date("2026-06-04T23:59:00.000Z")
+  });
+
+  const expired = await deps.service.expireDueApprovals();
+
+  assert.equal(expired.length, 1);
+  assert.equal(expired[0]?.approval.id, proposal.id);
+  assert.equal(expired[0]?.approval.status, "expired");
+  assert.equal(expired[0]?.next_action, "notify_reviewer");
+  assert.equal(expired[0]?.escalated, false);
+  assert.equal(proposal.decidedByUserId, null);
+  assert.deepEqual(
+    deps.bus.events.map((event) => [event.topic, event.type]).sort(),
+    [
+      [`user:${approverId}`, "permission.expired"],
+      [`workitem:${proposal.workItemId}`, "permission.expired"]
+    ].sort()
+  );
 });
 
 class MemoryUsers implements UserRepository {

@@ -47,6 +47,14 @@ export type ApprovalCreationResult =
   | { outcome: "escalated"; reason: "no_approver" }
   | { outcome: "pending"; approval: ApprovalRequest; attention: AttentionItem };
 
+export type ApprovalExpirationAction = "escalate_pm" | "notify_reviewer";
+
+export type ApprovalExpirationResult = {
+  approval: ApprovalRequest;
+  next_action: ApprovalExpirationAction;
+  escalated: boolean;
+};
+
 export type CreateApprovalInput = {
   actor: AuthActor;
   kind: "tool" | "proposal" | "revision";
@@ -167,6 +175,25 @@ async function publishIfAvailable<T>(
     return;
   }
   await bus.publish(topic, type, data);
+}
+
+function expirationAction(row: ApprovalRequestRow): ApprovalExpirationAction {
+  if (row.agentRunId || row.actionPattern.startsWith("tool.")) {
+    return "escalate_pm";
+  }
+  return "notify_reviewer";
+}
+
+function expirationEventData(row: ApprovalRequestRow, nextAction: ApprovalExpirationAction) {
+  return {
+    approval_id: row.id,
+    action_pattern: row.actionPattern,
+    next_action: nextAction,
+    escalated: nextAction === "escalate_pm",
+    ...(row.workItemId ? { work_item_id: row.workItemId } : {}),
+    ...(row.agentRunId ? { agent_run_id: row.agentRunId } : {}),
+    ...(row.routedToUserId ? { routed_to_user_id: row.routedToUserId } : {})
+  };
 }
 
 export function createApprovalService(deps: ApprovalServiceDependencies = getDefaultApprovalServiceDependencies()) {
@@ -316,6 +343,40 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         approval: toApprovalRequestResponse(updated),
         attention
       };
+    },
+
+    async expireDueApprovals(options: { limit?: number } = {}): Promise<ApprovalExpirationResult[]> {
+      const at = now();
+      const dueRows = await deps.approvals.listPendingDue(at, options.limit);
+      const results: ApprovalExpirationResult[] = [];
+
+      for (const due of dueRows) {
+        const updated = await deps.approvals.expirePending(due.id, at);
+        if (!updated) {
+          continue;
+        }
+        const nextAction = expirationAction(updated);
+        const eventData = expirationEventData(updated, nextAction);
+        await publishIfAvailable(
+          deps.bus,
+          updated.routedToUserId ? topics.user(updated.routedToUserId).topic : undefined,
+          eventTypes.permissionExpired,
+          eventData
+        );
+        if (updated.workItemId) {
+          await publishIfAvailable(deps.bus, topics.workitem(updated.workItemId).topic, eventTypes.permissionExpired, eventData);
+        }
+        if (updated.agentRunId) {
+          await publishIfAvailable(deps.bus, topics.session(updated.agentRunId).topic, eventTypes.permissionExpired, eventData);
+        }
+        results.push({
+          approval: toApprovalRequestResponse(updated),
+          next_action: nextAction,
+          escalated: nextAction === "escalate_pm"
+        });
+      }
+
+      return results;
     },
 
     async createPolicy(actor: AuthActor, input: PermissionPolicyWrite) {

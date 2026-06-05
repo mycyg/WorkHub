@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 
 import type { ApprovalDecision } from "@workhub/contracts";
 
@@ -22,6 +22,7 @@ export type CreateApprovalRequestInput = {
 export type ApprovalRequestRepository = {
   createApprovalRequest: (input: CreateApprovalRequestInput) => Promise<ApprovalRequestRow>;
   findById: (id: string) => Promise<ApprovalRequestRow | null>;
+  listPendingDue: (at: Date, limit?: number) => Promise<ApprovalRequestRow[]>;
   listPendingForUser: (userId: string, options?: { includeAll?: boolean }) => Promise<ApprovalRequestRow[]>;
   respondPending: (
     id: string,
@@ -60,6 +61,15 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
     async findById(id) {
       const rows = await db.select().from(approvalRequests).where(eq(approvalRequests.id, id)).limit(1);
       return rows[0] ?? null;
+    },
+
+    async listPendingDue(at, limit = 50) {
+      return db
+        .select()
+        .from(approvalRequests)
+        .where(and(eq(approvalRequests.status, "pending"), lte(approvalRequests.slaDueAt, at)))
+        .orderBy(asc(approvalRequests.slaDueAt), asc(approvalRequests.createdAt))
+        .limit(limit);
     },
 
     async listPendingForUser(userId, options = {}) {
