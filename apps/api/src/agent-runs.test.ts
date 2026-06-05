@@ -27,7 +27,8 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import {
   AgentRunnerError,
-  createInMemoryAgentRunQueue
+  createInMemoryAgentRunQueue,
+  type AgentRunNotificationPublisher
 } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -446,6 +447,16 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-snapshot-test-"));
   const snapshots = new MemorySnapshots();
   const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string; approverUserId?: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({
+        newStatus: context.newStatus,
+        ...(context.workItem.approverUserId ? { approverUserId: context.workItem.approverUserId } : {})
+      });
+      return [];
+    }
+  };
   const queue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
     now: () => now,
@@ -455,7 +466,8 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     snapshotRoot,
     snapshotId: () => snapshotId,
     snapshots,
-    auditLogs
+    auditLogs,
+    notifications
   });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs }));
@@ -479,6 +491,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(snapshots.rows[0]?.contentSha256?.length, 64);
   assert.equal(auditLogs.rows.length, 1);
   assert.equal(auditLogs.rows[0]?.action, "tool.write_file.snapshot");
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "in_review", approverUserId: userId }]);
 
   const runResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}`, {
     headers: { Cookie: await cookie(runtimeSettings) }

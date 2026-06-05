@@ -38,6 +38,7 @@ import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { createAgentRunSnapshotHook } from "../services/agent-run-snapshots.js";
+import { createNotificationService, type NotificationService } from "../services/notifications.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -125,6 +126,7 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
   toModelTools: (ctx: ToolExecutionContext) => Promise<unknown[]> | unknown[];
   execute: (toolId: string, input: unknown, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;
 };
+export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
@@ -152,6 +154,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshotId?: () => string;
   snapshots?: SnapshotRepository;
   auditLogs?: AuditLogRepository;
+  notifications?: AgentRunNotificationPublisher | false;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -279,6 +282,7 @@ export function createInMemoryAgentRunQueue(options: {
         now
       });
       current = updateRun(finalizeExecutedRun(current, result, now()));
+      await notifyRunMilestone(current, result.reason);
       return current;
     } catch (error) {
       current = updateRun({
@@ -300,7 +304,39 @@ export function createInMemoryAgentRunQueue(options: {
         ],
         updated_at: now().toISOString()
       });
+      await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
       return current;
+    }
+  }
+
+  async function notifyRunMilestone(run: AgentRunQueueRecord, reasonOneline: string) {
+    const newStatus = run.status === "succeeded"
+      ? "in_review"
+      : run.status === "failed" || run.status === "escalated"
+        ? "escalated"
+        : null;
+    if (!newStatus || options.notifications === false) {
+      return;
+    }
+    const notifications = options.notifications ?? createNotificationService();
+    try {
+      await notifications.notifyMilestone({
+        workItem: {
+          id: run.work_item_id,
+          code: "当前事项",
+          title: run.title,
+          submitterUserId: run.actor_id,
+          approverUserId: run.actor_id
+        },
+        actor: {
+          id: "ai-auto",
+          label: "AI 工人"
+        },
+        newStatus,
+        reasonOneline
+      });
+    } catch (error) {
+      console.warn("WorkHub notification milestone failed", error);
     }
   }
 
