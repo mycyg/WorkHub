@@ -55,7 +55,8 @@ export const goldPathCss = [
   ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}",
   ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
-  ".wh-cuu{display:grid;gap:14px;text-align:left}.wh-cuu-orb{width:80px;height:80px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd79b,#f08c3a 55%,#b95724);box-shadow:0 12px 30px rgba(215,123,41,.25)}.wh-cuu-name{font-weight:800}.wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
+  ".wh-cuu{display:grid;gap:14px;text-align:left}.wh-cuu-name{font-weight:800}.wh-cuu-figure{width:118px;height:108px;position:relative;display:grid;place-items:center;isolation:isolate}.wh-cuu-cat{position:relative;width:92px;height:88px;animation:wh-cuu-breathe 2.8s ease-in-out infinite;transform-origin:50% 100%}.wh-cuu-head{position:absolute;left:15px;top:10px;width:62px;height:58px;border-radius:48% 48% 44% 44%;background:linear-gradient(145deg,#ffb65e,#ee842f 72%);box-shadow:inset -8px -10px 0 rgba(166,82,30,.12),0 10px 24px rgba(194,103,36,.2);z-index:2}.wh-cuu-ear{position:absolute;top:0;width:25px;height:28px;background:#ef8732;clip-path:polygon(50% 0,100% 100%,0 100%);z-index:1}.wh-cuu-ear-left{left:17px;transform:rotate(-14deg)}.wh-cuu-ear-right{right:17px;transform:rotate(14deg)}.wh-cuu-ear:after{content:\"\";position:absolute;left:7px;top:9px;width:11px;height:13px;background:#ffd2bd;clip-path:polygon(50% 0,100% 100%,0 100%)}.wh-cuu-eye{position:absolute;top:23px;width:12px;height:15px;border-radius:50%;background:#1c2030;box-shadow:inset 3px 3px 0 rgba(255,255,255,.8)}.wh-cuu-eye-left{left:18px}.wh-cuu-eye-right{right:18px}.wh-cuu-muzzle{position:absolute;left:20px;top:37px;width:22px;height:15px;border-radius:50%;background:#ffe5c7}.wh-cuu-nose{position:absolute;left:28px;top:38px;width:7px;height:5px;border-radius:50%;background:#d6635e}.wh-cuu-body{position:absolute;left:20px;top:51px;width:58px;height:44px;border-radius:50% 50% 44% 44%;background:linear-gradient(140deg,#f6a34b,#dc7930);box-shadow:inset -8px -8px 0 rgba(143,72,26,.1)}.wh-cuu-tail{position:absolute;right:2px;top:52px;width:34px;height:42px;border:9px solid #e88734;border-left:0;border-bottom:0;border-radius:0 90% 0 0;transform:rotate(16deg);animation:wh-cuu-tail 2.4s ease-in-out infinite}.wh-cuu-collar{position:absolute;left:18px;top:63px;width:56px;height:13px;border-radius:999px;background:linear-gradient(90deg,#fff7f4,#f2dfd7);border:1px solid rgba(199,157,143,.55);z-index:3}.wh-cuu-bow{position:absolute;left:35px;top:65px;width:22px;height:13px;z-index:4}.wh-cuu-bow:before,.wh-cuu-bow:after{content:\"\";position:absolute;top:1px;width:11px;height:11px;background:#202436;border-radius:45% 10% 45% 10%}.wh-cuu-bow:before{left:0;transform:rotate(24deg)}.wh-cuu-bow:after{right:0;transform:scaleX(-1) rotate(24deg)}.wh-cuu-stripe{position:absolute;top:14px;width:4px;height:15px;border-radius:999px;background:rgba(153,76,31,.28);z-index:3}.wh-cuu-stripe-one{left:27px;transform:rotate(-16deg)}.wh-cuu-stripe-two{left:38px}.wh-cuu-stripe-three{right:27px;transform:rotate(16deg)}.wh-cuu-shadow{position:absolute;left:23px;right:23px;bottom:5px;height:12px;border-radius:50%;background:rgba(84,55,36,.14);filter:blur(2px);z-index:-1}.wh-cuu-figure[data-cuu-state=thinking] .wh-cuu-cat,.wh-cuu-figure[data-cuu-state=searching_evidence] .wh-cuu-cat{animation:wh-cuu-think 1.5s ease-in-out infinite}.wh-cuu-figure[data-cuu-state=asking_approval] .wh-cuu-cat,.wh-cuu-figure[data-cuu-state=carrying_document] .wh-cuu-cat{animation:wh-cuu-hop 1.8s ease-in-out infinite}.wh-cuu-figure[data-cuu-state=celebrating] .wh-cuu-cat{animation:wh-cuu-celebrate 1.1s ease-in-out infinite}.wh-cuu-figure[data-cuu-state=worried] .wh-cuu-cat{animation:wh-cuu-worry .9s ease-in-out infinite}.wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
+  "@keyframes wh-cuu-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.015)}}@keyframes wh-cuu-tail{0%,100%{transform:rotate(16deg)}50%{transform:rotate(28deg)}}@keyframes wh-cuu-hop{0%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}@keyframes wh-cuu-think{0%,100%{transform:rotate(0deg) translateY(0)}50%{transform:rotate(-3deg) translateY(-3px)}}@keyframes wh-cuu-celebrate{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-7px) rotate(-5deg)}70%{transform:translateY(-3px) rotate(5deg)}}@keyframes wh-cuu-worry{0%,100%{transform:translateX(0)}50%{transform:translateX(2px)}}",
   ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr 260px}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -98,7 +99,8 @@ function actions(actions: (AttentionAction | ActionSpec)[]) {
             ? "wh-btn wh-btn-primary"
             : "wh-btn";
       const reason = action.requires_reason ? " data-requires-reason=\"true\"" : "";
-      return `<a class="${style}" href="${href(actionHref(action))}"${reason}>${escapeHtml(action.label)}</a>`;
+      const method = "method" in action ? ` data-method="${escapeHtml(action.method)}"` : "";
+      return `<a class="${style}" href="${href(actionHref(action))}"${reason}${method}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -110,7 +112,26 @@ function cuuRail(input: {
 }) {
   const notice = input.notices?.[0];
   return `<aside class="wh-panel wh-side wh-cuu">
-    <div class="wh-cuu-orb" aria-hidden="true"></div>
+    <div class="wh-cuu-figure" data-cuu-state="${escapeHtml(input.state)}" aria-hidden="true">
+      <div class="wh-cuu-cat">
+        <span class="wh-cuu-tail"></span>
+        <span class="wh-cuu-ear wh-cuu-ear-left"></span>
+        <span class="wh-cuu-ear wh-cuu-ear-right"></span>
+        <span class="wh-cuu-body"></span>
+        <span class="wh-cuu-head">
+          <span class="wh-cuu-stripe wh-cuu-stripe-one"></span>
+          <span class="wh-cuu-stripe wh-cuu-stripe-two"></span>
+          <span class="wh-cuu-stripe wh-cuu-stripe-three"></span>
+          <span class="wh-cuu-eye wh-cuu-eye-left"></span>
+          <span class="wh-cuu-eye wh-cuu-eye-right"></span>
+          <span class="wh-cuu-muzzle"></span>
+          <span class="wh-cuu-nose"></span>
+        </span>
+        <span class="wh-cuu-collar"></span>
+        <span class="wh-cuu-bow"></span>
+      </div>
+      <span class="wh-cuu-shadow"></span>
+    </div>
     <div>
       <div class="wh-cuu-name">Cuu · ${escapeHtml(stateCopy[input.state])}</div>
       <p class="wh-subtle">我会把复杂内容收成一件事、几个选项和能追溯的证据。</p>

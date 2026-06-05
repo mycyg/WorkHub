@@ -177,6 +177,36 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
 });
 
+test("P0.5 gold path preview can be served without DB auth when explicitly enabled", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    allowUnauthenticatedGoldPath: true
+  }));
+
+  const response = await app.request("/api/pages/gold-path");
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: { fixture_id: string } };
+  assert.equal(body.data.fixture_id, "weekly_report_manifest_doc");
+});
+
+test("P0.5 gold path preview still closes when unauthenticated preview is disabled", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    allowUnauthenticatedGoldPath: false
+  }));
+
+  const response = await app.request("/api/pages/gold-path");
+
+  assert.equal(response.status, 401);
+});
+
 test("P0.5 route set returns option question, evidence bubble, proposal detail, work item detail, and replay", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());

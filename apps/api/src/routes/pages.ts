@@ -5,7 +5,9 @@ import { settings } from "@workhub/config";
 
 import {
   createCurrentUserMiddleware,
+  getAuthSettings,
   getDefaultAuthDependencies,
+  resolveAuthDependencies,
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
@@ -30,11 +32,14 @@ export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
   queue?: AgentRunQueue;
+  allowUnauthenticatedGoldPath?: boolean;
 };
 
 export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
+  const authSettings = getAuthSettings(resolveAuthDependencies(authSource));
+  const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
 
@@ -43,9 +48,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json({ ok: true, data: buildAttentionHomePage({ backgroundRuns: activeRuns }) });
   });
 
-  routes.get("/gold-path", createCurrentUserMiddleware(authSource), (c) => {
-    return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
-  });
+  if (allowUnauthenticatedGoldPath) {
+    routes.get("/gold-path", (c) => {
+      return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
+    });
+  } else {
+    routes.get("/gold-path", createCurrentUserMiddleware(authSource), (c) => {
+      return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
+    });
+  }
 
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
     const data = await approvals.listPendingForUser(c.var.currentUser);
