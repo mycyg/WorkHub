@@ -97,6 +97,25 @@ async function walkOutputs(root: string, current: string, entries: OutputEntry[]
   }
 }
 
+async function listDirectoryChildren(root: string, directory: string, limit = 20, acc: string[] = []) {
+  if (acc.length >= limit) {
+    return acc;
+  }
+  const children = (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  for (const child of children) {
+    if (acc.length >= limit) {
+      break;
+    }
+    const absolutePath = path.join(directory, child.name);
+    const relativePath = normalizeRelativePath(path.relative(root, absolutePath));
+    acc.push(child.isDirectory() ? `child_added:${relativePath}/` : `child_added:${relativePath}`);
+    if (child.isDirectory()) {
+      await listDirectoryChildren(root, absolutePath, limit, acc);
+    }
+  }
+  return acc;
+}
+
 async function listOutputEntries(workdir: string) {
   const outputsRoot = path.join(workdir, "outputs");
   const outputStat = await stat(outputsRoot).catch(() => undefined);
@@ -258,10 +277,11 @@ function previewKind(kind: DeliverableTargetKind, relativePath: string): NonNull
   return "download";
 }
 
-async function buildMachineSummary(entry: OutputEntry, kind: DeliverableTargetKind): Promise<DeliverableChange["machine_summary"]> {
+async function buildMachineSummary(entry: OutputEntry, kind: DeliverableTargetKind, outputsRoot: string): Promise<DeliverableChange["machine_summary"]> {
   if (entry.isDirectory) {
+    const children = await listDirectoryChildren(outputsRoot, entry.absolutePath);
     return {
-      changed_fields: ["folder_created"]
+      changed_fields: ["folder_created", ...children]
     };
   }
 
@@ -405,7 +425,8 @@ async function buildChange(input: BuildDeliverableChangeManifestInput, entry: Ou
     human_summary: buildHumanSummary(entry, kind)
   };
 
-  const machineSummary = await buildMachineSummary(entry, kind);
+  const outputsRoot = path.join(input.workdir, "outputs");
+  const machineSummary = await buildMachineSummary(entry, kind, outputsRoot);
   if (machineSummary) {
     change.machine_summary = machineSummary;
   }

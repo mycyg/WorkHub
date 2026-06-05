@@ -31,6 +31,7 @@ async function writeFixtureOutputs(workdir: string) {
   await writeFile(path.join(outputs, "sheet.csv"), "name,value\nalpha,1\nbeta,2\n", "utf8");
   await writeFile(path.join(outputs, "proposal.docx"), Buffer.from("docx-placeholder"));
   await writeFile(path.join(outputs, "story.pptx"), Buffer.from("pptx-placeholder"));
+  await writeFile(path.join(outputs, "archive.zip"), Buffer.from("zip-placeholder"));
   await writeFile(path.join(outputs, "bundle.bin"), Buffer.from([0, 1, 2, 3]));
   await writeFile(path.join(outputs, "folder-delivery", "readme.txt"), "nested", "utf8");
   await writeFile(
@@ -66,6 +67,7 @@ test("builds a DeliverableChangeManifest draft from varied outputs", async () =>
   assert.equal(targetKinds.has("slide_deck"), true);
   assert.equal(targetKinds.has("image"), true);
   assert.equal(targetKinds.has("folder"), true);
+  assert.equal(targetKinds.has("archive"), true);
 
   const fileChanges = manifest.changes.filter((change) => change.target_kind !== "folder");
   assert.equal(fileChanges.every((change) => change.target_ref.sha256_after?.length === 64), true);
@@ -76,6 +78,15 @@ test("builds a DeliverableChangeManifest draft from varied outputs", async () =>
 
   const csvChange = manifest.changes.find((change) => change.target_ref.path === "/outputs/sheet.csv");
   assert.equal(csvChange?.machine_summary?.row_count_delta, 3);
+
+  const folderChange = manifest.changes.find((change) => change.target_ref.path === "/outputs/folder-delivery");
+  assert.equal(folderChange?.machine_summary?.changed_fields?.includes("folder_created"), true);
+  assert.equal(folderChange?.machine_summary?.changed_fields?.includes("child_added:folder-delivery/readme.txt"), true);
+
+  const archiveChange = manifest.changes.find((change) => change.target_ref.path === "/outputs/archive.zip");
+  assert.equal(archiveChange?.target_kind, "archive");
+  assert.equal(archiveChange?.preview_ref?.kind, "download");
+  assert.equal(archiveChange?.target_ref.sha256_after?.length, 64);
 
   const unknownBinaryChange = manifest.changes.find((change) => change.target_ref.path === "/outputs/bundle.bin");
   assert.equal(unknownBinaryChange?.preview_ref?.kind, "download");
