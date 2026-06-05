@@ -267,6 +267,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
+  assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");

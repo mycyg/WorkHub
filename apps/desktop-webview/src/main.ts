@@ -21,6 +21,7 @@ export const desktopWebviewSurface = {
   ],
   consumesTypedClient: "@workhub/api-client",
   cuuCardAdapter: "@workhub/cuu",
+  rustEventBridge: "push-event -> shell-events -> @workhub/cuu",
   rustOwns: ["device_token", "tray", "deep_link", "local_sync", "system_notification"]
 } as const;
 
@@ -57,3 +58,15 @@ export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
 export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string): Promise<CuuCard> {
   return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId));
 }
+
+export {
+  createDesktopShellEventBridge,
+  desktopCuuCardFromShellPush,
+  desktopCuuCardFromShellSseStatus,
+  parseDesktopShellPushPayload,
+  parseDesktopShellSseStatusPayload,
+  workHubEventFromDesktopShellPush,
+  type DesktopShellBridgeEvent,
+  type DesktopShellPushPayload,
+  type DesktopShellSseStatusPayload
+} from "./shell-events.js";
