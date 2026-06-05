@@ -34,6 +34,8 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   assert.equal(body.openapi, "3.1.0");
   assert.equal(Boolean(body.paths["/api/pages/attention"]), true);
   assert.equal(Boolean(body.paths["/api/cost/usage"]), true);
+  assert.equal(Boolean(body.paths["/api/workitems/{id}/proposals"]), true);
+  assert.equal(Boolean(body.paths["/api/proposals/{id}"]), true);
 });
 
 test("unknown endpoints use the shared error shape", async () => {

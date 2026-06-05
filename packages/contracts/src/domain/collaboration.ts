@@ -85,6 +85,13 @@ export const reviewProposalRequestSchema = z.object({
 });
 export type ReviewProposalRequest = z.input<typeof reviewProposalRequestSchema>;
 
+export const createProposalFromManifestRequestSchema = z.object({
+  title: z.string().min(1).max(256).optional(),
+  branch_id: idSchema.optional(),
+  manifest: deliverableChangeManifestSchema
+});
+export type CreateProposalFromManifestRequest = z.input<typeof createProposalFromManifestRequestSchema>;
+
 export const proposalReviewResultSchema = z.object({
   proposal_id: idSchema,
   work_item_id: idSchema,

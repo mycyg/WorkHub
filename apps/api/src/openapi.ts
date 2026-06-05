@@ -36,6 +36,22 @@ export function getOpenApiDocument() {
           summary: "Proposal detail page VM"
         }
       },
+      "/api/workitems/{id}/proposals": {
+        post: {
+          tags: ["proposals"],
+          summary: "Create a deliverable change proposal from a manifest"
+        },
+        get: {
+          tags: ["proposals"],
+          summary: "List proposals for a work item"
+        }
+      },
+      "/api/proposals/{id}": {
+        get: {
+          tags: ["proposals"],
+          summary: "Read a deliverable change proposal"
+        }
+      },
       "/api/proposals/{id}/review": {
         post: {
           tags: ["proposals"],

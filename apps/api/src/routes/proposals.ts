@@ -1,14 +1,19 @@
+import { randomUUID } from "node:crypto";
+
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import { p05GoldPathIds } from "@workhub/agent/fixtures";
 import {
+  createProposalFromManifestRequestSchema,
   eventTypes,
   mergeProposalRequestSchema,
+  proposalSchema,
   proposalMergeResultSchema,
   proposalReviewResultSchema,
   reviewProposalRequestSchema,
-  type AttentionItem
+  type AttentionItem,
+  type ProposalReviewResult
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 
@@ -26,9 +31,17 @@ import {
   getP05GoldPathFixture,
   isP05ProposalId
 } from "../pages/gold-path.js";
+import {
+  getDefaultProposalService,
+  ProposalServiceError,
+  type ProposalActor,
+  type ProposalService,
+  type StoredProposal
+} from "../services/proposals.js";
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
+  proposals?: ProposalService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -59,6 +72,15 @@ function actorFor(actor?: AuthActor) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function proposalActorFor(actor?: AuthActor): ProposalActor {
+  const resolved = actorFor(actor);
+  return {
+    actor_kind: resolved.actor_kind,
+    ...(resolved.actor_user_id ? { actor_user_id: resolved.actor_user_id } : {}),
+    ...(resolved.label ? { label: resolved.label } : {})
+  };
 }
 
 function reviewAttention(input: {
@@ -122,6 +144,48 @@ function reviewAttention(input: {
   };
 }
 
+function genericReviewAttention(input: {
+  proposal: StoredProposal;
+  decision: "approve" | "request_changes";
+  reason?: string;
+  createdAt: string;
+}): AttentionItem {
+  const approve = input.decision === "approve";
+  return {
+    id: randomUUID(),
+    kind: "proposal_review",
+    priority: approve ? "normal" : "high",
+    work_item_id: input.proposal.work_item_id,
+    source_ref: { entity_type: "proposal", entity_id: input.proposal.id },
+    title: approve ? `${input.proposal.title} 已通过确认` : `${input.proposal.title} 需要修改`,
+    summary_text: approve
+      ? "接下来可以把这份交付物变更采纳到正式版本。"
+      : input.reason ?? "这份变更申请已被打回，原因会回灌给下一轮 AI。",
+    reason_text: approve ? "这是一份可审计的交付物变更申请。" : "打回原因已进入下一轮上下文。",
+    actions: approve
+      ? [
+          {
+            id: "merge",
+            label: "采纳到正式版",
+            style: "primary",
+            method: "POST",
+            href: `/api/proposals/${input.proposal.id}/merge`
+          }
+        ]
+      : [
+          {
+            id: "open_proposal",
+            label: "查看变更申请",
+            style: "primary",
+            method: "GET",
+            href: `/proposals/${input.proposal.id}`
+          }
+        ],
+    cuu_state: approve ? "carrying_document" : "revision_requested",
+    created_at: input.createdAt
+  };
+}
+
 function mergeAttention(createdAt: string): AttentionItem {
   return {
     id: p05GoldPathIds.eventProposalMerged,
@@ -154,6 +218,37 @@ function mergeAttention(createdAt: string): AttentionItem {
   };
 }
 
+function genericMergeAttention(proposal: StoredProposal, createdAt: string): AttentionItem {
+  return {
+    id: randomUUID(),
+    kind: "delivery_ready",
+    priority: "normal",
+    work_item_id: proposal.work_item_id,
+    source_ref: { entity_type: "proposal", entity_id: proposal.id },
+    title: `${proposal.title} 已采纳`,
+    summary_text: "交付物变更已进入正式版本，审计和回滚信息已保留。",
+    reason_text: proposal.diff_manifest.rollback.available ? "这次变更保留了回滚入口。" : "这次变更缺少可用回滚快照。",
+    actions: [
+      {
+        id: "open_proposal",
+        label: "查看变更申请",
+        style: "primary",
+        method: "GET",
+        href: `/proposals/${proposal.id}`
+      }
+    ],
+    cuu_state: "celebrating",
+    created_at: createdAt
+  };
+}
+
+function handleProposalServiceError(error: unknown): never {
+  if (error instanceof ProposalServiceError) {
+    throw new HTTPException(error.status as 400, { message: error.message });
+  }
+  throw error;
+}
+
 export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -162,13 +257,102 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const authMiddleware = allowUnauthenticatedGoldPath
     ? createOptionalCurrentUserMiddleware(authSource)
     : createCurrentUserMiddleware(authSource);
+  const proposals = deps.proposals ?? getDefaultProposalService();
 
-  routes.post("/:id/review", authMiddleware, async (c) => {
-    if (!isP05ProposalId(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+  routes.get("/:id", authMiddleware, async (c) => {
+    if (isP05ProposalId(c.req.param("id"))) {
+      const fixture = getP05GoldPathFixture();
+      return c.json({
+        ok: true,
+        data: proposalSchema.parse({
+          id: fixture.proposalDetail.proposal_id,
+          work_item_id: fixture.proposalDetail.work_item_id,
+          branch_id: p05GoldPathIds.branch,
+          round: 1,
+          title: fixture.proposalDetail.title,
+          status: fixture.proposalDetail.status,
+          diff_manifest: fixture.proposalDetail.manifest,
+          opened_by_kind: "ai",
+          created_at: fixture.proposalDetail.manifest.base.created_at ?? "2026-06-05T00:00:00.000Z",
+          updated_at: fixture.proposalDetail.manifest.base.created_at ?? "2026-06-05T00:00:00.000Z"
+        })
+      });
     }
 
+    const proposal = await proposals.get(c.req.param("id"));
+    if (!proposal) {
+      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+    }
+    const { reviews: _reviews, ...data } = proposal;
+    return c.json({ ok: true, data });
+  });
+
+  routes.post("/:id/review", authMiddleware, async (c) => {
     const payload = reviewProposalRequestSchema.parse(await readJsonBody(c));
+    if (!isP05ProposalId(c.req.param("id"))) {
+      let proposal: StoredProposal;
+      try {
+        proposal = await proposals.review({
+          proposalId: c.req.param("id"),
+          actor: proposalActorFor(c.var.actor),
+          decision: payload.decision,
+          ...(payload.reason_md ? { reasonMd: payload.reason_md } : {})
+        });
+      } catch (error) {
+        handleProposalServiceError(error);
+      }
+      const createdAt = nowIso();
+      const attention = genericReviewAttention({
+        proposal,
+        decision: payload.decision,
+        ...(payload.reason_md ? { reason: payload.reason_md } : {}),
+        createdAt
+      });
+      const actor = actorFor(c.var.actor);
+      const event = makeWorkHubEvent({
+        event_id: randomUUID(),
+        type: eventTypes.proposalReviewed,
+        topic: topics.workitem(proposal.work_item_id).topic,
+        ts: new Date(createdAt),
+        actor,
+        work_item_id: proposal.work_item_id,
+        proposal_id: proposal.id,
+        preview_text: payload.decision === "approve" ? `${proposal.title} 已通过确认。` : `打回原因：${payload.reason_md}`,
+        attention,
+        data: {
+          proposal_id: proposal.id,
+          decision: payload.decision,
+          ...(payload.reason_md ? { reason_md: payload.reason_md } : {})
+        }
+      });
+      const resultBase: ProposalReviewResult = {
+        proposal_id: proposal.id,
+        work_item_id: proposal.work_item_id,
+        status: payload.decision === "approve" ? "reviewed" : "revision_requested",
+        decision: payload.decision,
+        attention,
+        event
+      };
+      if (payload.reason_md) {
+        resultBase.reason_md = payload.reason_md;
+      }
+      if (payload.decision === "approve") {
+        resultBase.next_action = {
+          id: "merge",
+          label: "采纳到正式版",
+          method: "POST",
+          href: `/api/proposals/${proposal.id}/merge`
+        };
+      } else if (payload.reason_md) {
+        resultBase.next_agent_context = {
+          work_item_id: proposal.work_item_id,
+          correction: payload.reason_md,
+          reason_fed_back: true
+        };
+      }
+      return c.json({ ok: true, data: proposalReviewResultSchema.parse(resultBase) });
+    }
+
     const createdAt = nowIso();
     const attention = reviewAttention({
       decision: payload.decision,
@@ -226,11 +410,84 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   });
 
   routes.post("/:id/merge", authMiddleware, async (c) => {
+    mergeProposalRequestSchema.parse(await readJsonBody(c));
     if (!isP05ProposalId(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+      let proposal: StoredProposal;
+      try {
+        proposal = await proposals.merge({
+          proposalId: c.req.param("id"),
+          actor: proposalActorFor(c.var.actor)
+        });
+      } catch (error) {
+        handleProposalServiceError(error);
+      }
+      const createdAt = nowIso();
+      const actor = actorFor(c.var.actor);
+      const attention = genericMergeAttention(proposal, createdAt);
+      const mergeSnapshotId = proposal.merge_snapshot_id;
+      if (!mergeSnapshotId) {
+        throw new HTTPException(500, { message: "变更申请缺少合并快照。" });
+      }
+      const proposalMerged = makeWorkHubEvent({
+        event_id: randomUUID(),
+        type: eventTypes.proposalMerged,
+        topic: topics.workitem(proposal.work_item_id).topic,
+        ts: new Date(createdAt),
+        actor,
+        work_item_id: proposal.work_item_id,
+        proposal_id: proposal.id,
+        preview_text: `${proposal.title} 已采纳。`,
+        attention,
+        data: {
+          proposal_id: proposal.id,
+          merge_snapshot_id: mergeSnapshotId,
+          rollback_available: proposal.diff_manifest.rollback.available
+        }
+      });
+      const notification = makeWorkHubEvent({
+        event_id: randomUUID(),
+        type: eventTypes.notificationCreated,
+        topic: topics.user(c.var.currentUser?.id ?? p05GoldPathIds.user).topic,
+        ts: new Date(createdAt),
+        actor: { actor_kind: "system", label: "notification-service" },
+        work_item_id: proposal.work_item_id,
+        proposal_id: proposal.id,
+        preview_text: `${proposal.title} 已采纳。`,
+        attention,
+        data: attention
+      });
+      const auditLogs = [
+        {
+          id: randomUUID(),
+          actor: {
+            actor_kind: actor.actor_kind,
+            ...(actor.actor_user_id ? { actor_user_id: actor.actor_user_id } : {}),
+            ...(actor.label ? { actor_nickname: actor.label } : {})
+          },
+          entity: { entity_type: "proposal", entity_id: proposal.id },
+          action: "proposal.merged",
+          detail_json: {
+            rollback_available: proposal.diff_manifest.rollback.available,
+            changes: proposal.diff_manifest.changes.length
+          },
+          snapshot_id: mergeSnapshotId,
+          created_at: createdAt
+        }
+      ];
+      const data = proposalMergeResultSchema.parse({
+        proposal_id: proposal.id,
+        work_item_id: proposal.work_item_id,
+        status: "merged",
+        merge_snapshot_id: mergeSnapshotId,
+        rollback_available: proposal.diff_manifest.rollback.available,
+        rollback: proposal.diff_manifest.rollback,
+        attention,
+        events: [proposalMerged, notification],
+        audit_logs: auditLogs
+      });
+      return c.json({ ok: true, data });
     }
 
-    mergeProposalRequestSchema.parse(await readJsonBody(c));
     const fixture = getP05GoldPathFixture();
     const createdAt = nowIso();
     const actor = actorFor(c.var.actor);
@@ -312,6 +569,39 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     });
 
     return c.json({ ok: true, data });
+  });
+
+  return routes;
+}
+
+export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = {}) {
+  const routes = new Hono<AuthEnv>();
+  const authSource = deps.auth ?? getDefaultAuthDependencies;
+  const proposals = deps.proposals ?? getDefaultProposalService();
+
+  routes.post("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
+    const payload = createProposalFromManifestRequestSchema.parse(await readJsonBody(c));
+    try {
+      const proposal = await proposals.createFromManifest({
+        workItemId: c.req.param("id"),
+        manifest: payload.manifest,
+        actor: proposalActorFor(c.var.actor),
+        ...(payload.title ? { title: payload.title } : {}),
+        ...(payload.branch_id ? { branchId: payload.branch_id } : {})
+      });
+      const { reviews: _reviews, ...data } = proposal;
+      return c.json({ ok: true, data }, 201);
+    } catch (error) {
+      handleProposalServiceError(error);
+    }
+  });
+
+  routes.get("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
+    const rows = await proposals.listByWorkItem(c.req.param("id"));
+    return c.json({
+      ok: true,
+      data: rows.map(({ reviews: _reviews, ...proposal }) => proposal)
+    });
   });
 
   return routes;

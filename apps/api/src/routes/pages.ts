@@ -19,10 +19,15 @@ import {
   isP05ProposalId,
   isP05WorkItemId
 } from "../pages/gold-path.js";
+import { buildProposalDetailPage } from "../pages/proposals.js";
 import {
   createApprovalService,
   type ApprovalService
 } from "../services/approvals.js";
+import {
+  getDefaultProposalService,
+  type ProposalService
+} from "../services/proposals.js";
 import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
@@ -31,6 +36,7 @@ import {
 export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
+  proposals?: ProposalService;
   queue?: AgentRunQueue;
   allowUnauthenticatedGoldPath?: boolean;
 };
@@ -41,6 +47,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const authSettings = getAuthSettings(resolveAuthDependencies(authSource));
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
+  const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
@@ -70,9 +77,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json({ ok: true, data: getP05GoldPathFixture().workItemDetail });
   });
 
-  routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), (c) => {
+  routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {
     if (!isP05ProposalId(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+      const proposal = await proposals.get(c.req.param("id"));
+      if (!proposal) {
+        throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+      }
+      return c.json({ ok: true, data: buildProposalDetailPage(proposal) });
     }
     return c.json({ ok: true, data: getP05GoldPathFixture().proposalDetail });
   });
