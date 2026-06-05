@@ -243,7 +243,7 @@ owner: workflow
 
 ### 4.1 已落盘（原"待写"障碍已解除）
 
-> 以下篇目磁盘已存在（frontmatter `status: 🚧`，多为页面规划级）。**注意：[README §3 文档树](./README.md) 的状态列仍标 📝，与磁盘不一致——README 索引应同步刷新**（属 README 维护项，非本篇范围）。
+> 以下篇目磁盘已存在，且 [README §3 文档树](./README.md) 已同步为 32 篇文档与当前状态。后续若新增/删除文档，README、本文 §4 与 `docs/workhub` 实际文件数必须一起更新。
 
 | 已落盘文档 | 曾阻塞的开放问题 | 复核结论 |
 |---|---|---|
@@ -259,8 +259,9 @@ owner: workflow
 | 已补文档 | 原阻塞的开放问题 | 当前状态 |
 |---|---|---|
 | [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) | **OQ-7**（三级配额**数值**与合并规则） | 已给 v0 默认值、合并规则、计入口径、API/事件与验收门禁；后续只需按真实数据调参 |
+| [`06-roadmap/functional-requirements.md`](./06-roadmap/functional-requirements.md) | **OQ-6**（L2 首发 file-only 白名单） | 已给 `FR-WORKER-008` 允许/排除清单；后续实现只需按白名单验收 |
 
-> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 三篇全在）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标"程度；开放问题已从"无处落定"收敛为"已给 v0 默认 / 待真实数据标定 / 待产品拍板"。
+> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 五篇全在，含页面概念与 Cuu 概念）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标"程度；开放问题已从"无处落定"收敛为"已给 v0 默认 / 待真实数据标定 / 待产品拍板"。
 
 ---
 
@@ -297,4 +298,4 @@ owner: workflow
 
 ---
 
-*本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：把 P1 阻塞项（OQ-2/3/6 + MG-*）带入 `/workflows:plan`。*
+*本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：把 P1 阻塞项（OQ-2/3 + MG-*）带入 `/workflows:plan`；OQ-6 已转为实现验收项。*

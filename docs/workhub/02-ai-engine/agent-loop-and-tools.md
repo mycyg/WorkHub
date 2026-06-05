@@ -461,18 +461,16 @@ WorkHub 演进:
 
 | 事件 type | 何时 | data(切片) | 现状对应 |
 |---|---|---|---|
-| `run.started` | run 开始 | `{run_id, budget}` | `ai.started`(`:400`) |
-| `step.thinking` | 模型 thinking 块 | `{index, text(截断)}` | `ai.thinking`(`:438`) |
-| `step.text` | 模型可见文本 | `{index, text(截断)}` | `ai.text`(`:440`) |
-| `step.tool_call` | 发起工具调用 | `{index, tool_id, input_preview(截断)}` | `ai.tool_call`(`:444`) |
+| `agent_run.started` | run 开始 | `{run_id, budget}` | `ai.started`(`:400`) |
+| `agent_run.step` | 模型 thinking / text / tool_call 的统一实时投影 | `{index, kind, text_or_tool_preview(截断)}` | `ai.thinking`/`ai.text`/`ai.tool_call`(`:438/:440/:444`) |
 | `step.tool_result` | 工具回执 | `{index, tool_id, ok, content_preview}` | (现状未单发,新增) |
 | `step.snapshot` | 打了快照 | `{index, snapshot_id}` | (新增,§7) |
-| `approval.requested` | ask 阻塞 | `{tool_id, input, reason}` | (新增,§2.5) |
-| `run.compacting` | 触发压缩 | `{index, reason}` | (新增,§8.2) |
-| `run.escalated` | 升级 | `{trigger, handoff_summary}` | (派生自 `ai.failed`) |
-| `run.delivered` | 完成交付 | `{final_notes, file_count}` | `ai.done`+`requirement.updated`(`:235`) |
-| `run.failed` | 失败 | `{reason, notes}` | `ai.failed`(`:259`) |
-| `run.done` | run 收尾(成败均发) | `{run_id, steps}` | `ai.done`(`:507`,`finally` 必发) |
+| `permission.ask` | ask 阻塞 | `{approval_id, tool_id, summary, ttl}` | (新增,§2.5) |
+| `agent_run.compacting` | 触发压缩 | `{index, reason}` | (新增,§8.2) |
+| `agent_run.escalated` | 升级 | `{trigger, headline, handoff_ref}` | (派生自 `ai.failed`) |
+| `proposal.opened` | 完成交付并生成提议 | `{proposal_id, manifest_ref}` | `ai.done`+`requirement.updated`(`:235`) |
+| `agent_run.failed` | 失败 | `{reason, notes}` | `ai.failed`(`:259`) |
+| `agent_run.step` (`kind="done"`) | run 收尾投影(用于 reconcile) | `{run_id, steps}` | `ai.done`(`:507`,`finally` 必发) |
 
 > **截断纪律**:现状把 thinking/text/input 预览截到 200 字符再 publish(`:438/440/444`),避免长内容压垮 SSE 队列。WorkHub 保持:**事件载荷只放预览**,完整 trace 落 `AgentStep` 表,前端按需拉取。
 
@@ -535,7 +533,7 @@ approaching_context_window(run):  # 闸门(§4.3)
 compact_context(run):
     summary = summarize(早期 step 的 messages)   # 保留近 K 步原文 + 早期摘要
     messages = [system-ctx, summary, *recent_k_steps]
-    emit run:<id> run.compacting
+    emit run:<id> agent_run.compacting
     # 压缩后回 running,继续下一步
 ```
 

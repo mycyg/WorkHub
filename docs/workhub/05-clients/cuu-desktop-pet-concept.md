@@ -176,14 +176,14 @@ docs/workhub/05-clients/assets/cuu/
 
 | WorkHub 事件/状态 | Cuu 状态 | UI 呈现 | 用户动作 |
 |---|---|---|---|
-| `agent.run.started` / `ai.thinking` | thinking | Cuu 思考/转圈 | 可点开看执行步骤 |
+| `agent_run.started` / `agent_run.step` | thinking | Cuu 思考/转圈 | 可点开看执行步骤 |
 | `permission.ask` | asking approval | Cuu 轻敲审批气泡 | 通过 / 打回 / 委派 / 永远允许 |
-| `proposal.ready` | carrying document | Cuu 抱文件出现 | 查看变更包 |
+| `proposal.opened` | carrying document | Cuu 抱文件出现 | 查看变更包 |
 | `knowledge.evidence.ready` | searching evidence | Cuu 放大镜/证据气泡 | 打开证据 / 用于当前任务 |
 | `sync.progress` | syncing files | Cuu 同步动作 | 查看同步队列 |
 | `sync.conflict` | worried / sync conflict | Cuu 紧张 + 冲突卡 | 应用 AI 合并 / 保留本地 / 保留云端 |
 | `revision.requested` | revision requested | Cuu 委屈/拿笔 | 查看打回原因 |
-| `work.completed` | celebrating | Cuu 庆祝 | 查看交付物 |
+| `proposal.merged` | celebrating | Cuu 庆祝 | 查看交付物 |
 | `sse-status:disconnected` | offline | Cuu 灰态/重连 | 打开诊断 |
 
 ## 10. Tauri 部署与运行时边界

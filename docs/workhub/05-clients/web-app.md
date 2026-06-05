@@ -750,7 +750,7 @@ shared/src/components/
 ### 9.4 数据与事件流
 
 - 页面加载仍以 REST 为真相：`GET project/workitem/proposal/drive/meeting`。
-- SSE 只作为增量提示：收到 `proposal.ready`、`permission.ask`、`meeting.insight.ready`、`drive.changed` 后重拉对应 REST。
+- SSE 只作为增量提示：收到 `proposal.opened`、`permission.ask`、`meeting.insight.ready`、`drive.changed` 后重拉对应 REST。
 - Cuu 气泡与 Web 页面共享同一事件来源，但显示不同：
   - Web：完整页面、完整列表、完整审核记录。
   - Cuu：一张轻卡、一个问题、三个选项、少量证据。

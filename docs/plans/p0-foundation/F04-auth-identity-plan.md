@@ -189,6 +189,7 @@ spec: ../../workhub/01-architecture/security-and-permissions.md
 | 类别 | 目标路径 | 必须产物 | 审计门禁 |
 |---|---|---|---|
 | middleware | `apps/api/src/middleware/auth.ts` | `currentUser`, `optionalCurrentUser`, `currentClientDevice`, `requireStreamUser` | token 优先于 cookie 回归 |
+| identity schema | `packages/db/src/schema/identity.ts` 或 `packages/db/src/schema/users.ts`, `packages/db/src/schema/client-devices.ts` | users/client_devices/session identity 字段 | cookie/device token 字段不散落在 route |
 | repositories | `packages/db/src/repositories/users.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token 查找、软删过滤、revoked 过滤 | 软删用户视为不存在 |
 | contracts | `packages/contracts/src/auth.ts`, `packages/contracts/src/identity.ts` | `Identity`, `ClientDevice`, `Actor` DTO | AI actor 不进入 cookie 路径 |
 | config | `packages/config/src/auth.ts` | cookie secret/secure/admin claim/touch device 开关 | 空 admin secret fail-closed |

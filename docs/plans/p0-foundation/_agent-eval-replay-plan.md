@@ -88,7 +88,7 @@ type ReplayStepVM = {
 |---|---|---|
 | `clarify_option_first_basic` | 澄清不退化为聊天 | 返回 `QuestionCard` 且有推荐选项 |
 | `weekly_report_manifest_doc` | 文档交付物变更包 | 生成 doc/markdown target + evidence + rollback |
-| `ppt_change_manifest` | PPT 非代码 PR | target_kind=`presentation`, preview/download refs |
+| `ppt_change_manifest` | PPT 非代码 PR | target_kind=`slide_deck`, preview/download refs |
 | `xlsx_change_manifest` | 表格变更 | target_kind=`spreadsheet`, checks 包含公式/行列摘要 |
 | `image_asset_manifest` | 图片资产变更 | target_kind=`image`, preview/sha/risk |
 | `folder_reorg_manifest` | 文件夹结构变更 | target_kind=`folder`, affected paths |
@@ -96,8 +96,8 @@ type ReplayStepVM = {
 | `low_confidence_escalation` | 低置信升级 | `agent_run.escalated` + `AttentionItem` |
 | `permission_required_tool` | 权限 ask gate | 生成 `permission.ask`,不执行副作用 |
 | `snapshot_fail_closed` | 快照失败红线 | side-effect 被拒绝,Replay 说明原因 |
-| `budget_threshold_warning` | 成本接近阈值 | 触发 `budget.warning`,Replay footer 显示 cost summary |
-| `budget_exhausted_handoff` | 成本硬上限耗尽 | `ApiErr.code=budget_exhausted` 或当前 run 结构化交接 |
+| `budget_threshold_warning` | 成本接近阈值 | provider fixture 写 `UsageRecord`→`CostLedgerEntry`;触发 `budget.warning`;Replay footer 显示当前 run cost summary |
+| `budget_exhausted_handoff` | 成本硬上限耗尽 | `BudgetDecision.allowed=false` 时返回 `ApiErr.code=budget_exhausted`;运行中耗尽时产结构化交接 |
 | `revision_feedback_loop` | 打回理由回灌 | 下一轮 context 包含用户理由 |
 | `sync_conflict_choice` | 冲突调解 | 返回 `ConflictChoice[]` + recommended choice |
 
@@ -198,6 +198,7 @@ pnpm eval:report
 - Replay endpoint fixture pass = 100%
 - Manifest target coverage >= docx/pptx/xlsx/image/folder
 - CuuState mapping coverage >= `permission.ask/proposal.opened/knowledge.evidence.ready/sync.conflict`
+- Budget threshold fixture pass = 100%;`retry`/`compact` usage 必须计入 run 成本,`nightly eval` 必须进 `scope.kind="eval"` 而非用户/team 配额
 
 ---
 

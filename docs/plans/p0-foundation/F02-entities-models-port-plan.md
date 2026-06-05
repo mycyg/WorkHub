@@ -128,7 +128,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 | `AgentRun` | §7.1 | `work_item_id` FK CASCADE、`branch_id?`;`mode`、`actor`、`status`、`model`、`turns_used`、`max_turns`(必填)、`token_in/out`、`cost_estimate?`、`handoff_md?` |
 | `AgentStep` | §7.2 | `agent_run_id` FK CASCADE;`step_no`、`phase`、`tool_name?`、`input_json` JSONB、`output_excerpt`、`control_signal?`、`snapshot_id?`;`UniqueConstraint(agent_run_id, step_no)` |
 | `ConfidenceRecord` | §7.3 | `work_item_id`/`proposal_id?`/`agent_run_id?`;`confidence_score`/`risk_score` float、`grade`/`risk_level`(**`low|medium|high`**)、`verdict`、`signals_json` JSONB、`rationale_md` |
-| `EscalationEvent` | §7.4 | `work_item_id`/`agent_run_id?`/`confidence_id?`;`trigger`(枚举 `unqualified\|user_unsatisfied\|user_forbidden\|doom_loop\|budget_exhausted`,**以 data-model §7.4 为准**;api-contract §2.7 写作 `user_rejected` 属表述漂移,API 面对等由 F11 收敛到本枚举)、`reason_md`、`handoff_json` JSONB、`suggested_lead_user_id?`、`resolved_at?` |
+| `EscalationEvent` | §7.4 | `work_item_id`/`agent_run_id?`/`confidence_id?`;`trigger`(枚举 `unqualified\|user_unsatisfied\|user_forbidden\|doom_loop\|budget_exhausted`,**以 data-model §7.4 与 api-contract §2.7 为准**)、`reason_md`、`handoff_json` JSONB、`suggested_lead_user_id?`、`resolved_at?` |
 | `Snapshot` | §7.5 | `work_item_id`/`branch_id?`;`kind=pre_step|merge|manual`、`ref`、`content_sha256?`、`created_by_kind`、`reverted_at?`(沿用 `undone_at` 范式) |
 | `PermissionPolicy` | §8.1 | `scope_kind`/`scope_id`、`action_pattern`、`effect=allow|deny|ask`、`priority`、`learned_from_session`、`org_id?`/`workspace_id?`、软删 |
 | `ApprovalRequest` | §8.2 | `work_item_id?`/`agent_run_id?`;`action_pattern`、`payload_json` JSONB、`status`、`routed_to_user_id?`、`decided_by_user_id?`、`decision_reason_md?`、`delegated_to_user_id?`、`sla_due_at?` index |
@@ -144,7 +144,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 - [ ] **S3 `Requirement`→`WorkItem` 改名**:类/表/状态 default 改名;新增 §契约的 AI-native 字段;`version_id_col` 配置。
 - [ ] **S4 全仓 FK 改名(`requirement_id`→`work_item_id`)**:`models.py` 内 19 处 FK + 关系 `back_populates`/`foreign_keys` 同步;`uq_*` 约束名改;**产出"跨文件 317 处改名清单"交 F11**(routers/services 的属性引用)。
 - [ ] **S5 NEW 实体(15 个)**:按 NEW 表分模块声明;FK 互引按依赖序(`Org`→`Workspace`→…→`Branch`/`AgentRun`→`Proposal`/`ConfidenceRecord`→`EscalationEvent`/`Snapshot`);唯一约束与 index 意图标注。
-- [ ] **S6 枚举/常量单一真相**:导出 `WORK_ITEM_STATUSES`、`ALLOWED_TRANSITIONS`(自 data-model §5 全转移表)、`CONFIDENCE_GRADES=("low","medium","high")`、`RISK_LEVELS`、`VERDICTS`、`ESCALATION_TRIGGERS=("unqualified","user_unsatisfied","user_forbidden","doom_loop","budget_exhausted")`(以 data-model §7.4 为准,消灭 api-contract §2.7 的 `user_rejected` 漂移);**统一 `mid`→`medium`**;同步 `shared/src/design/status-vocab.ts` 人话标签(交 F11,本组件出枚举清单)。
+- [ ] **S6 枚举/常量单一真相**:导出 `WORK_ITEM_STATUSES`、`ALLOWED_TRANSITIONS`(自 data-model §5 全转移表)、`CONFIDENCE_GRADES=("low","medium","high")`、`RISK_LEVELS`、`VERDICTS`、`ESCALATION_TRIGGERS=("unqualified","user_unsatisfied","user_forbidden","doom_loop","budget_exhausted")`(以 data-model §7.4 与 api-contract §2.7 为准);**统一 `mid`→`medium`**;同步 `shared/src/design/status-vocab.ts` 人话标签(交 F11,本组件出枚举清单)。
 - [ ] **S7 Pydantic schema 字段名对齐**:`app/schemas.py` 内 `requirement_id`→`work_item_id`(16 处)、`estimate_confidence` 正则保持 `low|medium|high`(已对,`schemas.py:227/250`)、新实体读写 schema 骨架(详细 API schema 属 F11)。
 - [ ] **S8 `DeliverableChangeManifest` 契约接入**:`Proposal.diff_manifest` 的 ORM/Pydantic 类型标为 JSONB/dict,并在 schema docstring / OpenAPI extra 中引用 `_experience-deliverable-contracts.md` §3;不新增表,但交 F8/F10/F11 一份 fixture 清单(`docx/pptx/xlsx/image/folder/structured_record`)。
 - [ ] **S9 自检 gate**:① `import app.models` 全图加载无错;② `Base.metadata.sorted_tables` 含全部新旧表且拓扑可建(FK 无悬空);③ 在临时 PG 上 `Base.metadata.create_all()` 冒烟建表成功(仅本组件自检,正式建表走 F3 Alembic);④ grep 确认 `models.py`/`schemas.py` 内无残留 `requirement_id`。
@@ -175,7 +175,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 ### 枚举一致性(消灭漂移,data-model §7.3 ⚠️)
 
 `ConfidenceRecord.grade` / `risk_level` 与 `WorkItem.estimate_confidence` **统一 `low|medium|high`**;`schemas.py:227/250` 现有正则 `^(low|medium|high)$` 为基准,新实体对齐,**禁用 `mid`**。
-`EscalationEvent.trigger` 单一真相 = `unqualified|user_unsatisfied|user_forbidden|doom_loop|budget_exhausted`(data-model §7.4);api-contract §2.7 的 `user_rejected` 与 F08 文档措辞统一收敛到 `user_unsatisfied`,API 面由 F11 对齐(本组件导出 `ESCALATION_TRIGGERS` 常量为消费方基准)。
+`EscalationEvent.trigger` 单一真相 = `unqualified|user_unsatisfied|user_forbidden|doom_loop|budget_exhausted`(data-model §7.4 + api-contract §2.7);本组件导出 `ESCALATION_TRIGGERS` 常量为消费方基准,页面/route 不得再引入 `user_rejected` 同义项。
 
 ### Alembic 契约(交 F3,本组件不写迁移)
 

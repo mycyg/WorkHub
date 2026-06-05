@@ -113,9 +113,9 @@ class EscalationEvent:
 
 | `trigger` | 中文 | 对应现有零件 | 默认 `risk_tier` 影响 |
 |---|---|---|---|
-| `quality_failed` | 不合格 | `auto_agent.py:544` `llm_review` 判 `meets_requirement=false`（编排处 `auto_agent.py:651`） | 不变（取产出本身风险） |
-| `user_rejected` | 用户不满意（打回） | `RevisionRequest`（`models.py:535`，`reason_md` 必填） | 不变 |
-| `human_reserved` | 用户明确不让 AI 干 | `HumanOnlyPolicy` 三级开关（work_item/project/user，上游 §2.3） | 通常人来做，简报偏"派活" |
+| `unqualified` | 不合格 | `auto_agent.py:544` `llm_review` 判 `meets_requirement=false`（编排处 `auto_agent.py:651`） | 不变（取产出本身风险） |
+| `user_unsatisfied` | 用户不满意（打回） | `RevisionRequest`（`models.py:535`，`reason_md` 必填） | 由早期 `user_rejected` 同义项收敛而来 |
+| `user_forbidden` | 用户明确不让 AI 干 | `HumanOnlyPolicy` 三级开关（work_item/project/user，上游 §2.3） | 通常人来做，简报偏"派活" |
 | `doom_loop` | 卡住（连续 N 次相同动作） | 工人循环检测（[`agent-loop-and-tools.md`](./agent-loop-and-tools.md) 命中即 `trigger=doom_loop`） | 提一档 |
 | `budget_exhausted` | 超预算 | `MAX_TURNS=15` / `TOTAL_TIMEOUT_DEFAULT=300s`（`auto_agent.py:36-37`） | 不变 |
 

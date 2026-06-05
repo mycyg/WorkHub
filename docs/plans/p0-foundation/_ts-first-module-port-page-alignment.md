@@ -145,13 +145,16 @@ workers/
 | `approvals` | `GET /api/approvals` | `routes/approvals.ts` | `ApprovalCenterVM` |
 | `proposals` | `GET /api/proposals/:id` | `routes/proposals.ts` | `DeliverableChangeManifest` |
 | `cost` | `GET /api/cost/usage` | `routes/cost.ts` | `CostSummaryVM`（内含 `BudgetUsage[]`）, `BudgetNotice` |
+| `cost` | `GET /api/cost/policies`, `PUT /api/cost/policies/:scope/:id` | `routes/cost.ts` | `BudgetPolicy`, `BudgetDecision` audit ref |
 | `knowledge` | `POST /api/knowledge/search` | `routes/knowledge.ts` | `EvidenceRef`, `EvidenceBubble` |
 | `drive` | `GET /api/drive/items` | `routes/drive.ts` | `DriveItem`, `DeliverableTarget` |
 | `meetings` | `GET /api/meetings/:id` | `routes/meetings.ts` | `EvidenceRef`, insight draft |
 | `sync` | `GET /api/sync/conflicts` | `routes/sync.ts` | `ConflictChoice` |
 | `notifications` | `GET /api/notifications` | `routes/notifications.ts` | `Notification`, `AttentionItem` |
 | `push` | `GET /api/push/stream/me` | `routes/push.ts` | `WorkHubEvent<T>` SSE |
-| `pages` | `GET /api/pages/attention` | `apps/api/pages/*` | page view models |
+| `pages` | `GET /api/pages/attention` | `apps/api/pages/attention.ts` | `AttentionHomeVM` |
+| `pages` | `GET /api/pages/cost` | `apps/api/pages/cost.ts` | `CostDashboardVM` |
+| `pages` | `GET /api/agent-runs/:id/replay` | `apps/api/pages/replay.ts` | `ReplayTraceVM` |
 
 ### 4.2 REST envelope
 
@@ -237,6 +240,24 @@ type ProposalDetailVM = {
   comments: CommentVM[];
 };
 ```
+
+### 5.3 字段级落点矩阵
+
+| VM / payload | 字段 | 端点 / 事件 | TS owner | Web 落点 | Rust / Cuu 落点 |
+|---|---|---|---|---|---|
+| `ReplayTraceVM` | `steps[]`, `evidence_refs[]`, `snapshots[]`, `cost` | `GET /api/agent-runs/:id/replay` | `packages/contracts/src/replay.ts`, `apps/api/src/pages/replay.ts` | Replay Work | deep-link 打开;Cuu 不塞完整 trace |
+| `ReplayTraceVM.cost` | `input_tokens`, `output_tokens`, `estimated_cost`, `latency_ms` | `GET /api/agent-runs/:id/replay` | `packages/cost` + `packages/audit` facts | Replay footer | Rust footer 只显示当前 run 摘要 |
+| `CostSummaryVM` | `me`, `team`, `scopes`, `active_notices` | `GET /api/cost/usage` | `packages/contracts/src/cost.ts`, `packages/cost/src/usage.ts` | Attention banner / compact budget strip | OneThing budget strip / Cuu 轻气泡 |
+| `BudgetNotice` | `code`, `severity`, `message`, `scope`, `usage_ratio`, `recommended_action`, `options` | `budget.warning`, `budget.exhausted` | `packages/contracts/src/cost.ts`, `packages/events` | Attention item / Cost Dashboard warning | `worried` 或 `asking_approval`;必须点选操作 |
+| `CostDashboardVM` | `total_cost_cny`, `token_in`, `token_out`, `trend`, `model_breakdown` | `GET /api/pages/cost` | `apps/api/src/pages/cost.ts` | Cost Dashboard 概览/趋势/模型图 | 不在 Cuu 展开 |
+| `CostDashboardVM` | `by_user`, `by_team`, `by_workitem`, `budget`, `notices`, `top_exhaustion_risks` | `GET /api/pages/cost` | `apps/api/src/pages/cost.ts`, `packages/permissions` | Cost Dashboard 排行/预算/钻取 | Rust 只消费当前 actor 切片;普通用户不看全员榜 |
+
+字段落点规则:
+
+- Page VM assembler 只聚合 contracts DTO,不直接把 Drizzle row 透给页面。
+- `BudgetNotice.options` 是端侧动作来源;Cuu/Rust 不要求用户输入预算处理命令。
+- `ReplayTraceVM` 的 raw 内容必须走单独 raw endpoint 并按权限脱敏,不得塞进 Cuu 气泡。
+- `CostDashboardVM.by_user` 仅 admin / owner 返回全量;普通用户返回空数组或个人切片,由服务端裁定。
 
 ---
 

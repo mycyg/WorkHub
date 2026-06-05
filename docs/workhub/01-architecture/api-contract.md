@@ -158,11 +158,11 @@ owner: workflow
 | 方法 路径 | 入参 | 出参 | 鉴权 |
 |---|---|---|---|
 | **[新]** `GET /api/workitems/{id}/escalations` | — | `EscalationEvent[]`(触发器、原因、交接件、目标人) | 可见性门 |
-| **[新]** `POST /api/workitems/{id}/escalations` | `{trigger: "unqualified"\|"user_rejected"\|"user_forbidden"\|"doom_loop"\|"budget_exhausted", handoff}` | `EscalationOut`(切 `pm_mode`) | 系统/reviewer |
+| **[新]** `POST /api/workitems/{id}/escalations` | `{trigger: "unqualified"\|"user_unsatisfied"\|"user_forbidden"\|"doom_loop"\|"budget_exhausted", handoff}` | `EscalationOut`(切 `pm_mode`) | 系统/reviewer |
 | **[新]** `GET /api/workitems/{id}/confidence` | — | `ConfidenceRecord`(置信度+风险+分级裁决+依据,**人话呈现**) | 可见性门 |
 | **[新]** `POST /api/workitems/{id}/hold` | `{level: "workitem"\|"project"\|"user", reason?}` | `{ok}`("人工保留"开关,FR-ESC-005) | 角色门 |
 
-**三触发器映射真实零件**(PRD §8.2):`unqualified` ← `auto_agent` 的 `llm_review` 判分不过(`services/auto_agent.py:544`,`{"meets_requirement": bool, "reason"}`;系统提示词 `REVIEW_SYSTEM` 在 `:535`);`user_rejected` ← `request_revision`(`deliveries.py:267`);`user_forbidden` ← `hold` 开关。算法与阈值见 [`../02-ai-engine/confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md)——本篇只定契约形状,不重复算法。
+**三触发器映射真实零件**(PRD §8.2):`unqualified` ← `auto_agent` 的 `llm_review` 判分不过(`services/auto_agent.py:544`,`{"meets_requirement": bool, "reason"}`;系统提示词 `REVIEW_SYSTEM` 在 `:535`);`user_unsatisfied` ← `request_revision`(`deliveries.py:267`,用户打回/不满意);`user_forbidden` ← `hold` 开关。算法与阈值见 [`../02-ai-engine/confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md)——本篇只定契约形状,不重复算法。
 
 ### 2.8 permission & approval — 分层策略 + 审批阻塞 **[新,借鉴 opencode]**
 
@@ -340,12 +340,16 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 | 事件 type | topic | payload 概要 |
 |---|---|---|
-| `agent_run.step` | `session:{id}` / `workitem:{id}` | `{run_id, step, action, tool?}`(对外化 `ai.*` trace) |
+| `agent_run.started` | `run:{id}` / `workitem:{id}` | `{run_id, budget}`(对外化 `ai.started`) |
+| `agent_run.step` | `run:{id}` / `workitem:{id}` | `{run_id, step, action, tool?}`(对外化 `ai.*` trace) |
 | `confidence.assessed` | `workitem:{id}` | `{run_id, tier, headline}`(人话呈现,不暴露数值) |
-| `escalation.created` | `workitem:{id}` + 目标人 `user:{id}` | `{trigger, headline, handoff_ref}` |
+| `agent_run.escalated` | `workitem:{id}` + 目标人 `user:{id}` | `{trigger, headline, handoff_ref}` |
 | `permission.ask` | `session:{id}` + 被路由人 `user:{id}` | `{approval_id, tool, summary, ttl}`(阻塞原语外显) |
 | `proposal.opened` / `proposal.reviewed` / `proposal.merged` | `workitem:{id}` | `{proposal_id, status, by?}` |
-| `conflict.detected` | `workitem:{id}` | `{proposal_id, suggestion_ref}`(AI 调解) |
+| `sync.conflict` | `workitem:{id}` / `user:{id}` | `{conflict_id, choices, recommended_choice}`(AI 调解候选) |
+| `usage.recorded` | `run:{id}` / admin metrics | `{usage_record_id, run_id?, workitem_id?, provider, model, input_tokens, output_tokens, estimated_cost_cny, source}` |
+| `budget.warning` | `user:{id}` + admin metrics | `BudgetNotice`(预算接近阈值;Cuu/Web 轻提示) |
+| `budget.exhausted` | `user:{id}` + admin metrics | `BudgetNotice`(硬配额耗尽;阻断新 run 或当前 run 交接) |
 
 ### 5.3 Topic 隔离与隐私(NFR-08,沿用真实修复)
 
@@ -355,6 +359,8 @@ topic 命名空间与可订阅性如下——**隔离是安全约束,不是性�
 |---|---|---|
 | `all` | 任意已认证用户 | 只承载**公共**事件(工作项就绪/状态);**绝不**放私有数据 |
 | `req:{id}` / `workitem:{id}` | 通过 `can_view_requirement_record` 的人 | `/stream/req/{id}` 在订阅前做可见性检查(`push.py:84`),私有(draft/clarifying/summary_ready)他人不可订 |
+| `run:{id}` **[新]** | run owner、可见 WorkItem 的 reviewer/owner | AgentRun 细节、成本、工具 trace 均可能含私有内容;订阅前必须经 run→workitem 可见性门 |
+| `proposal:{id}` **[新]** | 可见该 Proposal 的 reviewer/branch owner/WorkItem viewer | 只承载该提议的 reviewed/merged/comment 增量;完整 manifest 仍 REST 拉取 |
 | `user:{id}` | **仅 cookie/令牌解析出的本人** | topic 由 `user.id` 派生而非路径参数(`push.py:99` 注释:客户端无法请求他人流) |
 | `job:{id}` | 该 job 的查询者 | `job.updated` **只**发 `job:{id}` + owner `user:{id}`,**绝不发 `all`**——否则泄漏 `result_ref`(=requirement_id)/进度给所有人(`jobs.py:71` 注释,与通知泄漏同类) |
 | `session:{id}` **[新]** | session owner(+ 被路由的审批人) | 桌宠/web 会话事件;`permission.ask` 额外发给被路由审批人的 `user:{id}` |

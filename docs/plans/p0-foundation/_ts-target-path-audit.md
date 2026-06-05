@@ -33,7 +33,7 @@ depends:
 | F01 Repo/config | `app/config.py`, root package files | `package.json`, `pnpm-workspace.yaml`, `packages/config`, `apps/api`, `apps/web`, `apps/desktop-webview` | Node 22, pnpm workspace, env schema, docker compose | `pnpm typecheck`, env parse 不触碰 `/srv/yqgl` |
 | F02 Entities/models | `app/models.py` | `packages/db/src/schema/*`, `packages/contracts/src/domain/*` | Drizzle tables, Zod DTO, relation helpers | 新实体不得只存在 route local type |
 | F03 PG/migrations | `app/db.py`, `schema_migrations.py` | `packages/db`, `drizzle.config.ts`, `migrations/` | 首迁移, drift check, seed fixture | 无 runtime ALTER/create_all |
-| F04 Auth/identity | `app/auth.py` | `apps/api/src/middleware/auth.ts`, `packages/contracts/src/auth.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token middleware | token-beats-cookie 行为回归 |
+| F04 Auth/identity | `app/auth.py` | `apps/api/src/middleware/auth.ts`, `packages/contracts/src/auth.ts`, `packages/db/src/schema/identity.ts`, `packages/db/src/repositories/devices.ts` | cookie/device token middleware + identity schema | token-beats-cookie 行为回归 |
 | F05 Event broker | `push_bus.py`, `push.py`, `presence.py` | `packages/events`, `apps/api/src/sse`, `apps/api/src/broker`, `packages/contracts/src/events.ts` | WorkHubEvent helper, Redis pub/sub, SSE writer | 不手写事件名;订阅边界鉴权 |
 | F06 Permission | `permissions.py` | `packages/permissions`, `apps/api/src/services/approvals.ts`, `packages/contracts/src/approval.ts` | policy evaluator, ApprovalRequest, AttentionItem UI slice | admin 读/写/设备不对称回归 |
 | F07 Provider registry | 7 处 `AsyncAnthropic` | `packages/agent/src/providers`, `packages/config/src/providers.ts`, `packages/cost` | provider registry, usage sink, BudgetDecision 输入 | grep 无裸 SDK client in services/tools |

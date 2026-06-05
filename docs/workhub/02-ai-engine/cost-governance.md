@@ -13,6 +13,18 @@ owner: workflow
 
 ---
 
+## 0. 参考概念图
+
+P-COST 不新增独立概念图，施工时引用现有三张横切图来避免端侧各自解释成本状态：
+
+| 概念图 | 用途 |
+|---|---|
+| ![Endpoint Page Cuu Alignment](../05-clients/assets/shared/endpoint-page-cuu-alignment.png) | 定义 `GET /api/cost/usage`、`GET /api/pages/cost`、`budget.warning`、`budget.exhausted` 如何落到 Web 页面、Rust 主窗和 Cuu 气泡。 |
+| ![TS-first Runtime](../05-clients/assets/shared/ts-first-runtime-concept.png) | 定义 `packages/cost`、provider registry、AgentLoop、Page VM 的 TS-first 责任边界。 |
+| ![Web Operations Pages Atlas](../05-clients/assets/web/web-operations-pages-atlas.png) | 定义成本看板属于管理/治理入口，而不是普通用户默认首页或重看板。 |
+
+---
+
 ## 1. 治理目标
 
 | 目标 | 决策 |
