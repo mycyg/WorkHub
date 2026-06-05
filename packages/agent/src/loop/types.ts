@@ -1,5 +1,5 @@
 import type { RunBudget } from "@workhub/cost";
-import type { EventType } from "@workhub/contracts";
+import type { DeliverableChangeManifest, EventType, EvidenceRef } from "@workhub/contracts";
 import type {
   SandboxBudget,
   SnapshotHook,
@@ -68,6 +68,19 @@ export type AgentLoopRecorder = {
   recordStep: (step: AgentLoopStep) => Promise<void> | void;
 };
 
+export type AgentLoopManifestOptions = {
+  title?: string;
+  proposalId?: string;
+  branchId?: string;
+  snapshotId?: string;
+  branchHeadRef?: string;
+  author?: DeliverableChangeManifest["author"];
+  evidenceRefs?: EvidenceRef[];
+  createdAt?: Date | string;
+  downloadHrefForPath?: (relativePath: string) => string;
+  previewHrefForPath?: (relativePath: string) => string | undefined;
+};
+
 export type AgentLoopEvent = {
   type: EventType;
   previewText?: string;
@@ -90,6 +103,7 @@ export type AgentLoopInput = {
   maxTokensPerStep?: number;
   requireDeliverable?: boolean;
   snapshot?: SnapshotHook;
+  manifest?: AgentLoopManifestOptions;
   recorder?: AgentLoopRecorder;
   emit?: (event: AgentLoopEvent) => Promise<void> | void;
   now?: () => Date;
@@ -103,4 +117,5 @@ export type AgentLoopResult = {
   steps: AgentLoopStep[];
   finalText?: string;
   handoff?: StructuredHandoff;
+  manifest?: DeliverableChangeManifest;
 };

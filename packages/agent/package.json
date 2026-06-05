@@ -19,6 +19,10 @@
     "./loop": {
       "types": "./src/loop/index.ts",
       "import": "./src/loop/index.ts"
+    },
+    "./deliverables": {
+      "types": "./src/deliverables/index.ts",
+      "import": "./src/deliverables/index.ts"
     }
   },
   "scripts": {

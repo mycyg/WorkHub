@@ -16,6 +16,7 @@
       "@workhub/ui/gold-path": ["packages/ui/src/gold-path/index.ts"],
       "@workhub/agent": ["packages/agent/src/index.ts"],
       "@workhub/agent/loop": ["packages/agent/src/loop/index.ts"],
+      "@workhub/agent/deliverables": ["packages/agent/src/deliverables/index.ts"],
       "@workhub/agent/providers": ["packages/agent/src/providers/index.ts"],
       "@workhub/tools": ["packages/tools/src/index.ts"],
       "@workhub/db": ["packages/db/src/index.ts"],

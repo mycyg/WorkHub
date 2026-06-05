@@ -114,6 +114,10 @@ test("AgentLoop completes when the model stops after writing outputs", async () 
   assert.equal(result.steps.length, 2);
   assert.equal(result.usage.totalTokens, 40);
   assert.equal(result.steps[0]?.snapshotId, "60000000-0000-4000-8000-000000000001");
+  assert.equal(result.manifest?.work_item_id, "50000000-0000-4000-8000-000000000001");
+  assert.equal(result.manifest?.base.snapshot_id, "60000000-0000-4000-8000-000000000001");
+  assert.equal(result.manifest?.changes.some((change) => change.target_ref.path === "/outputs/result.md"), true);
+  assert.equal(result.manifest?.checks.some((check) => check.id === "revert_available" && check.status === "passed"), true);
 });
 
 test("AgentLoop escalates repeated identical tool calls as a doom loop", async () => {

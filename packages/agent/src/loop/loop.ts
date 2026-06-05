@@ -3,6 +3,10 @@ import path from "node:path";
 
 import { eventTypes } from "@workhub/contracts";
 
+import {
+  buildDeliverableChangeManifestFromOutputs,
+  type BuildDeliverableChangeManifestInput
+} from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "./control.js";
 import { buildStructuredHandoff } from "./handoff.js";
@@ -182,6 +186,7 @@ function terminalResult(input: {
   steps: AgentLoopStep[];
   finalText?: string;
   handoff?: StructuredHandoff;
+  manifest?: AgentLoopResult["manifest"];
 }): AgentLoopResult {
   const result: AgentLoopResult = {
     status: input.status,
@@ -196,7 +201,25 @@ function terminalResult(input: {
   if (input.handoff) {
     result.handoff = input.handoff;
   }
+  if (input.manifest) {
+    result.manifest = input.manifest;
+  }
   return result;
+}
+
+function latestSnapshotId(steps: AgentLoopStep[]) {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index];
+    if (step?.snapshotId) {
+      return step.snapshotId;
+    }
+  }
+  return undefined;
+}
+
+function titleFromFinalText(finalText: string) {
+  const title = finalText.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim();
+  return title ? title.slice(0, 80) : "AgentRun 交付物变更草案";
 }
 
 export class AgentLoop {
@@ -418,13 +441,52 @@ export class AgentLoop {
         });
       }
 
+      let manifest: AgentLoopResult["manifest"];
+      if (requireDeliverable) {
+        const manifestInput: BuildDeliverableChangeManifestInput = {
+          workdir: input.workdir,
+          workItemId: input.workItemId,
+          title: input.manifest?.title ?? titleFromFinalText(finalText)
+        };
+        const manifestSnapshotId = input.manifest?.snapshotId ?? latestSnapshotId(steps);
+        if (input.manifest?.proposalId) {
+          manifestInput.proposalId = input.manifest.proposalId;
+        }
+        if (input.manifest?.branchId) {
+          manifestInput.branchId = input.manifest.branchId;
+        }
+        if (manifestSnapshotId) {
+          manifestInput.snapshotId = manifestSnapshotId;
+        }
+        if (input.manifest?.branchHeadRef) {
+          manifestInput.branchHeadRef = input.manifest.branchHeadRef;
+        }
+        if (input.manifest?.author) {
+          manifestInput.author = input.manifest.author;
+        }
+        if (input.manifest?.evidenceRefs) {
+          manifestInput.evidenceRefs = input.manifest.evidenceRefs;
+        }
+        if (input.manifest?.createdAt) {
+          manifestInput.createdAt = input.manifest.createdAt;
+        }
+        if (input.manifest?.downloadHrefForPath) {
+          manifestInput.downloadHrefForPath = input.manifest.downloadHrefForPath;
+        }
+        if (input.manifest?.previewHrefForPath) {
+          manifestInput.previewHrefForPath = input.manifest.previewHrefForPath;
+        }
+        manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
+      }
+
       return terminalResult({
         status: "succeeded",
         reason: finalText || "AgentRun completed",
         control: "stop",
         usage,
         steps,
-        finalText
+        finalText,
+        ...(manifest ? { manifest } : {})
       });
     }
 
