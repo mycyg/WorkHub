@@ -23,12 +23,15 @@ import type {
   SnapshotRepository,
   SnapshotRow,
   UserAuthRow,
-  UserRepository
+  UserRepository,
+  WorkItemHumanReservedRow,
+  WorkItemRepository
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
+import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
@@ -183,6 +186,20 @@ function escalationEventRow(partial: Partial<EscalationEventRow> = {}): Escalati
   };
 }
 
+function humanReservedWorkItemRow(partial: Partial<WorkItemHumanReservedRow> = {}): WorkItemHumanReservedRow {
+  return {
+    id: workItemId,
+    code: "WH-21",
+    title: "Manual-only client approval",
+    status: "spec_ready",
+    mode: "worker",
+    humanReserved: true,
+    submitterUserId: userId,
+    claimedByUserId: null,
+    ...partial
+  };
+}
+
 class MemorySnapshots implements SnapshotRepository {
   public rows: SnapshotRow[] = [];
 
@@ -215,6 +232,34 @@ class MemorySnapshots implements SnapshotRepository {
     }
     row.revertedAt = at;
     return row;
+  }
+}
+
+class MemoryWorkItems implements WorkItemRepository {
+  public rows = new Map<string, WorkItemHumanReservedRow>();
+
+  constructor(rows: WorkItemHumanReservedRow[]) {
+    for (const row of rows) {
+      this.rows.set(row.id, row);
+    }
+  }
+
+  async findWorkItemForHumanReservedGuard(id: string) {
+    return this.rows.get(id) ?? null;
+  }
+
+  async markHumanReservedPmMode(input: Parameters<WorkItemRepository["markHumanReservedPmMode"]>[0]) {
+    const row = this.rows.get(input.workItemId);
+    if (!row?.humanReserved) {
+      return null;
+    }
+    const updated: WorkItemHumanReservedRow = {
+      ...row,
+      status: "pm_mode",
+      mode: "pm"
+    };
+    this.rows.set(input.workItemId, updated);
+    return updated;
   }
 }
 
@@ -555,6 +600,69 @@ test("agent run enqueue uses ledger snapshots when no usage fixture is injected"
   assert.equal(response.status, 202);
   const body = await response.json() as { ok: true; data: { budget: { max_tokens: number } } };
   assert.equal(body.data.budget.max_tokens, 25000);
+});
+
+test("agent run enqueue opens user_forbidden escalation for human-reserved worker work", async () => {
+  const runtimeSettings = settings();
+  const workItems = new MemoryWorkItems([humanReservedWorkItemRow()]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000027",
+    humanReserved: createHumanReservedGuard({
+      workItems,
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      now: () => now,
+      bus: {
+        async publish(topic, type, data) {
+          events.push({ topic, type, data: data as Record<string, unknown> });
+        }
+      }
+    })
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+
+  const blocked = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Manual-only worker run" })
+  });
+
+  assert.equal(blocked.status, 409);
+  const blockedBody = await blocked.json() as {
+    ok: false;
+    error: { code: string; details?: { escalation_id?: string; trigger?: string; suggested_action?: string } };
+  };
+  assert.equal(blockedBody.error.code, "human_reserved");
+  assert.equal(blockedBody.error.details?.escalation_id, escalationId);
+  assert.equal(blockedBody.error.details?.trigger, "user_forbidden");
+  assert.equal(blockedBody.error.details?.suggested_action, "pm_mode");
+  assert.equal((await queue.listActive()).length, 0);
+  assert.equal(decisions.confidenceRows.length, 0);
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(decisions.escalationRows[0]?.trigger, "user_forbidden");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "work_item");
+  assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [`workitem:${workItemId}`, "escalation.opened"],
+    ["all", "escalation.opened"]
+  ]);
+  assert.equal(workItems.rows.get(workItemId)?.status, "pm_mode");
+  assert.equal(workItems.rows.get(workItemId)?.mode, "pm");
+
+  const pmRun = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ mode: "pm", title: "PM assist" })
+  });
+  assert.equal(pmRun.status, 202);
+  assert.equal(decisions.escalationRows.length, 1);
 });
 
 test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {

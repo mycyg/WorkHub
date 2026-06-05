@@ -42,6 +42,7 @@ import {
   createAgentRunConfidenceRecorder,
   type AgentRunConfidenceRecorder
 } from "../services/agent-run-confidence.js";
+import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -160,6 +161,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshots?: SnapshotRepository;
   auditLogs?: AuditLogRepository;
   confidence?: AgentRunConfidenceRecorder | false;
+  humanReserved?: HumanReservedGuard | false;
   notifications?: AgentRunNotificationPublisher | false;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
@@ -172,6 +174,7 @@ export function createInMemoryAgentRunQueue(options: {
   const policyStore = options.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
   const defaultTools = createToolRegistry(createBuiltInFileTools());
+  const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -380,6 +383,24 @@ export function createInMemoryAgentRunQueue(options: {
       const existing = activeForWorkItem(input.workItemId);
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
+      }
+      const humanReserved = await humanReservedGuard?.({
+        ...input,
+        settings
+      });
+      if (humanReserved) {
+        throw new AgentRunnerError(
+          409,
+          "human_reserved",
+          "这个事项已经标记为人工处理，我不会让 AI 工人自动施工。",
+          {
+            escalation_id: humanReserved.escalationId,
+            trigger: humanReserved.trigger,
+            source: humanReserved.source,
+            reused: humanReserved.reused,
+            suggested_action: "pm_mode"
+          }
+        );
       }
       const decision = await decideBudget({ ...input, settings });
       if (!decision.allowed) {
@@ -663,7 +684,8 @@ let defaultQueue: AgentRunQueue | undefined;
 
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
-    confidence: createAgentRunConfidenceRecorder()
+    confidence: createAgentRunConfidenceRecorder(),
+    humanReserved: createHumanReservedGuard()
   });
   return defaultQueue;
 }
