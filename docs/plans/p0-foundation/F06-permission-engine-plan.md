@@ -9,6 +9,7 @@ inventory: ./_migration-inventory.md
 specs:
   - ../../workhub/01-architecture/security-and-permissions.md
   - ../../workhub/03-collaboration/review-and-approval.md
+  - ./_experience-deliverable-contracts.md
 ---
 
 # F06 权限引擎（Permission Engine）
@@ -25,6 +26,7 @@ specs:
 3. **审批阻塞原语**:`ApprovalRequest`(`tool`/`proposal`/`revision` 三类共用一表)+ 路由(`route_approver`)+ SLA 截止/到期分流 + 委派 + 按身份审计,三铁律(同事务/commit 后推/CAS 防重)直接继承 `lifecycle.py`/`deliveries.py`。
 4. **工具可见性过滤**:`visible_tools(actor) = [t for t in ALL_TOOLS if resolve(actor,t.id)!=DENY]`,供 F8 Agent 引擎组装模型可见工具菜单。
 5. **"永远允许"学习**:裁决携带 `remember:"always"` → 沉淀 `learned_from_session=true` 的 allow policy(最细作用域、高风险不可学、可撤销可审计)。
+6. **审批卡可渲染**:`ApprovalRequest.payload_json` 必须包含足够生成 `AttentionItem` / Cuu 审批气泡的信息(`summary_text`、`risk`、`evidence_refs`、`actions`),不能只存工具原始入参。
 
 **北极星不变式**:权限外化后,既有的"陌生人看不到草稿态工单 / admin 能审计归档项目但不能写归档项目 / admin 不豁免设备门"行为**逐字等价**——以移植前的纯函数为基线回归(Master §9 风险4)。
 
@@ -85,6 +87,7 @@ specs:
 - **N-1 `PermissionPolicy` 实体**(data-model §8.1):`id`、`scope_kind ∈ {org,workspace,role,session}`、`scope_id`、`action_pattern`(glob)、`effect ∈ {allow,deny,ask}`、`priority:int`、`learned_from_session:bool=false`、`reason`、`created_by`、`expires_at?`、`org_id/workspace_id?`、`version`(乐观锁)、`deleted_at`(软删)。
 - **N-2 合并算法** `resolve(actor, tool, args) -> effect`:见"数据与接口契约"。确定性、可审计、默认 ask。
 - **N-3 `ApprovalRequest` 实体**(data-model §8.2):`id`、`work_item_id?`、`agent_run_id?`、`kind ∈ {tool,proposal,revision}`[扩展待收口]、`action_pattern`、`payload_json`(JSONB)、`rationale_json?`(JSONB)、`risk_tier ∈ {low,medium,high}`[扩展;**枚举与 data-model §7.3 `ConfidenceRecord.risk_level` 同源,统一用 `medium`(非 `mid`),对齐现有 `estimate_confidence` 正则与 glossary**]、`status ∈ {pending,approved,denied,expired,delegated}` default `pending`、`routed_to_user_id?`、`assignee_role?`[扩展]、`decided_by_user_id?`、`decision_reason_md?`、`delegated_to_user_id?`、`sla_due_at?`、`escalation_event_id?`[扩展]、`org_id/workspace_id?`、`TimestampMixin`、`version`。
+- **N-3a 审批 payload 体验切片**:`payload_json.ui` 可选但 P0 推荐写入 `{summary_text, reason_text, evidence_refs, risk, affected_targets, requires_desktop}`;F11/Cuu 可直接映射成 `AttentionItem`。原始工具入参保留在 `payload_json.raw_args`,避免 UI 摘要与执行入参混淆。
 - **N-4 `route_approver(kind, work_item, action_pattern, risk)`**:按 review §3.3 路由表;硬约束=裁决者须过 `can_view_*`、排除软删用户、排除发起者本人;算不出 → 不入 pending,直接 `EscalationEvent(no_approver)`。
   > **EscalationEvent.trigger 枚举对齐**:data-model §7.4 现定 `trigger ∈ {unqualified, user_unsatisfied, user_forbidden, doom_loop, budget_exhausted}`(api-contract §2.7 同义项作 `user_rejected`);F06 因审批路由失败/超时新增的 `no_approver`(N-4)、`approval_timeout`(N-5)是**审批侧扩展 trigger 值,标注 [扩展待收口],由 F2/data-model §7.4 收口进枚举**——F06 创建 `EscalationEvent` 时用这两值,但实体/枚举权威归 F2。
 - **N-5 SLA**:`sla_due_at = created_at + sla_duration(kind, risk_tier)`(review §4.1 默认表);到期分流(`tool`→升级、`proposal`→催办/改派);**超时只朝"找人"降级,绝不放行**。
@@ -116,11 +119,12 @@ specs:
 
 - [ ] C1. 定义 `ApprovalRequest` 实体(N-3)+ Alembic 迁移(`status` 索引、`sla_due_at` 索引、`routed_to_user_id` 索引、`version`)。
 - [ ] C2. 创建流程 `create_approval`:策略评估(allow/deny 直接返回,不建审批)→ 仅 `ask` 落 `pending` → `route_approver`(N-4)→ 算不出则 `EscalationEvent(no_approver)`(不入 pending)。
-- [ ] C3. 裁决 `respond`:CAS `status==pending`(rowcount==0 → 409 "approval race");`deny` 强校验 `reason_md` 非空(min_length=1,否则 422);写 `AuditLog`(同事务);commit 后 publish `permission.decided`。
-- [ ] C4. `route_approver` 路由表(review §3.3):`proposal/revision`→提交者(`submitter_user_id`,延续现状);`tool`→lead→owner→admin;硬约束(有权/非软删/排除发起者本人)。
-- [ ] C5. SLA:`sla_due_at` 计算(review §4.1 表);到期处置语义(`tool`→`pending→expired` CAS + `EscalationEvent(approval_timeout)`;`proposal`→催办通知 + 二次到期改派)。**后台扫描的多 worker 选主归 F8/F11,F06 定 CAS 幂等契约。**
-- [ ] C6. 委派 `delegate`(N-6):CAS、权限校验、`permission.reassigned` 事件、`decided_by` 仍空。
-- [ ] C7. "永远允许"沉淀(N-7):`remember="always"` → 写 `learned_from_session=true` policy;护栏(最细作用域 / `risk_tier=high` 拒学 / 软删可撤 / 写 AuditLog)。
+- [ ] C3. 审批 payload 组装(N-3a):写 `payload_json.raw_args` + `payload_json.ui` 摘要;能映射 `_experience-deliverable-contracts.md` 的 `AttentionItem`/`EvidenceRef`,且用户面不暴露内部 tool enum。
+- [ ] C4. 裁决 `respond`:CAS `status==pending`(rowcount==0 → 409 "approval race");`deny` 强校验 `reason_md` 非空(min_length=1,否则 422);写 `AuditLog`(同事务);commit 后 publish `permission.decided`。
+- [ ] C5. `route_approver` 路由表(review §3.3):`proposal/revision`→提交者(`submitter_user_id`,延续现状);`tool`→lead→owner→admin;硬约束(有权/非软删/排除发起者本人)。
+- [ ] C6. SLA:`sla_due_at` 计算(review §4.1 表);到期处置语义(`tool`→`pending→expired` CAS + `EscalationEvent(approval_timeout)`;`proposal`→催办通知 + 二次到期改派)。**后台扫描的多 worker 选主归 F8/F11,F06 定 CAS 幂等契约。**
+- [ ] C7. 委派 `delegate`(N-6):CAS、权限校验、`permission.reassigned` 事件、`decided_by` 仍空。
+- [ ] C8. "永远允许"沉淀(N-7):`remember="always"` → 写 `learned_from_session=true` policy;护栏(最细作用域 / `risk_tier=high` 拒学 / 软删可撤 / 写 AuditLog)。
 
 ### 阶段 D — API + 事件 + 审计接线
 
@@ -163,6 +167,22 @@ specs:
 ### 实体:`ApprovalRequest`(data-model §8.2;扩展列标 *[待收口]*)
 
 `id`、`work_item_id?`、`agent_run_id?`、`action_pattern(128)`、`payload_json(JSONB)`、`status(16) default pending`、`routed_to_user_id?`、`decided_by_user_id?`、`decision_reason_md? (deny 必填)`、`delegated_to_user_id?`、`sla_due_at?`、`created_at/updated_at`、`org_id/workspace_id?`、`version`;*[待收口]* `kind(16)`、`risk_tier(8)`、`rationale_json(JSONB)`、`assignee_role(16)?`、`escalation_event_id?`。
+
+`payload_json` 建议分层,既保留执行真相,也给 Cuu/Web 审批卡一眼可读的摘要:
+
+```json
+{
+  "ui": {
+    "summary_text": "AI 想替你改交付包里的 3 个文件,要点头才继续",
+    "reason_text": "涉及对外交付,需要确认",
+    "risk": { "level": "medium", "human_label": "影响面不小,稳一点" },
+    "evidence_refs": [],
+    "affected_targets": [],
+    "requires_desktop": false
+  },
+  "raw_args": {}
+}
+```
 
 ### Alembic 迁移
 
@@ -240,6 +260,7 @@ resolve(actor, tool, args) -> effect:
 - [ ] AC-13 `tool` SLA 到期 → `pending→expired` CAS + `EscalationEvent(approval_timeout)`;`proposal` 到期 → 催办,**绝不超时即放行/自动合并**。
 - [ ] AC-14 委派:仅当前 routed_to/admin 可发起;经 delegated 改 routed_to 回 pending;`decided_by` 仍空;`permission.reassigned` 发旧 + 新两端。
 - [ ] AC-15 `remember="always"` → 写 `learned_from_session=true` allow(最细作用域);`risk_tier=high` 动作拒学;软删该 policy 可撤销;命中/写入均落 AuditLog。
+- [ ] AC-15a 审批卡 payload:`permission.ask` 对应的 `ApprovalRequest.payload_json.ui` 能映射为 `AttentionItem`,含 `summary_text/risk/actions/evidence_refs?`;UI 摘要不包含裸 `tool.delete_file` 这类内部黑话。
 
 **审计**
 

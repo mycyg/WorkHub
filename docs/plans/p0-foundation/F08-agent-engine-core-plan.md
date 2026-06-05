@@ -9,6 +9,8 @@ origin: docs/plans/2026-06-05-feat-workhub-p0-foundation-master-plan.md
 specs:
   - docs/workhub/02-ai-engine/agent-loop-and-tools.md
   - docs/workhub/02-ai-engine/confidence-risk-escalation.md
+  - docs/plans/p0-foundation/_experience-deliverable-contracts.md
+  - docs/plans/p0-foundation/_ts-first-module-port-page-alignment.md
 inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
 ---
 
@@ -19,6 +21,7 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
 > `asyncio.create_task` 编排)**抽出、泛化、headless 化、持久化**为可被多 worker 并发驱动的
 > Agent 引擎核心。安全敏感资产(沙箱前缀 / rlimit / 命令白名单 / 三竞态护栏)按 Master §6.4
 > **逐字移植,禁止顺手重构**。
+> **TS-first 修正**:旧 `auto_agent.py` 是行为锚点;新仓实现落 `packages/agent` / `packages/tools` / `apps/api/src/workers`,默认 TypeScript AgentLoop,Python 仅作可选文档 worker。
 >
 > 所有"现状如此"均以真实代码 `file:line` 为锚。权威字段定义在 data-model.md / agent-loop-and-tools.md,
 > 本 plan 只给执行循环直接读写的切片;跨组件共享处以 Master §6 九铁律 + 规格为准。
@@ -48,6 +51,7 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
    (规格 §8.3,NFR-06)、`compact` 上下文压缩(规格 §8.2)。
 8. 事件 topic 从 `req:<id>` 演进为 `run:<run_id>`(规格 §6),经 F5 broker 跨 worker 扇出,
    订阅边界重强制隐私门(Master §6.5)。
+9. 产物不只落 `outputs/` 文件,还要生成可审的 **`DeliverableChangeManifest` 草案**(写入 `Proposal.diff_manifest` 或交 F10/F11 消费),支持文档/表格/PPT/图片/文件夹/结构化记录,避免后续 Proposal UI 退化成代码 diff。
 
 ---
 
@@ -73,6 +77,7 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
   revert-only-if-in-flight `auto.py:318`,规格 §3.5)。
 - `llm_review`(`:544`)逐字移植为升级触发①的零件接口(裁决逻辑不在本组件,见 §依赖)。
 - 事件 topic `run:<run_id>` + 截断纪律(预览 ≤200 字符,完整 trace 落 `AgentStep`,规格 §6.2)。
+- `DeliverableChangeManifest` 草案生成:扫描 `outputs/`、AgentStep tool results、F10 snapshot/check refs,形成 `_experience-deliverable-contracts.md` §3 的最小 manifest;P0 不做完整 diff,但必须覆盖 fixture 类型。
 - 单步快照 **钩子点**(`AgentStep.snapshot_id` 字段 + `side_effect` 工具执行前调用 F10 的
   `snapshot()`;**快照实现在 F10**,本组件只埋调用点与 fail-closed 红线接入,规格 §7 / Master §6.6)。
 - token/cost 计量埋点(从 provider 注册表 F7 的 usage 累加进 `RunUsage`,规格 §4.2)。
@@ -150,6 +155,8 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
 | N8 | 单步快照**钩子点**:`AgentStep.snapshot_id` + `side_effect` 工具执行前调 F10 `snapshot()`;快照失败 → 拒绝副作用(fail-closed) | agent-loop §7,Master §6.6(实现在 F10) |
 | N9 | token/cost 计量:`RunUsage.tokens_in/out/cost` 从 provider 响应 usage 累加;`check_budget` 增 `max_cost` 闸门 | agent-loop §4.2/§4.3,NFR-05 |
 | N10 | AI actor 一等身份接入:`registry.visible_for(actor_id)` 用真 actor(替现 `auto.py:224` 伪造 `User(id="ai-auto")`),由 F4 `require_actor` 注入 | inventory §5 REFACTOR,规格 §5.3 |
+| N11 | `DeliverableChangeManifest` 草案生成器:`outputs/` + business writes + snapshot/check refs → `Proposal.diff_manifest` JSONB;至少覆盖 docx/pptx/xlsx/image/folder/structured_record fixture | `_experience-deliverable-contracts.md` §3 |
+| N12 | `ToolSpec.side_effect` 细分:`none|sandbox_file|business_write|external_effect`;F10 未就位时 side-effect 工具硬拒绝,只读工具可跑 | `_experience-deliverable-contracts.md` §5 |
 
 ---
 
@@ -233,25 +240,26 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 
 ### 事件 topic + type(经 F5 broker 扇出;**SSE 事件 type 权威以 [api-contract §5.2] 为准**,topic 隔离以 §5.3 为准)
 
-> 命名口径:Master §6.8 taxonomy 与 api-contract §5.2 事件名有细微差异(`agent.run.step` vs `agent_run.step`)。**F08 落地以 api-contract §5.2 的 SSE 事件 type 为单一真相**(契约层),下表用契约拼写。topic 命名(`run:<run_id>`/`workitem:<id>`/`user:<id>`)以 api-contract §5.3 + F05 topic 注册表为准;F05 只提供 topic+扇出+订阅鉴权,事件由 F08 发布。
+> 命名口径:早期文档里的 `agent.run.step` / `proposal.ready` 属概念别名。**F08 落地以 `_experience-deliverable-contracts.md` §4 的正式事件名为准**,下表用正式拼写。topic 命名(`run:<run_id>`/`workitem:<id>`/`user:<id>`)以 api-contract §5.3 + F05 topic 注册表为准;F05 只提供 topic+扇出+订阅鉴权,事件由 F08 发布。
 
 | 事件 type | topic | data 切片 | 现状对应 |
 |---|---|---|---|
-| `agent_run.step`(run 开始) | `run:<run_id>` | `{run_id, budget}` | `ai.started` `:400` |
+| `agent_run.started` | `run:<run_id>` | `{run_id, budget}` | `ai.started` `:400` |
 | `agent_run.step`(逐步 trace) | `run:<run_id>` | `{index, kind, preview(≤200)}` | `ai.thinking/text/tool_call` `:438/440/444` |
 | `step.tool_result` | `run:<run_id>` | `{index, tool_id, ok, content_preview}` | (新增) |
 | `step.snapshot` | `run:<run_id>` | `{index, snapshot_id}` | (新增,N8) |
 | `permission.ask` | `session:<id>` + `user:<被路由审批人 id>` | `{approval_id, tool_id, input, reason, ttl}` | (新增,接 F6) |
-| `run.compacting` | `run:<run_id>` | `{index, reason}` | (新增,N4) |
-| `escalation.created` | `workitem:<id>` + 目标人 `user:<id>`(脱敏) | `{trigger, headline, handoff_ref}` | 派生自 `ai.failed` |
-| `work.completed`(交付) | `run:<run_id>` + `workitem:<id>` | `{final_notes, file_count}` | `ai.done`+`requirement.updated` `:235` |
-| `run.failed` | `run:<run_id>` | `{reason, notes}` | `ai.failed` `:259` |
+| `agent_run.compacting` | `run:<run_id>` | `{index, reason}` | (新增,N4) |
+| `agent_run.escalated` | `workitem:<id>` + 目标人 `user:<id>`(脱敏) | `{trigger, headline, handoff_ref}` | 派生自 `ai.failed` |
+| `proposal.opened` | `workitem:<id>` + `user:<approver>` | `{proposal_id, manifest_ref, summary}` | manifest 草案就绪(N11) |
+| `proposal.merged` | `run:<run_id>` + `workitem:<id>` | `{final_notes, file_count}` | `ai.done`+`requirement.updated` `:235` |
+| `agent_run.failed` | `run:<run_id>` | `{reason, notes}` | `ai.failed` `:259` |
 | `agent_run.step`(done 收尾,成败均发) | `run:<run_id>` | `{run_id, steps}` | `ai.done` `:507`(`finally` 必发) |
 
-> **`permission.ask` topic 对齐(改正点)**:api-contract §5.3 与 F09 明确——`permission.ask` 走 `session:<id>` + 被路由审批人 `user:<id>`,**不另立 `permission:*` 命名空间**;F08 接 F6 的审批阻塞原语时按此发布(此前误写 `permission:<approver>` 已纠正)。`escalation.created` 走 `workitem:<id>` + 目标人 `user:<id>`(§5.2),**不发 `all`**(含 `trigger` 等私有细节);若需 org 级感知,另发脱敏 `headline`(不含 trigger 原值)。
+> **`permission.ask` topic 对齐(改正点)**:api-contract §5.3 与 F09 明确——`permission.ask` 走 `session:<id>` + 被路由审批人 `user:<id>`,**不另立 `permission:*` 命名空间**;F08 接 F6 的审批阻塞原语时按此发布(此前误写 `permission:<approver>` 已纠正)。`agent_run.escalated` 走 `workitem:<id>` + 目标人 `user:<id>`,**不发 `all`**(含 `trigger` 等私有细节);若需 org 级感知,另发脱敏 `headline`(不含 trigger 原值)。
 > 截断纪律(Master §6.8 / agent-loop §6.2):事件载荷只放预览(≤200 字符,沿用 `:438`);完整 trace 落
 > `AgentStep`,前端按需拉。隐私门(Master §6.5):`run:<id>` 仅 owner/审批人可订阅,在**订阅边界**重强制
-> `can_view`,禁"全量发 Redis 客户端过滤"。`confidence.assessed`/`proposal.opened` 等由 P1/F10 发,不在本组件。
+> `can_view`,禁"全量发 Redis 客户端过滤"。`proposal.opened`/`knowledge.evidence.ready` 等由 F10/P1 对应组件发,不在本组件。
 
 ---
 
@@ -285,6 +293,8 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 - [ ] C6. 超预算/跑满步数 → `escalate` + `StructuredHandoff`(N7,引擎用 trace 自动生成)。
 - [ ] C7. 单步快照钩子(N8):`side_effect` 工具执行前调 F10 `snapshot()`;**快照失败 → 拒绝副作用**
       (fail-closed,Master §6.6);写 `AgentStep.snapshot_id`;只读步跳过。
+- [ ] C8. `ToolSpec.side_effect` 细分(N12):`none` 工具可在 F10 未就位时跑;`sandbox_file/business_write/external_effect` 在 F10 stub 失败时硬拒绝;`external_effect` 默认 ask-gate。
+- [ ] C9. `DeliverableChangeManifest` 草案生成(N11):完成时扫描 `outputs/` 与业务写 trace,生成 manifest JSON;无法识别的产物也必须有 sha/download/human_summary。
 
 ### 阶段 D — 出请求进程进队列 + 三竞态护栏(单→多 worker)
 - [ ] D1. `app/agent/queue.py`:入队(Redis/PG,与 F5 broker 复用)+ worker 取出 + lease 心跳。
@@ -302,7 +312,8 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 - [ ] E2. AI actor 一等身份(N10):`visible_for(actor_id)` + `execute` 二次 `min_scope`/`ask` 校验
       (接 F6);替 `auto.py:224` 伪造 actor。
 - [ ] E3. `llm_review` 移植(P7)接 provider 注册表,作升级触发①零件(裁决在 P1)。
-- [ ] E4. 删除 `auto_agent.py` / `auto.py`;F11 同步改名端点 + 客户端 hook。
+- [ ] E4. 事件 type 全部引用 F05 正式事件常量;grep 新增代码无 `agent.run.started`/`proposal.ready` 旧概念名。
+- [ ] E5. 删除 `auto_agent.py` / `auto.py`;F11 同步改名端点 + 客户端 hook。
 
 ### 阶段 F — 集成验收
 - [ ] F1. 端到端:一条 WorkItem 经引擎产出 → `llm_review` 判分 → `AgentRun/AgentStep` 持久化且可重放
@@ -342,6 +353,8 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 13. **review 容错移植**:`llm_review` 收到非 JSON 输出 → 判最低分(保守),不崩(逐字保留 `:585`)。
 14. **lease 回收**:worker 持 run lease 后崩溃 → lease 过期被另一 worker 回收转终态(替 15 分钟 cutoff,R9);
     无 run 永久卡 `running`。
+15. **交付物 manifest fixture**:构造 docx/pptx/xlsx/image/folder/structured_record 六类产物/业务写,完成后 `DeliverableChangeManifest` 含对应 `target_kind`、sha/preview/download、risk、rollback/checks。
+16. **正式事件名**:新增 publish 点只发 `agent_run.started`/`agent_run.step`/`agent_run.escalated`/`proposal.opened` 等正式名;旧概念名只在 alias 测试/注释出现。
 
 ---
 
@@ -357,7 +370,7 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 | **三竞态护栏从单 worker SQLite 隐式锁迁 PG 行锁**,迁错 → 多 worker 下重复执行/孤儿状态 | 逐字保留语义(P8),仅换锁原语;precedence 用例 7/8/9 覆盖;2-worker 冒烟为门禁 |
 | **完成判定改写**(submit→end_turn)可能放过"答非所问但有产物" | 产物非空仍校验;质量由 `llm_review`(P1 置信度)兜底;开放问题(agent-loop §10.1)标注,P0 仅做产物存在性 |
 | **快照红线接入 F10 未就位** → side_effect 工具无快照即落库,违 Master §6.6 | 本组件埋 fail-closed 钩子(N8);F10 未上线前 `side_effect` 工具的 snapshot() 返回桩 → 桩失败即拒绝(宁拒不漏);用例 12 守 |
-| **broker 化跨用户事件泄漏**(NFR-08 有前科) | `run:<id>` 订阅边界重强制 `can_view`(Master §6.5);org 级只发脱敏 `escalation.created`;不"全量发客户端过滤" |
+| **broker 化跨用户事件泄漏**(NFR-08 有前科) | `run:<id>` 订阅边界重强制 `can_view`(Master §6.5);org 级只发脱敏 `agent_run.escalated`;不"全量发客户端过滤" |
 | **naive `utcnow` 迁 timestamptz** 静默出错(stuck 清扫永不/全触发) | R9 lease 用 `timestamptz`;F3 时间审校口径;用例 14 守 lease 回收 |
 | **token/cost 计入口径未定**(重试/压缩自身 token 是否计) | MVP 全计入 `max_cost`,标为开放问题(agent-loop §10.6),P1 调 |
 | **doom-loop 误判合法重试** | 指纹规范化排除已知幂等/退避重试;N 可经策略覆写(默认 3);用例 4 守 |

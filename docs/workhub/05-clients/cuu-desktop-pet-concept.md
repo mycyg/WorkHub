@@ -86,7 +86,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - **窗口**：独立 `pet` Tauri 窗口，`transparent:true`、`decorations:false`、`alwaysOnTop:true`、`skipTaskbar:true`。
 - **动效**：MVP 可用 CSS sprite 或 Lottie/Rive；空闲态降帧，避免持续占 GPU。
-- **事件映射**：继续使用 Rust SSE worker 转发的 `push-event`，由前端将事件映射到 Cuu 状态。
+- **事件映射**：继续使用 Rust SSE worker 转发的 `push-event`，由前端将正式 `WorkHubEvent.type` 映射到 Cuu 状态；映射表与 payload 形状以 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md) §4 为准。
+- **轻卡类型**：审批、澄清、证据、项目检索、交付物变更包统一消费 `AttentionItem` / `QuestionCard` / `EvidenceRef` / `DeliverableChangeManifest`，避免桌宠、主窗、Web 各自手写结构。
 - **主窗关系**：Cuu 可单独展开轻卡；复杂操作再通过 deep-link 打开主客户端。
 - **隐私**：项目检索卡只显示用户有权限看到的证据，私有通知走 user-scoped 事件。
 

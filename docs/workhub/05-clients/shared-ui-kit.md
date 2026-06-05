@@ -9,9 +9,10 @@ owner: workflow
 
 > **一句话**：C-WEB（[web-app](./web-app.md)）与 C-PET（[desktop-pet-tauri](./desktop-pet-tauri.md)）**不各画各的轮子**——两端共用同一包 `@yqgl/shared`：同一套设计 token、同一组件库、同一 API client、同一批 hooks/types。本篇是这层「跨端唯一真相源」的页面规划级规格。
 >
-> 上游：[规格树索引 §1 产品呈现模式](../README.md)（C-UIKIT 代号）、[去黑话词汇表 §7](../00-overview/glossary-dejargon.md)（状态标签权威来源就在本包 `status-vocab.ts`）、[system-architecture](../01-architecture/system-architecture.md)（daemon+thin client 边界）、[api-contract](../01-architecture/api-contract.md)（OpenAPI 路由 + SSE 事件）、[data-model](../01-architecture/data-model.md)（实体字段）。
+> 上游：[规格树索引 §1 产品呈现模式](../README.md)（C-UIKIT 代号）、[去黑话词汇表 §7](../00-overview/glossary-dejargon.md)（状态标签权威来源就在本包 `status-vocab.ts`）、[system-architecture](../01-architecture/system-architecture.md)（daemon+thin client 边界）、[api-contract](../01-architecture/api-contract.md)（OpenAPI 路由 + SSE 事件）、[data-model](../01-architecture/data-model.md)（实体字段）、P0 横切体验契约 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)（AttentionItem / QuestionCard / EvidenceRef / DeliverableChangeManifest / WorkHubEvent / CuuState）。
 >
 > **扎根**：本篇所有断言均指向真实代码 `shared/src/**`（现包名 `@yqgl/shared`，见 `shared/package.json:2`）。迁移到 WorkHub 后包名可能切到 `@workhub/shared`，但 export 形态延续——本篇即「现状 + WorkHub 增补」两层叠写。
+> **参考图**：跨端运行时与 endpoint/page/Cuu 对齐关系见 [`ts-first-runtime-concept.png`](./assets/shared/ts-first-runtime-concept.png) 和 [`endpoint-page-cuu-alignment.png`](./assets/shared/endpoint-page-cuu-alignment.png)。
 
 本篇小节：
 
@@ -231,7 +232,7 @@ shared/
 
 ## 6. 共享 types（`@yqgl/shared/api` types.ts）
 
-`types.ts` 是**前后端契约的前端镜像**（与 [data-model](../01-architecture/data-model.md) 同源；字段权威以 data-model 为准，本篇给「前端会消费哪些形状」）。分三族：
+`types.ts` 是**前后端契约的前端镜像**（与 [data-model](../01-architecture/data-model.md) 同源；字段权威以 data-model 为准，本篇给「前端会消费哪些形状」）。WorkHub P0 起还必须承接横切体验契约，保证 Web / Rust 主窗 / Cuu 不重复造 payload。分四族：
 
 ### 6.1 领域实体类型（直接映射 daemon 实体）
 
@@ -252,6 +253,19 @@ shared/
 | `PushEvent` | `{event,data,at}`（SSE 累积单元） | `useReqStream.events` | `useReqStream.ts:3` |
 
 > `SummarizePayload.ai_doable/ai_reason`（`types.ts:232`）与 `MeetingInsight.confidence_reason`（`types.ts:319`）是 WorkHub「**AI 决策必附人话理由**」（`FR-EXPLAIN-001`）的现有锚点——置信度/可解释类型已经在了。
+
+### 6.4 WorkHub 体验契约类型（P0 新增）
+
+| 类型 | 用途 | 必须共享的原因 |
+|---|---|---|
+| `AttentionItem` | AI 首页、审批中心、Cuu 气泡统一的「当前需要你处理的一件事」 | Web 与桌宠展示同一阻塞事项,动作权限一致 |
+| `QuestionCard` | 选项优先澄清、审批理由、轻量表单 | 防止澄清页退化为聊天墙或大文本框 |
+| `EvidenceRef` / `EvidenceBubble` | 知识库、项目检索、会议洞察、提议证据 | AI 建议必须可展开来源,且只显示有权证据 |
+| `DeliverableChangeManifest` | 非代码 PR:文档、表格、PPT、图片、文件夹、结构化记录 | 交付物变更说明不局限 git diff |
+| `WorkHubEvent<T>` | 新 SSE envelope | Web/Rust/Cuu 对正式事件名、预览文本、payload 有同一解析入口 |
+| `CuuState` | Cuu 动效状态机 | `permission.ask`/`proposal.opened`/`knowledge.evidence.ready`/`sync.conflict` 能稳定驱动桌宠状态 |
+
+这些类型以 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md) 为权威；若 OpenAPI 暂不能完整表达 union，先放 `shared/src/types/workhub-experience.ts`，但必须进入 `tsc` 和 fixture 测试。
 
 ---
 

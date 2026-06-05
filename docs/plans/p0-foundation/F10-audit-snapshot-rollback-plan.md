@@ -9,11 +9,14 @@ inventory: ./_migration-inventory.md
 specs:
   - ../../workhub/02-ai-engine/agent-loop-and-tools.md
   - ../../workhub/01-architecture/data-model.md
+  - ./_experience-deliverable-contracts.md
+  - ./_ts-first-module-port-page-alignment.md
 ---
 
 # F10 · 审计 + 快照 / 回滚 —— 系统级实现 plan
 
 > 本组件是 P0 地基的**安全宪法承载层**：把现有零散的两套审计/undo 原语（`ActivityLog` + `ProjectDriveOperation.undone_at`）统一为 `AuditLog`，**新增通用 `Snapshot` 实体 + revert 契约**，并落地 Master §6 第 6 条红线——**「AI 任何副作用先有同事务 `Snapshot`，快照失败则拒绝执行；不可逆写须 ask-gate」**。
+> **TS-first 修正**:新仓实现默认落 `packages/audit` 的 transaction wrapper 与 manifest facts helper;旧 Python/SQLAlchemy 代码只作行为锚点。
 >
 > 现状根：`app/models.py:554`(`ActivityLog`)、`app/models.py:214`(`ProjectDriveOperation`)、`app/routers/project_drive.py:1504`(undo 处理器)、`app/services/activity.py:12`(`log_activity`)、`app/services/lifecycle.py:104/164`(queue-in-tx/flush-post-commit)。
 > 规格根：`data-model.md §7.5`(`Snapshot`)、`§8.3`(`AuditLog`)、`agent-loop-and-tools.md §7`(每步快照与回滚)、`§2.2 ④`(副作用前打快照)。
@@ -28,6 +31,7 @@ specs:
 3. **落地红线 fail-closed**：AI 任一副作用工具执行前必须成功打快照,**快照失败 ⇒ 拒绝执行该副作用**(`is_error` 回灌,不崩、不静默写)。快照与业务写**同一 PG 事务**(F3 提供 PG 事务语义)。
 4. **revert 契约**：`revert(run, to=snapshot_id|step_index)` 还原文件域 + 倒序应用业务域反向补偿,**revert 本身也写 `AuditLog`**,幂等(`agent-loop-and-tools.md §7.2`)。
 5. **不可逆写 ask-gate**：对 P0 判定为「天然不可逆」的业务写(已发外部通知等),执行前强制走 F6 的 `ask` 阻塞原语,解 `agent-loop-and-tools.md §10.5` / Master §9 风险 5。
+6. **交付物变更申请事实源**：为 `DeliverableChangeManifest` 提供 `rollback.snapshot_id`、`checks.snapshot_exists/revert_available`、`risk.reversible`、`evidence_refs` 的审计/快照真相,避免 Proposal 说明只靠 AI 文案。
 
 ---
 
@@ -42,6 +46,7 @@ specs:
 - 「不可逆写清单」+ 执行前 ask-gate 判定函数(接 F6 `PermissionPolicy.effect=ask`)。
 - 业务写经统一审计封装(`record_audit(...)` 取代散落的 `log_activity` / `_record_op`)。
 - 把现有 drive undo(`project_drive.py:1504`)的逆操作语义,泛化为 `Snapshot` 业务域反向补偿的**首批参考实现**。
+- `manifest_check_context(snapshot_id, audit_ids...)` 辅助函数:给 F8/F11 生成 `DeliverableChangeManifest.checks/risk/rollback` 使用;F10 不负责 UI,只提供事实切片。
 
 ### Out（明确推迟到 P1+）
 
@@ -80,6 +85,7 @@ specs:
 - **N-3 fail-closed 红线闸门**:`require_snapshot_before_side_effect(ctx)` ——AgentLoop 在执行 `side_effect=True` 工具前调用;快照 `take` 抛错 ⇒ 不执行工具,构造 `is_error` 的 `ToolResult` 回灌(`agent-loop-and-tools.md §2.4`),`AgentRun` 不崩。
 - **N-4 不可逆写判定 + ask-gate**:`is_irreversible(action, target) -> bool` + 命中则前置 `request_approval`(接 F6 `ApprovalRequest`,`agent-loop-and-tools.md §2.5`)。解 §10.5 开放问题——P0 判定清单见下「数据与接口契约」。
 - **N-5 `AgentStep.snapshot_id` 回填**(`data-model.md §7.2`):每步副作用前快照 id 写入 step 行(只读步为 NULL),供 trace 可审 + 单步 revert。F8 持久化 `AgentStep`,F10 提供 snapshot id。
+- **N-6 manifest facts**:`build_manifest_facts(run_id|proposal_id)` 输出 `{snapshot_exists,revert_available,rollback_snapshot_id,reversible,evidence_refs,check_results}`,供 F8 的 `DeliverableChangeManifest` 草案和 F11 的 Proposal 详情复用。
 
 ---
 
@@ -109,19 +115,24 @@ specs:
   - [ ] 5.1 实现 `is_irreversible(action, target)`(查 P0 判定清单)。
   - [ ] 5.2 命中 ⇒ 执行前 `request_approval`(F6 阻塞原语);拒绝 ⇒ `is_error` 理由回灌,不写。
   - [ ] 5.3 `AuditLog` 记录该写为 `action` + `detail_json.gate='ask'` + 审批结果。
-- [ ] **6. drive undo 端点改接**(REFACTOR R-4)
-  - [ ] 6.1 `undo_drive_operation`(`project_drive.py:1504`)改查 `AuditLog` 可逆行 + 调 `SnapshotService.revert`。
-  - [ ] 6.2 逆操作分派(`:1520-1571`)迁入 `SnapshotService` 业务补偿器;端点行为/响应保持兼容。
-- [ ] **7. 数据迁移**(REFACTOR R-1/R-2)
-  - [ ] 7.1 Alembic 数据迁移:`activity_log` 行 → `audit_log`(`entity_type='work_item'`,`actor_kind` 从 nickname 启发式推断 AI 行,无法判定标 `human`)。
-  - [ ] 7.2 `project_drive_operations` 行 → `audit_log`(`entity_type='drive_item'`,`undone_at` 直迁,payload 入 `detail_json`)。
-  - [ ] 7.3 旧表保留只读一个 release(回滚安全),新写全走 `audit_log`。
-- [ ] **8. 验收测试**(见下「验收用例」)
-  - [ ] 8.1 快照失败 ⇒ 副作用被拒(red-line 集成测试,对齐 Master §7 场景④)。
-  - [ ] 8.2 AI 写业务对象 → 快照存在 → revert 还原(Master §8 / §7 场景④)。
-  - [ ] 8.3 不可逆写 → 命中 ask-gate(阻塞 + 拒绝回灌)。
-  - [ ] 8.4 审计 append-only:revert 不删原行,新增 revert 审计行。
-  - [ ] 8.5 同事务原子:业务写回滚则快照行也回滚(无孤儿快照)。
+- [ ] **6. manifest facts 输出**(NEW N-6,供 F8/F11)
+  - [ ] 6.1 `build_manifest_facts(run_id|proposal_id)` 汇总 `Snapshot`/`AuditLog`/不可逆判定结果。
+  - [ ] 6.2 输出 checks:`snapshot_exists`、`artifact_exists`(F8 传入)、`evidence_linked`、`revert_available` 或 `ask_gate_required`。
+  - [ ] 6.3 输出 `rollback.available/snapshot_id/description` 与 `risk.reversible/irreversible_reasons`。
+- [ ] **7. drive undo 端点改接**(REFACTOR R-4)
+  - [ ] 7.1 `undo_drive_operation`(`project_drive.py:1504`)改查 `AuditLog` 可逆行 + 调 `SnapshotService.revert`。
+  - [ ] 7.2 逆操作分派(`:1520-1571`)迁入 `SnapshotService` 业务补偿器;端点行为/响应保持兼容。
+- [ ] **8. 数据迁移**(REFACTOR R-1/R-2)
+  - [ ] 8.1 Alembic 数据迁移:`activity_log` 行 → `audit_log`(`entity_type='work_item'`,`actor_kind` 从 nickname 启发式推断 AI 行,无法判定标 `human`)。
+  - [ ] 8.2 `project_drive_operations` 行 → `audit_log`(`entity_type='drive_item'`,`undone_at` 直迁,payload 入 `detail_json`)。
+  - [ ] 8.3 旧表保留只读一个 release(回滚安全),新写全走 `audit_log`。
+- [ ] **9. 验收测试**(见下「验收用例」)
+  - [ ] 9.1 快照失败 ⇒ 副作用被拒(red-line 集成测试,对齐 Master §7 场景④)。
+  - [ ] 9.2 AI 写业务对象 → 快照存在 → revert 还原(Master §8 / §7 场景④)。
+  - [ ] 9.3 不可逆写 → 命中 ask-gate(阻塞 + 拒绝回灌)。
+  - [ ] 9.4 审计 append-only:revert 不删原行,新增 revert 审计行。
+  - [ ] 9.5 同事务原子:业务写回滚则快照行也回滚(无孤儿快照)。
+  - [ ] 9.6 manifest facts:给定一次 AI 产物 run,输出 `snapshot_exists/revert_available/rollback_snapshot_id/risk.reversible` 与 manifest 契约一致。
 
 ---
 
@@ -195,6 +206,21 @@ specs:
 | **已落库的对外交付包发布** | **不可逆**(他人已见) | **ask-gate** |
 | **触发第三方副作用的 `run_command`**(网络出口未拦,`auto_agent.py:276`) | **不可逆** | **ask-gate**(并标 `detail_json.risk='external'`) |
 
+### Manifest facts 契约
+
+F10 为 `_experience-deliverable-contracts.md` §3 的 `DeliverableChangeManifest` 提供事实字段,不生成完整 UI 文案:
+
+| manifest 字段 | F10 来源 |
+|---|---|
+| `base.snapshot_id` | AgentRun 起始或 step 前 `Snapshot.id` |
+| `rollback.available` | `Snapshot.reverted_at IS NULL` 且存在已实现补偿器 |
+| `rollback.snapshot_id` | 可回滚的最近安全 snapshot |
+| `risk.reversible` | `is_irreversible(action,target)` 的反值 + 补偿器可用性 |
+| `risk.irreversible_reasons` | 外部通知/对外交付/网络副作用等判定原因 |
+| `checks.snapshot_exists` | side-effect 前成功写入 `Snapshot` |
+| `checks.revert_available` | `SnapshotService.revert` dry-run / 补偿器存在 |
+| `evidence_refs` | `AuditLog` / `AgentStep` / `Snapshot` refs |
+
 ---
 
 ## 验收用例（可测）
@@ -207,6 +233,7 @@ specs:
 6. **drive undo 兼容回归**:对现有 6 类 `op_type`(create/replace/delete/restore/patch/paste_cut)各跑「操作→undo」→ 断言行为与现状(`project_drive.py:1520-1571`)逐一等价(R-4 不回归)。
 7. **幂等 revert**:对同一 `snapshot_id` 连续 revert 两次 → 第二次 no-op,无副作用(`agent-loop-and-tools.md §7.2` 幂等)。
 8. **actor_kind 正确**:AI 路径写审计 → `actor_kind='ai'`(非靠 nickname 字符串猜),人路径 `actor_kind='human'`(R-3)。
+9. **manifest facts**:一次包含文件写 + WorkItem 状态变更的 run,`build_manifest_facts` 返回 `snapshot_exists=passed`、`revert_available=passed`、`rollback.snapshot_id` 非空;一次 external run_command 返回 `risk.reversible=false` 且 `ask_gate_required=warning|passed`。
 
 ---
 
@@ -215,7 +242,7 @@ specs:
 **回滚策略**
 - 数据迁移期**双表并存一个 release**(步骤 7.3):新写走 `audit_log`,旧 `activity_log`/`project_drive_operations` 保留只读;若 `audit_log` 写入面出问题,可临时切回旧 `_record_op`/`log_activity`(薄封装 R-3.2 保留旧签名,便于一行切换)。
 - Alembic down 还原两新表 + 旧写入面(up/down 可逆测试覆盖)。
-- 红线闸门(N-3)用 feature flag 包裹:若快照后端不稳,可在 `--workers 1` 阶段降级为「快照失败仅告警不拒绝」**仅限非生产**;生产门(`main.py:227` 范式)下 flag 强制 fail-closed,不可降级。
+- 红线闸门(N-3)用 feature flag 包裹仅限开发排障:非生产可临时把 side-effect 工具整体禁用或只跑只读工具;**不得**把「快照失败」降级为允许写入。生产门(`main.py:227` 范式)下强制 fail-closed,不可降级。
 
 **风险**
 1. **通用业务对象逆操作是净新设计**(inventory §9 RISK、Master §5 F10 行)。异构写(状态/派活/结构化记录)的逆操作完备性不足 ⇒ revert 还原不全。**缓解**:P0 只承诺「可逆子集」revert 完备,不可逆子集走 ask-gate(不强求逆操作);drive 逆操作 P-3 已验证可作模板。

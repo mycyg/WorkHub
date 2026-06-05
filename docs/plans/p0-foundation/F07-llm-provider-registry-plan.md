@@ -6,13 +6,15 @@ depends: [F1]
 date: 2026-06-05
 origin: docs/plans/2026-06-05-feat-workhub-p0-foundation-master-plan.md
 inventory: docs/plans/p0-foundation/_migration-inventory.md §7
-spec: docs/workhub/01-architecture/tech-stack-and-migration.md §4
+specs:
+  - docs/workhub/01-architecture/tech-stack-and-migration.md §4
+  - docs/plans/p0-foundation/_ts-first-module-port-page-alignment.md
 ---
 
 # F07 LLM provider 注册表 — 系统级实现 plan
 
 > 上游:[Master Plan §5/§5.1/§6/§8](../2026-06-05-feat-workhub-p0-foundation-master-plan.md) · [迁移清单 §7](./_migration-inventory.md) · [技术选型 §4](../../workhub/01-architecture/tech-stack-and-migration.md)。
-> 本组件 = Master Plan 表中的 **F7**:`registry.get(actor, task)` 单出口、改接全部 7 处裸 `AsyncAnthropic`、模型路由骨架(低风险走廉价,NFR-05)、每调用 token/成本计量喂三级预算。
+> 本组件 = Master Plan 表中的 **F7**:TS `providerRegistry.get(actor, task)` 单出口、迁移全部 7 处裸 `AsyncAnthropic` 的行为、模型路由骨架(低风险走廉价,NFR-05)、每调用 token/成本计量喂三级预算。
 > 依赖 **F1**(配置块落地);**不依赖 DB**,可与 F3–F5 并行(Master §5.1)。
 > 铁律对齐:本组件直接落地 Master §6.9「**provider 单出口**」;并为 §6.1「可移植」「配置经 settings」与 §6.8「事件 taxonomy」埋点。安全敏感面(API key 注入)按 §6.4「逐字移植」处理。
 
@@ -20,14 +22,14 @@ spec: docs/workhub/01-architecture/tech-stack-and-migration.md §4
 
 ## 目标
 
-把现有 7 处各自 `new` 的 `AsyncAnthropic(base_url=settings.llm_base_url, api_key=settings.llm_api_key)` 收敛成**单一 provider 注册表**(`app/llm/`),系统其余只向注册表要「一个能跑 `messages` 的 client」,保持**模型无关**。落成后:
+把现有 7 处各自 `new` 的 `AsyncAnthropic(base_url=settings.llm_base_url, api_key=settings.llm_api_key)` 行为迁移成**单一 TS provider 注册表**(`packages/agent/providers/`),系统其余只向注册表要「一个能跑 `messages` 的 client」,保持**模型无关**。落成后:
 
-1. **单出口(Master §6.9):** 全仓 LLM 调用都经 `registry.get(actor, task)`;`grep` 无残留裸 `AsyncAnthropic(` 实例化(Master §8 功能门禁第 3 条)。
+1. **单出口(Master §6.9):** 全仓 LLM 调用都经 `providerRegistry.get(actor, task)`;`grep` 无残留裸 SDK client 实例化(Master §8 功能门禁第 3 条)。
 2. **provider 元数据集中:** 端点 / 鉴权 / 模型 / 能力(streaming / tools / context window)/ 成本档收成一处声明,新增 provider = 加一条注册条目,调用方零改。
 3. **模型路由骨架(NFR-05):** 按任务风险/复杂度把低风险任务路由到更廉价模型;P0 提供**骨架 + 默认直通**,真正的多模型成本优化策略留 P1+。
 4. **token/成本计量喂三级预算:** 每次调用产出 `UsageRecord`(input/output tokens + 估算成本),通过**注入式 sink**喂给 P0 的预算计量入口;预算**强制裁决(enforcement)**本身属 F8/P-COST,本组件只保证「每调用必计量、计量可被消费」。
 
-非目标:不改 DeepSeek-via-Anthropic 接入形态(仍是 `AsyncAnthropic(base_url, api_key)`),不改任何调用点的 `.stream`/`.create` 签名,不引入 DB 表(计量落库属 F8 AgentRun / F10 审计)。
+非目标:不改变 DeepSeek/Anthropic-compatible endpoint 作为首发 provider 的事实;不在页面或 tool 中直接 new SDK client;不引入 DB 表(计量落库属 F8 AgentRun / F10 审计)。
 
 ---
 

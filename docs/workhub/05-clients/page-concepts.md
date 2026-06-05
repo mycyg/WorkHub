@@ -16,6 +16,8 @@ owner: workflow
 - **桌宠优先**：项目检索、轻审批、澄清提醒优先由 Cuu 桌宠承接。
 - **选项优先**：澄清流程默认点选项，打字只是「其他 / 补充」兜底。
 - **Cuu 为准**：早期非小猫桌宠图只保留交互探索价值；桌宠形象以 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 为准。
+- **落地契约**：页面里的注意力卡、选项澄清、证据气泡、交付物变更包、Cuu 状态映射，统一落到 P0 横切契约 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)，后续开发不得各端各造一套 payload。
+- **纵切优先**：概念图的第一条可施工路径以 [`_gold-path-p0-5-vertical-slice.md`](../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md) 为准；P1+ 交互增强见 [`_interaction-extension-backlog.md`](../../plans/p0-foundation/_interaction-extension-backlog.md)。
 
 ---
 
@@ -195,7 +197,25 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ---
 
-## 4. 资产目录
+## 4. 模块 / 端口 / 页面返回概念图
+
+对应文档：[`_ts-first-module-port-page-alignment.md`](../../plans/p0-foundation/_ts-first-module-port-page-alignment.md)
+
+### 4.1 TS-first Runtime
+
+![WorkHub TS-first Runtime](./assets/shared/ts-first-runtime-concept.png)
+
+这张图定义后续施工的语言边界和运行时边界：TypeScript Core 承载 API、Agent、事件、契约和共享 UI；Rust shell 承接本地能力；Python 只作为可选文档处理 worker。
+
+### 4.2 Endpoint → Page → Cuu Alignment
+
+![WorkHub Endpoint Page Cuu Alignment](./assets/shared/endpoint-page-cuu-alignment.png)
+
+这张图定义模块、端口、返回 payload、页面和 Cuu 状态之间的对齐关系。后续新增页面时，必须先补齐对应的 endpoint、Page VM、事件和 Cuu 承接方式。
+
+---
+
+## 5. 资产目录
 
 - `assets/web/`：Web 页面与审批/交付物概念图。
 - `assets/desktop/`：Rust/Tauri 客户端主窗、本地执行、同步与托盘概念图。
@@ -203,7 +223,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 - `assets/cuu/`：Cuu 最终桌宠形象与交互概念图。
 - `assets/shared/`：跨端组件与交互元件图谱。
 
-## 5. 共享组件图谱
+## 6. 共享组件图谱
 
 对应文档：[`shared-ui-kit.md`](./shared-ui-kit.md)
 

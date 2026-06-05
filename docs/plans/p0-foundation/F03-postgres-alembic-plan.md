@@ -1,6 +1,6 @@
 ---
 component: F03
-title: PostgreSQL + Alembic — 系统级实现 plan
+title: PostgreSQL + Drizzle migrations — 系统级实现 plan
 status: draft
 depends: [F1, F2]
 date: 2026-06-05
@@ -9,11 +9,12 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md
 specs:
   - docs/workhub/01-architecture/data-model.md
   - docs/workhub/01-architecture/tech-stack-and-migration.md
+  - docs/plans/p0-foundation/_ts-first-module-port-page-alignment.md
 ---
 
-# F03 PostgreSQL + Alembic — 系统级实现 plan
+# F03 PostgreSQL + Drizzle migrations — 系统级实现 plan
 
-> 地基第一道门(F2 之后)。换底座(SQLite→PostgreSQL),把"运行期 `create_all` + 幂等 ALTER"换成"Alembic 版本化迁移",并做 SQLite→PG **类型审校**(消灭 naive `utcnow`、Text-JSON→JSONB、`String(32)`→UUID、bool、编号 SEQUENCE/行锁)。
+> 地基第一道门(F2 之后)。换底座(SQLite→PostgreSQL),把"运行期 `create_all` + 幂等 ALTER"换成"Drizzle schema + Drizzle Kit 版本化迁移",并做 SQLite→PG **类型审校**(消灭 naive `utcnow`、Text-JSON→JSONB、`String(32)`→UUID、bool、编号 SEQUENCE/行锁)。
 > 关键不变式:本组件**只换库、立迁移、审类型**,不碰鉴权链/权限/沙箱/事件 bus(各归 F4/F6/F8/F5)。解除单 worker 的"另一半"(broker)是 F5——**F3 单独完成后仍 `--workers 1`,与 F5 成对发布才能开多 worker**(Master §6 铁律 3)。
 > 代码根:相对路径锚点指向当前工作目录「需求管理大师」(`app/`);文档锚点指向 `D:/WorkHub/docs`。
 
@@ -21,10 +22,10 @@ specs:
 
 ## 目标
 
-1. **换 engine**:`settings.database_url` 切 `postgresql+psycopg://…`,删 SQLite-only PRAGMA hook,补 PG 连接池配置(`pool_size`/`max_overflow`)。引擎其余形态(`pool_pre_ping`/`future`/`expire_on_commit=False`)**原样保留**(`app/db.py:14-17,42` 当初已为 PG 埋好伏笔)。
-2. **立 Alembic 迁移体系**:`alembic.ini` + `env.py` + 首迁移(从空 PG 库可 `alembic upgrade head` 重建全 schema)。删除运行期 `Base.metadata.create_all` + `ensure_runtime_schema`(`app/main.py:251-252`)。
+1. **换 engine**:`DATABASE_URL` 切 `postgresql://…`,旧 `settings.database_url` / SQLite PRAGMA 只作为行为锚点;新实现落 `packages/db` 的 pg client + Drizzle 实例,补 PG 连接池配置。
+2. **立 Drizzle 迁移体系**:`packages/db/src/schema/*` + `drizzle.config.ts` + 首迁移(从空 PG 库可重建全 schema)。删除运行期 `Base.metadata.create_all` + `ensure_runtime_schema`(`app/main.py:251-252`)行为。
 3. **SQLite→PG 类型审校**:naive `datetime.utcnow()`→`timestamptz`(aware UTC);Text-JSON→`JSONB`;`String(32)` UUID→PG 原生 `UUID`;`is_admin` bool 的裸 `DEFAULT 0`→`false`;`Project.next_seq` 编号自增→PG `SEQUENCE` 或行级锁(为多 worker 预备,**实际开多 worker 在 F5**)。
-4. **去运行期 schema 变更**:仓内不再有 `create_all` / 运行期 `ALTER` / `CREATE TABLE IF NOT EXISTS`;一切 schema 变更走 Alembic(Master §6 铁律 2、§8「无 `create_all`/运行时 ALTER」)。
+4. **去运行期 schema 变更**:仓内不再有 `create_all` / 运行期 `ALTER` / `CREATE TABLE IF NOT EXISTS`;一切 schema 变更走 Drizzle migrations(Master §6 铁律 2、§8「无 `create_all`/运行时 ALTER」)。
 5. **保留崩溃恢复的业务语义,但摘掉 schema 副作用**:`_resume_stuck_jobs`(`app/main.py:102-224`)是**业务恢复**不是 schema,F3 只把它依赖的 naive `utcnow` 时间数学(`main.py:116` 15 分钟 cutoff)改成 aware,执行编排下沉留给 F8/F11。
 
 ---

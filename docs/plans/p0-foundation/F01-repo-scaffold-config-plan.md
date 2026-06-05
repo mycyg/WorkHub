@@ -11,13 +11,14 @@ inventory: ./_migration-inventory.md
 specs:
   - ../../workhub/01-architecture/tech-stack-and-migration.md
   - ../../workhub/01-architecture/security-and-permissions.md
+  - ./_ts-first-module-port-page-alignment.md
 ---
 
 # F01 — 仓库/构建脚手架 + 配置(系统级 plan)
 
 > P0「地基之地基」的第一块砖。本组件**不引入业务逻辑、不碰运行时行为**,只把现有
-> 「需求管理大师」骨架改造成 **可移植的 greenfield 起点**:settings 收口、去 `/srv/yqgl`
-> 硬编码、补 provider/budget/broker 配置块、npm workspace 校准、最小 CI 扩展。
+> 「需求管理大师」骨架改造成 **可移植的 TS-first greenfield 起点**:pnpm workspace、Node 22/Hono API、Drizzle 配置、env schema 收口、去 `/srv/yqgl`
+> 硬编码、补 provider/budget/broker 配置块、Tauri/Web workspace 校准、最小 CI 扩展。
 > 依赖图见 [Master §5.1](../2026-06-05-feat-workhub-p0-foundation-master-plan.md);本组件 **blocks 全部**,故求**小、稳、零行为变更**。
 > 代码锚点均经实际核验(见 [迁移清单 §1](./_migration-inventory.md));文件路径相对当前工作目录(需求管理大师)。
 
@@ -26,13 +27,13 @@ specs:
 ## 目标
 
 1. **可移植(Master §6 铁律 1):** 一切路径/URL/密钥经 `settings`;运行时代码里**零** `/srv/yqgl` 类绝对路径硬编码。当前开发机是 Windows,现状 `config.py:9-10` + `main.py:339` + `main.py:469` 的 POSIX 绝对路径在本机直接不可用——这是 F01 必须先拆的墙。
-2. **配置面向 WorkHub 扩展(为后续组件预留接口,不实现逻辑):** `config.py` 增 PG pool、broker URL、provider-registry、三级预算默认值的**配置 schema**(F03/F05/F07/F08 各自消费)。
-3. **`database_url` 默认翻面:** 默认值由 `sqlite:////srv/yqgl/...` 改为 `postgresql+psycopg://...`(Master §6 铁律 2、tech-stack §6.3 步骤 1),但**实际换库/删 PRAGMA/Alembic init 是 F03 的事**——F01 只改默认串与配置形,不动 `db.py` 引擎逻辑、不删 `create_all`。
+2. **配置面向 WorkHub 扩展(为后续组件预留接口,不实现逻辑):** `packages/config` 增 PG pool、broker URL、provider-registry、三级预算默认值的**env schema**(F03/F05/F07/F08 各自消费)。
+3. **`DATABASE_URL` 默认翻面:** 默认值由 `sqlite:////srv/yqgl/...` 行为锚点改为 `postgresql://...`(Master §6 铁律 2、tech-stack §6.3 步骤 1),但**实际换库/删 PRAGMA/Drizzle migrations init 是 F03 的事**——F01 只改默认串与配置形。
 4. **fail-closed 生产门逐字保留(Master §6 铁律 4 + 安全篇 §3.4):** `_validate_runtime_config`(`main.py:227`)是已验证的安全资产,F01 **原样保留**,新增配置项**不削弱**它。
 5. **最小 CI:** 现仓**已有** `.github/workflows/verify.yml`(web typecheck + backend smoke + rust check);F01 **扩展**它增加 lint + 迁移校验占位 + 配置可移植性回归,而非从零起 CI。
-6. **npm workspace 校准:** `package.json` workspaces 已含 `shared/web/client-tauri`、`@yqgl/shared` 已是真包——F01 只做命名/描述/脚本的 greenfield 校准与文档,不重建。
+6. **pnpm workspace 校准:** 新仓默认 `apps/*` + `packages/*` + `client-tauri`;现有 `shared/web/client-tauri`、`@yqgl/shared` 作为迁移锚点——F01 做命名/描述/脚本的 greenfield 校准与文档。
 
-> 北极星验收:一个全新 clone 在 **Windows 与 Linux 上**都能 `pip install` + `npm ci` 起来、`import config` 不触碰任何 `/srv/yqgl` 路径、`verify` CI 全绿。
+> 北极星验收:一个全新 clone 在 **Windows 与 Linux 上**都能 `pnpm install` + `pnpm typecheck` + Tauri/Rust check 起来、读取 TS env schema 不触碰任何 `/srv/yqgl` 路径、`verify` CI 全绿。
 
 ---
 
@@ -93,7 +94,7 @@ specs:
 | N4 | 三级预算默认 | `config.py` 新字段 | F08 | `budget_default_user_tokens`、`budget_default_team_tokens`、`budget_default_task_tokens`(NFR-05)。F01 只给默认数值,F08 消费 |
 | N5 | 派生路径设置项 | `config.py` 新字段 | F01 自身(R3/R4) | `downloads_dir`、`web_dist_dir`,默认派生自 `data_dir` 或 `None` |
 | N6 | `.env.example` | 新文件(根或 `app/`) | 全部 | 列全部 env 键 + Windows/Linux 注释样例;**不含真实密钥** |
-| N7 | greenfield README 起步段 | `README` / `docs` | 全部 | Windows 与 Linux 双平台 `pip install` + `npm ci` + 起 daemon 的最小步骤;声明"生产须 Linux(沙箱 rlimit POSIX-only,安全篇 §6.1)" |
+| N7 | greenfield README 起步段 | `README` / `docs` | 全部 | Windows 与 Linux 双平台 `pnpm install` + `pnpm typecheck` + 起 Hono daemon 的最小步骤;声明"生产须 Linux(沙箱 rlimit POSIX-only,安全篇 §6.1)" |
 | N8 | CI lint + 可移植性回归 + 迁移占位 | `verify.yml` 扩展 | F03 | 见下「实施步骤」§CI |
 
 ---
@@ -133,7 +134,7 @@ specs:
 
 ### E. 验证
 
-- [ ] E1. 全新 clone 在 Windows + Linux 均能 `pip install`(`app/pyproject.toml`)+ `npm ci` + 起 daemon(默认配置,空 LLM key)。
+- [ ] E1. 全新 clone 在 Windows + Linux 均能 `pnpm install` + `pnpm typecheck` + 起 Hono daemon(默认配置,空 LLM key)。
 - [ ] E2. `verify` CI 全绿。
 - [ ] E3. `import config` 与 daemon 启动**零**触碰 `/srv/yqgl`。
 

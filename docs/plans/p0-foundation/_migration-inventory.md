@@ -42,8 +42,8 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 ## 4. 事件 bus
 - **EXISTS:** `app/services/push_bus.py` 进程内 `PushBus`:`dict[str,list[Queue]]`(`:23`),每订阅 `Queue(maxsize=256)`(`:27`),`publish` 扇出 `QueueFull→pass`(丢慢订阅,`:43-44`),`stream()` 30s 心跳(`:50-61`),模块单例 `bus`(`:47`)。`app/routers/push.py` SSE,topic `all`/`req:{id}`/`user:{id}`;`req:{id}` 订阅前 `can_view_requirement_record`;`user:{id}` 由认证 `user.id` 派生(非路径)。`app/services/presence.py` 另一进程内单例(RLock+dict,TTL 120s)。
 - **PORT:** topic 命名、maxsize-256 丢慢订阅背压、30s 心跳、"订阅前鉴权"隐私门、`user:{id}`-by-identity 规则。
-- **REFACTOR:** `PushBus` 抽象为接口,后端 **Redis pub/sub**(`DEPLOY.md:97` 点名)或 PG `LISTEN/NOTIFY`(跨 worker);`presence`→Redis key+TTL;扩 topic `workitem:{id}`/`run:{id}`/`proposal:{id}`/`permission:{approver}`/`session:{id}`/`org:`/`workspace:`。
-- **NEW:** broker 适配器;跨 worker 扇出;新 topic + 鉴权门;`permission.ask`/`agent_run.step`/`confidence.assessed`/`escalation.created` 事件类型。
+- **REFACTOR:** `PushBus` 抽象为接口,后端 **Redis pub/sub**(`DEPLOY.md:97` 点名)或 PG `LISTEN/NOTIFY`(跨 worker);`presence`→Redis key+TTL;扩 topic `workitem:{id}`/`run:{id}`/`proposal:{id}`/`session:{id}`/`org:`/`workspace:`;审批私有事件按 approver 路由到 `user:{id}`,不另立 `permission:*` 物理 topic。
+- **NEW:** broker 适配器;跨 worker 扇出;新 topic + 鉴权门;正式事件类型采用 `_experience-deliverable-contracts.md` §4,如 `permission.ask`/`agent_run.step`/`agent_run.escalated`/`proposal.opened`。
 - **RISK:** broker 化后每 payload 对所有 worker 可见 —— 隐私门(`can_view`、`user:{id}`-by-identity)须在**订阅边界**重强制(NFR-08,有跨用户泄漏前科)。"全量发 Redis 客户端过滤"会重现泄漏。
 
 ## 5. 鉴权/身份
@@ -85,7 +85,7 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 - **EXISTS:** `app/services/notifications.py` `create_notification`(`:30`)/`publish_notification`(`:94`,**仅**发 `user:{row.user_id}`,`:105`,私有)/`publish_notification_threadsafe`(`:108`,同步上下文桥)。`app/services/lifecycle.py` `_MILESTONES`(`:31`,覆盖 `claimed/delivered/delivery_doc_pending/accepted/revision_requested/cancelled`),`queue_status_notifications`(事务内不发)/`flush_status_notifications`(commit 后发);docstring(`:3-14`)记录真实 outage:PATCH /status 不在 claim/deliver 路 → 提交者收不到 → 故中枢化。`Notification` 带 `dedupe_key`(`models.py:146`)。
 - **PORT:** "里程碑通知集中一处"、私有按身份(`user:{id}`,永不 `all`)、queue-in-tx/flush-post-commit 铁律、`dedupe_key` 幂等、`publish_notification_threadsafe` 桥。
 - **REFACTOR:** `_MILESTONES` 须加**新状态** `escalated/pm_mode/in_review/merged`(规格 data-model §5 警告:现未登记 → 升级/合并里程碑会静默不通知);扩 Proposal/Review/Escalation。
-- **NEW:** 通知路由到 approver(`permission:{approver}`);新状态机节点的里程碑路由;跨 worker 投递(依赖 broker §4)。
+- **NEW:** 通知按 approver 路由到私有 `user:{id}`;新状态机节点的里程碑路由;跨 worker 投递(依赖 broker §4)。
 - **RISK:** 加状态时静默漏通知。`lifecycle.py:3-14` 史证:状态变更脱离通知码路是**隐形 outage**(无错,用户只是收不到)。加 `escalated/pm_mode/in_review/merged` 不登记 `_MILESTONES` 即对最重要新流(升级/合并)重现此 bug。
 
 ## 11. 客户端壳

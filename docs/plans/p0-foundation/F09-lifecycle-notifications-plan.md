@@ -10,14 +10,15 @@ inventory: ./_migration-inventory.md
 specs:
   - ../../workhub/02-ai-engine/pm-mode-orchestration.md
   - ../../workhub/03-collaboration/review-and-approval.md
+  - ./_experience-deliverable-contracts.md
 ---
 
 # F09 生命周期 / 通知扩展 — 系统级实现 plan
 
-> **一句话**:把现有「需求管理大师」的里程碑通知中枢(`lifecycle.py` 的 `_MILESTONES` + queue-in-tx/flush-post-commit 双段式)**原样保住其铁律**,只做加法:登记四个新状态(`escalated / pm_mode / in_review / merged`)、新增 `approver` 收件人角色与 `permission:{approver}` 投递语义、保持 `dedupe_key` 幂等、并随 F5 broker 化后实现**跨 worker 投递**。
+> **一句话**:把现有「需求管理大师」的里程碑通知中枢(`lifecycle.py` 的 `_MILESTONES` + queue-in-tx/flush-post-commit 双段式)**原样保住其铁律**,只做加法:登记四个新状态(`escalated / pm_mode / in_review / merged`)、新增 `approver` 收件人角色与 approver 私有投递语义、保持 `dedupe_key` 幂等、并随 F5 broker 化后实现**跨 worker 投递**。
 >
 > 上游:[Master Plan](../2026-06-05-feat-workhub-p0-foundation-master-plan.md)(§5 F9 行、§5.1 依赖图、§6 九铁律之 7「通知不漏」、§8 整体验收)· [迁移清单 §10](./_migration-inventory.md)。
-> 规格(本组件作为消费方,口径以规格为准):[`pm-mode-orchestration.md`](../../workhub/02-ai-engine/pm-mode-orchestration.md) §0/§2.2/§3.3/§8 · [`review-and-approval.md`](../../workhub/03-collaboration/review-and-approval.md) §0/§3.3/§8.2。
+> 规格(本组件作为消费方,口径以规格为准):[`pm-mode-orchestration.md`](../../workhub/02-ai-engine/pm-mode-orchestration.md) §0/§2.2/§3.3/§8 · [`review-and-approval.md`](../../workhub/03-collaboration/review-and-approval.md) §0/§3.3/§8.2 · [`_experience-deliverable-contracts.md`](./_experience-deliverable-contracts.md) §4。
 > 真实代码锚点:`app/services/lifecycle.py`、`app/services/notifications.py`、`app/services/push_bus.py`、`app/models.py:146`。
 
 ---
@@ -25,7 +26,7 @@ specs:
 ## 目标
 
 1. **新状态不静默漏通知(九铁律 #7)**:WorkHub 新增的 `escalated / pm_mode / in_review / merged` 四个状态机节点全部登记进 `_MILESTONES`,任一状态变更都走中枢通知码路。`lifecycle.py:3-14` 已记录真实 outage——状态变更脱离通知码路是**隐形 outage**(无报错,用户只是收不到),F09 的核心就是不让最重要的新流(升级/合并)重蹈覆辙。
-2. **approver 路由**:新增 `approver` 收件人角色,把升级简报、审批待办、合并结果精确投递到「该决策的人」(`route_approver` 的产物 `routed_to_user_id`),投递语义对齐规格的 `permission:{approver}` 概念(实现层落为私有 `user:{id}` topic,见「数据与接口契约」)。
+2. **approver 路由**:新增 `approver` 收件人角色,把升级简报、审批待办、合并结果精确投递到「该决策的人」(`route_approver` 的产物 `routed_to_user_id`),投递语义对齐规格中的 approver 私有流概念(实现层落为私有 `user:{id}` topic,见「数据与接口契约」)。
 3. **铁律原样保住**:queue-in-tx(`queue_status_notifications` 不 commit/不 publish)、flush-post-commit(`flush_status_notifications` 在 commit 后 fire 且吞 bus 异常)、`dedupe_key` 幂等、`str.replace` 安全替换(非 `str.format`)、私有按身份(只发 `user:{id}`,永不 `all`)——逐条保留,不"顺手重构"。
 4. **跨 worker 投递**:随 F5 把 `publish_notification` 的出口从进程内 `bus` 切到 broker 后端,保证 2 worker 下 A worker 写的通知能投到连在 B worker 的接收方;隐私门在订阅边界重强制(九铁律 #5)。
 
@@ -49,7 +50,7 @@ specs:
 - **细粒度催办规则表 R1–R5、催办节流频率上限、静默时段**(`pm-mode-orchestration.md` §5.3)→ **P2**。
 - **`pm_briefed / staffing_proposed / catchup / re_reviewed` 等编排子里程碑**(规格 §0 表)→ 随 PM 模式落地于 **P2**;F09 只登记四个 P0 状态机主节点。
 - **Proposal/Review/Escalation 通知的完整字段映射**(依赖这些实体定稿)→ 字段以 F2/data-model 收口为准,F09 落最小可用映射。
-- **`Notification` → `permission:{approver}` 物理 topic 新命名空间**:规格 §8.2 明确不另立 `permission:*` 命名空间,审批私有事件走 `user:{被路由人 id}`。F09 不新建 topic 命名空间。
+- **`Notification` → approver 物理 topic 新命名空间**:规格 §8.2 明确不另立 `permission:*` 命名空间,审批私有事件走 `user:{被路由人 id}`。F09 不新建 topic 命名空间。
 
 ---
 
@@ -79,7 +80,7 @@ specs:
 
 - **N1 `approver` 投递的 EscalationEvent / ApprovalRequest 解析适配** — 新实体(F2 建表:`EscalationEvent` / `ApprovalRequest` / `Proposal`)的收件人解析小函数,供 R2 调用。F09 落「能解析出 approver user_id」的最小实现;路由算法(scope 合并、SLA)归 F6。
 - **N2 跨 worker 投递验收钩子** — 2 worker 下「A worker 触发 escalated → 连在 B worker 的 approver 收到 `notification.created`」的集成测试(对齐 Master §7 集成场景⑤、§8 整体验收)。依赖 F5 broker。
-- **N3 新事件 type 常量** — 通知 `type` 串(`workitem.escalated` / `workitem.in_review` / `workitem.merged` 等,见契约表),与 F5 事件 taxonomy(`escalation.created` 等 SSE 事件)区分:F09 负责**Notification.type**(收件箱条目),F5 负责 **SSE event type**(实时事件名)。二者命名不冲突、各有出口。
+- **N3 新通知 type 常量** — 通知 `type` 串(`workitem.escalated` / `workitem.in_review` / `workitem.merged` 等,见契约表),与 F5 承载的正式 SSE `event.type`(`agent_run.escalated` / `proposal.opened` / `permission.ask` 等)区分:F09 负责**Notification.type**(收件箱条目),F5 负责 **SSE topic + event envelope 承载**(实时事件名由产出组件发布)。二者命名不冲突、各有出口。
 
 ### RISK(本组件首要风险,见「回滚与风险」详列)
 
@@ -130,12 +131,12 @@ specs:
 | `in_review` | `approver` | `workitem.in_review` | `{code} 成果待你确认采纳` | `{actor} 把成果整理好了,进去确认采纳或打回` | `high` |
 | `merged` | `submitter` | `workitem.merged` | `{code} 已合并完成 🎉` | `{actor} 采纳了成果,本次工作已汇入` | `normal` |
 
-> **来源对齐**:`escalated`/`pm_mode` 文案取自 `pm-mode-orchestration.md §3.3`(其 `pm_briefed` 子里程碑属 P2,F09 用 `pm_mode` 状态主节点承载首条简报通知)。`in_review`/`merged` 对齐 `review-and-approval.md §1.1` 异步门(`proposal.ready_for_review`/合并)与 pm-mode §7.3。事件 `type` 命名与 F5 SSE 事件(`escalation.created`/`proposal.ready`)分属两套出口,不冲突。
+> **来源对齐**:`escalated`/`pm_mode` 文案取自 `pm-mode-orchestration.md §3.3`(其 `pm_briefed` 子里程碑属 P2,F09 用 `pm_mode` 状态主节点承载首条简报通知)。`in_review`/`merged` 对齐 `review-and-approval.md §1.1` 异步门(概念里的 `proposal.ready_for_review` 在 P0 正式 SSE 中映射为 `proposal.opened`)与 pm-mode §7.3。`Notification.type` 与 SSE `event.type` 分属两套出口,不冲突。
 
 ### 事件 topic(投递语义)
 
-- 里程碑通知**收件箱条目**:`create_notification` 落库 → commit 后 `publish_notification` 发 `notification.created` 到 **`user:{recipient_id}`**(`notifications.py:105`)。这是 `permission:{approver}` 概念的**实现落点**——approver 是一个 user,其私有流是 `user:{approver_id}`,客户端经 `/stream/me`(cookie/令牌派生 id)订阅。**不新建** `permission:*` topic 命名空间(规格 §8.2 明确)。
-- 与 F5 SSE 事件的分工:F5 负责 `escalation.created` / `proposal.ready` / `permission.ask` 等**实时事件**(topic `workitem:{id}` + 目标人 `user:{id}`);F09 负责**里程碑通知行**(`notification.created` → `user:{id}`)。两者都 commit 后发、都不发 `all`、都在订阅边界重强制 `can_view`。
+- 里程碑通知**收件箱条目**:`create_notification` 落库 → commit 后 `publish_notification` 发 `notification.created` 到 **`user:{recipient_id}`**(`notifications.py:105`)。这是 approver 私有投递概念的**实现落点**——approver 是一个 user,其私有流是 `user:{approver_id}`,客户端经 `/stream/me`(cookie/令牌派生 id)订阅。**不新建** `permission:*` topic 命名空间(规格 §8.2 明确)。
+- 与 F5 SSE 事件的分工:F5 负责承载 `agent_run.escalated` / `proposal.opened` / `permission.ask` 等**正式实时事件**(topic `workitem:{id}` + 目标人 `user:{id}`);F09 负责**里程碑通知行**(`notification.created` → `user:{id}`)。两者都 commit 后发、都不发 `all`、都在订阅边界重强制 `can_view`。
 
 ### API
 

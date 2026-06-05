@@ -6,7 +6,10 @@ depends: [F1]
 date: 2026-06-05
 type: feat
 origin: docs/plans/2026-06-05-feat-workhub-p0-foundation-master-plan.md
-spec: docs/workhub/01-architecture/data-model.md
+spec:
+  - docs/workhub/01-architecture/data-model.md
+  - docs/plans/p0-foundation/_experience-deliverable-contracts.md
+  - docs/plans/p0-foundation/_ts-first-module-port-page-alignment.md
 inventory: docs/plans/p0-foundation/_migration-inventory.md §2
 code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 ---
@@ -15,7 +18,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 
 > 本 plan 是 Master Plan §5「组件表」F2 行的系统级展开,代码级依据见迁移清单 §2(数据层)。
 > 所有"现有"字段锚定真实代码 `app/models.py`(行号经本次核验)。**严守 Master §6 九铁律**,逐条在 §回滚与风险标注命中。
-> 上游契约以 [data-model.md](../../workhub/01-architecture/data-model.md) 为准;凡跨组件共享字段语义(状态机、租户列、快照引用),本 plan **不重定义**,仅落 ORM 形态并深链规格。
+> 上游契约以 [data-model.md](../../workhub/01-architecture/data-model.md) 为准;凡跨组件共享字段语义(状态机、租户列、快照引用),本 plan **不重定义**,仅落 ORM 形态并深链规格。Proposal 的交付物变更说明另以 [`_experience-deliverable-contracts.md`](./_experience-deliverable-contracts.md) 的 `DeliverableChangeManifest v0` 为准。
 
 ---
 
@@ -119,7 +122,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 | `Workspace` | §3.4 | `org_id` FK CASCADE;`UniqueConstraint(org_id, slug)`;软删 |
 | `UserProfile` | §3.2 | `user_id` FK unique CASCADE(1:1);`skill_tags`/`availability_pref` JSONB;`onboarded_at?` |
 | `Branch` | §6.1 | `work_item_id` FK CASCADE;`actor_kind`、`actor_user_id?`、`agent_run_id?`、`kind=work|main`、`base_snapshot_id?`、`head_ref`、`status`、`version`(+`version_id_col`) |
-| `Proposal` | §6.2 | `branch_id` FK CASCADE;`round`;`diff_manifest` JSONB;`confidence_id?`、`merge_snapshot_id?`;`UniqueConstraint(branch_id, round)` |
+| `Proposal` | §6.2 + experience §3 | `branch_id` FK CASCADE;`round`;`diff_manifest` JSONB(**必须承载 `DeliverableChangeManifest v0`,覆盖文档/表格/PPT/图片/文件夹/结构化记录**);`confidence_id?`、`merge_snapshot_id?`;`UniqueConstraint(branch_id, round)` |
 | `Review`(自 `RevisionRequest`) | §6.3 | `proposal_id` FK CASCADE;`decision=approve|reject`;`reason_md`(reject 时应用层 NOT NULL);`reason_fed_back_at?`、`reviewer_kind` |
 | `SpecDoc` | §6.5 | `scope_kind=work_item|project`;`work_item_id?`/`project_id?` 二选一;`content_sha256`、`version`(+`version_id_col`) |
 | `AgentRun` | §7.1 | `work_item_id` FK CASCADE、`branch_id?`;`mode`、`actor`、`status`、`model`、`turns_used`、`max_turns`(必填)、`token_in/out`、`cost_estimate?`、`handoff_md?` |
@@ -143,8 +146,9 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 - [ ] **S5 NEW 实体(15 个)**:按 NEW 表分模块声明;FK 互引按依赖序(`Org`→`Workspace`→…→`Branch`/`AgentRun`→`Proposal`/`ConfidenceRecord`→`EscalationEvent`/`Snapshot`);唯一约束与 index 意图标注。
 - [ ] **S6 枚举/常量单一真相**:导出 `WORK_ITEM_STATUSES`、`ALLOWED_TRANSITIONS`(自 data-model §5 全转移表)、`CONFIDENCE_GRADES=("low","medium","high")`、`RISK_LEVELS`、`VERDICTS`、`ESCALATION_TRIGGERS=("unqualified","user_unsatisfied","user_forbidden","doom_loop","budget_exhausted")`(以 data-model §7.4 为准,消灭 api-contract §2.7 的 `user_rejected` 漂移);**统一 `mid`→`medium`**;同步 `shared/src/design/status-vocab.ts` 人话标签(交 F11,本组件出枚举清单)。
 - [ ] **S7 Pydantic schema 字段名对齐**:`app/schemas.py` 内 `requirement_id`→`work_item_id`(16 处)、`estimate_confidence` 正则保持 `low|medium|high`(已对,`schemas.py:227/250`)、新实体读写 schema 骨架(详细 API schema 属 F11)。
-- [ ] **S8 自检 gate**:① `import app.models` 全图加载无错;② `Base.metadata.sorted_tables` 含全部新旧表且拓扑可建(FK 无悬空);③ 在临时 PG 上 `Base.metadata.create_all()` 冒烟建表成功(仅本组件自检,正式建表走 F3 Alembic);④ grep 确认 `models.py`/`schemas.py` 内无残留 `requirement_id`。
-- [ ] **S9 交接产物**:向 F3 交"列类型转换清单 + 状态映射表 + 租户回填点";向 F6/F8/F9/F10 交"对应新实体已就绪 + version_id_col 位置";向 F11 交"FK/字段改名的 317 处跨文件清单 + 枚举词表"。
+- [ ] **S8 `DeliverableChangeManifest` 契约接入**:`Proposal.diff_manifest` 的 ORM/Pydantic 类型标为 JSONB/dict,并在 schema docstring / OpenAPI extra 中引用 `_experience-deliverable-contracts.md` §3;不新增表,但交 F8/F10/F11 一份 fixture 清单(`docx/pptx/xlsx/image/folder/structured_record`)。
+- [ ] **S9 自检 gate**:① `import app.models` 全图加载无错;② `Base.metadata.sorted_tables` 含全部新旧表且拓扑可建(FK 无悬空);③ 在临时 PG 上 `Base.metadata.create_all()` 冒烟建表成功(仅本组件自检,正式建表走 F3 Alembic);④ grep 确认 `models.py`/`schemas.py` 内无残留 `requirement_id`。
+- [ ] **S10 交接产物**:向 F3 交"列类型转换清单 + 状态映射表 + 租户回填点";向 F6/F8/F9/F10 交"对应新实体已就绪 + version_id_col 位置";向 F11 交"FK/字段改名的 317 处跨文件清单 + 枚举词表 + `DeliverableChangeManifest` fixture 清单"。
 
 ---
 
@@ -180,7 +184,8 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 ### API / 事件 topic 契约(交 F11/F5,本组件仅命名对齐)
 
 - API 字段改名 `requirement_id`→`work_item_id` 的端点/客户端 hook 对等属 **F11**;本组件出"字段改名清单"。
-- 事件 taxonomy(`agent.run.started`/`run.step`/`confidence.assessed`/`escalation.created`/`proposal.ready`/`permission.ask`,Master §6.8)由 **F5** 落 topic;本组件提供其载体实体(`AgentRun`/`AgentStep`/`ConfidenceRecord`/`EscalationEvent`/`Proposal`/`ApprovalRequest`)字段就绪。
+- 正式事件 taxonomy(`agent_run.started`/`agent_run.step`/`agent_run.escalated`/`proposal.opened`/`permission.ask` 等,见 `_experience-deliverable-contracts.md` §4)由 **F5** 落 topic;本组件提供其载体实体(`AgentRun`/`AgentStep`/`ConfidenceRecord`/`EscalationEvent`/`Proposal`/`ApprovalRequest`)字段就绪。
+- `Proposal.diff_manifest` 的 JSON 形态以 `_experience-deliverable-contracts.md` §3 为准;P0 不要求 F2 校验每个字段,但 F11 生成类型和 F8/F10 manifest 生成必须能引用同一 schema。
 
 ---
 
@@ -195,6 +200,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 7. **枚举一致**:`CONFIDENCE_GRADES == ("low","medium","high")`;源码内 `rg "\bmid\b" app/models app/schemas` 在 grade/risk 语境零命中。
 8. **审计不软删**:`AuditLog` 无 `deleted_at` 列、有 `created_at` index(`hasattr(AuditLog,"deleted_at") is False`)。
 9. **关系往返**:`WorkItem.branches`/`AgentRun.steps`/`Branch.proposals` relationship 双向 `back_populates` 一致(SQLAlchemy `configure_mappers()` 无警告)。
+10. **交付物 manifest 载体就绪**:`Proposal.diff_manifest` 是 JSONB/dict,并有至少 6 个 fixture 类型(docx/pptx/xlsx/image/folder/structured_record)可作为 F8/F10/F11 共享测试输入。
 
 ---
 

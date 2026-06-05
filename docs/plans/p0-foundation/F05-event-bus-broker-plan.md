@@ -9,13 +9,15 @@ inventory: ./_migration-inventory.md
 specs:
   - ../../workhub/01-architecture/api-contract.md
   - ../../workhub/01-architecture/data-model.md
+  - ./_experience-deliverable-contracts.md
+  - ./_ts-first-module-port-page-alignment.md
 ---
 
 # F05 事件 bus → broker（Event Bus → Broker）
 
 > 把现有进程内单例 `PushBus`（`app/services/push_bus.py:47`）与 `presence`（`app/services/presence.py`）**抽象为接口 + broker 后端**（Redis pub/sub 或 PG `LISTEN/NOTIFY`），解除"单 worker 的事件半边"，使 2 worker 下 A worker 发的事件能投到连在 B worker 的订阅方。这是 Master §6 铁律 3「**F3 与 F5 成对发布**」中的事件那一半——**F3+F5 都到位才 `--workers N`**。
 > 核心红线：broker 化后每条 payload 对所有 worker 可见，**隐私门（`can_view`、`user:{id}`-by-identity）必须在订阅边界重强制**（NFR-08，有跨用户泄漏前科）；禁止"全量发 Redis 客户端过滤"。
-> 权威来源：SSE 帧格式 / topic 隔离 / 事件类型清单以 [`api-contract.md`] §5 为准；topic 命名（`req:{id}`→`workitem:{id}`、`run:{id}` 等）以 api-contract §5.3 + Master §6.8 taxonomy 为准。本 plan 引用其产物，不重定义事件 schema。
+> 权威来源：SSE 帧格式 / topic 隔离以 [`api-contract.md`] §5 为准；P0 新事件的**正式实现名**与 `WorkHubEvent` envelope 以 [`_experience-deliverable-contracts.md`](./_experience-deliverable-contracts.md) §4 为准。本 plan 引用其产物，不重定义业务 payload schema。
 
 ---
 
@@ -24,7 +26,7 @@ specs:
 1. **PushBus 抽象 + broker 后端**：把 `push_bus.py` 的进程内 `dict[str,list[Queue]]`（`:23`）抽象为 `PushBus` 接口；落地 ① 进程内后端（开发/单 worker，等价现状）与 ② broker 后端（Redis pub/sub 或 PG `LISTEN/NOTIFY`，跨 worker）。**对 publisher/subscriber 的调用签名零改**（`bus.publish(topic, type, data)` / `stream(topic)` 不变），仅 import 的 `bus` 指向新后端。
 2. **presence → 共享后端**：把 `presence.py` 的进程内 `RLock+dict`（`:18-20`，TTL 120s）迁到 Redis key+TTL（或 PG），使 2 worker 下在线状态一致（现状第 2 worker 看不到第 1 worker 的连接计数）。
 3. **topic 鉴权门在订阅边界重强制**：`req:{id}`→`workitem:{id}` 订阅前 `can_view`（沿用 `push.py:84`）、`user:{id}` 由认证身份派生而非路径参数（沿用 `push.py:99`）、`job:{id}` 不发 `all`——broker 化后这些门**一条不削弱**，且在订阅边界（连接建立时）重新强制。
-4. **topic taxonomy 扩展**：新增 `workitem:{id}`（演进自 `req:{id}`）、`run:{run_id}`、`session:{id}`、`proposal:{id}` topic，对齐 api-contract §5.3；事件**类型**（`agent_run.step`/`escalation.created`/`permission.ask` 等）由各产出组件（F8/F6/F9）发布，F05 只保证**topic 命名空间 + 订阅鉴权 + 跨 worker 扇出**到位。
+4. **topic taxonomy 扩展**：新增 `workitem:{id}`（演进自 `req:{id}`）、`run:{run_id}`、`session:{id}`、`proposal:{id}` topic，对齐 api-contract §5.3；事件**类型**（`agent_run.step`/`agent_run.escalated`/`permission.ask`/`proposal.opened` 等）由各产出组件（F8/F6/F9）发布，F05 只保证**topic 命名空间 + 订阅鉴权 + 跨 worker 扇出**到位。
 
 ---
 
@@ -41,7 +43,7 @@ specs:
 
 ### Out（明确推迟 / 归他组件）
 
-- **事件 payload schema / 新事件类型定义**：由产出组件拥有——`agent_run.step`/`run.compacting`/`step.snapshot`/`escalation.created`/`work.completed` 归 **F8**（agent-loop §6.2）；`permission.ask`/`permission.decided` 归 **F6**；`notification.created`（里程碑通知出口 broker 化）归 **F9**。F05 只提供 topic + 扇出 + 鉴权门，**不发这些业务事件**。
+- **事件 payload schema / 新事件类型定义**：由产出组件拥有——`agent_run.started`/`agent_run.step`/`agent_run.compacting`/`agent_run.escalated`/`step.snapshot` 归 **F8**（agent-loop §6.2）；`permission.ask`/`permission.decided` 归 **F6**；`proposal.opened`/`proposal.reviewed`/`proposal.merged` 与 `notification.created` 归 **F9/F10** 按生命周期与合并边界承接。F05 只提供 topic + 扇出 + 鉴权门，**不发这些业务事件**。
 - **AgentRun 入队/出队队列**（`asyncio.create_task`→可恢复队列）：归 **F8**（其 queue 可复用 F05 的 broker 连接，但队列语义/lease 心跳归 F8）。F05 只交付 pub/sub + presence，不交付 work-queue。
 - **里程碑通知中枢**（`_MILESTONES` 登记新状态、approver 路由、queue-in-tx/flush-post-commit）：归 **F9**；F05 只保证 `publish_notification` 的出口（`notifications.py:105` `bus.publish`）透明切到 broker 后端。
 - **行级锁/乐观锁 / AgentRun 竞态护栏**：归 F8；F05 不碰 DB 锁（事件域）。
@@ -80,9 +82,11 @@ specs:
 
 - **N-1 broker 后端选型 + 适配器**：`app/services/push_backends/`（或 `app/events/`）含 `InProcessPushBus` + `RedisPushBus`/`PgNotifyPushBus`；连接配置经 `settings.broker_url`（F1）。**P0 定调一种**（建议 Redis pub/sub，`DEPLOY.md:97` 点名；PG `LISTEN/NOTIFY` 作为无 Redis 部署的降级，见「开放/选型」）。
 - **N-2 topic 命名空间表 + 订阅鉴权注册**：集中定义 topic → 鉴权谓词映射（`workitem:{id}`→`can_view`、`user:{id}`→身份派生、`run:{id}`→owner/审批人、`session:{id}`→owner、`proposal:{id}`→`can_view`），SSE 端点订阅前查表强制（防新增 topic 漏门）。
-- **N-3 新 SSE 端点（路径占位，F11 收口）**：`/api/push/stream/session/{id}`（session owner）、`/api/push/stream/run/{id}`（run owner/审批人）——沿用 `stream_one` 的"短会话鉴权 → 关 session → 流"范式（`push.py:77-92`）。
-- **N-4 presence 共享 store 适配器**：Redis key+TTL（或 PG）实现 `presence` 协议；`get_presence_map` 批量读（`presence.py:63`）改为共享 store 的 pipeline/批查。
-- **N-5 broker 连接健康 + 降级**：broker 不可达时 fail-closed 行为定义（启动拒绝 vs 降级单 worker）；连接断开重连 + 重订阅（不丢订阅）。
+- **N-3 正式事件名注册表**：集中定义 `_experience-deliverable-contracts.md` §4 的正式事件 type 常量;旧概念名(`agent.run.started`/`proposal.ready`)只可写入 alias 注释/迁移表,不得作为新 publish type。
+- **N-4 `WorkHubEvent` envelope 适配**：新事件发布时至少带 `event_id/type/topic/ts/preview_text?/data`;允许旧事件迁移期裸 payload,但新增 WorkHub 事件必须 envelope 化,便于 Cuu/Web/Rust 共享消费。
+- **N-5 新 SSE 端点（路径占位，F11 收口）**：`/api/push/stream/session/{id}`（session owner）、`/api/push/stream/run/{id}`（run owner/审批人）——沿用 `stream_one` 的"短会话鉴权 → 关 session → 流"范式（`push.py:77-92`）。
+- **N-6 presence 共享 store 适配器**：Redis key+TTL（或 PG）实现 `presence` 协议；`get_presence_map` 批量读（`presence.py:63`）改为共享 store 的 pipeline/批查。
+- **N-7 broker 连接健康 + 降级**：broker 不可达时 fail-closed 行为定义（启动拒绝 vs 降级单 worker）；连接断开重连 + 重订阅（不丢订阅）。
 
 ---
 
@@ -93,13 +97,14 @@ specs:
 - [ ] **S0 前置（F1/F3）**：`settings.broker_url`（F1 配置块）；确认 F3 已落 PG（PG `LISTEN/NOTIFY` 方案需要）。
 - [ ] **S1 抽象 `PushBus` 接口**：把 `push_bus.py:21` 拆为接口 + `InProcessPushBus`；模块单例 `bus` 按 settings 选后端；**签名零改**，跑现有 SSE 回归（连上收 `connected`、收 `requirement.updated`、30s 心跳、断连清理）。
 - [ ] **S2 实现 broker 后端**（N-1）：Redis pub/sub（或 PG `LISTEN/NOTIFY`）；每 worker 一条订阅连接多路复用 → 本地 `Queue(maxsize=256)`（保 P-1 背压）；`publish` 走 broker channel。单测：A "worker"（进程/事件循环）publish → B 订阅者收到。
-- [ ] **S3 presence 共享化**（R-4/N-4）：`presence` 存储换 Redis key+TTL（或 PG）；`mark_stream_open/closed`/`get_presence` 语义不变。单测：跨"worker"读写一致。
+- [ ] **S3 presence 共享化**（R-4/N-6）：`presence` 存储换 Redis key+TTL（或 PG）；`mark_stream_open/closed`/`get_presence` 语义不变。单测：跨"worker"读写一致。
 - [ ] **S4 topic 扩展 + 鉴权注册表**（N-2）：`req:{id}`→`workitem:{id}`；新增 `run:{id}`/`session:{id}`/`proposal:{id}` topic + 订阅鉴权谓词；订阅前查表强制。
-- [ ] **S5 新 SSE 端点占位**（N-3）：`/stream/session/{id}`、`/stream/run/{id}` 用短会话鉴权范式（`push.py:77-92`）；路径最终由 F11 收口。
-- [ ] **S6 隐私门订阅边界回归**（NFR-08）：`workitem:{id}` 私有态他人订阅 403；`user:{id}` 客户端无法点名他人；`job:{id}`/私有 topic 不发 `all`；broker payload 不全量广播。
-- [ ] **S7 通知出口确认**（与 F9）：`notifications.py:105` 经 broker 后端跨 worker 可达，双段式（queue-in-tx/flush-post-commit）不变。
-- [ ] **S8 broker 健康/降级**（N-5）：broker 不可达的 fail-closed/降级策略 + 断线重连重订阅。
-- [ ] **S9 2 worker 冒烟门禁**（Master §8 / §7 集成场景①③）：`--workers 2`，A worker 发 `workitem:{id}` 事件 → 连在 B worker 的有权订阅方收到；**无跨用户泄漏**（无权方收不到）；presence 跨 worker 一致。**此门禁过后方可解禁 `--workers N`（与 F3 成对）。**
+- [ ] **S5 事件常量 + envelope**（N-3/N-4）：新增正式事件 type 常量表 + `WorkHubEvent` envelope helper;新增 publish 调用必须用正式名,并能携带 `cuu_state` / `attention` hint。
+- [ ] **S6 新 SSE 端点占位**（N-5）：`/stream/session/{id}`、`/stream/run/{id}` 用短会话鉴权范式（`push.py:77-92`）；路径最终由 F11 收口。
+- [ ] **S7 隐私门订阅边界回归**（NFR-08）：`workitem:{id}` 私有态他人订阅 403；`user:{id}` 客户端无法点名他人；`job:{id}`/私有 topic 不发 `all`；broker payload 不全量广播。
+- [ ] **S8 通知出口确认**（与 F9）：`notifications.py:105` 经 broker 后端跨 worker 可达，双段式（queue-in-tx/flush-post-commit）不变。
+- [ ] **S9 broker 健康/降级**（N-7）：broker 不可达的 fail-closed/降级策略 + 断线重连重订阅。
+- [ ] **S10 2 worker 冒烟门禁**（Master §8 / §7 集成场景①③）：`--workers 2`，A worker 发 `workitem:{id}` 事件 → 连在 B worker 的有权订阅方收到；**无跨用户泄漏**（无权方收不到）；presence 跨 worker 一致。**此门禁过后方可解禁 `--workers N`（与 F3 成对）。**
 
 ---
 
@@ -131,13 +136,17 @@ class PushBus(Protocol):
 
 > **约定**（api-contract §5.3）：任何新增 topic **先判私有性**——含 `result_ref`/正文/置信细节的一律走 `user:{id}` 或 `workitem:{id}`（经可见性门），不走 `all`。审批私有事件 `permission.ask` 走 `user:{被路由人 id}`，**不另立 `permission:*` 命名空间**（对齐 api-contract §5.3 / F09 收口口径）。
 
-### 事件类型（F05 不拥有，仅承载；权威：api-contract §5.2）
+### 事件类型（F05 不拥有，仅承载；正式名权威：`_experience-deliverable-contracts.md` §4）
 
 F05 提供 topic + 扇出 + 鉴权，**不发布业务事件**。产出方与归属：
 - 现状 `requirement.ready`/`requirement.updated`/`comment.added`/`drive.changed`/`notification.created`/`job.updated` 等（api-contract §5.2 全清单）——各域沿用，topic 改名（`req:`→`workitem:`）随 F11。
-- WorkHub 新增 `agent_run.step`/`escalation.created`/`confidence.assessed`/`permission.ask`/`proposal.opened|reviewed|merged`/`conflict.detected`（api-contract §5.2 下表）——归 **F8/F6/F9/P1**。F05 保证这些事件能跨 worker 扇出到正确 topic 并经订阅鉴权。
+- WorkHub 新增正式事件名采用 `_experience-deliverable-contracts.md` §4:`agent_run.started`/`agent_run.step`/`agent_run.escalated`/`permission.ask`/`permission.decided`/`proposal.opened|reviewed|merged`/`knowledge.evidence.ready`/`sync.progress|conflict`/`step.snapshot` 等——归 **F8/F6/F9/F10/P1**。F05 保证这些事件能跨 worker 扇出到正确 topic 并经订阅鉴权。
 
-> 注：Master §6.8 taxonomy 与 api-contract §5.2 事件名有细微差异（如 `agent.run.step` vs `agent_run.step`）。**SSE 事件 type 的实现权威以 api-contract §5.2 为准**（契约层），F05 透传字符串不解释语义。
+> 注：Master §6.8 与早期概念图里的 `agent.run.started` / `proposal.ready` 属概念别名。**P0 新实现只能 publish 正式名**;别名可在前端迁移层兼容旧事件,但不得继续扩散。
+
+### Event Envelope
+
+新增 WorkHub 事件使用 `_experience-deliverable-contracts.md` §4.2 的 `WorkHubEvent<T>` envelope。F05 不校验业务 `data`,但可在测试里断言新事件至少含 `event_id/type/topic/ts/data`,且 `preview_text` 不超过 200 字符。
 
 ### broker 后端选型（P0 定调）
 
@@ -168,8 +177,10 @@ F05 提供 topic + 扇出 + 鉴权，**不发布业务事件**。产出方与归
 - [ ] **AC-6 隐私门：`user:{id}` 身份派生**：客户端无法构造请求订阅他人 `user:{id}` 流（topic 从认证身份派生，非路径，P-5）。
 - [ ] **AC-7 无跨用户泄漏（NFR-08，有前科）**：worker-A 发到 `user:{B}` / `job:{B}` 的私有事件，连在 worker-B 但非 B 本人的订阅者**收不到**；broker payload 未"全量广播 + 客户端过滤"（grep 无全量发 + 客户端 filter 模式）。
 - [ ] **AC-8 新 topic 鉴权**：`run:{id}` 非 owner/审批人订阅被拒；`session:{id}` 非 owner 被拒。
-- [ ] **AC-9 通知出口跨 worker**：worker-A `publish_notification`（`user:{B}`）→ 连在 worker-B 的 B 本人 `/stream/me` 在心跳窗口内收到 `notification.created`（与 F9 AC5 同源，验出口 broker 化）。
-- [ ] **AC-10 broker 降级/重连**：broker 短暂断开重连后，已有订阅自动重订阅、不丢后续事件;broker 启动不可达按 N-5 策略 fail-closed/降级（不静默脑裂）。
+- [ ] **AC-9 事件正式名守卫**：新增 WorkHub 事件 publish 点只引用正式事件常量;`rg "agent\\.run|proposal\\.ready"` 在新增 publish 代码中零命中。
+- [ ] **AC-10 envelope 守卫**：`permission.ask` / `proposal.opened` / `knowledge.evidence.ready` 三类 fixture 事件都含 `WorkHubEvent` 基本字段,且可映射 `cuu_state`。
+- [ ] **AC-11 通知出口跨 worker**：worker-A `publish_notification`（`user:{B}`）→ 连在 worker-B 的 B 本人 `/stream/me` 在心跳窗口内收到 `notification.created`（与 F9 AC5 同源，验出口 broker 化）。
+- [ ] **AC-12 broker 降级/重连**：broker 短暂断开重连后，已有订阅自动重订阅、不丢后续事件;broker 启动不可达按 N-7 策略 fail-closed/降级（不静默脑裂）。
 
 ---
 

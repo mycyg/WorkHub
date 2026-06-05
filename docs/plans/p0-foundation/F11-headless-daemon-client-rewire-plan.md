@@ -12,25 +12,30 @@ specs:
   - ../../workhub/01-architecture/api-contract.md
   - ../../workhub/05-clients/web-app.md
   - ../../workhub/05-clients/desktop-pet-tauri.md
+  - ./_experience-deliverable-contracts.md
+  - ./_ts-first-module-port-page-alignment.md
 ---
 
 # F11 — headless daemon 拆分 + 客户端改接
 
-> **一句话**:把 daemon 从「自带 SPA 静态托管的单体」剥离为 **headless agent daemon**(只暴露 OpenAPI + SSE),路由按域重排,从 `/openapi.json` 生成**类型化客户端**替手写 `shared/src/api/types.ts`/`client.ts`,把 web 的**同源假设**改为可配 daemon base-URL + 跨域 CORS/cookie(**不削弱生产门**),把 `requirements→workitem` 端点对齐改名,补 SSE 新 topic,Tauri 仅做**最小改接**。
+> **一句话**:把 daemon 从「自带 SPA 静态托管的单体」剥离为 **TS-first headless agent daemon**(Hono/Node,只暴露 OpenAPI + SSE),路由按域重排,从 `/api/openapi.json` 生成**类型化客户端**替手写 `shared/src/api/types.ts`/`client.ts`,把 web 的**同源假设**改为可配 daemon base-URL + 跨域 CORS/cookie(**不削弱生产门**),把 `requirements→workitem` 端点对齐改名,补 SSE 新 topic,Tauri 仅做**最小改接**。
 > **定位**:F11 是 P0 的**汇聚与暴露层**(Master §5.2 P0c),依赖 F1–F10 全部。本 plan 只管「daemon 去 UI + 客户端连新 daemon」这条边界;实体/状态机以 [data-model] 为准,接口形状以 [api-contract] 为准,事件 broker 内核以 F5 为准,provider/Agent 引擎以 F7/F8 为准——**交叉处只引用,不复述**。
+> **TS-first 修正**:原 `app/main.py` / FastAPI file:line 继续作为旧系统行为锚点;新仓实际模块、端口、Page VM、Endpoint→Page→Cuu 对齐以 [`_ts-first-module-port-page-alignment.md`](./_ts-first-module-port-page-alignment.md) 为准。
 > **扎根**:本 plan 每条改动带 `file:line` 锚点,均经真实代码核验(`app/main.py`、`shared/src/api/client.ts`、`client-tauri/src-tauri/src/http.rs`、`app/routers/push.py`、`app/auth.py`、`app/config.py`、`client-tauri/web-src/src/lib/tauri.ts`)。
 
 ---
 
 ## 目标
 
-1. **daemon headless 化**:剥离 SPA 静态托管(`/assets` + SPA fallback,`main.py:469-498`),daemon 只服务 `/api/*` + `/api/push/stream*` + 安装包下载;web `dist` 由独立静态服务器/CDN 托管。
+1. **daemon headless 化**:新建 `apps/api` Hono/Node daemon,剥离旧 SPA 静态托管(`/assets` + SPA fallback,`main.py:469-498` 作为行为锚点),daemon 只服务 `/api/*` + `/api/push/stream*` + 安装包下载;web `dist` 由独立静态服务器/CDN 托管。
 2. **路由按域重排**:把 26 个 `include_router`(`main.py:280-305`)按 api-contract §1 的域分组(session/workitem/proposal/permission/agent-run/escalation/event/sync …)显式化,使 `/openapi.json` 成为稳定契约。
-3. **OpenAPI-first 类型化客户端**:从 daemon `/openapi.json` 生成 TS 类型 + API client,替换手写 `shared/src/api/types.ts` 与 `shared/src/api/client.ts`(P0 最高杠杆客户端改动)。
+3. **OpenAPI-first 类型化客户端**:从 daemon `/api/openapi.json` 生成 TS 类型 + API client,替换手写 `shared/src/api/types.ts` 与 `shared/src/api/client.ts`(P0 最高杠杆客户端改动)。
 4. **web 跨域 base-URL/CORS/cookie 重解**:web 从「相对 `/api` 同源 + cookie」改为「可配 daemon base-URL + 跨域 CORS(`allow_credentials=True` + 显式 origin)+ cookie `SameSite=None;Secure`」,**且不放松** `_validate_runtime_config` 生产门(`main.py:227`)。
 5. **`requirements→workitem` 端点对齐**:把 F2 改名(`requirements→work_items`)在 API 面与客户端 hook 统一落地,旧路径保留迁移期别名(deprecation 兼容窗)。
-6. **SSE 新 topic 暴露**:在 `routers/push.py` 增 `/stream/session/{id}` 等新 topic 端点(F5 已实现 broker 内核与 topic 鉴权门),客户端 hook 消费 `agent_run.step`/`permission.ask`/`confidence.assessed`/`escalation.created`/`proposal.*`。
+6. **SSE 新 topic 暴露**:在 `routers/push.py` 增 `/stream/session/{id}` 等新 topic 端点(F5 已实现 broker 内核与 topic 鉴权门),客户端 hook 消费 `agent_run.step`/`agent_run.escalated`/`permission.ask`/`proposal.opened|reviewed|merged`/`knowledge.evidence.ready`。
 7. **Tauri 最小改接**:`http.rs:84` 已有可配 `base_url`,P0 仅对齐新/改名端点与新事件分发;**不做**双向同步、桌宠独立窗、自动更新(推 P1+)。
+8. **体验契约类型化**:OpenAPI/shared generated types 必须覆盖 `AttentionItem` / `QuestionCard` / `EvidenceRef` / `DeliverableChangeManifest` / `WorkHubEvent` / `CuuState`,保证 Web、Rust 主窗、未来 Cuu pet window 同源消费。
+9. **页面返回对齐**:关键 AI-native 页面使用 Page VM endpoint(`GET /api/pages/attention`、`/api/pages/proposals/:id`、`/api/pages/approvals` 等),避免 Web/Tauri/Cuu 各自拼接口。
 
 ---
 
@@ -47,6 +52,7 @@ specs:
 - `routers/push.py` 增 `/stream/session/{id}`(+ 复用 `require_stream_user` 轻鉴权 + 订阅前 `can_view` 门);客户端新增 hook 消费新 topic。
 - Tauri:`http.rs`/`lib/tauri.ts` 对齐新端点路径与新事件名(经 `push-event` 单入口分发,无需新 Tauri 事件)。
 - 端到端冒烟:web(跨域 CORS+cookie)与 Tauri(token)经生成客户端 + 新 SSE topic 成功访问 daemon。
+- shared/OpenAPI 生成的客户端类型包含 `_experience-deliverable-contracts.md` 的体验契约;Web 可完整渲染, Cuu 可轻量渲染, Rust 可按 `requires_desktop` 执行边界分流。
 
 ### Out(明确推迟到 P1+)
 
@@ -90,8 +96,10 @@ specs:
 - **N-3 web base-URL 配置**:web 加 `VITE_API_BASE_URL`(构建期)或运行时 `/config.json` 注入;`apiBase()` 读取之。SSE hook 同步用此 base 拼 `/api/push/stream*`。
 - **N-4 跨域 CORS + cookie 收紧**:`config.py` 注释/校验明确「web 独立部署 ⇒ `cors_allow_origins` 必须列 web origin」;`auth.py` cookie 签发在跨域场景 `SameSite=None; Secure`(LAN http 同源时维持现状);`_validate_runtime_config` 补断言「production 下若 web 跨域则 origin 不得含 `*` 且 cookie 必 secure」。
 - **N-5 SSE 新 topic 端点**:`routers/push.py` 增 `GET /api/push/stream/session/{id}`(owner 鉴权 + 短命 session 检查,照搬 `stream_one` `push.py:63-92`);`/stream/req/{id}` 接受 `workitem:{id}` 别名 topic(api-contract §5.3)。
-- **N-6 客户端新 topic hook**:`shared/src/hooks/` 增 `useSessionStream`(消费 `session:{id}` 的 `agent_run.step`/`permission.ask`)、扩 `useReqStream` 消费 `confidence.assessed`/`escalation.created`/`proposal.*`;Tauri 经 `push-event` 单入口按 `data.event` 分发(无新 Tauri 事件,`desktop-pet-tauri.md §4.2`)。
+- **N-6 客户端新 topic hook**:`shared/src/hooks/` 增 `useSessionStream`(消费 `session:{id}` 的 `agent_run.step`/`permission.ask`)、扩 `useReqStream` 消费 `agent_run.escalated`/`proposal.opened|reviewed|merged`/`knowledge.evidence.ready`;Tauri 经 `push-event` 单入口按 `data.event` 分发(无新 Tauri 事件,`desktop-pet-tauri.md §4.2`)。
 - **N-7 Tauri 端点/事件对齐**:`commands/*.rs` 中改名端点路径对齐(如 `submitter.rs` 的 `/auto-process` → `/agent-runs`),`http.rs`/`tauri.ts` 不需结构改动(base-URL 与 token 已就绪);新事件按 `data.event` 在 webview 侧分发。
+- **N-8 体验契约类型导出**:`shared/src/api/generated/` 或 `shared/src/types/workhub-experience.ts` 导出 `AttentionItem`/`QuestionCard`/`EvidenceRef`/`DeliverableChangeManifest`/`WorkHubEvent`/`CuuState`;若 OpenAPI 暂不能表达全部 union,先以 shared 手写类型承接,但必须进入 CI 类型检查。
+- **N-9 Cuu 轻消费适配器**:`shared/src/events/toAttentionItem.ts` / `toCuuState.ts` 把正式 SSE 事件映射为 `AttentionItem` + `CuuState`;P0 不施工 pet window,但适配器必须可被主窗 bubble 和未来 pet window 复用。
 
 ---
 
@@ -119,6 +127,7 @@ specs:
 - [ ] **C3** 引入 `apiBase()`(R-5/N-3):web env-driven base-URL,Tauri 维持 `clientFetch` base 前缀。
 - [ ] **C4** 逐方法迁移 web 调用点至生成客户端(约 40 方法),`tsc` 零类型错误为门。
 - [ ] **C5** CI 加契约漂移检测(生成产物 vs 提交版)。
+- [ ] **C6** 导出体验契约类型(N-8):确保 `QuestionCard`/`EvidenceRef`/`DeliverableChangeManifest`/`WorkHubEvent`/`CuuState` 可被 Web 与 client-tauri web-src import;补 fixture type tests。
 
 ### 阶段 D — 跨域 CORS / cookie 重解(不削弱生产门)
 
@@ -131,7 +140,9 @@ specs:
 
 - [ ] **E1** `routers/push.py` 增 `/stream/session/{id}`(owner 检查照搬 `stream_one` `push.py:63-92`),`workitem:{id}` 别名(N-5)。
 - [ ] **E2** `shared/src/hooks/` 增 `useSessionStream` + 扩 `useReqStream` 新事件(N-6),base-URL 经 `apiBase()`。
-- [ ] **E3** Tauri webview 按 `data.event` 分发新事件(`desktop-pet-tauri.md §4.2`),`sse.rs` 无结构改动。
+- [ ] **E3** 新事件使用 `WorkHubEvent` envelope;hook 只读正式事件名,旧事件别名在迁移层兼容但不扩散。
+- [ ] **E4** Tauri webview 按 `data.event` 分发新事件(`desktop-pet-tauri.md §4.2`),`sse.rs` 无结构改动。
+- [ ] **E5** `toAttentionItem` / `toCuuState` 适配器覆盖 `permission.ask`、`proposal.opened`、`knowledge.evidence.ready`、`sync.conflict` 四类 Cuu 必备事件。
 
 ### 阶段 F — Tauri 最小改接
 
@@ -174,7 +185,7 @@ specs:
 |---|---|---|
 | `all` / `req:{id}`→`workitem:{id}` / `user:{id}` | `/stream`、`/stream/req/{id}`、`/stream/me`(`push.py:53/63/95`) | 保留 + `workitem` 别名 |
 | `session:{id}` **[新]** | `GET /api/push/stream/session/{id}` | N-5 新增(owner 门) |
-| `agent_run.step`/`permission.ask`/`confidence.assessed`/`escalation.created`/`proposal.*` | 经上述 topic | 客户端 hook 消费(N-6);事件由 F8/F9/F10 发 |
+| `agent_run.started`/`agent_run.step`/`agent_run.escalated`/`permission.ask`/`permission.decided`/`proposal.opened`/`proposal.reviewed`/`proposal.merged`/`knowledge.evidence.ready`/`sync.*` | 经上述 topic | 客户端 hook 消费(N-6);正式名见 `_experience-deliverable-contracts.md` §4 |
 
 - **隐私铁律(Master §6 铁律5、NFR-08)**:新 `session:{id}` 订阅前 owner 检查在**订阅边界**强制(照搬 `stream_one` 的短命 session `can_view`);`user:{id}` 仍由身份派生而非路径(`push.py:99`)。**禁止**「全量发 broker 客户端过滤」。
 
@@ -191,6 +202,8 @@ specs:
 7. **AC-stream-auth-light**:`/stream/session/{id}` 鉴权用 `require_stream_user`(不持 DB session),`can_view` 检查在短命 session 内完成后 `db.close()`,生成器无 DB 资源。(P-3)
 8. **AC-tauri-rewire**:Tauri onboarding 全流程(`test_server`/`identify`/`register_device`/双 SSE 流)经新端点正常;`http.rs` base-URL/token 零结构改动。(F1-F3)
 9. **AC-multiworker**:`--workers 2` 下 web+Tauri 双客户端经生成客户端 + SSE 访问,事件不丢、presence 正确、无泄漏(Master §8 功能门禁)。(G1/G2)
+10. **AC-experience-types**:`QuestionCard`/`EvidenceRef`/`DeliverableChangeManifest`/`WorkHubEvent`/`CuuState` 可在 Web 与 client-tauri web-src 中类型导入;`.docx/.pptx/.xlsx/image/folder` manifest fixture 通过 `tsc`。
+11. **AC-cuu-adapter**:`permission.ask`→`asking_approval`,`proposal.opened`→`carrying_document`,`knowledge.evidence.ready`→`searching_evidence`,`sync.conflict`→`worried`;适配器输出 `AttentionItem` 且 action 的 `requires_desktop` 被 Web 正确降级。
 
 ---
 
@@ -211,6 +224,7 @@ specs:
 4. **改名牵动全 API 面 + 客户端 hook(Master §7「API 面对等」)**:漏改一处即客户端 404。**缓解**:旧别名兜底 + 生成客户端 `tsc` 门暴露漏改 + 逐文件清单(B1)。
 5. **headless 后多 worker 周期任务重复跑**:去 SPA 不解决 `_resume_stuck_jobs`/reindex 的 leader 选举(`main.py:255-258`)。**缓解**:R-6 明确实现属 F3/F5/F8;F11 在 `--workers 2` 冒烟校验不重复(AC-multiworker),发布前 `--workers 1`(Master §6 铁律3)。
 6. **OpenAPI 生成与 FastAPI DTO 漂移**:DTO 改了忘重生成。**缓解**:CI 契约漂移检测(C5)。
+7. **体验契约被各端复制分叉**:Web、Rust 主窗、Cuu 各自手写 payload → 后续页面施工返工。**缓解**:N-8 shared 类型 + N-9 适配器集中;AC-experience-types/AC-cuu-adapter 守。
 
 ---
 
@@ -226,8 +240,9 @@ specs:
 - **F6**(permission/approval 组 handler;`permission.ask` 事件源)。
 - **F7**(provider 注册表;不直接耦合,但 agent-run 端点暴露其结果)。
 - **F8**(Agent 引擎核心;`agent-run`/`agent_run.step` 端点与事件源)。
-- **F9**(生命周期/通知;`escalation.created`/通知路由事件源)。
+- **F9**(生命周期/通知;`agent_run.escalated` 对应通知路由、`notification.created` 收件箱事件源)。
 - **F10**(审计/快照;proposal/review 端点的副作用契约)。
+- **P0 横切体验契约**:`_experience-deliverable-contracts.md` 的 shared types / event names / Cuu state / manifest schema。
 
 ### 被依赖(needs F11)
 
