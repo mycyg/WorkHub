@@ -10,7 +10,6 @@ import {
   type BudgetPolicyUpdate as ApiBudgetPolicyUpdate
 } from "@workhub/contracts";
 import {
-  createMemoryBudgetPolicyStore,
   type BudgetPolicy as CostBudgetPolicy,
   type BudgetPolicyPatch,
   type BudgetPolicyStore
@@ -23,6 +22,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildCostSummary } from "../pages/cost.js";
+import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type CostRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -30,12 +30,11 @@ export type CostRoutesDependencies = {
 };
 
 const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
-const defaultPolicyStore = createMemoryBudgetPolicyStore();
 
 export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
-  const policyStore = deps.policyStore ?? defaultPolicyStore;
+  const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
 
   routes.get("/policies", createCurrentUserMiddleware(authSource), (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);

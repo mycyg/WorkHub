@@ -10,6 +10,7 @@ import {
   chooseModelRoute,
   createMemoryBudgetPolicyStore,
   createMemoryUsageSink,
+  decideRunBudget,
   defaultBudgetPoliciesFromSettings,
   defaultRunBudgetFromSettings,
   usageToLedgerEntry
@@ -84,4 +85,60 @@ test("model routing can prefer cheaper models for low risk or near-budget runs",
   assert.equal(chooseModelRoute([premium, cheap], { risk: "medium" }).model, "premium");
   assert.equal(chooseModelRoute([premium, cheap], { risk: "low" }).model, "cheap");
   assert.equal(chooseModelRoute([premium, cheap], { budgetRatio: 0.96 }).reason, "near_budget_downgrade");
+});
+
+test("budget decision warns near policy limits and trims the run budget", () => {
+  const settings = loadSettings({});
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-critical",
+    now: new Date("2026-06-05T12:00:00.000Z"),
+    scopeIds: { workItemId: "workitem-1", userId: "user-1" },
+    modelRoute: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" },
+    usage: [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId: "user-1" },
+        tokenIn: 475000,
+        tokenOut: 0,
+        estimatedCostCny: "1"
+      }
+    ]
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.reason, "critical");
+  assert.equal(decision.runBudget.maxTokens, 25000);
+  assert.equal(decision.modelRoute.reason, "near_budget_downgrade");
+  assert.equal(decision.notice?.code, "budget_warning");
+  assert.equal(decision.notice?.recommendedAction, "downgrade_model");
+  assert.equal(decision.limitingUsage?.policyId, "pcost-user-day-v0");
+});
+
+test("budget decision blocks exhausted scopes with traceable details", () => {
+  const settings = loadSettings({});
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-exhausted",
+    now: new Date("2026-06-05T12:00:00.000Z"),
+    scopeIds: { workItemId: "workitem-1", userId: "user-1" },
+    modelRoute: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" },
+    usage: [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId: "user-1" },
+        tokenIn: 500000,
+        tokenOut: 1,
+        estimatedCostCny: "20"
+      }
+    ]
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "budget_exhausted");
+  assert.equal(decision.notice?.code, "budget_exhausted");
+  assert.equal(decision.notice?.options?.some((option) => option.id === "ask_admin"), true);
+  assert.equal(decision.limitingUsage?.status, "exhausted");
+  assert.equal(decision.limitingUsage?.remainingTokens, 0);
+  assert.equal(decision.limitingUsage?.remainingCostCny, "0");
 });

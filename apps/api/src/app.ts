@@ -8,6 +8,7 @@ import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
+import { AgentRunnerError } from "./workers/agent-runner.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
 import { createNotificationRoutes } from "./routes/notifications.js";
@@ -90,6 +91,20 @@ app.onError((error, c) => {
         }
       },
       error.status
+    );
+  }
+
+  if (error instanceof AgentRunnerError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.details ? { details: error.details } : {})
+        }
+      },
+      error.status as 400
     );
   }
 
