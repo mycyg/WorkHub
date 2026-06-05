@@ -1,5 +1,6 @@
 import type {
   ActionSpec,
+  ApprovalCenterVM,
   AttentionAction,
   AttentionItem,
   BudgetNotice,
@@ -16,7 +17,7 @@ import type {
 export type GoldPathRenderSurface = "web" | "desktop";
 
 export type GoldPathRenderedPage = {
-  key: "home" | "intake" | "workitem" | "proposal" | "replay" | "cost";
+  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost";
   route: string;
   title: string;
   html: string;
@@ -207,6 +208,42 @@ function renderIntake(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): Go
   };
 }
 
+function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+  const approvals: ApprovalCenterVM = vm.page_vms.approvals;
+  const primary = approvals.items[0];
+  const request = approvals.requests[0];
+  const requestRows = approvals.requests
+    .map(
+      (item) =>
+        `<div class="wh-row"><div><strong>${escapeHtml(item.action_pattern)}</strong><p class="wh-subtle">${escapeHtml(item.status)}${item.sla_due_at ? ` · SLA ${escapeHtml(item.sla_due_at)}` : ""}</p></div><span class="wh-pill">${escapeHtml(item.routed_to_user_id ?? "未路由")}</span></div>`
+    )
+    .join("");
+  const queueCards = approvals.items
+    .map(
+      (item) =>
+        `<article class="wh-card"><span class="wh-pill">${escapeHtml(item.priority)}</span><h3>${escapeHtml(item.title)}</h3><p class="wh-subtle">${escapeHtml(item.summary_text)}</p>${actions(item.actions)}</article>`
+    )
+    .join("");
+  const main = `<span class="wh-kicker">Approval center</span>
+    <h1 class="wh-title">${escapeHtml(primary?.title ?? "没有等你点头的事")}</h1>
+    <p class="wh-subtle">${escapeHtml(primary?.reason_text ?? "审批中心只放阻塞用户的事项，完整看板继续下沉。")}</p>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>待处理</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length} 件</p></article>
+      <article class="wh-card"><strong>SLA</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? "没有即将超时的审批。")}</p></article>
+      <article class="wh-card"><strong>规则</strong><p class="wh-subtle">打回必须说明原因，Cuu 会据此继续改。</p></article>
+    </div>
+    <div class="wh-list">${queueCards}</div>
+    <h2>审批事实</h2><div class="wh-card">${requestRows}</div>`;
+  return {
+    key: "approvals",
+    route: vm.routes.approvals,
+    title: "Approval Center",
+    html: pageShell(surface, "Approval Center", main, cuuRail({ state: "asking_approval", evidenceRefs: primary?.evidence_refs })),
+    primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
+    cuuState: "asking_approval"
+  };
+}
+
 function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
   const detail = vm.page_vms.workitem;
   const steps = detail.agent_trace_preview
@@ -318,6 +355,7 @@ export function renderGoldPathSurface(vm: GoldPathSurfaceVM, surface: GoldPathRe
     pages: [
       renderHome(surface, vm),
       renderIntake(surface, vm),
+      renderApprovals(surface, vm),
       renderWorkItem(surface, vm),
       renderProposal(surface, vm),
       renderReplay(surface, vm),

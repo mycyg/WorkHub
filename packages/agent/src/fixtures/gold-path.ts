@@ -1,6 +1,7 @@
 import {
   agentRunSchema,
   agentStepSchema,
+  approvalCenterVmSchema,
   attentionHomeVmSchema,
   attentionItemSchema,
   costDashboardVmSchema,
@@ -19,6 +20,8 @@ import {
   workItemSchema,
   type AgentRun,
   type AgentStep,
+  type ApprovalCenterVM,
+  type ApprovalRequest,
   type AttentionHomeVM,
   type AttentionItem,
   type AuditLogFact,
@@ -84,6 +87,8 @@ export const p05GoldPathIds = {
   stepWriteDeliverable: "00000000-0000-4000-8000-000000000705",
   stepOpenProposal: "00000000-0000-4000-8000-000000000706",
   comment: "00000000-0000-4000-8000-000000000801",
+  approval: "00000000-0000-4000-8000-000000000802",
+  eventApprovalAsk: "00000000-0000-4000-8000-000000000803",
   costLedger: "00000000-0000-4000-8000-000000000901"
 } as const;
 
@@ -96,6 +101,7 @@ export type P05GoldPathFixture = {
   manifest: DeliverableChangeManifest;
   workItemDetail: WorkItemDetailVM;
   proposalDetail: ProposalDetailVM;
+  approvalCenter: ApprovalCenterVM;
   replay: ReplayTraceVM;
   costSummary: CostSummaryVM;
   costDashboard: CostDashboardVM;
@@ -626,6 +632,79 @@ const proposalAttention: AttentionItem = {
   created_at: at(7)
 };
 
+const approvalRequest: ApprovalRequest = {
+  id: p05GoldPathIds.approval,
+  work_item_id: p05GoldPathIds.workItem,
+  agent_run_id: p05GoldPathIds.run,
+  action_pattern: "proposal.review.weekly_report_template",
+  payload_json: {
+    ui: {
+      summary_text: "Cuu 准备把客户周报模板提交给正式交付，需要你点头。",
+      reason_text: "这次会把 2 个交付物放入可采纳的变更包；如果打回，理由会回灌给 Cuu 继续改。",
+      risk: {
+        level: "low",
+        human_label: "只生成文档草稿和预览，不会对外发送，且有回滚点。"
+      },
+      evidence_refs: evidenceRefs,
+      affected_targets: manifest.changes.map((change) => change.target_ref.path ?? change.target_kind),
+      requires_desktop: false
+    },
+    raw_args: {
+      proposal_id: p05GoldPathIds.proposal,
+      work_item_id: p05GoldPathIds.workItem,
+      action: "review_deliverable_change_manifest"
+    }
+  },
+  status: "pending",
+  routed_to_user_id: p05GoldPathIds.user,
+  sla_due_at: at(90),
+  created_at: at(8),
+  updated_at: at(8)
+};
+
+const approvalAttention: AttentionItem = {
+  id: p05GoldPathIds.approval,
+  kind: "approval",
+  priority: "high",
+  work_item_id: p05GoldPathIds.workItem,
+  project_id: p05GoldPathIds.project,
+  source_ref: {
+    entity_type: "approval_request",
+    entity_id: p05GoldPathIds.approval
+  },
+  title: "Cuu 等你审批客户周报模板",
+  summary_text: "2 个交付物、3 条证据、可回滚；点同意后才会进入正式交付。",
+  reason_text: "打回必须写原因，Cuu 会把原因放进下一轮修改上下文。",
+  evidence_refs: evidenceRefs,
+  actions: [
+    {
+      id: "open_approval",
+      label: "打开审批",
+      style: "primary",
+      method: "GET",
+      href: "/approvals"
+    },
+    {
+      id: "approve",
+      label: "同意",
+      style: "secondary",
+      method: "POST",
+      href: `/api/approvals/${p05GoldPathIds.approval}/respond`
+    },
+    {
+      id: "deny",
+      label: "打回",
+      style: "danger",
+      method: "POST",
+      href: `/api/approvals/${p05GoldPathIds.approval}/respond`,
+      requires_reason: true
+    }
+  ],
+  cuu_state: "asking_approval",
+  created_at: at(8),
+  expires_at: at(90)
+};
+
 const clarificationAttention: AttentionItem = {
   id: p05GoldPathIds.eventQuestion,
   kind: "clarification",
@@ -713,6 +792,21 @@ const proposalDetail: ProposalDetailVM = {
       created_at: at(7)
     }
   ]
+};
+
+const approvalCenter: ApprovalCenterVM = {
+  items: [approvalAttention],
+  requests: [approvalRequest],
+  filters: {
+    pending: true,
+    kind: "proposal",
+    view: "one_thing"
+  },
+  counts: {
+    pending: 1,
+    all: 1,
+    urgent: 0
+  }
 };
 
 const workItemDetail: WorkItemDetailVM = {
@@ -871,6 +965,20 @@ const events: WorkHubEvent<unknown>[] = [
     data: manifest
   }),
   makeWorkHubEvent({
+    event_id: p05GoldPathIds.eventApprovalAsk,
+    type: eventTypes.permissionAsk,
+    topic: topics.user(p05GoldPathIds.user).topic,
+    ts: new Date(at(8)),
+    actor,
+    work_item_id: p05GoldPathIds.workItem,
+    project_id: p05GoldPathIds.project,
+    run_id: p05GoldPathIds.run,
+    proposal_id: p05GoldPathIds.proposal,
+    preview_text: "Cuu 准备提交客户周报模板，等你点头。",
+    attention: approvalAttention,
+    data: approvalRequest
+  }),
+  makeWorkHubEvent({
     event_id: p05GoldPathIds.eventUsageRecorded,
     type: eventTypes.usageRecorded,
     topic: topics.run(p05GoldPathIds.run).topic,
@@ -914,8 +1022,8 @@ const events: WorkHubEvent<unknown>[] = [
 ];
 
 const attentionHome: AttentionHomeVM = {
-  primary: proposalAttention,
-  queue: [clarificationAttention, deliveryAttention],
+  primary: approvalAttention,
+  queue: [clarificationAttention, proposalAttention, deliveryAttention],
   background_runs: [
     {
       run_id: p05GoldPathIds.run,
@@ -938,6 +1046,7 @@ export function createP05GoldPathFixture(): P05GoldPathFixture {
     manifest,
     workItemDetail,
     proposalDetail,
+    approvalCenter,
     replay,
     costSummary,
     costDashboard,
@@ -969,6 +1078,7 @@ export function validateP05GoldPathFixture(fixture: P05GoldPathFixture = createP
   deliverableChangeManifestSchema.parse(fixture.manifest);
   workItemDetailVmSchema.parse(fixture.workItemDetail);
   proposalDetailVmSchema.parse(fixture.proposalDetail);
+  approvalCenterVmSchema.parse(fixture.approvalCenter);
   replayTraceVmSchema.parse(fixture.replay);
   costSummaryVmSchema.parse(fixture.costSummary);
   costDashboardVmSchema.parse(fixture.costDashboard);

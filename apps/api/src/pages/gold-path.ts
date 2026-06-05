@@ -15,6 +15,7 @@ export function buildP05GoldPathSurfacePage(): GoldPathSurfaceVM {
     routes: {
       home: "/",
       intake: `/intake/${p05GoldPathIds.session}`,
+      approvals: "/approvals",
       workitem: `/workitems/${p05GoldPathIds.workItem}`,
       proposal: `/proposals/${p05GoldPathIds.proposal}`,
       replay: `/agent-runs/${p05GoldPathIds.run}/replay`,
@@ -24,6 +25,7 @@ export function buildP05GoldPathSurfacePage(): GoldPathSurfaceVM {
       attention: fixture.attentionHome,
       question: fixture.question,
       evidence: fixture.evidenceBubble,
+      approvals: fixture.approvalCenter,
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: fixture.replay,

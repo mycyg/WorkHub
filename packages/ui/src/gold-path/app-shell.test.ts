@@ -15,6 +15,7 @@ function surfaceVm(): GoldPathSurfaceVM {
     routes: {
       home: "/",
       intake: "/intake/demo",
+      approvals: "/approvals",
       workitem: "/workitems/demo",
       proposal: "/proposals/demo",
       replay: "/agent-runs/demo/replay",
@@ -24,6 +25,7 @@ function surfaceVm(): GoldPathSurfaceVM {
       attention: fixture.attentionHome,
       question: fixture.question,
       evidence: fixture.evidenceBubble,
+      approvals: fixture.approvalCenter,
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: fixture.replay,
@@ -41,7 +43,9 @@ test("gold path app shell renders navigable panels around the shared pages", () 
   });
 
   assert.equal(Object.keys(shell.routeMap).includes("/proposals/demo"), true);
+  assert.equal(Object.keys(shell.routeMap).includes("/approvals"), true);
   assert.equal(shell.html.includes("data-wh-panel=\"proposal\""), true);
+  assert.equal(shell.html.includes("data-wh-panel=\"approvals\""), true);
   assert.equal(shell.html.includes("aria-label=\"Gold Path\""), true);
   assert.equal(shell.css.includes("wh-cuu-cat"), true);
 });
@@ -53,9 +57,14 @@ test("gold path app shell resolves routes and keeps API actions separate from pa
   });
 
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/agent-runs/demo/replay?from=proposal"), "replay");
+  assert.equal(resolveGoldPathPageKey(shell.routeMap, "/approvals?status=pending"), "approvals");
   assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/proposals/demo"), {
     kind: "navigate",
     pageKey: "proposal"
+  });
+  assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/approvals"), {
+    kind: "navigate",
+    pageKey: "approvals"
   });
   assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/api/proposals/demo/review", { requiresReason: true, method: "POST" }), {
     kind: "api-action",

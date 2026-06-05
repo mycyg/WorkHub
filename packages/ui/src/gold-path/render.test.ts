@@ -13,6 +13,7 @@ function surfaceVm() {
     routes: {
       home: "/",
       intake: "/intake/demo",
+      approvals: "/approvals",
       workitem: "/workitems/demo",
       proposal: "/proposals/demo",
       replay: "/agent-runs/demo/replay",
@@ -22,6 +23,7 @@ function surfaceVm() {
       attention: fixture.attentionHome,
       question: fixture.question,
       evidence: fixture.evidenceBubble,
+      approvals: fixture.approvalCenter,
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: fixture.replay,
@@ -32,19 +34,29 @@ function surfaceVm() {
   } as const;
 }
 
-test("gold path renderer creates the six P0.5 pages from one shared VM", () => {
+test("gold path renderer creates the seven P0.5 pages from one shared VM", () => {
   const rendered = renderGoldPathSurface(surfaceVm(), "web");
 
   assert.equal(rendered.fixtureId, "weekly_report_manifest_doc");
   assert.deepEqual(rendered.pages.map((page) => page.key), [
     "home",
     "intake",
+    "approvals",
     "workitem",
     "proposal",
     "replay",
     "cost"
   ]);
   assert.equal(rendered.pages.every((page) => page.html.includes("wh-shell")), true);
+});
+
+test("approval center keeps the blocking decision visible without turning into a kanban", () => {
+  const approvals = renderGoldPathSurface(surfaceVm(), "web").pages.find((page) => page.key === "approvals");
+
+  assert.equal(approvals?.html.includes("Approval center"), true);
+  assert.equal(approvals?.html.includes("data-requires-reason=\"true\""), true);
+  assert.equal(approvals?.html.includes("kanban"), false);
+  assert.equal(approvals?.cuuState, "asking_approval");
 });
 
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {

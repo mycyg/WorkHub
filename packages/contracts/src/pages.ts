@@ -130,6 +130,7 @@ export const goldPathSurfaceVmSchema = z.object({
   routes: z.object({
     home: z.string().min(1),
     intake: z.string().min(1),
+    approvals: z.string().min(1),
     workitem: z.string().min(1),
     proposal: z.string().min(1),
     replay: z.string().min(1),
@@ -139,6 +140,7 @@ export const goldPathSurfaceVmSchema = z.object({
     attention: attentionHomeVmSchema,
     question: questionCardSchema,
     evidence: evidenceBubbleSchema,
+    approvals: approvalCenterVmSchema,
     workitem: workItemDetailVmSchema,
     proposal: proposalDetailVmSchema,
     replay: replayTraceVmSchema,

@@ -68,6 +68,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
     routes: {
       home: "/",
       intake: "/intake/session",
+      approvals: "/approvals",
       workitem: "/workitems/work",
       proposal: "/proposals/proposal",
       replay: "/agent-runs/run/replay",
@@ -96,6 +97,45 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
         submit: { id: "continue", label: "继续", href: "/intake/session/continue" }
       },
       evidence: { query: "weekly report", results: [] },
+      approvals: {
+        items: [
+          {
+            id: "approval",
+            kind: "approval",
+            priority: "high",
+            source_ref: { entity_type: "approval_request", entity_id: "approval" },
+            title: "Cuu 等你审批周报草稿",
+            summary_text: "点同意后才进入正式交付。",
+            reason_text: "打回必须写原因，Cuu 会继续改。",
+            actions: [
+              { id: "approve", label: "同意", style: "primary", method: "POST", href: "/api/approvals/approval/respond" },
+              {
+                id: "deny",
+                label: "打回",
+                style: "danger",
+                method: "POST",
+                href: "/api/approvals/approval/respond",
+                requires_reason: true
+              }
+            ],
+            cuu_state: "asking_approval",
+            created_at: "2026-06-05T01:00:00.000Z"
+          }
+        ],
+        requests: [
+          {
+            id: "approval",
+            action_pattern: "proposal.review.weekly_report",
+            payload_json: {},
+            status: "pending",
+            routed_to_user_id: "user",
+            created_at: "2026-06-05T01:00:00.000Z",
+            updated_at: "2026-06-05T01:00:00.000Z"
+          }
+        ],
+        filters: { pending: true },
+        counts: { pending: 1, all: 1 }
+      },
       workitem: {
         workitem: {
           id: "work",

@@ -166,13 +166,23 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
     ok: true;
     data: {
       fixture_id: string;
-      page_vms: { question: { options: unknown[] }; replay: { steps: unknown[] } };
+      routes: { approvals: string };
+      page_vms: {
+        question: { options: unknown[] };
+        approvals: { items: unknown[]; requests: { status: string }[] };
+        replay: { steps: unknown[] };
+      };
+      events: { type: string; topic: string; attention?: { id: string } }[];
       cuu_states: string[];
     };
   };
   assert.equal(body.data.fixture_id, "weekly_report_manifest_doc");
+  assert.equal(body.data.routes.approvals, "/approvals");
   assert.equal(body.data.page_vms.question.options.length >= 2, true);
+  assert.equal(body.data.page_vms.approvals.items.length, 1);
+  assert.equal(body.data.page_vms.approvals.requests[0]?.status, "pending");
   assert.equal(body.data.page_vms.replay.steps.length >= 5, true);
+  assert.equal(body.data.events.some((event) => event.type === "permission.ask" && event.topic.startsWith("user:")), true);
   assert.equal(body.data.cuu_states.includes("carrying_document"), true);
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
 });

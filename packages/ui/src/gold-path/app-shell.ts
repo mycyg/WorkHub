@@ -65,6 +65,9 @@ function pageAliases(page: GoldPathRenderedPage) {
   if (page.key === "intake") {
     aliases.add("/intake");
   }
+  if (page.key === "approvals") {
+    aliases.add("/approvals");
+  }
   if (page.key === "workitem") {
     aliases.add("/workitems");
   }
@@ -97,6 +100,9 @@ export function resolveGoldPathPageKey(routeMap: Record<string, PageKey>, href: 
   }
   if (route.startsWith("/intake/")) {
     return "intake";
+  }
+  if (route.startsWith("/approvals")) {
+    return "approvals";
   }
   if (route.startsWith("/workitems/")) {
     return "workitem";
