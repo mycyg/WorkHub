@@ -1,0 +1,200 @@
+import { z } from "zod";
+
+type EnvInput = Record<string, string | undefined>;
+
+const emptyToUndefined = (value: unknown) => {
+  if (value === "") {
+    return undefined;
+  }
+  return value;
+};
+
+const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
+const cnyString = z.string().regex(/^\d+(\.\d+)?$/, "Expected a numeric CNY string");
+
+export const brokerBackendSchema = z.enum(["memory", "redis", "pg_listen"]);
+export type BrokerBackend = z.infer<typeof brokerBackendSchema>;
+
+export const envSchema = z.object({
+  APP_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.coerce.number().int().positive().default(8787),
+  API_HOST: z.string().min(1).default("127.0.0.1"),
+  WORKER_COUNT: z.coerce.number().int().positive().default(1),
+
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .default("postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub"),
+  DATA_DIR: z.string().min(1).default("./data"),
+  DOWNLOADS_DIR: optionalString,
+  WEB_DIST_DIR: optionalString,
+
+  DB_POOL_SIZE: z.coerce.number().int().positive().default(5),
+  DB_MAX_OVERFLOW: z.coerce.number().int().min(0).default(10),
+  DB_POOL_TIMEOUT: z.coerce.number().int().positive().default(30),
+
+  BROKER_BACKEND: brokerBackendSchema.default("memory"),
+  BROKER_URL: z.string().default(""),
+
+  COOKIE_SECRET: z.string().default("dev-change-me"),
+  ADMIN_CLAIM_SECRET: z.string().default(""),
+  CORS_ALLOW_ORIGINS: z.string().default("*"),
+
+  LLM_PROVIDER_DEFAULT: z.string().min(1).default("deepseek"),
+  LLM_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
+  LLM_MODEL: z.string().min(1).default("deepseek-v4-flash"),
+  LLM_API_KEY: z.string().default(""),
+
+  PROVIDER_DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
+  PROVIDER_DEEPSEEK_MODEL: z.string().min(1).default("deepseek-v4-flash"),
+  PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(0),
+  PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(0),
+
+  BUDGET_DEFAULT_RUN_TOKENS: z.coerce.number().int().positive().default(120000),
+  BUDGET_DEFAULT_USER_DAILY_TOKENS: z.coerce.number().int().positive().default(500000),
+  BUDGET_DEFAULT_TEAM_DAILY_TOKENS: z.coerce.number().int().positive().default(5000000),
+  BUDGET_DEFAULT_TEAM_MONTHLY_TOKENS: z.coerce.number().int().positive().default(50000000),
+  BUDGET_DEFAULT_RUN_COST_CNY: cnyString.default("5"),
+  BUDGET_DEFAULT_USER_DAILY_COST_CNY: cnyString.default("20"),
+  BUDGET_DEFAULT_TEAM_DAILY_COST_CNY: cnyString.default("200"),
+  BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY: cnyString.default("2000")
+});
+
+type ParsedEnv = z.infer<typeof envSchema>;
+
+export type Settings = {
+  appEnv: ParsedEnv["APP_ENV"];
+  port: number;
+  apiHost: string;
+  workerCount: number;
+  databaseUrl: string;
+  dataDir: string;
+  downloadsDir: string;
+  webDistDir?: string;
+  db: {
+    poolSize: number;
+    maxOverflow: number;
+    poolTimeout: number;
+  };
+  broker: {
+    backend: BrokerBackend;
+    url: string;
+  };
+  auth: {
+    cookieSecret: string;
+    adminClaimSecret: string;
+    corsAllowOrigins: string[];
+  };
+  llm: {
+    defaultProvider: string;
+    baseUrl: string;
+    model: string;
+    apiKey: string;
+  };
+  providers: {
+    deepseek: {
+      baseUrl: string;
+      model: string;
+      costInputCnyPerMtok: number;
+      costOutputCnyPerMtok: number;
+    };
+  };
+  budgets: {
+    runTokens: number;
+    userDailyTokens: number;
+    teamDailyTokens: number;
+    teamMonthlyTokens: number;
+    runCostCny: string;
+    userDailyCostCny: string;
+    teamDailyCostCny: string;
+    teamMonthlyCostCny: string;
+  };
+};
+
+const parseCorsOrigins = (value: string) =>
+  value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+export function loadSettings(env: EnvInput = process.env): Settings {
+  const parsed = envSchema.parse(env);
+  const settings: Settings = {
+    appEnv: parsed.APP_ENV,
+    port: parsed.PORT,
+    apiHost: parsed.API_HOST,
+    workerCount: parsed.WORKER_COUNT,
+    databaseUrl: parsed.DATABASE_URL,
+    dataDir: parsed.DATA_DIR,
+    downloadsDir: parsed.DOWNLOADS_DIR ?? `${parsed.DATA_DIR}/downloads`,
+    db: {
+      poolSize: parsed.DB_POOL_SIZE,
+      maxOverflow: parsed.DB_MAX_OVERFLOW,
+      poolTimeout: parsed.DB_POOL_TIMEOUT
+    },
+    broker: {
+      backend: parsed.BROKER_BACKEND,
+      url: parsed.BROKER_URL
+    },
+    auth: {
+      cookieSecret: parsed.COOKIE_SECRET,
+      adminClaimSecret: parsed.ADMIN_CLAIM_SECRET,
+      corsAllowOrigins: parseCorsOrigins(parsed.CORS_ALLOW_ORIGINS)
+    },
+    llm: {
+      defaultProvider: parsed.LLM_PROVIDER_DEFAULT,
+      baseUrl: parsed.LLM_BASE_URL,
+      model: parsed.LLM_MODEL,
+      apiKey: parsed.LLM_API_KEY
+    },
+    providers: {
+      deepseek: {
+        baseUrl: parsed.PROVIDER_DEEPSEEK_BASE_URL,
+        model: parsed.PROVIDER_DEEPSEEK_MODEL,
+        costInputCnyPerMtok: parsed.PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK,
+        costOutputCnyPerMtok: parsed.PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK
+      }
+    },
+    budgets: {
+      runTokens: parsed.BUDGET_DEFAULT_RUN_TOKENS,
+      userDailyTokens: parsed.BUDGET_DEFAULT_USER_DAILY_TOKENS,
+      teamDailyTokens: parsed.BUDGET_DEFAULT_TEAM_DAILY_TOKENS,
+      teamMonthlyTokens: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_TOKENS,
+      runCostCny: parsed.BUDGET_DEFAULT_RUN_COST_CNY,
+      userDailyCostCny: parsed.BUDGET_DEFAULT_USER_DAILY_COST_CNY,
+      teamDailyCostCny: parsed.BUDGET_DEFAULT_TEAM_DAILY_COST_CNY,
+      teamMonthlyCostCny: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY
+    }
+  };
+
+  if (parsed.WEB_DIST_DIR) {
+    settings.webDistDir = parsed.WEB_DIST_DIR;
+  }
+
+  validateRuntimeConfig(settings);
+  return settings;
+}
+
+export function validateRuntimeConfig(value: Settings) {
+  if (value.appEnv !== "production") {
+    return;
+  }
+
+  if (value.auth.cookieSecret === "dev-change-me") {
+    throw new Error("COOKIE_SECRET must be changed in production");
+  }
+
+  if (value.auth.corsAllowOrigins.includes("*")) {
+    throw new Error("CORS_ALLOW_ORIGINS cannot include * in production");
+  }
+
+  if (value.workerCount > 1 && value.broker.backend === "memory") {
+    throw new Error("BROKER_BACKEND=memory cannot be used with multiple workers in production");
+  }
+
+  if (value.broker.backend !== "memory" && value.broker.url.length === 0) {
+    throw new Error("BROKER_URL is required when BROKER_BACKEND is not memory");
+  }
+}
+
+export const settings = loadSettings();

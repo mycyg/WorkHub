@@ -8,15 +8,30 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:文档先行,慢慢施工 🚧
+## 现状:地基施工已开始 🚧
 
-本仓库目前是 **产品规格文档树**(已细化到屏级 / 接口级 / 功能级),实现代码将逐步加入。
+本仓库目前是 **产品规格文档树 + TS-first 地基脚手架**。规格已细化到屏级 / 接口级 / 功能级,实现代码会按 F01–F11 逐步加入。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 28 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 32 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
 **技术方向**:headless agent daemon + OpenAPI/SSE + PostgreSQL + Tauri 桌面端 / Web 瘦客户端(LAN-first,云就绪)。
+
+## 本地开发
+
+```bash
+corepack enable
+pnpm install
+pnpm verify
+pnpm dev
+```
+
+- API daemon 默认端口: `8787` (`GET /api/health`)。
+- Web SPA 规划端口: `5173`。
+- Tauri webview 规划端口: `1420`。
+- 默认配置来自 [`packages/config`](packages/config);复制 [`.env.example`](.env.example) 到 `.env` 后填入本地密钥。
+- 生产沙箱与 Agent 执行后续要求 Linux；Windows 当前用于开发、文档与地基验证。
 
 ## 许可证与商业授权 ⚖️
 

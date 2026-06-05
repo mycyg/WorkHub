@@ -1,0 +1,26 @@
+{
+  "name": "workhub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @workhub/api dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm audit:portable-config && pnpm audit:target-paths",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint",
+    "audit:portable-config": "tsx scripts/dev/check-portable-config.ts",
+    "audit:target-paths": "tsx scripts/dev/check-target-paths.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

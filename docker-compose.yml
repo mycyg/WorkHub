@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: workhub
+      POSTGRES_USER: workhub
+      POSTGRES_PASSWORD: workhub
+    volumes:
+      - workhub-postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  workhub-postgres:
