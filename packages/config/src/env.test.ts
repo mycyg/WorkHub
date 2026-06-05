@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSettings } from "./env.js";
+import { createProviderRegistryConfig, toPublicProviderConfig } from "./providers.js";
 
 test("defaults are portable and PostgreSQL-first", () => {
   const value = loadSettings({});
@@ -22,6 +23,23 @@ test("keeps provider and budget defaults available", () => {
   assert.equal(value.providers.deepseek.model, "deepseek-v4-flash");
   assert.equal(value.budgets.runTokens, 120000);
   assert.equal(value.budgets.teamMonthlyCostCny, "2000");
+});
+
+test("provider registry config keeps API keys out of public metadata", () => {
+  const value = loadSettings({
+    LLM_API_KEY: "secret-key",
+    PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: "1.5",
+    PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: "3"
+  });
+  const registry = createProviderRegistryConfig(value);
+  const deepseek = registry.providers.deepseek;
+  assert.ok(deepseek);
+  const publicDeepseek = toPublicProviderConfig(deepseek);
+
+  assert.equal(deepseek.apiKey, "secret-key");
+  assert.equal(publicDeepseek.configured, true);
+  assert.equal(JSON.stringify(publicDeepseek).includes("secret-key"), false);
+  assert.equal(publicDeepseek.models.default?.costOutputCnyPerMtok, 3);
 });
 
 test("fails closed for weak production cookie secret", () => {

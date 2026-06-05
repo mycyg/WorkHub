@@ -52,6 +52,15 @@ importers:
 
   apps/web: {}
 
+  packages/agent:
+    dependencies:
+      '@workhub/config':
+        specifier: workspace:*
+        version: link:../config
+      '@workhub/cost':
+        specifier: workspace:*
+        version: link:../cost
+
   packages/config:
     dependencies:
       zod:
@@ -63,6 +72,12 @@ importers:
       zod:
         specifier: ^4.0.1
         version: 4.4.3
+
+  packages/cost:
+    dependencies:
+      '@workhub/config':
+        specifier: workspace:*
+        version: link:../config
 
   packages/db:
     dependencies:
