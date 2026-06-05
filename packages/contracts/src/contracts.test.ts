@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   allowedWorkItemTransitions,
   authContextSchema,
+  createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
+  respondApprovalRequestSchema,
   deliverableChangeManifestSchema,
   deliverableManifestFixtures,
   escalationTriggers,
@@ -95,4 +97,22 @@ test("question cards prefer clickable choices but retain a collapsed fallback", 
 
   assert.equal(parsed.options.length, 2);
   assert.equal(parsed.free_text.collapsed_by_default, true);
+});
+
+test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {
+  const request = createApprovalRequestSchema.parse({
+    action_pattern: "tool.delete_file",
+    routed_to_user_id: "10000000-0000-4000-8000-000000000001",
+    payload_json: {
+      ui: {
+        summary_text: "AI 想修改交付包里的 3 个文件，需要你点头。",
+        risk: { level: "medium", human_label: "影响面不小，稳一点" }
+      },
+      raw_args: { files: ["a.md"] }
+    }
+  });
+
+  assert.equal(request.kind, "tool");
+  assert.equal(request.payload_json.ui?.summary_text.includes("tool.delete_file"), false);
+  assert.throws(() => respondApprovalRequestSchema.parse({ decision: "deny", reason_md: "" }));
 });

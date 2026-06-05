@@ -38,6 +38,11 @@ const requiredPaths = [
   "packages/events/src/sse.ts",
   "packages/events/src/toAttentionItem.ts",
   "packages/events/src/toCuuState.ts",
+  "packages/permissions/src/evaluate.ts",
+  "packages/permissions/src/resource-permissions.ts",
+  "packages/permissions/src/approval-routing.ts",
+  "packages/db/src/repositories/approval-requests.ts",
+  "packages/db/src/repositories/permission-policies.ts",
   "packages/db/drizzle.config.ts",
   "apps/api/src/middleware/auth.ts",
   "apps/api/src/routes/auth.ts",
@@ -49,6 +54,9 @@ const requiredPaths = [
   "apps/api/src/sse/stream.ts",
   "apps/api/src/sse/topic-access.ts",
   "apps/api/src/routes/push.ts",
+  "apps/api/src/services/approvals.ts",
+  "apps/api/src/routes/approvals.ts",
+  "apps/api/src/routes/permissions.ts",
   "scripts/dev/check-portable-config.ts"
 ];
 

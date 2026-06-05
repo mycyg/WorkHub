@@ -8,3 +8,5 @@ export * from "./seed.js";
 export * from "./types.js";
 export * from "./repositories/users.js";
 export * from "./repositories/devices.js";
+export * from "./repositories/approval-requests.js";
+export * from "./repositories/permission-policies.js";

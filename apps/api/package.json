@@ -17,6 +17,7 @@
     "@workhub/contracts": "workspace:*",
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",
+    "@workhub/permissions": "workspace:*",
     "hono": "^4.8.0",
     "redis": "^5.5.6",
     "zod": "^4.0.1"

@@ -4,6 +4,7 @@ export * from "./experience.js";
 export * from "./pages.js";
 export * from "./identity.js";
 export * from "./auth.js";
+export * from "./approval.js";
 export * from "./domain/common.js";
 export * from "./domain/identity.js";
 export * from "./domain/work-item.js";

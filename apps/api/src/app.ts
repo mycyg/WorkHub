@@ -5,7 +5,10 @@ import { settings } from "@workhub/config";
 
 import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
+import { createApprovalRoutes } from "./routes/approvals.js";
+import { createPermissionRoutes } from "./routes/permissions.js";
 import { createPushRoutes } from "./routes/push.js";
+import { ApprovalServiceError } from "./services/approvals.js";
 
 export const app = new Hono();
 
@@ -31,6 +34,8 @@ app.get("/api/health", (c) =>
 app.route("/api/auth", createAuthRoutes());
 app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
+app.route("/api/approvals", createApprovalRoutes());
+app.route("/api/permissions", createPermissionRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {
@@ -63,6 +68,19 @@ app.onError((error, c) => {
         }
       },
       error.status
+    );
+  }
+
+  if (error instanceof ApprovalServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
     );
   }
 

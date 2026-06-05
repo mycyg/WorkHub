@@ -142,6 +142,8 @@ export const eventTypes = {
   agentRunEscalated: "agent_run.escalated",
   permissionAsk: "permission.ask",
   permissionDecided: "permission.decided",
+  permissionReassigned: "permission.reassigned",
+  permissionExpired: "permission.expired",
   proposalOpened: "proposal.opened",
   proposalReviewed: "proposal.reviewed",
   proposalMerged: "proposal.merged",

@@ -8,6 +8,8 @@ const eventTypeToCuuState: Partial<Record<EventType, CuuState>> = {
   [eventTypes.agentRunEscalated]: "worried",
   [eventTypes.permissionAsk]: "asking_approval",
   [eventTypes.permissionDecided]: "thinking",
+  [eventTypes.permissionReassigned]: "asking_approval",
+  [eventTypes.permissionExpired]: "worried",
   [eventTypes.proposalOpened]: "carrying_document",
   [eventTypes.proposalReviewed]: "carrying_document",
   [eventTypes.proposalMerged]: "celebrating",

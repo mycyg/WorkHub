@@ -1,0 +1,410 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { Hono } from "hono";
+import { generateSignedCookie } from "hono/cookie";
+import { HTTPException } from "hono/http-exception";
+import { ZodError } from "zod";
+
+import { loadSettings, type Settings } from "@workhub/config";
+import type {
+  ApprovalRequestRepository,
+  ApprovalRequestRow,
+  ClientDeviceAuthRow,
+  ClientDeviceRepository,
+  PermissionPolicyRecord,
+  PermissionPolicyRepository,
+  UserAuthRow,
+  UserRepository
+} from "@workhub/db";
+
+import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import {
+  ApprovalServiceError,
+  createApprovalService
+} from "./services/approvals.js";
+import { createPermissionRoutes } from "./routes/permissions.js";
+
+const now = new Date("2026-06-05T00:00:00.000Z");
+const userId = "10000000-0000-4000-8000-000000000001";
+const approverId = "10000000-0000-4000-8000-000000000002";
+const orgId = "00000000-0000-4000-8000-000000000001";
+const workspaceId = "00000000-0000-4000-8000-000000000002";
+
+function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
+  return {
+    id: userId,
+    nickname: "alice",
+    cookieToken: "cookie-alice",
+    availabilityStatus: "free",
+    availabilityText: null,
+    availabilityUpdatedAt: null,
+    isAdmin: false,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...partial
+  };
+}
+
+function row(partial: Partial<ApprovalRequestRow> = {}): ApprovalRequestRow {
+  return {
+    id: "40000000-0000-4000-8000-000000000001",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    agentRunId: "60000000-0000-4000-8000-000000000001",
+    actionPattern: "tool.write_file",
+    payloadJson: {},
+    status: "pending",
+    routedToUserId: approverId,
+    decidedByUserId: null,
+    decisionReasonMd: null,
+    delegatedToUserId: null,
+    slaDueAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...partial
+  };
+}
+
+class MemoryApprovals implements ApprovalRequestRepository {
+  public rows: ApprovalRequestRow[] = [];
+
+  async createApprovalRequest(input: Parameters<ApprovalRequestRepository["createApprovalRequest"]>[0]) {
+    const approval = row({
+      id: input.id ?? `40000000-0000-4000-8000-${String(this.rows.length + 1).padStart(12, "0")}`,
+      workItemId: input.workItemId ?? null,
+      agentRunId: input.agentRunId ?? null,
+      actionPattern: input.actionPattern,
+      payloadJson: input.payloadJson ?? {},
+      routedToUserId: input.routedToUserId ?? null,
+      slaDueAt: input.slaDueAt ?? null
+    });
+    this.rows.push(approval);
+    return approval;
+  }
+
+  async findById(id: string) {
+    return this.rows.find((approval) => approval.id === id) ?? null;
+  }
+
+  async listPendingForUser(id: string, options: { includeAll?: boolean } = {}) {
+    return this.rows.filter(
+      (approval) => approval.status === "pending" && (options.includeAll || approval.routedToUserId === id)
+    );
+  }
+
+  async respondPending(
+    id: string,
+    decision: "allow" | "deny",
+    decidedByUserId: string,
+    reasonMd: string | null,
+    at: Date
+  ) {
+    const approval = this.rows.find((candidate) => candidate.id === id && candidate.status === "pending") ?? null;
+    if (!approval) {
+      return null;
+    }
+    approval.status = decision === "allow" ? "approved" : "denied";
+    approval.decidedByUserId = decidedByUserId;
+    approval.decisionReasonMd = reasonMd;
+    approval.updatedAt = at;
+    return approval;
+  }
+
+  async delegatePending(id: string, toUserId: string, at: Date) {
+    const approval = this.rows.find((candidate) => candidate.id === id && candidate.status === "pending") ?? null;
+    if (!approval) {
+      return null;
+    }
+    approval.routedToUserId = toUserId;
+    approval.delegatedToUserId = toUserId;
+    approval.updatedAt = at;
+    return approval;
+  }
+
+  async expirePending(id: string, at: Date) {
+    const approval = this.rows.find((candidate) => candidate.id === id && candidate.status === "pending") ?? null;
+    if (!approval) {
+      return null;
+    }
+    approval.status = "expired";
+    approval.updatedAt = at;
+    return approval;
+  }
+}
+
+class MemoryPolicies implements PermissionPolicyRepository {
+  public rows: PermissionPolicyRecord[];
+
+  constructor(rows: PermissionPolicyRecord[] = []) {
+    this.rows = rows;
+  }
+
+  async listActivePolicies() {
+    return this.rows.filter((policy) => policy.deletedAt == null);
+  }
+
+  async createPermissionPolicy(input: Parameters<PermissionPolicyRepository["createPermissionPolicy"]>[0]) {
+    const policy: PermissionPolicyRecord = {
+      id: input.id ?? `70000000-0000-4000-8000-${String(this.rows.length + 1).padStart(12, "0")}`,
+      scopeKind: input.scopeKind,
+      scopeId: input.scopeId,
+      actionPattern: input.actionPattern,
+      effect: input.effect,
+      priority: input.priority ?? 0,
+      learnedFromSession: input.learnedFromSession ?? false,
+      createdByUserId: input.createdByUserId ?? null,
+      orgId: input.orgId ?? null,
+      workspaceId: input.workspaceId ?? null,
+      deletedAt: null
+    };
+    this.rows.push(policy);
+    return policy;
+  }
+
+  async softDeletePolicy(id: string, deletedByUserId: string, at: Date) {
+    const policy = this.rows.find((candidate) => candidate.id === id) ?? null;
+    if (!policy) {
+      return null;
+    }
+    policy.deletedAt = at;
+    assert.equal(typeof deletedByUserId, "string");
+    return policy;
+  }
+}
+
+class RecordingBus {
+  public events: { topic: string; type: string; data: unknown }[] = [];
+
+  async publish<T>(topic: string, type: string, data: T) {
+    this.events.push({ topic, type, data });
+  }
+}
+
+function serviceDeps(policies: PermissionPolicyRecord[] = []) {
+  const approvals = new MemoryApprovals();
+  const policyRepo = new MemoryPolicies(policies);
+  const bus = new RecordingBus();
+  return {
+    approvals,
+    policyRepo,
+    bus,
+    service: createApprovalService({
+      approvals,
+      policies: policyRepo,
+      bus,
+      now: () => now
+    })
+  };
+}
+
+const actor = {
+  kind: "human" as const,
+  id: approverId,
+  label: "approver",
+  userId: approverId,
+  isAdmin: false,
+  orgId,
+  workspaceId
+};
+
+test("ask creates a pending approval and publishes only private user/session topics", async () => {
+  const deps = serviceDeps();
+  const result = await deps.service.createApproval({
+    actor,
+    kind: "tool",
+    agentRunId: "60000000-0000-4000-8000-000000000001",
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想修改交付包里的 3 个文件，需要你点头。",
+        risk: { level: "medium", human_label: "影响面不小，稳一点" }
+      },
+      raw_args: { action: "tool.write_file" }
+    }
+  });
+
+  assert.equal(result.outcome, "pending");
+  assert.deepEqual(
+    deps.bus.events.map((event) => event.topic).sort(),
+    [`session:60000000-0000-4000-8000-000000000001`, `user:${approverId}`].sort()
+  );
+  assert.equal(deps.bus.events.some((event) => event.topic === "all"), false);
+  if (result.outcome === "pending") {
+    assert.equal(result.attention.summary_text.includes("tool.write_file"), false);
+  }
+});
+
+test("allow policy skips approval creation while no policy defaults to ask", async () => {
+  const deps = serviceDeps([
+    {
+      scopeKind: "session",
+      scopeId: "60000000-0000-4000-8000-000000000001",
+      actionPattern: "tool.write_file",
+      effect: "allow"
+    }
+  ]);
+
+  const result = await deps.service.createApproval({
+    actor,
+    kind: "tool",
+    agentRunId: "60000000-0000-4000-8000-000000000001",
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId
+  });
+
+  assert.equal(result.outcome, "allowed");
+  assert.equal(deps.approvals.rows.length, 0);
+});
+
+test("deny requires a reason and remember always refuses to learn high-risk approvals", async () => {
+  const deps = serviceDeps();
+  const highRisk = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.publish_external",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想发布对外内容，需要你确认。",
+        risk: { level: "high", human_label: "对外动作" }
+      },
+      raw_args: {}
+    }
+  });
+
+  await assert.rejects(
+    () => deps.service.respond(highRisk.id, actor, { decision: "deny", remember: "once" }),
+    (error) => error instanceof ApprovalServiceError && error.status === 422
+  );
+
+  await deps.service.respond(highRisk.id, actor, { decision: "allow", remember: "always" });
+  assert.equal(deps.policyRepo.rows.length, 0);
+
+  const mediumRisk = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想更新文件，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+  await deps.service.respond(mediumRisk.id, actor, { decision: "allow", remember: "always" });
+
+  assert.equal(deps.policyRepo.rows.length, 1);
+  assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
+});
+
+class MemoryUsers implements UserRepository {
+  constructor(private rows: UserAuthRow[]) {}
+
+  async findActiveById(id: string) {
+    return this.rows.find((candidate) => candidate.id === id && candidate.deletedAt === null) ?? null;
+  }
+
+  async findActiveByCookieToken(cookieToken: string) {
+    return this.rows.find((candidate) => candidate.cookieToken === cookieToken && candidate.deletedAt === null) ?? null;
+  }
+
+  async findActiveByNickname() {
+    return null;
+  }
+
+  async createUser(): Promise<UserAuthRow> {
+    throw new Error("not needed");
+  }
+
+  async getOrCreateActiveByNickname(): Promise<{ user: UserAuthRow; created: boolean }> {
+    throw new Error("not needed");
+  }
+
+  async rotateCookieToken() {
+    return null;
+  }
+}
+
+class MemoryDevices implements ClientDeviceRepository {
+  async findActiveByTokenHash() {
+    return null;
+  }
+
+  async findActiveByTokenHashForUser() {
+    return null;
+  }
+
+  async createClientDevice(): Promise<ClientDeviceAuthRow> {
+    throw new Error("not needed");
+  }
+
+  async listByUser() {
+    return [];
+  }
+
+  async touchLastSeen() {
+    return null;
+  }
+
+  async revokeByIdForUser() {
+    return null;
+  }
+
+  async revokeByTokenHash() {
+    return null;
+  }
+}
+
+function settings(): Settings {
+  return loadSettings({
+    APP_ENV: "test",
+    COOKIE_SECRET: "test-cookie-secret"
+  });
+}
+
+function authDeps(runtimeSettings: Settings): AuthDependencies {
+  return {
+    users: new MemoryUsers([user({ isAdmin: true })]),
+    devices: new MemoryDevices(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+}
+
+function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
+  app.onError((error, c) => {
+    if (error instanceof ZodError) {
+      return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
+    }
+    if (error instanceof HTTPException) {
+      return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
+    }
+    if (error instanceof ApprovalServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
+    throw error;
+  });
+  return app;
+}
+
+test("permission policy writes keep the local-client device gate", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({ auth: authDeps(runtimeSettings), service: serviceDeps().service }));
+
+  const response = await app.request("/api/permissions", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      scope_kind: "org",
+      scope_id: orgId,
+      action_pattern: "tool.*",
+      effect: "ask"
+    })
+  });
+
+  assert.equal(response.status, 403);
+});
