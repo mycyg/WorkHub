@@ -198,8 +198,12 @@ export function createInMemoryAgentRunQueue(options: {
     }));
   const runs = new Map<string, AgentRunQueueRecord>();
   const runWorkdirs = new Map<string, string>();
+  const startingWorkItems = new Set<string>();
 
   function activeForWorkItem(workItemId: string) {
+    if (startingWorkItems.has(workItemId)) {
+      return true;
+    }
     return [...runs.values()].find(
       (run) =>
         run.work_item_id === workItemId &&
@@ -384,55 +388,60 @@ export function createInMemoryAgentRunQueue(options: {
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
       }
-      const humanReserved = await humanReservedGuard?.({
-        ...input,
-        settings
-      });
-      if (humanReserved) {
-        throw new AgentRunnerError(
-          409,
-          "human_reserved",
-          "这个事项已经标记为人工处理，我不会让 AI 工人自动施工。",
-          {
-            escalation_id: humanReserved.escalationId,
-            trigger: humanReserved.trigger,
-            source: humanReserved.source,
-            reused: humanReserved.reused,
-            suggested_action: "pm_mode"
-          }
-        );
+      startingWorkItems.add(input.workItemId);
+      try {
+        const humanReserved = await humanReservedGuard?.({
+          ...input,
+          settings
+        });
+        if (humanReserved) {
+          throw new AgentRunnerError(
+            409,
+            "human_reserved",
+            "这个事项已经标记为人工处理，我不会让 AI 工人自动施工。",
+            {
+              escalation_id: humanReserved.escalationId,
+              trigger: humanReserved.trigger,
+              source: humanReserved.source,
+              reused: humanReserved.reused,
+              suggested_action: "pm_mode"
+            }
+          );
+        }
+        const decision = await decideBudget({ ...input, settings });
+        if (!decision.allowed) {
+          throw new AgentRunnerError(
+            402,
+            "budget_exhausted",
+            decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。",
+            budgetErrorDetails(decision)
+          );
+        }
+        const at = now().toISOString();
+        const run: AgentRunQueueRecord = {
+          run_id: nextId(),
+          work_item_id: input.workItemId,
+          actor_id: input.actorId,
+          mode: input.mode ?? "worker",
+          status: "queued",
+          title: input.title ?? "AI worker run",
+          budget: toQueueRunBudget(decision.runBudget),
+          budget_decision: toQueueBudgetDecision(decision),
+          usage: {
+            steps_used: 0,
+            token_in: 0,
+            token_out: 0,
+            estimated_cost_cny: "0"
+          },
+          trace: [],
+          created_at: at,
+          updated_at: at
+        };
+        runs.set(run.run_id, run);
+        return run;
+      } finally {
+        startingWorkItems.delete(input.workItemId);
       }
-      const decision = await decideBudget({ ...input, settings });
-      if (!decision.allowed) {
-        throw new AgentRunnerError(
-          402,
-          "budget_exhausted",
-          decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。",
-          budgetErrorDetails(decision)
-        );
-      }
-      const at = now().toISOString();
-      const run: AgentRunQueueRecord = {
-        run_id: nextId(),
-        work_item_id: input.workItemId,
-        actor_id: input.actorId,
-        mode: input.mode ?? "worker",
-        status: "queued",
-        title: input.title ?? "AI worker run",
-        budget: toQueueRunBudget(decision.runBudget),
-        budget_decision: toQueueBudgetDecision(decision),
-        usage: {
-          steps_used: 0,
-          token_in: 0,
-          token_out: 0,
-          estimated_cost_cny: "0"
-        },
-        trace: [],
-        created_at: at,
-        updated_at: at
-      };
-      runs.set(run.run_id, run);
-      return run;
     },
 
     async get(runId) {

@@ -11,7 +11,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import { buildUsageRecord, createMemoryCostLedgerStore } from "@workhub/cost";
+import { buildUsageRecord, createMemoryCostLedgerStore, decideRunBudget } from "@workhub/cost";
 import type {
   AuditLogRepository,
   AuditLogRow,
@@ -398,6 +398,14 @@ async function cookie(runtimeSettings: Settings) {
   return generateSignedCookie(COOKIE_NAME, "cookie-agent-run", runtimeSettings.auth.cookieSecret);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 function executableAgentClient(): AgentLoopClient {
   const responses = [
     {
@@ -600,6 +608,54 @@ test("agent run enqueue uses ledger snapshots when no usage fixture is injected"
   assert.equal(response.status, 202);
   const body = await response.json() as { ok: true; data: { budget: { max_tokens: number } } };
   assert.equal(body.data.budget.max_tokens, 25000);
+});
+
+test("concurrent agent run starts keep one active run per work item", async () => {
+  const runtimeSettings = settings();
+  const budgetBarrier = deferred<void>();
+  let budgetCalls = 0;
+  let runIndex = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => `40000000-0000-4000-8000-${String(30 + runIndex++).padStart(12, "0")}`,
+    decideBudget: async (input) => {
+      const callNo = ++budgetCalls;
+      await budgetBarrier.promise;
+      return decideRunBudget({
+        settings: input.settings,
+        scopeIds: {
+          workItemId: input.workItemId,
+          userId: input.actorId,
+          teamId: input.settings.auth.defaultWorkspaceId
+        },
+        usage: [],
+        modelRoute: {
+          provider: input.settings.llm.defaultProvider,
+          model: input.settings.llm.model,
+          reason: "default"
+        },
+        now,
+        decisionId: `budget-decision-${callNo}`
+      });
+    }
+  });
+
+  const starts = [
+    queue.enqueue({ workItemId, actorId: userId, title: "Concurrent worker run A" }),
+    queue.enqueue({ workItemId, actorId: userId, title: "Concurrent worker run B" })
+  ];
+  budgetBarrier.resolve();
+  const results = await Promise.allSettled(starts);
+
+  const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.ok(rejected);
+  assert.equal(rejected.reason instanceof AgentRunnerError, true);
+  assert.equal((rejected.reason as AgentRunnerError).status, 409);
+  assert.equal((rejected.reason as AgentRunnerError).code, "agent_run_already_active");
+  assert.equal(budgetCalls, 1);
+  assert.equal((await queue.listActive()).length, 1);
 });
 
 test("agent run enqueue opens user_forbidden escalation for human-reserved worker work", async () => {
