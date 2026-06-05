@@ -16,6 +16,7 @@
     "@workhub/agent": "workspace:*",
     "@workhub/config": "workspace:*",
     "@workhub/contracts": "workspace:*",
+    "@workhub/cost": "workspace:*",
     "@workhub/audit": "workspace:*",
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",

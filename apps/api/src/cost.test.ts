@@ -6,6 +6,13 @@ import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
+import type {
+  LlmCreateParams,
+  LlmCreateResponse,
+  LlmStream,
+  LlmStreamEvent,
+  LlmTransport
+} from "@workhub/agent/providers";
 import { loadSettings, type Settings } from "@workhub/config";
 import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
@@ -18,6 +25,7 @@ import type {
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createPageRoutes } from "./routes/pages.js";
+import { createApiProviderRegistry } from "./services/provider-registry.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const adminId = "10000000-0000-4000-8000-0000000000a1";
@@ -94,6 +102,40 @@ class MemoryDevices implements ClientDeviceRepository {
 
   async revokeByTokenHash() {
     return null;
+  }
+}
+
+class ProviderLedgerTestStream implements LlmStream {
+  constructor(private readonly final: LlmCreateResponse) {}
+
+  async *[Symbol.asyncIterator](): AsyncIterator<LlmStreamEvent> {
+    yield { type: "content_block_delta", data: { text: "streamed" } };
+  }
+
+  async getFinalMessage() {
+    return this.final;
+  }
+}
+
+class ProviderLedgerTestTransport implements LlmTransport {
+  public calls: (LlmCreateParams & { model: string })[] = [];
+
+  async create(params: LlmCreateParams & { model: string }) {
+    this.calls.push(params);
+    return {
+      id: "msg-cost-create",
+      content: [{ type: "text", text: "created" }],
+      usage: { inputTokens: 1000, outputTokens: 500 }
+    };
+  }
+
+  async stream(params: LlmCreateParams & { model: string }) {
+    this.calls.push(params);
+    return new ProviderLedgerTestStream({
+      id: "msg-cost-stream",
+      content: [{ type: "text", text: "streamed" }],
+      usage: { inputTokens: 2000, outputTokens: 1000 }
+    });
   }
 }
 
@@ -290,4 +332,75 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
   assert.equal(userBody.data.by_user.length, 0);
   assert.equal(userBody.data.model_breakdown[0]?.provider, "deepseek");
   assert.equal(adminBody.data.by_user.length, 1);
+});
+
+test("api provider registry records create and stream usage into the shared cost ledger", async () => {
+  const runtimeSettings = loadSettings({
+    APP_ENV: "test",
+    COOKIE_SECRET: "test-cookie-secret",
+    LLM_API_KEY: "fake-api-provider-key",
+    PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: "2",
+    PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: "8"
+  });
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  const transport = new ProviderLedgerTestTransport();
+  const registry = createApiProviderRegistry({
+    settings: runtimeSettings,
+    ledgerStore,
+    transportFactory: () => transport
+  });
+  const actor = {
+    id: "actor-cost-ledger",
+    userId,
+    runId: "40000000-0000-4000-8000-0000000000c1",
+    workItemId: "50000000-0000-4000-8000-0000000000c1"
+  };
+
+  await registry.get(actor, "worker").messages.create({
+    maxTokens: 4096,
+    messages: [{ role: "user", content: "write a proposal" }]
+  });
+  const stream = await registry.get(actor, "review").messages.stream({
+    maxTokens: 4096,
+    source: "review",
+    messages: [{ role: "user", content: "review the proposal" }]
+  });
+  for await (const _event of stream) {
+    // The stream body is intentionally consumed before final usage is reconciled.
+  }
+  await stream.getFinalMessage();
+
+  assert.equal(transport.calls.length, 2);
+  assert.equal(transport.calls.every((call) => call.model === "deepseek-v4-flash"), true);
+  assert.equal(ledgerStore.records.length, 2);
+  assert.equal(ledgerStore.entries.length, 6);
+  assert.equal(ledgerStore.records[0]?.estimatedCostCny, "0.006");
+  assert.equal(ledgerStore.records[1]?.estimatedCostCny, "0.012");
+  assert.equal(JSON.stringify(ledgerStore.records).includes("fake-api-provider-key"), false);
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    ledgerStore,
+    policyStore: createMemoryBudgetPolicyStore()
+  }));
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      total_cost_cny: string;
+      token_in: number;
+      token_out: number;
+      model_breakdown: { provider: string; model: string; count: number; cost_cny: string }[];
+    };
+  };
+  assert.equal(body.data.total_cost_cny, "0.018");
+  assert.equal(body.data.token_in, 3000);
+  assert.equal(body.data.token_out, 1500);
+  assert.deepEqual(body.data.model_breakdown, [
+    { provider: "deepseek", model: "deepseek-v4-flash", count: 2, cost_cny: "0.018" }
+  ]);
 });

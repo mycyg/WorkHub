@@ -35,6 +35,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@workhub/cost':
+        specifier: workspace:*
+        version: link:../../packages/cost
       '@workhub/db':
         specifier: workspace:*
         version: link:../../packages/db
