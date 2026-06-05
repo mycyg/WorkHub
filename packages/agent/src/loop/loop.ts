@@ -1,7 +1,9 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { LlmMessage } from "../providers/types.js";
+import { eventTypes } from "@workhub/contracts";
+
+import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "./control.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
@@ -70,6 +72,108 @@ function elapsedSeconds(startedAt: number) {
   return (Date.now() - startedAt) / 1000;
 }
 
+function previewUnknown(value: unknown, maxLength = 200) {
+  if (typeof value === "string") {
+    return value.slice(0, maxLength);
+  }
+  try {
+    return JSON.stringify(value).slice(0, maxLength);
+  } catch {
+    return String(value).slice(0, maxLength);
+  }
+}
+
+function previewStreamEvent(event: LlmStreamEvent) {
+  if (event.data && typeof event.data === "object") {
+    const value = event.data as Record<string, unknown>;
+    const delta = value.delta;
+    if (delta && typeof delta === "object") {
+      const deltaRecord = delta as Record<string, unknown>;
+      if (typeof deltaRecord.text === "string") {
+        return deltaRecord.text.slice(0, 200);
+      }
+      if (typeof deltaRecord.thinking === "string") {
+        return deltaRecord.thinking.slice(0, 200);
+      }
+    }
+  }
+  return previewUnknown(event.data ?? event.type);
+}
+
+async function callModel(input: AgentLoopInput, params: {
+  stepNo: number;
+  system: string;
+  messages: LlmMessage[];
+  tools: unknown[];
+  maxTokens: number;
+}) {
+  const request = {
+    system: params.system,
+    messages: params.messages,
+    tools: params.tools,
+    maxTokens: params.maxTokens,
+    source: "agent_step" as const
+  };
+  const stream = input.client.messages.stream;
+  if (!stream) {
+    return input.client.messages.create(request);
+  }
+
+  const responseStream = await stream(request);
+  for await (const event of responseStream) {
+    await input.emit?.({
+      type: eventTypes.agentRunStep,
+      previewText: previewStreamEvent(event),
+      data: {
+        run_id: input.runId,
+        step_no: params.stepNo,
+        kind: "stream_event",
+        provider_event_type: event.type
+      }
+    });
+  }
+  return responseStream.getFinalMessage();
+}
+
+async function emitAssistantTrace(input: AgentLoopInput, stepNo: number, assistant: AgentAssistantBlock[]) {
+  for (const block of assistant) {
+    if (block.type === "thinking") {
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: block.text.slice(0, 200),
+        data: {
+          run_id: input.runId,
+          step_no: stepNo,
+          kind: "thinking"
+        }
+      });
+    } else if (block.type === "text") {
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: block.text.slice(0, 200),
+        data: {
+          run_id: input.runId,
+          step_no: stepNo,
+          kind: "text"
+        }
+      });
+    } else if (block.type === "tool_use") {
+      const inputPreview = previewUnknown(block.input);
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `${block.name} ${inputPreview}`.slice(0, 200),
+        data: {
+          run_id: input.runId,
+          step_no: stepNo,
+          kind: "tool_call",
+          tool_id: block.name,
+          input_preview: inputPreview
+        }
+      });
+    }
+  }
+}
+
 function terminalResult(input: {
   status: AgentLoopResult["status"];
   reason: string;
@@ -111,7 +215,7 @@ export class AgentLoop {
     const requireDeliverable = input.requireDeliverable ?? true;
 
     await input.emit?.({
-      type: "agent_run.started",
+      type: eventTypes.agentRunStarted,
       previewText: "AgentRun started",
       data: {
         run_id: input.runId,
@@ -130,7 +234,7 @@ export class AgentLoop {
           reason: budgetDecision.reason
         });
         await input.emit?.({
-          type: "agent_run.escalated",
+          type: eventTypes.agentRunEscalated,
           previewText: budgetDecision.reason,
           data: { run_id: input.runId, handoff }
         });
@@ -158,28 +262,30 @@ export class AgentLoop {
         ...(input.snapshot ? { snapshot: input.snapshot } : {})
       };
       const tools = await input.tools.toModelTools(ctx);
-      const response = await input.client.messages.create({
+      const stepNo = usage.stepsUsed + 1;
+      const response = await callModel(input, {
+        stepNo,
         system: input.systemPrompt,
         messages,
         tools,
-        maxTokens: input.maxTokensPerStep ?? 4096,
-        source: "agent_step"
+        maxTokens: input.maxTokensPerStep ?? 4096
       });
       const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
       addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens);
 
       const assistant = response.content.map(parseBlock);
+      await emitAssistantTrace(input, stepNo, assistant);
       const toolCalls = assistant.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
       const toolResults = [];
       for (const toolCall of toolCalls) {
         const result = await input.tools.execute(toolCall.name, toolCall.input, ctx);
         toolResults.push(result);
         await input.emit?.({
-          type: "step.tool_result",
+          type: eventTypes.stepToolResult,
           previewText: result.content.slice(0, 200),
           data: {
             run_id: input.runId,
-            step_no: usage.stepsUsed + 1,
+            step_no: stepNo,
             tool_id: toolCall.name,
             ok: result.ok,
             is_error: result.isError
@@ -189,7 +295,7 @@ export class AgentLoop {
 
       const control = controlFromAssistant(assistant, response.stopReason);
       const step: AgentLoopStep = {
-        index: usage.stepsUsed + 1,
+        index: stepNo,
         assistant,
         toolCalls,
         toolResults,
@@ -203,13 +309,22 @@ export class AgentLoop {
       const snapshotId = toolResults.find((result) => result.snapshotId)?.snapshotId;
       if (snapshotId) {
         step.snapshotId = snapshotId;
+        await input.emit?.({
+          type: eventTypes.stepSnapshot,
+          previewText: "Snapshot captured",
+          data: {
+            run_id: input.runId,
+            step_no: step.index,
+            snapshot_id: snapshotId
+          }
+        });
       }
 
       steps.push(step);
       usage.stepsUsed = steps.length;
       await input.recorder?.recordStep(step);
       await input.emit?.({
-        type: "agent_run.step",
+        type: eventTypes.agentRunStep,
         previewText: textFromBlocks(assistant).slice(0, 200),
         data: {
           run_id: input.runId,
@@ -224,6 +339,14 @@ export class AgentLoop {
           steps,
           budgetHit: "doom_loop",
           reason: "连续多步执行了相同动作，已自动升级。"
+        });
+        await input.emit?.({
+          type: eventTypes.agentRunEscalated,
+          previewText: "doom_loop",
+          data: {
+            run_id: input.runId,
+            handoff
+          }
         });
         return terminalResult({
           status: "escalated",
@@ -259,6 +382,15 @@ export class AgentLoop {
           budgetHit: "tokens",
           reason: "模型响应被截断，需要上下文压缩。"
         });
+        await input.emit?.({
+          type: eventTypes.agentRunCompacting,
+          previewText: "模型响应被截断，需要上下文压缩。",
+          data: {
+            run_id: input.runId,
+            step_no: step.index,
+            handoff
+          }
+        });
         return terminalResult({
           status: "escalated",
           reason: "compact_required",
@@ -272,7 +404,7 @@ export class AgentLoop {
       const finalText = textFromBlocks(assistant);
       if (requireDeliverable && !(await hasDeliverables(input.workdir))) {
         await input.emit?.({
-          type: "agent_run.failed",
+          type: eventTypes.agentRunFailed,
           previewText: "AI 没产出交付物",
           data: { run_id: input.runId }
         });
@@ -300,6 +432,14 @@ export class AgentLoop {
       steps,
       budgetHit: "steps",
       reason: "步数预算已耗尽"
+    });
+    await input.emit?.({
+      type: eventTypes.agentRunEscalated,
+      previewText: "步数预算已耗尽",
+      data: {
+        run_id: input.runId,
+        handoff
+      }
     });
     return terminalResult({
       status: "escalated",

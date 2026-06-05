@@ -1,4 +1,5 @@
 import type { RunBudget } from "@workhub/cost";
+import type { EventType } from "@workhub/contracts";
 import type {
   SandboxBudget,
   SnapshotHook,
@@ -6,7 +7,7 @@ import type {
   ToolResult
 } from "@workhub/tools";
 
-import type { LlmCreateParams, LlmCreateResponse } from "../providers/types.js";
+import type { LlmCreateParams, LlmCreateResponse, LlmStream } from "../providers/types.js";
 
 export type AgentRunTerminalStatus = "succeeded" | "failed" | "escalated" | "cancelled";
 export type AgentLoopControlSignal = "continue" | "stop" | "compact" | "escalate";
@@ -59,6 +60,7 @@ export type AgentLoopClient = {
   model: string;
   messages: {
     create: (params: LlmCreateParams) => Promise<LlmCreateResponse>;
+    stream?: (params: LlmCreateParams) => Promise<LlmStream>;
   };
 };
 
@@ -67,7 +69,7 @@ export type AgentLoopRecorder = {
 };
 
 export type AgentLoopEvent = {
-  type: "agent_run.started" | "agent_run.step" | "step.tool_result" | "agent_run.escalated" | "agent_run.failed";
+  type: EventType;
   previewText?: string;
   data: Record<string, unknown>;
 };
