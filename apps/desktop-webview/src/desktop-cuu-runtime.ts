@@ -1,4 +1,5 @@
 import type { CuuCard, CuuCardAction, CuuCardChip } from "@workhub/cuu";
+import type { WorkHubApiClient } from "@workhub/api-client";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
 
@@ -22,6 +23,22 @@ export type DesktopCuuNotice = {
 export type DesktopShellCuuRuntime = {
   subscribed: boolean;
   dispose: () => Promise<void>;
+};
+
+export type DesktopCuuActionRequest =
+  | {
+      kind: "approval-response";
+      approvalId: string;
+      decision: "allow" | "deny";
+      requiresReason: boolean;
+    }
+  | {
+      kind: "session-next-question";
+      sessionId: string;
+    };
+
+export type DesktopCuuActionResult = {
+  message: string;
 };
 
 type DesktopShellGlobal = {
@@ -119,6 +136,57 @@ export function renderDesktopCuuNotice(card: CuuCard) {
   </section>`;
 }
 
+export function resolveDesktopCuuAction(
+  href: string,
+  input: { actionId?: string | undefined; requiresReason?: boolean | undefined } = {}
+): DesktopCuuActionRequest | undefined {
+  const path = new URL(href, "https://workhub.local").pathname;
+  const approvalMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
+  if (approvalMatch?.[1]) {
+    return {
+      kind: "approval-response",
+      approvalId: decodeURIComponent(approvalMatch[1]),
+      decision: approvalDecisionFromAction(input.actionId, input.requiresReason === true),
+      requiresReason: input.requiresReason === true
+    };
+  }
+
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(path);
+  if (sessionMatch?.[1]) {
+    return {
+      kind: "session-next-question",
+      sessionId: decodeURIComponent(sessionMatch[1])
+    };
+  }
+
+  return undefined;
+}
+
+export async function submitDesktopCuuAction(input: {
+  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion">;
+  action: DesktopCuuActionRequest;
+  reasonMd?: string | undefined;
+}): Promise<DesktopCuuActionResult> {
+  if (input.action.kind === "approval-response") {
+    if (input.action.decision === "deny" && !input.reasonMd?.trim()) {
+      throw new Error("打回需要先选择一个原因。");
+    }
+    await input.client.respondApproval(input.action.approvalId, {
+      decision: input.action.decision,
+      ...(input.reasonMd ? { reason_md: input.reasonMd } : {}),
+      remember: "once"
+    });
+    return {
+      message: input.action.decision === "allow" ? "Cuu 已收到：这步已批准。" : "Cuu 已带着原因打回，会继续改。"
+    };
+  }
+
+  const question = await input.client.nextQuestion(input.action.sessionId);
+  return {
+    message: `下一题：${question.title}`
+  };
+}
+
 function renderChip(chip: CuuCardChip) {
   const text = chip.description ? `${chip.label} · ${chip.description}` : chip.label;
   return `<span class="wh-cuu-chip" data-chip-id="${escapeHtml(chip.id)}">${escapeHtml(text)}</span>`;
@@ -129,6 +197,14 @@ function renderAction(action: CuuCardAction) {
     return `<span class="wh-cuu-action" data-tone="${escapeHtml(action.tone)}">${escapeHtml(action.label)}</span>`;
   }
   return `<a class="wh-cuu-action" href="${escapeHtml(action.href)}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
+}
+
+function approvalDecisionFromAction(actionId: string | undefined, requiresReason: boolean): "allow" | "deny" {
+  const normalized = actionId?.toLowerCase() ?? "";
+  if (requiresReason || ["deny", "reject", "request_changes", "changes", "revise"].includes(normalized)) {
+    return "deny";
+  }
+  return "allow";
 }
 
 function labelForState(state: CuuCard["state"]) {

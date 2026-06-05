@@ -8,7 +8,13 @@ import {
   type GoldPathAppShell
 } from "@workhub/ui/gold-path";
 
-import { bindDesktopShellCuuRuntime, desktopCuuNoticeCss } from "./desktop-cuu-runtime.js";
+import {
+  bindDesktopShellCuuRuntime,
+  desktopCuuNoticeCss,
+  resolveDesktopCuuAction,
+  submitDesktopCuuAction,
+  type DesktopCuuActionRequest
+} from "./desktop-cuu-runtime.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -72,6 +78,7 @@ function actionMessage(error: unknown) {
 
 function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient) {
   let pendingReviewHref: string | undefined;
+  let pendingCuuAction: DesktopCuuActionRequest | undefined;
 
   const activateFromHash = () => {
     const hashRoute = window.location.hash.slice(1) || "/";
@@ -83,6 +90,20 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
 
   shellRoot.addEventListener("click", async (event) => {
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
+    if (reasonButton && pendingCuuAction) {
+      try {
+        const result = await submitDesktopCuuAction({
+          client,
+          action: pendingCuuAction,
+          reasonMd: reasonButton.dataset.reviewReason ?? "需要调整"
+        });
+        pendingCuuAction = undefined;
+        showNotice(shellRoot, result.message);
+      } catch (error) {
+        showNotice(shellRoot, actionMessage(error));
+      }
+      return;
+    }
     if (reasonButton && pendingReviewHref) {
       const proposalAction = proposalActionFromHref(pendingReviewHref);
       if (proposalAction?.action === "review") {
@@ -111,6 +132,25 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
       return;
     }
     const href = anchor.getAttribute("href") ?? "";
+    const cuuAction = resolveDesktopCuuAction(href, {
+      actionId: anchor.dataset.cuuActionId,
+      requiresReason: anchor.dataset.requiresReason === "true"
+    });
+    if (cuuAction) {
+      event.preventDefault();
+      if (cuuAction.kind === "approval-response" && cuuAction.requiresReason && cuuAction.decision === "deny") {
+        pendingCuuAction = cuuAction;
+        showNotice(shellRoot, "先点一个打回原因，Cuu 会带着它继续改。", reviewReasonButtons());
+        return;
+      }
+      try {
+        const result = await submitDesktopCuuAction({ client, action: cuuAction });
+        showNotice(shellRoot, result.message);
+      } catch (error) {
+        showNotice(shellRoot, actionMessage(error));
+      }
+      return;
+    }
     const action = classifyGoldPathHref(shell.routeMap, href, {
       requiresReason: anchor.dataset.requiresReason === "true",
       method: anchor.dataset.method
