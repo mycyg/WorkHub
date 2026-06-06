@@ -93,7 +93,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；但还没有 Rive 文件或 Live2D rig。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 没有真实 Tauri `pet` 透明窗口 runtime；当前已有 desktop webview notice、`/pet` surface、Rust pet window plan/config scaffold 和几何合同。
-- 拖拽/hover 的 webview bridge 已落，但仍缺真实 Tauri `startDragging` command、位置持久化、收起、真实独立设置页、低电量降帧。
+- 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和进程内 body anchor 位置记忆；仍缺磁盘持久化、收起、真实独立设置页、多屏恢复和低电量降帧。
 - 证据卡已能触发 typed `knowledge-search` 并回显结果；「用这些证据继续」已通过 `POST /api/workitems/{id}/evidence-bindings` 绑定到当前任务上下文。仍缺真实知识库持久化、证据详情展开和完整检索页分页。
 - 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
 
@@ -116,8 +116,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/idle-scheduler.ts`：新增 Cuu 活体 idle scheduler，覆盖呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲和挥手等微动作语义。
 - `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
 - `client-tauri/src-tauri/src/pet_commands.rs`：新增 Cuu 独立窗口 command scaffold，固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`，并让 capability 开放最小 `core:window:allow-start-dragging`。
-- `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；`set_pet_window_mode` 已执行 resize/position/show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置。
-- `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 喂给 idle scheduler。
+- `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；`set_pet_window_mode` 已执行 resize/position/show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实桌面 cursor 与 pet window rect。
+- `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 与 Rust cursor sample 喂给 idle scheduler。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
 - `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 `/pet` 或 `?surface=pet` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
@@ -127,8 +127,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - 18 个动作的正式透明 PNG / WebP 已落 P1 pack；后续仍需做体积压缩、anchor 微调、真实透明窗口截图和长时间性能 QA。
 - `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
-- 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position 执行到真实 Tauri window API；仍缺真实 cursor sampling、位置持久化、多显示器修正和托盘显隐。
-- 真实跨窗口鼠标距离采样、拖拽窗口位置持久化、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
+- 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；仍缺磁盘级位置持久化、多显示器恢复、托盘显隐和真实截图 QA。
+- 多屏位置记忆落盘、真实 Tauri 设置页承接、系统通知、收起/恢复和透明窗口长驻 QA。
 - Rive / Live2D 高表现力路线。
 - 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。
 

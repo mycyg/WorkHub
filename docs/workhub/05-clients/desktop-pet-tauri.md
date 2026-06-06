@@ -54,12 +54,12 @@ owner: workflow
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
 | `client-tauri/src-tauri/build.rs` | Tauri build entry | 调用 `tauri_build::build()`，使当前 crate 具备真实 Tauri build scaffold |
-| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置；`sample_pet_cursor_near` 暂为保守 fallback |
+| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect |
 | `client-tauri/src-tauri/icons/icon.ico` | Tauri Windows resource icon | 从 Cuu alpha atlas 样张裁切生成的占位 app icon，满足 `tauri-build` Windows resource 要求；正式发布前替换为完整品牌图标 |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
 | `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan；deep-link route 做安全校验，pet 操作不抢焦点 |
 | `client-tauri/src-tauri/src/pet_window.rs` | Cuu pet window geometry contract | `body_only` / `card` 双模式尺寸、右下角定位、从小猫锚点向左上展开、屏幕内夹取、鼠标接近判定、拖拽 plan |
-| `client-tauri/src-tauri/src/pet_commands.rs` | Cuu pet window command scaffold | 固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` command 名称和 typed plan，真实 Tauri runtime 后执行到 window API |
+| `client-tauri/src-tauri/src/pet_commands.rs` | Cuu pet window command scaffold | 固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` command 名称和 typed plan，新增 body anchor 防漂移、active mode rect 和 cursor decision helper |
 | `client-tauri/src-tauri/tauri.conf.json` | Tauri config scaffold | 对齐 `apps/desktop-webview` dev/build 输出，声明 `main` / `pet` window；`withGlobalTauri:true` 对齐当前 `window.__TAURI__` bridge；`skipTaskbar` 暂留在 WorkHub window plan，未写入 Tauri schema |
 | `client-tauri/src-tauri/capabilities/default.json` | Tauri capability scaffold | `main` / `pet` 授予 `core:default` 和最小窗口拖拽权限 `core:window:allow-start-dragging`；文件/进程/shell 能力后续按模块最小化开启 |
 | `client-tauri/src-tauri/tests/tauri_scaffold.rs` | scaffold contract tests | 校验 Tauri build target、window config 与 `ShellWindowPlan` 一致、capability 未提前放开高风险权限 |
@@ -68,7 +68,7 @@ owner: workflow
 | `apps/desktop-webview/src/cuu-preferences.ts` | Cuu preference panel | 右上角轻入口，面板默认隐藏；本地存储 `attention_mode` / `sound_mode` / `reduced_motion` / `queue_limit`，把点击偏好写回 `CuuController` |
 | `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo；启动时按 `/pet` 或 `?surface=pet` 分流到 Cuu pet surface |
 | `apps/desktop-webview/src/pet-surface.ts` | Cuu pet webview surface | `pet` 窗口入口只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由用固定按钮 |
-| `apps/desktop-webview/src/pet-window-bridge.ts` | Cuu pet webview input/window bridge | 解析 mock / Tauri-like bridge，支持 `body_only` / `card` 模式切换、`startDragging`、位置保存、cursor-near fallback |
+| `apps/desktop-webview/src/pet-window-bridge.ts` | Cuu pet webview input/window bridge | 解析 mock / Tauri-like bridge，支持 `body_only` / `card` 模式切换、`startDragging`、位置保存、Rust cursor sample command plan 与 browser fallback |
 | `packages/cuu/src/atlas-manifest.ts` | Cuu atlas contract | 真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验 |
 | `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu motion pack asset manifest | 指向 `cuu-p1-motion-pack.png` atlas，并在 clip 上保留 source-green / alpha 路径 |
 | `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 CSS keyframes，非覆盖状态会标记 fallback |
@@ -79,7 +79,7 @@ owner: workflow
 
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
-| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position command 已执行到真实 window API | 后续补 setup/tray/SSE/notification/deep-link、真实 cursor sampling 和位置持久化 |
+| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，进程内 body anchor 位置记忆已落 | 后续补 setup/tray/SSE/notification/deep-link、磁盘位置持久化、多屏恢复 |
 | 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
 | 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 mode resize/position/show、drag 和 save-position 执行到真实 Tauri window API；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻 |
 | Cuu 绿幕资产 | 已有 18 clip motion pack，`CuuMotionHint.sprite_state` 与 idle / interaction micro action 均已 full coverage，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA 与性能检查 |
@@ -87,7 +87,7 @@ owner: workflow
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
 | 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
-| Cuu 偏好 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存端口 | 迁入真实 Tauri Settings / pet window，接托盘显隐、真实位置持久化和系统通知 |
+| Cuu 偏好 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存/cursor sample 端口，Rust 侧已有进程内 body anchor 记忆 | 迁入真实 Tauri Settings / pet window，接托盘显隐、磁盘位置持久化和系统通知 |
 | updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
 
 结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 的下一步应先补 `Tauri scaffold → SSE worker emit → pet window → tray/notification/deep-link → local sync/delivery`。
@@ -160,7 +160,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前几何合同**：`client-tauri/src-tauri/src/pet_window.rs` 已把 `body_only`（180×220）和 `card`（380×560）拆开，默认把 Cuu 放在主显示器 work area 右下角 24px，展开卡片时从小猫身体锚点向左上扩展，并对离屏位置做 clamp。
 - **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
 - **当前 webview surface**：`apps/desktop-webview/src/browser.ts` 会把 `/pet` 或 `?surface=pet` 分流到 `pet-surface.ts`，该 surface 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳。
-- **当前活体行为**：`packages/cuu/src/idle-scheduler.ts` 已提供基础 scheduler，`pet-surface.ts` 会在没有 active card 时 tick 并更新 `data-cuu-idle-action`，并按该 action 选择真实 atlas clip；`pet-window-bridge.ts` 已把 pointer hover / drag / release 喂给 scheduler，并会调用 Tauri window `startDragging` 或 Rust command fallback；`pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`；`main.rs` 已注册这些 command，并把 mode resize/position/show、drag、save-position 执行到真实 Tauri window API。当前还未接真实跨窗口鼠标采样、位置持久化和透明窗口视觉 QA。
+- **当前活体行为**：`packages/cuu/src/idle-scheduler.ts` 已提供基础 scheduler，`pet-surface.ts` 会在没有 active card 时 tick 并更新 `data-cuu-idle-action`，并按该 action 选择真实 atlas clip；`pet-window-bridge.ts` 已把 pointer hover / drag / release 与 Rust cursor sample 喂给 scheduler，并会调用 Tauri window `startDragging` 或 Rust command fallback；`pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`；`main.rs` 已注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API。当前还未接磁盘位置持久化、多屏恢复和透明窗口视觉 QA。
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。

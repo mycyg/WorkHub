@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::pet_window::{
     default_pet_window_placement, pet_pointer_decision, place_pet_window_from_body_anchor,
-    save_pet_window_position_plan, start_pet_window_drag_plan, LogicalPosition, LogicalRect,
-    PetWindowDragPlan, PetWindowMode, PetWindowPlacementPlan, PetWindowPointerDecision,
-    PetWindowPointerInput,
+    pet_window_size, save_pet_window_position_plan, start_pet_window_drag_plan, LogicalPosition,
+    LogicalRect, PetWindowDragPlan, PetWindowMode, PetWindowPlacementPlan,
+    PetWindowPointerDecision, PetWindowPointerInput,
 };
 
 pub const SET_PET_WINDOW_MODE_COMMAND: &str = "set_pet_window_mode";
@@ -36,6 +36,48 @@ pub struct PetWindowRuntimeCommandPlan {
     pub drag: Option<PetWindowDragPlan>,
     pub saved_position: Option<LogicalPosition>,
     pub pointer: Option<PetWindowPointerDecision>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowRuntimeState {
+    pub mode: PetWindowMode,
+    pub body_position: Option<LogicalPosition>,
+}
+
+impl Default for PetWindowRuntimeState {
+    fn default() -> Self {
+        Self {
+            mode: PetWindowMode::BodyOnly,
+            body_position: None,
+        }
+    }
+}
+
+pub fn body_position_from_window_position(
+    mode: PetWindowMode,
+    window_position: LogicalPosition,
+) -> LogicalPosition {
+    let body_size = pet_window_size(PetWindowMode::BodyOnly);
+    let window_size = pet_window_size(mode);
+
+    LogicalPosition {
+        x: window_position.x + window_size.width as i32 - body_size.width as i32,
+        y: window_position.y + window_size.height as i32 - body_size.height as i32,
+    }
+}
+
+pub fn pet_window_rect_from_position(
+    mode: PetWindowMode,
+    window_position: LogicalPosition,
+) -> LogicalRect {
+    let size = pet_window_size(mode);
+    LogicalRect {
+        x: window_position.x,
+        y: window_position.y,
+        width: size.width,
+        height: size.height,
+    }
 }
 
 pub fn set_pet_window_mode_command_plan(
@@ -166,6 +208,44 @@ mod tests {
         assert_eq!(
             save.saved_position,
             Some(LogicalPosition { x: 1280, y: 720 })
+        );
+    }
+
+    #[test]
+    fn card_window_position_converts_back_to_body_anchor_without_drift() {
+        let body = LogicalPosition { x: 1716, y: 796 };
+        let card = place_pet_window_from_body_anchor(work_area(), body, PetWindowMode::Card, 24);
+
+        assert_eq!(card.position, LogicalPosition { x: 1516, y: 456 });
+        assert_eq!(
+            body_position_from_window_position(PetWindowMode::Card, card.position),
+            body
+        );
+        assert_eq!(
+            body_position_from_window_position(PetWindowMode::BodyOnly, body),
+            body
+        );
+    }
+
+    #[test]
+    fn pet_window_rect_uses_the_active_mode_size() {
+        assert_eq!(
+            pet_window_rect_from_position(PetWindowMode::BodyOnly, LogicalPosition { x: 10, y: 20 }),
+            LogicalRect {
+                x: 10,
+                y: 20,
+                width: 180,
+                height: 220
+            }
+        );
+        assert_eq!(
+            pet_window_rect_from_position(PetWindowMode::Card, LogicalPosition { x: 10, y: 20 }),
+            LogicalRect {
+                x: 10,
+                y: 20,
+                width: 380,
+                height: 560
+            }
         );
     }
 

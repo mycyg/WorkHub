@@ -230,19 +230,31 @@ export async function bootDesktopPetSurface(
       setCard(notice.card);
     }
   });
+  let samplingCursor = false;
   const idleTimer = window.setInterval(() => {
+    if (samplingCursor) {
+      return;
+    }
+    samplingCursor = true;
+    void tickIdle().finally(() => {
+      samplingCursor = false;
+    });
+  }, 1000);
+
+  async function tickIdle() {
     const pointer = pointerSensor.snapshot();
+    const sampledCursorNear = await Promise.resolve(petWindowBridge?.sampleCursorNear?.()).catch(() => undefined);
     const decision = idleScheduler.tick({
       now_ms: Date.now(),
       active_card: Boolean(currentCard),
-      cursor_near: pointer.cursor_near,
+      cursor_near: sampledCursorNear ?? pointer.cursor_near,
       reduced_motion: controller.snapshot().preferences.reduced_motion
     });
     if (decision.action) {
       idleAction = decision.action;
       render();
     }
-  }, 1000);
+  }
 
   return {
     controller,

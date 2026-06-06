@@ -16,6 +16,15 @@ export type DesktopPetWindowBridge = {
   sampleCursorNear?: () => boolean | Promise<boolean>;
 };
 
+type PetCursorSampleResult =
+  | boolean
+  | {
+      pointer?: {
+        cursorNear?: boolean;
+        cursor_near?: boolean;
+      };
+    };
+
 export type DesktopPetPointerSensor = {
   snapshot: () => DesktopPetPointerSnapshot;
   dispose: () => void;
@@ -76,7 +85,7 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
           },
           sampleCursorNear: async () => {
             const value = await invoke("sample_pet_cursor_near");
-            return value === true;
+            return readCursorNear(value);
           }
         }
       : {})
@@ -164,4 +173,15 @@ export function createDesktopPetPointerSensor(
       root.removeEventListener("pointercancel", onPointerUp);
     }
   };
+}
+
+function readCursorNear(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const sample = value as Extract<PetCursorSampleResult, object>;
+  return sample?.pointer?.cursorNear === true || sample?.pointer?.cursor_near === true;
 }

@@ -187,3 +187,24 @@ test("pet window bridge can start dragging through the Rust command fallback", a
   await bridge?.savePosition?.();
   assert.deepEqual(calls, ["start_pet_window_drag", "save_pet_window_position"]);
 });
+
+test("pet window bridge accepts Rust cursor sample command plans", async () => {
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string) {
+          assert.equal(command, "sample_pet_cursor_near");
+          return {
+            pointer: {
+              insideWindow: false,
+              cursorNear: true,
+              distanceToWindowPx: 24
+            }
+          };
+        }
+      }
+    }
+  });
+
+  assert.equal(await bridge?.sampleCursorNear?.(), true);
+});

@@ -270,9 +270,9 @@ idle loop
 - `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
 - `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action` 并按该 action 选择真实 atlas clip，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
 - `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
-- `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并预留 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
-- `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position 执行到真实 Tauri window API；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前仍缺跨窗口鼠标距离采样、位置持久化、多显示器 work-area 实测、透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
+- `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并接入 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
+- `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API；capability 已开放最小 `core:window:allow-start-dragging`。
+- 当前已具备跨窗口鼠标距离采样与进程内 body anchor 位置记忆；仍缺磁盘持久化、多显示器 work-area 实测/恢复、透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -313,8 +313,8 @@ idle loop
 1. **Cuu Asset P1**：生成 18 个动作的绿幕 sprite sheets，完成 alpha、anchor、atlas 和 `cuu.sprite.json`。
 2. **Cuu Runtime P1**：把 procedural CSS sprite 替换为 atlas renderer，继续复用现有 `CuuController`。
 3. **Pet Window P1.5**：新增 `?surface=pet`，让 `pet` window 只加载 Cuu，不加载主壳。
-4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，支持拖动、收起、托盘显隐。
-5. **Behavior P2**：idle scheduler 与 webview pointer bridge 已落，18 clip full coverage atlas 已接；继续接真实跨窗口鼠标采样、真实窗口位置、系统 idle 策略和长驻视觉 QA。
+4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`；继续补收起、托盘显隐、磁盘位置持久化和多屏恢复。
+5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample 和 18 clip full coverage atlas 已接；继续接系统 idle 策略、真实窗口长驻视觉 QA 和性能降级。
 6. **QA P2**：Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
 7. **Rive P3**：如果 sprite 切换仍显僵硬，再把高频动作迁到 Rive state machine。
 8. **Live2D P4**：只有当 Cuu 需要明显表情/头部/身体形变时评估。
@@ -337,7 +337,7 @@ idle loop
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
 - 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍。
 - 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
-- 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，把已落的 webview bridge 接到 Rust runtime。
+- 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime；下一步补磁盘存储、多屏恢复与托盘显隐。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
 - 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。
 
