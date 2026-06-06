@@ -1,3 +1,5 @@
+use std::collections::{HashSet, VecDeque};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::plugin::PermissionState;
@@ -11,6 +13,7 @@ use crate::window_controls::{
 
 pub const MAX_SYSTEM_NOTIFICATION_TITLE_CHARS: usize = 96;
 pub const MAX_SYSTEM_NOTIFICATION_BODY_CHARS: usize = 220;
+pub const MAX_SYSTEM_NOTIFICATION_DEDUPE_KEYS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +36,13 @@ pub struct ShellSystemNotificationPlan {
     pub stream_path: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ShellSystemNotificationDeduper {
+    max_keys: usize,
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShellSystemNotificationError {
     EmptyId,
@@ -49,6 +59,46 @@ struct ParsedPushData {
 
 pub fn system_notification_event_channel() -> &'static str {
     event_channel_name(ShellEvent::SystemNotification)
+}
+
+impl Default for ShellSystemNotificationDeduper {
+    fn default() -> Self {
+        Self::with_capacity(MAX_SYSTEM_NOTIFICATION_DEDUPE_KEYS)
+    }
+}
+
+impl ShellSystemNotificationDeduper {
+    pub fn with_capacity(max_keys: usize) -> Self {
+        Self {
+            max_keys,
+            seen: HashSet::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    pub fn should_deliver(&mut self, plan: &ShellSystemNotificationPlan) -> bool {
+        if self.max_keys == 0 {
+            return true;
+        }
+
+        let key = system_notification_dedupe_key(plan);
+        if self.seen.contains(&key) {
+            return false;
+        }
+
+        self.seen.insert(key.clone());
+        self.order.push_back(key);
+        while self.order.len() > self.max_keys {
+            if let Some(oldest) = self.order.pop_front() {
+                self.seen.remove(&oldest);
+            }
+        }
+        true
+    }
+}
+
+pub fn system_notification_dedupe_key(plan: &ShellSystemNotificationPlan) -> String {
+    format!("{}:{}:{}", plan.id, plan.event, plan.route)
 }
 
 pub fn show_system_notification(
@@ -455,5 +505,58 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.route, "/inbox");
+    }
+
+    #[test]
+    fn notification_deduper_suppresses_replayed_events() {
+        let plan = system_notification_plan_from_push_payload(&payload(
+            "notification.created",
+            r#"{"id":"n-dedupe","severity":"urgent","title":"Needs attention"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+        let mut deduper = ShellSystemNotificationDeduper::with_capacity(8);
+
+        assert!(deduper.should_deliver(&plan));
+        assert!(!deduper.should_deliver(&plan));
+        assert_eq!(
+            system_notification_dedupe_key(&plan),
+            "n-dedupe:notification.created:/inbox"
+        );
+    }
+
+    #[test]
+    fn notification_deduper_evicts_oldest_keys_when_full() {
+        let mut first = system_notification_plan_from_push_payload(&payload(
+            "notification.created",
+            r#"{"id":"first","severity":"urgent","title":"First"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+        let second = system_notification_plan_from_push_payload(&payload(
+            "notification.created",
+            r#"{"id":"second","severity":"urgent","title":"Second"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+        let third = system_notification_plan_from_push_payload(&payload(
+            "notification.created",
+            r#"{"id":"third","severity":"urgent","title":"Third"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+        let mut deduper = ShellSystemNotificationDeduper::with_capacity(2);
+
+        assert!(deduper.should_deliver(&first));
+        assert!(deduper.should_deliver(&second));
+        assert!(deduper.should_deliver(&third));
+        assert!(deduper.should_deliver(&first));
+
+        first.id = "third".to_string();
+        assert!(!deduper.should_deliver(&first));
     }
 }

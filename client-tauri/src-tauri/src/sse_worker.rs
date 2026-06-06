@@ -1,11 +1,13 @@
 use futures_util::StreamExt;
+use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tokio::time::{sleep, Duration};
 
 use crate::config::WorkHubShellConfig;
 use crate::notify::{
     show_system_notification, system_notification_event_channel,
-    system_notification_plan_from_push_payload,
+    system_notification_plan_from_push_payload, ShellSystemNotificationDeduper,
+    ShellSystemNotificationPlan,
 };
 use crate::sse::{
     plan_shell_sse_worker, push_payload_from_frame, startup_shell_sse_targets,
@@ -34,12 +36,21 @@ pub fn spawn_shell_sse_workers(
     plan: ShellSseWorkerPlan,
 ) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
     let client = reqwest::Client::new();
+    let notification_deduper = Arc::new(Mutex::new(ShellSystemNotificationDeduper::default()));
     for subscription in plan.subscriptions.clone() {
         let app = app.clone();
         let client = client.clone();
+        let notification_deduper = Arc::clone(&notification_deduper);
         let reconnect_delay_ms = plan.reconnect_delay_ms;
         tauri::async_runtime::spawn(async move {
-            run_sse_subscription(app, client, subscription, reconnect_delay_ms).await;
+            run_sse_subscription(
+                app,
+                client,
+                subscription,
+                reconnect_delay_ms,
+                notification_deduper,
+            )
+            .await;
         });
     }
     Ok(plan)
@@ -50,6 +61,7 @@ async fn run_sse_subscription(
     client: reqwest::Client,
     subscription: ShellSseSubscription,
     reconnect_delay_ms: u64,
+    notification_deduper: Arc<Mutex<ShellSystemNotificationDeduper>>,
 ) {
     let delay = Duration::from_millis(reconnect_delay_ms);
     loop {
@@ -63,7 +75,9 @@ async fn run_sse_subscription(
         match open_sse_response(&client, &subscription).await {
             Ok(response) => {
                 emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
-                if let Err(message) = pump_sse_response(&app, &subscription, response).await {
+                if let Err(message) =
+                    pump_sse_response(&app, &subscription, response, &notification_deduper).await
+                {
                     emit_sse_status(
                         &app,
                         &subscription,
@@ -113,6 +127,7 @@ async fn pump_sse_response(
     app: &tauri::AppHandle,
     subscription: &ShellSseSubscription,
     response: reqwest::Response,
+    notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
 ) -> Result<(), String> {
     let mut buffer = ShellSseFrameBuffer::default();
     let mut stream = response.bytes_stream();
@@ -127,6 +142,9 @@ async fn pump_sse_response(
             if let Some(plan) = system_notification_plan_from_push_payload(&payload)
                 .map_err(|error| format!("failed to plan system notification: {error:?}"))?
             {
+                if !should_deliver_system_notification(notification_deduper, &plan)? {
+                    continue;
+                }
                 app.emit(system_notification_event_channel(), plan.clone())
                     .map_err(|error| format!("failed to emit system notification: {error}"))?;
                 if let Err(error) = show_system_notification(app, &plan) {
@@ -137,6 +155,16 @@ async fn pump_sse_response(
     }
 
     Err("SSE stream ended".to_string())
+}
+
+fn should_deliver_system_notification(
+    notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
+    plan: &ShellSystemNotificationPlan,
+) -> Result<bool, String> {
+    notification_deduper
+        .lock()
+        .map_err(|_| "system notification dedupe state is poisoned".to_string())
+        .map(|mut deduper| deduper.should_deliver(plan))
 }
 
 fn emit_sse_status(
