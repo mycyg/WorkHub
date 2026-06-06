@@ -34,12 +34,14 @@ export type CuuControllerDecisionReason =
   | "duplicate_dropped"
   | "queue_overflow_dropped"
   | "dismissed_current"
+  | "promoted_badge"
   | "removed_queued_card"
   | "nothing_active";
 
 export type CuuControllerSnapshot = {
   active_card?: CuuCard;
   queue: CuuCard[];
+  badges: CuuCard[];
   badge_count: number;
   preferences: CuuControllerPreferences;
   idle_state: CuuState;
@@ -88,13 +90,14 @@ export function createCuuController(input: {
   let preferences = normalizePreferences(input.preferences);
   const idleState = input.idle_state ?? "idle";
   let activeCard: CuuCard | undefined;
-  let badgeCount = 0;
   const queue: CuuCard[] = [];
+  const badges: CuuCard[] = [];
 
   const snapshot = (): CuuControllerSnapshot => ({
     ...(activeCard ? { active_card: activeCard } : {}),
     queue: [...queue],
-    badge_count: badgeCount,
+    badges: [...badges],
+    badge_count: badges.length,
     preferences: { ...preferences },
     idle_state: idleState
   });
@@ -122,14 +125,19 @@ export function createCuuController(input: {
   };
 
   const enqueue = (card: CuuCard): CuuControllerDecision => {
-    if (hasCard(card.id, activeCard, queue)) {
+    if (hasCard(card.id, activeCard, queue, badges)) {
       return decision("drop", "duplicate_dropped", { card });
     }
 
     const badgeReason = badgeReasonFor(card, preferences);
     if (badgeReason) {
-      badgeCount += 1;
-      return decision("badge", badgeReason, { card, surface: "badge" });
+      const droppedCard = pushQueued(card, badges, preferences.queue_limit);
+      const incomingWasDropped = droppedCard?.id === card.id;
+      return decision(incomingWasDropped ? "drop" : "badge", droppedCard ? "queue_overflow_dropped" : badgeReason, {
+        card,
+        surface: "badge",
+        ...(droppedCard ? { dropped_card: droppedCard } : {})
+      });
     }
 
     if (!activeCard) {
@@ -158,13 +166,19 @@ export function createCuuController(input: {
 
   const dismiss = (cardId = activeCard?.id): CuuControllerDecision => {
     if (!cardId) {
+      const promoted = takeNextCard(queue, badges);
+      if (promoted) {
+        activeCard = promoted.card;
+        return decision("show", promoted.reason, { card: promoted.card });
+      }
       return decision("idle", "nothing_active");
     }
 
     if (activeCard?.id === cardId) {
-      activeCard = takeHighestPriority(queue);
-      if (activeCard) {
-        return decision("show", "dismissed_current", { card: activeCard });
+      const promoted = takeNextCard(queue, badges);
+      activeCard = promoted?.card;
+      if (promoted) {
+        return decision("show", promoted.reason, { card: promoted.card });
       }
       return decision("idle", "dismissed_current");
     }
@@ -173,6 +187,20 @@ export function createCuuController(input: {
     if (queuedIndex >= 0) {
       const [removed] = queue.splice(queuedIndex, 1);
       return decision("drop", "removed_queued_card", { ...(removed ? { card: removed } : {}) });
+    }
+
+    const badgeIndex = badges.findIndex((item) => item.id === cardId);
+    if (badgeIndex >= 0) {
+      const [removed] = badges.splice(badgeIndex, 1);
+      return decision("drop", "removed_queued_card", { ...(removed ? { card: removed } : {}) });
+    }
+
+    if (!activeCard) {
+      const promoted = takeNextCard(queue, badges);
+      activeCard = promoted?.card;
+      if (promoted) {
+        return decision("show", promoted.reason, { card: promoted.card });
+      }
     }
 
     return decision("idle", "nothing_active");
@@ -187,7 +215,7 @@ export function createCuuController(input: {
       return snapshot();
     },
     clearBadges() {
-      badgeCount = 0;
+      badges.splice(0);
       return snapshot();
     }
   };
@@ -247,8 +275,20 @@ function takeHighestPriority(queue: CuuCard[]) {
   return next;
 }
 
-function hasCard(cardId: string, activeCard: CuuCard | undefined, queue: CuuCard[]) {
-  return activeCard?.id === cardId || queue.some((item) => item.id === cardId);
+function takeNextCard(queue: CuuCard[], badges: CuuCard[]) {
+  const queued = takeHighestPriority(queue);
+  if (queued) {
+    return { card: queued, reason: "dismissed_current" as const };
+  }
+  const badge = takeHighestPriority(badges);
+  if (badge) {
+    return { card: badge, reason: "promoted_badge" as const };
+  }
+  return undefined;
+}
+
+function hasCard(cardId: string, activeCard: CuuCard | undefined, queue: CuuCard[], badges: CuuCard[]) {
+  return activeCard?.id === cardId || queue.some((item) => item.id === cardId) || badges.some((item) => item.id === cardId);
 }
 
 function presentationFor(

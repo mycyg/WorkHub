@@ -1,5 +1,12 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import {
+  createCuuController,
+  type CuuCard,
+  type CuuController,
+  type CuuControllerDecision,
+  type CuuControllerSnapshot
+} from "@workhub/cuu";
+import {
   classifyGoldPathHref,
   renderGoldPathAppShell,
   renderGoldPathBootDocument,
@@ -12,7 +19,9 @@ import {
   bindDesktopShellCuuRuntime,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
+  desktopCuuNoticeMessage,
   desktopCuuNoticeCss,
+  renderDesktopCuuNotice,
   resolveDesktopCuuAction,
   resolveDesktopShellListen,
   submitDesktopCuuAction,
@@ -27,7 +36,13 @@ function clientToken() {
   return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
 }
 
-function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string, timeoutMs = 4600) {
+function showNotice(
+  shellRoot: HTMLElement,
+  message: string,
+  extraHtml?: string,
+  timeoutMs = 4600,
+  onTimeout?: () => void
+) {
   const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
   if (!notice) {
     return;
@@ -45,8 +60,89 @@ function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string,
     noticeTimer = window.setTimeout(() => {
       notice.hidden = true;
       noticeTimer = undefined;
+      onTimeout?.();
     }, timeoutMs);
   }
+}
+
+function ensureCuuQueueBadge(shellRoot: HTMLElement) {
+  const existing = shellRoot.querySelector<HTMLButtonElement>("[data-cuu-queue-badge]");
+  if (existing) {
+    return existing;
+  }
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = "wh-cuu-queue-badge";
+  badge.dataset.cuuQueueBadge = "true";
+  badge.hidden = true;
+  shellRoot.appendChild(badge);
+  return badge;
+}
+
+function updateCuuQueueBadge(shellRoot: HTMLElement, snapshot: CuuControllerSnapshot) {
+  const badge = ensureCuuQueueBadge(shellRoot);
+  const total = snapshot.queue.length + snapshot.badge_count;
+  if (total <= 0) {
+    badge.hidden = true;
+    badge.innerHTML = "";
+    return;
+  }
+  const label = snapshot.queue.length > 0
+    ? `排队 ${snapshot.queue.length} 条，收起 ${snapshot.badge_count} 条`
+    : `收起 ${snapshot.badge_count} 条`;
+  badge.innerHTML = `<span class="wh-cuu-queue-count">${total}</span><span class="wh-cuu-queue-text">${escapeHtml(label)}</span>`;
+  badge.title = `Cuu ${label}`;
+  badge.hidden = false;
+}
+
+function bindCuuQueueBadge(shellRoot: HTMLElement, controller: CuuController) {
+  const badge = ensureCuuQueueBadge(shellRoot);
+  badge.addEventListener("click", () => {
+    const activeCard = controller.snapshot().active_card;
+    if (activeCard) {
+      showCuuCard(shellRoot, controller, activeCard);
+      updateCuuQueueBadge(shellRoot, controller.snapshot());
+      return;
+    }
+    const next = controller.dismiss();
+    updateCuuQueueBadge(shellRoot, next.snapshot);
+    if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
+      showCuuCard(shellRoot, controller, next.card, next);
+    }
+  });
+}
+
+function showCuuCard(
+  shellRoot: HTMLElement,
+  controller: CuuController,
+  card: CuuCard,
+  decision?: CuuControllerDecision
+) {
+  showNotice(
+    shellRoot,
+    desktopCuuNoticeMessage(card),
+    renderDesktopCuuNotice(card),
+    decision?.presentation.timeout_ms ?? cuuNoticeTimeoutMs(card),
+    () => {
+      const next = controller.dismiss(card.id);
+      updateCuuQueueBadge(shellRoot, next.snapshot);
+      if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
+        showCuuCard(shellRoot, controller, next.card, next);
+      }
+    }
+  );
+}
+
+function cuuNoticeTimeoutMs(card: CuuCard) {
+  return card.priority === "urgent" || card.state === "asking_approval" ? 12000 : 7200;
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;");
 }
 
 function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey: string) {
@@ -241,6 +337,9 @@ async function boot() {
     });
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}</style>${shell.html}`;
     bindGoldPathNavigation(root, shell, client);
+    const cuuController = createCuuController();
+    const cuuDecisions = new Map<string, CuuControllerDecision>();
+    bindCuuQueueBadge(root, cuuController);
     const realShellListen = resolveDesktopShellListen();
     const demoMode = cuuDemoMode();
     const demoListener =
@@ -251,9 +350,15 @@ async function boot() {
         : undefined;
     void bindDesktopShellCuuRuntime({
       listen: realShellListen ?? demoListener?.listen,
+      controller: cuuController,
+      onDecision(decision) {
+        if (decision.card) {
+          cuuDecisions.set(decision.card.id, decision);
+        }
+        updateCuuQueueBadge(root, decision.snapshot);
+      },
       notify(notice) {
-        const timeoutMs = notice.card.priority === "urgent" || notice.card.state === "asking_approval" ? 12000 : 7200;
-        showNotice(root, notice.message, notice.html, timeoutMs);
+        showCuuCard(root, cuuController, notice.card, cuuDecisions.get(notice.card.id));
       }
     }).then((runtime) => {
       if (runtime.subscribed && demoListener) {

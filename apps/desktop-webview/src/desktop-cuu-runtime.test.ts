@@ -8,6 +8,7 @@ import {
   bindDesktopShellCuuRuntime,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
+  desktopCuuNoticeCss,
   desktopCuuNoticeMessage,
   renderDesktopCuuNotice,
   resolveDesktopCuuAction,
@@ -363,6 +364,7 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.match(html, /aria-label="Cuu 在等你点选。"/u);
   assert.match(html, /不用打字，点选即可。/u);
   assert.match(html, /data-cuu-action-id="submit"/u);
+  assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
 });
 
 test("desktop Cuu actions submit approval choices through the typed API client", async () => {

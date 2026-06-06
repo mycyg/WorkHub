@@ -88,7 +88,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 但这些还不等于「桌宠已经完成」：
 
 - 没有真实小猫动画帧、sprite atlas、Rive 文件或 Live2D rig。
-- `CuuController` 仍是纯策略 MVP，缺可视化 badge、队列自动推进、拖拽位置偏好和长期 idle 行为。
+- `CuuController` 与 desktop-webview badge / 队列推进已有 MVP，仍缺独立设置页偏好、拖拽位置偏好和长期 idle 行为。
 - 没有独立 Tauri `pet` 透明窗口；当前只是 desktop webview 内的 notice。
 - 没有拖拽、收起、独立设置页、长时间 idle、低电量降帧。
 - 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
@@ -103,14 +103,15 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/controller.ts`：新增 `createCuuController`，把 Cuu 提醒收敛为 `show` / `replace` / `queue` / `badge` / `drop` 决策。
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图。
+- `apps/desktop-webview/src/browser.ts`：新增 queue badge，可在当前 Cuu 气泡超时后自动推进下一张卡。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点。
 
 仍未完成：
 
 - GPT Image 生成的正式透明 PNG / WebP 帧。
 - `cuu.sprite.json` 生产资产包与真实 frame image 路径。
 - 独立 Tauri `pet` window。
-- 可视化 badge、队列自动推进、拖拽、长期 idle 和多屏位置记忆。
+- 拖拽、长期 idle、多屏位置记忆、独立偏好设置和系统通知落地。
 - Rive / Live2D 高表现力路线。
 
 ## 4. 交互原则

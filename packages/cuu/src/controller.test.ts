@@ -68,6 +68,14 @@ test("Cuu controller turns quiet and do-not-disturb interruptions into badges", 
   assert.equal(dndUrgent.reason, "do_not_disturb_badge");
   assert.equal(dndUrgent.presentation.os_notification, true);
   assert.equal(dnd.snapshot().active_card, undefined);
+  assert.equal(dnd.snapshot().badges[0]?.id, "dnd-urgent");
+
+  const promoted = dnd.dismiss();
+
+  assert.equal(promoted.outcome, "show");
+  assert.equal(promoted.reason, "promoted_badge");
+  assert.equal(promoted.card?.id, "dnd-urgent");
+  assert.equal(promoted.snapshot.badge_count, 0);
 });
 
 test("Cuu controller drops duplicates and respects queue limits", () => {

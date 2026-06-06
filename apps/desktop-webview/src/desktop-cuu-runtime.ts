@@ -90,7 +90,9 @@ export const desktopCuuNoticeCss = [
   ".wh-cuu-chip{border:1px solid var(--wh-app-line);border-radius:999px;background:#fff;padding:5px 8px;font-size:12px;color:var(--wh-app-ink)}",
   ".wh-cuu-action{border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-app-ink);font-size:13px;text-decoration:none;font-weight:800}",
   ".wh-cuu-action[data-tone=primary]{background:var(--wh-app-blue);border-color:var(--wh-app-blue);color:#fff}",
-  ".wh-cuu-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}"
+  ".wh-cuu-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
+  ".wh-cuu-queue-badge{position:fixed;right:18px;bottom:124px;z-index:39;display:flex;align-items:center;gap:8px;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.92);box-shadow:0 12px 34px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-ink);font:750 12px/1.2 \"Aptos\",\"Segoe UI\",sans-serif}",
+  ".wh-cuu-queue-badge[hidden]{display:none}.wh-cuu-queue-count{min-width:20px;height:20px;border-radius:999px;display:grid;place-items:center;background:var(--wh-app-blue);color:#fff;font-size:11px}.wh-cuu-queue-text{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wh-app-muted)}"
 ].join("");
 
 export function resolveDesktopShellListen(input: unknown = globalThis): DesktopShellListen | undefined {
