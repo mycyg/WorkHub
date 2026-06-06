@@ -52,6 +52,7 @@ owner: workflow
 | `client-tauri/src-tauri/src/http.rs` | daemon request plan | URL 归一化、device token headers |
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
+| `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
 | `apps/desktop-webview/src/main.ts` | 桌面 webview typed surface | 消费 `@workhub/api-client`、渲染 Gold Path / intake / workitem / proposal / agent live |
 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status`，生成 Cuu notice |
 | `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo |
@@ -61,8 +62,8 @@ owner: workflow
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
 | Tauri v2 app runtime | `Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri app scaffold、`tauri.conf.json`、capabilities、main entry |
-| 主窗 `main` | 未创建 | 承载 `apps/desktop-webview` build |
-| 独立桌宠窗 `pet` | 未创建 | transparent / decorations false / always-on-top / skip taskbar |
+| 主窗 `main` | 已有 `ShellWindowPlan`，未创建真实 Tauri window | 承载 `apps/desktop-webview` build |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan`，未创建真实 Tauri window | transparent / decorations false / always-on-top / skip taskbar |
 | 托盘 | 只有 event 名 | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 只有目标 ownership | `workhub://` / 兼容 `yqgl://` handler |

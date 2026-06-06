@@ -2,6 +2,7 @@ pub mod config;
 pub mod events;
 pub mod http;
 pub mod sse;
+pub mod windows;
 
 pub const RUST_SHELL_OWNS: &[&str] = &[
     "base_url",
@@ -9,6 +10,8 @@ pub const RUST_SHELL_OWNS: &[&str] = &[
     "tray",
     "deep_link",
     "system_notification",
+    "window_plan",
+    "pet_window",
     "sse_worker",
     "sse_frame_parser",
     "local_file_sync",
