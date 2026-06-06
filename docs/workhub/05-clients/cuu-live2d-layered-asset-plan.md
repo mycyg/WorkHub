@@ -18,6 +18,14 @@ owner: workflow
 
 这张图是 **Live2D 分层参考概念图**，不是最终运行时资产。它用于固定 Cuu 的正面基准、拆件方向和美术细节：橘色虎斑、奶油脸和爪、白蕾丝围兜、黑蝴蝶结、珍珠流苏、红色小珠、尾巴分段。后续正式 PSD 必须重新按图层规范输出，不能直接把概念图裁成模型。
 
+![Cuu Live2D 正面基准稿](./assets/cuu/cuu-live2d-front-model-concept.png)
+
+这张图是 **正面基准稿概念**，用于锁定 Cuu 的比例、脸部识别点、围兜/蝴蝶结/流苏位置和脚底 anchor。正式 PSD 可以参考它重绘，但仍必须按第 4 节图层树拆件并补画遮挡区域。
+
+![Cuu Live2D PSD 生产板](./assets/cuu/cuu-live2d-psd-production-board.png)
+
+这张图是 **PSD 生产板 / 拆件参考图**，由 GPT Image 生成后同步到文档资产目录。它把中心正面 Cuu 与周边可拆部件放在同一画布：耳朵、眼皮、眼睛、嘴型、前后爪、胸腹、背毛、蕾丝围兜、蝴蝶结、珍珠流苏和尾巴段。它仍不是最终 PSD，但可以直接指导后续绘图工具中的补画、切层与命名。
+
 ---
 
 ## 1. 原则
@@ -44,6 +52,8 @@ Moonku 教程的核心经验可以转成 Cuu 的施工规则：
 | 图层命名清晰 | 使用英文稳定名，便于脚本、Cubism、TS manifest 对齐 |
 | PSD 交付前检查 | 无同名图层、无隐藏废层、无杂点、图层模式 normal、透明度 100% |
 | 配件单独拆 | 红珠、珍珠、流苏绳、蝴蝶结左右翼都拆出物理摆动层 |
+
+参考页对 WorkHub 的实际启发是：**不要把 AI 生成的整猫图直接当 Live2D 成品**。Cuu 需要先有正面生产板，再把被遮挡的身体、围兜、蝴蝶结、前爪和尾巴根部补完整，最后用可审计图层名交给 Cubism。任何 “整图切几块就导入” 的路线都不算通过。
 
 ---
 
@@ -75,9 +85,13 @@ apps/desktop-webview/src/assets/cuu/
         sleepy.exp3.json
 docs/workhub/05-clients/assets/cuu/
   cuu-live2d-layer-breakdown-concept.png
+  cuu-live2d-front-model-concept.png
+  cuu-live2d-psd-production-board.png
 ```
 
 文档目录只放概念图；运行时模型必须进入 `apps/desktop-webview/src/assets/cuu/live2d/exported/`，随 Tauri bundle 发布。
+
+当前已落：`apps/desktop-webview/src/assets/cuu/live2d/source/cuu-live2d-v0-layer-manifest.json`，状态为 `contract_only`。它列出必需图层、遮挡补画、Cubism 参数、motion fallback 与 QA 门禁；正式 PSD 未落前，不能把它误读为完成的 Live2D 模型。
 
 ---
 
@@ -419,8 +433,8 @@ GIF 不允许：
 | 阶段 | 目标 | 产物 | 验收 |
 |---|---|---|---|
 | L2D-P0 | 分层规范与概念图 | 本文 + `cuu-live2d-layer-breakdown-concept.png` | 角色和拆件方向明确 |
-| L2D-P1 | 正面基准稿 | `cuu-live2d-v0-front.png` | Cuu 外观与概念图一致 |
-| L2D-P2 | 分层 PSD | `cuu-live2d-v0.psd` + layer manifest | Cubism 可导入，无同名/杂点/丢层 |
+| L2D-P1 | 正面基准稿 / 生产板 | `cuu-live2d-front-model-concept.png` + `cuu-live2d-psd-production-board.png` | Cuu 外观与概念图一致，拆件清晰 |
+| L2D-P2 | 分层 PSD | `cuu-live2d-v0.psd` + `cuu-live2d-v0-layer-manifest.json` | Cubism 可导入，无同名/杂点/丢层 |
 | L2D-P3 | Cubism 绑定 | `.cmo3` 源 + exported `.model3.json` 套件 | 呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可动 |
 | L2D-P4 | Tauri runtime | `cuu-live2d-runtime.ts` | `pet` window 优先加载 Live2D，失败降级 sprite |
 | L2D-P5 | 事件动作 | motion / expression map | approval/search/carry/worried/celebrate 可由事件触发 |

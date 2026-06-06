@@ -346,7 +346,7 @@ idle loop
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
 - 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍；pet surface 静态视觉 QA 已由 `pet-surface-qa.ts` 覆盖。
 - 真实 Tauri runtime 已在启动期显示独立透明 `pet` window 的 body-only Cuu，并消费已落的 `pet_window.rs` 几何 plan；2026-06-07 已用 Windows debug smoke 证明 `Cuu` window 位于右下角、visible/topmost，并能显示 Cuu 与气泡；下一步要自动化证明主窗隐藏后仍常驻。
-- Live2D 正式 PSD 与 Cubism runtime 尚未落；当前新增 `cuu-live2d-layer-breakdown-concept.png` 和专篇作为施工合同。
+- Live2D 正式 PSD 与 Cubism runtime 尚未落；当前已有 `cuu-live2d-layer-breakdown-concept.png`、`cuu-live2d-front-model-concept.png`、`cuu-live2d-psd-production-board.png`、`cuu-live2d-v0-layer-manifest.json` 和专篇作为施工合同。
 - 真实 Tauri commands：启动期 body-only 显示、`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；HiDPI 坐标换算和 runtime topmost 已接；下一步补多屏恢复实测、拖拽后截图和自动化透明像素 QA。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
 - 真实透明窗口 QA：当前已完成一次 Windows debug 截图 smoke；下一步仍需把截图、alpha 像素、HiDPI、多屏和性能纳入自动化门禁。

@@ -82,7 +82,15 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 这张概念图固定 Live2D 方向：Cuu 需要从完整正面角色拆成可绑定部件，而不是把 GIF 当成最终动画。正式 PSD 要拆出耳朵、眼睛、眼皮、嘴型、头发/毛束、身体、爪子、围兜、蝴蝶结、珍珠流苏、尾巴分段，并补画所有遮挡区域。分层命名、Cubism 参数、运行时接入和 QA 门禁见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。
 
-### 3.5 当前实现差距
+### 3.5 Live2D 正面基准稿与 PSD 生产板
+
+![Cuu Live2D 正面基准稿](./assets/cuu/cuu-live2d-front-model-concept.png)
+
+![Cuu Live2D PSD 生产板](./assets/cuu/cuu-live2d-psd-production-board.png)
+
+第一张图用于锁定 Cuu 的正面比例、脚底 anchor 和角色识别点；第二张图用于指导后续正式 PSD 拆层：中心是正面 Cuu，周围拆出耳朵、眼皮、眼睛、嘴型、爪子、围兜、蝴蝶结、珍珠流苏、身体块和尾巴段。它们不是运行时资产，但已经同步到文档目录，并由 `apps/desktop-webview/src/assets/cuu/live2d/source/cuu-live2d-v0-layer-manifest.json` 固定成可审计的图层合同。
+
+### 3.6 当前实现差距
 
 ![Cuu runtime gap roadmap](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
@@ -106,7 +114,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
 
-### 3.6 施工进展（2026-06-06）
+### 3.7 施工进展（2026-06-06）
 
 已落一个 **sprite runtime MVP**，用于把 `CuuMotionHint` 真正接到可渲染的 Cuu 动画层：
 
@@ -115,6 +123,9 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
 - `packages/cuu/src/atlas-manifest.ts`：新增真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验。
 - `docs/workhub/05-clients/assets/cuu/cuu-live2d-layer-breakdown-concept.png`：GPT Image 生成的 Live2D 分层拆件概念板，用于指导正式 PSD 拆层。
+- `docs/workhub/05-clients/assets/cuu/cuu-live2d-front-model-concept.png`：GPT Image 生成的 Live2D 正面基准稿，用于锁定角色比例、脚底 anchor 和装饰位置。
+- `docs/workhub/05-clients/assets/cuu/cuu-live2d-psd-production-board.png`：GPT Image 生成的 Live2D PSD 生产板，把中心 Cuu 与周边可拆部件放在同一画布，用于指导补画、切层与 Cubism 导入前检查。
+- `apps/desktop-webview/src/assets/cuu/live2d/source/cuu-live2d-v0-layer-manifest.json`：Live2D 分层 PSD 合同，状态为 `contract_only`；列出必需图层、遮挡补画、Cubism 参数、motion fallback 与 QA 门禁。
 - `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：GPT Image 绿幕 sprite sheets，保留原始绿幕源图。
 - `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：本地 chroma-key + despill + edge-contract 后的透明 PNG。
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png`：P1 motion pack atlas，当前覆盖 18 个业务状态与 idle / interaction clip。
