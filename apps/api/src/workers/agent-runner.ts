@@ -28,6 +28,7 @@ import {
 import {
   createBuiltInFileTools,
   createToolRegistry,
+  errorToolResult,
   type SnapshotHook,
   type ToolExecutionContext,
   type ToolResult
@@ -241,6 +242,11 @@ export function createInMemoryAgentRunQueue(options: {
     return run;
   }
 
+  function driftedRun(runId: string) {
+    const live = runs.get(runId);
+    return live && live.status !== "running" ? live : null;
+  }
+
   async function executeRun(runId: string) {
     const run = runs.get(runId);
     if (!run) {
@@ -259,7 +265,16 @@ export function createInMemoryAgentRunQueue(options: {
     const client = await (options.client ?? defaultClient)(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
     runWorkdirs.set(current.run_id, workdir);
-    const tools = options.tools?.(executionInput) ?? defaultTools;
+    const rawTools = options.tools?.(executionInput) ?? defaultTools;
+    const tools: ReturnType<AgentRunToolsProvider> = {
+      toModelTools: (ctx) => rawTools.toModelTools(ctx),
+      execute: async (toolId, input, ctx) => {
+        if (driftedRun(current.run_id)) {
+          return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
+        }
+        return rawTools.execute(toolId, input, ctx);
+      }
+    };
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
       run: current,
       settings,
@@ -286,9 +301,13 @@ export function createInMemoryAgentRunQueue(options: {
         snapshot,
         recorder: {
           recordStep: (step) => {
+            const live = runs.get(current.run_id);
+            if (!live || live.status !== "running") {
+              return;
+            }
             current = updateRun({
-              ...current,
-              trace: [...current.trace, ...traceRecordsFromStep(current.run_id, step)],
+              ...live,
+              trace: [...live.trace, ...traceRecordsFromStep(current.run_id, step)],
               updated_at: now().toISOString()
             });
           }
@@ -296,12 +315,20 @@ export function createInMemoryAgentRunQueue(options: {
         emit: (event) => options.emit?.(event, current),
         now
       });
+      const drifted = driftedRun(current.run_id);
+      if (drifted) {
+        return drifted;
+      }
       current = updateRun(finalizeExecutedRun(current, result, now()));
       await recordRunConfidence(current, result);
       await notifyRunMilestone(current, result.reason);
       return current;
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
+      const drifted = driftedRun(current.run_id);
+      if (drifted) {
+        return drifted;
+      }
       current = updateRun({
         ...current,
         status: "failed",

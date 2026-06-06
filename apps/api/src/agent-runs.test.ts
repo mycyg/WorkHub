@@ -489,6 +489,39 @@ function noDeliverableAgentClient(): AgentLoopClient {
   };
 }
 
+function singleToolThenDoneAgentClient(): AgentLoopClient {
+  let calls = 0;
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            id: "msg-cancellable-1",
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [
+              {
+                type: "tool_use",
+                id: "tool-cancel-1",
+                name: "slow_tool",
+                input: {}
+              }
+            ]
+          };
+        }
+        return {
+          id: "msg-cancellable-2",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: "交付完成" }]
+        };
+      }
+    }
+  };
+}
+
 test("agent run enqueue consumes P-COST decisions before creating a run", async () => {
   const runtimeSettings = settings();
   const queue = createInMemoryAgentRunQueue({
@@ -656,6 +689,67 @@ test("concurrent agent run starts keep one active run per work item", async () =
   assert.equal((rejected.reason as AgentRunnerError).code, "agent_run_already_active");
   assert.equal(budgetCalls, 1);
   assert.equal((await queue.listActive()).length, 1);
+});
+
+test("aborted running agent runs keep the cancelled state during finalize drift", async () => {
+  const runtimeSettings = settings();
+  const toolStarted = deferred<void>();
+  const releaseTool = deferred<void>();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  let toolExecutions = 0;
+  let confidenceCalls = 0;
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000031",
+    client: () => singleToolThenDoneAgentClient(),
+    requireDeliverable: false,
+    confidence: async () => {
+      confidenceCalls += 1;
+      return { confidenceId };
+    },
+    notifications,
+    tools: () => ({
+      toModelTools: () => [],
+      async execute() {
+        toolExecutions += 1;
+        toolStarted.resolve();
+        await releaseTool.promise;
+        return {
+          ok: true,
+          isError: false,
+          content: "slow tool done"
+        };
+      }
+    })
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Cancellable worker run"
+  });
+  const running = queue.runNext();
+  await toolStarted.promise;
+  const aborted = await queue.abort(queued.run_id, userId);
+
+  assert.equal(aborted.status, "cancelled");
+  releaseTool.resolve();
+  const settled = await running;
+  const stored = await queue.get(queued.run_id);
+
+  assert.equal(settled?.status, "cancelled");
+  assert.equal(stored?.status, "cancelled");
+  assert.equal(stored?.trace.length, 0);
+  assert.equal(toolExecutions, 1);
+  assert.equal(confidenceCalls, 0);
+  assert.deepEqual(milestoneNotifications, []);
 });
 
 test("agent run enqueue opens user_forbidden escalation for human-reserved worker work", async () => {
