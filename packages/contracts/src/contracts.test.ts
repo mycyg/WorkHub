@@ -21,6 +21,7 @@ import {
   escalationTriggers,
   eventTypes,
   questionCardSchema,
+  sessionVmSchema,
   workItemStatuses
 } from "./index.js";
 
@@ -195,6 +196,36 @@ test("question cards prefer clickable choices but retain a collapsed fallback", 
 
   assert.equal(parsed.options.length, 2);
   assert.equal(parsed.free_text.collapsed_by_default, true);
+});
+
+test("session VMs carry option-first intake and stream metadata", () => {
+  const parsed = sessionVmSchema.parse({
+    session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    work_item_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    topic: "session:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    stream_href: "/api/push/stream/session/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    next_question_href: "/api/sessions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/next-question",
+    question: {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      title: "这次主要要做什么？",
+      input_mode: "single_choice",
+      options: [
+        { id: "plan", label: "先写方案" },
+        { id: "draft", label: "直接起草" }
+      ],
+      free_text: {
+        enabled: true,
+        collapsed_by_default: true
+      },
+      progress: [{ key: "clarify", label: "澄清", state: "active" }],
+      submit: { method: "POST", href: "/api/sessions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/next-question" }
+    }
+  });
+
+  assert.equal(parsed.topic, `session:${parsed.session_id}`);
+  assert.equal(parsed.question.input_mode, "single_choice");
+  assert.equal(parsed.question.free_text.collapsed_by_default, true);
 });
 
 test("cost governance contracts expose clickable budget notices and scoped usage", () => {

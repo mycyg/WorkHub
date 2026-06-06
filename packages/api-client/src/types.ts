@@ -6,6 +6,7 @@ import type {
   CostDashboardVM,
   CostSummaryVM,
   CreateProposalFromManifestRequest,
+  CreateSessionRequest,
   EvidenceBubble,
   GoldPathSurfaceVM,
   NotificationList,
@@ -18,6 +19,7 @@ import type {
   ReviewProposalRequest,
   RespondApprovalRequest,
   MergeProposalRequest,
+  SessionVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -100,6 +102,7 @@ export type WorkHubApiClient = {
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
   me: () => Promise<IdentityResponse | null>;
   notifications: () => Promise<NotificationList>;
+  createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;

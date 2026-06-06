@@ -30,6 +30,9 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
     async notifications() {
       throw new Error("not needed");
     },
+    async createSession() {
+      throw new Error("not needed");
+    },
     async respondApproval() {
       throw new Error("not needed");
     },

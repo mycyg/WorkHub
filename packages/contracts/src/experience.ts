@@ -133,6 +133,24 @@ export const questionCardSchema = z.object({
 });
 export type QuestionCard = z.infer<typeof questionCardSchema>;
 
+export const createSessionRequestSchema = z.object({
+  title: z.string().min(1).optional(),
+  intent_text: z.string().min(1).optional(),
+  project_id: idSchema.optional(),
+  work_item_id: idSchema.optional()
+});
+export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
+
+export const sessionVmSchema = z.object({
+  session_id: idSchema,
+  work_item_id: idSchema.optional(),
+  topic: z.string().min(1),
+  stream_href: z.string().min(1),
+  next_question_href: z.string().min(1),
+  question: questionCardSchema
+});
+export type SessionVM = z.infer<typeof sessionVmSchema>;
+
 export const evidenceBubbleSchema = z.object({
   id: idSchema,
   query_text: z.string().optional(),

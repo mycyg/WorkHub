@@ -139,7 +139,7 @@ workers/
 | `auth` | `POST /api/auth/identify` | `apps/api/routes/auth.ts` | `contracts/auth.ts` |
 | `projects` | `GET /api/projects` | `routes/projects.ts` | `contracts/project.ts` |
 | `workitems` | `GET /api/workitems/:id` | `routes/workitems.ts` | `contracts/workitem.ts` |
-| `sessions` | `POST /api/sessions` | `routes/sessions.ts` | `QuestionCard` |
+| `sessions` | `POST /api/sessions` | `routes/sessions.ts` | `SessionVM`（含首张 `QuestionCard`、`topic`、`stream_href`） |
 | `agent-runs` | `POST /api/workitems/:id/agent-runs` | `routes/agent-runs.ts` | `AgentRun`, `WorkHubEvent` |
 | `permissions` | `POST /api/permissions/ask` | `routes/permissions.ts` | `ApprovalRequest`, `AttentionItem` |
 | `approvals` | `GET /api/approvals` | `routes/approvals.ts` | `ApprovalCenterVM` |
@@ -193,7 +193,7 @@ AI-native 产品不应该让前端拼十几个接口才知道「现在要处理�
 | 页面 / surface | Endpoint | 返回 VM | 关键字段 | Cuu 承接 |
 |---|---|---|---|---|
 | AI-first 首页 / Rust 单件事工作台 | `GET /api/pages/attention` | `AttentionHomeVM` | `primary: AttentionItem`, `queue`, `background_runs`, `cuu_state` | 红点、轻气泡、当前一件事 |
-| 提需求 / 澄清 | `POST /api/sessions/:id/next-question` | `QuestionCard` | `prompt`, `options`, `recommended_option_id`, `free_text` | `asking_approval` / `thinking` |
+| 提需求 / 澄清 | `POST /api/sessions` / `POST /api/sessions/:id/next-question` | `SessionVM` / `QuestionCard` | `session_id`, `topic`, `stream_href`, `question.options`, `recommended_option_ids`, `free_text` | `asking_approval` / `thinking` |
 | 工作项详情 | `GET /api/pages/workitems/:id` | `WorkItemDetailVM` | `workitem`, `acceptance`, `agent_trace_preview`, `latest_proposal`, `evidence_refs` | carrying document / worried |
 | 审批中心 | `GET /api/pages/approvals` | `ApprovalCenterVM` | `items: AttentionItem[]`, `filters`, `counts` | approval bubble |
 | 提议详情 | `GET /api/pages/proposals/:id` | `ProposalDetailVM` | `manifest: DeliverableChangeManifest`, `checks`, `rollback`, `comments` | carrying document / celebrating |

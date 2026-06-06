@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { createSessionRequestSchema, sessionVmSchema } from "@workhub/contracts";
+import { topics } from "@workhub/events";
 
 import {
   createCurrentUserMiddleware,
@@ -21,16 +23,20 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
 
-  routes.post("/sessions", createCurrentUserMiddleware(authSource), (c) => {
+  routes.post("/sessions", createCurrentUserMiddleware(authSource), async (c) => {
+    createSessionRequestSchema.parse(await optionalJson(c.req));
     const fixture = getP05GoldPathFixture();
+    const sessionId = p05GoldPathIds.session;
     return c.json({
       ok: true,
-      data: {
-        session_id: p05GoldPathIds.session,
+      data: sessionVmSchema.parse({
+        session_id: sessionId,
         work_item_id: p05GoldPathIds.workItem,
-        next_question_href: `/api/sessions/${p05GoldPathIds.session}/next-question`,
+        topic: topics.session(sessionId).topic,
+        stream_href: `/api/push/stream/session/${sessionId}`,
+        next_question_href: `/api/sessions/${sessionId}/next-question`,
         question: fixture.question
-      }
+      })
     });
   });
 
@@ -42,4 +48,16 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
   });
 
   return routes;
+}
+
+async function optionalJson(req: { text: () => Promise<string> }) {
+  const text = await req.text();
+  if (!text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HTTPException(400, { message: "澄清会话请求不是有效的 JSON。" });
+  }
 }

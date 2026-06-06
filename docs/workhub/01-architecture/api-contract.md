@@ -96,7 +96,7 @@ owner: workflow
 
 | 方法 路径 | 入参 | 出参 | 鉴权 |
 |---|---|---|---|
-| **[新]** `POST /api/session` | `{title?, workitem_id?, actor?: "user"\|"ai"}` | `{id, topic, created_at}` | `require_actor` |
+| **[新]** `POST /api/sessions` | `{title?, intent_text?, project_id?, workitem_id?}` | `SessionVM`（`session_id`, `topic`, `stream_href`, `next_question_href`, 首张 `QuestionCard`） | `require_actor` |
 | **[新]** `GET /api/session/{id}` | — | `SessionOut`(含消息游标) | owner |
 | **[新]** `POST /api/session/{id}/message` | `{text, attachments?}` | `202 {accepted}`(产物经 SSE 回流) | owner + 设备门(若驱动高权限工具) |
 | **[新]** `GET /api/session/{id}/messages` | `?after=<cursor>` | `Message[]` | owner |

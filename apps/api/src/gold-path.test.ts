@@ -240,6 +240,11 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   app.route("/api/cost", createCostRoutes({ auth }));
   const headers = { Cookie: await cookie(runtimeSettings) };
 
+  const session = await app.request("/api/sessions", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ intent_text: "帮我整理客户周报模板。" })
+  });
   const question = await app.request(`/api/sessions/${p05GoldPathIds.session}/next-question`, {
     method: "POST",
     headers
@@ -250,6 +255,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   const replay = await app.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
   const costUsage = await app.request("/api/cost/usage", { headers });
 
+  assert.equal(session.status, 200);
   assert.equal(question.status, 200);
   assert.equal(evidence.status, 200);
   assert.equal(proposal.status, 200);
@@ -257,6 +263,15 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(replay.status, 200);
   assert.equal(costUsage.status, 200);
 
+  const sessionBody = await session.json() as {
+    data: {
+      session_id: string;
+      topic: string;
+      stream_href: string;
+      next_question_href: string;
+      question: { free_text: { collapsed_by_default: boolean } };
+    };
+  };
   const questionBody = await question.json() as { data: { free_text: { collapsed_by_default: boolean } } };
   const evidenceBody = await evidence.json() as { data: { evidence_refs: unknown[] } };
   const proposalBody = await proposal.json() as {
@@ -272,6 +287,11 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
     data: { me: { max_tokens: number }; scopes: unknown[]; active_notices: unknown[]; generated_at: string };
   };
 
+  assert.equal(sessionBody.data.session_id, p05GoldPathIds.session);
+  assert.equal(sessionBody.data.topic, `session:${p05GoldPathIds.session}`);
+  assert.equal(sessionBody.data.stream_href, `/api/push/stream/session/${p05GoldPathIds.session}`);
+  assert.equal(sessionBody.data.next_question_href, `/api/sessions/${p05GoldPathIds.session}/next-question`);
+  assert.equal(sessionBody.data.question.free_text.collapsed_by_default, true);
   assert.equal(questionBody.data.free_text.collapsed_by_default, true);
   assert.equal(evidenceBody.data.evidence_refs.length, 3);
   assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
