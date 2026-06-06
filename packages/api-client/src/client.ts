@@ -148,6 +148,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    createWorkItem: (payload) =>
+      request("/api/workitems", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     respondApproval: (id, payload) =>
       request(`/api/approvals/${id}/respond`, {
         method: "POST",

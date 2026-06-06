@@ -112,6 +112,12 @@ export function getOpenApiDocument() {
           summary: "Return an option-first clarification card"
         }
       },
+      "/api/workitems": {
+        post: {
+          tags: ["workitems"],
+          summary: "Create a work item from an intake session or option-first payload"
+        }
+      },
       "/api/knowledge/search": {
         post: {
           tags: ["knowledge"],

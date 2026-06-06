@@ -5,12 +5,16 @@ import type { WorkHubApiClient } from "@workhub/api-client";
 import { eventTypes, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
 
 import {
+  createWebWorkItem,
+  createWebWorkItemCuuCard,
   loadWebIntakeCuuCard,
   loadWebProposalCuuCard,
   loadWebGoldPathSurface,
+  loadWebWorkItemCuuCard,
   renderWebIntakeSession,
   renderWebGoldPathSurface,
   renderWebProposalDetail,
+  renderWebWorkItemDetail,
   startWebIntakeSession,
   webCuuCardFromEvent,
   webSurface
@@ -67,6 +71,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createSession() {
       return session;
     },
+    async createWorkItem() {
+      return surface.page_vms.workitem;
+    },
     async respondApproval() {
       throw new Error("not needed");
     },
@@ -117,7 +124,7 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         return surface;
       },
       async workItem() {
-        throw new Error("not needed");
+        return surface.page_vms.workitem;
       },
       async proposal() {
         return surface.page_vms.proposal;
@@ -220,6 +227,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
           status: "needs_review",
           summary_md: "准备一份周报草稿。"
         },
+        acceptance: [{ title: "确认 file-only 范围", status: "met" }],
         latest_proposal: { title: "周报草稿变更申请" },
         agent_trace_preview: [{ step_no: 1, phase: "plan", output_excerpt: "确认 file-only 范围。" }],
         evidence_refs: []
@@ -320,8 +328,11 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal(webSurface.cuuCardAdapter, "@workhub/cuu");
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface))).surface, "web");
+  assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).surface, "web");
+  assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).html.includes("AI 实时执行"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
+  assert.equal((await loadWebWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadWebProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 });
 
@@ -343,6 +354,34 @@ test("web surface starts option-first intake sessions through the typed client",
   assert.equal(card.state, "asking_approval");
   assert.equal(card.payload_ref?.entity_type, "session");
   assert.equal(card.input?.option_first, true);
+});
+
+test("web surface creates work items through the typed client and maps the result to Cuu", async () => {
+  const surface = {
+    page_vms: {
+      workitem: {
+        workitem: {
+          id: "work",
+          code: "WH-001",
+          title: "生成周报草稿",
+          status: "ai_working",
+          summary_md: "Cuu 已开始处理。"
+        },
+        acceptance: [{ title: "绑定证据", status: "open" }],
+        agent_trace_preview: [{ agent_run_id: "run", step_no: 1, phase: "think", output_excerpt: "准备读取证据。" }],
+        evidence_refs: []
+      },
+      proposal: {}
+    }
+  } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  const created = await createWebWorkItem({ session_id: "10000000-0000-4000-8000-000000000101" }, client);
+  const card = await createWebWorkItemCuuCard({ session_id: "10000000-0000-4000-8000-000000000101" }, client);
+
+  assert.equal(webSurface.pages.includes("/api/workitems"), true);
+  assert.equal(created.workitem.status, "ai_working");
+  assert.equal(card.kind, "trace");
+  assert.equal(card.state, "thinking");
 });
 
 test("web surface exposes the shared Cuu event adapter for floating bubbles", () => {

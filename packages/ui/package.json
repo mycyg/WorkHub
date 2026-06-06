@@ -16,6 +16,10 @@
       "types": "./src/intake/index.ts",
       "import": "./src/intake/index.ts"
     },
+    "./workitem": {
+      "types": "./src/workitem/index.ts",
+      "import": "./src/workitem/index.ts"
+    },
     "./proposal": {
       "types": "./src/proposal/index.ts",
       "import": "./src/proposal/index.ts"

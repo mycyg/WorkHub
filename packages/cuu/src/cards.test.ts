@@ -8,6 +8,7 @@ import {
   type ProposalDetailVM,
   type QuestionCard,
   type SessionVM,
+  type WorkItemDetailVM,
   type WorkHubEvent
 } from "@workhub/contracts";
 
@@ -18,7 +19,8 @@ import {
   cardFromEvent,
   cardFromProposalDetail,
   cardFromQuestionCard,
-  cardFromSessionVm
+  cardFromSessionVm,
+  cardFromWorkItemDetail
 } from "./index.js";
 
 const ts = "2026-06-05T01:00:00.000Z";
@@ -185,6 +187,44 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
   assert.equal(card.sections?.some((section) => section.title === "风险与回滚"), true);
   assert.equal(card.chips?.[0]?.label, "docs/weekly-report.md");
   assert.equal(card.evidence_refs?.[0]?.title, "原始需求");
+});
+
+test("work item detail becomes a lightweight Cuu task card", () => {
+  const detail = {
+    workitem: {
+      id: workItemId,
+      code: "CSW-1",
+      project_id: "10000000-0000-4000-8000-000000000002",
+      title: "生成客户周报模板",
+      status: "ai_working",
+      summary_md: "Cuu 已开始读取会议和网盘证据。"
+    },
+    acceptance: [{ title: "输出必须绑定证据", status: "open" }],
+    agent_trace_preview: [
+      {
+        agent_run_id: "10000000-0000-4000-8000-000000000003",
+        step_no: 1,
+        phase: "think",
+        output_excerpt: "已按风险优先口径开始处理。"
+      }
+    ],
+    evidence_refs: [
+      {
+        id: "10000000-0000-4000-8000-000000000004",
+        source_type: "meeting",
+        source_id: "meeting-weekly-sync",
+        title: "上次周会纪要"
+      }
+    ]
+  } as unknown as WorkItemDetailVM;
+
+  const card = cardFromWorkItemDetail(detail);
+
+  assert.equal(card.kind, "trace");
+  assert.equal(card.state, "thinking");
+  assert.equal(card.payload_ref?.entity_type, "workitem");
+  assert.equal(card.actions.some((action) => action.href === `/agent-runs/${detail.agent_trace_preview[0]?.agent_run_id}/replay`), true);
+  assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
 });
 
 test("budget notices and budget events become actionable Cuu cards", () => {

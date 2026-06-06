@@ -5,6 +5,7 @@ import type {
   BudgetPolicyUpdate,
   CostDashboardVM,
   CostSummaryVM,
+  CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
   EvidenceBubble,
@@ -103,6 +104,7 @@ export type WorkHubApiClient = {
   me: () => Promise<IdentityResponse | null>;
   notifications: () => Promise<NotificationList>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
+  createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;

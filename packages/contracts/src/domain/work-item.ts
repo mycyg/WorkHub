@@ -59,6 +59,25 @@ export const workItemSchema = timestampFieldsSchema.extend({
 });
 export type WorkItem = z.infer<typeof workItemSchema>;
 
+export const createWorkItemRequestSchema = z
+  .object({
+    session_id: idSchema.optional(),
+    project_id: idSchema.optional(),
+    title: z.string().min(1).max(256).optional(),
+    raw_description: z.string().min(1).optional(),
+    selected_option_ids: z.array(z.string().min(1)).optional(),
+    kickoff_agent: z.boolean().optional()
+  })
+  .superRefine((payload, ctx) => {
+    if (!payload.session_id && !payload.title && !payload.raw_description) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "create work item requires a session, title, or raw description"
+      });
+    }
+  });
+export type CreateWorkItemRequest = z.infer<typeof createWorkItemRequestSchema>;
+
 export const assignmentSchema = timestampFieldsSchema.extend({
   id: idSchema,
   work_item_id: idSchema,

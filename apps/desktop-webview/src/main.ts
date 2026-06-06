@@ -1,9 +1,10 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, CreateWorkItemRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
+import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
 
 export const desktopWebviewSurface = {
@@ -14,6 +15,7 @@ export const desktopWebviewSurface = {
   pages: [
     "/api/pages/attention",
     "/api/sessions",
+    "/api/workitems",
     "/api/pages/gold-path",
     "/intake/:sessionId",
     "/api/pages/workitems/:id",
@@ -54,6 +56,18 @@ export async function renderDesktopIntakeSession(client: WorkHubApiClient, paylo
   return renderIntakeSession(await startDesktopIntakeSession(client, payload), "desktop");
 }
 
+export function createDesktopWorkItem(client: WorkHubApiClient, payload: CreateWorkItemRequest) {
+  return client.createWorkItem(payload);
+}
+
+export function loadDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
+  return client.pages.workItem(workItemId);
+}
+
+export async function renderDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
+  return renderWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId), "desktop");
+}
+
 export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return client.pages.proposal(proposalId);
 }
@@ -75,6 +89,17 @@ export async function loadDesktopIntakeCuuCard(
   payload: CreateSessionRequest = {}
 ): Promise<CuuCard> {
   return cardFromSessionVm(await startDesktopIntakeSession(client, payload));
+}
+
+export async function createDesktopWorkItemCuuCard(
+  client: WorkHubApiClient,
+  payload: CreateWorkItemRequest
+): Promise<CuuCard> {
+  return cardFromWorkItemDetail(await createDesktopWorkItem(client, payload));
+}
+
+export async function loadDesktopWorkItemCuuCard(client: WorkHubApiClient, workItemId: string): Promise<CuuCard> {
+  return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId));
 }
 
 export {

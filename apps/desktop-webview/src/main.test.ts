@@ -5,14 +5,18 @@ import type { WorkHubApiClient } from "@workhub/api-client";
 import { eventTypes, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
 
 import {
+  createDesktopWorkItem,
+  createDesktopWorkItemCuuCard,
   desktopCuuCardFromEvent,
   desktopWebviewSurface,
   loadDesktopIntakeCuuCard,
   loadDesktopProposalCuuCard,
   loadDesktopGoldPathSurface,
+  loadDesktopWorkItemCuuCard,
   renderDesktopIntakeSession,
   renderDesktopGoldPathSurface,
   renderDesktopProposalDetail,
+  renderDesktopWorkItemDetail,
   startDesktopIntakeSession
 } from "./main.js";
 
@@ -67,6 +71,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createSession() {
       return session;
     },
+    async createWorkItem() {
+      return surface.page_vms.workitem;
+    },
     async respondApproval() {
       throw new Error("not needed");
     },
@@ -117,7 +124,7 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         return surface;
       },
       async workItem() {
-        throw new Error("not needed");
+        return surface.page_vms.workitem;
       },
       async proposal() {
         return surface.page_vms.proposal;
@@ -220,6 +227,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
           status: "needs_review",
           summary_md: "准备一份周报草稿。"
         },
+        acceptance: [{ title: "确认 file-only 范围", status: "met" }],
         latest_proposal: { title: "周报草稿变更申请" },
         agent_trace_preview: [{ step_no: 1, phase: "plan", output_excerpt: "确认 file-only 范围。" }],
         evidence_refs: []
@@ -321,8 +329,11 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
+  assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).surface, "desktop");
+  assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).html.includes("wh-desktop"), true);
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
+  assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 });
 
@@ -343,6 +354,34 @@ test("desktop webview starts option-first intake sessions through the typed clie
   assert.equal(card.kind, "question");
   assert.equal(card.payload_ref?.entity_type, "session");
   assert.equal(card.input?.free_text_collapsed_by_default, true);
+});
+
+test("desktop webview creates work items through the typed client and maps the result to Cuu", async () => {
+  const surface = {
+    page_vms: {
+      workitem: {
+        workitem: {
+          id: "work",
+          code: "WH-001",
+          title: "生成周报草稿",
+          status: "ai_working",
+          summary_md: "Cuu 已开始处理。"
+        },
+        acceptance: [{ title: "绑定证据", status: "open" }],
+        agent_trace_preview: [{ agent_run_id: "run", step_no: 1, phase: "think", output_excerpt: "准备读取证据。" }],
+        evidence_refs: []
+      },
+      proposal: {}
+    }
+  } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  const created = await createDesktopWorkItem(client, { session_id: "10000000-0000-4000-8000-000000000201" });
+  const card = await createDesktopWorkItemCuuCard(client, { session_id: "10000000-0000-4000-8000-000000000201" });
+
+  assert.equal(desktopWebviewSurface.pages.includes("/api/workitems"), true);
+  assert.equal(created.workitem.status, "ai_working");
+  assert.equal(card.kind, "trace");
+  assert.equal(card.state, "thinking");
 });
 
 test("desktop webview exposes the shared Cuu event adapter for the Rust shell", () => {

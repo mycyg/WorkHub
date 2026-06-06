@@ -21,6 +21,7 @@ import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
+import { createWorkItemRoutes } from "./routes/workitems.js";
 import { createCostRoutes } from "./routes/cost.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
@@ -233,6 +234,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   const app = withErrors(new Hono<AuthEnv>());
   const auth = authDeps(runtimeSettings);
   app.route("/api", createSessionRoutes({ auth }));
+  app.route("/api", createWorkItemRoutes({ auth }));
   app.route("/api/knowledge", createKnowledgeRoutes({ auth }));
   app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
   app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue() }));
@@ -249,6 +251,14 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
     method: "POST",
     headers
   });
+  const createdWorkItem = await app.request("/api/workitems", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      session_id: p05GoldPathIds.session,
+      selected_option_ids: ["risk-first"]
+    })
+  });
   const evidence = await app.request("/api/knowledge/search", { method: "POST", headers });
   const proposal = await app.request(`/api/pages/proposals/${p05GoldPathIds.proposal}`, { headers });
   const workitem = await app.request(`/api/pages/workitems/${p05GoldPathIds.workItem}`, { headers });
@@ -257,6 +267,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
 
   assert.equal(session.status, 200);
   assert.equal(question.status, 200);
+  assert.equal(createdWorkItem.status, 201);
   assert.equal(evidence.status, 200);
   assert.equal(proposal.status, 200);
   assert.equal(workitem.status, 200);
@@ -273,6 +284,9 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
     };
   };
   const questionBody = await question.json() as { data: { free_text: { collapsed_by_default: boolean } } };
+  const createdWorkItemBody = await createdWorkItem.json() as {
+    data: { workitem: { id: string; status: string; summary_md?: string }; latest_proposal?: unknown; agent_trace_preview: unknown[] };
+  };
   const evidenceBody = await evidence.json() as { data: { evidence_refs: unknown[] } };
   const proposalBody = await proposal.json() as {
     data: { review_actions: { request_changes: { requires_reason?: boolean } } };
@@ -293,6 +307,11 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(sessionBody.data.next_question_href, `/api/sessions/${p05GoldPathIds.session}/next-question`);
   assert.equal(sessionBody.data.question.free_text.collapsed_by_default, true);
   assert.equal(questionBody.data.free_text.collapsed_by_default, true);
+  assert.equal(createdWorkItemBody.data.workitem.id, p05GoldPathIds.workItem);
+  assert.equal(createdWorkItemBody.data.workitem.status, "ai_working");
+  assert.equal(createdWorkItemBody.data.latest_proposal, undefined);
+  assert.equal(createdWorkItemBody.data.agent_trace_preview.length >= 1, true);
+  assert.equal(createdWorkItemBody.data.workitem.summary_md?.includes("已选择：风险优先"), true);
   assert.equal(evidenceBody.data.evidence_refs.length, 3);
   assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
   assert.equal(workItemBody.data.latest_proposal !== undefined, true);

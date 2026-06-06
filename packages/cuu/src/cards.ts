@@ -15,6 +15,8 @@ import {
   type QuestionCard,
   type ReplayTraceVM,
   type SessionVM,
+  type WorkItemDetailVM,
+  type WorkItemStatus,
   type WorkHubEvent
 } from "@workhub/contracts";
 import { toAttentionItem } from "@workhub/events/toAttentionItem";
@@ -89,6 +91,7 @@ export type CuuPayloadRef = {
     | "cost_dashboard"
     | "replay_trace"
     | "session"
+    | "workitem"
     | "event";
   entity_id: string;
   href?: string;
@@ -523,6 +526,119 @@ export function cardFromProposalDetail(vm: ProposalDetailVM): CuuCard {
   });
 }
 
+function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuState {
+  if (status === "merged" || status === "done") {
+    return "celebrating";
+  }
+  if (status === "in_review" || hasProposal) {
+    return "carrying_document";
+  }
+  if (status === "escalated" || status === "pm_mode") {
+    return "worried";
+  }
+  if (status === "intake" || status === "ai_clarifying") {
+    return "asking_approval";
+  }
+  return "thinking";
+}
+
+export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
+  const hasProposal = Boolean(vm.latest_proposal);
+  const state = stateForWorkItem(vm.workitem.status, hasProposal);
+  const proposalId = vm.latest_proposal?.proposal_id;
+  const latestStep = vm.agent_trace_preview.at(-1);
+  const runId = latestStep?.agent_run_id;
+  const actions: CuuCardAction[] = [
+    {
+      id: "open_workitem",
+      label: "查看任务",
+      tone: hasProposal ? "secondary" : "primary",
+      method: "GET",
+      href: `/workitems/${vm.workitem.id}`
+    },
+    ...(proposalId
+      ? [
+          {
+            id: "open_proposal",
+            label: "查看变更",
+            tone: "primary" as const,
+            method: "GET" as const,
+            href: `/proposals/${proposalId}`
+          }
+        ]
+      : []),
+    ...(runId
+      ? [
+          {
+            id: "view_replay",
+            label: "查看回放",
+            tone: "secondary" as const,
+            method: "GET" as const,
+            href: `/agent-runs/${runId}/replay`
+          }
+        ]
+      : []),
+    ...(!hasProposal && vm.workitem.status === "spec_ready"
+      ? [
+          {
+            id: "start_agent",
+            label: "开始 AI 执行",
+            tone: "primary" as const,
+            method: "POST" as const,
+            href: `/api/workitems/${vm.workitem.id}/agent-runs`
+          }
+        ]
+      : [])
+  ];
+
+  const sections: CuuCardSection[] = [
+    {
+      id: "status",
+      title: "当前状态",
+      lines: [
+        vm.workitem.status,
+        latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? "Cuu 已准备继续处理。"
+      ]
+    }
+  ];
+
+  if (vm.acceptance.length) {
+    sections.push({
+      id: "acceptance",
+      title: "验收",
+      lines: vm.acceptance.slice(0, 4).map((item, index) => {
+        const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        const title = record.title ?? `验收项 ${index + 1}`;
+        const status = record.status ?? "open";
+        return `${title}: ${status}`;
+      })
+    });
+  }
+
+  return withMotion({
+    id: vm.workitem.id,
+    kind: state === "carrying_document" ? "proposal" : state === "celebrating" ? "completion" : "trace",
+    state,
+    title: vm.workitem.title ?? vm.workitem.code,
+    message: truncate(latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? "Cuu 开始处理这件事了。"),
+    priority: state === "worried" ? "high" : "normal",
+    actions,
+    sections,
+    ...(vm.evidence_refs.length ? { evidence_refs: vm.evidence_refs } : {}),
+    payload_ref: {
+      entity_type: "workitem",
+      entity_id: vm.workitem.id,
+      href: `/workitems/${vm.workitem.id}`
+    },
+    source: optionalSource({
+      entity_type: "page_vm",
+      entity_id: vm.workitem.id,
+      work_item_id: vm.workitem.id,
+      project_id: vm.workitem.project_id
+    })
+  });
+}
+
 export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice.code}`): CuuCard {
   const exhausted = notice.code === "budget_exhausted";
   const actions = notice.options?.map<CuuCardAction>((option) => ({
@@ -690,6 +806,7 @@ export function cardsFromGoldPathSurface(surface: GoldPathSurfaceVM): CuuCard[] 
     surface.page_vms.attention.primary ? cardFromAttentionItem(surface.page_vms.attention.primary) : undefined,
     ...surface.page_vms.attention.queue.map(cardFromAttentionItem),
     cardFromQuestionCard(surface.page_vms.question),
+    cardFromWorkItemDetail(surface.page_vms.workitem),
     cardFromEvidenceBubble(surface.page_vms.evidence),
     cardFromProposalDetail(surface.page_vms.proposal),
     cardFromReplayTrace(surface.page_vms.replay),
