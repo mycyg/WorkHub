@@ -61,7 +61,12 @@ owner: workflow
 | `apps/desktop-webview/src/main.ts` | 桌面 webview typed surface | 消费 `@workhub/api-client`、渲染 Gold Path / intake / workitem / proposal / agent live |
 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status`，生成 Cuu notice |
 | `apps/desktop-webview/src/cuu-preferences.ts` | Cuu preference panel | 右上角轻入口，面板默认隐藏；本地存储 `attention_mode` / `sound_mode` / `reduced_motion` / `queue_limit`，把点击偏好写回 `CuuController` |
-| `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo；Cuu action 可把知识检索结果回显为 evidence card |
+| `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo；启动时按 `/pet` 或 `?surface=pet` 分流到 Cuu pet surface |
+| `apps/desktop-webview/src/pet-surface.ts` | Cuu pet webview surface | `pet` 窗口入口只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由用固定按钮 |
+| `packages/cuu/src/atlas-manifest.ts` | Cuu atlas contract | 真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验 |
+| `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu sample asset manifest | 指向 `cuu-p1-idle-breathe.png` sample atlas，并保留 source-green / alpha 路径 |
+| `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 CSS keyframes，非覆盖状态会标记 fallback |
+| `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset sample | 已有 `idle_breathe` 绿幕源图、透明 alpha 图和 sample atlas |
 
 ### 0.2 当前未落
 
@@ -69,8 +74,8 @@ owner: workflow
 |---|---|---|
 | Tauri v2 app runtime | 已有 `tauri.conf.json` / capability scaffold；`Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri dependency、`build.rs`、`main.rs` / setup entry |
 | 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
-| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan，未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
-| Cuu 绿幕资产 | 当前只有 procedural CSS sprite / 概念图；无运行时 PNG/WebP atlas | GPT Image 绿幕多帧素材、抠图裁切、anchor 对齐、`cuu.sprite.json` |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan，webview `/pet` surface 已能只渲染 Cuu；未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
+| Cuu 绿幕资产 | 已有 `idle_breathe` 绿幕源图、透明 alpha 与 sample atlas；只覆盖一个动作，未形成完整 `cuu.sprite.json` | GPT Image 18 动作绿幕多帧素材、抠图裁切、anchor 对齐、full coverage atlas |
 | 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
@@ -142,20 +147,21 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 
 ### 2.2 桌宠窗（`pet`，**新增**）
 
-> 现状的 `FloatingAssistant` 是**主窗内的浮层**（`fixed bottom-5 right-5`，`FloatingAssistant.tsx:236`），随主窗显隐。WorkHub 把它抽成**独立 always-on-top 小窗**，主窗隐藏到托盘后桌宠仍在桌面常驻——这是「桌宠是常驻入口」的关键。
+> 旧参照里的 `FloatingAssistant` 是**主窗内的浮层**（`fixed bottom-5 right-5`，`FloatingAssistant.tsx:236`），随主窗显隐。WorkHub 现在已经有 `/pet` webview surface 分流，但还没有真实 Tauri runtime 创建透明 always-on-top 小窗。后续必须把它抽成独立桌面窗口，主窗隐藏到托盘后桌宠仍在桌面常驻——这是「桌宠是常驻入口」的关键。
 
 - **当前 WorkHub scaffold**：`pet` window config = 360×220、最小 260×180、`visible:false`、`focus:false`、`decorations:false`、`transparent:true`、`alwaysOnTop:true`；`skipTaskbar:true` 已在 `ShellWindowPlan` 中固定，但暂未写入 `tauri.conf.json`，等真实 Tauri dependency/schema 校验后再接。
 - **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
+- **当前 webview surface**：`apps/desktop-webview/src/browser.ts` 会把 `/pet` 或 `?surface=pet` 分流到 `pet-surface.ts`，该 surface 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳。
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
-- **视觉资产（新增硬约束）**：P1 不再接受抽象图标或 procedural CSS 作为完成标准；必须加载绿幕抠图后的 Cuu PNG/WebP sprite atlas，至少覆盖 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、worried、revision、celebrating、offline。
+- **视觉资产（新增硬约束）**：P1 不再接受抽象图标或 procedural CSS 作为完成标准；当前已有 `idle_breathe` 绿幕源图、透明 alpha 和 sample atlas，用于证明管线。生产必须继续生成绿幕抠图后的 Cuu PNG/WebP sprite atlas，至少覆盖 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、worried、revision、celebrating、offline。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
 - **唤起/隐藏**：托盘新增「显示/隐藏桌宠」项（扩展 `tray.rs` 菜单）；deep-link `yqgl://me` 可点亮桌宠。
 - **IPC**：桌宠窗与主窗共享同一 `ConfigState`（`lib.rs:67` `handle.state()`）与同一 `push-event` 事件流（`emit` 默认广播到所有窗口），无需新通道。
-- **MVP 降级**：P0–P3 可继续用主窗内浮层（`FloatingAssistant`），独立 `pet` 窗作为 P4「桌宠」里程碑交付（对齐 PRD `P0–P5` 的 P4=桌宠）。
+- **MVP 降级**：真实 Tauri runtime 未接前，`/pet` surface 可作为 webview 预览和测试入口；主窗 notice 的 procedural sprite 只保留为 fallback，不再作为桌宠完成标准。
 
 ### 2.3 系统托盘（目标 + 旧参照，当前未落）
 
@@ -700,7 +706,7 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 
 | 阶段 | Rust 壳 | React 主窗 | Cuu/pet | 验收 |
 |---|---|---|---|---|
-| P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 绿幕 PNG/WebP atlas + 主窗内开发预览 | 用户能不打字完成澄清和审批，Cuu 动作资产可播放 |
+| P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 绿幕 PNG/WebP atlas + `/pet` webview 预览 | 用户能不打字完成澄清和审批，Cuu 动作资产可播放 |
 | P2 | 新增 `pet` window、窗口状态、open/hide 命令 | 设置页增加桌宠显隐/自启动/诊断 | 独立桌宠窗 + idle scheduler，Rive 可选 | 关闭主窗后 Cuu 仍可提醒，右下角常驻且有生命感 |
 | P3 | permission/proposal IPC、deep-link 更完整 | 交付物变更包、审批中心联动 | 审批气泡 / 证据气泡 | 变更申请能通过/打回/记住规则 |
 | P4 | 双向 sync、冲突检测、delivery 安全校验 | 同步中心、冲突解决、交付向导 | sync/conflict 动作状态 | 本地/云端冲突可安全处理 |

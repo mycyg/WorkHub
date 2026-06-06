@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "character": "Cuu",
+  "art_pack": "cuu-p1-green-screen-sample",
+  "default_state": "idle_breathe",
+  "atlas": {
+    "image_path": "cuu-p1-idle-breathe.png",
+    "source_green_path": "../source-green/idle_breathe/cuu-idle-breathe-sheet-v1-green.png",
+    "alpha_path": "../alpha/idle_breathe/cuu-idle-breathe-sheet-v1-alpha-clean.png",
+    "width": 1536,
+    "height": 1024,
+    "pixel_ratio": 1,
+    "format": "png"
+  },
+  "clips": {
+    "idle_breathe": {
+      "state": "idle_breathe",
+      "fps": 8,
+      "loop": true,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": { "x": 192, "y": 480 },
+      "frames": [
+        { "id": "idle_breathe-000", "x": 0, "y": 0, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-001", "x": 384, "y": 0, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-002", "x": 768, "y": 0, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-003", "x": 1152, "y": 0, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-004", "x": 0, "y": 512, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-005", "x": 384, "y": 512, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-006", "x": 768, "y": 512, "w": 384, "h": 512, "duration_ms": 125 },
+        { "id": "idle_breathe-007", "x": 1152, "y": 512, "w": 384, "h": 512, "duration_ms": 125 }
+      ],
+      "reduced_motion_frame_id": "idle_breathe-000"
+    }
+  }
+}

@@ -297,17 +297,54 @@ idle loop
 
 ## 10. 当前实现与目标差距
 
-当前已落的是 Cuu 的“逻辑层”和“占位视觉层”：
+当前已落的是 Cuu 的“逻辑层”、桌面 surface 分流和首张真实图形资产样张：
 
 - `CuuController` 已能处理 show / replace / queue / badge / drop。
 - desktop webview 已能把 SSE / mock event 转成 Cuu notice。
 - evidence card 已能执行 `knowledge-search` 和 `use_for_current_task`。
-- procedural CSS sprite 只是占位，用于验证状态映射。
+- procedural CSS sprite 仍保留在主窗 notice 中，用于验证状态映射和 fallback。
+- `packages/cuu/src/atlas-manifest.ts` 已新增真实 atlas manifest schema、grid frame helper、partial/full coverage 校验。
+- `apps/desktop-webview/src/cuu-atlas-runtime.ts` 已能按 atlas frame rect 生成 CSS keyframes。
+- `apps/desktop-webview/src/pet-surface.ts` 已支持 `/pet` 或 `?surface=pet` 只加载 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
+- 已生成一张 Cuu idle/breathe 绿幕 sprite sheet，并抠图为透明 PNG sample atlas。
 
 下一步必须从“会显示”升级到“独立活着”：
 
-- 真实绿幕素材。
-- 真实 alpha atlas。
-- 真实 `pet` window。
-- 真实 idle scheduler。
-- 真实透明窗口 QA。
+- 18 个动作的完整绿幕素材批次，而不是只有 idle sample。
+- 完整 alpha atlas / `cuu.sprite.json`，全量覆盖 `CuuMotionHint.sprite_state`。
+- 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻。
+- 真实 idle scheduler：呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应。
+- 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。
+
+## 11. P1 样张落地记录（2026-06-06）
+
+本轮已经把“绿幕生成 -> 本地抠图 -> atlas runtime”跑通一遍：
+
+| 项 | 落点 |
+|---|---|
+| 绿幕源图 | `apps/desktop-webview/src/assets/cuu/source-green/idle_breathe/cuu-idle-breathe-sheet-v1-green.png` |
+| 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/idle_breathe/cuu-idle-breathe-sheet-v1-alpha-clean.png` |
+| sample atlas | `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-idle-breathe.png` |
+| sample JSON manifest | `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json` |
+| manifest schema | `packages/cuu/src/atlas-manifest.ts` |
+| desktop asset manifest | `apps/desktop-webview/src/cuu-atlas-assets.ts` |
+| atlas renderer | `apps/desktop-webview/src/cuu-atlas-runtime.ts` |
+| pet surface | `apps/desktop-webview/src/pet-surface.ts` |
+
+像素验收结果：
+
+```text
+size: 1536x1024
+corners_alpha: [0, 0, 0, 0]
+transparent_pixels: 1022776
+partially_transparent_pixels: 11983
+visible_pixels: 550088
+greenish_visible_pixels: 0
+```
+
+这张样张用于证明管线可行，不等于正式资产包完成。它当前只覆盖 `idle_breathe`，非 idle 状态会在 atlas renderer 中标记 `data-fallback="true"` 并回退到 idle clip。生产门禁仍要求：
+
+- 补齐 `thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`searching_evidence_peek`、`syncing_files_spin`、`worried_ears`、`revision_requested_nod`、`celebrating_jump`、`offline_sleep` 等业务状态。
+- 补齐 blink、tail、sleep、wake、look_at_mouse、drag_hold、tap_bubble、wave_hello 等生命感微动作。
+- 为每个动作记录统一 anchor、fps、loop、interruptible、priority、reduced motion frame。
+- 通过 `validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true })` 后，才允许替换主窗 notice 的 procedural sprite。

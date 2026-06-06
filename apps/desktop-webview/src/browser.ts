@@ -32,6 +32,7 @@ import {
   desktopCuuPreferenceCss,
   loadCuuPreferences
 } from "./cuu-preferences.js";
+import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -422,4 +423,8 @@ async function boot() {
   }
 }
 
-void boot();
+if (root && resolveDesktopSurface() === "pet") {
+  void bootDesktopPetSurface(root);
+} else {
+  void boot();
+}

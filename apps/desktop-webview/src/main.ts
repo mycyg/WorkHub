@@ -145,6 +145,28 @@ export {
 } from "./cuu-sprite-runtime.js";
 
 export {
+  desktopCuuP1AtlasManifestUrl,
+  desktopCuuP1AtlasManifest,
+  validateDesktopCuuP1AtlasManifest
+} from "./cuu-atlas-assets.js";
+
+export {
+  desktopCuuAtlasBaseCss,
+  renderDesktopCuuAtlasSprite,
+  type DesktopCuuAtlasRender
+} from "./cuu-atlas-runtime.js";
+
+export {
+  bootDesktopPetSurface,
+  desktopPetSurfaceCss,
+  renderDesktopPetSurface,
+  resolveDesktopSurface,
+  type DesktopPetSurfaceRender,
+  type DesktopPetSurfaceRuntime,
+  type DesktopSurface
+} from "./pet-surface.js";
+
+export {
   createDesktopShellEventBridge,
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,

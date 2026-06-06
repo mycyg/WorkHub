@@ -106,16 +106,23 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/sprite-manifest.ts`：新增 `defaultCuuSpriteManifest`、`cuuSpriteClipForMotion`、`validateCuuSpriteManifest`、`assertValidCuuSpriteManifest`。
 - `packages/cuu/src/controller.ts`：新增 `createCuuController`，把 Cuu 提醒收敛为 `show` / `replace` / `queue` / `badge` / `drop` 决策。
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
+- `packages/cuu/src/atlas-manifest.ts`：新增真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验。
+- `apps/desktop-webview/src/assets/cuu/source-green/idle_breathe/cuu-idle-breathe-sheet-v1-green.png`：首张 GPT Image 绿幕 sprite sheet 样张，保留原始绿幕源图。
+- `apps/desktop-webview/src/assets/cuu/alpha/idle_breathe/cuu-idle-breathe-sheet-v1-alpha-clean.png`：本地 chroma-key + despill + edge-contract 后的透明 PNG。
+- `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-idle-breathe.png`：P1 sample atlas，当前只覆盖 `idle_breathe`。
+- `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json`：与 sample atlas 对齐的 JSON manifest，便于未来美术资产和 Tauri bundle 读取。
+- `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 CSS keyframes；非覆盖状态会标记 fallback。
+- `apps/desktop-webview/src/pet-surface.ts`：`/pet` 或 `?surface=pet` 已能只渲染 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
-- `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板，可在当前 Cuu 气泡超时后自动推进下一张卡；Cuu action 结果若返回新卡，会进入 controller 的 show/queue/badge 流；点击 evidence card action 时会从当前 card 带上 `evidence_refs`。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
+- `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 `/pet` 或 `?surface=pet` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 idle sample；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
 
 仍未完成：
 
-- GPT Image 生成的正式透明 PNG / WebP 帧。
-- `cuu.sprite.json` 生产资产包与真实 frame image 路径。
-- 独立 Tauri `pet` window。
+- 18 个动作的正式透明 PNG / WebP 帧；目前只有 `idle_breathe` 样张。
+- `cuu.sprite.json` 生产资产包；目前是 TS manifest sample，尚未写成运行时 JSON 文件。
+- 独立 Tauri `pet` window runtime；目前只是 webview `/pet` surface 分流和 Rust window plan / config scaffold。
 - 拖拽、长期 idle、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
 - Rive / Live2D 高表现力路线。
 - 右下角独立存在的活体 idle scheduler：呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应。
@@ -192,20 +199,26 @@ P1 sprite 不是抽象图标，而是绿幕生图后的透明小猫动作帧。�
 ### 8.1 目录建议
 
 ```text
-client-tauri/web-src/src/assets/cuu/
-  sprites/
-    idle/
-    walk/
-    thinking/
-    approval/
-  cuu.sprite.json
-  cuu.riv
+apps/desktop-webview/src/assets/cuu/
+  source-green/
+    idle_breathe/
+    thinking_tail/
+  alpha/
+    idle_breathe/
+    thinking_tail/
+  atlas/
+    cuu-p1-idle-breathe.png
+    cuu.sprite.json
+  rive/
+    cuu.riv
   live2d/
     cuu.model3.json
     textures/
 docs/workhub/05-clients/assets/cuu/
   *.png  # 概念图与设计说明用，不作为运行时生产资产
 ```
+
+如果后续 Tauri 前端目录从 `apps/desktop-webview` 迁到 `client-tauri/web-src`，仍保持 `assets/cuu/{source-green,alpha,atlas}` 结构，不改变 manifest 语义。
 
 ### 8.2 Sprite 配置草案
 
