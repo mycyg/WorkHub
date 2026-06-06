@@ -127,7 +127,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - 18 个动作的正式透明 PNG / WebP 已落 P1 pack；后续仍需做体积压缩、anchor 微调、真实透明窗口截图和长时间性能 QA。
 - `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
-- 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；仍缺多显示器实测、托盘显隐和真实截图 QA。
+- 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；基础托盘显隐已落，仍缺多显示器实测、动态通知联动和真实截图 QA。
 - 真实 Tauri 设置页承接、系统通知、收起/恢复、多屏监视器恢复策略和透明窗口长驻 QA。
 - Rive / Live2D 高表现力路线。
 - 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。
@@ -268,7 +268,7 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 
 1. P1：绿幕生成 PNG/WebP sprite 版 Cuu，至少 18 个动作，能 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、celebrating、offline（procedural MVP 只算占位，待正式资产）。
 2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清/知识检索回显/证据带回当前任务已落，待证据详情展开、完整检索页和真实持久化）。
-3. P2：独立 `pet` Tauri window，支持拖动、收起、托盘显隐，并把已有偏好面板迁入真实 Settings / pet window。
+3. P2：独立 `pet` Tauri window，支持拖动、收起、托盘显隐（基础菜单已落，待跨平台 smoke 和动态状态），并把已有偏好面板迁入真实 Settings / pet window。
 4. P2：引入 Rive state machine，把事件映射为自然过渡。
 5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。
 6. P4：性能/电量/多屏/HiDPI/透明边缘 QA，形成桌宠发布 checklist。

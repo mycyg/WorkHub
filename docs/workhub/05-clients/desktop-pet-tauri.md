@@ -53,8 +53,9 @@ owner: workflow
 | `client-tauri/src-tauri/src/http.rs` | daemon request plan | URL 归一化、device token headers |
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
+| `client-tauri/src-tauri/src/tray.rs` | tray menu contract | 固定 `workhub-main-tray`、tooltip、菜单 ID、菜单文案、`TrayMenuActionPlan`，把打开主窗/隐藏主窗/显示隐藏 Cuu/打开收件箱/退出映射到 window control 或 app exit；动态未读/审批计数尚未接 |
 | `client-tauri/src-tauri/build.rs` | Tauri build entry | 调用 `tauri_build::build()`，使当前 crate 具备真实 Tauri build scaffold |
-| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect |
+| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet/window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect；setup 已用 `TrayIconBuilder` 安装 WorkHub 托盘，左键打开主窗，右键菜单可执行基础窗口动作和退出 |
 | `client-tauri/src-tauri/icons/icon.ico` | Tauri Windows resource icon | 从 Cuu alpha atlas 样张裁切生成的占位 app icon，满足 `tauri-build` Windows resource 要求；正式发布前替换为完整品牌图标 |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
 | `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点 |
@@ -79,18 +80,18 @@ owner: workflow
 
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
-| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json` | 后续补 setup/tray/SSE/notification/deep-link、多屏恢复实测 |
-| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview | 承载 `apps/desktop-webview` build；后续补 tray/deep-link 事件源 |
-| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 pet show/hide/toggle、mode resize/position/show、drag、save-position、cursor sample 执行到真实 Tauri window / AppHandle API；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻；后续补 tray source 和视觉 QA |
+| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json`；托盘基础菜单已在 setup 安装 | 后续补 SSE/notification/deep-link、多屏恢复实测、安装包 smoke |
+| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview；托盘左键和菜单可显示/隐藏/聚焦主窗 | 承载 `apps/desktop-webview` build；后续补 deep-link/notification 事件源和 Linux/macOS smoke |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 pet show/hide/toggle、mode resize/position/show、drag、save-position、cursor sample 执行到真实 Tauri window / AppHandle API；托盘菜单可 toggle Cuu；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻；后续补透明窗口视觉 QA、多屏恢复实测和系统通知 |
 | Cuu 绿幕资产 | 已有 18 clip motion pack，`CuuMotionHint.sprite_state` 与 idle / interaction micro action 均已 full coverage，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA 与性能检查 |
-| 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
+| 托盘 | 已有 `client-tauri/src-tauri/src/tray.rs` 菜单契约与 `main.rs` `TrayIconBuilder` runtime；左键打开 WorkHub，右键菜单支持打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出，并发 `tray-action` plan | 动态未读/审批状态、tooltip/title 更新、同步子菜单、通知点击联动 |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
 | 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
 | Cuu 偏好 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存/cursor sample 端口，Rust 侧已有 `pet-window-state.json` 位置落盘 | 迁入真实 Tauri Settings / pet window，接托盘显隐、多屏恢复实测和系统通知 |
 | updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
 
-结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 的下一步应先补 `Tauri scaffold → SSE worker emit → pet window → tray/notification/deep-link → local sync/delivery`。
+结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 已把 `Tauri scaffold → pet window command → cursor/position → tray basics` 接到真实 Tauri API。下一步应继续补 `SSE worker emit → notification/deep-link → local sync/delivery → visual QA`。
 
 更完整的差距与后续 backlog 见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -168,16 +169,25 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
-- **唤起/隐藏**：托盘新增「显示/隐藏桌宠」项（扩展 `tray.rs` 菜单）；deep-link `yqgl://me` 可点亮桌宠。
+- **唤起/隐藏**：当前 `tray.rs` 已有「Show / hide Cuu」托盘项并在 `main.rs` 执行 `toggle_pet_window(Tray)`；deep-link `workhub://me` / 兼容 `yqgl://me` 后续可点亮桌宠。
 - **IPC**：桌宠窗与主窗共享同一 `ConfigState`（`lib.rs:67` `handle.state()`）与同一 `push-event` 事件流（`emit` 默认广播到所有窗口），无需新通道。
 - **MVP 降级**：真实 Tauri runtime 未接前，`/pet` surface 可作为 webview 预览和测试入口；主窗 notice 的 procedural sprite 只保留为 fallback，不再作为桌宠完成标准。
 
-### 2.3 系统托盘（目标 + 旧参照，当前未落）
+### 2.3 系统托盘（基础已落 + 动态状态待补）
 
-- **图标**：旧项目用 `icons/icon.png` + `with_id("main-tray")`，可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`。当前 WorkHub 尚未添加 tray plugin / icon / tray module。
-- **当前可复用契约**：托盘项先映射到 `ShellWindowControlPlan`：打开主窗=`show_main_window(Tray)`，隐藏主窗=`hide_main_window(Tray)`，显示/隐藏桌宠=`toggle_pet_window(Tray)`；同名 Tauri command 已可执行真实窗口 API，后续 tray module 只需选择正确 source。
-- **左键**：显示+聚焦主窗（`tray.rs:51`，`show_menu_on_left_click(false)` 故左键不弹菜单）。
-- **右键菜单**（动态重建，`build_menu`，`tray.rs:65`）：
+- **当前 WorkHub runtime**：`Cargo.toml` 已开启 Tauri `tray-icon` feature；`client-tauri/src-tauri/src/tray.rs` 固定 `WORKHUB_TRAY_ID="workhub-main-tray"` 与 `TrayMenuActionPlan`；`main.rs` setup 用 `TrayIconBuilder::with_id`、`MenuItemBuilder`、`MenuBuilder` 安装真实托盘，并复用默认窗口图标。
+- **当前可复用契约**：托盘项映射到 `ShellWindowControlPlan`：打开主窗=`show_main_window(Tray)`，隐藏主窗=`hide_main_window(Tray)`，显示/隐藏桌宠=`toggle_pet_window(Tray)`，打开收件箱=`focus_main_route(Tray,"/inbox")`；退出项只执行 `app.exit(0)`，不伪装成业务窗口动作。
+- **左键**：`show_menu_on_left_click(false)`，左键点击 tray icon 直接执行 `show_main_window(Tray)`，显示并聚焦主窗。
+- **当前右键菜单**：
+  ```
+  Open WorkHub           -> show_main_window(Tray)
+  Hide main window       -> hide_main_window(Tray)
+  Show / hide Cuu        -> toggle_pet_window(Tray)
+  Open inbox             -> focus_main_route(Tray, "/inbox")
+  Quit WorkHub           -> app.exit(0)
+  ```
+- **当前事件**：非退出菜单项会执行窗口动作，并向 webview 广播 `tray-action`，payload 为 `TrayMenuActionPlan {id,label,kind,windowControl,exitsApp}`；如果动作包含 route，`execute_window_control` 还会发 `navigate` route string。
+- **旧项目 / 目标动态菜单参照**（动态重建，`build_menu`，旧 `tray.rs:65`）：
   ```
   用户：<昵称|未登录>   (禁用，仅展示)
   ──────────────
@@ -196,8 +206,8 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
   设置…                 → navigate("/settings")
   退出                  → app.exit(0)
   ```
-- **未读角标**：Win11 无托盘红点公共 API，故用 **tooltip + title 文案**承载（`update_tray_unread`，`submitter.rs:242`：`需求管理大师 · N 条新通知`）；由 webview 侧 `refreshUnreadBadge`（`App.tsx:50`，250ms 防抖）拉 `/api/notifications?status=unread` 后 `invoke("update_tray_unread")`。
-- **WorkHub 扩展**：菜单新增「显示/隐藏桌宠」「待审批 N」（`permission.ask` 计数）；「网盘同步」子菜单在双向同步落地后增「双向」项（现状 `two_way` 被强制降级，`config.rs:155` `normalize_drive_mode`）。
+- **未读角标（待补）**：Win11 无托盘红点公共 API，后续用 **tooltip + title 文案**承载（目标 `update_tray_unread`）；webview 侧可由 `refreshUnreadBadge` 防抖拉 `/api/notifications?status=unread` 后调用 Rust 更新。
+- **WorkHub 扩展（待补）**：菜单新增「待审批 N」（`permission.ask` 计数）；「网盘同步」子菜单在双向同步落地后增「双向」项（现状 `two_way` 被强制降级）。
 
 ### 2.4 弹层（webview 内，非原生窗口）
 
@@ -228,7 +238,7 @@ C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+
 
 | 能力 | 职责 | 锚点 |
 |---|---|---|
-| **托盘** | 动态菜单 + 左键聚焦 + tooltip 未读 | `tray.rs`（§2.3） |
+| **托盘** | 基础菜单 + 左键聚焦 + 主窗/桌宠显隐 + 收件箱入口 + 退出；动态 tooltip 未读/审批计数待补 | `client-tauri/src-tauri/src/tray.rs`、`main.rs`（§2.3） |
 | **deep-link** | `yqgl://{host}/...` → 校验白名单 host（`r/p/inbox/settings/me`）+ 清洗 `..`/`//` 路径穿越 → `emit("navigate")` + `emit("deep-link")`（只发净化后路径，防 XSS） | `deep_link.rs:9/29/41` |
 | **单实例** | 第二次启动 → 聚焦已有主窗 + 把 `yqgl://` 参数转 deep-link | `lib.rs:31` `single_instance` |
 | **窗口装饰** | Mica/Acrylic/vibrancy + 延迟 show | `window.rs`（§2.1） |
@@ -247,7 +257,7 @@ C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+
 - **submitter（派活侧 + 文件 + 管理）**：`list_my_projects` / `create_requirement` / `patch_planning` / `put_assignees` / `submit_requirement` / `finalize_and_submit` / `accept_requirement` / `request_revision` / `auto_process` / `chat_messages` / `post_chat_answer` / 网盘 / spec 监视 / 交付下载 / admin（`commands/submitter.rs`）
 - **sync**：`trigger_sync`（单需求文件） / `trigger_drive_sync`（项目网盘）（`commands/sync.rs`）
 - **delivery**：`start_delivery`（打包文件夹 → 分片上传）（`commands/delivery.rs`）
-- **config/shell/tray**：`get_config` / `set_config` / `set_availability_status` / `test_server` / `open_folder` / `update_tray_unread`
+- **config/shell/tray**：当前 WorkHub 已落 `show_main_window` / `hide_main_window` / `focus_main_route` / `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 和基础 tray menu；旧/目标命令还包括 `get_config` / `set_config` / `set_availability_status` / `test_server` / `open_folder` / `update_tray_unread`
 
 ### 3.4 安全护栏（Rust 侧，迁移期原样保留）
 
@@ -331,9 +341,9 @@ webview 用 `useEvent(name, handler)` 订阅。事件由 Rust `app.emit(name, pa
 |---|---|---|---|---|
 | `push-event` | `{event, data}`（包裹后端 SSE 帧：`requirement.ready`/`requirement.updated`/`notification.created`/`ai.*` 等） | `sse.rs:148` | `App.tsx:213/238`（toast+OS 通知+角标）、`AILiveView`、各页 reconcile | `sse.rs`、`App.tsx` |
 | `sse-status` | `{status:"connected"\|"disconnected"}` | `sse.rs:90`（仅全局流） | `App.tsx:174` → `TitleBar` 绿点 | `TitleBar.tsx:26` |
-| `navigate` | `{path}` | `tray.rs:129`、`deep_link.rs:41` | `App.tsx:170` → `nav(path)` | `App.tsx:169` |
+| `navigate` | 当前 WorkHub 为 route string；旧/目标可包成 `{path}` | `main.rs` window control、未来 `deep_link.rs` | webview `nav(path)` | `apps/desktop-webview` bridge |
 | `deep-link` | `{path}`（净化后） | `deep_link.rs:45` | （可选）页内深链处理 | `deep_link.rs` |
-| `tray-action` | `{action: pull_new\|sync_drive\|do_deliver\|avail_custom\|availability_*\|drive_sync_*}` | `tray.rs:140` 及各 setter | `App.tsx:178`（toast + 导航 + setSpace） | `App.tsx:178` |
+| `tray-action` | 当前 WorkHub 为 `TrayMenuActionPlan {id,label,kind,windowControl,exitsApp}`；旧/目标动态菜单可扩展 `{action: pull_new\|sync_drive\|do_deliver\|availability_*}` | `main.rs` tray handler + `tray.rs` contract | Cuu/主窗可用于 toast、导航和状态同步 | `client-tauri/src-tauri/src/tray.rs` |
 | `availability-change` | `{status, availability_text}` | `tray.rs:162` | 接单状态 UI 同步 | `tray.rs` |
 | `reminder` | `{kind, title, requirement_id}` | `reminders.rs:82` | 提醒 UI | `reminders.rs` |
 | `notification` | 通知对象 | `reminders.rs:148` | Inbox/角标 | `reminders.rs` |

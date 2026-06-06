@@ -4,6 +4,7 @@ pub mod http;
 pub mod pet_commands;
 pub mod pet_window;
 pub mod sse;
+pub mod tray;
 pub mod window_controls;
 pub mod windows;
 
@@ -11,6 +12,7 @@ pub const RUST_SHELL_OWNS: &[&str] = &[
     "base_url",
     "device_token",
     "tray",
+    "tray_menu",
     "deep_link",
     "system_notification",
     "window_plan",

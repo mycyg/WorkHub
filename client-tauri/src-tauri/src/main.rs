@@ -9,6 +9,10 @@ use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPointerInput,
     DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
+use workhub_client_tauri::tray::{
+    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_QUIT_ID,
+    TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
+};
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
     hide_pet_window as hide_pet_window_plan, show_main_window as show_main_window_plan,
@@ -19,8 +23,10 @@ use workhub_client_tauri::window_controls::{
 use std::{fs, path::PathBuf, sync::Mutex};
 
 use tauri::{
-    path::BaseDirectory, Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
-    State,
+    menu::{MenuBuilder, MenuItemBuilder},
+    path::BaseDirectory,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager, State,
 };
 
 #[tauri::command]
@@ -294,6 +300,98 @@ fn execute_window_control(
     Ok(plan)
 }
 
+fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
+    let show_main = tray_menu_action_plan_by_id(TRAY_SHOW_MAIN_ID)
+        .ok_or_else(|| "missing show-main tray action".to_string())?;
+    let hide_main = tray_menu_action_plan_by_id(TRAY_HIDE_MAIN_ID)
+        .ok_or_else(|| "missing hide-main tray action".to_string())?;
+    let toggle_pet = tray_menu_action_plan_by_id(TRAY_TOGGLE_PET_ID)
+        .ok_or_else(|| "missing toggle-pet tray action".to_string())?;
+    let open_inbox = tray_menu_action_plan_by_id(TRAY_OPEN_INBOX_ID)
+        .ok_or_else(|| "missing open-inbox tray action".to_string())?;
+    let quit = tray_menu_action_plan_by_id(TRAY_QUIT_ID)
+        .ok_or_else(|| "missing quit tray action".to_string())?;
+
+    let show_main_item = MenuItemBuilder::with_id(show_main.id.as_str(), show_main.label.as_str())
+        .build(app)
+        .map_err(|error| format!("failed to build show-main tray item: {error}"))?;
+    let hide_main_item = MenuItemBuilder::with_id(hide_main.id.as_str(), hide_main.label.as_str())
+        .build(app)
+        .map_err(|error| format!("failed to build hide-main tray item: {error}"))?;
+    let toggle_pet_item =
+        MenuItemBuilder::with_id(toggle_pet.id.as_str(), toggle_pet.label.as_str())
+            .build(app)
+            .map_err(|error| format!("failed to build toggle-pet tray item: {error}"))?;
+    let open_inbox_item =
+        MenuItemBuilder::with_id(open_inbox.id.as_str(), open_inbox.label.as_str())
+            .build(app)
+            .map_err(|error| format!("failed to build open-inbox tray item: {error}"))?;
+    let quit_item = MenuItemBuilder::with_id(quit.id.as_str(), quit.label.as_str())
+        .build(app)
+        .map_err(|error| format!("failed to build quit tray item: {error}"))?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&show_main_item)
+        .item(&hide_main_item)
+        .separator()
+        .item(&toggle_pet_item)
+        .item(&open_inbox_item)
+        .separator()
+        .item(&quit_item)
+        .build()
+        .map_err(|error| format!("failed to build WorkHub tray menu: {error}"))?;
+
+    let mut builder = TrayIconBuilder::with_id(WORKHUB_TRAY_ID)
+        .tooltip(WORKHUB_TRAY_TOOLTIP)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            if let Err(error) = handle_tray_action(app, event.id().as_ref()) {
+                eprintln!("failed to handle WorkHub tray action: {error}");
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Err(error) = handle_tray_action(tray.app_handle(), TRAY_SHOW_MAIN_ID) {
+                    eprintln!("failed to handle WorkHub tray left click: {error}");
+                }
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder
+        .build(app)
+        .map_err(|error| format!("failed to install WorkHub tray: {error}"))?;
+
+    Ok(())
+}
+
+fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    let Some(plan) = tray_menu_action_plan_by_id(id) else {
+        return Ok(());
+    };
+
+    if plan.exits_app {
+        app.exit(0);
+        return Ok(());
+    }
+
+    if let Some(control) = plan.window_control.clone() {
+        execute_window_control(app, control)?;
+    }
+
+    app.emit("tray-action", plan)
+        .map_err(|error| format!("failed to emit tray-action event: {error}"))
+}
+
 fn pet_window_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resolve("pet-window-state.json", BaseDirectory::Config)
@@ -357,6 +455,7 @@ fn main() {
                     state.body_position = Some(restore_saved_body_position(&saved, work_area));
                 }
             }
+            install_workhub_tray(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
