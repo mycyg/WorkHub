@@ -61,6 +61,12 @@ pub struct ShellSseStatusPayload {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShellSseWorkerPlan {
+    pub subscriptions: Vec<ShellSseSubscription>,
+    pub reconnect_delay_ms: u64,
+}
+
 impl ShellSseTarget {
     pub fn kind(&self) -> &'static str {
         match self {
@@ -97,6 +103,30 @@ impl ShellSseTarget {
 
 pub fn default_shell_sse_targets() -> Vec<ShellSseTarget> {
     vec![ShellSseTarget::Global, ShellSseTarget::Me]
+}
+
+pub fn startup_shell_sse_targets(config: &WorkHubShellConfig) -> Vec<ShellSseTarget> {
+    let mut targets = vec![ShellSseTarget::Global];
+    if config.has_trusted_device_token() {
+        targets.push(ShellSseTarget::Me);
+    }
+    targets
+}
+
+pub fn plan_shell_sse_worker(
+    config: &WorkHubShellConfig,
+    targets: Vec<ShellSseTarget>,
+    reconnect_delay_ms: u64,
+) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
+    let subscriptions = targets
+        .into_iter()
+        .map(|target| plan_shell_sse_subscription(config, target))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ShellSseWorkerPlan {
+        subscriptions,
+        reconnect_delay_ms,
+    })
 }
 
 pub fn plan_shell_sse_subscription(
@@ -140,6 +170,30 @@ pub fn parse_sse_frames(input: &str) -> Vec<ParsedSseFrame> {
             })
         })
         .collect()
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ShellSseFrameBuffer {
+    pending: String,
+}
+
+impl ShellSseFrameBuffer {
+    pub fn push_chunk(&mut self, chunk: &str) -> Vec<ParsedSseFrame> {
+        self.pending.push_str(chunk);
+        self.pending = self.pending.replace("\r\n", "\n").replace('\r', "\n");
+
+        let mut frames = Vec::new();
+        while let Some(index) = self.pending.find("\n\n") {
+            let frame = self.pending[..index].to_string();
+            self.pending = self.pending[index + 2..].to_string();
+            frames.extend(parse_sse_frames(&format!("{frame}\n\n")));
+        }
+        frames
+    }
+
+    pub fn pending_bytes(&self) -> usize {
+        self.pending.len()
+    }
 }
 
 pub fn push_payload_from_frame(
@@ -214,6 +268,34 @@ mod tests {
     }
 
     #[test]
+    fn startup_targets_wait_for_a_trusted_device_token_before_private_streams() {
+        let mut without_token = config();
+        without_token.client_token = None;
+        let with_token = config();
+
+        assert_eq!(
+            startup_shell_sse_targets(&without_token),
+            vec![ShellSseTarget::Global]
+        );
+        assert_eq!(
+            startup_shell_sse_targets(&with_token),
+            vec![ShellSseTarget::Global, ShellSseTarget::Me]
+        );
+    }
+
+    #[test]
+    fn worker_plan_keeps_retry_policy_and_subscription_headers() {
+        let plan = plan_shell_sse_worker(&config(), startup_shell_sse_targets(&config()), 5_000)
+            .expect("worker plan should build");
+
+        assert_eq!(plan.reconnect_delay_ms, 5_000);
+        assert_eq!(plan.subscriptions.len(), 2);
+        assert_eq!(plan.subscriptions[0].path, "/api/push/stream");
+        assert_eq!(plan.subscriptions[1].path, "/api/push/stream/me");
+        assert_eq!(plan.subscriptions[1].headers.len(), 2);
+    }
+
+    #[test]
     fn plans_contract_stream_paths_without_copying_domain_logic() {
         let workitem = plan_shell_sse_subscription(
             &config(),
@@ -277,6 +359,26 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn frame_buffer_holds_partial_sse_frames_across_chunks() {
+        let mut buffer = ShellSseFrameBuffer::default();
+
+        assert!(buffer
+            .push_chunk("event: notification.created\n")
+            .is_empty());
+        assert!(buffer.pending_bytes() > 0);
+        let frames = buffer.push_chunk("data: {\"id\":\"n1\"}\n\n: ping\n\n");
+
+        assert_eq!(
+            frames,
+            vec![ParsedSseFrame {
+                event: "notification.created".to_string(),
+                data: "{\"id\":\"n1\"}".to_string(),
+            }]
+        );
+        assert_eq!(buffer.pending_bytes(), 0);
     }
 
     #[test]

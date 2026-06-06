@@ -1,3 +1,4 @@
+use workhub_client_tauri::config::WorkHubShellConfig;
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position, pet_window_rect_from_position, restore_saved_body_position,
     sample_pet_cursor_near_command_plan, save_pet_window_position_command_plan,
@@ -9,6 +10,7 @@ use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPointerInput,
     DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
+use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
     tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_QUIT_ID,
     TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
@@ -456,6 +458,11 @@ fn main() {
                 }
             }
             install_workhub_tray(app)?;
+            spawn_default_shell_sse_workers(
+                app.handle().clone(),
+                WorkHubShellConfig::lan_default(),
+            )
+            .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

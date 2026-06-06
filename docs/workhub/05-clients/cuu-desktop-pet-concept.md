@@ -251,7 +251,7 @@ docs/workhub/05-clients/assets/cuu/
 | `sync.conflict` | worried / sync conflict | Cuu 紧张 + 冲突卡 | 应用 AI 合并 / 保留本地 / 保留云端 |
 | `revision.requested` | revision requested | Cuu 委屈/拿笔 | 查看打回原因 |
 | `proposal.merged` | celebrating | Cuu 庆祝 | 查看交付物 |
-| `sse-status:disconnected` | offline | Cuu 灰态/重连 | 打开诊断 |
+| `sse-status:retrying/closed` | offline | Cuu 灰态/重连 | 打开诊断 |
 
 ## 10. Tauri 部署与运行时边界
 
@@ -259,7 +259,7 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 
 - `pet` 窗口：透明、无边框、always-on-top、skip-taskbar、记忆位置。
 - `main` 窗口：承载完整客户端页面；复杂操作由 Cuu deep-link 唤起。
-- Rust 侧：SSE worker / reminders / tray / deep-link 发事件；不承担动画逻辑。
+- Rust 侧：SSE worker（基础 global stream 已落）/ reminders / tray / deep-link 发事件；不承担动画逻辑。
 - TS/React 侧：`packages/cuu` 的纯 controller 管打扰策略与队列，React/Webview 层管动画 runtime、气泡卡片和用户输入。
 - 资源加载：生产资产打入 Tauri bundle；概念图只放文档目录。
 - 更新：Cuu 资产版本跟随客户端版本；未来可做独立 asset manifest，但 P1 不需要。

@@ -4,6 +4,7 @@ pub mod http;
 pub mod pet_commands;
 pub mod pet_window;
 pub mod sse;
+pub mod sse_worker;
 pub mod tray;
 pub mod window_controls;
 pub mod windows;
