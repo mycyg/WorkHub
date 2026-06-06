@@ -7,6 +7,7 @@ import {
   type BudgetNotice,
   type ProposalDetailVM,
   type QuestionCard,
+  type SessionVM,
   type WorkHubEvent
 } from "@workhub/contracts";
 
@@ -16,7 +17,8 @@ import {
   cardFromAttentionItem,
   cardFromEvent,
   cardFromProposalDetail,
-  cardFromQuestionCard
+  cardFromQuestionCard,
+  cardFromSessionVm
 } from "./index.js";
 
 const ts = "2026-06-05T01:00:00.000Z";
@@ -81,6 +83,46 @@ test("question cards stay option-first and keep free text collapsed", () => {
   assert.equal(card.input?.free_text_collapsed_by_default, true);
   assert.equal(card.chips?.find((chip) => chip.id === "brief")?.recommended, true);
   assert.equal(card.actions[0]?.href, "/api/sessions/session-1/next-question");
+});
+
+test("session VMs become option-first Cuu question cards", () => {
+  const session: SessionVM = {
+    session_id: "10000000-0000-4000-8000-000000000011",
+    work_item_id: workItemId,
+    topic: "生成客户周报模板",
+    stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000011",
+    next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000011/next-question",
+    question: {
+      id: "question-1",
+      title: "这次周报偏向哪种口吻？",
+      body: "选一个方向即可。",
+      input_mode: "single_choice",
+      options: [
+        { id: "brief", label: "简洁版", description: "适合快速同步。" },
+        { id: "detail", label: "详细版", description: "会展开更多证据。" }
+      ],
+      recommended_option_ids: ["brief"],
+      free_text: {
+        enabled: true,
+        collapsed_by_default: true,
+        placeholder: "确实需要时再补一句。"
+      },
+      progress: [{ key: "tone", label: "口吻", state: "active" }],
+      evidence_refs: [],
+      submit: { method: "POST", href: "/api/sessions/10000000-0000-4000-8000-000000000011/next-question" }
+    }
+  };
+
+  const card = cardFromSessionVm(session);
+
+  assert.equal(card.id, session.session_id);
+  assert.equal(card.kind, "question");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.payload_ref?.entity_type, "session");
+  assert.equal(card.payload_ref?.href, session.next_question_href);
+  assert.equal(card.source?.work_item_id, workItemId);
+  assert.equal(card.input?.option_first, true);
+  assert.equal(card.chips?.find((chip) => chip.id === "brief")?.recommended, true);
 });
 
 test("proposal detail becomes a PR-like Cuu deliverable card", () => {

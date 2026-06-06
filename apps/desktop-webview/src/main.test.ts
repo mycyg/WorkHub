@@ -2,18 +2,52 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type GoldPathSurfaceVM, type WorkHubEvent } from "@workhub/contracts";
+import { eventTypes, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
 
 import {
   desktopCuuCardFromEvent,
   desktopWebviewSurface,
+  loadDesktopIntakeCuuCard,
   loadDesktopProposalCuuCard,
   loadDesktopGoldPathSurface,
+  renderDesktopIntakeSession,
   renderDesktopGoldPathSurface,
-  renderDesktopProposalDetail
+  renderDesktopProposalDetail,
+  startDesktopIntakeSession
 } from "./main.js";
 
-function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
+const intakeSession: SessionVM = {
+  session_id: "10000000-0000-4000-8000-000000000201",
+  work_item_id: "10000000-0000-4000-8000-000000000202",
+  topic: "生成客户周报模板",
+  stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000201",
+  next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+  question: {
+    id: "10000000-0000-4000-8000-000000000203",
+    title: "这次周报偏向哪种口吻？",
+    body: "选一个方向即可。",
+    input_mode: "single_choice",
+    options: [
+      { id: "brief", label: "简洁版", description: "适合快速同步。" },
+      { id: "detailed", label: "详细版", description: "会展开更多证据。" }
+    ],
+    recommended_option_ids: ["brief"],
+    free_text: {
+      enabled: true,
+      collapsed_by_default: true,
+      placeholder: "确实需要时再补一句。",
+      max_length: 120
+    },
+    progress: [
+      { key: "goal", label: "目标", state: "done" },
+      { key: "tone", label: "口吻", state: "active" }
+    ],
+    evidence_refs: [],
+    submit: { method: "POST", href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question" }
+  }
+};
+
+function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSession): WorkHubApiClient {
   return {
     async health() {
       throw new Error("not needed");
@@ -31,7 +65,7 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
       throw new Error("not needed");
     },
     async createSession() {
-      throw new Error("not needed");
+      return session;
     },
     async respondApproval() {
       throw new Error("not needed");
@@ -290,6 +324,25 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
+});
+
+test("desktop webview starts option-first intake sessions through the typed client", async () => {
+  const surface = { page_vms: { proposal: {} } } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  const session = await startDesktopIntakeSession(client, { intent_text: "帮我整理客户周报" });
+  const rendered = await renderDesktopIntakeSession(client, { intent_text: "帮我整理客户周报" });
+  const card = await loadDesktopIntakeCuuCard(client, { intent_text: "帮我整理客户周报" });
+
+  assert.equal(desktopWebviewSurface.pages.includes("/api/sessions"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/intake/:sessionId"), true);
+  assert.equal(session.session_id, intakeSession.session_id);
+  assert.equal(rendered.surface, "desktop");
+  assert.equal(rendered.route, `/intake/${intakeSession.session_id}`);
+  assert.equal(rendered.html.includes("wh-desktop"), true);
+  assert.equal(rendered.html.includes("简洁版"), true);
+  assert.equal(card.kind, "question");
+  assert.equal(card.payload_ref?.entity_type, "session");
+  assert.equal(card.input?.free_text_collapsed_by_default, true);
 });
 
 test("desktop webview exposes the shared Cuu event adapter for the Rust shell", () => {

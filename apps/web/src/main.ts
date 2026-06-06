@@ -1,8 +1,9 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cardFromProposalDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, type CuuCard } from "@workhub/cuu";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderProposalDetail } from "@workhub/ui/proposal";
 
 export const webSurface = {
@@ -13,7 +14,9 @@ export const webSurface = {
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,
   pages: [
     "/api/pages/attention",
+    "/api/sessions",
     "/api/pages/gold-path",
+    "/intake/:sessionId",
     "/api/pages/workitems/:id",
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
@@ -36,6 +39,20 @@ export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApi
   return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web");
 }
 
+export function startWebIntakeSession(
+  client: WorkHubApiClient = webApiClient,
+  payload: CreateSessionRequest = {}
+) {
+  return client.createSession(payload);
+}
+
+export async function renderWebIntakeSession(
+  client: WorkHubApiClient = webApiClient,
+  payload: CreateSessionRequest = {}
+) {
+  return renderIntakeSession(await startWebIntakeSession(client, payload), "web");
+}
+
 export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return client.pages.proposal(proposalId);
 }
@@ -53,4 +70,11 @@ export async function loadWebProposalCuuCard(
   proposalId: string
 ): Promise<CuuCard> {
   return cardFromProposalDetail(await loadWebProposalDetail(client, proposalId));
+}
+
+export async function loadWebIntakeCuuCard(
+  client: WorkHubApiClient = webApiClient,
+  payload: CreateSessionRequest = {}
+): Promise<CuuCard> {
+  return cardFromSessionVm(await startWebIntakeSession(client, payload));
 }

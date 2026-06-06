@@ -14,6 +14,7 @@ import {
   type ProposalDetailVM,
   type QuestionCard,
   type ReplayTraceVM,
+  type SessionVM,
   type WorkHubEvent
 } from "@workhub/contracts";
 import { toAttentionItem } from "@workhub/events/toAttentionItem";
@@ -87,6 +88,7 @@ export type CuuPayloadRef = {
     | "budget_notice"
     | "cost_dashboard"
     | "replay_trace"
+    | "session"
     | "event";
   entity_id: string;
   href?: string;
@@ -394,6 +396,31 @@ export function cardFromQuestionCard(question: QuestionCard): CuuCard {
         }
       : {})
   });
+}
+
+export function cardFromSessionVm(session: SessionVM): CuuCard {
+  const workItemId = session.work_item_id ?? session.question.work_item_id;
+  const question = {
+    ...session.question,
+    session_id: session.question.session_id ?? session.session_id,
+    ...(workItemId ? { work_item_id: workItemId } : {})
+  };
+  const card = cardFromQuestionCard(question);
+
+  return {
+    ...card,
+    id: session.session_id,
+    payload_ref: {
+      entity_type: "session",
+      entity_id: session.session_id,
+      href: session.next_question_href
+    },
+    source: optionalSource({
+      entity_type: "page_vm",
+      entity_id: session.session_id,
+      ...(workItemId ? { work_item_id: workItemId } : {})
+    })
+  };
 }
 
 export function cardFromEvidenceBubble(bubble: EvidenceBubble): CuuCard {

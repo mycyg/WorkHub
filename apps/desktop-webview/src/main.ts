@@ -1,8 +1,9 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cardFromProposalDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, type CuuCard } from "@workhub/cuu";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderProposalDetail } from "@workhub/ui/proposal";
 
 export const desktopWebviewSurface = {
@@ -12,7 +13,9 @@ export const desktopWebviewSurface = {
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,
   pages: [
     "/api/pages/attention",
+    "/api/sessions",
     "/api/pages/gold-path",
+    "/intake/:sessionId",
     "/api/pages/workitems/:id",
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
@@ -43,6 +46,14 @@ export async function renderDesktopGoldPathSurface(client: WorkHubApiClient) {
   return renderGoldPathSurface(await loadDesktopGoldPathSurface(client), "desktop");
 }
 
+export function startDesktopIntakeSession(client: WorkHubApiClient, payload: CreateSessionRequest = {}) {
+  return client.createSession(payload);
+}
+
+export async function renderDesktopIntakeSession(client: WorkHubApiClient, payload: CreateSessionRequest = {}) {
+  return renderIntakeSession(await startDesktopIntakeSession(client, payload), "desktop");
+}
+
 export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return client.pages.proposal(proposalId);
 }
@@ -57,6 +68,13 @@ export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
 
 export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string): Promise<CuuCard> {
   return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId));
+}
+
+export async function loadDesktopIntakeCuuCard(
+  client: WorkHubApiClient,
+  payload: CreateSessionRequest = {}
+): Promise<CuuCard> {
+  return cardFromSessionVm(await startDesktopIntakeSession(client, payload));
 }
 
 export {
