@@ -81,15 +81,16 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - `packages/cuu/src/cards.ts`：把 session、workitem、proposal、agent live、event 转成 `CuuCard`。
 - `packages/cuu/src/motion.ts`：为每个 `CuuState` 提供 `sprite_state`、`emphasis`、`loop` 和 reduced-motion 文案。
+- `packages/cuu/src/controller.ts`：提供纯 TS 的 show / replace / queue / badge / drop 决策，覆盖静音、勿扰、低优先级降级和 reduced-motion。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：把 Tauri/mock 的 `push-event` 与 `sse-status` 转成 Cuu notice。
 - `apps/desktop-webview/src/browser.ts`：支持 `cuuDemo=1` / `cuuDemo=offline` 的 scripted event 预览。
 
 但这些还不等于「桌宠已经完成」：
 
 - 没有真实小猫动画帧、sprite atlas、Rive 文件或 Live2D rig。
-- 没有 `CuuController` 管状态机、气泡队列、打扰策略和 reduced motion。
+- `CuuController` 仍是纯策略 MVP，缺可视化 badge、队列自动推进、拖拽位置偏好和长期 idle 行为。
 - 没有独立 Tauri `pet` 透明窗口；当前只是 desktop webview 内的 notice。
-- 没有拖拽、收起、静音、勿扰、长时间 idle、低电量降帧。
+- 没有拖拽、收起、独立设置页、长时间 idle、低电量降帧。
 - 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
@@ -99,16 +100,17 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 已落一个 **sprite runtime MVP**，用于把 `CuuMotionHint` 真正接到可渲染的 Cuu 动画层：
 
 - `packages/cuu/src/sprite-manifest.ts`：新增 `defaultCuuSpriteManifest`、`cuuSpriteClipForMotion`、`validateCuuSpriteManifest`、`assertValidCuuSpriteManifest`。
+- `packages/cuu/src/controller.ts`：新增 `createCuuController`，把 Cuu 提醒收敛为 `show` / `replace` / `queue` / `badge` / `drop` 决策。
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
-- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，不再只有文字卡片。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图。
 
 仍未完成：
 
 - GPT Image 生成的正式透明 PNG / WebP 帧。
 - `cuu.sprite.json` 生产资产包与真实 frame image 路径。
 - 独立 Tauri `pet` window。
-- 拖拽、静音、勿扰、长期 idle 和多屏位置记忆。
+- 可视化 badge、队列自动推进、拖拽、长期 idle 和多屏位置记忆。
 - Rive / Live2D 高表现力路线。
 
 ## 4. 交互原则
@@ -231,14 +233,14 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 - `pet` 窗口：透明、无边框、always-on-top、skip-taskbar、记忆位置。
 - `main` 窗口：承载完整客户端页面；复杂操作由 Cuu deep-link 唤起。
 - Rust 侧：SSE worker / reminders / tray / deep-link 发事件；不承担动画逻辑。
-- React 侧：`CuuController` 管状态机、动画 runtime、气泡卡片和用户输入。
+- TS/React 侧：`packages/cuu` 的纯 controller 管打扰策略与队列，React/Webview 层管动画 runtime、气泡卡片和用户输入。
 - 资源加载：生产资产打入 Tauri bundle；概念图只放文档目录。
 - 更新：Cuu 资产版本跟随客户端版本；未来可做独立 asset manifest，但 P1 不需要。
 
 ## 11. 施工顺序建议
 
-1. P1：CSS/PNG sprite 版 Cuu，能 idle、thinking、approval、completed、offline。
-2. P1：Cuu 气泡承接选项式澄清和项目检索 chips。
+1. P1：CSS/PNG sprite 版 Cuu，能 idle、thinking、approval、completed、offline（procedural MVP 已落，待正式资产）。
+2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清基础已落，待证据/检索展开卡）。
 3. P2：独立 `pet` Tauri window，支持拖动、收起、静音、托盘显隐。
 4. P2：引入 Rive state machine，把事件映射为自然过渡。
 5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。

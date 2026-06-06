@@ -1,4 +1,11 @@
-import type { CuuCard, CuuCardAction, CuuCardChip } from "@workhub/cuu";
+import {
+  createCuuController,
+  type CuuCard,
+  type CuuCardAction,
+  type CuuCardChip,
+  type CuuController,
+  type CuuControllerDecision
+} from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { eventTypes, type GoldPathSurfaceVM } from "@workhub/contracts";
 
@@ -194,6 +201,8 @@ export function createDesktopCuuDemoScript(
 export async function bindDesktopShellCuuRuntime(input: {
   listen?: DesktopShellListen | undefined;
   notify: (notice: DesktopCuuNotice) => void;
+  controller?: CuuController;
+  onDecision?: (decision: CuuControllerDecision) => void;
   now?: () => Date;
 }): Promise<DesktopShellCuuRuntime> {
   const listen = input.listen ?? resolveDesktopShellListen();
@@ -204,14 +213,24 @@ export async function bindDesktopShellCuuRuntime(input: {
     };
   }
 
+  const controller = input.controller ?? createCuuController();
+  const emitCard = (card: CuuCard) => {
+    const decision = controller.enqueue(card);
+    input.onDecision?.(decision);
+    if (decision.outcome !== "show" && decision.outcome !== "replace") {
+      return;
+    }
+    const shownCard = decision.card ?? card;
+    input.notify({
+      card: shownCard,
+      message: desktopCuuNoticeMessage(shownCard),
+      html: renderDesktopCuuNotice(shownCard)
+    });
+  };
   const bridge = createDesktopShellEventBridge({
     ...(input.now ? { now: input.now } : {}),
     onCuuCard(card) {
-      input.notify({
-        card,
-        message: desktopCuuNoticeMessage(card),
-        html: renderDesktopCuuNotice(card)
-      });
+      emitCard(card);
     }
   });
   const unlisten: DesktopShellUnlisten[] = [];

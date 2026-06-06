@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { eventTypes, type AttentionItem, type QuestionCard, type WorkHubEvent } from "@workhub/contracts";
+import { createCuuController, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
   bindDesktopShellCuuRuntime,
@@ -55,6 +56,7 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
   const stopped: string[] = [];
   const notices: DesktopCuuNotice[] = [];
+  const decisions: CuuControllerDecision[] = [];
   const listen: DesktopShellListen = (eventName, handler) => {
     handlers.set(eventName, handler);
     return () => stopped.push(eventName);
@@ -83,7 +85,8 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   const runtime = await bindDesktopShellCuuRuntime({
     listen,
     now: () => new Date("2026-06-05T01:00:00.000Z"),
-    notify: (notice) => notices.push(notice)
+    notify: (notice) => notices.push(notice),
+    onDecision: (decision) => decisions.push(decision)
   });
   handlers.get("push-event")?.({
     payload: shellPayload(eventTypes.permissionAsk, {
@@ -104,10 +107,53 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   assert.equal(notices[0]?.message, "Cuu：Cuu 等你审批 <不要执行脚本>");
   assert.match(notices[0]?.html ?? "", /&lt;不要执行脚本&gt;/u);
   assert.match(notices[0]?.html ?? "", /data-method="POST"/u);
-  assert.equal(notices[1]?.card.state, "offline");
+  assert.equal(notices.length, 1);
+  assert.equal(decisions[0]?.outcome, "show");
+  assert.equal(decisions[1]?.outcome, "queue");
+  assert.equal(decisions[1]?.card?.state, "offline");
 
   await runtime.dispose();
   assert.deepEqual(stopped, ["push-event", "sse-status"]);
+});
+
+test("desktop Cuu runtime respects do-not-disturb controller decisions", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const decisions: CuuControllerDecision[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+  const attention: AttentionItem = {
+    id: "attention-dnd",
+    kind: "approval",
+    priority: "urgent",
+    source_ref: { entity_type: "approval_request", entity_id: "approval-dnd" },
+    title: "Cuu 等你审批",
+    summary_text: "勿扰时不弹窗，但保留系统级提醒意图。",
+    actions: [],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-05T01:00:00.000Z"
+  };
+
+  await bindDesktopShellCuuRuntime({
+    listen,
+    controller: createCuuController({ preferences: { attention_mode: "do_not_disturb" } }),
+    now: () => new Date("2026-06-05T01:00:00.000Z"),
+    notify: (notice) => notices.push(notice),
+    onDecision: (decision) => decisions.push(decision)
+  });
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.permissionAsk, {
+      summary_text: attention.summary_text,
+      attention
+    })
+  });
+
+  assert.equal(notices.length, 0);
+  assert.equal(decisions[0]?.outcome, "badge");
+  assert.equal(decisions[0]?.reason, "do_not_disturb_badge");
+  assert.equal(decisions[0]?.presentation.os_notification, true);
 });
 
 test("desktop Cuu runtime resolves Tauri and mock listeners without subscribing in plain browsers", async () => {

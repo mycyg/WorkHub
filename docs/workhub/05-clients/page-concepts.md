@@ -223,7 +223,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已经有卡片适配和 motion hints，但还缺真实 sprite/Rive/Live2D runtime、动画资产、独立 pet window、拖拽/静音/勿扰和气泡动作提交。
+Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、controller 策略 MVP 和审批/澄清动作提交基础；仍缺正式小猫动画资产、Rive/Live2D 高表现力路线、独立 pet window、可视化 badge、队列推进、拖拽/位置记忆和展开气泡卡。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
