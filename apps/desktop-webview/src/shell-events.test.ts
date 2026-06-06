@@ -7,6 +7,7 @@ import {
   createDesktopShellEventBridge,
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,
+  parseDesktopShellNavigatePayload,
   parseDesktopShellPushPayload,
   parseDesktopShellSystemNotificationPlan,
   workHubEventFromDesktopShellPush,
@@ -173,6 +174,22 @@ test("desktop shell event bridge dispatches events and Cuu cards to callbacks", 
   assert.equal(statusCard?.state, "offline");
   assert.deepEqual(seenEvents, ["proposal.opened"]);
   assert.deepEqual(seenCards, ["carrying_document", "offline"]);
+});
+
+test("desktop shell navigate payloads accept only safe WorkHub routes", () => {
+  assert.deepEqual(parseDesktopShellNavigatePayload("/approvals?approvalId=approval-1"), {
+    route: "/approvals?approvalId=approval-1"
+  });
+  assert.deepEqual(parseDesktopShellNavigatePayload({ route: "/proposals/proposal-1" }), {
+    route: "/proposals/proposal-1"
+  });
+  assert.deepEqual(parseDesktopShellNavigatePayload({ path: "/agent-runs/run-1/replay" }), {
+    route: "/agent-runs/run-1/replay"
+  });
+  assert.equal(parseDesktopShellNavigatePayload("https://evil.test/approvals"), undefined);
+  assert.equal(parseDesktopShellNavigatePayload("//evil.test/approvals"), undefined);
+  assert.equal(parseDesktopShellNavigatePayload("/../settings"), undefined);
+  assert.equal(parseDesktopShellNavigatePayload("/workitems\\evil"), undefined);
 });
 
 test("desktop shell bridge parses Rust system-notification plans for Cuu follow-up handling", () => {

@@ -25,7 +25,8 @@ import {
   resolveDesktopCuuAction,
   resolveDesktopShellListen,
   submitDesktopCuuAction,
-  type DesktopCuuActionRequest
+  type DesktopCuuActionRequest,
+  type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
 import {
   bindCuuPreferencePanel,
@@ -33,6 +34,7 @@ import {
   loadCuuPreferences
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
+import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -227,17 +229,23 @@ function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
   client: BrowserApiClient,
-  cuuController: CuuController
+  cuuController: CuuController,
+  input: { listen?: DesktopShellListen | undefined } = {}
 ) {
   let pendingReviewHref: string | undefined;
   let pendingCuuAction: DesktopCuuActionRequest | undefined;
 
-  const activateFromHash = () => {
-    const hashRoute = window.location.hash.slice(1) || "/";
-    const pageKey = resolveGoldPathPageKey(shell.routeMap, hashRoute);
+  const activateRoute = (route: string) => {
+    const pageKey = resolveGoldPathPageKey(shell.routeMap, route);
     if (pageKey) {
       setActivePage(shellRoot, shell, pageKey);
+      return true;
     }
+    return false;
+  };
+
+  const activateFromHash = () => {
+    activateRoute(window.location.hash.slice(1) || "/");
   };
 
   shellRoot.addEventListener("click", async (event) => {
@@ -345,6 +353,12 @@ function bindGoldPathNavigation(
   });
 
   window.addEventListener("hashchange", activateFromHash);
+  void input.listen?.("navigate", (event) => {
+    const payload = parseDesktopShellNavigatePayload(event.payload);
+    if (payload) {
+      activateRoute(payload.route);
+    }
+  });
   activateFromHash();
 }
 
@@ -380,7 +394,8 @@ async function boot() {
     });
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
-    bindGoldPathNavigation(root, shell, client, cuuController);
+    const realShellListen = resolveDesktopShellListen();
+    bindGoldPathNavigation(root, shell, client, cuuController, { listen: realShellListen });
     const cuuDecisions = new Map<string, CuuControllerDecision>();
     bindCuuQueueBadge(root, cuuController);
     bindCuuPreferencePanel(root, cuuController, {
@@ -388,7 +403,6 @@ async function boot() {
         updateCuuQueueBadge(root, snapshot);
       }
     });
-    const realShellListen = resolveDesktopShellListen();
     const demoMode = cuuDemoMode();
     const demoListener =
       !realShellListen && demoMode !== "off"

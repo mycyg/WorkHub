@@ -38,6 +38,10 @@ export type DesktopShellSystemNotificationPlan = {
   streamPath: string;
 };
 
+export type DesktopShellNavigatePayload = {
+  route: string;
+};
+
 export type DesktopShellBridgeEvent = {
   shell: DesktopShellPushPayload;
   event: WorkHubEvent<unknown>;
@@ -144,6 +148,14 @@ export function parseDesktopShellSystemNotificationPlan(input: unknown): Desktop
     streamKind,
     streamPath
   };
+}
+
+export function parseDesktopShellNavigatePayload(input: unknown): DesktopShellNavigatePayload | undefined {
+  const route = typeof input === "string"
+    ? input
+    : stringFieldAny(asRecord(input), ["route", "path"]);
+  const safeRoute = safeDesktopShellRoute(route);
+  return safeRoute ? { route: safeRoute } : undefined;
 }
 
 export function workHubEventFromDesktopShellPush(
@@ -341,6 +353,22 @@ function topicFromStreamPath(streamPath: string, streamKind: string) {
     return "all";
   }
   return `stream:${streamKind}`;
+}
+
+function safeDesktopShellRoute(route: string | undefined) {
+  const trimmed = route?.trim();
+  if (
+    !trimmed ||
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("..") ||
+    trimmed.includes("\n") ||
+    trimmed.includes("\r")
+  ) {
+    return undefined;
+  }
+  return trimmed;
 }
 
 function asRecord(input: unknown): Record<string, unknown> | undefined {

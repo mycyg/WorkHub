@@ -126,7 +126,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
 - `client-tauri/src-tauri/src/pet_commands.rs`：新增 Cuu 独立窗口 command scaffold，固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`，并让 capability 开放最小 `core:window:allow-start-dragging`。
 - `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；`set_pet_window_mode` 已执行 resize/position/show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实桌面 cursor 与 pet window rect。
-- `client-tauri/src-tauri/src/deep_link.rs` + `main.rs`：已接 `tauri-plugin-deep-link`，`workhub://` / `yqgl://` 可安全映射到 WorkHub 主窗 route，并同时发 `navigate` 与 `deep-link` 事件；Cuu 后续可把复杂轻卡动作交给主窗承接。
+- `client-tauri/src-tauri/src/deep_link.rs` + `main.rs` + `apps/desktop-webview/src/browser.ts`：已接 `tauri-plugin-deep-link`，`workhub://` / `yqgl://` 可安全映射到 WorkHub 主窗 route，并同时发 `navigate` 与 `deep-link` 事件；desktop webview 已消费 safe `navigate` route，Cuu 可把复杂轻卡动作交给主窗承接。
 - `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 与 Rust cursor sample 喂给 idle scheduler。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。

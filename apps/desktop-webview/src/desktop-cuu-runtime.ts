@@ -22,7 +22,7 @@ export type DesktopShellEventEnvelope = {
 export type DesktopShellUnlisten = () => void;
 
 export type DesktopShellListen = (
-  eventName: "push-event" | "sse-status" | "system-notification",
+  eventName: "push-event" | "sse-status" | "system-notification" | "navigate",
   handler: (event: DesktopShellEventEnvelope) => void
 ) => DesktopShellUnlisten | Promise<DesktopShellUnlisten> | void | Promise<void>;
 
@@ -38,7 +38,7 @@ export type DesktopShellCuuRuntime = {
 };
 
 export type DesktopShellScriptedEvent = {
-  eventName: "push-event" | "sse-status" | "system-notification";
+  eventName: "push-event" | "sse-status" | "system-notification" | "navigate";
   payload: unknown;
   delayMs: number;
 };
