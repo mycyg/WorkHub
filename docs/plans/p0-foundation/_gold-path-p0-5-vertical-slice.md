@@ -6,6 +6,7 @@ date: 2026-06-05
 depends:
   - ./_experience-deliverable-contracts.md
   - ./_ts-first-module-port-page-alignment.md
+  - ../../workhub/05-clients/prd-concept-reproduction-gap-audit.md
 ---
 
 # WorkHub Gold Path + P0.5 Vertical Slice
@@ -13,6 +14,7 @@ depends:
 > **一句话**:所有地基、页面、Cuu、Agent、审计和事件规划,都必须服务同一条黄金路径:用户一句话提需求 → Cuu 选项澄清 → Agent 执行 → 生成交付物变更申请 → 用户审批/打回 → 合并 → 通知/回滚/审计可见。
 >
 > 这不是完整产品施工,而是 P0.5 的最小纵切。它允许 Agent 先 mock,允许页面先 fixture,但不允许 schema、事件、Page VM、Cuu 状态彼此脱节。
+> **重要边界**:P0.5 跑通不等于 PRD / 概念图完全复现。Cuu 真实动画、透明 `pet` window、生产 Tauri 壳、完整 React SPA、本地同步、视觉 QA 等差距见 [`prd-concept-reproduction-gap-audit.md`](../../workhub/05-clients/prd-concept-reproduction-gap-audit.md)。
 
 ---
 

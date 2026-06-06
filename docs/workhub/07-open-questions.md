@@ -243,7 +243,7 @@ owner: workflow
 
 ### 4.1 已落盘（原"待写"障碍已解除）
 
-> 以下篇目磁盘已存在，且 [README §3 文档树](./README.md) 已同步为 32 篇文档与当前状态。后续若新增/删除文档，README、本文 §4 与 `docs/workhub` 实际文件数必须一起更新。
+> 以下篇目磁盘已存在，且 [README §3 文档树](./README.md) 已同步为 33 篇文档与当前状态。后续若新增/删除文档，README、本文 §4 与 `docs/workhub` 实际文件数必须一起更新。
 
 | 已落盘文档 | 曾阻塞的开放问题 | 复核结论 |
 |---|---|---|
@@ -253,6 +253,7 @@ owner: workflow
 | [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) | **OQ-7**（三级配额数值与合并规则） | v0 默认配额、超额动作、计入口径、`BudgetDecision` / `CostDashboardVM` 已落盘 |
 | [`06-roadmap/phasing-p0-p5.md`](./06-roadmap/phasing-p0-p5.md) | 多数 🔵 延后项的出入口标准（KB-2、EX-4、PJ-2 等） | 已落盘；🔵 项的出入口锚点应回该篇核对 |
 | [`05-clients/web-app.md`](./05-clients/web-app.md) · [`05-clients/shared-ui-kit.md`](./05-clients/shared-ui-kit.md) | EX-3 的 UI 落点、去黑话渲染层 | 已落盘；去黑话"在客户端翻译"（[`api-contract.md §7`](./01-architecture/api-contract.md)）有了 UI 落点 |
+| [`05-clients/prd-concept-reproduction-gap-audit.md`](./05-clients/prd-concept-reproduction-gap-audit.md) | Cuu 动画、Rust/Tauri 壳、Web 真页面、视觉 QA 与 PRD/概念图复现距离 | 已落盘；明确当前实现事实、旧项目锚点边界、后续 GAP-CUU/GAP-RUST/GAP-WEB/GAP-GOLD backlog |
 
 ### 4.2 已关闭缺口（本次补齐）
 
@@ -261,7 +262,7 @@ owner: workflow
 | [`02-ai-engine/cost-governance.md`](./02-ai-engine/cost-governance.md) | **OQ-7**（三级配额**数值**与合并规则） | 已给 v0 默认值、合并规则、计入口径、API/事件与验收门禁；后续只需按真实数据调参 |
 | [`06-roadmap/functional-requirements.md`](./06-roadmap/functional-requirements.md) | **OQ-6**（L2 首发 file-only 白名单） | 已给 `FR-WORKER-008` 允许/排除清单；后续实现只需按白名单验收 |
 
-> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 五篇全在，含页面概念与 Cuu 概念）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标"程度；开放问题已从"无处落定"收敛为"已给 v0 默认 / 待真实数据标定 / 待产品拍板"。
+> 全树骨架已基本齐备：地基/AI/协作篇（`00-overview/*`、`01-architecture/*`、`02-ai-engine/*`、`03-collaboration/*`）、业务模块（`04-modules/*` 六篇全在）、客户端（`05-clients/*` 六篇全在，含页面概念、Cuu 概念与 PRD/概念复现差距审计）、roadmap（`06-roadmap/*` 两篇全在）均已落盘到"骨架完成、参数待标 / 差距已识别"程度；开放问题已从"无处落定"收敛为"已给 v0 默认 / 待真实数据标定 / 待产品拍板 / 待差距施工"。
 
 ---
 

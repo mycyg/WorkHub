@@ -73,6 +73,27 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - 「其他 / 补充」折叠在底部，只作为兜底。
 - 右侧显示已经澄清的内容，帮助用户知道还剩几步。
 
+### 3.4 当前实现差距
+
+![Cuu runtime gap roadmap](./assets/cuu/cuu-runtime-gap-roadmap.png)
+
+当前 WorkHub 仓库里，Cuu 已经有这些地基：
+
+- `packages/cuu/src/cards.ts`：把 session、workitem、proposal、agent live、event 转成 `CuuCard`。
+- `packages/cuu/src/motion.ts`：为每个 `CuuState` 提供 `sprite_state`、`emphasis`、`loop` 和 reduced-motion 文案。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：把 Tauri/mock 的 `push-event` 与 `sse-status` 转成 Cuu notice。
+- `apps/desktop-webview/src/browser.ts`：支持 `cuuDemo=1` / `cuuDemo=offline` 的 scripted event 预览。
+
+但这些还不等于「桌宠已经完成」：
+
+- 没有真实小猫动画帧、sprite atlas、Rive 文件或 Live2D rig。
+- 没有 `CuuController` 管状态机、气泡队列、打扰策略和 reduced motion。
+- 没有独立 Tauri `pet` 透明窗口；当前只是 desktop webview 内的 notice。
+- 没有拖拽、收起、静音、勿扰、长时间 idle、低电量降帧。
+- 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
+
+因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
+
 ## 4. 交互原则
 
 1. **Cuu 先动，用户再点**：有事时 Cuu 用动作、表情和小气泡发起，不要求用户主动找页面。
@@ -205,3 +226,17 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 4. P2：引入 Rive state machine，把事件映射为自然过渡。
 5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。
 6. P4：性能/电量/多屏/HiDPI/透明边缘 QA，形成桌宠发布 checklist。
+
+### 11.1 施工验收门
+
+| 门禁 | 必须证明 |
+|---|---|
+| Motion hint 不漂移 | `allCuuMotionHints()` 的每个 `sprite_state` 都能在 sprite manifest 找到对应资产 |
+| Cuu 真会动 | `idle → thinking → asking_approval → carrying_document → celebrating` 能由 scripted event 触发 |
+| 选项优先 | 澄清、审批、打回理由都有可点击 chips；长文本只作为兜底 |
+| 桌宠独立 | 主窗隐藏后 `pet` window 仍能显示提醒 |
+| 不挡事 | 支持拖动、收起、静音、勿扰和低存在感 idle |
+| 可访问 | reduced-motion 模式下不播放复杂动画，但保留状态文案和可点动作 |
+| 可部署 | 运行时资产进入 Tauri bundle；概念图只留在 `docs/workhub/05-clients/assets/cuu` |
+
+更多当前差距和跨端路线见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。

@@ -6,11 +6,14 @@ date: 2026-06-05
 depends:
   - ./_gold-path-p0-5-vertical-slice.md
   - ./_experience-deliverable-contracts.md
+  - ../../workhub/05-clients/prd-concept-reproduction-gap-audit.md
 ---
 
 # WorkHub Interaction Improvements + Extension Backlog
 
 > **一句话**:WorkHub 的交互原则是“AI 先过滤复杂度,用户只处理当前一件事”。本 backlog 收口 P1+ 可以拓展的功能和体验改善,但所有条目都要回到 Gold Path 和共享契约。
+>
+> **差距来源**:PRD / 概念图完全复现还缺 Cuu 动画 runtime、透明桌宠窗、生产 Tauri 壳、真实 Web SPA、视觉 QA 等，详见 [`prd-concept-reproduction-gap-audit.md`](../../workhub/05-clients/prd-concept-reproduction-gap-audit.md)。本 backlog 中涉及这些方向的条目必须回写该差距审计或对应客户端文档。
 
 ---
 
@@ -103,6 +106,7 @@ depends:
 | EX-10 | Cuu Personality Preferences | 可调提醒频率和语气 | `CuuPreference` | P2 |
 | EX-11 | Cost Lens | 管理者看 AI 成本/收益 | Agent metrics | P3 |
 | EX-12 | Rive/Live2D Cuu | 更高表现力桌宠 | `CuuState` runtime adapter | P3 |
+| EX-13 | PRD Concept Gap Closure | 把概念图差距变成可验收施工项 | GAP-CUU/GAP-RUST/GAP-WEB/GAP-GOLD | P0.5-P3 |
 
 ---
 
@@ -163,15 +167,18 @@ Quiet Mode 下:
 - Replay fixture
 - Cuu 静态状态 + 气泡
 - Proposal Detail 非代码 PR 最小版
+- PRD/概念复现差距审计入文档树,后续每个 gap 有 owner path 和验收门
 
 ### P1
 
 - Cuu 轻/重卡
+- Cuu sprite runtime MVP
 - Approval Center
 - Inbox Zero for Work
 - Remember This Rule
 - Evidence Confidence
 - Quiet Mode
+- Web Gold Path shell 升级为真实 React SPA routes
 
 ### P2
 
@@ -179,6 +186,8 @@ Quiet Mode 下:
 - Sync Conflict Coach
 - Proposal renderer per target type
 - Cuu preference/personality
+- 独立 Tauri `pet` window + 拖拽/静音/勿扰
+- Rust shell SSE worker / tray / notification / deep-link
 
 ### P3+
 
@@ -186,6 +195,7 @@ Quiet Mode 下:
 - Cost Lens
 - Advanced replay analytics
 - Multi-agent collaboration view
+- local sync / delivery / conflict 的生产桌面体验
 
 ---
 

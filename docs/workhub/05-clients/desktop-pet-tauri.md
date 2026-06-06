@@ -11,11 +11,12 @@ owner: workflow
 >
 > **定位**：本篇是 `C-PET` 这一**产品呈现模式**的端级规格。**后端契约**（路由/事件/鉴权）见 [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)；**进程边界与事件总线拓扑**见 [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md)；**实体/状态机**见 [`../01-architecture/data-model.md`](../01-architecture/data-model.md)；**体验 payload / Cuu 状态 / 交付物变更包契约**见 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)；**用户用语/去黑话**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威；**Web 端页面规划**见 [`./web-app.md`](./web-app.md)（同源信息架构，本篇只写差异）；**共享设计系统/类型化 client** 见 [`./shared-ui-kit.md`](./shared-ui-kit.md)。交叉处用相对链接引用，不重复。
 >
-> **扎根**：本篇从现有「需求管理大师」桌面客户端真实代码演进而来。Rust 壳代码锚点贯穿全文（`client-tauri/src-tauri/src/{lib,sse,sync,spec_watch,tray,deep_link,reminders,window,config,http,upload,delivery,operation_locks}.rs` 与 `commands/*.rs`）；webview 页面锚点为 `client-tauri/web-src/src/{App.tsx,lib/tauri.ts,routes/*,components/*}`。**严禁臆造 IPC/命令**——本篇列出的每个 Tauri command 都对应 `lib.rs:84-135` 的 `invoke_handler!` 注册表。
+> **扎根口径（2026-06-06 修正）**：本篇最初从现有「需求管理大师」桌面客户端真实代码演进而来，文中的 `tray.rs`、`sync.rs`、`spec_watch.rs`、`deep_link.rs`、`commands/*.rs`、`client-tauri/web-src/*` 等属于**旧项目行为参照 / 目标能力锚点**。当前 WorkHub 仓库的真实实现是 `client-tauri/src-tauri/src/{config,events,http,lib,sse}.rs` 的 Rust shell contract crate，加上 `apps/desktop-webview` 的 TS webview adapter。后续施工必须把旧锚点写成 `Behavior source`，把当前要落的文件写成 `Target Rust/TS paths`，不得把旧项目文件误判为已在 WorkHub 主仓落地。
 > **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
 
 本篇小节：
 
+0. 当前 WorkHub 实现快照（避免旧锚点误判）
 1. C-PET 是什么 / 与 C-WEB 的根本差异（一图一表）
 2. 窗口类型（桌宠窗 / 主窗 / 托盘 / 弹层）
 3. Rust 侧能力清单（command / 后台 worker / 事件发射器）
@@ -33,6 +34,44 @@ owner: workflow
    - 6.8 设置（Settings，设备/同步/外观）
 7. 安装与更新（NSIS 安装、设备令牌门、自动更新缺口）
 8. 与其他文档的边界
+
+---
+
+## 0. 当前 WorkHub 实现快照（2026-06-06）
+
+![Rust shell gap roadmap](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
+
+当前 WorkHub 主仓已经有 C-PET 的**契约地基**，但尚未有生产 Tauri 桌面壳。
+
+### 0.1 当前已落
+
+| 文件 / 模块 | 当前职责 | 说明 |
+|---|---|---|
+| `client-tauri/src-tauri/src/lib.rs` | Rust shell ownership 声明 | 明确 Rust 拥有 base url、device token、tray、deep-link、system notification、sse worker、local file sync 等本地能力；也明确不拥有 permission / workitem 状态机 / domain DTO / Cuu animation state |
+| `client-tauri/src-tauri/src/config.rs` | shell config DTO | server url、client token、device name、token tail |
+| `client-tauri/src-tauri/src/http.rs` | daemon request plan | URL 归一化、device token headers |
+| `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
+| `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
+| `apps/desktop-webview/src/main.ts` | 桌面 webview typed surface | 消费 `@workhub/api-client`、渲染 Gold Path / intake / workitem / proposal / agent live |
+| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status`，生成 Cuu notice |
+| `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo |
+
+### 0.2 当前未落
+
+| 能力 | 当前状态 | 后续目标 |
+|---|---|---|
+| Tauri v2 app runtime | `Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri app scaffold、`tauri.conf.json`、capabilities、main entry |
+| 主窗 `main` | 未创建 | 承载 `apps/desktop-webview` build |
+| 独立桌宠窗 `pet` | 未创建 | transparent / decorations false / always-on-top / skip taskbar |
+| 托盘 | 只有 event 名 | 托盘菜单、未读/审批状态、show/hide Cuu |
+| 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
+| deep-link | 只有目标 ownership | `workhub://` / 兼容 `yqgl://` handler |
+| 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
+| updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
+
+结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 的下一步应先补 `Tauri scaffold → SSE worker emit → pet window → tray/notification/deep-link → local sync/delivery`。
+
+更完整的差距与后续 backlog 见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
 ---
 

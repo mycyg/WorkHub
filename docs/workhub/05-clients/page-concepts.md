@@ -213,6 +213,26 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 这张图定义模块、端口、返回 payload、页面和 Cuu 状态之间的对齐关系。后续新增页面时，必须先补齐对应的 endpoint、Page VM、事件和 Cuu 承接方式。
 
+### 4.3 PRD / 概念复现差距地图
+
+对应文档：[`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)
+
+![PRD / 概念复现差距地图](./assets/shared/prd-concept-gap-map.png)
+
+这张图把当前「已落地的契约和 P0.5 纵切」「仍处于原型的 Web / desktop-webview / Rust shell contract」「距离完整概念还缺的 Cuu 动画、透明桌宠窗、真实 Tauri 壳、本地同步、真实 SPA 页面和视觉 QA」放到同一张图里。它用于识别缺口，不作为精确完成率。
+
+![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
+
+Cuu 当前已经有卡片适配和 motion hints，但还缺真实 sprite/Rive/Live2D runtime、动画资产、独立 pet window、拖拽/静音/勿扰和气泡动作提交。
+
+![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
+
+Rust 客户端当前是 shell contract crate + desktop webview bridge；要复现概念图，还需要 Tauri v2 runtime、主窗、透明桌宠窗、托盘、通知、deep-link、设备令牌 vault、本地同步、updater 和诊断。
+
+![Web 真页面差距路线](./assets/web/web-real-ui-gap-roadmap.png)
+
+Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 React SPA routes、四态、响应式、Cuu bubble、视觉回归和 option-first 主路径。
+
 ---
 
 ## 5. 资产目录

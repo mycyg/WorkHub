@@ -9,8 +9,34 @@ owner: workflow
 
 > **范围**：`C-WEB`（React + Vite + TS 浏览器 SPA）的**信息架构 + 路由/页面清单 + 每页布局/组件/数据绑定/SSE 订阅/四态 + 导航流 + 响应式 + web↔桌宠差异**。本篇深度=**页面设计规划级**（逐页 wireframe + 绑定表）。
 > **定位**：本篇只管「Web 端长什么样、订什么流、绑哪个接口」。**接口形状**（路由组/事件清单/鉴权依赖）见 [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)；**实体字段/状态机**见 [`../01-architecture/data-model.md`](../01-architecture/data-model.md)；**进程边界/事件总线拓扑**见 [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md)；**桌宠端**见 [`./desktop-pet-tauri.md`](./desktop-pet-tauri.md)；**共享组件/tokens/API client**见 [`./shared-ui-kit.md`](./shared-ui-kit.md)；**体验 payload / Cuu 状态 / 交付物变更包契约**见 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)；**用户用语/去黑话**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威。交叉处只引用、不复述。
-> **扎根**：本篇逐页扎根现有真实代码——路由树 `web/src/App.tsx`、14 个页面 `web/src/pages/*`、共享 API client `shared/src/api/client.ts`、SSE hooks `shared/src/hooks/useReqStream.ts`/`useChatStream.ts`、通知流 `web/src/hooks/useNotificationToasts.ts`、状态标签 `shared/src/design/status-vocab.ts`。所有路径/行为均可在仓库核对。
+> **扎根口径（2026-06-06 修正）**：`web/src/App.tsx`、`web/src/pages/*`、`shared/src/*` 等路径属于旧项目行为参照。当前 WorkHub 主仓真实 Web 代码在 `apps/web`，共享 API client 在 `packages/api-client`，共享 render helpers 在 `packages/ui`，共享契约在 `packages/contracts`。后续施工必须把旧路径写成 `Behavior source`，把当前要落的文件写成 `Target TS paths`，不得把旧项目页面误判为已在 WorkHub 主仓复现。
 > **概念图**：页面视觉方向与探索图见 [`page-concepts.md`](./page-concepts.md)。
+
+---
+
+## 当前 WorkHub 实现快照（2026-06-06）
+
+![Web real UI gap roadmap](./assets/web/web-real-ui-gap-roadmap.png)
+
+当前 Web 已有 P0.5 纵切地基，但还不是完整真实 SPA：
+
+| 当前已落 | 真实路径 | 说明 |
+|---|---|---|
+| Gold Path shell | `apps/web/src/browser.ts` | 读取 `/api/pages/gold-path`，渲染共享 shell，绑定基础导航和 proposal action |
+| Web typed surface | `apps/web/src/main.ts` | 暴露 `loadWebGoldPathSurface`、`renderWebIntakeSession`、`renderWebWorkItemDetail`、`renderWebProposalDetail`、`renderWebAgentRunLive` 等 helpers |
+| Shared render helpers | `packages/ui/src/*` | Gold Path、intake、workitem、proposal、agent-run 的 HTML render helpers |
+| API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client |
+| Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay 同源 |
+
+当前缺口：
+
+- 真实 React routes 尚未完整落到 `apps/web/src/routes/*`。
+- 现有 shell 更像 P0.5 preview，不是长期使用的信息架构。
+- `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
+- Cuu bubble 在 Web 中还不是完整交互层；主力 Cuu 仍应归桌宠，Web 只做轻量同步提示和兜底。
+- 视觉回归、响应式、移动端、空/错/载/无权限、无默认 Kanban 等门禁尚未形成。
+
+完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
 ---
 
