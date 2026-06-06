@@ -78,7 +78,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | AgentRun / proposal / replay / cost | P0.5 纵切已成形 | 真实 LLM loop、eval runner、side-effect 工具、全量快照回滚、模型成本账本还需加深 |
 | Web | Gold Path shell + render helpers | 全量真实 React SPA、路由、状态、响应式、四态、视觉回归、Cuu 气泡整合 |
 | Desktop webview | 能消费同一 VM、桥接 Cuu notice | 仍不是独立桌面体验；缺真实 pet window、本地动作面板、设置/诊断/同步中心 |
-| Rust shell | config/http/sse/event/window planning crate + Tauri config/capability scaffold | 缺 Tauri runtime、真实窗口创建、托盘、通知、deep-link、设备令牌 vault、本地 sync/delivery/updater |
+| Rust shell | config/http/sse/event/window planning/control planning crate + Tauri config/capability scaffold | 缺 Tauri runtime、真实窗口创建、托盘、通知、deep-link、设备令牌 vault、本地 sync/delivery/updater |
 | Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue MVP | 缺正式小猫动画资产、Rive/Live2D runtime、透明窗口、拖拽、系统通知、展开卡 |
 | 项目检索 / 知识库 | API/证据契约方向明确 | 缺 Cuu-first 检索气泡真实实现、证据卡交互、权限内检索结果分页 |
 | 同步 / 本地交付 | 规划完整 | 当前 WorkHub 仓库未落真实本地 sync worker、冲突 resolver、delivery package |
@@ -103,7 +103,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 Cuu notice |
 | Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
 | Cuu controller / badge MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge 和超时后推进下一张卡 |
-| Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan |
+| Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan 与 show/hide/focus/toggle control plan |
 | Tauri scaffold | `client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json`、`client-tauri/src-tauri/tests/tauri_scaffold.rs` | 已把 desktop webview dev/build、`main` / `pet` window config、最小 capability 和 scaffold contract tests 落到当前仓库 |
 
 ### 2.2 容易误判的地方
@@ -123,6 +123,7 @@ client-tauri/src-tauri/
   src/http.rs
   src/lib.rs
   src/sse.rs
+  src/window_controls.rs
   src/windows.rs
 
 apps/desktop-webview/
@@ -191,6 +192,7 @@ apps/desktop-webview/
 - `sse.rs`：SSE target、frame parser、push payload/status payload。
 - `events.rs`：`push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` channel 命名。
 - `windows.rs`：`main` / `pet` window plan contract，`pet` 固定 transparent、decorations false、always-on-top、skip taskbar。
+- `window_controls.rs`：`show/hide/focus/toggle main/pet` 的 typed control plan；deep-link route 做安全校验，pet 操作不抢焦点。
 - `tauri.conf.json`：声明 desktop webview 的 `devUrl=1420` / build dist、`main` 与 `pet` window config；`skipTaskbar` 暂留在 WorkHub 自有 plan，避免未确认字段提前进入 Tauri schema。
 - `capabilities/default.json`：当前只给 `main` / `pet` `core:default`，文件系统、shell、process 等能力后续按模块最小化开启。
 - `tests/tauri_scaffold.rs`：把配置与 `ShellWindowPlan` / capability 绑定成可测契约。
@@ -201,11 +203,11 @@ apps/desktop-webview/
 | 缺口 | 当前事实 | 目标 |
 |---|---|---|
 | Tauri v2 runtime | 已有 `tauri.conf.json` / capability scaffold；`Cargo.toml` 当前无 `tauri` 依赖 | 新增真实 Tauri dependency、`build.rs`、`main.rs` / setup entry |
-| 主窗口 | 已有 `main` window plan + Tauri config，当前无真实 Rust window 创建 | `main` window 承载 desktop webview |
-| Cuu pet window | 已有 `pet` window plan + Tauri config，当前无真实透明窗口创建；`skipTaskbar` 仍在 WorkHub plan | `pet` window：transparent / decorations false / always-on-top / skip taskbar |
-| 托盘 | 当前只有 event enum | tray menu、未读/审批状态、show/hide Cuu、退出 |
+| 主窗口 | 已有 `main` window plan + Tauri config + `show/hide/focus` control plan，当前无真实 Rust window 创建 | `main` window 承载 desktop webview |
+| Cuu pet window | 已有 `pet` window plan + Tauri config + `show/hide/toggle` control plan，当前无真实透明窗口创建；`skipTaskbar` 仍在 WorkHub plan | `pet` window：transparent / decorations false / always-on-top / skip taskbar |
+| 托盘 | 当前有 event enum 与 window control plan，无真实 tray module | tray menu、未读/审批状态、show/hide Cuu、退出 |
 | 系统通知 | 当前只有 channel 名 | OS notification plugin + high/urgent policy |
-| deep-link | 当前无 handler | `workhub://` 或迁移兼容 `yqgl://`，打开 workitem/proposal/approval |
+| deep-link | 当前有 route 安全校验与 focus main control plan，无真实 handler | `workhub://` 或迁移兼容 `yqgl://`，打开 workitem/proposal/approval |
 | 设备令牌 vault | 当前只是内存结构 | 安全保存、token tail 展示、重新注册、失效恢复 |
 | SSE worker | 当前只有 parser/plan | 后台连接 `/api/push/stream`、`/me`，emit 到 webview |
 | local sync/delivery | 当前无本地 worker | 文件监听、路径 containment、下载/上传/冲突/交付打包 |
@@ -216,7 +218,7 @@ apps/desktop-webview/
 
 | 阶段 | Rust 目标 | TS/webview 目标 | 验收 |
 |---|---|---|---|
-| Rust-P1a | 保持 contract crate，补 Tauri scaffold | desktop-webview 继续消费 API client | **window plan + `tauri.conf.json` + capability scaffold 已落**；下一步 `tauri` dependency / `build.rs` / setup |
+| Rust-P1a | 保持 contract crate，补 Tauri scaffold | desktop-webview 继续消费 API client | **window plan + window control plan + `tauri.conf.json` + capability scaffold 已落**；下一步 `tauri` dependency / `build.rs` / setup |
 | Rust-P1b | 实现 `push-event` / `sse-status` emit worker | `bindDesktopShellCuuRuntime` 订阅真实 Tauri listener | 真实 SSE 可触发 Cuu notice，不依赖 mock |
 | Rust-P2a | 主窗 + pet window + tray | 设置页显示连接/token/pet 开关 | 主窗隐藏后 Cuu 常驻；托盘可显隐 |
 | Rust-P2b | notification + deep-link + device vault | 页面响应 `navigate` | 系统通知点击能打开 proposal / approval |
@@ -324,7 +326,7 @@ Rust 应只做：
 | GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge 与超时推进已接；待设置页偏好、系统通知、视觉 QA |
 | GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question 可提交；待 evidence/search chips 与桌宠展开卡 |
 | GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` | Rust scaffold | 主窗关闭/隐藏后 Cuu 常驻 |
-| GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + config/capability scaffold 已落**；待 `tauri` 依赖、`build.rs`、`main.rs` / setup、真实 main/pet window |
+| GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + window control plan + config/capability scaffold 已落**；待 `tauri` 依赖、`build.rs`、`main.rs` / setup、真实 main/pet window |
 | GAP-RUST-02 | SSE worker emit | `client-tauri/src-tauri/src/sse_worker.rs` | GAP-RUST-01 | 真实 SSE 发到 desktop webview |
 | GAP-RUST-03 | Tray / notification / deep-link | `client-tauri/src-tauri/src/{tray,notify,deep_link}.rs` | GAP-RUST-01 | 托盘和系统通知可唤起页面 |
 | GAP-RUST-04 | Local sync / delivery | `client-tauri/src-tauri/src/{sync,delivery}.rs` | sync contract | 本地变更能走 proposal / conflict |

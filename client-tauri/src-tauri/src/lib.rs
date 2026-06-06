@@ -2,6 +2,7 @@ pub mod config;
 pub mod events;
 pub mod http;
 pub mod sse;
+pub mod window_controls;
 pub mod windows;
 
 pub const RUST_SHELL_OWNS: &[&str] = &[
@@ -11,6 +12,7 @@ pub const RUST_SHELL_OWNS: &[&str] = &[
     "deep_link",
     "system_notification",
     "window_plan",
+    "window_control",
     "pet_window",
     "sse_worker",
     "sse_frame_parser",

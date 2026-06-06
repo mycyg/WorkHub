@@ -53,6 +53,7 @@ owner: workflow
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
+| `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan；deep-link route 做安全校验，pet 操作不抢焦点 |
 | `client-tauri/src-tauri/tauri.conf.json` | Tauri config scaffold | 对齐 `apps/desktop-webview` dev/build 输出，声明 `main` / `pet` window；`skipTaskbar` 暂留在 WorkHub window plan，未写入 Tauri schema |
 | `client-tauri/src-tauri/capabilities/default.json` | Tauri capability scaffold | `main` / `pet` 仅授予 `core:default`，文件/进程/shell 能力后续按模块最小化开启 |
 | `client-tauri/src-tauri/tests/tauri_scaffold.rs` | scaffold contract tests | 校验 Tauri build target、window config 与 `ShellWindowPlan` 一致、capability 未提前放开高风险权限 |
@@ -65,11 +66,11 @@ owner: workflow
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
 | Tauri v2 app runtime | 已有 `tauri.conf.json` / capability scaffold；`Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri dependency、`build.rs`、`main.rs` / setup entry |
-| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
-| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config，未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
-| 托盘 | 只有 event 名 | 托盘菜单、未读/审批状态、show/hide Cuu |
+| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan，未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
+| 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
-| deep-link | 只有目标 ownership | `workhub://` / 兼容 `yqgl://` handler |
+| deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
 | 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
 | updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
 
@@ -129,6 +130,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 ### 2.1 主窗（`main`，目标 + 旧参照）
 
 - **当前 WorkHub scaffold**：`main` window config = 1180×780、最小 960×640、`visible:true`、`focus:true`、`decorations:true`、`transparent:false`，先保证承载 `apps/desktop-webview` 的稳定主壳。
+- **当前控制契约**：`show_main_window` / `hide_main_window` / `focus_main_route` 已落；route 必须是安全站内路径，拒绝空值、外链、`..`、反斜杠和换行。
 - **旧项目 / 目标形态参照**：无边框（`decorations:false`）、透明（`transparent:true`）、有阴影、`titleBarStyle:"Overlay"`、`hiddenTitle:true`，1280×800、最小 920×600、居中、**启动隐藏**（`visible:false`），用于后续主窗视觉升级。
 - **毛玻璃**：`window::decorate`（`window.rs:11`）在 Win11 上 `apply_acrylic`（半透明实时模糊，回退 `apply_mica`），macOS 上 `apply_vibrancy(HudWindow)`；应用后才 `window.show()`（`window.rs:40`）——避免白闪。
 - **自绘标题栏**：`TitleBar.tsx` 提供 `data-tauri-drag-region` 拖拽区 + 最小化/最大化/隐藏按钮 + 主题切换 + **SSE 连接绿点**（`TitleBar.tsx:26`，`sseConnected ? bg-success : bg-ink-faint`）。**关闭按钮 = `window.hide()` 而非退出**（`TitleBar.tsx:53`，「隐藏到托盘」）——只有托盘「退出」或 `app.exit(0)` 真退出（`tray.rs:44`）。
@@ -139,6 +141,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 > 现状的 `FloatingAssistant` 是**主窗内的浮层**（`fixed bottom-5 right-5`，`FloatingAssistant.tsx:236`），随主窗显隐。WorkHub 把它抽成**独立 always-on-top 小窗**，主窗隐藏到托盘后桌宠仍在桌面常驻——这是「桌宠是常驻入口」的关键。
 
 - **当前 WorkHub scaffold**：`pet` window config = 360×220、最小 260×180、`visible:false`、`focus:false`、`decorations:false`、`transparent:true`、`alwaysOnTop:true`；`skipTaskbar:true` 已在 `ShellWindowPlan` 中固定，但暂未写入 `tauri.conf.json`，等真实 Tauri dependency/schema 校验后再接。
+- **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
 - **形态（建议）**：小尺寸（约 96×96 收起 / 380×560 展开）、`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
@@ -150,6 +153,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 ### 2.3 系统托盘（目标 + 旧参照，当前未落）
 
 - **图标**：旧项目用 `icons/icon.png` + `with_id("main-tray")`，可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`。当前 WorkHub 尚未添加 tray plugin / icon / tray module。
+- **当前可复用契约**：托盘项先映射到 `ShellWindowControlPlan`：打开主窗=`show_main_window(Tray)`，隐藏主窗=`hide_main_window(Tray)`，显示/隐藏桌宠=`toggle_pet_window(Tray)`。
 - **左键**：显示+聚焦主窗（`tray.rs:51`，`show_menu_on_left_click(false)` 故左键不弹菜单）。
 - **右键菜单**（动态重建，`build_menu`，`tray.rs:65`）：
   ```
