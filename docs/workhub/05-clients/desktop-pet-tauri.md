@@ -70,9 +70,9 @@ owner: workflow
 | `apps/desktop-webview/src/pet-surface.ts` | Cuu pet webview surface | `pet` 窗口入口只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由用固定按钮 |
 | `apps/desktop-webview/src/pet-window-bridge.ts` | Cuu pet webview input/window bridge | 解析 mock / Tauri-like bridge，支持 `body_only` / `card` 模式切换、`startDragging`、位置保存、cursor-near fallback |
 | `packages/cuu/src/atlas-manifest.ts` | Cuu atlas contract | 真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验 |
-| `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu sample asset manifest | 指向 `cuu-p1-idle-breathe.png` sample atlas，并保留 source-green / alpha 路径 |
+| `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu motion pack asset manifest | 指向 `cuu-p1-motion-pack.png` atlas，并在 clip 上保留 source-green / alpha 路径 |
 | `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 CSS keyframes，非覆盖状态会标记 fallback |
-| `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset sample | 已有 `idle_breathe` 绿幕源图、透明 alpha 图和 sample atlas |
+| `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset pack | 已有 `idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek` 绿幕源图、透明 alpha 图和 motion pack atlas |
 | `packages/cuu/src/idle-scheduler.ts` | Cuu alive behavior scheduler | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；Rust 不拥有动画状态 |
 
 ### 0.2 当前未落
@@ -82,7 +82,7 @@ owner: workflow
 | Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position command 已执行到真实 window API | 后续补 setup/tray/SSE/notification/deep-link、真实 cursor sampling 和位置持久化 |
 | 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
 | 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 mode resize/position/show、drag 和 save-position 执行到真实 Tauri window API；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻 |
-| Cuu 绿幕资产 | 已有 `idle_breathe` 绿幕源图、透明 alpha 与 sample atlas；只覆盖一个动作，未形成完整 `cuu.sprite.json` | GPT Image 18 动作绿幕多帧素材、抠图裁切、anchor 对齐、full coverage atlas |
+| Cuu 绿幕资产 | 已有 6 clip motion pack：`idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek`，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | GPT Image 18 动作绿幕多帧素材、抠图裁切、anchor 对齐、full coverage atlas |
 | 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
@@ -164,7 +164,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
-- **视觉资产（新增硬约束）**：P1 不再接受抽象图标或 procedural CSS 作为完成标准；当前已有 `idle_breathe` 绿幕源图、透明 alpha 和 sample atlas，用于证明管线。生产必须继续生成绿幕抠图后的 Cuu PNG/WebP sprite atlas，至少覆盖 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、worried、revision、celebrating、offline。
+- **视觉资产（新增硬约束）**：P1 不再接受抽象图标或 procedural CSS 作为完成标准；当前已有 6 clip 绿幕 motion pack，用于证明业务动作可进入运行时。生产必须继续生成绿幕抠图后的 Cuu PNG/WebP sprite atlas，至少覆盖 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、worried、revision、celebrating、offline。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。

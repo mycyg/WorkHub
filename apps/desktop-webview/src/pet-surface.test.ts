@@ -41,17 +41,21 @@ function approvalCard(): CuuCard {
 
 test("desktop Cuu P1 atlas manifest points at the generated transparent sample", () => {
   assert.deepEqual(validateDesktopCuuP1AtlasManifest(), []);
-  assert.match(desktopCuuP1AtlasManifest.atlas.image_path, /cuu-p1-idle-breathe\.png/u);
+  assert.match(desktopCuuP1AtlasManifest.atlas.image_path, /cuu-p1-motion-pack\.png/u);
   assert.match(desktopCuuP1AtlasManifestUrl, /cuu\.sprite\.json/u);
   assert.equal(desktopCuuP1AtlasManifest.clips.idle_breathe?.frames.length, 8);
+  assert.equal(desktopCuuP1AtlasManifest.clips.thinking_tail?.frames.at(0)?.y, 1024);
+  assert.equal(desktopCuuP1AtlasManifest.clips.asking_approval_bounce?.priority, "urgent");
 });
 
 test("desktop Cuu JSON sprite manifest validates against the shared atlas schema", () => {
   const manifest = JSON.parse(readFileSync(new URL("./assets/cuu/atlas/cuu.sprite.json", import.meta.url), "utf8")) as CuuSpriteAtlasManifest;
 
   assert.deepEqual(validateCuuSpriteAtlasManifest(manifest), []);
-  assert.equal(manifest.atlas.image_path, "cuu-p1-idle-breathe.png");
+  assert.equal(manifest.atlas.image_path, "cuu-p1-motion-pack.png");
   assert.equal(manifest.clips.idle_breathe?.reduced_motion_frame_id, "idle_breathe-000");
+  assert.equal(Object.keys(manifest.clips).length, 6);
+  assert.equal(manifest.clips.searching_evidence_peek?.frames.at(0)?.y, 4576);
 });
 
 test("desktop Cuu atlas renderer emits keyframes from atlas rectangles", () => {
@@ -66,13 +70,21 @@ test("desktop Cuu atlas renderer emits keyframes from atlas rectangles", () => {
   assert.match(render.css, /background-position:-444px -197px/u);
 });
 
-test("desktop Cuu atlas renderer marks fallback while the sample pack is partial", () => {
+test("desktop Cuu atlas renderer uses generated business motion clips", () => {
   const render = renderDesktopCuuAtlasSprite(cuuMotionForState("thinking"), desktopCuuP1AtlasManifest);
+
+  assert.equal(render.clip.state, "thinking_tail");
+  assert.equal(render.fallback, false);
+  assert.match(render.html, /data-cuu-requested-state="thinking_tail"/u);
+  assert.match(render.html, /data-fallback="false"/u);
+});
+
+test("desktop Cuu atlas renderer marks fallback for states still missing from the P1 pack", () => {
+  const render = renderDesktopCuuAtlasSprite(cuuMotionForState("worried"), desktopCuuP1AtlasManifest);
 
   assert.equal(render.clip.state, "idle_breathe");
   assert.equal(render.fallback, true);
-  assert.match(render.html, /data-cuu-requested-state="thinking_tail"/u);
-  assert.match(render.html, /data-fallback="true"/u);
+  assert.match(render.html, /data-cuu-requested-state="worried_ears"/u);
 });
 
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
@@ -97,7 +109,7 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
-  assert.match(card.html, /data-cuu-atlas-fallback="true"/u);
+  assert.match(card.html, /data-cuu-atlas-fallback="false"/u);
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
   assert.doesNotMatch(card.html, /textarea/u);

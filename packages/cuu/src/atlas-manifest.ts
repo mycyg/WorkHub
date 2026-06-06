@@ -37,6 +37,8 @@ export type CuuSpriteAtlasClip = {
   anchor: CuuSpriteAtlasAnchor;
   frames: CuuSpriteAtlasFrame[];
   reduced_motion_frame_id: string;
+  source_green_path?: string;
+  alpha_path?: string;
 };
 
 export type CuuSpriteAtlasManifest = {
@@ -67,6 +69,8 @@ export type CuuSpriteAtlasGridInput = {
   cell_height: number;
   duration_ms: number;
   id_prefix?: string;
+  origin_x?: number;
+  origin_y?: number;
 };
 
 export function createCuuSpriteAtlasGridFrames(input: CuuSpriteAtlasGridInput): CuuSpriteAtlasFrame[] {
@@ -78,8 +82,8 @@ export function createCuuSpriteAtlasGridFrames(input: CuuSpriteAtlasGridInput): 
     const row = Math.floor(index / input.columns);
     frames.push({
       id: `${input.id_prefix ?? input.state}-${String(index).padStart(3, "0")}`,
-      x: column * input.cell_width,
-      y: row * input.cell_height,
+      x: (input.origin_x ?? 0) + column * input.cell_width,
+      y: (input.origin_y ?? 0) + row * input.cell_height,
       w: input.cell_width,
       h: input.cell_height,
       duration_ms: input.duration_ms

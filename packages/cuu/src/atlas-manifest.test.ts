@@ -57,6 +57,30 @@ test("P1 Cuu atlas manifest accepts a real idle green-screen sample pack", () =>
   assert.equal(clip?.frames.at(-1)?.y, 512);
 });
 
+test("atlas grid frame helper can place clips inside a larger packed atlas", () => {
+  const frames = createCuuSpriteAtlasGridFrames({
+    state: "thinking_tail",
+    columns: 4,
+    rows: 2,
+    frame_count: 8,
+    cell_width: 444,
+    cell_height: 444,
+    duration_ms: 100,
+    origin_y: 1024
+  });
+
+  assert.deepEqual(frames[0], {
+    id: "thinking_tail-000",
+    x: 0,
+    y: 1024,
+    w: 444,
+    h: 444,
+    duration_ms: 100
+  });
+  assert.equal(frames.at(-1)?.x, 1332);
+  assert.equal(frames.at(-1)?.y, 1468);
+});
+
 test("atlas manifest can enforce full motion coverage for production packs", () => {
   const issues = validateCuuSpriteAtlasManifest(p1IdleAtlas, {
     require_full_motion_coverage: true
