@@ -14,6 +14,7 @@ owner: workflow
 > **扎根口径（2026-06-06 修正）**：本篇最初从现有「需求管理大师」桌面客户端真实代码演进而来，文中的 `tray.rs`、`sync.rs`、`spec_watch.rs`、`deep_link.rs`、`commands/*.rs`、`client-tauri/web-src/*` 等属于**旧项目行为参照 / 目标能力锚点**。当前 WorkHub 仓库的真实实现是 `client-tauri/src-tauri/src/{config,events,http,lib,sse,windows}.rs`、`client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json` 的 Rust shell / Tauri scaffold，加上 `apps/desktop-webview` 的 TS webview adapter。后续施工必须把旧锚点写成 `Behavior source`，把当前要落的文件写成 `Target Rust/TS paths`，不得把旧项目文件误判为已在 WorkHub 主仓落地。
 > **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
 > **独立桌宠与绿幕素材方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。Cuu 的最终工程形态是右下角独立透明 `pet` window，不是主窗内浮层；视觉资产使用 GPT Image 绿幕多帧图，抠图后进入 sprite atlas。
+> **Live2D 高表现力方案**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。sprite atlas 是先跑通和失败降级层；长期目标优先是 Cuu 分层 PSD + Cubism 模型，GIF 只允许做临时预览。
 
 本篇小节：
 
@@ -758,11 +759,12 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 
 ### 9.6 Cuu runtime 选型
 
-桌宠动画技术的详细方案见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。本端级规格只固定工程边界：
+桌宠动画技术的详细方案见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 与 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。本端级规格只固定工程边界：
 
 - MVP 必须能不依赖专业绑定工具运行，因此 sprite atlas 是首选。
-- Rive 可作为 P2 推荐路线，因为 state machine 与 WorkHub 的事件映射天然契合。
-- Live2D 只作为高表现力路线，不能阻塞 P1/P2。
+- Live2D 是 Cuu 长期高表现力主线：用 GPT Image / 人工精修产出分层 PSD，Cubism 绑定后导出 `.model3.json`，由 `pet` window runtime 优先加载。
+- Rive 可作为许可或工具链阻塞时的中间路线，因为 state machine 与 WorkHub 的事件映射天然契合。
+- GIF 只作为 motion storyboard / 文档预览 / 临时演示，不能作为最终桌宠 renderer。
 - Lottie 适合小动效和过渡，不建议承载复杂桌宠人格。
 
 ### 9.7 相关官方资料

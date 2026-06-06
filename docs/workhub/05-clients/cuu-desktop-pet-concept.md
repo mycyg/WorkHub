@@ -10,6 +10,7 @@ owner: workflow
 > **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的橘色卡通小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
 >
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
+> **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
 
 ## 1. 角色定位
 
@@ -75,7 +76,13 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - 「其他 / 补充」折叠在底部，只作为兜底。
 - 右侧显示已经澄清的内容，帮助用户知道还剩几步。
 
-### 3.4 当前实现差距
+### 3.4 Live2D 分层拆件
+
+![Cuu Live2D 分层拆件概念](./assets/cuu/cuu-live2d-layer-breakdown-concept.png)
+
+这张概念图固定 Live2D 方向：Cuu 需要从完整正面角色拆成可绑定部件，而不是把 GIF 当成最终动画。正式 PSD 要拆出耳朵、眼睛、眼皮、嘴型、头发/毛束、身体、爪子、围兜、蝴蝶结、珍珠流苏、尾巴分段，并补画所有遮挡区域。分层命名、Cubism 参数、运行时接入和 QA 门禁见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。
+
+### 3.5 当前实现差距
 
 ![Cuu runtime gap roadmap](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
@@ -90,7 +97,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 但这些还不等于「桌宠已经完成」：
 
-- 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；但还没有 Rive 文件或 Live2D rig。
+- 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；已有 Live2D 分层拆件概念图和施工专篇；但还没有正式分层 PSD、Cubism `.moc3` / `.model3.json` 或 Tauri Live2D runtime。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 没有真实 Tauri `pet` 透明窗口 runtime；当前已有 desktop webview notice、`/pet` surface、Rust pet window plan/config scaffold 和几何合同。
 - 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和 body anchor 位置落盘；仍缺收起、真实独立设置页、多屏实测恢复和低电量降帧。
@@ -99,7 +106,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
 
-### 3.5 施工进展（2026-06-06）
+### 3.6 施工进展（2026-06-06）
 
 已落一个 **sprite runtime MVP**，用于把 `CuuMotionHint` 真正接到可渲染的 Cuu 动画层：
 
@@ -107,6 +114,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/controller.ts`：新增 `createCuuController`，把 Cuu 提醒收敛为 `show` / `replace` / `queue` / `badge` / `drop` 决策。
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
 - `packages/cuu/src/atlas-manifest.ts`：新增真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验。
+- `docs/workhub/05-clients/assets/cuu/cuu-live2d-layer-breakdown-concept.png`：GPT Image 生成的 Live2D 分层拆件概念板，用于指导正式 PSD 拆层。
 - `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：GPT Image 绿幕 sprite sheets，保留原始绿幕源图。
 - `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：本地 chroma-key + despill + edge-contract 后的透明 PNG。
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png`：P1 motion pack atlas，当前覆盖 18 个业务状态与 idle / interaction clip。
@@ -130,7 +138,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
 - 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；基础托盘显隐和 deep-link 主窗唤起已落，仍缺多显示器实测、动态通知联动和真实截图 QA。
 - 真实 Tauri 设置页承接、系统通知、收起/恢复、多屏监视器恢复策略和透明窗口长驻 QA。
-- Rive / Live2D 高表现力路线。
+- 正式 Live2D 分层 PSD、Cubism 绑定、`.model3.json` 导出和 Tauri Live2D runtime。
 - 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。
 
 ## 4. 交互原则
@@ -167,14 +175,14 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 | 方案 | 资产形态 | 优点 | 风险/代价 | 建议阶段 |
 |---|---|---|---|---|
-| **PNG Sprite Atlas** | 多帧透明 PNG + JSON 帧配置 | 最简单、最可靠、最容易由 GPT Image 生成，适合先跑起来 | 文件体积偏大，状态切换不够丝滑 | **MVP/P1** |
+| **PNG Sprite Atlas** | 多帧透明 PNG + JSON 帧配置 | 最简单、最可靠、最容易由 GPT Image 生成，适合先跑起来，也能做 Live2D 失败降级 | 文件体积偏大，状态切换不够丝滑 | **MVP/P1 + fallback** |
 | **Lottie** | After Effects/Bodymovin JSON，Web 端 `lottie-web` 渲染 | 轻量、SVG/Canvas/HTML 多渲染器，适合简单循环和 UI 动效 | 角色形变/交互状态有限，美术需 AE 流程 | P1 兜底 |
 | **Rive** | `.riv` 文件 + state machine | Web/React 运行时支持 state machine input，适合把 `push-event` 映射成动作 | 需要 Rive 制作流程，初期资产准备成本高于 sprite | **P2 推荐** |
-| **Live2D Cubism** | `.moc3` + texture + physics/motion config | 表现力强，适合呼吸、眼神、脸部、轻微身体形变 | 美术/绑定/许可/运行时复杂度最高，Cubism Core 需官方包 | P3/Premium |
+| **Live2D Cubism** | 分层 PSD -> `.moc3` + texture + physics/motion config | 表现力强，适合呼吸、眼神、耳朵、尾巴、流苏、脸部与身体轻形变，最符合“活着的桌宠”目标 | 美术拆层/补画/绑定/许可/运行时复杂度最高，Cubism Core 需官方包 | **高表现力主线 P2/P3** |
 
-推荐路线：**先 sprite，让 Cuu 真的出现在桌面；再 Rive，让 Cuu 具备状态机和自然过渡；最后按价值评估 Live2D。**
+推荐路线：**先 sprite，让 Cuu 真的出现在桌面；同时按 Live2D 专篇推进分层 PSD；再让 Cubism 模型接管主要表现力。Rive 可作为可选中间路线，但不应挤掉 Live2D 的长期目标。**
 
-P1 sprite 不是抽象图标，而是绿幕生图后的透明小猫动作帧。完整动作批次、prompt、抠图、anchor 对齐、atlas manifest 与独立窗口策略见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。
+P1 sprite 不是抽象图标，而是绿幕生图后的透明小猫动作帧。完整动作批次、prompt、抠图、anchor 对齐、atlas manifest 与独立窗口策略见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。Live2D 的图层树、PSD 交付、Cubism 参数和 runtime 接线见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。
 
 官方资料锚点：
 
@@ -198,8 +206,8 @@ P1 sprite 不是抽象图标，而是绿幕生图后的透明小猫动作帧。�
 4. **一致性修正**：统一眼睛大小、围兜位置、蝴蝶结朝向、红珠数量、阴影边缘和色温。
 5. **打包**：
    - MVP：`cuu.sprite.json` + `*.png` frames。
-   - P2：`.riv` + state machine input。
-   - P3：Live2D `.moc3` + texture + physics/motion。
+   - P2/P3：Live2D 分层 PSD -> Cubism `.moc3` + texture + physics/motion。
+   - Rive：作为可选中间路线，不阻塞 Live2D 主目标。
 6. **运行时验收**：在 Tauri 透明窗口中检查边缘、帧率、CPU/GPU、点击区域、HiDPI、多显示器和低电量表现。
 
 ### 8.1 目录建议
@@ -218,6 +226,9 @@ apps/desktop-webview/src/assets/cuu/
   rive/
     cuu.riv
   live2d/
+    source/
+      cuu-live2d-v0.psd
+      cuu-live2d-v0-layer-manifest.json
     cuu.model3.json
     textures/
 docs/workhub/05-clients/assets/cuu/
@@ -270,8 +281,8 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 1. P1：绿幕生成 PNG/WebP sprite 版 Cuu，至少 18 个动作，能 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、celebrating、offline（procedural MVP 只算占位，待正式资产）。
 2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清/知识检索回显/证据带回当前任务已落，待证据详情展开、完整检索页和真实持久化）。
 3. P2：独立 `pet` Tauri window，支持拖动、收起、托盘显隐（基础菜单已落，待跨平台 smoke 和动态状态），并把已有偏好面板迁入真实 Settings / pet window。
-4. P2：引入 Rive state machine，把事件映射为自然过渡。
-5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。
+4. P2：并行推进 Live2D 正面基准稿、分层 PSD 和 Cubism 绑定，让呼吸、眨眼、看鼠标、耳朵、尾巴、流苏先动起来。
+5. P3：接 Tauri Live2D runtime，优先加载 `.model3.json`，失败降级 sprite；Rive 仅作为可选中间路线。
 6. P4：性能/电量/多屏/HiDPI/透明边缘 QA，形成桌宠发布 checklist。
 
 ### 11.1 施工验收门

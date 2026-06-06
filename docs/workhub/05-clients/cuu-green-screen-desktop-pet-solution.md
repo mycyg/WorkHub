@@ -7,7 +7,7 @@ owner: workflow
 
 # Cuu 绿幕素材与独立桌宠方案
 
-> 结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。角色视觉用 GPT Image 生成绿幕多帧素材，再经本地抠图、裁切、对齐、打包成 sprite atlas。Cuu 必须有持续 idle、眨眼、尾巴、睡觉、醒来、思考、检索、审批、叼文件、庆祝、担心等动作，让用户感觉它在桌面右下角“活着”。
+> 结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。P1 用 GPT Image 生成绿幕多帧素材，经本地抠图、裁切、对齐、打包成 sprite atlas，先让 Cuu 真实可见、会动、可测试；长期高表现力路线优先走 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 Live2D 分层 PSD + Cubism 绑定。GIF 只做临时预览，不作为最终桌宠目标。
 
 ## 1. 目标体验
 
@@ -24,10 +24,10 @@ Cuu 应该像多年前 QQ 宠物那类“桌面常驻角色”，但行为更克
 | 层 | 决策 | 原因 |
 |---|---|---|
 | 视觉资产 | 绿幕生成 PNG 帧，抠图后打包成 atlas | 最快得到真实小猫形象，避免 procedural CSS 的符号感 |
-| MVP renderer | CSS/Canvas sprite atlas | 简单、稳定、可测试，适合先让 Cuu 独立活起来 |
+| MVP renderer | CSS/Canvas sprite atlas | 简单、稳定、可测试，适合先让 Cuu 独立活起来，并作为 Live2D 失败降级 |
 | 桌面载体 | Tauri 独立 `pet` window | 主窗隐藏后仍常驻，符合桌宠定位 |
 | 状态调度 | TS `CuuController` + animation queue | 业务状态仍来自 daemon，动画不进 Rust |
-| 后续升级 | Rive state machine, Live2D 评估 | Rive 用于自然过渡，Live2D 只在表现力收益足够时进入 |
+| 后续升级 | Live2D 分层 PSD + Cubism runtime；Rive 可选 | Live2D 最符合“活着的小猫桌宠”；Rive 可作为中间路线但不替代 Live2D 主目标 |
 
 不要把 Cuu 做成：
 
@@ -83,8 +83,9 @@ Avoid: photorealism, symbol icon, abstract mascot, extra props unless the action
 
 生成方式有两种：
 
-- **动作 sprite sheet**：一次生成 6-8 格同一动作，适合 `idle`、`thinking`、`searching`。优点是一致性高。
+- **动作 sprite sheet**：一次生成 6-8 格同一动作，适合 `idle`、`thinking`、`searching`。优点是一致性高，也能作为 Live2D motion storyboard。
 - **单帧补图**：补关键帧或修坏帧，适合 `celebrating`、`wake_up` 这类一次性动作。
+- **Live2D 拆件参考**：生成正面模型板和分层拆件图，不直接要求一次输出 PSD。正式图层树见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。
 
 ### 3.3 抠图和裁切
 
@@ -139,6 +140,12 @@ apps/desktop-webview/src/assets/cuu/
   atlas/
     cuu-p1-motion-pack.png
     cuu.sprite.json
+  live2d/
+    source/
+      cuu-live2d-v0.psd
+      cuu-live2d-v0-layer-manifest.json
+    exported/
+      cuu.model3.json
 
 docs/workhub/05-clients/assets/cuu/
   *.png  # 概念图、流程图、参考说明
@@ -316,8 +323,8 @@ idle loop
 4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 和 `pet-window-state.json` 位置落盘；继续补收起、托盘显隐和多屏恢复实测。
 5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample 和 18 clip full coverage atlas 已接；继续接系统 idle 策略、真实窗口长驻视觉 QA 和性能降级。
 6. **QA P2**：Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
-7. **Rive P3**：如果 sprite 切换仍显僵硬，再把高频动作迁到 Rive state machine。
-8. **Live2D P4**：只有当 Cuu 需要明显表情/头部/身体形变时评估。
+7. **Live2D P2/P3**：按 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 生成正面基准稿、分层 PSD、Cubism 绑定和 `.model3.json` 导出；sprite atlas 作为降级。
+8. **Rive 可选**：如果 Live2D 许可/工具链阻塞，而 sprite 切换又显僵硬，再把高频动作临时迁到 Rive state machine。
 
 ## 10. 当前实现与目标差距
 
@@ -337,6 +344,7 @@ idle loop
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
 - 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍。
 - 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
+- Live2D 正式 PSD 与 Cubism runtime 尚未落；当前新增 `cuu-live2d-layer-breakdown-concept.png` 和专篇作为施工合同。
 - 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；下一步补多屏恢复实测与托盘显隐。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
 - 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。

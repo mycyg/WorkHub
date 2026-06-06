@@ -173,13 +173,19 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 这张图定义美术资产从 AI 生图到透明 PNG、精修、sprite / Rive / Live2D / Lottie 运行时的可选路线。
 
-### 3.1.2 Cuu 动画架构选型
+### 3.1.2 Cuu Live2D 分层概念
+
+![Cuu Live2D 分层拆件概念](./assets/cuu/cuu-live2d-layer-breakdown-concept.png)
+
+这张图定义 Cuu 的 Live2D 分层方向：正面完整小猫作为基准，耳朵、眼睛、眼皮、嘴型、围兜、蝴蝶结、珍珠流苏、爪子、身体和尾巴段拆成可绑定部件。正式施工细节见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。GIF 只作为临时预览，不作为最终桌宠目标。
+
+### 3.1.3 Cuu 动画架构选型
 
 ![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
 
-桌宠动画不宜一开始锁死 Live2D。推荐路径是：MVP 用 PNG sprite atlas，P2 用 Rive state machine，Live2D 作为后续高表现力路线。
+桌宠动画不宜退化成 GIF 或符号图标。推荐路径是：P1 用 PNG sprite atlas 保证 Cuu 先真实出现在透明桌面窗口；并行推进 Live2D 分层 PSD；P2/P3 用 Cubism 模型承接主要表现力，sprite 作为降级层。
 
-### 3.1.3 WorkHub 实现路线图
+### 3.1.4 WorkHub 实现路线图
 
 ![WorkHub 实现路线图](./assets/cuu/cuu-implementation-roadmap.png)
 
