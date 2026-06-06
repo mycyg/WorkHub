@@ -1,13 +1,47 @@
 import {
   createCuuSpriteAtlasGridFrames,
   validateCuuSpriteAtlasManifest,
+  type CuuSpriteAtlasClipState,
   type CuuSpriteAtlasManifest,
   type CuuSpriteAtlasManifestIssue
 } from "@workhub/cuu";
 
 const motionPackAtlasImage = new URL("./assets/cuu/atlas/cuu-p1-motion-pack.png", import.meta.url).href;
+const askingApprovalBounceSheet = new URL("./assets/cuu/alpha/asking_approval_bounce/cuu-asking-approval-bounce-sheet-v1-alpha-clean.png", import.meta.url).href;
+const carryingDocumentStepSheet = new URL("./assets/cuu/alpha/carrying_document_step/cuu-carrying-document-step-sheet-v1-alpha-clean.png", import.meta.url).href;
+const celebratingJumpSheet = new URL("./assets/cuu/alpha/celebrating_jump/cuu-celebrating-jump-sheet-v1-alpha-clean.png", import.meta.url).href;
+const dragHoldSheet = new URL("./assets/cuu/alpha/drag_hold/cuu-drag-hold-sheet-v1-alpha-clean.png", import.meta.url).href;
+const idleBlinkSheet = new URL("./assets/cuu/alpha/idle_blink/cuu-idle-blink-sheet-v1-alpha-clean.png", import.meta.url).href;
+const idleBreatheSheet = new URL("./assets/cuu/alpha/idle_breathe/cuu-idle-breathe-sheet-v1-alpha-clean.png", import.meta.url).href;
+const idleTailSwaySheet = new URL("./assets/cuu/alpha/idle_tail_sway/cuu-idle-tail-sway-sheet-v1-alpha-clean.png", import.meta.url).href;
+const lookAtMouseSheet = new URL("./assets/cuu/alpha/look_at_mouse/cuu-look-at-mouse-sheet-v1-alpha-clean.png", import.meta.url).href;
+const offlineSleepSheet = new URL("./assets/cuu/alpha/offline_sleep/cuu-offline-sleep-sheet-v1-alpha-clean.png", import.meta.url).href;
+const revisionRequestedNodSheet = new URL("./assets/cuu/alpha/revision_requested_nod/cuu-revision-requested-nod-sheet-v1-alpha-clean.png", import.meta.url).href;
+const searchingEvidencePeekSheet = new URL("./assets/cuu/alpha/searching_evidence_peek/cuu-searching-evidence-peek-sheet-v1-alpha-clean.png", import.meta.url).href;
+const sleepingCurlSheet = new URL("./assets/cuu/alpha/sleeping_curl/cuu-sleeping-curl-sheet-v1-alpha-clean.png", import.meta.url).href;
+const syncingFilesSpinSheet = new URL("./assets/cuu/alpha/syncing_files_spin/cuu-syncing-files-spin-sheet-v1-alpha-clean.png", import.meta.url).href;
+const tapBubbleSheet = new URL("./assets/cuu/alpha/tap_bubble/cuu-tap-bubble-sheet-v1-alpha-clean.png", import.meta.url).href;
+const thinkingTailSheet = new URL("./assets/cuu/alpha/thinking_tail/cuu-thinking-tail-sheet-v1-alpha-clean.png", import.meta.url).href;
+const wakeUpSheet = new URL("./assets/cuu/alpha/wake_up/cuu-wake-up-sheet-v1-alpha-clean.png", import.meta.url).href;
+const waveHelloSheet = new URL("./assets/cuu/alpha/wave_hello/cuu-wave-hello-sheet-v1-alpha-clean.png", import.meta.url).href;
+const worriedEarsSheet = new URL("./assets/cuu/alpha/worried_ears/cuu-worried-ears-sheet-v1-alpha-clean.png", import.meta.url).href;
+const staticFallbackImage = new URL("./assets/cuu/static/cuu-static-fallback-v1-alpha-clean.png?inline", import.meta.url).href;
 
 export const desktopCuuP1AtlasManifestUrl = new URL("./assets/cuu/atlas/cuu.sprite.json", import.meta.url).href;
+
+export type DesktopCuuP1ClipSheetImage = {
+  image_path: string;
+  width: number;
+  height: number;
+  origin_x: number;
+  origin_y: number;
+};
+
+export type DesktopCuuP1StaticFallbackImage = {
+  image_path: string;
+  width: number;
+  height: number;
+};
 
 export const desktopCuuP1AtlasManifest = {
   version: 1,
@@ -404,4 +438,50 @@ export const desktopCuuP1AtlasManifest = {
 
 export function validateDesktopCuuP1AtlasManifest(): CuuSpriteAtlasManifestIssue[] {
   return validateCuuSpriteAtlasManifest(desktopCuuP1AtlasManifest);
+}
+
+export const desktopCuuP1ClipSheetImages = {
+  idle_breathe: clipSheetImage("idle_breathe", idleBreatheSheet),
+  thinking_tail: clipSheetImage("thinking_tail", thinkingTailSheet),
+  asking_approval_bounce: clipSheetImage("asking_approval_bounce", askingApprovalBounceSheet),
+  carrying_document_step: clipSheetImage("carrying_document_step", carryingDocumentStepSheet),
+  celebrating_jump: clipSheetImage("celebrating_jump", celebratingJumpSheet),
+  searching_evidence_peek: clipSheetImage("searching_evidence_peek", searchingEvidencePeekSheet),
+  syncing_files_spin: clipSheetImage("syncing_files_spin", syncingFilesSpinSheet),
+  worried_ears: clipSheetImage("worried_ears", worriedEarsSheet),
+  revision_requested_nod: clipSheetImage("revision_requested_nod", revisionRequestedNodSheet),
+  offline_sleep: clipSheetImage("offline_sleep", offlineSleepSheet),
+  idle_blink: clipSheetImage("idle_blink", idleBlinkSheet),
+  idle_tail_sway: clipSheetImage("idle_tail_sway", idleTailSwaySheet),
+  look_at_mouse: clipSheetImage("look_at_mouse", lookAtMouseSheet),
+  sleeping_curl: clipSheetImage("sleeping_curl", sleepingCurlSheet),
+  wake_up: clipSheetImage("wake_up", wakeUpSheet),
+  drag_hold: clipSheetImage("drag_hold", dragHoldSheet),
+  tap_bubble: clipSheetImage("tap_bubble", tapBubbleSheet),
+  wave_hello: clipSheetImage("wave_hello", waveHelloSheet)
+} satisfies Partial<Record<CuuSpriteAtlasClipState, DesktopCuuP1ClipSheetImage>>;
+
+export const desktopCuuP1StaticFallbackImage = {
+  image_path: staticFallbackImage,
+  width: 340,
+  height: 420
+} satisfies DesktopCuuP1StaticFallbackImage;
+
+function clipSheetImage(state: CuuSpriteAtlasClipState, image_path: string): DesktopCuuP1ClipSheetImage {
+  const clip = desktopCuuP1AtlasManifest.clips[state];
+  if (!clip) {
+    throw new Error(`Missing Cuu clip ${state}`);
+  }
+  const minX = Math.min(...clip.frames.map((frame) => frame.x));
+  const minY = Math.min(...clip.frames.map((frame) => frame.y));
+  const maxRight = Math.max(...clip.frames.map((frame) => frame.x + frame.w));
+  const maxBottom = Math.max(...clip.frames.map((frame) => frame.y + frame.h));
+
+  return {
+    image_path,
+    width: maxRight - minX,
+    height: maxBottom - minY,
+    origin_x: minX,
+    origin_y: minY
+  };
 }

@@ -189,7 +189,7 @@ mod tests {
 
         assert_eq!(show.label, "pet");
         assert_eq!(show.action, ShellWindowControlAction::Show);
-        assert_eq!(show.route, Some("/?surface=pet".to_string()));
+        assert_eq!(show.route, Some("/".to_string()));
         assert_eq!(show.focus, false);
         assert_eq!(toggle.action, ShellWindowControlAction::Toggle);
         assert_eq!(toggle.focus, false);

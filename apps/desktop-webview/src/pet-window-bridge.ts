@@ -44,6 +44,9 @@ type TauriGlobal = {
       getCurrentWindow?: () => TauriWindowHandle;
       appWindow?: TauriWindowHandle;
     };
+    webviewWindow?: {
+      getCurrentWebviewWindow?: () => TauriWindowHandle;
+    };
   };
 };
 
@@ -58,7 +61,10 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
   }
 
   const invoke = target.__TAURI__?.core?.invoke;
-  const currentWindow = target.__TAURI__?.window?.getCurrentWindow?.() ?? target.__TAURI__?.window?.appWindow;
+  const currentWindow =
+    target.__TAURI__?.window?.getCurrentWindow?.() ??
+    target.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.() ??
+    target.__TAURI__?.window?.appWindow;
   if (!invoke && !currentWindow?.startDragging) {
     return undefined;
   }

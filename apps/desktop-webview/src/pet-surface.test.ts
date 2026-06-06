@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { cuuMotionForState, validateCuuSpriteAtlasManifest, type CuuCard, type CuuSpriteAtlasManifest } from "@workhub/cuu";
 
-import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, validateDesktopCuuP1AtlasManifest } from "./cuu-atlas-assets.js";
+import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, desktopCuuP1ClipSheetImages, validateDesktopCuuP1AtlasManifest } from "./cuu-atlas-assets.js";
 import { renderDesktopCuuAtlasSprite, renderDesktopCuuAtlasState } from "./cuu-atlas-runtime.js";
 import { renderDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
@@ -106,10 +106,83 @@ test("desktop Cuu atlas renderer uses generated idle micro action clips", () => 
   assert.match(render.html, /data-cuu-requested-state="idle_tail_sway"/u);
 });
 
+test("desktop Cuu renderer can use per-action clip sheets for the Tauri pet window", () => {
+  const render = renderDesktopCuuAtlasState("idle_tail_sway", desktopCuuP1AtlasManifest, {
+    clip_images: desktopCuuP1ClipSheetImages
+  });
+
+  assert.equal(render.clip.state, "idle_tail_sway");
+  assert.equal(render.fallback, false);
+  assert.match(render.html, /data-cuu-image-mode="clip_sheet"/u);
+  assert.match(render.html, /data-cuu-render-mode="img_stack"/u);
+  assert.match(render.html, /data-cuu-static-fallback="false"/u);
+  assert.match(render.html, /class="wh-cuu-atlas-img-frame"/u);
+  assert.match(render.html, /--wh-cuu-frame-left:0px/u);
+  assert.match(render.html, /cuu-idle-tail-sway-sheet-v1-alpha-clean\.png/u);
+});
+
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
   assert.equal(resolveDesktopSurface({ pathname: "/pet", search: "" }), "pet");
   assert.equal(resolveDesktopSurface({ pathname: "/", search: "?surface=pet" }), "pet");
+  assert.equal(resolveDesktopSurface({ pathname: "/index.html", search: "", hash: "#surface=pet" }), "pet");
   assert.equal(resolveDesktopSurface({ pathname: "/", search: "?surface=main" }), "main");
+});
+
+test("desktop surface resolver accepts the dedicated pet html entry flag", () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_SURFACE__?: string };
+  const previous = target.__WORKHUB_SURFACE__;
+  try {
+    target.__WORKHUB_SURFACE__ = "pet";
+    assert.equal(resolveDesktopSurface({ pathname: "/pet.html", search: "", hash: "" }), "pet");
+  } finally {
+    if (previous === undefined) {
+      delete target.__WORKHUB_SURFACE__;
+    } else {
+      target.__WORKHUB_SURFACE__ = previous;
+    }
+  }
+});
+
+test("desktop surface resolver treats the Tauri pet window label as the pet surface", () => {
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const previous = target.__TAURI__;
+  try {
+    target.__TAURI__ = {
+      window: {
+        getCurrentWindow() {
+          return { label: "pet" };
+        }
+      }
+    };
+    assert.equal(resolveDesktopSurface({ pathname: "/", search: "", hash: "" }), "pet");
+  } finally {
+    if (previous === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = previous;
+    }
+  }
+});
+
+test("desktop surface resolver accepts the Tauri v2 webviewWindow label", () => {
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const previous = target.__TAURI__;
+  try {
+    target.__TAURI__ = {
+      webviewWindow: {
+        getCurrentWebviewWindow() {
+          return { label: "pet" };
+        }
+      }
+    };
+    assert.equal(resolveDesktopSurface({ pathname: "/", search: "", hash: "" }), "pet");
+  } finally {
+    if (previous === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = previous;
+    }
+  }
 });
 
 test("pet surface renders Cuu without the main Gold Path shell", () => {
@@ -124,6 +197,10 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /data-pet-window-mode="body_only"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
   assert.match(idle.html, /data-cuu-atlas-state="idle_tail_sway"/u);
+  assert.match(idle.html, /data-cuu-image-mode="clip_sheet"/u);
+  assert.match(idle.html, /data-cuu-render-mode="img_stack"/u);
+  assert.match(idle.html, /data-cuu-static-fallback="true"/u);
+  assert.match(idle.html, /class="wh-cuu-atlas-static-fallback"/u);
   assert.match(idle.html, /data-cuu-manifest-url="[^"]*cuu\.sprite\.json/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
@@ -201,6 +278,26 @@ test("pet window bridge can start dragging through the Rust command fallback", a
   await bridge?.startDragging?.();
   await bridge?.savePosition?.();
   assert.deepEqual(calls, ["start_pet_window_drag", "save_pet_window_position"]);
+});
+
+test("pet window bridge accepts the Tauri v2 webviewWindow drag handle", async () => {
+  const calls: string[] = [];
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      webviewWindow: {
+        getCurrentWebviewWindow() {
+          return {
+            startDragging() {
+              calls.push("webviewWindow.startDragging");
+            }
+          };
+        }
+      }
+    }
+  });
+
+  await bridge?.startDragging?.();
+  assert.deepEqual(calls, ["webviewWindow.startDragging"]);
 });
 
 test("pet window bridge accepts Rust cursor sample command plans", async () => {

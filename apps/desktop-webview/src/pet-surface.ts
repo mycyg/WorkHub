@@ -9,7 +9,7 @@ import {
   type CuuIdleScheduler
 } from "@workhub/cuu";
 
-import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl } from "./cuu-atlas-assets.js";
+import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, desktopCuuP1ClipSheetImages, desktopCuuP1StaticFallbackImage } from "./cuu-atlas-assets.js";
 import {
   renderDesktopCuuAtlasSprite,
   renderDesktopCuuAtlasState,
@@ -52,8 +52,9 @@ export type DesktopPetSurfaceRuntime = {
 export const desktopPetSurfaceCss = [
   "html,body,#root{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}",
   "body{font-family:\"Aptos\",\"Segoe UI\",sans-serif;color:#222b38}",
-  ".wh-pet-surface{position:fixed;inset:0;display:grid;place-items:end end;box-sizing:border-box;padding:8px;background:transparent;pointer-events:none}",
-  ".wh-pet-body{display:grid;place-items:end center;border:0;background:transparent;padding:0;margin:0;cursor:grab;pointer-events:auto}",
+  ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:180px;height:220px;background:transparent;pointer-events:none;overflow:hidden}",
+  ".wh-pet-surface[data-pet-window-mode=card]{width:380px;height:560px}",
+  ".wh-pet-body{position:absolute;right:8px;bottom:8px;width:148px;height:197px;display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto}",
   ".wh-pet-body:active{cursor:grabbing}",
   ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800}",
@@ -67,12 +68,40 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-status{margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750}"
 ].join("");
 
-export function resolveDesktopSurface(input: { pathname?: string; search?: string } = {}): DesktopSurface {
-  const target = globalThis as typeof globalThis & { location?: Location };
+export function resolveDesktopSurface(input: { pathname?: string; search?: string; hash?: string } = {}): DesktopSurface {
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_SURFACE__?: string;
+    __TAURI__?: {
+      window?: { getCurrentWindow?: () => { label?: string } };
+      webviewWindow?: { getCurrentWebviewWindow?: () => { label?: string } };
+    };
+    location?: Location;
+  };
   const pathname = input.pathname ?? target.location?.pathname ?? "/";
   const search = input.search ?? target.location?.search ?? "";
+  const hash = input.hash ?? target.location?.hash ?? "";
   const surface = new URLSearchParams(search).get("surface");
-  return surface === "pet" || pathname === "/pet" ? "pet" : "main";
+  return target.__WORKHUB_SURFACE__ === "pet" ||
+    currentTauriWindowLabel(target) === "pet" ||
+    surface === "pet" ||
+    hash === "#surface=pet" ||
+    pathname === "/pet"
+    ? "pet"
+    : "main";
+}
+
+function currentTauriWindowLabel(target: {
+  __TAURI__?: {
+    window?: { getCurrentWindow?: () => { label?: string } };
+    webviewWindow?: { getCurrentWebviewWindow?: () => { label?: string } };
+  };
+}) {
+  try {
+    return target.__TAURI__?.window?.getCurrentWindow?.()?.label ??
+      target.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.()?.label;
+  } catch {
+    return undefined;
+  }
 }
 
 export function renderDesktopPetSurface(input: {
@@ -85,10 +114,14 @@ export function renderDesktopPetSurface(input: {
   const motion = input.card?.motion ?? cuuMotionForState("idle");
   const sprite = input.card
     ? renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
-        display_width_px: input.display_width_px ?? 118
+        display_width_px: input.display_width_px ?? 118,
+        clip_images: desktopCuuP1ClipSheetImages,
+        fallback_image: desktopCuuP1StaticFallbackImage
       })
     : renderDesktopCuuAtlasState(input.idle_action ?? "idle_breathe", desktopCuuP1AtlasManifest, {
-        display_width_px: input.display_width_px ?? 148
+        display_width_px: input.display_width_px ?? 148,
+        clip_images: desktopCuuP1ClipSheetImages,
+        fallback_image: desktopCuuP1StaticFallbackImage
       });
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({

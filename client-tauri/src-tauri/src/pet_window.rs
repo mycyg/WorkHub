@@ -260,7 +260,7 @@ mod tests {
         let plan = default_pet_window_placement(primary_work_area());
 
         assert_eq!(plan.label, "pet");
-        assert_eq!(plan.route, "/?surface=pet");
+        assert_eq!(plan.route, "/");
         assert_eq!(plan.mode, PetWindowMode::BodyOnly);
         assert_eq!(plan.size, PET_BODY_ONLY_SIZE);
         assert_eq!(plan.position, LogicalPosition { x: 1716, y: 796 });

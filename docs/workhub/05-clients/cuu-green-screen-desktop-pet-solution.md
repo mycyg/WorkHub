@@ -205,8 +205,9 @@ manifest 必须能回答三件事：
 
 ```text
 app start
-  -> Rust setup creates main + pet
-  -> pet loads same desktop webview bundle with /?surface=pet
+  -> Tauri auto-creates main; pet is declared with create:false
+  -> Rust setup builds pet from config and injects window.__WORKHUB_SURFACE__ = "pet"
+  -> pet loads the same desktop webview bundle at /
   -> Rust restores and clamps saved body anchor, then positions body-only Cuu at bottom-right
   -> Rust converts monitor/window/cursor physical pixels to logical pixels for HiDPI screens
   -> Rust sets always-on-top at startup and whenever pet is shown or resized
@@ -226,11 +227,14 @@ apps/desktop-webview/src/pet.ts
   - render one bubble/card only when needed
 ```
 
-同一个 Vite build 可以通过 query 分流：
+同一个 Vite build 的生产 Tauri 入口不依赖静态 SPA fallback。生产 pet 由 Rust 初始化脚本注入 `window.__WORKHUB_SURFACE__ = "pet"`；浏览器调试和自动化预览继续保留 `/pet`、`?surface=pet`、`#surface=pet` 与 `pet.html`：
 
 ```text
-/?surface=main  -> Gold Path / desktop workbench
-/?surface=pet   -> Cuu transparent pet window
+/               -> Gold Path / desktop workbench, unless Rust injected pet surface flag
+/pet            -> browser/debug Cuu transparent pet surface
+/?surface=pet   -> browser/debug Cuu transparent pet surface
+#surface=pet    -> browser/debug Cuu transparent pet surface
+pet.html        -> browser/debug Cuu transparent pet surface
 ```
 
 ### 5.3 点击和拖动
@@ -273,14 +277,15 @@ idle loop
 - `celebrating_jump` 播一次后回到 idle。
 - `sleeping_curl` 被 urgent 事件唤醒时先播 `wake_up`，再播事件动作。
 
-当前实现落点（2026-06-06）：
+当前实现落点（2026-06-07）：
 
 - `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
 - `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action` 并按该 action 选择真实 atlas clip，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
-- `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan；Tauri 静态构建的 pet URL 已收敛到 `/?surface=pet`，避免 `/pet` 在静态 asset protocol 下缺少 SPA fallback。
+- `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan；`client-tauri/src-tauri/src/main.rs` 会用 `WebviewWindowBuilder::from_config` 动态创建 `create:false` 的 `pet` window，并通过 initialization script 标记 pet surface，避免 Tauri 静态 asset protocol 下的 SPA route fallback 问题。
 - `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并接入 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
 - `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前已具备跨窗口鼠标距离采样、body anchor 位置落盘和启动期 Cuu body-only 显示；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏并恢复到右下角/保存位置；Rust 侧已把 monitor work area、window outer position、cursor position 做 physical→logical 换算，修复高 DPI 屏幕离屏问题；运行期会显式设置 `set_always_on_top(true)`，修复主窗盖住 pet 的层级问题；2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost，右下角透明浮层能显示 Cuu 与气泡。`pet-surface-qa.ts` 已把透明、右下角、独立 surface、真实多帧 atlas、轻气泡和选项优先做成静态 QA 门禁；仍缺多显示器 work-area 实测/恢复、自动化透明像素 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
+- `apps/desktop-webview/src/cuu-atlas-runtime.ts` 已改为 clip sheet `<img>` frame stack，并加入内联静态 Cuu fallback；Tauri/WebView2 若加载大 PNG 资产失败，仍能显示一只呼吸态 Cuu，不会变成空透明窗口。
+- 当前已具备跨窗口鼠标距离采样、body anchor 位置落盘和启动期 Cuu body-only 显示；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏并恢复到右下角/保存位置；Rust 侧已把 monitor work area、window outer position、cursor position 做 physical→logical 换算，修复高 DPI 屏幕离屏问题；运行期会显式设置 `set_always_on_top(true)`，修复主窗盖住 pet 的层级问题；2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost，右下角透明浮层能显示 Cuu 与气泡。`scripts/qa/cuu-tauri-smoke.ps1` 已能隐藏主窗并用 `PrintWindow` 对 `Cuu` 窗口做像素检查；仍缺多显示器 work-area 实测/恢复、安装包 smoke、长期运行性能 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -316,15 +321,17 @@ idle loop
 - idle CPU/GPU 不应持续高占用，离线/睡觉态降帧。
 - 多显示器拔插后位置能回到可见区域。
 - 当前已落静态门禁：`apps/desktop-webview/src/pet-surface-qa.ts` 会检查透明 root、右下角 `pet` surface、非主壳、多帧 atlas、card mode 轻气泡、点击选项和打回理由按钮；该门禁随 `pnpm --filter @workhub/desktop-webview test` 执行。
+- 当前已落 Windows debug runtime 门禁：`scripts/qa/cuu-tauri-smoke.ps1` 会启动真实 Tauri debug app、定位 `Cuu` 顶层窗口、校验 visible/topmost/bottom-right、隐藏主窗，并通过 `PrintWindow(PW_RENDERFULLCONTENT)` 截取透明/layered WebView2 窗口后统计橘色/奶油/暗色可见像素。2026-06-07 严格 smoke 通过：`orange_pixels=8961`、`visual_pixels=11189`。
+- Windows 全屏桌面截图对透明/layered WebView2 不可靠，可能捕不到独立窗口内容；Cuu runtime QA 以 pet hwnd 的 `PrintWindow` 或后续平台专用 compositor capture 为准。
 
 ## 9. 施工顺序
 
 1. **Cuu Asset P1**：生成 18 个动作的绿幕 sprite sheets，完成 alpha、anchor、atlas 和 `cuu.sprite.json`。
 2. **Cuu Runtime P1**：把 procedural CSS sprite 替换为 atlas renderer，继续复用现有 `CuuController`。
-3. **Pet Window P1.5**：新增 `?surface=pet`，让 `pet` window 只加载 Cuu，不加载主壳。
-4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角/保存位置启动显示 body-only Cuu，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 和 `pet-window-state.json` 位置落盘；静态 pet surface QA 已落；继续补收起、托盘显隐和多屏恢复实测。
-5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample 和 18 clip full coverage atlas 已接；继续接系统 idle 策略、真实窗口长驻截图 QA 和性能降级。
-6. **QA P2**：已落 pet surface 静态视觉合同；继续补 Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
+3. **Pet Window P1.5**：已新增 pet surface 分流。生产 Tauri 通过 Rust injected surface flag 进入 pet；`/pet`、`?surface=pet`、`#surface=pet` 与 `pet.html` 作为调试入口。
+4. **Pet Window P2**：Tauri setup 动态创建真实透明 pet window，按 `pet_window.rs` 默认右下角/保存位置启动显示 body-only Cuu，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`、`pet-window-state.json` 位置落盘、托盘显隐和 Windows debug smoke；继续补收起细节、多屏恢复实测和安装包 smoke。
+5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample、18 clip full coverage atlas 和静态 fallback 已接；继续接系统 idle 策略、长驻性能降级和主窗 notice 替换策略。
+6. **QA P2**：已落 pet surface 静态视觉合同和 Windows `PrintWindow` runtime smoke；继续补 Playwright/Tauri alpha 边缘 fixture、多屏/HiDPI/性能检查和 Linux/macOS capture。
 7. **Live2D P2/P3**：按 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 生成正面基准稿、分层 PSD、Cubism 绑定和 `.model3.json` 导出；sprite atlas 作为降级。
 8. **Rive 可选**：如果 Live2D 许可/工具链阻塞，而 sprite 切换又显僵硬，再把高频动作临时迁到 Rive state machine。
 
@@ -338,18 +345,18 @@ idle loop
 - procedural CSS sprite 仍保留在主窗 notice 中，用于验证状态映射和 fallback。
 - `packages/cuu/src/atlas-manifest.ts` 已新增真实 atlas manifest schema、grid frame helper、partial/full coverage 校验。
 - `apps/desktop-webview/src/cuu-atlas-runtime.ts` 已能按 atlas frame rect 生成 CSS keyframes。
-- `apps/desktop-webview/src/pet-surface.ts` 已支持 `/pet` 或 `?surface=pet` 只加载 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
+- `apps/desktop-webview/src/pet-surface.ts` 已支持 Rust injected surface flag、Tauri window label、`/pet`、`?surface=pet`、`#surface=pet` 和 `pet.html` 只加载 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
 - 已生成 18 个动作的绿幕 sprite sheet，完成 alpha 抠图，并合成 `cuu-p1-motion-pack.png`。
 
 下一步必须从“会显示”升级到“独立活着”：
 
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
-- 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍；pet surface 静态视觉 QA 已由 `pet-surface-qa.ts` 覆盖。
-- 真实 Tauri runtime 已在启动期显示独立透明 `pet` window 的 body-only Cuu，并消费已落的 `pet_window.rs` 几何 plan；2026-06-07 已用 Windows debug smoke 证明 `Cuu` window 位于右下角、visible/topmost，并能显示 Cuu 与气泡；下一步要自动化证明主窗隐藏后仍常驻。
+- 继续做 anchor 微调、WebP/PNG 压缩、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍；pet surface 静态视觉 QA 已由 `pet-surface-qa.ts` 覆盖。
+- 真实 Tauri runtime 已在启动期显示独立透明 `pet` window 的 body-only Cuu，并消费已落的 `pet_window.rs` 几何 plan；2026-06-07 已用 Windows debug smoke 证明 `Cuu` window 位于右下角、visible/topmost，并能在主窗隐藏后显示 Cuu 与气泡。
 - Live2D 正式 PSD 与 Cubism runtime 尚未落；当前已有 `cuu-live2d-layer-breakdown-concept.png`、`cuu-live2d-front-model-concept.png`、`cuu-live2d-psd-production-board.png`、`cuu-live2d-v0-layer-manifest.json` 和专篇作为施工合同。
-- 真实 Tauri commands：启动期 body-only 显示、`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；HiDPI 坐标换算和 runtime topmost 已接；下一步补多屏恢复实测、拖拽后截图和自动化透明像素 QA。
+- 真实 Tauri commands：启动期 body-only 显示、`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；HiDPI 坐标换算和 runtime topmost 已接；下一步补多屏恢复实测、拖拽后截图、安装包 smoke 和跨平台透明 capture。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
-- 真实透明窗口 QA：当前已完成一次 Windows debug 截图 smoke；下一步仍需把截图、alpha 像素、HiDPI、多屏和性能纳入自动化门禁。
+- 真实透明窗口 QA：当前已完成 Windows debug `PrintWindow` 像素 smoke；下一步仍需把 alpha 边缘、HiDPI、多屏、拖拽后位置和性能纳入自动化门禁。
 
 ## 11. P1 资产落地记录（2026-06-06）
 
@@ -361,6 +368,7 @@ idle loop
 | 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/{18 action ids}/` |
 | runtime atlas | `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png` |
 | runtime JSON manifest | `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json` |
+| inline static fallback | `apps/desktop-webview/src/assets/cuu/static/cuu-static-fallback-v1-alpha-clean.png` |
 | manifest schema | `packages/cuu/src/atlas-manifest.ts` |
 | desktop asset manifest | `apps/desktop-webview/src/cuu-atlas-assets.ts` |
 | atlas renderer | `apps/desktop-webview/src/cuu-atlas-runtime.ts` |
@@ -371,6 +379,7 @@ idle loop
 | pet command scaffold | `client-tauri/src-tauri/src/pet_commands.rs` |
 | Tauri runtime scaffold | `client-tauri/src-tauri/{build.rs,src/main.rs}` |
 | pet pointer/window bridge | `apps/desktop-webview/src/pet-window-bridge.ts` |
+| Windows runtime smoke | `scripts/qa/cuu-tauri-smoke.ps1` |
 
 本轮像素验收结果（所有 clip 可见绿边统计均为 0）：
 

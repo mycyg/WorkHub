@@ -32,7 +32,7 @@ use tauri::{
     path::BaseDirectory,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
-    PhysicalPosition as TauriPhysicalPosition, State,
+    PhysicalPosition as TauriPhysicalPosition, State, WebviewWindowBuilder,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -397,6 +397,28 @@ fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
+fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
+    if app.get_webview_window("pet").is_some() {
+        return Ok(());
+    }
+
+    let pet_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "pet")
+        .ok_or_else(|| "pet window config is missing".to_string())?;
+
+    WebviewWindowBuilder::from_config(app.handle(), pet_config)
+        .map_err(|error| format!("failed to create pet window builder: {error}"))?
+        .initialization_script(r#"window.__WORKHUB_SURFACE__ = "pet";"#)
+        .build()
+        .map_err(|error| format!("failed to create pet window: {error}"))?;
+
+    Ok(())
+}
+
 fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), String> {
     window
         .set_always_on_top(true)
@@ -638,6 +660,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .setup(|app| {
+            create_pet_window_with_surface_flag(app)?;
             if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {
                 let work_area = app
                     .get_webview_window("pet")

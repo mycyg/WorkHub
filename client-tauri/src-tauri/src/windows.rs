@@ -66,7 +66,7 @@ pub fn pet_window_plan() -> ShellWindowPlan {
         label: "pet".to_string(),
         kind: ShellWindowKind::Pet,
         title: "Cuu".to_string(),
-        route: "/?surface=pet".to_string(),
+        route: "/".to_string(),
         width: 180,
         height: 220,
         min_width: Some(160),
@@ -97,7 +97,7 @@ mod tests {
 
         assert_eq!(pet.label, "pet");
         assert_eq!(pet.title, "Cuu");
-        assert_eq!(pet.route, "/?surface=pet");
+        assert_eq!(pet.route, "/");
         assert_eq!(pet.transparent, true);
         assert_eq!(pet.decorations, false);
         assert_eq!(pet.always_on_top, true);

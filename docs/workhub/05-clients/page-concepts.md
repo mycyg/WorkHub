@@ -225,15 +225,15 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![PRD / 概念复现差距地图](./assets/shared/prd-concept-gap-map.png)
 
-这张图把当前「已落地的契约和 P0.5 纵切」「仍处于原型的 Web / desktop-webview / Rust shell contract」「距离完整概念还缺的 Cuu 动画、透明桌宠窗、真实 Tauri 壳、本地同步、真实 SPA 页面和视觉 QA」放到同一张图里。它用于识别缺口，不作为精确完成率。
+这张图把当前「已落地的契约和 P0.5 纵切」「仍处于原型的 Web / desktop-webview / Rust shell contract」「距离完整概念还缺的 Live2D 高表现力模型、多屏恢复、本地同步、真实 SPA 页面、安装包和跨平台视觉 QA」放到同一张图里。它用于识别缺口，不作为精确完成率。
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、`/pet` surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample 与 `pet-window-state.json` 位置落盘；仍缺 Rive/Live2D 高表现力路线、多屏恢复实测、系统通知和展开气泡卡 QA。
+Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺正式 Live2D 模型、多屏恢复实测、系统通知点击、安装包和展开气泡卡 QA。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
-Rust 客户端当前是 shell contract crate + desktop webview bridge；要复现概念图，还需要 Tauri v2 runtime、主窗、透明桌宠窗、托盘、通知、deep-link、设备令牌 vault、本地同步、updater 和诊断。
+Rust 客户端当前已有 shell contract crate、desktop webview bridge、Tauri v2 最小 runtime、主窗/透明桌宠窗、托盘、SSE、通知、deep-link 和 single-instance 基础；要复现概念图，还需要设备令牌 vault、通知点击/偏好、多屏恢复、安装包、本地同步、updater 和诊断。
 
 ![Web 真页面差距路线](./assets/web/web-real-ui-gap-roadmap.png)
 

@@ -36,12 +36,17 @@ export function createDesktopPetVisualQaReport(input: {
       "right_bottom_independent_surface",
       hasAll(input.idle.css, [
         ".wh-pet-surface",
-        "position:fixed",
-        "inset:0",
-        "place-items:end end",
+        "position:relative",
+        "width:180px",
+        "height:220px",
+        ".wh-pet-surface[data-pet-window-mode=card]",
+        "width:380px",
+        "height:560px",
+        "right:8px",
+        "bottom:8px",
         "pointer-events:none"
       ]),
-      "Cuu must be anchored to the bottom-right transparent surface without blocking the desktop."
+      "Cuu must be anchored inside the local Tauri pet window canvas without depending on the WebView viewport."
     ),
     qaCheck(
       "pet_body_hit_area",
@@ -61,8 +66,9 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.sprite.frame_count >= 4 &&
         input.idle.sprite.duration_ms >= 400 &&
         input.idle.html.includes("data-cuu-atlas-state=") &&
+        input.idle.html.includes('data-cuu-image-mode="clip_sheet"') &&
         input.idle.html.includes("cuu.sprite.json"),
-      "idle Cuu must render a real multi-frame atlas clip instead of a fallback icon."
+      "idle Cuu must render a real multi-frame clip sheet instead of a fallback icon or oversized atlas."
     ),
     qaCheck(
       "card_mode_light_bubble",
