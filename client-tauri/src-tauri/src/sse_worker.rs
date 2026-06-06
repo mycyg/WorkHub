@@ -3,6 +3,10 @@ use tauri::Emitter;
 use tokio::time::{sleep, Duration};
 
 use crate::config::WorkHubShellConfig;
+use crate::notify::{
+    show_system_notification, system_notification_event_channel,
+    system_notification_plan_from_push_payload,
+};
 use crate::sse::{
     plan_shell_sse_worker, push_payload_from_frame, startup_shell_sse_targets,
     status_event_channel, status_payload, ShellSseConnectionState, ShellSseFrameBuffer,
@@ -118,8 +122,17 @@ async fn pump_sse_response(
         let text = String::from_utf8_lossy(&chunk);
         for frame in buffer.push_chunk(&text) {
             let payload = push_payload_from_frame(subscription, frame);
-            app.emit(&subscription.event_channel, payload)
+            app.emit(&subscription.event_channel, payload.clone())
                 .map_err(|error| format!("failed to emit push-event: {error}"))?;
+            if let Some(plan) = system_notification_plan_from_push_payload(&payload)
+                .map_err(|error| format!("failed to plan system notification: {error:?}"))?
+            {
+                app.emit(system_notification_event_channel(), plan.clone())
+                    .map_err(|error| format!("failed to emit system notification: {error}"))?;
+                if let Err(error) = show_system_notification(app, &plan) {
+                    eprintln!("failed to show WorkHub system notification: {error}");
+                }
+            }
         }
     }
 

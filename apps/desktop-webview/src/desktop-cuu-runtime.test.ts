@@ -58,6 +58,7 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   const stopped: string[] = [];
   const notices: DesktopCuuNotice[] = [];
   const decisions: CuuControllerDecision[] = [];
+  const systemNotificationRoutes: string[] = [];
   const listen: DesktopShellListen = (eventName, handler) => {
     handlers.set(eventName, handler);
     return () => stopped.push(eventName);
@@ -87,7 +88,8 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
     listen,
     now: () => new Date("2026-06-05T01:00:00.000Z"),
     notify: (notice) => notices.push(notice),
-    onDecision: (decision) => decisions.push(decision)
+    onDecision: (decision) => decisions.push(decision),
+    onSystemNotification: (plan) => systemNotificationRoutes.push(plan.route)
   });
   handlers.get("push-event")?.({
     payload: shellPayload(eventTypes.permissionAsk, {
@@ -102,6 +104,26 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
       state: "closed"
     }
   });
+  handlers.get("system-notification")?.({
+    payload: {
+      id: "evt-approval",
+      event: eventTypes.permissionAsk,
+      title: "Cuu needs your approval",
+      body: "Open WorkHub to allow, deny, or remember this rule.",
+      urgency: "urgent",
+      route: "/approvals?approvalId=approval-runtime",
+      windowControl: {
+        label: "main",
+        action: "show_and_focus",
+        source: "system_notification",
+        route: "/approvals?approvalId=approval-runtime",
+        focus: true,
+        reason: "focus-main-route"
+      },
+      streamKind: "me",
+      streamPath: "/api/push/stream/me"
+    }
+  });
 
   assert.equal(runtime.subscribed, true);
   assert.equal(notices[0]?.card.state, "asking_approval");
@@ -112,9 +134,10 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   assert.equal(decisions[0]?.outcome, "show");
   assert.equal(decisions[1]?.outcome, "queue");
   assert.equal(decisions[1]?.card?.state, "offline");
+  assert.deepEqual(systemNotificationRoutes, ["/approvals?approvalId=approval-runtime"]);
 
   await runtime.dispose();
-  assert.deepEqual(stopped, ["push-event", "sse-status"]);
+  assert.deepEqual(stopped, ["push-event", "sse-status", "system-notification"]);
 });
 
 test("desktop Cuu runtime respects do-not-disturb controller decisions", async () => {

@@ -13,6 +13,7 @@ import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM } from "@workhub/c
 
 import { desktopCuuSpriteCss, renderDesktopCuuSprite } from "./cuu-sprite-runtime.js";
 import { createDesktopShellEventBridge } from "./shell-events.js";
+import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
 
 export type DesktopShellEventEnvelope = {
   payload: unknown;
@@ -21,7 +22,7 @@ export type DesktopShellEventEnvelope = {
 export type DesktopShellUnlisten = () => void;
 
 export type DesktopShellListen = (
-  eventName: "push-event" | "sse-status",
+  eventName: "push-event" | "sse-status" | "system-notification",
   handler: (event: DesktopShellEventEnvelope) => void
 ) => DesktopShellUnlisten | Promise<DesktopShellUnlisten> | void | Promise<void>;
 
@@ -37,7 +38,7 @@ export type DesktopShellCuuRuntime = {
 };
 
 export type DesktopShellScriptedEvent = {
-  eventName: "push-event" | "sse-status";
+  eventName: "push-event" | "sse-status" | "system-notification";
   payload: unknown;
   delayMs: number;
 };
@@ -219,6 +220,7 @@ export async function bindDesktopShellCuuRuntime(input: {
   notify: (notice: DesktopCuuNotice) => void;
   controller?: CuuController;
   onDecision?: (decision: CuuControllerDecision) => void;
+  onSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void;
   now?: () => Date;
 }): Promise<DesktopShellCuuRuntime> {
   const listen = input.listen ?? resolveDesktopShellListen();
@@ -247,6 +249,9 @@ export async function bindDesktopShellCuuRuntime(input: {
     ...(input.now ? { now: input.now } : {}),
     onCuuCard(card) {
       emitCard(card);
+    },
+    onSystemNotification(plan) {
+      input.onSystemNotification?.(plan);
     }
   });
   const unlisten: DesktopShellUnlisten[] = [];
@@ -261,6 +266,12 @@ export async function bindDesktopShellCuuRuntime(input: {
   });
   if (typeof statusUnlisten === "function") {
     unlisten.push(statusUnlisten);
+  }
+  const systemNotificationUnlisten = await listen("system-notification", (event) => {
+    bridge.handleSystemNotificationPayload(event.payload);
+  });
+  if (typeof systemNotificationUnlisten === "function") {
+    unlisten.push(systemNotificationUnlisten);
   }
 
   return {

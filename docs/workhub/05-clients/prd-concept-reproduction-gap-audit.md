@@ -214,7 +214,8 @@ packages/cuu/
 - `client-tauri/src-tauri/src/config.rs`：server url、device token、device name 的基础结构。
 - `http.rs`：daemon URL 和 device token header plan。
 - `sse.rs`：SSE target、frame parser、chunk buffer、push payload/status payload、startup target 选择。
-- `sse_worker.rs`：真实后台 SSE worker，使用 `tauri::async_runtime::spawn` + `reqwest` rustls stream，连接 global stream，按 chunk 解析并 emit `push-event` / `sse-status`；无设备 token 时不连 `/me`。
+- `sse_worker.rs`：真实后台 SSE worker，使用 `tauri::async_runtime::spawn` + `reqwest` rustls stream，连接 global stream，按 chunk 解析并 emit `push-event` / `sse-status`；无设备 token 时不连 `/me`；收到 high/urgent 私有事件时调用 `notify.rs` 生成 system notification plan。
+- `notify.rs`：系统通知策略和 Tauri plugin adapter；全局流、普通 notice 不弹 OS 通知，预算耗尽/告警、审批、proposal、run/escalation、sync conflict 和 high/urgent notification 可形成 `ShellSystemNotificationPlan`。
 - `events.rs`：`push-event`、`sse-status`、`navigate`、`deep-link`、`tray-action`、`system-notification` channel 命名。
 - `windows.rs`：`main` / `pet` window plan contract，`pet` 固定 transparent、decorations false、always-on-top、skip taskbar。
 - `window_controls.rs`：`show/hide/focus/toggle main/pet` 的 typed control plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点；`main.rs` 已注册同名 Tauri command 并执行到真实 window API。
@@ -224,16 +225,17 @@ packages/cuu/
 - `capabilities/default.json`：当前只给 `main` / `pet` `core:default`，文件系统、shell、process 等能力后续按模块最小化开启。
 - `tests/tauri_scaffold.rs`：把配置与 `ShellWindowPlan` / capability 绑定成可测契约。
 - `lib.rs` 明确 Rust 只拥有本地壳能力，不复制 permission / workitem status / domain DTO / Cuu animation state。
+- `main.rs` 已注册 `tauri-plugin-notification`，OS notification 由 Rust 侧按 `notify.rs` plan 请求权限并展示。
 
 ### 4.2 缺口
 
 | 缺口 | 当前事实 | 目标 |
 |---|---|---|
-| Tauri v2 runtime | 已有 `tauri` / `tauri-build` 依赖、`tauri.conf.json` / capability scaffold、`build.rs`、`main.rs` command handler，pet mode/drag/save-position 已执行到 window API，cursor sampling 已执行到 AppHandle，body anchor 位置已写入 `pet-window-state.json`，基础托盘、SSE global worker 与 deep-link plugin 已在 setup 安装 | 补真实配置/设备 token 接线、notification、多屏恢复实测、安装包 smoke |
-| 主窗口 | 已有 `main` window plan + Tauri config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API；托盘、菜单和 deep-link 可打开/隐藏/聚焦主窗 | `main` window 承载 desktop webview；后续补 notification source、single-instance 和跨平台 smoke |
+| Tauri v2 runtime | 已有 `tauri` / `tauri-build` 依赖、`tauri.conf.json` / capability scaffold、`build.rs`、`main.rs` command handler，pet mode/drag/save-position 已执行到 window API，cursor sampling 已执行到 AppHandle，body anchor 位置已写入 `pet-window-state.json`，基础托盘、SSE global worker、deep-link plugin 与 notification plugin 已在 setup 安装 | 补真实配置/设备 token 接线、多屏恢复实测、安装包 smoke |
+| 主窗口 | 已有 `main` window plan + Tauri config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API；托盘、菜单、deep-link 和 system notification plan 可打开/隐藏/聚焦主窗 | `main` window 承载 desktop webview；后续补 notification click-through、single-instance 和跨平台 smoke |
 | Cuu pet window | 已有 `pet` window plan + Tauri config + `show/hide/toggle` control plan，webview `/pet` surface、body/card 几何 plan、command scaffold 与拖拽 bridge 已落；`main.rs` 已注册 `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 并执行到真实 Tauri window API；托盘可 toggle Cuu；`skipTaskbar` 仍在 WorkHub plan | `pet` window：transparent / decorations false / always-on-top / skip taskbar；后续补透明窗口视觉 QA、多屏恢复实测 |
 | 托盘 | 已有 `src/tray.rs` contract 与 `main.rs` Tauri `TrayIconBuilder` runtime；左键打开 WorkHub，右键菜单支持打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出，并广播 `tray-action` plan | 未读/审批状态、tooltip/title 更新、同步子菜单、通知点击联动 |
-| 系统通知 | 当前只有 channel 名 | OS notification plugin + high/urgent policy |
+| 系统通知 | 已有 `notify.rs` high/urgent policy、`tauri-plugin-notification` runtime、`system-notification` plan event；`sse_worker.rs` 只对私有流的预算/审批/proposal/run/conflict/high notice 触发 | 通知点击联动、勿扰/偏好接线、去重持久化、安装包权限 smoke |
 | deep-link | 已接 `tauri-plugin-deep-link`、scheme 配置、启动/运行时 URL listener、route 白名单和 `navigate`/`deep-link` 事件；支持 `workhub://open/task/{id}`、proposal、run replay、approval、inbox、settings、me、cost 和兼容 `yqgl://r|p|inbox...` | 补 single-instance、安装包协议注册 smoke、通知点击联动和更多业务 target |
 | 设备令牌 vault | 当前只是内存结构 | 安全保存、token tail 展示、重新注册、失效恢复 |
 | SSE worker | 已有 `sse_worker.rs` runtime；当前 setup 用 LAN default 连接 `/api/push/stream`，发 `push-event` 和 `sse-status`，5s retry；`/me` 仅在 config 有可信 token 时进入 plan | 接真实 ConfigState / 设备注册后的 worker restart，补 run/session/proposal 按需订阅和端到端 smoke |
@@ -245,10 +247,10 @@ packages/cuu/
 
 | 阶段 | Rust 目标 | TS/webview 目标 | 验收 |
 |---|---|---|---|
-| Rust-P1a | 保持 contract crate，补 Tauri scaffold | desktop-webview 继续消费 API client | **window plan + window control plan + `tauri.conf.json` + capability scaffold + `tauri` dependency + `build.rs` + `main.rs` command handler + window control API + 基础 tray menu + SSE global worker + deep-link handler 执行已落**；下一步真实配置/设备 token、notification source 与 single-instance 接线 |
+| Rust-P1a | 保持 contract crate，补 Tauri scaffold | desktop-webview 继续消费 API client | **window plan + window control plan + `tauri.conf.json` + capability scaffold + `tauri` dependency + `build.rs` + `main.rs` command handler + window control API + 基础 tray menu + SSE global worker + deep-link handler + high/urgent system notification 执行已落**；下一步真实配置/设备 token、click-through 与 single-instance 接线 |
 | Rust-P1b | 实现 `push-event` / `sse-status` emit worker | `bindDesktopShellCuuRuntime` 订阅真实 Tauri listener | **基础已落**：global SSE 可触发 Cuu notice，不依赖 mock；待 token 后 `/me` restart 与 E2E smoke |
 | Rust-P2a | 主窗 + pet window + tray | 设置页显示连接/token/pet 开关 | 消费已落的 pet 几何/bridge，证明主窗隐藏后 Cuu 常驻；托盘可显隐 |
-| Rust-P2b | notification + single-instance + device vault；deep-link route expansion | 页面响应 `navigate` | 系统通知点击能打开 proposal / approval，二次启动协议 URL 能聚焦已有实例 |
+| Rust-P2b | notification click-through / dedup / preference bridge + single-instance + device vault；deep-link route expansion | 页面响应 `navigate` | 系统通知点击能打开 proposal / approval，二次启动协议 URL 能聚焦已有实例，勿扰时只入队不弹窗 |
 | Rust-P3 | local sync / delivery / conflict | sync center / conflict resolver | 文件改动可形成 proposal 或 conflict choice |
 | Rust-P5 | updater / autostart / diagnostics | 设置页更新与诊断 | 安装包、升级、开机自启可测试 |
 
@@ -356,7 +358,7 @@ Rust 应只做：
 | GAP-CUU-05 | Live2D 分层模型 | `docs/workhub/05-clients/cuu-live2d-layered-asset-plan.md`、`apps/desktop-webview/src/assets/cuu/live2d`、未来 `apps/desktop-webview/src/cuu-live2d-runtime.ts` | Cuu 形象规范 + sprite 降级层 | **概念图 + 分层施工合同已落**；待正式分层 PSD、Cubism 绑定、`.model3.json` 导出、Tauri runtime 与 sprite fallback |
 | GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + window control plan + window control commands + pet geometry/command plan + config/capability scaffold + 最小 Tauri `build.rs`/`main.rs` + pet window API + cursor sampling + `pet-window-state.json` 位置落盘 + 基础 tray menu 已落**；待补 SSE、多屏恢复实测、安装包 smoke |
 | GAP-RUST-02 | SSE worker emit | `client-tauri/src-tauri/src/sse_worker.rs` | GAP-RUST-01 | **基础已落**：global stream 真实连接/重试/emit；待真实配置、token 后私有流 restart、run/session/proposal 按需订阅 |
-| GAP-RUST-03 | Tray / notification / deep-link | `client-tauri/src-tauri/src/{tray,notify,deep_link}.rs` | GAP-RUST-01 | **Tray basics + deep-link basics 已落**；待补动态未读/审批菜单、系统通知、single-instance、安装包协议 smoke 和通知点击联动 |
+| GAP-RUST-03 | Tray / notification / deep-link | `client-tauri/src-tauri/src/{tray,notify,deep_link}.rs` | GAP-RUST-01 | **Tray basics + deep-link basics + high/urgent system notification basics 已落**；待补动态未读/审批菜单、通知 click-through / dedup / preference bridge、single-instance、安装包协议和系统通知权限 smoke |
 | GAP-RUST-04 | Local sync / delivery | `client-tauri/src-tauri/src/{sync,delivery}.rs` | sync contract | 本地变更能走 proposal / conflict |
 | GAP-WEB-01 | Real SPA routes | `apps/web/src/routes` | Page VM | Gold Path 全链路可点 |
 | GAP-WEB-02 | Visual QA | `apps/web/tests`、`apps/desktop-webview/tests` | Real routes | 截图无重叠、四态完整 |

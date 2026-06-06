@@ -8,6 +8,7 @@ import {
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,
   parseDesktopShellPushPayload,
+  parseDesktopShellSystemNotificationPlan,
   workHubEventFromDesktopShellPush,
   type DesktopShellPushPayload
 } from "./shell-events.js";
@@ -172,4 +173,46 @@ test("desktop shell event bridge dispatches events and Cuu cards to callbacks", 
   assert.equal(statusCard?.state, "offline");
   assert.deepEqual(seenEvents, ["proposal.opened"]);
   assert.deepEqual(seenCards, ["carrying_document", "offline"]);
+});
+
+test("desktop shell bridge parses Rust system-notification plans for Cuu follow-up handling", () => {
+  const seenPlans: string[] = [];
+  const payload = {
+    id: "evt-approval",
+    event: eventTypes.permissionAsk,
+    title: "Cuu needs your approval",
+    body: "Open WorkHub to allow, deny, or remember this rule.",
+    urgency: "urgent",
+    route: "/approvals?approvalId=approval-1",
+    windowControl: {
+      label: "main",
+      action: "show_and_focus",
+      source: "system_notification",
+      route: "/approvals?approvalId=approval-1",
+      focus: true,
+      reason: "focus-main-route"
+    },
+    streamKind: "me",
+    streamPath: "/api/push/stream/me"
+  };
+  const bridge = createDesktopShellEventBridge({
+    onSystemNotification: (plan) => seenPlans.push(plan.route)
+  });
+  const plan = parseDesktopShellSystemNotificationPlan(payload);
+  const bridged = bridge.handleSystemNotificationPayload(payload);
+
+  assert.equal(plan?.urgency, "urgent");
+  assert.equal(plan?.windowControl.source, "system_notification");
+  assert.equal(bridged?.route, "/approvals?approvalId=approval-1");
+  assert.deepEqual(seenPlans, ["/approvals?approvalId=approval-1"]);
+  assert.equal(
+    parseDesktopShellSystemNotificationPlan({
+      ...payload,
+      streamKind: undefined,
+      stream_kind: "me",
+      stream_path: "/api/push/stream/me",
+      window_control: payload.windowControl
+    })?.streamKind,
+    "me"
+  );
 });

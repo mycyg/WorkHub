@@ -491,6 +491,7 @@ fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .setup(|app| {
             if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {

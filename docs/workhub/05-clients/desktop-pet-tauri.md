@@ -54,10 +54,11 @@ owner: workflow
 | `client-tauri/src-tauri/src/http.rs` | daemon request plan | URL 归一化、device token headers |
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload；新增 startup target 选择（无设备 token 只连 global）和 chunk frame buffer |
 | `client-tauri/src-tauri/src/sse_worker.rs` | SSE runtime worker | 用 `tauri::async_runtime::spawn` + `reqwest` rustls stream 后台连接 SSE，发 `connecting/open/retrying` status，按 chunk 解析后广播 `push-event`；默认 5s 重连 |
+| `client-tauri/src-tauri/src/notify.rs` | system notification planner | 从私有 SSE payload 中筛出 high/urgent 事件，生成 `ShellSystemNotificationPlan`；全局流和普通通知不弹 OS 通知；预算、审批、proposal、run、workitem 均路由到安全站内页面 |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
 | `client-tauri/src-tauri/src/tray.rs` | tray menu contract | 固定 `workhub-main-tray`、tooltip、菜单 ID、菜单文案、`TrayMenuActionPlan`，把打开主窗/隐藏主窗/显示隐藏 Cuu/打开收件箱/退出映射到 window control 或 app exit；动态未读/审批计数尚未接 |
 | `client-tauri/src-tauri/build.rs` | Tauri build entry | 调用 `tauri_build::build()`，使当前 crate 具备真实 Tauri build scaffold |
-| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet/window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect；setup 已用 `TrayIconBuilder` 安装 WorkHub 托盘，并启动基础 SSE worker（LAN 默认 global stream） |
+| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet/window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect；setup 已用 `TrayIconBuilder` 安装 WorkHub 托盘、deep-link plugin、notification plugin，并启动基础 SSE worker（LAN 默认 global stream） |
 | `client-tauri/src-tauri/icons/icon.ico` | Tauri Windows resource icon | 从 Cuu alpha atlas 样张裁切生成的占位 app icon，满足 `tauri-build` Windows resource 要求；正式发布前替换为完整品牌图标 |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
 | `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点 |
@@ -68,7 +69,7 @@ owner: workflow
 | `client-tauri/src-tauri/capabilities/default.json` | Tauri capability scaffold | `main` / `pet` 授予 `core:default` 和最小窗口拖拽权限 `core:window:allow-start-dragging`；文件/进程/shell 能力后续按模块最小化开启 |
 | `client-tauri/src-tauri/tests/tauri_scaffold.rs` | scaffold contract tests | 校验 Tauri build target、window config 与 `ShellWindowPlan` 一致、capability 未提前放开高风险权限 |
 | `apps/desktop-webview/src/main.ts` | 桌面 webview typed surface | 消费 `@workhub/api-client`、渲染 Gold Path / intake / workitem / proposal / agent live |
-| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status`，生成 Cuu notice |
+| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status` / `system-notification`；push/status 生成 Cuu notice，system notification plan 交给后续偏好、历史与点击跳转处理 |
 | `apps/desktop-webview/src/cuu-preferences.ts` | Cuu preference panel | 右上角轻入口，面板默认隐藏；本地存储 `attention_mode` / `sound_mode` / `reduced_motion` / `queue_limit`，把点击偏好写回 `CuuController` |
 | `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo；启动时按 `/pet` 或 `?surface=pet` 分流到 Cuu pet surface |
 | `apps/desktop-webview/src/pet-surface.ts` | Cuu pet webview surface | `pet` 窗口入口只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由用固定按钮 |
@@ -83,19 +84,19 @@ owner: workflow
 
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
-| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json`；托盘基础菜单、SSE global worker 与 deep-link plugin 已在 setup 安装 | 后续补真实配置/设备 token 接线、notification、多屏恢复实测、安装包 smoke |
-| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview；托盘左键/菜单和 deep-link 均可显示/隐藏/聚焦主窗 | 承载 `apps/desktop-webview` build；后续补 notification 事件源、single-instance 与 Linux/macOS smoke |
+| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json`；托盘基础菜单、SSE global worker、deep-link plugin 与 notification plugin 已在 setup 安装 | 后续补真实配置/设备 token 接线、多屏恢复实测、安装包 smoke |
+| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview；托盘左键/菜单、deep-link 和 system notification plan 均可显示/隐藏/聚焦主窗 | 承载 `apps/desktop-webview` build；后续补 notification click-through、single-instance 与 Linux/macOS smoke |
 | 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 pet show/hide/toggle、mode resize/position/show、drag、save-position、cursor sample 执行到真实 Tauri window / AppHandle API；托盘菜单可 toggle Cuu；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻；后续补透明窗口视觉 QA、多屏恢复实测和系统通知 |
 | Cuu 绿幕资产 | 已有 18 clip motion pack，`CuuMotionHint.sprite_state` 与 idle / interaction micro action 均已 full coverage，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA 与性能检查 |
 | 托盘 | 已有 `client-tauri/src-tauri/src/tray.rs` 菜单契约与 `main.rs` `TrayIconBuilder` runtime；左键打开 WorkHub，右键菜单支持打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出，并发 `tray-action` plan | 动态未读/审批状态、tooltip/title 更新、同步子菜单、通知点击联动 |
 | SSE worker | 已有 `sse_worker.rs` runtime；setup 先用 LAN default 连接 `/api/push/stream`，按 SSE chunk 解析后发 `push-event`，连接态发 `sse-status`，断开 5s 重试；`/me` 仅在 config 有可信设备 token 时纳入 plan | 接真实 ConfigState/设备注册后的 worker restart，补 run/session/proposal 按需订阅和端到端 smoke |
-| 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
+| 系统通知 | 已有 `notify.rs` high/urgent 策略、`tauri-plugin-notification` runtime、`system-notification` plan event；`sse_worker.rs` 只对私有流的预算耗尽、预算告警、审批请求、proposal、run/escalation、sync conflict 和 high/urgent notification 弹 OS 通知 | 通知点击联动、用户偏好/勿扰接线、去重持久化、安装包权限 smoke |
 | deep-link | 已有 `tauri-plugin-deep-link`、`workhub://` / `yqgl://` scheme 配置、启动 URL / 运行时 URL listener、`deep_link.rs` route 白名单与 `deep-link` + `navigate` 事件发射 | 补 single-instance、安装包协议注册 smoke、更多业务 target 与通知点击联动 |
 | 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
 | Cuu 偏好 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存/cursor sample 端口，Rust 侧已有 `pet-window-state.json` 位置落盘 | 迁入真实 Tauri Settings / pet window，接托盘显隐、多屏恢复实测和系统通知 |
 | updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
 
-结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 已把 `Tauri scaffold → pet window command → cursor/position → tray basics → SSE global worker → deep-link handler` 接到真实 Tauri API。下一步应继续补 `真实配置/设备 token worker restart → notification/single-instance → local sync/delivery → visual QA`。
+结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 已把 `Tauri scaffold → pet window command → cursor/position → tray basics → SSE global worker → deep-link handler → high/urgent OS notification` 接到真实 Tauri API。下一步应继续补 `真实配置/设备 token worker restart → notification click-through / single-instance → local sync/delivery → visual QA`。
 
 更完整的差距与后续 backlog 见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -232,7 +233,7 @@ C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+
 
 | worker | 职责 | 启动 | 发射事件 | 锚点 |
 |---|---|---|---|---|
-| **SSE worker** | 当前 setup 先连 `/api/push/stream`（全局非 PII），有可信设备 token 时 plan 才加入 `/api/push/stream/me`；字节级解析 SSE 帧，统一转 `push-event` | `main.rs` → `spawn_default_shell_sse_workers` | `push-event`、`sse-status`（`connecting/open/retrying/closed`） | `sse.rs`、`sse_worker.rs` |
+| **SSE worker** | 当前 setup 先连 `/api/push/stream`（全局非 PII），有可信设备 token 时 plan 才加入 `/api/push/stream/me`；字节级解析 SSE 帧，统一转 `push-event`，并把 high/urgent 私有事件交给 `notify.rs` 规划 OS 通知 | `main.rs` → `spawn_default_shell_sse_workers` | `push-event`、`sse-status`（`connecting/open/retrying/closed`）、`system-notification` | `sse.rs`、`sse_worker.rs`、`notify.rs` |
 | **提醒/通知轮询** | 60s tick 拉 `/api/reminders/due` + `/api/notifications?status=unread`，severity high/urgent → OS toast，本地 dedup（`known_reminders`/`known_notifications`，按 `id:updated_at` 去重，无 id 则跳过) | `lib.rs:72` `reminders::spawn` | `reminder`、`notification` + OS 通知 | `reminders.rs:13/28/105` |
 | **spec_watch（按需）** | 监视 `{sync_root}/{slug}/{code}/spec/` 文件夹，文件落定后 sha256 去重、稳定性快照、分片上传为附件；append-only（本地删不删远端） | `start_spec_watcher` 命令（`submitter.rs:553`）→ `spec_watch::start`（`spec_watch.rs:122`） | `upload-progress`（pending/chunk/done/error） | `spec_watch.rs` 全文 |
 
@@ -247,7 +248,7 @@ C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+
 | **单实例** | 第二次启动 → 聚焦已有主窗 + 把协议 URL 转 deep-link；当前尚未接 `tauri-plugin-single-instance`，Windows/Linux 运行时 `on_open_url` 仍需单实例配合 | 后续 `single_instance` |
 | **窗口装饰** | Mica/Acrylic/vibrancy + 延迟 show | `window.rs`（§2.1） |
 | **窗口状态记忆** | 位置/尺寸持久化 | `tauri_plugin_window_state`（`lib.rs:50`） |
-| **OS 通知** | 系统级 toast | `notify.rs:10` `toast` + `reminders.rs:76` + webview `osNotify`（`App.tsx:66`） |
+| **OS 通知** | `tauri-plugin-notification` 系统 toast；只对 high/urgent 私有事件触发，先发 `system-notification` plan，再按权限展示 OS 通知 | `client-tauri/src-tauri/src/notify.rs`、`sse_worker.rs`、`main.rs` |
 | **进程控制** | 退出/relaunch（自动更新重启用） | `tauri_plugin_process`（`lib.rs:51`） |
 | **自启动** | 开机自启（**已声明依赖但未在 `lib.rs` 注册**——latent，WorkHub 待接线） | `Cargo.toml:23` `tauri-plugin-autostart`（未 `.plugin(...)`） |
 
@@ -348,6 +349,7 @@ webview 用 `useEvent(name, handler)` 订阅。事件由 Rust `app.emit(name, pa
 | `navigate` | 当前 WorkHub 为 route string；旧/目标可包成 `{path}` | `main.rs` window control、未来 `deep_link.rs` | webview `nav(path)` | `apps/desktop-webview` bridge |
 | `deep-link` | `ShellDeepLinkPlan {rawUrl,scheme,route,windowControl}` | `main.rs` + `deep_link.rs` | （可选）页内深链处理；`navigate` 已负责主窗跳转 | `client-tauri/src-tauri/src/deep_link.rs` |
 | `tray-action` | 当前 WorkHub 为 `TrayMenuActionPlan {id,label,kind,windowControl,exitsApp}`；旧/目标动态菜单可扩展 `{action: pull_new\|sync_drive\|do_deliver\|availability_*}` | `main.rs` tray handler + `tray.rs` contract | Cuu/主窗可用于 toast、导航和状态同步 | `client-tauri/src-tauri/src/tray.rs` |
+| `system-notification` | `ShellSystemNotificationPlan {id,event,title,body,urgency,route,windowControl,streamKind,streamPath}`；只由 high/urgent 私有 SSE 事件生成 | `sse_worker.rs` + `notify.rs` | Cuu/主窗可用于 badge、通知历史、点击跳转与偏好拦截；OS toast 由 Rust 同步尝试展示 | `client-tauri/src-tauri/src/notify.rs` |
 | `availability-change` | `{status, availability_text}` | `tray.rs:162` | 接单状态 UI 同步 | `tray.rs` |
 | `reminder` | `{kind, title, requirement_id}` | `reminders.rs:82` | 提醒 UI | `reminders.rs` |
 | `notification` | 通知对象 | `reminders.rs:148` | Inbox/角标 | `reminders.rs` |
@@ -373,7 +375,7 @@ webview 用 `useEvent(name, handler)` 订阅。事件由 Rust `app.emit(name, pa
 
 - **定位**：能干、克制、会请示。默认闷头干活，只在三种时刻主动出声：① 做好了请你扫一眼 / 采纳；② 拿不准请你拍板（审批/升级）；③ 你打回了它接着改（理由回灌）。
 - **文案口径**：严格走 [glossary §3](../00-overview/glossary-dejargon.md) 三档语气——「我比较有把握 / 我大致有谱，建议你扫一眼 / 我不太确定，想请你拍板」；**绝不显示置信度数值或 `escalation`/`merge` 等内部词**（落地 §1.2 硬规则、`auto_agent.py` 的「user's language」约定）。
-- **去打扰**：通知去重沿用 `reminders.rs` 的 dedup（`id:updated_at` 键 + 上限裁剪 `prune_seen_map`）；only severity high/urgent 弹 OS 通知（`reminders.rs:135`）。「永远允许」学习（`api-contract.md §2.8` `remember:always`）让桌宠「以后这类不用再问」。
+- **去打扰**：当前 Rust `notify.rs` 只允许私有流的 high/urgent 事件触发 OS 通知，global stream 与 normal notice 不打断；后续补 `id/event/route` 去重、勿扰偏好与 click-through。「永远允许」学习（`api-contract.md §2.8` `remember:always`）让桌宠「以后这类不用再问」。
 
 ### 5.2 桌宠状态机（视觉态，映射真实事件）
 
@@ -722,7 +724,7 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 - **权限**：若前端创建窗口，需要 Tauri capability 允许创建 webview window；更稳妥的 MVP 是 Rust setup 阶段创建 pet window，前端只发 `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 命令。
 - **点击模型**：idle 时窗口可小尺寸跟随 Cuu 外接矩形；展开时扩大交互区域。真正的 click-through 需要谨慎，MVP 先用最小窗口避免挡事。
 - **位置**：当前 `pet_window.rs` 已有右下角默认定位、从 body anchor 展开和 work area clamp；`main.rs` 已用自有 `pet-window-state.json` 保存 body anchor 与可选 monitor name，启动时恢复并按当前 work area clamp，失效则回到底部右侧；后续补多显示器实测和 Settings 可视化。
-- **降噪**：desktop webview 已支持静音/勿扰/减少动效/队列上限；真实 Tauri 里继续补隐藏到托盘、拖拽位置和系统通知。
+- **降噪**：desktop webview 已支持静音/勿扰/减少动效/队列上限；真实 Tauri 已有托盘显隐、拖拽位置与 high/urgent 系统通知基础，继续补通知点击联动、偏好下沉和去重持久化。
 - **surface 分流**：`main` window 加载完整 workbench；`pet` window 加载同一 bundle 的 `?surface=pet`，只启动 Cuu runtime、sprite atlas、bubble/card，不渲染 Gold Path 主壳。当前 `pet-window-bridge.ts` 已把 `body_only/card` 模式、拖拽、位置保存和 cursor-near 采样端口暴露给 `pet_commands.rs`，并由 `main.rs` 执行到 Tauri window / AppHandle API。
 
 ### 9.3 客户端页面施工顺序
@@ -731,7 +733,7 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 |---|---|---|---|---|
 | P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 绿幕 PNG/WebP atlas + `/pet` webview 预览 | 用户能不打字完成澄清和审批，Cuu 动作资产可播放 |
 | P2 | 新增 `pet` window、窗口状态、open/hide 命令 | 设置页增加桌宠显隐/自启动/诊断 | 独立桌宠窗 + idle scheduler，Rive 可选 | 关闭主窗后 Cuu 仍可提醒，右下角常驻且有生命感 |
-| P3 | permission/proposal IPC、deep-link route expansion + notification click-through | 交付物变更包、审批中心联动 | 审批气泡 / 证据气泡 | 变更申请能通过/打回/记住规则，系统通知能唤起对应页面 |
+| P3 | permission/proposal IPC、deep-link route expansion + notification click-through / dedup / preference bridge | 交付物变更包、审批中心联动 | 审批气泡 / 证据气泡 | 变更申请能通过/打回/记住规则，系统通知能唤起对应页面且尊重勿扰 |
 | P4 | 双向 sync、冲突检测、delivery 安全校验 | 同步中心、冲突解决、交付向导 | sync/conflict 动作状态 | 本地/云端冲突可安全处理 |
 | P5 | updater/autostart、崩溃日志、性能采样 | 设置/诊断/帮助完善 | 性能降级与可访问性 | 长时间常驻稳定 |
 

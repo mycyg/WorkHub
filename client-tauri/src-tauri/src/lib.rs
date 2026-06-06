@@ -2,6 +2,7 @@ pub mod config;
 pub mod deep_link;
 pub mod events;
 pub mod http;
+pub mod notify;
 pub mod pet_commands;
 pub mod pet_window;
 pub mod sse;

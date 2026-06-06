@@ -17,6 +17,27 @@ export type DesktopShellSseStatusPayload = {
   message?: string;
 };
 
+export type DesktopShellWindowControlPlan = {
+  label: string;
+  action: "show" | "hide" | "toggle" | "focus" | "show_and_focus";
+  source: "tray" | "deep_link" | "cuu_bubble" | "setting" | "system_notification" | "startup";
+  focus: boolean;
+  reason: string;
+  route?: string;
+};
+
+export type DesktopShellSystemNotificationPlan = {
+  id: string;
+  event: string;
+  title: string;
+  body: string;
+  urgency: "high" | "urgent";
+  route: string;
+  windowControl: DesktopShellWindowControlPlan;
+  streamKind: string;
+  streamPath: string;
+};
+
 export type DesktopShellBridgeEvent = {
   shell: DesktopShellPushPayload;
   event: WorkHubEvent<unknown>;
@@ -26,12 +47,14 @@ export type DesktopShellBridgeEvent = {
 export type DesktopShellEventBridge = {
   handlePushPayload: (input: unknown) => DesktopShellBridgeEvent | undefined;
   handleSseStatusPayload: (input: unknown) => CuuCard | undefined;
+  handleSystemNotificationPayload: (input: unknown) => DesktopShellSystemNotificationPlan | undefined;
 };
 
 type DesktopShellBridgeOptions = {
   now?: () => Date;
   onEvent?: (event: DesktopShellBridgeEvent) => void;
   onCuuCard?: (card: CuuCard) => void;
+  onSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void;
 };
 
 const passivePushEvents = new Set(["connected", "message"]);
@@ -78,6 +101,48 @@ export function parseDesktopShellSseStatusPayload(input: unknown): DesktopShellS
     stream_path: streamPath,
     state,
     ...(message ? { message } : {})
+  };
+}
+
+export function parseDesktopShellSystemNotificationPlan(input: unknown): DesktopShellSystemNotificationPlan | undefined {
+  const record = asRecord(input);
+  if (!record) {
+    return undefined;
+  }
+
+  const id = stringField(record, "id");
+  const event = stringField(record, "event");
+  const title = stringField(record, "title");
+  const body = stringField(record, "body");
+  const urgency = stringField(record, "urgency");
+  const route = stringField(record, "route");
+  const streamKind = stringFieldAny(record, ["streamKind", "stream_kind"]);
+  const streamPath = stringFieldAny(record, ["streamPath", "stream_path"]);
+  const windowControl = parseDesktopShellWindowControlPlan(recordFieldAny(record, ["windowControl", "window_control"]));
+  if (
+    !id ||
+    !event ||
+    !title ||
+    !body ||
+    !isDesktopShellSystemNotificationUrgency(urgency) ||
+    !route ||
+    !streamKind ||
+    !streamPath ||
+    !windowControl
+  ) {
+    return undefined;
+  }
+
+  return {
+    id,
+    event,
+    title,
+    body,
+    urgency,
+    route,
+    windowControl,
+    streamKind,
+    streamPath
   };
 }
 
@@ -189,6 +254,14 @@ export function createDesktopShellEventBridge(options: DesktopShellBridgeOptions
         options.onCuuCard?.(card);
       }
       return card;
+    },
+    handleSystemNotificationPayload(input) {
+      const plan = parseDesktopShellSystemNotificationPlan(input);
+      if (!plan) {
+        return undefined;
+      }
+      options.onSystemNotification?.(plan);
+      return plan;
     }
   };
 }
@@ -278,11 +351,82 @@ function recordField(record: Record<string, unknown> | undefined, key: string) {
   return asRecord(record?.[key]);
 }
 
+function recordFieldAny(record: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = recordField(record, key);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function stringField(record: Record<string, unknown> | undefined, key: string) {
   const value = record?.[key];
   return typeof value === "string" ? value : undefined;
 }
 
+function stringFieldAny(record: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = stringField(record, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function booleanField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function isDesktopShellSseStatus(value: string | undefined): value is DesktopShellSseStatus {
   return value === "connecting" || value === "open" || value === "retrying" || value === "closed";
+}
+
+function parseDesktopShellWindowControlPlan(input: unknown): DesktopShellWindowControlPlan | undefined {
+  const record = asRecord(input);
+  if (!record) {
+    return undefined;
+  }
+
+  const label = stringField(record, "label");
+  const action = stringField(record, "action");
+  const source = stringField(record, "source");
+  const focus = booleanField(record, "focus");
+  const reason = stringField(record, "reason");
+  if (
+    !label ||
+    !isDesktopShellWindowControlAction(action) ||
+    !isDesktopShellWindowControlSource(source) ||
+    focus === undefined ||
+    !reason
+  ) {
+    return undefined;
+  }
+
+  const route = stringField(record, "route");
+  return {
+    label,
+    action,
+    source,
+    focus,
+    reason,
+    ...(route ? { route } : {})
+  };
+}
+
+function isDesktopShellWindowControlAction(value: string | undefined): value is DesktopShellWindowControlPlan["action"] {
+  return value === "show" || value === "hide" || value === "toggle" || value === "focus" || value === "show_and_focus";
+}
+
+function isDesktopShellWindowControlSource(value: string | undefined): value is DesktopShellWindowControlPlan["source"] {
+  return value === "tray" || value === "deep_link" || value === "cuu_bubble" || value === "setting" || value === "system_notification" || value === "startup";
+}
+
+function isDesktopShellSystemNotificationUrgency(
+  value: string | undefined
+): value is DesktopShellSystemNotificationPlan["urgency"] {
+  return value === "high" || value === "urgent";
 }
