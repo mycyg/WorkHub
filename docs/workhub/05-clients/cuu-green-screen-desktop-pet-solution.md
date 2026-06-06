@@ -256,8 +256,8 @@ idle loop
 - `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action`，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
 - `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
 - `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并预留 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
-- `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前仍缺真实 Tauri runtime command 执行、跨窗口鼠标距离采样、位置持久化和对应 full coverage atlas；scheduler、bridge 和 command scaffold 先把动作语义与端口固定下来。
+- `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command；capability 已开放最小 `core:window:allow-start-dragging`。
+- 当前仍缺把 command plan 执行到真实 Tauri window API、跨窗口鼠标距离采样、位置持久化和对应 full coverage atlas；scheduler、bridge、command scaffold 和最小 runtime 先把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -343,6 +343,7 @@ idle loop
 | idle scheduler | `packages/cuu/src/idle-scheduler.ts` |
 | pet geometry contract | `client-tauri/src-tauri/src/pet_window.rs` |
 | pet command scaffold | `client-tauri/src-tauri/src/pet_commands.rs` |
+| Tauri runtime scaffold | `client-tauri/src-tauri/{build.rs,src/main.rs}` |
 | pet pointer/window bridge | `apps/desktop-webview/src/pet-window-bridge.ts` |
 
 像素验收结果：

@@ -2,6 +2,7 @@
 name = "workhub-client-tauri"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [lib]
 name = "workhub_client_tauri"
@@ -9,6 +10,10 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
+tauri = "2.11.2"
+
+[build-dependencies]
+tauri-build = "2.6.2"
 
 [dev-dependencies]
 serde_json = "1.0"

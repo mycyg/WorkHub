@@ -37,6 +37,8 @@ fn tauri_build_points_at_the_desktop_webview_surface() {
 #[test]
 fn tauri_windows_match_the_shell_window_contract() {
     let config = read_json("tauri.conf.json");
+    assert_eq!(config["app"]["withGlobalTauri"], true);
+
     let windows = config["app"]["windows"].as_array().unwrap();
     let plans = default_window_plans();
 
