@@ -8,6 +8,8 @@ owner: workflow
 # Cuu 桌宠形象与交互概念
 
 > **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的橘色卡通小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
+>
+> **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 
 ## 1. 角色定位
 
@@ -116,6 +118,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - 独立 Tauri `pet` window。
 - 拖拽、长期 idle、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
 - Rive / Live2D 高表现力路线。
+- 右下角独立存在的活体 idle scheduler：呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应。
 
 ## 4. 交互原则
 
@@ -129,7 +132,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 ## 5. 实现提示
 
 - **窗口**：独立 `pet` Tauri 窗口，`transparent:true`、`decorations:false`、`alwaysOnTop:true`、`skipTaskbar:true`。
-- **动效**：MVP 可用 CSS sprite 或 Lottie/Rive；空闲态降帧，避免持续占 GPU。
+- **动效**：MVP 必须用 GPT Image 绿幕生成的真实小猫多帧 PNG/WebP，抠图后打成 sprite atlas；CSS procedural sprite 只能作为占位，不算完成。空闲态降帧，避免持续占 GPU。
 - **事件映射**：继续使用 Rust SSE worker 转发的 `push-event`，由前端将正式 `WorkHubEvent.type` 映射到 Cuu 状态；映射表与 payload 形状以 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md) §4 为准。
 - **轻卡类型**：审批、澄清、证据、项目检索、交付物变更包统一消费 `AttentionItem` / `QuestionCard` / `EvidenceRef` / `DeliverableChangeManifest`，避免桌宠、主窗、Web 各自手写结构。
 - **主窗关系**：Cuu 可单独展开轻卡；复杂操作再通过 deep-link 打开主客户端。
@@ -157,6 +160,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 | **Live2D Cubism** | `.moc3` + texture + physics/motion config | 表现力强，适合呼吸、眼神、脸部、轻微身体形变 | 美术/绑定/许可/运行时复杂度最高，Cubism Core 需官方包 | P3/Premium |
 
 推荐路线：**先 sprite，让 Cuu 真的出现在桌面；再 Rive，让 Cuu 具备状态机和自然过渡；最后按价值评估 Live2D。**
+
+P1 sprite 不是抽象图标，而是绿幕生图后的透明小猫动作帧。完整动作批次、prompt、抠图、anchor 对齐、atlas manifest 与独立窗口策略见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。
 
 官方资料锚点：
 
@@ -243,7 +248,7 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 
 ## 11. 施工顺序建议
 
-1. P1：CSS/PNG sprite 版 Cuu，能 idle、thinking、approval、completed、offline（procedural MVP 已落，待正式资产）。
+1. P1：绿幕生成 PNG/WebP sprite 版 Cuu，至少 18 个动作，能 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、celebrating、offline（procedural MVP 只算占位，待正式资产）。
 2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清/知识检索回显/证据带回当前任务已落，待证据详情展开、完整检索页和真实持久化）。
 3. P2：独立 `pet` Tauri window，支持拖动、收起、托盘显隐，并把已有偏好面板迁入真实 Settings / pet window。
 4. P2：引入 Rive state machine，把事件映射为自然过渡。
@@ -256,6 +261,7 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 |---|---|
 | Motion hint 不漂移 | `allCuuMotionHints()` 的每个 `sprite_state` 都能在 sprite manifest 找到对应资产 |
 | Cuu 真会动 | `idle → thinking → asking_approval → carrying_document → celebrating` 能由 scripted event 触发 |
+| Cuu 像活物 | 60 秒 idle 内至少出现呼吸、眨眼、尾巴、睡觉/看鼠标中的两类微动作 |
 | 选项优先 | 澄清、审批、打回理由都有可点击 chips；长文本只作为兜底 |
 | 桌宠独立 | 主窗隐藏后 `pet` window 仍能显示提醒 |
 | 不挡事 | 支持拖动、收起、静音、勿扰和低存在感 idle |

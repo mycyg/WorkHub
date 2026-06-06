@@ -13,6 +13,7 @@ owner: workflow
 >
 > **扎根口径（2026-06-06 修正）**：本篇最初从现有「需求管理大师」桌面客户端真实代码演进而来，文中的 `tray.rs`、`sync.rs`、`spec_watch.rs`、`deep_link.rs`、`commands/*.rs`、`client-tauri/web-src/*` 等属于**旧项目行为参照 / 目标能力锚点**。当前 WorkHub 仓库的真实实现是 `client-tauri/src-tauri/src/{config,events,http,lib,sse,windows}.rs`、`client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json` 的 Rust shell / Tauri scaffold，加上 `apps/desktop-webview` 的 TS webview adapter。后续施工必须把旧锚点写成 `Behavior source`，把当前要落的文件写成 `Target Rust/TS paths`，不得把旧项目文件误判为已在 WorkHub 主仓落地。
 > **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
+> **独立桌宠与绿幕素材方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。Cuu 的最终工程形态是右下角独立透明 `pet` window，不是主窗内浮层；视觉资产使用 GPT Image 绿幕多帧图，抠图后进入 sprite atlas。
 
 本篇小节：
 
@@ -69,6 +70,7 @@ owner: workflow
 | Tauri v2 app runtime | 已有 `tauri.conf.json` / capability scaffold；`Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri dependency、`build.rs`、`main.rs` / setup entry |
 | 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
 | 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan，未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
+| Cuu 绿幕资产 | 当前只有 procedural CSS sprite / 概念图；无运行时 PNG/WebP atlas | GPT Image 绿幕多帧素材、抠图裁切、anchor 对齐、`cuu.sprite.json` |
 | 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 有 route 安全校验与 focus main control plan；无真实 handler | `workhub://` / 兼容 `yqgl://` handler |
@@ -146,7 +148,8 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
-- **形态（建议）**：小尺寸（约 96×96 收起 / 380×560 展开）、`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
+- **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
+- **视觉资产（新增硬约束）**：P1 不再接受抽象图标或 procedural CSS 作为完成标准；必须加载绿幕抠图后的 Cuu PNG/WebP sprite atlas，至少覆盖 idle、blink、tail、sleep、wake、thinking、approval、searching、carrying、worried、revision、celebrating、offline。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
@@ -362,10 +365,10 @@ webview 用 `useEvent(name, handler)` 订阅。事件由 Rust `app.emit(name, pa
 
 ### 5.3 动效与实现约束
 
-- **承载**：桌宠头像建议用轻量 Lottie/CSS sprite；动效用 CSS transition/keyframes（复用 `@yqgl/shared` 已有的 `anim-fade-up`/`animate-spin`/脉动类，见 `FloatingAssistant.tsx:245`、`AILiveView.tsx`）。
+- **承载**：P1 用绿幕生图后的 PNG/WebP sprite atlas；CSS procedural sprite 只能用于开发占位。P2 可接 Rive state machine，P3/P4 再评估 Live2D。
 - **性能**：桌宠窗 always-on-top 但极小、`skipTaskbar`；空闲态降帧/暂停动画避免占 GPU；连接断开停转圈。
 - **可达性**：所有角标有 `aria-label`/`title`（沿用 `TitleBar`/`AILiveView` 的 `aria-hidden` + 文本并存做法）。
-- **MVP**：P0–P3 用 `FloatingAssistant` 的渐变气泡（`linear-gradient(135deg,#6B5BFF,#FF6E8E)`，`FloatingAssistant.tsx:237`）+ Bot/Sparkles 图标承载基本「在思考/可点击」两态；完整状态机在 P4 桌宠里程碑落地。
+- **MVP 修正**：早期主窗浮层只用于验证业务卡片，不再作为桌宠体验验收。桌宠里程碑必须证明 Cuu 在独立 `pet` window 中右下角常驻，主窗隐藏后仍会动、会提醒、可拖动。
 
 ---
 
@@ -691,13 +694,14 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 - **点击模型**：idle 时窗口可小尺寸跟随 Cuu 外接矩形；展开时扩大交互区域。真正的 click-through 需要谨慎，MVP 先用最小窗口避免挡事。
 - **位置**：用 window-state 记忆桌宠位置；多显示器时保存 monitor id + logical position，失效则回到底部右侧。
 - **降噪**：desktop webview 已支持静音/勿扰/减少动效/队列上限；真实 Tauri 里继续补隐藏到托盘、拖拽位置和系统通知。
+- **surface 分流**：`main` window 加载完整 workbench；`pet` window 加载同一 bundle 的 `?surface=pet`，只启动 Cuu runtime、sprite atlas、bubble/card，不渲染 Gold Path 主壳。
 
 ### 9.3 客户端页面施工顺序
 
 | 阶段 | Rust 壳 | React 主窗 | Cuu/pet | 验收 |
 |---|---|---|---|---|
-| P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 主窗内 Cuu bubble + sprite | 用户能不打字完成澄清和审批 |
-| P2 | 新增 `pet` window、窗口状态、open/hide 命令 | 设置页增加桌宠显隐/自启动/诊断 | 独立桌宠窗 + Rive state machine | 关闭主窗后 Cuu 仍可提醒 |
+| P1 | 复用现有 `main`、托盘、SSE | 单件事 Hub、选项澄清、审批卡 | 绿幕 PNG/WebP atlas + 主窗内开发预览 | 用户能不打字完成澄清和审批，Cuu 动作资产可播放 |
+| P2 | 新增 `pet` window、窗口状态、open/hide 命令 | 设置页增加桌宠显隐/自启动/诊断 | 独立桌宠窗 + idle scheduler，Rive 可选 | 关闭主窗后 Cuu 仍可提醒，右下角常驻且有生命感 |
 | P3 | permission/proposal IPC、deep-link 更完整 | 交付物变更包、审批中心联动 | 审批气泡 / 证据气泡 | 变更申请能通过/打回/记住规则 |
 | P4 | 双向 sync、冲突检测、delivery 安全校验 | 同步中心、冲突解决、交付向导 | sync/conflict 动作状态 | 本地/云端冲突可安全处理 |
 | P5 | updater/autostart、崩溃日志、性能采样 | 设置/诊断/帮助完善 | 性能降级与可访问性 | 长时间常驻稳定 |

@@ -111,6 +111,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `desktop-pet-tauri.md` | **C-PET**:Rust 侧能力(托盘/通知/提醒/deep-link/spec_watch/双向同步)、桌宠窗口与人格、本地 Agent、webview↔Rust 边界、安装/更新 | ✅ |
 | `page-concepts.md` | **C-WEB/C-PET**:页面概念图索引,覆盖 Web、Rust 客户端、桌宠/澄清/检索视觉方向 | concept |
 | `cuu-desktop-pet-concept.md` | **C-PET/Cuu**:小猫桌宠形象、动效状态、审批/检索气泡、选项优先澄清概念图 | concept |
+| `cuu-green-screen-desktop-pet-solution.md` | **C-PET/Cuu**:绿幕生图、抠图裁切、sprite atlas、独立 pet window、活体 idle 调度与 QA 门禁 | concept |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |
 
