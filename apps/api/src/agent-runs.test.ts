@@ -11,7 +11,9 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import { eventTypes, type WorkHubEvent } from "@workhub/contracts";
 import { buildUsageRecord, createMemoryCostLedgerStore, decideRunBudget } from "@workhub/cost";
+import { topics } from "@workhub/events";
 import type {
   AuditLogRepository,
   AuditLogRow,
@@ -924,6 +926,11 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   const auditLogs = new MemoryAuditLogs();
   const decisions = new MemoryAiDecisions();
   const milestoneNotifications: { newStatus: string; approverUserId?: string }[] = [];
+  const publishedEvents: {
+    topic: string;
+    type: string;
+    data: WorkHubEvent<Record<string, unknown>>;
+  }[] = [];
   const notifications: AgentRunNotificationPublisher = {
     async notifyMilestone(context) {
       milestoneNotifications.push({
@@ -948,7 +955,16 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
       auditLogs,
       settings: runtimeSettings
     }),
-    notifications
+    notifications,
+    eventBus: {
+      async publish(topic, type, data) {
+        publishedEvents.push({
+          topic,
+          type,
+          data: data as WorkHubEvent<Record<string, unknown>>
+        });
+      }
+    }
   });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs }));
@@ -968,6 +984,28 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(executed?.usage.token_in, 15);
   assert.equal(executed?.usage.token_out, 25);
   assert.equal(executed?.usage.estimated_cost_cny, "0.003");
+  const runTopic = topics.run(startBody.data.run_id).topic;
+  assert.equal(publishedEvents.length > 0, true);
+  assert.equal(publishedEvents.every((event) => event.topic === runTopic), true);
+  assert.equal(publishedEvents.some((event) => event.topic === "all"), false);
+  assert.equal(publishedEvents.some((event) => event.type === eventTypes.agentRunStarted), true);
+  assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepToolResult), true);
+  assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepSnapshot), true);
+  for (const event of publishedEvents) {
+    assert.equal(event.data.topic, runTopic);
+    assert.equal(event.data.run_id, startBody.data.run_id);
+    assert.equal(event.data.work_item_id, workItemId);
+    assert.equal(event.data.preview_text === undefined || event.data.preview_text.length <= 200, true);
+  }
+  const startedEvent = publishedEvents.find((event) => event.type === eventTypes.agentRunStarted);
+  assert.equal(startedEvent?.data.cuu_state, "thinking");
+  assert.equal(startedEvent?.data.data["run_id"], startBody.data.run_id);
+  const finalEvent = publishedEvents.find((event) =>
+    event.type === eventTypes.agentRunStep &&
+    event.data.data["kind"] === "done"
+  );
+  assert.equal(finalEvent?.data.cuu_state, "celebrating");
+  assert.equal(finalEvent?.data.data["status"], "succeeded");
   assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
   assert.equal(snapshots.rows.length, 1);
   assert.equal(snapshots.rows[0]?.contentSha256?.length, 64);

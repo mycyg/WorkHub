@@ -13,7 +13,7 @@ import {
   type StructuredHandoff
 } from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
-import type { WorkItemMode } from "@workhub/contracts";
+import { eventTypes, type CuuState, type WorkItemMode } from "@workhub/contracts";
 import {
   decideRunBudget,
   type BudgetDecision,
@@ -33,8 +33,10 @@ import {
   type ToolExecutionContext,
   type ToolResult
 } from "@workhub/tools";
+import { makeWorkHubEvent, topics, toCuuState } from "@workhub/events";
 import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
 
+import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
@@ -135,6 +137,7 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
   execute: (toolId: string, input: unknown, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;
 };
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
+export type AgentRunEventBus = Pick<PushBus, "publish">;
 
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
@@ -166,6 +169,7 @@ export function createInMemoryAgentRunQueue(options: {
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
   notifications?: AgentRunNotificationPublisher | false;
+  eventBus?: AgentRunEventBus | false;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -178,6 +182,7 @@ export function createInMemoryAgentRunQueue(options: {
   const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
   const defaultTools = createToolRegistry(createBuiltInFileTools());
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
+  const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -257,6 +262,50 @@ export function createInMemoryAgentRunQueue(options: {
     return live && live.status !== "running" ? live : null;
   }
 
+  async function emitRunEvent(
+    event: AgentLoopEvent,
+    run: AgentRunQueueRecord,
+    cuuState?: CuuState
+  ) {
+    await options.emit?.(event, run);
+    if (!eventBus) {
+      return;
+    }
+
+    const topic = topics.run(run.run_id).topic;
+    const envelope = makeWorkHubEvent({
+      type: event.type,
+      topic,
+      actor: { actor_kind: "ai", label: "WorkHub AI" },
+      work_item_id: run.work_item_id,
+      run_id: run.run_id,
+      ...(event.previewText ? { preview_text: event.previewText } : {}),
+      cuu_state: cuuState ?? toCuuState({ type: event.type }),
+      data: {
+        run_id: run.run_id,
+        work_item_id: run.work_item_id,
+        ...event.data
+      }
+    });
+    await eventBus.publish(topic, event.type, envelope);
+  }
+
+  async function emitFinalRunEvent(run: AgentRunQueueRecord, result: AgentLoopResult) {
+    const cuuState: CuuState = result.status === "succeeded" ? "celebrating" : "worried";
+    await emitRunEvent({
+      type: eventTypes.agentRunStep,
+      previewText: result.reason,
+      data: {
+        run_id: run.run_id,
+        work_item_id: run.work_item_id,
+        kind: "done",
+        status: result.status,
+        steps: result.usage.stepsUsed,
+        control: result.control
+      }
+    }, run, cuuState);
+  }
+
   async function executeRun(runId: string) {
     const run = runs.get(runId);
     if (!run) {
@@ -322,7 +371,7 @@ export function createInMemoryAgentRunQueue(options: {
             });
           }
         },
-        emit: (event) => options.emit?.(event, current),
+        emit: (event) => emitRunEvent(event, current),
         now
       });
       const drifted = driftedRun(current.run_id);
@@ -330,6 +379,7 @@ export function createInMemoryAgentRunQueue(options: {
         return drifted;
       }
       current = updateRun(finalizeExecutedRun(current, result, now()));
+      await emitFinalRunEvent(current, result);
       await recordRunConfidence(current, result);
       await notifyRunMilestone(current, result.reason);
       return current;
@@ -357,6 +407,29 @@ export function createInMemoryAgentRunQueue(options: {
           }
         ],
         updated_at: now().toISOString()
+      });
+      await emitRunEvent({
+        type: eventTypes.agentRunFailed,
+        previewText: failureReason,
+        data: {
+          run_id: current.run_id,
+          work_item_id: current.work_item_id,
+          reason: failureReason
+        }
+      }, current, "worried");
+      await emitFinalRunEvent(current, {
+        status: "failed",
+        reason: failureReason,
+        control: "escalate",
+        usage: {
+          stepsUsed: current.usage.steps_used,
+          secondsUsed: 0,
+          tokenIn: current.usage.token_in,
+          tokenOut: current.usage.token_out,
+          totalTokens: current.usage.token_in + current.usage.token_out,
+          estimatedCostCny: current.usage.estimated_cost_cny
+        },
+        steps: []
       });
       await recordRunConfidence(current, {
         status: "failed",
