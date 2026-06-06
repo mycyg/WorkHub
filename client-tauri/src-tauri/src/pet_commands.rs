@@ -214,6 +214,22 @@ mod tests {
     }
 
     #[test]
+    fn set_mode_command_starts_body_only_at_bottom_right_without_focus() {
+        let plan = set_pet_window_mode_command_plan(PetWindowModeCommandInput {
+            mode: PetWindowMode::BodyOnly,
+            work_area: work_area(),
+            body_position: None,
+        });
+
+        let placement = plan.placement.expect("placement should be present");
+        assert_eq!(plan.command, SET_PET_WINDOW_MODE_COMMAND);
+        assert_eq!(plan.label, "pet");
+        assert_eq!(plan.focus, false);
+        assert_eq!(placement.mode, PetWindowMode::BodyOnly);
+        assert_eq!(placement.position, LogicalPosition { x: 1716, y: 796 });
+    }
+
+    #[test]
     fn drag_and_save_position_commands_are_focusless_and_persistable() {
         let drag = start_pet_window_drag_command_plan();
         let save = save_pet_window_position_command_plan(PetWindowSavePositionCommandInput {

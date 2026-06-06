@@ -306,6 +306,53 @@ fn execute_window_control(
     Ok(plan)
 }
 
+fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or_else(|| "pet window is not available".to_string())?;
+    let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
+    let body_position = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?
+        .body_position;
+    let plan = set_pet_window_mode_command_plan(PetWindowModeCommandInput {
+        mode: PetWindowMode::BodyOnly,
+        work_area: work_area_for_pet_window(&window),
+        body_position,
+    });
+    let placement = plan
+        .placement
+        .as_ref()
+        .ok_or_else(|| "pet startup placement plan is missing".to_string())?;
+
+    window
+        .set_size(LogicalSize::new(
+            placement.size.width as f64,
+            placement.size.height as f64,
+        ))
+        .map_err(|error| format!("failed to resize pet window at startup: {error}"))?;
+    window
+        .set_position(TauriLogicalPosition::new(
+            placement.position.x as f64,
+            placement.position.y as f64,
+        ))
+        .map_err(|error| format!("failed to position pet window at startup: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("failed to show pet window at startup: {error}"))?;
+
+    let mut state = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?;
+    state.mode = PetWindowMode::BodyOnly;
+    state.body_position = Some(body_position_from_window_position(
+        PetWindowMode::BodyOnly,
+        placement.position,
+    ));
+
+    Ok(())
+}
+
 fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
     let show_main = tray_menu_action_plan_by_id(TRAY_SHOW_MAIN_ID)
         .ok_or_else(|| "missing show-main tray action".to_string())?;
@@ -550,6 +597,7 @@ fn main() {
                     state.body_position = Some(restore_saved_body_position(&saved, work_area));
                 }
             }
+            show_pet_window_on_startup(app)?;
             install_workhub_tray(app)?;
             install_workhub_deep_links(app)?;
             let shell_config = load_workhub_shell_config(&app.handle())?;
