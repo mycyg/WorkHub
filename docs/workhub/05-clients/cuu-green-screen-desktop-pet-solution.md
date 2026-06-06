@@ -279,7 +279,7 @@ idle loop
 - `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
 - `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并接入 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
 - `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前已具备跨窗口鼠标距离采样与 body anchor 位置落盘；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏；仍缺多显示器 work-area 实测/恢复、透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
+- 当前已具备跨窗口鼠标距离采样与 body anchor 位置落盘；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏；`pet-surface-qa.ts` 已把透明、右下角、独立 surface、真实多帧 atlas、轻气泡和选项优先做成静态 QA 门禁；仍缺多显示器 work-area 实测/恢复、真实透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -314,15 +314,16 @@ idle loop
 - reduced-motion 下不播放复杂动作，但状态和按钮仍可用。
 - idle CPU/GPU 不应持续高占用，离线/睡觉态降帧。
 - 多显示器拔插后位置能回到可见区域。
+- 当前已落静态门禁：`apps/desktop-webview/src/pet-surface-qa.ts` 会检查透明 root、右下角 `pet` surface、非主壳、多帧 atlas、card mode 轻气泡、点击选项和打回理由按钮；该门禁随 `pnpm --filter @workhub/desktop-webview test` 执行。
 
 ## 9. 施工顺序
 
 1. **Cuu Asset P1**：生成 18 个动作的绿幕 sprite sheets，完成 alpha、anchor、atlas 和 `cuu.sprite.json`。
 2. **Cuu Runtime P1**：把 procedural CSS sprite 替换为 atlas renderer，继续复用现有 `CuuController`。
 3. **Pet Window P1.5**：新增 `?surface=pet`，让 `pet` window 只加载 Cuu，不加载主壳。
-4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 和 `pet-window-state.json` 位置落盘；继续补收起、托盘显隐和多屏恢复实测。
-5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample 和 18 clip full coverage atlas 已接；继续接系统 idle 策略、真实窗口长驻视觉 QA 和性能降级。
-6. **QA P2**：Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
+4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，已接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 和 `pet-window-state.json` 位置落盘；静态 pet surface QA 已落；继续补收起、托盘显隐和多屏恢复实测。
+5. **Behavior P2**：idle scheduler、webview pointer bridge、Rust cursor sample 和 18 clip full coverage atlas 已接；继续接系统 idle 策略、真实窗口长驻截图 QA 和性能降级。
+6. **QA P2**：已落 pet surface 静态视觉合同；继续补 Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
 7. **Live2D P2/P3**：按 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 生成正面基准稿、分层 PSD、Cubism 绑定和 `.model3.json` 导出；sprite atlas 作为降级。
 8. **Rive 可选**：如果 Live2D 许可/工具链阻塞，而 sprite 切换又显僵硬，再把高频动作临时迁到 Rive state machine。
 
@@ -342,12 +343,12 @@ idle loop
 下一步必须从“会显示”升级到“独立活着”：
 
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
-- 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍。
+- 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍；pet surface 静态视觉 QA 已由 `pet-surface-qa.ts` 覆盖。
 - 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
 - Live2D 正式 PSD 与 Cubism runtime 尚未落；当前新增 `cuu-live2d-layer-breakdown-concept.png` 和专篇作为施工合同。
 - 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；下一步补多屏恢复实测与托盘显隐。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
-- 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。
+- 真实透明窗口 QA：下一步仍需截图、alpha 像素、HiDPI、多屏和性能；当前只完成 webview 输出级静态门禁。
 
 ## 11. P1 资产落地记录（2026-06-06）
 
@@ -363,6 +364,7 @@ idle loop
 | desktop asset manifest | `apps/desktop-webview/src/cuu-atlas-assets.ts` |
 | atlas renderer | `apps/desktop-webview/src/cuu-atlas-runtime.ts` |
 | pet surface | `apps/desktop-webview/src/pet-surface.ts` |
+| pet visual QA contract | `apps/desktop-webview/src/pet-surface-qa.ts` |
 | idle scheduler | `packages/cuu/src/idle-scheduler.ts` |
 | pet geometry contract | `client-tauri/src-tauri/src/pet_window.rs` |
 | pet command scaffold | `client-tauri/src-tauri/src/pet_commands.rs` |

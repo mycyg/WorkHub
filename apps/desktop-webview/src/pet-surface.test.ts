@@ -7,6 +7,7 @@ import { cuuMotionForState, validateCuuSpriteAtlasManifest, type CuuCard, type C
 import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, validateDesktopCuuP1AtlasManifest } from "./cuu-atlas-assets.js";
 import { renderDesktopCuuAtlasSprite, renderDesktopCuuAtlasState } from "./cuu-atlas-runtime.js";
 import { renderDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
+import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
 import { desktopPetWindowModeForCard, resolveDesktopPetWindowBridge } from "./pet-window-bridge.js";
 
 function approvalCard(): CuuCard {
@@ -131,6 +132,20 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
   assert.doesNotMatch(card.html, /textarea/u);
+});
+
+test("pet surface passes the Cuu independent desktop visual QA contract", () => {
+  const idle = renderDesktopPetSurface({ idle_action: "idle_tail_sway" });
+  const card = renderDesktopPetSurface({
+    card: approvalCard(),
+    status_text: "先点一个原因，Cuu 会带着它继续改。",
+    include_reject_reasons: true
+  });
+  const report = createDesktopPetVisualQaReport({ idle, card });
+
+  assert.deepEqual(report.failed_checks, []);
+  assert.equal(report.passed, true);
+  assertDesktopPetVisualQaPass(report);
 });
 
 test("pet window bridge resolves body/card modes and Tauri-like commands", async () => {
