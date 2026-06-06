@@ -27,6 +27,11 @@ import {
   submitDesktopCuuAction,
   type DesktopCuuActionRequest
 } from "./desktop-cuu-runtime.js";
+import {
+  bindCuuPreferencePanel,
+  desktopCuuPreferenceCss,
+  loadCuuPreferences
+} from "./cuu-preferences.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -335,11 +340,16 @@ async function boot() {
       surfaceLabel: "Tauri Webview P0.5",
       apiBaseLabel: "device-token aware client"
     });
-    root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}</style>${shell.html}`;
+    root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
     bindGoldPathNavigation(root, shell, client);
-    const cuuController = createCuuController();
+    const cuuController = createCuuController({ preferences: loadCuuPreferences() });
     const cuuDecisions = new Map<string, CuuControllerDecision>();
     bindCuuQueueBadge(root, cuuController);
+    bindCuuPreferencePanel(root, cuuController, {
+      onChange(snapshot) {
+        updateCuuQueueBadge(root, snapshot);
+      }
+    });
     const realShellListen = resolveDesktopShellListen();
     const demoMode = cuuDemoMode();
     const demoListener =

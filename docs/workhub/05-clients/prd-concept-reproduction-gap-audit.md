@@ -79,7 +79,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Web | Gold Path shell + render helpers | 全量真实 React SPA、路由、状态、响应式、四态、视觉回归、Cuu 气泡整合 |
 | Desktop webview | 能消费同一 VM、桥接 Cuu notice | 仍不是独立桌面体验；缺真实 pet window、本地动作面板、设置/诊断/同步中心 |
 | Rust shell | config/http/sse/event/window planning/control planning crate + Tauri config/capability scaffold | 缺 Tauri runtime、真实窗口创建、托盘、通知、deep-link、设备令牌 vault、本地 sync/delivery/updater |
-| Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue MVP | 缺正式小猫动画资产、Rive/Live2D runtime、透明窗口、拖拽、系统通知、展开卡 |
+| Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue / preference panel MVP | 缺正式小猫动画资产、Rive/Live2D runtime、透明窗口、拖拽、系统通知、展开卡 |
 | 项目检索 / 知识库 | API/证据契约方向明确 | 缺 Cuu-first 检索气泡真实实现、证据卡交互、权限内检索结果分页 |
 | 同步 / 本地交付 | 规划完整 | 当前 WorkHub 仓库未落真实本地 sync worker、冲突 resolver、delivery package |
 | QA / 发布 | 单元测试与构建基础 | 缺端到端视觉 QA、桌宠透明窗口 QA、Tauri 安装包、updater/autostart 验证 |
@@ -102,7 +102,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Desktop webview shell | `apps/desktop-webview/src/browser.ts` | 可读取同一 VM，支持 Cuu demo event 和 desktop notice |
 | Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 Cuu notice |
 | Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
-| Cuu controller / badge MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge 和超时后推进下一张卡 |
+| Cuu controller / badge / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge、超时后推进下一张卡、默认隐藏的提醒/声音/减少动效/队列上限偏好面板 |
 | Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan 与 show/hide/focus/toggle control plan |
 | Tauri scaffold | `client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json`、`client-tauri/src-tauri/tests/tauri_scaffold.rs` | 已把 desktop webview dev/build、`main` / `pet` window config、最小 capability 和 scaffold contract tests 落到当前仓库 |
 
@@ -154,10 +154,10 @@ apps/desktop-webview/
 |---|---|---|
 | 真实小猫动画资产 | 当前 runtime 还是 procedural CSS，占位感强；要复现概念图必须替换为正式小猫帧 | `apps/desktop-webview/src/assets/cuu/*` 或未来 `client-tauri/web-src/src/assets/cuu/*` |
 | sprite manifest 生产资产化 | schema / default manifest 已落，但需要接真实 frame image 路径和 asset bundle | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/assets/cuu/*` |
-| CuuController 生产化 | 策略、badge、队列推进 MVP 已落；还需要 click/restore 细化、idle 降级、设置页偏好和系统通知 | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/browser.ts`、未来 `apps/desktop-webview/src/cuu/*` |
+| CuuController 生产化 | 策略、badge、队列推进、desktop preference panel MVP 已落；还需要 click/restore 细化、idle 降级、真实 Tauri Settings 承接和系统通知 | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/browser.ts`、未来 `apps/desktop-webview/src/cuu/*` |
 | 动画 renderer | 需要 CSS sprite / Canvas / Rive renderer | `apps/desktop-webview/src/cuu/SpriteCuu.tsx`、`RiveCuu.tsx` |
 | 独立 pet window | 主窗隐藏后 Cuu 仍在桌面活动 | `client-tauri/src-tauri/src/windows.rs`、Tauri `pet` window |
-| 拖拽 / 收起 / 静音 / 勿扰 | 不挡事，符合桌宠长期常驻 | Rust window state + TS preference |
+| 拖拽 / 收起 / 静音 / 勿扰 | 静音 / 勿扰 / 减少动效 / 队列上限已有 desktop webview 面板；拖拽、收起、位置记忆仍待独立 pet window | Rust window state + TS preference |
 | 气泡卡动作真实提交 | Cuu 卡片按钮必须真正调用 API，不只是展示 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` + `packages/api-client` |
 | 视觉 / 性能 QA | 透明边缘、帧率、CPU/GPU、HiDPI、多屏必须可验收 | Playwright + Tauri smoke + pixel checks |
 
@@ -166,7 +166,7 @@ apps/desktop-webview/
 | 阶段 | 目标 | 产物 | 验收 |
 |---|---|---|---|
 | Cuu-P1a | 把 motion hint 绑定 sprite manifest | `defaultCuuSpriteManifest`、`CuuSpriteState` 校验 | **已落 MVP**：每个 `CuuState` 有 clip、fps、reduced-motion 文案；下一步接正式图片资产 |
-| Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、`SpriteCuu`、bubble layer | **部分已落**：notice 内可渲染 procedural sprite，controller 已能决策 show/queue/badge/drop，browser 已有 queue badge 与超时推进；下一步做真实 frame animation、设置页偏好和视觉 QA |
+| Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、`SpriteCuu`、bubble layer | **部分已落**：notice 内可渲染 procedural sprite，controller 已能决策 show/queue/badge/drop，browser 已有 queue badge、超时推进和偏好面板；下一步做真实 frame animation、真实 Settings 承接和视觉 QA |
 | Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler | 主路径不长篇打字；打回原因用选项 chips |
 | Cuu-P2a | 独立 `pet` window | Tauri window + open/hide command | 主窗隐藏后 Cuu 仍显示，可拖动、可收起 |
 | Cuu-P2b | Rive state machine | `.riv` + runtime adapter | push-event 触发自然过渡，失败可降级到 sprite |
@@ -323,7 +323,7 @@ Rust 应只做：
 |---|---|---|---|---|
 | GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | **MVP 已落**：每个 state 有可校验 clip；待生产资产路径 |
 | GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite；待真实 frame / atlas |
-| GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge 与超时推进已接；待设置页偏好、系统通知、视觉 QA |
+| GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge、超时推进和偏好面板已接；待真实 Tauri Settings 承接、系统通知、视觉 QA |
 | GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question 可提交；待 evidence/search chips 与桌宠展开卡 |
 | GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` | Rust scaffold | 主窗关闭/隐藏后 Cuu 常驻 |
 | GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + window control plan + config/capability scaffold 已落**；待 `tauri` 依赖、`build.rs`、`main.rs` / setup、真实 main/pet window |
