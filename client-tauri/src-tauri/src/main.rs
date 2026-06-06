@@ -1,17 +1,21 @@
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position, pet_window_rect_from_position,
+    restore_saved_body_position,
     sample_pet_cursor_near_command_plan, save_pet_window_position_command_plan,
     set_pet_window_mode_command_plan, start_pet_window_drag_command_plan, PetWindowModeCommandInput,
     PetWindowRuntimeCommandPlan, PetWindowRuntimeState, PetWindowSavePositionCommandInput,
+    PetWindowSavedPlacement,
 };
 use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPointerInput,
     DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
 
-use std::sync::Mutex;
+use std::{fs, path::PathBuf, sync::Mutex};
 
-use tauri::{LogicalPosition as TauriLogicalPosition, LogicalSize, Manager, State};
+use tauri::{
+    path::BaseDirectory, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager, State,
+};
 
 #[tauri::command]
 fn set_pet_window_mode(
@@ -106,6 +110,13 @@ fn save_pet_window_position(app: tauri::AppHandle) -> Result<PetWindowRuntimeCom
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .body_position = Some(body_position);
+    save_pet_window_saved_placement(
+        &app,
+        PetWindowSavedPlacement {
+            body_position,
+            monitor_name: current_monitor_name(&window),
+        },
+    )?;
     Ok(save_pet_window_position_command_plan(
         PetWindowSavePositionCommandInput {
             position: body_position,
@@ -175,9 +186,67 @@ fn default_work_area() -> LogicalRect {
     }
 }
 
+fn pet_window_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .resolve("pet-window-state.json", BaseDirectory::Config)
+        .map_err(|error| format!("failed to resolve pet window state path: {error}"))
+}
+
+fn load_pet_window_saved_placement(
+    app: &tauri::AppHandle,
+) -> Result<Option<PetWindowSavedPlacement>, String> {
+    let path = pet_window_state_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read pet window state: {error}"))?;
+    serde_json::from_str(&raw).map(Some).map_err(|error| {
+        format!(
+            "failed to parse pet window state {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn save_pet_window_saved_placement(
+    app: &tauri::AppHandle,
+    saved: PetWindowSavedPlacement,
+) -> Result<(), String> {
+    let path = pet_window_state_path(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create pet window state directory: {error}"))?;
+    }
+    let raw = serde_json::to_string_pretty(&saved)
+        .map_err(|error| format!("failed to serialize pet window state: {error}"))?;
+    fs::write(&path, raw)
+        .map_err(|error| format!("failed to write pet window state {}: {error}", path.display()))
+}
+
+fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
+    window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .and_then(|monitor| monitor.name().cloned())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Mutex::new(PetWindowRuntimeState::default()))
+        .setup(|app| {
+            if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {
+                let work_area = app
+                    .get_webview_window("pet")
+                    .map(|window| work_area_for_pet_window(&window))
+                    .unwrap_or_else(default_work_area);
+                if let Ok(mut state) = app.state::<Mutex<PetWindowRuntimeState>>().lock() {
+                    state.body_position = Some(restore_saved_body_position(&saved, work_area));
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             set_pet_window_mode,
             start_pet_window_drag,

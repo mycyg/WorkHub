@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pet_window::{
-    default_pet_window_placement, pet_pointer_decision, place_pet_window_from_body_anchor,
-    pet_window_size, save_pet_window_position_plan, start_pet_window_drag_plan, LogicalPosition,
-    LogicalRect, PetWindowDragPlan, PetWindowMode, PetWindowPlacementPlan,
-    PetWindowPointerDecision, PetWindowPointerInput,
+    clamp_position, default_pet_window_placement, pet_pointer_decision,
+    place_pet_window_from_body_anchor, pet_window_size, save_pet_window_position_plan,
+    start_pet_window_drag_plan, LogicalPosition, LogicalRect, PetWindowDragPlan, PetWindowMode,
+    PetWindowPlacementPlan, PetWindowPointerDecision, PetWindowPointerInput,
+    DEFAULT_PET_WINDOW_MARGIN,
 };
 
 pub const SET_PET_WINDOW_MODE_COMMAND: &str = "set_pet_window_mode";
@@ -45,6 +46,13 @@ pub struct PetWindowRuntimeState {
     pub body_position: Option<LogicalPosition>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowSavedPlacement {
+    pub body_position: LogicalPosition,
+    pub monitor_name: Option<String>,
+}
+
 impl Default for PetWindowRuntimeState {
     fn default() -> Self {
         Self {
@@ -52,6 +60,18 @@ impl Default for PetWindowRuntimeState {
             body_position: None,
         }
     }
+}
+
+pub fn restore_saved_body_position(
+    saved: &PetWindowSavedPlacement,
+    work_area: LogicalRect,
+) -> LogicalPosition {
+    clamp_position(
+        saved.body_position,
+        pet_window_size(PetWindowMode::BodyOnly),
+        work_area,
+        DEFAULT_PET_WINDOW_MARGIN,
+    )
 }
 
 pub fn body_position_from_window_position(
@@ -246,6 +266,19 @@ mod tests {
                 width: 380,
                 height: 560
             }
+        );
+    }
+
+    #[test]
+    fn saved_body_position_is_clamped_when_the_monitor_layout_changes() {
+        let saved = PetWindowSavedPlacement {
+            body_position: LogicalPosition { x: -2000, y: 3000 },
+            monitor_name: Some("old-monitor".to_string()),
+        };
+
+        assert_eq!(
+            restore_saved_body_position(&saved, work_area()),
+            LogicalPosition { x: 24, y: 796 }
         );
     }
 
