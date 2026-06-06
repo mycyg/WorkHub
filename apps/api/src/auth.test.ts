@@ -329,7 +329,7 @@ test("stream identity resolves without a request-scoped DB session concept", asy
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { id: alice.id, nickname: alice.nickname });
+  assert.deepEqual(await response.json(), { id: alice.id, nickname: alice.nickname, isAdmin: false });
 });
 
 test("AI actor construction is first-class and never touches cookie auth", () => {

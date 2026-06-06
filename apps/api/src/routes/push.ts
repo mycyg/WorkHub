@@ -10,14 +10,28 @@ import {
 } from "../middleware/auth.js";
 import { resolveAuthorizedTopic, type TopicAccessResolver } from "../sse/topic-access.js";
 import { writeEventStream, type WriteEventStreamOptions } from "../sse/stream.js";
+import {
+  getDefaultAgentRunQueue,
+  type AgentRunQueue
+} from "../workers/agent-runner.js";
 
 export type PushRoutesDependencies = {
   auth?: AuthDependencySource;
   bus?: PushBus;
   presence?: PresenceStore;
   access?: TopicAccessResolver;
+  agentRuns?: AgentRunQueue;
   stream?: WriteEventStreamOptions;
 };
+
+function createDefaultTopicAccess(agentRuns: AgentRunQueue): TopicAccessResolver {
+  return {
+    async canViewRun(user, id) {
+      const run = await agentRuns.get(id);
+      return Boolean(run && (run.actor_id === user.id || user.isAdmin));
+    }
+  };
+}
 
 export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
@@ -25,7 +39,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const bus = deps.bus ?? getDefaultPushBus();
   const presence = deps.presence ?? getDefaultPresenceStore();
-  const access = deps.access ?? {};
+  const access = deps.access ?? createDefaultTopicAccess(deps.agentRuns ?? getDefaultAgentRunQueue());
 
   routes.get("/stream", async (c) => {
     const authDeps = resolveAuthDependencies(authSource);

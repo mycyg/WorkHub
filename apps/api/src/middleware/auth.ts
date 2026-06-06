@@ -36,6 +36,7 @@ export type AuthActor = {
 export type StreamUser = {
   id: string;
   nickname: string;
+  isAdmin: boolean;
 };
 
 export type AuthVariables = {
@@ -290,7 +291,7 @@ export async function resolveStreamUser(c: Context, deps: AuthDependencies): Pro
   const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);
-    return { id: byToken.user.id, nickname: byToken.user.nickname };
+    return { id: byToken.user.id, nickname: byToken.user.nickname, isAdmin: byToken.user.isAdmin };
   }
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));
@@ -298,7 +299,7 @@ export async function resolveStreamUser(c: Context, deps: AuthDependencies): Pro
     const user = await deps.users.findActiveByCookieToken(cookieToken);
     if (user) {
       await deps.touchUser?.(user.id);
-      return { id: user.id, nickname: user.nickname };
+      return { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin };
     }
   }
 

@@ -20,15 +20,76 @@ import type { AuthDependencies, AuthEnv } from "./middleware/auth.js";
 import { COOKIE_NAME } from "./middleware/auth.js";
 import { createPushRoutes } from "./routes/push.js";
 import { resolveAuthorizedTopic } from "./sse/topic-access.js";
+import { createInMemoryAgentRunQueue } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 
 test("topic authorization derives user streams from identity and rejects unregistered private topics", async () => {
-  const user = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice" };
+  const user = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice", isAdmin: false };
 
   assert.equal(await resolveAuthorizedTopic(user, { kind: "all" }), "all");
   assert.equal(await resolveAuthorizedTopic(user, { kind: "me" }), `user:${user.id}`);
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "run", id: "r1" }));
+});
+
+test("push route authorizes run streams through the AgentRun owner/admin gate", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const stranger = user({
+    id: "10000000-0000-4000-8000-000000000002",
+    nickname: "bob",
+    cookieToken: "cookie-bob"
+  });
+  const admin = user({
+    id: "10000000-0000-4000-8000-000000000003",
+    nickname: "admin",
+    cookieToken: "cookie-admin",
+    isAdmin: true
+  });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000041"
+  });
+  const run = await queue.enqueue({
+    workItemId: "50000000-0000-4000-8000-000000000041",
+    actorId: alice.id,
+    title: "Private stream run"
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice, stranger, admin], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      agentRuns: queue,
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const strangerResponse = await app.request(`/api/push/stream/run/${run.run_id}`, {
+    headers: { Cookie: await signedCookie(stranger.cookieToken, runtimeSettings) }
+  });
+  assert.equal(strangerResponse.status, 403);
+
+  const ownerController = new AbortController();
+  const ownerResponse = await app.request(`/api/push/stream/run/${run.run_id}`, {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+    signal: ownerController.signal
+  });
+  assert.equal(ownerResponse.status, 200);
+  assert.equal(ownerResponse.headers.get("content-type")?.includes("text/event-stream"), true);
+  ownerController.abort();
+
+  const adminController = new AbortController();
+  const adminResponse = await app.request(`/api/push/stream/run/${run.run_id}`, {
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) },
+    signal: adminController.signal
+  });
+  assert.equal(adminResponse.status, 200);
+  assert.equal(adminResponse.headers.get("content-type")?.includes("text/event-stream"), true);
+  adminController.abort();
 });
 
 test("push route fails closed on workitem stream when can_view is not registered", async () => {
