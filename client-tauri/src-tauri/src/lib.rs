@@ -5,6 +5,7 @@ pub mod http;
 pub mod notify;
 pub mod pet_commands;
 pub mod pet_window;
+pub mod single_instance;
 pub mod sse;
 pub mod sse_worker;
 pub mod tray;

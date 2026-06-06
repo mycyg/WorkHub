@@ -12,6 +12,7 @@ use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPointerInput,
     DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
+use workhub_client_tauri::single_instance::single_instance_plan_from_args;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
     tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_QUIT_ID,
@@ -438,6 +439,26 @@ fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), Str
         .map_err(|error| format!("failed to emit deep-link event: {error}"))
 }
 
+fn handle_single_instance_launch(
+    app: &tauri::AppHandle,
+    args: Vec<String>,
+    cwd: String,
+) -> Result<(), String> {
+    let plan = single_instance_plan_from_args(&args, &cwd);
+    if plan.deep_links.is_empty() {
+        execute_window_control(app, plan.window_control.clone())?;
+    } else {
+        for deep_link in &plan.deep_links {
+            execute_window_control(app, deep_link.window_control.clone())?;
+            app.emit(event_channel_name(ShellEvent::DeepLink), deep_link.clone())
+                .map_err(|error| format!("failed to emit deep-link event: {error}"))?;
+        }
+    }
+
+    app.emit(event_channel_name(ShellEvent::SingleInstance), plan)
+        .map_err(|error| format!("failed to emit single-instance event: {error}"))
+}
+
 fn pet_window_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resolve("pet-window-state.json", BaseDirectory::Config)
@@ -490,6 +511,11 @@ fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            if let Err(error) = handle_single_instance_launch(app, args, cwd) {
+                eprintln!("failed to handle WorkHub single-instance launch: {error}");
+            }
+        }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))

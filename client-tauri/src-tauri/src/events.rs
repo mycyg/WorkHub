@@ -9,6 +9,7 @@ pub enum ShellEvent {
     DeepLink,
     TrayAction,
     SystemNotification,
+    SingleInstance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +38,10 @@ mod tests {
             "system-notification"
         );
         assert_eq!(event_channel_name(ShellEvent::DeepLink), "deep-link");
+        assert_eq!(
+            event_channel_name(ShellEvent::SingleInstance),
+            "single-instance"
+        );
     }
 }
 
@@ -48,5 +53,6 @@ pub fn event_channel_name(event: ShellEvent) -> &'static str {
         ShellEvent::DeepLink => "deep-link",
         ShellEvent::TrayAction => "tray-action",
         ShellEvent::SystemNotification => "system-notification",
+        ShellEvent::SingleInstance => "single-instance",
     }
 }
