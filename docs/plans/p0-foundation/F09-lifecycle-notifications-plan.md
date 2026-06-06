@@ -191,13 +191,13 @@ specs:
 
 ## Target TS paths
 
-> 本组件施工时,旧 `lifecycle.py` / `notifications.py` 是里程碑、去重和私有通知 behavior source;新实现落生命周期 helper 与通知服务。
+> 本组件施工时,旧 `lifecycle.py` / `notifications.py` 是里程碑、去重和私有通知 behavior source;新实现落生命周期 service、通知 service 与事件 helper。
 
 | 类别 | 目标路径 | 必须产物 | 审计门禁 |
 |---|---|---|---|
-| lifecycle | `packages/events/src/lifecycle.ts` | milestone map、状态→通知规则 | 新状态必须登记 |
+| lifecycle service | `apps/api/src/services/lifecycle.ts`, `packages/events/src/lifecycle.ts` | milestone map、状态→通知规则、状态变更后置事件计划 | 新状态必须登记 |
 | notification service | `apps/api/src/services/notifications.ts`, `apps/api/src/routes/notifications.ts` | `notification.created`、收件箱、dedupe key | 私有通知不发 `all` |
 | contracts | `packages/contracts/src/notification.ts`, `packages/contracts/src/attention.ts` | `Notification`, `AttentionItem` | 文案人话,不裸露内部 enum |
-| Cuu/Web adapters | `packages/events/src/toAttentionItem.ts`, `packages/cuu/src/notification-card.ts` | 通知→一件事/气泡 | `budget.warning` 等治理事件能降级为轻提示 |
+| event helpers / Cuu adapters | `packages/events/src/toAttentionItem.ts`, `packages/events/src/toCuuState.ts`, `packages/cuu/src/notification-card.ts` | 通知/治理事件→一件事/气泡/Cuu state | `budget.warning` 等治理事件能降级为轻提示 |
 
 **PR 必答**:说明新增状态是否进入 `_MILESTONES` 等价表。通知只负责投递,审批路由归 F06,业务状态写归对应 service。

@@ -387,14 +387,17 @@ type WorkHubEvent<T> = {
 成本治理 payload 统一来自 P-COST:
 
 ```ts
+type BudgetScope =
+  | { kind: "workitem"; workitem_id: string }
+  | { kind: "user"; user_id: string }
+  | { kind: "team"; team_id: string }
+  | { kind: "eval"; suite: "nightly" | "release" };
+
 type BudgetNotice = {
   code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
-  scope: {
-    kind: "workitem" | "user" | "team" | "eval";
-    id?: string;
-  };
+  scope: BudgetScope;
   usage_ratio: number;
   recommended_action: "continue" | "downgrade_model" | "pause" | "ask_admin";
   options?: { id: string; label: string; action_href: string }[];
@@ -402,7 +405,7 @@ type BudgetNotice = {
 };
 
 type BudgetUsage = {
-  scope: { kind: "workitem" | "user" | "team" | "eval"; id?: string };
+  scope: BudgetScope;
   scope_label: string;
   total_tokens: number;
   max_tokens: number;
@@ -435,7 +438,7 @@ type CostDashboardVM = {
   model_breakdown: { provider: string; model: string; count: number; cost_cny: string }[];
   budget: BudgetUsage[];
   notices: BudgetNotice[];
-  top_exhaustion_risks: { scope: BudgetUsage["scope"]; label: string; remaining_cost_cny: string; status: BudgetUsage["status"] }[];
+  top_exhaustion_risks: { scope: BudgetScope; label: string; remaining_cost_cny: string; status: BudgetUsage["status"] }[];
   empty_state?: "no_agent_runs" | "usage_not_connected";
 };
 ```

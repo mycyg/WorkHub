@@ -114,7 +114,7 @@ owner: workflow
 - **FR-WORKER-005**:工具异常以可恢复错误文本回灌(沿用现状 `content = f"[error] …"`,[`auto_agent.py:490`](../../../app/services/auto_agent.py)),`AgentStep.phase=tool_result` 记录;**不**让单个工具异常终止整个 run。
 - **FR-WORKER-006**:`run_command` 仅放行 `ALLOWED_COMMANDS`(`python/node/npm/pnpm/bun/pytest/ruff/tsc`,[`auto_agent.py:42`](../../../app/services/auto_agent.py)),`npm/pnpm/bun install` 被显式禁用([`auto_agent.py:296`](../../../app/services/auto_agent.py));文件数 > `MAX_SANDBOX_FILES=800` 或字节 > `MAX_SANDBOX_BYTES=200MB` 抛错;子进程 rlimit(CPU/AS/FSIZE/NOFILE,[`auto_agent.py:282-285`](../../../app/services/auto_agent.py))生效(POSIX);路径逃逸(`_safe_path`)被拒。**威胁模型重审**:现状 network egress 未阻断,基于「可信 LAN」假设([`auto_agent.py:268-279`](../../../app/services/auto_agent.py) 注释),上云前须重审(见 [`security-and-permissions.md`](../01-architecture/security-and-permissions.md) 与 [PRD NFR-02](../../prd/2026-06-04-workhub-prd.md))。
 - **FR-WORKER-007**:模型每轮收到的 `tools=` 列表由 actor 权限过滤;现状为静态 `TOOLS` 全集([`auto_agent.py:418`](../../../app/services/auto_agent.py)),WorkHub 改为按 `PermissionPolicy` 计算可见集。
-- **FR-WORKER-008**:首发白名单只允许「文件型/文本型/可由沙箱命令本地算出」的交付物。允许子类包括:需求/方案/周报/纪要草稿,结构化 JSON/YAML/CSV/config,小型代码或模板改动,CSV/TSV 轻分析报告,会议/网盘证据生成的需求草稿。明确排除:外部发送、付款、生产部署、法律/医疗/财务专业判断、联网装包、不可逆删除。命中排除项时不得自动执行,必须走风险门 `domain_gate` 或权限 `ask`。
+- **FR-WORKER-008**:首发白名单只允许「文件型/文本型/可由沙箱命令本地算出」的交付物。允许子类包括:文档/周报/方案/纪要草稿,结构化 JSON/YAML/CSV/config,小型代码或模板改动,CSV/TSV 轻分析报告,会议/网盘证据生成的需求草稿。明确排除:外部发送、付款、生产部署、法律/医疗/财务专业判断、联网装包、不可逆删除。命中排除项时不得自动执行,必须走风险门 `domain_gate` 或权限 `ask`。
 
 ---
 
