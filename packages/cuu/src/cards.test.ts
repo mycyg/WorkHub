@@ -202,3 +202,36 @@ test("generic permission events still map through attention into Cuu approval ca
   assert.equal(card.state, "asking_approval");
   assert.equal(card.title, "Cuu 需要你批准这次 file-only 变更。");
 });
+
+test("agent run events become trace and completion cards for live Cuu updates", () => {
+  const step: WorkHubEvent<unknown> = {
+    event_id: "event-step",
+    type: eventTypes.agentRunStep,
+    topic: "run:run-1",
+    ts,
+    run_id: "run-1",
+    preview_text: "Cuu 正在读取项目文档。",
+    cuu_state: "thinking",
+    data: { kind: "step", summary: "读取项目文档" }
+  };
+  const done: WorkHubEvent<unknown> = {
+    event_id: "event-done",
+    type: eventTypes.agentRunStep,
+    topic: "run:run-1",
+    ts,
+    run_id: "run-1",
+    preview_text: "Cuu 已经完成本次执行。",
+    cuu_state: "celebrating",
+    data: { kind: "done", status: "succeeded" }
+  };
+
+  const stepCard = cardFromEvent(step);
+  const doneCard = cardFromEvent(done);
+
+  assert.equal(stepCard.kind, "trace");
+  assert.equal(stepCard.state, "thinking");
+  assert.equal(stepCard.actions[0]?.href, "/agent-runs/run-1/replay");
+  assert.equal(doneCard.kind, "completion");
+  assert.equal(doneCard.state, "celebrating");
+  assert.equal(doneCard.actions[0]?.tone, "primary");
+});

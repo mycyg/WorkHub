@@ -85,6 +85,15 @@ export type PageClient = {
   proposal: (id: string) => Promise<ProposalDetailVM>;
 };
 
+export type PushStreamClient = {
+  all: () => string;
+  me: () => string;
+  workItem: (id: string) => string;
+  run: (id: string) => string;
+  session: (id: string) => string;
+  proposal: (id: string) => string;
+};
+
 export type WorkHubApiClient = {
   health: () => Promise<HealthResponse>;
   openapi: () => Promise<unknown>;
@@ -104,6 +113,7 @@ export type WorkHubApiClient = {
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
   replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;
   pages: PageClient;
+  streams: PushStreamClient;
   streamUrl: (path: string) => string;
   request: <T>(path: string, init?: RequestInit) => Promise<T>;
 };

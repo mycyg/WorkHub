@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { deliverableManifestFixtures } from "@workhub/contracts";
 
-import { createApiClient, joinApiUrl, parseWorkHubSse, WorkHubApiError } from "./index.js";
+import { createApiClient, joinApiUrl, parseRunEventSse, parseWorkHubEventSse, parseWorkHubSse, WorkHubApiError } from "./index.js";
 
 test("joinApiUrl preserves relative mode and absolute daemon base URLs", () => {
   assert.equal(joinApiUrl(undefined, "/api/health"), "/api/health");
@@ -92,9 +92,38 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   ]);
 });
 
+test("api client exposes typed push stream URLs for web and desktop clients", () => {
+  const relative = createApiClient();
+  const daemon = createApiClient({ baseUrl: "http://127.0.0.1:8787/" });
+
+  assert.equal(relative.streams.all(), "/api/push/stream");
+  assert.equal(relative.streams.me(), "/api/push/stream/me");
+  assert.equal(relative.streams.workItem("work/1"), "/api/push/stream/workitem/work%2F1");
+  assert.equal(relative.streams.run("run/1"), "/api/push/stream/run/run%2F1");
+  assert.equal(relative.streams.session("session 1"), "/api/push/stream/session/session%201");
+  assert.equal(relative.streams.proposal("proposal:1"), "/api/push/stream/proposal/proposal%3A1");
+  assert.equal(daemon.streams.run("run-1"), "http://127.0.0.1:8787/api/push/stream/run/run-1");
+});
+
 test("SSE parser keeps event names and parses JSON payloads", () => {
   const events = parseWorkHubSse<{ topic: string }>('event: connected\ndata: {"topic":"user:1"}\n\n: ping\n\n');
   assert.equal(events.length, 1);
   assert.equal(events[0]?.event, "connected");
   assert.equal(events[0]?.json?.topic, "user:1");
+});
+
+test("SSE parser extracts WorkHubEvent envelopes and run-specific event streams", () => {
+  const input = [
+    'event: agent_run.step\ndata: {"event_id":"event-1","type":"agent_run.step","topic":"run:run-1","ts":"2026-06-05T01:00:00.000Z","run_id":"run-1","data":{"kind":"step","summary":"读取文档"}}',
+    'event: budget.warning\ndata: {"event_id":"event-2","type":"budget.warning","topic":"workitem:work-1","ts":"2026-06-05T01:00:01.000Z","data":{"message":"预算提醒"}}',
+    "event: message\ndata: not-json"
+  ].join("\n\n");
+
+  const events = parseWorkHubEventSse(input);
+  const runEvents = parseRunEventSse("run-1", input);
+
+  assert.equal(events.length, 2);
+  assert.equal(events[0]?.type, "agent_run.step");
+  assert.equal(runEvents.length, 1);
+  assert.equal(runEvents[0]?.topic, "run:run-1");
 });

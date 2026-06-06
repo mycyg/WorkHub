@@ -36,6 +36,10 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   return Boolean(value && typeof value === "object" && "ok" in value);
 }
 
+function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id: string) {
+  return `/api/push/stream/${kind}/${encodeURIComponent(id)}`;
+}
+
 async function readJson(response: Response) {
   const text = await response.text();
   if (text.length === 0) {
@@ -122,6 +126,14 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
   return {
     request,
     streamUrl: (path) => joinApiUrl(options.baseUrl, path),
+    streams: {
+      all: () => joinApiUrl(options.baseUrl, "/api/push/stream"),
+      me: () => joinApiUrl(options.baseUrl, "/api/push/stream/me"),
+      workItem: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("workitem", id)),
+      run: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("run", id)),
+      session: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("session", id)),
+      proposal: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("proposal", id))
+    },
     health: () => request<HealthResponse>("/api/health"),
     openapi: () => request<unknown>("/api/openapi.json"),
     identify: (payload: IdentifyRequest) =>

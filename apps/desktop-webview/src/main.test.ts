@@ -86,6 +86,14 @@ function fakeClient(surface: GoldPathSurfaceVM): WorkHubApiClient {
         return surface.page_vms.proposal;
       }
     },
+    streams: {
+      all: () => "/api/push/stream",
+      me: () => "/api/push/stream/me",
+      workItem: (id) => `/api/push/stream/workitem/${id}`,
+      run: (id) => `/api/push/stream/run/${id}`,
+      session: (id) => `/api/push/stream/session/${id}`,
+      proposal: (id) => `/api/push/stream/proposal/${id}`
+    },
     streamUrl: (path) => path,
     async request() {
       throw new Error("not needed");

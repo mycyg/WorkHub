@@ -94,6 +94,28 @@ test("desktop shell bridge preserves full WorkHubEvent envelopes from daemon SSE
   assert.equal(card?.actions[0]?.href, `/api/workitems/${workItemId}/pause`);
 });
 
+test("desktop shell bridge maps run stream events into Cuu trace completion cards", () => {
+  const embedded: WorkHubEvent<unknown> = {
+    event_id: "event-run-done",
+    type: eventTypes.agentRunStep,
+    topic: "run:run-1",
+    ts: "2026-06-05T01:00:00.000Z",
+    run_id: "run-1",
+    preview_text: "Cuu 已经完成本次执行。",
+    cuu_state: "celebrating",
+    data: { kind: "done", status: "succeeded" }
+  };
+  const shell = shellPayload(eventTypes.agentRunStep, embedded, "/api/push/stream/run/run-1");
+  const event = workHubEventFromDesktopShellPush(shell, { now });
+  const card = desktopCuuCardFromShellPush(shell, { now });
+
+  assert.equal(event.topic, "run:run-1");
+  assert.equal(event.run_id, "run-1");
+  assert.equal(card?.kind, "completion");
+  assert.equal(card?.state, "celebrating");
+  assert.equal(card?.actions[0]?.href, "/agent-runs/run-1/replay");
+});
+
 test("passive connected frames are parsed but do not create Cuu interruption cards", () => {
   const shell = shellPayload("connected", { topic: "user:me" });
 

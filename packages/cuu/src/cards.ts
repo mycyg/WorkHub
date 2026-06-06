@@ -1,5 +1,6 @@
 import {
   budgetNoticeSchema,
+  eventTypes,
   type ActionSpec,
   type AttentionAction,
   type AttentionItem,
@@ -206,6 +207,79 @@ function budgetScopeChip(scope: BudgetScope): CuuCardChip {
     case "eval":
       return { id: "scope", label: "评测预算", description: scope.suite };
   }
+}
+
+function dataStringField(data: unknown, key: string) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isAgentRunEvent(event: WorkHubEvent<unknown>) {
+  return (
+    event.type === eventTypes.agentRunStarted ||
+    event.type === eventTypes.agentRunStep ||
+    event.type === eventTypes.agentRunCompacting ||
+    event.type === eventTypes.agentRunFailed ||
+    event.type === eventTypes.agentRunEscalated
+  );
+}
+
+function agentRunHref(runId: string | undefined) {
+  return runId ? `/agent-runs/${runId}/replay` : undefined;
+}
+
+function cardFromAgentRunEvent(event: WorkHubEvent<unknown>): CuuCard {
+  const runId = event.run_id ?? (event.topic.startsWith("run:") ? event.topic.slice("run:".length) : undefined);
+  const state = toCuuState(event);
+  const dataKind = dataStringField(event.data, "kind");
+  const dataStatus = dataStringField(event.data, "status");
+  const finalEvent =
+    event.type === eventTypes.agentRunFailed ||
+    event.type === eventTypes.agentRunEscalated ||
+    (event.type === eventTypes.agentRunStep && (dataKind === "done" || dataStatus === "succeeded" || state === "celebrating"));
+  const href = agentRunHref(runId);
+  const title = finalEvent
+    ? state === "celebrating"
+      ? "这次执行完成了"
+      : "这次执行需要关注"
+    : event.type === eventTypes.agentRunStarted
+      ? "Cuu 开始处理了"
+      : "Cuu 正在处理";
+
+  return withMotion({
+    id: event.event_id,
+    kind: finalEvent && state === "celebrating" ? "completion" : "trace",
+    state,
+    title,
+    message: truncate(event.preview_text ?? dataStringField(event.data, "summary") ?? "Cuu 正在整理执行进度。"),
+    priority: state === "worried" ? "high" : "normal",
+    actions: href
+      ? [
+          {
+            id: "view_replay",
+            label: "查看回放",
+            tone: finalEvent ? "primary" : "secondary",
+            method: "GET",
+            href
+          }
+        ]
+      : [],
+    payload_ref: {
+      entity_type: "event",
+      entity_id: event.event_id,
+      ...(href ? { href } : {})
+    },
+    source: optionalSource({
+      entity_type: "event",
+      entity_id: event.event_id,
+      ...(event.work_item_id ? { work_item_id: event.work_item_id } : {}),
+      ...(event.project_id ? { project_id: event.project_id } : {})
+    }),
+    created_at: event.ts
+  });
 }
 
 function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
@@ -551,6 +625,10 @@ export function cardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
   const budgetNotice = budgetNoticeSchema.safeParse(event.data);
   if (budgetNotice.success) {
     return cardFromBudgetNotice(budgetNotice.data, event.event_id);
+  }
+
+  if (isAgentRunEvent(event)) {
+    return cardFromAgentRunEvent(event);
   }
 
   const attention = toAttentionItem(event);
