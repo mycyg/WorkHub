@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::windows::{main_window_plan, pet_window_plan, ShellWindowPlan};
 
+pub const SHOW_MAIN_WINDOW_COMMAND: &str = "show_main_window";
+pub const HIDE_MAIN_WINDOW_COMMAND: &str = "hide_main_window";
+pub const FOCUS_MAIN_ROUTE_COMMAND: &str = "focus_main_route";
+pub const SHOW_PET_WINDOW_COMMAND: &str = "show_pet_window";
+pub const HIDE_PET_WINDOW_COMMAND: &str = "hide_pet_window";
+pub const TOGGLE_PET_WINDOW_COMMAND: &str = "toggle_pet_window";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellWindowControlAction {
@@ -159,6 +166,16 @@ mod tests {
         assert_eq!(plan.source, ShellWindowControlSource::DeepLink);
         assert_eq!(plan.route, Some("/proposal/proposal-1".to_string()));
         assert_eq!(plan.focus, true);
+    }
+
+    #[test]
+    fn command_names_match_the_tauri_runtime_entry() {
+        assert_eq!(SHOW_MAIN_WINDOW_COMMAND, "show_main_window");
+        assert_eq!(HIDE_MAIN_WINDOW_COMMAND, "hide_main_window");
+        assert_eq!(FOCUS_MAIN_ROUTE_COMMAND, "focus_main_route");
+        assert_eq!(SHOW_PET_WINDOW_COMMAND, "show_pet_window");
+        assert_eq!(HIDE_PET_WINDOW_COMMAND, "hide_pet_window");
+        assert_eq!(TOGGLE_PET_WINDOW_COMMAND, "toggle_pet_window");
     }
 
     #[test]

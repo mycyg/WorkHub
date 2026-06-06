@@ -57,7 +57,7 @@ owner: workflow
 | `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect |
 | `client-tauri/src-tauri/icons/icon.ico` | Tauri Windows resource icon | 从 Cuu alpha atlas 样张裁切生成的占位 app icon，满足 `tauri-build` Windows resource 要求；正式发布前替换为完整品牌图标 |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
-| `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan；deep-link route 做安全校验，pet 操作不抢焦点 |
+| `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点 |
 | `client-tauri/src-tauri/src/pet_window.rs` | Cuu pet window geometry contract | `body_only` / `card` 双模式尺寸、右下角定位、从小猫锚点向左上展开、屏幕内夹取、鼠标接近判定、拖拽 plan |
 | `client-tauri/src-tauri/src/pet_commands.rs` | Cuu pet window command scaffold | 固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` command 名称和 typed plan，新增 body anchor 防漂移、active mode rect 和 cursor decision helper |
 | `client-tauri/src-tauri/tauri.conf.json` | Tauri config scaffold | 对齐 `apps/desktop-webview` dev/build 输出，声明 `main` / `pet` window；`withGlobalTauri:true` 对齐当前 `window.__TAURI__` bridge；`skipTaskbar` 暂留在 WorkHub window plan，未写入 Tauri schema |
@@ -80,8 +80,8 @@ owner: workflow
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
 | Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json` | 后续补 setup/tray/SSE/notification/deep-link、多屏恢复实测 |
-| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
-| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 mode resize/position/show、drag 和 save-position 执行到真实 Tauri window API；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻 |
+| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview | 承载 `apps/desktop-webview` build；后续补 tray/deep-link 事件源 |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 pet show/hide/toggle、mode resize/position/show、drag、save-position、cursor sample 执行到真实 Tauri window / AppHandle API；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻；后续补 tray source 和视觉 QA |
 | Cuu 绿幕资产 | 已有 18 clip motion pack，`CuuMotionHint.sprite_state` 与 idle / interaction micro action 均已 full coverage，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA 与性能检查 |
 | 托盘 | 有 event 名与 window control plan；无真实 tray module | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
@@ -146,7 +146,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 ### 2.1 主窗（`main`，目标 + 旧参照）
 
 - **当前 WorkHub scaffold**：`main` window config = 1180×780、最小 960×640、`visible:true`、`focus:true`、`decorations:true`、`transparent:false`，先保证承载 `apps/desktop-webview` 的稳定主壳。
-- **当前控制契约**：`show_main_window` / `hide_main_window` / `focus_main_route` 已落；route 必须是安全站内路径，拒绝空值、外链、`..`、反斜杠和换行。
+- **当前控制契约**：`show_main_window` / `hide_main_window` / `focus_main_route` 已落并注册为 Tauri command；route 必须是安全站内路径，拒绝空值、外链、`..`、反斜杠和换行；`focus_main_route` 会 show/focus 主窗并 emit `navigate`。
 - **旧项目 / 目标形态参照**：无边框（`decorations:false`）、透明（`transparent:true`）、有阴影、`titleBarStyle:"Overlay"`、`hiddenTitle:true`，1280×800、最小 920×600、居中、**启动隐藏**（`visible:false`），用于后续主窗视觉升级。
 - **毛玻璃**：`window::decorate`（`window.rs:11`）在 Win11 上 `apply_acrylic`（半透明实时模糊，回退 `apply_mica`），macOS 上 `apply_vibrancy(HudWindow)`；应用后才 `window.show()`（`window.rs:40`）——避免白闪。
 - **自绘标题栏**：`TitleBar.tsx` 提供 `data-tauri-drag-region` 拖拽区 + 最小化/最大化/隐藏按钮 + 主题切换 + **SSE 连接绿点**（`TitleBar.tsx:26`，`sseConnected ? bg-success : bg-ink-faint`）。**关闭按钮 = `window.hide()` 而非退出**（`TitleBar.tsx:53`，「隐藏到托盘」）——只有托盘「退出」或 `app.exit(0)` 真退出（`tray.rs:44`）。
@@ -158,7 +158,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 
 - **当前 WorkHub scaffold**：`pet` window 初始 config = 180×220、最小 160×180、`visible:false`、`focus:false`、`decorations:false`、`transparent:true`、`alwaysOnTop:true`；`skipTaskbar:true` 已在 `ShellWindowPlan` 中固定，但暂未写入 `tauri.conf.json`，等真实 Tauri dependency/schema 校验后再接。
 - **当前几何合同**：`client-tauri/src-tauri/src/pet_window.rs` 已把 `body_only`（180×220）和 `card`（380×560）拆开，默认把 Cuu 放在主显示器 work area 右下角 24px，展开卡片时从小猫身体锚点向左上扩展，并对离屏位置做 clamp。
-- **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
+- **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落并注册为 Tauri command；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
 - **当前 webview surface**：`apps/desktop-webview/src/browser.ts` 会把 `/pet` 或 `?surface=pet` 分流到 `pet-surface.ts`，该 surface 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳。
 - **当前活体行为**：`packages/cuu/src/idle-scheduler.ts` 已提供基础 scheduler，`pet-surface.ts` 会在没有 active card 时 tick 并更新 `data-cuu-idle-action`，并按该 action 选择真实 atlas clip；`pet-window-bridge.ts` 已把 pointer hover / drag / release 与 Rust cursor sample 喂给 scheduler，并会调用 Tauri window `startDragging` 或 Rust command fallback；`pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`；`main.rs` 已注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API，拖拽位置保存到 Tauri Config `pet-window-state.json`，启动时会 clamp 回当前 work area。当前还未接多屏恢复实测和透明窗口视觉 QA。
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
@@ -175,7 +175,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 ### 2.3 系统托盘（目标 + 旧参照，当前未落）
 
 - **图标**：旧项目用 `icons/icon.png` + `with_id("main-tray")`，可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`。当前 WorkHub 尚未添加 tray plugin / icon / tray module。
-- **当前可复用契约**：托盘项先映射到 `ShellWindowControlPlan`：打开主窗=`show_main_window(Tray)`，隐藏主窗=`hide_main_window(Tray)`，显示/隐藏桌宠=`toggle_pet_window(Tray)`。
+- **当前可复用契约**：托盘项先映射到 `ShellWindowControlPlan`：打开主窗=`show_main_window(Tray)`，隐藏主窗=`hide_main_window(Tray)`，显示/隐藏桌宠=`toggle_pet_window(Tray)`；同名 Tauri command 已可执行真实窗口 API，后续 tray module 只需选择正确 source。
 - **左键**：显示+聚焦主窗（`tray.rs:51`，`show_menu_on_left_click(false)` 故左键不弹菜单）。
 - **右键菜单**（动态重建，`build_menu`，`tray.rs:65`）：
   ```
@@ -321,7 +321,7 @@ IPC 双向：**webview → Rust** 走 `invoke(cmd, args)`（`lib/tauri.ts:11`）
 | `create_project`/`delete_project`/`delete_requirement`/`set_user_admin`/`delete_user` | — | — | 管理动作 | `commands/submitter.rs` |
 | `update_tray_unread` | `count` | — | 改托盘 tooltip/title | `commands/submitter.rs:242` |
 
-**WorkHub 新增命令（建议，对齐 §6.4 / api-contract）**：`open_session`（开桌宠对话 session，`api-contract.md §2.3`）、`send_session_message`、`respond_approval`（回审批 allow/deny+理由，`§2.8`）、`abort_agent_run`、`open_pet`/`hide_pet`（桌宠窗显隐）、`check_update`/`install_update`（自动更新，§7）。新命令一律遵循 §3.1 共享 ConfigState 与 §3.4 护栏。
+**WorkHub 新增命令（建议，对齐 §6.4 / api-contract）**：`open_session`（开桌宠对话 session，`api-contract.md §2.3`）、`send_session_message`、`respond_approval`（回审批 allow/deny+理由，`§2.8`）、`abort_agent_run`、`check_update`/`install_update`（自动更新，§7）。桌宠窗显隐已用 `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 注册到当前 `main.rs`。新命令一律遵循 §3.1 共享 ConfigState 与 §3.4 护栏。
 
 ### 4.2 事件订阅表（Rust → webview，全量）
 
@@ -705,7 +705,7 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 ### 9.2 宠物窗口落地
 
 - **窗口创建**：`pet` label 已在 scaffold 中存在，配置 `transparent:true`、`decorations:false`、`alwaysOnTop:true`、`visible:false`、`focus:false`；初始 body-only 尺寸为 180x220，展开卡片时按 `pet_window.rs` 的 `card` plan 扩到 380x560。`tauri::Builder` / `generate_context!` / command handler 已落，`set_pet_window_mode` 已能执行 resize/position/show；`skipTaskbar:true` 已在 WorkHub plan 固定，待真实 Tauri schema/runtime 接线。
-- **权限**：若前端创建窗口，需要 Tauri capability 允许创建 webview window；更稳妥的 MVP 是 Rust setup 阶段创建 pet window，前端只发 `open_pet/hide_pet` 命令。
+- **权限**：若前端创建窗口，需要 Tauri capability 允许创建 webview window；更稳妥的 MVP 是 Rust setup 阶段创建 pet window，前端只发 `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 命令。
 - **点击模型**：idle 时窗口可小尺寸跟随 Cuu 外接矩形；展开时扩大交互区域。真正的 click-through 需要谨慎，MVP 先用最小窗口避免挡事。
 - **位置**：当前 `pet_window.rs` 已有右下角默认定位、从 body anchor 展开和 work area clamp；`main.rs` 已用自有 `pet-window-state.json` 保存 body anchor 与可选 monitor name，启动时恢复并按当前 work area clamp，失效则回到底部右侧；后续补多显示器实测和 Settings 可视化。
 - **降噪**：desktop webview 已支持静音/勿扰/减少动效/队列上限；真实 Tauri 里继续补隐藏到托盘、拖拽位置和系统通知。

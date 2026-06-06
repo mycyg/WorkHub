@@ -1,11 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pet_window::{
-    clamp_position, default_pet_window_placement, pet_pointer_decision,
-    place_pet_window_from_body_anchor, pet_window_size, save_pet_window_position_plan,
-    start_pet_window_drag_plan, LogicalPosition, LogicalRect, PetWindowDragPlan, PetWindowMode,
-    PetWindowPlacementPlan, PetWindowPointerDecision, PetWindowPointerInput,
-    DEFAULT_PET_WINDOW_MARGIN,
+    clamp_position, default_pet_window_placement, pet_pointer_decision, pet_window_size,
+    place_pet_window_from_body_anchor, save_pet_window_position_plan, start_pet_window_drag_plan,
+    LogicalPosition, LogicalRect, PetWindowDragPlan, PetWindowMode, PetWindowPlacementPlan,
+    PetWindowPointerDecision, PetWindowPointerInput, DEFAULT_PET_WINDOW_MARGIN,
 };
 
 pub const SET_PET_WINDOW_MODE_COMMAND: &str = "set_pet_window_mode";
@@ -250,7 +249,10 @@ mod tests {
     #[test]
     fn pet_window_rect_uses_the_active_mode_size() {
         assert_eq!(
-            pet_window_rect_from_position(PetWindowMode::BodyOnly, LogicalPosition { x: 10, y: 20 }),
+            pet_window_rect_from_position(
+                PetWindowMode::BodyOnly,
+                LogicalPosition { x: 10, y: 20 }
+            ),
             LogicalRect {
                 x: 10,
                 y: 20,
