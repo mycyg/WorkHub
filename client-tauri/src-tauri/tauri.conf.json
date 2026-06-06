@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WorkHub",
+  "version": "0.1.0",
+  "identifier": "com.mycyg.workhub",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @workhub/desktop-webview dev -- --port 1420",
+    "beforeBuildCommand": "pnpm --filter @workhub/desktop-webview build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../../apps/desktop-webview/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "WorkHub",
+        "url": "/",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": true,
+        "focus": true,
+        "transparent": false,
+        "decorations": true,
+        "alwaysOnTop": false
+      },
+      {
+        "label": "pet",
+        "title": "Cuu",
+        "url": "/pet",
+        "width": 360,
+        "height": 220,
+        "minWidth": 260,
+        "minHeight": 180,
+        "resizable": false,
+        "visible": false,
+        "focus": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"]
+  }
+}

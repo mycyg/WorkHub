@@ -11,7 +11,7 @@ owner: workflow
 >
 > **定位**：本篇是 `C-PET` 这一**产品呈现模式**的端级规格。**后端契约**（路由/事件/鉴权）见 [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)；**进程边界与事件总线拓扑**见 [`../01-architecture/system-architecture.md`](../01-architecture/system-architecture.md)；**实体/状态机**见 [`../01-architecture/data-model.md`](../01-architecture/data-model.md)；**体验 payload / Cuu 状态 / 交付物变更包契约**见 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)；**用户用语/去黑话**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威；**Web 端页面规划**见 [`./web-app.md`](./web-app.md)（同源信息架构，本篇只写差异）；**共享设计系统/类型化 client** 见 [`./shared-ui-kit.md`](./shared-ui-kit.md)。交叉处用相对链接引用，不重复。
 >
-> **扎根口径（2026-06-06 修正）**：本篇最初从现有「需求管理大师」桌面客户端真实代码演进而来，文中的 `tray.rs`、`sync.rs`、`spec_watch.rs`、`deep_link.rs`、`commands/*.rs`、`client-tauri/web-src/*` 等属于**旧项目行为参照 / 目标能力锚点**。当前 WorkHub 仓库的真实实现是 `client-tauri/src-tauri/src/{config,events,http,lib,sse}.rs` 的 Rust shell contract crate，加上 `apps/desktop-webview` 的 TS webview adapter。后续施工必须把旧锚点写成 `Behavior source`，把当前要落的文件写成 `Target Rust/TS paths`，不得把旧项目文件误判为已在 WorkHub 主仓落地。
+> **扎根口径（2026-06-06 修正）**：本篇最初从现有「需求管理大师」桌面客户端真实代码演进而来，文中的 `tray.rs`、`sync.rs`、`spec_watch.rs`、`deep_link.rs`、`commands/*.rs`、`client-tauri/web-src/*` 等属于**旧项目行为参照 / 目标能力锚点**。当前 WorkHub 仓库的真实实现是 `client-tauri/src-tauri/src/{config,events,http,lib,sse,windows}.rs`、`client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json` 的 Rust shell / Tauri scaffold，加上 `apps/desktop-webview` 的 TS webview adapter。后续施工必须把旧锚点写成 `Behavior source`，把当前要落的文件写成 `Target Rust/TS paths`，不得把旧项目文件误判为已在 WorkHub 主仓落地。
 > **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
 
 本篇小节：
@@ -53,6 +53,9 @@ owner: workflow
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload |
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
+| `client-tauri/src-tauri/tauri.conf.json` | Tauri config scaffold | 对齐 `apps/desktop-webview` dev/build 输出，声明 `main` / `pet` window；`skipTaskbar` 暂留在 WorkHub window plan，未写入 Tauri schema |
+| `client-tauri/src-tauri/capabilities/default.json` | Tauri capability scaffold | `main` / `pet` 仅授予 `core:default`，文件/进程/shell 能力后续按模块最小化开启 |
+| `client-tauri/src-tauri/tests/tauri_scaffold.rs` | scaffold contract tests | 校验 Tauri build target、window config 与 `ShellWindowPlan` 一致、capability 未提前放开高风险权限 |
 | `apps/desktop-webview/src/main.ts` | 桌面 webview typed surface | 消费 `@workhub/api-client`、渲染 Gold Path / intake / workitem / proposal / agent live |
 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu notice bridge | 从 Tauri/mock listener 订阅 `push-event` / `sse-status`，生成 Cuu notice |
 | `apps/desktop-webview/src/browser.ts` | webview preview shell | 读取 `/api/pages/gold-path`，支持 scripted Cuu demo |
@@ -61,9 +64,9 @@ owner: workflow
 
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
-| Tauri v2 app runtime | `Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri app scaffold、`tauri.conf.json`、capabilities、main entry |
-| 主窗 `main` | 已有 `ShellWindowPlan`，未创建真实 Tauri window | 承载 `apps/desktop-webview` build |
-| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan`，未创建真实 Tauri window | transparent / decorations false / always-on-top / skip taskbar |
+| Tauri v2 app runtime | 已有 `tauri.conf.json` / capability scaffold；`Cargo.toml` 当前无 `tauri` dependency | 新增 Tauri dependency、`build.rs`、`main.rs` / setup entry |
+| 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config，未创建真实 Tauri runtime | 承载 `apps/desktop-webview` build |
+| 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config，未创建真实透明窗口 runtime；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar |
 | 托盘 | 只有 event 名 | 托盘菜单、未读/审批状态、show/hide Cuu |
 | 系统通知 | 只有 event 名 | OS notification plugin 与 high/urgent 策略 |
 | deep-link | 只有目标 ownership | `workhub://` / 兼容 `yqgl://` handler |
@@ -112,7 +115,7 @@ owner: workflow
 | **常驻入口** | 浏览器标签 | 托盘 + 桌宠浮窗（隐藏到托盘不退出） | `tray.rs`、`TitleBar.tsx:53`（关闭=`hide()`） |
 | **通知** | 页内 toast | 页内 toast **+ OS 系统通知**（右下角弹窗） | `App.tsx:66` `osNotify`、`reminders.rs:76` |
 | **唤起** | URL | `yqgl://` deep-link + 托盘菜单 + 单实例聚焦 | `deep_link.rs`、`lib.rs:31`（single-instance） |
-| **窗口** | 浏览器 chrome | 无边框 + Mica/Acrylic 毛玻璃 + 自绘标题栏 | `tauri.conf.json:21`（`decorations:false`）、`window.rs:22` |
+| **窗口** | 浏览器 chrome | 当前 scaffold：`main` 稳定主壳 + `pet` 透明桌宠窗配置；目标再升级主窗无边框/Mica | `windows.rs`、`tauri.conf.json` |
 | **身份持久化** | cookie | `config.json`（昵称/令牌/同步根/dedup 态，原子写） | `config.rs:390`（`save_to_path` atomic rename） |
 
 > **演进基线**：今天「桌宠」尚未独立成窗——它是右下角的 `FloatingAssistant`（`components/FloatingAssistant.tsx`）气泡 + 系统托盘（`tray.rs`）。WorkHub 的 C-PET 把这两者**升级为一等「桌宠」呈现层**（[glossary §8](../00-overview/glossary-dejargon.md) 标注 *(新增,L4)*），并补齐双向同步（现状 `sync.rs:227` 明注单向占位）与升级简报（PM 模式人话简报，`FR-PM-001`）。
@@ -121,11 +124,12 @@ owner: workflow
 
 ## 2. 窗口类型
 
-C-PET 用 **三类窗口 + 一类弹层**。现状只有 `main` 一个窗口（`tauri.conf.json:13`），WorkHub 新增独立桌宠窗。
+C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `tauri.conf.json` 中声明 `main` / `pet` 两个窗口，但还没有真实 Tauri runtime；下方旧项目细节是行为参照，施工时以 0.1/0.2 的当前文件表为准。
 
-### 2.1 主窗（`main`，现有）
+### 2.1 主窗（`main`，目标 + 旧参照）
 
-- **形态**：无边框（`decorations:false`）、透明（`transparent:true`）、有阴影、`titleBarStyle:"Overlay"`、`hiddenTitle:true`，1280×800、最小 920×600、居中、**启动隐藏**（`visible:false`）（`tauri.conf.json:14-28`）。
+- **当前 WorkHub scaffold**：`main` window config = 1180×780、最小 960×640、`visible:true`、`focus:true`、`decorations:true`、`transparent:false`，先保证承载 `apps/desktop-webview` 的稳定主壳。
+- **旧项目 / 目标形态参照**：无边框（`decorations:false`）、透明（`transparent:true`）、有阴影、`titleBarStyle:"Overlay"`、`hiddenTitle:true`，1280×800、最小 920×600、居中、**启动隐藏**（`visible:false`），用于后续主窗视觉升级。
 - **毛玻璃**：`window::decorate`（`window.rs:11`）在 Win11 上 `apply_acrylic`（半透明实时模糊，回退 `apply_mica`），macOS 上 `apply_vibrancy(HudWindow)`；应用后才 `window.show()`（`window.rs:40`）——避免白闪。
 - **自绘标题栏**：`TitleBar.tsx` 提供 `data-tauri-drag-region` 拖拽区 + 最小化/最大化/隐藏按钮 + 主题切换 + **SSE 连接绿点**（`TitleBar.tsx:26`，`sseConnected ? bg-success : bg-ink-faint`）。**关闭按钮 = `window.hide()` 而非退出**（`TitleBar.tsx:53`，「隐藏到托盘」）——只有托盘「退出」或 `app.exit(0)` 真退出（`tray.rs:44`）。
 - **承载**：除桌宠对话外的全部 webview 页面（§6 路由）。
@@ -134,7 +138,8 @@ C-PET 用 **三类窗口 + 一类弹层**。现状只有 `main` 一个窗口（`
 
 > 现状的 `FloatingAssistant` 是**主窗内的浮层**（`fixed bottom-5 right-5`，`FloatingAssistant.tsx:236`），随主窗显隐。WorkHub 把它抽成**独立 always-on-top 小窗**，主窗隐藏到托盘后桌宠仍在桌面常驻——这是「桌宠是常驻入口」的关键。
 
-- **形态（建议）**：小尺寸（约 96×96 收起 / 380×560 展开）、`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（复用 `tauri-plugin-window-state`，已在 `lib.rs:50` 注册）。
+- **当前 WorkHub scaffold**：`pet` window config = 360×220、最小 260×180、`visible:false`、`focus:false`、`decorations:false`、`transparent:true`、`alwaysOnTop:true`；`skipTaskbar:true` 已在 `ShellWindowPlan` 中固定，但暂未写入 `tauri.conf.json`，等真实 Tauri dependency/schema 校验后再接。
+- **形态（建议）**：小尺寸（约 96×96 收起 / 380×560 展开）、`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
@@ -142,9 +147,9 @@ C-PET 用 **三类窗口 + 一类弹层**。现状只有 `main` 一个窗口（`
 - **IPC**：桌宠窗与主窗共享同一 `ConfigState`（`lib.rs:67` `handle.state()`）与同一 `push-event` 事件流（`emit` 默认广播到所有窗口），无需新通道。
 - **MVP 降级**：P0–P3 可继续用主窗内浮层（`FloatingAssistant`），独立 `pet` 窗作为 P4「桌宠」里程碑交付（对齐 PRD `P0–P5` 的 P4=桌宠）。
 
-### 2.3 系统托盘（现有，`tray.rs`）
+### 2.3 系统托盘（目标 + 旧参照，当前未落）
 
-- **图标**：`icons/icon.png`（`tauri.conf.json:33`）；`with_id("main-tray")`（`tray.rs:11`），可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`（`tray.rs:260`、`submitter.rs:248`）。
+- **图标**：旧项目用 `icons/icon.png` + `with_id("main-tray")`，可 `tray_by_id` 后 `set_menu/set_tooltip/set_title`。当前 WorkHub 尚未添加 tray plugin / icon / tray module。
 - **左键**：显示+聚焦主窗（`tray.rs:51`，`show_menu_on_left_click(false)` 故左键不弹菜单）。
 - **右键菜单**（动态重建，`build_menu`，`tray.rs:65`）：
   ```
@@ -175,7 +180,7 @@ C-PET 用 **三类窗口 + 一类弹层**。现状只有 `main` 一个窗口（`
 - **Toast**：`ToastHost`（`App.tsx:330`），全局右上角；`osNotify` 同时触发 OS 系统通知。
 - **欢迎引导（WelcomeTour）**：`App.tsx:290`，首次进主壳自动开（`useFirstRun` 持久化），6 张卡（Sparkles/切换 Space/Bot/Bell/Folder/Command）。
 - **审批询问卡 / 升级简报**：WorkHub 新增（`permission.ask` / `escalation.created` 事件驱动），优先在桌宠窗展开态呈现，详见 §6.4。
-- **原生对话框**：`@tauri-apps/plugin-dialog`（`capabilities/default.json` 授权 `dialog:allow-open/save/message`）用于文件/文件夹选择（交付打包选目录、网盘上传选文件）。
+- **原生对话框**：后续接 `@tauri-apps/plugin-dialog` 时，再在 capability 中按需授权 `dialog:allow-open/save/message`；当前 `capabilities/default.json` 只保留 `core:default`。
 
 ---
 
@@ -605,9 +610,10 @@ C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/d
 
 ### 7.1 安装（NSIS）
 
-- **打包**：`bundle.targets: ["nsis"]`（`tauri.conf.json:49`），`installMode:"currentUser"`（免管理员，`:60`）、语言 `SimpChinese`/`English`（`:61`）、WebView2 `embedBootstrapper`（按需拉运行时，`:58`）。标识符 `com.mycyg.yqgl`，产品名「需求管理大师」，版本 `0.2.0`。
+- **当前 WorkHub scaffold**：`bundle.targets:["nsis"]` 已写入 `tauri.conf.json`，标识符为 `com.mycyg.workhub`，产品名 `WorkHub`。安装模式、语言、WebView2 bootstrapper、签名与图标尚未接。
+- **旧项目 / 目标形态参照**：`installMode:"currentUser"`（免管理员）、语言 `SimpChinese`/`English`、WebView2 `embedBootstrapper`（按需拉运行时）。
 - **分发**：daemon 托管安装包，客户端从 `/api/downloads/manifest` + `/downloads/*` 取（`api-contract.md §1` downloads 组）。
-- **deep-link 注册**：NSIS 装时注册 `yqgl://` scheme（`tauri.conf.json:41` `deep-link.desktop.schemes:["yqgl"]`）。
+- **deep-link 注册**：当前 WorkHub 未接 deep-link plugin；目标是 `workhub://`，必要时兼容旧 `yqgl://`。
 - **配置迁移**：首启从旧 Python 客户端配置（`%APPDATA%/yqgl/config.json` 等）迁移并备份（`config.rs:294` `legacy_config_candidates` + `config.migrated-to-tauri.json` 备份）；字段名刻意与旧版一致以无损迁移（`config.rs:1` 头注）。配置坏/锁/权限错时**保留 `.broken-/.recover-` 备份再回退默认**，绝不静默清令牌（`config.rs:264/463` 注释强调：静默重置 = 重新 onboarding = 吊销服务端设备记录 = 单向数据丢失）。
 
 ### 7.2 首次运行 → 设备门建立
@@ -618,7 +624,7 @@ C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/d
 
 ### 7.3 自动更新（**当前缺口 → WorkHub 待补**）
 
-- **现状**：`Cargo.toml` **无 `tauri-plugin-updater`**；`tauri.conf.json` **无 `updater` 配置**；故**目前无应用内自动更新**——升级靠重新下载安装包（NSIS 覆盖装，`currentUser` 模式）。`tauri-plugin-process`（`lib.rs:51`）已在，具备 relaunch 能力；`tauri-plugin-autostart`（`Cargo.toml:23`）已声明但**未在 `lib.rs` 注册**（latent）。
+- **现状**：`Cargo.toml` 仍无 `tauri` / `tauri-plugin-updater` / `tauri-plugin-process` / `tauri-plugin-autostart` 依赖；`tauri.conf.json` 无 `updater` 配置，故目前无应用内自动更新。`tauri-plugin-process` / `autostart` 属后续目标，不应误判为当前已接。
 - **WorkHub 演进（建议）**：
   - 接 `tauri-plugin-updater`：daemon 暴露 update manifest（与 `/api/downloads/manifest` 同源或扩展），客户端启动/定时 `check_update` → 有新版提示 → `install_update` → 用 `tauri_plugin_process` relaunch。新增命令 `check_update`/`install_update`（§4.1）+ 事件 `update-available`/`update-progress`。
   - LAN-first 形态下 update 源 = daemon 自身（无需公网 CDN）；云就绪时可移到对象存储/CDN（对齐 [`system-architecture.md §4`](../01-architecture/system-architecture.md)）。
