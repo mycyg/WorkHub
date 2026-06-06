@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { eventTypes, type AttentionItem, type QuestionCard, type WorkHubEvent } from "@workhub/contracts";
+import { eventTypes, type AttentionItem, type EvidenceBubble, type QuestionCard, type WorkHubEvent } from "@workhub/contracts";
 import { createCuuController, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
@@ -375,6 +375,9 @@ test("desktop Cuu actions submit approval choices through the typed API client",
     },
     async nextQuestion() {
       throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
     }
   };
   const allow = resolveDesktopCuuAction("/api/approvals/approval-1/respond", { actionId: "approve" });
@@ -422,6 +425,9 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
         submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
       };
       return question;
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
     }
   };
   const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option" });
@@ -430,4 +436,55 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.equal((await submitDesktopCuuAction({ client, action: action! })).message, "下一题：下一步要谁审批？");
   assert.deepEqual(calls, ["session-1"]);
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
+});
+
+test("desktop Cuu actions search project knowledge and return an evidence card", async () => {
+  const calls: unknown[] = [];
+  const bubble: EvidenceBubble = {
+    id: "00000000-0000-4000-8000-000000000302",
+    query_text: "客户成功周报模板",
+    summary_text: "我找到了会议口径、网盘数据和客户格式偏好。",
+    evidence_refs: [
+      {
+        id: "00000000-0000-4000-8000-000000000201",
+        source_type: "meeting",
+        source_id: "00000000-0000-4000-8000-000000000101",
+        title: "上次周会纪要",
+        confidence_hint: "found",
+        href: "/knowledge/evidence/meeting-1"
+      }
+    ],
+    actions: [
+      { id: "use_for_current_task", label: "用这些证据继续" },
+      { id: "open_full_search", label: "打开完整检索", href: "/knowledge/search?run=weekly-report" }
+    ]
+  };
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge(payload: unknown) {
+      calls.push(payload);
+      return bubble;
+    }
+  };
+  const action = resolveDesktopCuuAction("/knowledge/search?run=weekly-report&query=客户成功", {
+    actionId: "open_full_search"
+  });
+
+  assert.deepEqual(action, {
+    kind: "knowledge-search",
+    query: "客户成功",
+    run: "weekly-report"
+  });
+
+  const result = await submitDesktopCuuAction({ client, action: action! });
+  assert.equal(result.message, "Cuu 找到了一组项目证据。");
+  assert.equal(result.card?.kind, "evidence");
+  assert.equal(result.card?.state, "searching_evidence");
+  assert.equal(result.card?.chips?.[0]?.label, "上次周会纪要");
+  assert.deepEqual(calls, [{ query: "客户成功", run: "weekly-report" }]);
 });

@@ -1,5 +1,6 @@
 import {
   createCuuController,
+  cardFromEvidenceBubble,
   type CuuCard,
   type CuuCardAction,
   type CuuCardChip,
@@ -57,10 +58,16 @@ export type DesktopCuuActionRequest =
   | {
       kind: "session-next-question";
       sessionId: string;
+    }
+  | {
+      kind: "knowledge-search";
+      query?: string;
+      run?: string;
     };
 
 export type DesktopCuuActionResult = {
   message: string;
+  card?: CuuCard;
 };
 
 type DesktopShellGlobal = {
@@ -288,7 +295,8 @@ export function resolveDesktopCuuAction(
   href: string,
   input: { actionId?: string | undefined; requiresReason?: boolean | undefined } = {}
 ): DesktopCuuActionRequest | undefined {
-  const path = new URL(href, "https://workhub.local").pathname;
+  const url = new URL(href, "https://workhub.local");
+  const path = url.pathname;
   const approvalMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
   if (approvalMatch?.[1]) {
     return {
@@ -307,11 +315,21 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  if (path === "/knowledge/search" || path === "/api/knowledge/search") {
+    const query = url.searchParams.get("query") ?? url.searchParams.get("q");
+    const run = url.searchParams.get("run");
+    return {
+      kind: "knowledge-search",
+      ...(query ? { query } : {}),
+      ...(run ? { run } : {})
+    };
+  }
+
   return undefined;
 }
 
 export async function submitDesktopCuuAction(input: {
-  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion">;
+  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion" | "searchKnowledge">;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
 }): Promise<DesktopCuuActionResult> {
@@ -326,6 +344,18 @@ export async function submitDesktopCuuAction(input: {
     });
     return {
       message: input.action.decision === "allow" ? "Cuu 已收到：这步已批准。" : "Cuu 已带着原因打回，会继续改。"
+    };
+  }
+
+  if (input.action.kind === "knowledge-search") {
+    const bubble = await input.client.searchKnowledge({
+      ...(input.action.query ? { query: input.action.query } : {}),
+      ...(input.action.run ? { run: input.action.run } : {})
+    });
+    const card = cardFromEvidenceBubble(bubble);
+    return {
+      message: "Cuu 找到了一组项目证据。",
+      card
     };
   }
 

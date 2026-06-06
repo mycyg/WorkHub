@@ -191,7 +191,30 @@ function cuuDemoMode() {
   return "off";
 }
 
-function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient) {
+function handleCuuActionResult(
+  shellRoot: HTMLElement,
+  controller: CuuController,
+  result: { message: string; card?: CuuCard }
+) {
+  if (!result.card) {
+    showNotice(shellRoot, result.message);
+    return;
+  }
+  const decision = controller.enqueue(result.card);
+  updateCuuQueueBadge(shellRoot, decision.snapshot);
+  if (decision.card && (decision.outcome === "show" || decision.outcome === "replace")) {
+    showCuuCard(shellRoot, controller, decision.card, decision);
+    return;
+  }
+  showNotice(shellRoot, result.message);
+}
+
+function bindGoldPathNavigation(
+  shellRoot: HTMLElement,
+  shell: GoldPathAppShell,
+  client: BrowserApiClient,
+  cuuController: CuuController
+) {
   let pendingReviewHref: string | undefined;
   let pendingCuuAction: DesktopCuuActionRequest | undefined;
 
@@ -213,7 +236,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
           reasonMd: reasonButton.dataset.reviewReason ?? "需要调整"
         });
         pendingCuuAction = undefined;
-        showNotice(shellRoot, result.message);
+        handleCuuActionResult(shellRoot, cuuController, result);
       } catch (error) {
         showNotice(shellRoot, actionMessage(error));
       }
@@ -260,7 +283,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
       }
       try {
         const result = await submitDesktopCuuAction({ client, action: cuuAction });
-        showNotice(shellRoot, result.message);
+        handleCuuActionResult(shellRoot, cuuController, result);
       } catch (error) {
         showNotice(shellRoot, actionMessage(error));
       }
@@ -341,8 +364,8 @@ async function boot() {
       apiBaseLabel: "device-token aware client"
     });
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
-    bindGoldPathNavigation(root, shell, client);
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
+    bindGoldPathNavigation(root, shell, client, cuuController);
     const cuuDecisions = new Map<string, CuuControllerDecision>();
     bindCuuQueueBadge(root, cuuController);
     bindCuuPreferencePanel(root, cuuController, {

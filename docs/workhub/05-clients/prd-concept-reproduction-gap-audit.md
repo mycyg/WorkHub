@@ -80,7 +80,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Desktop webview | 能消费同一 VM、桥接 Cuu notice | 仍不是独立桌面体验；缺真实 pet window、本地动作面板、设置/诊断/同步中心 |
 | Rust shell | config/http/sse/event/window planning/control planning crate + Tauri config/capability scaffold | 缺 Tauri runtime、真实窗口创建、托盘、通知、deep-link、设备令牌 vault、本地 sync/delivery/updater |
 | Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue / preference panel MVP | 缺正式小猫动画资产、Rive/Live2D runtime、透明窗口、拖拽、系统通知、展开卡 |
-| 项目检索 / 知识库 | API/证据契约方向明确 | 缺 Cuu-first 检索气泡真实实现、证据卡交互、权限内检索结果分页 |
+| 项目检索 / 知识库 | API/证据契约方向明确；Cuu `knowledge-search` 可调用 typed API 并回显 evidence card | 缺「用这些证据继续」真实任务绑定、完整检索页、权限内检索结果分页 |
 | 同步 / 本地交付 | 规划完整 | 当前 WorkHub 仓库未落真实本地 sync worker、冲突 resolver、delivery package |
 | QA / 发布 | 单元测试与构建基础 | 缺端到端视觉 QA、桌宠透明窗口 QA、Tauri 安装包、updater/autostart 验证 |
 
@@ -102,7 +102,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Desktop webview shell | `apps/desktop-webview/src/browser.ts` | 可读取同一 VM，支持 Cuu demo event 和 desktop notice |
 | Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 Cuu notice |
 | Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
-| Cuu controller / badge / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge、超时后推进下一张卡、默认隐藏的提醒/声音/减少动效/队列上限偏好面板 |
+| Cuu controller / badge / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge、超时后推进下一张卡、默认隐藏的提醒/声音/减少动效/队列上限偏好面板；`knowledge-search` action 可回显 evidence card |
 | Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan 与 show/hide/focus/toggle control plan |
 | Tauri scaffold | `client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json`、`client-tauri/src-tauri/tests/tauri_scaffold.rs` | 已把 desktop webview dev/build、`main` / `pet` window config、最小 capability 和 scaffold contract tests 落到当前仓库 |
 
@@ -167,7 +167,7 @@ apps/desktop-webview/
 |---|---|---|---|
 | Cuu-P1a | 把 motion hint 绑定 sprite manifest | `defaultCuuSpriteManifest`、`CuuSpriteState` 校验 | **已落 MVP**：每个 `CuuState` 有 clip、fps、reduced-motion 文案；下一步接正式图片资产 |
 | Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、`SpriteCuu`、bubble layer | **部分已落**：notice 内可渲染 procedural sprite，controller 已能决策 show/queue/badge/drop，browser 已有 queue badge、超时推进和偏好面板；下一步做真实 frame animation、真实 Settings 承接和视觉 QA |
-| Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler | 主路径不长篇打字；打回原因用选项 chips |
+| Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler | 审批/下一题/知识检索回显已落；待「用这些证据继续」和证据详情展开 |
 | Cuu-P2a | 独立 `pet` window | Tauri window + open/hide command | 主窗隐藏后 Cuu 仍显示，可拖动、可收起 |
 | Cuu-P2b | Rive state machine | `.riv` + runtime adapter | push-event 触发自然过渡，失败可降级到 sprite |
 | Cuu-P3 | Live2D 评估 | `.moc3` 方案或放弃理由 | 只有在表情/陪伴感显著提升时进入 |
@@ -324,7 +324,7 @@ Rust 应只做：
 | GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | **MVP 已落**：每个 state 有可校验 clip；待生产资产路径 |
 | GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite；待真实 frame / atlas |
 | GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge、超时推进和偏好面板已接；待真实 Tauri Settings 承接、系统通知、视觉 QA |
-| GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question 可提交；待 evidence/search chips 与桌宠展开卡 |
+| GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question / knowledge-search 可提交并回显 evidence card；待「用这些证据继续」真实绑定与桌宠展开卡 |
 | GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` | Rust scaffold | 主窗关闭/隐藏后 Cuu 常驻 |
 | GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + window control plan + config/capability scaffold 已落**；待 `tauri` 依赖、`build.rs`、`main.rs` / setup、真实 main/pet window |
 | GAP-RUST-02 | SSE worker emit | `client-tauri/src-tauri/src/sse_worker.rs` | GAP-RUST-01 | 真实 SSE 发到 desktop webview |
