@@ -1,4 +1,5 @@
 pub mod config;
+pub mod deep_link;
 pub mod events;
 pub mod http;
 pub mod pet_commands;

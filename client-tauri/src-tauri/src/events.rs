@@ -6,6 +6,7 @@ pub enum ShellEvent {
     PushEvent,
     SseStatus,
     Navigate,
+    DeepLink,
     TrayAction,
     SystemNotification,
 }
@@ -35,6 +36,7 @@ mod tests {
             event_channel_name(ShellEvent::SystemNotification),
             "system-notification"
         );
+        assert_eq!(event_channel_name(ShellEvent::DeepLink), "deep-link");
     }
 }
 
@@ -43,6 +45,7 @@ pub fn event_channel_name(event: ShellEvent) -> &'static str {
         ShellEvent::PushEvent => "push-event",
         ShellEvent::SseStatus => "sse-status",
         ShellEvent::Navigate => "navigate",
+        ShellEvent::DeepLink => "deep-link",
         ShellEvent::TrayAction => "tray-action",
         ShellEvent::SystemNotification => "system-notification",
     }

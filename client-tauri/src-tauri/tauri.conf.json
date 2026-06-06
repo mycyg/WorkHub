@@ -47,6 +47,13 @@
       }
     ]
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["workhub", "yqgl"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"]

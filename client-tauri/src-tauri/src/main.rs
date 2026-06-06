@@ -1,4 +1,6 @@
 use workhub_client_tauri::config::WorkHubShellConfig;
+use workhub_client_tauri::deep_link::{deep_link_plan_from_url, DEEP_LINK_SCHEMES};
+use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position, pet_window_rect_from_position, restore_saved_body_position,
     sample_pet_cursor_near_command_plan, save_pet_window_position_command_plan,
@@ -30,6 +32,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager, State,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[tauri::command]
 fn set_pet_window_mode(
@@ -394,6 +397,47 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
         .map_err(|error| format!("failed to emit tray-action event: {error}"))
 }
 
+fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
+    #[cfg(any(windows, target_os = "linux"))]
+    {
+        let schemes = DEEP_LINK_SCHEMES.join(", ");
+        app.deep_link().register_all().map_err(|error| {
+            format!("failed to register WorkHub deep-link schemes ({schemes}): {error}")
+        })?;
+    }
+
+    let app_handle = app.handle().clone();
+    let start_urls = app
+        .deep_link()
+        .get_current()
+        .map_err(|error| format!("failed to read startup deep-link URLs: {error}"))?;
+    if let Some(urls) = start_urls {
+        for url in urls {
+            handle_deep_link_url(&app_handle, url.as_str())?;
+        }
+    }
+
+    let listener_app = app.handle().clone();
+    app.deep_link().on_open_url(move |event| {
+        for url in event.urls() {
+            if let Err(error) = handle_deep_link_url(&listener_app, url.as_str()) {
+                eprintln!("failed to handle WorkHub deep link {}: {error}", url);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
+    let plan = deep_link_plan_from_url(raw_url)
+        .map_err(|error| format!("invalid WorkHub deep link {raw_url}: {error:?}"))?;
+
+    execute_window_control(app, plan.window_control.clone())?;
+    app.emit(event_channel_name(ShellEvent::DeepLink), plan)
+        .map_err(|error| format!("failed to emit deep-link event: {error}"))
+}
+
 fn pet_window_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resolve("pet-window-state.json", BaseDirectory::Config)
@@ -446,6 +490,7 @@ fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .setup(|app| {
             if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {
@@ -458,6 +503,7 @@ fn main() {
                 }
             }
             install_workhub_tray(app)?;
+            install_workhub_deep_links(app)?;
             spawn_default_shell_sse_workers(
                 app.handle().clone(),
                 WorkHubShellConfig::lan_default(),
