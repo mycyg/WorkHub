@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capability for the WorkHub main shell and Cuu pet window.",
   "windows": ["main", "pet"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

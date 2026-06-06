@@ -59,6 +59,12 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
       ? {
           startDragging: () => currentWindow.startDragging?.()
         }
+      : invoke
+        ? {
+            startDragging: async () => {
+              await invoke("start_pet_window_drag");
+            }
+          }
       : {}),
     ...(invoke
       ? {

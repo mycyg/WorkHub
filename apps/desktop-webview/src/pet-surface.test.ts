@@ -139,3 +139,21 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   assert.equal(await tauri?.sampleCursorNear?.(), true);
   assert.deepEqual(calls, ["set_pet_window_mode:card", "startDragging", "sample_pet_cursor_near:"]);
 });
+
+test("pet window bridge can start dragging through the Rust command fallback", async () => {
+  const calls: string[] = [];
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string) {
+          calls.push(command);
+          return false;
+        }
+      }
+    }
+  });
+
+  await bridge?.startDragging?.();
+  await bridge?.savePosition?.();
+  assert.deepEqual(calls, ["start_pet_window_drag", "save_pet_window_position"]);
+});

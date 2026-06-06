@@ -89,7 +89,10 @@ fn default_capability_is_local_and_window_scoped() {
 
     assert_eq!(capability["identifier"], "default");
     assert_eq!(windows, HashSet::from(["main", "pet"]));
-    assert_eq!(permissions, HashSet::from(["core:default"]));
+    assert_eq!(
+        permissions,
+        HashSet::from(["core:default", "core:window:allow-start-dragging"])
+    );
     assert!(permissions.iter().all(|permission| {
         !permission.starts_with("fs:")
             && !permission.starts_with("shell:")
