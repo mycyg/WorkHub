@@ -101,6 +101,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Web shell | `apps/web/src/browser.ts` | 读取 `/api/pages/gold-path` 并渲染 shell，可做 P0.5 预览 |
 | Desktop webview shell | `apps/desktop-webview/src/browser.ts` | 可读取同一 VM，支持 Cuu demo event 和 desktop notice |
 | Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 Cuu notice |
+| Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
 | Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming |
 
 ### 2.2 容易误判的地方
@@ -143,8 +144,8 @@ apps/desktop-webview/
 
 | 缺口 | 为什么重要 | 目标落点 |
 |---|---|---|
-| 真实小猫动画资产 | 否则 Cuu 只是文本卡片，不符合“QQ 宠物式、会动、醒目、可爱” | `apps/desktop-webview/src/assets/cuu/*` 或未来 `client-tauri/web-src/src/assets/cuu/*` |
-| sprite manifest schema | 需要把 `CuuMotionHint.sprite_state` 绑定到真实帧 | `packages/cuu/src/sprite-manifest.ts`、`packages/contracts/src/experience.ts` |
+| 真实小猫动画资产 | 当前 runtime 还是 procedural CSS，占位感强；要复现概念图必须替换为正式小猫帧 | `apps/desktop-webview/src/assets/cuu/*` 或未来 `client-tauri/web-src/src/assets/cuu/*` |
+| sprite manifest 生产资产化 | schema / default manifest 已落，但需要接真实 frame image 路径和 asset bundle | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/assets/cuu/*` |
 | CuuController | 需要管理 state transition、队列、打扰策略、reduced motion | `apps/desktop-webview/src/cuu/CuuController.tsx` |
 | 动画 renderer | 需要 CSS sprite / Canvas / Rive renderer | `apps/desktop-webview/src/cuu/SpriteCuu.tsx`、`RiveCuu.tsx` |
 | 独立 pet window | 主窗隐藏后 Cuu 仍在桌面活动 | `client-tauri/src-tauri/src/windows.rs`、Tauri `pet` window |
@@ -156,8 +157,8 @@ apps/desktop-webview/
 
 | 阶段 | 目标 | 产物 | 验收 |
 |---|---|---|---|
-| Cuu-P1a | 把 motion hint 绑定真实 sprite manifest | `cuu.sprite.json`、`CuuSpriteState` 校验 | 每个 `CuuState` 有帧、有 fps、有 reduced-motion 文案 |
-| Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、`SpriteCuu`、bubble layer | `cuuDemo=1` 可看到 idle→thinking→approval→celebrating |
+| Cuu-P1a | 把 motion hint 绑定 sprite manifest | `defaultCuuSpriteManifest`、`CuuSpriteState` 校验 | **已落 MVP**：每个 `CuuState` 有 clip、fps、reduced-motion 文案；下一步接正式图片资产 |
+| Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、`SpriteCuu`、bubble layer | **部分已落**：notice 内可渲染 procedural sprite；下一步做 `CuuController` 与真实 frame animation |
 | Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler | 主路径不长篇打字；打回原因用选项 chips |
 | Cuu-P2a | 独立 `pet` window | Tauri window + open/hide command | 主窗隐藏后 Cuu 仍显示，可拖动、可收起 |
 | Cuu-P2b | Rive state machine | `.riv` + runtime adapter | push-event 触发自然过渡，失败可降级到 sprite |
@@ -307,8 +308,8 @@ Rust 应只做：
 
 | ID | 主题 | Owner path | 依赖 | 退出标准 |
 |---|---|---|---|---|
-| GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | 每个 state 有可校验资产配置 |
-| GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu` | GAP-CUU-01 | demo event 能驱动动画 |
+| GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | **MVP 已落**：每个 state 有可校验 clip；待生产资产路径 |
+| GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite；待 `CuuController` 与真实 frame |
 | GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | approval / next question 可提交 |
 | GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` | Rust scaffold | 主窗关闭/隐藏后 Cuu 常驻 |
 | GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | `tauri` 依赖、conf、capabilities、main window |

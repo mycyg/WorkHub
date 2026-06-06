@@ -94,6 +94,23 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
 
+### 3.5 施工进展（2026-06-06）
+
+已落一个 **sprite runtime MVP**，用于把 `CuuMotionHint` 真正接到可渲染的 Cuu 动画层：
+
+- `packages/cuu/src/sprite-manifest.ts`：新增 `defaultCuuSpriteManifest`、`cuuSpriteClipForMotion`、`validateCuuSpriteManifest`、`assertValidCuuSpriteManifest`。
+- `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，不再只有文字卡片。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`。
+
+仍未完成：
+
+- GPT Image 生成的正式透明 PNG / WebP 帧。
+- `cuu.sprite.json` 生产资产包与真实 frame image 路径。
+- 独立 Tauri `pet` window。
+- 拖拽、静音、勿扰、长期 idle 和多屏位置记忆。
+- Rive / Live2D 高表现力路线。
+
 ## 4. 交互原则
 
 1. **Cuu 先动，用户再点**：有事时 Cuu 用动作、表情和小气泡发起，不要求用户主动找页面。

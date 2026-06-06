@@ -2,6 +2,7 @@ import type { CuuCard, CuuCardAction, CuuCardChip } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { eventTypes, type GoldPathSurfaceVM } from "@workhub/contracts";
 
+import { desktopCuuSpriteCss, renderDesktopCuuSprite } from "./cuu-sprite-runtime.js";
 import { createDesktopShellEventBridge } from "./shell-events.js";
 
 export type DesktopShellEventEnvelope = {
@@ -68,7 +69,10 @@ type TimerId = ReturnType<typeof globalThis.setTimeout>;
 type GoldPathEvent = GoldPathSurfaceVM["events"][number];
 
 export const desktopCuuNoticeCss = [
+  desktopCuuSpriteCss,
   ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;font-weight:650}",
+  ".wh-cuu-card-hero{display:flex;align-items:center;gap:12px}",
+  ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0}",
   ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}",
   ".wh-cuu-card-kicker{display:flex;align-items:center;gap:8px;color:var(--wh-app-muted);font-size:12px}",
   ".wh-cuu-card-paw{width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#ffb169,#355cff);box-shadow:0 6px 16px rgba(53,92,255,.18)}",
@@ -241,13 +245,19 @@ export function desktopCuuNoticeMessage(card: CuuCard) {
 export function renderDesktopCuuNotice(card: CuuCard) {
   const chips = (card.chips ?? []).slice(0, 3).map(renderChip).join("");
   const actions = card.actions.slice(0, 3).map(renderAction).join("");
+  const sprite = renderDesktopCuuSprite(card.motion);
   return `<section class="wh-cuu-card" data-cuu-card-id="${escapeHtml(card.id)}" data-cuu-state="${escapeHtml(card.state)}" role="status">
-    <div class="wh-cuu-card-head">
-      <div class="wh-cuu-card-kicker"><span class="wh-cuu-card-paw" aria-hidden="true"></span><span>Cuu</span></div>
-      <span class="wh-cuu-card-state">${escapeHtml(labelForState(card.state))}</span>
+    <div class="wh-cuu-card-hero">
+      ${sprite.html}
+      <div class="wh-cuu-card-copy">
+        <div class="wh-cuu-card-head">
+          <div class="wh-cuu-card-kicker"><span class="wh-cuu-card-paw" aria-hidden="true"></span><span>Cuu</span></div>
+          <span class="wh-cuu-card-state">${escapeHtml(labelForState(card.state))}</span>
+        </div>
+        <strong class="wh-cuu-card-title">${escapeHtml(card.title)}</strong>
+        <p class="wh-cuu-card-message">${escapeHtml(card.message)}</p>
+      </div>
     </div>
-    <strong class="wh-cuu-card-title">${escapeHtml(card.title)}</strong>
-    <p class="wh-cuu-card-message">${escapeHtml(card.message)}</p>
     ${chips ? `<div class="wh-cuu-card-chips">${chips}</div>` : ""}
     ${actions ? `<div class="wh-cuu-card-actions">${actions}</div>` : ""}
   </section>`;

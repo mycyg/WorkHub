@@ -15,6 +15,7 @@ import {
 
 import {
   allCuuMotionHints,
+  assertValidCuuSpriteManifest,
   cardFromBudgetNotice,
   cardFromAttentionItem,
   cardFromEvent,
@@ -22,7 +23,10 @@ import {
   cardFromQuestionCard,
   cardFromSessionVm,
   cardFromAgentRunLive,
-  cardFromWorkItemDetail
+  cardFromWorkItemDetail,
+  cuuSpriteClipForMotion,
+  defaultCuuSpriteManifest,
+  validateCuuSpriteManifest
 } from "./index.js";
 
 const ts = "2026-06-05T01:00:00.000Z";
@@ -50,6 +54,39 @@ test("Cuu motion hints cover every contract state", () => {
     [...cuuStates].sort()
   );
   assert.equal(hints.every((hint) => hint.reduced_motion_fallback.includes("Cuu")), true);
+});
+
+test("default Cuu sprite manifest covers every motion hint", () => {
+  const hints = allCuuMotionHints();
+
+  assert.deepEqual(validateCuuSpriteManifest(defaultCuuSpriteManifest), []);
+  assert.doesNotThrow(() => assertValidCuuSpriteManifest(defaultCuuSpriteManifest));
+  for (const hint of hints) {
+    const clip = cuuSpriteClipForMotion(hint, defaultCuuSpriteManifest);
+    assert.equal(clip.state, hint.sprite_state);
+    assert.equal(clip.loop, hint.loop);
+    assert.ok(clip.frames.length >= 1);
+    assert.equal(clip.frames.some((frame) => frame.id === clip.reduced_motion_frame_id), true);
+  }
+});
+
+test("sprite manifest validation reports missing clips before Cuu runtime drifts", () => {
+  const broken = {
+    ...defaultCuuSpriteManifest,
+    clips: {
+      ...defaultCuuSpriteManifest.clips,
+      asking_approval_bounce: {
+        ...defaultCuuSpriteManifest.clips.asking_approval_bounce,
+        frames: [],
+        reduced_motion_frame_id: "missing-frame"
+      }
+    }
+  };
+
+  const issues = validateCuuSpriteManifest(broken);
+
+  assert.equal(issues.some((issue) => issue.path === "clips.asking_approval_bounce.frames"), true);
+  assert.equal(issues.some((issue) => issue.path === "clips.asking_approval_bounce.reduced_motion_frame_id"), true);
 });
 
 test("question cards stay option-first and keep free text collapsed", () => {

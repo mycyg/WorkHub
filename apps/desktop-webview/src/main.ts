@@ -139,6 +139,12 @@ export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId
 }
 
 export {
+  desktopCuuSpriteCss,
+  renderDesktopCuuSprite,
+  type DesktopCuuSpriteRender
+} from "./cuu-sprite-runtime.js";
+
+export {
   createDesktopShellEventBridge,
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,
