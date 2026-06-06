@@ -40,12 +40,14 @@ import {
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000021";
+const strangerId = "10000000-0000-4000-8000-000000000099";
+const adminId = "10000000-0000-4000-8000-000000000098";
 const workItemId = "50000000-0000-4000-8000-000000000021";
 const snapshotId = "70000000-0000-4000-8000-000000000025";
 const confidenceId = "72000000-0000-4000-8000-000000000025";
 const escalationId = "73000000-0000-4000-8000-000000000025";
 
-function user(): UserAuthRow {
+function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
   return {
     id: userId,
     nickname: "agent-run-user",
@@ -56,7 +58,8 @@ function user(): UserAuthRow {
     isAdmin: false,
     deletedAt: null,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    ...partial
   };
 }
 
@@ -359,9 +362,9 @@ function settings(): Settings {
   });
 }
 
-function authDeps(runtimeSettings: Settings): AuthDependencies {
+function authDeps(runtimeSettings: Settings, users: UserAuthRow[] = [user()]): AuthDependencies {
   return {
-    users: new MemoryUsers([user()]),
+    users: new MemoryUsers(users),
     devices: new MemoryDevices(),
     settings: runtimeSettings,
     now: () => now
@@ -394,8 +397,8 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   return app;
 }
 
-async function cookie(runtimeSettings: Settings) {
-  return generateSignedCookie(COOKIE_NAME, "cookie-agent-run", runtimeSettings.auth.cookieSecret);
+async function cookie(runtimeSettings: Settings, token = "cookie-agent-run") {
+  return generateSignedCookie(COOKIE_NAME, token, runtimeSettings.auth.cookieSecret);
 }
 
 function deferred<T>() {
@@ -727,6 +730,66 @@ test("agent run abort is limited to the run owner or an admin actor", async () =
     isAdmin: true
   });
   assert.equal(adminCancelled.status, "cancelled");
+});
+
+test("agent run read routes are limited to the run owner or an admin actor", async () => {
+  const runtimeSettings = settings();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000032"
+  });
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({
+    auth: authDeps(runtimeSettings, [
+      user(),
+      user({
+        id: strangerId,
+        nickname: "agent-run-stranger",
+        cookieToken: "cookie-agent-run-stranger"
+      }),
+      user({
+        id: adminId,
+        nickname: "agent-run-admin",
+        cookieToken: "cookie-agent-run-admin",
+        isAdmin: true
+      })
+    ]),
+    queue,
+    snapshots,
+    auditLogs
+  }));
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Private worker run"
+  });
+  const readRoutes = [
+    `/api/agent-runs/${queued.run_id}`,
+    `/api/agent-runs/${queued.run_id}/trace`,
+    `/api/agent-runs/${queued.run_id}/handoff`,
+    `/api/agent-runs/${queued.run_id}/replay`
+  ];
+
+  const strangerCookie = await cookie(runtimeSettings, "cookie-agent-run-stranger");
+  for (const route of readRoutes) {
+    const response = await app.request(route, { headers: { Cookie: strangerCookie } });
+    assert.equal(response.status, 403, route);
+    const body = await response.json() as { ok: false; error: { code: string } };
+    assert.equal(body.error.code, "http_error");
+  }
+
+  const ownerCookie = await cookie(runtimeSettings);
+  const adminCookie = await cookie(runtimeSettings, "cookie-agent-run-admin");
+  for (const route of readRoutes) {
+    const ownerResponse = await app.request(route, { headers: { Cookie: ownerCookie } });
+    assert.equal(ownerResponse.status, 200, route);
+    const adminResponse = await app.request(route, { headers: { Cookie: adminCookie } });
+    assert.equal(adminResponse.status, 200, route);
+  }
 });
 
 test("aborted running agent runs keep the cancelled state during finalize drift", async () => {

@@ -7,12 +7,14 @@ import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
 import {
   createCurrentUserMiddleware,
   getDefaultAuthDependencies,
+  type AuthActor,
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
 import {
   getDefaultAgentRunQueue,
-  type AgentRunQueue
+  type AgentRunQueue,
+  type AgentRunQueueRecord
 } from "../workers/agent-runner.js";
 import { buildReplayTracePage, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
 import {
@@ -32,6 +34,13 @@ function auditLogRunId(detailJson: unknown) {
   }
   const value = (detailJson as Record<string, unknown>).run_id;
   return typeof value === "string" ? value : undefined;
+}
+
+function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
+  if (run.actor_id === actor.id || actor.isAdmin) {
+    return;
+  }
+  throw new HTTPException(403, { message: "你没有权限查看这次 AI 执行。" });
 }
 
 export type AgentRunRoutesDependencies = {
@@ -69,13 +78,19 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!data) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
+    assertCanReadRun(data, c.var.actor);
     return c.json({ ok: true, data });
   });
 
   routes.get("/agent-runs/:id/trace", createCurrentUserMiddleware(authSource), async (c) => {
     const afterRaw = c.req.query("after");
     const after = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
-    const data = await queue.trace(c.req.param("id"), Number.isFinite(after) ? after : 0);
+    const run = await queue.get(c.req.param("id"));
+    if (!run) {
+      throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
+    }
+    assertCanReadRun(run, c.var.actor);
+    const data = await queue.trace(run.run_id, Number.isFinite(after) ? after : 0);
     return c.json({ ok: true, data });
   });
 
@@ -92,6 +107,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
+    assertCanReadRun(run, c.var.actor);
     return c.json({ ok: true, data: run.handoff ?? null });
   });
 
@@ -103,6 +119,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
+    assertCanReadRun(run, c.var.actor);
     const stores = auditStores();
     const snapshotRows = await stores.snapshots.listSnapshotsForWorkItem(run.work_item_id, { includeReverted: true });
     const auditRows = await stores.auditLogs.listAuditLogsForWorkItem(run.work_item_id);
