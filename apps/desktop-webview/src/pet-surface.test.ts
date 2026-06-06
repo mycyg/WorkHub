@@ -46,16 +46,20 @@ test("desktop Cuu P1 atlas manifest points at the generated transparent sample",
   assert.equal(desktopCuuP1AtlasManifest.clips.idle_breathe?.frames.length, 8);
   assert.equal(desktopCuuP1AtlasManifest.clips.thinking_tail?.frames.at(0)?.y, 1024);
   assert.equal(desktopCuuP1AtlasManifest.clips.asking_approval_bounce?.priority, "urgent");
+  assert.equal(desktopCuuP1AtlasManifest.clips.syncing_files_spin?.frames.at(0)?.y, 5464);
+  assert.equal(desktopCuuP1AtlasManifest.clips.offline_sleep?.frames.at(0)?.y, 8128);
 });
 
 test("desktop Cuu JSON sprite manifest validates against the shared atlas schema", () => {
   const manifest = JSON.parse(readFileSync(new URL("./assets/cuu/atlas/cuu.sprite.json", import.meta.url), "utf8")) as CuuSpriteAtlasManifest;
 
   assert.deepEqual(validateCuuSpriteAtlasManifest(manifest), []);
+  assert.deepEqual(validateCuuSpriteAtlasManifest(manifest, { require_full_motion_coverage: true }), []);
   assert.equal(manifest.atlas.image_path, "cuu-p1-motion-pack.png");
   assert.equal(manifest.clips.idle_breathe?.reduced_motion_frame_id, "idle_breathe-000");
-  assert.equal(Object.keys(manifest.clips).length, 6);
+  assert.equal(Object.keys(manifest.clips).length, 10);
   assert.equal(manifest.clips.searching_evidence_peek?.frames.at(0)?.y, 4576);
+  assert.equal(manifest.clips.offline_sleep?.priority, "idle");
 });
 
 test("desktop Cuu atlas renderer emits keyframes from atlas rectangles", () => {
@@ -79,12 +83,13 @@ test("desktop Cuu atlas renderer uses generated business motion clips", () => {
   assert.match(render.html, /data-fallback="false"/u);
 });
 
-test("desktop Cuu atlas renderer marks fallback for states still missing from the P1 pack", () => {
+test("desktop Cuu atlas renderer has business-state full coverage in the P1 pack", () => {
   const render = renderDesktopCuuAtlasSprite(cuuMotionForState("worried"), desktopCuuP1AtlasManifest);
 
-  assert.equal(render.clip.state, "idle_breathe");
-  assert.equal(render.fallback, true);
+  assert.equal(render.clip.state, "worried_ears");
+  assert.equal(render.fallback, false);
   assert.match(render.html, /data-cuu-requested-state="worried_ears"/u);
+  assert.match(render.html, /data-fallback="false"/u);
 });
 
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {

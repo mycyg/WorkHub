@@ -17,7 +17,7 @@ export const desktopCuuP1AtlasManifest = {
   atlas: {
     image_path: motionPackAtlasImage,
     width: 1776,
-    height: 5464,
+    height: 9016,
     pixel_ratio: 1,
     format: "png"
   },
@@ -146,6 +146,90 @@ export const desktopCuuP1AtlasManifest = {
         origin_y: 4576
       }),
       reduced_motion_frame_id: "searching_evidence_peek-000"
+    },
+    syncing_files_spin: {
+      state: "syncing_files_spin",
+      fps: 10,
+      loop: true,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/syncing_files_spin/cuu-syncing-files-spin-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/syncing_files_spin/cuu-syncing-files-spin-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "syncing_files_spin",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 5464
+      }),
+      reduced_motion_frame_id: "syncing_files_spin-000"
+    },
+    worried_ears: {
+      state: "worried_ears",
+      fps: 8,
+      loop: true,
+      interruptible: true,
+      priority: "urgent",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/worried_ears/cuu-worried-ears-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/worried_ears/cuu-worried-ears-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "worried_ears",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 125,
+        origin_y: 6352
+      }),
+      reduced_motion_frame_id: "worried_ears-000"
+    },
+    revision_requested_nod: {
+      state: "revision_requested_nod",
+      fps: 10,
+      loop: false,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/revision_requested_nod/cuu-revision-requested-nod-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/revision_requested_nod/cuu-revision-requested-nod-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "revision_requested_nod",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 7240
+      }),
+      reduced_motion_frame_id: "revision_requested_nod-000"
+    },
+    offline_sleep: {
+      state: "offline_sleep",
+      fps: 6,
+      loop: true,
+      interruptible: true,
+      priority: "idle",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/offline_sleep/cuu-offline-sleep-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/offline_sleep/cuu-offline-sleep-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "offline_sleep",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 167,
+        origin_y: 8128
+      }),
+      reduced_motion_frame_id: "offline_sleep-000"
     }
   }
 } satisfies CuuSpriteAtlasManifest;

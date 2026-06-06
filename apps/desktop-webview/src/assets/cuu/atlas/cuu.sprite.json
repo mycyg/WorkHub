@@ -6,7 +6,7 @@
   "atlas": {
     "image_path": "cuu-p1-motion-pack.png",
     "width": 1776,
-    "height": 5464,
+    "height": 9016,
     "pixel_ratio": 1,
     "format": "png"
   },
@@ -490,6 +490,326 @@
       "reduced_motion_frame_id": "searching_evidence_peek-000",
       "source_green_path": "../source-green/searching_evidence_peek/cuu-searching-evidence-peek-sheet-v1-green.png",
       "alpha_path": "../alpha/searching_evidence_peek/cuu-searching-evidence-peek-sheet-v1-alpha-clean.png"
+    },
+    "syncing_files_spin": {
+      "state": "syncing_files_spin",
+      "fps": 10,
+      "loop": true,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "syncing_files_spin-000",
+          "x": 0,
+          "y": 5464,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-001",
+          "x": 444,
+          "y": 5464,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-002",
+          "x": 888,
+          "y": 5464,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-003",
+          "x": 1332,
+          "y": 5464,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-004",
+          "x": 0,
+          "y": 5908,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-005",
+          "x": 444,
+          "y": 5908,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-006",
+          "x": 888,
+          "y": 5908,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "syncing_files_spin-007",
+          "x": 1332,
+          "y": 5908,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "syncing_files_spin-000",
+      "source_green_path": "../source-green/syncing_files_spin/cuu-syncing-files-spin-sheet-v1-green.png",
+      "alpha_path": "../alpha/syncing_files_spin/cuu-syncing-files-spin-sheet-v1-alpha-clean.png"
+    },
+    "worried_ears": {
+      "state": "worried_ears",
+      "fps": 8,
+      "loop": true,
+      "interruptible": true,
+      "priority": "urgent",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "worried_ears-000",
+          "x": 0,
+          "y": 6352,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-001",
+          "x": 444,
+          "y": 6352,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-002",
+          "x": 888,
+          "y": 6352,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-003",
+          "x": 1332,
+          "y": 6352,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-004",
+          "x": 0,
+          "y": 6796,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-005",
+          "x": 444,
+          "y": 6796,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-006",
+          "x": 888,
+          "y": 6796,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "worried_ears-007",
+          "x": 1332,
+          "y": 6796,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        }
+      ],
+      "reduced_motion_frame_id": "worried_ears-000",
+      "source_green_path": "../source-green/worried_ears/cuu-worried-ears-sheet-v1-green.png",
+      "alpha_path": "../alpha/worried_ears/cuu-worried-ears-sheet-v1-alpha-clean.png"
+    },
+    "revision_requested_nod": {
+      "state": "revision_requested_nod",
+      "fps": 10,
+      "loop": false,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "revision_requested_nod-000",
+          "x": 0,
+          "y": 7240,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-001",
+          "x": 444,
+          "y": 7240,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-002",
+          "x": 888,
+          "y": 7240,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-003",
+          "x": 1332,
+          "y": 7240,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-004",
+          "x": 0,
+          "y": 7684,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-005",
+          "x": 444,
+          "y": 7684,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-006",
+          "x": 888,
+          "y": 7684,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "revision_requested_nod-007",
+          "x": 1332,
+          "y": 7684,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "revision_requested_nod-000",
+      "source_green_path": "../source-green/revision_requested_nod/cuu-revision-requested-nod-sheet-v1-green.png",
+      "alpha_path": "../alpha/revision_requested_nod/cuu-revision-requested-nod-sheet-v1-alpha-clean.png"
+    },
+    "offline_sleep": {
+      "state": "offline_sleep",
+      "fps": 6,
+      "loop": true,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "offline_sleep-000",
+          "x": 0,
+          "y": 8128,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-001",
+          "x": 444,
+          "y": 8128,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-002",
+          "x": 888,
+          "y": 8128,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-003",
+          "x": 1332,
+          "y": 8128,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-004",
+          "x": 0,
+          "y": 8572,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-005",
+          "x": 444,
+          "y": 8572,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-006",
+          "x": 888,
+          "y": 8572,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "offline_sleep-007",
+          "x": 1332,
+          "y": 8572,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        }
+      ],
+      "reduced_motion_frame_id": "offline_sleep-000",
+      "source_green_path": "../source-green/offline_sleep/cuu-offline-sleep-sheet-v1-green.png",
+      "alpha_path": "../alpha/offline_sleep/cuu-offline-sleep-sheet-v1-alpha-clean.png"
     }
   }
 }

@@ -121,6 +121,10 @@ apps/desktop-webview/src/assets/cuu/
     carrying_document_step/
     celebrating_jump/
     searching_evidence_peek/
+    syncing_files_spin/
+    worried_ears/
+    revision_requested_nod/
+    offline_sleep/
   alpha/
     idle_breathe/
     thinking_tail/
@@ -128,6 +132,10 @@ apps/desktop-webview/src/assets/cuu/
     carrying_document_step/
     celebrating_jump/
     searching_evidence_peek/
+    syncing_files_spin/
+    worried_ears/
+    revision_requested_nod/
+    offline_sleep/
   atlas/
     cuu-p1-motion-pack.png
     cuu.sprite.json
@@ -277,7 +285,7 @@ idle loop
 | `knowledge.evidence.ready` | `searching_evidence_peek` + evidence card |
 | `sync.progress` | `syncing_files_spin` |
 | `budget.warning` / `budget.exhausted` | `worried_ears` |
-| `revision.fedback` | `revision_requested_nod` |
+| `revision.feedback` | `revision_requested_nod` |
 | `proposal.merged` / run succeeded | `celebrating_jump` |
 | `sse-status:retrying/closed` | `offline_sleep` |
 
@@ -322,12 +330,12 @@ idle loop
 - `packages/cuu/src/atlas-manifest.ts` 已新增真实 atlas manifest schema、grid frame helper、partial/full coverage 校验。
 - `apps/desktop-webview/src/cuu-atlas-runtime.ts` 已能按 atlas frame rect 生成 CSS keyframes。
 - `apps/desktop-webview/src/pet-surface.ts` 已支持 `/pet` 或 `?surface=pet` 只加载 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
-- 已生成 `idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek` 六个 clip 的绿幕 sprite sheet，完成 alpha 抠图，并合成 `cuu-p1-motion-pack.png`。
+- 已生成 `idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek`、`syncing_files_spin`、`worried_ears`、`revision_requested_nod`、`offline_sleep` 十个业务 clip 的绿幕 sprite sheet，完成 alpha 抠图，并合成 `cuu-p1-motion-pack.png`。
 
 下一步必须从“会显示”升级到“独立活着”：
 
-- 18 个动作的完整绿幕素材批次；当前是 6 clip seed，不是 full coverage。
-- 继续补全 `syncing_files_spin`、`worried_ears`、`revision_requested_nod`、`offline_sleep` 以及 idle 微动作专用 clip，直到 `cuu.sprite.json` 全量覆盖 `CuuMotionHint.sprite_state` 与 scheduler micro action。
+- 18 个动作的完整绿幕素材批次；当前 `CuuMotionHint.sprite_state` 已 full coverage，但 scheduler 的 8 个非 `idle_breathe` 微动作还缺专用视觉 clip。
+- 继续补全 `idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`，直到 `cuu.sprite.json` 同时覆盖 scheduler micro action。
 - 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
 - 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，把已落的 webview bridge 接到 Rust runtime。
 - idle scheduler 已落基础语义；继续把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到 full coverage atlas 视觉资产。
@@ -335,12 +343,12 @@ idle loop
 
 ## 11. P1 资产落地记录（2026-06-06）
 
-本轮已经把“绿幕生成 -> 本地抠图 -> atlas runtime”从单样张推进到 6 clip motion pack：
+本轮已经把“绿幕生成 -> 本地抠图 -> atlas runtime”推进到 10 个业务 clip full coverage motion pack：
 
 | 项 | 落点 |
 |---|---|
-| 绿幕源图 | `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek}/` |
-| 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek}/` |
+| 绿幕源图 | `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/` |
+| 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/` |
 | runtime atlas | `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png` |
 | runtime JSON manifest | `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json` |
 | manifest schema | `packages/cuu/src/atlas-manifest.ts` |
@@ -356,19 +364,22 @@ idle loop
 本轮像素验收结果（所有 clip 可见绿边统计均为 0）：
 
 ```text
-atlas: 1776x5464
-clips: idle_breathe, thinking_tail, asking_approval_bounce, carrying_document_step, celebrating_jump, searching_evidence_peek
+atlas: 1776x9016
+clips: idle_breathe, thinking_tail, asking_approval_bounce, carrying_document_step, celebrating_jump, searching_evidence_peek, syncing_files_spin, worried_ears, revision_requested_nod, offline_sleep
 idle_breathe: 1536x1024, visible=550088, partial=11983, greenish_visible=0
 thinking_tail: 1776x888, visible=535770, partial=12502, greenish_visible=0
 asking_approval_bounce: 1776x888, visible=533992, partial=16453, greenish_visible=0
 carrying_document_step: 1776x888, visible=480759, partial=13256, greenish_visible=0
 celebrating_jump: 1776x888, visible=433997, partial=11469, greenish_visible=0
 searching_evidence_peek: 1776x888, visible=515903, partial=20764, greenish_visible=0
+syncing_files_spin: 1776x888, visible=496776, partial=10523, greenish_visible=0
+worried_ears: 1776x888, visible=574405, partial=12924, greenish_visible=0
+revision_requested_nod: 1776x888, visible=503304, partial=10329, greenish_visible=0
+offline_sleep: 1776x888, visible=442821, partial=7090, greenish_visible=0
 ```
 
-这个 motion pack 用于把核心业务链路先跑起来，不等于正式 full coverage 资产包。当前已覆盖 `idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek`；未覆盖状态仍会在 atlas renderer 中标记 `data-fallback="true"` 并回退到 idle clip。生产门禁仍要求：
+这个 motion pack 已让 `CuuMotionHint.sprite_state` 业务状态 full coverage，`validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true })` 应通过。它仍不等于 18 动作正式资产包，因为 idle scheduler 的微动作还没有专用 clip。生产门禁仍要求：
 
-- 补齐 `syncing_files_spin`、`worried_ears`、`revision_requested_nod`、`offline_sleep` 等剩余业务状态。
 - 补齐 blink、tail、sleep、wake、look_at_mouse、drag_hold、tap_bubble、wave_hello 等生命感微动作。
 - 为每个动作记录统一 anchor、fps、loop、interruptible、priority、reduced motion frame。
 - 通过 `validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true })` 后，才允许替换主窗 notice 的 procedural sprite。
