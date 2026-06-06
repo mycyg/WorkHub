@@ -209,6 +209,19 @@ function handleCuuActionResult(
   showNotice(shellRoot, result.message);
 }
 
+function findCuuCardForAction(controller: CuuController, anchor: HTMLAnchorElement) {
+  const cardId = anchor.closest<HTMLElement>("[data-cuu-card-id]")?.dataset.cuuCardId;
+  if (!cardId) {
+    return undefined;
+  }
+  const snapshot = controller.snapshot();
+  const cards = [
+    snapshot.active_card,
+    ...snapshot.queue
+  ].filter((card): card is CuuCard => Boolean(card));
+  return cards.find((card) => card.id === cardId);
+}
+
 function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
@@ -272,7 +285,8 @@ function bindGoldPathNavigation(
     const href = anchor.getAttribute("href") ?? "";
     const cuuAction = resolveDesktopCuuAction(href, {
       actionId: anchor.dataset.cuuActionId,
-      requiresReason: anchor.dataset.requiresReason === "true"
+      requiresReason: anchor.dataset.requiresReason === "true",
+      card: findCuuCardForAction(cuuController, anchor)
     });
     if (cuuAction) {
       event.preventDefault();

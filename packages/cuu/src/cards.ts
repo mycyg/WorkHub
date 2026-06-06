@@ -444,7 +444,7 @@ export function cardFromEvidenceBubble(bubble: EvidenceBubble): CuuCard {
       id: action.id,
       label: action.label,
       tone: action.id === "use_for_current_task" ? "primary" : "secondary",
-      ...(action.href ? { method: "GET", href: action.href } : {})
+      ...(action.href ? { method: action.method ?? "GET", href: action.href } : {})
     })),
     chips: bubble.evidence_refs.slice(0, 4).map((evidence) => ({
       id: evidence.id,

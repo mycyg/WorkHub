@@ -84,7 +84,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/controller.ts`：提供纯 TS 的 show / replace / queue / badge / drop 决策，覆盖静音、勿扰、低优先级降级和 reduced-motion。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：把 Tauri/mock 的 `push-event` 与 `sse-status` 转成 Cuu notice。
 - `apps/desktop-webview/src/cuu-preferences.ts`：提供 Cuu 轻入口与偏好面板，面板默认隐藏，本地存储提醒模式、声音、减少动效和队列上限，并写回 `CuuController`。
-- `apps/desktop-webview/src/browser.ts`：支持 `cuuDemo=1` / `cuuDemo=offline` 的 scripted event 预览；Cuu action 可把知识检索结果回显成 evidence card。
+- `apps/desktop-webview/src/browser.ts`：支持 `cuuDemo=1` / `cuuDemo=offline` 的 scripted event 预览；Cuu action 可把知识检索结果回显成 evidence card，并把 evidence card 的 `evidence_refs` 通过 POST action 带回当前任务。
 
 但这些还不等于「桌宠已经完成」：
 
@@ -92,7 +92,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 没有独立 Tauri `pet` 透明窗口；当前只是 desktop webview 内的 notice。
 - 没有拖拽、收起、真实独立设置页、长时间 idle、低电量降帧。
-- 证据卡已能触发 typed `knowledge-search` 并回显结果，但「用这些证据继续」还没有绑定真实任务上下文。
+- 证据卡已能触发 typed `knowledge-search` 并回显结果；「用这些证据继续」已通过 `POST /api/workitems/{id}/evidence-bindings` 绑定到当前任务上下文。仍缺真实知识库持久化、证据详情展开和完整检索页分页。
 - 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
@@ -106,8 +106,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/cuu-sprite-runtime.ts`：新增 procedural CSS sprite renderer，在 notice 中显示 Cuu 小猫视觉层。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
-- `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板，可在当前 Cuu 气泡超时后自动推进下一张卡；Cuu action 结果若返回新卡，会进入 controller 的 show/queue/badge 流。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card。
+- `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板，可在当前 Cuu 气泡超时后自动推进下一张卡；Cuu action 结果若返回新卡，会进入 controller 的 show/queue/badge 流；点击 evidence card action 时会从当前 card 带上 `evidence_refs`。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 clip；desktop notice 能输出 `data-cuu-sprite-state`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
 
 仍未完成：
 
@@ -244,7 +244,7 @@ Cuu 应是独立 `pet` window，而不是主窗内固定浮层。
 ## 11. 施工顺序建议
 
 1. P1：CSS/PNG sprite 版 Cuu，能 idle、thinking、approval、completed、offline（procedural MVP 已落，待正式资产）。
-2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清/知识检索回显基础已落，待「用这些证据继续」真实任务绑定）。
+2. P1：Cuu 气泡承接选项式澄清和项目检索 chips（审批/澄清/知识检索回显/证据带回当前任务已落，待证据详情展开、完整检索页和真实持久化）。
 3. P2：独立 `pet` Tauri window，支持拖动、收起、托盘显隐，并把已有偏好面板迁入真实 Settings / pet window。
 4. P2：引入 Rive state machine，把事件映射为自然过渡。
 5. P3：评估 Live2D：只在 Cuu 的表情/呼吸/头部转动明显提升体验时使用。

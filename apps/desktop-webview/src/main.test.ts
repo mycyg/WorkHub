@@ -159,6 +159,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async searchKnowledge() {
       throw new Error("not needed");
     },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
     async costUsage() {
       throw new Error("not needed");
     },

@@ -3,8 +3,11 @@ import { HTTPException } from "hono/http-exception";
 
 import {
   createWorkItemRequestSchema,
+  useEvidenceForTaskRequestSchema,
   workItemDetailVmSchema,
   type CreateWorkItemRequest,
+  type EvidenceRef,
+  type UseEvidenceForTaskRequest,
   type WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -17,6 +20,7 @@ import {
 import {
   getP05GoldPathFixture,
   isP05SessionId,
+  isP05WorkItemId,
   p05GoldPathIds
 } from "../pages/gold-path.js";
 
@@ -103,6 +107,68 @@ function buildCreatedWorkItemDetail(input: CreateWorkItemRequest, submitterUserI
   return workItemDetailVmSchema.parse(detail);
 }
 
+function uniqueEvidenceRefs(refs: EvidenceRef[]) {
+  const seen = new Set<string>();
+  const result: EvidenceRef[] = [];
+  for (const ref of refs) {
+    if (seen.has(ref.id)) {
+      continue;
+    }
+    seen.add(ref.id);
+    result.push(ref);
+  }
+  return result;
+}
+
+function bindEvidenceAcceptance(acceptance: unknown[], evidenceCount: number) {
+  let found = false;
+  const mapped = acceptance.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return item;
+    }
+    const record = item as Record<string, unknown>;
+    if (record.id !== "evidence-bound") {
+      return item;
+    }
+    found = true;
+    return {
+      ...record,
+      status: "met",
+      detail: `Cuu 已带回 ${evidenceCount} 条证据引用。`
+    };
+  });
+  if (found) {
+    return mapped;
+  }
+  return [
+    ...mapped,
+    {
+      id: "evidence-bound",
+      title: "输出前必须绑定会议/网盘/评论证据",
+      status: "met",
+      detail: `Cuu 已带回 ${evidenceCount} 条证据引用。`
+    }
+  ];
+}
+
+function buildEvidenceBoundWorkItemDetail(input: UseEvidenceForTaskRequest): WorkItemDetailVM {
+  const fixture = getP05GoldPathFixture();
+  const evidenceRefs = uniqueEvidenceRefs([...input.evidence_refs, ...fixture.workItemDetail.evidence_refs]);
+  const detail: WorkItemDetailVM = {
+    ...fixture.workItemDetail,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      summary_md: `Cuu 已把 ${input.evidence_refs.length} 条证据绑定到当前任务，下一步会基于这些来源起草交付物。`,
+      status: "ai_working",
+      updated_at: new Date().toISOString()
+    },
+    acceptance: bindEvidenceAcceptance(fixture.workItemDetail.acceptance, input.evidence_refs.length),
+    evidence_refs: evidenceRefs
+  };
+
+  return workItemDetailVmSchema.parse(detail);
+}
+
 export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -115,6 +181,14 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
 
     const data = buildCreatedWorkItemDetail(payload, c.var.currentUser.id ?? p05GoldPathIds.user);
     return c.json({ ok: true, data }, 201);
+  });
+
+  routes.post("/workitems/:id/evidence-bindings", createCurrentUserMiddleware(authSource), async (c) => {
+    if (!isP05WorkItemId(c.req.param("id"))) {
+      throw new HTTPException(404, { message: "没有找到这个事项页面。" });
+    }
+    const payload = useEvidenceForTaskRequestSchema.parse(await readJsonBody(c));
+    return c.json({ ok: true, data: buildEvidenceBoundWorkItemDetail(payload) });
   });
 
   return routes;

@@ -267,7 +267,12 @@ const evidenceBubble: EvidenceBubble = {
   summary_text: "我找到了会议口径、网盘数据和客户格式偏好，足够起草第一版。",
   evidence_refs: evidenceRefs,
   actions: [
-    { id: "use_for_current_task", label: "用这些证据继续" },
+    {
+      id: "use_for_current_task",
+      label: "用这些证据继续",
+      method: "POST",
+      href: `/api/workitems/${p05GoldPathIds.workItem}/evidence-bindings`
+    },
     { id: "open_full_search", label: "打开完整检索", href: "/knowledge/search?run=weekly-report" },
     { id: "ask_followup", label: "再问一个范围问题", href: `/intake/${p05GoldPathIds.session}` }
   ]

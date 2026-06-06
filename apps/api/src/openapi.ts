@@ -142,6 +142,12 @@ export function getOpenApiDocument() {
           summary: "Create a work item from an intake session or option-first payload"
         }
       },
+      "/api/workitems/{id}/evidence-bindings": {
+        post: {
+          tags: ["workitems"],
+          summary: "Attach selected evidence refs to the current work item context"
+        }
+      },
       "/api/knowledge/search": {
         post: {
           tags: ["knowledge"],

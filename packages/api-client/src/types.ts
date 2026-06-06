@@ -25,6 +25,7 @@ import type {
   SessionVM,
   StartAgentRunRequest,
   StructuredHandoff,
+  UseEvidenceForTaskRequest,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -122,6 +123,7 @@ export type WorkHubApiClient = {
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
+  useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;

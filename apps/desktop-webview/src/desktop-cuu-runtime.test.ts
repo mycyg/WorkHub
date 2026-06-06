@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { eventTypes, type AttentionItem, type EvidenceBubble, type QuestionCard, type WorkHubEvent } from "@workhub/contracts";
-import { createCuuController, type CuuControllerDecision } from "@workhub/cuu";
+import { eventTypes, type AttentionItem, type EvidenceBubble, type QuestionCard, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
+import { createCuuController, type CuuCard, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
   bindDesktopShellCuuRuntime,
@@ -378,6 +378,9 @@ test("desktop Cuu actions submit approval choices through the typed API client",
     },
     async searchKnowledge() {
       throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
     }
   };
   const allow = resolveDesktopCuuAction("/api/approvals/approval-1/respond", { actionId: "approve" });
@@ -428,6 +431,9 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
     },
     async searchKnowledge() {
       throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
     }
   };
   const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option" });
@@ -469,6 +475,9 @@ test("desktop Cuu actions search project knowledge and return an evidence card",
     async searchKnowledge(payload: unknown) {
       calls.push(payload);
       return bubble;
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
     }
   };
   const action = resolveDesktopCuuAction("/knowledge/search?run=weekly-report&query=客户成功", {
@@ -487,4 +496,103 @@ test("desktop Cuu actions search project knowledge and return an evidence card",
   assert.equal(result.card?.state, "searching_evidence");
   assert.equal(result.card?.chips?.[0]?.label, "上次周会纪要");
   assert.deepEqual(calls, [{ query: "客户成功", run: "weekly-report" }]);
+});
+
+test("desktop Cuu actions bind evidence refs back to the current work item", async () => {
+  const workItemId = "10000000-0000-4000-8000-000000000001";
+  const evidenceBubbleId = "00000000-0000-4000-8000-000000000302";
+  const evidenceRefs = [
+    {
+      id: "00000000-0000-4000-8000-000000000201",
+      source_type: "meeting" as const,
+      source_id: "weekly-sync",
+      title: "上次周会纪要",
+      confidence_hint: "found" as const
+    }
+  ];
+  const card: CuuCard = {
+    id: evidenceBubbleId,
+    kind: "evidence",
+    state: "searching_evidence",
+    motion: {
+      state: "searching_evidence",
+      sprite_state: "searching_evidence_peek",
+      emphasis: "busy",
+      loop: true,
+      reduced_motion_fallback: "Cuu 正在找证据。"
+    },
+    title: "找到证据",
+    message: "可以继续处理。",
+    priority: "normal",
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: "用这些证据继续",
+        tone: "primary",
+        method: "POST",
+        href: `/api/workitems/${workItemId}/evidence-bindings`
+      }
+    ],
+    evidence_refs: evidenceRefs,
+    payload_ref: {
+      entity_type: "evidence",
+      entity_id: evidenceBubbleId
+    }
+  };
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return {
+        workitem: {
+          id,
+          code: "CSW-1",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          title: "生成客户周报模板",
+          status: "ai_working",
+          summary_md: "Cuu 已把证据绑定到当前任务。"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        evidence_refs: evidenceRefs
+      } as unknown as WorkItemDetailVM;
+    }
+  };
+
+  const action = resolveDesktopCuuAction(`/api/workitems/${workItemId}/evidence-bindings`, {
+    actionId: "use_for_current_task",
+    card
+  });
+
+  assert.deepEqual(action, {
+    kind: "use-evidence-for-task",
+    workItemId,
+    evidenceRefs,
+    evidenceBubbleId
+  });
+
+  const result = await submitDesktopCuuAction({ client, action: action! });
+
+  assert.equal(result.message, "Cuu 已把这些证据放进当前任务。");
+  assert.equal(result.card?.payload_ref?.entity_type, "workitem");
+  assert.equal(result.card?.evidence_refs?.[0]?.title, "上次周会纪要");
+  assert.deepEqual(calls, [
+    {
+      id: workItemId,
+      payload: {
+        evidence_bubble_id: evidenceBubbleId,
+        evidence_refs: evidenceRefs,
+        note: "Cuu evidence card action: use_for_current_task"
+      }
+    }
+  ]);
 });

@@ -199,6 +199,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    useEvidenceForWorkItem: (workItemId, payload) =>
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/evidence-bindings`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>

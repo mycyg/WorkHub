@@ -19,10 +19,12 @@ import {
   respondApprovalRequestSchema,
   deliverableChangeManifestSchema,
   deliverableManifestFixtures,
+  evidenceBubbleSchema,
   escalationTriggers,
   eventTypes,
   questionCardSchema,
   sessionVmSchema,
+  useEvidenceForTaskRequestSchema,
   workItemStatuses
 } from "./index.js";
 
@@ -274,6 +276,39 @@ test("session VMs carry option-first intake and stream metadata", () => {
   assert.equal(parsed.topic, `session:${parsed.session_id}`);
   assert.equal(parsed.question.input_mode, "single_choice");
   assert.equal(parsed.question.free_text.collapsed_by_default, true);
+});
+
+test("evidence bubbles expose POST binding actions for Cuu-first task continuation", () => {
+  const evidenceRef = {
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    source_type: "meeting",
+    source_id: "meeting-weekly-sync",
+    title: "上次周会纪要",
+    confidence_hint: "found"
+  };
+  const bubble = evidenceBubbleSchema.parse({
+    id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    query_text: "客户成功周报",
+    summary_text: "找到了会议和网盘证据。",
+    evidence_refs: [evidenceRef],
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: "用这些证据继续",
+        method: "POST",
+        href: "/api/workitems/cccccccc-cccc-4ccc-8ccc-cccccccccccc/evidence-bindings"
+      },
+      { id: "open_full_search", label: "打开完整检索", href: "/knowledge/search?q=weekly" }
+    ]
+  });
+  const request = useEvidenceForTaskRequestSchema.parse({
+    evidence_bubble_id: bubble.id,
+    evidence_refs: bubble.evidence_refs,
+    note: "Cuu 从证据气泡带回当前任务。"
+  });
+
+  assert.equal(bubble.actions[0]?.method, "POST");
+  assert.equal(request.evidence_refs[0]?.title, "上次周会纪要");
 });
 
 test("cost governance contracts expose clickable budget notices and scoped usage", () => {

@@ -1,6 +1,7 @@
 import {
   createCuuController,
   cardFromEvidenceBubble,
+  cardFromWorkItemDetail,
   type CuuCard,
   type CuuCardAction,
   type CuuCardChip,
@@ -8,7 +9,7 @@ import {
   type CuuControllerDecision
 } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type GoldPathSurfaceVM } from "@workhub/contracts";
+import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM } from "@workhub/contracts";
 
 import { desktopCuuSpriteCss, renderDesktopCuuSprite } from "./cuu-sprite-runtime.js";
 import { createDesktopShellEventBridge } from "./shell-events.js";
@@ -63,6 +64,12 @@ export type DesktopCuuActionRequest =
       kind: "knowledge-search";
       query?: string;
       run?: string;
+    }
+  | {
+      kind: "use-evidence-for-task";
+      workItemId: string;
+      evidenceRefs: EvidenceRef[];
+      evidenceBubbleId?: string;
     };
 
 export type DesktopCuuActionResult = {
@@ -293,7 +300,7 @@ export function renderDesktopCuuNotice(card: CuuCard) {
 
 export function resolveDesktopCuuAction(
   href: string,
-  input: { actionId?: string | undefined; requiresReason?: boolean | undefined } = {}
+  input: { actionId?: string | undefined; requiresReason?: boolean | undefined; card?: CuuCard | undefined } = {}
 ): DesktopCuuActionRequest | undefined {
   const url = new URL(href, "https://workhub.local");
   const path = url.pathname;
@@ -325,11 +332,23 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  const evidenceBindingMatch = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(path);
+  if (evidenceBindingMatch?.[1] && input.actionId === "use_for_current_task") {
+    const evidenceBubbleId =
+      input.card?.payload_ref?.entity_type === "evidence" ? input.card.payload_ref.entity_id : undefined;
+    return {
+      kind: "use-evidence-for-task",
+      workItemId: decodeURIComponent(evidenceBindingMatch[1]),
+      evidenceRefs: input.card?.evidence_refs ?? [],
+      ...(evidenceBubbleId ? { evidenceBubbleId } : {})
+    };
+  }
+
   return undefined;
 }
 
 export async function submitDesktopCuuAction(input: {
-  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion" | "searchKnowledge">;
+  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem">;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
 }): Promise<DesktopCuuActionResult> {
@@ -356,6 +375,21 @@ export async function submitDesktopCuuAction(input: {
     return {
       message: "Cuu 找到了一组项目证据。",
       card
+    };
+  }
+
+  if (input.action.kind === "use-evidence-for-task") {
+    if (input.action.evidenceRefs.length === 0) {
+      throw new Error("这张证据卡里没有可绑定的证据。");
+    }
+    const detail = await input.client.useEvidenceForWorkItem(input.action.workItemId, {
+      ...(input.action.evidenceBubbleId ? { evidence_bubble_id: input.action.evidenceBubbleId } : {}),
+      evidence_refs: input.action.evidenceRefs,
+      note: "Cuu evidence card action: use_for_current_task"
+    });
+    return {
+      message: "Cuu 已把这些证据放进当前任务。",
+      card: cardFromWorkItemDetail(detail)
     };
   }
 

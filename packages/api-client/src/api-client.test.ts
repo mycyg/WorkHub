@@ -74,6 +74,16 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.getProposal("proposal-1");
   await client.nextQuestion("session-1");
   await client.searchKnowledge({ q: "weekly" });
+  await client.useEvidenceForWorkItem("work-1", {
+    evidence_refs: [
+      {
+        id: "00000000-0000-4000-8000-000000000201",
+        source_type: "meeting",
+        source_id: "weekly-sync",
+        title: "周会纪要"
+      }
+    ]
+  });
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -97,6 +107,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/proposals/proposal-1",
     "POST /api/sessions/session-1/next-question",
     "POST /api/knowledge/search",
+    "POST /api/workitems/work-1/evidence-bindings",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",

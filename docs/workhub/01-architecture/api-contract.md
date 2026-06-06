@@ -129,6 +129,7 @@ owner: workflow
 | 方法 路径 | 入参 | 出参 | 鉴权 |
 |---|---|---|---|
 | **[新]** `POST /api/workitems/{id}/branches` | `{actor}` | `{branch_id}`(协作者/AI 各开分支) | 角色门 + 设备门(人工接活) |
+| **[新]** `POST /api/workitems/{id}/evidence-bindings` | `{evidence_bubble_id?, evidence_refs[], note?}` | `WorkItemDetailVM`(证据引用并入当前任务上下文) | 可见性门 |
 | **[新]** `POST /api/workitems/{id}/proposals` | `{branch_id, summary, changeset_ref}` | `ProposalOut`(状态 `open`) | branch owner |
 | **[新]** `GET /api/proposals/{id}` | — | `ProposalOut`(含 diff 摘要、ConfidenceRecord 引用) | 可见性门 |
 | **[新/演]** `POST /api/proposals/{id}/review` | `{decision: "approve"\|"reject", reason_md?}` | `{ok, status}` | reviewer(负责人) |
@@ -209,7 +210,7 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 | 方法 路径 | 入参 | 出参 | 锚点 |
 |---|---|---|---|
-| `GET /api/knowledge/search` | `?q` | `KnowledgeSearchOut`(`hits[]`) | `knowledge.py:42` |
+| `POST /api/knowledge/search` | `{q?/query?, project_id?, run?}` | `EvidenceBubble`(`evidence_refs[]` + Cuu actions) | `knowledge.py:42` |
 | `POST /api/knowledge/reindex` | — | `{ok}`(admin 强制重建) | `knowledge.py:57` |
 | `POST /api/knowledge/ask` | `KnowledgeAskIn` | `KnowledgeAskCreateOut`(`{run_id}`,异步) | `knowledge.py:73` |
 | `GET /api/knowledge/runs/{id}` | — | `KnowledgeAskRunOut`(`answer_md` + 引用) | `knowledge.py:96` |

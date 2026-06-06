@@ -160,10 +160,18 @@ export const evidenceBubbleSchema = z.object({
   actions: z.array(z.object({
     id: z.enum(["use_for_current_task", "open_full_search", "copy_summary", "ask_followup"]),
     label: z.string().min(1),
+    method: z.enum(["GET", "POST"]).optional(),
     href: z.string().optional()
   }))
 });
 export type EvidenceBubble = z.infer<typeof evidenceBubbleSchema>;
+
+export const useEvidenceForTaskRequestSchema = z.object({
+  evidence_bubble_id: idSchema.optional(),
+  evidence_refs: z.array(evidenceRefSchema).min(1),
+  note: z.string().max(500).optional()
+});
+export type UseEvidenceForTaskRequest = z.infer<typeof useEvidenceForTaskRequestSchema>;
 
 export const deliverableChangeSchema = z.object({
   id: idSchema,

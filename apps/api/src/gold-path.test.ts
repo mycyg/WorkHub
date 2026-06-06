@@ -292,6 +292,18 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
     data: { review_actions: { request_changes: { requires_reason?: boolean } } };
   };
   const workItemBody = await workitem.json() as { data: { latest_proposal?: unknown } };
+  const evidenceBound = await app.request(`/api/workitems/${p05GoldPathIds.workItem}/evidence-bindings`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      evidence_bubble_id: p05GoldPathIds.evidenceBubble,
+      evidence_refs: evidenceBody.data.evidence_refs
+    })
+  });
+  assert.equal(evidenceBound.status, 200);
+  const evidenceBoundBody = await evidenceBound.json() as {
+    data: { workitem: { status: string; summary_md?: string }; evidence_refs: unknown[]; acceptance: { id?: string; status?: string }[] };
+  };
   const replayBody = await replay.json() as {
     ok: true;
     data: { cost?: { active_notices: { usage_ratio: number; options?: unknown[] }[] } };
@@ -313,6 +325,10 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(createdWorkItemBody.data.agent_trace_preview.length >= 1, true);
   assert.equal(createdWorkItemBody.data.workitem.summary_md?.includes("已选择：风险优先"), true);
   assert.equal(evidenceBody.data.evidence_refs.length, 3);
+  assert.equal(evidenceBoundBody.data.workitem.status, "ai_working");
+  assert.equal(evidenceBoundBody.data.workitem.summary_md?.includes("3 条证据"), true);
+  assert.equal(evidenceBoundBody.data.evidence_refs.length, 3);
+  assert.equal(evidenceBoundBody.data.acceptance.some((item) => item.id === "evidence-bound" && item.status === "met"), true);
   assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
   assert.equal(workItemBody.data.latest_proposal !== undefined, true);
   assert.equal((replayBody.data.cost?.active_notices[0]?.usage_ratio ?? 0) >= 0.8, true);

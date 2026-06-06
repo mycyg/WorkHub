@@ -6,6 +6,7 @@ import {
   eventTypes,
   type AgentRunLiveVM,
   type BudgetNotice,
+  type EvidenceBubble,
   type ProposalDetailVM,
   type QuestionCard,
   type SessionVM,
@@ -19,6 +20,7 @@ import {
   cardFromBudgetNotice,
   cardFromAttentionItem,
   cardFromEvent,
+  cardFromEvidenceBubble,
   cardFromProposalDetail,
   cardFromQuestionCard,
   cardFromSessionVm,
@@ -264,6 +266,39 @@ test("work item detail becomes a lightweight Cuu task card", () => {
   assert.equal(card.payload_ref?.entity_type, "workitem");
   assert.equal(card.actions.some((action) => action.href === `/agent-runs/${detail.agent_trace_preview[0]?.agent_run_id}/replay`), true);
   assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
+});
+
+test("evidence bubbles preserve task binding POST actions", () => {
+  const bubble: EvidenceBubble = {
+    id: "00000000-0000-4000-8000-000000000302",
+    query_text: "客户成功周报模板",
+    summary_text: "找到了会议纪要和网盘表格。",
+    evidence_refs: [
+      {
+        id: "00000000-0000-4000-8000-000000000201",
+        source_type: "meeting",
+        source_id: "weekly-sync",
+        title: "上次周会纪要",
+        confidence_hint: "found"
+      }
+    ],
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: "用这些证据继续",
+        method: "POST",
+        href: `/api/workitems/${workItemId}/evidence-bindings`
+      }
+    ]
+  };
+
+  const card = cardFromEvidenceBubble(bubble);
+
+  assert.equal(card.kind, "evidence");
+  assert.equal(card.actions[0]?.tone, "primary");
+  assert.equal(card.actions[0]?.method, "POST");
+  assert.equal(card.actions[0]?.href, `/api/workitems/${workItemId}/evidence-bindings`);
+  assert.equal(card.evidence_refs?.length, 1);
 });
 
 test("live agent runs become immediate Cuu trace cards before SSE catches up", () => {
