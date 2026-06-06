@@ -50,7 +50,7 @@ owner: workflow
 | 文件 / 模块 | 当前职责 | 说明 |
 |---|---|---|
 | `client-tauri/src-tauri/src/lib.rs` | Rust shell ownership 声明 | 明确 Rust 拥有 base url、device token、tray、deep-link、system notification、sse worker、local file sync 等本地能力；也明确不拥有 permission / workitem 状态机 / domain DTO / Cuu animation state |
-| `client-tauri/src-tauri/src/config.rs` | shell config DTO | server url、client token、device name、token tail |
+| `client-tauri/src-tauri/src/config.rs` | shell config DTO / loader | server url、client token、device name、token tail；支持从 Tauri Config `workhub-shell-config.json` 与 `WORKHUB_*` / legacy `YQGL_CLIENT_TOKEN` 环境变量加载，空 token 不视为可信设备 |
 | `client-tauri/src-tauri/src/http.rs` | daemon request plan | URL 归一化、device token headers |
 | `client-tauri/src-tauri/src/sse.rs` | SSE target / frame parser | 规划 global/me/workitem/run/session/proposal streams，把 frame 转 push payload/status payload；新增 startup target 选择（无设备 token 只连 global）和 chunk frame buffer |
 | `client-tauri/src-tauri/src/sse_worker.rs` | SSE runtime worker | 用 `tauri::async_runtime::spawn` + `reqwest` rustls stream 后台连接 SSE，发 `connecting/open/retrying` status，按 chunk 解析后广播 `push-event`；默认 5s 重连 |
@@ -58,7 +58,7 @@ owner: workflow
 | `client-tauri/src-tauri/src/events.rs` | shell event channel names | `push-event`、`sse-status`、`navigate`、`tray-action`、`system-notification` |
 | `client-tauri/src-tauri/src/tray.rs` | tray menu contract | 固定 `workhub-main-tray`、tooltip、菜单 ID、菜单文案、`TrayMenuActionPlan`，把打开主窗/隐藏主窗/显示隐藏 Cuu/打开收件箱/退出映射到 window control 或 app exit；动态未读/审批计数尚未接 |
 | `client-tauri/src-tauri/build.rs` | Tauri build entry | 调用 `tauri_build::build()`，使当前 crate 具备真实 Tauri build scaffold |
-| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet/window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect；setup 已用 `TrayIconBuilder` 安装 WorkHub 托盘、deep-link plugin、notification plugin，并启动基础 SSE worker（LAN 默认 global stream） |
+| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry scaffold | 接 `tauri::Builder`、`generate_context!`、`invoke_handler`，注册 pet/window command；`set_pet_window_mode` 已执行 resize / position / show，`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实 cursor 与 pet window rect；setup 已加载 shell config、安装 WorkHub 托盘/deep-link/notification/single-instance plugin，并按配置启动 SSE worker |
 | `client-tauri/src-tauri/icons/icon.ico` | Tauri Windows resource icon | 从 Cuu alpha atlas 样张裁切生成的占位 app icon，满足 `tauri-build` Windows resource 要求；正式发布前替换为完整品牌图标 |
 | `client-tauri/src-tauri/src/windows.rs` | window plan contract | `main` / `pet` 窗口计划，`pet` 采用 transparent / decorations false / always-on-top / skip taskbar |
 | `client-tauri/src-tauri/src/window_controls.rs` | window control command contract | `show/hide/focus/toggle main/pet` 的 typed plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点 |
@@ -85,19 +85,19 @@ owner: workflow
 
 | 能力 | 当前状态 | 后续目标 |
 |---|---|---|
-| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json`；托盘基础菜单、SSE global worker、deep-link plugin、notification plugin 与 single-instance plugin 已在 setup 安装 | 后续补真实配置/设备 token 接线、多屏恢复实测、安装包 smoke |
+| Tauri v2 app runtime | 已有 `tauri` / `tauri-build` dependency、`build.rs`、`main.rs`、`tauri.conf.json` / capability scaffold；pet mode / drag / save-position / cursor sample command 已执行到真实 window / AppHandle API，body anchor 位置已保存到 Tauri Config `pet-window-state.json`；托盘基础菜单、SSE global worker、deep-link plugin、notification plugin 与 single-instance plugin 已在 setup 安装；启动时会读 `workhub-shell-config.json` 与环境变量 | 后续补设备注册/安全 vault、多屏恢复实测、安装包 smoke |
 | 主窗 `main` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API，安全 route 会通过 `navigate` 事件发给 webview；托盘左键/菜单、deep-link、system notification plan 和第二次启动均可显示/隐藏/聚焦主窗 | 承载 `apps/desktop-webview` build；后续补 notification click-through 与 Linux/macOS smoke |
 | 独立桌宠窗 `pet` | 已有 `ShellWindowPlan` + Tauri window config + `show/hide/toggle` control plan；webview `/pet` surface 已能只渲染 Cuu；`pet_window.rs` 已固定 body-only/card 几何、右下角定位、展开锚点、鼠标接近与拖拽 plan；`main.rs` 已把 pet show/hide/toggle、mode resize/position/show、drag、save-position、cursor sample 执行到真实 Tauri window / AppHandle API；托盘菜单可 toggle Cuu；`skipTaskbar` 仍在 WorkHub plan | transparent / decorations false / always-on-top / skip taskbar，主窗隐藏后仍常驻；后续补透明窗口视觉 QA、多屏恢复实测和系统通知 |
 | Cuu 绿幕资产 | 已有 18 clip motion pack，`CuuMotionHint.sprite_state` 与 idle / interaction micro action 均已 full coverage，均保留绿幕源图、透明 alpha 与 `cuu.sprite.json` | 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA 与性能检查 |
 | 托盘 | 已有 `client-tauri/src-tauri/src/tray.rs` 菜单契约与 `main.rs` `TrayIconBuilder` runtime；左键打开 WorkHub，右键菜单支持打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出，并发 `tray-action` plan | 动态未读/审批状态、tooltip/title 更新、同步子菜单、通知点击联动 |
-| SSE worker | 已有 `sse_worker.rs` runtime；setup 先用 LAN default 连接 `/api/push/stream`，按 SSE chunk 解析后发 `push-event`，连接态发 `sse-status`，断开 5s 重试；`/me` 仅在 config 有可信设备 token 时纳入 plan | 接真实 ConfigState/设备注册后的 worker restart，补 run/session/proposal 按需订阅和端到端 smoke |
+| SSE worker | 已有 `sse_worker.rs` runtime；setup 读取 shell config 后连接 `/api/push/stream`，按 SSE chunk 解析后发 `push-event`，连接态发 `sse-status`，断开 5s 重试；`/me` 仅在 config/file/env 有可信设备 token 时纳入 plan | 接设备注册/安全 vault 后的 worker restart，补 run/session/proposal 按需订阅和端到端 smoke |
 | 系统通知 | 已有 `notify.rs` high/urgent 策略、`tauri-plugin-notification` runtime、`system-notification` plan event；`sse_worker.rs` 只对私有流的预算耗尽、预算告警、审批请求、proposal、run/escalation、sync conflict 和 high/urgent notification 弹 OS 通知 | 通知点击联动、用户偏好/勿扰接线、去重持久化、安装包权限 smoke |
 | deep-link / single-instance | 已有 `tauri-plugin-deep-link`、`tauri-plugin-single-instance`、`workhub://` / `yqgl://` scheme 配置、启动 URL / 运行时 URL listener、`deep_link.rs` route 白名单、第二次启动 argv/cwd plan、`deep-link` / `single-instance` / `navigate` 事件发射 | 安装包协议注册 smoke、更多业务 target 与通知点击联动 |
 | 本地同步 / 交付 | 只有 ownership 声明 | sync worker、path containment、conflict resolver、delivery package |
-| Cuu 偏好 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存/cursor sample 端口，Rust 侧已有 `pet-window-state.json` 位置落盘 | 迁入真实 Tauri Settings / pet window，接托盘显隐、多屏恢复实测和系统通知 |
+| Cuu 偏好 / shell 设置 | desktop webview 内已有偏好面板和本地存储；`pet-window-bridge.ts` 已有拖拽/位置保存/cursor sample 端口，Rust 侧已有 `pet-window-state.json` 位置落盘和 `workhub-shell-config.json` 读取入口 | 迁入真实 Tauri Settings / pet window，接设备注册、安全 vault、托盘显隐、多屏恢复实测和系统通知偏好 |
 | updater / autostart | 未接 | P5 接安装更新、自启动、诊断 |
 
-结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 已把 `Tauri scaffold → pet window command → cursor/position → tray basics → SSE global worker → deep-link handler → high/urgent OS notification → single-instance focus/deep-link` 接到真实 Tauri API。下一步应继续补 `真实配置/设备 token worker restart → notification click-through / preference bridge → local sync/delivery → visual QA`。
+结论：本文后续大量旧项目能力描述仍有价值，但它们是迁移参照和目标形态；当前 WorkHub 已把 `Tauri scaffold → pet window command → cursor/position → tray basics → SSE config loader/global-or-me worker → deep-link handler → high/urgent OS notification → single-instance focus/deep-link` 接到真实 Tauri API。下一步应继续补 `设备注册/安全 vault + worker restart → notification click-through / preference bridge → local sync/delivery → visual QA`。
 
 更完整的差距与后续 backlog 见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -112,8 +112,8 @@ owner: workflow
 ```
 ┌──────────────────────── C-PET 进程（Tauri v2）────────────────────────┐
 │                                                                       │
-│  Rust 壳 (lib.rs)  ── manage(ConfigState) 共享配置（Arc<Mutex<Config>>）│
-│   ├─ 后台 worker: sse::spawn ─ 双流（global + /me）→ emit "push-event" │
+│  Rust 壳 (main.rs) ── load_shell_config(file/env) → setup workers       │
+│   ├─ 后台 worker: sse_worker ─ global + token-gated /me → push-event   │
 │   ├─ 后台 worker: reminders::spawn ─ 60s 轮询 due/unread → OS toast    │
 │   ├─ 后台 worker: spec_watch ─ 监视 spec/ 文件夹 → 自动上传            │
 │   ├─ tray::install ─ 托盘菜单（接单状态/同步/交付/设置/退出）         │
@@ -140,7 +140,7 @@ owner: workflow
 | **通知** | 页内 toast | 页内 toast **+ OS 系统通知**（右下角弹窗） | `App.tsx:66` `osNotify`、`reminders.rs:76` |
 | **唤起** | URL | `workhub://` deep-link + 兼容 `yqgl://` + 托盘菜单 + 单实例聚焦；第二次启动带协议 URL 会复用 deep-link 白名单跳转 | `deep_link.rs`、`single_instance.rs`、`main.rs`、`tauri.conf.json` |
 | **窗口** | 浏览器 chrome | 当前 scaffold：`main` 稳定主壳 + `pet` 透明桌宠窗配置；目标再升级主窗无边框/Mica | `windows.rs`、`tauri.conf.json` |
-| **身份持久化** | cookie | `config.json`（昵称/令牌/同步根/dedup 态，原子写） | `config.rs:390`（`save_to_path` atomic rename） |
+| **身份持久化** | cookie | 当前 WorkHub 已能启动读取 `workhub-shell-config.json` + env token；目标补 `config.json` / secure vault / sync root / dedup 态原子写 | `config.rs`、后续 `commands/config.rs` |
 
 > **演进基线**：今天「桌宠」尚未独立成窗——它是右下角的 `FloatingAssistant`（`components/FloatingAssistant.tsx`）气泡 + 系统托盘（`tray.rs`）。WorkHub 的 C-PET 把这两者**升级为一等「桌宠」呈现层**（[glossary §8](../00-overview/glossary-dejargon.md) 标注 *(新增,L4)*），并补齐双向同步（现状 `sync.rs:227` 明注单向占位）与升级简报（PM 模式人话简报，`FR-PM-001`）。
 
@@ -176,7 +176,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
 - **唤起/隐藏**：当前 `tray.rs` 已有「Show / hide Cuu」托盘项并在 `main.rs` 执行 `toggle_pet_window(Tray)`；deep-link `workhub://me` / 兼容 `yqgl://me` 已能打开主窗到个人入口，后续再补直接点亮桌宠和通知点击联动。
-- **IPC**：桌宠窗与主窗共享同一 `ConfigState`（`lib.rs:67` `handle.state()`）与同一 `push-event` 事件流（`emit` 默认广播到所有窗口），无需新通道。
+- **IPC**：桌宠窗与主窗共享同一 `push-event` 事件流（`emit` 默认广播到所有窗口）；当前 shell config 是启动期加载，后续 Settings/设备注册落地后再升级为共享可变 `ConfigState`，并在 token 更新后 restart 私有 SSE。
 - **MVP 降级**：真实 Tauri runtime 未接前，`/pet` surface 可作为 webview 预览和测试入口；主窗 notice 的 procedural sprite 只保留为 fallback，不再作为桌宠完成标准。
 
 ### 2.3 系统托盘（基础已落 + 动态状态待补）
@@ -238,7 +238,7 @@ C-PET 的 Rust 壳 = **命令处理器**（被 webview `invoke` 同步调用）+
 | **提醒/通知轮询** | 60s tick 拉 `/api/reminders/due` + `/api/notifications?status=unread`，severity high/urgent → OS toast，本地 dedup（`known_reminders`/`known_notifications`，按 `id:updated_at` 去重，无 id 则跳过) | `lib.rs:72` `reminders::spawn` | `reminder`、`notification` + OS 通知 | `reminders.rs:13/28/105` |
 | **spec_watch（按需）** | 监视 `{sync_root}/{slug}/{code}/spec/` 文件夹，文件落定后 sha256 去重、稳定性快照、分片上传为附件；append-only（本地删不删远端） | `start_spec_watcher` 命令（`submitter.rs:553`）→ `spec_watch::start`（`spec_watch.rs:122`） | `upload-progress`（pending/chunk/done/error） | `spec_watch.rs` 全文 |
 
-> **共享配置铁律**：当前 WorkHub 还没有旧项目那种完整 `ConfigState`，所以 SSE worker 在 setup 阶段先用 `WorkHubShellConfig::lan_default()` 连 global stream，避免无 token 时误打 `/me`。后续设备注册/设置落地后，后台 worker 与命令必须共享同一个配置状态；历史 bug 是 worker 持快照副本，导致 `register_device` 写入的 `client_token` 对 SSE/reminders 不可见→鉴权头空、通知静默。
+> **共享配置铁律**：当前 WorkHub 已有启动期配置加载：Tauri Config `workhub-shell-config.json` + `WORKHUB_SERVER_URL` / `WORKHUB_DEVICE_NAME` / `WORKHUB_CLIENT_TOKEN` / legacy `YQGL_CLIENT_TOKEN` 环境变量。SSE worker 只在有可信 token 时连 `/me`，避免无 token 误打私有流。后续设备注册/设置落地后，后台 worker 与命令必须共享同一个可变配置状态，并在 token 更新后 restart 私有 SSE；历史 bug 是 worker 持快照副本，导致 `register_device` 写入的 `client_token` 对 SSE/reminders 不可见→鉴权头空、通知静默。
 
 ### 3.2 平台集成
 
@@ -631,11 +631,12 @@ C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/d
 ### 6.8 设置（Settings）
 
 > 锚点 `routes/Settings.tsx`。C-PET 设置比 C-WEB 多「本地目录/同步/服务器地址」。
+> **当前 WorkHub 状态**：Rust 已有启动期 `workhub-shell-config.json` + env loader，可让 SSE worker 在有 token 时连接 `/me`；但 webview Settings 写盘、设备注册、secure vault、worker restart 尚未落地。以下旧项目锚点仍作为行为目标。
 
 **布局**：分组卡片，现状真实顺序为 身份+外观 / 接单状态 / 本地目录+网盘同步 / 服务器 / 帮助（重看引导）/ 关于 / 管理（`AdminPanel`，非管理员渲染 `null`，`Settings.tsx:437`）。
-**数据/API**：`get_config`/`set_config`（本地配置，`commands/config.rs`）+ `test_server` + `set_availability_status`（PUT `/api/users/me/status`）。改 endpoint/身份 → `set_config` 内部清 dedup 态（`commands/config.rs:177` `clear_dedup_state`）并清令牌（endpoint 变时，`commands/config.rs:169`）。
+**数据/API**：目标 `get_config`/`set_config`（本地配置，`commands/config.rs`）+ `test_server` + `set_availability_status`（PUT `/api/users/me/status`）。当前真实只读入口为 Rust 启动期 `load_shell_config_from_json_and_env`；后续改 endpoint/身份时仍需清 dedup 态和令牌。
 **关键交互**：
-- 服务器地址/端口 → `set_config` + `resetClientTokenCache`（`lib/tauri.ts:133`，让下次 `clientFetch` 用新 baseUrl/token；`Settings.tsx:384`「保存并重新连接」）。
+- 服务器地址/端口 → 目标 `set_config` + `resetClientTokenCache`（`lib/tauri.ts:133`，让下次 `clientFetch` 用新 baseUrl/token；`Settings.tsx:384`「保存并重新连接」）；当前开发/测试可写入 `workhub-shell-config.json` 或环境变量。
 - 本地工作目录/网盘目录（`onBlur` 触发 `saveRootField`，`Settings.tsx:180`；后端 `validated_root` 校验非空，`commands/config.rs:31`）。
 - 网盘同步模式（关/仅下载；两向被强制降级，`config.rs:155` `normalize_drive_mode`）+ 暂停开关（`Settings.tsx:352`，与托盘 `toggle_pause` 同源）。
 - 接单状态（空闲/忙碌/自定义文案，`set_availability_status` → 同步后端 + 托盘菜单 `refresh_menu`）。
@@ -658,13 +659,13 @@ C-PET 有**三种对话面**，都走 SSE 流式（`thinking/text/parsed/error/d
 - **旧项目 / 目标形态参照**：`installMode:"currentUser"`（免管理员）、语言 `SimpChinese`/`English`、WebView2 `embedBootstrapper`（按需拉运行时）。
 - **分发**：daemon 托管安装包，客户端从 `/api/downloads/manifest` + `/downloads/*` 取（`api-contract.md §1` downloads 组）。
 - **deep-link 注册**：当前 WorkHub 已接 `tauri-plugin-deep-link` 与 `tauri-plugin-single-instance`，`tauri.conf.json` 注册 `workhub://` 与兼容旧 `yqgl://`。开发态 Windows/Linux 会 `register_all()` 方便测试；第二次启动会聚焦既有主窗，并把 argv 里的协议 URL 复用 deep-link 白名单执行；后续还需安装包协议注册 smoke、macOS bundle smoke 与通知点击 smoke。
-- **配置迁移**：首启从旧 Python 客户端配置（`%APPDATA%/yqgl/config.json` 等）迁移并备份（`config.rs:294` `legacy_config_candidates` + `config.migrated-to-tauri.json` 备份）；字段名刻意与旧版一致以无损迁移（`config.rs:1` 头注）。配置坏/锁/权限错时**保留 `.broken-/.recover-` 备份再回退默认**，绝不静默清令牌（`config.rs:264/463` 注释强调：静默重置 = 重新 onboarding = 吊销服务端设备记录 = 单向数据丢失）。
+- **配置入口**：当前 WorkHub 会在 Tauri Config 目录读取 `workhub-shell-config.json`，字段为 `server_url` / `client_token` / `device_name`，并允许 `WORKHUB_SERVER_URL` / `WORKHUB_DEVICE_NAME` / `WORKHUB_CLIENT_TOKEN` / legacy `YQGL_CLIENT_TOKEN` 覆盖。后续再补旧 Python 客户端配置迁移、原子写盘、secure vault 与损坏配置恢复。
 
 ### 7.2 首次运行 → 设备门建立
 
-启动 → `window::decorate` + 延迟 show（避免白闪）→ `App.tsx` 读 config：
-- 无昵称 → onboarding（§6.1）。
-- 有昵称 → **每次启动自动重认证**（`App.tsx:144`）：`identify`（幂等）→ `validate_device`，无效则 `register_device` 刷新令牌（reqwest cookie jar 进程内、重启即空，故 `cookie_token` 只是「曾 onboarding」哨兵，不可信）→ `resetClientTokenCache` → 进主壳。
+启动 → `main.rs` 读 `workhub-shell-config.json`/env → 根据 token 决定 SSE global-only 或 global+`/me` → 进主壳。
+- 当前：若无 token，只连 global；若有 token，所有 SSE 请求带 `X-WorkHub-Client-Token` + legacy `X-YQGL-Client-Token`。
+- 目标：webview onboarding 识别用户 → 注册设备 → token 进入 secure vault / config state → restart 私有 SSE worker → 进主壳。
 
 ### 7.3 自动更新（**当前缺口 → WorkHub 待补**）
 

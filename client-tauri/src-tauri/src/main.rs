@@ -1,4 +1,4 @@
-use workhub_client_tauri::config::WorkHubShellConfig;
+use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
 use workhub_client_tauri::deep_link::{deep_link_plan_from_url, DEEP_LINK_SCHEMES};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::pet_commands::{
@@ -509,6 +509,27 @@ fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
         .and_then(|monitor| monitor.name().cloned())
 }
 
+fn shell_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .resolve("workhub-shell-config.json", BaseDirectory::Config)
+        .map_err(|error| format!("failed to resolve shell config path: {error}"))
+}
+
+fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfig, String> {
+    let path = shell_config_path(app)?;
+    let raw =
+        if path.exists() {
+            Some(fs::read_to_string(&path).map_err(|error| {
+                format!("failed to read shell config {}: {error}", path.display())
+            })?)
+        } else {
+            None
+        };
+
+    load_shell_config_from_json_and_env(raw.as_deref(), |name| std::env::var(name).ok())
+        .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -531,11 +552,9 @@ fn main() {
             }
             install_workhub_tray(app)?;
             install_workhub_deep_links(app)?;
-            spawn_default_shell_sse_workers(
-                app.handle().clone(),
-                WorkHubShellConfig::lan_default(),
-            )
-            .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
+            let shell_config = load_workhub_shell_config(&app.handle())?;
+            spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
+                .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
