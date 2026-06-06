@@ -80,7 +80,10 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   });
 
   routes.post("/agent-runs/:id/abort", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await queue.abort(c.req.param("id"), c.var.actor.id);
+    const data = await queue.abort(c.req.param("id"), {
+      id: c.var.actor.id,
+      isAdmin: c.var.actor.isAdmin
+    });
     return c.json({ ok: true, data });
   });
 

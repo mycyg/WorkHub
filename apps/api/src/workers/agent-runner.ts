@@ -115,6 +115,8 @@ export type EnqueueAgentRunInput = {
   mode?: WorkItemMode;
 };
 
+export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean };
+
 export type BudgetDecisionInput = EnqueueAgentRunInput & {
   settings: Settings;
 };
@@ -139,7 +141,7 @@ export type AgentRunQueue = {
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
   workdir: (runId: string) => Promise<string | null>;
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
-  abort: (runId: string, actorId: string) => Promise<AgentRunQueueRecord>;
+  abort: (runId: string, actor: AbortAgentRunActor) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
   run: (runId: string) => Promise<AgentRunQueueRecord>;
   runNext: () => Promise<AgentRunQueueRecord | null>;
@@ -240,6 +242,14 @@ export function createInMemoryAgentRunQueue(options: {
   function updateRun(run: AgentRunQueueRecord) {
     runs.set(run.run_id, run);
     return run;
+  }
+
+  function abortActorId(actor: AbortAgentRunActor) {
+    return typeof actor === "string" ? actor : actor.id;
+  }
+
+  function abortActorIsAdmin(actor: AbortAgentRunActor) {
+    return typeof actor === "object" && actor.isAdmin === true;
   }
 
   function driftedRun(runId: string) {
@@ -487,10 +497,13 @@ export function createInMemoryAgentRunQueue(options: {
       return run.trace.filter((step) => step.step_no > after);
     },
 
-    async abort(runId) {
+    async abort(runId, actor) {
       const run = runs.get(runId);
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
+      }
+      if (run.actor_id !== abortActorId(actor) && !abortActorIsAdmin(actor)) {
+        throw new AgentRunnerError(403, "agent_run_abort_forbidden", "只有发起人或管理员可以取消这次 AI 执行。");
       }
       if (!["queued", "running"].includes(run.status)) {
         throw new AgentRunnerError(409, "agent_run_already_settled", "这次 AI 执行已经结束。");

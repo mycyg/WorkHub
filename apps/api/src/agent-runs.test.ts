@@ -691,6 +691,44 @@ test("concurrent agent run starts keep one active run per work item", async () =
   assert.equal((await queue.listActive()).length, 1);
 });
 
+test("agent run abort is limited to the run owner or an admin actor", async () => {
+  const runtimeSettings = settings();
+  let runIndex = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => `40000000-0000-4000-8000-${String(40 + runIndex++).padStart(12, "0")}`
+  });
+
+  const ownedRun = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Owner cancellable run"
+  });
+  await assert.rejects(
+    () => queue.abort(ownedRun.run_id, "10000000-0000-4000-8000-000000000099"),
+    (error) =>
+      error instanceof AgentRunnerError &&
+      error.status === 403 &&
+      error.code === "agent_run_abort_forbidden"
+  );
+  assert.equal((await queue.get(ownedRun.run_id))?.status, "queued");
+
+  const ownerCancelled = await queue.abort(ownedRun.run_id, userId);
+  assert.equal(ownerCancelled.status, "cancelled");
+
+  const adminRun = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Admin cancellable run"
+  });
+  const adminCancelled = await queue.abort(adminRun.run_id, {
+    id: "10000000-0000-4000-8000-000000000098",
+    isAdmin: true
+  });
+  assert.equal(adminCancelled.status, "cancelled");
+});
+
 test("aborted running agent runs keep the cancelled state during finalize drift", async () => {
   const runtimeSettings = settings();
   const toolStarted = deferred<void>();
