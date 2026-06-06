@@ -350,7 +350,7 @@ owner: workflow
 
 ## 12. 成本治理(`FR-COST-*` · P-COST)
 
-> 上游 [PRD NFR-05/§11](../../prd/2026-06-04-workhub-prd.md);治理专篇见 [`02-ai-engine/cost-governance.md`](../02-ai-engine/cost-governance.md);实体见 [data-model §7.1](../01-architecture/data-model.md)(`AgentRun.token_in/out`/`cost_estimate`/`model`)。
+> 上游 [PRD NFR-05/§11](../../prd/2026-06-04-workhub-prd.md);治理专篇见 [`02-ai-engine/cost-governance.md`](../02-ai-engine/cost-governance.md);成本事实以 `UsageRecord` / `CostLedgerEntry` 为准,`AgentRun.token_in/out` / `cost_estimate` / `model` 只是执行摘要与可钻取索引。
 > **现状锚点**:统一 provider `AsyncAnthropic(base_url=settings.llm_base_url)`([`auto_agent.py:34`](../../../app/services/auto_agent.py))、模型 `settings.llm_model`、端点配置 [`config.py`](../../../app/config.py);硬预算 `MAX_TURNS`/`TOTAL_TIMEOUT_DEFAULT`([`auto_agent.py:36-37`](../../../app/services/auto_agent.py))。
 
 | 编号 | 优先级 | 阶段 | 来源 | 需求 |
@@ -358,14 +358,14 @@ owner: workflow
 | **FR-COST-001** | P0 | P1 | [补] | 每个 `AgentRun` 有**硬预算上限**(轮次/超时/token),超限按 [`FR-WORKER-003`](#1-ai-工人引擎-fr-worker--p-ai--l2-旗舰) 优雅降级。 |
 | **FR-COST-002** | P0 | P5 | [补] | 支持 **用户/团队/任务** 三级预算与配额。 |
 | **FR-COST-003** | P1 | P5 | [补] | 低风险任务可路由**更便宜模型**;provider 统一注册表,系统其余保持模型无关。 |
-| **FR-COST-004** | P1 | P5 | [补] | 每条已交付需求的 AI token 成本可计量、可上看板([`FR-DASH-002`](#18-知识库-fr-kb--m-knowledge))。 |
+| **FR-COST-004** | P1 | P5 | [补] | 每条已交付需求的 AI token 成本可计量、可上看板([`FR-DASH-002`](#19-看板与度量fr-dash--m-dashboard))。 |
 
 **验收(AC)**
 
 - **FR-COST-001**:`AgentRun.max_turns` 必填([data-model §7.1](../01-architecture/data-model.md));v0 默认 `15 steps / 300s / 120k tokens / 5 CNY`,具体数值由 [`cost-governance.md §2`](../02-ai-engine/cost-governance.md#2-v0-默认值) 配置化裁出。
 - **FR-COST-002**:三级配额耗尽时阻断新 `AgentRun` 并提示;v0 默认用户日 `500k tokens / 20 CNY`,团队日 `5M tokens / 200 CNY`,团队月 `50M tokens / 2000 CNY`,合并规则见 [`cost-governance.md §4`](../02-ai-engine/cost-governance.md#4-裁决流程)。
 - **FR-COST-003**:`AgentRun.model` 记录实际模型;低风险或接近预算时走廉价模型,由 provider 注册表 + `BudgetDecision.model_route` 裁决([PRD §11 LLM 抽象](../../prd/2026-06-04-workhub-prd.md))。
-- **FR-COST-004**:`AgentRun.token_in/token_out/cost_estimate` 聚合到看板;重试、compact、review token 计入真实成本,nightly eval 单独进 `scope.kind="eval"`。
+- **FR-COST-004**:每次真实 provider 调用先写 `UsageRecord`,再由 P-COST 幂等归集 `CostLedgerEntry`;看板读取 `CostDashboardVM` / ledger 聚合,`AgentRun.token_in/token_out/cost_estimate` 仅作摘要缓存。重试、compact、review token 计入真实成本,nightly eval 单独进 `scope.kind="eval"`。
 
 ---
 
@@ -598,7 +598,7 @@ owner: workflow
 | FR | PRD 出处 | 主要实体(data-model) | 阶段 | 补全 |
 |---|---|---|---|---|
 | FR-WORKER-001..004 | §8.1 | AgentRun/AgentStep/Snapshot | P1 | — |
-| FR-WORKER-005..007 | §8.1(隐含) | AgentStep/PermissionPolicy | P1 | 补 |
+| FR-WORKER-005..008 | §8.1(隐含)+§12 file-only 首发范围 | AgentStep/PermissionPolicy/Run whitelist | P1 | 补 |
 | FR-ESC-001..005 | §8.2 | ConfidenceRecord/EscalationEvent | P1–P2 | — |
 | FR-ESC-006..008 | §8.2(隐含) | ConfidenceRecord/Review | P1–P2 | 补 |
 | FR-PM-001..003 | §8.3 | EscalationEvent/TaskPlan | P2 | — |

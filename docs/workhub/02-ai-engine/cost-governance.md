@@ -316,7 +316,7 @@ type CostDashboardVM = {
 ## 8. 验收门禁
 
 - `RunBudget.max_cost` 来源必须可追溯到 `BudgetDecision`，不得在 AgentLoop 内硬编码。
-- provider 的每次真实调用都产生 `UsageRecord`，并能聚合为 `AgentRun.token_in/token_out/cost_estimate`。
+- provider 的每次真实调用都产生 `UsageRecord`，并能幂等聚合为 `CostLedgerEntry`；`AgentRun.token_in/token_out/cost_estimate` 只能从 ledger 回填为摘要缓存。
 - 重试、compact、review token 均计入 run 成本。
 - `budget_exhausted` 统一走 `ApiErr.code = "budget_exhausted"`，用户面文案来自 `message`。
 - `GET /api/pages/cost` 非 admin 不返回全员 `by_user`。

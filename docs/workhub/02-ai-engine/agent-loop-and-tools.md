@@ -327,10 +327,12 @@ RunBudget
 RunUsage
   steps_used:   int      # = step_cursor
   seconds_used: float    # monotonic 计时(现状 time.monotonic(), auto_agent.py:384)
-  tokens_in / tokens_out: int    # 从每次 model 响应 usage 累加(新增)
-  cost:         float    # 按 provider 单价累加(新增)
+  tokens_in / tokens_out: int    # 从 P-COST usage sink / ledger 摘要读取,每次 model 响应先写 UsageRecord
+  cost:         float    # 由 CostLedgerEntry 汇总,AgentLoop 不直接乘模型单价
   files_count / bytes_used: int  # _sandbox_stats() 实时统计(auto_agent.py:163)
 ```
+
+`RunUsage` 是 AgentLoop 的执行期视图,不是成本真相源。provider registry 负责把每次真实模型调用写成 `UsageRecord`;P-COST 负责归集 `CostLedgerEntry` 与 `BudgetUsage`;AgentLoop 只读摘要做 `check_budget()`。
 
 ### 4.3 `check_budget()`(每步开头闸门)
 

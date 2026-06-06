@@ -215,7 +215,7 @@ owner: workflow
 
 | 编号 | 问题 | 收敛状态 | 现状基线 / 建议 | 归属篇 |
 |---|---|---|---|---|
-| **OQ-DASH-1** | 成本采集前置：`AgentRun.token_in/out/cost_estimate` 何时采集？模型单价表归属？ | 🟡 采集待实现；单价归属已定 | 采集必须在 provider usage sink 落 `UsageRecord` / `CostLedgerEntry` 后才有数。模型单价表归 P-COST provider/model 配置，业务逻辑不得硬编码。 | [`dashboards-and-metrics.md §14`](./04-modules/dashboards-and-metrics.md) · [`cost-governance.md`](./02-ai-engine/cost-governance.md) |
+| **OQ-DASH-1** | 成本采集前置：provider usage sink / ledger 何时接入？模型单价表归属？ | 🟡 采集待实现；单价归属已定 | 采集必须先落 `UsageRecord` / `CostLedgerEntry` 后才有数；`AgentRun.token_in/out/cost_estimate` 只能作为 ledger 派生摘要。模型单价表归 P-COST provider/model 配置，业务逻辑不得硬编码。 | [`dashboards-and-metrics.md §14`](./04-modules/dashboards-and-metrics.md) · [`cost-governance.md`](./02-ai-engine/cost-governance.md) |
 | **OQ-DASH-2** | 「好升级 / 误升级」的判据怎么定义？ | 🟡 与命门标定共定 | 建议以 `Review` 结果、后续打回、人工确认风险点共同判定，不只用「人秒过」。 | [`confidence-risk-escalation.md`](./02-ai-engine/confidence-risk-escalation.md) |
 | **OQ-DASH-3** | 跨项目/全员自治率与成本榜的可见范围？ | 🟢 倾向 admin/owner 全量，普通用户降级 | 与 `CostDashboardVM` 权限分层一致：admin/owner 可看全员榜，普通用户只看自己或参与项目聚合。 | [`security-and-permissions.md`](./01-architecture/security-and-permissions.md) · [`api-contract.md §2.15`](./01-architecture/api-contract.md#215-cost-governance-新) |
 | **OQ-DASH-4** | 区间默认值、历史留存与预聚合策略？ | 🟠 待真实数据 | v0 可用近 30 天 + 直接聚合；AgentRun/ledger 增长后再引入物化视图或预聚合表。 | [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md) |

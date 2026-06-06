@@ -14,7 +14,7 @@ owner: workflow
 > **边界（不在本篇，交叉处只链接不重复）**：
 > - 指标背后的**算法定义**（置信度怎么算、风险怎么评、三触发器、doom-loop）→ [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md)。本模块只**消费**其裁决结果并可视化。
 > - 看板的 HTTP/SSE **接口契约**（`/api/project-health` §2.14、新增 `/api/dashboard/*`、事件清单 §5、`job.updated`/`user:{id}` 隔离 §5.3）→ [api-contract](../01-architecture/api-contract.md)。
-> - 度量所依赖的**实体字段**（`AgentRun.token_in/out/cost_estimate/turns_used`、`ConfidenceRecord.grade/verdict`、`EscalationEvent.trigger`、`Review.decision`、`CollaborationGraph.hit_rate`、`Snapshot.reverted_at`）→ [data-model](../01-architecture/data-model.md)。
+> - 度量所依赖的**实体字段**（`CostLedgerEntry`/`UsageRecord` 成本事实、`AgentRun.turns_used` 与成本摘要缓存、`ConfidenceRecord.grade/verdict`、`EscalationEvent.trigger`、`Review.decision`、`CollaborationGraph.hit_rate`、`Snapshot.reverted_at`）→ [data-model](../01-architecture/data-model.md) 与 [cost-governance](../02-ai-engine/cost-governance.md)。
 > - 成本治理的**预算配额/模型路由策略**（三级预算、超额动作）→ [cost-governance](../02-ai-engine/cost-governance.md) 与 [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md)。本模块只**呈现**用量与配额对比。
 > - 术语（健康分 / 自治 / 升级 / 信任 / 设备令牌门 / 置信度三档语气）以 [glossary-dejargon](../00-overview/glossary-dejargon.md) 为权威。**去黑话铁律在本篇尤其关键**：看板**绝不显示** `confidence=0.82` / `risk 7/10` 这类裸数值，只显示比率、计数与人话档位。
 >
@@ -122,17 +122,17 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 
 > P-COST / NFR-05/11：用户/团队/任务三级用量与预算对比 + 模型路由分布。
 >
-> **诚实注脚（关键）**：现状 `auto_agent.py` **不采集 token/成本**——它对话用 `max_tokens=32768`（`auto_agent.py:415`）、复审用 `max_tokens=2048`（`auto_agent.py:560`），但从不读取 `resp.usage.{input_tokens,output_tokens}`。**本看板上线的前置条件**是：在 `auto_agent` 收口处把 usage 写进 data-model 新增的 `AgentRun.token_in/token_out/cost_estimate`（cost = token × 模型单价表，单价表属 P-COST 配置）。本篇负责呈现，采集落点见 [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md)。
+> **诚实注脚（关键）**：现状 `auto_agent.py` **不采集 token/成本**——它对话用 `max_tokens=32768`（`auto_agent.py:415`）、复审用 `max_tokens=2048`（`auto_agent.py:560`），但从不读取 `resp.usage.{input_tokens,output_tokens}`。**本看板上线的前置条件**是：provider registry 统一产生 `UsageRecord`，P-COST 归集为 `CostLedgerEntry`；`AgentRun.token_in/token_out/cost_estimate` 只能作为由 ledger 回填的摘要缓存，不能成为看板真相源。模型单价表属 P-COST 配置，业务 route、页面、Cuu 不得硬编码。本篇负责呈现，采集与预算裁决落点见 [cost-governance](../02-ai-engine/cost-governance.md) 与 [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md)。
 
 | 指标 | 用户标签 | 口径 / 公式 | 数据源 | 图表类型 |
 |---|---|---|---|---|
-| 总成本 | 本期总花费 | `Σ AgentRun.cost_estimate`（区间内） | `AgentRun.cost_estimate`（新增） | 大数字(¥) + 周趋势面积图 |
-| Token 用量 | 处理量 | `Σ token_in / Σ token_out` | `AgentRun.token_in/out`（新增） | 双值卡 + 趋势 |
-| 按人 | 谁触发的花费 | `groupby(触发 run 的 actor_user_id)` 求和 | `AgentRun` × `actor_user_id` | 横向条形榜 |
-| 按团队/项目 | 各项目花费 | `groupby(workspace_id / project_id)` | `AgentRun` × `WorkItem.project_id` | 横向条形 |
-| 按工作项 | 单个活的花费 | `groupby(work_item_id)` Top-N 烧钱榜 | `AgentRun.work_item_id` | 排行表（可钻取） |
-| 模型分布 | 用了哪些模型 | `groupby(AgentRun.model)` 计数+成本 | `AgentRun.model`（现 `settings.llm_model`） | 环形图 |
-| 预算用量 | 配额还剩多少 | `已用 / 配额`（三级：用户/团队/任务） | P-COST 配额 × `AgentRun` 求和 | 进度条（超额变红 + 告警） |
+| 总成本 | 本期总花费 | `Σ CostLedgerEntry.estimated_cost_cny`（区间内） | `CostLedgerEntry` | 大数字(¥) + 周趋势面积图 |
+| Token 用量 | 处理量 | `Σ token_in / Σ token_out` | `CostLedgerEntry.token_in/out` | 双值卡 + 趋势 |
+| 按人 | 谁触发的花费 | `groupby(user_id)` 求和 | `CostLedgerEntry` × `User` label | 横向条形榜 |
+| 按团队/项目 | 各项目花费 | `groupby(team_id / project_id)` | ledger + `WorkItem.project_id` join | 横向条形 |
+| 按工作项 | 单个活的花费 | `groupby(workitem_id)` Top-N 烧钱榜 | `CostLedgerEntry.workitem_id` | 排行表（可钻取） |
+| 模型分布 | 用了哪些模型 | `groupby(provider, model)` 计数+成本 | `UsageRecord.provider/model` + ledger cost | 环形图 |
+| 预算用量 | 配额还剩多少 | `已用 / 配额`（三级：用户/团队/任务） | `BudgetPolicy` × `BudgetUsage`（ledger 汇总） | 进度条（超额变红 + 告警） |
 | 单位成本 | 每完成一个活多少钱 | `总成本 / merged 数` | 派生 | 大数字(¥) |
 
 ---
@@ -300,7 +300,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 
 ## 7. 页面 DASH-3：成本看板（`/dashboard/cost`）—— 重点页
 
-**全新页**。前置：`AgentRun.token_in/out/cost_estimate` 已采集（§2.5 注脚）。
+**全新页**。前置：provider usage sink 已能写 `UsageRecord`，P-COST 已能归集 `CostLedgerEntry`；`AgentRun.token_in/out/cost_estimate` 只是可选摘要缓存（§2.5 注脚）。
 
 ### 7.1 布局（文字版 wireframe）
 
@@ -343,7 +343,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 ### 7.3 四态
 
 - **加载**：`Skeleton`。
-- **空**：无 AgentRun 或 token 字段全空（**采集未上线**）→ `EmptyState title="还没有成本数据" description="AI 接活后会自动记账"`。**这是当前最可能的真实态**（采集是新增）——页面必须优雅退化，不报错。
+- **空**：无 `CostLedgerEntry` 或 usage sink 未接入（**采集未上线**）→ `empty_state="no_agent_runs"` 或 `empty_state="usage_not_connected"`，页面显示 `EmptyState title="还没有成本数据" description="AI 接活后会自动记账"`。**这是当前最可能的真实态**（采集是新增）——页面必须优雅退化，不报错。
 - **错误**：`Array.isArray` 守卫（同 §6.3）。
 - **无权限**：**成本含隐私**——`by_user` 暴露「谁烧了多少」。非 admin/非项目 owner **只看自己的花费**（按 `current_user` 过滤），全员排行仅 admin 可见（§12，对齐 NFR-08 隐私隔离的精神）。
 
@@ -496,7 +496,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 5. **无图表库**：图表用自绘 SVG/div 原语收敛进 `C-UIKIT`（§10），不引重依赖。
 
 **开放问题（待收敛，登记到 [07-open-questions](../07-open-questions.md)）**：
-- **OQ-DASH-1（采集前置）**：`AgentRun.token_in/out/cost_estimate` 何时在 `auto_agent` 收口处采集 `resp.usage`？成本看板（DASH-3）**强依赖**此项，否则永远空态。模型单价表已收口到 P-COST 的 provider/model 配置，业务逻辑不得硬编码单价。
+- **OQ-DASH-1（采集前置）**：provider registry 何时把 `resp.usage` 统一写成 `UsageRecord`，并由 P-COST 幂等归集为 `CostLedgerEntry`？成本看板（DASH-3）**强依赖**此项，否则永远空态。`AgentRun.token_in/out/cost_estimate` 只允许作为 ledger 派生摘要；模型单价表已收口到 P-COST 的 provider/model 配置，业务逻辑不得硬编码单价。
 - **OQ-DASH-2（精准度判据）**：「好升级 / 误升级」的判据需 confidence-risk 引擎共定——「误升级=人秒过」是否过严？是否要引入「人虽 approve 但确认了 AI 提的风险点」的中间态？（与 [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md) 对齐。）
 - **OQ-DASH-3（全局视图权限）**：跨项目/全员的自治率与成本榜，是否仅 admin/管理者可见？非管理者的「全局」是否退化为「我参与项目的聚合」？（与 [security-and-permissions](../01-architecture/security-and-permissions.md) 的 RBAC 对齐。）
 - **OQ-DASH-4（区间与留存）**：区间下拉的默认值（近30天？）与历史留存窗口；`AgentRun`/`EscalationEvent` 量大后，看板聚合是否需要预聚合表/物化视图（对齐 `CollaborationGraph` 的物化视图思路，data-model §3.3）。
@@ -504,4 +504,4 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 
 ---
 
-*下一步：本篇定页面与四态；指标背后的算法在 [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md)，接口/事件契约在 [api-contract §2.14](../01-architecture/api-contract.md)，依赖实体字段在 [data-model](../01-architecture/data-model.md)，自绘图表原语在 [shared-ui-kit](../05-clients/shared-ui-kit.md)，成本采集落点在 [agent-loop-and-tools](../02-ai-engine/agent-loop-and-tools.md)。*
+*下一步：本篇定页面与四态；指标背后的算法在 [confidence-risk-escalation](../02-ai-engine/confidence-risk-escalation.md)，接口/事件契约在 [api-contract §2.14](../01-architecture/api-contract.md)，依赖实体字段在 [data-model](../01-architecture/data-model.md)，自绘图表原语在 [shared-ui-kit](../05-clients/shared-ui-kit.md)，成本采集与账本真相源在 [cost-governance](../02-ai-engine/cost-governance.md)，AgentLoop 只消费其裁出的预算。*
