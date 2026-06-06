@@ -20,6 +20,10 @@
       "types": "./src/workitem/index.ts",
       "import": "./src/workitem/index.ts"
     },
+    "./agent-run": {
+      "types": "./src/agent-run/index.ts",
+      "import": "./src/agent-run/index.ts"
+    },
     "./proposal": {
       "types": "./src/proposal/index.ts",
       "import": "./src/proposal/index.ts"

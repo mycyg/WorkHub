@@ -1,8 +1,108 @@
-import type { AuditLogFact, CostSummaryVM, EvidenceRef, ManifestFacts, Snapshot } from "@workhub/contracts";
+import { createHash } from "node:crypto";
+
+import type {
+  AgentRun,
+  AgentRunLiveVM,
+  AgentStep,
+  AuditLogFact,
+  CostSummaryVM,
+  EvidenceRef,
+  ManifestFacts,
+  Snapshot,
+  StructuredHandoff
+} from "@workhub/contracts";
 import { buildManifestFacts, type AuditLogFact as InternalAuditLogFact, type SnapshotRef } from "@workhub/audit";
 import type { AuditLogRow, SnapshotRow } from "@workhub/db";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
+
+function stableUuid(input: string) {
+  const hex = createHash("sha256").update(input).digest("hex");
+  const variant = ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(18, 20)}`,
+    hex.slice(20, 32)
+  ].join("-");
+}
+
+function handoffMd(handoff: AgentRunQueueRecord["handoff"]) {
+  if (!handoff) {
+    return undefined;
+  }
+  return [
+    handoff.done.length ? `已完成: ${handoff.done.join("；")}` : undefined,
+    handoff.remaining.length ? `还剩: ${handoff.remaining.join("；")}` : undefined,
+    handoff.next_steps.length ? `下一步: ${handoff.next_steps.join("；")}` : undefined,
+    handoff.blockers.length ? `阻塞: ${handoff.blockers.join("；")}` : undefined
+  ].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+export function toAgentRunVm(run: AgentRunQueueRecord): AgentRun {
+  const latestOutput = run.trace.at(-1)?.output_excerpt;
+  const handoffText = handoffMd(run.handoff);
+  return {
+    id: run.run_id,
+    work_item_id: run.work_item_id,
+    mode: run.mode,
+    actor: "human",
+    status: run.status,
+    model: run.budget_decision.model_route.model,
+    turns_used: run.usage.steps_used,
+    max_turns: run.budget.max_steps,
+    token_in: run.usage.token_in,
+    token_out: run.usage.token_out,
+    cost_estimate: run.usage.estimated_cost_cny,
+    ...(latestOutput ? { outcome_reason: latestOutput } : {}),
+    ...(handoffText ? { handoff_md: handoffText } : {}),
+    created_at: run.created_at,
+    updated_at: run.updated_at
+  };
+}
+
+export function toAgentStepVm(runId: string, step: AgentRunQueueRecord["trace"][number]): AgentStep {
+  return {
+    id: stableUuid(step.id),
+    agent_run_id: runId,
+    step_no: step.step_no,
+    phase: step.phase,
+    input_json: {},
+    ...(step.output_excerpt ? { output_excerpt: step.output_excerpt } : {}),
+    ...(step.control_signal ? { control_signal: step.control_signal } : {}),
+    ...(step.snapshot_id ? { snapshot_id: step.snapshot_id } : {}),
+    created_at: step.created_at
+  };
+}
+
+function toStructuredHandoff(handoff: NonNullable<AgentRunQueueRecord["handoff"]>): StructuredHandoff {
+  return {
+    done: handoff.done,
+    remaining: handoff.remaining,
+    next_steps: handoff.next_steps,
+    blockers: handoff.blockers,
+    artifacts: handoff.artifacts,
+    budget_hit: handoff.budget_hit as StructuredHandoff["budget_hit"]
+  };
+}
+
+export function toAgentRunLiveVm(run: AgentRunQueueRecord): AgentRunLiveVM {
+  return {
+    run: toAgentRunVm(run),
+    run_id: run.run_id,
+    work_item_id: run.work_item_id,
+    title: run.title,
+    status: run.status,
+    budget: run.budget,
+    budget_decision: run.budget_decision,
+    usage: run.usage,
+    trace: run.trace.map((step) => toAgentStepVm(run.run_id, step)),
+    ...(run.handoff ? { handoff: toStructuredHandoff(run.handoff) } : {}),
+    stream_href: `/api/push/stream/run/${run.run_id}`,
+    replay_href: `/api/agent-runs/${run.run_id}/replay`
+  };
+}
 
 export function toSnapshotVm(row: SnapshotRow): Snapshot {
   const snapshot: Snapshot = {
@@ -201,8 +301,8 @@ export function buildReplayTracePage(input: {
   const snapshots = input.snapshots ?? [];
   const auditLogs = input.auditLogs ?? [];
   return {
-    run: input.run,
-    steps: input.run.trace,
+    run: toAgentRunVm(input.run),
+    steps: input.run.trace.map((step) => toAgentStepVm(input.run.run_id, step)),
     evidence_refs: buildReplayEvidenceRefs(auditLogs),
     snapshots,
     audit_logs: auditLogs,

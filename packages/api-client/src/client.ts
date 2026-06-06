@@ -153,6 +153,21 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    startAgentRun: (workItemId, payload = {}) =>
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    getAgentRun: (runId) => request(`/api/agent-runs/${encodeURIComponent(runId)}`),
+    getAgentRunTrace: (runId, after) =>
+      request(
+        `/api/agent-runs/${encodeURIComponent(runId)}/trace${after === undefined ? "" : `?after=${encodeURIComponent(String(after))}`}`
+      ),
+    abortAgentRun: (runId) =>
+      request(`/api/agent-runs/${encodeURIComponent(runId)}/abort`, {
+        method: "POST"
+      }),
+    getAgentRunHandoff: (runId) => request(`/api/agent-runs/${encodeURIComponent(runId)}/handoff`),
     respondApproval: (id, payload) =>
       request(`/api/approvals/${id}/respond`, {
         method: "POST",

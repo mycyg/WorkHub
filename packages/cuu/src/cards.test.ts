@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   cuuStates,
   eventTypes,
+  type AgentRunLiveVM,
   type BudgetNotice,
   type ProposalDetailVM,
   type QuestionCard,
@@ -20,6 +21,7 @@ import {
   cardFromProposalDetail,
   cardFromQuestionCard,
   cardFromSessionVm,
+  cardFromAgentRunLive,
   cardFromWorkItemDetail
 } from "./index.js";
 
@@ -225,6 +227,64 @@ test("work item detail becomes a lightweight Cuu task card", () => {
   assert.equal(card.payload_ref?.entity_type, "workitem");
   assert.equal(card.actions.some((action) => action.href === `/agent-runs/${detail.agent_trace_preview[0]?.agent_run_id}/replay`), true);
   assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
+});
+
+test("live agent runs become immediate Cuu trace cards before SSE catches up", () => {
+  const live = {
+    run: {
+      id: "40000000-0000-4000-8000-000000000025",
+      work_item_id: workItemId,
+      mode: "worker",
+      actor: "human",
+      status: "running",
+      model: "deepseek-v4-flash",
+      turns_used: 1,
+      max_turns: 15,
+      token_in: 10,
+      token_out: 20,
+      created_at: ts,
+      updated_at: ts
+    },
+    run_id: "40000000-0000-4000-8000-000000000025",
+    work_item_id: workItemId,
+    title: "生成客户周报模板",
+    status: "running",
+    budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
+    budget_decision: {
+      decision_id: "decision-run",
+      allowed: true,
+      model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
+    },
+    usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
+    trace: [
+      {
+        id: "60000000-0000-4000-8000-000000000001",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 1,
+        phase: "think",
+        input_json: {},
+        output_excerpt: "Cuu 正在读取项目文档。",
+        created_at: ts
+      }
+    ],
+    stream_href: "/api/push/stream/run/40000000-0000-4000-8000-000000000025",
+    replay_href: "/api/agent-runs/40000000-0000-4000-8000-000000000025/replay"
+  } satisfies AgentRunLiveVM;
+
+  const card = cardFromAgentRunLive(live);
+  const doneCard = cardFromAgentRunLive({
+    ...live,
+    run: { ...live.run, status: "succeeded" },
+    status: "succeeded"
+  });
+
+  assert.equal(card.kind, "trace");
+  assert.equal(card.state, "thinking");
+  assert.equal(card.payload_ref?.entity_type, "agent_run");
+  assert.equal(card.actions.some((action) => action.id === "abort_agent_run"), true);
+  assert.equal(doneCard.kind, "completion");
+  assert.equal(doneCard.state, "celebrating");
+  assert.equal(doneCard.actions.some((action) => action.id === "abort_agent_run"), false);
 });
 
 test("budget notices and budget events become actionable Cuu cards", () => {

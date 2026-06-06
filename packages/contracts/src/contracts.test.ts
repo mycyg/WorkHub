@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentRunLiveVmSchema,
   agentRunTraceVmSchema,
   attentionItemSchema,
   authContextSchema,
@@ -65,6 +66,53 @@ test("agent trace VM carries F08 replay and structured handoff fields", () => {
   });
 
   assert.equal(parsed.handoff?.budget_hit, "doom_loop");
+});
+
+test("agent run live VMs expose start status, trace, stream, replay, and budget fields", () => {
+  const parsed = agentRunLiveVmSchema.parse({
+    run: {
+      id: "70000000-0000-4000-8000-000000000011",
+      work_item_id: "70000000-0000-4000-8000-000000000012",
+      mode: "worker",
+      actor: "human",
+      status: "running",
+      model: "deepseek-v4-flash",
+      turns_used: 1,
+      max_turns: 15,
+      token_in: 10,
+      token_out: 20,
+      created_at: "2026-06-05T00:00:00.000Z",
+      updated_at: "2026-06-05T00:00:01.000Z"
+    },
+    run_id: "70000000-0000-4000-8000-000000000011",
+    work_item_id: "70000000-0000-4000-8000-000000000012",
+    title: "生成客户周报模板",
+    status: "running",
+    budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
+    budget_decision: {
+      decision_id: "decision-run",
+      allowed: true,
+      model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
+    },
+    usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
+    trace: [
+      {
+        id: "70000000-0000-4000-8000-000000000013",
+        agent_run_id: "70000000-0000-4000-8000-000000000011",
+        step_no: 1,
+        phase: "think",
+        input_json: {},
+        output_excerpt: "Cuu 正在读取项目文档。",
+        created_at: "2026-06-05T00:00:01.000Z"
+      }
+    ],
+    stream_href: "/api/push/stream/run/70000000-0000-4000-8000-000000000011",
+    replay_href: "/api/agent-runs/70000000-0000-4000-8000-000000000011/replay"
+  });
+
+  assert.equal(parsed.run_id, parsed.run.id);
+  assert.equal(parsed.trace[0]?.phase, "think");
+  assert.equal(parsed.replay_href.endsWith("/replay"), true);
 });
 
 test("replay pages carry F10 audit facts and rollback state", () => {

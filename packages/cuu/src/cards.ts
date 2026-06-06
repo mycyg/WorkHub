@@ -2,6 +2,7 @@ import {
   budgetNoticeSchema,
   eventTypes,
   type ActionSpec,
+  type AgentRunLiveVM,
   type AttentionAction,
   type AttentionItem,
   type BudgetNotice,
@@ -92,6 +93,7 @@ export type CuuPayloadRef = {
     | "replay_trace"
     | "session"
     | "workitem"
+    | "agent_run"
     | "event";
   entity_id: string;
   href?: string;
@@ -636,6 +638,99 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
       work_item_id: vm.workitem.id,
       project_id: vm.workitem.project_id
     })
+  });
+}
+
+function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
+  if (status === "succeeded") {
+    return "celebrating";
+  }
+  if (status === "budget_exhausted") {
+    return "asking_approval";
+  }
+  if (status === "failed" || status === "escalated") {
+    return "worried";
+  }
+  return "thinking";
+}
+
+export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
+  const state = stateForAgentRun(vm.status);
+  const latestStep = vm.trace.at(-1);
+  const active = vm.status === "queued" || vm.status === "running";
+  const actions: CuuCardAction[] = [
+    {
+      id: "view_replay",
+      label: "查看回放",
+      tone: state === "celebrating" ? "primary" : "secondary",
+      method: "GET",
+      href: `/agent-runs/${vm.run_id}/replay`
+    },
+    {
+      id: "open_workitem",
+      label: "回到任务",
+      tone: "secondary",
+      method: "GET",
+      href: `/workitems/${vm.work_item_id}`
+    },
+    ...(active
+      ? [
+          {
+            id: "abort_agent_run",
+            label: "取消执行",
+            tone: "danger" as const,
+            method: "POST" as const,
+            href: `/api/agent-runs/${vm.run_id}/abort`
+          }
+        ]
+      : [])
+  ];
+  const sections: CuuCardSection[] = [
+    {
+      id: "trace",
+      title: "执行进度",
+      lines: vm.trace.length
+        ? vm.trace.slice(-4).map((step) => `#${step.step_no} ${step.phase}${step.output_excerpt ? `: ${step.output_excerpt}` : ""}`)
+        : ["Cuu 已排队，稍后开始处理。"]
+    },
+    {
+      id: "budget",
+      title: "预算",
+      lines: [
+        `${vm.usage.token_in + vm.usage.token_out}/${vm.budget.max_tokens} tokens`,
+        `¥${vm.usage.estimated_cost_cny}/${vm.budget.max_cost_cny}`
+      ]
+    }
+  ];
+
+  if (vm.handoff) {
+    sections.push({
+      id: "handoff",
+      title: "交接",
+      lines: [...vm.handoff.remaining, ...vm.handoff.next_steps, ...vm.handoff.blockers].slice(0, 4)
+    });
+  }
+
+  return withMotion({
+    id: vm.run_id,
+    kind: state === "celebrating" ? "completion" : "trace",
+    state,
+    title: state === "celebrating" ? "这次执行完成了" : state === "worried" ? "这次执行需要关注" : "Cuu 开始处理了",
+    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? "Cuu 正在整理执行进度。"),
+    priority: state === "worried" || state === "asking_approval" ? "high" : "normal",
+    actions,
+    sections,
+    payload_ref: {
+      entity_type: "agent_run",
+      entity_id: vm.run_id,
+      href: `/agent-runs/${vm.run_id}/replay`
+    },
+    source: optionalSource({
+      entity_type: "page_vm",
+      entity_id: vm.run_id,
+      work_item_id: vm.work_item_id
+    }),
+    created_at: vm.run.created_at
   });
 }
 

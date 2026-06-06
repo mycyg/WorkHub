@@ -100,6 +100,30 @@ export function getOpenApiDocument() {
           summary: "Start an AI worker run for a work item"
         }
       },
+      "/api/agent-runs/{id}": {
+        get: {
+          tags: ["agent-runs"],
+          summary: "Read the live state for an AI worker run"
+        }
+      },
+      "/api/agent-runs/{id}/trace": {
+        get: {
+          tags: ["agent-runs"],
+          summary: "Read live trace steps for an AI worker run"
+        }
+      },
+      "/api/agent-runs/{id}/handoff": {
+        get: {
+          tags: ["agent-runs"],
+          summary: "Read the structured handoff for an escalated AI worker run"
+        }
+      },
+      "/api/agent-runs/{id}/abort": {
+        post: {
+          tags: ["agent-runs"],
+          summary: "Cancel a queued or running AI worker run"
+        }
+      },
       "/api/sessions": {
         post: {
           tags: ["sessions"],

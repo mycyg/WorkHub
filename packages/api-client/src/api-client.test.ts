@@ -64,6 +64,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.proposal("proposal-1");
   await client.createSession({ intent_text: "帮我整理客户周报模板。" });
   await client.createWorkItem({ session_id: "session-1", selected_option_ids: ["risk-first"] });
+  await client.startAgentRun("work-1", { title: "AI 开始整理周报" });
+  await client.getAgentRun("run-1");
+  await client.getAgentRunTrace("run-1", 2);
+  await client.getAgentRunHandoff("run-1");
+  await client.abortAgentRun("run-1");
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
   await client.getProposal("proposal-1");
@@ -82,6 +87,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions",
     "POST /api/workitems",
+    "POST /api/workitems/work-1/agent-runs",
+    "GET /api/agent-runs/run-1",
+    "GET /api/agent-runs/run-1/trace?after=2",
+    "GET /api/agent-runs/run-1/handoff",
+    "POST /api/agent-runs/run-1/abort",
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/proposals/proposal-1",

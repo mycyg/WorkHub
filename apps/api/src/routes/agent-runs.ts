@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { z } from "zod";
 
 import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
+import { startAgentRunRequestSchema } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -16,17 +16,12 @@ import {
   type AgentRunQueue,
   type AgentRunQueueRecord
 } from "../workers/agent-runner.js";
-import { buildReplayTracePage, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
+import { buildReplayTracePage, toAgentRunLiveVm, toAgentStepVm, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
 import {
   getP05GoldPathFixture,
   isP05AgentRunId
 } from "../pages/gold-path.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
-
-const startAgentRunSchema = z.object({
-  mode: z.enum(["worker", "pm"]).optional(),
-  title: z.string().min(1).max(256).optional()
-});
 
 function auditLogRunId(detailJson: unknown) {
   if (!detailJson || typeof detailJson !== "object") {
@@ -63,14 +58,14 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   }
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = startAgentRunSchema.parse(await c.req.json().catch(() => ({})));
-    const data = await queue.enqueue({
+    const payload = startAgentRunRequestSchema.parse(await c.req.json().catch(() => ({})));
+    const run = await queue.enqueue({
       workItemId: c.req.param("id"),
       actorId: c.var.actor.id,
       ...(payload.title ? { title: payload.title } : {}),
       ...(payload.mode ? { mode: payload.mode } : {})
     });
-    return c.json({ ok: true, data }, 202);
+    return c.json({ ok: true, data: toAgentRunLiveVm(run) }, 202);
   });
 
   routes.get("/agent-runs/:id", createCurrentUserMiddleware(authSource), async (c) => {
@@ -79,7 +74,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
     assertCanReadRun(data, c.var.actor);
-    return c.json({ ok: true, data });
+    return c.json({ ok: true, data: toAgentRunLiveVm(data) });
   });
 
   routes.get("/agent-runs/:id/trace", createCurrentUserMiddleware(authSource), async (c) => {
@@ -91,7 +86,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     }
     assertCanReadRun(run, c.var.actor);
     const data = await queue.trace(run.run_id, Number.isFinite(after) ? after : 0);
-    return c.json({ ok: true, data });
+    return c.json({ ok: true, data: data.map((step) => toAgentStepVm(run.run_id, step)) });
   });
 
   routes.post("/agent-runs/:id/abort", createCurrentUserMiddleware(authSource), async (c) => {
@@ -99,7 +94,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       id: c.var.actor.id,
       isAdmin: c.var.actor.isAdmin
     });
-    return c.json({ ok: true, data });
+    return c.json({ ok: true, data: toAgentRunLiveVm(data) });
   });
 
   routes.get("/agent-runs/:id/handoff", createCurrentUserMiddleware(authSource), async (c) => {

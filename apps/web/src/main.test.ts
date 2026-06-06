@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
+import { eventTypes, type AgentRunLiveVM, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
 
 import {
+  loadWebAgentRunCuuCard,
+  loadWebAgentRunTrace,
   createWebWorkItem,
   createWebWorkItemCuuCard,
+  renderWebAgentRunLive,
   loadWebIntakeCuuCard,
   loadWebProposalCuuCard,
   loadWebGoldPathSurface,
@@ -15,6 +18,8 @@ import {
   renderWebGoldPathSurface,
   renderWebProposalDetail,
   renderWebWorkItemDetail,
+  startWebAgentRun,
+  startWebAgentRunCuuCard,
   startWebIntakeSession,
   webCuuCardFromEvent,
   webSurface
@@ -51,6 +56,47 @@ const intakeSession: SessionVM = {
   }
 };
 
+const liveRun = {
+  run: {
+    id: "40000000-0000-4000-8000-000000000025",
+    work_item_id: "50000000-0000-4000-8000-000000000021",
+    mode: "worker",
+    actor: "human",
+    status: "running",
+    model: "deepseek-v4-flash",
+    turns_used: 1,
+    max_turns: 15,
+    token_in: 10,
+    token_out: 20,
+    created_at: "2026-06-05T01:00:00.000Z",
+    updated_at: "2026-06-05T01:00:01.000Z"
+  },
+  run_id: "40000000-0000-4000-8000-000000000025",
+  work_item_id: "50000000-0000-4000-8000-000000000021",
+  title: "生成客户周报模板",
+  status: "running",
+  budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
+  budget_decision: {
+    decision_id: "decision-run",
+    allowed: true,
+    model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
+  },
+  usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
+  trace: [
+    {
+      id: "60000000-0000-4000-8000-000000000001",
+      agent_run_id: "40000000-0000-4000-8000-000000000025",
+      step_no: 1,
+      phase: "think",
+      input_json: {},
+      output_excerpt: "Cuu 正在读取项目文档。",
+      created_at: "2026-06-05T01:00:01.000Z"
+    }
+  ],
+  stream_href: "/api/push/stream/run/40000000-0000-4000-8000-000000000025",
+  replay_href: "/api/agent-runs/40000000-0000-4000-8000-000000000025/replay"
+} satisfies AgentRunLiveVM;
+
 function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSession): WorkHubApiClient {
   return {
     async health() {
@@ -73,6 +119,21 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     },
     async createWorkItem() {
       return surface.page_vms.workitem;
+    },
+    async startAgentRun() {
+      return liveRun;
+    },
+    async getAgentRun() {
+      return liveRun;
+    },
+    async getAgentRunTrace() {
+      return liveRun.trace;
+    },
+    async abortAgentRun() {
+      return { ...liveRun, status: "cancelled", run: { ...liveRun.run, status: "cancelled" } };
+    },
+    async getAgentRunHandoff() {
+      return null;
     },
     async respondApproval() {
       throw new Error("not needed");
@@ -382,6 +443,25 @@ test("web surface creates work items through the typed client and maps the resul
   assert.equal(created.workitem.status, "ai_working");
   assert.equal(card.kind, "trace");
   assert.equal(card.state, "thinking");
+});
+
+test("web surface starts agent runs and renders the live trace with Cuu state", async () => {
+  const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  const started = await startWebAgentRun(client, liveRun.work_item_id, { title: "生成客户周报模板" });
+  const rendered = await renderWebAgentRunLive(client, liveRun.run_id);
+  const trace = await loadWebAgentRunTrace(client, liveRun.run_id, 0);
+  const startedCard = await startWebAgentRunCuuCard(client, liveRun.work_item_id, { title: "生成客户周报模板" });
+  const loadedCard = await loadWebAgentRunCuuCard(client, liveRun.run_id);
+
+  assert.equal(webSurface.pages.includes("/api/workitems/:id/agent-runs"), true);
+  assert.equal(webSurface.pages.includes("/api/agent-runs/:id/trace"), true);
+  assert.equal(started.run_id, liveRun.run_id);
+  assert.equal(rendered.cuuState, "thinking");
+  assert.equal(rendered.html.includes("AI 实时执行"), true);
+  assert.equal(trace[0]?.phase, "think");
+  assert.equal(startedCard.kind, "trace");
+  assert.equal(loadedCard.state, "thinking");
 });
 
 test("web surface exposes the shared Cuu event adapter for floating bubbles", () => {

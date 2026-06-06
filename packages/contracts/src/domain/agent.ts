@@ -33,6 +33,12 @@ export const agentRunSchema = timestampFieldsSchema.extend({
 });
 export type AgentRun = z.infer<typeof agentRunSchema>;
 
+export const startAgentRunRequestSchema = z.object({
+  mode: workItemModeSchema.optional(),
+  title: z.string().min(1).max(256).optional()
+});
+export type StartAgentRunRequest = z.infer<typeof startAgentRunRequestSchema>;
+
 export const agentStepSchema = z.object({
   id: idSchema,
   agent_run_id: idSchema,
@@ -73,6 +79,51 @@ export const structuredHandoffSchema = z.object({
   budget_hit: z.enum(["steps", "timeout", "tokens", "cost", "doom_loop", "snapshot_gate", "unknown"])
 });
 export type StructuredHandoff = z.infer<typeof structuredHandoffSchema>;
+
+export const agentRunLiveBudgetSchema = z.object({
+  max_steps: z.number().int().positive(),
+  total_timeout_s: z.number().int().positive(),
+  max_tokens: z.number().int().nonnegative(),
+  max_cost_cny: z.string()
+});
+export type AgentRunLiveBudget = z.infer<typeof agentRunLiveBudgetSchema>;
+
+export const agentRunLiveUsageSchema = z.object({
+  steps_used: z.number().int().nonnegative(),
+  token_in: z.number().int().nonnegative(),
+  token_out: z.number().int().nonnegative(),
+  estimated_cost_cny: z.string()
+});
+export type AgentRunLiveUsage = z.infer<typeof agentRunLiveUsageSchema>;
+
+export const agentRunBudgetDecisionVmSchema = z.object({
+  decision_id: z.string().min(1),
+  allowed: z.boolean(),
+  reason: z.string().optional(),
+  model_route: z.object({
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    reason: z.string().min(1)
+  }),
+  notice: z.unknown().optional()
+});
+export type AgentRunBudgetDecisionVM = z.infer<typeof agentRunBudgetDecisionVmSchema>;
+
+export const agentRunLiveVmSchema = z.object({
+  run: agentRunSchema,
+  run_id: idSchema,
+  work_item_id: idSchema,
+  title: z.string().min(1),
+  status: agentRunStatusSchema,
+  budget: agentRunLiveBudgetSchema,
+  budget_decision: agentRunBudgetDecisionVmSchema,
+  usage: agentRunLiveUsageSchema,
+  trace: z.array(agentStepSchema),
+  handoff: structuredHandoffSchema.optional(),
+  stream_href: z.string().min(1),
+  replay_href: z.string().min(1)
+});
+export type AgentRunLiveVM = z.infer<typeof agentRunLiveVmSchema>;
 
 export const confidenceRecordSchema = z.object({
   id: idSchema,

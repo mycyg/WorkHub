@@ -1,7 +1,8 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, CreateWorkItemRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
@@ -17,6 +18,9 @@ export const webSurface = {
     "/api/pages/attention",
     "/api/sessions",
     "/api/workitems",
+    "/api/workitems/:id/agent-runs",
+    "/api/agent-runs/:id",
+    "/api/agent-runs/:id/trace",
     "/api/pages/gold-path",
     "/intake/:sessionId",
     "/api/pages/workitems/:id",
@@ -70,6 +74,26 @@ export async function renderWebWorkItemDetail(client: WorkHubApiClient, workItem
   return renderWorkItemDetail(await loadWebWorkItemDetail(client, workItemId), "web");
 }
 
+export function startWebAgentRun(
+  client: WorkHubApiClient = webApiClient,
+  workItemId: string,
+  payload: StartAgentRunRequest = {}
+) {
+  return client.startAgentRun(workItemId, payload);
+}
+
+export function loadWebAgentRun(client: WorkHubApiClient, runId: string) {
+  return client.getAgentRun(runId);
+}
+
+export function loadWebAgentRunTrace(client: WorkHubApiClient, runId: string, after?: number) {
+  return client.getAgentRunTrace(runId, after);
+}
+
+export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string) {
+  return renderAgentRunLive(await loadWebAgentRun(client, runId), "web");
+}
+
 export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return client.pages.proposal(proposalId);
 }
@@ -108,4 +132,19 @@ export async function loadWebWorkItemCuuCard(
   workItemId: string
 ): Promise<CuuCard> {
   return cardFromWorkItemDetail(await loadWebWorkItemDetail(client, workItemId));
+}
+
+export async function startWebAgentRunCuuCard(
+  client: WorkHubApiClient = webApiClient,
+  workItemId: string,
+  payload: StartAgentRunRequest = {}
+): Promise<CuuCard> {
+  return cardFromAgentRunLive(await startWebAgentRun(client, workItemId, payload));
+}
+
+export async function loadWebAgentRunCuuCard(
+  client: WorkHubApiClient = webApiClient,
+  runId: string
+): Promise<CuuCard> {
+  return cardFromAgentRunLive(await loadWebAgentRun(client, runId));
 }

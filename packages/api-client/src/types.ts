@@ -1,5 +1,7 @@
 import type {
   ApprovalCenterVM,
+  AgentRunLiveVM,
+  AgentStep,
   AttentionHomeVM,
   BudgetPolicy,
   BudgetPolicyUpdate,
@@ -21,6 +23,8 @@ import type {
   RespondApprovalRequest,
   MergeProposalRequest,
   SessionVM,
+  StartAgentRunRequest,
+  StructuredHandoff,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -105,6 +109,11 @@ export type WorkHubApiClient = {
   notifications: () => Promise<NotificationList>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
+  startAgentRun: (workItemId: string, payload?: StartAgentRunRequest) => Promise<AgentRunLiveVM>;
+  getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
+  getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
+  abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
+  getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;

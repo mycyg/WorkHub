@@ -1,7 +1,8 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, CreateWorkItemRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
@@ -16,6 +17,9 @@ export const desktopWebviewSurface = {
     "/api/pages/attention",
     "/api/sessions",
     "/api/workitems",
+    "/api/workitems/:id/agent-runs",
+    "/api/agent-runs/:id",
+    "/api/agent-runs/:id/trace",
     "/api/pages/gold-path",
     "/intake/:sessionId",
     "/api/pages/workitems/:id",
@@ -68,6 +72,26 @@ export async function renderDesktopWorkItemDetail(client: WorkHubApiClient, work
   return renderWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId), "desktop");
 }
 
+export function startDesktopAgentRun(
+  client: WorkHubApiClient,
+  workItemId: string,
+  payload: StartAgentRunRequest = {}
+) {
+  return client.startAgentRun(workItemId, payload);
+}
+
+export function loadDesktopAgentRun(client: WorkHubApiClient, runId: string) {
+  return client.getAgentRun(runId);
+}
+
+export function loadDesktopAgentRunTrace(client: WorkHubApiClient, runId: string, after?: number) {
+  return client.getAgentRunTrace(runId, after);
+}
+
+export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string) {
+  return renderAgentRunLive(await loadDesktopAgentRun(client, runId), "desktop");
+}
+
 export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return client.pages.proposal(proposalId);
 }
@@ -100,6 +124,18 @@ export async function createDesktopWorkItemCuuCard(
 
 export async function loadDesktopWorkItemCuuCard(client: WorkHubApiClient, workItemId: string): Promise<CuuCard> {
   return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId));
+}
+
+export async function startDesktopAgentRunCuuCard(
+  client: WorkHubApiClient,
+  workItemId: string,
+  payload: StartAgentRunRequest = {}
+): Promise<CuuCard> {
+  return cardFromAgentRunLive(await startDesktopAgentRun(client, workItemId, payload));
+}
+
+export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId: string): Promise<CuuCard> {
+  return cardFromAgentRunLive(await loadDesktopAgentRun(client, runId));
 }
 
 export {
