@@ -10,7 +10,11 @@ import {
 } from "@workhub/cuu";
 
 import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl } from "./cuu-atlas-assets.js";
-import { renderDesktopCuuAtlasSprite, type DesktopCuuAtlasRender } from "./cuu-atlas-runtime.js";
+import {
+  renderDesktopCuuAtlasSprite,
+  renderDesktopCuuAtlasState,
+  type DesktopCuuAtlasRender
+} from "./cuu-atlas-runtime.js";
 import { loadCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
@@ -79,9 +83,13 @@ export function renderDesktopPetSurface(input: {
   display_width_px?: number | undefined;
 } = {}): DesktopPetSurfaceRender {
   const motion = input.card?.motion ?? cuuMotionForState("idle");
-  const sprite = renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
-    display_width_px: input.display_width_px ?? (input.card ? 118 : 148)
-  });
+  const sprite = input.card
+    ? renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
+        display_width_px: input.display_width_px ?? 118
+      })
+    : renderDesktopCuuAtlasState(input.idle_action ?? "idle_breathe", desktopCuuP1AtlasManifest, {
+        display_width_px: input.display_width_px ?? 148
+      });
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({
         card: input.card,

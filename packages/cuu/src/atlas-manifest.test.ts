@@ -83,11 +83,14 @@ test("atlas grid frame helper can place clips inside a larger packed atlas", () 
 
 test("atlas manifest can enforce full motion coverage for production packs", () => {
   const issues = validateCuuSpriteAtlasManifest(p1IdleAtlas, {
-    require_full_motion_coverage: true
+    require_full_motion_coverage: true,
+    require_idle_micro_action_coverage: true
   });
 
   assert.equal(issues.some((issue) => issue.path === "clips.thinking_tail"), true);
   assert.equal(issues.some((issue) => issue.path === "clips.asking_approval_bounce"), true);
+  assert.equal(issues.some((issue) => issue.path === "clips.idle_blink"), true);
+  assert.equal(issues.some((issue) => issue.path === "clips.drag_hold"), true);
 });
 
 test("atlas clip lookup falls back to the default clip while sample packs are partial", () => {

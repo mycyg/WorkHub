@@ -6,7 +6,7 @@
   "atlas": {
     "image_path": "cuu-p1-motion-pack.png",
     "width": 1776,
-    "height": 9016,
+    "height": 16120,
     "pixel_ratio": 1,
     "format": "png"
   },
@@ -810,6 +810,646 @@
       "reduced_motion_frame_id": "offline_sleep-000",
       "source_green_path": "../source-green/offline_sleep/cuu-offline-sleep-sheet-v1-green.png",
       "alpha_path": "../alpha/offline_sleep/cuu-offline-sleep-sheet-v1-alpha-clean.png"
+    },
+    "idle_blink": {
+      "state": "idle_blink",
+      "fps": 10,
+      "loop": false,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "idle_blink-000",
+          "x": 0,
+          "y": 9016,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-001",
+          "x": 444,
+          "y": 9016,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-002",
+          "x": 888,
+          "y": 9016,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-003",
+          "x": 1332,
+          "y": 9016,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-004",
+          "x": 0,
+          "y": 9460,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-005",
+          "x": 444,
+          "y": 9460,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-006",
+          "x": 888,
+          "y": 9460,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "idle_blink-007",
+          "x": 1332,
+          "y": 9460,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "idle_blink-000",
+      "source_green_path": "../source-green/idle_blink/cuu-idle-blink-sheet-v1-green.png",
+      "alpha_path": "../alpha/idle_blink/cuu-idle-blink-sheet-v1-alpha-clean.png"
+    },
+    "idle_tail_sway": {
+      "state": "idle_tail_sway",
+      "fps": 8,
+      "loop": true,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "idle_tail_sway-000",
+          "x": 0,
+          "y": 9904,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-001",
+          "x": 444,
+          "y": 9904,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-002",
+          "x": 888,
+          "y": 9904,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-003",
+          "x": 1332,
+          "y": 9904,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-004",
+          "x": 0,
+          "y": 10348,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-005",
+          "x": 444,
+          "y": 10348,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-006",
+          "x": 888,
+          "y": 10348,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "idle_tail_sway-007",
+          "x": 1332,
+          "y": 10348,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        }
+      ],
+      "reduced_motion_frame_id": "idle_tail_sway-000",
+      "source_green_path": "../source-green/idle_tail_sway/cuu-idle-tail-sway-sheet-v1-green.png",
+      "alpha_path": "../alpha/idle_tail_sway/cuu-idle-tail-sway-sheet-v1-alpha-clean.png"
+    },
+    "look_at_mouse": {
+      "state": "look_at_mouse",
+      "fps": 10,
+      "loop": false,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "look_at_mouse-000",
+          "x": 0,
+          "y": 10792,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-001",
+          "x": 444,
+          "y": 10792,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-002",
+          "x": 888,
+          "y": 10792,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-003",
+          "x": 1332,
+          "y": 10792,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-004",
+          "x": 0,
+          "y": 11236,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-005",
+          "x": 444,
+          "y": 11236,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-006",
+          "x": 888,
+          "y": 11236,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "look_at_mouse-007",
+          "x": 1332,
+          "y": 11236,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "look_at_mouse-000",
+      "source_green_path": "../source-green/look_at_mouse/cuu-look-at-mouse-sheet-v1-green.png",
+      "alpha_path": "../alpha/look_at_mouse/cuu-look-at-mouse-sheet-v1-alpha-clean.png"
+    },
+    "sleeping_curl": {
+      "state": "sleeping_curl",
+      "fps": 6,
+      "loop": true,
+      "interruptible": true,
+      "priority": "idle",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "sleeping_curl-000",
+          "x": 0,
+          "y": 11680,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-001",
+          "x": 444,
+          "y": 11680,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-002",
+          "x": 888,
+          "y": 11680,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-003",
+          "x": 1332,
+          "y": 11680,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-004",
+          "x": 0,
+          "y": 12124,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-005",
+          "x": 444,
+          "y": 12124,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-006",
+          "x": 888,
+          "y": 12124,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        },
+        {
+          "id": "sleeping_curl-007",
+          "x": 1332,
+          "y": 12124,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 167
+        }
+      ],
+      "reduced_motion_frame_id": "sleeping_curl-000",
+      "source_green_path": "../source-green/sleeping_curl/cuu-sleeping-curl-sheet-v1-green.png",
+      "alpha_path": "../alpha/sleeping_curl/cuu-sleeping-curl-sheet-v1-alpha-clean.png"
+    },
+    "wake_up": {
+      "state": "wake_up",
+      "fps": 10,
+      "loop": false,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "wake_up-000",
+          "x": 0,
+          "y": 12568,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-001",
+          "x": 444,
+          "y": 12568,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-002",
+          "x": 888,
+          "y": 12568,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-003",
+          "x": 1332,
+          "y": 12568,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-004",
+          "x": 0,
+          "y": 13012,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-005",
+          "x": 444,
+          "y": 13012,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-006",
+          "x": 888,
+          "y": 13012,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wake_up-007",
+          "x": 1332,
+          "y": 13012,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "wake_up-000",
+      "source_green_path": "../source-green/wake_up/cuu-wake-up-sheet-v1-green.png",
+      "alpha_path": "../alpha/wake_up/cuu-wake-up-sheet-v1-alpha-clean.png"
+    },
+    "drag_hold": {
+      "state": "drag_hold",
+      "fps": 8,
+      "loop": true,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "drag_hold-000",
+          "x": 0,
+          "y": 13456,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-001",
+          "x": 444,
+          "y": 13456,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-002",
+          "x": 888,
+          "y": 13456,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-003",
+          "x": 1332,
+          "y": 13456,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-004",
+          "x": 0,
+          "y": 13900,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-005",
+          "x": 444,
+          "y": 13900,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-006",
+          "x": 888,
+          "y": 13900,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        },
+        {
+          "id": "drag_hold-007",
+          "x": 1332,
+          "y": 13900,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 125
+        }
+      ],
+      "reduced_motion_frame_id": "drag_hold-000",
+      "source_green_path": "../source-green/drag_hold/cuu-drag-hold-sheet-v1-green.png",
+      "alpha_path": "../alpha/drag_hold/cuu-drag-hold-sheet-v1-alpha-clean.png"
+    },
+    "tap_bubble": {
+      "state": "tap_bubble",
+      "fps": 12,
+      "loop": false,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "tap_bubble-000",
+          "x": 0,
+          "y": 14344,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-001",
+          "x": 444,
+          "y": 14344,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-002",
+          "x": 888,
+          "y": 14344,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-003",
+          "x": 1332,
+          "y": 14344,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-004",
+          "x": 0,
+          "y": 14788,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-005",
+          "x": 444,
+          "y": 14788,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-006",
+          "x": 888,
+          "y": 14788,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        },
+        {
+          "id": "tap_bubble-007",
+          "x": 1332,
+          "y": 14788,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 83
+        }
+      ],
+      "reduced_motion_frame_id": "tap_bubble-000",
+      "source_green_path": "../source-green/tap_bubble/cuu-tap-bubble-sheet-v1-green.png",
+      "alpha_path": "../alpha/tap_bubble/cuu-tap-bubble-sheet-v1-alpha-clean.png"
+    },
+    "wave_hello": {
+      "state": "wave_hello",
+      "fps": 10,
+      "loop": false,
+      "interruptible": true,
+      "priority": "normal",
+      "anchor": {
+        "x": 222,
+        "y": 418
+      },
+      "frames": [
+        {
+          "id": "wave_hello-000",
+          "x": 0,
+          "y": 15232,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-001",
+          "x": 444,
+          "y": 15232,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-002",
+          "x": 888,
+          "y": 15232,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-003",
+          "x": 1332,
+          "y": 15232,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-004",
+          "x": 0,
+          "y": 15676,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-005",
+          "x": 444,
+          "y": 15676,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-006",
+          "x": 888,
+          "y": 15676,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        },
+        {
+          "id": "wave_hello-007",
+          "x": 1332,
+          "y": 15676,
+          "w": 444,
+          "h": 444,
+          "duration_ms": 100
+        }
+      ],
+      "reduced_motion_frame_id": "wave_hello-000",
+      "source_green_path": "../source-green/wave_hello/cuu-wave-hello-sheet-v1-green.png",
+      "alpha_path": "../alpha/wave_hello/cuu-wave-hello-sheet-v1-alpha-clean.png"
     }
   }
 }

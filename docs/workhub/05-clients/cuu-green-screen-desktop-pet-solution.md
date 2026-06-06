@@ -268,11 +268,11 @@ idle loop
 当前实现落点（2026-06-06）：
 
 - `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
-- `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action`，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
+- `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action` 并按该 action 选择真实 atlas clip，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
 - `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
 - `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并预留 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
 - `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position 执行到真实 Tauri window API；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前仍缺跨窗口鼠标距离采样、位置持久化、多显示器 work-area 实测和对应 full coverage atlas；scheduler、bridge、command scaffold 和最小 runtime 先把动作语义与端口固定下来。
+- 当前仍缺跨窗口鼠标距离采样、位置持久化、多显示器 work-area 实测、透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -297,7 +297,7 @@ idle loop
 - 绿边残留低于肉眼可见阈值，必要时二次 despill。
 - 同一动作内脚底 anchor 不漂移。
 - 没有文字、水印、参考图残留、额外猫或额外道具。
-- `CuuMotionHint.sprite_state` 全量覆盖。
+- `CuuMotionHint.sprite_state` 与 idle / interaction micro action 全量覆盖。
 
 运行时门禁：
 
@@ -314,7 +314,7 @@ idle loop
 2. **Cuu Runtime P1**：把 procedural CSS sprite 替换为 atlas renderer，继续复用现有 `CuuController`。
 3. **Pet Window P1.5**：新增 `?surface=pet`，让 `pet` window 只加载 Cuu，不加载主壳。
 4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，支持拖动、收起、托盘显隐。
-5. **Behavior P2**：idle scheduler 与 webview pointer bridge 已落；继续接真实跨窗口鼠标采样、睡觉/醒来视觉资产、事件动作优先级和 full coverage atlas。
+5. **Behavior P2**：idle scheduler 与 webview pointer bridge 已落，18 clip full coverage atlas 已接；继续接真实跨窗口鼠标采样、真实窗口位置、系统 idle 策略和长驻视觉 QA。
 6. **QA P2**：Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
 7. **Rive P3**：如果 sprite 切换仍显僵硬，再把高频动作迁到 Rive state machine。
 8. **Live2D P4**：只有当 Cuu 需要明显表情/头部/身体形变时评估。
@@ -330,25 +330,25 @@ idle loop
 - `packages/cuu/src/atlas-manifest.ts` 已新增真实 atlas manifest schema、grid frame helper、partial/full coverage 校验。
 - `apps/desktop-webview/src/cuu-atlas-runtime.ts` 已能按 atlas frame rect 生成 CSS keyframes。
 - `apps/desktop-webview/src/pet-surface.ts` 已支持 `/pet` 或 `?surface=pet` 只加载 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
-- 已生成 `idle_breathe`、`thinking_tail`、`asking_approval_bounce`、`carrying_document_step`、`celebrating_jump`、`searching_evidence_peek`、`syncing_files_spin`、`worried_ears`、`revision_requested_nod`、`offline_sleep` 十个业务 clip 的绿幕 sprite sheet，完成 alpha 抠图，并合成 `cuu-p1-motion-pack.png`。
+- 已生成 18 个动作的绿幕 sprite sheet，完成 alpha 抠图，并合成 `cuu-p1-motion-pack.png`。
 
 下一步必须从“会显示”升级到“独立活着”：
 
-- 18 个动作的完整绿幕素材批次；当前 `CuuMotionHint.sprite_state` 已 full coverage，但 scheduler 的 8 个非 `idle_breathe` 微动作还缺专用视觉 clip。
-- 继续补全 `idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`，直到 `cuu.sprite.json` 同时覆盖 scheduler micro action。
+- 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
+- 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍。
 - 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
 - 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，把已落的 webview bridge 接到 Rust runtime。
-- idle scheduler 已落基础语义；继续把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到 full coverage atlas 视觉资产。
+- idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
 - 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。
 
 ## 11. P1 资产落地记录（2026-06-06）
 
-本轮已经把“绿幕生成 -> 本地抠图 -> atlas runtime”推进到 10 个业务 clip full coverage motion pack：
+本轮已经把“绿幕生成 -> 本地抠图 -> atlas runtime”推进到 18 个动作 full coverage motion pack：
 
 | 项 | 落点 |
 |---|---|
-| 绿幕源图 | `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/` |
-| 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/` |
+| 绿幕源图 | `apps/desktop-webview/src/assets/cuu/source-green/{18 action ids}/` |
+| 透明 alpha | `apps/desktop-webview/src/assets/cuu/alpha/{18 action ids}/` |
 | runtime atlas | `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png` |
 | runtime JSON manifest | `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json` |
 | manifest schema | `packages/cuu/src/atlas-manifest.ts` |
@@ -364,8 +364,8 @@ idle loop
 本轮像素验收结果（所有 clip 可见绿边统计均为 0）：
 
 ```text
-atlas: 1776x9016
-clips: idle_breathe, thinking_tail, asking_approval_bounce, carrying_document_step, celebrating_jump, searching_evidence_peek, syncing_files_spin, worried_ears, revision_requested_nod, offline_sleep
+atlas: 1776x16120
+clips: idle_breathe, thinking_tail, asking_approval_bounce, carrying_document_step, celebrating_jump, searching_evidence_peek, syncing_files_spin, worried_ears, revision_requested_nod, offline_sleep, idle_blink, idle_tail_sway, look_at_mouse, sleeping_curl, wake_up, drag_hold, tap_bubble, wave_hello
 idle_breathe: 1536x1024, visible=550088, partial=11983, greenish_visible=0
 thinking_tail: 1776x888, visible=535770, partial=12502, greenish_visible=0
 asking_approval_bounce: 1776x888, visible=533992, partial=16453, greenish_visible=0
@@ -376,10 +376,18 @@ syncing_files_spin: 1776x888, visible=496776, partial=10523, greenish_visible=0
 worried_ears: 1776x888, visible=574405, partial=12924, greenish_visible=0
 revision_requested_nod: 1776x888, visible=503304, partial=10329, greenish_visible=0
 offline_sleep: 1776x888, visible=442821, partial=7090, greenish_visible=0
+idle_blink: 1776x888, visible=543653, partial=12584, greenish_visible=0
+idle_tail_sway: 1776x888, visible=521457, partial=8818, greenish_visible=0
+look_at_mouse: 1776x888, visible=460812, partial=8767, greenish_visible=0
+sleeping_curl: 1776x888, visible=455579, partial=6505, greenish_visible=0
+wake_up: 1776x888, visible=502394, partial=10913, greenish_visible=0
+drag_hold: 1776x888, visible=515240, partial=10758, greenish_visible=0
+tap_bubble: 1776x888, visible=509808, partial=11686, greenish_visible=0
+wave_hello: 1776x888, visible=585108, partial=11280, greenish_visible=0
 ```
 
-这个 motion pack 已让 `CuuMotionHint.sprite_state` 业务状态 full coverage，`validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true })` 应通过。它仍不等于 18 动作正式资产包，因为 idle scheduler 的微动作还没有专用 clip。生产门禁仍要求：
+这个 motion pack 已让 `CuuMotionHint.sprite_state` 业务状态与 scheduler micro action 都 full coverage，`validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true, require_idle_micro_action_coverage: true })` 应通过。生产门禁仍要求：
 
-- 补齐 blink、tail、sleep、wake、look_at_mouse、drag_hold、tap_bubble、wave_hello 等生命感微动作。
 - 为每个动作记录统一 anchor、fps、loop、interruptible、priority、reduced motion frame。
-- 通过 `validateCuuSpriteAtlasManifest(..., { require_full_motion_coverage: true })` 后，才允许替换主窗 notice 的 procedural sprite。
+- 同时通过 `require_full_motion_coverage` 与 `require_idle_micro_action_coverage` 后，才允许评估替换主窗 notice 的 procedural sprite。
+- 在真实 Tauri 透明窗口中截图确认非空、无绿边、无黑底泄漏、无离屏，并根据结果做 WebP/PNG 体积优化。

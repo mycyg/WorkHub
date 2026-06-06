@@ -1,8 +1,11 @@
 import { allCuuMotionHints, type CuuMotionHint, type CuuSpriteState } from "./motion.js";
+import { cuuIdleMicroActionSpecs, type CuuIdleMicroAction } from "./idle-scheduler.js";
 
 export type CuuSpriteAtlasFormat = "png" | "webp";
 
 export type CuuSpriteAtlasPriority = "idle" | "normal" | "urgent";
+
+export type CuuSpriteAtlasClipState = CuuSpriteState | CuuIdleMicroAction;
 
 export type CuuSpriteAtlasImage = {
   image_path: string;
@@ -29,7 +32,7 @@ export type CuuSpriteAtlasFrame = {
 };
 
 export type CuuSpriteAtlasClip = {
-  state: CuuSpriteState;
+  state: CuuSpriteAtlasClipState;
   fps: number;
   loop: boolean;
   interruptible: boolean;
@@ -45,9 +48,9 @@ export type CuuSpriteAtlasManifest = {
   version: 1;
   character: "Cuu";
   art_pack: string;
-  default_state: CuuSpriteState;
+  default_state: CuuSpriteAtlasClipState;
   atlas: CuuSpriteAtlasImage;
-  clips: Partial<Record<CuuSpriteState, CuuSpriteAtlasClip>>;
+  clips: Partial<Record<CuuSpriteAtlasClipState, CuuSpriteAtlasClip>>;
 };
 
 export type CuuSpriteAtlasManifestIssue = {
@@ -57,11 +60,12 @@ export type CuuSpriteAtlasManifestIssue = {
 
 export type CuuSpriteAtlasValidationOptions = {
   require_full_motion_coverage?: boolean;
+  require_idle_micro_action_coverage?: boolean;
   hints?: CuuMotionHint[];
 };
 
 export type CuuSpriteAtlasGridInput = {
-  state: CuuSpriteState;
+  state: CuuSpriteAtlasClipState;
   columns: number;
   rows: number;
   frame_count: number;
@@ -97,6 +101,13 @@ export function cuuAtlasClipForMotion(
   manifest: CuuSpriteAtlasManifest
 ): CuuSpriteAtlasClip | undefined {
   return manifest.clips[motion.sprite_state] ?? manifest.clips[manifest.default_state];
+}
+
+export function cuuAtlasClipForIdleMicroAction(
+  action: CuuIdleMicroAction,
+  manifest: CuuSpriteAtlasManifest
+): CuuSpriteAtlasClip | undefined {
+  return manifest.clips[action] ?? manifest.clips[manifest.default_state];
 }
 
 export function validateCuuSpriteAtlasManifest(
@@ -135,7 +146,18 @@ export function validateCuuSpriteAtlasManifest(
     }
   }
 
-  for (const [state, clip] of Object.entries(manifest.clips) as [CuuSpriteState, CuuSpriteAtlasClip | undefined][]) {
+  if (options.require_idle_micro_action_coverage) {
+    for (const action of Object.keys(cuuIdleMicroActionSpecs) as CuuIdleMicroAction[]) {
+      if (!manifest.clips[action]) {
+        issues.push({
+          path: `clips.${action}`,
+          message: `Missing atlas clip for Cuu idle micro action ${action}.`
+        });
+      }
+    }
+  }
+
+  for (const [state, clip] of Object.entries(manifest.clips) as [CuuSpriteAtlasClipState, CuuSpriteAtlasClip | undefined][]) {
     if (!clip) {
       continue;
     }
@@ -176,7 +198,7 @@ export function assertValidCuuSpriteAtlasManifest(
 
 function validateAnchor(
   issues: CuuSpriteAtlasManifestIssue[],
-  state: CuuSpriteState,
+  state: CuuSpriteAtlasClipState,
   anchor: CuuSpriteAtlasAnchor
 ) {
   if (anchor.x < 0 || anchor.y < 0) {
@@ -187,7 +209,7 @@ function validateAnchor(
 function validateFrame(
   issues: CuuSpriteAtlasManifestIssue[],
   manifest: CuuSpriteAtlasManifest,
-  state: CuuSpriteState,
+  state: CuuSpriteAtlasClipState,
   index: number,
   frame: CuuSpriteAtlasFrame
 ) {

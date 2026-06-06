@@ -90,7 +90,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 但这些还不等于「桌宠已经完成」：
 
-- 已有 10 clip 真实小猫绿幕 motion pack，业务状态已 full coverage；但还没有 18 动作微行为 full coverage atlas、Rive 文件或 Live2D rig。
+- 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；但还没有 Rive 文件或 Live2D rig。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 没有真实 Tauri `pet` 透明窗口 runtime；当前已有 desktop webview notice、`/pet` surface、Rust pet window plan/config scaffold 和几何合同。
 - 拖拽/hover 的 webview bridge 已落，但仍缺真实 Tauri `startDragging` command、位置持久化、收起、真实独立设置页、低电量降帧。
@@ -109,7 +109,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/atlas-manifest.ts`：新增真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验。
 - `apps/desktop-webview/src/assets/cuu/source-green/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：GPT Image 绿幕 sprite sheets，保留原始绿幕源图。
 - `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：本地 chroma-key + despill + edge-contract 后的透明 PNG。
-- `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png`：P1 motion pack atlas，当前覆盖 10 个业务状态 clip。
+- `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png`：P1 motion pack atlas，当前覆盖 18 个业务状态与 idle / interaction clip。
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json`：与 motion pack atlas 对齐的 JSON manifest，便于 Tauri bundle 读取。
 - `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 CSS keyframes；非覆盖状态会标记 fallback。
 - `apps/desktop-webview/src/pet-surface.ts`：`/pet` 或 `?surface=pet` 已能只渲染 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
@@ -121,16 +121,16 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
 - `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 `/pet` 或 `?surface=pet` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 motion pack，10 个业务状态已命中真实 clip，并可通过 `require_full_motion_coverage`；idle scheduler 可 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动、释放和点击反馈；Rust pet window command plan 与 pet window bridge 可解析 body/card 模式、Tauri-like command 和拖拽 fallback；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 motion pack，业务状态可通过 `require_full_motion_coverage`，idle / interaction 微动作可通过 `require_idle_micro_action_coverage`；pet surface 无卡片时会按 scheduler `idle_action` 选择真实 atlas clip；Rust pet window command plan 与 pet window bridge 可解析 body/card 模式、Tauri-like command 和拖拽 fallback；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
 
 仍未完成：
 
-- 18 个动作的正式透明 PNG / WebP full coverage；目前 10 个业务状态已 full coverage，仍缺 8 个 idle / interaction 微动作专用 clip。
-- `cuu.sprite.json` 已有运行时 JSON manifest；业务状态已 full coverage，但仍未达到 18 动作 production pack。
+- 18 个动作的正式透明 PNG / WebP 已落 P1 pack；后续仍需做体积压缩、anchor 微调、真实透明窗口截图和长时间性能 QA。
+- `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
 - 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge，并已把 mode/drag/save-position 执行到真实 Tauri window API；仍缺真实 cursor sampling、位置持久化、多显示器修正和托盘显隐。
 - 真实跨窗口鼠标距离采样、拖拽窗口位置持久化、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
 - Rive / Live2D 高表现力路线。
-- full coverage 动作资产与 idle scheduler 的视觉落地：当前 scheduler 语义已落，核心业务 clip 已命中 motion pack，但 idle 微动作仍会回退到 idle clip。
+- 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。
 
 ## 4. 交互原则
 

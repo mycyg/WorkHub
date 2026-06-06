@@ -17,7 +17,7 @@ export const desktopCuuP1AtlasManifest = {
   atlas: {
     image_path: motionPackAtlasImage,
     width: 1776,
-    height: 9016,
+    height: 16120,
     pixel_ratio: 1,
     format: "png"
   },
@@ -230,6 +230,174 @@ export const desktopCuuP1AtlasManifest = {
         origin_y: 8128
       }),
       reduced_motion_frame_id: "offline_sleep-000"
+    },
+    idle_blink: {
+      state: "idle_blink",
+      fps: 10,
+      loop: false,
+      interruptible: true,
+      priority: "idle",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/idle_blink/cuu-idle-blink-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/idle_blink/cuu-idle-blink-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "idle_blink",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 9016
+      }),
+      reduced_motion_frame_id: "idle_blink-000"
+    },
+    idle_tail_sway: {
+      state: "idle_tail_sway",
+      fps: 8,
+      loop: true,
+      interruptible: true,
+      priority: "idle",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/idle_tail_sway/cuu-idle-tail-sway-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/idle_tail_sway/cuu-idle-tail-sway-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "idle_tail_sway",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 125,
+        origin_y: 9904
+      }),
+      reduced_motion_frame_id: "idle_tail_sway-000"
+    },
+    look_at_mouse: {
+      state: "look_at_mouse",
+      fps: 10,
+      loop: false,
+      interruptible: true,
+      priority: "idle",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/look_at_mouse/cuu-look-at-mouse-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/look_at_mouse/cuu-look-at-mouse-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "look_at_mouse",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 10792
+      }),
+      reduced_motion_frame_id: "look_at_mouse-000"
+    },
+    sleeping_curl: {
+      state: "sleeping_curl",
+      fps: 6,
+      loop: true,
+      interruptible: true,
+      priority: "idle",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/sleeping_curl/cuu-sleeping-curl-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/sleeping_curl/cuu-sleeping-curl-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "sleeping_curl",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 167,
+        origin_y: 11680
+      }),
+      reduced_motion_frame_id: "sleeping_curl-000"
+    },
+    wake_up: {
+      state: "wake_up",
+      fps: 10,
+      loop: false,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/wake_up/cuu-wake-up-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/wake_up/cuu-wake-up-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "wake_up",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 12568
+      }),
+      reduced_motion_frame_id: "wake_up-000"
+    },
+    drag_hold: {
+      state: "drag_hold",
+      fps: 8,
+      loop: true,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/drag_hold/cuu-drag-hold-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/drag_hold/cuu-drag-hold-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "drag_hold",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 125,
+        origin_y: 13456
+      }),
+      reduced_motion_frame_id: "drag_hold-000"
+    },
+    tap_bubble: {
+      state: "tap_bubble",
+      fps: 12,
+      loop: false,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/tap_bubble/cuu-tap-bubble-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/tap_bubble/cuu-tap-bubble-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "tap_bubble",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 83,
+        origin_y: 14344
+      }),
+      reduced_motion_frame_id: "tap_bubble-000"
+    },
+    wave_hello: {
+      state: "wave_hello",
+      fps: 10,
+      loop: false,
+      interruptible: true,
+      priority: "normal",
+      anchor: { x: 222, y: 418 },
+      source_green_path: "assets/cuu/source-green/wave_hello/cuu-wave-hello-sheet-v1-green.png",
+      alpha_path: "assets/cuu/alpha/wave_hello/cuu-wave-hello-sheet-v1-alpha-clean.png",
+      frames: createCuuSpriteAtlasGridFrames({
+        state: "wave_hello",
+        columns: 4,
+        rows: 2,
+        frame_count: 8,
+        cell_width: 444,
+        cell_height: 444,
+        duration_ms: 100,
+        origin_y: 15232
+      }),
+      reduced_motion_frame_id: "wave_hello-000"
     }
   }
 } satisfies CuuSpriteAtlasManifest;

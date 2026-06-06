@@ -2,6 +2,7 @@ import {
   cuuAtlasClipForMotion,
   type CuuMotionHint,
   type CuuSpriteAtlasClip,
+  type CuuSpriteAtlasClipState,
   type CuuSpriteAtlasFrame,
   type CuuSpriteAtlasManifest
 } from "@workhub/cuu";
@@ -32,7 +33,27 @@ export function renderDesktopCuuAtlasSprite(
   manifest: CuuSpriteAtlasManifest,
   options: DesktopCuuAtlasRenderOptions = {}
 ): DesktopCuuAtlasRender {
-  const clip = cuuAtlasClipForMotion(motion, manifest);
+  return renderDesktopCuuAtlasClipState(motion.sprite_state, motion.reduced_motion_fallback, manifest, options, () =>
+    cuuAtlasClipForMotion(motion, manifest)
+  );
+}
+
+export function renderDesktopCuuAtlasState(
+  state: CuuSpriteAtlasClipState,
+  manifest: CuuSpriteAtlasManifest,
+  options: DesktopCuuAtlasRenderOptions = {}
+): DesktopCuuAtlasRender {
+  return renderDesktopCuuAtlasClipState(state, cuuAtlasStateLabel(state), manifest, options);
+}
+
+function renderDesktopCuuAtlasClipState(
+  state: CuuSpriteAtlasClipState,
+  reducedMotionFallback: string,
+  manifest: CuuSpriteAtlasManifest,
+  options: DesktopCuuAtlasRenderOptions,
+  resolveClip: () => CuuSpriteAtlasClip | undefined = () => manifest.clips[state] ?? manifest.clips[manifest.default_state]
+): DesktopCuuAtlasRender {
+  const clip = resolveClip();
   if (!clip) {
     throw new Error("Cuu atlas manifest must include a default clip.");
   }
@@ -63,7 +84,7 @@ export function renderDesktopCuuAtlasSprite(
     `--wh-cuu-atlas-anchor-x:${Math.round(clip.anchor.x * scale)}px`,
     `--wh-cuu-atlas-anchor-y:${Math.round(clip.anchor.y * scale)}px`
   ].join(";");
-  const fallback = clip.state !== motion.sprite_state;
+  const fallback = clip.state !== state;
 
   return {
     clip,
@@ -71,8 +92,23 @@ export function renderDesktopCuuAtlasSprite(
     frame_count: clip.frames.length,
     duration_ms: durationMs,
     css: `${desktopCuuAtlasBaseCss}${buildAtlasKeyframes(keyframes, clip, scale)}`,
-    html: `<div class="wh-cuu-atlas" data-cuu-atlas-state="${escapeHtml(clip.state)}" data-cuu-requested-state="${escapeHtml(motion.sprite_state)}" data-fallback="${fallback ? "true" : "false"}" data-loop="${clip.loop ? "true" : "false"}" data-frame-count="${clip.frames.length}" aria-label="${escapeHtml(motion.reduced_motion_fallback)}" style="${escapeHtml(style)}"><div class="wh-cuu-atlas-frame" data-frame-id="${escapeHtml(reducedFrame.id)}"></div></div>`
+    html: `<div class="wh-cuu-atlas" data-cuu-atlas-state="${escapeHtml(clip.state)}" data-cuu-requested-state="${escapeHtml(state)}" data-fallback="${fallback ? "true" : "false"}" data-loop="${clip.loop ? "true" : "false"}" data-frame-count="${clip.frames.length}" aria-label="${escapeHtml(reducedMotionFallback)}" style="${escapeHtml(style)}"><div class="wh-cuu-atlas-frame" data-frame-id="${escapeHtml(reducedFrame.id)}"></div></div>`
   };
+}
+
+function cuuAtlasStateLabel(state: CuuSpriteAtlasClipState) {
+  const labels: Partial<Record<CuuSpriteAtlasClipState, string>> = {
+    idle_breathe: "Cuu 安静待命。",
+    idle_blink: "Cuu 眨了眨眼。",
+    idle_tail_sway: "Cuu 轻轻摆尾。",
+    look_at_mouse: "Cuu 看向鼠标。",
+    sleeping_curl: "Cuu 正在打盹。",
+    wake_up: "Cuu 醒来了。",
+    drag_hold: "Cuu 被轻轻拖动。",
+    tap_bubble: "Cuu 回应了点击。",
+    wave_hello: "Cuu 向你挥手。"
+  };
+  return labels[state] ?? "Cuu 正在工作。";
 }
 
 function buildAtlasKeyframes(name: string, clip: CuuSpriteAtlasClip, scale: number) {

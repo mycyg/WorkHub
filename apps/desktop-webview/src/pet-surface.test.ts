@@ -5,7 +5,7 @@ import test from "node:test";
 import { cuuMotionForState, validateCuuSpriteAtlasManifest, type CuuCard, type CuuSpriteAtlasManifest } from "@workhub/cuu";
 
 import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, validateDesktopCuuP1AtlasManifest } from "./cuu-atlas-assets.js";
-import { renderDesktopCuuAtlasSprite } from "./cuu-atlas-runtime.js";
+import { renderDesktopCuuAtlasSprite, renderDesktopCuuAtlasState } from "./cuu-atlas-runtime.js";
 import { renderDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { desktopPetWindowModeForCard, resolveDesktopPetWindowBridge } from "./pet-window-bridge.js";
 
@@ -48,6 +48,8 @@ test("desktop Cuu P1 atlas manifest points at the generated transparent sample",
   assert.equal(desktopCuuP1AtlasManifest.clips.asking_approval_bounce?.priority, "urgent");
   assert.equal(desktopCuuP1AtlasManifest.clips.syncing_files_spin?.frames.at(0)?.y, 5464);
   assert.equal(desktopCuuP1AtlasManifest.clips.offline_sleep?.frames.at(0)?.y, 8128);
+  assert.equal(desktopCuuP1AtlasManifest.clips.idle_blink?.frames.at(0)?.y, 9016);
+  assert.equal(desktopCuuP1AtlasManifest.clips.wave_hello?.frames.at(0)?.y, 15232);
 });
 
 test("desktop Cuu JSON sprite manifest validates against the shared atlas schema", () => {
@@ -55,11 +57,14 @@ test("desktop Cuu JSON sprite manifest validates against the shared atlas schema
 
   assert.deepEqual(validateCuuSpriteAtlasManifest(manifest), []);
   assert.deepEqual(validateCuuSpriteAtlasManifest(manifest, { require_full_motion_coverage: true }), []);
+  assert.deepEqual(validateCuuSpriteAtlasManifest(manifest, { require_idle_micro_action_coverage: true }), []);
   assert.equal(manifest.atlas.image_path, "cuu-p1-motion-pack.png");
   assert.equal(manifest.clips.idle_breathe?.reduced_motion_frame_id, "idle_breathe-000");
-  assert.equal(Object.keys(manifest.clips).length, 10);
+  assert.equal(Object.keys(manifest.clips).length, 18);
   assert.equal(manifest.clips.searching_evidence_peek?.frames.at(0)?.y, 4576);
   assert.equal(manifest.clips.offline_sleep?.priority, "idle");
+  assert.equal(manifest.clips.idle_tail_sway?.frames.at(0)?.y, 9904);
+  assert.equal(manifest.clips.drag_hold?.priority, "normal");
 });
 
 test("desktop Cuu atlas renderer emits keyframes from atlas rectangles", () => {
@@ -92,6 +97,14 @@ test("desktop Cuu atlas renderer has business-state full coverage in the P1 pack
   assert.match(render.html, /data-fallback="false"/u);
 });
 
+test("desktop Cuu atlas renderer uses generated idle micro action clips", () => {
+  const render = renderDesktopCuuAtlasState("idle_tail_sway", desktopCuuP1AtlasManifest);
+
+  assert.equal(render.clip.state, "idle_tail_sway");
+  assert.equal(render.fallback, false);
+  assert.match(render.html, /data-cuu-requested-state="idle_tail_sway"/u);
+});
+
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
   assert.equal(resolveDesktopSurface({ pathname: "/pet", search: "" }), "pet");
   assert.equal(resolveDesktopSurface({ pathname: "/", search: "?surface=pet" }), "pet");
@@ -109,7 +122,7 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /data-wh-surface="pet"/u);
   assert.match(idle.html, /data-pet-window-mode="body_only"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
-  assert.match(idle.html, /data-cuu-atlas-state="idle_breathe"/u);
+  assert.match(idle.html, /data-cuu-atlas-state="idle_tail_sway"/u);
   assert.match(idle.html, /data-cuu-manifest-url="[^"]*cuu\.sprite\.json/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
