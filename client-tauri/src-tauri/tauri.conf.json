@@ -33,7 +33,7 @@
       {
         "label": "pet",
         "title": "Cuu",
-        "url": "/pet",
+        "url": "/?surface=pet",
         "width": 180,
         "height": 220,
         "minWidth": 160,

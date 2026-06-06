@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(toggle_control.label, "pet");
         assert_eq!(toggle_control.action, ShellWindowControlAction::Toggle);
         assert_eq!(toggle_control.source, ShellWindowControlSource::Tray);
-        assert_eq!(toggle_control.route, Some("/pet".to_string()));
+        assert_eq!(toggle_control.route, Some("/?surface=pet".to_string()));
         assert_eq!(toggle_control.focus, false);
     }
 

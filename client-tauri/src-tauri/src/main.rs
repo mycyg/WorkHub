@@ -31,7 +31,8 @@ use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     path::BaseDirectory,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager, State,
+    Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
+    PhysicalPosition as TauriPhysicalPosition, State,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -44,13 +45,11 @@ fn set_pet_window_mode(
     let window = app
         .get_webview_window("pet")
         .ok_or_else(|| "pet window is not available".to_string())?;
+    let scale_factor = scale_factor_for_window(&window);
     let current_position = window
         .outer_position()
         .ok()
-        .map(|position| LogicalPosition {
-            x: position.x,
-            y: position.y,
-        });
+        .map(|position| physical_position_to_logical(position, scale_factor));
     let state = *runtime_state
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?;
@@ -79,6 +78,7 @@ fn set_pet_window_mode(
             placement.position.y as f64,
         ))
         .map_err(|error| format!("failed to position pet window: {error}"))?;
+    keep_pet_window_above_desktop(&window)?;
     window
         .show()
         .map_err(|error| format!("failed to show pet window: {error}"))?;
@@ -110,6 +110,7 @@ fn save_pet_window_position(app: tauri::AppHandle) -> Result<PetWindowRuntimeCom
         .get_webview_window("pet")
         .ok_or_else(|| "pet window is not available".to_string())?;
     let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
+    let scale_factor = scale_factor_for_window(&window);
     let position = window
         .outer_position()
         .map_err(|error| format!("failed to read pet window position: {error}"))?;
@@ -117,6 +118,7 @@ fn save_pet_window_position(app: tauri::AppHandle) -> Result<PetWindowRuntimeCom
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .mode;
+    let position = physical_position_to_logical(position, scale_factor);
     let body_position = body_position_from_window_position(
         mode,
         LogicalPosition {
@@ -152,16 +154,19 @@ fn sample_pet_cursor_near(app: tauri::AppHandle) -> Result<PetWindowRuntimeComma
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .mode;
+    let scale_factor = scale_factor_for_window(&window);
     let cursor = app
         .cursor_position()
         .map_err(|error| format!("failed to read cursor position: {error}"))?;
     let position = window
         .outer_position()
         .map_err(|error| format!("failed to read pet window position: {error}"))?;
+    let cursor = cursor.to_logical::<i32>(scale_factor);
+    let position = physical_position_to_logical(position, scale_factor);
     Ok(sample_pet_cursor_near_command_plan(PetWindowPointerInput {
         cursor: LogicalPosition {
-            x: cursor.x.round() as i32,
-            y: cursor.y.round() as i32,
+            x: cursor.x,
+            y: cursor.y,
         },
         window: pet_window_rect_from_position(
             mode,
@@ -232,11 +237,14 @@ fn work_area_for_pet_window(window: &tauri::WebviewWindow) -> LogicalRect {
 
     if let Some(monitor) = monitor {
         let work_area = monitor.work_area();
+        let scale_factor = valid_scale_factor(monitor.scale_factor());
+        let position = work_area.position.to_logical::<i32>(scale_factor);
+        let size = work_area.size.to_logical::<u32>(scale_factor);
         return LogicalRect {
-            x: work_area.position.x,
-            y: work_area.position.y,
-            width: work_area.size.width,
-            height: work_area.size.height,
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
         };
     }
 
@@ -252,6 +260,33 @@ fn default_work_area() -> LogicalRect {
     }
 }
 
+fn physical_position_to_logical(
+    position: TauriPhysicalPosition<i32>,
+    scale_factor: f64,
+) -> LogicalPosition {
+    let position = position.to_logical::<i32>(valid_scale_factor(scale_factor));
+    LogicalPosition {
+        x: position.x,
+        y: position.y,
+    }
+}
+
+fn scale_factor_for_window(window: &tauri::WebviewWindow) -> f64 {
+    window
+        .scale_factor()
+        .ok()
+        .map(valid_scale_factor)
+        .unwrap_or(1.0)
+}
+
+fn valid_scale_factor(scale_factor: f64) -> f64 {
+    if scale_factor.is_sign_positive() && scale_factor.is_normal() {
+        scale_factor
+    } else {
+        1.0
+    }
+}
+
 fn execute_window_control(
     app: &tauri::AppHandle,
     plan: ShellWindowControlPlan,
@@ -261,9 +296,14 @@ fn execute_window_control(
         .ok_or_else(|| format!("{} window is not available", plan.label))?;
 
     match plan.action {
-        ShellWindowControlAction::Show => window
-            .show()
-            .map_err(|error| format!("failed to show {} window: {error}", plan.label))?,
+        ShellWindowControlAction::Show => {
+            if plan.label == "pet" {
+                keep_pet_window_above_desktop(&window)?;
+            }
+            window
+                .show()
+                .map_err(|error| format!("failed to show {} window: {error}", plan.label))?
+        }
         ShellWindowControlAction::Hide => window
             .hide()
             .map_err(|error| format!("failed to hide {} window: {error}", plan.label))?,
@@ -276,6 +316,9 @@ fn execute_window_control(
                     .hide()
                     .map_err(|error| format!("failed to hide {} window: {error}", plan.label))?;
             } else {
+                if plan.label == "pet" {
+                    keep_pet_window_above_desktop(&window)?;
+                }
                 window
                     .show()
                     .map_err(|error| format!("failed to show {} window: {error}", plan.label))?;
@@ -337,6 +380,7 @@ fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
             placement.position.y as f64,
         ))
         .map_err(|error| format!("failed to position pet window at startup: {error}"))?;
+    keep_pet_window_above_desktop(&window)?;
     window
         .show()
         .map_err(|error| format!("failed to show pet window at startup: {error}"))?;
@@ -351,6 +395,12 @@ fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
     ));
 
     Ok(())
+}
+
+fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_always_on_top(true)
+        .map_err(|error| format!("failed to keep pet window above desktop: {error}"))
 }
 
 fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {

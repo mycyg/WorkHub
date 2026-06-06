@@ -206,9 +206,10 @@ manifest 必须能回答三件事：
 ```text
 app start
   -> Rust setup creates main + pet
-  -> pet loads same desktop webview bundle with ?surface=pet
-  -> pet starts hidden until assets and controller ready
-  -> first ready event positions pet at bottom-right
+  -> pet loads same desktop webview bundle with /?surface=pet
+  -> Rust restores and clamps saved body anchor, then positions body-only Cuu at bottom-right
+  -> Rust converts monitor/window/cursor physical pixels to logical pixels for HiDPI screens
+  -> Rust sets always-on-top at startup and whenever pet is shown or resized
   -> show_pet_window(source=startup) without stealing focus
 ```
 
@@ -276,10 +277,10 @@ idle loop
 
 - `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
 - `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action` 并按该 action 选择真实 atlas clip，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
-- `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
+- `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan；Tauri 静态构建的 pet URL 已收敛到 `/?surface=pet`，避免 `/pet` 在静态 asset protocol 下缺少 SPA fallback。
 - `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并接入 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
 - `client-tauri/src-tauri/src/pet_commands.rs` 已固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` 的 command 名称和 typed plan；`client-tauri/src-tauri/src/main.rs` 已用 `tauri::Builder` 注册这些 command，并把 mode resize/position/show、drag、save-position、cursor sampling 执行到真实 Tauri window / AppHandle API；capability 已开放最小 `core:window:allow-start-dragging`。
-- 当前已具备跨窗口鼠标距离采样、body anchor 位置落盘和启动期 Cuu body-only 显示；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏并恢复到右下角/保存位置；`pet-surface-qa.ts` 已把透明、右下角、独立 surface、真实多帧 atlas、轻气泡和选项优先做成静态 QA 门禁；仍缺多显示器 work-area 实测/恢复、真实透明窗口截图 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
+- 当前已具备跨窗口鼠标距离采样、body anchor 位置落盘和启动期 Cuu body-only 显示；位置保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会按当前 work area clamp 防离屏并恢复到右下角/保存位置；Rust 侧已把 monitor work area、window outer position、cursor position 做 physical→logical 换算，修复高 DPI 屏幕离屏问题；运行期会显式设置 `set_always_on_top(true)`，修复主窗盖住 pet 的层级问题；2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost，右下角透明浮层能显示 Cuu 与气泡。`pet-surface-qa.ts` 已把透明、右下角、独立 surface、真实多帧 atlas、轻气泡和选项优先做成静态 QA 门禁；仍缺多显示器 work-area 实测/恢复、自动化透明像素 QA 和 atlas 体积压缩；scheduler、bridge、command scaffold 和最小 runtime 已把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -344,11 +345,11 @@ idle loop
 
 - 18 个动作的完整绿幕素材批次已落，`CuuMotionHint.sprite_state` 与 scheduler micro action 均已 full coverage。
 - 继续做 anchor 微调、WebP/PNG 压缩、真实透明窗口截图 QA、长时间 idle 性能检查和主窗 notice 是否替换 atlas 的取舍；pet surface 静态视觉 QA 已由 `pet-surface-qa.ts` 覆盖。
-- 真实 Tauri runtime 已在启动期显示独立透明 `pet` window 的 body-only Cuu，并消费已落的 `pet_window.rs` 几何 plan；下一步要用真实截图证明主窗隐藏后仍常驻。
+- 真实 Tauri runtime 已在启动期显示独立透明 `pet` window 的 body-only Cuu，并消费已落的 `pet_window.rs` 几何 plan；2026-06-07 已用 Windows debug smoke 证明 `Cuu` window 位于右下角、visible/topmost，并能显示 Cuu 与气泡；下一步要自动化证明主窗隐藏后仍常驻。
 - Live2D 正式 PSD 与 Cubism runtime 尚未落；当前新增 `cuu-live2d-layer-breakdown-concept.png` 和专篇作为施工合同。
-- 真实 Tauri commands：启动期 body-only 显示、`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；下一步补多屏恢复实测与真实截图。
+- 真实 Tauri commands：启动期 body-only 显示、`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near` 已把 webview bridge 接到 Rust runtime，并已保存 `pet-window-state.json`；HiDPI 坐标换算和 runtime topmost 已接；下一步补多屏恢复实测、拖拽后截图和自动化透明像素 QA。
 - idle scheduler 已落基础语义，并能把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到真实 atlas 视觉资产。
-- 真实透明窗口 QA：下一步仍需截图、alpha 像素、HiDPI、多屏和性能；当前只完成 webview 输出级静态门禁。
+- 真实透明窗口 QA：当前已完成一次 Windows debug 截图 smoke；下一步仍需把截图、alpha 像素、HiDPI、多屏和性能纳入自动化门禁。
 
 ## 11. P1 资产落地记录（2026-06-06）
 

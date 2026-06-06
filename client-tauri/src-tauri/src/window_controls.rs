@@ -81,11 +81,13 @@ pub fn focus_main_route(
 }
 
 pub fn show_pet_window(source: ShellWindowControlSource) -> ShellWindowControlPlan {
+    let window = pet_window_plan();
+    let route = Some(window.route.clone());
     control_plan(
-        pet_window_plan(),
+        window,
         ShellWindowControlAction::Show,
         source,
-        Some("/pet".to_string()),
+        route,
         "show-pet",
     )
 }
@@ -101,11 +103,13 @@ pub fn hide_pet_window(source: ShellWindowControlSource) -> ShellWindowControlPl
 }
 
 pub fn toggle_pet_window(source: ShellWindowControlSource) -> ShellWindowControlPlan {
+    let window = pet_window_plan();
+    let route = Some(window.route.clone());
     control_plan(
-        pet_window_plan(),
+        window,
         ShellWindowControlAction::Toggle,
         source,
-        Some("/pet".to_string()),
+        route,
         "toggle-pet",
     )
 }
@@ -185,7 +189,7 @@ mod tests {
 
         assert_eq!(show.label, "pet");
         assert_eq!(show.action, ShellWindowControlAction::Show);
-        assert_eq!(show.route, Some("/pet".to_string()));
+        assert_eq!(show.route, Some("/?surface=pet".to_string()));
         assert_eq!(show.focus, false);
         assert_eq!(toggle.action, ShellWindowControlAction::Toggle);
         assert_eq!(toggle.focus, false);
