@@ -1,6 +1,7 @@
 pub mod config;
 pub mod events;
 pub mod http;
+pub mod pet_window;
 pub mod sse;
 pub mod window_controls;
 pub mod windows;
@@ -14,6 +15,8 @@ pub const RUST_SHELL_OWNS: &[&str] = &[
     "window_plan",
     "window_control",
     "pet_window",
+    "pet_window_geometry",
+    "pet_window_drag",
     "sse_worker",
     "sse_frame_parser",
     "local_file_sync",

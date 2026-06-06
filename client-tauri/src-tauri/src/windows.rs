@@ -67,9 +67,9 @@ pub fn pet_window_plan() -> ShellWindowPlan {
         kind: ShellWindowKind::Pet,
         title: "Cuu".to_string(),
         route: "/pet".to_string(),
-        width: 360,
+        width: 180,
         height: 220,
-        min_width: Some(260),
+        min_width: Some(160),
         min_height: Some(180),
         resizable: false,
         visible: false,
@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(pet.resizable, false);
         assert_eq!(pet.visible, false);
         assert_eq!(pet.focus, false);
-        assert!(pet.width <= 420);
+        assert!(pet.width <= 220);
         assert!(pet.height <= 260);
     }
 
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(value["label"], "pet");
         assert_eq!(value["alwaysOnTop"], true);
         assert_eq!(value["skipTaskbar"], true);
-        assert_eq!(value["minWidth"], 260);
+        assert_eq!(value["minWidth"], 160);
         assert_eq!(value["minHeight"], 180);
     }
 

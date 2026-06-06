@@ -1,0 +1,346 @@
+use serde::{Deserialize, Serialize};
+
+use crate::windows::pet_window_plan;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PetWindowMode {
+    BodyOnly,
+    Card,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogicalPosition {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogicalSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogicalRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowPlacementPlan {
+    pub label: String,
+    pub route: String,
+    pub mode: PetWindowMode,
+    pub position: LogicalPosition,
+    pub size: LogicalSize,
+    pub margin: u32,
+    pub focus: bool,
+    pub transparent: bool,
+    pub decorations: bool,
+    pub always_on_top: bool,
+    pub skip_taskbar: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowPointerInput {
+    pub cursor: LogicalPosition,
+    pub window: LogicalRect,
+    pub near_radius: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowPointerDecision {
+    pub inside_window: bool,
+    pub cursor_near: bool,
+    pub distance_to_window_px: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PetWindowDragAction {
+    StartDragging,
+    SavePosition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetWindowDragPlan {
+    pub label: String,
+    pub action: PetWindowDragAction,
+    pub focus: bool,
+    pub animation_action: String,
+}
+
+pub const DEFAULT_PET_WINDOW_MARGIN: u32 = 24;
+pub const DEFAULT_PET_CURSOR_NEAR_RADIUS: u32 = 72;
+pub const PET_BODY_ONLY_SIZE: LogicalSize = LogicalSize {
+    width: 180,
+    height: 220,
+};
+pub const PET_CARD_SIZE: LogicalSize = LogicalSize {
+    width: 380,
+    height: 560,
+};
+
+pub fn pet_window_size(mode: PetWindowMode) -> LogicalSize {
+    match mode {
+        PetWindowMode::BodyOnly => PET_BODY_ONLY_SIZE,
+        PetWindowMode::Card => PET_CARD_SIZE,
+    }
+}
+
+pub fn default_pet_window_placement(work_area: LogicalRect) -> PetWindowPlacementPlan {
+    place_pet_window_bottom_right(
+        work_area,
+        PetWindowMode::BodyOnly,
+        DEFAULT_PET_WINDOW_MARGIN,
+    )
+}
+
+pub fn place_pet_window_bottom_right(
+    work_area: LogicalRect,
+    mode: PetWindowMode,
+    margin: u32,
+) -> PetWindowPlacementPlan {
+    let size = pet_window_size(mode);
+    let x = work_area.x + work_area.width as i32 - size.width as i32 - margin as i32;
+    let y = work_area.y + work_area.height as i32 - size.height as i32 - margin as i32;
+    pet_window_placement(
+        mode,
+        clamp_position(LogicalPosition { x, y }, size, work_area, margin),
+        size,
+        margin,
+    )
+}
+
+pub fn place_pet_window_from_body_anchor(
+    work_area: LogicalRect,
+    body_position: LogicalPosition,
+    mode: PetWindowMode,
+    margin: u32,
+) -> PetWindowPlacementPlan {
+    let body_size = pet_window_size(PetWindowMode::BodyOnly);
+    let size = pet_window_size(mode);
+    let bottom_right_x = body_position.x + body_size.width as i32;
+    let bottom_right_y = body_position.y + body_size.height as i32;
+    let position = match mode {
+        PetWindowMode::BodyOnly => body_position,
+        PetWindowMode::Card => LogicalPosition {
+            x: bottom_right_x - size.width as i32,
+            y: bottom_right_y - size.height as i32,
+        },
+    };
+
+    pet_window_placement(
+        mode,
+        clamp_position(position, size, work_area, margin),
+        size,
+        margin,
+    )
+}
+
+pub fn clamp_position(
+    position: LogicalPosition,
+    size: LogicalSize,
+    work_area: LogicalRect,
+    margin: u32,
+) -> LogicalPosition {
+    let margin = margin as i32;
+    let min_x = work_area.x + margin;
+    let min_y = work_area.y + margin;
+    let max_x = work_area.x + work_area.width as i32 - size.width as i32 - margin;
+    let max_y = work_area.y + work_area.height as i32 - size.height as i32 - margin;
+
+    LogicalPosition {
+        x: clamp_axis(position.x, min_x, max_x),
+        y: clamp_axis(position.y, min_y, max_y),
+    }
+}
+
+pub fn pet_pointer_decision(input: PetWindowPointerInput) -> PetWindowPointerDecision {
+    let distance = distance_to_rect(input.cursor, input.window);
+    PetWindowPointerDecision {
+        inside_window: distance == 0,
+        cursor_near: distance <= input.near_radius,
+        distance_to_window_px: distance,
+    }
+}
+
+pub fn start_pet_window_drag_plan() -> PetWindowDragPlan {
+    PetWindowDragPlan {
+        label: pet_window_plan().label,
+        action: PetWindowDragAction::StartDragging,
+        focus: false,
+        animation_action: "drag_hold".to_string(),
+    }
+}
+
+pub fn save_pet_window_position_plan() -> PetWindowDragPlan {
+    PetWindowDragPlan {
+        label: pet_window_plan().label,
+        action: PetWindowDragAction::SavePosition,
+        focus: false,
+        animation_action: "idle_breathe".to_string(),
+    }
+}
+
+fn pet_window_placement(
+    mode: PetWindowMode,
+    position: LogicalPosition,
+    size: LogicalSize,
+    margin: u32,
+) -> PetWindowPlacementPlan {
+    let window = pet_window_plan();
+    PetWindowPlacementPlan {
+        label: window.label,
+        route: window.route,
+        mode,
+        position,
+        size,
+        margin,
+        focus: false,
+        transparent: window.transparent,
+        decorations: window.decorations,
+        always_on_top: window.always_on_top,
+        skip_taskbar: window.skip_taskbar,
+    }
+}
+
+fn clamp_axis(value: i32, min: i32, max: i32) -> i32 {
+    if max < min {
+        return min;
+    }
+    value.clamp(min, max)
+}
+
+fn distance_to_rect(point: LogicalPosition, rect: LogicalRect) -> u32 {
+    let right = rect.x + rect.width as i32;
+    let bottom = rect.y + rect.height as i32;
+    let dx = if point.x < rect.x {
+        rect.x - point.x
+    } else if point.x > right {
+        point.x - right
+    } else {
+        0
+    };
+    let dy = if point.y < rect.y {
+        rect.y - point.y
+    } else if point.y > bottom {
+        point.y - bottom
+    } else {
+        0
+    };
+    (((dx * dx + dy * dy) as f64).sqrt().round()) as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn primary_work_area() -> LogicalRect {
+        LogicalRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        }
+    }
+
+    #[test]
+    fn body_only_pet_defaults_to_visible_bottom_right() {
+        let plan = default_pet_window_placement(primary_work_area());
+
+        assert_eq!(plan.label, "pet");
+        assert_eq!(plan.route, "/pet");
+        assert_eq!(plan.mode, PetWindowMode::BodyOnly);
+        assert_eq!(plan.size, PET_BODY_ONLY_SIZE);
+        assert_eq!(plan.position, LogicalPosition { x: 1716, y: 796 });
+        assert_eq!(plan.focus, false);
+        assert_eq!(plan.transparent, true);
+        assert_eq!(plan.decorations, false);
+        assert_eq!(plan.always_on_top, true);
+        assert_eq!(plan.skip_taskbar, true);
+    }
+
+    #[test]
+    fn card_mode_expands_left_and_up_from_body_anchor() {
+        let body = LogicalPosition { x: 1696, y: 796 };
+        let plan =
+            place_pet_window_from_body_anchor(primary_work_area(), body, PetWindowMode::Card, 24);
+
+        assert_eq!(plan.mode, PetWindowMode::Card);
+        assert_eq!(plan.size, PET_CARD_SIZE);
+        assert_eq!(plan.position, LogicalPosition { x: 1496, y: 456 });
+    }
+
+    #[test]
+    fn placement_clamps_to_work_area_when_saved_position_is_offscreen() {
+        let plan = place_pet_window_from_body_anchor(
+            LogicalRect {
+                x: 100,
+                y: 50,
+                width: 800,
+                height: 600,
+            },
+            LogicalPosition { x: -400, y: 2000 },
+            PetWindowMode::BodyOnly,
+            24,
+        );
+
+        assert_eq!(plan.position, LogicalPosition { x: 124, y: 406 });
+    }
+
+    #[test]
+    fn pointer_decision_marks_inside_and_near_without_expanding_click_area() {
+        let window = LogicalRect {
+            x: 100,
+            y: 100,
+            width: 180,
+            height: 220,
+        };
+
+        let inside = pet_pointer_decision(PetWindowPointerInput {
+            cursor: LogicalPosition { x: 120, y: 130 },
+            window,
+            near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
+        });
+        let nearby = pet_pointer_decision(PetWindowPointerInput {
+            cursor: LogicalPosition { x: 330, y: 340 },
+            window,
+            near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
+        });
+        let far = pet_pointer_decision(PetWindowPointerInput {
+            cursor: LogicalPosition { x: 500, y: 500 },
+            window,
+            near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
+        });
+
+        assert_eq!(inside.inside_window, true);
+        assert_eq!(inside.cursor_near, true);
+        assert_eq!(nearby.inside_window, false);
+        assert_eq!(nearby.cursor_near, true);
+        assert_eq!(far.cursor_near, false);
+    }
+
+    #[test]
+    fn drag_plans_never_steal_focus_and_map_to_cuu_actions() {
+        let start = start_pet_window_drag_plan();
+        let save = save_pet_window_position_plan();
+
+        assert_eq!(start.label, "pet");
+        assert_eq!(start.action, PetWindowDragAction::StartDragging);
+        assert_eq!(start.focus, false);
+        assert_eq!(start.animation_action, "drag_hold");
+        assert_eq!(save.action, PetWindowDragAction::SavePosition);
+        assert_eq!(save.animation_action, "idle_breathe");
+    }
+}

@@ -53,6 +53,10 @@ test("Cuu idle scheduler maps direct interactions to pet-like feedback", () => {
   assert.equal(scheduler.observeInteraction("tap", 100).action, "tap_bubble");
   assert.equal(scheduler.observeInteraction("drag", 200).action, "drag_hold");
   assert.equal(scheduler.observeInteraction("hover", 300).action, "wave_hello");
+  const release = scheduler.observeInteraction("release", 320);
+  assert.equal(release.action, undefined);
+  assert.equal(release.reason, "drag_released");
+  assert.equal(release.snapshot.last_interaction_ms, 320);
 });
 
 test("Cuu idle scheduler lets active cards and reduced-motion own the visual state", () => {

@@ -254,7 +254,9 @@ idle loop
 
 - `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
 - `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action`，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
-- 当前仍缺真实鼠标距离采样、拖拽事件接线和对应 full coverage atlas；scheduler 先把动作语义固定下来。
+- `client-tauri/src-tauri/src/pet_window.rs` 已固定 `body_only` / `card` 双模式窗口几何、默认右下角定位、展开锚点、work area clamp、鼠标接近判定和拖拽 plan。
+- `apps/desktop-webview/src/pet-window-bridge.ts` 已把 pointer hover / drag / release 接到 scheduler，并预留 Tauri `startDragging`、`set_pet_window_mode`、`save_pet_window_position`、`sample_pet_cursor_near` 端口。
+- 当前仍缺真实 Tauri command、跨窗口鼠标距离采样、位置持久化和对应 full coverage atlas；scheduler 和 bridge 先把动作语义与端口固定下来。
 
 ## 7. 与 WorkHub 事件对齐
 
@@ -295,8 +297,8 @@ idle loop
 1. **Cuu Asset P1**：生成 18 个动作的绿幕 sprite sheets，完成 alpha、anchor、atlas 和 `cuu.sprite.json`。
 2. **Cuu Runtime P1**：把 procedural CSS sprite 替换为 atlas renderer，继续复用现有 `CuuController`。
 3. **Pet Window P1.5**：新增 `?surface=pet`，让 `pet` window 只加载 Cuu，不加载主壳。
-4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，默认右下角，支持拖动、收起、托盘显隐。
-5. **Behavior P2**：接 idle scheduler、鼠标 hover、睡觉/醒来、事件动作优先级。
+4. **Pet Window P2**：Tauri setup 创建真实透明 pet window，按 `pet_window.rs` 默认右下角，接 `set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，支持拖动、收起、托盘显隐。
+5. **Behavior P2**：idle scheduler 与 webview pointer bridge 已落；继续接真实跨窗口鼠标采样、睡觉/醒来视觉资产、事件动作优先级和 full coverage atlas。
 6. **QA P2**：Playwright/Tauri screenshot + alpha pixel checks + 多屏/HiDPI/性能检查。
 7. **Rive P3**：如果 sprite 切换仍显僵硬，再把高频动作迁到 Rive state machine。
 8. **Live2D P4**：只有当 Cuu 需要明显表情/头部/身体形变时评估。
@@ -318,8 +320,9 @@ idle loop
 
 - 18 个动作的完整绿幕素材批次，而不是只有 idle sample。
 - 完整 alpha atlas / `cuu.sprite.json`，全量覆盖 `CuuMotionHint.sprite_state`。
-- 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻。
-- 真实 idle scheduler：呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应。
+- 真实 Tauri runtime 创建独立透明 `pet` window，主窗隐藏后仍常驻，并消费已落的 `pet_window.rs` 几何 plan。
+- 真实 Tauri commands：`set_pet_window_mode`、`startDragging`、`save_pet_window_position`、`sample_pet_cursor_near`，把已落的 webview bridge 接到 Rust runtime。
+- idle scheduler 已落基础语义；继续把呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应落到 full coverage atlas 视觉资产。
 - 真实透明窗口 QA：截图、alpha 像素、HiDPI、多屏和性能。
 
 ## 11. P1 样张落地记录（2026-06-06）
@@ -337,6 +340,8 @@ idle loop
 | atlas renderer | `apps/desktop-webview/src/cuu-atlas-runtime.ts` |
 | pet surface | `apps/desktop-webview/src/pet-surface.ts` |
 | idle scheduler | `packages/cuu/src/idle-scheduler.ts` |
+| pet geometry contract | `client-tauri/src-tauri/src/pet_window.rs` |
+| pet pointer/window bridge | `apps/desktop-webview/src/pet-window-bridge.ts` |
 
 像素验收结果：
 

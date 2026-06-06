@@ -167,6 +167,16 @@ export {
 } from "./pet-surface.js";
 
 export {
+  createDesktopPetPointerSensor,
+  desktopPetWindowModeForCard,
+  resolveDesktopPetWindowBridge,
+  type DesktopPetPointerSensor,
+  type DesktopPetPointerSnapshot,
+  type DesktopPetWindowBridge,
+  type DesktopPetWindowMode
+} from "./pet-window-bridge.js";
+
+export {
   createDesktopShellEventBridge,
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,

@@ -53,6 +53,7 @@ export type CuuIdleSchedulerDecisionReason =
   | "reduced_motion_static"
   | "dragging"
   | "tap_feedback"
+  | "drag_released"
   | "hover_wakeup"
   | "hover_hello"
   | "sleep_timeout"
@@ -157,6 +158,10 @@ export function createCuuIdleScheduler(input: {
     if (inputTick.interaction === "drag") {
       state = { ...state, last_interaction_ms: now_ms };
       return decide("dragging", now_ms, "drag_hold");
+    }
+    if (inputTick.interaction === "release") {
+      state = { ...state, last_interaction_ms: now_ms };
+      return decide("drag_released", now_ms);
     }
     if (state.asleep) {
       if (inputTick.interaction === "hover" || inputTick.interaction === "tap" || inputTick.cursor_near) {

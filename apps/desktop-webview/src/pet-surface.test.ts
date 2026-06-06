@@ -7,6 +7,7 @@ import { cuuMotionForState, validateCuuSpriteAtlasManifest, type CuuCard, type C
 import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, validateDesktopCuuP1AtlasManifest } from "./cuu-atlas-assets.js";
 import { renderDesktopCuuAtlasSprite } from "./cuu-atlas-runtime.js";
 import { renderDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
+import { desktopPetWindowModeForCard, resolveDesktopPetWindowBridge } from "./pet-window-bridge.js";
 
 function approvalCard(): CuuCard {
   return {
@@ -89,13 +90,52 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   });
 
   assert.match(idle.html, /data-wh-surface="pet"/u);
+  assert.match(idle.html, /data-pet-window-mode="body_only"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
   assert.match(idle.html, /data-cuu-atlas-state="idle_breathe"/u);
   assert.match(idle.html, /data-cuu-manifest-url="[^"]*cuu\.sprite\.json/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
+  assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-cuu-atlas-fallback="true"/u);
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
   assert.doesNotMatch(card.html, /textarea/u);
+});
+
+test("pet window bridge resolves body/card modes and Tauri-like commands", async () => {
+  const calls: string[] = [];
+  const mockBridge = {
+    setMode(mode: "body_only" | "card") {
+      calls.push(`mode:${mode}`);
+    }
+  };
+  assert.equal(desktopPetWindowModeForCard(undefined), "body_only");
+  assert.equal(desktopPetWindowModeForCard(approvalCard()), "card");
+  assert.equal(resolveDesktopPetWindowBridge({ __WORKHUB_PET__: mockBridge }), mockBridge);
+
+  const tauri = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          calls.push(`${command}:${args?.mode ?? ""}`);
+          return command === "sample_pet_cursor_near";
+        }
+      },
+      window: {
+        getCurrentWindow() {
+          return {
+            startDragging() {
+              calls.push("startDragging");
+            }
+          };
+        }
+      }
+    }
+  });
+
+  await tauri?.setMode?.("card");
+  await tauri?.startDragging?.();
+  assert.equal(await tauri?.sampleCursorNear?.(), true);
+  assert.deepEqual(calls, ["set_pet_window_mode:card", "startDragging", "sample_pet_cursor_near:"]);
 });

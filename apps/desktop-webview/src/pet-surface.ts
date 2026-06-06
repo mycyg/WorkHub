@@ -20,6 +20,14 @@ import {
   type DesktopCuuActionRequest,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
+import {
+  createDesktopPetPointerSensor,
+  desktopPetWindowModeForCard,
+  resolveDesktopPetWindowBridge,
+  type DesktopPetPointerSensor,
+  type DesktopPetWindowBridge,
+  type DesktopPetWindowMode
+} from "./pet-window-bridge.js";
 
 export type DesktopSurface = "main" | "pet";
 
@@ -32,6 +40,7 @@ export type DesktopPetSurfaceRender = {
 export type DesktopPetSurfaceRuntime = {
   controller: CuuController;
   idleScheduler: CuuIdleScheduler;
+  pointerSensor?: DesktopPetPointerSensor;
   subscribed: boolean;
   dispose: () => Promise<void>;
 };
@@ -84,7 +93,7 @@ export function renderDesktopPetSurface(input: {
   return {
     sprite,
     css: `${desktopPetSurfaceCss}${sprite.css}`,
-    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${desktopPetWindowModeForCard(input.card)}" data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${sprite.html}
       </button>
@@ -99,10 +108,12 @@ export async function bootDesktopPetSurface(
     listen?: DesktopShellListen | undefined;
     controller?: CuuController | undefined;
     idleScheduler?: CuuIdleScheduler | undefined;
+    petWindowBridge?: DesktopPetWindowBridge | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createCuuIdleScheduler({ now_ms: Date.now() });
+  const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
   const client = createApiClient({
     baseUrl: "",
     getClientToken: clientToken
@@ -111,6 +122,7 @@ export async function bootDesktopPetSurface(
   let idleAction: CuuIdleMicroAction = idleScheduler.snapshot().last_action ?? "idle_breathe";
   let statusText: string | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
+  let currentPetWindowMode: DesktopPetWindowMode | undefined;
 
   const render = () => {
     const surface = renderDesktopPetSurface({
@@ -120,6 +132,7 @@ export async function bootDesktopPetSurface(
       include_reject_reasons: Boolean(pendingAction)
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    syncPetWindowMode(desktopPetWindowModeForCard(currentCard));
   };
 
   const setCard = (card: CuuCard | undefined, status?: string) => {
@@ -133,6 +146,20 @@ export async function bootDesktopPetSurface(
   };
 
   render();
+
+  const pointerSensor = createDesktopPetPointerSensor(root, {
+    bridge: petWindowBridge,
+    onInteraction(interaction, nowMs) {
+      if (currentCard || controller.snapshot().preferences.reduced_motion) {
+        return;
+      }
+      const decision = idleScheduler.observeInteraction(interaction, nowMs);
+      if (decision.action) {
+        idleAction = decision.action;
+        render();
+      }
+    }
+  });
 
   root.addEventListener("click", async (event) => {
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-reason]") : null;
@@ -196,9 +223,11 @@ export async function bootDesktopPetSurface(
     }
   });
   const idleTimer = window.setInterval(() => {
+    const pointer = pointerSensor.snapshot();
     const decision = idleScheduler.tick({
       now_ms: Date.now(),
       active_card: Boolean(currentCard),
+      cursor_near: pointer.cursor_near,
       reduced_motion: controller.snapshot().preferences.reduced_motion
     });
     if (decision.action) {
@@ -210,12 +239,22 @@ export async function bootDesktopPetSurface(
   return {
     controller,
     idleScheduler,
+    pointerSensor,
     subscribed: runtime.subscribed,
     async dispose() {
       window.clearInterval(idleTimer);
+      pointerSensor.dispose();
       await runtime.dispose();
     }
   };
+
+  function syncPetWindowMode(mode: DesktopPetWindowMode) {
+    if (currentPetWindowMode === mode) {
+      return;
+    }
+    currentPetWindowMode = mode;
+    void petWindowBridge?.setMode?.(mode);
+  }
 }
 
 function renderDesktopPetBubble(input: {

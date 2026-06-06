@@ -92,8 +92,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - 没有真实小猫动画帧、sprite atlas、Rive 文件或 Live2D rig。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
-- 没有独立 Tauri `pet` 透明窗口；当前只是 desktop webview 内的 notice。
-- 没有拖拽、收起、真实独立设置页、长时间 idle、低电量降帧。
+- 没有真实 Tauri `pet` 透明窗口 runtime；当前已有 desktop webview notice、`/pet` surface、Rust pet window plan/config scaffold 和几何合同。
+- 拖拽/hover 的 webview bridge 已落，但仍缺真实 Tauri `startDragging` command、位置持久化、收起、真实独立设置页、低电量降帧。
 - 证据卡已能触发 typed `knowledge-search` 并回显结果；「用这些证据继续」已通过 `POST /api/workitems/{id}/evidence-bindings` 绑定到当前任务上下文。仍缺真实知识库持久化、证据详情展开和完整检索页分页。
 - 没有透明窗口边缘、帧率、HiDPI、多屏和点击区域 QA。
 
@@ -114,17 +114,19 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 CSS keyframes；非覆盖状态会标记 fallback。
 - `apps/desktop-webview/src/pet-surface.ts`：`/pet` 或 `?surface=pet` 已能只渲染 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
 - `packages/cuu/src/idle-scheduler.ts`：新增 Cuu 活体 idle scheduler，覆盖呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲和挥手等微动作语义。
+- `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
+- `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 喂给 idle scheduler。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
 - `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 `/pet` 或 `?surface=pet` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 idle sample；idle scheduler 可 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动和点击反馈；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 idle sample；idle scheduler 可 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动、释放和点击反馈；pet window bridge 可解析 body/card 模式与 Tauri-like command；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
 
 仍未完成：
 
 - 18 个动作的正式透明 PNG / WebP 帧；目前只有 `idle_breathe` 样张。
 - `cuu.sprite.json` 生产资产包；目前是 TS manifest sample，尚未写成运行时 JSON 文件。
-- 独立 Tauri `pet` window runtime；目前只是 webview `/pet` surface 分流和 Rust window plan / config scaffold。
-- 真实鼠标距离采样、拖拽窗口位置、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
+- 独立 Tauri `pet` window runtime；目前已有 webview `/pet` surface 分流、Rust window plan / config scaffold、pet 几何合同和前端 bridge，但还没有真实 Tauri setup/commands。
+- 真实跨窗口鼠标距离采样、拖拽窗口位置持久化、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
 - Rive / Live2D 高表现力路线。
 - full coverage 动作资产与 idle scheduler 的视觉落地：当前 scheduler 语义已落，但除 `idle_breathe` 外仍会回退到 sample atlas。
 
