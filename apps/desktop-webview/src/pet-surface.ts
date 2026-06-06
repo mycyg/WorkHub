@@ -1,5 +1,13 @@
 import { createApiClient } from "@workhub/api-client/client";
-import { createCuuController, cuuMotionForState, type CuuCard, type CuuController } from "@workhub/cuu";
+import {
+  createCuuController,
+  createCuuIdleScheduler,
+  cuuMotionForState,
+  type CuuCard,
+  type CuuController,
+  type CuuIdleMicroAction,
+  type CuuIdleScheduler
+} from "@workhub/cuu";
 
 import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl } from "./cuu-atlas-assets.js";
 import { renderDesktopCuuAtlasSprite, type DesktopCuuAtlasRender } from "./cuu-atlas-runtime.js";
@@ -23,6 +31,7 @@ export type DesktopPetSurfaceRender = {
 
 export type DesktopPetSurfaceRuntime = {
   controller: CuuController;
+  idleScheduler: CuuIdleScheduler;
   subscribed: boolean;
   dispose: () => Promise<void>;
 };
@@ -55,6 +64,7 @@ export function resolveDesktopSurface(input: { pathname?: string; search?: strin
 
 export function renderDesktopPetSurface(input: {
   card?: CuuCard | undefined;
+  idle_action?: CuuIdleMicroAction | undefined;
   status_text?: string | undefined;
   include_reject_reasons?: boolean | undefined;
   display_width_px?: number | undefined;
@@ -74,7 +84,7 @@ export function renderDesktopPetSurface(input: {
   return {
     sprite,
     css: `${desktopPetSurfaceCss}${sprite.css}`,
-    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-cuu-state="${escapeHtml(motion.state)}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${sprite.html}
       </button>
@@ -88,20 +98,24 @@ export async function bootDesktopPetSurface(
   input: {
     listen?: DesktopShellListen | undefined;
     controller?: CuuController | undefined;
+    idleScheduler?: CuuIdleScheduler | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
+  const idleScheduler = input.idleScheduler ?? createCuuIdleScheduler({ now_ms: Date.now() });
   const client = createApiClient({
     baseUrl: "",
     getClientToken: clientToken
   });
   let currentCard: CuuCard | undefined;
+  let idleAction: CuuIdleMicroAction = idleScheduler.snapshot().last_action ?? "idle_breathe";
   let statusText: string | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
 
   const render = () => {
     const surface = renderDesktopPetSurface({
       card: currentCard,
+      idle_action: idleAction,
       status_text: statusText,
       include_reject_reasons: Boolean(pendingAction)
     });
@@ -109,6 +123,9 @@ export async function bootDesktopPetSurface(
   };
 
   const setCard = (card: CuuCard | undefined, status?: string) => {
+    if (card) {
+      idleScheduler.observeWorkEvent(Date.now());
+    }
     currentCard = card;
     statusText = status;
     pendingAction = undefined;
@@ -135,6 +152,15 @@ export async function bootDesktopPetSurface(
     }
 
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+    const petBody = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-drag-handle]") : null;
+    if (petBody && !anchor) {
+      const decision = idleScheduler.observeInteraction("tap", Date.now());
+      if (decision.action) {
+        idleAction = decision.action;
+        render();
+      }
+      return;
+    }
     if (!anchor) {
       return;
     }
@@ -169,11 +195,26 @@ export async function bootDesktopPetSurface(
       setCard(notice.card);
     }
   });
+  const idleTimer = window.setInterval(() => {
+    const decision = idleScheduler.tick({
+      now_ms: Date.now(),
+      active_card: Boolean(currentCard),
+      reduced_motion: controller.snapshot().preferences.reduced_motion
+    });
+    if (decision.action) {
+      idleAction = decision.action;
+      render();
+    }
+  }, 1000);
 
   return {
     controller,
+    idleScheduler,
     subscribed: runtime.subscribed,
-    dispose: runtime.dispose
+    async dispose() {
+      window.clearInterval(idleTimer);
+      await runtime.dispose();
+    }
   };
 }
 

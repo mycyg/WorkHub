@@ -81,7 +81,7 @@ test("desktop surface resolver sends Tauri pet routes to the pet surface", () =>
 });
 
 test("pet surface renders Cuu without the main Gold Path shell", () => {
-  const idle = renderDesktopPetSurface();
+  const idle = renderDesktopPetSurface({ idle_action: "idle_tail_sway" });
   const card = renderDesktopPetSurface({
     card: approvalCard(),
     status_text: "先点一个原因，Cuu 会带着它继续改。",
@@ -89,6 +89,7 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   });
 
   assert.match(idle.html, /data-wh-surface="pet"/u);
+  assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
   assert.match(idle.html, /data-cuu-atlas-state="idle_breathe"/u);
   assert.match(idle.html, /data-cuu-manifest-url="[^"]*cuu\.sprite\.json/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);

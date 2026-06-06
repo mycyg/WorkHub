@@ -67,6 +67,7 @@ owner: workflow
 | `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu sample asset manifest | 指向 `cuu-p1-idle-breathe.png` sample atlas，并保留 source-green / alpha 路径 |
 | `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 CSS keyframes，非覆盖状态会标记 fallback |
 | `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset sample | 已有 `idle_breathe` 绿幕源图、透明 alpha 图和 sample atlas |
+| `packages/cuu/src/idle-scheduler.ts` | Cuu alive behavior scheduler | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；Rust 不拥有动画状态 |
 
 ### 0.2 当前未落
 
@@ -152,6 +153,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前 WorkHub scaffold**：`pet` window config = 360×220、最小 260×180、`visible:false`、`focus:false`、`decorations:false`、`transparent:true`、`alwaysOnTop:true`；`skipTaskbar:true` 已在 `ShellWindowPlan` 中固定，但暂未写入 `tauri.conf.json`，等真实 Tauri dependency/schema 校验后再接。
 - **当前控制契约**：`show_pet_window` / `hide_pet_window` / `toggle_pet_window` 已落；所有 pet 操作 `focus:false`，保证 Cuu 提醒不抢用户当前输入焦点。
 - **当前 webview surface**：`apps/desktop-webview/src/browser.ts` 会把 `/pet` 或 `?surface=pet` 分流到 `pet-surface.ts`，该 surface 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳。
+- **当前活体行为**：`packages/cuu/src/idle-scheduler.ts` 已提供基础 scheduler，`pet-surface.ts` 会在没有 active card 时 tick 并更新 `data-cuu-idle-action`；当前还未接真实鼠标距离、拖拽位置和 full coverage atlas。
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。

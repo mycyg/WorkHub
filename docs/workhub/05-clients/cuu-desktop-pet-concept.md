@@ -113,19 +113,20 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json`：与 sample atlas 对齐的 JSON manifest，便于未来美术资产和 Tauri bundle 读取。
 - `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 CSS keyframes；非覆盖状态会标记 fallback。
 - `apps/desktop-webview/src/pet-surface.ts`：`/pet` 或 `?surface=pet` 已能只渲染 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
+- `packages/cuu/src/idle-scheduler.ts`：新增 Cuu 活体 idle scheduler，覆盖呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲和挥手等微动作语义。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
 - `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
 - `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 `/pet` 或 `?surface=pet` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
-- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 idle sample；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
+- 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 idle sample；idle scheduler 可 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动和点击反馈；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card。
 
 仍未完成：
 
 - 18 个动作的正式透明 PNG / WebP 帧；目前只有 `idle_breathe` 样张。
 - `cuu.sprite.json` 生产资产包；目前是 TS manifest sample，尚未写成运行时 JSON 文件。
 - 独立 Tauri `pet` window runtime；目前只是 webview `/pet` surface 分流和 Rust window plan / config scaffold。
-- 拖拽、长期 idle、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
+- 真实鼠标距离采样、拖拽窗口位置、多屏位置记忆、真实 Tauri 设置页承接和系统通知落地。
 - Rive / Live2D 高表现力路线。
-- 右下角独立存在的活体 idle scheduler：呼吸、眨眼、尾巴、睡觉、看鼠标、拖动反应。
+- full coverage 动作资产与 idle scheduler 的视觉落地：当前 scheduler 语义已落，但除 `idle_breathe` 外仍会回退到 sample atlas。
 
 ## 4. 交互原则
 

@@ -250,6 +250,12 @@ idle loop
 - `celebrating_jump` 播一次后回到 idle。
 - `sleeping_curl` 被 urgent 事件唤醒时先播 `wake_up`，再播事件动作。
 
+当前实现落点（2026-06-06）：
+
+- `packages/cuu/src/idle-scheduler.ts` 已提供纯 TS `CuuIdleScheduler`，覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、`sleeping_curl`、`wake_up`、`drag_hold`、`tap_bubble`、`wave_hello`。
+- `apps/desktop-webview/src/pet-surface.ts` 已接 scheduler：无卡片时按 tick 更新 `data-cuu-idle-action`，有卡片时由卡片 motion 接管，reduced-motion 下不主动播放复杂 idle 动作。
+- 当前仍缺真实鼠标距离采样、拖拽事件接线和对应 full coverage atlas；scheduler 先把动作语义固定下来。
+
 ## 7. 与 WorkHub 事件对齐
 
 | WorkHub event / VM | Cuu action |
@@ -330,6 +336,7 @@ idle loop
 | desktop asset manifest | `apps/desktop-webview/src/cuu-atlas-assets.ts` |
 | atlas renderer | `apps/desktop-webview/src/cuu-atlas-runtime.ts` |
 | pet surface | `apps/desktop-webview/src/pet-surface.ts` |
+| idle scheduler | `packages/cuu/src/idle-scheduler.ts` |
 
 像素验收结果：
 

@@ -13,7 +13,7 @@ visuals:
 
 # PRD 与概念设计复现差距审计
 
-> **一句话**：当前 WorkHub 已经打下 TS-first 契约、API、Page VM、Gold Path、Cuu 卡片、首张 Cuu 绿幕 atlas 样张、`/pet` webview surface 和 Rust shell contract 的地基，但距离 PRD 与概念图里的完整体验还有明显距离：**Cuu 还没有完整动作包和活体 idle scheduler，Rust/Tauri 还没有成为生产桌面壳，Web 还不是完整 React SPA，概念图中的本地同步/托盘/透明桌宠窗/视觉 QA 尚未复现。**
+> **一句话**：当前 WorkHub 已经打下 TS-first 契约、API、Page VM、Gold Path、Cuu 卡片、首张 Cuu 绿幕 atlas 样张、基础 idle scheduler、`/pet` webview surface 和 Rust shell contract 的地基，但距离 PRD 与概念图里的完整体验还有明显距离：**Cuu 还没有完整动作包和真实透明窗口里的活体行为，Rust/Tauri 还没有成为生产桌面壳，Web 还不是完整 React SPA，概念图中的本地同步/托盘/透明桌宠窗/视觉 QA 尚未复现。**
 
 本篇用于防止后续施工把「已有契约」误判为「体验已完成」。所有判断基于 2026-06-06 当前仓库：
 
@@ -63,7 +63,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 但 P0.5 仍缺这些会影响真实体验的东西：
 
 - Web 端还偏「render helper + Gold Path shell」，不是完整可导航、可长期使用的 SPA。
-- Cuu 已有卡片、motion hint、sprite manifest、controller MVP、`idle_breathe` 绿幕/alpha sample atlas 与 `/pet` surface，但真实形态仍缺 18 动作完整包、右下角独立 Tauri `pet` window 和活体 idle scheduler。
+- Cuu 已有卡片、motion hint、sprite manifest、controller MVP、`idle_breathe` 绿幕/alpha sample atlas、基础 idle scheduler 与 `/pet` surface，但真实形态仍缺 18 动作完整包、真实鼠标/拖拽输入、右下角独立 Tauri `pet` window 和视觉 QA。
 - 桌面端是 webview adapter + Rust contract crate + Tauri config/capability scaffold，还不是可安装的 Tauri v2 桌面应用。
 - `client-tauri/src-tauri` 当前已有 `tauri.conf.json` / capability scaffold，但还没有 `tauri` 依赖、`build.rs`、`main.rs`、真实窗口创建、托盘、通知、deep-link、updater。
 - 视觉 QA、Playwright 截图、透明窗口像素检查、Cuu 帧率/多屏/HiDPI 检查都未形成门禁。
@@ -79,7 +79,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Web | Gold Path shell + render helpers | 全量真实 React SPA、路由、状态、响应式、四态、视觉回归、Cuu 气泡整合 |
 | Desktop webview | 能消费同一 VM、桥接 Cuu notice，并支持 `/pet` surface 只加载 Cuu | 仍不是独立桌面体验；缺真实 Tauri pet window、本地动作面板、设置/诊断/同步中心 |
 | Rust shell | config/http/sse/event/window planning/control planning crate + Tauri config/capability scaffold | 缺 Tauri runtime、真实窗口创建、托盘、通知、deep-link、设备令牌 vault、本地 sync/delivery/updater |
-| Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue / preference panel MVP、首张 `idle_breathe` 绿幕/alpha sample atlas、`/pet` webview surface | 缺 GPT Image 18 动作小猫帧、full coverage alpha atlas、右下角独立 Tauri `pet` 透明窗口、拖拽、系统通知、展开卡 |
+| Cuu | 卡片、状态、motion hint、sprite runtime MVP、controller / badge / queue / preference panel MVP、首张 `idle_breathe` 绿幕/alpha sample atlas、基础 idle scheduler、`/pet` webview surface | 缺 GPT Image 18 动作小猫帧、full coverage alpha atlas、右下角独立 Tauri `pet` 透明窗口、真实鼠标/拖拽输入、系统通知、展开卡 |
 | 项目检索 / 知识库 | API/证据契约方向明确；Cuu `knowledge-search` 可调用 typed API 并回显 evidence card；`use_for_current_task` 可把 evidence refs 带回 WorkItem VM | 缺完整检索页、证据详情展开、权限内检索结果分页和真实知识库持久化 |
 | 同步 / 本地交付 | 规划完整 | 当前 WorkHub 仓库未落真实本地 sync worker、冲突 resolver、delivery package |
 | QA / 发布 | 单元测试与构建基础 | 缺端到端视觉 QA、桌宠透明窗口 QA、Tauri 安装包、updater/autostart 验证 |
@@ -104,6 +104,7 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
 | Cuu atlas sample | `packages/cuu/src/atlas-manifest.ts`、`apps/desktop-webview/src/cuu-atlas-assets.ts`、`apps/desktop-webview/src/cuu-atlas-runtime.ts`、`apps/desktop-webview/src/assets/cuu/*` | 已把首张 GPT Image 绿幕 idle sprite sheet 抠图为透明 PNG sample atlas，并能按 frame rect 生成 CSS keyframes；当前只覆盖 `idle_breathe` |
 | Cuu pet surface | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由是固定按钮 |
+| Cuu idle scheduler | `packages/cuu/src/idle-scheduler.ts` | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；当前先输出动作语义，视觉仍受 atlas 覆盖度限制 |
 | Cuu controller / badge / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge、超时后推进下一张卡、默认隐藏的提醒/声音/减少动效/队列上限偏好面板；`knowledge-search` action 可回显 evidence card，`use_for_current_task` 可绑定当前证据到 WorkItem |
 | Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan 与 show/hide/focus/toggle control plan |
 | Tauri scaffold | `client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/capabilities/default.json`、`client-tauri/src-tauri/tests/tauri_scaffold.rs` | 已把 desktop webview dev/build、`main` / `pet` window config、最小 capability 和 scaffold contract tests 落到当前仓库 |
@@ -138,6 +139,8 @@ apps/desktop-webview/
   src/cuu-atlas-runtime.ts
   src/pet-surface.ts
   src/assets/cuu/
+packages/cuu/
+  src/idle-scheduler.ts
 ```
 
 因此后续施工必须把旧锚点写成「Behavior source / 迁移参照」，把当前目标写成「Target TS/Rust paths」。
@@ -155,6 +158,7 @@ apps/desktop-webview/
 - 概念图已经固定 Cuu 的小猫形象、动作状态、资产生产流水线、动画架构选型。
 - 已有一张 `idle_breathe` GPT Image 绿幕 sprite sheet、透明 alpha 图和 sample atlas，像素检查四角透明且无可见绿色残留。
 - `/pet` webview surface 已能只显示 Cuu atlas 本体和轻气泡，是 Tauri `pet` window 的前端入口雏形。
+- 基础 idle scheduler 已能 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动和点击反馈。
 
 ### 3.2 缺口
 
@@ -166,7 +170,7 @@ apps/desktop-webview/
 | 动画 renderer | atlas renderer 已落 sample；仍需替换主窗 notice、补 idle scheduler，后续可评估 Canvas/Rive | `apps/desktop-webview/src/cuu-atlas-runtime.ts`、`RiveCuu.tsx` |
 | 独立 pet window | `/pet` surface 已落，但主窗隐藏后 Cuu 仍在桌面活动需要真实 Tauri runtime | `client-tauri/src-tauri/src/windows.rs`、Tauri `pet` window、`apps/desktop-webview/src/pet-surface.ts` |
 | 拖拽 / 收起 / 静音 / 勿扰 | 静音 / 勿扰 / 减少动效 / 队列上限已有 desktop webview 面板；拖拽、收起、位置记忆仍待独立 pet window | Rust window state + TS preference |
-| 活体 idle scheduler | 桌宠不应只等事件；无事时也要呼吸、眨眼、尾巴、睡觉、看鼠标 | `apps/desktop-webview/src/pet-surface.ts`、`packages/cuu/src/controller.ts` |
+| 活体 idle scheduler | 基础 scheduler 已落；仍缺真实鼠标距离、拖拽输入、窗口位置和 full coverage atlas 承接 | `apps/desktop-webview/src/pet-surface.ts`、`packages/cuu/src/idle-scheduler.ts` |
 | 气泡卡动作真实提交 | Cuu 卡片按钮必须真正调用 API，不只是展示 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` + `packages/api-client` |
 | 视觉 / 性能 QA | 透明边缘、帧率、CPU/GPU、HiDPI、多屏必须可验收 | Playwright + Tauri smoke + pixel checks |
 
@@ -333,7 +337,7 @@ Rust 应只做：
 | ID | 主题 | Owner path | 依赖 | 退出标准 |
 |---|---|---|---|---|
 | GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | **MVP + atlas schema 已落**：每个 state 有可校验 procedural clip，真实 atlas schema 和 idle sample 已落；待 full coverage atlas、anchor 和生产 JSON |
-| GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts`、`apps/desktop-webview/src/cuu-atlas-runtime.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite，pet surface 可渲染 idle atlas；待主窗替换、18 动作 atlas、idle scheduler |
+| GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts`、`apps/desktop-webview/src/cuu-atlas-runtime.ts`、`packages/cuu/src/idle-scheduler.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite，pet surface 可渲染 idle atlas，基础 idle scheduler 已落；待主窗替换、18 动作 atlas、真实输入与视觉 QA |
 | GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge、超时推进和偏好面板已接；待真实 Tauri Settings 承接、系统通知、视觉 QA |
 | GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question / knowledge-search / use_for_current_task 可提交；evidence card 可带 `evidence_refs` 回 WorkItem VM；待证据详情展开与完整检索页 |
 | GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` + `apps/desktop-webview/src/pet-surface.ts` | Rust scaffold + 绿幕 atlas | **webview surface 已落**；待真实 Tauri `pet` window 运行、主窗关闭/隐藏后 Cuu 在右下角常驻、可拖动、会 idle 微动作 |
