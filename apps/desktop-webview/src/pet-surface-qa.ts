@@ -67,12 +67,14 @@ export function createDesktopPetVisualQaReport(input: {
       "pointer_reactive_pose",
       input.idle.html.includes('data-pet-look-x="0"') &&
         input.idle.html.includes('data-pet-hover-avoidance="none"') &&
+        input.idle.html.includes('data-pet-pointer-smoothing-alpha="0.58"') &&
         input.idle.html.includes("--wh-pet-look-head-x-px:0px") &&
+        input.idle.html.includes("--wh-pet-pointer-smoothing-alpha:0.58") &&
         input.idle.css.includes("--wh-pet-avoid-x-px") &&
         input.idle.bongo.css.includes("--wh-pet-look-head-x-px") &&
         input.idle.bongo.css.includes("--wh-pet-look-eye-x-px") &&
         input.idle.bongo.css.includes("data-pet-hover-avoidance=soft"),
-      "Bongo-style Cuu must expose continuous pointer look variables and a hover avoidance pose for screenshot QA."
+      "Bongo-style Cuu must expose continuous pointer look variables, smoothing alpha and a hover avoidance pose for screenshot QA."
     ),
     qaCheck(
       "no_main_shell",

@@ -24,6 +24,7 @@ import {
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
   desktopPetInitialIdleAction,
+  desktopPetPointerSmoothingAlpha,
   renderDesktopPetSurface,
   resolveDesktopSurface,
   scheduleDesktopPetFirstPaint
@@ -536,7 +537,9 @@ test("pet surface exposes input-reactive pointer state for Bongo-style QA", () =
   assert.match(surface.html, /data-pet-look-x="0\.42"/u);
   assert.match(surface.html, /data-pet-look-y="-0\.18"/u);
   assert.match(surface.html, /data-pet-hover-avoidance="none"/u);
+  assert.match(surface.html, /data-pet-pointer-smoothing-alpha="0\.58"/u);
   assert.match(surface.html, /data-pet-last-pointer-ms="1234"/u);
+  assert.match(surface.html, /--wh-pet-pointer-smoothing-alpha:0\.58/u);
   assert.match(surface.html, /--wh-pet-look-head-x-px:3\.78px/u);
   assert.match(surface.html, /--wh-pet-look-eye-y-px:-0\.72px/u);
   assert.match(surface.html, /data-cuu-idle-action="look_at_mouse"/u);
@@ -595,6 +598,64 @@ test("pet pointer helpers normalize Rust look percent and hover avoidance", () =
   assert.equal(dragging.hover_avoidance, "none");
   assert.equal(dragging.avoidance_x, 0);
   assert.equal(dragging.avoidance_y, 0);
+});
+
+test("pet pointer helpers smooth Rust cursor samples without overriding local hover and drag", () => {
+  assert.equal(desktopPetPointerSmoothingAlpha, 0.58);
+
+  const previous = normalizeDesktopPetPointerSnapshot({
+    cursor_near: true,
+    look_x: 0,
+    look_y: 0
+  });
+  const smoothed = desktopPetPointerSnapshotFromSample(
+    {
+      pointer: {
+        cursor_near: true,
+        look_x_percent: 100,
+        look_y_percent: -50
+      }
+    },
+    previous,
+    {
+      smoothing_alpha: 0.5,
+      snap_threshold: 0
+    }
+  );
+
+  assert.deepEqual(smoothed, {
+    cursor_near: true,
+    hovered: false,
+    dragging: false,
+    look_x: 0.5,
+    look_y: -0.25,
+    avoidance_x: 0,
+    avoidance_y: 0,
+    hover_avoidance: "none"
+  });
+
+  const localDrag = normalizeDesktopPetPointerSnapshot({
+    cursor_near: true,
+    hovered: true,
+    dragging: true,
+    look_x: -0.2,
+    look_y: 0.1
+  });
+  const unchanged = desktopPetPointerSnapshotFromSample(
+    {
+      pointer: {
+        cursor_near: true,
+        look_x_percent: 95,
+        look_y_percent: 95
+      }
+    },
+    localDrag,
+    {
+      smoothing_alpha: 0.5
+    }
+  );
+
+  assert.deepEqual(unchanged, localDrag);
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {

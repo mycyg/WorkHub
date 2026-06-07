@@ -22,6 +22,11 @@ export type DesktopPetPointerSnapshot = {
   last_pointer_ms?: number;
 };
 
+export type DesktopPetPointerSmoothingOptions = {
+  smoothing_alpha?: number;
+  snap_threshold?: number;
+};
+
 export type DesktopPetWindowBridge = {
   setMode?: (mode: DesktopPetWindowMode) => void | Promise<void>;
   setSettings?: (settings: DesktopPetWindowSettings) => void | Promise<void>;
@@ -300,7 +305,8 @@ export function normalizeDesktopPetPointerSnapshot(input: Partial<DesktopPetPoin
 
 export function desktopPetPointerSnapshotFromSample(
   sample: PetCursorSampleResult | undefined,
-  previous: DesktopPetPointerSnapshot
+  previous: DesktopPetPointerSnapshot,
+  options: DesktopPetPointerSmoothingOptions = {}
 ): DesktopPetPointerSnapshot {
   if (sample === undefined) {
     return normalizeDesktopPetPointerSnapshot(previous);
@@ -318,12 +324,20 @@ export function desktopPetPointerSnapshotFromSample(
   const cursorNear = pointer.cursorNear ?? pointer.cursor_near ?? previous.cursor_near;
   const lookX = readLookAxis(pointer.lookX ?? pointer.look_x ?? pointer.lookXPercent ?? pointer.look_x_percent);
   const lookY = readLookAxis(pointer.lookY ?? pointer.look_y ?? pointer.lookYPercent ?? pointer.look_y_percent);
-  return normalizeDesktopPetPointerSnapshot({
+  if (previous.dragging || previous.hovered) {
+    return normalizeDesktopPetPointerSnapshot({
+      ...previous,
+      cursor_near: cursorNear
+    });
+  }
+
+  const next = normalizeDesktopPetPointerSnapshot({
     ...previous,
     cursor_near: cursorNear,
     ...(lookX !== undefined ? { look_x: lookX } : cursorNear ? {} : { look_x: 0 }),
     ...(lookY !== undefined ? { look_y: lookY } : cursorNear ? {} : { look_y: 0 })
   });
+  return smoothDesktopPetPointerSnapshot(next, previous, options);
 }
 
 export function pointerPatchFromEvent(
@@ -366,6 +380,39 @@ function readLookAxis(value: unknown): number | undefined {
     return undefined;
   }
   return clampPointerAxis(Math.abs(value) > 1 ? value / 100 : value);
+}
+
+export function smoothDesktopPetPointerSnapshot(
+  next: DesktopPetPointerSnapshot,
+  previous: DesktopPetPointerSnapshot,
+  options: DesktopPetPointerSmoothingOptions = {}
+): DesktopPetPointerSnapshot {
+  if (options.smoothing_alpha === undefined || next.hovered || next.dragging || (!next.cursor_near && !previous.cursor_near)) {
+    return next;
+  }
+  const alpha = clampSmoothingAlpha(options.smoothing_alpha);
+  const snapThreshold = Math.max(0, options.snap_threshold ?? 0.012);
+  const lookX = smoothPointerAxis(previous.look_x, next.look_x, alpha, snapThreshold);
+  const lookY = smoothPointerAxis(previous.look_y, next.look_y, alpha, snapThreshold);
+  return normalizeDesktopPetPointerSnapshot({
+    ...next,
+    look_x: lookX,
+    look_y: lookY
+  });
+}
+
+function smoothPointerAxis(previous: number, next: number, alpha: number, snapThreshold: number) {
+  const current = clampPointerAxis(previous);
+  const target = clampPointerAxis(next);
+  const value = current + (target - current) * alpha;
+  return Math.abs(target - value) <= snapThreshold ? target : clampPointerAxis(value);
+}
+
+function clampSmoothingAlpha(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.max(0, Math.min(1, value));
 }
 
 function avoidanceFromLook(lookX: number, lookY: number) {

@@ -6,7 +6,7 @@ param(
   [int]$PixelStep = 2,
   [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
-  [ValidateSet("idle", "input-handfeel", "look-avoidance")]
+  [ValidateSet("idle", "input-handfeel", "look-avoidance", "drag-smoothing")]
   [string]$Scenario = "idle",
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
@@ -413,19 +413,23 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "drag-smoothing") {
     return $null
   }
 
+  $isLookAvoidance = $ScenarioName -eq "look-avoidance"
+  $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
   $nearLeftX = [int]($Window.Rect.Left - 36)
   $nearRightX = [int]($Window.Rect.Right + 36)
   $nearY = $centerY
-  $hoverX = if ($ScenarioName -eq "look-avoidance") { [int][Math]::Round($centerX + [Math]::Min(42, $Window.Rect.Width * 0.24)) } else { $centerX }
-  $hoverY = if ($ScenarioName -eq "look-avoidance") { [int][Math]::Round($centerY - [Math]::Min(34, $Window.Rect.Height * 0.2)) } else { $centerY }
+  $hoverX = if ($isLookAvoidance -or $isDragSmoothing) { [int][Math]::Round($centerX + [Math]::Min(42, $Window.Rect.Width * 0.24)) } else { $centerX }
+  $hoverY = if ($isLookAvoidance -or $isDragSmoothing) { [int][Math]::Round($centerY - [Math]::Min(34, $Window.Rect.Height * 0.2)) } else { $centerY }
   $dragX = [int]($centerX - 48)
   $dragY = [int]($centerY - 28)
+  $dragX2 = [int]($centerX - 86)
+  $dragY2 = [int]($centerY - 52)
 
   $action = $null
   $x = $centerX
@@ -433,13 +437,31 @@ function Invoke-CuuInteractionScenarioFrame {
 
   switch ($FrameIndex) {
     1 {
-      $action = if ($ScenarioName -eq "look-avoidance") { "cursor_near_left_outside" } else { "cursor_near_outside" }
+      $action = if ($isLookAvoidance -or $isDragSmoothing) { "cursor_near_left_outside" } else { "cursor_near_outside" }
+      $x = $nearLeftX
+      $y = $nearY
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    3 {
+      if (-not $isDragSmoothing) {
+        break
+      }
+      $action = "cursor_near_right_outside"
+      $x = $nearRightX
+      $y = $nearY
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    5 {
+      if (-not $isDragSmoothing) {
+        break
+      }
+      $action = "cursor_near_left_outside_again"
       $x = $nearLeftX
       $y = $nearY
       Set-CuuCursorPosition -X $x -Y $y
     }
     4 {
-      if ($ScenarioName -ne "look-avoidance") {
+      if (-not $isLookAvoidance) {
         break
       }
       $action = "cursor_near_right_outside"
@@ -448,7 +470,7 @@ function Invoke-CuuInteractionScenarioFrame {
       Set-CuuCursorPosition -X $x -Y $y
     }
     7 {
-      $action = if ($ScenarioName -eq "look-avoidance") { "hover_top_right_inside" } else { "hover_inside" }
+      $action = if ($isLookAvoidance -or $isDragSmoothing) { "hover_top_right_inside" } else { "hover_inside" }
       $x = $hoverX
       $y = $hoverY
       Set-CuuCursorPosition -X $x -Y $y
@@ -471,10 +493,19 @@ function Invoke-CuuInteractionScenarioFrame {
       $y = $dragY
       Set-CuuCursorPosition -X $x -Y $y
     }
+    17 {
+      if (-not $isDragSmoothing) {
+        break
+      }
+      $action = "drag_move_second"
+      $x = $dragX2
+      $y = $dragY2
+      Set-CuuCursorPosition -X $x -Y $y
+    }
     18 {
       $action = "drag_release"
-      $x = $dragX
-      $y = $dragY
+      $x = if ($isDragSmoothing) { $dragX2 } else { $dragX }
+      $y = if ($isDragSmoothing) { $dragY2 } else { $dragY }
       Set-CuuCursorPosition -X $x -Y $y
       Invoke-CuuMouse -Action "up"
     }
@@ -484,7 +515,7 @@ function Invoke-CuuInteractionScenarioFrame {
     return $null
   }
 
-  $postDelayMs = if ($ScenarioName -eq "look-avoidance" -and $action.StartsWith("cursor_near")) { 320 } else { 110 }
+  $postDelayMs = if (($isLookAvoidance -or $isDragSmoothing) -and $action.StartsWith("cursor_near")) { 320 } else { 110 }
   Start-Sleep -Milliseconds $postDelayMs
   [pscustomobject]@{
     frame = $FrameIndex
@@ -524,10 +555,11 @@ $originalLocalAppData = $env:LOCALAPPDATA
 $originalDisableSse = $env:WORKHUB_DISABLE_SSE
 $process = $null
 $devServerProcess = $null
+$isolatedRoot = $null
 
 try {
   if (-not $UseRealAppData) {
-    $isolatedRoot = Join-Path $OutDir "isolated-appdata"
+    $isolatedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("workhub-cuu-tauri-motion-appdata-{0}" -f [System.Guid]::NewGuid().ToString("N"))
     $isolatedAppData = Join-Path $isolatedRoot "Roaming"
     $isolatedLocalAppData = Join-Path $isolatedRoot "Local"
     New-Item -ItemType Directory -Force -Path $isolatedAppData, $isolatedLocalAppData | Out-Null
@@ -654,6 +686,13 @@ try {
   Restore-EnvVar -Name "APPDATA" -Value $originalAppData
   Restore-EnvVar -Name "LOCALAPPDATA" -Value $originalLocalAppData
   Restore-EnvVar -Name "WORKHUB_DISABLE_SSE" -Value $originalDisableSse
+  if ($isolatedRoot) {
+    $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
+    $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    if ($resolvedIsolatedRoot.StartsWith($resolvedTempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedIsolatedRoot)) {
+      Remove-Item -LiteralPath $resolvedIsolatedRoot -Recurse -Force
+    }
+  }
   if ($devServerProcess -and -not $devServerProcess.HasExited) {
     Stop-Process -Id $devServerProcess.Id -Force
     $devServerProcess.WaitForExit()

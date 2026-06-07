@@ -118,6 +118,7 @@ export const desktopPetSurfaceCss = [
 ].join("");
 
 export const desktopPetInitialIdleAction: CuuIdleMicroAction = "idle_tail_sway";
+export const desktopPetPointerSmoothingAlpha = 0.58;
 
 export const desktopPetAliveIdlePolicy = {
   breathe_interval_ms: [2800, 4200],
@@ -214,6 +215,7 @@ export function renderDesktopPetSurface(input: {
   display_width_px?: number | undefined;
   pet_window_settings?: DesktopPetWindowSettings | undefined;
   pointer_snapshot?: DesktopPetPointerSnapshot | undefined;
+  pointer_smoothing_alpha?: number | undefined;
   window_mode_error?: string | undefined;
   window_mode_status?: "syncing" | "failed" | undefined;
 } = {}): DesktopPetSurfaceRender {
@@ -221,6 +223,7 @@ export function renderDesktopPetSurface(input: {
   const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
   const settings = input.pet_window_settings ?? defaultDesktopPetWindowSettings();
   const pointer = normalizeDesktopPetPointerSnapshot(input.pointer_snapshot ?? defaultDesktopPetPointerSnapshot());
+  const pointerSmoothingAlpha = input.pointer_smoothing_alpha ?? desktopPetPointerSmoothingAlpha;
   const scaleRatio = settings.scale_percent / 100;
   const baseWindowSize = petWindowSize(windowMode);
   const scaledWindowSize = {
@@ -266,6 +269,7 @@ export function renderDesktopPetSurface(input: {
     `--wh-pet-window-h:${scaledWindowSize.height}px`,
     `--wh-pet-look-x:${formatPointerNumber(pointer.look_x)}`,
     `--wh-pet-look-y:${formatPointerNumber(pointer.look_y)}`,
+    `--wh-pet-pointer-smoothing-alpha:${formatPointerNumber(pointerSmoothingAlpha)}`,
     `--wh-pet-avoid-x:${formatPointerNumber(pointer.avoidance_x)}`,
     `--wh-pet-avoid-y:${formatPointerNumber(pointer.avoidance_y)}`,
     `--wh-pet-avoid-x-px:${formatPointerNumber(pointer.avoidance_x * 22 * scaleRatio)}px`,
@@ -284,7 +288,7 @@ export function renderDesktopPetSurface(input: {
     bongo,
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${bongo.css}${sprite.css}`,
-    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${bongo.html}
       </button>
@@ -541,12 +545,24 @@ export async function bootDesktopPetSurface(
   async function tickIdle() {
     const pointer = pointerSensor?.snapshot() ?? pointerSnapshot;
     const sampledPointer = await Promise.resolve(petWindowBridge?.sampleCursorNear?.()).catch(() => undefined);
-    const nextPointerSnapshot = desktopPetPointerSnapshotFromSample(sampledPointer, pointer);
+    const nextPointerSnapshot = desktopPetPointerSnapshotFromSample(sampledPointer, pointer, {
+      smoothing_alpha: desktopPetPointerSmoothingAlpha,
+      snap_threshold: 0.018
+    });
     const pointerChanged = !desktopPetPointerStateEqual(pointerSnapshot, nextPointerSnapshot);
     const cursorNear = nextPointerSnapshot.cursor_near;
     const enteredCursorNear = cursorNear && !lastCursorNear;
     pointerSnapshot = nextPointerSnapshot;
     lastCursorNear = cursorNear;
+    if (nextPointerSnapshot.dragging) {
+      const nextIdleAction = controller.snapshot().preferences.reduced_motion ? idleAction : "drag_hold";
+      const actionChanged = idleAction !== nextIdleAction;
+      idleAction = nextIdleAction;
+      if (pointerChanged || actionChanged) {
+        render();
+      }
+      return;
+    }
     const decision = idleScheduler.tick({
       now_ms: Date.now(),
       active_card: Boolean(currentCard),
