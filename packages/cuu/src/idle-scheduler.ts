@@ -9,7 +9,7 @@ export type CuuIdleMicroAction =
   | "tap_bubble"
   | "wave_hello";
 
-export type CuuIdleInteraction = "hover" | "tap" | "drag" | "release";
+export type CuuIdleInteraction = "hover" | "tap" | "drag" | "release" | "cursor_near";
 
 export type CuuIdleMicroActionSpec = {
   loop: boolean;
@@ -56,6 +56,7 @@ export type CuuIdleSchedulerDecisionReason =
   | "drag_released"
   | "hover_wakeup"
   | "hover_hello"
+  | "cursor_near_start"
   | "sleep_timeout"
   | "sleeping_loop"
   | "cursor_near"
@@ -164,7 +165,7 @@ export function createCuuIdleScheduler(input: {
       return decide("drag_released", now_ms);
     }
     if (state.asleep) {
-      if (inputTick.interaction === "hover" || inputTick.interaction === "tap" || inputTick.cursor_near) {
+      if (inputTick.interaction === "hover" || inputTick.interaction === "tap" || inputTick.interaction === "cursor_near" || inputTick.cursor_near) {
         wake(now_ms);
         return decide("hover_wakeup", now_ms, "wake_up");
       }
@@ -180,6 +181,10 @@ export function createCuuIdleScheduler(input: {
     if (inputTick.interaction === "hover") {
       state = { ...state, last_interaction_ms: now_ms };
       return decide("hover_hello", now_ms, "wave_hello");
+    }
+    if (inputTick.interaction === "cursor_near") {
+      state = { ...state, last_interaction_ms: now_ms };
+      return decide("cursor_near_start", now_ms, "look_at_mouse");
     }
     if (now_ms - Math.max(state.last_event_ms, state.last_interaction_ms) >= policy.sleep_after_ms) {
       state = {

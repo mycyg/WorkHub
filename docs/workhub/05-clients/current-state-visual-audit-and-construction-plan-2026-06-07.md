@@ -32,7 +32,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁和 BONGO-REF model pack 默认门禁；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，PSD draft 会被 `CuuModelPackManifest` 阻止成为默认。下一步转向窗口体验、动作幅度二轮、模型包加载器和 Live2D 精修。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1d-a 窗口手感合同和 P1e-a 输入响应合同；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，PSD draft 会被 `CuuModelPackManifest` 阻止成为默认。下一步转向真实输入录屏、窗口体验、动作幅度二轮、模型包加载器和 Live2D 精修。
 
 ---
 
@@ -322,6 +322,28 @@ visuals:
 | 回归口径 | 任何 `frame-000.png` 橘色像素为 0、只露耳朵或只显示半身，都不能作为桌宠 motion QA 通过 |
 | 仍待提升 | Bongo 动作幅度仍偏温和；下一步应做窗口设置（缩放/透明/贴边/hover 避让）和动作二轮，而不是回退恐怖谷 PSD |
 
+### 0.5.3 CUX-BONGO-004：输入响应合同与 DOM 可观测性（2026-06-08）
+
+本轮继续吸收 BongoCat 的“输入驱动动作”设计哲学，但不采集无关设备输入：只围绕桌宠窗口自身 hover / tap / drag 和 Rust `sample_pet_cursor_near` 做本地手感。`cursor_near` 首次进入附近区域会立即触发 `look_at_mouse`，不再等下一次 look interval；睡着时仍先 `wake_up`。pet surface 会把 pointer state 写入 DOM，方便 browser CDP、Tauri `PrintWindow` 和后续长时间录屏做自动判定。
+
+本轮新增 / 修改：
+
+| 文件 | 作用 |
+|---|---|
+| `packages/cuu/src/idle-scheduler.ts` | 新增 `CuuIdleInteraction="cursor_near"` 与 `cursor_near_start` reason，首次靠近立即映射 `look_at_mouse` |
+| `apps/desktop-webview/src/pet-surface.ts` | `renderDesktopPetSurface()` 接收 `DesktopPetPointerSnapshot`，输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` / `data-pet-last-pointer-ms` |
+| `packages/cuu/src/model-pack.ts` | 将 Bongo 默认包的 `scale` / `opacity` / `pass_through` 从 `planned` 收敛为 `supported`，对齐 P1d-a 真实 bridge |
+| `apps/desktop-webview/src/pet-surface.test.ts`、`packages/cuu/src/idle-scheduler.test.ts`、`packages/cuu/src/model-pack.test.ts` | 新增输入响应、DOM QA attrs 和窗口能力状态断言 |
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| cursor-near 立即响应 | 通过单测；首次进入附近区域触发 `look_at_mouse` |
+| hover / drag 可观测 | 通过单测；DOM 有 `data-pet-hovered` / `data-pet-dragging` |
+| 默认模型包状态 | 通过单测；P1d-a 已实现的 scale / opacity / pass-through 不再标 planned |
+| 真实录屏 | 未完成；P1e-b 必须补 hover / near / tap / drag 场景录屏和 diff report，才能算桌宠手感验收 |
+
 ### 0.6 P1.0 双语运行时底座（2026-06-07）
 
 本轮在 Cuu motion 修复后，先补了客户端级中英双语底座，避免后续 Web / desktop 主窗 / Cuu 气泡各自发明一套语言切换。
@@ -406,7 +428,7 @@ visuals:
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同 | 方向正确；还需增强动作幅度、补窗口设置真实截图 / hide-on-hover / 多屏恢复、模型包加载器、拖拽/hover/任务动作截图 | P1 |
+| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs | 方向正确；还需增强动作幅度、补窗口设置真实截图 / hide-on-hover / 多屏恢复、模型包加载器、拖拽/hover/任务动作真实录屏 | P1 |
 | Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示；未来必须以 `live2d_cubism` model pack 通过默认门禁，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
@@ -1163,7 +1185,7 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 
 1. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
 2. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
-3. **Pet window 设置与窗口能力**：补缩放、透明度、点击穿透、贴边、hover 避让、显示/隐藏快捷入口和拖拽后位置截图。
+3. **Pet window 设置与输入手感**：P1d-a/P1e-a 已补缩放、透明度、点击穿透、cursor-near 立即看鼠标和 pointer DOM attrs；下一步补真实 Tauri 设置截图、hover/near/drag 录屏、贴边、hover 避让、显示/隐藏快捷入口和拖拽后位置截图。
 4. **Cuu model pack loader**：把 `CuuModelPackManifest` 接入设置页和 runtime 选择器，默认只允许 `approved_default`；experimental pack 只能预览，不能常驻。
 5. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
 6. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏和 model pack gate 都通过后才允许进入默认候选。

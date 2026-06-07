@@ -21,6 +21,7 @@ import { renderDesktopCuuAtlasSprite, renderDesktopCuuAtlasState } from "./cuu-a
 import { renderDesktopCuuBongoForIdleAction, renderDesktopCuuBongoForMotion } from "./cuu-bongo-runtime.js";
 import {
   createDesktopPetIdleScheduler,
+  defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
   desktopPetInitialIdleAction,
   renderDesktopPetSurface,
@@ -431,6 +432,9 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /data-pet-pass-through="false"/u);
   assert.match(idle.html, /data-pet-window-width="180"/u);
   assert.match(idle.html, /data-pet-window-height="220"/u);
+  assert.match(idle.html, /data-pet-cursor-near="false"/u);
+  assert.match(idle.html, /data-pet-hovered="false"/u);
+  assert.match(idle.html, /data-pet-dragging="false"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
   assert.equal(idle.visual_mode, "bongo_cuu");
   assert.equal(idle.bongo.runtime_kind, "bongo_cuu");
@@ -494,6 +498,33 @@ test("pet surface scales Cuu, opacity and pass-through from window settings", ()
   assert.match(surface.html, /data-pet-window-width="225"/u);
   assert.match(surface.html, /data-pet-window-height="275"/u);
   assert.match(surface.html, /--wh-cuu-bongo-w:185px/u);
+});
+
+test("pet surface exposes input-reactive pointer state for Bongo-style QA", () => {
+  assert.deepEqual(defaultDesktopPetPointerSnapshot(), {
+    cursor_near: false,
+    hovered: false,
+    dragging: false
+  });
+
+  const surface = renderDesktopPetSurface({
+    idle_action: "look_at_mouse",
+    pointer_snapshot: {
+      cursor_near: true,
+      hovered: true,
+      dragging: true,
+      last_pointer_ms: 1234
+    }
+  });
+
+  assert.match(surface.html, /data-pet-cursor-near="true"/u);
+  assert.match(surface.html, /data-pet-hovered="true"/u);
+  assert.match(surface.html, /data-pet-dragging="true"/u);
+  assert.match(surface.html, /data-pet-last-pointer-ms="1234"/u);
+  assert.match(surface.html, /data-cuu-idle-action="look_at_mouse"/u);
+  assert.match(surface.html, /data-cuu-bongo-requested-state="look_at_mouse"/u);
+  assert.match(surface.css, /data-pet-cursor-near=true.*?saturate\(1\.04\)/u);
+  assert.match(surface.css, /data-pet-dragging=true.*?cursor:grabbing/u);
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {

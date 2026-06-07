@@ -177,7 +177,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。P1d-a 已补尺寸、透明度和点击穿透窗口合同；P1e-a 已补 cursor-near 立即 `look_at_mouse` 与 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` 输入 QA 属性。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 
 ### 3.1.2 Cuu Live2D 分层概念
 

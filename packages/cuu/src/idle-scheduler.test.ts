@@ -53,6 +53,9 @@ test("Cuu idle scheduler maps direct interactions to pet-like feedback", () => {
   assert.equal(scheduler.observeInteraction("tap", 100).action, "tap_bubble");
   assert.equal(scheduler.observeInteraction("drag", 200).action, "drag_hold");
   assert.equal(scheduler.observeInteraction("hover", 300).action, "wave_hello");
+  const cursor = scheduler.observeInteraction("cursor_near", 310);
+  assert.equal(cursor.action, "look_at_mouse");
+  assert.equal(cursor.reason, "cursor_near_start");
   const release = scheduler.observeInteraction("release", 320);
   assert.equal(release.action, undefined);
   assert.equal(release.reason, "drag_released");

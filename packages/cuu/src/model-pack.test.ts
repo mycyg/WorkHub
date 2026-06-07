@@ -22,7 +22,9 @@ test("Cuu Bongo model pack is the approved low-uncanny default", () => {
   assert.equal(defaultCuuBongoModelPack.visual_gate.no_psd_default, true);
   assert.equal(defaultCuuBongoModelPack.window_affordances.transparent_window, "supported");
   assert.equal(defaultCuuBongoModelPack.window_affordances.draggable, "supported");
-  assert.equal(defaultCuuBongoModelPack.window_affordances.pass_through, "planned");
+  assert.equal(defaultCuuBongoModelPack.window_affordances.pass_through, "supported");
+  assert.equal(defaultCuuBongoModelPack.window_affordances.scale, "supported");
+  assert.equal(defaultCuuBongoModelPack.window_affordances.opacity, "supported");
   assert.match(defaultCuuBongoModelPack.source.reference_url ?? "", /ayangweb\/BongoCat/u);
 });
 

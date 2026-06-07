@@ -171,9 +171,9 @@ export const defaultCuuBongoModelPack: CuuModelPackManifest = {
     transparent_window: "supported",
     always_on_top: "supported",
     draggable: "supported",
-    pass_through: "planned",
-    scale: "planned",
-    opacity: "planned",
+    pass_through: "supported",
+    scale: "supported",
+    opacity: "supported",
     hide_on_hover: "planned",
     keep_in_screen: "supported"
   }
