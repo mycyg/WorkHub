@@ -5,7 +5,7 @@ export type DesktopPetVisualQaCheckId =
   | "right_bottom_independent_surface"
   | "pet_body_hit_area"
   | "no_main_shell"
-  | "alive_atlas_motion"
+  | "layered_runtime_contract"
   | "card_mode_light_bubble"
   | "option_first_card";
 
@@ -51,9 +51,10 @@ export function createDesktopPetVisualQaReport(input: {
     qaCheck(
       "pet_body_hit_area",
       hasAll(input.idle.css, [".wh-pet-body", "cursor:grab", "pointer-events:auto"]) &&
-        hasAll(input.idle.css, [".wh-cuu-atlas", "pointer-events:none"]) &&
+        (hasAll(input.idle.css, [".wh-cuu-live2d", "pointer-events:none"]) ||
+          hasAll(input.idle.css, [".wh-cuu-atlas", "pointer-events:none"])) &&
         input.idle.html.includes('data-pet-drag-handle="true"'),
-      "only the pet body and bubble should receive pointer input; the atlas pixels stay visual-only."
+      "only the pet body and bubble should receive pointer input; Cuu visual pixels stay visual-only."
     ),
     qaCheck(
       "no_main_shell",
@@ -61,14 +62,19 @@ export function createDesktopPetVisualQaReport(input: {
       "the pet window must not load the Gold Path shell or free-text-first controls."
     ),
     qaCheck(
-      "alive_atlas_motion",
-      input.idle.sprite.fallback === false &&
-        input.idle.sprite.frame_count >= 4 &&
-        input.idle.sprite.duration_ms >= 400 &&
-        input.idle.html.includes("data-cuu-atlas-state=") &&
-        input.idle.html.includes('data-cuu-image-mode="clip_sheet"') &&
-        input.idle.html.includes("cuu.sprite.json"),
-      "idle Cuu must render a real multi-frame clip sheet instead of a fallback icon or oversized atlas."
+      "layered_runtime_contract",
+      input.idle.visual_mode === "live2d_prototype" &&
+        input.idle.live2d?.status === "prototype_layered" &&
+        input.idle.live2d.layer_count >= 8 &&
+        input.idle.live2d.duration_ms >= 700 &&
+        input.idle.html.includes('data-cuu-live2d-runtime="prototype_layered"') &&
+        input.idle.html.includes('data-cuu-live2d-layer-count="8"') &&
+        input.idle.html.includes('data-live2d-eye="l"') &&
+        input.idle.live2d.css.includes(".wh-cuu-live2d-layer") &&
+        input.idle.live2d.css.includes("@keyframes wh-cuu-live2d-tail-idle") &&
+        !input.idle.live2d.css.includes("steps(1,end)") &&
+        input.idle.sprite.fallback === false,
+      "idle Cuu must render the same-source layered runtime contract; final alive motion still requires Cubism capture."
     ),
     qaCheck(
       "card_mode_light_bubble",
@@ -124,7 +130,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     right_bottom_independent_surface: "right-bottom independent surface",
     pet_body_hit_area: "pet body hit area",
     no_main_shell: "no main shell",
-    alive_atlas_motion: "alive atlas motion",
+    layered_runtime_contract: "layered runtime contract",
     card_mode_light_bubble: "card-mode light bubble",
     option_first_card: "option-first card"
   };

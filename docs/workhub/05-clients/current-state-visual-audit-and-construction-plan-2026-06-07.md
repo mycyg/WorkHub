@@ -26,7 +26,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，并修掉「只靠静态 fallback / 缩放」的 P1 鲜活感缺口；但卡片气质、长期活体行为、Hatch Pack 与 Live2D 仍没有达到最终「QQ 宠物式活体入口」。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板和 144 层 `generated-psd-draft-v1`，下一步主线是 Live2D PSD 清理、Cubism 绑定与多秒桌宠录屏验收。
 
 ---
 
@@ -167,14 +167,14 @@ visuals:
 
 | 检查项 | 结果 | 处理 |
 |---|---|---|
-| Cuu 鲜活感 P1 | **通过**：真实 Tauri 窗口已显示非缩放 sprite 动作，且不依赖静态 fallback | 后续继续做 Hatch Pack / Live2D 以提升表情、连续动作和长期陪伴感 |
-| Hatch / Live2D 表现力 | **未完成**：当前仍是 atlas 轻帧动画，不是最终活体模型 | 进入 Hatch Pack 和 Live2D |
+| Cuu 鲜活感 P1 | **未通过最终验收**：真实 Tauri 窗口已不依赖静态 fallback，但当前 sprite/prototype 仍不像完整活体桌宠 | 转入 Live2D PSD / Cubism；Hatch 只保留 fallback |
+| Live2D 表现力 | **进行中**：绿幕零件板、144 层 PSD draft v1、manifest/report 已落；尚未 Cubism 绑定 | 清理 PSD、补画遮挡、导入 Cubism、录屏验收 |
 
 仍然没有完成的体验差距：
 
 - 历史失败证据必须保留：第一轮 card layout 图中 Cuu 只露耳朵 / 局部，不能作为通过截图；后续任何回归再次出现都直接判失败。
 - 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
-- 现阶段已达到 P1 sprite 活体门槛，但距离「会走动、看鼠标、抱文件来找用户、任务动作可读」仍需要 Hatch Pack / Live2D 资产路线。
+- 现阶段只达到“动作资源真实加载、不是静态 fallback”的技术门槛；距离「会眨眼、看鼠标、尾巴/流苏轻物理、抱文件来找用户、任务动作可读」仍需要 Live2D / Cubism 资产路线。
 
 ### 0.4 P1.0 双语运行时底座（2026-06-07）
 
@@ -260,7 +260,7 @@ visuals:
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Hatch Pet 路线 | 本文与绿幕方案已写入 P1.1 路线 | 可以作为 Live2D 前的高质量宠物包路线，显著改善「抽象」问题 | P1 |
+| Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案与文档预览 | 方向正确，但还需修绿边、尾巴、遮挡补画、Cubism 绑定和录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
 
@@ -502,7 +502,7 @@ visuals:
 
 - **窗口扩展 / card 裁切修复通过**：修复后 motion report 显示第 10 帧起窗口从 `194 x 228` 扩到 `394 x 568`。
 - **Cuu body 完整可见通过本轮 P0 门槛**：最终 HiDPI 关键帧中 Cuu 完整坐姿可见，card bubble 右侧有安全留白，离线卡不再显示 raw SSE error。
-- 因此 `CUX-MOTION-001` 可以关闭；“鲜活感不足”和“更可爱的多动作宠物包”继续转入 `CUX-MOTION-002` / `GAP-CUU-06 Hatch Pack`。
+- 因此 `CUX-MOTION-001` 可以关闭；“鲜活感不足”继续转入 `CUX-MOTION-002` / `GAP-CUU-05 Live2D PSD + Cubism`。`GAP-CUU-06 Hatch Pack` 只作为 fallback / 过渡方案保留。
 
 #### CUX-MOTION-002：当前动作太弱，不像活体桌宠
 
@@ -515,9 +515,9 @@ visuals:
 
 修复方向：
 
-- 短期走 Hatch Pet 风格的固定 8 x 9 spritesheet，先让 Cuu 有 idle / waiting / review / failed / running / waving / jumping / dragging states。
-- 中期把 WorkHub 18 状态映射到更清晰的小动作包。
-- 长期走 Live2D PSD / Cubism，处理眼睛、耳朵、尾巴、流苏、呼吸、看鼠标。
+- 短期清理 `generated-psd-draft-v1`：修绿边、尾巴重拆、头底/耳朵拆分、遮挡补画、表情层整理。
+- 中期导入 Live2D Cubism：绑定眼睛、眼皮、嘴、耳朵、尾巴、流苏、呼吸、看鼠标。
+- Hatch Pet 8 x 9 spritesheet 只在 Cubism 工具链短期阻塞时作为 fallback 施工，不再作为首要主线。
 
 验收：
 
@@ -579,7 +579,9 @@ Hatch Pet 路线的优势：
 - 9 个状态足够覆盖「活着」「等待用户」「出错」「审查」「庆祝」。
 - 可以用用户参考照做 canonical base，再生成一致的 Q 版状态行。
 
-### 5.3 WorkHub Cuu Hatch Pack 规格
+### 5.3 WorkHub Cuu Hatch Pack Fallback 规格
+
+定位：Hatch Pack 只在 Live2D / Cubism 短期阻塞时作为高质量 sprite fallback，不替代正式桌宠主线。它仍可用于 motion storyboard、fallback renderer 和跨平台降级，但不能作为最终“活体 Cuu”验收。
 
 目标新增资产：
 
@@ -665,12 +667,12 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 | 阶段 | 目标 | 为什么 |
 |---|---|---|
-| P1.1 Hatch Pack | 快速把 Cuu 从「静态/抽象」变成可爱的多动作宠物 | 成本低、格式固定、QA 容易 |
-| P1.2 Hatch runtime | 替换当前 pet body 的大图/静态 fallback | 解决体积和一致性 |
-| P2 Live2D PSD | 生成正式分层 PSD、补画遮挡、Cubism 绑定 | 提升眼神、耳朵、尾巴、流苏和鼠标互动 |
-| P3 Hybrid runtime | Live2D 主表现，Hatch sprite fallback | 高表现力 + 可靠降级 |
+| P1.1 Live2D PSD v1 | 清理 `generated-psd-draft-v1`，补画遮挡，修尾巴/耳朵/绿边 | 用户明确要求分层精细、活体动作，而不是 GIF/sprite |
+| P2 Cubism runtime | 导出 `.model3.json` / `.moc3` / physics / motions 并接 Tauri pet window | 解决眨眼、眼神、耳朵、尾巴、流苏和鼠标互动 |
+| Fallback Hatch Pack | Cubism 阻塞时提供高质量多动作 sprite 降级 | 成本低、格式固定、QA 容易，但不是最终主表现 |
+| Hybrid runtime | Live2D 主表现，Hatch / atlas sprite fallback | 高表现力 + 可靠降级 |
 
-结论：**Hatch Pet 是当前最适合的下一步，不是退回 GIF，而是给 Live2D 前的 Cuu 一个完整宠物包。**
+结论：**当前最适合的下一步是 Live2D PSD v1 清理与 Cubism 绑定；Hatch Pet 是 fallback，不是退回 GIF，也不是最终主路线。**
 
 ---
 
@@ -693,7 +695,7 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 目标：先修掉「事件卡片被小窗裁切」。
 
-状态：**2026-06-07 已完成 card mode bridge / placement / compact fallback / full-body HiDPI 修复并通过 Windows debug motion capture；剩余问题转入 P1.1 Hatch Pack 与 P1.2 轻卡视觉深化。**
+状态：**2026-06-07 已完成 card mode bridge / placement / compact fallback / full-body HiDPI 修复并通过 Windows debug motion capture；剩余问题转入 P1.1 Live2D PSD v1 / Cubism 与 P1.2 轻卡视觉深化。**
 
 | ID | 任务 | Target paths | 验收 |
 |---|---|---|---|
@@ -737,42 +739,62 @@ scripts/qa/cuu-tauri-smoke.ps1
 docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/
 ```
 
-### 6.2 P1.1：Cuu Hatch Pack
+### 6.2 P1.1：Cuu Live2D PSD v1 清理与 Cubism 准备
 
-目标：用 Hatch Pet 合同生成一个更可爱、更一致、更像桌宠的 Cuu v1。
+目标：把当前 `generated-psd-draft-v1` 从“脚本拼装草案”推进到“可导入 Cubism 的生产 PSD”。Hatch Pack / GIF / sprite 只作为 fallback 或 motion storyboard，不再作为首要路线。
 
-步骤：
-
-1. 准备 `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion` 作为当前差距证据。
-2. 参考 [Codex Hatch Pet recipe](https://github.com/freestylefly/CodexGuide/blob/main/docs%2Frecipes%2Fhatch-pet-photo.md) 的「照片输入 -> 专属动画宠物 -> 宠物包目录」思路，生成 `cuu-hatch-v1` canonical base，形象参考用户猫照片但输出原创 Q 版，不提交原照片。
-3. 生成 9 行动作：idle、running-right、running-left、waving、jumping、failed、waiting、running、review。
-4. 合成 `1536x1872` spritesheet。
-5. 输出 `pet.json`、contact sheet、motion preview、QA report。
-6. 将 WorkHub Cuu states 映射到 Hatch states。
-7. 在 `pet-surface.ts` 默认使用 Hatch renderer，旧 18 clip 保留为 fallback 或开发对照。
-
-目标文件：
+当前已落：
 
 ```text
-packages/cuu/src/hatch-state-map.ts
-apps/desktop-webview/src/cuu-hatch-assets.ts
-apps/desktop-webview/src/cuu-hatch-runtime.ts
-apps/desktop-webview/src/assets/cuu/hatch/cuu-hatch-v1/*
-apps/desktop-webview/src/pet-surface.ts
-docs/workhub/05-clients/cuu-desktop-pet-concept.md
-docs/workhub/05-clients/cuu-green-screen-desktop-pet-solution.md
+scripts/assets/extract-cuu-generated-parts.py
+scripts/assets/build-cuu-live2d-generated-psd.py
+apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v0/
+apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/
+docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-*-components.png
+docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png
 ```
 
-验收：
+已验证：
 
-- `idle` 6 秒内至少有两类微变化：呼吸/眨眼/尾巴。
-- `waiting` 明显表示「需要用户点」。
-- `review` 明显表示「在审查/看交付物」。
-- `failed` 不使用红叉或文字，表达离线/出错但不吓人。
-- 所有 cells 四角透明，unused cells 完全透明。
-- 角色一致性通过 contact sheet 肉眼审查。
-- Tauri motion capture 不再出现静态 5 秒。
-- Tauri card mode 中 Cuu body 不再只露出耳朵，脚底 anchor 与右下角 body box 对齐。
+- PSD 可由 `psd-tools` 打开：`1200 x 1600` canvas、9 个顶层组、144 个叶子图层。
+- `layers/*.png` 与 manifest 一一对应：144 个图层 PNG。
+- 图层来源可追踪：`source_board`、`source_part_id`、`origin`、`bind_target`、`note` 均写入 manifest。
+- 视觉仍不通过：尾巴段叠合偏厚，轮廓仍有少量绿边，遮挡补画未完成，尚未导入 Cubism。
+
+施工步骤：
+
+| ID | 任务 | Target paths | 验收 |
+|---|---|---|---|
+| CUX-L2D-01 | PSD 导入工具确认 | 本机 Krita / Photoshop / Live2D Cubism | 打开 `cuu-live2d-generated-psd-draft-v1.psd` 后 9 个组、144 层不丢失 |
+| CUX-L2D-02 | 绿边二次清理 | `scripts/assets/build-cuu-live2d-generated-psd.py`、`layers/*.png` | 轮廓在黑/白/透明棋盘三种背景下无明显绿边 |
+| CUX-L2D-03 | 尾巴重拆 | `generated-parts-v1`、`Tail_Base/01/02/03/Tip` | 默认预览只有一条自然尾巴，不出现厚重叠影 |
+| CUX-L2D-04 | 耳朵/头底拆分 | `Head_BaseClean`、`Ear_*` | 头底不再包含可见重复耳朵结构，耳朵可单独摇动 |
+| CUX-L2D-05 | 遮挡补画 | `Body_PaintBehind_*`、`LaceBib_Back`、`Tail_Root` | 摆动围兜、尾巴、爪子时不露洞 |
+| CUX-L2D-06 | 表情层整理 | `Eye_*`、`Mouth_*`、`80_Expressions` | 闭眼、惊讶、微笑、说话嘴型均可单独开关 |
+| CUX-L2D-07 | Cubism 参数草图 | `cuu-live2d-layered-asset-plan.md`、Cubism project | 建立呼吸、眼睛、眼皮、嘴、耳、尾、蝴蝶结、流苏参数 |
+| CUX-L2D-08 | 导出 runtime 包 | `apps/desktop-webview/src/assets/cuu/live2d/exported/` | 产出 `.model3.json`、`.moc3`、textures、physics、motions |
+| CUX-L2D-09 | Tauri runtime 接入 | `apps/desktop-webview/src/cuu-live2d-runtime.ts`、`pet-surface.ts` | pet window 默认加载 Cubism；失败时回落 atlas |
+| CUX-L2D-10 | 多秒录屏验收 | `docs/workhub/05-clients/assets/audit/<date>-cuu-live2d-cubism/` | GIF/MP4 显示眨眼、呼吸、尾巴、流苏、任务动作，不只是缩放 |
+
+需要的工具：
+
+- **Krita**：可本机安装，用于打开 PSD、检查图层、修边、导出中间 PNG。
+- **Live2D Cubism Editor**：用于 PSD 导入、网格、变形器、参数、物理和 motion。
+- **Python / psd-tools / Pillow / OpenCV**：继续做批量抠图、去绿、拼装、manifest/report。
+- **GPT Image**：继续生成更细的尾巴段、耳朵干净底、遮挡补画素材；每次生图都用绿幕或透明需求，并由脚本编号入库。
+
+通过标准：
+
+- 不能再用“图层数量多”当通过；必须能在 Cubism 中绑定并导出。
+- 不能再用“不同等待时间截图像素有差异”当通过；必须录制多秒动作并肉眼看到不同身体部位有连续运动。
+- 不能再用“只有缩放/呼吸”当通过；idle 至少包含眨眼、呼吸、尾巴/流苏微动、偶发看鼠标。
+- 不能出现只露耳朵、裁尾、裁爪、多腿、角色变脸、饰品漂移或绿幕边。
+
+Hatch Pack 保留策略：
+
+- 若 Cubism 工具链短期阻塞，可按 Hatch Pet 合同生成 `cuu-hatch-v1` 作为 sprite fallback。
+- Hatch 只解决过渡动画和回退，不替代正式 Live2D。
+- Hatch 输出仍需通过同样的 motion capture；只有 GIF 预览不能算桌宠验收。
 
 ### 6.3 P1.2：桌宠轻卡重做
 
@@ -876,26 +898,29 @@ apps/desktop-webview/src/routes/diagnostics.ts
 - 设置页可切换 Cuu 显隐、勿扰、声音、减少动效。
 - 托盘 tooltip 能显示连接 / 待审批状态。
 
-### 6.6 P2：Live2D 主线
+### 6.6 P2：Live2D Cubism 导出与桌宠运行时
 
-Live2D 不立刻阻塞 P1，但必须并行准备。
+P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠运行时。
 
 步骤：
 
-1. 基于 Cuu Hatch canonical base，生成正面高分辨率生产图。
-2. 按 `cuu-live2d-layered-asset-plan.md` 拆分 PSD。
-3. 补画遮挡区域：围兜后身体、尾巴根、爪子后胸毛、蝴蝶结后蕾丝。
-4. Cubism 绑定参数：呼吸、眼睛、眼皮、嘴、耳朵、尾巴、流苏。
-5. 导出 `.model3.json`、`.moc3`、textures、physics、motions。
-6. Tauri pet surface 加 `cuu-live2d-runtime.ts`。
-7. Hatch sprite 作为 fallback。
+1. 导入清理后的 `cuu-live2d-generated-psd-v1.psd` 到 Live2D Cubism。
+2. 建 mesh / deformer：`Head`、`Body`、`Ear_L/R`、`Eye_L/R`、`Mouth`、`Tail_01..Tip`、`Bow`、`LaceBib`、`Tassel_L/R`。
+3. 建参数：`ParamAngleX/Y/Z`、`ParamBodyAngleX/Y`、`ParamEyeLOpen/ROpen`、`ParamEyeBallX/Y`、`ParamMouthOpenY/Form`、`ParamTailSway/Curl`、`ParamBibSway`、`ParamBowBounce`、`ParamTasselSwingL/R`。
+4. 建 physics：尾巴链、左右流苏链、蝴蝶结轻回弹、耳朵微动。
+5. 建 motions：`idle`、`blink`、`look_at_mouse`、`thinking`、`approval_waiting`、`searching_evidence`、`celebrate`、`worried/offline`。
+6. 导出 `.model3.json`、`.moc3`、textures、`physics3.json`、`motions/*.motion3.json`、`expressions/*.exp3.json`。
+7. Tauri pet surface 用 Cubism SDK for Web 加载，atlas / Hatch sprite 仅作为 fallback。
+8. 录制 Windows / Linux / macOS 至少各一套 motion capture；Linux 可用用户提供的测试环境做透明窗口与动作截图。
 
 验收：
 
-- 眼睛会看鼠标。
-- 尾巴和流苏有轻物理。
-- idle CPU/GPU 可接受。
-- reduced-motion 下停用复杂动作。
+- 眼睛会看鼠标，眨眼不是遮罩假眨。
+- 尾巴和流苏有轻物理，动作连续不卡顿。
+- idle 10 秒内有呼吸、眨眼、尾巴/流苏微动；60 秒内有至少两类随机微动作。
+- 审批、澄清、检索、完成、离线至少 5 个业务状态有对应动作。
+- idle CPU/GPU 可接受；reduced-motion 下停用复杂动作并保留轻提示。
+- 多秒 GIF/MP4 肉眼通过，不再出现五条腿、角色漂移、绿边、只露耳朵或只有缩放变化。
 
 ---
 
@@ -942,11 +967,13 @@ Live2D 不立刻阻塞 P1，但必须并行准备。
 
 推荐顺序：
 
-1. **做 Cuu Hatch Pack v1**：把 Cuu 从静态照片感升级成 Q 版多动作宠物，优先解决动作弱、待机不够随机和任务动作不够明确。
-2. **替换 pet body renderer**：默认使用 Hatch sprite，旧 18 clip 保留 fallback。
-3. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
-5. **Web Home 真页面**：按 AI-first concept 改首屏。
-6. **Option Intake 真页面**：补 stepper、附件、summary、Cuu 推荐。
-7. **Desktop One Thing Desk**：主窗变成本地单件事干活桌。
+1. **清理 Cuu Live2D PSD v1**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画和默认预览。
+2. **导入 Cubism 做基础绑定**：先完成 idle / blink / look_at_mouse / tail sway / tassel physics，不追求复杂动作但必须肉眼鲜活。
+3. **替换 pet body renderer**：默认用 Cubism runtime；atlas / Hatch / static fallback 只在加载失败时使用。
+4. **录屏验收 Cuu**：多次截图、GIF/MP4、diff report、黑白背景 alpha 检查，确认不是只缩放、不卡顿、不绿边、不多腿。
+5. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
+6. **Web Home 真页面**：按 AI-first concept 改首屏。
+7. **Option Intake 真页面**：补 stepper、附件、summary、Cuu 推荐。
+8. **Desktop One Thing Desk**：主窗变成本地单件事干活桌。
 
 这条路径最符合项目设计哲学：**用户先看到 Cuu 活起来，再看到 WorkHub 把复杂任务收成几个可点选择，而不是先学会一堆看板。**

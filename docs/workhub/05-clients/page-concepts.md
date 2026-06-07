@@ -257,7 +257,7 @@ Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 
 
 ![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
-这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续要继续做 Hatch Pack anchor、待机眨眼/尾巴/看鼠标和任务动作。
+这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续要继续做 Live2D PSD 清理、Cubism 眨眼/尾巴/流苏/看鼠标和任务动作录屏验收。Hatch/sprite 只作为 fallback。
 
 ---
 

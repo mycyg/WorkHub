@@ -9,7 +9,7 @@ owner: workflow
 
 > 结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。P1 用 GPT Image 生成绿幕多帧素材，经本地抠图、裁切、对齐、打包成 sprite atlas，先让 Cuu 真实可见、会动、可测试；长期高表现力路线优先走 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 Live2D 分层 PSD + Cubism 绑定。GIF 只做临时预览，不作为最终桌宠目标。
 >
-> 2026-06-07 真实动作审计见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 窗口做 32 帧抓取、GIF/MP4 与像素差异报告；首轮发现 `CUX-MOTION-001`：事件卡触发后 `pet` 窗口未扩到 card mode，气泡被 body-only 小窗裁切。第一轮 card layout 又暴露 Cuu 只露耳朵 / 局部的失败样例。同日已补 bridge placement 校验、compact fallback、full-body HiDPI 站位、离线人话卡和 motion capture 脚本，最终 card mode 可扩到 `394 x 568` 且 Cuu 完整身体可见；下一层重点是 Hatch Pack 鲜活动作、稳定 body anchor 与 Live2D。
+> 2026-06-07 真实动作审计见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 窗口做 32 帧抓取、GIF/MP4 与像素差异报告；首轮发现 `CUX-MOTION-001`：事件卡触发后 `pet` 窗口未扩到 card mode，气泡被 body-only 小窗裁切。第一轮 card layout 又暴露 Cuu 只露耳朵 / 局部的失败样例。同日已补 bridge placement 校验、compact fallback、full-body HiDPI 站位、离线人话卡和 motion capture 脚本，最终 card mode 可扩到 `394 x 568` 且 Cuu 完整身体可见；随后确认 8 层裁片 prototype 动作肉眼差异不足，不能算鲜活感通过。当前主线已切到 Live2D 分层：用 GPT Image 生成绿幕零件板，自动抠图编号后拼出 `cuu-live2d-generated-psd-draft-v1.psd`，Hatch/sprite 仅保留为 fallback 或过渡参考。
 
 ## 1. 目标体验
 
@@ -119,6 +119,37 @@ apps/desktop-webview/src/cuu-hatch-runtime.ts
 - 不出现文字、水印、额外动物、绿色边缘、裁耳裁尾或脚底 anchor 漂移。
 - card mode 中 Cuu 必须完整出现在右下角；只露耳朵 / 裁尾 / 裁爪 / 局部出画一律判失败。
 - Hatch sprite 可以成为 Live2D 加载失败时的长期 fallback。
+
+### 2.2 Live2D 绿幕零件板路线
+
+当前 Cuu 已经验证出一条更适合最终桌宠的资产路线：
+
+```text
+GPT Image 绿幕零件板
+  -> extract-cuu-generated-parts.py 自动抠图 / 去绿 / 编号 / 裁切
+  -> build-cuu-live2d-generated-psd.py 调整大小 / 拼接 / 分组 / 命名
+  -> generated-psd-draft-v1.psd
+  -> Krita / Photoshop / Live2D Cubism 清理、补画、网格和骨骼绑定
+  -> .model3.json / .moc3 / textures / physics / motions
+  -> Tauri pet window runtime
+```
+
+已落产物：
+
+| 路径 | 用途 |
+|---|---|
+| `apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v0/` | 绿幕零件板、alpha 图、编号表、独立组件 PNG |
+| `apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/` | 144 层 PSD 草案、144 个 layer PNG、preview、manifest、report |
+| `docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-*-components.png` | 文档审查用编号表 |
+| `docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png` | 文档审查用 PSD 预览 |
+
+这条路线回答“能不能生成非常多不同分层素材，然后调整大小拼接”：可以，而且应该脚本化。每个可绑定部件都要有稳定英文层名、来源 board/part id、默认可见状态、bind target 和 note。后续重生图时只需要更新组件映射和位置，不需要手工追踪几百个 PNG。
+
+验收边界：
+
+- `generated-psd-draft-v1` 是生产草案，不是最终通过。
+- 通过标准不是层数，而是 Cubism 导入后眼睛、眼皮、嘴型、尾巴、流苏、蝴蝶结和身体呼吸能被连续驱动。
+- 旧 8 层 `prototype_layered` 只能做 runtime contract fixture，不能作为活体表现验收。
 
 ## 3. 绿幕生图管线
 

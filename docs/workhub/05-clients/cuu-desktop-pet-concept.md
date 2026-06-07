@@ -11,7 +11,7 @@ owner: workflow
 >
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。剩余核心差距是动作丰富度与长期活体表现，下一步进入 Hatch Pack / Live2D。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。当前已新增 GPT Image 绿幕零件板与 `cuu-live2d-generated-psd-draft-v1.psd`，下一步主线是清理 144 层 PSD、补画遮挡、导入 Cubism 并录屏验证真实活体动作。
 
 ## 1. 角色定位
 
@@ -90,6 +90,20 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 ![Cuu Live2D PSD 生产板](./assets/cuu/cuu-live2d-psd-production-board.png)
 
 第一张图用于锁定 Cuu 的正面比例、脚底 anchor 和角色识别点；第二张图用于指导后续正式 PSD 拆层：中心是正面 Cuu，周围拆出耳朵、眼皮、眼睛、嘴型、爪子、围兜、蝴蝶结、珍珠流苏、身体块和尾巴段。它们不是运行时资产，但已经同步到文档目录，并由 `apps/desktop-webview/src/assets/cuu/live2d/source/cuu-live2d-v0-layer-manifest.json` 固定成可审计的图层合同。
+
+### 3.5.1 Live2D 绿幕零件板与 PSD 草案
+
+![Cuu Live2D 脸部零件编号表](./assets/cuu/cuu-live2d-generated-face-parts-v0-components.png)
+
+![Cuu Live2D 身体零件编号表](./assets/cuu/cuu-live2d-generated-body-parts-v0-components.png)
+
+![Cuu Live2D 饰品零件编号表](./assets/cuu/cuu-live2d-generated-accessory-parts-v0-components.png)
+
+![Cuu Live2D generated PSD draft v1 preview](./assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png)
+
+这组图是当前最接近施工资产的参考：绿幕零件板已经被脚本自动抠图、编号和裁切，`generated-psd-draft-v1` 已拼成 9 个顶层组、144 个叶子图层、144 个 layer PNG 的 PSD 草案。它回答了“不同分层素材能否通过生图批量生成并调整大小拼接”：可以，且已经落成可重复生成脚本。
+
+但这仍不是最终桌宠通过证据。最终通过必须满足：PSD 在 Cubism 中可导入；眼睛/眼皮/嘴型/耳朵/尾巴/蝴蝶结/流苏有连续参数和物理；桌面右下角独立 `pet` 窗口录屏中能看到眨眼、呼吸、看鼠标、尾巴、任务动作，而不是静态图或缩放变化。
 
 ### 3.6 当前实现差距
 

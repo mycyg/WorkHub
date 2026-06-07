@@ -1,13 +1,14 @@
 ---
 module: 05-clients
 layer: C-PET / Cuu / Live2D
-status: concept
+status: generated-psd-draft-v1
 owner: workflow
 ---
 
 # Cuu Live2D 分层资产与建模施工方案
 
 > **结论**：Cuu 的长期高表现力目标应优先走 **Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。现有 sprite atlas 继续保留为 P1 可运行资产和降级层；GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案。  
+> **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -25,6 +26,20 @@ owner: workflow
 ![Cuu Live2D PSD 生产板](./assets/cuu/cuu-live2d-psd-production-board.png)
 
 这张图是 **PSD 生产板 / 拆件参考图**，由 GPT Image 生成后同步到文档资产目录。它把中心正面 Cuu 与周边可拆部件放在同一画布：耳朵、眼皮、眼睛、嘴型、前后爪、胸腹、背毛、蕾丝围兜、蝴蝶结、珍珠流苏和尾巴段。它仍不是最终 PSD，但可以直接指导后续绘图工具中的补画、切层与命名。
+
+![Cuu Live2D 绿幕零件总板](./assets/cuu/cuu-live2d-generated-parts-board-v0-green.png)
+
+![Cuu Live2D 脸部零件编号表](./assets/cuu/cuu-live2d-generated-face-parts-v0-components.png)
+
+![Cuu Live2D 身体零件编号表](./assets/cuu/cuu-live2d-generated-body-parts-v0-components.png)
+
+![Cuu Live2D 饰品零件编号表](./assets/cuu/cuu-live2d-generated-accessory-parts-v0-components.png)
+
+这四张图是 **生成式拆件资产 v0**：先用 GPT Image 生成绿幕零件板，再由 `scripts/assets/extract-cuu-generated-parts.py` 自动抠图、编号、裁切成独立 PNG。脸部板包含干净头底、眼白、虹膜、瞳孔、眼皮、鼻子、嘴型、腮红和须线；身体板包含背毛、胸毛、前后爪、爪垫和尾巴候选段；饰品板包含蕾丝围兜、蝴蝶结、流苏绳、珍珠、红珠和金属环。它们不是最终艺术定稿，但已经足够支撑 PSD 分层草案。
+
+![Cuu Live2D generated PSD draft v1 preview](./assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png)
+
+这张图是 **自动拼装的 144 层 PSD draft v1 预览**。它来自 `scripts/assets/build-cuu-live2d-generated-psd.py`，输出 `apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/`。它比 8 层裁片原型更接近 Live2D 生产资料：眼睛、嘴型、耳朵、身体、爪、尾巴、蕾丝、蝴蝶结、流苏、珍珠/红珠都已拆层；但它仍没有通过最终视觉验收，必须继续做边缘清理、遮挡补画、尾巴段重绘和 Cubism 绑定。
 
 ---
 
@@ -66,6 +81,19 @@ apps/desktop-webview/src/assets/cuu/
       cuu-live2d-v0.psd              # 正式 PSD 源文件，若体积过大后续迁 Git LFS
       cuu-live2d-v0-layer-preview.png
       cuu-live2d-v0-layer-manifest.json
+      generated-parts-v0/
+        cuu-live2d-generated-face-parts-v0-green.png
+        cuu-live2d-generated-face-parts-v0-components.png
+        cuu-live2d-generated-face-parts-v0/components/*.png
+        cuu-live2d-generated-body-parts-v0/components/*.png
+        cuu-live2d-generated-accessory-parts-v0/components/*.png
+      generated-psd-draft-v1/
+        cuu-live2d-generated-psd-draft-v1.psd
+        cuu-live2d-generated-psd-draft-v1-preview.png
+        cuu-live2d-generated-psd-draft-v1-psd-composite.png
+        cuu-live2d-generated-psd-draft-v1.manifest.json
+        cuu-live2d-generated-psd-draft-v1-report.json
+        layers/*.png
     exported/
       cuu.model3.json
       cuu.moc3
@@ -87,11 +115,113 @@ docs/workhub/05-clients/assets/cuu/
   cuu-live2d-layer-breakdown-concept.png
   cuu-live2d-front-model-concept.png
   cuu-live2d-psd-production-board.png
+  cuu-live2d-generated-*-green.png
+  cuu-live2d-generated-*-components.png
+  cuu-live2d-generated-psd-draft-v1-preview.png
 ```
 
-文档目录只放概念图；运行时模型必须进入 `apps/desktop-webview/src/assets/cuu/live2d/exported/`，随 Tauri bundle 发布。
+文档目录只放概念图、编号参考图和预览审查图；运行时源素材、PSD、layer PNG 和导出模型必须进入 `apps/desktop-webview/src/assets/cuu/live2d/`，随 Tauri bundle 或后续资产包发布。
 
 当前已落：`apps/desktop-webview/src/assets/cuu/live2d/source/cuu-live2d-v0-layer-manifest.json`，状态为 `contract_only`。它列出必需图层、遮挡补画、Cubism 参数、motion fallback 与 QA 门禁；正式 PSD 未落前，不能把它误读为完成的 Live2D 模型。
+
+2026-06-07 新增可运行原型：
+
+```text
+apps/desktop-webview/src/assets/cuu/live2d/prototype/cuu-layered-rig-v0/
+  body-backfur.png
+  tail.png
+  front-paws.png
+  head.png
+  lace-bib.png
+  bow.png
+  tassel-l.png
+  tassel-r.png
+  cuu-layered-rig-v0.manifest.json
+  cuu-layered-rig-v0-preview.png
+packages/cuu/src/live2d-manifest.ts
+apps/desktop-webview/src/cuu-live2d-assets.ts
+apps/desktop-webview/src/cuu-live2d-runtime.ts
+scripts/assets/generate-cuu-live2d-prototype.py
+```
+
+这套原型状态为 `prototype_layered`：它使用同一张 Cuu 透明基准图裁切，避免逐帧 AI 生图导致角色漂移、肢体数量错误、脚底 anchor 漂移。它仍然有局限：头/眼/嘴没有真正拆成 Cubism 可变形层，遮挡区没有人工补画，眨眼只是 runtime 遮罩模拟。因此它只能作为 **Live2D-ready runtime prototype**，不能替代正式 PSD / Cubism 模型。
+
+### 3.1 Live2D Prototype v0 审查证据
+
+![Cuu Live2D prototype contact sheet](./assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-contact-sheet.png)
+
+本轮运行态证据：
+
+| 证据 | 路径 |
+|---|---|
+| 0ms 截图 | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-frame-000.png` |
+| 1600ms 截图 | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-frame-1600.png` |
+| 3200ms 截图 | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-frame-3200.png` |
+| Contact sheet | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-contact-sheet.png` |
+| 审查 GIF | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-motion-sample.gif` |
+| DOM dump | `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-live2d-prototype/pet-live2d-dom.txt` |
+
+像素差分：
+
+```text
+000_vs_1600: bbox=(34, 44, 180, 219), changed_pixels=3225
+1600_vs_3200: bbox=(39, 44, 175, 220), changed_pixels=5441
+```
+
+验收结论：
+
+- 技术通过：Cuu 在浏览器 pet surface 中完整可见，不是只露耳朵 / 局部。
+- 技术通过：DOM 实际挂载 `data-cuu-live2d-runtime="prototype_layered"`，不是文档假设。
+- 技术通过：8 个图层来自同一张透明基准图，可以作为 runtime 分层探针。
+- 视觉不通过：等待不同时间的肉眼差异不足，动作主要像缩放/位移，不像有骨骼、眼皮、尾巴和流苏物理的活体。
+- 资产不通过：它不是 PSD 分层，不含眼白/虹膜/瞳孔/眼皮/嘴型/耳朵/流苏/珠子等细部图层，也没有遮挡补画。
+- 施工结论：`cuu-layered-rig-v0` 只保留为 regression / runtime contract fixture；不能再作为 Cuu 鲜活感或 Live2D 资产通过证据。
+
+### 3.2 绿幕零件板与 PSD Draft v1
+
+本轮新增生产草案路线：
+
+```text
+scripts/assets/extract-cuu-generated-parts.py
+scripts/assets/build-cuu-live2d-generated-psd.py
+apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v0/
+apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/
+```
+
+已生成资产：
+
+| 资产 | 结果 |
+|---|---:|
+| `cuu-live2d-generated-face-parts-v0` | 47 个自动裁切组件 |
+| `cuu-live2d-generated-body-parts-v0` | 23 个自动裁切组件 |
+| `cuu-live2d-generated-accessory-parts-v0` | 61 个自动裁切组件 |
+| `cuu-live2d-generated-parts-board-v0` | 58 个自动裁切组件 |
+| `cuu-live2d-generated-psd-draft-v1.psd` | 9 个顶层组 / 144 个叶子图层 / 14.5MB |
+| `layers/*.png` | 144 个独立图层 PNG，与 manifest 一一对应 |
+
+PSD draft v1 图层组：
+
+```text
+00_Guide_DoNotExport
+10_Back
+20_Body
+30_Tail
+40_Head
+50_Face
+60_Collar
+70_Accessories
+80_Expressions
+```
+
+默认可见层 `65` 个，隐藏/表达式/候选层 `79` 个。来源统计：`generated_layer_png=131`、`paint_behind_placeholder=5`、`procedural_detail=8`。这证明“生成很多部件图 -> 自动裁切 -> 调整大小拼接 -> PSD 分组保存”路线可行。
+
+当前不通过项必须继续保留：
+
+- 尾巴是多段候选件叠合，视觉上偏厚，正式绑定前需要重绘或精确切段。
+- 头底仍带部分耳朵结构，耳朵拆层需要美术清理。
+- 绿幕边缘仍有少量残留，正式贴图前要继续 despill / edge contract。
+- 围兜后身体、蝴蝶结后蕾丝、爪后胸毛、尾巴根部仍需要人工或生图补画。
+- 静态 PSD 预览不能证明 Cuu 活着；最终必须导出 Cubism 并录制多秒桌宠动作。
 
 ---
 
@@ -364,7 +494,7 @@ Constraints: separated parts must match the main Cuu design, no final production
 
 ### 9.1 TS 模块
 
-目标文件：
+已落 / 目标文件：
 
 ```text
 packages/cuu/src/live2d-manifest.ts
@@ -373,31 +503,59 @@ apps/desktop-webview/src/cuu-live2d-runtime.ts
 apps/desktop-webview/src/pet-surface.ts
 ```
 
-计划类型：
+当前 `prototype_layered` contract：
 
 ```ts
 export type CuuLive2DManifest = {
   version: 1;
-  model: {
+  character: "Cuu";
+  artifact: string;
+  status: "contract_only" | "prototype_layered" | "cubism_exported";
+  model?: {
     model3_json: string;
     moc3: string;
     textures: string[];
-    physics3_json?: string;
-    pose3_json?: string;
   };
-  motions: Record<string, { file: string; loop: boolean; priority: "idle" | "normal" | "urgent" }>;
-  expressions: Record<string, { file: string }>;
-  fallback_sprite_clip: Record<string, string>;
+  source: {
+    static_alpha: string;
+    layer_manifest: string;
+    psd_path: string;
+  };
+  stage: { width: number; height: number; anchor_x: number; anchor_y: number };
+  layers: CuuLive2DLayer[];
+  bones: CuuLive2DBone[];
+  parameters: CuuLive2DParameter[];
+  motions: Record<CuuLive2DMotionId, CuuLive2DMotion>;
 };
 ```
 
+`validateCuuLive2DManifest()` 当前会检查：
+
+- `body_backfur`、`tail`、`front_paws`、`head`、`lace_bib`、`bow`、`tassel_l`、`tassel_r` 八个必需图层。
+- `root`、body/head/tail/front paw/collar/bow/tassel 骨骼引用完整。
+- `ParamAngleX/Y/Z`、眼睛、尾巴、围兜、蝴蝶结、流苏、前爪等必需参数完整。
+- motion 参数必须存在。
+- 若状态为 `cubism_exported`，必须有 `model3_json`、`moc3` 和 texture。
+
+`pet-surface.ts` 当前默认顺序：
+
+```text
+renderDesktopPetSurface()
+  -> renderDesktopCuuAtlasState/Sprite(...)   # 仍生成 fallback 诊断
+  -> renderDesktopCuuLive2DPrototype...       # 默认主视觉
+  -> data-cuu-visual-mode="live2d_prototype"
+```
+
+这意味着：运行态优先显示同源拆层 rig；旧 18 clip atlas 继续作为 fallback 和对照，不再作为默认主视觉。
+
 ### 9.2 Runtime 策略
 
-1. `pet-surface` 启动时优先检测 Live2D manifest。
-2. Live2D 资源加载成功：使用 Live2D renderer。
-3. Live2D 加载失败：自动降级到当前 atlas renderer。
-4. reduced-motion：不播放复杂 motion，只做 blink/微参数或直接降到静态 reduced frame。
-5. `sse-status:retrying/closed`：Live2D 可切 `offline` 表情；如果 runtime 失败，sprite 显示离线。
+1. `pet-surface` 启动时默认尝试 `prototype_layered` renderer。
+2. Live2D prototype manifest 校验成功：使用 layered rig renderer。
+3. 正式 Cubism 导出就绪后：同一个 manifest contract 从 `prototype_layered` 升级为 `cubism_exported`。
+4. Live2D / Cubism 加载失败：自动降级到当前 atlas renderer。
+5. reduced-motion：关闭复杂层动画和眨眼遮罩，仅保留状态文案与可点动作。
+6. `sse-status:retrying/closed`：card mode 中优先映射为 `worried` 或 `offline` Live2D motion；fallback sprite 仍使用 `worried_ears` / `offline_sleep`。
 
 ### 9.3 许可与依赖风险
 
@@ -434,6 +592,7 @@ GIF 不允许：
 |---|---|---|---|
 | L2D-P0 | 分层规范与概念图 | 本文 + `cuu-live2d-layer-breakdown-concept.png` | 角色和拆件方向明确 |
 | L2D-P1 | 正面基准稿 / 生产板 | `cuu-live2d-front-model-concept.png` + `cuu-live2d-psd-production-board.png` | Cuu 外观与概念图一致，拆件清晰 |
+| L2D-P1.5 | 同源拆层 runtime prototype | `cuu-layered-rig-v0` 8 layer PNG + TS manifest/runtime | 默认 pet visual 使用 layered rig，三帧截图和 DOM dump 证明不是 atlas / 静态图 |
 | L2D-P2 | 分层 PSD | `cuu-live2d-v0.psd` + `cuu-live2d-v0-layer-manifest.json` | Cubism 可导入，无同名/杂点/丢层 |
 | L2D-P3 | Cubism 绑定 | `.cmo3` 源 + exported `.model3.json` 套件 | 呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可动 |
 | L2D-P4 | Tauri runtime | `cuu-live2d-runtime.ts` | `pet` window 优先加载 Live2D，失败降级 sprite |
