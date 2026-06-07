@@ -1,10 +1,11 @@
-import type { CuuIdleMicroAction, CuuMotionHint, CuuSpriteAtlasClipState } from "@workhub/cuu";
+import { defaultCuuBongoModelPack, type CuuIdleMicroAction, type CuuMotionHint, type CuuSpriteAtlasClipState } from "@workhub/cuu";
 
 export type DesktopCuuBongoRender = {
   html: string;
   css: string;
   runtime_kind: "bongo_cuu";
   status: "p1_default_low_uncanny";
+  model_pack_id: string;
   state: CuuSpriteAtlasClipState | CuuIdleMicroAction;
   motion_state: CuuSpriteAtlasClipState;
   component_count: number;
@@ -164,12 +165,13 @@ function renderDesktopCuuBongo(
   return {
     runtime_kind: "bongo_cuu",
     status: "p1_default_low_uncanny",
+    model_pack_id: defaultCuuBongoModelPack.pack_id,
     state,
     motion_state: motionState,
     component_count: componentCount,
     duration_ms: durationForState(motionState),
     css: desktopCuuBongoCss,
-    html: `<div class="wh-cuu-bongo" data-cuu-bongo-runtime="bongo_cuu" data-cuu-bongo-status="p1_default_low_uncanny" data-cuu-bongo-state="${escapeHtml(motionState)}" data-cuu-bongo-requested-state="${escapeHtml(state)}" data-cuu-bongo-component-count="${componentCount}" aria-label="${escapeHtml(labelForState(motionState))}" style="${escapeHtml(style)}">
+    html: `<div class="wh-cuu-bongo" data-cuu-bongo-runtime="bongo_cuu" data-cuu-model-pack="${escapeHtml(defaultCuuBongoModelPack.pack_id)}" data-cuu-default-visual-gate="low_uncanny" data-cuu-bongo-status="p1_default_low_uncanny" data-cuu-bongo-state="${escapeHtml(motionState)}" data-cuu-bongo-requested-state="${escapeHtml(state)}" data-cuu-bongo-component-count="${componentCount}" aria-label="${escapeHtml(labelForState(motionState))}" style="${escapeHtml(style)}">
       <span class="wh-cuu-bongo-shadow"></span>
       <span class="wh-cuu-bongo-tail"></span>
       <span class="wh-cuu-bongo-body"><span class="wh-cuu-bongo-cream"></span></span>

@@ -426,11 +426,14 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.equal(idle.visual_mode, "bongo_cuu");
   assert.equal(idle.bongo.runtime_kind, "bongo_cuu");
   assert.equal(idle.bongo.status, "p1_default_low_uncanny");
+  assert.equal(idle.bongo.model_pack_id, "cuu-bongo-p1");
   assert.equal(idle.bongo.motion_state, "idle_tail_sway");
   assert.equal(idle.bongo.component_count, 31);
   assert.equal(idle.sprite.clip.state, "idle_tail_sway");
   assert.match(idle.html, /data-cuu-visual-mode="bongo_cuu"/u);
   assert.match(idle.html, /data-cuu-bongo-runtime="bongo_cuu"/u);
+  assert.match(idle.html, /data-cuu-model-pack="cuu-bongo-p1"/u);
+  assert.match(idle.html, /data-cuu-default-visual-gate="low_uncanny"/u);
   assert.match(idle.html, /data-cuu-bongo-state="idle_tail_sway"/u);
   assert.match(idle.html, /wh-cuu-bongo-paw/u);
   assert.match(idle.html, /wh-cuu-bongo-eye/u);

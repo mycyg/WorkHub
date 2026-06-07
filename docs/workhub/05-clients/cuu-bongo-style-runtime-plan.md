@@ -30,6 +30,8 @@ visuals:
 |---|---|
 | 默认 renderer | `data-cuu-visual-mode="bongo_cuu"` |
 | Bongo runtime | `data-cuu-bongo-runtime="bongo_cuu"` |
+| 默认模型包 | `data-cuu-model-pack="cuu-bongo-p1"` |
+| 低恐怖谷门 | `data-cuu-default-visual-gate="low_uncanny"` |
 | 状态 | `p1_default_low_uncanny` |
 | 组件数 | `31` 个 DOM/CSS 组件 |
 | PSD 暴露 | `live2d=null`，`layers=[]`，默认 HTML 不含 `data-psd-layer` |
@@ -92,6 +94,28 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 
 对 Cuu 来说，P1 的成功标准不是“像真猫”，而是“用户愿意让它待在右下角”。
 
+### 1.1 BongoCat 参考实现吸收点
+
+已下载到 `reference/ayangweb-BongoCat/` 的参考项目只用于学习，不提交进仓库。对 WorkHub 有价值的实现点如下：
+
+| BongoCat 能力 | 参考落点 | WorkHub 当前状态 | 后续落点 |
+|---|---|---|---|
+| 可替换模型 | `src/stores/model.ts`、`src/composables/useModel.ts` | 新增 `packages/cuu/src/model-pack.ts` 作为 Cuu 模型包契约；默认包为 `cuu-bongo-p1` | P2 做 `Cuu model preset + custom model slot`，Live2D 通过后作为另一个 pack |
+| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算 | P1d 加鼠标平滑视线、pass-through 切换、缩放/透明度设置 |
+| 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动和保存位置 | P1d 补 hover 避让、屏幕边界、透明度、缩放 |
+| 低恐怖谷默认 | BongoCat 低拟真角色动作 | WorkHub 默认 `bongo_cuu`，PSD draft 被降级为实验 | 默认候选必须过 `assertCuuModelPackCanBeDefault()` |
+| 离线隐私友好 | README 明确离线运行 | Cuu 本体可在 webview 里离线渲染，数据从 WorkHub 安全通道来 | 设备输入监听只做本地手感，不采集无关数据 |
+
+新增代码门禁：
+
+```text
+packages/cuu/src/model-pack.ts
+packages/cuu/src/model-pack.test.ts
+apps/desktop-webview/src/cuu-bongo-runtime.ts
+```
+
+`CuuModelPackManifest` 把“默认可展示”收敛为一个可测试合同：默认包必须低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖所有业务动作与 idle 微动作。`cuu-psd-draft-v1` 这类资产即使技术可挂载，也会因为 `default_not_approved`、`visual_gate_failed`、`psd_default_asset` 被拒绝为默认。
+
 ---
 
 ## 2. 当前实现落点
@@ -147,6 +171,7 @@ packages/cuu/src/live2d-psd-draft.ts                      # PSD draft validator
 type DesktopCuuBongoRender = {
   runtime_kind: "bongo_cuu";
   status: "p1_default_low_uncanny";
+  model_pack_id: "cuu-bongo-p1";
   state: CuuSpriteAtlasClipState | CuuIdleMicroAction;
   motion_state: CuuSpriteAtlasClipState;
   component_count: number;
@@ -162,6 +187,8 @@ type DesktopCuuBongoRender = {
 |---|---|
 | `visual_mode` | `bongo_cuu` |
 | `data-cuu-bongo-runtime` | `bongo_cuu` |
+| `data-cuu-model-pack` | `cuu-bongo-p1` |
+| `data-cuu-default-visual-gate` | `low_uncanny` |
 | `data-cuu-bongo-status` | `p1_default_low_uncanny` |
 | `data-cuu-live2d-status` | `experiment_hidden` |
 | `data-cuu-live2d-layer-count` | `0` |
@@ -198,6 +225,7 @@ type DesktopCuuBongoRender = {
 - 全身可见，不允许只露耳朵、只露局部或被气泡裁切。
 - 默认 HTML 不允许出现 `data-psd-layer`。
 - DOM 必须出现 `data-cuu-bongo-runtime="bongo_cuu"`。
+- DOM 必须出现 `data-cuu-model-pack="cuu-bongo-p1"` 和 `data-cuu-default-visual-gate="low_uncanny"`。
 - 必须有 paws / eyes / tail 三类组件。
 - 搜索、同步、庆祝三类状态必须有对应道具层：`search-glass` / `sync-ring` / `spark`。
 - 任何多腿、多眼、尾巴断裂、脸部拟真漂移都直接失败。
@@ -233,6 +261,18 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 - browser CDP 只能作为快速视觉检查，不能替代最终透明窗口录屏。
 - motion capture 会先用 `first-frame-probe.png` 等到 `orange_pixels>=8000` 且 `visual_pixels>=12000`，通过后才开始写入 `frame-000.png`。
 
+模型包门：
+
+```text
+pnpm --filter @workhub/cuu test
+```
+
+必须通过：
+
+- `Cuu Bongo model pack is the approved low-uncanny default`
+- `Cuu default model pack covers all business and idle actions`
+- `Cuu PSD draft packs are blocked from becoming the default surface`
+
 ---
 
 ## 6. 后续施工
@@ -242,8 +282,41 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 | BONGO-P1a | 默认低恐怖谷 renderer | `cuu-bongo-runtime.ts` | 已落；浏览器截图和 DOM 证明默认不是 PSD |
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
 | BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
-| BONGO-P1d | 设置和窗口能力 | scale / opacity / pass-through / hide-on-hover / keep-in-screen | 对齐 BongoCat 的桌宠窗口体验 |
-| BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot | 可从默认 Bongo Cuu 切到未来 Live2D |
+| BONGO-P1d | 设置和窗口能力 | scale / opacity / pass-through / hide-on-hover / keep-in-screen | 对齐 BongoCat 的桌宠窗口体验；需要真实 Tauri 设置页与截图 |
+| BONGO-P1e | 输入手感增强 | cursor smoothing / look-at-mouse 参数 / hover 避让 | 吸收 BongoCat 的 `Ticker` 平滑思路，但只驱动 Cuu，不采集无关输入 |
+| BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot + `CuuModelPackManifest` loader | 可从默认 Bongo Cuu 切到未来 Live2D；任何 pack 都先跑 default gate |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
 
 当前取舍：**P1 先让 Cuu 可爱、稳定、愿意常驻；P2/P3 再追求 Live2D 高表现力。**
+
+### 6.1 P1d 详细施工路径
+
+| 子任务 | TS/Rust 落点 | 验收 |
+|---|---|---|
+| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；Rust `set_pet_window_mode` 读取 scale 后计算窗口尺寸 | 4 档截图，Cuu 不裁切，card mode 仍扩左上 |
+| 透明度 | preference 写入 `opacity`，pet surface root 设置 CSS opacity；Rust 可选跟随窗口 opacity | 截图对比 60/80/100，bubble 文本仍可读 |
+| 点击穿透 | Rust command `set_pet_window_pass_through`，body/card/hover 时临时关闭穿透 | 桌宠不挡鼠标；点击 Cuu 本体仍可拖动 |
+| hover 避让 | `sample_pet_cursor_near` + idle scheduler；靠近时 look/wave，停留后可半透明或让开 | 录屏能看到靠近反应，不是只变 cursor |
+| 屏幕边界 | 已有 `clamp_position`，补多显示器/缩放 QA | 贴边不出屏，重启恢复位置 |
+
+### 6.2 P2 模型包详细路径
+
+`CuuModelPackManifest` 不是 UI 文档，而是后续资产加载器的源合同：
+
+```text
+Cuu model pack
+  -> manifest.json
+  -> renderer kind: bongo_cuu | sprite_atlas | live2d_cubism
+  -> visual_gate
+  -> motions map
+  -> window_affordances
+  -> assets
+```
+
+加载顺序：
+
+1. 读取内置 `cuu-bongo-p1`，跑 `assertCuuModelPackCanBeDefault()`。
+2. 如果用户选择自定义 pack，只能在设置页预览；未通过 default gate 只能标 `experimental`，不能设为默认。
+3. Live2D Cubism pack 必须包含 `.model3.json` / `.moc3` / texture / physics / motions，并通过多秒桌宠录屏。
+4. PSD draft 只能作为 source/probe，不得作为 renderer default。
+5. 加载失败时回退 `cuu-bongo-p1`，再回退 sprite atlas；绝不回退到未验收 PSD。

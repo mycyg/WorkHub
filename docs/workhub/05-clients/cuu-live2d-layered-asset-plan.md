@@ -10,6 +10,7 @@ owner: workflow
 > **结论**：Cuu 的长期高表现力目标应优先走 **Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。现有 sprite atlas 继续保留为 P1 可运行资产和降级层；GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案。  
 > **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
 > **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+> **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -49,6 +50,8 @@ owner: workflow
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
 这张图是 **当前默认 Cuu**：因为 PSD draft 视觉有恐怖谷风险，P1 默认先使用 Bongo-style 低拟真 renderer。Live2D 专篇继续保留分层资产与 Cubism 施工计划，但默认用户体验不再展示未精修 PSD。
+
+默认门禁已代码化：`assertCuuModelPackCanBeDefault()` 要求默认包低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖全部业务动作和 idle 微动作。PSD 分层路线的目标因此不是“把当前草案强行上线”，而是把它推进到真正可绑定、可录屏、可替换默认的 Cubism model pack。
 
 ---
 
@@ -295,6 +298,30 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/
 - 视觉未通过：动作幅度仍偏探针级，缺 Cubism mesh deformation、物理链、参数 tween 和鼠标凝视。
 - 资产未通过：PSD draft 仍有尾巴厚重、边缘残留、遮挡补画不足和个别生成件风格漂移，不能导入 Cubism 后直接交付。
 - 施工结论：`psd_draft_probe` 是后续 Cubism 绑定前的可运行验证层；它让 QA 能持续检查“分层 PNG 是否真的能被运行时渲染”，但不能替代正式 Live2D，也不能默认展示给用户。
+
+### 3.4 Live2D Model Pack 晋级条件
+
+Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackManifest`：
+
+| 字段 | 通过标准 |
+|---|---|
+| `runtime_kind` | `live2d_cubism` |
+| `default_policy.status` | `approved_default`，且有视觉审查记录 |
+| `visual_gate.low_uncanny` | 多人审查无恐怖谷、无拟真漂移 |
+| `visual_gate.no_ai_artifact` | 无多腿、多眼、断尾、绿边、局部裁切 |
+| `visual_gate.alive_motion` | 10 秒 idle 与业务动作录屏肉眼通过 |
+| `source.assets` | 不允许 `psd_draft` 标记为 `default_candidate=true` |
+| `motions` | 覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、审批、检索、同步、担心、庆祝等 18 个动作 |
+| `window_affordances` | 至少支持透明窗口、置顶、拖动、贴屏 |
+
+Live2D 晋级验收流程：
+
+1. 精修 PSD：补画遮挡、重绘尾巴链、清绿边、统一线条粗细和脸部比例。
+2. Cubism 绑定：建立 mesh / deformer / parameter / physics，导出 `.model3.json`、`.moc3`、textures、motions。
+3. Webview runtime：加载 Cubism pack，并保留 `cuu-bongo-p1` fallback。
+4. 截图与录屏：browser CDP + Windows Tauri `PrintWindow` + Linux/macOS 透明窗口各一套。
+5. 跑 `pnpm --filter @workhub/cuu test`，新增 Live2D model pack 测试必须通过。
+6. 视觉审查：如果仍有恐怖谷、卡顿或肢体幻觉，保持 `experimental`，默认继续 Bongo。
 
 ---
 

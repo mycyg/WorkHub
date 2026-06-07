@@ -15,7 +15,7 @@ owner: workflow
 > **概念图**：客户端、桌宠、澄清与检索视觉方向见 [`page-concepts.md`](./page-concepts.md)，Cuu 形象规范见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)。
 > **独立桌宠与绿幕素材方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。Cuu 的最终工程形态是右下角独立透明 `pet` window，不是主窗内浮层；视觉资产使用 GPT Image 绿幕多帧图，抠图后进入 sprite atlas。
 > **Live2D 高表现力方案**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。sprite atlas 是先跑通和失败降级层；长期目标优先是 Cuu 分层 PSD + Cubism 模型，GIF 只允许做临时预览。
-> **当前截图 / 动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对 Web、desktop webview、browser pet preview 和真实 Tauri `Cuu` 窗口做截图，并对 `Cuu` 顶层窗口做 32 帧 motion capture。首轮发现 card mode 事件卡裁切；第一轮 card layout 又暴露 Cuu 只露耳朵 / 局部的失败样例；随后又发现静态 fallback 呼吸/缩放不能算鲜活动作。同日已补 bridge placement 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev server sprite asset 路径修复、运行态禁用静态 fallback 和多帧 motion QA，最终事件卡窗口可扩到 `394 x 568`，Cuu 完整身体可见，body-only 第一屏有真实摇尾动作。2026-06-08 已把默认视觉切到 Bongo-style 低恐怖谷 renderer，完成 P1b 动作增强、真实 Tauri `PrintWindow` 抓取和 P1c first-painted 首帧门禁：wave/search/sync/revise/celebrate 可辨，GIF/MP4 已产出，最新 frame 000 已是 body-only Cuu 全身可见。Live2D 144 层 PSD v1 继续作为并行实验线，只有 Cubism 录屏通过后才允许替换 Bongo 默认。
+> **当前截图 / 动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对 Web、desktop webview、browser pet preview 和真实 Tauri `Cuu` 窗口做截图，并对 `Cuu` 顶层窗口做 32 帧 motion capture。首轮发现 card mode 事件卡裁切；第一轮 card layout 又暴露 Cuu 只露耳朵 / 局部的失败样例；随后又发现静态 fallback 呼吸/缩放不能算鲜活动作。同日已补 bridge placement 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev server sprite asset 路径修复、运行态禁用静态 fallback 和多帧 motion QA，最终事件卡窗口可扩到 `394 x 568`，Cuu 完整身体可见，body-only 第一屏有真实摇尾动作。2026-06-08 已把默认视觉切到 Bongo-style 低恐怖谷 renderer，完成 P1b 动作增强、真实 Tauri `PrintWindow` 抓取、P1c first-painted 首帧门禁和 BONGO-REF 默认模型包门禁：wave/search/sync/revise/celebrate 可辨，GIF/MP4 已产出，最新 frame 000 已是 body-only Cuu 全身可见，`cuu-bongo-p1` 是当前唯一 `approved_default`。Live2D 144 层 PSD v1 继续作为并行实验线，只有 Cubism 录屏和 `CuuModelPackManifest` 默认门都通过后才允许替换 Bongo 默认。
 
 本篇小节：
 
@@ -81,6 +81,7 @@ owner: workflow
 | `packages/cuu/src/atlas-manifest.ts` | Cuu atlas contract | 真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验 |
 | `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu motion pack asset manifest | 指向 `cuu-p1-motion-pack.png` atlas，并在 clip 上保留 source-green / alpha 路径 |
 | `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 clip sheet background sprite 或 `<img>` frame stack；dev server `/src/assets/...` 保持原路径，打包态 `/assets/...` 才相对化为 `./assets/...`；内联静态 Cuu fallback 只作为非运行态兜底，不可替代真实动作 |
+| `packages/cuu/src/model-pack.ts` | Cuu model pack default gate | 对齐 BongoCat 的可替换模型思想，当前 `cuu-bongo-p1` 为唯一 `approved_default`；PSD draft 资产即使可渲染，也不能作为默认候选 |
 | `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset pack | 已有 18 个动作 clip 的绿幕源图、透明 alpha 图、motion pack atlas 和 `static/cuu-static-fallback-v1-alpha-clean.png` 内联兜底图 |
 | `packages/cuu/src/idle-scheduler.ts` | Cuu alive behavior scheduler | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；Rust 不拥有动画状态 |
 | `scripts/qa/cuu-tauri-smoke.ps1` | Windows Tauri runtime smoke | 启动真实 debug app，定位 `Cuu` 顶层窗口，校验 visible/topmost/bottom-right，隐藏主窗，并用 `PrintWindow(PW_RENDERFULLCONTENT)` 对透明/layered WebView2 pet 窗口做像素检查；若 1420 未监听，会自动隐藏启动 `@workhub/desktop-webview` dev server，避免抓到 WebView 错误页 |
@@ -178,7 +179,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
-- **视觉资产（新增硬约束）**：P1 不再接受恐怖谷 PSD、抽象图标或 inline 静态 fallback 作为完成标准；当前默认使用 `bongo_cuu` 低恐怖谷 renderer，atlas / Hatch 作为 fallback，PSD / Live2D 作为实验线。Bongo P1b 已补挥手、检索、同步、打回、抱文件、庆祝和拖拽动作，并已通过 browser CDP 与真实 Tauri `PrintWindow` 多帧抓取；P1c 已补 first-painted 首帧门禁，frame 000 不再空白。真实运行态必须显示可辨认的非缩放动作；静态 fallback 只能用于诊断或非运行兜底，不能作为 motion QA 通过依据。生产前继续做动作幅度二轮、窗口设置、anchor 微调、WebP/PNG 压缩、alpha 边缘 QA、长时间 idle 性能检查。
+- **视觉资产（新增硬约束）**：P1 不再接受恐怖谷 PSD、抽象图标或 inline 静态 fallback 作为完成标准；当前默认使用 `bongo_cuu` 低恐怖谷 renderer，atlas / Hatch 作为 fallback，PSD / Live2D 作为实验线。Bongo P1b 已补挥手、检索、同步、打回、抱文件、庆祝和拖拽动作，并已通过 browser CDP 与真实 Tauri `PrintWindow` 多帧抓取；P1c 已补 first-painted 首帧门禁，frame 000 不再空白；BONGO-REF 已把 `CuuModelPackManifest` 接成默认门禁，`cuu-bongo-p1` 通过，PSD draft 默认候选失败。真实运行态必须显示可辨认的非缩放动作；静态 fallback 只能用于诊断或非运行兜底，不能作为 motion QA 通过依据。生产前继续做动作幅度二轮、窗口设置、model pack loader、anchor 微调、WebP/PNG 压缩、alpha 边缘 QA、长时间 idle 性能检查。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
@@ -773,9 +774,9 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 
 桌宠动画技术的详细方案见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 与 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。本端级规格只固定工程边界：
 
-- P1 默认必须能不依赖专业绑定工具运行，因此当前采用 `bongo_cuu` DOM/CSS 低恐怖谷 renderer；详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。P1b 已通过 browser 状态墙和真实 Tauri contact sheet 验证动作可读性；P1c 已通过 first-painted 首帧门禁，frame 000 不再是 blank。
+- P1 默认必须能不依赖专业绑定工具运行，因此当前采用 `bongo_cuu` DOM/CSS 低恐怖谷 renderer；详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。P1b 已通过 browser 状态墙和真实 Tauri contact sheet 验证动作可读性；P1c 已通过 first-painted 首帧门禁，frame 000 不再是 blank；BONGO-REF 已把参考 BongoCat 的模型可替换思想收敛成 `CuuModelPackManifest`，默认包为 `cuu-bongo-p1`。
 - Sprite atlas / Hatch pack 作为 fallback 与动作素材参考，不能替代默认可爱度验收。
-- Live2D 是 Cuu 长期高表现力主线：用 GPT Image / 人工精修产出分层 PSD，Cubism 绑定后导出 `.model3.json`；但只有美术 QA 和真实 Tauri 录屏通过后，才允许替换 `bongo_cuu` 默认。
+- Live2D 是 Cuu 长期高表现力主线：用 GPT Image / 人工精修产出分层 PSD，Cubism 绑定后导出 `.model3.json`；但只有美术 QA、真实 Tauri 录屏和 `assertCuuModelPackCanBeDefault()` 都通过后，才允许替换 `bongo_cuu` 默认。
 - Rive 可作为许可或工具链阻塞时的中间路线，因为 state machine 与 WorkHub 的事件映射天然契合。
 - GIF 只作为 motion storyboard / 文档预览 / 临时演示，不能作为最终桌宠 renderer。
 - Lottie 适合小动效和过渡，不建议承载复杂桌宠人格。

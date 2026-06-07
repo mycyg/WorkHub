@@ -4,5 +4,6 @@ export * from "./sprite-manifest.js";
 export * from "./atlas-manifest.js";
 export * from "./live2d-manifest.js";
 export * from "./live2d-psd-draft.js";
+export * from "./model-pack.js";
 export * from "./idle-scheduler.js";
 export * from "./controller.js";
