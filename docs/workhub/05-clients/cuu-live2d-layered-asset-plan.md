@@ -11,6 +11,7 @@ owner: workflow
 > **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
 > **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 > **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
+> **2026-06-08 P1e 更新**：Bongo 默认已完成 hover/tap/drag 真实 Tauri 输入录屏底座，Live2D 替换默认前必须重跑同一输入手感门。分层资产下一步不是继续美化 v1，而是按第 5.6 节做 `generated-parts-v2`：更细的眼皮、嘴型、耳朵、尾巴段、蕾丝、流苏和遮挡补画组件，全部用 manifest 锚点拼装。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -547,6 +548,126 @@ type CuuLayerPlacement = {
 - 拼装预览必须先过“全身可见、脚底 anchor 稳定、没有只露耳朵、没有静态缩放假动”。
 - 只有通过 Cubism 导入、mesh 绑定和多秒桌宠录屏后，才能从 `draft_created_not_visual_pass` 升级。
 
+### 5.6 部件级生图 + 拼装 v2 施工手册
+
+用户提出的“能否生成非常多不同分层的素材，然后调整大小拼接”，本项目采用肯定路线，但把它约束成 **component pack -> placement manifest -> PSD/Cubism**，而不是凭肉眼拖图。v1 已证明 144 层 PSD draft 可以生成；v2 的目标是消除恐怖谷、五条腿和尾巴错位。
+
+#### 5.6.1 生产批次
+
+| 批次 | 建议数量 | 必须部件 | 备注 |
+|---|---:|---|---|
+| `face-base-v2` | 24-36 | 头底、脸颊、奶油口鼻区、鼻子、胡须、腮红 | 头底不能自带完整眼睛，避免后续眨眼重影 |
+| `eyes-v2` | 40-60 | 眼白、虹膜、瞳孔、高光、上眼皮、下眼皮、闭眼线、半闭眼 | 左右眼可共享风格但不得直接镜像到僵硬 |
+| `mouth-v2` | 20-32 | 微笑、张口、担心、呼吸口、睡觉口、叼文件口 | 所有嘴型要围绕同一鼻子 anchor |
+| `ears-v2` | 16-24 | 左右耳底、耳内、耳尖高光、压耳候选 | 压耳是 worried/offline 的关键表现 |
+| `body-v2` | 32-48 | 背毛、胸腹、前爪、后爪、爪垫、肩部补画 | 任何多腿/缺爪整批失败 |
+| `tail-chain-v2` | 32-48 | 尾根、尾巴段 1-5、尾尖、花纹覆盖片 | 每段必须可连续拼接，段间不许粗细突变 |
+| `lace-bib-v2` | 48-80 | 围兜底、蕾丝边分片、孔洞补片、阴影片 | 蕾丝是高风险区，自动抠图后必须人工放大审查 |
+| `bow-v2` | 20-32 | 左翼、右翼、中心结、折痕、高光 | 黑蝴蝶结是参考照识别点，不能丢 |
+| `tassels-v2` | 36-60 | 左右绳段、珍珠、红珠、金属环、摆动候选 | 珠子数量和颜色必须稳定 |
+| `paint-behind-v2` | 24-40 | 围兜后胸毛、爪后胸毛、尾根后身体、蝴蝶结后蕾丝 | 这是 Live2D 转头/摆动不露洞的核心 |
+
+每批用 3-5 张绿幕部件板生成，不要求一张图塞满所有零件。每张板只做同一类部件，保持正交视角、同线宽、同光照。
+
+#### 5.6.2 文件命名与目录
+
+```text
+apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v2/
+  prompts/
+    face-base-v2.prompt.txt
+    eyes-v2.prompt.txt
+  source-green/
+    face-base-v2-board-01-green.png
+    eyes-v2-board-01-green.png
+  components/
+    face-base-v2/
+      Head_Base_A.png
+      Muzzle_Cream_A.png
+    eyes-v2/
+      Eye_L_Iris_A.png
+      Eye_R_Iris_A.png
+  reports/
+    face-base-v2-extraction-report.json
+    eyes-v2-edge-report.json
+  manifest/
+    cuu-generated-parts-v2.components.json
+    cuu-generated-parts-v2.placements.json
+```
+
+文档目录只同步概念板、编号板、contact sheet 和报告摘要；真正的源素材进入 `apps/desktop-webview/src/assets/cuu/live2d/source/`。如果 PSD / Cubism 源文件体积过大，后续再引入 Git LFS 或 release asset，但不放进 `reference`。
+
+#### 5.6.3 组件记录结构
+
+```ts
+type CuuGeneratedComponent = {
+  component_id: string;
+  batch: string;
+  source_board: string;
+  role:
+    | "head"
+    | "eye"
+    | "eyelid"
+    | "mouth"
+    | "ear"
+    | "body"
+    | "paw"
+    | "tail"
+    | "lace"
+    | "bow"
+    | "tassel"
+    | "paint_behind";
+  alpha_png: string;
+  bbox: { x: number; y: number; width: number; height: number };
+  anchor: { x: number; y: number };
+  mirror_pair?: string;
+  candidate_score: number;
+  rejection_reason?: string;
+};
+```
+
+`candidate_score` 不是美术自动裁决，只是排序信号。最终是否进入 PSD，必须通过人工视觉审查和自动 QA 双门。
+
+#### 5.6.4 锚点规则
+
+| 部件 | Anchor |
+|---|---|
+| 头底 | 头部中心线与鼻梁交点 |
+| 眼睛 | 瞳孔中心 |
+| 上/下眼皮 | 对应眼睛外角到内角的局部坐标 |
+| 嘴型 | 鼻子下方固定 `mouth_socket` |
+| 耳朵 | 耳根内侧下点 |
+| 前爪 | 腕部连接点 |
+| 后爪 | 脚底与身体连接点 |
+| 尾段 | 段首关节中心；下一段 anchor 贴上一段尾端 |
+| 蕾丝片 | 围兜外缘局部点 |
+| 流苏绳 | 蝴蝶结下缘连接点 |
+| 珠子 | 珠心 |
+
+拼装时先锁 `body_center`、`head_center`、`mouth_socket`、`ground_line` 四个全局基准。任何候选部件如果需要大幅拉伸才能对齐，说明风格或透视不对，不能硬拼。
+
+#### 5.6.5 自动 QA
+
+| QA | 方法 | 失败阈值 |
+|---|---|---|
+| 绿边 | 采样 alpha 边界 RGB，检测 `#00ff00` 残留 | 边界绿像素占比 > 1% |
+| 孤立像素 | alpha 连通域检测 | 主体外连通域 > 12 px |
+| 肢体数量 | component role 计数 + 拼装预览人工复核 | 前爪/后爪/尾巴数量异常 |
+| 角色漂移 | 与正面基准的主色、线宽、眼距、耳距比对 | 超出 v2 report 设定区间 |
+| 拼装遮挡 | 渲染 0/25/50/75/100% 摆尾和围兜摆动预览 | 出现露洞或错层 |
+| 运行时 | browser pet surface + Tauri `PrintWindow` 多帧 | 只露耳朵、空白、只有缩放、多腿多眼 |
+
+自动 QA 只负责拦截明显错误；Cuu 是否“可爱、像 Cuu、不恐怖谷”仍由人工审查决定。
+
+#### 5.6.6 v2 晋级路线
+
+1. 生成 `generated-parts-v2` 的 10 个批次，每批保留 prompt、绿幕源图、透明 components、report。
+2. 选出每个角色部件的首选 component，写入 `placements.json`。
+3. 运行 `build-cuu-live2d-generated-psd.py --version v2`，输出 PSD draft v2、per-layer PNG、preview。
+4. 跑 `psd_draft_probe` browser 多帧，确认不是 8 层 prototype、不是静态 fallback。
+5. 跑真实 Tauri `PrintWindow` body-only + card mode + input-handfeel 三类录屏。
+6. 人工审查 Cuu 是否仍像参考照里的橘猫 Cuu：白蕾丝、黑蝴蝶结、珍珠流苏、红珠、圆眼、奶油脸都必须在。
+7. 只有 v2 视觉通过后，才导入 Cubism；否则继续生成/精修局部部件，不把 draft 默认给用户看。
+
 ---
 
 ## 6. PSD 装配流程
@@ -777,6 +898,7 @@ GIF 不允许：
 | L2D-P1 | 正面基准稿 / 生产板 | `cuu-live2d-front-model-concept.png` + `cuu-live2d-psd-production-board.png` | Cuu 外观与概念图一致，拆件清晰 |
 | L2D-P1.5 | 同源拆层 runtime prototype | `cuu-layered-rig-v0` 8 layer PNG + TS manifest/runtime | 已降级为 regression fixture；不能作为鲜活感通过证据 |
 | L2D-P1.6 | PSD draft runtime probe | `generated-psd-draft-v1` 72 runtime layers + `psd_draft_probe` renderer + 多帧截图 | 实验截图证明 PSD draft layers 能运行，且不是 8 层 prototype / atlas / 静态图；因恐怖谷风险不得默认展示，仍标记 final visual fail |
+| L2D-P1.7 | 生成式部件 v2 产线 | `generated-parts-v2` 10 批组件、prompt、绿幕源图、透明 components、placement manifest、QA report | 解决 v1 恐怖谷、尾巴错位、遮挡补画不足；任何多腿/多眼/绿边整批失败 |
 | L2D-P2 | 精修分层 PSD | `cuu-live2d-v0.psd` + `cuu-live2d-v0-layer-manifest.json` | Cubism 可导入，无同名/杂点/丢层，遮挡补画完整 |
 | L2D-P3 | Cubism 绑定 | `.cmo3` 源 + exported `.model3.json` 套件 | 呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可动 |
 | L2D-P4 | Tauri Cubism runtime | `cuu-live2d-runtime.ts` / Cubism adapter | `pet` window 优先加载 Cubism 模型，失败降级 PSD probe / sprite |

@@ -10,6 +10,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -48,6 +49,8 @@ visuals:
 
 ![Cuu Bongo P1c first-painted Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
 
+![Cuu Bongo P1e input handfeel Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
@@ -55,7 +58,8 @@ visuals:
 | 真实 Tauri 录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 通过；输出 contact sheet、GIF、MP4 和 diff report |
 | first-painted gate | 通过；`first_frame_gate.passed=true`，第 7 次 probe 后达到 `orange_pixels=9408`、`visual_pixels=15530` |
 | 真实窗口首帧 | 通过；P1c contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再把 blank 帧收进证据 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；下一步转向窗口体验和动作幅度二轮 |
+| 输入手感真实录屏 | 通过；P1e 场景用真实鼠标触发 cursor-near、hover、tap、drag、release，全程 body-only Cuu 可见，无离线卡片污染，窗口坐标从 `(1844,860)` 移到 `(1748,804)` |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1e-b 输入手感底座通过；下一步转向窗口设置真实截图、hover 避让、动作幅度二轮和 Live2D 精修 |
 
 证据文件：
 
@@ -101,7 +105,7 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 | BongoCat 能力 | 参考落点 | WorkHub 当前状态 | 后续落点 |
 |---|---|---|---|
 | 可替换模型 | `src/stores/model.ts`、`src/composables/useModel.ts` | 新增 `packages/cuu/src/model-pack.ts` 作为 Cuu 模型包契约；默认包为 `cuu-bongo-p1` | P2 做 `Cuu model preset + custom model slot`，Live2D 通过后作为另一个 pack |
-| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算；P1d-a 已把 scale / opacity / pass-through 接成偏好和 Rust bridge；P1e-a 已把 cursor-near 进入事件映射为立即 `look_at_mouse`，并把 pointer state 写入 DOM | P1e-b 继续做鼠标平滑视线、hover 避让和真实截图 |
+| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算；P1d-a 已把 scale / opacity / pass-through 接成偏好和 Rust bridge；P1e-a 已把 cursor-near 进入事件映射为立即 `look_at_mouse`，并把 pointer state 写入 DOM；P1e-b 已用真实 Tauri 录屏验证 hover/tap/drag 底座 | P1e-c 继续做鼠标平滑视线、hover 避让和 drag 姿态保持 |
 | 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动、保存位置、缩放几何、CSS 透明度和点击穿透命令 | P1d-b 补 hide-on-hover、keep-in-screen 多屏实测、Settings 视觉页与截图 |
 | 低恐怖谷默认 | BongoCat 低拟真角色动作 | WorkHub 默认 `bongo_cuu`，PSD draft 被降级为实验 | 默认候选必须过 `assertCuuModelPackCanBeDefault()` |
 | 离线隐私友好 | README 明确离线运行 | Cuu 本体可在 webview 里离线渲染，数据从 WorkHub 安全通道来 | 设备输入监听只做本地手感，不采集无关数据 |
@@ -260,6 +264,10 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 - 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/`。
 - browser CDP 只能作为快速视觉检查，不能替代最终透明窗口录屏。
 - motion capture 会先用 `first-frame-probe.png` 等到 `orange_pixels>=8000` 且 `visual_pixels>=12000`，通过后才开始写入 `frame-000.png`。
+- 输入手感场景使用 `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario input-handfeel -WaitSeconds 12 -FrameCount 24 -IntervalMs 180`。
+- 输入手感证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/`。
+- `input-handfeel` 场景会在启动 Tauri 前设置 `WORKHUB_DISABLE_SSE=1`，只隔离 QA 录屏中的离线卡片干扰；正式客户端仍启动 SSE worker 并显示离线/重连 Cuu 卡。
+- 输入手感 report 必须包含 `scenario="input-handfeel"`、`sse_disabled_for_scenario=true`、6 个 scenario events、`first_frame_gate.passed=true`，并且所有帧保持 body-only Cuu 全身可见。
 
 模型包门：
 
@@ -285,7 +293,8 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1d-a | 设置和窗口能力契约 | scale / opacity / pass-through 偏好、DOM/CSS、TS bridge、Rust command、几何缩放 | **已落**：`set_pet_window_settings`、`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through`、scaled body/card placement 和静态 QA 均已可测 |
 | BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | 对齐 BongoCat 的桌宠窗口体验；需要真实 Tauri 设置页、录屏和跨平台截图 |
 | BONGO-P1e-a | 输入手感合同 | `cursor_near` interaction、立即 `look_at_mouse`、DOM pointer QA attrs | **已落单测**：靠近不再等几秒；`data-pet-cursor-near` / `hovered` / `dragging` 可被截图脚本读取 |
-| BONGO-P1e-b | 输入手感真实 QA | cursor smoothing / look-at-mouse 参数 / hover 避让 / 拖拽录屏 | 吸收 BongoCat 的 `Ticker` 平滑思路，但只驱动 Cuu，不采集无关输入 |
+| BONGO-P1e-b | 输入手感真实 QA | hover / tap / drag 真实 Tauri 录屏，QA 隔离 SSE 干扰 | **已通过底座**：contact sheet/GIF/MP4/report 已落；全程 Cuu 可见，hover 有抬爪反馈，drag 会移动窗口；后续继续做鼠标平滑视线和 hover 避让 |
+| BONGO-P1e-c | 连续看鼠标与 hover 避让 | `cursor_x/y` 平滑映射、hover 遮挡时轻避让、drag 姿态保持到 release | 待做；完成后重跑同一 `input-handfeel` 真实 Tauri 门 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot + `CuuModelPackManifest` loader | 可从默认 Bongo Cuu 切到未来 Live2D；任何 pack 都先跑 default gate |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
 
@@ -298,7 +307,7 @@ pnpm --filter @workhub/cuu test
 | 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸 | **P1d-a 已落单测**；下一步补 4 档真实 Tauri 截图，Cuu 不裁切，card mode 仍从 body anchor 向左上扩 |
 | 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity | **P1d-a 已落单测**；下一步截图对比 60/80/100，bubble 文本仍可读 |
 | 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan | **P1d-a 已落单测**；下一步实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
-| hover / cursor near | `sample_pet_cursor_near` + idle scheduler；P1e-a 已新增 `cursor_near` interaction，进入附近区域立即 `look_at_mouse`，surface 输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` | P1e-b 录屏能看到靠近反应，不是只变 cursor；后续再做平滑视线与 hover 避让 |
+| hover / cursor near | `sample_pet_cursor_near` + idle scheduler；P1e-a 已新增 `cursor_near` interaction，进入附近区域立即 `look_at_mouse`，surface 输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging`；P1e-b 已有真实录屏底座 | 后续 P1e-c 做连续视线参数、hover 避让和重新录屏 |
 | 屏幕边界 | 已有 `clamp_position`，补多显示器/缩放 QA | 贴边不出屏，重启恢复位置 |
 
 P1d-a 已落代码路径：
@@ -331,7 +340,25 @@ cargo test
 | cursor-near 立即反应 | `packages/cuu/src/idle-scheduler.ts` 新增 `CuuIdleInteraction="cursor_near"`，reason 为 `cursor_near_start`，动作映射 `look_at_mouse` | **P1e-a 已落单测**：首次进入附近区域立即转头看；睡着时仍先 `wake_up` |
 | pointer state 可观测 | `apps/desktop-webview/src/pet-surface.ts` 接收 `DesktopPetPointerSnapshot`，输出 `data-pet-cursor-near`、`data-pet-hovered`、`data-pet-dragging` 和可选 `data-pet-last-pointer-ms` | **P1e-a 已落单测**：DOM 和 CSS contract 可被 browser CDP / Tauri capture 脚本读取 |
 | Bongo model pack 手感状态 | `packages/cuu/src/model-pack.ts` 将 `scale` / `opacity` / `pass_through` 更新为 `supported`，保持默认门禁与真实窗口能力一致 | **P1e-a 已落单测**：`defaultCuuBongoModelPack` 不再把已实现窗口能力标成 planned |
-| 真实录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 后续增加 hover / near / drag scenario，并把 DOM pointer attrs 写入 report | P1e-b：录屏中必须能看出靠近、悬停、点击、拖拽分别触发 `look_at_mouse` / `wave_hello` / `tap_bubble` / `drag_hold` |
+| 真实录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 新增 `input-handfeel` scenario：frame 1 cursor-near、frame 7 hover、frame 11 tap、frame 15 drag start、frame 16 drag move、frame 18 release；场景启动时设置 `WORKHUB_DISABLE_SSE=1` | **P1e-b 已通过底座**：24 帧真实 Tauri `PrintWindow` 录屏无离线卡污染；首帧 `orange_pixels=9416`、`visual_pixels=15536`；最大相邻变化 `1695` 像素；窗口坐标随拖拽移动 |
+
+P1e-b 当前证据：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/
+  cuu-motion-contact-sheet.png
+  cuu-motion-printwindow.gif
+  cuu-motion-printwindow.mp4
+  motion-diff-report.json
+  frames/frame-000.png ... frame-023.png
+```
+
+仍未算完成的输入手感：
+
+- `look_at_mouse` 还只是状态触发，不是连续眼球/头部跟随参数；后续需要 `cursor_x/y -> head_angle / eye_offset` 平滑。
+- hover 避让尚未做：Cuu 应在挡住鼠标目标时轻轻挪开或收起，而不是一直占着区域。
+- drag 姿态已能触发和保存位置，但动作仍偏 CSS keyframe，后续应让爪子/身体保持抓握姿态直到 release。
+- 当前录屏证明的是 P1 Bongo 底座；Live2D 替换默认前必须重新跑同一输入手感门。
 
 ### 6.2 P2 模型包详细路径
 

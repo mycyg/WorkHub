@@ -21,6 +21,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
@@ -32,7 +33,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1d-a 窗口手感合同和 P1e-a 输入响应合同；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，PSD draft 会被 `CuuModelPackManifest` 阻止成为默认。下一步转向真实输入录屏、窗口体验、动作幅度二轮、模型包加载器和 Live2D 精修。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1d-a 窗口手感合同、P1e-a 输入响应合同和 P1e-b hover/tap/drag 真实输入录屏；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，PSD draft 会被 `CuuModelPackManifest` 阻止成为默认。下一步转向窗口设置真实截图、hover 避让、动作幅度二轮、模型包加载器和 Live2D 精修。
 
 ---
 
@@ -342,7 +343,33 @@ visuals:
 | cursor-near 立即响应 | 通过单测；首次进入附近区域触发 `look_at_mouse` |
 | hover / drag 可观测 | 通过单测；DOM 有 `data-pet-hovered` / `data-pet-dragging` |
 | 默认模型包状态 | 通过单测；P1d-a 已实现的 scale / opacity / pass-through 不再标 planned |
-| 真实录屏 | 未完成；P1e-b 必须补 hover / near / tap / drag 场景录屏和 diff report，才能算桌宠手感验收 |
+| 真实录屏 | 已补 P1e-b 底座；见下一节 hover / near / tap / drag 场景录屏和 diff report |
+
+### 0.5.4 CUX-BONGO-006：输入手感真实 Tauri 录屏（2026-06-08）
+
+P1e-a 只证明“合同可观测”，还不能证明用户真的在桌面右下角靠近、悬停、点击、拖动 Cuu 时有反馈。本轮把 `scripts/qa/cuu-tauri-motion-capture.ps1` 扩展出 `input-handfeel` 场景，用真实 Win32 鼠标移动与按键触发 `cursor_near_outside -> hover_inside -> tap_body -> drag_start -> drag_move -> drag_release`，并重新抓取真实 Tauri `Cuu` 顶层窗口。
+
+![Cuu Bongo P1e input handfeel real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png)
+
+本轮新增 / 修改：
+
+| 文件 | 作用 |
+|---|---|
+| `client-tauri/src-tauri/src/main.rs` | 新增 QA 专用 `WORKHUB_DISABLE_SSE` 开关；普通客户端仍启动 SSE，只有录制纯输入手感时隔离离线卡片 |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario input-handfeel`、Win32 `SetCursorPos` / `mouse_event`、scenario events 记录和 `sse_disabled_for_scenario` 报告字段 |
+| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| 全身可见 | 通过；24 帧全程 body-only Cuu 全身可见，没有只露耳朵、空白帧或离线卡片插队 |
+| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=9416`、`visual_pixels=15536` |
+| 输入事件 | 通过；report 记录 6 个 scenario events：frame 1 near、7 hover、11 tap、15 drag start、16 drag move、18 release |
+| hover / tap 表现 | 通过底座；contact sheet 中 hover/tap 阶段出现抬爪/爪击反馈 |
+| drag 表现 | 通过底座；窗口 rect 从 `1844,860` 移到 `1748,804`，证明真实窗口拖动生效 |
+| QA 隔离 | 通过；`sse_disabled_for_scenario=true`，本次只验证输入手感，不让离线卡污染画面 |
+| 仍待提升 | 眼球/头部尚未连续跟随鼠标；hover 避让尚未实现；drag 抓握姿态还需保持到 release；Live2D 替换默认前必须重跑同一门禁 |
 
 ### 0.6 P1.0 双语运行时底座（2026-06-07）
 
@@ -428,7 +455,7 @@ visuals:
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs | 方向正确；还需增强动作幅度、补窗口设置真实截图 / hide-on-hover / 多屏恢复、模型包加载器、拖拽/hover/任务动作真实录屏 | P1 |
+| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs；P1e-b 已补 hover/tap/drag 真实 Tauri 输入录屏底座 | 方向正确；还需增强动作幅度、补窗口设置真实截图 / hide-on-hover / 多屏恢复、模型包加载器、任务动作真实录屏、连续看鼠标和 hover 避让 | P1 |
 | Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示；未来必须以 `live2d_cubism` model pack 通过默认门禁，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
@@ -1185,7 +1212,7 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 
 1. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
 2. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
-3. **Pet window 设置与输入手感**：P1d-a/P1e-a 已补缩放、透明度、点击穿透、cursor-near 立即看鼠标和 pointer DOM attrs；下一步补真实 Tauri 设置截图、hover/near/drag 录屏、贴边、hover 避让、显示/隐藏快捷入口和拖拽后位置截图。
+3. **Pet window 设置与输入手感**：P1d-a/P1e-a 已补缩放、透明度、点击穿透、cursor-near 立即看鼠标和 pointer DOM attrs；P1e-b 已补 hover/near/tap/drag 真实 Tauri 录屏底座。下一步补真实 Tauri 设置截图、贴边、hover 避让、连续看鼠标参数、显示/隐藏快捷入口和拖拽后位置截图。
 4. **Cuu model pack loader**：把 `CuuModelPackManifest` 接入设置页和 runtime 选择器，默认只允许 `approved_default`；experimental pack 只能预览，不能常驻。
 5. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
 6. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏和 model pack gate 都通过后才允许进入默认候选。

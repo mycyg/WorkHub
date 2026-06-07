@@ -37,6 +37,19 @@ use tauri::{
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
+const WORKHUB_DISABLE_SSE_ENV: &str = "WORKHUB_DISABLE_SSE";
+
+fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
+    get_env(WORKHUB_DISABLE_SSE_ENV)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 fn set_pet_window_mode(
     app: tauri::AppHandle,
@@ -761,9 +774,13 @@ fn main() {
             prepare_pet_window_on_startup(app)?;
             install_workhub_tray(app)?;
             install_workhub_deep_links(app)?;
-            let shell_config = load_workhub_shell_config(&app.handle())?;
-            spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
-                .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
+            if workhub_sse_disabled_from_env(|name| std::env::var(name).ok()) {
+                eprintln!("WorkHub SSE worker disabled by {WORKHUB_DISABLE_SSE_ENV}.");
+            } else {
+                let shell_config = load_workhub_shell_config(&app.handle())?;
+                spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
+                    .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -781,4 +798,28 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run WorkHub Tauri shell");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_value(value: Option<&'static str>) -> impl Fn(&str) -> Option<String> {
+        move |_| value.map(str::to_string)
+    }
+
+    #[test]
+    fn sse_disable_env_accepts_explicit_truthy_values() {
+        for value in ["1", "true", "TRUE", "yes", "on", " on "] {
+            assert!(workhub_sse_disabled_from_env(env_value(Some(value))));
+        }
+    }
+
+    #[test]
+    fn sse_disable_env_ignores_missing_and_falsey_values() {
+        assert!(!workhub_sse_disabled_from_env(env_value(None)));
+        for value in ["", "0", "false", "off", "no", "disabled"] {
+            assert!(!workhub_sse_disabled_from_env(env_value(Some(value))));
+        }
+    }
 }

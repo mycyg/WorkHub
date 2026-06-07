@@ -6,6 +6,8 @@ param(
   [int]$PixelStep = 2,
   [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
+  [ValidateSet("idle", "input-handfeel")]
+  [string]$Scenario = "idle",
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
 )
@@ -115,6 +117,25 @@ public static class WorkHubCuuMotionWin32
 }
 
 Add-Type -AssemblyName System.Drawing
+
+if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuInputWin32").Type) {
+  Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class WorkHubCuuInputWin32
+{
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+}
+"@
+}
 
 function New-MotionRect {
   param([WorkHubCuuMotionWin32+RECT]$Rect)
@@ -369,6 +390,98 @@ function New-ContactSheet {
   }
 }
 
+function Set-CuuCursorPosition {
+  param([int]$X, [int]$Y)
+  if (-not [WorkHubCuuInputWin32]::SetCursorPos($X, $Y)) {
+    throw "Unable to move cursor to $X,$Y for Cuu input scenario."
+  }
+}
+
+function Invoke-CuuMouse {
+  param([ValidateSet("down", "up")][string]$Action)
+  if ($Action -eq "down") {
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+  } else {
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+  }
+}
+
+function Invoke-CuuInteractionScenarioFrame {
+  param(
+    [string]$ScenarioName,
+    [int]$FrameIndex,
+    [object]$Window
+  )
+
+  if ($ScenarioName -ne "input-handfeel") {
+    return $null
+  }
+
+  $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
+  $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
+  $nearX = [int]($Window.Rect.Left - 36)
+  $nearY = $centerY
+  $dragX = [int]($centerX - 48)
+  $dragY = [int]($centerY - 28)
+
+  $action = $null
+  $x = $centerX
+  $y = $centerY
+
+  switch ($FrameIndex) {
+    1 {
+      $action = "cursor_near_outside"
+      $x = $nearX
+      $y = $nearY
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    7 {
+      $action = "hover_inside"
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    11 {
+      $action = "tap_body"
+      Set-CuuCursorPosition -X $x -Y $y
+      Invoke-CuuMouse -Action "down"
+      Start-Sleep -Milliseconds 60
+      Invoke-CuuMouse -Action "up"
+    }
+    15 {
+      $action = "drag_start"
+      Set-CuuCursorPosition -X $x -Y $y
+      Invoke-CuuMouse -Action "down"
+    }
+    16 {
+      $action = "drag_move"
+      $x = $dragX
+      $y = $dragY
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    18 {
+      $action = "drag_release"
+      $x = $dragX
+      $y = $dragY
+      Set-CuuCursorPosition -X $x -Y $y
+      Invoke-CuuMouse -Action "up"
+    }
+  }
+
+  if (-not $action) {
+    return $null
+  }
+
+  Start-Sleep -Milliseconds 90
+  [pscustomobject]@{
+    frame = $FrameIndex
+    action = $action
+    cursor = [pscustomobject]@{
+      x = $x
+      y = $y
+    }
+    window_rect = $Window.Rect
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $framesDir = Join-Path $OutDir "frames"
 New-Item -ItemType Directory -Force -Path $framesDir | Out-Null
@@ -393,6 +506,7 @@ if ($existingProcessIds.Count -gt 0) {
 
 $originalAppData = $env:APPDATA
 $originalLocalAppData = $env:LOCALAPPDATA
+$originalDisableSse = $env:WORKHUB_DISABLE_SSE
 $process = $null
 $devServerProcess = $null
 
@@ -404,6 +518,12 @@ try {
     New-Item -ItemType Directory -Force -Path $isolatedAppData, $isolatedLocalAppData | Out-Null
     $env:APPDATA = $isolatedAppData
     $env:LOCALAPPDATA = $isolatedLocalAppData
+  }
+
+  $sseDisabledForScenario = $false
+  if ($Scenario -eq "input-handfeel") {
+    $env:WORKHUB_DISABLE_SSE = "1"
+    $sseDisabledForScenario = $true
   }
 
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
@@ -421,10 +541,16 @@ try {
 
   $frames = [System.Collections.Generic.List[string]]::new()
   $rects = [System.Collections.Generic.List[object]]::new()
+  $scenarioEvents = [System.Collections.Generic.List[object]]::new()
   for ($i = 0; $i -lt $FrameCount; $i++) {
     $pet = Select-CuuWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     if (-not $pet) {
       throw "Cuu pet window disappeared during motion capture at frame $i."
+    }
+    $scenarioEvent = Invoke-CuuInteractionScenarioFrame -ScenarioName $Scenario -FrameIndex $i -Window $pet
+    if ($scenarioEvent) {
+      $scenarioEvents.Add($scenarioEvent) | Out-Null
+      $pet = Select-CuuWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     }
     $path = Join-Path $framesDir ("frame-{0:d3}.png" -f $i)
     New-WindowFrame -Window $pet -Path $path
@@ -450,6 +576,9 @@ try {
 
   $report = [pscustomobject]@{
     passed = $true
+    scenario = $Scenario
+    sse_disabled_for_scenario = $sseDisabledForScenario
+    scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
     frame_count = $FrameCount
     interval_ms = $IntervalMs
@@ -494,6 +623,8 @@ try {
 
   [pscustomobject]@{
     passed = $true
+    scenario = $Scenario
+    sse_disabled_for_scenario = $sseDisabledForScenario
     frames_dir = $framesDir
     contact_sheet = $contactSheet
     diff_report = $reportPath
@@ -507,6 +638,7 @@ try {
   }
   Restore-EnvVar -Name "APPDATA" -Value $originalAppData
   Restore-EnvVar -Name "LOCALAPPDATA" -Value $originalLocalAppData
+  Restore-EnvVar -Name "WORKHUB_DISABLE_SSE" -Value $originalDisableSse
   if ($devServerProcess -and -not $devServerProcess.HasExited) {
     Stop-Process -Id $devServerProcess.Id -Force
     $devServerProcess.WaitForExit()
