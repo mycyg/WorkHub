@@ -178,7 +178,7 @@ C-PET 用 **三类窗口 + 一类弹层**。当前 WorkHub scaffold 已在 `taur
 - **当前偏好面板**：`apps/desktop-webview/src/cuu-preferences.ts` 已提供右上角轻入口，面板默认隐藏；展开后可设置提醒模式（正常/安静/勿扰）、声音（开启/静音）、减少动效、队列上限；偏好写入 localStorage 并同步到 `CuuController`。
 - **当前证据动作**：`desktop-cuu-runtime.ts` 已支持 `knowledge-search` action，点击「打开完整检索」会调用 typed `client.searchKnowledge`，把返回的 `EvidenceBubble` 再交给 Cuu controller 作为证据卡显示；点击「用这些证据继续」会把当前 evidence card 的 `evidence_refs` 通过 typed `client.useEvidenceForWorkItem` 提交到 `POST /api/workitems/{id}/evidence-bindings`，并把返回的 `WorkItemDetailVM` 回显成任务卡。真实知识库持久化、证据详情展开和完整检索页分页仍待后续。
 - **形态（建议）**：独立右下角小窗，idle 约 160×180，展开轻卡约 380×560；`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`skipTaskbar:true`、可拖拽、记忆位置（后续接 `tauri-plugin-window-state`）。
-- **视觉资产（新增硬约束）**：P1 不再接受抽象图标、procedural CSS 或 inline 静态 fallback 作为完成标准；当前已有 18 clip 绿幕 motion pack，真实运行态必须显示 clip sheet / atlas / Live2D 的非缩放动作。静态 fallback 只能用于诊断或非运行兜底，不能作为 motion QA 通过依据。生产前继续做 anchor 微调、WebP/PNG 压缩、alpha 边缘 QA、长时间 idle 性能检查。
+- **视觉资产（新增硬约束）**：P1 不再接受恐怖谷 PSD、抽象图标或 inline 静态 fallback 作为完成标准；当前默认使用 `bongo_cuu` 低恐怖谷 renderer，atlas / Hatch 作为 fallback，PSD / Live2D 作为实验线。真实运行态必须显示可辨认的非缩放动作；静态 fallback 只能用于诊断或非运行兜底，不能作为 motion QA 通过依据。生产前继续做动作幅度、真实 Tauri 录屏、anchor 微调、WebP/PNG 压缩、alpha 边缘 QA、长时间 idle 性能检查。
 - **两态**：
   - **收起态** = 一个会动的桌宠头像（§5 人格/动效），点一下展开对话；红点角标表示「有事找你」（待审批/升级/打回）。
   - **展开态** = 迷你对话面板（承载 §6.4 的 FloatingAssistant 对话 + 升级简报 + 审批询问卡）。
@@ -773,8 +773,9 @@ Rust 只负责系统能力和安全边界；React 负责 UI、Cuu 动画状态�
 
 桌宠动画技术的详细方案见 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 与 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。本端级规格只固定工程边界：
 
-- MVP 必须能不依赖专业绑定工具运行，因此 sprite atlas 是首选。
-- Live2D 是 Cuu 长期高表现力主线：用 GPT Image / 人工精修产出分层 PSD，Cubism 绑定后导出 `.model3.json`，由 `pet` window runtime 优先加载。
+- P1 默认必须能不依赖专业绑定工具运行，因此当前采用 `bongo_cuu` DOM/CSS 低恐怖谷 renderer；详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+- Sprite atlas / Hatch pack 作为 fallback 与动作素材参考，不能替代默认可爱度验收。
+- Live2D 是 Cuu 长期高表现力主线：用 GPT Image / 人工精修产出分层 PSD，Cubism 绑定后导出 `.model3.json`；但只有美术 QA 和真实 Tauri 录屏通过后，才允许替换 `bongo_cuu` 默认。
 - Rive 可作为许可或工具链阻塞时的中间路线，因为 state machine 与 WorkHub 的事件映射天然契合。
 - GIF 只作为 motion storyboard / 文档预览 / 临时演示，不能作为最终桌宠 renderer。
 - Lottie 适合小动效和过渡，不建议承载复杂桌宠人格。

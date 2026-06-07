@@ -1,7 +1,7 @@
 ---
 module: 05-clients
 layer: C-PET / Cuu / Live2D
-status: generated-psd-draft-v1
+status: psd-draft-runtime-probe
 owner: workflow
 ---
 
@@ -9,6 +9,7 @@ owner: workflow
 
 > **结论**：Cuu 的长期高表现力目标应优先走 **Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。现有 sprite atlas 继续保留为 P1 可运行资产和降级层；GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案。  
 > **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
+> **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -40,6 +41,14 @@ owner: workflow
 ![Cuu Live2D generated PSD draft v1 preview](./assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png)
 
 这张图是 **自动拼装的 144 层 PSD draft v1 预览**。它来自 `scripts/assets/build-cuu-live2d-generated-psd.py`，输出 `apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/`。它比 8 层裁片原型更接近 Live2D 生产资料：眼睛、嘴型、耳朵、身体、爪、尾巴、蕾丝、蝴蝶结、流苏、珍珠/红珠都已拆层；但它仍没有通过最终视觉验收，必须继续做边缘清理、遮挡补画、尾巴段重绘和 Cubism 绑定。
+
+![Cuu PSD draft runtime probe 多帧截图](./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png)
+
+这张图是 **浏览器 pet surface 中真实挂载 PSD draft layer PNG 后的多帧截图**。它证明运行时已经不是 8 层 prototype，也不是静态 fallback：DOM 中有 72 个 PSD layer `<img>`，其中尾巴、耳朵、眼睛、嘴型、蝴蝶结、流苏等层拥有独立 CSS 动作。但它仍只能算 `psd_draft_probe` 证据，不能算 Cubism / Live2D 最终验收证据。
+
+![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+这张图是 **当前默认 Cuu**：因为 PSD draft 视觉有恐怖谷风险，P1 默认先使用 Bongo-style 低拟真 renderer。Live2D 专篇继续保留分层资产与 Cubism 施工计划，但默认用户体验不再展示未精修 PSD。
 
 ---
 
@@ -118,6 +127,11 @@ docs/workhub/05-clients/assets/cuu/
   cuu-live2d-generated-*-green.png
   cuu-live2d-generated-*-components.png
   cuu-live2d-generated-psd-draft-v1-preview.png
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/
+  pet-psd-draft-cdp-contact-sheet-grid.png
+  pet-psd-draft-cdp-frame-*.png
+  pet-psd-draft-cdp-dom.json
+  pet-psd-draft-cdp-diff-report.json
 ```
 
 文档目录只放概念图、编号参考图和预览审查图；运行时源素材、PSD、layer PNG 和导出模型必须进入 `apps/desktop-webview/src/assets/cuu/live2d/`，随 Tauri bundle 或后续资产包发布。
@@ -222,6 +236,65 @@ PSD draft v1 图层组：
 - 绿幕边缘仍有少量残留，正式贴图前要继续 despill / edge contract。
 - 围兜后身体、蝴蝶结后蕾丝、爪后胸毛、尾巴根部仍需要人工或生图补画。
 - 静态 PSD 预览不能证明 Cuu 活着；最终必须导出 Cubism 并录制多秒桌宠动作。
+
+### 3.3 PSD Draft Runtime Probe（2026-06-08）
+
+本轮把 `generated-psd-draft-v1` 从“静态 PSD 预览”推进到“运行时分层探针”，随后因视觉恐怖谷风险降为实验线：
+
+```text
+packages/cuu/src/live2d-psd-draft.ts
+apps/desktop-webview/src/cuu-live2d-psd-draft-assets.ts
+apps/desktop-webview/src/cuu-live2d-psd-draft-runtime.ts
+apps/desktop-webview/src/pet-surface.ts
+scripts/qa/cuu-pet-browser-capture.mjs
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/
+```
+
+运行时探针合同：
+
+| 项 | 当前值 |
+|---|---|
+| `runtime_kind` | `psd_draft_probe` |
+| `visual_mode` | `live2d_psd_draft` |
+| artifact | `cuu-live2d-generated-psd-draft-v1` |
+| status | `draft_created_not_visual_pass` |
+| PSD draft 总图层 | `144` |
+| 默认可见图层 | `65` |
+| runtime probe 图层 | `72` |
+| canvas / anchor | `1200 x 1600`，脚底 anchor `600,1216` |
+| renderer fallback | 实验线为 `psd_draft_probe -> prototype_layered -> sprite_atlas`；默认线为 `bongo_cuu -> sprite_atlas` |
+
+运行时已选入的关键层：
+
+| 部位 | 层 / bind target |
+|---|---|
+| 身体 | `Body_BackFur`、`Body_ChestCream`、`Paw_L_FrontUpper`、`Paw_R_FrontUpper`、`Paw_L_Back`、`Paw_R_Back` |
+| 头和耳朵 | `Head_BaseClean`、`Ear_L_Outer`、`Ear_R_Outer`、`Ear_L_Inner`、`Ear_R_Inner`、`FurTuft_Front_01/02` |
+| 眼睛 | `Eye_*_White`、`Eye_*_Iris`、`Eye_*_Pupil`、`Eye_*_Highlight_01`、`Eye_*_UpperLid`、`Eye_*_LowerLid`、`Eye_*_Closed`、`Eye_*_WorriedLine` |
+| 嘴型 | `Mouth_Line_Closed`、`Mouth_OpenSmall`、`Mouth_Surprised`、`Mouth_Smile` |
+| 尾巴 | `Tail_Base`、`Tail_01`、`Tail_02`、`Tail_03`、`Tail_Tip` |
+| 围兜/蝴蝶结 | `LaceBib_Back`、`LaceBib_Front`、`Bow_L_Wing`、`Bow_R_Wing`、`Bow_Center` |
+| 流苏/珠子 | `Tassel_*_String_01..03`、`Pearl_*_01..03`、`RedBead_*_01..02`、`GoldRing_*_01`、`GoldBead_*_01` |
+
+浏览器 QA 证据：
+
+| 证据 | 路径 |
+|---|---|
+| 多帧 contact sheet | `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png` |
+| 首帧 | `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-frame-0000.png` |
+| 3.5s 帧 | `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-frame-3500.png` |
+| DOM dump | `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-dom.json` |
+| 像素差分 | `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-diff-report.json` |
+
+当前判定：
+
+- 技术通过：`psd_draft_probe` 可以独立验证 PSD layer PNG 是否能被运行时挂载，并保留 prototype / atlas fallback。
+- 技术通过：首帧和多帧 contact sheet 中 Cuu 全身可见，不是“只露耳朵”的失败态。
+- 技术通过：DOM 中有 `data-cuu-live2d-runtime="psd_draft_probe"`、`data-cuu-live2d-layer-count="144"`、`data-psd-layer="Eye_L_Closed"`、`data-psd-layer="Tail_01"`、`data-psd-bind-target="Tassel_L_01"`。
+- 技术通过：CSS 中存在独立 tail / ear / eye / mouth / bow / tassel / paw 动作，不再是单张图缩放。
+- 视觉未通过：动作幅度仍偏探针级，缺 Cubism mesh deformation、物理链、参数 tween 和鼠标凝视。
+- 资产未通过：PSD draft 仍有尾巴厚重、边缘残留、遮挡补画不足和个别生成件风格漂移，不能导入 Cubism 后直接交付。
+- 施工结论：`psd_draft_probe` 是后续 Cubism 绑定前的可运行验证层；它让 QA 能持续检查“分层 PNG 是否真的能被运行时渲染”，但不能替代正式 Live2D，也不能默认展示给用户。
 
 ---
 
@@ -343,8 +416,12 @@ Eye_L_Closed
 |---|---|---|
 | `model-sheet` | 锁定完整正面 Cuu | `cuu-live2d-v0-front.png` |
 | `layer-parts` | 生成可分层/补画部件参考 | `layer-preview.png` + 分件 PNG |
+| `micro-parts-batch` | 批量生成更细部件，用于 PSD 细拆与补画 | face/body/accessory/tail patch sheets + numbered component PNG |
+| `paint-behind-patches` | 生成被遮挡区域的补画片 | body-behind-bib、fur-behind-paws、tail-root-behind-body PNG |
 
 不能直接要求模型“一次输出 PSD”。正确路线是：先让生成图固定角色和拆件参考，再用人工/脚本/编辑器装配 PSD。
+
+用户提出的“不同分层素材能否用生成图像功能生成非常多的部件图，然后调整大小拼接”，结论是：**可以，但必须按生产流水线做**。不能让模型每次自由发挥一只新猫；所有部件都必须继承同一个正面基准稿和同一套识别点，经过编号、抠图、锚点、尺寸、遮挡关系和运行时验证后才能进入 PSD。
 
 ### 5.2 正面模型 prompt
 
@@ -378,6 +455,71 @@ Constraints: separated parts must match the main Cuu design, no final production
 
 蕾丝和毛发是高风险区域，不能只靠自动抠图通过验收。
 
+### 5.5 批量部件生成流水线
+
+批量生成时，每个批次只解决一类部件，避免一张图里信息过多导致 AI 幻觉：
+
+| 批次 | 目标 | 输出 | 失败判据 |
+|---|---|---|---|
+| `face-core` | 头底、眼白、虹膜、瞳孔、高光、上下眼皮、闭眼线、鼻子、嘴型 | `generated-face-parts-v{n}` | 左右眼大小漂移、嘴型不在同一嘴套、头底自带完整表情 |
+| `body-core` | 背毛、胸毛、前爪、后爪、爪垫、身体遮挡补画 | `generated-body-parts-v{n}` | 多腿、爪子数量错误、身体姿态漂移 |
+| `tail-chain` | 尾根、尾巴 1-4 段、尾尖、尾影 | `generated-tail-parts-v{n}` | 尾巴段无法连续、粗细突变、花纹方向混乱 |
+| `collar-lace` | 围兜后层、前层、左右蕾丝边、小蕾丝片 | `generated-lace-parts-v{n}` | 蕾丝绿边严重、孔洞粘连、透视不正 |
+| `bow-tassel` | 蝴蝶结左右翼、中心结、流苏绳、珍珠、红珠、金属环 | `generated-accessory-parts-v{n}` | 珠子数量漂移、流苏方向不一致、黑结风格漂移 |
+| `paint-behind` | 被围兜/蝴蝶结/爪/尾巴挡住的身体补画 | `generated-paint-behind-v{n}` | 补画颜色不接、毛纹不连续、补画片无法覆盖露洞 |
+
+每个批次的 prompt 必须包含这些硬约束：
+
+```text
+Create Cuu Live2D production parts on a perfectly flat solid #00ff00 chroma-key background.
+Use the same original orange tabby kitten design: cream muzzle and paws, white lace bib, black bow, pearl tassels, tiny red beads.
+Generate separated individual parts, each with generous padding and crisp edges.
+Keep all parts front-facing, orthographic, same lighting, same line weight, same soft shading.
+Do not draw a full extra cat, no text labels, no cast shadow, no floor plane, no watermark.
+Do not add extra limbs, duplicated paws, duplicated eyes, or inconsistent tail count.
+```
+
+自动处理流水线：
+
+```text
+GPT Image parts board
+  -> save source green PNG under apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v{n}/
+  -> remove chroma key with soft matte / despill
+  -> component detection + bbox crop
+  -> write numbered PNG components
+  -> classify component to target layer name
+  -> assign x/y/width/height/z_index/default_visible/bind_target
+  -> build PSD draft + per-layer PNG
+  -> render pet surface probe
+  -> capture frames + DOM + diff
+```
+
+拼接不是一次性视觉操作，而是 manifest 操作。每个运行层至少要有：
+
+```ts
+type CuuLayerPlacement = {
+  name: string;
+  group: "20_Body" | "30_Tail" | "40_Head" | "50_Face" | "60_Collar" | "70_Accessories" | "80_Expressions";
+  image_path: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  opacity: number;
+  default_visible: boolean;
+  bind_target?: string;
+};
+```
+
+人工审查标准：
+
+- 单个部件放大 300% 后不能有明显绿边、白边、脏边和孤立像素。
+- 左右眼、左右耳、左右流苏不能简单镜像到僵硬，也不能漂移到像两套画风。
+- 爪子数量、尾巴段数、眼睛数量必须由脚本和截图双重检查；任何“五条腿”或多眼幻觉直接整批退回。
+- 拼装预览必须先过“全身可见、脚底 anchor 稳定、没有只露耳朵、没有静态缩放假动”。
+- 只有通过 Cubism 导入、mesh 绑定和多秒桌宠录屏后，才能从 `draft_created_not_visual_pass` 升级。
+
 ---
 
 ## 6. PSD 装配流程
@@ -394,16 +536,19 @@ Constraints: separated parts must match the main Cuu design, no final production
 ### 6.2 步骤
 
 1. 生成 `front model` 和 `layer breakdown`。
-2. 在绘图工具中重绘或清理 Cuu 正面稿。
-3. 按第 4 节图层树拆件。
-4. 对所有遮挡处补画。
-5. 合并每个部件的线稿、底色、阴影、高光为可导入图层。
-6. 保持图层模式 `normal`、透明度 `100%`。
-7. 删除隐藏废层、测试草图、参考图层。
-8. 导出 `cuu-live2d-v0.psd`。
-9. 在 Cubism Editor 导入 PSD，确认部件无错位、无同名、无杂点。
-10. 绑定参数、物理、表情和动作。
-11. 导出 `cuu.model3.json` 套件。
+2. 批量生成 `face-core`、`body-core`、`tail-chain`、`collar-lace`、`bow-tassel`、`paint-behind` 绿幕零件板。
+3. 运行抠图、编号、bbox 裁切和 component report。
+4. 在绘图工具中重绘或清理 Cuu 正面稿。
+5. 按第 4 节图层树拆件，并把自动组件只作为底稿或可复用素材。
+6. 对所有遮挡处补画。
+7. 合并每个部件的线稿、底色、阴影、高光为可导入图层。
+8. 保持图层模式 `normal`、透明度 `100%`。
+9. 删除隐藏废层、测试草图、参考图层。
+10. 导出 `cuu-live2d-v0.psd`。
+11. 从 PSD 生成 per-layer PNG + manifest，并跑 `psd_draft_probe` 截图。
+12. 在 Cubism Editor 导入 PSD，确认部件无错位、无同名、无杂点。
+13. 绑定参数、物理、表情和动作。
+14. 导出 `cuu.model3.json` 套件。
 
 ### 6.3 PSD 交付检查
 
@@ -498,9 +643,13 @@ Constraints: separated parts must match the main Cuu design, no final production
 
 ```text
 packages/cuu/src/live2d-manifest.ts
+packages/cuu/src/live2d-psd-draft.ts
 apps/desktop-webview/src/cuu-live2d-assets.ts
 apps/desktop-webview/src/cuu-live2d-runtime.ts
+apps/desktop-webview/src/cuu-live2d-psd-draft-assets.ts
+apps/desktop-webview/src/cuu-live2d-psd-draft-runtime.ts
 apps/desktop-webview/src/pet-surface.ts
+scripts/qa/cuu-pet-browser-capture.mjs
 ```
 
 当前 `prototype_layered` contract：
@@ -541,21 +690,28 @@ export type CuuLive2DManifest = {
 
 ```text
 renderDesktopPetSurface()
-  -> renderDesktopCuuAtlasState/Sprite(...)   # 仍生成 fallback 诊断
-  -> renderDesktopCuuLive2DPrototype...       # 默认主视觉
-  -> data-cuu-visual-mode="live2d_prototype"
+  -> renderDesktopCuuAtlasState/Sprite(...)       # fallback 诊断
+  -> renderDesktopCuuBongo...                     # 当前默认主视觉
+  -> data-cuu-visual-mode="bongo_cuu"
+
+Live2D 实验线
+  -> renderDesktopCuuLive2DPsdDraft...
+  -> renderDesktopCuuLive2DPrototype...
+  -> data-cuu-visual-mode="live2d_psd_draft"      # 仅实验 / QA
 ```
 
-这意味着：运行态优先显示同源拆层 rig；旧 18 clip atlas 继续作为 fallback 和对照，不再作为默认主视觉。
+这意味着：运行态优先显示低恐怖谷 Bongo Cuu；8 层同源拆层 rig 只保留为 regression fixture；旧 18 clip atlas 继续作为 fallback 和对照；144 层 PSD draft 仅在实验/QA 中启用。
 
 ### 9.2 Runtime 策略
 
-1. `pet-surface` 启动时默认尝试 `prototype_layered` renderer。
-2. Live2D prototype manifest 校验成功：使用 layered rig renderer。
-3. 正式 Cubism 导出就绪后：同一个 manifest contract 从 `prototype_layered` 升级为 `cubism_exported`。
-4. Live2D / Cubism 加载失败：自动降级到当前 atlas renderer。
-5. reduced-motion：关闭复杂层动画和眨眼遮罩，仅保留状态文案与可点动作。
-6. `sse-status:retrying/closed`：card mode 中优先映射为 `worried` 或 `offline` Live2D motion；fallback sprite 仍使用 `worried_ears` / `offline_sleep`。
+1. `pet-surface` 启动时默认使用 `bongo_cuu` renderer。
+2. `bongo_cuu` 失败或 reduced-motion 需要静态兜底时：降级到当前 atlas renderer。
+3. PSD / Live2D 实验模式才尝试 `psd_draft_probe` renderer。
+4. PSD draft layer validator 通过：使用 72 个选中图层渲染 `live2d_psd_draft`。
+5. PSD draft 不可用或校验失败：降级到 `prototype_layered` 技术 fixture。
+6. 正式 Cubism 导出就绪且美术 QA 通过后：才允许从 Bongo 默认切换到 `cubism_exported`。
+7. reduced-motion：关闭复杂层动画和眨眼遮罩，仅保留状态文案与可点动作。
+8. `sse-status:retrying/closed`：card mode 中优先映射为 `worried` 或 `offline`；fallback sprite 仍使用 `worried_ears` / `offline_sleep`。
 
 ### 9.3 许可与依赖风险
 
@@ -592,10 +748,11 @@ GIF 不允许：
 |---|---|---|---|
 | L2D-P0 | 分层规范与概念图 | 本文 + `cuu-live2d-layer-breakdown-concept.png` | 角色和拆件方向明确 |
 | L2D-P1 | 正面基准稿 / 生产板 | `cuu-live2d-front-model-concept.png` + `cuu-live2d-psd-production-board.png` | Cuu 外观与概念图一致，拆件清晰 |
-| L2D-P1.5 | 同源拆层 runtime prototype | `cuu-layered-rig-v0` 8 layer PNG + TS manifest/runtime | 默认 pet visual 使用 layered rig，三帧截图和 DOM dump 证明不是 atlas / 静态图 |
-| L2D-P2 | 分层 PSD | `cuu-live2d-v0.psd` + `cuu-live2d-v0-layer-manifest.json` | Cubism 可导入，无同名/杂点/丢层 |
+| L2D-P1.5 | 同源拆层 runtime prototype | `cuu-layered-rig-v0` 8 layer PNG + TS manifest/runtime | 已降级为 regression fixture；不能作为鲜活感通过证据 |
+| L2D-P1.6 | PSD draft runtime probe | `generated-psd-draft-v1` 72 runtime layers + `psd_draft_probe` renderer + 多帧截图 | 实验截图证明 PSD draft layers 能运行，且不是 8 层 prototype / atlas / 静态图；因恐怖谷风险不得默认展示，仍标记 final visual fail |
+| L2D-P2 | 精修分层 PSD | `cuu-live2d-v0.psd` + `cuu-live2d-v0-layer-manifest.json` | Cubism 可导入，无同名/杂点/丢层，遮挡补画完整 |
 | L2D-P3 | Cubism 绑定 | `.cmo3` 源 + exported `.model3.json` 套件 | 呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可动 |
-| L2D-P4 | Tauri runtime | `cuu-live2d-runtime.ts` | `pet` window 优先加载 Live2D，失败降级 sprite |
+| L2D-P4 | Tauri Cubism runtime | `cuu-live2d-runtime.ts` / Cubism adapter | `pet` window 优先加载 Cubism 模型，失败降级 PSD probe / sprite |
 | L2D-P5 | 事件动作 | motion / expression map | approval/search/carry/worried/celebrate 可由事件触发 |
 | L2D-QA | 透明窗口验收 | 截图、像素、性能、HiDPI、多屏报告 | 无绿边/黑底/离屏/高占用 |
 
@@ -622,10 +779,19 @@ GIF 不允许：
 ### 12.3 工程
 
 - `pet` window 使用透明背景，主窗隐藏后仍显示。
-- Live2D 加载失败自动降级 sprite atlas。
+- 运行 fallback 链必须明确：Cubism -> PSD draft probe -> 8-layer prototype fixture -> sprite atlas。
+- Live2D 加载失败自动降级，不允许回到静态单图并伪装成 motion pass。
 - reduced-motion 有静态/低动效路径。
 - 资源随 Tauri bundle 打包。
 - 不把 PSD/Cubism 源误放到 `reference` / `references`。
+
+### 12.4 运行时截图
+
+- browser pet surface 和真实 Tauri `Cuu` window 都要能截图。
+- 多帧截图必须能看到 Cuu 全身，不能只露耳朵、局部、空白或被气泡裁切。
+- 不同等待时间必须有可解释的独立部件差异：眨眼、尾巴、耳朵、流苏、嘴型或爪子，不接受只有整体缩放。
+- 任一帧出现多腿、多眼、尾巴断裂、绿边大面积残留，整批资产不得升级。
+- `pet-*-dom.json` 必须能证明当前 renderer 种类、layer count、motion id 和 fallback 状态。
 
 ---
 

@@ -1,0 +1,390 @@
+{
+  "surface": {
+    "whSurface": "pet",
+    "petWindowMode": "body_only",
+    "petCardLayout": "body",
+    "cuuState": "idle",
+    "cuuIdleAction": "idle_tail_sway",
+    "cuuVisualMode": "live2d_psd_draft",
+    "cuuLive2dStatus": "draft_created_not_visual_pass",
+    "cuuLive2dMotion": "idle",
+    "cuuLive2dLayerCount": "144",
+    "cuuAtlasFallback": "false",
+    "cuuManifestUrl": "http://127.0.0.1:1420/src/assets/cuu/atlas/cuu.sprite.json"
+  },
+  "live2d": {
+    "cuuLive2dRuntime": "psd_draft_probe",
+    "cuuLive2dStatus": "draft_created_not_visual_pass",
+    "cuuLive2dArtifact": "cuu-live2d-generated-psd-draft-v1",
+    "cuuLive2dMotion": "idle",
+    "cuuLive2dFallbackSprite": "idle_tail_sway",
+    "cuuLive2dLayerCount": "144",
+    "cuuLive2dVisibleLayerCount": "65",
+    "cuuLive2dAnimatedLayerCount": "54",
+    "cuuLive2dExpressionLayerCount": "7",
+    "cuuLive2dManifestUrl": "/src/assets/cuu/live2d/source/generated-psd-draft-v1/cuu-live2d-generated-psd-draft-v1.manifest.json",
+    "cuuLive2dReportUrl": "/src/assets/cuu/live2d/source/generated-psd-draft-v1/cuu-live2d-generated-psd-draft-v1-report.json"
+  },
+  "layers": [
+    {
+      "layer": "Shadow_SoftUnderBody",
+      "bindTarget": "",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tail_Base",
+      "bindTarget": "Tail_Base",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tail_01",
+      "bindTarget": "Tail_01",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tail_02",
+      "bindTarget": "Tail_02",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tail_03",
+      "bindTarget": "Tail_03",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tail_Tip",
+      "bindTarget": "Tail_Tip",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Body_BackFur",
+      "bindTarget": "Body",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Body_ChestCream",
+      "bindTarget": "Body",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Paw_L_FrontUpper",
+      "bindTarget": "Paw_L_Front",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Paw_R_FrontUpper",
+      "bindTarget": "Paw_R_Front",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Paw_L_Back",
+      "bindTarget": "Paw_L_Back",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Paw_R_Back",
+      "bindTarget": "Paw_R_Back",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Head_BaseClean",
+      "bindTarget": "Head",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_L_Outer",
+      "bindTarget": "Ear_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_R_Outer",
+      "bindTarget": "Ear_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_L_Inner",
+      "bindTarget": "Ear_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_R_Inner",
+      "bindTarget": "Ear_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_L_Inner_Fur_01",
+      "bindTarget": "Ear_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Ear_R_Inner_Fur_01",
+      "bindTarget": "Ear_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "FurTuft_Front_01",
+      "bindTarget": "Head",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "FurTuft_Front_02",
+      "bindTarget": "Head",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Muzzle_Cream",
+      "bindTarget": "Muzzle",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_White",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_White",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_Iris",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_Iris",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_Pupil",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_Pupil",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_Highlight_01",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_Highlight_01",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_UpperLid",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_UpperLid",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_LowerLid",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_R_LowerLid",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Nose_Base",
+      "bindTarget": "Nose",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Mouth_Line_Closed",
+      "bindTarget": "Mouth",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Whisker_L_01",
+      "bindTarget": "Whisker_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Whisker_R_01",
+      "bindTarget": "Whisker_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Cheek_Blush_L",
+      "bindTarget": "Cheek_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Cheek_Blush_R",
+      "bindTarget": "Cheek_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Eye_L_Closed",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Eye_R_Closed",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Eye_L_WorriedLine",
+      "bindTarget": "Eye_L",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Eye_R_WorriedLine",
+      "bindTarget": "Eye_R",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Mouth_OpenSmall",
+      "bindTarget": "Mouth",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Mouth_Surprised",
+      "bindTarget": "Mouth",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "Mouth_Smile",
+      "bindTarget": "Mouth",
+      "defaultVisible": "false"
+    },
+    {
+      "layer": "LaceBib_Back",
+      "bindTarget": "LaceBib",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "LaceBib_Front",
+      "bindTarget": "LaceBib",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Bow_L_Wing",
+      "bindTarget": "Bow_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Bow_R_Wing",
+      "bindTarget": "Bow_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Bow_Center",
+      "bindTarget": "Bow_Center",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_L_String_01",
+      "bindTarget": "Tassel_L_01",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_L_String_02",
+      "bindTarget": "Tassel_L_02",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_L_String_03",
+      "bindTarget": "Tassel_L_03",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_R_String_01",
+      "bindTarget": "Tassel_R_01",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_R_String_02",
+      "bindTarget": "Tassel_R_02",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Tassel_R_String_03",
+      "bindTarget": "Tassel_R_03",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_L_01",
+      "bindTarget": "Pearl_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_L_02",
+      "bindTarget": "Pearl_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_L_03",
+      "bindTarget": "Pearl_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "RedBead_L_01",
+      "bindTarget": "RedBead_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "RedBead_L_02",
+      "bindTarget": "RedBead_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "GoldRing_L_01",
+      "bindTarget": "GoldRing_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "GoldBead_L_01",
+      "bindTarget": "GoldBead_L",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_R_01",
+      "bindTarget": "Pearl_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_R_02",
+      "bindTarget": "Pearl_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "Pearl_R_03",
+      "bindTarget": "Pearl_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "RedBead_R_01",
+      "bindTarget": "RedBead_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "RedBead_R_02",
+      "bindTarget": "RedBead_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "GoldRing_R_01",
+      "bindTarget": "GoldRing_R",
+      "defaultVisible": "true"
+    },
+    {
+      "layer": "GoldBead_R_01",
+      "bindTarget": "GoldBead_R",
+      "defaultVisible": "true"
+    }
+  ]
+}

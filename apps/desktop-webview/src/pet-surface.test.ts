@@ -290,20 +290,27 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /data-wh-surface="pet"/u);
   assert.match(idle.html, /data-pet-window-mode="body_only"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
-  assert.equal(idle.visual_mode, "live2d_prototype");
-  assert.equal(idle.live2d?.layer_count, 8);
+  assert.equal(idle.visual_mode, "bongo_cuu");
+  assert.equal(idle.bongo.runtime_kind, "bongo_cuu");
+  assert.equal(idle.bongo.status, "p1_default_low_uncanny");
+  assert.equal(idle.bongo.motion_state, "idle_tail_sway");
+  assert.equal(idle.bongo.component_count, 24);
   assert.equal(idle.sprite.clip.state, "idle_tail_sway");
-  assert.match(idle.html, /data-cuu-visual-mode="live2d_prototype"/u);
-  assert.match(idle.html, /data-cuu-live2d-runtime="prototype_layered"/u);
-  assert.match(idle.html, /data-cuu-live2d-motion="idle"/u);
-  assert.match(idle.html, /data-cuu-live2d-layer-count="8"/u);
-  assert.match(idle.html, /data-live2d-eye="l"/u);
+  assert.match(idle.html, /data-cuu-visual-mode="bongo_cuu"/u);
+  assert.match(idle.html, /data-cuu-bongo-runtime="bongo_cuu"/u);
+  assert.match(idle.html, /data-cuu-bongo-state="idle_tail_sway"/u);
+  assert.match(idle.html, /wh-cuu-bongo-paw/u);
+  assert.match(idle.html, /wh-cuu-bongo-eye/u);
+  assert.match(idle.html, /wh-cuu-bongo-tail/u);
+  assert.doesNotMatch(idle.html, /data-cuu-live2d-runtime="psd_draft_probe"/u);
+  assert.doesNotMatch(idle.html, /data-psd-layer=/u);
   assert.doesNotMatch(idle.html, /class="wh-cuu-atlas-static-fallback"/u);
   assert.match(idle.html, /data-cuu-manifest-url="[^"]*cuu\.sprite\.json/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
-  assert.match(card.html, /data-cuu-live2d-motion="approval"/u);
+  assert.match(card.html, /data-cuu-bongo-motion="asking_approval_bounce"/u);
+  assert.match(card.html, /data-cuu-bongo-state="asking_approval_bounce"/u);
   assert.match(card.html, /data-cuu-atlas-fallback="false"/u);
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
@@ -317,8 +324,8 @@ test("pet surface starts with a non-static runtime action fixture and fast idle 
 
   const idle = renderDesktopPetSurface({ idle_action: desktopPetInitialIdleAction });
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
-  assert.match(idle.html, /data-cuu-live2d-runtime="prototype_layered"/u);
-  assert.match(idle.html, /data-cuu-live2d-motion="idle"/u);
+  assert.match(idle.html, /data-cuu-bongo-runtime="bongo_cuu"/u);
+  assert.match(idle.html, /data-cuu-bongo-motion="idle_tail_sway"/u);
   assert.equal(idle.sprite.clip.state, "idle_tail_sway");
 
   const scheduler = createCuuIdleScheduler({
@@ -360,11 +367,10 @@ test("pet surface keeps offline Cuu fully visible in card mode", () => {
   });
 
   assert.match(card.html, /data-cuu-state="offline"/u);
-  assert.match(card.html, /data-cuu-live2d-motion="worried"/u);
-  assert.match(card.html, /data-cuu-live2d-fallback-sprite="worried_ears"/u);
-  assert.doesNotMatch(card.html, /data-cuu-live2d-fallback-sprite="offline_sleep"/u);
+  assert.match(card.html, /data-cuu-bongo-motion="worried_ears"/u);
+  assert.doesNotMatch(card.html, /data-cuu-bongo-motion="offline_sleep"/u);
   assert.equal(card.sprite.clip.state, "worried_ears");
-  assert.match(card.html, /--wh-cuu-live2d-w:138px/u);
+  assert.match(card.html, /--wh-cuu-bongo-w:138px/u);
   assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-body\{right:64px;bottom:96px;width:150px;height:210px/u);
 });
 

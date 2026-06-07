@@ -173,6 +173,12 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 这张图定义美术资产从 AI 生图到透明 PNG、精修、sprite / Rive / Live2D / Lottie 运行时的可选路线。
 
+### 3.1.1.1 Cuu Bongo-style 默认运行态
+
+![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+
 ### 3.1.2 Cuu Live2D 分层概念
 
 ![Cuu Live2D 分层拆件概念](./assets/cuu/cuu-live2d-layer-breakdown-concept.png)
@@ -183,7 +189,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
 
-桌宠动画不宜退化成 GIF 或符号图标。推荐路径是：P1 用 PNG sprite atlas 保证 Cuu 先真实出现在透明桌面窗口；并行推进 Live2D 分层 PSD；P2/P3 用 Cubism 模型承接主要表现力，sprite 作为降级层。
+桌宠动画不宜退化成 GIF 或符号图标。当前推荐路径是：P1 默认用 `bongo_cuu` 低恐怖谷 renderer 保证 Cuu 先可爱、稳定地出现在透明桌面窗口；atlas / Hatch 作为 fallback；并行推进 Live2D 分层 PSD，但只有精修 PSD、Cubism 和真实 Tauri 录屏通过后，才允许替换默认。
 
 ### 3.1.4 WorkHub 实现路线图
 
@@ -229,7 +235,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺正式 Live2D 模型、多屏恢复实测、系统通知点击、安装包和展开气泡卡 QA。
+Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺更强 Bongo 动作、真实 Tauri Bongo 录屏、正式 Live2D 模型、多屏恢复实测、系统通知点击、安装包和展开气泡卡 QA。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
@@ -249,7 +255,7 @@ Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 
 
 ![Cuu 多帧动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
-这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，也暴露了已修复的 `CUX-MOTION-001`：事件卡片触发后窗口曾停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工应在已修好的 card mode 基础上继续推进 Hatch Pet 多动作包和 Live2D。
+这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，也暴露了已修复的 `CUX-MOTION-001`：事件卡片触发后窗口曾停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工应在已修好的 card mode 基础上继续推进 Bongo Cuu 多动作包和真实 Tauri 录屏，Live2D 只作为精修实验线。
 
 ![Cuu card mode 修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
 
@@ -257,7 +263,11 @@ Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 
 
 ![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
-这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续要继续做 Live2D PSD 清理、Cubism 眨眼/尾巴/流苏/看鼠标和任务动作录屏验收。Hatch/sprite 只作为 fallback。
+这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续默认路线改为 Bongo Cuu 动作增强和真实 Tauri 录屏，Live2D PSD / Cubism 只有精修通过后才替换默认。Hatch/sprite 只作为 fallback。
+
+![Cuu Bongo-style 默认动作抓取](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+这张 browser CDP contact sheet 是新的默认 Cuu 方向：低恐怖谷、全身可见、无 PSD layer 暴露。它还不能替代真实 Tauri 顶层窗口录屏，但已经把“不要把恐怖谷 PSD 默认给用户看”固化成概念和 QA 基线。
 
 ---
 

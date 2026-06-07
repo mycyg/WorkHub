@@ -5,7 +5,7 @@ export type DesktopPetVisualQaCheckId =
   | "right_bottom_independent_surface"
   | "pet_body_hit_area"
   | "no_main_shell"
-  | "layered_runtime_contract"
+  | "bongo_runtime_contract"
   | "card_mode_light_bubble"
   | "option_first_card";
 
@@ -52,6 +52,8 @@ export function createDesktopPetVisualQaReport(input: {
       "pet_body_hit_area",
       hasAll(input.idle.css, [".wh-pet-body", "cursor:grab", "pointer-events:auto"]) &&
         (hasAll(input.idle.css, [".wh-cuu-live2d", "pointer-events:none"]) ||
+          hasAll(input.idle.css, [".wh-cuu-bongo", "pointer-events:none"]) ||
+          hasAll(input.idle.css, [".wh-cuu-psd", "pointer-events:none"]) ||
           hasAll(input.idle.css, [".wh-cuu-atlas", "pointer-events:none"])) &&
         input.idle.html.includes('data-pet-drag-handle="true"'),
       "only the pet body and bubble should receive pointer input; Cuu visual pixels stay visual-only."
@@ -62,19 +64,25 @@ export function createDesktopPetVisualQaReport(input: {
       "the pet window must not load the Gold Path shell or free-text-first controls."
     ),
     qaCheck(
-      "layered_runtime_contract",
-      input.idle.visual_mode === "live2d_prototype" &&
-        input.idle.live2d?.status === "prototype_layered" &&
-        input.idle.live2d.layer_count >= 8 &&
-        input.idle.live2d.duration_ms >= 700 &&
-        input.idle.html.includes('data-cuu-live2d-runtime="prototype_layered"') &&
-        input.idle.html.includes('data-cuu-live2d-layer-count="8"') &&
-        input.idle.html.includes('data-live2d-eye="l"') &&
-        input.idle.live2d.css.includes(".wh-cuu-live2d-layer") &&
-        input.idle.live2d.css.includes("@keyframes wh-cuu-live2d-tail-idle") &&
-        !input.idle.live2d.css.includes("steps(1,end)") &&
+      "bongo_runtime_contract",
+      input.idle.visual_mode === "bongo_cuu" &&
+        input.idle.bongo.runtime_kind === "bongo_cuu" &&
+        input.idle.bongo.status === "p1_default_low_uncanny" &&
+        input.idle.bongo.component_count >= 20 &&
+        input.idle.bongo.duration_ms >= 700 &&
+        input.idle.html.includes('data-cuu-bongo-runtime="bongo_cuu"') &&
+        input.idle.html.includes('data-cuu-bongo-status="p1_default_low_uncanny"') &&
+        input.idle.html.includes('data-cuu-bongo-component-count="24"') &&
+        input.idle.html.includes("wh-cuu-bongo-paw") &&
+        input.idle.html.includes("wh-cuu-bongo-eye") &&
+        input.idle.html.includes("wh-cuu-bongo-tail") &&
+        !input.idle.html.includes('data-cuu-live2d-runtime="psd_draft_probe"') &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-tail") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-paw-hit-l") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-eye-open") &&
+        input.idle.bongo.css.includes("prefers-reduced-motion") &&
         input.idle.sprite.fallback === false,
-      "idle Cuu must render the same-source layered runtime contract; final alive motion still requires Cubism capture."
+      "idle Cuu must default to a low-uncanny Bongo-style renderer; PSD draft probes stay hidden until Cubism-quality art passes visual QA."
     ),
     qaCheck(
       "card_mode_light_bubble",
@@ -130,7 +138,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     right_bottom_independent_surface: "right-bottom independent surface",
     pet_body_hit_area: "pet body hit area",
     no_main_shell: "no main shell",
-    layered_runtime_contract: "layered runtime contract",
+    bongo_runtime_contract: "Bongo-style runtime contract",
     card_mode_light_bubble: "card-mode light bubble",
     option_first_card: "option-first card"
   };

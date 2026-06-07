@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-07):**36 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu Live2D 分层资产方案与当前真实截图/动作审计;详见各篇 frontmatter)。
+> 状态(2026-06-08):**37 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu Bongo-style 低恐怖谷默认路线、Cuu Live2D 分层资产方案与当前真实截图/动作审计;详见各篇 frontmatter)。
 
 ---
 
@@ -111,8 +111,9 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `desktop-pet-tauri.md` | **C-PET**:Rust 侧能力(托盘/通知/提醒/deep-link/spec_watch/双向同步)、桌宠窗口与人格、本地 Agent、webview↔Rust 边界、安装/更新 | ✅ |
 | `page-concepts.md` | **C-WEB/C-PET**:页面概念图索引,覆盖 Web、Rust 客户端、桌宠/澄清/检索视觉方向 | concept |
 | `cuu-desktop-pet-concept.md` | **C-PET/Cuu**:小猫桌宠形象、动效状态、审批/检索气泡、选项优先澄清概念图 | concept |
+| `cuu-bongo-style-runtime-plan.md` | **C-PET/Cuu/Bongo-style**:参考 BongoCat 的低恐怖谷默认桌宠路线、DOM/CSS renderer、动作映射、截图 QA 与后续施工 | p1-default |
 | `cuu-green-screen-desktop-pet-solution.md` | **C-PET/Cuu**:绿幕生图、抠图裁切、sprite atlas、独立 pet window、活体 idle 调度与 QA 门禁 | concept |
-| `cuu-live2d-layered-asset-plan.md` | **C-PET/Cuu/Live2D**:分层 PSD、图层树、GPT Image 拆件、Cubism 绑定、Tauri runtime 与 GIF 兜底规则 | concept |
+| `cuu-live2d-layered-asset-plan.md` | **C-PET/Cuu/Live2D**:分层 PSD、图层树、GPT Image 拆件、Cubism 绑定、Tauri runtime 与 GIF 兜底规则;当前为实验线 | concept |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `current-state-visual-audit-and-construction-plan-2026-06-07.md` | **C-WEB/C-PET/Cuu/Rust shell**:真实页面截图、Cuu 多帧动作抓取、Hatch Pet 路线与下一轮施工验收门 | audit |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |

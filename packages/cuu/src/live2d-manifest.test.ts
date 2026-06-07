@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   cuuLive2DMotionForSpriteState,
+  validateCuuLive2DPsdDraftLayers,
   validateCuuLive2DManifest,
   type CuuLive2DManifest
 } from "./index.js";
@@ -122,6 +123,61 @@ test("Cuu Live2D motion lookup preserves sprite fallback semantics", () => {
   assert.equal(cuuLive2DMotionForSpriteState("drag_hold"), "drag");
 });
 
+test("Cuu PSD draft probe validator requires real expression, tail, and tassel layers", () => {
+  const layers = [
+    psdLayer("Body_BackFur"),
+    psdLayer("Body_ChestCream"),
+    psdLayer("Head_BaseClean"),
+    psdLayer("Ear_L_Outer"),
+    psdLayer("Ear_R_Outer"),
+    psdLayer("Ear_L_Inner"),
+    psdLayer("Ear_R_Inner"),
+    psdLayer("Eye_L_White"),
+    psdLayer("Eye_R_White"),
+    psdLayer("Eye_L_Iris"),
+    psdLayer("Eye_R_Iris"),
+    psdLayer("Eye_L_Pupil"),
+    psdLayer("Eye_R_Pupil"),
+    psdLayer("Eye_L_Closed", 0),
+    psdLayer("Eye_R_Closed", 0),
+    psdLayer("Mouth_Line_Closed"),
+    psdLayer("Mouth_OpenSmall", 0),
+    psdLayer("Tail_Base"),
+    psdLayer("Tail_01"),
+    psdLayer("Tail_02"),
+    psdLayer("Tail_03"),
+    psdLayer("Tail_Tip"),
+    psdLayer("LaceBib_Front"),
+    psdLayer("Bow_L_Wing"),
+    psdLayer("Bow_R_Wing"),
+    psdLayer("Bow_Center"),
+    psdLayer("Tassel_L_String_01"),
+    psdLayer("Tassel_L_String_02"),
+    psdLayer("Tassel_L_String_03"),
+    psdLayer("Tassel_R_String_01"),
+    psdLayer("Tassel_R_String_02"),
+    psdLayer("Tassel_R_String_03"),
+    psdLayer("Pearl_L_01"),
+    psdLayer("Pearl_R_01"),
+    psdLayer("RedBead_L_01"),
+    psdLayer("RedBead_R_01")
+  ];
+
+  assert.deepEqual(validateCuuLive2DPsdDraftLayers(layers), []);
+
+  const broken = layers.filter((layer) => layer.name !== "Eye_L_Closed" && layer.name !== "Tail_02");
+  const issueCodes = validateCuuLive2DPsdDraftLayers([
+    ...broken,
+    { ...psdLayer("Tassel_L_String_01"), width: 0 },
+    { ...psdLayer("Mouth_OpenSmall", 255), default_visible: false }
+  ]).map((issue) => issue.code);
+
+  assert.ok(issueCodes.includes("missing_psd_layer"));
+  assert.ok(issueCodes.includes("duplicate_psd_layer"));
+  assert.ok(issueCodes.includes("invalid_psd_layer_geometry"));
+  assert.ok(issueCodes.includes("missing_default_visible_layer"));
+});
+
 function layer(
   id: CuuLive2DManifest["layers"][number]["id"],
   source_layer: string,
@@ -171,4 +227,19 @@ function motion(
   parameters: CuuLive2DManifest["motions"]["idle"]["parameters"]
 ): CuuLive2DManifest["motions"]["idle"] {
   return { id, loop, priority, fallback_sprite_clip, parameters };
+}
+
+function psdLayer(name: string, opacity = 255) {
+  return {
+    name,
+    group: "probe",
+    image_path: `layers/${name}.png`,
+    x: 1,
+    y: 1,
+    width: 10,
+    height: 10,
+    opacity,
+    z_index: 1,
+    default_visible: opacity > 0
+  };
 }

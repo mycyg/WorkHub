@@ -1,0 +1,47 @@
+{
+  "baseline": "pet-bongo-cuu-cdp-frame-0000.png",
+  "comparisons": [
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-0700.png",
+      "changed_pixels_gt8": 2450,
+      "avg_channel_max_diff": 1.6444940476190477,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-1400.png",
+      "changed_pixels_gt8": 3694,
+      "avg_channel_max_diff": 4.143005952380952,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-2100.png",
+      "changed_pixels_gt8": 54,
+      "avg_channel_max_diff": 0.0440327380952381,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-2800.png",
+      "changed_pixels_gt8": 2645,
+      "avg_channel_max_diff": 2.001800595238095,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-3500.png",
+      "changed_pixels_gt8": 1748,
+      "avg_channel_max_diff": 0.8819196428571429,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-4200.png",
+      "changed_pixels_gt8": 241,
+      "avg_channel_max_diff": 0.12327380952380952,
+      "bbox": null
+    },
+    {
+      "frame": "pet-bongo-cuu-cdp-frame-4900.png",
+      "changed_pixels_gt8": 2862,
+      "avg_channel_max_diff": 2.458392857142857,
+      "bbox": null
+    }
+  ]
+}

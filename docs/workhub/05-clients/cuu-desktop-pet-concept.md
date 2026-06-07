@@ -9,9 +9,10 @@ owner: workflow
 
 > **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的橘色卡通小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
 >
+> **当前默认视觉路线**：见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。用户已明确反馈当前 PSD draft 有恐怖谷风险，因此 Cuu P1 默认改为参考 [BongoCat](https://github.com/ayangweb/BongoCat) 思路的低恐怖谷扁平小猫 renderer；PSD / Live2D 只保留为实验线，过美术 QA 后才能回到默认。
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。当前已新增 GPT Image 绿幕零件板与 `cuu-live2d-generated-psd-draft-v1.psd`，下一步主线是清理 144 层 PSD、补画遮挡、导入 Cubism 并录屏验证真实活体动作。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；下一步主线是先增强 Bongo Cuu 动作并做真实 Tauri 录屏，Live2D 继续精修。
 
 ## 1. 角色定位
 
@@ -103,7 +104,17 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 这组图是当前最接近施工资产的参考：绿幕零件板已经被脚本自动抠图、编号和裁切，`generated-psd-draft-v1` 已拼成 9 个顶层组、144 个叶子图层、144 个 layer PNG 的 PSD 草案。它回答了“不同分层素材能否通过生图批量生成并调整大小拼接”：可以，且已经落成可重复生成脚本。
 
-但这仍不是最终桌宠通过证据。最终通过必须满足：PSD 在 Cubism 中可导入；眼睛/眼皮/嘴型/耳朵/尾巴/蝴蝶结/流苏有连续参数和物理；桌面右下角独立 `pet` 窗口录屏中能看到眨眼、呼吸、看鼠标、尾巴、任务动作，而不是静态图或缩放变化。
+![Cuu PSD draft runtime probe 多帧截图](./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png)
+
+这张多帧图是 PSD draft 的运行探针：它曾让 `pet.html` / pet surface 挂载 `generated-psd-draft-v1` 中选出的 72 个 layer PNG，而不是 8 层 prototype 或静态 fallback。DOM 里能审计 `Eye_L_Closed`、`Tail_01`、`Tassel_L_01` 等真实 PSD layer；CSS 中眼睛、尾巴、耳朵、嘴型、蝴蝶结、流苏和爪子分别动。它证明“批量生成部件 -> 调整大小拼接 -> 分层运行”这条技术路线可行，但仍不是最终 Cubism 通过。
+
+但这仍不是最终桌宠通过证据，也不再是默认视觉。最终 Live2D 通过必须满足：PSD 在 Cubism 中可导入；眼睛/眼皮/嘴型/耳朵/尾巴/蝴蝶结/流苏有连续参数和物理；桌面右下角独立 `pet` 窗口录屏中能看到眨眼、呼吸、看鼠标、尾巴、任务动作，而不是静态图或缩放变化。
+
+### 3.5.2 Bongo-style 低恐怖谷默认 Cuu
+
+![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。这条路线的目标是先让 Cuu 可爱、稳定、愿意常驻，再逐步补更明显的挥手、抱文件、审批敲桌、检索和庆祝动作。
 
 ### 3.6 当前实现差距
 
@@ -121,6 +132,8 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 但这些还不等于「桌宠已经完成」：
 
 - 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；已有 Live2D 分层拆件概念图和施工专篇；但还没有正式分层 PSD、Cubism `.moc3` / `.model3.json` 或 Tauri Live2D runtime。
+- 当前默认 pet surface 已切到 `bongo_cuu`：扁平、稳定、低恐怖谷，DOM/CSS 组件数 `24`，保留 Cuu 的围兜、蝴蝶结、红珠和尾巴识别点。
+- `psd_draft_probe` 从 144 层 PSD draft 中选出 72 个运行层渲染，能证明眼睛、尾巴、耳朵、流苏等层被真实挂载；但它仍是 `draft_created_not_visual_pass`，因恐怖谷风险只保留为实验线，不能替代精修 PSD / Cubism。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、显示 body-only Cuu，并在 mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；同日 card mode motion capture 已确认事件卡触发后窗口可从 `194 x 228` 扩到 `394 x 568`，最终 fresh 抓帧中 Cuu 完整身体可见、轻卡右侧有 HiDPI 留白；最新 dev asset path 修复后，body-only 第一屏可见 `idle_tail_sway`，不再依赖 inline 静态 fallback 或缩放呼吸；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
 - 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和 body anchor 位置落盘；bridge 现在会校验 Rust placement，缺失 invoke 或 placement 时显式进入 diagnostic/compact fallback，不再静默裁切；仍缺收起、真实独立设置页、多屏实测恢复和低电量降帧。

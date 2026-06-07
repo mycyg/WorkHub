@@ -1,0 +1,126 @@
+{
+  "baseline": "pet-psd-draft-cdp-frame-0000.png",
+  "comparisons": [
+    {
+      "frame": "pet-psd-draft-cdp-frame-0700.png",
+      "changed_pixels_gt8": 2285,
+      "avg_channel_max_diff": 1.4445238095238095,
+      "bbox": [
+        19,
+        6,
+        180,
+        202
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-0900.png",
+      "changed_pixels_gt8": 2189,
+      "avg_channel_max_diff": 1.3023660714285714,
+      "bbox": [
+        19,
+        6,
+        180,
+        196
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-1400.png",
+      "changed_pixels_gt8": 2740,
+      "avg_channel_max_diff": 1.772172619047619,
+      "bbox": [
+        18,
+        6,
+        180,
+        196
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-1800.png",
+      "changed_pixels_gt8": 2174,
+      "avg_channel_max_diff": 1.1457589285714285,
+      "bbox": [
+        18,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-2100.png",
+      "changed_pixels_gt8": 735,
+      "avg_channel_max_diff": 0.530967261904762,
+      "bbox": [
+        20,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-2700.png",
+      "changed_pixels_gt8": 1920,
+      "avg_channel_max_diff": 1.1187351190476191,
+      "bbox": [
+        19,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-2800.png",
+      "changed_pixels_gt8": 2273,
+      "avg_channel_max_diff": 1.3506696428571427,
+      "bbox": [
+        19,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-3500.png",
+      "changed_pixels_gt8": 1799,
+      "avg_channel_max_diff": 0.9829464285714286,
+      "bbox": [
+        19,
+        6,
+        180,
+        196
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-3600.png",
+      "changed_pixels_gt8": 1787,
+      "avg_channel_max_diff": 1.0126636904761905,
+      "bbox": [
+        19,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-4800.png",
+      "changed_pixels_gt8": 2273,
+      "avg_channel_max_diff": 1.3506696428571427,
+      "bbox": [
+        19,
+        6,
+        180,
+        195
+      ]
+    },
+    {
+      "frame": "pet-psd-draft-cdp-frame-5200.png",
+      "changed_pixels_gt8": 570,
+      "avg_channel_max_diff": 0.2960565476190476,
+      "bbox": [
+        20,
+        6,
+        180,
+        191
+      ]
+    }
+  ]
+}

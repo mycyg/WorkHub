@@ -18,10 +18,10 @@ import {
   type DesktopCuuAtlasRender
 } from "./cuu-atlas-runtime.js";
 import {
-  renderDesktopCuuLive2DPrototypeForMotion,
-  renderDesktopCuuLive2DPrototypeForState,
-  type DesktopCuuLive2DRender
-} from "./cuu-live2d-runtime.js";
+  renderDesktopCuuBongoForIdleAction,
+  renderDesktopCuuBongoForMotion,
+  type DesktopCuuBongoRender
+} from "./cuu-bongo-runtime.js";
 import { loadCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
@@ -46,8 +46,8 @@ export type DesktopPetSurfaceRender = {
   html: string;
   css: string;
   sprite: DesktopCuuAtlasRender;
-  live2d?: DesktopCuuLive2DRender;
-  visual_mode: "live2d_prototype" | "sprite_atlas";
+  bongo: DesktopCuuBongoRender;
+  visual_mode: "bongo_cuu" | "live2d_psd_draft" | "live2d_prototype" | "sprite_atlas";
 };
 
 export type DesktopPetSurfaceRuntime = {
@@ -168,10 +168,10 @@ export function renderDesktopPetSurface(input: {
         clip_images: desktopCuuP1ClipSheetImages,
         prefer_background_clip_sheet: true
       });
-  const live2d = input.card
-    ? renderDesktopCuuLive2DPrototypeForMotion(motion, { display_width_px: displayWidth })
-    : renderDesktopCuuLive2DPrototypeForState(input.idle_action ?? "idle_breathe", { display_width_px: displayWidth });
-  const visualMode = live2d ? "live2d_prototype" : "sprite_atlas";
+  const bongo = input.card
+    ? renderDesktopCuuBongoForMotion(motion, { display_width_px: displayWidth })
+    : renderDesktopCuuBongoForIdleAction(input.idle_action ?? "idle_breathe", { display_width_px: displayWidth });
+  const visualMode = "bongo_cuu";
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({
         card: input.card,
@@ -184,12 +184,12 @@ export function renderDesktopPetSurface(input: {
 
   return {
     sprite,
-    live2d,
+    bongo,
     visual_mode: visualMode,
-    css: `${desktopPetSurfaceCss}${sprite.css}${live2d?.css ?? ""}`,
-    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}"${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-status="${escapeHtml(live2d?.status ?? "unavailable")}" data-cuu-live2d-motion="${escapeHtml(live2d?.motion_id ?? "")}" data-cuu-live2d-layer-count="${escapeHtml(live2d?.layer_count ?? 0)}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    css: `${desktopPetSurfaceCss}${bongo.css}${sprite.css}`,
+    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}"${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
-        ${live2d?.html ?? sprite.html}
+        ${bongo.html}
       </button>
       ${bubble}
     </section>`

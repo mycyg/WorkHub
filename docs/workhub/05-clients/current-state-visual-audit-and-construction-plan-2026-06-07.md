@@ -15,6 +15,8 @@ visuals:
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
+  - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
   - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
@@ -26,7 +28,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板和 144 层 `generated-psd-draft-v1`，下一步主线是 Live2D PSD 清理、Cubism 绑定与多秒桌宠录屏验收。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。下一步主线是增强 Bongo Cuu 动作并做真实 Tauri 录屏；Live2D 继续精修。
 
 ---
 
@@ -176,7 +178,85 @@ visuals:
 - 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
 - 现阶段只达到“动作资源真实加载、不是静态 fallback”的技术门槛；距离「会眨眼、看鼠标、尾巴/流苏轻物理、抱文件来找用户、任务动作可读」仍需要 Live2D / Cubism 资产路线。
 
-### 0.4 P1.0 双语运行时底座（2026-06-07）
+### 0.4 CUX-L2D-001：PSD Draft Runtime Probe（2026-06-08）
+
+用户最新验收口径：Cuu 不能只是 8 层裁片、不能只有缩放，也不能用一张静态图伪装动作；如果要走 Live2D，必须先把 PSD 分层做细。为此，本轮把 144 层 `generated-psd-draft-v1` 接成 `psd_draft_probe` 运行探针。随后用户复核认为该 PSD 草案有恐怖谷风险，因此它只保留为实验线，不再作为默认 pet surface。
+
+![Cuu PSD draft runtime probe](./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png)
+
+本轮新增资产：
+
+- 多帧 contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png`
+- 原始截图：`pet-psd-draft-cdp-frame-0000.png`、`pet-psd-draft-cdp-frame-0700.png`、`pet-psd-draft-cdp-frame-1400.png`、`pet-psd-draft-cdp-frame-2100.png`、`pet-psd-draft-cdp-frame-2800.png`、`pet-psd-draft-cdp-frame-3500.png`、`pet-psd-draft-cdp-frame-4800.png`、`pet-psd-draft-cdp-frame-5200.png`
+- DOM：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-dom.json`
+- 像素差分：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-diff-report.json`
+
+本轮代码落点：
+
+| 文件 | 作用 |
+|---|---|
+| `packages/cuu/src/live2d-psd-draft.ts` | 校验 PSD draft runtime probe 必需层，防止缺眼睛/尾巴/流苏仍被当成通过 |
+| `apps/desktop-webview/src/cuu-live2d-psd-draft-assets.ts` | 从 144 层 draft 中显式列出 72 个运行时探针层和坐标 |
+| `apps/desktop-webview/src/cuu-live2d-psd-draft-runtime.ts` | 渲染 layer PNG、data attrs 和 tail/ear/eye/mouth/bow/tassel/paw 动作 |
+| `apps/desktop-webview/src/pet-surface.ts` | 曾用于验证 `psd_draft_probe -> prototype_layered -> sprite_atlas`；现默认已切到 `bongo_cuu` |
+| `scripts/qa/cuu-pet-browser-capture.mjs` | 通过 Chrome CDP 多帧截图、DOM dump 和报告生成 |
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| 全身可见 | 通过；多帧截图中不是只露耳朵、局部或空白 |
+| 实验 renderer | 通过；实验截图中 `data-cuu-visual-mode="live2d_psd_draft"`，DOM 里有 `data-cuu-live2d-runtime="psd_draft_probe"` |
+| 真实分层 | 通过；DOM 可见 `Eye_L_Closed`、`Tail_01`、`Tassel_L_01` 等 PSD layer |
+| 非缩放动作 | 技术通过；CSS 中尾巴、耳朵、眼睛、嘴型、蝴蝶结、流苏、爪子独立运动 |
+| 动作鲜活感 | **未通过最终验收**；仍是 CSS 层动画，不是 Cubism mesh / physics |
+| 美术质量 | **未通过最终验收**；尾巴、绿边、遮挡补画和部分生成件仍需精修 |
+| Tauri 真实窗口 | 待补；本轮为 browser pet surface CDP 截图，下一轮必须跑真实 Tauri `Cuu` 顶层窗口录屏 |
+
+下一步施工：
+
+1. 继续批量生成更细的 `face-core`、`body-core`、`tail-chain`、`collar-lace`、`bow-tassel`、`paint-behind` 绿幕零件板。
+2. 自动抠图后只把候选部件放进 PSD draft，正式 PSD 仍必须人工清理边缘、修遮挡和统一画风。
+3. 用 Cubism Editor 导入精修 PSD，绑定 `ParamEyeOpen`、`ParamTailSway`、`ParamTasselSwing`、`ParamPawTap` 等参数。
+4. 录制真实 Tauri 透明 `Cuu` window 多秒动作，验收眨眼、尾巴、耳朵、流苏、看鼠标和任务动作。
+
+### 0.5 CUX-BONGO-001：低恐怖谷默认 Cuu（2026-06-08）
+
+用户复核结论：PSD draft 会触发恐怖谷风险，不适合作为默认桌宠。参考 [BongoCat](https://github.com/ayangweb/BongoCat) 后，本轮把默认 pet renderer 改为 `bongo_cuu`：扁平圆润、少状态强反馈、形体稳定，不依赖 AI 生成肢体。
+
+![Cuu Bongo-style runtime](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+本轮新增 / 修改：
+
+| 文件 | 作用 |
+|---|---|
+| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 24 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档和桌面 |
+| `apps/desktop-webview/src/pet-surface.ts` | 默认 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"` |
+| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu，不允许默认 HTML 出现 PSD layer |
+| `scripts/qa/cuu-pet-browser-capture.mjs` | 默认等待 `[data-cuu-bongo-runtime="bongo_cuu"]` 并抓多帧截图 |
+| `docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | 新增默认路线专篇 |
+
+截图证据：
+
+- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png`
+- DOM：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-dom.json`
+- Diff：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-diff-report.json`
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| 恐怖谷止损 | 通过；默认不再展示 PSD draft |
+| 默认 renderer | 通过；`data-cuu-visual-mode="bongo_cuu"` |
+| PSD 隐藏 | 通过；DOM 中 `live2d=null`，`layers=[]`，`data-cuu-live2d-layer-count="0"` |
+| 全身可见 | 通过；多帧截图中 Cuu 全身可见，不是只露耳朵 |
+| 动作 | P1 技术通过；尾巴、头、眨眼、爪、耳朵已有 keyframes |
+| 鲜活感 | 继续增强；当前动作安全但偏温和，后续要补更明显的挥手、抱文件、敲桌、检索和庆祝 |
+| Tauri 真实窗口 | 待补；本轮是 browser CDP，下一轮必须真实 `Cuu` hwnd 录屏 |
+
+下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 先让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。
+
+### 0.6 P1.0 双语运行时底座（2026-06-07）
 
 本轮在 Cuu motion 修复后，先补了客户端级中英双语底座，避免后续 Web / desktop 主窗 / Cuu 气泡各自发明一套语言切换。
 
@@ -260,7 +340,8 @@ visuals:
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案与文档预览 | 方向正确，但还需修绿边、尾巴、遮挡补画、Cubism 绑定和录屏验收 | P1 |
+| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图和 DOM 通过 | 方向正确；还需增强动作幅度、录真实 Tauri 窗口、补拖拽/hover/任务动作截图 | P1 |
+| Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
 
@@ -967,11 +1048,11 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 
 推荐顺序：
 
-1. **清理 Cuu Live2D PSD v1**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画和默认预览。
-2. **导入 Cubism 做基础绑定**：先完成 idle / blink / look_at_mouse / tail sway / tassel physics，不追求复杂动作但必须肉眼鲜活。
-3. **替换 pet body renderer**：默认用 Cubism runtime；atlas / Hatch / static fallback 只在加载失败时使用。
-4. **录屏验收 Cuu**：多次截图、GIF/MP4、diff report、黑白背景 alpha 检查，确认不是只缩放、不卡顿、不绿边、不多腿。
-5. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
+1. **增强 Bongo Cuu 默认动作**：补挥手、抱文件、审批敲桌、检索窥探、庆祝和拖拽姿态，动作必须比当前 browser contact sheet 更明显。
+2. **真实 Tauri Bongo Cuu 录屏验收**：用 `scripts/qa/cuu-tauri-motion-capture.ps1` 抓真实 `Cuu` 顶层窗口 GIF/MP4/contact sheet，确认右下角全身可见、不卡顿、不裁切。
+3. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
+4. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
+5. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏肉眼通过后才允许进入默认候选。
 6. **Web Home 真页面**：按 AI-first concept 改首屏。
 7. **Option Intake 真页面**：补 stepper、附件、summary、Cuu 推荐。
 8. **Desktop One Thing Desk**：主窗变成本地单件事干活桌。
