@@ -1,0 +1,30 @@
+{
+  "surface": {
+    "whSurface": "pet",
+    "petWindowMode": "card",
+    "petCardLayout": "full",
+    "petCardKind": "approval",
+    "petCardPriority": "urgent",
+    "petCardHasContext": "true",
+    "cuuState": "asking_approval",
+    "cuuIdleAction": "idle_breathe",
+    "cuuVisualMode": "bongo_cuu",
+    "cuuBongoStatus": "p1_default_low_uncanny",
+    "cuuBongoMotion": "asking_approval_bounce",
+    "cuuBongoComponentCount": "31",
+    "cuuLive2dStatus": "experiment_hidden",
+    "cuuLive2dMotion": "",
+    "cuuLive2dLayerCount": "0",
+    "cuuAtlasFallback": "false",
+    "cuuManifestUrl": "file:///D:/WorkHub/apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json"
+  },
+  "bongo": {
+    "cuuBongoRuntime": "bongo_cuu",
+    "cuuBongoStatus": "p1_default_low_uncanny",
+    "cuuBongoState": "asking_approval_bounce",
+    "cuuBongoRequestedState": "asking_approval_bounce",
+    "cuuBongoComponentCount": "31"
+  },
+  "live2d": null,
+  "layers": []
+}

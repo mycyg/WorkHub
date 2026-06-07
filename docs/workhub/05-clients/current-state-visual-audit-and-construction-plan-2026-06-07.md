@@ -968,6 +968,40 @@ apps/desktop-webview/src/pet-surface-qa.ts
 apps/desktop-webview/src/pet-surface.test.ts
 ```
 
+2026-06-08 施工状态：
+
+![Cuu Pet card P1.2 normal approval contact sheet](./assets/audit/2026-06-08-cuu-pet-card-p1-2-normal/cuu-pet-card-p1-2-contact-sheet.png)
+
+![Cuu Pet card P1.2 reject-reason contact sheet](./assets/audit/2026-06-08-cuu-pet-card-p1-2/cuu-pet-card-p1-2-contact-sheet.png)
+
+已落：
+
+- `apps/desktop-webview/src/pet-surface.ts` 现在会把 `CuuCard.kind` / `priority` / `sections` / `progress` / `evidence_refs` / `input` 渲染进独立桌宠轻卡；正常审批态能同时看到 Cuu 全身、主按钮、变更摘要和风险摘要。
+- 轻卡根节点新增 `data-pet-card-kind`、`data-pet-card-priority`、`data-pet-card-has-context`；bubble 新增 kind / priority badge、PR 式 section、证据摘要、progress、option-first input hint。
+- 澄清卡的 chips 已变成可点击 option button；单选会本地切换选中态并提示「点确认继续」，打字仍保持折叠，不在桌宠窗里放 textarea。
+- 操作区前置：chips 后立即展示「同意 / 打回」等按钮；打回原因状态下仍能看到固定原因按钮，不再把按钮挤到不可见区域。
+- `pet-surface-qa.ts` 新增 `heavy_card_context` 门禁，防止审批 / proposal / evidence / budget 的 PR-like context 被再次丢掉。
+- 浏览器 CDP 抓帧已生成两组证据：正常审批态展示摘要与风险；打回原因态展示按钮和原因选择。两组截图中 Cuu 均为 Bongo-style 全身可见，不再只露耳朵，也没有多腿 AI 幻觉。
+
+仍未完成：
+
+- `submit_option` 目前仍走已有 `nextQuestion` 基础动作，没有把选中的 option id 作为请求 payload 提交；下一步需要给 session API / client / Cuu action 增加 `selected_option_ids`。
+- 证据区域在轻卡高度内只适合摘要；完整证据列表、证据详情、引用定位和二次追问需要 deep-link 到主窗证据/项目检索页。
+- Budget / evidence / sync / offline 四类卡已具备同一渲染能力，但仍需要分别制作真实事件 fixture 和截图验收。
+- 这次是 browser CDP 视觉证据；下一轮要把 P1.2 card fixture 接进真实 Tauri `PrintWindow` motion capture，验证透明顶层窗口中的同一布局。
+
+后续 P1.2b Target paths：
+
+```text
+packages/contracts/src/experience.ts
+packages/api-client/src/client.ts
+apps/api/src/routes/sessions.ts
+apps/desktop-webview/src/desktop-cuu-runtime.ts
+apps/desktop-webview/src/pet-surface.ts
+apps/desktop-webview/src/pet-surface.test.ts
+docs/workhub/05-clients/assets/audit/<date>-cuu-pet-card-p1-2-tauri/
+```
+
 ### 6.4 P1.3：Web 真页面路线
 
 目标：把 Gold Path shell 从 render helper demo 变成真实 SPA。

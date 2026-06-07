@@ -135,8 +135,8 @@ P0.5 的「可点击纵切」已经有一批核心底座：
 | Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 Cuu notice |
 | Cuu sprite runtime MVP | `packages/cuu/src/sprite-manifest.ts`、`apps/desktop-webview/src/cuu-sprite-runtime.ts` | 已把 `CuuMotionHint.sprite_state` 接到可校验 manifest 和 procedural CSS sprite renderer；尚非正式图片资产 |
 | Cuu motion pack | `packages/cuu/src/atlas-manifest.ts`、`apps/desktop-webview/src/cuu-atlas-assets.ts`、`apps/desktop-webview/src/cuu-atlas-runtime.ts`、`apps/desktop-webview/src/assets/cuu/*` | 已把 18 个 GPT Image 绿幕 sprite sheet 抠图为透明 PNG，并合成 `cuu-p1-motion-pack.png` / `cuu.sprite.json`；当前覆盖全部 `CuuMotionHint.sprite_state` 业务状态与 idle / interaction micro action；内联静态 fallback 保证 Tauri/WebView2 大图加载异常时仍有可见 Cuu |
-| Cuu pet surface | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Cuu atlas 本体和一张轻气泡，不加载 Gold Path 主壳；打回理由是固定按钮 |
-| Cuu pet visual QA | `apps/desktop-webview/src/pet-surface-qa.ts` | 静态检查透明 root、右下角独立 surface、点击/拖拽热区、非主壳、真实多帧 atlas、card mode 轻气泡和选项优先 |
+| Cuu pet surface | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Cuu Bongo / atlas 本体和一张轻气泡，不加载 Gold Path 主壳；P1.2 已渲染 kind / priority / sections / progress / evidence refs / input hint，操作区前置，打回理由是固定按钮 |
+| Cuu pet visual QA | `apps/desktop-webview/src/pet-surface-qa.ts` | 静态检查透明 root、右下角独立 surface、点击/拖拽热区、非主壳、Bongo 默认、真实多帧 atlas fallback、card mode 轻气泡、选项优先和 heavy card context |
 | Cuu idle scheduler | `packages/cuu/src/idle-scheduler.ts` | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；当前先输出动作语义，视觉仍受 atlas 覆盖度限制 |
 | Cuu pet geometry / commands / bridge | `client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、`client-tauri/src-tauri/src/main.rs`、`apps/desktop-webview/src/pet-window-bridge.ts` | 已固定 body-only/card 双模式、右下角定位、展开锚点、work area clamp、鼠标接近判定、拖拽 plan、`set_pet_window_mode` / `start_pet_window_drag` / `save_pet_window_position` / `sample_pet_cursor_near` command 名，已在 `main.rs` 注册 command；setup 会动态创建 `create:false` 的 `pet` window 并注入 pet surface flag；启动期 body-only 显示、mode resize/position/show、drag、save-position 已执行到 Tauri window API，cursor sampling 已执行到 Tauri AppHandle，body anchor 防漂移与 `pet-window-state.json` 落盘已落，并把 hover/drag/release/cursor sample 接进 pet surface |
 | Cuu controller / badge / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / badge / drop 决策；desktop runtime 会尊重勿扰与队列策略；browser 侧已有 queue badge、超时后推进下一张卡、默认隐藏的提醒/声音/减少动效/队列上限偏好面板；`knowledge-search` action 可回显 evidence card，`use_for_current_task` 可绑定当前证据到 WorkItem |
@@ -221,7 +221,7 @@ packages/cuu/
 |---|---|---|---|
 | Cuu-P1a | 把 motion hint 绑定 sprite / atlas manifest | `defaultCuuSpriteManifest`、`CuuSpriteAtlasManifest`、`CuuSpriteState` 校验 | **业务状态与 micro-action full coverage 已落**：每个 `CuuState` 有 procedural clip、fps、reduced-motion 文案，18 个真实 atlas clip 已落，并可通过 `require_full_motion_coverage` 与 `require_idle_micro_action_coverage`；下一步做 anchor/压缩/QA 与主窗替换 |
 | Cuu-P1b | 在 desktop webview 渲染可动 Cuu | `CuuController`、atlas renderer、bubble layer、pet surface QA | **P1 已落**：notice 内可渲染 procedural sprite，pet surface 可渲染 18 clip motion pack atlas，controller 已能决策 show/queue/badge/drop，browser 已有 queue badge、超时推进和偏好面板，idle scheduler 与 pointer bridge 已接，pet surface 静态视觉合同、Windows `PrintWindow` smoke、motion capture、dev asset path 修复和非缩放动作验收已落；下一步替换主窗 notice 为真实 frame animation、做 alpha 边缘和跨平台透明 capture QA |
-| Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler | 审批/下一题/知识检索回显/证据带回当前任务已落；待证据详情展开和完整检索页 |
+| Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler + pet surface | 审批/下一题/知识检索回显/证据带回当前任务已落；Pet card P1.2 已把审批/澄清轻卡上下文和 option-first DOM 渲染落地；待 `selected_option_ids` 真实提交、证据详情展开、预算/证据/sync fixture 和完整检索页 |
 | Cuu-P2a | 独立 `pet` window | Tauri window + open/hide command + pet surface | **基础已落**：Rust 动态创建真实透明 `pet` window，注入 pet surface flag，body/card 几何、拖拽/模式 bridge、位置记忆、主窗隐藏后可见像素 smoke 已落；待收起细节、多屏恢复、安装包 smoke 和跨平台透明 capture |
 | Cuu-P2b | Rive state machine | `.riv` + runtime adapter | push-event 触发自然过渡，失败可降级到 sprite |
 | Cuu-P3 | Live2D 分层模型 | 分层 PSD、Cubism `.moc3` / `.model3.json`、Tauri runtime adapter | Cuu 的呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可由事件触发，加载失败可降级 sprite |
@@ -424,7 +424,7 @@ Rust 应只做：
 
 推荐下一个施工切片不要直接追 Live2D，也不要先做复杂看板，而是：
 
-1. **Pet card P1.2**：离线轻卡已先做人话化；继续把审批 / 澄清 / 证据 / 预算轻卡打磨成人话卡，并让卡片出现前先触发对应 Bongo 动作。
+1. **Pet card P1.2b**：P1.2 已落审批 / 澄清轻卡上下文、option button、本地选中态和 browser CDP 截图；继续补 `selected_option_ids` 到 session API、证据详情 deep-link、预算 / evidence / sync fixtures，并把 P1.2 card fixture 接进真实 Tauri `PrintWindow` capture。
 2. **Bongo P1d 动作与窗口体验**：在 first-painted 首帧已修的基础上，继续补缩放、透明度、贴边、hover 避让、显示/隐藏快捷入口，并加大抱文件 / 审批敲桌 / 完成庆祝的动作幅度。
 3. **GAP-CUU-05 Live2D PSD + Cubism**：card mode 只露耳朵已作为 P0 bug 修复并保留回归样例；8 层裁片 prototype 和未精修 PSD draft 都不能默认展示。继续清理 `generated-psd-draft-v1`、补画遮挡、导入 Cubism 并录屏验证眨眼、呼吸、尾巴、流苏和任务动作；只有美术 QA 通过后才允许替换 Bongo 默认。
 4. **GAP-CUU-04 + GAP-RUST-01**：在独立 `pet` window 已可见、card mode geometry 和 first-painted 首帧已修的基础上，继续补拖拽后位置截图、多屏恢复、安装包 smoke 和跨平台透明 capture。

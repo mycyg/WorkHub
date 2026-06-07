@@ -7,6 +7,7 @@ export type DesktopPetVisualQaCheckId =
   | "no_main_shell"
   | "bongo_runtime_contract"
   | "card_mode_light_bubble"
+  | "heavy_card_context"
   | "option_first_card";
 
 export type DesktopPetVisualQaCheck = {
@@ -100,6 +101,16 @@ export function createDesktopPetVisualQaReport(input: {
       "expanded mode must remain a small option bubble beside Cuu, not a full application panel."
     ),
     qaCheck(
+      "heavy_card_context",
+      input.card.html.includes('data-pet-card-has-context="true"') &&
+        input.card.html.includes('data-pet-context="true"') &&
+        input.card.html.includes("wh-pet-kind") &&
+        input.card.html.includes("wh-pet-section") &&
+        input.card.html.includes("wh-pet-evidence") &&
+        input.card.html.includes("data-pet-evidence-count="),
+      "approval, proposal, evidence and budget cards must surface compact context inside the pet bubble instead of dropping PR-like details."
+    ),
+    qaCheck(
       "option_first_card",
       input.card.html.includes("data-cuu-action-id=") &&
         input.card.html.includes("data-pet-reason=") &&
@@ -147,6 +158,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     no_main_shell: "no main shell",
     bongo_runtime_contract: "Bongo-style runtime contract",
     card_mode_light_bubble: "card-mode light bubble",
+    heavy_card_context: "heavy card context",
     option_first_card: "option-first card"
   };
   return labels[id];

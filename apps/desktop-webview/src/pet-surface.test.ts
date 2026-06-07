@@ -40,6 +40,36 @@ function approvalCard(): CuuCard {
     message: "点一个选项即可继续。",
     priority: "urgent",
     chips: [{ id: "file-only", label: "仅改文件", recommended: true }],
+    sections: [
+      {
+        id: "changes",
+        title: "这次改了什么",
+        lines: ["更新周报草稿和验收清单", "新增 JSON 配置示例"]
+      },
+      {
+        id: "risk",
+        title: "风险与回滚",
+        lines: ["低风险，可回滚", "不触碰生产部署"]
+      }
+    ],
+    evidence_refs: [
+      {
+        id: "ev-weekly",
+        source_type: "spec_doc",
+        source_id: "doc-1",
+        title: "上周周报",
+        locator: { path: "docs/weekly.md" },
+        confidence_hint: "found"
+      },
+      {
+        id: "ev-config",
+        source_type: "drive_file",
+        source_id: "file-1",
+        title: "配置样例",
+        locator: { path: "config/sample.json" },
+        confidence_hint: "found"
+      }
+    ],
     actions: [
       {
         id: "approve",
@@ -55,6 +85,65 @@ function approvalCard(): CuuCard {
         method: "POST",
         href: "/api/approvals/approval-1/respond",
         requires_reason: true
+      }
+    ]
+  };
+}
+
+function questionCard(): CuuCard {
+  return {
+    id: "question-card",
+    kind: "question",
+    state: "asking_approval",
+    motion: cuuMotionForState("asking_approval"),
+    title: "这次要按哪种口径整理？",
+    message: "Cuu 推荐先走轻量方案。",
+    priority: "high",
+    chips: [
+      {
+        id: "minimal",
+        label: "轻量方案",
+        tone: "success",
+        description: "只整理必要字段",
+        recommended: true
+      },
+      {
+        id: "complete",
+        label: "完整方案",
+        tone: "warning",
+        description: "覆盖全部材料"
+      }
+    ],
+    progress: [
+      { key: "intent", label: "目标", state: "done", index: 0 },
+      { key: "scope", label: "范围", state: "active", index: 1 },
+      { key: "confirm", label: "确认", state: "pending", index: 2 }
+    ],
+    input: {
+      mode: "single_choice",
+      option_first: true,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: true,
+      free_text_placeholder: "补充一句即可",
+      free_text_max_length: 120
+    },
+    actions: [
+      {
+        id: "submit_option",
+        label: "确认选项",
+        tone: "primary",
+        method: "POST",
+        href: "/api/sessions/session-1/next-question"
+      }
+    ],
+    evidence_refs: [
+      {
+        id: "ev-intake",
+        source_type: "spec_doc",
+        source_id: "doc-2",
+        title: "需求草稿",
+        locator: { path: "docs/intake.md" },
+        confidence_hint: "found"
       }
     ]
   };
@@ -356,6 +445,16 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
+  assert.match(card.html, /data-pet-card-kind="approval"/u);
+  assert.match(card.html, /data-pet-card-priority="urgent"/u);
+  assert.match(card.html, /data-pet-card-has-context="true"/u);
+  assert.match(card.html, /data-pet-bubble-kind="approval"/u);
+  assert.match(card.html, /class="wh-pet-kind">审批/u);
+  assert.match(card.html, /data-pet-section-id="changes"/u);
+  assert.match(card.html, /data-pet-section-id="risk"/u);
+  assert.match(card.html, /data-pet-evidence-count="2"/u);
+  assert.match(card.html, /data-evidence-ref-id="ev-weekly"/u);
+  assert.match(card.html, /data-recommended="true"/u);
   assert.match(card.html, /data-cuu-bongo-motion="asking_approval_bounce"/u);
   assert.match(card.html, /data-cuu-bongo-state="asking_approval_bounce"/u);
   assert.match(card.html, /data-cuu-atlas-fallback="false"/u);
@@ -364,6 +463,26 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.doesNotMatch(card.html, /textarea/u);
   assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{left:16px;right:auto;top:16px;bottom:auto/u);
   assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{[^}]*width:260px/u);
+});
+
+test("pet surface renders clarification cards as option-first light cards", () => {
+  const card = renderDesktopPetSurface({
+    card: questionCard()
+  });
+
+  assert.match(card.html, /data-pet-card-kind="question"/u);
+  assert.match(card.html, /data-pet-card-has-context="true"/u);
+  assert.match(card.html, /class="wh-pet-kind">澄清/u);
+  assert.match(card.html, /class="wh-pet-progress"/u);
+  assert.match(card.html, /data-step-key="scope"/u);
+  assert.match(card.html, /data-pet-option-id="minimal"/u);
+  assert.match(card.html, /type="button" aria-pressed="false"/u);
+  assert.match(card.html, /data-pet-option-first="true"/u);
+  assert.match(card.html, /data-pet-input-mode="single_choice"/u);
+  assert.match(card.html, /点选项即可，补充文字已折叠/u);
+  assert.match(card.html, /data-pet-evidence-count="1"/u);
+  assert.match(card.html, /data-cuu-action-id="submit_option"/u);
+  assert.doesNotMatch(card.html, /textarea|<input\b/iu);
 });
 
 test("desktop Cuu Bongo renderer makes P1b business and idle actions readable", () => {
