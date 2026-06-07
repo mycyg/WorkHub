@@ -11,7 +11,7 @@ owner: workflow
 >
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；结论是 Cuu 已有轻微动效，但事件卡片会被 body-only 小窗裁切，必须优先修复。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。剩余核心差距是动作丰富度与长期活体表现，下一步进入 Hatch Pack / Live2D。
 
 ## 1. 角色定位
 
@@ -108,10 +108,10 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；已有 Live2D 分层拆件概念图和施工专篇；但还没有正式分层 PSD、Cubism `.moc3` / `.model3.json` 或 Tauri Live2D runtime。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
-- 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、显示 body-only Cuu，并在 mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
-- 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和 body anchor 位置落盘；仍缺收起、真实独立设置页、多屏实测恢复和低电量降帧。
+- 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、显示 body-only Cuu，并在 mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；同日 card mode motion capture 已确认事件卡触发后窗口可从 `194 x 228` 扩到 `394 x 568`，最终 fresh 抓帧中 Cuu 完整身体可见、轻卡右侧有 HiDPI 留白；最新 dev asset path 修复后，body-only 第一屏可见 `idle_tail_sway`，不再依赖 inline 静态 fallback 或缩放呼吸；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
+- 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和 body anchor 位置落盘；bridge 现在会校验 Rust placement，缺失 invoke 或 placement 时显式进入 diagnostic/compact fallback，不再静默裁切；仍缺收起、真实独立设置页、多屏实测恢复和低电量降帧。
 - 证据卡已能触发 typed `knowledge-search` 并回显结果；「用这些证据继续」已通过 `POST /api/workitems/{id}/evidence-bindings` 绑定到当前任务上下文。仍缺真实知识库持久化、证据详情展开和完整检索页分页。
-- 已有 Windows debug `PrintWindow` 自动 smoke，可对透明/layered WebView2 的 `Cuu` 顶层窗口做可见像素检查；还没有自动化 alpha 边缘、帧率、HiDPI、多屏和点击区域 QA。
+- 已有 Windows debug `PrintWindow` 自动 smoke 和多帧 motion capture，可对透明/layered WebView2 的 `Cuu` 顶层窗口做可见像素、尺寸变化和帧差检查；还没有自动化 alpha 边缘、真实帧率、HiDPI、多屏和点击区域 QA。
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
 
@@ -133,7 +133,55 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `CUX-MOTION-001`：第 20 帧附近出现离线卡片，窗口仍为 `194 x 228` body-only 尺寸，卡片和 Cuu 被裁切；说明 `set_pet_window_mode("card")` 或前端 bridge fallback 需要 P0 修复。
 - 单张 smoke 截图只能证明启动可见，不能证明长时间运行、事件触发和卡片展开正确；后续 Cuu 验收必须包含多帧截图、GIF/MP4 和 diff report。
 
-下一步不应先堆更多抽象状态，而应按 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 先修 card mode resize，再制作 Hatch Pet 规格的 Cuu 多动作包。
+这组现在保留为**历史不足证据**：它只能证明窗口有像素和轻微变化，不能证明动作资源真实加载，也不能证明 Cuu 已经“活着”。
+
+### 3.6.2 Card mode 修复后审计（2026-06-07）
+
+第一轮修复后失败证据：
+
+![Cuu card mode 第一轮修复后失败证据](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
+
+最终 HiDPI 修复后证据：
+
+![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
+
+修复后证据：
+
+- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-card-layout.gif`
+- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png`
+- 关键帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-card-mode.png`
+- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-card-layout.json`
+- 最终 GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.gif`
+- 最终 Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png`
+- 最终关键帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-full-body-hidpi-card-mode.png`
+- 最终像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-full-body-hidpi-fix.json`
+
+修复结论：
+
+- `CUX-MOTION-001` 已完成：事件卡触发后，真实 Tauri `Cuu` 窗口从 `194 x 228` 扩到 `394 x 568`，卡片不再被 body-only 小窗裁切；最终 fresh 抓帧中 Cuu 完整身体可见，不再只露耳朵 / 头部。
+- `pet-window-bridge.ts` 现在会校验 Rust `set_pet_window_mode` 的 placement 返回值，缺失 invoke / 缺失 placement / 尺寸不足都会显式失败。
+- `pet-surface.ts` 现在只有在 card mode 确认后才渲染完整轻卡；未确认时走 compact fallback，避免长正文挤进小窗；card bubble 收窄以适配 HiDPI `PrintWindow` 物理截图安全边距。
+- `shell-events.ts` 现在把 `sse-status` 映射成类型化 offline card，用户看到“连接有点不稳 / 重连中”，raw SSE error 只保留在诊断 payload 中。
+- `scripts/qa/cuu-tauri-motion-capture.ps1` 可多帧抓取真实 `Cuu` 顶层窗口，输出 frames、contact sheet、diff JSON、GIF/MP4。
+
+最新鲜活感修复证据：
+
+![Cuu alive motion after dev asset path fix](./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png)
+
+结论：
+
+- `CUX-MOTION-002` 已完成 P1：真实 Tauri 窗口不再依赖 inline 静态 fallback，body-only 第一屏可见 `idle_tail_sway`，进入 card mode 后 Cuu 全身和 worried/offline 姿态仍可见。
+- dev server `/src/assets/...` 不能被错误改写成 `./assets/...`；打包态 `/assets/...` 才相对化。这条已有测试覆盖。
+- 只有大小变化 / 呼吸缩放不能算通过；只露耳朵 / 局部也不能算通过。
+
+剩余差距：
+
+- 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
+- 下一步 Hatch Pack 不再是为修“只露耳朵”兜底，而是为了提升 body anchor 一致性、姿态可爱度和待机/任务动作的鲜活感。
+- 离线卡已完成 P0 人话化，但审批 / 澄清 / 证据 / 预算等轻卡仍需继续按概念图做气泡式、选项优先和少文字化。
+- 当前动作仍是 sprite atlas，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
+
+下一步不应先堆更多抽象状态，而应制作 Hatch Pet 规格的 Cuu 多动作包，再把 pet body renderer 从旧 18 clip 切到 Hatch Pack，最后并行推进 Live2D 分层 PSD。
 
 ### 3.7 施工进展（2026-06-06）
 
@@ -151,10 +199,12 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/assets/cuu/alpha/{idle_breathe,thinking_tail,asking_approval_bounce,carrying_document_step,celebrating_jump,searching_evidence_peek,syncing_files_spin,worried_ears,revision_requested_nod,offline_sleep}/`：本地 chroma-key + despill + edge-contract 后的透明 PNG。
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu-p1-motion-pack.png`：P1 motion pack atlas，当前覆盖 18 个业务状态与 idle / interaction clip。
 - `apps/desktop-webview/src/assets/cuu/atlas/cuu.sprite.json`：与 motion pack atlas 对齐的 JSON manifest，便于 Tauri bundle 读取。
-- `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 clip sheet `<img>` frame stack；非覆盖状态会标记 fallback；内联静态 Cuu fallback 保证 Tauri/WebView2 大 PNG 加载异常时仍显示呼吸态 Cuu。
-- `apps/desktop-webview/src/assets/cuu/static/cuu-static-fallback-v1-alpha-clean.png`：从 idle Cuu alpha 帧生成的静态兜底图，作为 Tauri pet 透明窗口的可见性保险，不替代正式 Live2D / atlas 动画。
+- `apps/desktop-webview/src/cuu-atlas-assets.ts` / `cuu-atlas-runtime.ts`：desktop webview 可按 atlas frame rect 生成 clip sheet background sprite 或 `<img>` frame stack；dev server `/src/assets/...` 保持原路径，打包态 `/assets/...` 才相对化；非覆盖状态会标记 fallback。
+- `apps/desktop-webview/src/assets/cuu/static/cuu-static-fallback-v1-alpha-clean.png`：从 idle Cuu alpha 帧生成的静态兜底图，只作为诊断/兜底资产；运行态 motion QA 不允许用它替代真实 clip sheet / atlas / Live2D 动作。
 - `apps/desktop-webview/src/pet-surface.ts`：Rust injected surface flag、Tauri window label、`/pet`、`?surface=pet`、`#surface=pet` 或 `pet.html` 均能只渲染 Cuu 本体和轻气泡，不加载 Gold Path 主壳。
 - `apps/desktop-webview/src/pet-surface-qa.ts`：新增 Cuu 独立桌宠静态视觉 QA 合同，检查透明窗口语义、右下角独立 surface、pet body 点击/拖拽区域、非主壳、真实多帧 atlas、轻气泡和选项优先卡片。
+- `apps/desktop-webview/src/pet-window-bridge.ts`：新增 bridge diagnostics、legacy invoke 兼容和 Rust placement 校验，避免 `set_pet_window_mode("card")` 静默失败。
+- `scripts/qa/cuu-tauri-motion-capture.ps1`：新增真实 Tauri `Cuu` 顶层窗口多帧捕获，输出 frames、contact sheet、diff JSON 和 GIF/MP4，用于回答“桌宠到底有没有动、事件卡有没有被裁、是否只是在显示静态 fallback”。
 - `packages/cuu/src/idle-scheduler.ts`：新增 Cuu 活体 idle scheduler，覆盖呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲和挥手等微动作语义。
 - `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
 - `client-tauri/src-tauri/src/pet_commands.rs`：新增 Cuu 独立窗口 command scaffold，固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`，并让 capability 开放最小 `core:window:allow-start-dragging`。
@@ -170,7 +220,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 仍未完成：
 
-- 18 个动作的正式透明 PNG / WebP 已落 P1 pack；pet surface 静态视觉 QA 和 Windows debug `PrintWindow` runtime smoke 已落；后续仍需做体积压缩、anchor 微调、alpha 边缘、跨平台透明 capture 和长时间性能 QA。
+- 18 个动作的正式透明 PNG / WebP 已落 P1 pack；pet surface 静态视觉 QA 和 Windows debug `PrintWindow` runtime smoke / motion capture 已落；2026-06-07 已修复 dev sprite asset path 并验证真实 `idle_tail_sway` / card worried/offline 姿态可见；后续仍需做体积压缩、anchor 微调、alpha 边缘、跨平台透明 capture 和长时间性能 QA。
 - `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
 - 独立 Tauri `pet` window runtime 已有初版；生产 Tauri 通过 Rust injected surface flag 分流，浏览器调试保留 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html`；Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge 已落，并已把启动期 Cuu body-only 显示、mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；HiDPI 坐标换算和 runtime topmost 已接；基础托盘显隐、deep-link 主窗唤起、single-instance 聚焦/协议 URL 处理和 high/urgent 系统通知已落；2026-06-07 已通过 Windows debug `PrintWindow` smoke，仍缺多显示器实测、通知点击联动、跨平台透明 capture 和 alpha 边缘 QA。
 - 真实 Tauri 设置页承接、系统通知偏好/去重、收起/恢复、多屏监视器恢复策略和透明窗口长驻 QA。

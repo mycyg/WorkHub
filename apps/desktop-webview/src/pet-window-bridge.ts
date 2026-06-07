@@ -14,6 +14,14 @@ export type DesktopPetWindowBridge = {
   startDragging?: () => void | Promise<void>;
   savePosition?: () => void | Promise<void>;
   sampleCursorNear?: () => boolean | Promise<boolean>;
+  diagnostics?: DesktopPetWindowBridgeDiagnostics;
+};
+
+export type DesktopPetWindowBridgeDiagnostics = {
+  source: "workhub-pet" | "tauri-global";
+  invoke_available: boolean;
+  drag_available: boolean;
+  missing: string[];
 };
 
 type PetCursorSampleResult =
@@ -25,18 +33,34 @@ type PetCursorSampleResult =
       };
     };
 
+type PetWindowModeCommandResult = {
+  placement?: {
+    mode?: DesktopPetWindowMode;
+    size?: {
+      width?: number;
+      height?: number;
+    };
+  };
+};
+
 export type DesktopPetPointerSensor = {
   snapshot: () => DesktopPetPointerSnapshot;
   dispose: () => void;
 };
 
 type TauriWindowHandle = {
+  label?: string;
   startDragging?: () => void | Promise<void>;
 };
 
 type TauriGlobal = {
   __WORKHUB_PET__?: DesktopPetWindowBridge;
+  __WORKHUB_SURFACE__?: string;
+  location?: {
+    pathname?: string;
+  };
   __TAURI__?: {
+    invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
     core?: {
       invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
     };
@@ -60,16 +84,29 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
     return target.__WORKHUB_PET__;
   }
 
-  const invoke = target.__TAURI__?.core?.invoke;
+  const invoke = target.__TAURI__?.core?.invoke ?? target.__TAURI__?.invoke;
   const currentWindow =
     target.__TAURI__?.window?.getCurrentWindow?.() ??
     target.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.() ??
     target.__TAURI__?.window?.appWindow;
-  if (!invoke && !currentWindow?.startDragging) {
+  const injectedPetSurface = target.__WORKHUB_SURFACE__ === "pet" && target.location?.pathname !== "/pet.html";
+  const isPetTauriWindow = currentWindow?.label === "pet";
+  if (!invoke && !currentWindow?.startDragging && !injectedPetSurface && !isPetTauriWindow) {
     return undefined;
   }
 
+  const diagnostics: DesktopPetWindowBridgeDiagnostics = {
+    source: "tauri-global",
+    invoke_available: Boolean(invoke),
+    drag_available: Boolean(currentWindow?.startDragging),
+    missing: [
+      ...(invoke ? [] : ["__TAURI__.core.invoke"]),
+      ...(currentWindow?.startDragging ? [] : ["currentWindow.startDragging"])
+    ]
+  };
+
   return {
+    diagnostics,
     ...(currentWindow?.startDragging
       ? {
           startDragging: () => currentWindow.startDragging?.()
@@ -84,7 +121,8 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
     ...(invoke
       ? {
           setMode: async (mode: DesktopPetWindowMode) => {
-            await invoke("set_pet_window_mode", { mode });
+            const value = await invoke("set_pet_window_mode", { mode });
+            assertPetWindowModeResult(value, mode);
           },
           savePosition: async () => {
             await invoke("save_pet_window_position");
@@ -94,7 +132,11 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
             return readCursorNear(value);
           }
         }
-      : {})
+      : {
+          setMode: async (mode: DesktopPetWindowMode) => {
+            throw new Error(`Cannot switch Cuu pet window to ${mode}: Tauri invoke bridge is unavailable.`);
+          }
+        })
   };
 }
 
@@ -190,4 +232,18 @@ function readCursorNear(value: unknown): boolean {
   }
   const sample = value as Extract<PetCursorSampleResult, object>;
   return sample?.pointer?.cursorNear === true || sample?.pointer?.cursor_near === true;
+}
+
+function assertPetWindowModeResult(value: unknown, expectedMode: DesktopPetWindowMode) {
+  if (!value || typeof value !== "object") {
+    throw new Error(`Cuu pet window did not confirm ${expectedMode} mode.`);
+  }
+  const result = value as PetWindowModeCommandResult;
+  const mode = result.placement?.mode;
+  const size = result.placement?.size;
+  const minWidth = expectedMode === "card" ? 360 : 160;
+  const minHeight = expectedMode === "card" ? 520 : 180;
+  if (mode !== expectedMode || typeof size?.width !== "number" || typeof size?.height !== "number" || size.width < minWidth || size.height < minHeight) {
+    throw new Error(`Cuu pet window returned an invalid ${expectedMode} placement plan.`);
+  }
 }

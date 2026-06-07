@@ -8,6 +8,13 @@ visuals:
   - ./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.gif
+  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
+  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-card-layout.gif
+  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png
+  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.gif
+  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png
+  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif
+  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
   - ./assets/desktop/desktop-one-thing-work-desk.png
@@ -18,7 +25,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，但动作表现和卡片展开还没有达到「QQ 宠物式活体入口」。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，并修掉「只靠静态 fallback / 缩放」的 P1 鲜活感缺口；但卡片气质、长期活体行为、Hatch Pack 与 Live2D 仍没有达到最终「QQ 宠物式活体入口」。
 
 ---
 
@@ -76,6 +83,97 @@ visuals:
 - 第 20 帧附近出现 `SSE stream returned HTTP 401` 的离线卡片，窗口仍停在 body-only 小尺寸，气泡和 Cuu 被挤在 194 x 228 范围内。
 - 这说明单张 smoke 截图只能证明「启动时可见」，不能证明「长时间活着、遇到事件时布局正确」。
 - 后续 QA 必须把多帧截图 / GIF / 像素差异作为桌宠验收门。
+
+### 0.3 Cuu card mode 修复后多帧抓取
+
+第一轮修复只证明窗口可以扩到 card mode，但关键帧中 Cuu 仍只露耳朵 / 局部，因此这组图必须保留为失败证据：
+
+![Cuu card mode 第一轮修复后失败证据](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
+
+![Cuu card mode 第一轮 frame 012 失败证据](./assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-card-mode.png)
+
+随后修复 card mode 中离线状态的可见动作、轻卡文案与 HiDPI 安全边距，fresh build 后重新抓取：
+
+![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
+
+关键通过帧：
+
+![Cuu card mode full body frame 012](./assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-full-body-hidpi-card-mode.png)
+
+本轮修复后资产：
+
+- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-card-layout.gif`
+- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png`
+- 最终 GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.gif`
+- 最终 MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.mp4`
+- 最终 Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png`
+- 最终关键帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-full-body-hidpi-card-mode.png`
+- 修复前对照：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-before-card-layout.png`
+- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-card-layout.json`
+- 最终像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-full-body-hidpi-fix.json`
+- 启动 smoke 截图：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/tauri-pet-smoke-after-card-mode.png`
+
+窗口 / 布局修复结果：
+
+| 检查项 | 结果 |
+|---|---|
+| `set_pet_window_mode("card")` 是否被真实调用 | 通过；bridge 同时支持 `__TAURI__.core.invoke` 和 legacy `__TAURI__.invoke` |
+| Rust placement 是否被前端校验 | 通过；缺少 placement 或尺寸低于阈值会抛错，不再静默 |
+| 事件卡出现后窗口尺寸 | 第 10 帧起由 `194 x 228` 扩到 `394 x 568` |
+| card bubble 布局 | 已固定在扩展窗口左上，避免被右下角 Cuu body 或窗口底部裁切 |
+| HiDPI 安全边距 | 通过；card bubble 收窄到 260px 逻辑宽，fresh `PrintWindow` 关键帧右侧有明确留白 |
+| Cuu body 在 card mode 中完整可见 | 通过；最终关键帧显示完整坐姿、围兜、爪子和尾巴局部，不再只露耳朵 / 头部 |
+| 离线卡表达 | 通过本轮 P0 修正；`sse-status` raw error 不再进入用户卡片，显示“连接有点不稳 / 重连中” |
+| invoke 不可用时 | 走 compact fallback，只显示极短标题和一个动作按钮，并记录 `data-pet-window-mode-error` |
+| motion QA | `scripts/qa/cuu-tauri-motion-capture.ps1` 可输出 frames、contact sheet、GIF/MP4、diff report |
+| smoke QA | `scripts/qa/cuu-tauri-smoke.ps1` 会自动拉起 desktop webview dev server，避免误抓 WebView 错误页 |
+
+#### CUX-MOTION-002：Cuu 非缩放鲜活感修复（2026-06-07）
+
+用户验收口径更新：**只露耳朵是失败；只有大小变化 / 呼吸缩放也是失败；静态 fallback 在动不能算通过。** 因此在 card mode 修复后又追加了一轮真实 `Cuu` 顶层窗口 motion capture，确认动作 PNG 真的在 Tauri dev server 下加载并渲染。
+
+![Cuu alive motion after dev asset path fix](./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png)
+
+关键通过帧：
+
+![Cuu idle tail sway frame 003](./assets/audit/2026-06-07-cuu-alive-motion-fix/frame-003-idle-tail-sway.png)
+
+![Cuu card worried visible frame 010](./assets/audit/2026-06-07-cuu-alive-motion-fix/frame-010-card-worried-visible.png)
+
+![Cuu smoke after dev asset path fix](./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png)
+
+本轮修复后资产：
+
+- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif`
+- MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.mp4`
+- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png`
+- 关键帧：`frame-003-idle-tail-sway.png`、`frame-010-card-worried-visible.png`
+- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/motion-diff-report-after-dev-asset-path-fix.json`
+- Smoke 截图：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png`
+
+根因与修复：
+
+| 项 | 结论 |
+|---|---|
+| 静态 fallback 伪通过 | 之前 Tauri dev 下外部 clip sheet PNG 路径错误，inline fallback 一直可见，导致看起来只有缩放/呼吸 |
+| dev 资源路径 | `documentRelativeAssetPath` 曾把 `/src/assets/...` 错误归一成 `./assets/...`，导致 dev server 404；现在只把打包态 `/assets/...` 转为 `./assets/...` |
+| 运行态渲染 | pet surface 改用 clip sheet background sprite，不再让运行态静态 fallback 盖住动作帧 |
+| 起始动作 | body-only 默认从 `idle_tail_sway` 开始，第一屏就是可见待机动作；scheduler 使用更快的 blink/tail/look cadence |
+| 验收结果 | 第 001-008 帧可见 Cuu 摇尾/姿态变化；第 010 帧起进入 card mode，Cuu 全身可见且动作资源仍可见 |
+| Smoke 像素 | 去掉静态 fallback 后仍通过：`orange_pixels=7858`、`visual_pixels=9900`，主窗隐藏后 `Cuu` 仍 visible/topmost |
+
+仍待提升项：
+
+| 检查项 | 结果 | 处理 |
+|---|---|---|
+| Cuu 鲜活感 P1 | **通过**：真实 Tauri 窗口已显示非缩放 sprite 动作，且不依赖静态 fallback | 后续继续做 Hatch Pack / Live2D 以提升表情、连续动作和长期陪伴感 |
+| Hatch / Live2D 表现力 | **未完成**：当前仍是 atlas 轻帧动画，不是最终活体模型 | 进入 Hatch Pack 和 Live2D |
+
+仍然没有完成的体验差距：
+
+- 历史失败证据必须保留：第一轮 card layout 图中 Cuu 只露耳朵 / 局部，不能作为通过截图；后续任何回归再次出现都直接判失败。
+- 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
+- 现阶段已达到 P1 sprite 活体门槛，但距离「会走动、看鼠标、抱文件来找用户、任务动作可读」仍需要 Hatch Pack / Live2D 资产路线。
 
 ---
 
@@ -142,8 +240,8 @@ visuals:
 | Web cost | 有预算卡 | 只是基础页面，缺策略编辑、usage trend、告警说明、团队/用户视图切换 | P2 |
 | Desktop 主窗 | 基本与 Web shell 一致 | 缺 Rust 客户端设计哲学：单件事干活桌、本地执行、同步、设备、托盘、诊断 | P1 |
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
-| 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见 | 形象有参考照特征，但动作弱；事件卡片触发后窗口不扩展导致内容被裁；还不够活 | P0 |
-| Motion QA | 本轮新增 32 帧抓取 | 已发现单张截图漏掉的问题；需要纳入 repo QA | P0 |
+| 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
+| Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
 | Hatch Pet 路线 | 本文与绿幕方案已写入 P1.1 路线 | 可以作为 Live2D 前的高质量宠物包路线，显著改善「抽象」问题 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
@@ -345,14 +443,15 @@ visuals:
 | 独立窗口 | 已有真实 Tauri `pet` window |
 | 主窗隐藏后常驻 | smoke 通过 |
 | 右下角定位 | smoke 通过 |
-| 可见像素 | smoke 通过 |
+| 可见像素 | startup smoke 通过，只能证明启动期 Cuu 可见 |
 | 多帧动作 | 多帧抓取显示前半段有轻微呼吸/轮廓变化 |
-| 事件后布局 | 本轮发现离线卡片触发后窗口仍 body-only，卡片被裁 |
+| 事件后布局 | 首轮发现离线卡片触发后窗口仍 body-only；本轮已修复 card mode 扩窗、完整身体站位和 HiDPI 右侧留白 |
+| Card mode Cuu body | **通过本轮 P0 门槛**：最终关键帧中 Cuu 完整可见；只露耳朵历史图保留为回归失败样例 |
 | 视觉可爱度 | 参考照特征有了，但当前不是概念图里的 Q 版活体宠物 |
 
 ### 4.2 Motion Capture 发现的问题
 
-#### CUX-MOTION-001：事件卡片触发后窗口没有扩展
+#### CUX-MOTION-001：事件卡片触发后窗口没有扩展（已修）
 
 证据：
 
@@ -381,6 +480,12 @@ visuals:
 - card 截图中标题、正文、按钮、Cuu 本体都完整可见。
 - `PrintWindow` 多帧 contact sheet 中不能出现大面积黑/透明空白掩盖卡片。
 
+2026-06-07 修复后复核：
+
+- **窗口扩展 / card 裁切修复通过**：修复后 motion report 显示第 10 帧起窗口从 `194 x 228` 扩到 `394 x 568`。
+- **Cuu body 完整可见通过本轮 P0 门槛**：最终 HiDPI 关键帧中 Cuu 完整坐姿可见，card bubble 右侧有安全留白，离线卡不再显示 raw SSE error。
+- 因此 `CUX-MOTION-001` 可以关闭；“鲜活感不足”和“更可爱的多动作宠物包”继续转入 `CUX-MOTION-002` / `GAP-CUU-06 Hatch Pack`。
+
 #### CUX-MOTION-002：当前动作太弱，不像活体桌宠
 
 证据：
@@ -388,12 +493,20 @@ visuals:
 - 动作主要是轻微 scale / breathe，无法表达走动、挥手、跳跃、审批、检索、同步。
 - 概念图里的 Cuu 有明显身体动作、尾巴、表情、气泡互动；当前更像静态贴纸。
 - 当前 main shell 内 Cuu 仍是抽象橘色图标，和独立 pet 的参考照风格不一致。
+- 历史第一轮修复曾出现 card mode 只露出 Cuu 耳朵 / 局部；这个回归样例必须长期保留，后续任何只露耳朵、裁尾、裁爪都判失败。
 
 修复方向：
 
 - 短期走 Hatch Pet 风格的固定 8 x 9 spritesheet，先让 Cuu 有 idle / waiting / review / failed / running / waving / jumping / dragging states。
 - 中期把 WorkHub 18 状态映射到更清晰的小动作包。
 - 长期走 Live2D PSD / Cubism，处理眼睛、耳朵、尾巴、流苏、呼吸、看鼠标。
+
+验收：
+
+- 5 秒 idle 不能像一张死图，必须能看出呼吸和眨眼。
+- 60 秒 idle 至少出现眨眼、尾巴、耳朵、看鼠标、打盹/醒来中的两类随机待机动作。
+- 任务事件必须先触发对应动作，再出现气泡。
+- card mode 中 Cuu 必须完整、可爱、稳定地站在右下角；只露耳朵、裁尾、裁爪、离开 anchor 都判失败。
 
 ---
 
@@ -549,19 +662,49 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 目标：先修掉「事件卡片被小窗裁切」。
 
+状态：**2026-06-07 已完成 card mode bridge / placement / compact fallback / full-body HiDPI 修复并通过 Windows debug motion capture；剩余问题转入 P1.1 Hatch Pack 与 P1.2 轻卡视觉深化。**
+
 | ID | 任务 | Target paths | 验收 |
 |---|---|---|---|
-| CUX-P0-01 | Tauri invoke bridge 审计 | `apps/desktop-webview/src/pet-window-bridge.ts` | 能可靠调用 `set_pet_window_mode` |
-| CUX-P0-02 | card mode resize await / fallback | `apps/desktop-webview/src/pet-surface.ts` | card 渲染前窗口扩展，失败走 compact layout |
-| CUX-P0-03 | Rust command diagnostic | `client-tauri/src-tauri/src/main.rs` | `set_pet_window_mode` 成功/失败可测试 |
-| CUX-P0-04 | 多帧 motion capture QA 脚本 | `scripts/qa/cuu-tauri-motion-capture.ps1` | 输出 frames、contact sheet、GIF/MP4、diff report |
-| CUX-P0-05 | smoke 扩展 card 验收 | `scripts/qa/cuu-tauri-smoke.ps1` | 触发 card 后窗口尺寸和可见像素都通过 |
+| CUX-P0-01 | Tauri invoke bridge 审计 | `apps/desktop-webview/src/pet-window-bridge.ts` | **已落**：支持 core / legacy invoke，并暴露 diagnostics |
+| CUX-P0-02 | card mode resize await / fallback | `apps/desktop-webview/src/pet-surface.ts` | **已落**：card mode 等待 Rust placement；失败走 compact layout |
+| CUX-P0-03 | Rust command diagnostic | `client-tauri/src-tauri/src/main.rs` / `pet_commands.rs` | **已落基础**：前端校验 command 返回 placement；Rust 测试覆盖既有 window plan |
+| CUX-P0-04 | 多帧 motion capture QA 脚本 | `scripts/qa/cuu-tauri-motion-capture.ps1` | **已落**：输出 frames、contact sheet、GIF/MP4、diff report |
+| CUX-P0-05 | smoke 扩展 card 验收 | `scripts/qa/cuu-tauri-smoke.ps1` | **已落基础**：自动拉起 1420 dev server，避免抓到 WebView 错误页 |
 
-必须新增测试：
+已新增测试：
 
-- `pet-window-bridge.test.ts`：当 `invoke` 不存在时，`setMode` 缺失必须被显式报告，不允许静默。
-- `pet-surface.test.ts`：card mode 可渲染 compact fallback，并带 `data-pet-window-mode-error`。
-- Rust test：`set_pet_window_mode` command plan 的 route/size/position 与 active mode 对齐。
+- `pet-surface.test.ts`：覆盖 compact fallback、legacy invoke、缺失 placement、缺失 invoke、Rust injected pet surface diagnostic、Tauri `pet` label diagnostic、card mode CSS 锚点。
+- Rust tests：继续覆盖 `pet_window.rs` / `pet_commands.rs` 的 route、size、position 与 active mode plan。
+
+实现路径：
+
+```text
+apps/desktop-webview/src/pet-window-bridge.ts
+  - resolveDesktopPetWindowBridge()
+  - DesktopPetWindowBridgeDiagnostics
+  - assertPetWindowModeResult()
+
+apps/desktop-webview/src/pet-surface.ts
+  - confirmedPetWindowMode / syncingPetWindowMode / failedPetWindowMode
+  - data-pet-card-layout="compact|full"
+  - card mode left/top bubble CSS
+
+scripts/qa/cuu-tauri-motion-capture.ps1
+  - PrintWindow frame capture
+  - contact sheet
+  - diff JSON
+  - optional GIF / MP4
+
+scripts/qa/cuu-tauri-smoke.ps1
+  - auto-start desktop-webview dev server on 1420 when needed
+```
+
+新的验收证据目录：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/
+```
 
 ### 6.2 P1.1：Cuu Hatch Pack
 
@@ -570,7 +713,7 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 步骤：
 
 1. 准备 `docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion` 作为当前差距证据。
-2. 生成 `cuu-hatch-v1` canonical base，形象参考用户猫照片但输出原创 Q 版，不提交原照片。
+2. 参考 [Codex Hatch Pet recipe](https://github.com/freestylefly/CodexGuide/blob/main/docs%2Frecipes%2Fhatch-pet-photo.md) 的「照片输入 -> 专属动画宠物 -> 宠物包目录」思路，生成 `cuu-hatch-v1` canonical base，形象参考用户猫照片但输出原创 Q 版，不提交原照片。
 3. 生成 9 行动作：idle、running-right、running-left、waving、jumping、failed、waiting、running、review。
 4. 合成 `1536x1872` spritesheet。
 5. 输出 `pet.json`、contact sheet、motion preview、QA report。
@@ -598,6 +741,7 @@ docs/workhub/05-clients/cuu-green-screen-desktop-pet-solution.md
 - 所有 cells 四角透明，unused cells 完全透明。
 - 角色一致性通过 contact sheet 肉眼审查。
 - Tauri motion capture 不再出现静态 5 秒。
+- Tauri card mode 中 Cuu body 不再只露出耳朵，脚底 anchor 与右下角 body box 对齐。
 
 ### 6.3 P1.2：桌宠轻卡重做
 
@@ -767,10 +911,9 @@ Live2D 不立刻阻塞 P1，但必须并行准备。
 
 推荐顺序：
 
-1. **修 CUX-MOTION-001**：card mode resize / invoke bridge / compact fallback / 多帧 QA。
-2. **做 Cuu Hatch Pack v1**：把 Cuu 从静态照片感升级成 Q 版多动作宠物。
-3. **替换 pet body renderer**：默认使用 Hatch sprite，旧 18 clip 保留 fallback。
-4. **重做 pet card layout**：审批、澄清、证据、离线、预算五类轻卡。
+1. **做 Cuu Hatch Pack v1**：把 Cuu 从静态照片感升级成 Q 版多动作宠物，优先解决动作弱、待机不够随机和任务动作不够明确。
+2. **替换 pet body renderer**：默认使用 Hatch sprite，旧 18 clip 保留 fallback。
+3. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
 5. **Web Home 真页面**：按 AI-first concept 改首屏。
 6. **Option Intake 真页面**：补 stepper、附件、summary、Cuu 推荐。
 7. **Desktop One Thing Desk**：主窗变成本地单件事干活桌。

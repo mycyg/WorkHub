@@ -249,7 +249,15 @@ Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 
 
 ![Cuu 多帧动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
-这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，但也暴露 `CUX-MOTION-001`：事件卡片触发后窗口仍停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工必须先修 card mode resize，再推进 Hatch Pet 多动作包和 Live2D。
+这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，也暴露了已修复的 `CUX-MOTION-001`：事件卡片触发后窗口曾停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工应在已修好的 card mode 基础上继续推进 Hatch Pet 多动作包和 Live2D。
+
+![Cuu card mode 修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
+
+这张第一轮修复后 contact sheet 只能证明 **窗口扩展和卡片裁切问题已收口**：事件卡触发后真实 `Cuu` 窗口可进入 card mode。但它不能作为 Cuu 视觉通过证据，因为关键帧中 Cuu body 基本只露出耳朵 / 局部。后续概念还原必须把“只露耳朵”判失败。
+
+![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
+
+这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续要继续做 Hatch Pack anchor、待机眨眼/尾巴/看鼠标和任务动作。
 
 ---
 

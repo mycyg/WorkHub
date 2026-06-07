@@ -1,0 +1,686 @@
+﻿{
+    "passed":  true,
+    "process_id":  59724,
+    "frame_count":  32,
+    "interval_ms":  180,
+    "frames_dir":  "C:\\Users\\mycyg\\AppData\\Local\\Temp\\workhub-cuu-motion-after-card-layout-fix\\frames",
+    "contact_sheet":  "C:\\Users\\mycyg\\AppData\\Local\\Temp\\workhub-cuu-motion-after-card-layout-fix\\cuu-motion-contact-sheet.png",
+    "max_vs_first_mean_abs_delta":  148.095,
+    "max_vs_previous_mean_abs_delta":  127.743,
+    "max_vs_first_changed_pixels_gt8":  7537,
+    "max_vs_previous_changed_pixels_gt8":  8016,
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  38.315,
+                                        "changed_pixels_gt8":  2829,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  38.315,
+                                           "changed_pixels_gt8":  2829,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  38.822,
+                                        "changed_pixels_gt8":  2854,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  3.2,
+                                           "changed_pixels_gt8":  1256,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  39.541,
+                                        "changed_pixels_gt8":  2903,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.714,
+                                           "changed_pixels_gt8":  1629,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  4,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  40.186,
+                                        "changed_pixels_gt8":  2947,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.377,
+                                           "changed_pixels_gt8":  1563,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  5,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  40.52,
+                                        "changed_pixels_gt8":  2970,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.464,
+                                           "changed_pixels_gt8":  1017,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  6,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  40.535,
+                                        "changed_pixels_gt8":  2972,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.139,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  7,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  40.234,
+                                        "changed_pixels_gt8":  2946,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.182,
+                                           "changed_pixels_gt8":  893,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  8,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  39.608,
+                                        "changed_pixels_gt8":  2911,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.395,
+                                           "changed_pixels_gt8":  1550,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  9,
+                       "rect":  {
+                                    "Left":  1844,
+                                    "Top":  860,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  194,
+                                    "Height":  228
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  38.838,
+                                        "changed_pixels_gt8":  2857,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.894,
+                                           "changed_pixels_gt8":  1667,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  10,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  127.743,
+                                           "changed_pixels_gt8":  8016,
+                                           "samples":  11058
+                                       }
+                   },
+                   {
+                       "frame":  11,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.017,
+                                           "changed_pixels_gt8":  31,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  12,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.062,
+                                           "changed_pixels_gt8":  89,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  13,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.066,
+                                           "changed_pixels_gt8":  94,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  14,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.053,
+                                           "changed_pixels_gt8":  96,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  15,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.016,
+                                           "changed_pixels_gt8":  35,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  16,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.033,
+                                           "changed_pixels_gt8":  62,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  17,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.062,
+                                           "changed_pixels_gt8":  105,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  18,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.063,
+                                           "changed_pixels_gt8":  95,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  19,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.043,
+                                           "changed_pixels_gt8":  76,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  20,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.01,
+                                           "changed_pixels_gt8":  19,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  21,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.022,
+                                           "changed_pixels_gt8":  43,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  22,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.056,
+                                           "changed_pixels_gt8":  82,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  23,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.067,
+                                           "changed_pixels_gt8":  101,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  24,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.054,
+                                           "changed_pixels_gt8":  98,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  25,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.017,
+                                           "changed_pixels_gt8":  35,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  26,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.025,
+                                           "changed_pixels_gt8":  51,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  27,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.054,
+                                           "changed_pixels_gt8":  100,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  28,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.066,
+                                           "changed_pixels_gt8":  103,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  29,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.05,
+                                           "changed_pixels_gt8":  76,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  30,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.019,
+                                           "changed_pixels_gt8":  34,
+                                           "samples":  55948
+                                       }
+                   },
+                   {
+                       "frame":  31,
+                       "rect":  {
+                                    "Left":  1644,
+                                    "Top":  520,
+                                    "Right":  2038,
+                                    "Bottom":  1088,
+                                    "Width":  394,
+                                    "Height":  568
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  148.095,
+                                        "changed_pixels_gt8":  7537,
+                                        "samples":  11058
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.009,
+                                           "changed_pixels_gt8":  19,
+                                           "samples":  55948
+                                       }
+                   }
+               ]
+}

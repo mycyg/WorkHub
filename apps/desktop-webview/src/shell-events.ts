@@ -1,5 +1,5 @@
 import { cuuStates, type AttentionItem, type CuuState, type WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, type CuuCard } from "@workhub/cuu";
+import { cardFromEvent, cuuMotionForState, type CuuCard } from "@workhub/cuu";
 
 export type DesktopShellPushPayload = {
   event: string;
@@ -225,15 +225,33 @@ export function desktopCuuCardFromShellSseStatus(
   }
 
   const retrying = payload.state === "retrying";
-  return cardFromEvent({
-    event_id: `sse-status:${payload.stream_kind}:${payload.state}`,
-    type: "sse.status",
-    topic: topicFromStreamPath(payload.stream_path, payload.stream_kind),
-    ts: (options.now ?? (() => new Date()))().toISOString(),
-    preview_text: payload.message ?? (retrying ? "daemon 连接不稳定，Cuu 正在重试。" : "daemon 连接已断开，Cuu 正在等它回来。"),
-    cuu_state: "offline",
-    data: payload
-  });
+  const id = `sse-status:${payload.stream_kind}:${payload.state}`;
+  return {
+    id,
+    kind: "offline",
+    state: "offline",
+    motion: cuuMotionForState("offline"),
+    title: retrying ? "连接有点不稳" : "WorkHub 连接断开了",
+    message: retrying ? "Cuu 正在重新连接，恢复后会继续把提醒送到你这里。" : "Cuu 会安静等连接回来，重要事项不会被丢掉。",
+    priority: "normal",
+    chips: [
+      {
+        id: payload.state,
+        label: retrying ? "重连中" : "已断开",
+        tone: "warning"
+      }
+    ],
+    actions: [],
+    payload_ref: {
+      entity_type: "event",
+      entity_id: id
+    },
+    source: {
+      entity_type: "event",
+      entity_id: payload.stream_path
+    },
+    created_at: (options.now ?? (() => new Date()))().toISOString()
+  };
 }
 
 export function createDesktopShellEventBridge(options: DesktopShellBridgeOptions = {}): DesktopShellEventBridge {

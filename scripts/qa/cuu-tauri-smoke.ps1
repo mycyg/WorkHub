@@ -57,6 +57,39 @@ function Restore-EnvVar {
   }
 }
 
+function Test-LocalPort {
+  param([int]$Port)
+  $listener = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.LocalPort -eq $Port } |
+    Select-Object -First 1
+  return $null -ne $listener
+}
+
+function Start-DesktopWebviewDevServerIfNeeded {
+  param([int]$Port = 1420)
+  if (Test-LocalPort -Port $Port) {
+    return $null
+  }
+
+  $pnpm = (Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue).Source
+  if (-not $pnpm) {
+    $pnpm = (Get-Command "pnpm" -ErrorAction Stop).Source
+  }
+  $process = Start-Process -FilePath $pnpm -ArgumentList @("--filter", "@workhub/desktop-webview", "dev", "--", "--host", "127.0.0.1") -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+  $deadline = (Get-Date).AddSeconds(25)
+  do {
+    if ($process.HasExited) {
+      throw "desktop webview dev server exited before opening port $Port."
+    }
+    Start-Sleep -Milliseconds 500
+  } while (-not (Test-LocalPort -Port $Port) -and (Get-Date) -lt $deadline)
+
+  if (-not (Test-LocalPort -Port $Port)) {
+    throw "desktop webview dev server did not open port $Port in time."
+  }
+  return $process
+}
+
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuSmokeWin32").Type) {
   Add-Type -TypeDefinition @"
 using System;
@@ -473,6 +506,7 @@ Assert-Smoke ($existingProcessIds.Count -eq 0) "Close existing workhub-client-ta
 $originalAppData = $env:APPDATA
 $originalLocalAppData = $env:LOCALAPPDATA
 $process = $null
+$devServerProcess = $null
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $screenshotPath = Join-Path $OutDir "cuu-tauri-smoke-$timestamp.png"
 
@@ -487,6 +521,7 @@ try {
   }
 
   Write-Host "Launching WorkHub Tauri debug app..."
+  $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $process = Start-Process -FilePath $exePath -WorkingDirectory $srcTauriRoot -PassThru
   $snapshot = Wait-ForWorkHubWindows -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds
 
@@ -554,4 +589,8 @@ try {
 
   Restore-EnvVar -Name "APPDATA" -Value $originalAppData
   Restore-EnvVar -Name "LOCALAPPDATA" -Value $originalLocalAppData
+  if ($devServerProcess -and -not $devServerProcess.HasExited) {
+    Stop-Process -Id $devServerProcess.Id -Force
+    $devServerProcess.WaitForExit()
+  }
 }

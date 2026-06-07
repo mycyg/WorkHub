@@ -137,15 +137,20 @@ test("sse-status retrying and closed states become offline Cuu cards", () => {
       stream_kind: "global",
       stream_path: "/api/push/stream",
       state: "retrying",
-      message: "daemon 正在重连。"
+      message: "failed to connect SSE stream: error sending request for url (http://127.0.0.1:8787/api/push/stream)"
     },
     { now }
   );
 
   assert.equal(open, undefined);
+  assert.equal(retrying?.kind, "offline");
   assert.equal(retrying?.state, "offline");
   assert.equal(retrying?.motion.sprite_state, "offline_sleep");
-  assert.equal(retrying?.message, "daemon 正在重连。");
+  assert.equal(retrying?.title, "连接有点不稳");
+  assert.equal(retrying?.message, "Cuu 正在重新连接，恢复后会继续把提醒送到你这里。");
+  assert.equal(retrying?.chips?.[0]?.label, "重连中");
+  assert.doesNotMatch(retrying?.title ?? "", /failed to connect|127\.0\.0\.1/u);
+  assert.doesNotMatch(retrying?.message ?? "", /failed to connect|127\.0\.0\.1/u);
 });
 
 test("desktop shell event bridge dispatches events and Cuu cards to callbacks", () => {

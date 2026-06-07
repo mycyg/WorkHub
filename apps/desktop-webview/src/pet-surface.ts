@@ -6,10 +6,12 @@ import {
   type CuuCard,
   type CuuController,
   type CuuIdleMicroAction,
-  type CuuIdleScheduler
+  type CuuIdleScheduler,
+  type CuuIdleSchedulerPolicy,
+  type CuuMotionHint
 } from "@workhub/cuu";
 
-import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, desktopCuuP1ClipSheetImages, desktopCuuP1StaticFallbackImage } from "./cuu-atlas-assets.js";
+import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, desktopCuuP1ClipSheetImages } from "./cuu-atlas-assets.js";
 import {
   renderDesktopCuuAtlasSprite,
   renderDesktopCuuAtlasState,
@@ -56,7 +58,17 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card]{width:380px;height:560px}",
   ".wh-pet-body{position:absolute;right:8px;bottom:8px;width:148px;height:197px;display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto}",
   ".wh-pet-body:active{cursor:grabbing}",
-  ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
+  ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;box-sizing:border-box;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:64px;bottom:96px;width:150px;height:210px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:16px;right:auto;top:16px;bottom:auto;width:260px;max-height:320px;overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-actions{max-width:100%}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:4px;bottom:4px;width:118px;height:157px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:8px;right:auto;top:8px;bottom:auto;width:124px;max-height:86px;overflow:hidden;gap:5px;padding:7px 8px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-title{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-title{font-size:14px;line-height:1.35;font-weight:850}",
@@ -67,6 +79,24 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
   ".wh-pet-status{margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750}"
 ].join("");
+
+export const desktopPetInitialIdleAction: CuuIdleMicroAction = "idle_tail_sway";
+
+export const desktopPetAliveIdlePolicy = {
+  breathe_interval_ms: [2800, 4200],
+  blink_interval_ms: [1200, 1800],
+  tail_interval_ms: [2200, 3200],
+  look_interval_ms: [3200, 4600],
+  sleep_after_ms: 5 * 60 * 1000,
+  sleeping_loop_interval_ms: 12000
+} satisfies Partial<CuuIdleSchedulerPolicy>;
+
+export function createDesktopPetIdleScheduler(now_ms = Date.now()): CuuIdleScheduler {
+  return createCuuIdleScheduler({
+    now_ms,
+    policy: desktopPetAliveIdlePolicy
+  });
+}
 
 export function resolveDesktopSurface(input: { pathname?: string; search?: string; hash?: string } = {}): DesktopSurface {
   const target = globalThis as typeof globalThis & {
@@ -110,37 +140,60 @@ export function renderDesktopPetSurface(input: {
   status_text?: string | undefined;
   include_reject_reasons?: boolean | undefined;
   display_width_px?: number | undefined;
+  window_mode_error?: string | undefined;
+  window_mode_status?: "syncing" | "failed" | undefined;
 } = {}): DesktopPetSurfaceRender {
-  const motion = input.card?.motion ?? cuuMotionForState("idle");
+  const compactCard = Boolean(input.card && input.window_mode_error);
+  const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
+  const motion = desktopPetVisibleMotion(input.card?.motion ?? cuuMotionForState("idle"), {
+    has_card: Boolean(input.card),
+    compact_card: compactCard
+  });
+  const displayWidth = input.display_width_px ?? (compactCard ? 92 : input.card ? 138 : 148);
   const sprite = input.card
     ? renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
-        display_width_px: input.display_width_px ?? 118,
+        display_width_px: displayWidth,
         clip_images: desktopCuuP1ClipSheetImages,
-        fallback_image: desktopCuuP1StaticFallbackImage
+        prefer_background_clip_sheet: true
       })
     : renderDesktopCuuAtlasState(input.idle_action ?? "idle_breathe", desktopCuuP1AtlasManifest, {
-        display_width_px: input.display_width_px ?? 148,
+        display_width_px: displayWidth,
         clip_images: desktopCuuP1ClipSheetImages,
-        fallback_image: desktopCuuP1StaticFallbackImage
+        prefer_background_clip_sheet: true
       });
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({
         card: input.card,
         status_text: input.status_text,
-        include_reject_reasons: input.include_reject_reasons
+        include_reject_reasons: input.include_reject_reasons,
+        compact: compactCard,
+        window_mode_error: input.window_mode_error
       })
     : "";
 
   return {
     sprite,
     css: `${desktopPetSurfaceCss}${sprite.css}`,
-    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${desktopPetWindowModeForCard(input.card)}" data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}"${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${sprite.html}
       </button>
       ${bubble}
     </section>`
   };
+}
+
+function desktopPetVisibleMotion(motion: CuuMotionHint, input: { has_card: boolean; compact_card: boolean }): CuuMotionHint {
+  if (input.has_card && !input.compact_card && motion.sprite_state === "offline_sleep") {
+    return {
+      ...motion,
+      sprite_state: "worried_ears",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 遇到连接问题，正在提醒你。"
+    };
+  }
+  return motion;
 }
 
 export async function bootDesktopPetSurface(
@@ -153,27 +206,36 @@ export async function bootDesktopPetSurface(
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
-  const idleScheduler = input.idleScheduler ?? createCuuIdleScheduler({ now_ms: Date.now() });
+  const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
   const client = createApiClient({
     baseUrl: "",
     getClientToken: clientToken
   });
   let currentCard: CuuCard | undefined;
-  let idleAction: CuuIdleMicroAction = idleScheduler.snapshot().last_action ?? "idle_breathe";
+  let idleAction: CuuIdleMicroAction = input.idleScheduler
+    ? idleScheduler.snapshot().last_action ?? "idle_breathe"
+    : desktopPetInitialIdleAction;
   let statusText: string | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
-  let currentPetWindowMode: DesktopPetWindowMode | undefined;
+  let confirmedPetWindowMode: DesktopPetWindowMode | undefined;
+  let syncingPetWindowMode: DesktopPetWindowMode | undefined;
+  let failedPetWindowMode: DesktopPetWindowMode | undefined;
+  let petWindowModeError: string | undefined;
 
   const render = () => {
+    const desiredMode = desktopPetWindowModeForCard(currentCard);
+    const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
     const surface = renderDesktopPetSurface({
       card: currentCard,
       idle_action: idleAction,
       status_text: statusText,
-      include_reject_reasons: Boolean(pendingAction)
+      include_reject_reasons: Boolean(pendingAction),
+      window_mode_error: compactCard ? petWindowModeError ?? "Cuu 轻卡窗口正在展开。" : undefined,
+      window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
-    syncPetWindowMode(desktopPetWindowModeForCard(currentCard));
+    syncPetWindowMode(desiredMode);
   };
 
   const setCard = (card: CuuCard | undefined, status?: string) => {
@@ -302,11 +364,39 @@ export async function bootDesktopPetSurface(
   };
 
   function syncPetWindowMode(mode: DesktopPetWindowMode) {
-    if (currentPetWindowMode === mode) {
+    if (!petWindowBridge) {
+      confirmedPetWindowMode = mode;
       return;
     }
-    currentPetWindowMode = mode;
-    void petWindowBridge?.setMode?.(mode);
+    if (confirmedPetWindowMode === mode || syncingPetWindowMode === mode) {
+      return;
+    }
+    if (failedPetWindowMode === mode && petWindowModeError) {
+      return;
+    }
+    syncingPetWindowMode = mode;
+    failedPetWindowMode = undefined;
+    petWindowModeError = undefined;
+    void Promise.resolve(petWindowBridge.setMode?.(mode))
+      .then(() => {
+        if (syncingPetWindowMode !== mode) {
+          return;
+        }
+        confirmedPetWindowMode = mode;
+        syncingPetWindowMode = undefined;
+        failedPetWindowMode = undefined;
+        petWindowModeError = undefined;
+        render();
+      })
+      .catch((error: unknown) => {
+        if (syncingPetWindowMode !== mode) {
+          return;
+        }
+        syncingPetWindowMode = undefined;
+        failedPetWindowMode = mode;
+        petWindowModeError = actionMessage(error);
+        render();
+      });
   }
 }
 
@@ -314,16 +404,20 @@ function renderDesktopPetBubble(input: {
   card?: CuuCard | undefined;
   status_text?: string | undefined;
   include_reject_reasons?: boolean | undefined;
+  compact?: boolean | undefined;
+  window_mode_error?: string | undefined;
 }) {
   const card = input.card;
-  const chips = (card?.chips ?? []).slice(0, 3).map(renderPetChip).join("");
-  const actions = (card?.actions ?? []).slice(0, 3).map(renderPetAction).join("");
-  const reasons = input.include_reject_reasons ? renderRejectReasons() : "";
+  const compact = Boolean(input.compact);
+  const chips = compact ? "" : (card?.chips ?? []).slice(0, 3).map(renderPetChip).join("");
+  const actions = (card?.actions ?? []).slice(0, compact ? 1 : 3).map(renderPetAction).join("");
+  const reasons = !compact && input.include_reject_reasons ? renderRejectReasons() : "";
   return `<aside class="wh-pet-bubble" data-pet-bubble="true" ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}>
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span></div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
-    ${card ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
-    ${input.status_text ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
+    ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
+    ${input.status_text && !compact ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
+    ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
     ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
     ${actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
     ${reasons}
