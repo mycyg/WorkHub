@@ -6,7 +6,9 @@ param(
   [int]$PixelStep = 2,
   [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
-  [ValidateSet("idle", "input-handfeel", "look-avoidance", "drag-smoothing", "hide-on-hover")]
+  [double]$MinLongRunVisualRatio = 0.7,
+  [int]$MinLongRunChangedFrames = 3,
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "drag-smoothing", "hide-on-hover")]
   [string]$Scenario = "idle",
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
@@ -633,6 +635,9 @@ try {
     $cuuQaHideOnHover = $true
     Set-CuuCursorPosition -X 120 -Y 120
   }
+  if ($Scenario -eq "idle-long-run") {
+    Set-CuuCursorPosition -X 120 -Y 120
+  }
 
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $process = Start-Process -FilePath $exePath -WorkingDirectory $srcTauriRoot -PassThru
@@ -671,9 +676,15 @@ try {
   New-ContactSheet -Frames $frames.ToArray() -Path $contactSheet
 
   $diffs = @()
+  $framePixelReports = @()
   for ($i = 0; $i -lt $frames.Count; $i++) {
+    $framePixelReport = Measure-CuuFrameVisualPixels -Path $frames[$i]
     $vsFirst = Measure-FrameDiff -BasePath $frames[0] -Path $frames[$i] -Step $PixelStep
     $vsPrevious = if ($i -gt 0) { Measure-FrameDiff -BasePath $frames[$i - 1] -Path $frames[$i] -Step $PixelStep } else { $vsFirst }
+    $framePixelReports += [pscustomobject]@{
+      frame = $i
+      pixel_report = $framePixelReport
+    }
     $diffs += [pscustomobject]@{
       frame = $i
       rect = $rects[$i]
@@ -682,8 +693,53 @@ try {
     }
   }
 
+  $longRunReport = $null
+  if ($Scenario -eq "idle-long-run") {
+    $baselinePixels = $firstFrameGate.PixelReport
+    $minLongRunVisualPixels = [Math]::Floor($baselinePixels.visual_pixels * $MinLongRunVisualRatio)
+    $minLongRunOrangePixels = [Math]::Floor($baselinePixels.orange_pixels * $MinLongRunVisualRatio)
+    $lowVisualFrames = @($framePixelReports | Where-Object {
+      $_.pixel_report.visual_pixels -lt $minLongRunVisualPixels -or
+      $_.pixel_report.orange_pixels -lt $minLongRunOrangePixels
+    })
+    $firstRect = $rects[0]
+    $rectDriftFrames = @()
+    for ($i = 0; $i -lt $rects.Count; $i++) {
+      $rect = $rects[$i]
+      $drift = [Math]::Abs($rect.Left - $firstRect.Left) +
+        [Math]::Abs($rect.Top - $firstRect.Top) +
+        [Math]::Abs($rect.Width - $firstRect.Width) +
+        [Math]::Abs($rect.Height - $firstRect.Height)
+      if ($drift -gt 2) {
+        $rectDriftFrames += $i
+      }
+    }
+    $changedFrames = @($diffs | Where-Object {
+      $_.frame -gt 0 -and $_.vs_previous.changed_pixels_gt8 -ge 60
+    })
+    $longRunPassed = $lowVisualFrames.Count -eq 0 -and
+      $rectDriftFrames.Count -eq 0 -and
+      $changedFrames.Count -ge $MinLongRunChangedFrames
+    $longRunReport = [pscustomobject]@{
+      enabled = $true
+      passed = $longRunPassed
+      min_visual_ratio = $MinLongRunVisualRatio
+      min_visual_pixels = $minLongRunVisualPixels
+      min_orange_pixels = $minLongRunOrangePixels
+      low_visual_frames = @($lowVisualFrames | ForEach-Object { $_.frame })
+      rect_drift_frames = $rectDriftFrames
+      changed_frames_gt8_threshold = 60
+      changed_frames_gt8_count = $changedFrames.Count
+      min_changed_frames = $MinLongRunChangedFrames
+      min_frame_visual_pixels = ($framePixelReports | ForEach-Object { $_.pixel_report.visual_pixels } | Measure-Object -Minimum).Minimum
+      min_frame_orange_pixels = ($framePixelReports | ForEach-Object { $_.pixel_report.orange_pixels } | Measure-Object -Minimum).Minimum
+    }
+  }
+
+  $capturePassed = if ($longRunReport) { $longRunReport.passed } else { $true }
+
   $report = [pscustomobject]@{
-    passed = $true
+    passed = $capturePassed
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
@@ -705,10 +761,15 @@ try {
     max_vs_previous_mean_abs_delta = ($diffs | ForEach-Object { $_.vs_previous.mean_abs_delta } | Measure-Object -Maximum).Maximum
     max_vs_first_changed_pixels_gt8 = ($diffs | ForEach-Object { $_.vs_first.changed_pixels_gt8 } | Measure-Object -Maximum).Maximum
     max_vs_previous_changed_pixels_gt8 = ($diffs | ForEach-Object { $_.vs_previous.changed_pixels_gt8 } | Measure-Object -Maximum).Maximum
+    frame_pixel_reports = $framePixelReports
+    long_run = $longRunReport
     frames = $diffs
   }
   $reportPath = Join-Path $OutDir "motion-diff-report.json"
   $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath -Encoding UTF8
+  if (-not $capturePassed) {
+    throw "Cuu long-run motion capture failed. See $reportPath"
+  }
 
   $ffmpeg = Get-Command "ffmpeg" -ErrorAction SilentlyContinue
   $gifPath = $null
@@ -731,7 +792,7 @@ try {
   }
 
   [pscustomobject]@{
-    passed = $true
+    passed = $capturePassed
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover

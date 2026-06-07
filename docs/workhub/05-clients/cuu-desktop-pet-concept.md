@@ -12,7 +12,7 @@ owner: workflow
 > **当前默认视觉路线**：见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。用户已明确反馈当前 PSD draft 有恐怖谷风险，因此 Cuu P1 默认改为参考 [BongoCat](https://github.com/ayangweb/BongoCat) 思路的低恐怖谷扁平小猫 renderer；当前默认模型包是 `cuu-bongo-p1`，由 `CuuModelPackManifest` 标记为 `approved_default`。PSD / Live2D 只保留为实验线，只有过美术 QA、真实桌宠录屏和 model pack 默认门禁后才能回到默认。
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1e-b hover/tap/drag 真实录屏、P1e-c 连续看鼠标 / hover 避让真实录屏和 P1e-d-a pointer smoothing / drag grip 真实录屏。下一步主线是 Bongo 动作二轮、窗口设置真实截图、hide-on-hover、多屏恢复、60s jitter QA、model pack loader 和 Live2D 精修并行。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1e-b hover/tap/drag 真实录屏、P1e-c 连续看鼠标 / hover 避让真实录屏、P1e-d-a pointer smoothing / drag grip 真实录屏和 P1e-d-b 60s idle jitter / flicker 长驻 QA。下一步主线是 Bongo 动作二轮、窗口设置真实截图、多屏恢复、长驻性能采样、model pack loader 和 Live2D 精修并行。
 
 ## 1. 角色定位
 
@@ -128,6 +128,10 @@ P1e-d-a 后，Cuu 的输入不再直接把 Rust cursor sample 硬切到新方向
 
 P1d-b-a 后，Cuu 支持可恢复的“悬停避让”：hover 时 soft hide，cursor 离开后恢复，再次 hover 再隐藏。它刻意不是全透明 pass-through，避免用户丢失桌宠；后续若要升级到 BongoCat 式完全隐藏，必须先设计托盘、快捷键、边缘热区和自动恢复。
 
+![Cuu Bongo P1e-d-b 60s idle jitter real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
+
+P1e-d-b 后，Cuu 有了真实 Tauri 长驻可见性门：31 帧约 60 秒内没有空白、只露耳朵、低可见帧或窗口漂移，`long_run.passed=true`。这证明它能稳定待在桌面右下角，但动作幅度仍偏克制，后续还要继续增强抱文件、庆祝、审批敲桌等演出。
+
 ### 3.6 当前实现差距
 
 ![Cuu runtime gap roadmap](./assets/cuu/cuu-runtime-gap-roadmap.png)
@@ -230,9 +234,9 @@ P1d-b-a 后，Cuu 支持可恢复的“悬停避让”：hover 时 soft hide，c
 - 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
 - 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是作为动作 storyboard / fallback；默认主线继续打磨 Bongo Cuu，Live2D 继续精修。
 - 离线卡与审批 / 澄清轻卡已完成 P1.2 的人话化、选项优先和少文字化基线，P1.2b 已补真实 option payload 提交；证据详情、预算卡、sync conflict 和 Tauri 顶层窗口 P1.2 抓帧仍需继续。
-- 当前默认动作仍是 Bongo DOM/CSS + sprite fallback，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
+- 当前默认动作仍是 Bongo DOM/CSS + sprite fallback，不是最终 Live2D 活体表现；P1e-d-b 已证明 60 秒长驻可见和防闪烁，Hatch Pack / Bongo 动作二轮仍要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
 
-下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、真实设置截图、多屏恢复、60s jitter 和 full hide/pass-through 安全恢复做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
+下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、真实设置截图、多屏恢复、长驻性能采样和 full hide/pass-through 安全恢复做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
 
 ### 3.7 施工进展（2026-06-06）
 

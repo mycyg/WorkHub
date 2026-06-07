@@ -14,6 +14,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -60,6 +61,8 @@ visuals:
 
 ![Cuu Bongo P1d-b hide-on-hover Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
 
+![Cuu Bongo P1e-d-b 60s idle jitter Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
@@ -71,7 +74,8 @@ visuals:
 | 连续看鼠标 / hover 避让 | 通过；P1e-c `look-avoidance` 真实 Tauri 场景包含 `cursor_near_left_outside`、`cursor_near_right_outside`、`hover_top_right_inside`、`tap_body`、`drag_start/move/release`，first-frame `orange_pixels=10737`、`visual_pixels=16870`，最大相邻变化 `3352` 像素，窗口坐标最终移动到 `(1748,804)` |
 | pointer smoothing / drag grip | 通过 P1e-d-a；参考 BongoCat `DAMPING_DECAY` 思路，WorkHub 新增 `desktopPetPointerSmoothingAlpha=0.58`、`data-pet-pointer-smoothing-alpha` QA 属性和 `drag-smoothing` 真实 Tauri 场景。report 记录 9 个 scenario events，first-frame `orange_pixels=9090`、`visual_pixels=14540`，窗口从 `(1844,860)` 连续拖到 `(1710,780)` |
 | hide-on-hover 软隐藏 / 恢复 | 通过 P1d-b-a；参考 BongoCat `hideOnHover` 思路，但 WorkHub P1 先做可恢复 soft dodge，不做不可找回的全透明穿透。report 记录 5 个 scenario events：`cursor_near_left_outside`、`hover_top_right_inside_soft_hide`、`hover_inside_hold`、`cursor_leave_recover`、`hover_inside_again`；first-frame `orange_pixels=9291`、`visual_pixels=15423`，contact sheet 可见 frame 004-013 软隐藏、frame 014-017 恢复、frame 018 后再次软隐藏 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持。下一步转向真实设置页截图、多屏恢复、60s jitter QA、model pack loader 和 Live2D 精修 |
+| 60s idle jitter / flicker | 通过 P1e-d-b；`idle-long-run` 真实 Tauri 场景抓取 31 帧、间隔 2000ms，`long_run.passed=true`，first-frame `orange_pixels=9406`、`visual_pixels=15530`，最低帧仍有 `orange_pixels=9287`、`visual_pixels=15417`，无低可见帧、无窗口漂移，24 个相邻帧超过变化阈值 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门。下一步转向真实设置页截图、多屏恢复、model pack loader、动作幅度二轮和 Live2D 精修 |
 
 证据文件：
 
@@ -163,6 +167,18 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/
   motion-diff-report.json
   first-frame-probe.png
   frames/frame-000.png ... frame-023.png
+```
+
+2026-06-08 P1e-d-b 60s idle jitter / flicker 真实证据：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/
+  cuu-motion-contact-sheet.png
+  cuu-motion-printwindow.gif
+  cuu-motion-printwindow.mp4
+  motion-diff-report.json
+  first-frame-probe.png
+  frames/frame-000.png ... frame-030.png
 ```
 
 `CuuModelPackManifest` 把“默认可展示”收敛为一个可测试合同：默认包必须低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖所有业务动作与 idle 微动作。`cuu-psd-draft-v1` 这类资产即使技术可挂载，也会因为 `default_not_approved`、`visual_gate_failed`、`psd_default_asset` 被拒绝为默认。
@@ -342,6 +358,10 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 - hide-on-hover 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/`。
 - `hide-on-hover` 启动前会把鼠标移到安全位置，并通过 `WORKHUB_CUU_QA_HIDE_ON_HOVER=1` 只对 QA 注入 `pet_hide_on_hover=true`；report 必须包含 `scenario="hide-on-hover"`、`sse_disabled_for_scenario=true`、`cuu_qa_hide_on_hover=true`、5 个 scenario events：`cursor_near_left_outside`、`hover_top_right_inside_soft_hide`、`hover_inside_hold`、`cursor_leave_recover`、`hover_inside_again`。
 - `hide-on-hover` 通过条件：首帧 `orange_pixels>=8000` 且 `visual_pixels>=12000`；contact sheet 肉眼可见初始完整明亮、hover 后 soft hide、离开后恢复明亮、再次 hover 后重新 soft hide；本轮通过值为 `orange_pixels=9291`、`visual_pixels=15423`、`max_vs_previous_changed_pixels_gt8=5544`。
+- 60s idle jitter 场景使用 `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario idle-long-run -WaitSeconds 12 -FrameCount 31 -IntervalMs 2000`。
+- 60s idle jitter 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/`。
+- `idle-long-run` report 必须包含 `scenario="idle-long-run"`、`sse_disabled_for_scenario=true`、`frame_pixel_reports` 和 `long_run.passed=true`；通过条件：每帧可见像素不低于首帧 70%、窗口 rect 不漂移、至少 3 个相邻帧超过变化阈值，避免把死图误判为长驻稳定。
+- 本轮 `idle-long-run` 通过值：31 帧、间隔 2000ms、first-frame `orange_pixels=9406` / `visual_pixels=15530`，最低帧 `orange_pixels=9287` / `visual_pixels=15417`，`changed_frames_gt8_count=24`，无 `low_visual_frames` 和 `rect_drift_frames`。
 
 模型包门：
 
@@ -369,7 +389,7 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1e-a | 输入手感合同 | `cursor_near` interaction、立即 `look_at_mouse`、DOM pointer QA attrs | **已落单测**：靠近不再等几秒；`data-pet-cursor-near` / `hovered` / `dragging` 可被截图脚本读取 |
 | BONGO-P1e-b | 输入手感真实 QA | hover / tap / drag 真实 Tauri 录屏，QA 隔离 SSE 干扰 | **已通过底座**：contact sheet/GIF/MP4/report 已落；全程 Cuu 可见，hover 有抬爪反馈，drag 会移动窗口；后续继续做鼠标平滑视线和 hover 避让 |
 | BONGO-P1e-c | 连续看鼠标与 hover 避让 | Rust `look_x/y_percent`、TS pointer snapshot、CSS pose variables、hover 反向避让、`look-avoidance` 真实 Tauri 录屏 | **已通过**：左右靠近、hover、tap、drag 7 个事件录屏；全程 Cuu 可见，首帧像素门过，drag 后窗口移动 |
-| BONGO-P1e-d | 输入手感细抛光 | pointer smoothing / easing、hover 避让阈值、drag grip 持续姿态、长驻 60s jitter QA | **已落 P1e-d-a**：pointer smoothing alpha、drag grip 持续姿态、`drag-smoothing` 真实 Tauri 录屏通过；仍待 60s jitter 与多屏边界避让 |
+| BONGO-P1e-d | 输入手感细抛光 | pointer smoothing / easing、hover 避让阈值、drag grip 持续姿态、长驻 60s jitter QA | **已落 P1e-d-a / P1e-d-b**：pointer smoothing alpha、drag grip 持续姿态、`drag-smoothing` 真实 Tauri 录屏通过；`idle-long-run` 60 秒长驻可见 / 防闪烁 QA 通过；仍待多屏边界避让和动作幅度二轮 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot + `CuuModelPackManifest` loader | 可从默认 Bongo Cuu 切到未来 Live2D；任何 pack 都先跑 default gate |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
 
@@ -421,6 +441,7 @@ powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-motion-capture.ps1
 | 真实录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 新增 `input-handfeel` scenario：frame 1 cursor-near、frame 7 hover、frame 11 tap、frame 15 drag start、frame 16 drag move、frame 18 release；场景启动时设置 `WORKHUB_DISABLE_SSE=1` | **P1e-b 已通过底座**：24 帧真实 Tauri `PrintWindow` 录屏无离线卡污染；首帧 `orange_pixels=9416`、`visual_pixels=15536`；最大相邻变化 `1695` 像素；窗口坐标随拖拽移动 |
 | 连续凝视与 hover 避让 | `client-tauri/src-tauri/src/pet_window.rs` 返回 `look_x_percent/look_y_percent`；`pet-window-bridge.ts` 归一到 `look_x/look_y`；`cuu-bongo-runtime.ts` 用 CSS 变量驱动头、眼、鼻口、胡须和 hover 反向位移 | **P1e-c 已通过真实录屏**：`look-avoidance` 场景覆盖左右 cursor-near、hover、tap、drag/release；首帧 `orange_pixels=10737`、`visual_pixels=16870` |
 | 输入平滑与 drag grip | `pet-window-bridge.ts` 新增 `DesktopPetPointerSmoothingOptions` 与 `smoothDesktopPetPointerSnapshot()`；`pet-surface.ts` 固定 `desktopPetPointerSmoothingAlpha=0.58`，输出 `data-pet-pointer-smoothing-alpha`，dragging 时强制保持 `drag_hold`；`pet-surface-qa.ts` 检查 smoothing contract | **P1e-d-a 已通过单测与真实录屏**：`drag-smoothing` 场景覆盖左/右/左凝视、hover、tap、drag_start、两段 drag_move、release；首帧 `orange_pixels=9090`、`visual_pixels=14540`，窗口坐标从 `(1844,860)` 移到 `(1710,780)` |
+| 长驻 60s jitter / flicker | `scripts/qa/cuu-tauri-motion-capture.ps1` 新增 `idle-long-run`；报告写入每帧 `frame_pixel_reports` 与 `long_run` 汇总，按首帧可见像素比例、窗口漂移和相邻变化帧数判定 | **P1e-d-b 已通过真实录屏**：31 帧、2 秒间隔、`long_run.passed=true`；最低可见像素仍为 `visual_pixels=15417`，无低可见帧和窗口漂移 |
 
 P1e-b 当前证据：
 
@@ -437,7 +458,7 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/
 
 - P1e-c/P1e-d-a 已有连续头/眼/面部凝视、hover 避让、pointer smoothing 和 drag grip 持续姿态，但仍是 Bongo CSS pose，不是 Cubism 物理；后续 Live2D 必须消费同一 `look_x/look_y` contract。
 - hover 避让目前已有轻微反向位移和 P1d-b-a soft hide/recover；后续需要按屏幕边界、气泡 card、pass-through 状态决定避让方向、收起策略和 full hide-on-hover 安全恢复。
-- drag 姿态已能触发、保持和保存位置，但还缺 60s jitter / flicker QA、长驻 CPU/GPU 采样和多屏边界拖拽恢复。
+- drag 姿态已能触发、保持和保存位置，60s jitter / flicker 可见性 QA 已通过；仍缺长驻 CPU/GPU 采样和多屏边界拖拽恢复。
 - 当前录屏证明的是 P1 Bongo 底座；Live2D 替换默认前必须重新跑同一输入手感门。
 
 ### 6.2 P2 模型包详细路径
