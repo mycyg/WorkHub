@@ -15,6 +15,7 @@ export type CuuControllerPreferences = {
   pet_scale_percent: CuuPetScalePercent;
   pet_opacity_percent: CuuPetOpacityPercent;
   pet_pass_through: boolean;
+  pet_hide_on_hover: boolean;
 };
 
 export type CuuPresentationSurface = "notice" | "badge" | "none";
@@ -77,7 +78,8 @@ const defaultPreferences: CuuControllerPreferences = {
   queue_limit: 5,
   pet_scale_percent: 100,
   pet_opacity_percent: 100,
-  pet_pass_through: false
+  pet_pass_through: false,
+  pet_hide_on_hover: false
 };
 
 const priorityRank: Record<CuuCard["priority"], number> = {
@@ -238,7 +240,8 @@ function normalizePreferences(input: Partial<CuuControllerPreferences> | undefin
     queue_limit: Math.max(0, Math.floor(queueLimit)),
     pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
     pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
-    pet_pass_through: input?.pet_pass_through === true
+    pet_pass_through: input?.pet_pass_through === true,
+    pet_hide_on_hover: input?.pet_hide_on_hover === true
   };
 }
 

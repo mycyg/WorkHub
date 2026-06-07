@@ -119,28 +119,33 @@ test("Cuu controller normalizes desktop pet window preferences", () => {
     queue_limit: 5,
     pet_scale_percent: 100,
     pet_opacity_percent: 100,
-    pet_pass_through: false
+    pet_pass_through: false,
+    pet_hide_on_hover: false
   });
 
   const controller = createCuuController({
     preferences: {
       pet_scale_percent: 125,
       pet_opacity_percent: 80,
-      pet_pass_through: true
+      pet_pass_through: true,
+      pet_hide_on_hover: true
     }
   });
 
   assert.equal(controller.snapshot().preferences.pet_scale_percent, 125);
   assert.equal(controller.snapshot().preferences.pet_opacity_percent, 80);
   assert.equal(controller.snapshot().preferences.pet_pass_through, true);
+  assert.equal(controller.snapshot().preferences.pet_hide_on_hover, true);
 
   const normalized = controller.setPreferences({
     pet_scale_percent: 111 as 100,
     pet_opacity_percent: 42 as 100,
-    pet_pass_through: false
+    pet_pass_through: false,
+    pet_hide_on_hover: false
   });
 
   assert.equal(normalized.preferences.pet_scale_percent, 100);
   assert.equal(normalized.preferences.pet_opacity_percent, 100);
   assert.equal(normalized.preferences.pet_pass_through, false);
+  assert.equal(normalized.preferences.pet_hide_on_hover, false);
 });

@@ -5,6 +5,7 @@ export type DesktopPetVisualQaCheckId =
   | "right_bottom_independent_surface"
   | "pet_body_hit_area"
   | "pointer_reactive_pose"
+  | "bongo_hover_hide_handfeel"
   | "no_main_shell"
   | "bongo_runtime_contract"
   | "card_mode_light_bubble"
@@ -75,6 +76,16 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.bongo.css.includes("--wh-pet-look-eye-x-px") &&
         input.idle.bongo.css.includes("data-pet-hover-avoidance=soft"),
       "Bongo-style Cuu must expose continuous pointer look variables, smoothing alpha and a hover avoidance pose for screenshot QA."
+    ),
+    qaCheck(
+      "bongo_hover_hide_handfeel",
+      input.idle.html.includes('data-pet-hide-on-hover="false"') &&
+        input.idle.html.includes('data-pet-hover-hidden="false"') &&
+        input.idle.html.includes('data-pet-hover-hide-mode="off"') &&
+        input.idle.html.includes("--wh-pet-hide-opacity:1") &&
+        input.idle.css.includes("data-pet-hover-hidden=true") &&
+        input.idle.css.includes("--wh-pet-hide-x-px"),
+      "Bongo-style Cuu must expose a recoverable hover hide/dodge state instead of depending on PSD realism or a full invisible window."
     ),
     qaCheck(
       "no_main_shell",
@@ -173,6 +184,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     right_bottom_independent_surface: "right-bottom independent surface",
     pet_body_hit_area: "pet body hit area",
     pointer_reactive_pose: "pointer-reactive pose",
+    bongo_hover_hide_handfeel: "Bongo hover-hide handfeel",
     no_main_shell: "no main shell",
     bongo_runtime_contract: "Bongo-style runtime contract",
     card_mode_light_bubble: "card-mode light bubble",

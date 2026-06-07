@@ -54,6 +54,7 @@ pub struct PetWindowSettings {
     pub scale_percent: u16,
     pub opacity_percent: u8,
     pub pass_through: bool,
+    pub hide_on_hover: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ pub struct PetWindowVisualSettingsPlan {
     pub scale_percent: u16,
     pub opacity_percent: u8,
     pub pass_through: bool,
+    pub hide_on_hover: bool,
     pub focus: bool,
 }
 
@@ -119,6 +121,7 @@ impl Default for PetWindowSettings {
             scale_percent: DEFAULT_PET_WINDOW_SCALE_PERCENT,
             opacity_percent: DEFAULT_PET_WINDOW_OPACITY_PERCENT,
             pass_through: false,
+            hide_on_hover: false,
         }
     }
 }
@@ -268,6 +271,7 @@ pub fn normalize_pet_window_settings(settings: PetWindowSettings) -> PetWindowSe
         scale_percent: normalize_pet_window_scale_percent(settings.scale_percent),
         opacity_percent: normalize_pet_window_opacity_percent(settings.opacity_percent),
         pass_through: settings.pass_through,
+        hide_on_hover: settings.hide_on_hover,
     }
 }
 
@@ -278,6 +282,7 @@ pub fn pet_window_visual_settings_plan(settings: PetWindowSettings) -> PetWindow
         scale_percent: settings.scale_percent,
         opacity_percent: settings.opacity_percent,
         pass_through: settings.pass_through,
+        hide_on_hover: settings.hide_on_hover,
         focus: false,
     }
 }
@@ -409,6 +414,7 @@ mod tests {
             scale_percent: 125,
             opacity_percent: 80,
             pass_through: true,
+            hide_on_hover: true,
         };
         let body = LogicalPosition { x: 1600, y: 700 };
         let body_plan = place_pet_window_from_body_anchor(
@@ -445,6 +451,7 @@ mod tests {
         assert_eq!(visual.scale_percent, 125);
         assert_eq!(visual.opacity_percent, 80);
         assert_eq!(visual.pass_through, true);
+        assert_eq!(visual.hide_on_hover, true);
         assert_eq!(visual.focus, false);
     }
 

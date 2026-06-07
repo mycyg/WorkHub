@@ -6,7 +6,7 @@ param(
   [int]$PixelStep = 2,
   [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
-  [ValidateSet("idle", "input-handfeel", "look-avoidance", "drag-smoothing")]
+  [ValidateSet("idle", "input-handfeel", "look-avoidance", "drag-smoothing", "hide-on-hover")]
   [string]$Scenario = "idle",
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
@@ -413,19 +413,22 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "drag-smoothing") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover") {
     return $null
   }
 
   $isLookAvoidance = $ScenarioName -eq "look-avoidance"
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
+  $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
   $nearLeftX = [int]($Window.Rect.Left - 36)
   $nearRightX = [int]($Window.Rect.Right + 36)
   $nearY = $centerY
-  $hoverX = if ($isLookAvoidance -or $isDragSmoothing) { [int][Math]::Round($centerX + [Math]::Min(42, $Window.Rect.Width * 0.24)) } else { $centerX }
-  $hoverY = if ($isLookAvoidance -or $isDragSmoothing) { [int][Math]::Round($centerY - [Math]::Min(34, $Window.Rect.Height * 0.2)) } else { $centerY }
+  $hoverX = if ($isLookAvoidance -or $isDragSmoothing -or $isHideOnHover) { [int][Math]::Round($centerX + [Math]::Min(42, $Window.Rect.Width * 0.24)) } else { $centerX }
+  $hoverY = if ($isLookAvoidance -or $isDragSmoothing -or $isHideOnHover) { [int][Math]::Round($centerY - [Math]::Min(34, $Window.Rect.Height * 0.2)) } else { $centerY }
+  $leaveX = [int]($Window.Rect.Right + 160)
+  $leaveY = [int]($Window.Rect.Bottom + 80)
   $dragX = [int]($centerX - 48)
   $dragY = [int]($centerY - 28)
   $dragX2 = [int]($centerX - 86)
@@ -434,6 +437,57 @@ function Invoke-CuuInteractionScenarioFrame {
   $action = $null
   $x = $centerX
   $y = $centerY
+
+  if ($isHideOnHover) {
+    switch ($FrameIndex) {
+      1 {
+        $action = "cursor_near_left_outside"
+        $x = $nearLeftX
+        $y = $nearY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      4 {
+        $action = "hover_top_right_inside_soft_hide"
+        $x = $hoverX
+        $y = $hoverY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      9 {
+        $action = "hover_inside_hold"
+        $x = $centerX
+        $y = $centerY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      14 {
+        $action = "cursor_leave_recover"
+        $x = $leaveX
+        $y = $leaveY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      18 {
+        $action = "hover_inside_again"
+        $x = $hoverX
+        $y = $hoverY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+    }
+
+    if (-not $action) {
+      return $null
+    }
+
+    $postDelayMs = if ($action.StartsWith("hover")) { 360 } else { 180 }
+    Start-Sleep -Milliseconds $postDelayMs
+    return [pscustomobject]@{
+      frame = $FrameIndex
+      action = $action
+      cursor = [pscustomobject]@{
+        x = $x
+        y = $y
+      }
+      window_rect = $Window.Rect
+    }
+  }
 
   switch ($FrameIndex) {
     1 {
@@ -553,6 +607,7 @@ if ($existingProcessIds.Count -gt 0) {
 $originalAppData = $env:APPDATA
 $originalLocalAppData = $env:LOCALAPPDATA
 $originalDisableSse = $env:WORKHUB_DISABLE_SSE
+$originalCuuQaHideOnHover = $env:WORKHUB_CUU_QA_HIDE_ON_HOVER
 $process = $null
 $devServerProcess = $null
 $isolatedRoot = $null
@@ -571,6 +626,12 @@ try {
   if ($Scenario -ne "idle") {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
+  }
+  $cuuQaHideOnHover = $false
+  if ($Scenario -eq "hide-on-hover") {
+    $env:WORKHUB_CUU_QA_HIDE_ON_HOVER = "1"
+    $cuuQaHideOnHover = $true
+    Set-CuuCursorPosition -X 120 -Y 120
   }
 
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
@@ -625,6 +686,7 @@ try {
     passed = $true
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
+    cuu_qa_hide_on_hover = $cuuQaHideOnHover
     scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
     frame_count = $FrameCount
@@ -672,6 +734,7 @@ try {
     passed = $true
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
+    cuu_qa_hide_on_hover = $cuuQaHideOnHover
     frames_dir = $framesDir
     contact_sheet = $contactSheet
     diff_report = $reportPath
@@ -686,6 +749,7 @@ try {
   Restore-EnvVar -Name "APPDATA" -Value $originalAppData
   Restore-EnvVar -Name "LOCALAPPDATA" -Value $originalLocalAppData
   Restore-EnvVar -Name "WORKHUB_DISABLE_SSE" -Value $originalDisableSse
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_HIDE_ON_HOVER" -Value $originalCuuQaHideOnHover
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
     $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())

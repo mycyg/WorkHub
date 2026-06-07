@@ -8,6 +8,7 @@ export type DesktopPetWindowSettings = {
   scale_percent: DesktopPetScalePercent;
   opacity_percent: DesktopPetOpacityPercent;
   pass_through: boolean;
+  hide_on_hover: boolean;
 };
 
 export type DesktopPetPointerSnapshot = {
@@ -82,6 +83,8 @@ type PetWindowSettingsCommandResult = {
     opacity_percent?: number;
     passThrough?: boolean;
     pass_through?: boolean;
+    hideOnHover?: boolean;
+    hide_on_hover?: boolean;
   };
 };
 
@@ -121,12 +124,13 @@ export function desktopPetWindowModeForCard(card: unknown): DesktopPetWindowMode
 }
 
 export function desktopPetWindowSettingsFromPreferences(
-  preferences: Pick<CuuControllerPreferences, "pet_scale_percent" | "pet_opacity_percent" | "pet_pass_through">
+  preferences: Pick<CuuControllerPreferences, "pet_scale_percent" | "pet_opacity_percent" | "pet_pass_through" | "pet_hide_on_hover">
 ): DesktopPetWindowSettings {
   return {
     scale_percent: preferences.pet_scale_percent,
     opacity_percent: preferences.pet_opacity_percent,
-    pass_through: preferences.pet_pass_through
+    pass_through: preferences.pet_pass_through,
+    hide_on_hover: preferences.pet_hide_on_hover
   };
 }
 
@@ -180,7 +184,8 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
             const value = await invoke("set_pet_window_settings", {
               scalePercent: settings.scale_percent,
               opacityPercent: settings.opacity_percent,
-              passThrough: settings.pass_through
+              passThrough: settings.pass_through,
+              hideOnHover: settings.hide_on_hover
             });
             assertPetWindowSettingsResult(value, settings);
           },
@@ -321,10 +326,18 @@ export function desktopPetPointerSnapshotFromSample(
   if (!pointer) {
     return normalizeDesktopPetPointerSnapshot(previous);
   }
+  const insideWindow = pointer.insideWindow ?? pointer.inside_window;
   const cursorNear = pointer.cursorNear ?? pointer.cursor_near ?? previous.cursor_near;
   const lookX = readLookAxis(pointer.lookX ?? pointer.look_x ?? pointer.lookXPercent ?? pointer.look_x_percent);
   const lookY = readLookAxis(pointer.lookY ?? pointer.look_y ?? pointer.lookYPercent ?? pointer.look_y_percent);
   if (previous.dragging || previous.hovered) {
+    if (insideWindow === false && cursorNear === false) {
+      return normalizeDesktopPetPointerSnapshot({
+        cursor_near: false,
+        hovered: false,
+        dragging: false
+      });
+    }
     return normalizeDesktopPetPointerSnapshot({
       ...previous,
       cursor_near: cursorNear
@@ -452,7 +465,13 @@ function assertPetWindowSettingsResult(value: unknown, expected: DesktopPetWindo
   const scale = settings?.scalePercent ?? settings?.scale_percent;
   const opacity = settings?.opacityPercent ?? settings?.opacity_percent;
   const passThrough = settings?.passThrough ?? settings?.pass_through;
-  if (scale !== expected.scale_percent || opacity !== expected.opacity_percent || passThrough !== expected.pass_through) {
+  const hideOnHover = settings?.hideOnHover ?? settings?.hide_on_hover;
+  if (
+    scale !== expected.scale_percent ||
+    opacity !== expected.opacity_percent ||
+    passThrough !== expected.pass_through ||
+    hideOnHover !== expected.hide_on_hover
+  ) {
     throw new Error("Cuu pet window returned an invalid settings plan.");
   }
 }

@@ -33,7 +33,11 @@ export const desktopCuuPreferenceCss = [
 ].join("");
 
 export function loadCuuPreferences(storage = defaultStorage()): CuuControllerPreferences {
-  const defaults = defaultCuuControllerPreferences();
+  const injected = injectedCuuPreferenceOverrides();
+  const defaults = normalizeCuuPreferences({
+    ...defaultCuuControllerPreferences(),
+    ...injected
+  });
   if (!storage) {
     return defaults;
   }
@@ -42,7 +46,10 @@ export function loadCuuPreferences(storage = defaultStorage()): CuuControllerPre
     if (!raw) {
       return defaults;
     }
-    return normalizeCuuPreferences(JSON.parse(raw) as Partial<CuuControllerPreferences>);
+    return normalizeCuuPreferences({
+      ...(JSON.parse(raw) as Partial<CuuControllerPreferences>),
+      ...injected
+    });
   } catch {
     return defaults;
   }
@@ -67,7 +74,8 @@ export function normalizeCuuPreferences(input: Partial<CuuControllerPreferences>
     queue_limit: Math.max(0, Math.min(12, Math.floor(Number.isFinite(queueLimit) ? queueLimit : defaults.queue_limit))),
     pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
     pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
-    pet_pass_through: input?.pet_pass_through === true
+    pet_pass_through: input?.pet_pass_through === true,
+    pet_hide_on_hover: input?.pet_hide_on_hover === true
   };
 }
 
@@ -117,6 +125,10 @@ export function renderCuuPreferencePanel(snapshot: CuuControllerSnapshot) {
     <div class="wh-cuu-pref-toggle">
       <label><input type="checkbox" data-cuu-pet-pass-through ${preferences.pet_pass_through ? "checked" : ""}>点击穿透</label>
       <span>${preferences.pet_scale_percent}% · ${preferences.pet_opacity_percent}%</span>
+    </div>
+    <div class="wh-cuu-pref-toggle">
+      <label><input type="checkbox" data-cuu-pet-hide-on-hover ${preferences.pet_hide_on_hover ? "checked" : ""}>悬停避让</label>
+      <span>${preferences.pet_hide_on_hover ? "软隐藏" : "常驻"}</span>
     </div>
     <div class="wh-cuu-pref-queue">
       <label for="wh-cuu-queue-limit">队列上限</label>
@@ -182,6 +194,10 @@ export function bindCuuPreferencePanel(
     }
     if (target.matches("[data-cuu-pet-pass-through]")) {
       update({ pet_pass_through: target.checked });
+      return;
+    }
+    if (target.matches("[data-cuu-pet-hide-on-hover]")) {
+      update({ pet_hide_on_hover: target.checked });
     }
   });
 
@@ -230,6 +246,11 @@ function defaultStorage(): CuuPreferenceStorage | undefined {
   } catch {
     return undefined;
   }
+}
+
+function injectedCuuPreferenceOverrides(): Partial<CuuControllerPreferences> | undefined {
+  const injected = (globalThis as { __WORKHUB_CUU_PREFERENCES__?: Partial<CuuControllerPreferences> }).__WORKHUB_CUU_PREFERENCES__;
+  return injected && typeof injected === "object" ? injected : undefined;
 }
 
 function normalizePetScalePercent(value: unknown): CuuPetScalePercent {

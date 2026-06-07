@@ -177,7 +177,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。P1d-a 已补尺寸、透明度和点击穿透窗口合同；P1e-a 已补 cursor-near 立即 `look_at_mouse` 与 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` 输入 QA 属性。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。P1d-a 已补尺寸、透明度和点击穿透窗口合同；P1d-b-a 已补 hide-on-hover soft dodge；P1e-a 已补 cursor-near 立即 `look_at_mouse` 与 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` 输入 QA 属性。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 
 ### 3.1.2 Cuu Live2D 分层概念
 
@@ -235,7 +235,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1e-b/P1e-c/P1e-d-a 真实输入录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、真实 Tauri Bongo GIF/MP4、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺 Bongo 动作二轮幅度、窗口设置真实截图 / hide-on-hover、60s jitter QA、多屏恢复实测、正式 Live2D 模型、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
+Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1e-b/P1e-c/P1e-d-a 真实输入录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、真实 Tauri Bongo GIF/MP4、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺 Bongo 动作二轮幅度、窗口设置真实截图、full hide/pass-through 安全恢复、60s jitter QA、多屏恢复实测、正式 Live2D 模型、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
@@ -276,6 +276,10 @@ Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 
 ![Cuu Bongo P1c 首帧稳定真实 Tauri 录屏](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
 
 这张真实 Tauri `PrintWindow` contact sheet 是当前首帧验收依据：frame 000 就有 body-only Cuu 全身，不再出现 P1b 证据里的 black blank。`motion-diff-report.json` 记录 `first_frame_gate.passed=true`，首帧 probe 达到 `orange_pixels=9408`、`visual_pixels=15530` 后才开始写正式帧。
+
+![Cuu Bongo P1d-b 悬停避让真实 Tauri 录屏](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
+
+这张真实 Tauri contact sheet 是当前 hide-on-hover soft dodge 验收依据：frame 000-003 完整可见，frame 004-013 hover 软隐藏，frame 014-017 离开恢复，frame 018 后再次软隐藏。它不是 full pass-through 隐身；后续若升级到 BongoCat 式全透明避让，必须先补托盘、快捷键和边缘热区恢复。
 
 ![Cuu Pet card P1.2 审批轻卡](./assets/audit/2026-06-08-cuu-pet-card-p1-2-normal/cuu-pet-card-p1-2-contact-sheet.png)
 

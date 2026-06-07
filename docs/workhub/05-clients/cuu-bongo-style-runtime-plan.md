@@ -13,6 +13,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -57,6 +58,8 @@ visuals:
 
 ![Cuu Bongo P1e-d drag smoothing Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png)
 
+![Cuu Bongo P1d-b hide-on-hover Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
@@ -67,7 +70,8 @@ visuals:
 | 输入手感真实录屏 | 通过；P1e 场景用真实鼠标触发 cursor-near、hover、tap、drag、release，全程 body-only Cuu 可见，无离线卡片污染，窗口坐标从 `(1844,860)` 移到 `(1748,804)` |
 | 连续看鼠标 / hover 避让 | 通过；P1e-c `look-avoidance` 真实 Tauri 场景包含 `cursor_near_left_outside`、`cursor_near_right_outside`、`hover_top_right_inside`、`tap_body`、`drag_start/move/release`，first-frame `orange_pixels=10737`、`visual_pixels=16870`，最大相邻变化 `3352` 像素，窗口坐标最终移动到 `(1748,804)` |
 | pointer smoothing / drag grip | 通过 P1e-d-a；参考 BongoCat `DAMPING_DECAY` 思路，WorkHub 新增 `desktopPetPointerSmoothingAlpha=0.58`、`data-pet-pointer-smoothing-alpha` QA 属性和 `drag-smoothing` 真实 Tauri 场景。report 记录 9 个 scenario events，first-frame `orange_pixels=9090`、`visual_pixels=14540`，窗口从 `(1844,860)` 连续拖到 `(1710,780)` |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持。下一步转向窗口设置真实截图、hide-on-hover、多屏恢复、60s jitter QA、model pack loader 和 Live2D 精修 |
+| hide-on-hover 软隐藏 / 恢复 | 通过 P1d-b-a；参考 BongoCat `hideOnHover` 思路，但 WorkHub P1 先做可恢复 soft dodge，不做不可找回的全透明穿透。report 记录 5 个 scenario events：`cursor_near_left_outside`、`hover_top_right_inside_soft_hide`、`hover_inside_hold`、`cursor_leave_recover`、`hover_inside_again`；first-frame `orange_pixels=9291`、`visual_pixels=15423`，contact sheet 可见 frame 004-013 软隐藏、frame 014-017 恢复、frame 018 后再次软隐藏 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持。下一步转向真实设置页截图、多屏恢复、60s jitter QA、model pack loader 和 Live2D 精修 |
 
 证据文件：
 
@@ -113,8 +117,8 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 | BongoCat 能力 | 参考落点 | WorkHub 当前状态 | 后续落点 |
 |---|---|---|---|
 | 可替换模型 | `src/stores/model.ts`、`src/composables/useModel.ts` | 新增 `packages/cuu/src/model-pack.ts` 作为 Cuu 模型包契约；默认包为 `cuu-bongo-p1` | P2 做 `Cuu model preset + custom model slot`，Live2D 通过后作为另一个 pack |
-| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射；`useDevice.ts` 的 `DAMPING_DECAY=0.75` 鼠标阻尼 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算；P1d-a 已把 scale / opacity / pass-through 接成偏好和 Rust bridge；P1e-a 已把 cursor-near 进入事件映射为立即 `look_at_mouse`，并把 pointer state 写入 DOM；P1e-b 已用真实 Tauri 录屏验证 hover/tap/drag 底座；P1e-c 已把 Rust `look_x_percent/look_y_percent` 归一为 TS `look_x/look_y`，驱动头/眼/面部凝视和 hover 反向避让；P1e-d-a 已把 250ms Rust sample 接上 `desktopPetPointerSmoothingAlpha=0.58`，并在 dragging 时保护本地 DOM pointer pose 不被 Rust sample 覆盖 | 后续把同一 pointer contract 接入 Live2D `ParamAngleX/Y`、`ParamEyeBallX/Y` 与 Cubism 物理，并把 hide-on-hover / pass-through 安全策略做成可配置窗口能力 |
-| 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动、保存位置、缩放几何、CSS 透明度和点击穿透命令 | P1d-b 补 hide-on-hover、keep-in-screen 多屏实测、Settings 视觉页与截图 |
+| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射；`useDevice.ts` 的 `DAMPING_DECAY=0.75` 鼠标阻尼 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算；P1d-a 已把 scale / opacity / pass-through 接成偏好和 Rust bridge；P1d-b-a 已把 `pet_hide_on_hover` 接进偏好、TS bridge、Rust settings 和真实 Tauri `hide-on-hover` 录屏；P1e-a 已把 cursor-near 进入事件映射为立即 `look_at_mouse`，并把 pointer state 写入 DOM；P1e-b 已用真实 Tauri 录屏验证 hover/tap/drag 底座；P1e-c 已把 Rust `look_x_percent/look_y_percent` 归一为 TS `look_x/look_y`，驱动头/眼/面部凝视和 hover 反向避让；P1e-d-a 已把 250ms Rust sample 接上 `desktopPetPointerSmoothingAlpha=0.58`，并在 dragging 时保护本地 DOM pointer pose 不被 Rust sample 覆盖，同时会在 Rust outside sample 明确离开时清掉 hover，避免 Cuu 软隐藏后不恢复 | 后续把同一 pointer contract 接入 Live2D `ParamAngleX/Y`、`ParamEyeBallX/Y` 与 Cubism 物理，并把 full hide/pass-through 安全策略做成可配置窗口能力 |
+| 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动、保存位置、缩放几何、CSS 透明度、点击穿透命令和 hover soft hide/recover | P1d-b 继续补 keep-in-screen 多屏实测、Settings 视觉页与截图、full hide-on-hover/pass-through 安全恢复 |
 | 低恐怖谷默认 | BongoCat 低拟真角色动作 | WorkHub 默认 `bongo_cuu`，PSD draft 被降级为实验 | 默认候选必须过 `assertCuuModelPackCanBeDefault()` |
 | 离线隐私友好 | README 明确离线运行 | Cuu 本体可在 webview 里离线渲染，数据从 WorkHub 安全通道来 | 设备输入监听只做本地手感，不采集无关数据 |
 
@@ -141,6 +145,18 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/
 
 ```text
 docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/
+  cuu-motion-contact-sheet.png
+  cuu-motion-printwindow.gif
+  cuu-motion-printwindow.mp4
+  motion-diff-report.json
+  first-frame-probe.png
+  frames/frame-000.png ... frame-023.png
+```
+
+2026-06-08 P1d-b-a hide-on-hover 软隐藏 / 恢复真实证据：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/
   cuu-motion-contact-sheet.png
   cuu-motion-printwindow.gif
   cuu-motion-printwindow.mp4
@@ -241,7 +257,7 @@ BONGO-P1e-c 已把“鼠标靠近”升级为连续输入 pose，而不是只切
 | TS bridge | `apps/desktop-webview/src/pet-window-bridge.ts` | `desktopPetPointerSnapshotFromSample()` 把百分比归一为 `look_x/look_y: -1..1`，并可按 `smoothing_alpha` 做低通插值；`pointerPatchFromEvent()` 从 hover / drag DOM event 推导本地 `look_x/look_y` 与 hover 避让；drag / hover 的本地 pose 不被 Rust sample 覆盖 |
 | Surface VM | `apps/desktop-webview/src/pet-surface.ts` | `DesktopPetPointerSnapshot` 输出 `data-pet-look-x/y`、`data-pet-hover-avoidance`、`data-pet-pointer-smoothing-alpha`、`--wh-pet-look-*`、`--wh-pet-avoid-*`；轮询频率为 `250ms`，默认 smoothing alpha 为 `0.58`，避免窗口外靠近时错过动作或左右凝视突然跳变 |
 | Bongo renderer | `apps/desktop-webview/src/cuu-bongo-runtime.ts` | `look_at_mouse` 状态用 CSS 变量驱动头、眼、鼻口、胡须方向；hover 时 body 轻微反向避让，drag 时取消避让并保持抓握感 |
-| QA | `apps/desktop-webview/src/pet-surface-qa.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | 静态 QA 检查 pointer-reactive pose 与 smoothing alpha；真实 Tauri `look-avoidance` 场景录制左看、右看、hover、tap、drag；`drag-smoothing` 场景录制左右凝视跳转、hover、tap、连续拖动和 release |
+| QA | `apps/desktop-webview/src/pet-surface-qa.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | 静态 QA 检查 pointer-reactive pose、smoothing alpha 与 hover soft-hide DOM；真实 Tauri `look-avoidance` 场景录制左看、右看、hover、tap、drag；`drag-smoothing` 场景录制左右凝视跳转、hover、tap、连续拖动和 release；`hide-on-hover` 场景录制 hover 软隐藏、离开恢复、再次 hover |
 
 这套合同是后续 Live2D 的输入端口：Cubism model pack 不应重新定义鼠标协议，而应直接消费 `look_x/look_y` 映射到 `ParamAngleX/Y`、`ParamEyeBallX/Y`、耳朵轻摆、尾巴警觉和 hover avoidance。
 
@@ -322,6 +338,10 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 - 输入平滑与 drag grip 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/`。
 - `drag-smoothing` report 必须包含 `scenario="drag-smoothing"`、`sse_disabled_for_scenario=true`、9 个 scenario events：`cursor_near_left_outside`、`cursor_near_right_outside`、`cursor_near_left_outside_again`、`hover_top_right_inside`、`tap_body`、`drag_start`、`drag_move`、`drag_move_second`、`drag_release`。
 - `drag-smoothing` 通过条件：首帧 `orange_pixels>=8000` 且 `visual_pixels>=12000`；DOM 静态 QA 出现 `data-pet-pointer-smoothing-alpha="0.58"`；contact sheet 肉眼可见左右凝视过渡、hover 抬爪、drag 阶段保持 body-only 全身可见；本轮通过值为 `orange_pixels=9090`、`visual_pixels=14540`、`max_vs_previous_changed_pixels_gt8=4256`，窗口从 `(1844,860)` 移到 `(1710,780)`。
+- hide-on-hover 软隐藏场景使用 `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario hide-on-hover -WaitSeconds 12 -FrameCount 24 -IntervalMs 180`。
+- hide-on-hover 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/`。
+- `hide-on-hover` 启动前会把鼠标移到安全位置，并通过 `WORKHUB_CUU_QA_HIDE_ON_HOVER=1` 只对 QA 注入 `pet_hide_on_hover=true`；report 必须包含 `scenario="hide-on-hover"`、`sse_disabled_for_scenario=true`、`cuu_qa_hide_on_hover=true`、5 个 scenario events：`cursor_near_left_outside`、`hover_top_right_inside_soft_hide`、`hover_inside_hold`、`cursor_leave_recover`、`hover_inside_again`。
+- `hide-on-hover` 通过条件：首帧 `orange_pixels>=8000` 且 `visual_pixels>=12000`；contact sheet 肉眼可见初始完整明亮、hover 后 soft hide、离开后恢复明亮、再次 hover 后重新 soft hide；本轮通过值为 `orange_pixels=9291`、`visual_pixels=15423`、`max_vs_previous_changed_pixels_gt8=5544`。
 
 模型包门：
 
@@ -345,11 +365,11 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
 | BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
 | BONGO-P1d-a | 设置和窗口能力契约 | scale / opacity / pass-through 偏好、DOM/CSS、TS bridge、Rust command、几何缩放 | **已落**：`set_pet_window_settings`、`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through`、scaled body/card placement 和静态 QA 均已可测 |
-| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | 对齐 BongoCat 的桌宠窗口体验；需要真实 Tauri 设置页、录屏和跨平台截图 |
+| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | **已落 P1d-b-a**：`pet_hide_on_hover` 偏好、DOM/Rust settings、QA 注入和真实 Tauri soft hide/recover 录屏通过；仍待真实设置页截图、多屏恢复和 full hide/pass-through 安全策略 |
 | BONGO-P1e-a | 输入手感合同 | `cursor_near` interaction、立即 `look_at_mouse`、DOM pointer QA attrs | **已落单测**：靠近不再等几秒；`data-pet-cursor-near` / `hovered` / `dragging` 可被截图脚本读取 |
 | BONGO-P1e-b | 输入手感真实 QA | hover / tap / drag 真实 Tauri 录屏，QA 隔离 SSE 干扰 | **已通过底座**：contact sheet/GIF/MP4/report 已落；全程 Cuu 可见，hover 有抬爪反馈，drag 会移动窗口；后续继续做鼠标平滑视线和 hover 避让 |
 | BONGO-P1e-c | 连续看鼠标与 hover 避让 | Rust `look_x/y_percent`、TS pointer snapshot、CSS pose variables、hover 反向避让、`look-avoidance` 真实 Tauri 录屏 | **已通过**：左右靠近、hover、tap、drag 7 个事件录屏；全程 Cuu 可见，首帧像素门过，drag 后窗口移动 |
-| BONGO-P1e-d | 输入手感细抛光 | pointer smoothing / easing、hover 避让阈值、drag grip 持续姿态、长驻 60s jitter QA | **已落 P1e-d-a**：pointer smoothing alpha、drag grip 持续姿态、`drag-smoothing` 真实 Tauri 录屏通过；仍待 60s jitter、hide-on-hover、多屏边界避让 |
+| BONGO-P1e-d | 输入手感细抛光 | pointer smoothing / easing、hover 避让阈值、drag grip 持续姿态、长驻 60s jitter QA | **已落 P1e-d-a**：pointer smoothing alpha、drag grip 持续姿态、`drag-smoothing` 真实 Tauri 录屏通过；仍待 60s jitter 与多屏边界避让 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot + `CuuModelPackManifest` loader | 可从默认 Bongo Cuu 切到未来 Live2D；任何 pack 都先跑 default gate |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
 
@@ -362,10 +382,11 @@ pnpm --filter @workhub/cuu test
 | 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸 | **P1d-a 已落单测**；下一步补 4 档真实 Tauri 截图，Cuu 不裁切，card mode 仍从 body anchor 向左上扩 |
 | 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity | **P1d-a 已落单测**；下一步截图对比 60/80/100，bubble 文本仍可读 |
 | 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan | **P1d-a 已落单测**；下一步实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
+| 悬停避让 | `packages/cuu/src/controller.ts` 写入 `pet_hide_on_hover`；`cuu-preferences.ts` 提供“悬停避让”开关；`pet-window-bridge.ts`/Rust settings plan 统一 `hide_on_hover`；`pet-surface.ts` 用 `data-pet-hover-hidden`、`--wh-pet-hide-*` 做可恢复 soft dodge；`desktopPetPointerSnapshotFromSample()` 在 Rust outside sample 时清掉 hover，防止软隐藏后不恢复 | **P1d-b-a 已落并录屏**；后续若做 BongoCat 式全透明隐藏，必须先设计托盘/快捷键/边缘热区恢复策略 |
 | hover / cursor near | `sample_pet_cursor_near` + idle scheduler；P1e-a 已新增 `cursor_near` interaction，进入附近区域立即 `look_at_mouse`，surface 输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging`；P1e-b 已有真实录屏底座 | 后续 P1e-c 做连续视线参数、hover 避让和重新录屏 |
 | 屏幕边界 | 已有 `clamp_position`，补多显示器/缩放 QA | 贴边不出屏，重启恢复位置 |
 
-P1d-a 已落代码路径：
+P1d-a / P1d-b-a 已落代码路径：
 
 ```text
 packages/cuu/src/controller.ts
@@ -376,16 +397,18 @@ apps/desktop-webview/src/pet-surface-qa.ts
 client-tauri/src-tauri/src/pet_window.rs
 client-tauri/src-tauri/src/pet_commands.rs
 client-tauri/src-tauri/src/main.rs
+scripts/qa/cuu-tauri-motion-capture.ps1
 ```
 
-P1d-a 当前测试门：
+P1d-a / P1d-b-a 当前测试门：
 
 ```text
 pnpm --filter @workhub/cuu test
 pnpm --filter @workhub/desktop-webview test
 pnpm --filter @workhub/cuu typecheck
 pnpm --filter @workhub/desktop-webview typecheck
-cargo test
+cargo test --manifest-path client-tauri/src-tauri/Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario hide-on-hover
 ```
 
 ### 6.2 P1e 输入手感施工路径
@@ -413,7 +436,7 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/
 仍未算最终完成的输入手感：
 
 - P1e-c/P1e-d-a 已有连续头/眼/面部凝视、hover 避让、pointer smoothing 和 drag grip 持续姿态，但仍是 Bongo CSS pose，不是 Cubism 物理；后续 Live2D 必须消费同一 `look_x/look_y` contract。
-- hover 避让目前是轻微反向位移；后续需要按屏幕边界、气泡 card、pass-through 状态决定避让方向、收起策略和 hide-on-hover 安全恢复。
+- hover 避让目前已有轻微反向位移和 P1d-b-a soft hide/recover；后续需要按屏幕边界、气泡 card、pass-through 状态决定避让方向、收起策略和 full hide-on-hover 安全恢复。
 - drag 姿态已能触发、保持和保存位置，但还缺 60s jitter / flicker QA、长驻 CPU/GPU 采样和多屏边界拖拽恢复。
 - 当前录屏证明的是 P1 Bongo 底座；Live2D 替换默认前必须重新跑同一输入手感门。
 

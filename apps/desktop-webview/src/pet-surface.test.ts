@@ -434,6 +434,8 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /data-pet-scale-percent="100"/u);
   assert.match(idle.html, /data-pet-opacity-percent="100"/u);
   assert.match(idle.html, /data-pet-pass-through="false"/u);
+  assert.match(idle.html, /data-pet-hide-on-hover="false"/u);
+  assert.match(idle.html, /data-pet-hover-hidden="false"/u);
   assert.match(idle.html, /data-pet-window-width="180"/u);
   assert.match(idle.html, /data-pet-window-height="220"/u);
   assert.match(idle.html, /data-pet-cursor-near="false"/u);
@@ -491,7 +493,8 @@ test("pet surface scales Cuu, opacity and pass-through from window settings", ()
     pet_window_settings: {
       scale_percent: 125,
       opacity_percent: 80,
-      pass_through: true
+      pass_through: true,
+      hide_on_hover: true
     }
   });
 
@@ -499,9 +502,41 @@ test("pet surface scales Cuu, opacity and pass-through from window settings", ()
   assert.match(surface.html, /data-pet-scale-percent="125"/u);
   assert.match(surface.html, /data-pet-opacity-percent="80"/u);
   assert.match(surface.html, /data-pet-pass-through="true"/u);
+  assert.match(surface.html, /data-pet-hide-on-hover="true"/u);
+  assert.match(surface.html, /data-pet-hover-hidden="false"/u);
   assert.match(surface.html, /data-pet-window-width="225"/u);
   assert.match(surface.html, /data-pet-window-height="275"/u);
   assert.match(surface.html, /--wh-cuu-bongo-w:185px/u);
+});
+
+test("pet surface soft-hides Bongo-style Cuu on hover when enabled", () => {
+  const surface = renderDesktopPetSurface({
+    idle_action: "look_at_mouse",
+    pet_window_settings: {
+      scale_percent: 100,
+      opacity_percent: 100,
+      pass_through: false,
+      hide_on_hover: true
+    },
+    pointer_snapshot: {
+      cursor_near: true,
+      hovered: true,
+      dragging: false,
+      look_x: 0.8,
+      look_y: -0.5,
+      avoidance_x: -0.64,
+      avoidance_y: 0.3,
+      hover_avoidance: "soft"
+    }
+  });
+
+  assert.match(surface.html, /data-pet-hide-on-hover="true"/u);
+  assert.match(surface.html, /data-pet-hover-hidden="true"/u);
+  assert.match(surface.html, /data-pet-hover-hide-mode="soft"/u);
+  assert.match(surface.html, /--wh-pet-hide-opacity:0\.36/u);
+  assert.match(surface.html, /--wh-pet-hide-scale:0\.92/u);
+  assert.match(surface.html, /--wh-pet-hide-x-px:-26\.88px/u);
+  assert.match(surface.css, /data-pet-hover-hidden=true.*?transition-duration:140ms/u);
 });
 
 test("pet surface exposes input-reactive pointer state for Bongo-style QA", () => {
@@ -656,6 +691,27 @@ test("pet pointer helpers smooth Rust cursor samples without overriding local ho
   );
 
   assert.deepEqual(unchanged, localDrag);
+
+  const cleared = desktopPetPointerSnapshotFromSample(
+    {
+      pointer: {
+        inside_window: false,
+        cursor_near: false,
+        look_x_percent: 90,
+        look_y_percent: 90
+      }
+    },
+    normalizeDesktopPetPointerSnapshot({
+      cursor_near: true,
+      hovered: true,
+      look_x: 0.4,
+      look_y: -0.2
+    }),
+    {
+      smoothing_alpha: 0.5
+    }
+  );
+  assert.deepEqual(cleared, defaultDesktopPetPointerSnapshot());
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {
@@ -801,7 +857,8 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
               settings: {
                 scalePercent: args?.scalePercent,
                 opacityPercent: args?.opacityPercent,
-                passThrough: args?.passThrough
+                passThrough: args?.passThrough,
+                hideOnHover: args?.hideOnHover
               }
             };
           }
@@ -821,7 +878,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   });
 
   await tauri?.setMode?.("card");
-  await tauri?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true });
+  await tauri?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true, hide_on_hover: true });
   await tauri?.startDragging?.();
   assert.equal(await tauri?.sampleCursorNear?.(), true);
   assert.deepEqual(calls, ["set_pet_window_mode:card", "set_pet_window_settings:125", "startDragging", "sample_pet_cursor_near:"]);
@@ -877,7 +934,7 @@ test("pet window bridge rejects settings without a Rust confirmation plan", asyn
   });
 
   await assert.rejects(
-    async () => bridge?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true }),
+    async () => bridge?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true, hide_on_hover: true }),
     /did not confirm settings/u
   );
 });
@@ -887,12 +944,14 @@ test("pet window settings map from Cuu preferences", () => {
     desktopPetWindowSettingsFromPreferences({
       pet_scale_percent: 150,
       pet_opacity_percent: 60,
-      pet_pass_through: true
+      pet_pass_through: true,
+      pet_hide_on_hover: true
     }),
     {
       scale_percent: 150,
       opacity_percent: 60,
-      pass_through: true
+      pass_through: true,
+      hide_on_hover: true
     }
   );
 });
@@ -917,7 +976,7 @@ test("pet window bridge reports missing invoke instead of silently dropping setM
     /Tauri invoke bridge is unavailable/u
   );
   await assert.rejects(
-    async () => bridge?.setSettings?.({ scale_percent: 100, opacity_percent: 100, pass_through: false }),
+    async () => bridge?.setSettings?.({ scale_percent: 100, opacity_percent: 100, pass_through: false, hide_on_hover: false }),
     /Tauri invoke bridge is unavailable/u
   );
 });

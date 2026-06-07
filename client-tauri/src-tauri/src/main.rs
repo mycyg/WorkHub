@@ -38,9 +38,18 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 const WORKHUB_DISABLE_SSE_ENV: &str = "WORKHUB_DISABLE_SSE";
+const WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV: &str = "WORKHUB_CUU_QA_HIDE_ON_HOVER";
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
-    get_env(WORKHUB_DISABLE_SSE_ENV)
+    workhub_env_flag_enabled(WORKHUB_DISABLE_SSE_ENV, get_env)
+}
+
+fn workhub_cuu_qa_hide_on_hover_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
+    workhub_env_flag_enabled(WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, get_env)
+}
+
+fn workhub_env_flag_enabled(name: &str, get_env: impl Fn(&str) -> Option<String>) -> bool {
+    get_env(name)
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
@@ -109,6 +118,7 @@ fn set_pet_window_settings(
     scale_percent: u16,
     opacity_percent: u8,
     pass_through: bool,
+    hide_on_hover: bool,
 ) -> Result<PetWindowRuntimeCommandPlan, String> {
     let window = app
         .get_webview_window("pet")
@@ -130,6 +140,7 @@ fn set_pet_window_settings(
         scale_percent,
         opacity_percent,
         pass_through,
+        hide_on_hover,
         mode: state.mode,
         work_area: work_area_for_pet_window(&window),
         body_position,
@@ -142,6 +153,7 @@ fn set_pet_window_settings(
         scale_percent: settings.scale_percent,
         opacity_percent: settings.opacity_percent,
         pass_through: settings.pass_through,
+        hide_on_hover: settings.hide_on_hover,
     };
     let placement = plan
         .placement
@@ -492,13 +504,26 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
         .find(|window| window.label == "pet")
         .ok_or_else(|| "pet window config is missing".to_string())?;
 
+    let initialization_script =
+        pet_window_initialization_script(workhub_cuu_qa_hide_on_hover_from_env(|name| {
+            std::env::var(name).ok()
+        }));
+
     WebviewWindowBuilder::from_config(app.handle(), pet_config)
         .map_err(|error| format!("failed to create pet window builder: {error}"))?
-        .initialization_script(r#"window.__WORKHUB_SURFACE__ = "pet";"#)
+        .initialization_script(initialization_script)
         .build()
         .map_err(|error| format!("failed to create pet window: {error}"))?;
 
     Ok(())
+}
+
+fn pet_window_initialization_script(hide_on_hover: bool) -> &'static str {
+    if hide_on_hover {
+        r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = { pet_hide_on_hover: true };"#
+    } else {
+        r#"window.__WORKHUB_SURFACE__ = "pet";"#
+    }
 }
 
 fn apply_pet_window_placement(
@@ -821,5 +846,24 @@ mod tests {
         for value in ["", "0", "false", "off", "no", "disabled"] {
             assert!(!workhub_sse_disabled_from_env(env_value(Some(value))));
         }
+    }
+
+    #[test]
+    fn cuu_qa_hide_on_hover_env_accepts_truthy_values() {
+        assert!(workhub_cuu_qa_hide_on_hover_from_env(env_value(Some("1"))));
+        assert!(workhub_cuu_qa_hide_on_hover_from_env(env_value(Some(
+            "true"
+        ))));
+        assert!(!workhub_cuu_qa_hide_on_hover_from_env(env_value(Some("0"))));
+    }
+
+    #[test]
+    fn pet_initialization_script_can_inject_qa_preferences() {
+        assert_eq!(
+            pet_window_initialization_script(false),
+            r#"window.__WORKHUB_SURFACE__ = "pet";"#
+        );
+        assert!(pet_window_initialization_script(true).contains("__WORKHUB_CUU_PREFERENCES__"));
+        assert!(pet_window_initialization_script(true).contains("pet_hide_on_hover"));
     }
 }

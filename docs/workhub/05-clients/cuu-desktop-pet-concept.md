@@ -114,7 +114,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`、`data-cuu-model-pack="cuu-bongo-p1"`、`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。P1b 已补挥手、抱文件、审批打回、检索、同步、庆祝和拖拽动作，P1c 已补 first-painted 首帧门禁；BONGO-REF 已让 PSD draft 默认候选在测试里失败。后续继续增强动作幅度、窗口体验和模型包加载器。
+这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`、`data-cuu-model-pack="cuu-bongo-p1"`、`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。P1b 已补挥手、抱文件、审批打回、检索、同步、庆祝和拖拽动作，P1c 已补 first-painted 首帧门禁，P1d-b-a 已补 hide-on-hover soft dodge；BONGO-REF 已让 PSD draft 默认候选在测试里失败。后续继续增强动作幅度、窗口体验和模型包加载器。
 
 ![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
 
@@ -123,6 +123,10 @@ P1e-c 后，Cuu 不只是“靠近时切到看鼠标状态”：Rust 会返回 `
 ![Cuu Bongo P1e-d drag smoothing real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png)
 
 P1e-d-a 后，Cuu 的输入不再直接把 Rust cursor sample 硬切到新方向，而是参考 BongoCat 的阻尼思路，用 `desktopPetPointerSmoothingAlpha=0.58` 做低通平滑。hover / drag 期间本地 DOM pose 优先，拖拽时 Cuu 保持 `drag_hold` 抓握姿态直到 release。这个阶段仍是低恐怖谷 Bongo CSS pose，不是最终 Live2D；但它把“卡顿、像死图、拖拽动作被抢走”的问题往正确方向推进了一步。
+
+![Cuu Bongo P1d-b hide-on-hover real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
+
+P1d-b-a 后，Cuu 支持可恢复的“悬停避让”：hover 时 soft hide，cursor 离开后恢复，再次 hover 再隐藏。它刻意不是全透明 pass-through，避免用户丢失桌宠；后续若要升级到 BongoCat 式完全隐藏，必须先设计托盘、快捷键、边缘热区和自动恢复。
 
 ### 3.6 当前实现差距
 
@@ -226,9 +230,9 @@ P1e-d-a 后，Cuu 的输入不再直接把 Rust cursor sample 硬切到新方向
 - 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
 - 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是作为动作 storyboard / fallback；默认主线继续打磨 Bongo Cuu，Live2D 继续精修。
 - 离线卡与审批 / 澄清轻卡已完成 P1.2 的人话化、选项优先和少文字化基线，P1.2b 已补真实 option payload 提交；证据详情、预算卡、sync conflict 和 Tauri 顶层窗口 P1.2 抓帧仍需继续。
-- 当前动作仍是 sprite atlas，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
+- 当前默认动作仍是 Bongo DOM/CSS + sprite fallback，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
 
-下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、窗口设置和动作幅度做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
+下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、真实设置截图、多屏恢复、60s jitter 和 full hide/pass-through 安全恢复做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
 
 ### 3.7 施工进展（2026-06-06）
 

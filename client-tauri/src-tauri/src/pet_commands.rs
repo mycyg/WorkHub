@@ -30,6 +30,7 @@ pub struct PetWindowSettingsCommandInput {
     pub scale_percent: u16,
     pub opacity_percent: u8,
     pub pass_through: bool,
+    pub hide_on_hover: bool,
     pub mode: PetWindowMode,
     pub work_area: LogicalRect,
     pub body_position: Option<LogicalPosition>,
@@ -179,6 +180,7 @@ pub fn set_pet_window_settings_command_plan(
         scale_percent: input.scale_percent,
         opacity_percent: input.opacity_percent,
         pass_through: input.pass_through,
+        hide_on_hover: input.hide_on_hover,
     });
     let placement = match input.body_position {
         Some(position) => {
@@ -323,6 +325,7 @@ mod tests {
             scale_percent: 125,
             opacity_percent: 80,
             pass_through: true,
+            hide_on_hover: true,
             mode: PetWindowMode::Card,
             work_area: work_area(),
             body_position: Some(LogicalPosition { x: 1600, y: 700 }),
@@ -339,6 +342,7 @@ mod tests {
         assert_eq!(settings.scale_percent, 125);
         assert_eq!(settings.opacity_percent, 80);
         assert_eq!(settings.pass_through, true);
+        assert_eq!(settings.hide_on_hover, true);
     }
 
     #[test]

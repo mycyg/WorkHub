@@ -35,7 +35,8 @@ test("Cuu preferences load defaults when storage is absent or invalid", () => {
     queue_limit: 5,
     pet_scale_percent: 100,
     pet_opacity_percent: 100,
-    pet_pass_through: false
+    pet_pass_through: false,
+    pet_hide_on_hover: false
   });
   assert.deepEqual(loadCuuPreferences(broken), {
     attention_mode: "normal",
@@ -44,7 +45,8 @@ test("Cuu preferences load defaults when storage is absent or invalid", () => {
     queue_limit: 5,
     pet_scale_percent: 100,
     pet_opacity_percent: 100,
-    pet_pass_through: false
+    pet_pass_through: false,
+    pet_hide_on_hover: false
   });
 });
 
@@ -56,7 +58,8 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
     queue_limit: 42,
     pet_scale_percent: 125,
     pet_opacity_percent: 80,
-    pet_pass_through: true
+    pet_pass_through: true,
+    pet_hide_on_hover: true
   });
   const storage = memoryStorage();
 
@@ -67,10 +70,29 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
     queue_limit: 12,
     pet_scale_percent: 125,
     pet_opacity_percent: 80,
-    pet_pass_through: true
+    pet_pass_through: true,
+    pet_hide_on_hover: true
   });
   saveCuuPreferences(normalized, storage);
   assert.deepEqual(loadCuuPreferences(storage), normalized);
+});
+
+test("Cuu preferences accept Rust-injected QA overrides", () => {
+  const target = globalThis as { __WORKHUB_CUU_PREFERENCES__?: unknown };
+  const previous = target.__WORKHUB_CUU_PREFERENCES__;
+  try {
+    target.__WORKHUB_CUU_PREFERENCES__ = {
+      pet_hide_on_hover: true,
+      queue_limit: 2
+    };
+
+    const loaded = loadCuuPreferences(memoryStorage());
+
+    assert.equal(loaded.pet_hide_on_hover, true);
+    assert.equal(loaded.queue_limit, 2);
+  } finally {
+    target.__WORKHUB_CUU_PREFERENCES__ = previous;
+  }
 });
 
 test("Cuu preference panel renders clickable modes and queue state", () => {
@@ -82,7 +104,8 @@ test("Cuu preference panel renders clickable modes and queue state", () => {
       queue_limit: 3,
       pet_scale_percent: 150,
       pet_opacity_percent: 60,
-      pet_pass_through: true
+      pet_pass_through: true,
+      pet_hide_on_hover: true
     }
   });
   const html = renderCuuPreferencePanel(controller.snapshot());
@@ -94,7 +117,9 @@ test("Cuu preference panel renders clickable modes and queue state", () => {
   assert.match(html, /data-cuu-pet-scale="150" aria-pressed="true"/u);
   assert.match(html, /data-cuu-pet-opacity="60" aria-pressed="true"/u);
   assert.match(html, /data-cuu-pet-pass-through checked/u);
+  assert.match(html, /data-cuu-pet-hide-on-hover checked/u);
   assert.match(html, /value="3" data-cuu-queue-limit/u);
   assert.match(html, /150% · 60%/u);
+  assert.match(html, /软隐藏/u);
   assert.match(html, /0 条待处理/u);
 });
