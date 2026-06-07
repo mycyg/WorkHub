@@ -6,6 +6,9 @@ owner: workflow
 date: 2026-06-08
 visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -27,10 +30,26 @@ visuals:
 | 默认 renderer | `data-cuu-visual-mode="bongo_cuu"` |
 | Bongo runtime | `data-cuu-bongo-runtime="bongo_cuu"` |
 | 状态 | `p1_default_low_uncanny` |
-| 组件数 | `24` 个 DOM/CSS 组件 |
+| 组件数 | `31` 个 DOM/CSS 组件 |
 | PSD 暴露 | `live2d=null`，`layers=[]`，默认 HTML 不含 `data-psd-layer` |
 | 截图 | 全身可见，不是只露耳朵 / 局部 / 空白 |
 | 动作 | 尾巴、头、眨眼、爪子、耳朵、文档卡状态由 CSS keyframes 驱动 |
+
+2026-06-08 P1b/P1c 追加证据：
+
+![Cuu Bongo P1b idle runtime](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png)
+
+![Cuu Bongo P1b state gallery](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
+
+![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
+
+| 检查项 | 结果 |
+|---|---|
+| 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
+| 状态墙多帧 | 12 个状态同屏；wave/search/sync/revise/celebrate 等动作可肉眼区分，最高 `25.17%` 像素相对首帧变化 |
+| 真实 Tauri 录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 通过；输出 contact sheet、GIF、MP4 和 diff report |
+| 真实窗口残留 | frame 000-003 有启动期空白/局部过渡；frame 004 起全身可见，frame 009 起 card mode 全身可见 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 技术通过但仍需 `pet-ready` 后再 show，避免启动首帧空白 |
 
 证据文件：
 
@@ -92,6 +111,9 @@ scripts/qa/cuu-pet-browser-capture.mjs
 | paws | approval / tap 时敲桌面 |
 | bib / bow / beads | 保留参考照的围兜、黑蝴蝶结、红珠识别点 |
 | desk / doc | BongoCat 式桌面动作，approval / carrying document 时出现 |
+| search glass / rays | 检索状态的放大镜和短光线 |
+| sync ring | 同步状态的绿色旋转环 |
+| sparks | 完成/庆祝状态的跳跃反馈 |
 
 默认 pet surface 现在只渲染 Bongo Cuu：
 
@@ -160,8 +182,8 @@ type DesktopCuuBongoRender = {
 | `celebrating_jump` | 整体轻跳 |
 | `offline_sleep` | 眯眼、压耳、低存在感 |
 | `tap_bubble` | 单次爪击反馈 |
-| `drag_hold` | 后续补抓握/悬浮姿态；当前保持稳定形态 |
-| `wave_hello` | 后续补单爪挥手 |
+| `drag_hold` | 双爪压住桌面，尾巴收紧，表达正在拖动/抓握 |
+| `wave_hello` | 单爪抬起挥手，头和尾巴同步更大幅度动作 |
 
 ---
 
@@ -173,6 +195,7 @@ type DesktopCuuBongoRender = {
 - 默认 HTML 不允许出现 `data-psd-layer`。
 - DOM 必须出现 `data-cuu-bongo-runtime="bongo_cuu"`。
 - 必须有 paws / eyes / tail 三类组件。
+- 搜索、同步、庆祝三类状态必须有对应道具层：`search-glass` / `sync-ring` / `spark`。
 - 任何多腿、多眼、尾巴断裂、脸部拟真漂移都直接失败。
 - reduced-motion 必须关闭 keyframes。
 - Bongo Cuu 可以简单，但不能冷冰冰；至少要有待机、眨眼、尾巴、爪击和担心动作。
@@ -189,10 +212,22 @@ node scripts/qa/cuu-pet-browser-capture.mjs
 docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/
 ```
 
+P1b 动作增强输出到：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
+  pet-bongo-p1b-idle-contact-sheet-grid.png
+  pet-bongo-p1b-gallery-contact-sheet-grid.png
+  pet-bongo-p1b-idle-diff-report.json
+  pet-bongo-p1b-gallery-diff-report.json
+```
+
 真实 Tauri 门：
 
-- 后续必须用 `scripts/qa/cuu-tauri-motion-capture.ps1` 抓真实 `Cuu` 顶层窗口。
+- 已用 `scripts/qa/cuu-tauri-motion-capture.ps1 -SkipBuild -FrameCount 24 -IntervalMs 180` 抓真实 `Cuu` 顶层窗口。
+- 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-tauri/`。
 - browser CDP 只能作为快速视觉检查，不能替代最终透明窗口录屏。
+- 下一步必须补 `pet-ready` / first-painted handshake，避免 Tauri window visible 后前几帧空白或局部过渡。
 
 ---
 
@@ -201,8 +236,8 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/
 | 阶段 | 目标 | 产物 | 验收 |
 |---|---|---|---|
 | BONGO-P1a | 默认低恐怖谷 renderer | `cuu-bongo-runtime.ts` | 已落；浏览器截图和 DOM 证明默认不是 PSD |
-| BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | 多帧截图肉眼能分辨动作 |
-| BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | 右下角独立窗口全身可见、无裁切、动作流畅 |
+| BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
+| BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **技术通过**：真实窗口全身可见；待修首帧空白/局部过渡后再标完美 |
 | BONGO-P1d | 设置和窗口能力 | scale / opacity / pass-through / hide-on-hover / keep-in-screen | 对齐 BongoCat 的桌宠窗口体验 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot | 可从默认 Bongo Cuu 切到未来 Live2D |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |

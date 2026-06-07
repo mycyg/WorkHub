@@ -15,7 +15,7 @@ export type DesktopCuuBongoRenderOptions = {
   display_width_px?: number;
 };
 
-const componentCount = 24;
+const componentCount = 31;
 
 const desktopCuuBongoCss = [
   ".wh-cuu-bongo{position:relative;display:block;width:var(--wh-cuu-bongo-w);height:var(--wh-cuu-bongo-h);pointer-events:none;isolation:isolate;filter:drop-shadow(0 14px 16px rgba(35,27,20,.18));transform-origin:50% 88%}",
@@ -60,6 +60,17 @@ const desktopCuuBongoCss = [
   ".wh-cuu-bongo-bead{position:absolute;width:5%;height:5%;border-radius:50%;background:#c84545;border:1px solid rgba(91,33,33,.28);z-index:10;animation:wh-cuu-bongo-bead 2400ms ease-in-out infinite}",
   ".wh-cuu-bongo-bead-l{left:29%;bottom:30%}",
   ".wh-cuu-bongo-bead-r{right:29%;bottom:30%;animation-delay:170ms}",
+  ".wh-cuu-bongo-search-glass{position:absolute;left:58%;top:30%;width:18%;height:18%;border:3px solid #5c719d;border-radius:50%;z-index:16;opacity:0;transform:translateY(8px) rotate(-18deg)}",
+  ".wh-cuu-bongo-search-glass::after{content:\"\";position:absolute;right:-28%;bottom:-20%;width:38%;height:3px;border-radius:999px;background:#5c719d;transform:rotate(45deg);transform-origin:left center}",
+  ".wh-cuu-bongo-search-ray{position:absolute;left:62%;top:22%;width:10%;height:3px;border-radius:999px;background:#f2c94c;z-index:15;opacity:0;transform-origin:left center}",
+  ".wh-cuu-bongo-search-ray-a{transform:rotate(-24deg)}",
+  ".wh-cuu-bongo-search-ray-b{top:26%;transform:rotate(-6deg)}",
+  ".wh-cuu-bongo-search-ray-c{top:30%;transform:rotate(18deg)}",
+  ".wh-cuu-bongo-sync-ring{position:absolute;left:62%;top:19%;width:20%;height:20%;border:3px solid #65a77d;border-left-color:transparent;border-radius:50%;z-index:15;opacity:0}",
+  ".wh-cuu-bongo-sync-ring::after{content:\"\";position:absolute;right:-6%;top:6%;width:0;height:0;border-left:7px solid #65a77d;border-top:5px solid transparent;border-bottom:5px solid transparent;transform:rotate(18deg)}",
+  ".wh-cuu-bongo-spark{position:absolute;width:5%;height:5%;border-radius:50%;background:#f2c94c;box-shadow:0 0 0 3px rgba(242,201,76,.24);z-index:18;opacity:0}",
+  ".wh-cuu-bongo-spark-l{left:18%;top:18%}",
+  ".wh-cuu-bongo-spark-r{right:14%;top:24%;animation-delay:130ms}",
   ".wh-cuu-bongo[data-cuu-bongo-state=asking_approval_bounce] .wh-cuu-bongo-paw-l,.wh-cuu-bongo[data-cuu-bongo-state=tap_bubble] .wh-cuu-bongo-paw-l{animation:wh-cuu-bongo-paw-hit-l 720ms ease-in-out infinite}",
   ".wh-cuu-bongo[data-cuu-bongo-state=asking_approval_bounce] .wh-cuu-bongo-paw-r,.wh-cuu-bongo[data-cuu-bongo-state=tap_bubble] .wh-cuu-bongo-paw-r{animation:wh-cuu-bongo-paw-hit-r 720ms ease-in-out infinite}",
   ".wh-cuu-bongo[data-cuu-bongo-state=thinking_tail] .wh-cuu-bongo-tail,.wh-cuu-bongo[data-cuu-bongo-state=searching_evidence_peek] .wh-cuu-bongo-tail{animation:wh-cuu-bongo-tail-thinking 1450ms ease-in-out infinite}",
@@ -67,24 +78,63 @@ const desktopCuuBongoCss = [
   ".wh-cuu-bongo[data-cuu-bongo-state=worried_ears] .wh-cuu-bongo-ear-r,.wh-cuu-bongo[data-cuu-bongo-state=offline_sleep] .wh-cuu-bongo-ear-r{animation:wh-cuu-bongo-ear-worried-r 1350ms ease-in-out infinite}",
   ".wh-cuu-bongo[data-cuu-bongo-state=carrying_document_step] .wh-cuu-bongo-doc,.wh-cuu-bongo[data-cuu-bongo-state=asking_approval_bounce] .wh-cuu-bongo-doc{opacity:1;animation:wh-cuu-bongo-doc-pop 1200ms ease-in-out infinite}",
   ".wh-cuu-bongo[data-cuu-bongo-state=celebrating_jump]{animation:wh-cuu-bongo-celebrate 880ms ease-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=celebrating_jump] .wh-cuu-bongo-spark{animation:wh-cuu-bongo-spark 880ms ease-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=wave_hello] .wh-cuu-bongo-paw-r{z-index:17;animation:wh-cuu-bongo-wave 980ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=wave_hello] .wh-cuu-bongo-head{animation:wh-cuu-bongo-head-wave 980ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=wave_hello] .wh-cuu-bongo-tail{animation:wh-cuu-bongo-tail-wave 980ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=carrying_document_step] .wh-cuu-bongo-doc{left:35%;bottom:19%;width:30%;height:22%;animation:wh-cuu-bongo-doc-carry 1180ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=carrying_document_step] .wh-cuu-bongo-paw-l{animation:wh-cuu-bongo-paw-hold-l 1180ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=carrying_document_step] .wh-cuu-bongo-paw-r{animation:wh-cuu-bongo-paw-hold-r 1180ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=searching_evidence_peek] .wh-cuu-bongo-search-glass{opacity:1;animation:wh-cuu-bongo-search-peek 1450ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=searching_evidence_peek] .wh-cuu-bongo-search-ray{animation:wh-cuu-bongo-search-ray 1450ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=searching_evidence_peek] .wh-cuu-bongo-eye{animation:wh-cuu-bongo-search-eye 1450ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=syncing_files_spin] .wh-cuu-bongo-sync-ring{opacity:1;animation:wh-cuu-bongo-sync-ring 920ms linear infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=syncing_files_spin] .wh-cuu-bongo-tail{animation:wh-cuu-bongo-tail-thinking 920ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=revision_requested_nod] .wh-cuu-bongo-head{animation:wh-cuu-bongo-revision-nod 760ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=revision_requested_nod] .wh-cuu-bongo-doc{opacity:1;border-color:#d56b5f;animation:wh-cuu-bongo-doc-revise 980ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=drag_hold] .wh-cuu-bongo-paw-l,.wh-cuu-bongo[data-cuu-bongo-state=drag_hold] .wh-cuu-bongo-paw-r{animation:wh-cuu-bongo-grip 760ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=drag_hold] .wh-cuu-bongo-tail{animation:wh-cuu-bongo-tail-brace 760ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=look_at_mouse] .wh-cuu-bongo-head{animation:wh-cuu-bongo-look-head 1600ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-state=look_at_mouse] .wh-cuu-bongo-eye{animation:wh-cuu-bongo-look-eye 1600ms ease-in-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-requested-state=wake_up]{animation:wh-cuu-bongo-wake 980ms ease-out infinite}",
+  ".wh-cuu-bongo[data-cuu-bongo-requested-state=sleeping_curl] .wh-cuu-bongo-tail{animation:wh-cuu-bongo-sleep-tail 2600ms ease-in-out infinite}",
   ".wh-cuu-bongo[data-cuu-bongo-state=offline_sleep] .wh-cuu-bongo-eye{height:4%;top:42%;background:#33251c;animation:none}",
   ".wh-cuu-bongo[data-cuu-bongo-state=offline_sleep] .wh-cuu-bongo-mouth{width:13%;left:43%;border-bottom-color:#7d6654}",
   "@keyframes wh-cuu-bongo-tail{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(12deg) translateY(-2px)}}",
   "@keyframes wh-cuu-bongo-tail-thinking{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(18deg) translateY(-3px)}}",
+  "@keyframes wh-cuu-bongo-tail-wave{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(23deg) translateY(-4px)}}",
+  "@keyframes wh-cuu-bongo-tail-brace{0%,100%{transform:rotate(-18deg) translateY(2px)}50%{transform:rotate(-8deg) translateY(-1px)}}",
+  "@keyframes wh-cuu-bongo-sleep-tail{0%,100%{transform:rotate(-20deg) translateY(3px)}50%{transform:rotate(-14deg) translateY(1px)}}",
   "@keyframes wh-cuu-bongo-head{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}",
+  "@keyframes wh-cuu-bongo-head-wave{0%,100%{transform:translateY(0) rotate(0deg)}45%{transform:translateY(-4px) rotate(-4deg)}}",
+  "@keyframes wh-cuu-bongo-look-head{0%,100%{transform:translateX(0) rotate(0deg)}50%{transform:translateX(5px) rotate(2deg)}}",
+  "@keyframes wh-cuu-bongo-revision-nod{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(5px) rotate(2deg)}65%{transform:translateY(-2px) rotate(-1deg)}}",
   "@keyframes wh-cuu-bongo-ear{0%,100%{transform:rotate(-24deg)}50%{transform:rotate(-18deg) translateY(-1px)}}",
   "@keyframes wh-cuu-bongo-ear-r{0%,100%{transform:scaleX(-1) rotate(-24deg)}50%{transform:scaleX(-1) rotate(-18deg) translateY(-1px)}}",
   "@keyframes wh-cuu-bongo-ear-worried-l{0%,100%{transform:rotate(-42deg) translateY(4px)}50%{transform:rotate(-32deg) translateY(2px)}}",
   "@keyframes wh-cuu-bongo-ear-worried-r{0%,100%{transform:scaleX(-1) rotate(-42deg) translateY(4px)}50%{transform:scaleX(-1) rotate(-32deg) translateY(2px)}}",
   "@keyframes wh-cuu-bongo-eye-open{0%,88%,95%,100%{transform:scaleY(1)}90%,93%{transform:scaleY(.08)}}",
+  "@keyframes wh-cuu-bongo-look-eye{0%,100%{transform:translateX(0) scaleY(1)}50%{transform:translateX(4px) scaleY(1)}}",
+  "@keyframes wh-cuu-bongo-search-eye{0%,100%{transform:translateX(0) scaleY(1)}35%{transform:translateX(5px) scaleY(1)}70%{transform:translateX(-2px) scaleY(1)}}",
   "@keyframes wh-cuu-bongo-bib{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-1.3deg)}}",
   "@keyframes wh-cuu-bongo-bow{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-1px) scale(1.04)}}",
   "@keyframes wh-cuu-bongo-bead{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}",
   "@keyframes wh-cuu-bongo-paw-idle{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}",
   "@keyframes wh-cuu-bongo-paw-hit-l{0%,100%{transform:translateY(0) rotate(0deg)}42%{transform:translateY(-12px) rotate(-8deg)}70%{transform:translateY(1px)}}",
   "@keyframes wh-cuu-bongo-paw-hit-r{0%,100%{transform:translateY(0) rotate(0deg)}42%{transform:translateY(-12px) rotate(8deg)}70%{transform:translateY(1px)}}",
+  "@keyframes wh-cuu-bongo-wave{0%,100%{transform:translate(0,0) rotate(0deg)}28%{transform:translate(18px,-56px) rotate(24deg)}50%{transform:translate(22px,-62px) rotate(-18deg)}72%{transform:translate(18px,-56px) rotate(22deg)}}",
+  "@keyframes wh-cuu-bongo-paw-hold-l{0%,100%{transform:translate(2px,-8px) rotate(-10deg)}50%{transform:translate(-1px,-11px) rotate(-4deg)}}",
+  "@keyframes wh-cuu-bongo-paw-hold-r{0%,100%{transform:translate(-2px,-8px) rotate(10deg)}50%{transform:translate(1px,-11px) rotate(4deg)}}",
+  "@keyframes wh-cuu-bongo-grip{0%,100%{transform:translateY(3px) scaleY(.9)}50%{transform:translateY(0) scaleY(1)}}",
   "@keyframes wh-cuu-bongo-doc-pop{0%,100%{transform:translateY(5px) rotate(-5deg)}45%{transform:translateY(-7px) rotate(4deg)}}",
+  "@keyframes wh-cuu-bongo-doc-carry{0%,100%{transform:translateY(-2px) rotate(-2deg)}50%{transform:translateY(-9px) rotate(3deg)}}",
+  "@keyframes wh-cuu-bongo-doc-revise{0%,100%{transform:translateY(5px) rotate(-8deg)}50%{transform:translateY(-5px) rotate(7deg)}}",
+  "@keyframes wh-cuu-bongo-search-peek{0%,100%{transform:translateY(8px) rotate(-18deg)}36%{transform:translateY(-6px) translateX(4px) rotate(-8deg)}72%{transform:translateY(-2px) translateX(-2px) rotate(-24deg)}}",
+  "@keyframes wh-cuu-bongo-search-ray{0%,25%,100%{opacity:0;transform:scaleX(.2)}35%,70%{opacity:1;transform:scaleX(1)}}",
+  "@keyframes wh-cuu-bongo-sync-ring{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}",
+  "@keyframes wh-cuu-bongo-spark{0%,100%{opacity:0;transform:translateY(8px) scale(.4)}38%{opacity:1;transform:translateY(-7px) scale(1)}}",
   "@keyframes wh-cuu-bongo-celebrate{0%,100%{transform:translateY(0) rotate(0deg)}38%{transform:translateY(-13px) rotate(-3deg)}68%{transform:translateY(1px) rotate(2deg)}}",
+  "@keyframes wh-cuu-bongo-wake{0%{transform:scale(.96) translateY(4px)}45%{transform:scale(1.04) translateY(-5px)}100%{transform:scale(1) translateY(0)}}",
   "@media (prefers-reduced-motion: reduce){.wh-cuu-bongo,.wh-cuu-bongo *{animation:none!important}}"
 ].join("");
 
@@ -141,6 +191,13 @@ function renderDesktopCuuBongo(
       <span class="wh-cuu-bongo-bow"><span class="wh-cuu-bongo-bow-knot"></span></span>
       <span class="wh-cuu-bongo-bead wh-cuu-bongo-bead-l"></span>
       <span class="wh-cuu-bongo-bead wh-cuu-bongo-bead-r"></span>
+      <span class="wh-cuu-bongo-search-glass"></span>
+      <span class="wh-cuu-bongo-search-ray wh-cuu-bongo-search-ray-a"></span>
+      <span class="wh-cuu-bongo-search-ray wh-cuu-bongo-search-ray-b"></span>
+      <span class="wh-cuu-bongo-search-ray wh-cuu-bongo-search-ray-c"></span>
+      <span class="wh-cuu-bongo-sync-ring"></span>
+      <span class="wh-cuu-bongo-spark wh-cuu-bongo-spark-l"></span>
+      <span class="wh-cuu-bongo-spark wh-cuu-bongo-spark-r"></span>
       <span class="wh-cuu-bongo-doc"></span>
       <span class="wh-cuu-bongo-desk"></span>
       <span class="wh-cuu-bongo-paw wh-cuu-bongo-paw-l"></span>
@@ -168,8 +225,20 @@ function durationForState(state: CuuSpriteAtlasClipState) {
   if (state === "asking_approval_bounce" || state === "tap_bubble") {
     return 720;
   }
+  if (state === "revision_requested_nod" || state === "drag_hold") {
+    return 760;
+  }
   if (state === "celebrating_jump") {
     return 880;
+  }
+  if (state === "syncing_files_spin") {
+    return 920;
+  }
+  if (state === "wave_hello") {
+    return 980;
+  }
+  if (state === "carrying_document_step") {
+    return 1180;
   }
   if (state === "thinking_tail" || state === "searching_evidence_peek") {
     return 1450;
@@ -191,7 +260,10 @@ function labelForState(state: CuuSpriteAtlasClipState) {
     worried_ears: "Cuu is worried.",
     revision_requested_nod: "Cuu is ready to revise.",
     celebrating_jump: "Cuu is celebrating.",
-    offline_sleep: "Cuu is waiting offline."
+    offline_sleep: "Cuu is waiting offline.",
+    drag_hold: "Cuu is holding position.",
+    tap_bubble: "Cuu is tapping.",
+    wave_hello: "Cuu is waving hello."
   };
   return labels[state] ?? "Cuu desktop pet.";
 }

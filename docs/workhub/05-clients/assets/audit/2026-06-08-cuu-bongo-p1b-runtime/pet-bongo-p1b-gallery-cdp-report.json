@@ -1,0 +1,15 @@
+{
+  "url": "file:///D:/WorkHub/tmp/qa/cuu-bongo-p1b-gallery.html",
+  "width": 960,
+  "height": 760,
+  "wait_selector": "[data-cuu-bongo-runtime=\"bongo_cuu\"]",
+  "frames": [
+    "pet-bongo-p1b-gallery-cdp-frame-0000.png",
+    "pet-bongo-p1b-gallery-cdp-frame-0700.png",
+    "pet-bongo-p1b-gallery-cdp-frame-1400.png",
+    "pet-bongo-p1b-gallery-cdp-frame-2100.png",
+    "pet-bongo-p1b-gallery-cdp-frame-2800.png",
+    "pet-bongo-p1b-gallery-cdp-frame-3500.png"
+  ],
+  "captured_at": "2026-06-07T18:18:59.015Z"
+}

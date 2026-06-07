@@ -1,0 +1,12 @@
+{
+  "surface": null,
+  "bongo": {
+    "cuuBongoRuntime": "bongo_cuu",
+    "cuuBongoStatus": "p1_default_low_uncanny",
+    "cuuBongoState": "idle_tail_sway",
+    "cuuBongoRequestedState": "idle_tail_sway",
+    "cuuBongoComponentCount": "31"
+  },
+  "live2d": null,
+  "layers": []
+}

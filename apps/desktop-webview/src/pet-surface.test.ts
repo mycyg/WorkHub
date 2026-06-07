@@ -18,6 +18,7 @@ import {
   validateDesktopCuuP1AtlasManifest
 } from "./cuu-atlas-assets.js";
 import { renderDesktopCuuAtlasSprite, renderDesktopCuuAtlasState } from "./cuu-atlas-runtime.js";
+import { renderDesktopCuuBongoForIdleAction, renderDesktopCuuBongoForMotion } from "./cuu-bongo-runtime.js";
 import {
   createDesktopPetIdleScheduler,
   desktopPetAliveIdlePolicy,
@@ -294,7 +295,7 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.equal(idle.bongo.runtime_kind, "bongo_cuu");
   assert.equal(idle.bongo.status, "p1_default_low_uncanny");
   assert.equal(idle.bongo.motion_state, "idle_tail_sway");
-  assert.equal(idle.bongo.component_count, 24);
+  assert.equal(idle.bongo.component_count, 31);
   assert.equal(idle.sprite.clip.state, "idle_tail_sway");
   assert.match(idle.html, /data-cuu-visual-mode="bongo_cuu"/u);
   assert.match(idle.html, /data-cuu-bongo-runtime="bongo_cuu"/u);
@@ -302,6 +303,9 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(idle.html, /wh-cuu-bongo-paw/u);
   assert.match(idle.html, /wh-cuu-bongo-eye/u);
   assert.match(idle.html, /wh-cuu-bongo-tail/u);
+  assert.match(idle.html, /wh-cuu-bongo-search-glass/u);
+  assert.match(idle.html, /wh-cuu-bongo-sync-ring/u);
+  assert.match(idle.html, /wh-cuu-bongo-spark/u);
   assert.doesNotMatch(idle.html, /data-cuu-live2d-runtime="psd_draft_probe"/u);
   assert.doesNotMatch(idle.html, /data-psd-layer=/u);
   assert.doesNotMatch(idle.html, /class="wh-cuu-atlas-static-fallback"/u);
@@ -317,6 +321,31 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.doesNotMatch(card.html, /textarea/u);
   assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{left:16px;right:auto;top:16px;bottom:auto/u);
   assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{[^}]*width:260px/u);
+});
+
+test("desktop Cuu Bongo renderer makes P1b business and idle actions readable", () => {
+  const search = renderDesktopCuuBongoForMotion(cuuMotionForState("searching_evidence"));
+  const sync = renderDesktopCuuBongoForMotion(cuuMotionForState("syncing_files"));
+  const revise = renderDesktopCuuBongoForMotion(cuuMotionForState("revision_requested"));
+  const carry = renderDesktopCuuBongoForMotion(cuuMotionForState("carrying_document"));
+  const wave = renderDesktopCuuBongoForIdleAction("wave_hello");
+  const drag = renderDesktopCuuBongoForIdleAction("drag_hold");
+
+  assert.equal(search.component_count, 31);
+  assert.match(search.html, /data-cuu-bongo-state="searching_evidence_peek"/u);
+  assert.match(search.html, /wh-cuu-bongo-search-glass/u);
+  assert.match(search.css, /wh-cuu-bongo-search-peek/u);
+  assert.match(search.css, /wh-cuu-bongo-search-ray/u);
+  assert.match(sync.html, /data-cuu-bongo-state="syncing_files_spin"/u);
+  assert.match(sync.css, /wh-cuu-bongo-sync-ring/u);
+  assert.match(revise.html, /data-cuu-bongo-state="revision_requested_nod"/u);
+  assert.match(revise.css, /wh-cuu-bongo-revision-nod/u);
+  assert.match(carry.html, /data-cuu-bongo-state="carrying_document_step"/u);
+  assert.match(carry.css, /wh-cuu-bongo-doc-carry/u);
+  assert.match(wave.html, /data-cuu-bongo-requested-state="wave_hello"/u);
+  assert.match(wave.css, /wh-cuu-bongo-wave/u);
+  assert.match(drag.html, /data-cuu-bongo-requested-state="drag_hold"/u);
+  assert.match(drag.css, /wh-cuu-bongo-grip/u);
 });
 
 test("pet surface starts with a non-static runtime action fixture and fast idle cadence", () => {

@@ -72,14 +72,21 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.bongo.duration_ms >= 700 &&
         input.idle.html.includes('data-cuu-bongo-runtime="bongo_cuu"') &&
         input.idle.html.includes('data-cuu-bongo-status="p1_default_low_uncanny"') &&
-        input.idle.html.includes('data-cuu-bongo-component-count="24"') &&
+        input.idle.html.includes('data-cuu-bongo-component-count="31"') &&
         input.idle.html.includes("wh-cuu-bongo-paw") &&
         input.idle.html.includes("wh-cuu-bongo-eye") &&
         input.idle.html.includes("wh-cuu-bongo-tail") &&
+        input.idle.html.includes("wh-cuu-bongo-search-glass") &&
+        input.idle.html.includes("wh-cuu-bongo-sync-ring") &&
+        input.idle.html.includes("wh-cuu-bongo-spark") &&
         !input.idle.html.includes('data-cuu-live2d-runtime="psd_draft_probe"') &&
         input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-tail") &&
         input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-paw-hit-l") &&
         input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-eye-open") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-wave") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-search-peek") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-sync-ring") &&
+        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-revision-nod") &&
         input.idle.bongo.css.includes("prefers-reduced-motion") &&
         input.idle.sprite.fallback === false,
       "idle Cuu must default to a low-uncanny Bongo-style renderer; PSD draft probes stay hidden until Cubism-quality art passes visual QA."

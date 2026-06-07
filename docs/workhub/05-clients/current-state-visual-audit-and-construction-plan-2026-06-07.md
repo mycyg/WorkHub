@@ -17,6 +17,9 @@ visuals:
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
   - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
@@ -230,7 +233,7 @@ visuals:
 
 | 文件 | 作用 |
 |---|---|
-| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 24 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档和桌面 |
+| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 31 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档、桌面、检索放大镜、同步环和庆祝星点 |
 | `apps/desktop-webview/src/pet-surface.ts` | 默认 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"` |
 | `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu，不允许默认 HTML 出现 PSD layer |
 | `scripts/qa/cuu-pet-browser-capture.mjs` | 默认等待 `[data-cuu-bongo-runtime="bongo_cuu"]` 并抓多帧截图 |
@@ -252,9 +255,40 @@ visuals:
 | 全身可见 | 通过；多帧截图中 Cuu 全身可见，不是只露耳朵 |
 | 动作 | P1 技术通过；尾巴、头、眨眼、爪、耳朵已有 keyframes |
 | 鲜活感 | 继续增强；当前动作安全但偏温和，后续要补更明显的挥手、抱文件、敲桌、检索和庆祝 |
-| Tauri 真实窗口 | 待补；本轮是 browser CDP，下一轮必须真实 `Cuu` hwnd 录屏 |
+| Tauri 真实窗口 | 已补技术验证；P1b 真实 `Cuu` hwnd 录屏通过，但启动首帧仍有空白/局部过渡 |
 
-下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 先让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。
+下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活，并修掉 cold-start 首帧过渡。
+
+### 0.5.1 CUX-BONGO-002：Bongo Cuu 动作增强与真实 Tauri 录屏（2026-06-08）
+
+本轮继续按用户反馈处理“Cuu 不能像死图、不能只靠缩放”的问题：不再追加恐怖谷 PSD，而是在默认 `bongo_cuu` 上增强动作可读性。新增道具层和 keyframes：放大镜 / 检索光线、同步旋转环、庆祝星点、挥手抬爪、抱文件、打回点头、拖拽抓握、看鼠标。
+
+![Cuu Bongo P1b idle](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png)
+
+![Cuu Bongo P1b state gallery](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
+
+![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
+
+本轮新增 / 修改：
+
+| 文件 | 作用 |
+|---|---|
+| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 组件数从 24 升到 31，补 `search-glass`、`sync-ring`、`spark` 和 P1b 状态动画 |
+| `apps/desktop-webview/src/pet-surface.test.ts` | 新增 P1b business / idle actions readable 测试，覆盖 search/sync/revise/carry/wave/drag |
+| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 合同要求 31 组件、检索/同步/庆祝部件和关键 keyframes |
+| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/` | browser idle 与状态墙多帧截图、DOM 和 diff report |
+| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-tauri/` | 真实 Tauri `Cuu` 顶层窗口 frames、contact sheet、GIF、MP4、diff report |
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| 低恐怖谷 | 通过；仍是稳定扁平 Cuu，没有 PSD 恐怖谷和多肢体幻觉 |
+| 默认 idle | 通过；8 帧 browser CDP 中尾巴、头、眼有可见变化，最高 `18.97%` 像素相对首帧变化 |
+| 业务动作 | 通过 P1b；状态墙中 wave/search/sync/revise/celebrate 肉眼可辨 |
+| 真实 Tauri | 技术通过；`cuu-tauri-motion-capture.ps1` 输出 GIF/MP4，frame 004 起 body-only 全身可见，frame 009 起 card mode 全身可见 |
+| 启动首帧 | **未完美**；frame 000-003 有空白/右侧局部过渡，说明 `pet` window visible 早于 webview first paint |
+| 下一步 | 补 `pet-ready` / first-painted handshake，Rust 只在 Cuu body 已绘制后 show，或 motion QA 加启动稳定等待并单独保存冷启动缺口 |
 
 ### 0.6 P1.0 双语运行时底座（2026-06-07）
 
@@ -1048,9 +1082,9 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 
 推荐顺序：
 
-1. **增强 Bongo Cuu 默认动作**：补挥手、抱文件、审批敲桌、检索窥探、庆祝和拖拽姿态，动作必须比当前 browser contact sheet 更明显。
-2. **真实 Tauri Bongo Cuu 录屏验收**：用 `scripts/qa/cuu-tauri-motion-capture.ps1` 抓真实 `Cuu` 顶层窗口 GIF/MP4/contact sheet，确认右下角全身可见、不卡顿、不裁切。
-3. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨。
+1. **Bongo cold-start 稳定**：补 `pet-ready` / first-painted handshake，Rust 不应在 webview 尚未绘制时让 `Cuu` window 可见；frame 000-003 空白/局部必须消失。
+2. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
+3. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
 4. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
 5. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏肉眼通过后才允许进入默认候选。
 6. **Web Home 真页面**：按 AI-first concept 改首屏。
