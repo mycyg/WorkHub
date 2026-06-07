@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assertCuuModelPackCanBeDefault,
   defaultCuuBongoModelPack,
+  plannedCuuLive2DCubismModelPack,
   requiredCuuModelPackMotionStates,
   validateCuuModelPackManifest,
   type CuuModelPackManifest
@@ -25,6 +26,7 @@ test("Cuu Bongo model pack is the approved low-uncanny default", () => {
   assert.equal(defaultCuuBongoModelPack.window_affordances.pass_through, "supported");
   assert.equal(defaultCuuBongoModelPack.window_affordances.scale, "supported");
   assert.equal(defaultCuuBongoModelPack.window_affordances.opacity, "supported");
+  assert.equal(defaultCuuBongoModelPack.window_affordances.hide_on_hover, "supported");
   assert.match(defaultCuuBongoModelPack.source.reference_url ?? "", /ayangweb\/BongoCat/u);
 });
 
@@ -79,4 +81,24 @@ test("Cuu PSD draft packs are blocked from becoming the default surface", () => 
   assert.ok(issueCodes.includes("visual_gate_failed"));
   assert.ok(issueCodes.includes("psd_default_asset"));
   assert.throws(() => assertCuuModelPackCanBeDefault(psdDraft), /cannot be default/u);
+});
+
+test("planned Cuu Live2D Cubism pack is documented but cannot be default yet", () => {
+  assert.equal(plannedCuuLive2DCubismModelPack.pack_id, "cuu-live2d-cubism-v2");
+  assert.equal(plannedCuuLive2DCubismModelPack.runtime_kind, "live2d_cubism");
+  assert.equal(plannedCuuLive2DCubismModelPack.default_policy.status, "experimental");
+  assert.equal(plannedCuuLive2DCubismModelPack.default_policy.allow_as_default, false);
+  assert.equal(validateCuuModelPackManifest(plannedCuuLive2DCubismModelPack).length, 0);
+
+  const issueCodes = validateCuuModelPackManifest(plannedCuuLive2DCubismModelPack, {
+    require_default_ready: true,
+    require_full_motion_coverage: true,
+    require_idle_micro_action_coverage: true
+  }).map((issue) => issue.code);
+
+  assert.ok(issueCodes.includes("default_blocked"));
+  assert.ok(issueCodes.includes("default_not_approved"));
+  assert.ok(issueCodes.includes("visual_gate_failed"));
+  assert.ok(issueCodes.includes("missing_motion"));
+  assert.throws(() => assertCuuModelPackCanBeDefault(plannedCuuLive2DCubismModelPack), /cannot be default/u);
 });

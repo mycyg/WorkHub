@@ -6,6 +6,7 @@ owner: workflow
 date: 2026-06-08
 visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
+  - ./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
@@ -20,6 +21,8 @@ visuals:
 # Cuu Bongo-style 低恐怖谷桌宠路线
 
 > 结论：当前 `generated-psd-draft-v1` 只能作为技术探针，不应该默认展示给用户。Cuu P1 默认视觉改为 **BongoCat 式扁平、稳定、低恐怖谷 renderer**；PSD / Live2D 继续保留为实验线，只有精修 PSD + Cubism + 多秒录屏全部通过后，才允许回到默认。
+>
+> **2026-06-08 复核更新**：用户再次确认 PSD draft 已触发恐怖谷风险，尤其是拟真眼睛、写实毛发、尾巴/流苏叠层和局部 AI 形体不稳定。后续不再把 `generated-psd-draft-v1` 当成可美化后直接默认的候选，而是把它冻结为工程探针；默认体验继续走低恐怖谷 Bongo Cuu。若要重启 Live2D，必须新开 `cuu-live2d-cubism-v2` 资产线，并先满足本篇和 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 model pack 晋级门。
 
 参考项目：[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)。本仓库只学习架构和交互思路，不复制它的模型或素材；本地参考代码放在 `reference/ayangweb-BongoCat/`，禁止提交。
 
@@ -28,6 +31,10 @@ visuals:
 ## 0. 当前截图
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+
+![Cuu Bongo low-uncanny v2 style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+
+第二张图是 **Cuu Bongo / Live2D v2 低恐怖谷风格板**。它由 GPT Image 生成后同步到文档资产目录，用来替代 PSD draft 的写实参考方向：大形体圆润、五官简化、动作缩略图清楚、保留白围兜/黑蝴蝶结/红珠识别点，但不追求拟真毛发和照片级眼睛。它只作为美术风格基准，不是最终 PSD、sprite 或 Cubism 源。
 
 本轮 browser pet surface 抓图确认：
 
@@ -126,6 +133,21 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 | 低恐怖谷默认 | BongoCat 低拟真角色动作 | WorkHub 默认 `bongo_cuu`，PSD draft 被降级为实验 | 默认候选必须过 `assertCuuModelPackCanBeDefault()` |
 | 离线隐私友好 | README 明确离线运行 | Cuu 本体可在 webview 里离线渲染，数据从 WorkHub 安全通道来 | 设备输入监听只做本地手感，不采集无关数据 |
 
+### 1.2 参考实现转 WorkHub 施工切片
+
+BongoCat 给 WorkHub 的下一步不是复制角色素材，而是把桌宠拆成 **模型包、运行时、输入、窗口、安全恢复、QA** 六条工程线：
+
+| 切片 | 参考依据 | WorkHub 目标 | 首个可验收交付 |
+|---|---|---|---|
+| BONGO-P2a model pack loader | BongoCat `stores/model.ts` 维护 preset / current model | `CuuModelPackManifest` 从纯常量升级为可枚举、可选择、可禁止默认的 loader；默认仍是 `cuu-bongo-p1` | `GET /api/pages/cuu-settings` 或本地 settings VM 能列出 `cuu-bongo-p1` 和 `cuu-live2d-cubism-v2`，后者显示实验不可默认 |
+| BONGO-P2b Live2D adapter spike | BongoCat `utils/live2d.ts` 用 `easy-live2d` + Pixi 读取 `.model3.json` | 新增 `cuu-live2d-cubism-runtime.ts`，只接受导出的 `.model3.json` / `.moc3` / texture，不接受 PSD draft 直接默认 | 浏览器 pet surface 能加载一个 mock/fixture Cubism pack；失败时自动回 `bongo_cuu` |
+| BONGO-P2c pointer parameter bridge | BongoCat `useModel.handleMouseMove()` 映射 `ParamAngleX/Y`、`ParamEyeBallX/Y` | 复用 WorkHub 已有 `look_x/look_y/hover_avoidance`，映射到 Cubism 参数；不另起鼠标协议 | Tauri `look-avoidance` QA 同时能验证 Bongo DOM pose 和 Cubism parameter trace |
+| BONGO-P2d behavior trigger map | BongoCat 支持 motion / expression 快捷键 | WorkHub 把 approval/search/sync/revision/celebrate 映射到 `motion3.json` 或 expression，而不是只靠 CSS keyframes | `CuuMotionHint.sprite_state -> CubismMotionBinding` 表覆盖 18 个状态 |
+| BONGO-P2e safe hide / pass-through | BongoCat `hideOnHover` 可全透明并忽略鼠标事件 | WorkHub P1 继续 soft dodge；full hide 只在托盘、快捷键、边缘热区和超时恢复全部有 QA 后开放 | `hide-on-hover-full` 真实 Tauri 录屏：隐藏、穿透、托盘恢复、热区恢复均可见 |
+| BONGO-P2f visual anti-uncanny gate | BongoCat 低拟真角色稳定 | Cuu 禁止默认使用写实毛发、拟真眼珠、AI 逐帧漂移、多肢体、拼接错位 | model pack QA 输出 `low_uncanny=true`、`no_ai_artifact=true`，并附 contact sheet |
+
+这意味着后续 Live2D 不是“继续修当前 PSD draft”，而是按新概念板重做低恐怖谷 Cuu v2：统一正面基准、简化眼睛、简化毛发、减少尾巴分段错觉，先做 Cubism 可控参数，再谈动作丰富度。
+
 新增代码门禁：
 
 ```text
@@ -133,6 +155,8 @@ packages/cuu/src/model-pack.ts
 packages/cuu/src/model-pack.test.ts
 apps/desktop-webview/src/cuu-bongo-runtime.ts
 ```
+
+2026-06-08 新增代码口径：`packages/cuu/src/model-pack.ts` 已加入 `plannedCuuLive2DCubismModelPack`。它可以被设置页和文档展示为未来路线，但 `assertCuuModelPackCanBeDefault()` 会拒绝它作为默认；`cuu-bongo-p1` 的默认窗口能力也已收紧到 `transparent_window / always_on_top / draggable / pass_through / scale / opacity / hide_on_hover / keep_in_screen` 全部 supported。
 
 2026-06-08 P1e-c 输入凝视 / hover 避让真实证据：
 

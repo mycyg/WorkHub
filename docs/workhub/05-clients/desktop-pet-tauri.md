@@ -81,7 +81,7 @@ owner: workflow
 | `packages/cuu/src/atlas-manifest.ts` | Cuu atlas contract | 真实 PNG/WebP atlas manifest schema、grid frame helper、partial/full coverage 校验 |
 | `apps/desktop-webview/src/cuu-atlas-assets.ts` | Cuu motion pack asset manifest | 指向 `cuu-p1-motion-pack.png` atlas，并在 clip 上保留 source-green / alpha 路径 |
 | `apps/desktop-webview/src/cuu-atlas-runtime.ts` | Cuu atlas renderer | 按 atlas frame rect 生成 clip sheet background sprite 或 `<img>` frame stack；dev server `/src/assets/...` 保持原路径，打包态 `/assets/...` 才相对化为 `./assets/...`；内联静态 Cuu fallback 只作为非运行态兜底，不可替代真实动作 |
-| `packages/cuu/src/model-pack.ts` | Cuu model pack default gate | 对齐 BongoCat 的可替换模型思想，当前 `cuu-bongo-p1` 为唯一 `approved_default`；PSD draft 资产即使可渲染，也不能作为默认候选；P1d-a 后 scale / opacity / pass-through 已标为 supported |
+| `packages/cuu/src/model-pack.ts` | Cuu model pack default gate | 对齐 BongoCat 的可替换模型思想，当前 `cuu-bongo-p1` 为唯一 `approved_default`；PSD draft 资产即使可渲染，也不能作为默认候选；P1d-a/P1d-b-a 后 scale / opacity / pass-through / hide-on-hover 已标为 supported；`plannedCuuLive2DCubismModelPack` 只作为未来 Cubism 路线占位，不能默认 |
 | `apps/desktop-webview/src/assets/cuu/*` | Cuu generated asset pack | 已有 18 个动作 clip 的绿幕源图、透明 alpha 图、motion pack atlas 和 `static/cuu-static-fallback-v1-alpha-clean.png` 内联兜底图 |
 | `packages/cuu/src/idle-scheduler.ts` | Cuu alive behavior scheduler | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；P1e-a 新增 `cursor_near` interaction，首次靠近立即 `look_at_mouse`；Rust 不拥有动画状态 |
 | `scripts/qa/cuu-tauri-smoke.ps1` | Windows Tauri runtime smoke | 启动真实 debug app，定位 `Cuu` 顶层窗口，校验 visible/topmost/bottom-right，隐藏主窗，并用 `PrintWindow(PW_RENDERFULLCONTENT)` 对透明/layered WebView2 pet 窗口做像素检查；若 1420 未监听，会自动隐藏启动 `@workhub/desktop-webview` dev server，避免抓到 WebView 错误页 |

@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**37 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu Bongo-style 低恐怖谷默认路线、Cuu Live2D 分层资产方案与当前真实截图/动作审计;详见各篇 frontmatter)。
+> 状态(2026-06-08):**37 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu Bongo-style 低恐怖谷默认路线、Cuu Live2D 分层资产方案、BongoCat 参考吸收、Cuu v2 低恐怖谷风格板与当前真实截图/动作审计;详见各篇 frontmatter)。
 
 ---
 

@@ -17,6 +17,7 @@ visuals:
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png
   - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
+  - ./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
@@ -74,6 +75,8 @@ visuals:
 
 ![Cuu Bongo-style 低恐怖谷默认截图](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
+![Cuu Bongo / Live2D v2 低恐怖谷风格板](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+
 ![Cuu Bongo P1b state gallery](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
 
 ![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
@@ -88,7 +91,7 @@ visuals:
 
 ![Cuu Bongo P1e-d-b 60s idle jitter real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
 
-本轮真实截图确认：Web 与 desktop 主窗仍是 P0.5 shell；Cuu 能独立出现在右下角。首轮 motion capture 暴露事件卡片触发后未进入 card mode；第一轮修复暴露 Cuu 只露耳朵 / 局部；最终 HiDPI fresh 抓帧确认窗口扩展、Cuu 完整身体、离线人话卡和右侧安全留白均已收口。随后 8 层裁片 prototype 被判定为视觉不通过。本轮新增的 `generated-psd-draft-v1` 和 `psd_draft_probe` 证明“生成零件 -> 抠图编号 -> 调整大小拼接 -> PSD 分层运行”可行；但用户复核认为 PSD draft 有恐怖谷风险，因此默认视觉已切到 `bongo_cuu` 低恐怖谷 renderer。随后 Bongo P1b 已补挥手、检索、同步、打回、抱文件、庆祝和拖拽动作，并通过 browser 状态墙与真实 Tauri GIF/MP4 录屏；P1c 已补 first-painted 首帧门禁，新 contact sheet 的 frame 000 不再是 blank；P1e-b 已补真实鼠标 hover/tap/drag 录屏，24 帧全程 Cuu 可见、无离线卡片污染，拖拽窗口坐标确实移动；P1e-c 已补左右 cursor-near、hover_top_right、tap、drag/release 真实录屏，Cuu 有连续看鼠标和 hover 轻避让；P1e-d-a 已补 pointer smoothing、drag grip 持续姿态和 `drag-smoothing` 真实录屏；P1d-b-a 已补 `hide-on-hover` 真实录屏，frame 004-013 软隐藏，frame 014-017 离开恢复，frame 018 后再次软隐藏；P1e-d-b 已补 60 秒 `idle-long-run` 长驻录屏，31 帧无低可见帧和窗口漂移，24 个相邻帧有可测变化。Live2D 继续清理 PSD、导入 Cubism，而不是把未精修 PSD 默认展示给用户。
+本轮真实截图确认：Web 与 desktop 主窗仍是 P0.5 shell；Cuu 能独立出现在右下角。首轮 motion capture 暴露事件卡片触发后未进入 card mode；第一轮修复暴露 Cuu 只露耳朵 / 局部；最终 HiDPI fresh 抓帧确认窗口扩展、Cuu 完整身体、离线人话卡和右侧安全留白均已收口。随后 8 层裁片 prototype 被判定为视觉不通过。本轮新增的 `generated-psd-draft-v1` 和 `psd_draft_probe` 证明“生成零件 -> 抠图编号 -> 调整大小拼接 -> PSD 分层运行”可行；但用户复核认为 PSD draft 有恐怖谷风险，因此默认视觉已切到 `bongo_cuu` 低恐怖谷 renderer。本次追加 `cuu-bongo-low-uncanny-v2-style-board.png`，把下一轮 Live2D / Bongo 动作二轮的视觉方向从写实 PSD 调整为圆润扁平 mascot。随后 Bongo P1b 已补挥手、检索、同步、打回、抱文件、庆祝和拖拽动作，并通过 browser 状态墙与真实 Tauri GIF/MP4 录屏；P1c 已补 first-painted 首帧门禁，新 contact sheet 的 frame 000 不再是 blank；P1e-b 已补真实鼠标 hover/tap/drag 录屏，24 帧全程 Cuu 可见、无离线卡片污染，拖拽窗口坐标确实移动；P1e-c 已补左右 cursor-near、hover_top_right、tap、drag/release 真实录屏，Cuu 有连续看鼠标和 hover 轻避让；P1e-d-a 已补 pointer smoothing、drag grip 持续姿态和 `drag-smoothing` 真实录屏；P1d-b-a 已补 `hide-on-hover` 真实录屏，frame 004-013 软隐藏，frame 014-017 离开恢复，frame 018 后再次软隐藏；P1e-d-b 已补 60 秒 `idle-long-run` 长驻录屏，31 帧无低可见帧和窗口漂移，24 个相邻帧有可测变化。Live2D 需要按低恐怖谷 v2 重绘并导入 Cubism，而不是把未精修 PSD 默认展示给用户。
 
 ---
 

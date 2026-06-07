@@ -12,6 +12,7 @@ owner: workflow
 > **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 > **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
 > **2026-06-08 P1e 更新**：Bongo 默认已完成 hover/tap/drag 真实 Tauri 输入录屏底座，并在 P1e-c 追加连续看鼠标 / hover 避让真实录屏。Live2D 替换默认前必须重跑 `input-handfeel` 与 `look-avoidance` 两个输入手感门；Cubism 参数必须复用 `look_x/look_y/hover_avoidance` contract，而不是另起一套鼠标协议。分层资产下一步不是继续美化 v1，而是按第 5.6 节做 `generated-parts-v2`：更细的眼皮、嘴型、耳朵、尾巴段、蕾丝、流苏和遮挡补画组件，全部用 manifest 锚点拼装。
+> **2026-06-08 低恐怖谷重启口径**：用户复核当前 PSD draft 后明确反馈“恐怖谷效应”。因此 `generated-psd-draft-v1` 不再作为可修可上的 Live2D 候选，只保留为运行时/manifest 探针。新的 Live2D 路线必须以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，先做低拟真、少层但稳定的 Cubism v2，再逐步增加表情、尾巴、围兜和流苏物理。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -50,7 +51,11 @@ owner: workflow
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
+![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+
 这张图是 **当前默认 Cuu**：因为 PSD draft 视觉有恐怖谷风险，P1 默认先使用 Bongo-style 低拟真 renderer。Live2D 专篇继续保留分层资产与 Cubism 施工计划，但默认用户体验不再展示未精修 PSD。
+
+新增的低恐怖谷 v2 风格板是后续 Live2D 重启基准：保留橘猫、白围兜、黑蝴蝶结、红珠和任务动作，但把毛发、眼睛和体块都压回圆润、扁平、可绑定的 mascot 语言。正式 PSD 不允许继续沿用 `generated-psd-draft-v1` 的拟真眼珠和写实毛发方向。
 
 默认门禁已代码化：`assertCuuModelPackCanBeDefault()` 要求默认包低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖全部业务动作和 idle 微动作。PSD 分层路线的目标因此不是“把当前草案强行上线”，而是把它推进到真正可绑定、可录屏、可替换默认的 Cubism model pack。
 
@@ -302,7 +307,7 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/
 
 ### 3.4 Live2D Model Pack 晋级条件
 
-Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackManifest`：
+Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackManifest`。当前代码中已有 `plannedCuuLive2DCubismModelPack` 作为计划占位：它能被设置页展示为未来路线，但 `default_policy.allow_as_default=false`，`assertCuuModelPackCanBeDefault()` 会拒绝它成为默认。
 
 | 字段 | 通过标准 |
 |---|---|
@@ -313,16 +318,17 @@ Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackMani
 | `visual_gate.alive_motion` | 10 秒 idle 与业务动作录屏肉眼通过；必须包含 `input-handfeel` 和 `look-avoidance` 真实 Tauri 场景 |
 | `source.assets` | 不允许 `psd_draft` 标记为 `default_candidate=true` |
 | `motions` | 覆盖 `idle_breathe`、`idle_blink`、`idle_tail_sway`、`look_at_mouse`、审批、检索、同步、担心、庆祝等 18 个动作；`look_at_mouse` 必须消费 `look_x/look_y` 映射到 `ParamAngleX/Y` 与 `ParamEyeBallX/Y` |
-| `window_affordances` | 至少支持透明窗口、置顶、拖动、贴屏 |
+| `window_affordances` | 必须继承 Bongo 默认的透明窗口、置顶、拖动、点击穿透、缩放、透明度、悬停避让、贴屏 |
 
 Live2D 晋级验收流程：
 
-1. 精修 PSD：补画遮挡、重绘尾巴链、清绿边、统一线条粗细和脸部比例。
-2. Cubism 绑定：建立 mesh / deformer / parameter / physics，导出 `.model3.json`、`.moc3`、textures、motions。
-3. Webview runtime：加载 Cubism pack，并保留 `cuu-bongo-p1` fallback。
-4. 截图与录屏：browser CDP + Windows Tauri `PrintWindow` + Linux/macOS 透明窗口各一套。
-5. 跑 `pnpm --filter @workhub/cuu test`，新增 Live2D model pack 测试必须通过。
-6. 视觉审查：如果仍有恐怖谷、卡顿或肢体幻觉，保持 `experimental`，默认继续 Bongo。
+1. 重启低恐怖谷 PSD：以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，先重绘圆润扁平正面 Cuu，不复用 `generated-psd-draft-v1` 的拟真眼珠和写实毛发。
+2. 精修 PSD：补画遮挡、重绘尾巴链、清绿边、统一线条粗细和脸部比例。
+3. Cubism 绑定：建立 mesh / deformer / parameter / physics，导出 `.model3.json`、`.moc3`、textures、motions。
+4. Webview runtime：加载 Cubism pack，并保留 `cuu-bongo-p1` fallback。
+5. 截图与录屏：browser CDP + Windows Tauri `PrintWindow` + Linux/macOS 透明窗口各一套。
+6. 跑 `pnpm --filter @workhub/cuu test`，新增 Live2D model pack 测试必须通过。
+7. 视觉审查：如果仍有恐怖谷、卡顿或肢体幻觉，保持 `experimental`，默认继续 Bongo。
 
 ---
 

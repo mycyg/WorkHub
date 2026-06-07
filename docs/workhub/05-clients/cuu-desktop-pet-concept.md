@@ -116,6 +116,10 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`、`data-cuu-model-pack="cuu-bongo-p1"`、`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。P1b 已补挥手、抱文件、审批打回、检索、同步、庆祝和拖拽动作，P1c 已补 first-painted 首帧门禁，P1d-b-a 已补 hide-on-hover soft dodge；BONGO-REF 已让 PSD draft 默认候选在测试里失败。后续继续增强动作幅度、窗口体验和模型包加载器。
 
+![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+
+这张图是后续 Cuu v2 的低恐怖谷风格基准。它保留参考猫的橘色虎斑、奶油脸和爪、白围兜、黑蝴蝶结、红珠，但把眼睛、毛发、爪子和尾巴都压成可绑定、可复用、低细节的 mascot 形状。它用于指导 Bongo 动作二轮和 Live2D Cubism v2 重绘，不代表最终 PSD 已通过。
+
 ![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
 
 P1e-c 后，Cuu 不只是“靠近时切到看鼠标状态”：Rust 会返回 `look_x_percent/look_y_percent`，webview 统一成 `look_x/look_y/hover_avoidance`，Bongo renderer 用这些值驱动头、眼、鼻口、胡须方向和 hover 轻避让。未来 Live2D / Cubism 版本必须复用同一输入合同映射到 `ParamAngleX/Y`、`ParamEyeBallX/Y` 和物理链，而不是重新发明鼠标协议。

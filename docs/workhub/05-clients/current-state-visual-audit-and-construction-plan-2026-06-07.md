@@ -17,6 +17,7 @@ visuals:
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
   - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
+  - ./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
@@ -223,10 +224,11 @@ visuals:
 
 下一步施工：
 
-1. 继续批量生成更细的 `face-core`、`body-core`、`tail-chain`、`collar-lace`、`bow-tassel`、`paint-behind` 绿幕零件板。
-2. 自动抠图后只把候选部件放进 PSD draft，正式 PSD 仍必须人工清理边缘、修遮挡和统一画风。
-3. 用 Cubism Editor 导入精修 PSD，绑定 `ParamEyeOpen`、`ParamTailSway`、`ParamTasselSwing`、`ParamPawTap` 等参数。
-4. 录制真实 Tauri 透明 `Cuu` window 多秒动作，验收眨眼、尾巴、耳朵、流苏、看鼠标和任务动作。
+1. 冻结 `generated-psd-draft-v1` 为运行时探针，不再沿用它的拟真眼睛、写实毛发和尾巴拼接方向做默认候选。
+2. 以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，重做低恐怖谷 `face-core`、`body-core`、`tail-chain`、`collar-lace`、`bow-tassel`、`paint-behind` 绿幕零件板。
+3. 自动抠图后只把候选部件放进 v2 PSD / Cubism pipeline；正式 PSD 仍必须人工清理边缘、修遮挡、统一线条和脸部比例。
+4. 用 Cubism Editor 导入 v2 精修 PSD，绑定 `ParamEyeOpen`、`ParamTailSway`、`ParamTasselSwing`、`ParamPawTap`、`ParamAngleX/Y`、`ParamEyeBallX/Y` 等参数。
+5. 录制真实 Tauri 透明 `Cuu` window 多秒动作，验收眨眼、尾巴、耳朵、流苏、看鼠标和任务动作。
 
 ### 0.5 CUX-BONGO-001：低恐怖谷默认 Cuu（2026-06-08）
 
@@ -236,6 +238,8 @@ visuals:
 
 ![Cuu Bongo-style runtime](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
+![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+
 本轮新增 / 修改：
 
 | 文件 | 作用 |
@@ -244,9 +248,10 @@ visuals:
 | `apps/desktop-webview/src/pet-surface.ts` | 默认 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"` |
 | `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu，不允许默认 HTML 出现 PSD layer |
 | `packages/cuu/src/model-pack.ts` | 新增 Cuu 模型包默认门禁：`cuu-bongo-p1` 是 `approved_default`，PSD draft 默认候选会失败 |
-| `packages/cuu/src/model-pack.test.ts` | 覆盖 Bongo 默认可用、18 个动作全覆盖、PSD draft 不能默认 |
+| `packages/cuu/src/model-pack.test.ts` | 覆盖 Bongo 默认可用、18 个动作全覆盖、PSD draft 不能默认、planned Live2D Cubism 不能默认 |
 | `scripts/qa/cuu-pet-browser-capture.mjs` | 默认等待 `[data-cuu-bongo-runtime="bongo_cuu"]` 并抓多帧截图 |
 | `docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | 新增默认路线专篇 |
+| `docs/workhub/05-clients/assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png` | 新增低恐怖谷 v2 风格基准，指导 Bongo 动作二轮和 Live2D 重绘 |
 
 截图证据：
 

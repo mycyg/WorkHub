@@ -115,6 +115,10 @@ export const requiredCuuDefaultWindowAffordances: CuuModelPackWindowAffordance[]
   "transparent_window",
   "always_on_top",
   "draggable",
+  "pass_through",
+  "scale",
+  "opacity",
+  "hide_on_hover",
   "keep_in_screen"
 ];
 
@@ -174,8 +178,68 @@ export const defaultCuuBongoModelPack: CuuModelPackManifest = {
     pass_through: "supported",
     scale: "supported",
     opacity: "supported",
-    hide_on_hover: "planned",
+    hide_on_hover: "supported",
     keep_in_screen: "supported"
+  }
+};
+
+export const plannedCuuLive2DCubismModelPack: CuuModelPackManifest = {
+  version: 1,
+  character: "Cuu",
+  pack_id: "cuu-live2d-cubism-v2",
+  display_name: "Cuu Live2D Cubism V2 candidate",
+  runtime_kind: "live2d_cubism",
+  default_policy: {
+    allow_as_default: false,
+    status: "experimental",
+    reason: "Live2D remains experimental until a low-uncanny Cubism export passes real desktop-pet motion QA."
+  },
+  visual_gate: {
+    low_uncanny: false,
+    no_psd_default: true,
+    full_body_visible: false,
+    stable_identity: false,
+    no_ai_artifact: false,
+    alive_motion: false
+  },
+  source: {
+    inspiration: "BongoCat-style model loader and input-reactive Live2D parameter mapping, using original Cuu assets.",
+    reference_url: "https://github.com/ayangweb/BongoCat",
+    assets: [
+      {
+        kind: "live2d_cubism",
+        path: "apps/desktop-webview/src/assets/cuu/live2d/exported/cuu-live2d-cubism-v2/cuu.model3.json",
+        note: "Planned Cubism export path. The generated PSD draft is not a default candidate and should not be promoted without a real .model3.json/.moc3 export.",
+        default_candidate: false
+      }
+    ]
+  },
+  components: [
+    "body",
+    "head",
+    "ears",
+    "eyes",
+    "tail",
+    "paws",
+    "bib",
+    "bow",
+    "beads",
+    "desk",
+    "document",
+    "search_glass",
+    "sync_ring",
+    "sparks"
+  ],
+  motions: {},
+  window_affordances: {
+    transparent_window: "planned",
+    always_on_top: "planned",
+    draggable: "planned",
+    pass_through: "planned",
+    scale: "planned",
+    opacity: "planned",
+    hide_on_hover: "planned",
+    keep_in_screen: "planned"
   }
 };
 
