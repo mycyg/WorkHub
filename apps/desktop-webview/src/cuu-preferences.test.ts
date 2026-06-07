@@ -82,12 +82,26 @@ test("Cuu preferences accept Rust-injected QA overrides", () => {
   const previous = target.__WORKHUB_CUU_PREFERENCES__;
   try {
     target.__WORKHUB_CUU_PREFERENCES__ = {
+      pet_scale_percent: 150,
+      pet_opacity_percent: 60,
+      pet_pass_through: true,
       pet_hide_on_hover: true,
       queue_limit: 2
     };
 
-    const loaded = loadCuuPreferences(memoryStorage());
+    const loaded = loadCuuPreferences(memoryStorage({
+      [CUU_PREFERENCES_STORAGE_KEY]: JSON.stringify({
+        pet_scale_percent: 75,
+        pet_opacity_percent: 100,
+        pet_pass_through: false,
+        pet_hide_on_hover: false,
+        queue_limit: 9
+      })
+    }));
 
+    assert.equal(loaded.pet_scale_percent, 150);
+    assert.equal(loaded.pet_opacity_percent, 60);
+    assert.equal(loaded.pet_pass_through, true);
     assert.equal(loaded.pet_hide_on_hover, true);
     assert.equal(loaded.queue_limit, 2);
   } finally {

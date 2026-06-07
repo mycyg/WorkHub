@@ -10,6 +10,13 @@ param(
   [int]$MinLongRunChangedFrames = 3,
   [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "drag-smoothing", "hide-on-hover")]
   [string]$Scenario = "idle",
+  [ValidateSet(75, 100, 125, 150)]
+  [int]$PetScalePercent = 100,
+  [ValidateSet(60, 80, 100)]
+  [int]$PetOpacityPercent = 100,
+  [switch]$PetPassThrough,
+  [switch]$PetHideOnHover,
+  [switch]$DisableSse,
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
 )
@@ -610,6 +617,9 @@ $originalAppData = $env:APPDATA
 $originalLocalAppData = $env:LOCALAPPDATA
 $originalDisableSse = $env:WORKHUB_DISABLE_SSE
 $originalCuuQaHideOnHover = $env:WORKHUB_CUU_QA_HIDE_ON_HOVER
+$originalCuuQaPetScalePercent = $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT
+$originalCuuQaPetOpacityPercent = $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT
+$originalCuuQaPetPassThrough = $env:WORKHUB_CUU_QA_PET_PASS_THROUGH
 $process = $null
 $devServerProcess = $null
 $isolatedRoot = $null
@@ -625,12 +635,19 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  if ($Scenario -ne "idle") {
+  if ($Scenario -ne "idle" -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
   }
+  $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT = "$PetScalePercent"
+  $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT = "$PetOpacityPercent"
+  if ($PetPassThrough) {
+    $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
+  } else {
+    Remove-Item -Path "Env:WORKHUB_CUU_QA_PET_PASS_THROUGH" -ErrorAction SilentlyContinue
+  }
   $cuuQaHideOnHover = $false
-  if ($Scenario -eq "hide-on-hover") {
+  if ($Scenario -eq "hide-on-hover" -or $PetHideOnHover) {
     $env:WORKHUB_CUU_QA_HIDE_ON_HOVER = "1"
     $cuuQaHideOnHover = $true
     Set-CuuCursorPosition -X 120 -Y 120
@@ -743,6 +760,12 @@ try {
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
+    cuu_qa_preferences = [pscustomobject]@{
+      pet_scale_percent = $PetScalePercent
+      pet_opacity_percent = $PetOpacityPercent
+      pet_pass_through = [bool]$PetPassThrough
+      pet_hide_on_hover = $cuuQaHideOnHover
+    }
     scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
     frame_count = $FrameCount
@@ -796,6 +819,12 @@ try {
     scenario = $Scenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
+    cuu_qa_preferences = [pscustomobject]@{
+      pet_scale_percent = $PetScalePercent
+      pet_opacity_percent = $PetOpacityPercent
+      pet_pass_through = [bool]$PetPassThrough
+      pet_hide_on_hover = $cuuQaHideOnHover
+    }
     frames_dir = $framesDir
     contact_sheet = $contactSheet
     diff_report = $reportPath
@@ -811,6 +840,9 @@ try {
   Restore-EnvVar -Name "LOCALAPPDATA" -Value $originalLocalAppData
   Restore-EnvVar -Name "WORKHUB_DISABLE_SSE" -Value $originalDisableSse
   Restore-EnvVar -Name "WORKHUB_CUU_QA_HIDE_ON_HOVER" -Value $originalCuuQaHideOnHover
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_SCALE_PERCENT" -Value $originalCuuQaPetScalePercent
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_OPACITY_PERCENT" -Value $originalCuuQaPetOpacityPercent
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_PASS_THROUGH" -Value $originalCuuQaPetPassThrough
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
     $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())

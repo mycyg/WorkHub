@@ -1,0 +1,182 @@
+﻿{
+    "passed":  true,
+    "scenario":  "idle",
+    "sse_disabled_for_scenario":  true,
+    "cuu_qa_hide_on_hover":  false,
+    "cuu_qa_preferences":  {
+                               "pet_scale_percent":  150,
+                               "pet_opacity_percent":  100,
+                               "pet_pass_through":  false,
+                               "pet_hide_on_hover":  false
+                           },
+    "scenario_events":  [
+
+                        ],
+    "process_id":  49192,
+    "frame_count":  4,
+    "interval_ms":  240,
+    "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-bongo-p1d-settings\\scale-150\\frames",
+    "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-bongo-p1d-settings\\scale-150\\cuu-motion-contact-sheet.png",
+    "first_frame_gate":  {
+                             "passed":  true,
+                             "attempts":  7,
+                             "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-bongo-p1d-settings\\scale-150\\first-frame-probe.png",
+                             "min_orange_pixels":  8000,
+                             "min_visual_pixels":  12000,
+                             "pixel_report":  {
+                                                  "samples":  96330,
+                                                  "orange_pixels":  20886,
+                                                  "cream_pixels":  14139,
+                                                  "dark_pixels":  58525,
+                                                  "visual_pixels":  35025,
+                                                  "sample_step":  1,
+                                                  "width":  285,
+                                                  "height":  338
+                                              }
+                         },
+    "max_vs_first_mean_abs_delta":  2.716,
+    "max_vs_previous_mean_abs_delta":  1.073,
+    "max_vs_first_changed_pixels_gt8":  1521,
+    "max_vs_previous_changed_pixels_gt8":  968,
+    "frame_pixel_reports":  [
+                                {
+                                    "frame":  0,
+                                    "pixel_report":  {
+                                                         "samples":  96330,
+                                                         "orange_pixels":  20971,
+                                                         "cream_pixels":  14122,
+                                                         "dark_pixels":  58505,
+                                                         "visual_pixels":  35093,
+                                                         "sample_step":  1,
+                                                         "width":  285,
+                                                         "height":  338
+                                                     }
+                                },
+                                {
+                                    "frame":  1,
+                                    "pixel_report":  {
+                                                         "samples":  96330,
+                                                         "orange_pixels":  21171,
+                                                         "cream_pixels":  14068,
+                                                         "dark_pixels":  58476,
+                                                         "visual_pixels":  35239,
+                                                         "sample_step":  1,
+                                                         "width":  285,
+                                                         "height":  338
+                                                     }
+                                },
+                                {
+                                    "frame":  2,
+                                    "pixel_report":  {
+                                                         "samples":  96330,
+                                                         "orange_pixels":  21152,
+                                                         "cream_pixels":  14066,
+                                                         "dark_pixels":  58418,
+                                                         "visual_pixels":  35218,
+                                                         "sample_step":  1,
+                                                         "width":  285,
+                                                         "height":  338
+                                                     }
+                                },
+                                {
+                                    "frame":  3,
+                                    "pixel_report":  {
+                                                         "samples":  96330,
+                                                         "orange_pixels":  21331,
+                                                         "cream_pixels":  14071,
+                                                         "dark_pixels":  58364,
+                                                         "visual_pixels":  35402,
+                                                         "sample_step":  1,
+                                                         "width":  285,
+                                                         "height":  338
+                                                     }
+                                }
+                            ],
+    "long_run":  null,
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  1754,
+                                    "Top":  750,
+                                    "Right":  2039,
+                                    "Bottom":  1088,
+                                    "Width":  285,
+                                    "Height":  338
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  24167
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  24167
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  1754,
+                                    "Top":  750,
+                                    "Right":  2039,
+                                    "Bottom":  1088,
+                                    "Width":  285,
+                                    "Height":  338
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0.64,
+                                        "changed_pixels_gt8":  669,
+                                        "samples":  24167
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.64,
+                                           "changed_pixels_gt8":  669,
+                                           "samples":  24167
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  1754,
+                                    "Top":  750,
+                                    "Right":  2039,
+                                    "Bottom":  1088,
+                                    "Width":  285,
+                                    "Height":  338
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.67,
+                                        "changed_pixels_gt8":  1138,
+                                        "samples":  24167
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.042,
+                                           "changed_pixels_gt8":  877,
+                                           "samples":  24167
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  1754,
+                                    "Top":  750,
+                                    "Right":  2039,
+                                    "Bottom":  1088,
+                                    "Width":  285,
+                                    "Height":  338
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  2.716,
+                                        "changed_pixels_gt8":  1521,
+                                        "samples":  24167
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.073,
+                                           "changed_pixels_gt8":  968,
+                                           "samples":  24167
+                                       }
+                   }
+               ]
+}

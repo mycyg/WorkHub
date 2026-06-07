@@ -39,24 +39,67 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 const WORKHUB_DISABLE_SSE_ENV: &str = "WORKHUB_DISABLE_SSE";
 const WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV: &str = "WORKHUB_CUU_QA_HIDE_ON_HOVER";
+const WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_SCALE_PERCENT";
+const WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_OPACITY_PERCENT";
+const WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV: &str = "WORKHUB_CUU_QA_PET_PASS_THROUGH";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct CuuQaPreferenceOverrides {
+    pet_scale_percent: Option<u16>,
+    pet_opacity_percent: Option<u8>,
+    pet_pass_through: Option<bool>,
+    pet_hide_on_hover: Option<bool>,
+}
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
     workhub_env_flag_enabled(WORKHUB_DISABLE_SSE_ENV, get_env)
 }
 
-fn workhub_cuu_qa_hide_on_hover_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
-    workhub_env_flag_enabled(WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, get_env)
+fn workhub_cuu_qa_preferences_from_env<F>(get_env: F) -> CuuQaPreferenceOverrides
+where
+    F: Fn(&str) -> Option<String>,
+{
+    CuuQaPreferenceOverrides {
+        pet_scale_percent: workhub_env_u16_allowed(
+            WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV,
+            &get_env,
+            &[75, 100, 125, 150],
+        ),
+        pet_opacity_percent: workhub_env_u8_allowed(
+            WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV,
+            &get_env,
+            &[60, 80, 100],
+        ),
+        pet_pass_through: workhub_env_flag_value(WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, &get_env),
+        pet_hide_on_hover: workhub_env_flag_value(WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, &get_env),
+    }
 }
 
 fn workhub_env_flag_enabled(name: &str, get_env: impl Fn(&str) -> Option<String>) -> bool {
-    get_env(name)
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
+    workhub_env_flag_value(name, get_env).unwrap_or(false)
+}
+
+fn workhub_env_flag_value(name: &str, get_env: impl Fn(&str) -> Option<String>) -> Option<bool> {
+    get_env(name).map(|value| match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => true,
+        _ => false,
+    })
+}
+
+fn workhub_env_u16_allowed<F>(name: &str, get_env: &F, allowed: &[u16]) -> Option<u16>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let value = get_env(name)?.trim().parse::<u16>().ok()?;
+    allowed.contains(&value).then_some(value)
+}
+
+fn workhub_env_u8_allowed<F>(name: &str, get_env: &F, allowed: &[u8]) -> Option<u8>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let value = get_env(name)?.trim().parse::<u8>().ok()?;
+    allowed.contains(&value).then_some(value)
 }
 
 #[tauri::command]
@@ -505,7 +548,7 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
         .ok_or_else(|| "pet window config is missing".to_string())?;
 
     let initialization_script =
-        pet_window_initialization_script(workhub_cuu_qa_hide_on_hover_from_env(|name| {
+        pet_window_initialization_script(workhub_cuu_qa_preferences_from_env(|name| {
             std::env::var(name).ok()
         }));
 
@@ -518,11 +561,34 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
-fn pet_window_initialization_script(hide_on_hover: bool) -> &'static str {
-    if hide_on_hover {
-        r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = { pet_hide_on_hover: true };"#
+fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> String {
+    let mut fields = Vec::new();
+    if let Some(scale) = preferences.pet_scale_percent {
+        fields.push(format!("pet_scale_percent: {scale}"));
+    }
+    if let Some(opacity) = preferences.pet_opacity_percent {
+        fields.push(format!("pet_opacity_percent: {opacity}"));
+    }
+    if let Some(pass_through) = preferences.pet_pass_through {
+        fields.push(format!(
+            "pet_pass_through: {}",
+            if pass_through { "true" } else { "false" }
+        ));
+    }
+    if let Some(hide_on_hover) = preferences.pet_hide_on_hover {
+        fields.push(format!(
+            "pet_hide_on_hover: {}",
+            if hide_on_hover { "true" } else { "false" }
+        ));
+    }
+
+    if fields.is_empty() {
+        r#"window.__WORKHUB_SURFACE__ = "pet";"#.to_string()
     } else {
-        r#"window.__WORKHUB_SURFACE__ = "pet";"#
+        format!(
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};"#,
+            fields.join(", ")
+        )
     }
 }
 
@@ -833,6 +899,17 @@ mod tests {
         move |_| value.map(str::to_string)
     }
 
+    fn named_env(
+        entries: &'static [(&'static str, &'static str)],
+    ) -> impl Fn(&str) -> Option<String> {
+        move |name| {
+            entries
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| value.to_string())
+        }
+    }
+
     #[test]
     fn sse_disable_env_accepts_explicit_truthy_values() {
         for value in ["1", "true", "TRUE", "yes", "on", " on "] {
@@ -849,21 +926,84 @@ mod tests {
     }
 
     #[test]
-    fn cuu_qa_hide_on_hover_env_accepts_truthy_values() {
-        assert!(workhub_cuu_qa_hide_on_hover_from_env(env_value(Some("1"))));
-        assert!(workhub_cuu_qa_hide_on_hover_from_env(env_value(Some(
-            "true"
-        ))));
-        assert!(!workhub_cuu_qa_hide_on_hover_from_env(env_value(Some("0"))));
+    fn cuu_qa_preferences_env_accepts_hide_on_hover_truthy_values() {
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[(
+                WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV,
+                "1"
+            )]))
+            .pet_hide_on_hover,
+            Some(true)
+        );
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[(
+                WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV,
+                "true"
+            )]))
+            .pet_hide_on_hover,
+            Some(true)
+        );
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[(
+                WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV,
+                "0"
+            )]))
+            .pet_hide_on_hover,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn cuu_qa_preferences_env_accepts_window_settings() {
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[
+                (WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV, "150"),
+                (WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV, "60"),
+                (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "true"),
+                (WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, "1"),
+            ])),
+            CuuQaPreferenceOverrides {
+                pet_scale_percent: Some(150),
+                pet_opacity_percent: Some(60),
+                pet_pass_through: Some(true),
+                pet_hide_on_hover: Some(true),
+            }
+        );
+    }
+
+    #[test]
+    fn cuu_qa_preferences_env_ignores_invalid_settings() {
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[
+                (WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV, "110"),
+                (WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV, "75"),
+                (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "0"),
+            ])),
+            CuuQaPreferenceOverrides {
+                pet_scale_percent: None,
+                pet_opacity_percent: None,
+                pet_pass_through: Some(false),
+                pet_hide_on_hover: None,
+            }
+        );
     }
 
     #[test]
     fn pet_initialization_script_can_inject_qa_preferences() {
         assert_eq!(
-            pet_window_initialization_script(false),
+            pet_window_initialization_script(CuuQaPreferenceOverrides::default()),
             r#"window.__WORKHUB_SURFACE__ = "pet";"#
         );
-        assert!(pet_window_initialization_script(true).contains("__WORKHUB_CUU_PREFERENCES__"));
-        assert!(pet_window_initialization_script(true).contains("pet_hide_on_hover"));
+        let script = pet_window_initialization_script(CuuQaPreferenceOverrides {
+            pet_scale_percent: Some(75),
+            pet_opacity_percent: Some(80),
+            pet_pass_through: Some(true),
+            pet_hide_on_hover: Some(true),
+        });
+        assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
+        assert!(script.contains("pet_scale_percent: 75"));
+        assert!(script.contains("pet_opacity_percent: 80"));
+        assert!(script.contains("pet_pass_through: true"));
+        assert!(script.contains("pet_hide_on_hover: true"));
     }
 }

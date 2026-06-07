@@ -16,6 +16,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -24,7 +25,7 @@ visuals:
 >
 > **2026-06-08 复核更新**：用户再次确认 PSD draft 已触发恐怖谷风险，尤其是拟真眼睛、写实毛发、尾巴/流苏叠层和局部 AI 形体不稳定。后续不再把 `generated-psd-draft-v1` 当成可美化后直接默认的候选，而是把它冻结为工程探针；默认体验继续走低恐怖谷 Bongo Cuu。若要重启 Live2D，必须新开 `cuu-live2d-cubism-v2` 资产线，并先满足本篇和 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 model pack 晋级门。
 
-参考项目：[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)。本仓库只学习架构和交互思路，不复制它的模型或素材；本地参考代码放在 `reference/ayangweb-BongoCat/`，禁止提交。
+参考项目：[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)。本仓库只学习架构和交互思路，不复制它的模型或素材；本地参考代码放在 `reference/BongoCat/`，禁止提交。
 
 ---
 
@@ -70,6 +71,8 @@ visuals:
 
 ![Cuu Bongo P1e-d-b 60s idle jitter Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
 
+![Cuu Bongo P1d-c settings matrix Tauri screenshots](./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
@@ -82,7 +85,8 @@ visuals:
 | pointer smoothing / drag grip | 通过 P1e-d-a；参考 BongoCat `DAMPING_DECAY` 思路，WorkHub 新增 `desktopPetPointerSmoothingAlpha=0.58`、`data-pet-pointer-smoothing-alpha` QA 属性和 `drag-smoothing` 真实 Tauri 场景。report 记录 9 个 scenario events，first-frame `orange_pixels=9090`、`visual_pixels=14540`，窗口从 `(1844,860)` 连续拖到 `(1710,780)` |
 | hide-on-hover 软隐藏 / 恢复 | 通过 P1d-b-a；参考 BongoCat `hideOnHover` 思路，但 WorkHub P1 先做可恢复 soft dodge，不做不可找回的全透明穿透。report 记录 5 个 scenario events：`cursor_near_left_outside`、`hover_top_right_inside_soft_hide`、`hover_inside_hold`、`cursor_leave_recover`、`hover_inside_again`；first-frame `orange_pixels=9291`、`visual_pixels=15423`，contact sheet 可见 frame 004-013 软隐藏、frame 014-017 恢复、frame 018 后再次软隐藏 |
 | 60s idle jitter / flicker | 通过 P1e-d-b；`idle-long-run` 真实 Tauri 场景抓取 31 帧、间隔 2000ms，`long_run.passed=true`，first-frame `orange_pixels=9406`、`visual_pixels=15530`，最低帧仍有 `orange_pixels=9287`、`visual_pixels=15417`，无低可见帧、无窗口漂移，24 个相邻帧超过变化阈值 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门。下一步转向真实设置页截图、多屏恢复、model pack loader、动作幅度二轮和 Live2D 精修 |
+| 窗口设置矩阵 | 通过 P1d-c；`scripts/qa/cuu-tauri-settings-capture.ps1` 真实 Tauri 抓取 default、scale-75、scale-150、opacity-60、pass-through、hide-on-hover、combo-125-80-pass-hide 7 个场景；report `passed=true`，scale-75 首帧窗口 `150 x 173`，scale-150 为 `285 x 338`，opacity-60 仍可见，所有场景都不是空白或只露耳朵 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1d-c 设置矩阵真实截图通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门。下一步转向真实设置页 UI 截图、多屏恢复、model pack loader、动作幅度二轮和 Live2D 精修 |
 
 证据文件：
 
@@ -123,7 +127,7 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 
 ### 1.1 BongoCat 参考实现吸收点
 
-已下载到 `reference/ayangweb-BongoCat/` 的参考项目只用于学习，不提交进仓库。对 WorkHub 有价值的实现点如下：
+已下载到 `reference/BongoCat/` 的参考项目只用于学习，不提交进仓库。对 WorkHub 有价值的实现点如下：
 
 | BongoCat 能力 | 参考落点 | WorkHub 当前状态 | 后续落点 |
 |---|---|---|---|
@@ -203,6 +207,21 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/
   motion-diff-report.json
   first-frame-probe.png
   frames/frame-000.png ... frame-030.png
+```
+
+2026-06-08 P1d-c 窗口设置矩阵真实证据：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-settings/
+  cuu-settings-contact-sheet.png
+  settings-capture-report.json
+  default/
+  scale-75/
+  scale-150/
+  opacity-60/
+  pass-through/
+  hide-on-hover/
+  combo-125-80-pass-hide/
 ```
 
 `CuuModelPackManifest` 把“默认可展示”收敛为一个可测试合同：默认包必须低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖所有业务动作与 idle 微动作。`cuu-psd-draft-v1` 这类资产即使技术可挂载，也会因为 `default_not_approved`、`visual_gate_failed`、`psd_default_asset` 被拒绝为默认。
@@ -386,6 +405,9 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 - 60s idle jitter 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/`。
 - `idle-long-run` report 必须包含 `scenario="idle-long-run"`、`sse_disabled_for_scenario=true`、`frame_pixel_reports` 和 `long_run.passed=true`；通过条件：每帧可见像素不低于首帧 70%、窗口 rect 不漂移、至少 3 个相邻帧超过变化阈值，避免把死图误判为长驻稳定。
 - 本轮 `idle-long-run` 通过值：31 帧、间隔 2000ms、first-frame `orange_pixels=9406` / `visual_pixels=15530`，最低帧 `orange_pixels=9287` / `visual_pixels=15417`，`changed_frames_gt8_count=24`，无 `low_visual_frames` 和 `rect_drift_frames`。
+- 窗口设置矩阵使用 `scripts/qa/cuu-tauri-settings-capture.ps1 -OutDir docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-settings`。
+- 窗口设置矩阵 report 必须包含 `passed=true`、7 个 cases、每个 case 的 `settings`、`first_rect`、`first_frame_gate` 与 `diff_report`；case 至少覆盖 default、scale-75、scale-150、opacity-60、pass-through、hide-on-hover、combo-125-80-pass-hide。
+- 窗口设置矩阵通过条件：contact sheet 肉眼可见不同缩放/透明度/隐藏状态；scale case 的 `first_rect` 随设置变化；所有 case 首帧非空、Cuu 全身可见，不得只露耳朵或只有窗口边缘。当前通过值：default `194 x 228`，scale-75 `150 x 173`，scale-150 `285 x 338`，combo `239 x 283`，report `passed=true`。
 
 模型包门：
 
@@ -409,7 +431,7 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
 | BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
 | BONGO-P1d-a | 设置和窗口能力契约 | scale / opacity / pass-through 偏好、DOM/CSS、TS bridge、Rust command、几何缩放 | **已落**：`set_pet_window_settings`、`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through`、scaled body/card placement 和静态 QA 均已可测 |
-| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | **已落 P1d-b-a**：`pet_hide_on_hover` 偏好、DOM/Rust settings、QA 注入和真实 Tauri soft hide/recover 录屏通过；仍待真实设置页截图、多屏恢复和 full hide/pass-through 安全策略 |
+| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | **已落 P1d-b-a / P1d-c**：`pet_hide_on_hover` 偏好、DOM/Rust settings、QA 注入和真实 Tauri soft hide/recover 录屏通过；窗口设置矩阵已覆盖 scale / opacity / pass-through / hide-on-hover 组合截图；仍待真实设置页 UI 截图、多屏恢复和 full hide/pass-through 安全策略 |
 | BONGO-P1e-a | 输入手感合同 | `cursor_near` interaction、立即 `look_at_mouse`、DOM pointer QA attrs | **已落单测**：靠近不再等几秒；`data-pet-cursor-near` / `hovered` / `dragging` 可被截图脚本读取 |
 | BONGO-P1e-b | 输入手感真实 QA | hover / tap / drag 真实 Tauri 录屏，QA 隔离 SSE 干扰 | **已通过底座**：contact sheet/GIF/MP4/report 已落；全程 Cuu 可见，hover 有抬爪反馈，drag 会移动窗口；后续继续做鼠标平滑视线和 hover 避让 |
 | BONGO-P1e-c | 连续看鼠标与 hover 避让 | Rust `look_x/y_percent`、TS pointer snapshot、CSS pose variables、hover 反向避让、`look-avoidance` 真实 Tauri 录屏 | **已通过**：左右靠近、hover、tap、drag 7 个事件录屏；全程 Cuu 可见，首帧像素门过，drag 后窗口移动 |
@@ -423,14 +445,14 @@ pnpm --filter @workhub/cuu test
 
 | 子任务 | TS/Rust 落点 | 验收 |
 |---|---|---|
-| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸 | **P1d-a 已落单测**；下一步补 4 档真实 Tauri 截图，Cuu 不裁切，card mode 仍从 body anchor 向左上扩 |
-| 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity | **P1d-a 已落单测**；下一步截图对比 60/80/100，bubble 文本仍可读 |
-| 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan | **P1d-a 已落单测**；下一步实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
+| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸；`main.rs` 支持 QA 初始化脚本注入 scale | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；scale-75 / scale-150 均可见且不裁切，card mode 仍需后续设置页 UI 截图覆盖 |
+| 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity；`main.rs` 支持 QA 初始化脚本注入 opacity | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；opacity-60 首帧仍可见，后续补真实设置页 UI 里 bubble 文本可读性 |
+| 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan；`main.rs` 支持 QA 初始化脚本注入 pass-through | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；pass-through 截图证明设置能进入 pet surface；后续实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
 | 悬停避让 | `packages/cuu/src/controller.ts` 写入 `pet_hide_on_hover`；`cuu-preferences.ts` 提供“悬停避让”开关；`pet-window-bridge.ts`/Rust settings plan 统一 `hide_on_hover`；`pet-surface.ts` 用 `data-pet-hover-hidden`、`--wh-pet-hide-*` 做可恢复 soft dodge；`desktopPetPointerSnapshotFromSample()` 在 Rust outside sample 时清掉 hover，防止软隐藏后不恢复 | **P1d-b-a 已落并录屏**；后续若做 BongoCat 式全透明隐藏，必须先设计托盘/快捷键/边缘热区恢复策略 |
 | hover / cursor near | `sample_pet_cursor_near` + idle scheduler；P1e-a 已新增 `cursor_near` interaction，进入附近区域立即 `look_at_mouse`，surface 输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging`；P1e-b 已有真实录屏底座 | 后续 P1e-c 做连续视线参数、hover 避让和重新录屏 |
 | 屏幕边界 | 已有 `clamp_position`，补多显示器/缩放 QA | 贴边不出屏，重启恢复位置 |
 
-P1d-a / P1d-b-a 已落代码路径：
+P1d-a / P1d-b-a / P1d-c 已落代码路径：
 
 ```text
 packages/cuu/src/controller.ts
@@ -442,9 +464,10 @@ client-tauri/src-tauri/src/pet_window.rs
 client-tauri/src-tauri/src/pet_commands.rs
 client-tauri/src-tauri/src/main.rs
 scripts/qa/cuu-tauri-motion-capture.ps1
+scripts/qa/cuu-tauri-settings-capture.ps1
 ```
 
-P1d-a / P1d-b-a 当前测试门：
+P1d-a / P1d-b-a / P1d-c 当前测试门：
 
 ```text
 pnpm --filter @workhub/cuu test
@@ -453,6 +476,7 @@ pnpm --filter @workhub/cuu typecheck
 pnpm --filter @workhub/desktop-webview typecheck
 cargo test --manifest-path client-tauri/src-tauri/Cargo.toml
 powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario hide-on-hover
+powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-settings-capture.ps1
 ```
 
 ### 6.2 P1e 输入手感施工路径
