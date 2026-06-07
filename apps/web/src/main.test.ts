@@ -392,6 +392,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal(webSurface.cuuCardAdapter, "@workhub/cuu");
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface))).surface, "web");
+  assert.equal((await renderWebGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
   assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).surface, "web");
   assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).html.includes("AI 实时执行"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");

@@ -3,7 +3,7 @@ import { defaultPorts } from "@workhub/config";
 import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
 import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
-import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
@@ -41,8 +41,8 @@ export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient) 
   return client.pages.goldPath();
 }
 
-export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApiClient) {
-  return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web");
+export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApiClient, locale?: WorkHubLocale) {
+  return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web", { locale });
 }
 
 export function startWebIntakeSession(

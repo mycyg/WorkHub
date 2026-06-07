@@ -67,6 +67,18 @@ test("option intake stays option-first with collapsed free text instead of a cha
   assert.equal(intake?.html.includes("message-list"), false);
 });
 
+test("gold path renderer localizes static page chrome while keeping VM content intact", () => {
+  const rendered = renderGoldPathSurface(surfaceVm(), "web", { locale: "en-US" });
+  const home = rendered.pages.find((page) => page.key === "home");
+  const cost = rendered.pages.find((page) => page.key === "cost");
+
+  assert.equal(home?.html.includes("Needs your decision"), true);
+  assert.equal(home?.html.includes("The board is fallback only"), true);
+  assert.equal(home?.html.includes("Cuu ·"), true);
+  assert.equal(cost?.html.includes("Budget and cost"), true);
+  assert.equal(cost?.html.includes("Regular users see their own slice"), true);
+});
+
 test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {
   const rendered = renderGoldPathSurface(surfaceVm(), "web");
   const proposal = rendered.pages.find((page) => page.key === "proposal");

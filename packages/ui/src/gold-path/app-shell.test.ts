@@ -72,3 +72,16 @@ test("gold path app shell resolves routes and keeps API actions separate from pa
     method: "POST"
   });
 });
+
+test("gold path app shell renders a persistent bilingual locale switch", () => {
+  const shell = renderGoldPathAppShell(renderGoldPathSurface(surfaceVm(), "web", { locale: "en-US" }), {
+    appName: "WorkHub",
+    surfaceLabel: "Web P0.5",
+    locale: "en-US"
+  });
+
+  assert.equal(shell.html.includes('data-wh-locale="zh-CN"'), true);
+  assert.equal(shell.html.includes('data-wh-locale="en-US" aria-pressed="true"'), true);
+  assert.equal(shell.html.includes('aria-label="Language"'), true);
+  assert.equal(shell.css.includes("wh-locale-toggle"), true);
+});

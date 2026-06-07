@@ -8,11 +8,15 @@ import {
 } from "@workhub/cuu";
 import {
   classifyGoldPathHref,
+  goldPathT,
+  normalizeWorkHubLocale,
   renderGoldPathAppShell,
   renderGoldPathBootDocument,
   renderGoldPathSurface,
   resolveGoldPathPageKey,
-  type GoldPathAppShell
+  workHubLocaleStorageKey,
+  type GoldPathAppShell,
+  type WorkHubLocale
 } from "@workhub/ui/gold-path";
 
 import {
@@ -42,6 +46,29 @@ let noticeTimer: number | undefined;
 
 function clientToken() {
   return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
+}
+
+function browserLocale(): WorkHubLocale {
+  return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
+}
+
+function setDocumentLocale(locale: WorkHubLocale) {
+  document.documentElement.lang = locale;
+}
+
+function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale) {
+  shellRoot.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-locale]") : null;
+    if (!button) {
+      return;
+    }
+    const nextLocale = normalizeWorkHubLocale(button.dataset.whLocale);
+    if (nextLocale === locale) {
+      return;
+    }
+    window.localStorage.setItem(workHubLocaleStorageKey, nextLocale);
+    window.location.reload();
+  });
 }
 
 function showNotice(
@@ -87,7 +114,18 @@ function ensureCuuQueueBadge(shellRoot: HTMLElement) {
   return badge;
 }
 
-function updateCuuQueueBadge(shellRoot: HTMLElement, snapshot: CuuControllerSnapshot) {
+function cuuQueueLabel(locale: WorkHubLocale, snapshot: CuuControllerSnapshot) {
+  if (locale === "en-US") {
+    return snapshot.queue.length > 0
+      ? `${snapshot.queue.length} queued, ${snapshot.badge_count} tucked away`
+      : `${snapshot.badge_count} tucked away`;
+  }
+  return snapshot.queue.length > 0
+    ? `排队 ${snapshot.queue.length} 条，收起 ${snapshot.badge_count} 条`
+    : `收起 ${snapshot.badge_count} 条`;
+}
+
+function updateCuuQueueBadge(shellRoot: HTMLElement, snapshot: CuuControllerSnapshot, locale: WorkHubLocale) {
   const badge = ensureCuuQueueBadge(shellRoot);
   const total = snapshot.queue.length + snapshot.badge_count;
   if (total <= 0) {
@@ -95,27 +133,25 @@ function updateCuuQueueBadge(shellRoot: HTMLElement, snapshot: CuuControllerSnap
     badge.innerHTML = "";
     return;
   }
-  const label = snapshot.queue.length > 0
-    ? `排队 ${snapshot.queue.length} 条，收起 ${snapshot.badge_count} 条`
-    : `收起 ${snapshot.badge_count} 条`;
+  const label = cuuQueueLabel(locale, snapshot);
   badge.innerHTML = `<span class="wh-cuu-queue-count">${total}</span><span class="wh-cuu-queue-text">${escapeHtml(label)}</span>`;
   badge.title = `Cuu ${label}`;
   badge.hidden = false;
 }
 
-function bindCuuQueueBadge(shellRoot: HTMLElement, controller: CuuController) {
+function bindCuuQueueBadge(shellRoot: HTMLElement, controller: CuuController, locale: WorkHubLocale) {
   const badge = ensureCuuQueueBadge(shellRoot);
   badge.addEventListener("click", () => {
     const activeCard = controller.snapshot().active_card;
     if (activeCard) {
-      showCuuCard(shellRoot, controller, activeCard);
-      updateCuuQueueBadge(shellRoot, controller.snapshot());
+      showCuuCard(shellRoot, controller, activeCard, locale);
+      updateCuuQueueBadge(shellRoot, controller.snapshot(), locale);
       return;
     }
     const next = controller.dismiss();
-    updateCuuQueueBadge(shellRoot, next.snapshot);
+    updateCuuQueueBadge(shellRoot, next.snapshot, locale);
     if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
-      showCuuCard(shellRoot, controller, next.card, next);
+      showCuuCard(shellRoot, controller, next.card, locale, next);
     }
   });
 }
@@ -124,6 +160,7 @@ function showCuuCard(
   shellRoot: HTMLElement,
   controller: CuuController,
   card: CuuCard,
+  locale: WorkHubLocale,
   decision?: CuuControllerDecision
 ) {
   showNotice(
@@ -133,9 +170,9 @@ function showCuuCard(
     decision?.presentation.timeout_ms ?? cuuNoticeTimeoutMs(card),
     () => {
       const next = controller.dismiss(card.id);
-      updateCuuQueueBadge(shellRoot, next.snapshot);
+      updateCuuQueueBadge(shellRoot, next.snapshot, locale);
       if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
-        showCuuCard(shellRoot, controller, next.card, next);
+        showCuuCard(shellRoot, controller, next.card, locale, next);
       }
     }
   );
@@ -175,12 +212,19 @@ function proposalActionFromHref(href: string) {
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
 }
 
-function reviewReasonButtons() {
-  return '<div class="wh-app-action-row"><button type="button" data-review-reason="证据不足">证据不足</button><button type="button" data-review-reason="范围太大">范围太大</button><button type="button" data-review-reason="交付格式要改">交付格式要改</button></div>';
+function reviewReasonButtons(locale: WorkHubLocale) {
+  const reasons = [
+    goldPathT(locale, "runtime.reason.evidence"),
+    goldPathT(locale, "runtime.reason.scope"),
+    goldPathT(locale, "runtime.reason.format")
+  ];
+  return `<div class="wh-app-action-row">${reasons
+    .map((reason) => `<button type="button" data-review-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
+    .join("")}</div>`;
 }
 
-function actionMessage(error: unknown) {
-  return error instanceof Error ? error.message : "动作提交失败，请稍后再试。";
+function actionMessage(error: unknown, locale: WorkHubLocale) {
+  return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
 }
 
 function cuuDemoMode() {
@@ -197,6 +241,7 @@ function cuuDemoMode() {
 function handleCuuActionResult(
   shellRoot: HTMLElement,
   controller: CuuController,
+  locale: WorkHubLocale,
   result: { message: string; card?: CuuCard }
 ) {
   if (!result.card) {
@@ -204,9 +249,9 @@ function handleCuuActionResult(
     return;
   }
   const decision = controller.enqueue(result.card);
-  updateCuuQueueBadge(shellRoot, decision.snapshot);
+  updateCuuQueueBadge(shellRoot, decision.snapshot, locale);
   if (decision.card && (decision.outcome === "show" || decision.outcome === "replace")) {
-    showCuuCard(shellRoot, controller, decision.card, decision);
+    showCuuCard(shellRoot, controller, decision.card, locale, decision);
     return;
   }
   showNotice(shellRoot, result.message);
@@ -230,6 +275,7 @@ function bindGoldPathNavigation(
   shell: GoldPathAppShell,
   client: BrowserApiClient,
   cuuController: CuuController,
+  locale: WorkHubLocale,
   input: { listen?: DesktopShellListen | undefined } = {}
 ) {
   let pendingReviewHref: string | undefined;
@@ -258,9 +304,9 @@ function bindGoldPathNavigation(
           reasonMd: reasonButton.dataset.reviewReason ?? "需要调整"
         });
         pendingCuuAction = undefined;
-        handleCuuActionResult(shellRoot, cuuController, result);
+        handleCuuActionResult(shellRoot, cuuController, locale, result);
       } catch (error) {
-        showNotice(shellRoot, actionMessage(error));
+        showNotice(shellRoot, actionMessage(error, locale));
       }
       return;
     }
@@ -275,7 +321,7 @@ function bindGoldPathNavigation(
           });
           showNotice(shellRoot, result.attention.summary_text);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
       }
       return;
@@ -283,7 +329,7 @@ function bindGoldPathNavigation(
 
     const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-option-id]") : null;
     if (option) {
-      showNotice(shellRoot, `已选择「${option.querySelector("strong")?.textContent ?? option.dataset.optionId}」，Cuu 会继续推进。`);
+      showNotice(shellRoot, `${goldPathT(locale, "runtime.optionSelectedPrefix")}${option.querySelector("strong")?.textContent ?? option.dataset.optionId}${goldPathT(locale, "runtime.optionSelectedSuffix")}`);
       return;
     }
 
@@ -301,14 +347,14 @@ function bindGoldPathNavigation(
       event.preventDefault();
       if (cuuAction.kind === "approval-response" && cuuAction.requiresReason && cuuAction.decision === "deny") {
         pendingCuuAction = cuuAction;
-        showNotice(shellRoot, "先点一个打回原因，Cuu 会带着它继续改。", reviewReasonButtons());
+        showNotice(shellRoot, goldPathT(locale, "runtime.rejectNeedsReason"), reviewReasonButtons(locale));
         return;
       }
       try {
         const result = await submitDesktopCuuAction({ client, action: cuuAction });
-        handleCuuActionResult(shellRoot, cuuController, result);
+        handleCuuActionResult(shellRoot, cuuController, locale, result);
       } catch (error) {
-        showNotice(shellRoot, actionMessage(error));
+        showNotice(shellRoot, actionMessage(error, locale));
       }
       return;
     }
@@ -327,7 +373,7 @@ function bindGoldPathNavigation(
       if (proposalAction?.action === "review") {
         if (action.requiresReason) {
           pendingReviewHref = href;
-          showNotice(shellRoot, "先点一个打回原因，Cuu 会把它放进下一轮修改。", reviewReasonButtons());
+          showNotice(shellRoot, goldPathT(locale, "runtime.rejectReasonFirst"), reviewReasonButtons(locale));
           return;
         }
         try {
@@ -335,7 +381,7 @@ function bindGoldPathNavigation(
           const merge = await client.mergeProposal(proposalAction.proposalId);
           showNotice(shellRoot, `${review.attention.summary_text} ${merge.attention.summary_text}`);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
         return;
       }
@@ -344,11 +390,11 @@ function bindGoldPathNavigation(
           const merge = await client.mergeProposal(proposalAction.proposalId);
           showNotice(shellRoot, merge.attention.summary_text);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
         return;
       }
-      showNotice(shellRoot, "这个动作还在等待对应服务接线。");
+      showNotice(shellRoot, goldPathT(locale, "runtime.actionPending"));
     }
   });
 
@@ -366,9 +412,11 @@ async function boot() {
   if (!root) {
     return;
   }
+  const locale = browserLocale();
+  setDocumentLocale(locale);
   root.innerHTML = renderGoldPathBootDocument({
-    title: "正在打开 WorkHub Desktop",
-    message: "连接 daemon，读取同一份 P0.5 Gold Path 页面 VM。"
+    title: goldPathT(locale, "boot.desktop.title"),
+    message: goldPathT(locale, "boot.desktop.message")
   });
 
   try {
@@ -386,21 +434,23 @@ async function boot() {
       await client.identify({ nickname: "Cuu Desktop Preview" });
       surfaceVm = await client.pages.goldPath();
     }
-    const rendered = renderGoldPathSurface(surfaceVm, "desktop");
+    const rendered = renderGoldPathSurface(surfaceVm, "desktop", { locale });
     const shell = renderGoldPathAppShell(rendered, {
       appName: "WorkHub Desktop",
       surfaceLabel: "Tauri Webview P0.5",
-      apiBaseLabel: "device-token aware client"
+      apiBaseLabel: "device-token aware client",
+      locale
     });
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
     const realShellListen = resolveDesktopShellListen();
-    bindGoldPathNavigation(root, shell, client, cuuController, { listen: realShellListen });
+    bindLocaleSwitch(root, locale);
+    bindGoldPathNavigation(root, shell, client, cuuController, locale, { listen: realShellListen });
     const cuuDecisions = new Map<string, CuuControllerDecision>();
-    bindCuuQueueBadge(root, cuuController);
+    bindCuuQueueBadge(root, cuuController, locale);
     bindCuuPreferencePanel(root, cuuController, {
       onChange(snapshot) {
-        updateCuuQueueBadge(root, snapshot);
+        updateCuuQueueBadge(root, snapshot, locale);
       }
     });
     const demoMode = cuuDemoMode();
@@ -417,21 +467,21 @@ async function boot() {
         if (decision.card) {
           cuuDecisions.set(decision.card.id, decision);
         }
-        updateCuuQueueBadge(root, decision.snapshot);
+        updateCuuQueueBadge(root, decision.snapshot, locale);
       },
       notify(notice) {
-        showCuuCard(root, cuuController, notice.card, cuuDecisions.get(notice.card.id));
+        showCuuCard(root, cuuController, notice.card, locale, cuuDecisions.get(notice.card.id));
       }
     }).then((runtime) => {
       if (runtime.subscribed && demoListener) {
-        showNotice(root, "Cuu 事件预览已开启。", undefined, 2400);
+        showNotice(root, goldPathT(locale, "runtime.cuuPreviewOn"), undefined, 2400);
         demoListener.start();
       }
     });
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
-      title: "daemon 还没连上",
-      message: error instanceof Error ? error.message : "请先启动 WorkHub API daemon，再刷新桌面 webview。",
+      title: goldPathT(locale, "boot.desktop.errorTitle"),
+      message: error instanceof Error ? error.message : goldPathT(locale, "boot.desktop.errorMessage"),
       tone: "error"
     });
   }

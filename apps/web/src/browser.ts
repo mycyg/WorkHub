@@ -1,15 +1,42 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import {
   classifyGoldPathHref,
+  goldPathT,
+  normalizeWorkHubLocale,
   renderGoldPathAppShell,
   renderGoldPathBootDocument,
   renderGoldPathSurface,
   resolveGoldPathPageKey,
-  type GoldPathAppShell
+  workHubLocaleStorageKey,
+  type GoldPathAppShell,
+  type WorkHubLocale
 } from "@workhub/ui/gold-path";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+
+function browserLocale(): WorkHubLocale {
+  return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
+}
+
+function setDocumentLocale(locale: WorkHubLocale) {
+  document.documentElement.lang = locale;
+}
+
+function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale) {
+  shellRoot.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-locale]") : null;
+    if (!button) {
+      return;
+    }
+    const nextLocale = normalizeWorkHubLocale(button.dataset.whLocale);
+    if (nextLocale === locale) {
+      return;
+    }
+    window.localStorage.setItem(workHubLocaleStorageKey, nextLocale);
+    window.location.reload();
+  });
+}
 
 function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string) {
   const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
@@ -48,15 +75,22 @@ function proposalActionFromHref(href: string) {
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
 }
 
-function reviewReasonButtons() {
-  return '<div class="wh-app-action-row"><button type="button" data-review-reason="证据不足">证据不足</button><button type="button" data-review-reason="口吻要改">口吻要改</button><button type="button" data-review-reason="范围太大">范围太大</button></div>';
+function reviewReasonButtons(locale: WorkHubLocale) {
+  const reasons = [
+    goldPathT(locale, "runtime.reason.evidence"),
+    goldPathT(locale, "runtime.reason.tone"),
+    goldPathT(locale, "runtime.reason.scope")
+  ];
+  return `<div class="wh-app-action-row">${reasons
+    .map((reason) => `<button type="button" data-review-reason="${reason}">${reason}</button>`)
+    .join("")}</div>`;
 }
 
-function actionMessage(error: unknown) {
-  return error instanceof Error ? error.message : "动作提交失败，请稍后再试。";
+function actionMessage(error: unknown, locale: WorkHubLocale) {
+  return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
 }
 
-function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient) {
+function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient, locale: WorkHubLocale) {
   let pendingReviewHref: string | undefined;
 
   const activateFromHash = () => {
@@ -80,7 +114,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
           });
           showNotice(shellRoot, result.attention.summary_text);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
       }
       return;
@@ -88,7 +122,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
 
     const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-option-id]") : null;
     if (option) {
-      showNotice(shellRoot, `已选择「${option.querySelector("strong")?.textContent ?? option.dataset.optionId}」，Cuu 会继续推进。`);
+      showNotice(shellRoot, `${goldPathT(locale, "runtime.optionSelectedPrefix")}${option.querySelector("strong")?.textContent ?? option.dataset.optionId}${goldPathT(locale, "runtime.optionSelectedSuffix")}`);
       return;
     }
 
@@ -112,7 +146,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
       if (proposalAction?.action === "review") {
         if (action.requiresReason) {
           pendingReviewHref = href;
-          showNotice(shellRoot, "打回必须说明原因。先点一个原因，Cuu 会带着它继续改。", reviewReasonButtons());
+          showNotice(shellRoot, goldPathT(locale, "runtime.rejectNeedsReason"), reviewReasonButtons(locale));
           return;
         }
         try {
@@ -120,7 +154,7 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
           const merge = await client.mergeProposal(proposalAction.proposalId);
           showNotice(shellRoot, `${review.attention.summary_text} ${merge.attention.summary_text}`);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
         return;
       }
@@ -129,11 +163,11 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
           const merge = await client.mergeProposal(proposalAction.proposalId);
           showNotice(shellRoot, merge.attention.summary_text);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error));
+          showNotice(shellRoot, actionMessage(error, locale));
         }
         return;
       }
-      showNotice(shellRoot, "这个动作还在等待对应服务接线。");
+      showNotice(shellRoot, goldPathT(locale, "runtime.actionPending"));
     }
   });
 
@@ -145,9 +179,11 @@ async function boot() {
   if (!root) {
     return;
   }
+  const locale = browserLocale();
+  setDocumentLocale(locale);
   root.innerHTML = renderGoldPathBootDocument({
-    title: "正在打开 WorkHub",
-    message: "连接 API daemon，读取 P0.5 Gold Path 页面 VM。"
+    title: goldPathT(locale, "boot.web.title"),
+    message: goldPathT(locale, "boot.web.message")
   });
 
   try {
@@ -162,18 +198,20 @@ async function boot() {
       await client.identify({ nickname: "P0.5 Reviewer" });
       surfaceVm = await client.pages.goldPath();
     }
-    const rendered = renderGoldPathSurface(surfaceVm, "web");
+    const rendered = renderGoldPathSurface(surfaceVm, "web", { locale });
     const shell = renderGoldPathAppShell(rendered, {
       appName: "WorkHub",
       surfaceLabel: "Web P0.5",
-      apiBaseLabel: "/api/pages/gold-path"
+      apiBaseLabel: "/api/pages/gold-path",
+      locale
     });
     root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
-    bindGoldPathNavigation(root, shell, client);
+    bindLocaleSwitch(root, locale);
+    bindGoldPathNavigation(root, shell, client, locale);
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
-      title: "API daemon 还没连上",
-      message: error instanceof Error ? error.message : "请先启动 WorkHub API daemon，再刷新这个页面。",
+      title: goldPathT(locale, "boot.web.errorTitle"),
+      message: error instanceof Error ? error.message : goldPathT(locale, "boot.web.errorMessage"),
       tone: "error"
     });
   }

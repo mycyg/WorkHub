@@ -393,6 +393,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
+  assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).surface, "desktop");
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).html.includes("wh-desktop"), true);
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");

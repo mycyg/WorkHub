@@ -167,6 +167,21 @@ shared/
 
 > **CSS 类的「双轨」现状**：kit 自身的 24 个组件用 Tailwind 原子类（`bg-accent`/`text-ink`…）。但两端老页面里还存在 `button-ghost`/`pill`/`paper-surface`/`app-shell` 这类**应用级语义类**（见 `web/src/App.tsx:215/225`），它们不在 kit 内、由各端 `index.css` 定义。**WorkHub 收敛方向**：高频语义类（按钮、pill、卡面）应上提进 kit 或统一走 `Button`/`Badge`/`Card`，消除两端漂移（开放问题 §10-OQ1）。
 
+### 3.3 WorkHub 当前 i18n 底座（2026-06-07 已落）
+
+当前 WorkHub 主仓已经先落了 **P1.0 中英双语运行时底座**，位置不在旧 `@yqgl/shared` React 组件包，而在当前 TS-first preview shell：
+
+| 能力 | Target TS paths | 当前状态 |
+|---|---|---|
+| locale 类型 / 词表 / storage key | `packages/ui/src/gold-path/i18n.ts` | 已落 `WorkHubLocale = "zh-CN" | "en-US"`、`workhub.locale`、`normalizeWorkHubLocale()`、`goldPathT()` |
+| Gold Path 静态文案本地化 | `packages/ui/src/gold-path/render.ts` | 已覆盖 shell 内静态 chrome、Cuu rail 状态文案、空态、按钮、预算/成本/回放等固定标签 |
+| 顶栏语言切换 | `packages/ui/src/gold-path/app-shell.ts` | 已在 Web / desktop webview 共享 shell 右上角渲染 `中 / EN` segmented control |
+| Web 运行时接线 | `apps/web/src/browser.ts`、`apps/web/src/main.ts` | 已从 `localStorage` / `navigator.language` 读取语言，切换后 reload 并持久化 |
+| Desktop webview 接线 | `apps/desktop-webview/src/browser.ts`、`apps/desktop-webview/src/main.ts` | 已接同一套语言切换，并把 Cuu 队列 badge、审批原因按钮、动作失败/未接线提示本地化 |
+| 测试门 | `packages/ui/src/gold-path/*test.ts`、`apps/web/src/main.test.ts`、`apps/desktop-webview/src/main.test.ts` | 已覆盖 locale 规范化、英文静态文案、shell 语言按钮和两端入口函数 |
+
+边界：本轮只本地化**客户端固定文案**，不伪造后端返回的任务标题、摘要、证据摘录、proposal manifest、Cuu card payload。下一阶段要在 `packages/contracts` / `apps/api/routes/pages` 增加字段级 locale 契约，至少让 `GET /api/pages/*` 支持 `locale` 或用户偏好，并让 Cuu card adapter 同步返回对应语言的 `title` / `body` / `action.label`。
+
 ---
 
 ## 4. API client（`@yqgl/shared/api`）

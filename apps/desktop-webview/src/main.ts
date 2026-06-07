@@ -3,7 +3,7 @@ import { defaultPorts } from "@workhub/config";
 import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
 import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
-import { renderGoldPathSurface } from "@workhub/ui/gold-path";
+import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
@@ -48,8 +48,8 @@ export function loadDesktopGoldPathSurface(client: WorkHubApiClient) {
   return client.pages.goldPath();
 }
 
-export async function renderDesktopGoldPathSurface(client: WorkHubApiClient) {
-  return renderGoldPathSurface(await loadDesktopGoldPathSurface(client), "desktop");
+export async function renderDesktopGoldPathSurface(client: WorkHubApiClient, locale?: WorkHubLocale) {
+  return renderGoldPathSurface(await loadDesktopGoldPathSurface(client), "desktop", { locale });
 }
 
 export function startDesktopIntakeSession(client: WorkHubApiClient, payload: CreateSessionRequest = {}) {

@@ -13,8 +13,12 @@ import type {
   QuestionCard,
   ReplayTraceVM
 } from "@workhub/contracts";
+import { goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 
 export type GoldPathRenderSurface = "web" | "desktop";
+export type GoldPathRenderOptions = {
+  locale?: WorkHubLocale | undefined;
+};
 
 export type GoldPathRenderedPage = {
   key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost";
@@ -30,19 +34,6 @@ export type GoldPathRenderedSurface = {
   fixtureId: string;
   css: string;
   pages: GoldPathRenderedPage[];
-};
-
-const stateCopy: Record<CuuState, string> = {
-  idle: "待命",
-  thinking: "整理中",
-  asking_approval: "等你点一下",
-  carrying_document: "带着交付物",
-  searching_evidence: "找证据",
-  syncing_files: "同步中",
-  worried: "需要留意",
-  revision_requested: "继续修改",
-  celebrating: "完成啦",
-  offline: "离线"
 };
 
 export const goldPathCss = [
@@ -74,9 +65,17 @@ function href(value: string) {
   return escapeHtml(value);
 }
 
-function evidenceList(evidenceRefs: EvidenceRef[]) {
+function t(locale: WorkHubLocale, key: GoldPathCopyKey) {
+  return goldPathT(locale, key);
+}
+
+function stateLabel(locale: WorkHubLocale, state: CuuState) {
+  return t(locale, `state.${state}` as GoldPathCopyKey);
+}
+
+function evidenceList(evidenceRefs: EvidenceRef[], locale: WorkHubLocale) {
   if (evidenceRefs.length === 0) {
-    return '<p class="wh-subtle">没有找到可展示的证据。</p>';
+    return `<p class="wh-subtle">${escapeHtml(t(locale, "empty.evidence"))}</p>`;
   }
   return `<div class="wh-list">${evidenceRefs
     .map(
@@ -108,6 +107,7 @@ function actions(actions: (AttentionAction | ActionSpec)[]) {
 
 function cuuRail(input: {
   state: CuuState;
+  locale: WorkHubLocale;
   evidenceRefs?: EvidenceRef[] | undefined;
   notices?: BudgetNotice[] | undefined;
 }) {
@@ -134,13 +134,13 @@ function cuuRail(input: {
       <span class="wh-cuu-shadow"></span>
     </div>
     <div>
-      <div class="wh-cuu-name">Cuu · ${escapeHtml(stateCopy[input.state])}</div>
-      <p class="wh-subtle">我会把复杂内容收成一件事、几个选项和能追溯的证据。</p>
+      <div class="wh-cuu-name">Cuu · ${escapeHtml(stateLabel(input.locale, input.state))}</div>
+      <p class="wh-subtle">${escapeHtml(t(input.locale, "cuu.description"))}</p>
     </div>
-    ${notice ? `<div class="wh-card"><strong>预算提醒</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></div>` : ""}
+    ${notice ? `<div class="wh-card"><strong>${escapeHtml(t(input.locale, "cuu.budgetReminder"))}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></div>` : ""}
     ${
       input.evidenceRefs && input.evidenceRefs.length > 0
-        ? `<div><span class="wh-kicker">Evidence</span>${evidenceList(input.evidenceRefs.slice(0, 2))}</div>`
+        ? `<div><span class="wh-kicker">Evidence</span>${evidenceList(input.evidenceRefs.slice(0, 2), input.locale)}</div>`
         : ""
     }
   </aside>`;
@@ -151,30 +151,30 @@ function pageShell(surface: GoldPathRenderSurface, title: string, main: string, 
   return `<div class="${surfaceClass}"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main">${main}</section>${rail}</div></main></div>`;
 }
 
-function renderHome(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderHome(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const page = vm.page_vms.attention;
   const primary = page.primary;
   const runs = page.background_runs;
-  const main = `<span class="wh-kicker">AI-first home</span>
-    <h1 class="wh-title">${escapeHtml(primary?.title ?? "现在没有阻塞你的事")}</h1>
-    <p class="wh-subtle">${escapeHtml(primary?.summary_text ?? "Cuu 会在需要你判断时把事项递过来。")}</p>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "home.kicker"))}</span>
+    <h1 class="wh-title">${escapeHtml(primary?.title ?? t(locale, "home.emptyTitle"))}</h1>
+    <p class="wh-subtle">${escapeHtml(primary?.summary_text ?? t(locale, "home.emptySummary"))}</p>
     ${primary ? actions(primary.actions) : ""}
     <div class="wh-grid">
-      <article class="wh-card"><strong>需要你决定</strong><p class="wh-subtle">${escapeHtml(primary ? primary.reason_text ?? primary.summary_text : "暂无")}</p></article>
-      <article class="wh-card"><strong>AI 正在做</strong><p class="wh-subtle">${escapeHtml(runs[0]?.preview_text ?? "没有后台运行。")}</p></article>
-      <article class="wh-card"><strong>当前入口</strong><p class="wh-subtle">看板只是兜底，主路径从这一件事开始。</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "home.decisionTitle"))}</strong><p class="wh-subtle">${escapeHtml(primary ? primary.reason_text ?? primary.summary_text : t(locale, "home.decisionEmpty"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "home.aiWorkingTitle"))}</strong><p class="wh-subtle">${escapeHtml(runs[0]?.preview_text ?? t(locale, "home.aiWorkingEmpty"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "home.entryTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "home.entryText"))}</p></article>
     </div>`;
   return {
     key: "home",
     route: vm.routes.home,
     title: "AI-first Home",
-    html: pageShell(surface, "AI-first Home", main, cuuRail({ state: page.cuu_state, evidenceRefs: primary?.evidence_refs })),
+    html: pageShell(surface, "AI-first Home", main, cuuRail({ state: page.cuu_state, locale, evidenceRefs: primary?.evidence_refs })),
     primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
     cuuState: page.cuu_state
   };
 }
 
-function renderIntake(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderIntake(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const question: QuestionCard = vm.page_vms.question;
   const optionCards = question.options
     .map((option) => {
@@ -182,40 +182,40 @@ function renderIntake(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): Go
       return `<button class="wh-card" data-option-id="${escapeHtml(option.id)}" data-recommended="${recommended}" type="button">
         <strong>${escapeHtml(option.label)}</strong>
         <p class="wh-subtle">${escapeHtml(option.description ?? option.impact ?? "")}</p>
-        ${recommended ? '<span class="wh-pill">Cuu 推荐</span>' : ""}
+        ${recommended ? `<span class="wh-pill">${escapeHtml(t(locale, "intake.recommended"))}</span>` : ""}
       </button>`;
     })
     .join("");
   const done = question.progress.filter((item) => item.state === "done").length;
   const progress = Math.round((done / Math.max(question.progress.length, 1)) * 100);
-  const main = `<span class="wh-kicker">Option intake</span>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "intake.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(question.title)}</h1>
-    <p class="wh-subtle">${escapeHtml(question.body ?? "先点一个选项，我再继续。")}</p>
-    <div class="wh-progress" aria-label="clarification progress"><span style="width:${progress}%"></span></div>
+    <p class="wh-subtle">${escapeHtml(question.body ?? t(locale, "intake.bodyFallback"))}</p>
+    <div class="wh-progress" aria-label="${escapeHtml(t(locale, "intake.progressLabel"))}"><span style="width:${progress}%"></span></div>
     <div class="wh-grid">${optionCards}</div>
     <details class="wh-card" ${question.free_text.collapsed_by_default ? "" : "open"}>
-      <summary>其他 / 补充</summary>
-      <p class="wh-subtle">${escapeHtml(question.free_text.placeholder ?? "需要时再补一句。")}</p>
+      <summary>${escapeHtml(t(locale, "intake.otherSummary"))}</summary>
+      <p class="wh-subtle">${escapeHtml(question.free_text.placeholder ?? t(locale, "intake.freeTextFallback"))}</p>
     </details>
-    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="${href(question.submit.href)}">继续</a></div>`;
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="${href(question.submit.href)}">${escapeHtml(t(locale, "intake.continue"))}</a></div>`;
   return {
     key: "intake",
     route: vm.routes.intake,
     title: "Option Intake",
-    html: pageShell(surface, "Option Intake", main, cuuRail({ state: "asking_approval", evidenceRefs: question.evidence_refs })),
+    html: pageShell(surface, "Option Intake", main, cuuRail({ state: "asking_approval", locale, evidenceRefs: question.evidence_refs })),
     primaryHrefs: [question.submit.href],
     cuuState: "asking_approval"
   };
 }
 
-function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const approvals: ApprovalCenterVM = vm.page_vms.approvals;
   const primary = approvals.items[0];
   const request = approvals.requests[0];
   const requestRows = approvals.requests
     .map(
       (item) =>
-        `<div class="wh-row"><div><strong>${escapeHtml(item.action_pattern)}</strong><p class="wh-subtle">${escapeHtml(item.status)}${item.sla_due_at ? ` · SLA ${escapeHtml(item.sla_due_at)}` : ""}</p></div><span class="wh-pill">${escapeHtml(item.routed_to_user_id ?? "未路由")}</span></div>`
+        `<div class="wh-row"><div><strong>${escapeHtml(item.action_pattern)}</strong><p class="wh-subtle">${escapeHtml(item.status)}${item.sla_due_at ? ` · SLA ${escapeHtml(item.sla_due_at)}` : ""}</p></div><span class="wh-pill">${escapeHtml(item.routed_to_user_id ?? t(locale, "approvals.unrouted"))}</span></div>`
     )
     .join("");
   const queueCards = approvals.items
@@ -224,45 +224,45 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM):
         `<article class="wh-card"><span class="wh-pill">${escapeHtml(item.priority)}</span><h3>${escapeHtml(item.title)}</h3><p class="wh-subtle">${escapeHtml(item.summary_text)}</p>${actions(item.actions)}</article>`
     )
     .join("");
-  const main = `<span class="wh-kicker">Approval center</span>
-    <h1 class="wh-title">${escapeHtml(primary?.title ?? "没有等你点头的事")}</h1>
-    <p class="wh-subtle">${escapeHtml(primary?.reason_text ?? "审批中心只放阻塞用户的事项，完整看板继续下沉。")}</p>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "approvals.kicker"))}</span>
+    <h1 class="wh-title">${escapeHtml(primary?.title ?? t(locale, "approvals.emptyTitle"))}</h1>
+    <p class="wh-subtle">${escapeHtml(primary?.reason_text ?? t(locale, "approvals.reasonFallback"))}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>待处理</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length} 件</p></article>
-      <article class="wh-card"><strong>SLA</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? "没有即将超时的审批。")}</p></article>
-      <article class="wh-card"><strong>规则</strong><p class="wh-subtle">打回必须说明原因，Cuu 会据此继续改。</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.pendingTitle"))}</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length}${escapeHtml(t(locale, "approvals.pendingUnit"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? t(locale, "approvals.slaEmpty"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.ruleTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "approvals.ruleText"))}</p></article>
     </div>
     <div class="wh-list">${queueCards}</div>
-    <h2>审批事实</h2><div class="wh-card">${requestRows}</div>`;
+    <h2>${escapeHtml(t(locale, "approvals.factsTitle"))}</h2><div class="wh-card">${requestRows}</div>`;
   return {
     key: "approvals",
     route: vm.routes.approvals,
     title: "Approval Center",
-    html: pageShell(surface, "Approval Center", main, cuuRail({ state: "asking_approval", evidenceRefs: primary?.evidence_refs })),
+    html: pageShell(surface, "Approval Center", main, cuuRail({ state: "asking_approval", locale, evidenceRefs: primary?.evidence_refs })),
     primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
     cuuState: "asking_approval"
   };
 }
 
-function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const detail = vm.page_vms.workitem;
   const steps = detail.agent_trace_preview
     .map((step) => `<div class="wh-row"><span>${escapeHtml(step.output_excerpt ?? step.phase)}</span><span class="wh-pill">#${step.step_no}</span></div>`)
     .join("");
-  const main = `<span class="wh-kicker">Work item</span>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "workitem.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(detail.workitem.title ?? detail.workitem.code)}</h1>
     <p class="wh-subtle">${escapeHtml(detail.workitem.summary_md ?? detail.workitem.raw_description ?? "")}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>状态</strong><p class="wh-subtle">${escapeHtml(detail.workitem.status)}</p></article>
-      <article class="wh-card"><strong>交付物</strong><p class="wh-subtle">${escapeHtml(detail.latest_proposal?.title ?? "暂无")}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.workitem.status)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.deliverableTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.latest_proposal?.title ?? t(locale, "workitem.emptyDeliverable"))}</p></article>
     </div>
-    <h2>AI 轨迹预览</h2><div class="wh-card">${steps}</div>
-    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="${href(vm.routes.proposal)}">查看变更申请</a><a class="wh-btn" href="${href(vm.routes.replay)}">看 AI 怎么做的</a></div>`;
+    <h2>${escapeHtml(t(locale, "workitem.traceTitle"))}</h2><div class="wh-card">${steps}</div>
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="${href(vm.routes.proposal)}">${escapeHtml(t(locale, "workitem.openProposal"))}</a><a class="wh-btn" href="${href(vm.routes.replay)}">${escapeHtml(t(locale, "workitem.openReplay"))}</a></div>`;
   return {
     key: "workitem",
     route: vm.routes.workitem,
     title: "WorkItem Detail",
-    html: pageShell(surface, "WorkItem Detail", main, cuuRail({ state: "thinking", evidenceRefs: detail.evidence_refs })),
+    html: pageShell(surface, "WorkItem Detail", main, cuuRail({ state: "thinking", locale, evidenceRefs: detail.evidence_refs })),
     primaryHrefs: [vm.routes.proposal, vm.routes.replay],
     cuuState: "thinking"
   };
@@ -277,7 +277,7 @@ function checkRow(check: DeliverableCheck) {
   return `<div class="${className}"><strong>${escapeHtml(check.label)}</strong><span class="wh-subtle">${escapeHtml(check.status)}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span></div>`;
 }
 
-function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const proposal = vm.page_vms.proposal;
   const manifest: DeliverableChangeManifest = proposal.manifest;
   const proposalActions = [
@@ -285,87 +285,92 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): 
     proposal.review_actions.request_changes,
     ...(proposal.review_actions.merge ? [proposal.review_actions.merge] : [])
   ];
-  const main = `<span class="wh-kicker">Deliverable change request</span>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "proposal.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(proposal.title)}</h1>
     <p class="wh-subtle">${escapeHtml(manifest.summary_md.replace(/[#*_`-]/gu, " ").slice(0, 220))}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>风险</strong><p class="wh-subtle">${escapeHtml(manifest.risk.human_label)}</p></article>
-      <article class="wh-card"><strong>回滚</strong><p class="wh-subtle">${escapeHtml(manifest.rollback.description)}</p></article>
-      <article class="wh-card"><strong>证据</strong><p class="wh-subtle">${manifest.evidence_refs.length} 条来源</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.riskTitle"))}</strong><p class="wh-subtle">${escapeHtml(manifest.risk.human_label)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.rollbackTitle"))}</strong><p class="wh-subtle">${escapeHtml(manifest.rollback.description)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.evidenceTitle"))}</strong><p class="wh-subtle">${manifest.evidence_refs.length}${escapeHtml(t(locale, "proposal.evidenceUnit"))}</p></article>
     </div>
-    <h2>改了什么</h2><div class="wh-card">${manifest.changes.map(changeRow).join("")}</div>
-    <h2>检查结果</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
+    <h2>${escapeHtml(t(locale, "proposal.changedTitle"))}</h2><div class="wh-card">${manifest.changes.map(changeRow).join("")}</div>
+    <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
     ${actions(proposalActions)}`;
   return {
     key: "proposal",
     route: vm.routes.proposal,
     title: "Proposal Detail",
-    html: pageShell(surface, "Proposal Detail", main, cuuRail({ state: "carrying_document", evidenceRefs: proposal.evidence_refs })),
+    html: pageShell(surface, "Proposal Detail", main, cuuRail({ state: "carrying_document", locale, evidenceRefs: proposal.evidence_refs })),
     primaryHrefs: proposalActions.map((action) => action.href),
     cuuState: "carrying_document"
   };
 }
 
-function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const replay: ReplayTraceVM = vm.page_vms.replay;
   const steps = replay.steps
-    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? "记录了一步。")}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? t(locale, "replay.stepFallback"))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
     .join("");
-  const main = `<span class="wh-kicker">Replay Work</span>
-    <h1 class="wh-title">看看 Cuu 怎么做的</h1>
-    <p class="wh-subtle">${escapeHtml(replay.run.handoff_md ?? replay.run.outcome_reason ?? "关键步骤、证据、快照和成本都在这里。")}</p>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "replay.kicker"))}</span>
+    <h1 class="wh-title">${escapeHtml(t(locale, "replay.title"))}</h1>
+    <p class="wh-subtle">${escapeHtml(replay.run.handoff_md ?? replay.run.outcome_reason ?? t(locale, "replay.empty"))}</p>
     <div class="wh-card">${steps}</div>
     <div class="wh-grid">
-      <article class="wh-card"><strong>Token</strong><p class="wh-subtle">${replay.cost?.me.total_tokens ?? 0}</p></article>
-      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
-      <article class="wh-card"><strong>快照</strong><p class="wh-subtle">${replay.snapshots.length} 个回滚点</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.tokenTitle"))}</strong><p class="wh-subtle">${replay.cost?.me.total_tokens ?? 0}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.snapshotTitle"))}</strong><p class="wh-subtle">${replay.snapshots.length}${escapeHtml(t(locale, "replay.snapshotUnit"))}</p></article>
     </div>`;
   return {
     key: "replay",
     route: vm.routes.replay,
     title: "Replay Work",
-    html: pageShell(surface, "Replay Work", main, cuuRail({ state: "thinking", evidenceRefs: replay.evidence_refs, notices: replay.cost?.active_notices })),
+    html: pageShell(surface, "Replay Work", main, cuuRail({ state: "thinking", locale, evidenceRefs: replay.evidence_refs, notices: replay.cost?.active_notices })),
     primaryHrefs: [],
     cuuState: "thinking"
   };
 }
 
-function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM): GoldPathRenderedPage {
+function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const cost = vm.page_vms.cost;
   const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(notice.severity)}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
   const nearestRisk = cost.top_exhaustion_risks[0];
-  const main = `<span class="wh-kicker">Cost governance</span>
-    <h1 class="wh-title">预算与成本</h1>
-    <p class="wh-subtle">普通用户只看个人切片；管理者再看团队视图。</p>
+  const main = `<span class="wh-kicker">${escapeHtml(t(locale, "cost.kicker"))}</span>
+    <h1 class="wh-title">${escapeHtml(t(locale, "cost.title"))}</h1>
+    <p class="wh-subtle">${escapeHtml(t(locale, "cost.summary"))}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>本期 token</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
-      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost_cny)}</p></article>
-      <article class="wh-card"><strong>预算状态</strong><p class="wh-subtle">${escapeHtml(nearestRisk?.status ?? cost.empty_state ?? "ok")}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.tokenTitle"))}</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost_cny)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(nearestRisk?.status ?? cost.empty_state ?? t(locale, "cost.statusFallback"))}</p></article>
     </div>
     <div class="wh-list">${noticeCards}</div>`;
   return {
     key: "cost",
     route: vm.routes.cost,
     title: "Cost Dashboard",
-    html: pageShell(surface, "Cost Dashboard", main, cuuRail({ state: "worried", notices: cost.notices })),
+    html: pageShell(surface, "Cost Dashboard", main, cuuRail({ state: "worried", locale, notices: cost.notices })),
     primaryHrefs: [],
     cuuState: "worried"
   };
 }
 
-export function renderGoldPathSurface(vm: GoldPathSurfaceVM, surface: GoldPathRenderSurface): GoldPathRenderedSurface {
+export function renderGoldPathSurface(
+  vm: GoldPathSurfaceVM,
+  surface: GoldPathRenderSurface,
+  options: GoldPathRenderOptions = {}
+): GoldPathRenderedSurface {
+  const locale = normalizeWorkHubLocale(options.locale);
   return {
     surface,
     fixtureId: vm.fixture_id,
     css: goldPathCss,
     pages: [
-      renderHome(surface, vm),
-      renderIntake(surface, vm),
-      renderApprovals(surface, vm),
-      renderWorkItem(surface, vm),
-      renderProposal(surface, vm),
-      renderReplay(surface, vm),
-      renderCost(surface, vm)
+      renderHome(surface, vm, locale),
+      renderIntake(surface, vm, locale),
+      renderApprovals(surface, vm, locale),
+      renderWorkItem(surface, vm, locale),
+      renderProposal(surface, vm, locale),
+      renderReplay(surface, vm, locale),
+      renderCost(surface, vm, locale)
     ]
   };
 }

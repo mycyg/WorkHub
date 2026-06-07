@@ -1,4 +1,5 @@
 import type { GoldPathRenderedPage, GoldPathRenderedSurface } from "./render.js";
+import { goldPathT, normalizeWorkHubLocale, workHubLocaleOptions, type WorkHubLocale } from "./i18n.js";
 
 type PageKey = GoldPathRenderedPage["key"];
 
@@ -8,6 +9,7 @@ export type GoldPathAppShellOptions = {
   currentRoute?: string;
   apiBaseLabel?: string;
   notice?: string;
+  locale?: WorkHubLocale | undefined;
 };
 
 export type GoldPathHrefAction =
@@ -27,13 +29,15 @@ const appCss = [
   ".wh-app-root{min-height:100vh;background:linear-gradient(180deg,#fbfdff 0%,#edf4fb 100%);font-family:\"Aptos\",\"Segoe UI\",sans-serif}",
   ".wh-app-topbar{position:sticky;top:0;z-index:20;height:62px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 22px;border-bottom:1px solid var(--wh-app-line);background:rgba(255,255,255,.88);backdrop-filter:blur(18px)}",
   ".wh-app-brand{display:flex;align-items:center;gap:10px;font-weight:850}.wh-app-mark{width:26px;height:26px;border-radius:8px;background:conic-gradient(from 45deg,#355cff,#24a66a,#ee6b5f,#355cff);box-shadow:0 10px 24px rgba(53,92,255,.18)}",
-  ".wh-app-runtime{display:flex;align-items:center;gap:10px;color:var(--wh-app-muted);font-size:13px}.wh-app-dot{width:8px;height:8px;border-radius:50%;background:var(--wh-app-green);box-shadow:0 0 0 4px rgba(36,166,106,.12)}",
+  ".wh-app-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0}.wh-app-runtime{display:flex;align-items:center;gap:10px;color:var(--wh-app-muted);font-size:13px;min-width:0}.wh-app-runtime span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wh-app-dot{width:8px;height:8px;border-radius:50%;background:var(--wh-app-green);box-shadow:0 0 0 4px rgba(36,166,106,.12);flex:0 0 auto}",
+  ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-app-line);border-radius:8px;background:#eef3f9;padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--wh-app-muted);font-weight:800;font-size:12px;line-height:1;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-app-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
   ".wh-app-layout{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:calc(100vh - 63px)}.wh-app-nav{border-right:1px solid var(--wh-app-line);padding:18px 14px;background:rgba(247,250,254,.72)}",
   ".wh-app-nav-title{font-size:12px;font-weight:800;color:var(--wh-app-muted);text-transform:uppercase;letter-spacing:0;margin:4px 10px 12px}.wh-app-nav-list{display:grid;gap:6px}",
   ".wh-app-nav a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:8px;color:var(--wh-app-ink);text-decoration:none;font-weight:700;font-size:14px}.wh-app-nav a:hover{background:#fff}.wh-app-nav a[aria-current=page]{background:#fff;color:var(--wh-app-blue);box-shadow:0 0 0 1px rgba(53,92,255,.18),0 10px 24px rgba(37,51,79,.06)}",
   ".wh-app-nav small{font-size:11px;color:var(--wh-app-muted);font-weight:650}.wh-app-content{min-width:0}.wh-route-panel[hidden]{display:none}.wh-app-notice{position:fixed;right:18px;bottom:18px;z-index:40;max-width:360px;border:1px solid rgba(53,92,255,.22);background:var(--wh-app-paper);border-radius:8px;box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-app-ink);font-weight:700}.wh-app-notice[hidden]{display:none}.wh-app-boot{min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#fbfdff,#eef4fb);font-family:\"Aptos\",\"Segoe UI\",sans-serif;color:#172033}.wh-app-boot-card{width:min(420px,calc(100vw - 36px));border:1px solid var(--wh-app-line);border-radius:8px;background:rgba(255,255,255,.9);box-shadow:0 18px 60px rgba(37,51,79,.1);padding:24px}.wh-app-boot-card h1{margin:0 0 8px;font-size:24px}.wh-app-boot-card p{margin:0;color:var(--wh-app-muted);line-height:1.55}",
   ".wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.wh-app-action-row button{border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;padding:9px 12px;font-weight:750;color:var(--wh-app-ink)}.wh-app-action-row button:first-child{background:var(--wh-app-blue);border-color:var(--wh-app-blue);color:#fff}",
-  "@media (max-width:900px){.wh-app-layout{grid-template-columns:1fr}.wh-app-nav{position:sticky;top:62px;z-index:10;border-right:0;border-bottom:1px solid var(--wh-app-line);padding:10px;overflow:auto}.wh-app-nav-list{grid-auto-flow:column;grid-auto-columns:max-content}.wh-app-nav-title{display:none}}"
+  "@media (max-width:900px){.wh-app-layout{grid-template-columns:1fr}.wh-app-nav{position:sticky;top:62px;z-index:10;border-right:0;border-bottom:1px solid var(--wh-app-line);padding:10px;overflow:auto}.wh-app-nav-list{grid-auto-flow:column;grid-auto-columns:max-content}.wh-app-nav-title{display:none}}",
+  "@media (max-width:640px){.wh-app-topbar{padding:0 12px;gap:10px}.wh-app-runtime span:last-child{display:none}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -81,6 +85,15 @@ function pageAliases(page: GoldPathRenderedPage) {
     aliases.add("/dashboard/cost");
   }
   return [...aliases];
+}
+
+function renderLocaleToggle(locale: WorkHubLocale) {
+  return `<div class="wh-locale-toggle" role="group" aria-label="${escapeHtml(goldPathT(locale, "shell.localeAria"))}">${workHubLocaleOptions
+    .map(
+      (option) =>
+        `<button type="button" data-wh-locale="${option.locale}" aria-pressed="${option.locale === locale ? "true" : "false"}" title="${escapeHtml(option.label)}">${escapeHtml(option.shortLabel)}</button>`
+    )
+    .join("")}</div>`;
 }
 
 export function buildGoldPathRouteMap(pages: GoldPathRenderedPage[]) {
@@ -142,6 +155,7 @@ export function renderGoldPathAppShell(
   rendered: GoldPathRenderedSurface,
   options: GoldPathAppShellOptions
 ): GoldPathAppShell {
+  const locale = normalizeWorkHubLocale(options.locale);
   const routeMap = buildGoldPathRouteMap(rendered.pages);
   const activeKey = resolveGoldPathPageKey(routeMap, options.currentRoute ?? "") ?? rendered.pages[0]?.key ?? "home";
   const nav = rendered.pages
@@ -163,11 +177,14 @@ export function renderGoldPathAppShell(
     html: `<div class="wh-app-root" data-wh-surface="${rendered.surface}">
       <header class="wh-app-topbar">
         <div class="wh-app-brand"><span class="wh-app-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></div>
-        <div class="wh-app-runtime"><span class="wh-app-dot" aria-hidden="true"></span><span>${escapeHtml(options.surfaceLabel)}</span><span>${escapeHtml(options.apiBaseLabel ?? "typed API")}</span></div>
+        <div class="wh-app-top-actions">
+          <div class="wh-app-runtime"><span class="wh-app-dot" aria-hidden="true"></span><span>${escapeHtml(options.surfaceLabel)}</span><span>${escapeHtml(options.apiBaseLabel ?? goldPathT(locale, "shell.typedApi"))}</span></div>
+          ${renderLocaleToggle(locale)}
+        </div>
       </header>
       <div class="wh-app-layout">
-        <nav class="wh-app-nav" aria-label="Gold Path">
-          <div class="wh-app-nav-title">Gold Path</div>
+        <nav class="wh-app-nav" aria-label="${escapeHtml(goldPathT(locale, "shell.navAria"))}">
+          <div class="wh-app-nav-title">${escapeHtml(goldPathT(locale, "shell.navTitle"))}</div>
           <div class="wh-app-nav-list">${nav}</div>
         </nav>
         <div class="wh-app-content">${panels}</div>

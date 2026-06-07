@@ -15,6 +15,7 @@ visuals:
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif
   - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
+  - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
   - ./assets/desktop/desktop-one-thing-work-desk.png
@@ -175,6 +176,22 @@ visuals:
 - 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
 - 现阶段已达到 P1 sprite 活体门槛，但距离「会走动、看鼠标、抱文件来找用户、任务动作可读」仍需要 Hatch Pack / Live2D 资产路线。
 
+### 0.4 P1.0 双语运行时底座（2026-06-07）
+
+本轮在 Cuu motion 修复后，先补了客户端级中英双语底座，避免后续 Web / desktop 主窗 / Cuu 气泡各自发明一套语言切换。
+
+![Web English runtime screenshot](./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png)
+
+| 检查项 | 当前结论 |
+|---|---|
+| 设计对齐 | 语言切换放在右上角轻量 segmented control，不抢 AI-first 主路径；符合概念图里“主界面只保留必要入口”的方向 |
+| 已落路径 | `packages/ui/src/gold-path/i18n.ts`、`packages/ui/src/gold-path/render.ts`、`packages/ui/src/gold-path/app-shell.ts`、`apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` |
+| 已落能力 | `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome、Cuu rail 状态、Web/desktop 运行时提示、桌面 Cuu 队列 badge 与审批原因按钮 |
+| 测试 | `@workhub/ui` 覆盖 locale 规范化、英文静态文案、shell 语言按钮；`@workhub/web` / `@workhub/desktop-webview` 覆盖 locale 入口函数 |
+| 未完成 | API Page VM 动态标题/摘要、proposal manifest、Cuu card payload、独立 pet 轻气泡仍跟随 daemon 原文；后续必须从 contracts/API 层补字段级 locale |
+
+验收口径：切到 English 后，静态框架必须出现 `Needs your decision` / `Budget and cost` / `Language`，审批原因按钮也必须是英文；如果任务标题仍是中文，只能说明服务端 VM 尚未做多语种，不能把它伪装成本地化完成。
+
 ---
 
 ## 1. 设计基线
@@ -239,6 +256,7 @@ visuals:
 | Web replay | 有 trace/replay 页面 | 仍偏数据面板，缺人话 timeline、cost footer、snapshot/revert、脱敏 raw 展开 | P2 |
 | Web cost | 有预算卡 | 只是基础页面，缺策略编辑、usage trend、告警说明、团队/用户视图切换 | P2 |
 | Desktop 主窗 | 基本与 Web shell 一致 | 缺 Rust 客户端设计哲学：单件事干活桌、本地执行、同步、设备、托盘、诊断 | P1 |
+| 中英双语 | 已有右上角轻量切换，Gold Path 静态 chrome 与运行时提示可切中英 | 动态 Page VM / Cuu payload / 独立 pet 轻卡仍是单语言，需要 API/Contracts 级 locale | P1 |
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
@@ -657,6 +675,19 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 ---
 
 ## 6. 后续施工计划
+
+### 6.0 P1.0：中英双语运行时底座
+
+状态：**2026-06-07 已完成客户端固定文案底座；动态 VM / Cuu payload 多语种仍待 P1.3+ 接 API 契约。**
+
+| ID | 任务 | Target paths | 验收 |
+|---|---|---|---|
+| I18N-P1-01 | 共享 locale 类型与词表 | `packages/ui/src/gold-path/i18n.ts` | **已落**：`WorkHubLocale`、`workhub.locale`、`normalizeWorkHubLocale()`、`goldPathT()` |
+| I18N-P1-02 | Gold Path 静态 chrome 本地化 | `packages/ui/src/gold-path/render.ts`、`app-shell.ts` | **已落**：首页/澄清/审批/proposal/replay/cost 固定标签支持中英 |
+| I18N-P1-03 | Web / desktop 主窗切换 | `apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` | **已落**：右上角 `中 / EN`，切换持久化并 reload |
+| I18N-P1-04 | 桌面 Cuu 运行时提示 | `apps/desktop-webview/src/browser.ts` | **已落基础**：队列 badge、审批原因按钮、动作失败/未接线提示随 locale 变化 |
+| I18N-P1-05 | 动态 VM 字段契约 | `packages/contracts/src/pages*`、`apps/api/routes/pages*`、`packages/cuu/src/*` | 待做：`GET /api/pages/*` 与 Cuu card adapter 接用户 locale |
+| I18N-P1-06 | 视觉截图门 | `scripts/qa/*` / Playwright route screenshots | 待做：中/英两个 viewport 截图，检查文字不溢出 |
 
 ### 6.1 P0 立即修复：Cuu card mode 与 motion QA
 
