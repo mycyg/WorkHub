@@ -133,7 +133,24 @@ export function getOpenApiDocument() {
       "/api/sessions/{id}/next-question": {
         post: {
           tags: ["sessions"],
-          summary: "Return an option-first clarification card"
+          summary: "Return an option-first clarification card",
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    selected_option_ids: {
+                      type: "array",
+                      items: { type: "string" }
+                    },
+                    free_text: { type: "string" }
+                  },
+                  additionalProperties: false
+                }
+              }
+            }
+          }
         }
       },
       "/api/workitems": {

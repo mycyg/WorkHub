@@ -434,13 +434,13 @@ test("desktop Cuu actions submit approval choices through the typed API client",
 });
 
 test("desktop Cuu actions advance option-first clarification sessions", async () => {
-  const calls: string[] = [];
+  const calls: unknown[] = [];
   const client = {
     async respondApproval() {
       throw new Error("not needed");
     },
-    async nextQuestion(sessionId: string) {
-      calls.push(sessionId);
+    async nextQuestion(sessionId: string, payload: unknown) {
+      calls.push({ sessionId, payload });
       const question: QuestionCard = {
         id: "question-next",
         title: "下一步要谁审批？",
@@ -459,11 +459,45 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
       throw new Error("not needed");
     }
   };
-  const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option" });
+  const card: CuuCard = {
+    id: "question-card",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你选择一个澄清选项。"
+    },
+    title: "选择口径",
+    message: "点一个选项即可。",
+    priority: "high",
+    chips: [
+      { id: "risk-first", label: "风险优先", selected: true },
+      { id: "progress-first", label: "进展优先" }
+    ],
+    input: {
+      mode: "single_choice",
+      option_first: true,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: true
+    },
+    actions: [
+      {
+        id: "submit_option",
+        label: "确认选项",
+        tone: "primary",
+        method: "POST",
+        href: "/api/sessions/session-1/next-question"
+      }
+    ]
+  };
+  const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option", card });
 
-  assert.deepEqual(action, { kind: "session-next-question", sessionId: "session-1" });
+  assert.deepEqual(action, { kind: "session-next-question", sessionId: "session-1", selectedOptionIds: ["risk-first"] });
   assert.equal((await submitDesktopCuuAction({ client, action: action! })).message, "下一题：下一步要谁审批？");
-  assert.deepEqual(calls, ["session-1"]);
+  assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
 });
 

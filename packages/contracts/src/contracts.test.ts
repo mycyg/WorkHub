@@ -15,6 +15,7 @@ import {
   createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
+  nextQuestionRequestSchema,
   replayTracePageVmSchema,
   respondApprovalRequestSchema,
   deliverableChangeManifestSchema,
@@ -246,6 +247,16 @@ test("question cards prefer clickable choices but retain a collapsed fallback", 
 
   assert.equal(parsed.options.length, 2);
   assert.equal(parsed.free_text.collapsed_by_default, true);
+});
+
+test("next question requests carry clicked option ids before text fallback", () => {
+  const parsed = nextQuestionRequestSchema.parse({
+    selected_option_ids: ["risk-first", "summary-only"],
+    free_text: "  只补一句  "
+  });
+
+  assert.deepEqual(parsed.selected_option_ids, ["risk-first", "summary-only"]);
+  assert.equal(parsed.free_text, "只补一句");
 });
 
 test("session VMs carry option-first intake and stream metadata", () => {

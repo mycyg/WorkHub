@@ -293,6 +293,10 @@ function selectPetCardOption(card: CuuCard, optionId: string): { card: CuuCard; 
   };
 }
 
+function selectedOptionIdsFromCard(card: CuuCard | undefined) {
+  return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
+}
+
 export async function bootDesktopPetSurface(
   root: HTMLElement,
   input: {
@@ -412,6 +416,16 @@ export async function bootDesktopPetSurface(
     }
     if (!anchor) {
       return;
+    }
+    if (anchor.dataset.cuuActionId === "submit_option" && currentCard?.input && (currentCard.chips?.length ?? 0) > 0) {
+      const selectedOptionIds = selectedOptionIdsFromCard(currentCard);
+      if (selectedOptionIds.length === 0) {
+        event.preventDefault();
+        statusText = "先点一个选项，Cuu 再继续。";
+        pendingAction = undefined;
+        render();
+        return;
+      }
     }
     const action = resolveDesktopCuuAction(anchor.getAttribute("href") ?? "", {
       actionId: anchor.dataset.cuuActionId,

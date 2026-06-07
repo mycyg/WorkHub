@@ -141,6 +141,12 @@ export const createSessionRequestSchema = z.object({
 });
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 
+export const nextQuestionRequestSchema = z.object({
+  selected_option_ids: z.array(z.string().min(1)).max(10).optional(),
+  free_text: z.string().trim().max(1000).optional()
+});
+export type NextQuestionRequest = z.infer<typeof nextQuestionRequestSchema>;
+
 export const sessionVmSchema = z.object({
   session_id: idSchema,
   work_item_id: idSchema.optional(),

@@ -210,13 +210,13 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `apps/desktop-webview/src/pet-surface.ts` 已把 `CuuCard.sections`、`progress`、`evidence_refs` 和 `input` 渲染到 pet card，不再只显示标题、消息、chip 和按钮。
 - P1.2 正常审批态能在 `380 x 560` card mode 中同时看到 Cuu 全身、主操作按钮、变更摘要和风险摘要；这比把 Web notice 原样塞进小窗更接近概念图里的 Cuu 气泡。
 - 打回原因态另有抓帧：`assets/audit/2026-06-08-cuu-pet-card-p1-2/cuu-pet-card-p1-2-contact-sheet.png`。该状态优先展示原因按钮，下方 PR context 会被折叠，这是轻卡密度上限，不应继续往桌宠窗里塞完整证据页。
-- 澄清卡已渲染 option button、本地选中态、progress 和折叠输入提示；但 option id 提交到 session API 仍是 P1.2b 缺口。
+- 澄清卡已渲染 option button、本地选中态、progress 和折叠输入提示；P1.2b 已把选中项通过 `selected_option_ids` 提交到 session API。
 
 剩余差距：
 
 - 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
 - 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是作为动作 storyboard / fallback；默认主线继续打磨 Bongo Cuu，Live2D 继续精修。
-- 离线卡与审批 / 澄清轻卡已完成 P1.2 的人话化、选项优先和少文字化基线；证据详情、预算卡、sync conflict、真实 option payload 提交和 Tauri 顶层窗口 P1.2 抓帧仍需继续。
+- 离线卡与审批 / 澄清轻卡已完成 P1.2 的人话化、选项优先和少文字化基线，P1.2b 已补真实 option payload 提交；证据详情、预算卡、sync conflict 和 Tauri 顶层窗口 P1.2 抓帧仍需继续。
 - 当前动作仍是 sprite atlas，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
 
 下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、窗口设置和动作幅度做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。

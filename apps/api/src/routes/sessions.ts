@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createSessionRequestSchema, sessionVmSchema } from "@workhub/contracts";
+import { createSessionRequestSchema, nextQuestionRequestSchema, sessionVmSchema } from "@workhub/contracts";
 import { topics } from "@workhub/events";
 
 import {
@@ -40,11 +40,33 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
     });
   });
 
-  routes.post("/sessions/:id/next-question", createCurrentUserMiddleware(authSource), (c) => {
+  routes.post("/sessions/:id/next-question", createCurrentUserMiddleware(authSource), async (c) => {
     if (!isP05SessionId(c.req.param("id"))) {
       throw new HTTPException(404, { message: "没有找到这个澄清会话。" });
     }
-    return c.json({ ok: true, data: getP05GoldPathFixture().question });
+    const payload = nextQuestionRequestSchema.parse(await optionalJson(c.req));
+    const question = getP05GoldPathFixture().question;
+    const selectedOptionIds = payload.selected_option_ids ?? [];
+    const optionById = new Map(question.options.map((option) => [option.id, option]));
+    const invalidOption = selectedOptionIds.find((id) => !optionById.has(id));
+    if (invalidOption) {
+      throw new HTTPException(400, { message: `澄清选项不存在：${invalidOption}` });
+    }
+    const selectedLabels = selectedOptionIds
+      .map((id) => optionById.get(id)?.label)
+      .filter((label): label is string => Boolean(label));
+    return c.json({
+      ok: true,
+      data: {
+        ...question,
+        ...(selectedLabels.length
+          ? {
+              body: `已收到：${selectedLabels.join("、")}。${question.body ?? ""}`.trim(),
+              recommended_option_ids: selectedOptionIds
+            }
+          : {})
+      }
+    });
   });
 
   return routes;

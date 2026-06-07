@@ -51,7 +51,8 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   const calls: string[] = [];
   const client = createApiClient({
     fetchFn: async (input, init) => {
-      calls.push(`${init?.method ?? "GET"} ${input}`);
+      const body = String(input).includes("/next-question") && typeof init?.body === "string" ? ` ${init.body}` : "";
+      calls.push(`${init?.method ?? "GET"} ${input}${body}`);
       return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -72,7 +73,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
   await client.getProposal("proposal-1");
-  await client.nextQuestion("session-1");
+  await client.nextQuestion("session-1", { selected_option_ids: ["risk-first"] });
   await client.searchKnowledge({ q: "weekly" });
   await client.useEvidenceForWorkItem("work-1", {
     evidence_refs: [
@@ -105,7 +106,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/proposals/proposal-1",
-    "POST /api/sessions/session-1/next-question",
+    'POST /api/sessions/session-1/next-question {"selected_option_ids":["risk-first"]}',
     "POST /api/knowledge/search",
     "POST /api/workitems/work-1/evidence-bindings",
     "GET /api/cost/usage",

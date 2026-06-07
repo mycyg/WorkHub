@@ -249,7 +249,8 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   });
   const question = await app.request(`/api/sessions/${p05GoldPathIds.session}/next-question`, {
     method: "POST",
-    headers
+    headers,
+    body: JSON.stringify({ selected_option_ids: ["risk-first"] })
   });
   const createdWorkItem = await app.request("/api/workitems", {
     method: "POST",
@@ -283,7 +284,9 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
       question: { free_text: { collapsed_by_default: boolean } };
     };
   };
-  const questionBody = await question.json() as { data: { free_text: { collapsed_by_default: boolean } } };
+  const questionBody = await question.json() as {
+    data: { body?: string; free_text: { collapsed_by_default: boolean }; recommended_option_ids?: string[] };
+  };
   const createdWorkItemBody = await createdWorkItem.json() as {
     data: { workitem: { id: string; status: string; summary_md?: string }; latest_proposal?: unknown; agent_trace_preview: unknown[] };
   };
@@ -319,6 +322,8 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(sessionBody.data.next_question_href, `/api/sessions/${p05GoldPathIds.session}/next-question`);
   assert.equal(sessionBody.data.question.free_text.collapsed_by_default, true);
   assert.equal(questionBody.data.free_text.collapsed_by_default, true);
+  assert.equal(questionBody.data.body?.includes("已收到：风险优先"), true);
+  assert.deepEqual(questionBody.data.recommended_option_ids, ["risk-first"]);
   assert.equal(createdWorkItemBody.data.workitem.id, p05GoldPathIds.workItem);
   assert.equal(createdWorkItemBody.data.workitem.status, "ai_working");
   assert.equal(createdWorkItemBody.data.latest_proposal, undefined);

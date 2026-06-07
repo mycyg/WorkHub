@@ -60,6 +60,7 @@ export type DesktopCuuActionRequest =
   | {
       kind: "session-next-question";
       sessionId: string;
+      selectedOptionIds?: string[];
     }
   | {
       kind: "knowledge-search";
@@ -327,9 +328,11 @@ export function resolveDesktopCuuAction(
 
   const sessionMatch = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(path);
   if (sessionMatch?.[1]) {
+    const selectedOptionIds = selectedOptionIdsFromCard(input.card);
     return {
       kind: "session-next-question",
-      sessionId: decodeURIComponent(sessionMatch[1])
+      sessionId: decodeURIComponent(sessionMatch[1]),
+      ...(selectedOptionIds.length ? { selectedOptionIds } : {})
     };
   }
 
@@ -404,10 +407,16 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
-  const question = await input.client.nextQuestion(input.action.sessionId);
+  const question = await input.client.nextQuestion(input.action.sessionId, {
+    ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
+  });
   return {
     message: `下一题：${question.title}`
   };
+}
+
+function selectedOptionIdsFromCard(card: CuuCard | undefined) {
+  return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
 }
 
 function renderChip(chip: CuuCardChip) {

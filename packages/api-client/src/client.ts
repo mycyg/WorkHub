@@ -190,9 +190,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    nextQuestion: (sessionId) =>
+    nextQuestion: (sessionId, payload = {}) =>
       request(`/api/sessions/${sessionId}/next-question`, {
-        method: "POST"
+        method: "POST",
+        body: JSON.stringify(payload)
       }),
     searchKnowledge: (payload = {}) =>
       request("/api/knowledge/search", {

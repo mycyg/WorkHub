@@ -22,6 +22,7 @@ import type {
   ReviewProposalRequest,
   RespondApprovalRequest,
   MergeProposalRequest,
+  NextQuestionRequest,
   SessionVM,
   StartAgentRunRequest,
   StructuredHandoff,
@@ -121,7 +122,7 @@ export type WorkHubApiClient = {
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
-  nextQuestion: (sessionId: string) => Promise<QuestionCard>;
+  nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;

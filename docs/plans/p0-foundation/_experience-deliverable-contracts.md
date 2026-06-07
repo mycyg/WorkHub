@@ -141,12 +141,22 @@ type QuestionOption = {
 };
 ```
 
+提交选项时统一使用 `NextQuestionRequest`，Cuu 气泡、Rust 主窗和 Web 页面不得各自发明字段名：
+
+```ts
+type NextQuestionRequest = {
+  selected_option_ids?: string[];
+  free_text?: string;
+};
+```
+
 P0 施工要求:
 
 - `input_mode=long_text` 只能作为明确兜底,不得作为澄清主路径默认。
 - `options.length` 推荐 2-5;超过 7 个必须分组或改成 rank/step。
 - `recommended_option_ids` 只能是辅助高亮,不能自动提交。
 - 任何 `QuestionCard` 都可以被 Cuu 气泡、Web 页面、Rust 主窗复用。
+- `selected_option_ids` 必须来自 `QuestionCard.options[].id`;无效 option id 必须 400 拒绝,不得默默当作 free text。
 
 ### 2.3 `EvidenceBubble`
 
