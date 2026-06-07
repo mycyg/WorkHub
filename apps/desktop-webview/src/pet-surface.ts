@@ -34,10 +34,12 @@ import {
 import {
   createDesktopPetPointerSensor,
   desktopPetWindowModeForCard,
+  desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge,
   type DesktopPetPointerSensor,
   type DesktopPetWindowBridge,
-  type DesktopPetWindowMode
+  type DesktopPetWindowMode,
+  type DesktopPetWindowSettings
 } from "./pet-window-bridge.js";
 
 export type DesktopSurface = "main" | "pet";
@@ -61,19 +63,19 @@ export type DesktopPetSurfaceRuntime = {
 export const desktopPetSurfaceCss = [
   "html,body,#root{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}",
   "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38}",
-  ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:180px;height:220px;background:transparent;pointer-events:none;overflow:hidden}",
-  ".wh-pet-surface[data-pet-window-mode=card]{width:380px;height:560px}",
-  ".wh-pet-body{position:absolute;right:8px;bottom:8px;width:148px;height:197px;display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto}",
+  ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,180px);height:var(--wh-pet-window-h,220px);background:transparent;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
+  ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,380px);height:var(--wh-pet-window-h,560px)}",
+  ".wh-pet-body{position:absolute;right:calc(8px * var(--wh-pet-scale,1));bottom:calc(8px * var(--wh-pet-scale,1));width:calc(148px * var(--wh-pet-scale,1));height:calc(197px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto}",
   ".wh-pet-body:active{cursor:grabbing}",
   ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;box-sizing:border-box;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:64px;bottom:96px;width:150px;height:210px}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:16px;right:auto;top:16px;bottom:auto;width:260px;max-height:320px;overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(64px * var(--wh-pet-scale,1));bottom:calc(96px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));height:calc(210px * var(--wh-pet-scale,1))}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(16px * var(--wh-pet-scale,1));right:auto;top:calc(16px * var(--wh-pet-scale,1));bottom:auto;width:calc(260px * var(--wh-pet-scale,1));max-height:calc(320px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:3}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-actions{max-width:100%}",
-  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:4px;bottom:4px;width:118px;height:157px}",
-  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:8px;right:auto;top:8px;bottom:auto;width:124px;max-height:86px;overflow:hidden;gap:5px;padding:7px 8px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(118px * var(--wh-pet-scale,1));height:calc(157px * var(--wh-pet-scale,1))}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:calc(8px * var(--wh-pet-scale,1));right:auto;top:calc(8px * var(--wh-pet-scale,1));bottom:auto;width:calc(124px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-title{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
@@ -203,16 +205,24 @@ export function renderDesktopPetSurface(input: {
   status_text?: string | undefined;
   include_reject_reasons?: boolean | undefined;
   display_width_px?: number | undefined;
+  pet_window_settings?: DesktopPetWindowSettings | undefined;
   window_mode_error?: string | undefined;
   window_mode_status?: "syncing" | "failed" | undefined;
 } = {}): DesktopPetSurfaceRender {
   const compactCard = Boolean(input.card && input.window_mode_error);
   const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
+  const settings = input.pet_window_settings ?? defaultDesktopPetWindowSettings();
+  const scaleRatio = settings.scale_percent / 100;
+  const baseWindowSize = petWindowSize(windowMode);
+  const scaledWindowSize = {
+    width: Math.round(baseWindowSize.width * scaleRatio),
+    height: Math.round(baseWindowSize.height * scaleRatio)
+  };
   const motion = desktopPetVisibleMotion(input.card?.motion ?? cuuMotionForState("idle"), {
     has_card: Boolean(input.card),
     compact_card: compactCard
   });
-  const displayWidth = input.display_width_px ?? (compactCard ? 92 : input.card ? 138 : 148);
+  const displayWidth = input.display_width_px ?? Math.round((compactCard ? 92 : input.card ? 138 : 148) * scaleRatio);
   const sprite = input.card
     ? renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
         display_width_px: displayWidth,
@@ -240,19 +250,39 @@ export function renderDesktopPetSurface(input: {
   const cardAttrs = input.card
     ? ` data-pet-card-kind="${escapeHtml(input.card.kind)}" data-pet-card-priority="${escapeHtml(input.card.priority)}" data-pet-card-has-context="${petCardHasContext(input.card) ? "true" : "false"}"`
     : "";
+  const surfaceStyle = [
+    `--wh-pet-scale:${scaleRatio}`,
+    `--wh-pet-opacity:${settings.opacity_percent / 100}`,
+    `--wh-pet-window-w:${scaledWindowSize.width}px`,
+    `--wh-pet-window-h:${scaledWindowSize.height}px`
+  ].join(";");
 
   return {
     sprite,
     bongo,
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${bongo.css}${sprite.css}`,
-    html: `<section class="wh-pet-surface" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}"${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}"${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${bongo.html}
       </button>
       ${bubble}
     </section>`
   };
+}
+
+export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
+  return {
+    scale_percent: 100,
+    opacity_percent: 100,
+    pass_through: false
+  };
+}
+
+function petWindowSize(mode: DesktopPetWindowMode) {
+  return mode === "card"
+    ? { width: 380, height: 560 }
+    : { width: 180, height: 220 };
 }
 
 function desktopPetVisibleMotion(motion: CuuMotionHint, input: { has_card: boolean; compact_card: boolean }): CuuMotionHint {
@@ -323,12 +353,16 @@ export async function bootDesktopPetSurface(
   let syncingPetWindowMode: DesktopPetWindowMode | undefined;
   let failedPetWindowMode: DesktopPetWindowMode | undefined;
   let petWindowModeError: string | undefined;
+  let confirmedPetWindowSettingsKey: string | undefined;
+  let syncingPetWindowSettingsKey: string | undefined;
+  let failedPetWindowSettingsKey: string | undefined;
   let renderGeneration = 0;
   let cancelPendingFirstPaintSync: (() => void) | undefined;
 
   const render = () => {
     renderGeneration += 1;
     const generation = renderGeneration;
+    const petWindowSettings = desktopPetWindowSettingsFromPreferences(controller.snapshot().preferences);
     const desiredMode = desktopPetWindowModeForCard(currentCard);
     const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
     const surface = renderDesktopPetSurface({
@@ -336,10 +370,12 @@ export async function bootDesktopPetSurface(
       idle_action: idleAction,
       status_text: statusText,
       include_reject_reasons: Boolean(pendingAction),
+      pet_window_settings: petWindowSettings,
       window_mode_error: compactCard ? petWindowModeError ?? "Cuu 轻卡窗口正在展开。" : undefined,
       window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    syncPetWindowSettings(petWindowSettings);
     cancelPendingFirstPaintSync?.();
     cancelPendingFirstPaintSync = scheduleDesktopPetFirstPaint(() => {
       if (generation !== renderGeneration) {
@@ -529,9 +565,42 @@ export async function bootDesktopPetSurface(
         syncingPetWindowMode = undefined;
         failedPetWindowMode = mode;
         petWindowModeError = actionMessage(error);
-        render();
+      render();
+    });
+  }
+
+  function syncPetWindowSettings(settings: DesktopPetWindowSettings) {
+    const key = desktopPetWindowSettingsKey(settings);
+    if (!petWindowBridge) {
+      confirmedPetWindowSettingsKey = key;
+      return;
+    }
+    if (confirmedPetWindowSettingsKey === key || syncingPetWindowSettingsKey === key || failedPetWindowSettingsKey === key) {
+      return;
+    }
+    syncingPetWindowSettingsKey = key;
+    failedPetWindowSettingsKey = undefined;
+    void Promise.resolve(petWindowBridge.setSettings?.(settings))
+      .then(() => {
+        if (syncingPetWindowSettingsKey !== key) {
+          return;
+        }
+        confirmedPetWindowSettingsKey = key;
+        syncingPetWindowSettingsKey = undefined;
+        failedPetWindowSettingsKey = undefined;
+      })
+      .catch(() => {
+        if (syncingPetWindowSettingsKey !== key) {
+          return;
+        }
+        syncingPetWindowSettingsKey = undefined;
+        failedPetWindowSettingsKey = key;
       });
   }
+}
+
+function desktopPetWindowSettingsKey(settings: DesktopPetWindowSettings) {
+  return `${settings.scale_percent}:${settings.opacity_percent}:${settings.pass_through ? "1" : "0"}`;
 }
 
 function renderDesktopPetBubble(input: {

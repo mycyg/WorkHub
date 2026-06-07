@@ -28,7 +28,11 @@ import {
   scheduleDesktopPetFirstPaint
 } from "./pet-surface.js";
 import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
-import { desktopPetWindowModeForCard, resolveDesktopPetWindowBridge } from "./pet-window-bridge.js";
+import {
+  desktopPetWindowModeForCard,
+  desktopPetWindowSettingsFromPreferences,
+  resolveDesktopPetWindowBridge
+} from "./pet-window-bridge.js";
 
 function approvalCard(): CuuCard {
   return {
@@ -422,6 +426,11 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
 
   assert.match(idle.html, /data-wh-surface="pet"/u);
   assert.match(idle.html, /data-pet-window-mode="body_only"/u);
+  assert.match(idle.html, /data-pet-scale-percent="100"/u);
+  assert.match(idle.html, /data-pet-opacity-percent="100"/u);
+  assert.match(idle.html, /data-pet-pass-through="false"/u);
+  assert.match(idle.html, /data-pet-window-width="180"/u);
+  assert.match(idle.html, /data-pet-window-height="220"/u);
   assert.match(idle.html, /data-cuu-idle-action="idle_tail_sway"/u);
   assert.equal(idle.visual_mode, "bongo_cuu");
   assert.equal(idle.bongo.runtime_kind, "bongo_cuu");
@@ -464,8 +473,27 @@ test("pet surface renders Cuu without the main Gold Path shell", () => {
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
   assert.doesNotMatch(card.html, /textarea/u);
-  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{left:16px;right:auto;top:16px;bottom:auto/u);
-  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{[^}]*width:260px/u);
+  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{left:calc\(16px \* var\(--wh-pet-scale,1\)\);right:auto;top:calc\(16px \* var\(--wh-pet-scale,1\)\);bottom:auto/u);
+  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-bubble\{[^}]*width:calc\(260px \* var\(--wh-pet-scale,1\)\)/u);
+});
+
+test("pet surface scales Cuu, opacity and pass-through from window settings", () => {
+  const surface = renderDesktopPetSurface({
+    idle_action: "idle_tail_sway",
+    pet_window_settings: {
+      scale_percent: 125,
+      opacity_percent: 80,
+      pass_through: true
+    }
+  });
+
+  assert.match(surface.html, /style="--wh-pet-scale:1.25;--wh-pet-opacity:0.8;--wh-pet-window-w:225px;--wh-pet-window-h:275px"/u);
+  assert.match(surface.html, /data-pet-scale-percent="125"/u);
+  assert.match(surface.html, /data-pet-opacity-percent="80"/u);
+  assert.match(surface.html, /data-pet-pass-through="true"/u);
+  assert.match(surface.html, /data-pet-window-width="225"/u);
+  assert.match(surface.html, /data-pet-window-height="275"/u);
+  assert.match(surface.html, /--wh-cuu-bongo-w:185px/u);
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {
@@ -565,7 +593,7 @@ test("pet surface keeps offline Cuu fully visible in card mode", () => {
   assert.doesNotMatch(card.html, /data-cuu-bongo-motion="offline_sleep"/u);
   assert.equal(card.sprite.clip.state, "worried_ears");
   assert.match(card.html, /--wh-cuu-bongo-w:138px/u);
-  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-body\{right:64px;bottom:96px;width:150px;height:210px/u);
+  assert.match(card.css, /data-pet-window-mode=card.*?\.wh-pet-body\{right:calc\(64px \* var\(--wh-pet-scale,1\)\);bottom:calc\(96px \* var\(--wh-pet-scale,1\)\);width:calc\(150px \* var\(--wh-pet-scale,1\)\);height:calc\(210px \* var\(--wh-pet-scale,1\)\)/u);
 });
 
 test("pet surface passes the Cuu independent desktop visual QA contract", () => {
@@ -597,12 +625,21 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
     __TAURI__: {
       core: {
         async invoke(command: string, args?: Record<string, unknown>) {
-          calls.push(`${command}:${args?.mode ?? ""}`);
+          calls.push(`${command}:${args?.mode ?? args?.scalePercent ?? ""}`);
           if (command === "set_pet_window_mode") {
             return {
               placement: {
                 mode: args?.mode,
                 size: { width: 380, height: 560 }
+              }
+            };
+          }
+          if (command === "set_pet_window_settings") {
+            return {
+              settings: {
+                scalePercent: args?.scalePercent,
+                opacityPercent: args?.opacityPercent,
+                passThrough: args?.passThrough
               }
             };
           }
@@ -622,9 +659,10 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   });
 
   await tauri?.setMode?.("card");
+  await tauri?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true });
   await tauri?.startDragging?.();
   assert.equal(await tauri?.sampleCursorNear?.(), true);
-  assert.deepEqual(calls, ["set_pet_window_mode:card", "startDragging", "sample_pet_cursor_near:"]);
+  assert.deepEqual(calls, ["set_pet_window_mode:card", "set_pet_window_settings:125", "startDragging", "sample_pet_cursor_near:"]);
 });
 
 test("pet window bridge accepts legacy top-level Tauri invoke for mode switching", async () => {
@@ -665,6 +703,38 @@ test("pet window bridge rejects mode switches without a Rust placement plan", as
   );
 });
 
+test("pet window bridge rejects settings without a Rust confirmation plan", async () => {
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke() {
+          return undefined;
+        }
+      }
+    }
+  });
+
+  await assert.rejects(
+    async () => bridge?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true }),
+    /did not confirm settings/u
+  );
+});
+
+test("pet window settings map from Cuu preferences", () => {
+  assert.deepEqual(
+    desktopPetWindowSettingsFromPreferences({
+      pet_scale_percent: 150,
+      pet_opacity_percent: 60,
+      pet_pass_through: true
+    }),
+    {
+      scale_percent: 150,
+      opacity_percent: 60,
+      pass_through: true
+    }
+  );
+});
+
 test("pet window bridge reports missing invoke instead of silently dropping setMode", async () => {
   const bridge = resolveDesktopPetWindowBridge({
     __TAURI__: {
@@ -682,6 +752,10 @@ test("pet window bridge reports missing invoke instead of silently dropping setM
   assert.deepEqual(bridge?.diagnostics?.missing, ["__TAURI__.core.invoke"]);
   await assert.rejects(
     async () => bridge?.setMode?.("card"),
+    /Tauri invoke bridge is unavailable/u
+  );
+  await assert.rejects(
+    async () => bridge?.setSettings?.({ scale_percent: 100, opacity_percent: 100, pass_through: false }),
     /Tauri invoke bridge is unavailable/u
   );
 });

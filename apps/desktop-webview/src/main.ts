@@ -169,11 +169,15 @@ export {
 export {
   createDesktopPetPointerSensor,
   desktopPetWindowModeForCard,
+  desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge,
   type DesktopPetPointerSensor,
   type DesktopPetPointerSnapshot,
+  type DesktopPetOpacityPercent,
+  type DesktopPetScalePercent,
   type DesktopPetWindowBridge,
-  type DesktopPetWindowMode
+  type DesktopPetWindowMode,
+  type DesktopPetWindowSettings
 } from "./pet-window-bridge.js";
 
 export {

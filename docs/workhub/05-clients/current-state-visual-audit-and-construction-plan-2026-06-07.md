@@ -263,7 +263,7 @@ visuals:
 | 鲜活感 | 继续增强；P1b 已补挥手、抱文件、检索、同步和庆祝，后续要加大动作幅度和卡片联动 |
 | Tauri 真实窗口 | 已补 P1c first-painted 门禁；最新真实 `Cuu` hwnd 录屏 frame 000 即 body-only 全身可见 |
 
-下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活，并补窗口设置、动作幅度二轮与模型包加载器。Live2D 只能在 Cubism 导出、录屏和 model pack gate 全部通过后申请替换默认。
+下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。窗口设置已落 P1d-a 的 scale / opacity / pass-through 合同，后续继续补真实截图、hide-on-hover、多屏恢复、动作幅度二轮与模型包加载器。Live2D 只能在 Cubism 导出、录屏和 model pack gate 全部通过后申请替换默认。
 
 ### 0.5.1 CUX-BONGO-002：Bongo Cuu 动作增强与真实 Tauri 录屏（2026-06-08）
 
@@ -406,7 +406,7 @@ visuals:
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过 | 方向正确；还需增强动作幅度、补窗口设置、模型包加载器、拖拽/hover/任务动作截图 | P1 |
+| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同 | 方向正确；还需增强动作幅度、补窗口设置真实截图 / hide-on-hover / 多屏恢复、模型包加载器、拖拽/hover/任务动作截图 | P1 |
 | Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示；未来必须以 `live2d_cubism` model pack 通过默认门禁，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**

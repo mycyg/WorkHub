@@ -101,8 +101,8 @@ BongoCat 值得参考的不是“键盘猫”这个具体题材，而是这几�
 | BongoCat 能力 | 参考落点 | WorkHub 当前状态 | 后续落点 |
 |---|---|---|---|
 | 可替换模型 | `src/stores/model.ts`、`src/composables/useModel.ts` | 新增 `packages/cuu/src/model-pack.ts` 作为 Cuu 模型包契约；默认包为 `cuu-bongo-p1` | P2 做 `Cuu model preset + custom model slot`，Live2D 通过后作为另一个 pack |
-| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算 | P1d 加鼠标平滑视线、pass-through 切换、缩放/透明度设置 |
-| 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动和保存位置 | P1d 补 hover 避让、屏幕边界、透明度、缩放 |
+| 输入到动作参数 | `useDevice.ts`、`useModel.ts` 的键鼠/光标映射 | WorkHub 已有 hover / tap / drag / cursor_near 调度；业务事件映射审批、证据、同步、预算；P1d-a 已把 scale / opacity / pass-through 接成偏好和 Rust bridge | P1d-b 继续做鼠标平滑视线、hover 避让和真实截图 |
+| 独立透明窗口 | Tauri window plugin、always-on-top、skip taskbar | WorkHub 已有 `pet` 透明顶层窗口、body/card mode、拖动、保存位置、缩放几何、CSS 透明度和点击穿透命令 | P1d-b 补 hide-on-hover、keep-in-screen 多屏实测、Settings 视觉页与截图 |
 | 低恐怖谷默认 | BongoCat 低拟真角色动作 | WorkHub 默认 `bongo_cuu`，PSD draft 被降级为实验 | 默认候选必须过 `assertCuuModelPackCanBeDefault()` |
 | 离线隐私友好 | README 明确离线运行 | Cuu 本体可在 webview 里离线渲染，数据从 WorkHub 安全通道来 | 设备输入监听只做本地手感，不采集无关数据 |
 
@@ -282,7 +282,8 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1a | 默认低恐怖谷 renderer | `cuu-bongo-runtime.ts` | 已落；浏览器截图和 DOM 证明默认不是 PSD |
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
 | BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
-| BONGO-P1d | 设置和窗口能力 | scale / opacity / pass-through / hide-on-hover / keep-in-screen | 对齐 BongoCat 的桌宠窗口体验；需要真实 Tauri 设置页与截图 |
+| BONGO-P1d-a | 设置和窗口能力契约 | scale / opacity / pass-through 偏好、DOM/CSS、TS bridge、Rust command、几何缩放 | **已落**：`set_pet_window_settings`、`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through`、scaled body/card placement 和静态 QA 均已可测 |
+| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / hover 避让 / 多屏恢复 / 设置页截图 | 对齐 BongoCat 的桌宠窗口体验；需要真实 Tauri 设置页、录屏和跨平台截图 |
 | BONGO-P1e | 输入手感增强 | cursor smoothing / look-at-mouse 参数 / hover 避让 | 吸收 BongoCat 的 `Ticker` 平滑思路，但只驱动 Cuu，不采集无关输入 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot + `CuuModelPackManifest` loader | 可从默认 Bongo Cuu 切到未来 Live2D；任何 pack 都先跑 default gate |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
@@ -293,11 +294,34 @@ pnpm --filter @workhub/cuu test
 
 | 子任务 | TS/Rust 落点 | 验收 |
 |---|---|---|
-| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；Rust `set_pet_window_mode` 读取 scale 后计算窗口尺寸 | 4 档截图，Cuu 不裁切，card mode 仍扩左上 |
-| 透明度 | preference 写入 `opacity`，pet surface root 设置 CSS opacity；Rust 可选跟随窗口 opacity | 截图对比 60/80/100，bubble 文本仍可读 |
-| 点击穿透 | Rust command `set_pet_window_pass_through`，body/card/hover 时临时关闭穿透 | 桌宠不挡鼠标；点击 Cuu 本体仍可拖动 |
+| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸 | **P1d-a 已落单测**；下一步补 4 档真实 Tauri 截图，Cuu 不裁切，card mode 仍从 body anchor 向左上扩 |
+| 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity | **P1d-a 已落单测**；下一步截图对比 60/80/100，bubble 文本仍可读 |
+| 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan | **P1d-a 已落单测**；下一步实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
 | hover 避让 | `sample_pet_cursor_near` + idle scheduler；靠近时 look/wave，停留后可半透明或让开 | 录屏能看到靠近反应，不是只变 cursor |
 | 屏幕边界 | 已有 `clamp_position`，补多显示器/缩放 QA | 贴边不出屏，重启恢复位置 |
+
+P1d-a 已落代码路径：
+
+```text
+packages/cuu/src/controller.ts
+apps/desktop-webview/src/cuu-preferences.ts
+apps/desktop-webview/src/pet-window-bridge.ts
+apps/desktop-webview/src/pet-surface.ts
+apps/desktop-webview/src/pet-surface-qa.ts
+client-tauri/src-tauri/src/pet_window.rs
+client-tauri/src-tauri/src/pet_commands.rs
+client-tauri/src-tauri/src/main.rs
+```
+
+P1d-a 当前测试门：
+
+```text
+pnpm --filter @workhub/cuu test
+pnpm --filter @workhub/desktop-webview test
+pnpm --filter @workhub/cuu typecheck
+pnpm --filter @workhub/desktop-webview typecheck
+cargo test
+```
 
 ### 6.2 P2 模型包详细路径
 

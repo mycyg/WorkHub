@@ -38,6 +38,10 @@ import {
   loadCuuPreferences
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
+import {
+  desktopPetWindowSettingsFromPreferences,
+  resolveDesktopPetWindowBridge
+} from "./pet-window-bridge.js";
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 
 const root = document.getElementById("root");
@@ -447,9 +451,15 @@ async function boot() {
     bindLocaleSwitch(root, locale);
     bindGoldPathNavigation(root, shell, client, cuuController, locale, { listen: realShellListen });
     const cuuDecisions = new Map<string, CuuControllerDecision>();
+    const petWindowBridge = resolveDesktopPetWindowBridge();
+    const syncPetWindowPreferences = (snapshot: CuuControllerSnapshot) => {
+      void Promise.resolve(petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(snapshot.preferences))).catch(() => undefined);
+    };
     bindCuuQueueBadge(root, cuuController, locale);
+    syncPetWindowPreferences(cuuController.snapshot());
     bindCuuPreferencePanel(root, cuuController, {
       onChange(snapshot) {
+        syncPetWindowPreferences(snapshot);
         updateCuuQueueBadge(root, snapshot, locale);
       }
     });

@@ -4,12 +4,17 @@ import type { CuuCard } from "./cards.js";
 
 export type CuuAttentionMode = "normal" | "quiet" | "do_not_disturb";
 export type CuuSoundMode = "on" | "muted";
+export type CuuPetScalePercent = 75 | 100 | 125 | 150;
+export type CuuPetOpacityPercent = 60 | 80 | 100;
 
 export type CuuControllerPreferences = {
   attention_mode: CuuAttentionMode;
   sound_mode: CuuSoundMode;
   reduced_motion: boolean;
   queue_limit: number;
+  pet_scale_percent: CuuPetScalePercent;
+  pet_opacity_percent: CuuPetOpacityPercent;
+  pet_pass_through: boolean;
 };
 
 export type CuuPresentationSurface = "notice" | "badge" | "none";
@@ -69,7 +74,10 @@ const defaultPreferences: CuuControllerPreferences = {
   attention_mode: "normal",
   sound_mode: "on",
   reduced_motion: false,
-  queue_limit: 5
+  queue_limit: 5,
+  pet_scale_percent: 100,
+  pet_opacity_percent: 100,
+  pet_pass_through: false
 };
 
 const priorityRank: Record<CuuCard["priority"], number> = {
@@ -227,8 +235,23 @@ function normalizePreferences(input: Partial<CuuControllerPreferences> | undefin
     attention_mode: input?.attention_mode ?? defaultPreferences.attention_mode,
     sound_mode: input?.sound_mode ?? defaultPreferences.sound_mode,
     reduced_motion: input?.reduced_motion ?? defaultPreferences.reduced_motion,
-    queue_limit: Math.max(0, Math.floor(queueLimit))
+    queue_limit: Math.max(0, Math.floor(queueLimit)),
+    pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
+    pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
+    pet_pass_through: input?.pet_pass_through === true
   };
+}
+
+function normalizePetScalePercent(value: unknown): CuuPetScalePercent {
+  return value === 75 || value === 100 || value === 125 || value === 150
+    ? value
+    : defaultPreferences.pet_scale_percent;
+}
+
+function normalizePetOpacityPercent(value: unknown): CuuPetOpacityPercent {
+  return value === 60 || value === 80 || value === 100
+    ? value
+    : defaultPreferences.pet_opacity_percent;
 }
 
 function badgeReasonFor(card: CuuCard, preferences: CuuControllerPreferences): CuuControllerDecisionReason | undefined {

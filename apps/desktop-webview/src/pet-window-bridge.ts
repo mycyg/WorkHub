@@ -1,6 +1,14 @@
-import type { CuuIdleInteraction } from "@workhub/cuu";
+import type { CuuControllerPreferences, CuuIdleInteraction } from "@workhub/cuu";
 
 export type DesktopPetWindowMode = "body_only" | "card";
+export type DesktopPetScalePercent = 75 | 100 | 125 | 150;
+export type DesktopPetOpacityPercent = 60 | 80 | 100;
+
+export type DesktopPetWindowSettings = {
+  scale_percent: DesktopPetScalePercent;
+  opacity_percent: DesktopPetOpacityPercent;
+  pass_through: boolean;
+};
 
 export type DesktopPetPointerSnapshot = {
   cursor_near: boolean;
@@ -11,6 +19,7 @@ export type DesktopPetPointerSnapshot = {
 
 export type DesktopPetWindowBridge = {
   setMode?: (mode: DesktopPetWindowMode) => void | Promise<void>;
+  setSettings?: (settings: DesktopPetWindowSettings) => void | Promise<void>;
   startDragging?: () => void | Promise<void>;
   savePosition?: () => void | Promise<void>;
   sampleCursorNear?: () => boolean | Promise<boolean>;
@@ -40,6 +49,17 @@ type PetWindowModeCommandResult = {
       width?: number;
       height?: number;
     };
+  };
+};
+
+type PetWindowSettingsCommandResult = {
+  settings?: {
+    scalePercent?: number;
+    scale_percent?: number;
+    opacityPercent?: number;
+    opacity_percent?: number;
+    passThrough?: boolean;
+    pass_through?: boolean;
   };
 };
 
@@ -76,6 +96,16 @@ type TauriGlobal = {
 
 export function desktopPetWindowModeForCard(card: unknown): DesktopPetWindowMode {
   return card ? "card" : "body_only";
+}
+
+export function desktopPetWindowSettingsFromPreferences(
+  preferences: Pick<CuuControllerPreferences, "pet_scale_percent" | "pet_opacity_percent" | "pet_pass_through">
+): DesktopPetWindowSettings {
+  return {
+    scale_percent: preferences.pet_scale_percent,
+    opacity_percent: preferences.pet_opacity_percent,
+    pass_through: preferences.pet_pass_through
+  };
 }
 
 export function resolveDesktopPetWindowBridge(input: unknown = globalThis): DesktopPetWindowBridge | undefined {
@@ -124,6 +154,14 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
             const value = await invoke("set_pet_window_mode", { mode });
             assertPetWindowModeResult(value, mode);
           },
+          setSettings: async (settings: DesktopPetWindowSettings) => {
+            const value = await invoke("set_pet_window_settings", {
+              scalePercent: settings.scale_percent,
+              opacityPercent: settings.opacity_percent,
+              passThrough: settings.pass_through
+            });
+            assertPetWindowSettingsResult(value, settings);
+          },
           savePosition: async () => {
             await invoke("save_pet_window_position");
           },
@@ -135,6 +173,9 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
       : {
           setMode: async (mode: DesktopPetWindowMode) => {
             throw new Error(`Cannot switch Cuu pet window to ${mode}: Tauri invoke bridge is unavailable.`);
+          },
+          setSettings: async () => {
+            throw new Error("Cannot update Cuu pet window settings: Tauri invoke bridge is unavailable.");
           }
         })
   };
@@ -245,5 +286,19 @@ function assertPetWindowModeResult(value: unknown, expectedMode: DesktopPetWindo
   const minHeight = expectedMode === "card" ? 520 : 180;
   if (mode !== expectedMode || typeof size?.width !== "number" || typeof size?.height !== "number" || size.width < minWidth || size.height < minHeight) {
     throw new Error(`Cuu pet window returned an invalid ${expectedMode} placement plan.`);
+  }
+}
+
+function assertPetWindowSettingsResult(value: unknown, expected: DesktopPetWindowSettings) {
+  if (!value || typeof value !== "object") {
+    throw new Error("Cuu pet window did not confirm settings.");
+  }
+  const result = value as PetWindowSettingsCommandResult;
+  const settings = result.settings;
+  const scale = settings?.scalePercent ?? settings?.scale_percent;
+  const opacity = settings?.opacityPercent ?? settings?.opacity_percent;
+  const passThrough = settings?.passThrough ?? settings?.pass_through;
+  if (scale !== expected.scale_percent || opacity !== expected.opacity_percent || passThrough !== expected.pass_through) {
+    throw new Error("Cuu pet window returned an invalid settings plan.");
   }
 }

@@ -1,6 +1,8 @@
 import {
   defaultCuuControllerPreferences,
   type CuuController,
+  type CuuPetOpacityPercent,
+  type CuuPetScalePercent,
   type CuuControllerPreferences,
   type CuuControllerSnapshot
 } from "@workhub/cuu";
@@ -14,6 +16,9 @@ export type CuuPreferencePanelBinding = {
   toggle: HTMLButtonElement;
   refresh: () => void;
 };
+
+const petScaleOptions = [75, 100, 125, 150] as const satisfies readonly CuuPetScalePercent[];
+const petOpacityOptions = [60, 80, 100] as const satisfies readonly CuuPetOpacityPercent[];
 
 export const desktopCuuPreferenceCss = [
   ".wh-cuu-pref-button{position:fixed;right:18px;top:78px;z-index:40;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 12px 32px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-blue);font:850 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;cursor:pointer}",
@@ -59,7 +64,10 @@ export function normalizeCuuPreferences(input: Partial<CuuControllerPreferences>
     attention_mode: attentionMode === "quiet" || attentionMode === "do_not_disturb" ? attentionMode : defaults.attention_mode,
     sound_mode: soundMode === "muted" ? "muted" : defaults.sound_mode,
     reduced_motion: input?.reduced_motion === true,
-    queue_limit: Math.max(0, Math.min(12, Math.floor(Number.isFinite(queueLimit) ? queueLimit : defaults.queue_limit)))
+    queue_limit: Math.max(0, Math.min(12, Math.floor(Number.isFinite(queueLimit) ? queueLimit : defaults.queue_limit))),
+    pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
+    pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
+    pet_pass_through: input?.pet_pass_through === true
   };
 }
 
@@ -69,6 +77,10 @@ export function renderCuuPreferencePanel(snapshot: CuuControllerSnapshot) {
     `<button type="button" data-cuu-attention-mode="${mode}" aria-pressed="${preferences.attention_mode === mode ? "true" : "false"}">${label}</button>`;
   const soundButton = (mode: CuuControllerPreferences["sound_mode"], label: string) =>
     `<button type="button" data-cuu-sound-mode="${mode}" aria-pressed="${preferences.sound_mode === mode ? "true" : "false"}">${label}</button>`;
+  const scaleButton = (value: CuuPetScalePercent) =>
+    `<button type="button" data-cuu-pet-scale="${value}" aria-pressed="${preferences.pet_scale_percent === value ? "true" : "false"}">${value}%</button>`;
+  const opacityButton = (value: CuuPetOpacityPercent) =>
+    `<button type="button" data-cuu-pet-opacity="${value}" aria-pressed="${preferences.pet_opacity_percent === value ? "true" : "false"}">${value}%</button>`;
 
   return `<strong>Cuu</strong>
     <div class="wh-cuu-pref-row">
@@ -89,6 +101,22 @@ export function renderCuuPreferencePanel(snapshot: CuuControllerSnapshot) {
     <div class="wh-cuu-pref-toggle">
       <label><input type="checkbox" data-cuu-reduced-motion ${preferences.reduced_motion ? "checked" : ""}>减少动效</label>
       <span>${snapshot.queue.length + snapshot.badge_count} 条待处理</span>
+    </div>
+    <div class="wh-cuu-pref-row">
+      <span>尺寸</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 桌宠尺寸">
+        ${petScaleOptions.map(scaleButton).join("")}
+      </div>
+    </div>
+    <div class="wh-cuu-pref-row">
+      <span>透明度</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 桌宠透明度">
+        ${petOpacityOptions.map(opacityButton).join("")}
+      </div>
+    </div>
+    <div class="wh-cuu-pref-toggle">
+      <label><input type="checkbox" data-cuu-pet-pass-through ${preferences.pet_pass_through ? "checked" : ""}>点击穿透</label>
+      <span>${preferences.pet_scale_percent}% · ${preferences.pet_opacity_percent}%</span>
     </div>
     <div class="wh-cuu-pref-queue">
       <label for="wh-cuu-queue-limit">队列上限</label>
@@ -126,6 +154,16 @@ export function bindCuuPreferencePanel(
     const soundButton = target?.closest<HTMLButtonElement>("[data-cuu-sound-mode]");
     if (soundButton) {
       update({ sound_mode: soundButton.dataset.cuuSoundMode as CuuControllerPreferences["sound_mode"] });
+      return;
+    }
+    const scaleButton = target?.closest<HTMLButtonElement>("[data-cuu-pet-scale]");
+    if (scaleButton) {
+      update({ pet_scale_percent: Number(scaleButton.dataset.cuuPetScale) as CuuPetScalePercent });
+      return;
+    }
+    const opacityButton = target?.closest<HTMLButtonElement>("[data-cuu-pet-opacity]");
+    if (opacityButton) {
+      update({ pet_opacity_percent: Number(opacityButton.dataset.cuuPetOpacity) as CuuPetOpacityPercent });
     }
   });
 
@@ -140,6 +178,10 @@ export function bindCuuPreferencePanel(
     }
     if (target.matches("[data-cuu-queue-limit]")) {
       update({ queue_limit: Number(target.value) });
+      return;
+    }
+    if (target.matches("[data-cuu-pet-pass-through]")) {
+      update({ pet_pass_through: target.checked });
     }
   });
 
@@ -188,4 +230,16 @@ function defaultStorage(): CuuPreferenceStorage | undefined {
   } catch {
     return undefined;
   }
+}
+
+function normalizePetScalePercent(value: unknown): CuuPetScalePercent {
+  return petScaleOptions.includes(value as CuuPetScalePercent)
+    ? value as CuuPetScalePercent
+    : defaultCuuControllerPreferences().pet_scale_percent;
+}
+
+function normalizePetOpacityPercent(value: unknown): CuuPetOpacityPercent {
+  return petOpacityOptions.includes(value as CuuPetOpacityPercent)
+    ? value as CuuPetOpacityPercent
+    : defaultCuuControllerPreferences().pet_opacity_percent;
 }

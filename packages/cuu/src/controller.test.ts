@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCuuController } from "./controller.js";
+import { createCuuController, defaultCuuControllerPreferences } from "./controller.js";
 import { cuuMotionForState, type CuuCard } from "./index.js";
 
 function card(input: {
@@ -109,4 +109,38 @@ test("Cuu controller can disable motion and sound without changing visual notice
   assert.equal(decision.presentation.play_motion, false);
   assert.equal(decision.presentation.play_sound, false);
   assert.equal(decision.presentation.timeout_ms, 12000);
+});
+
+test("Cuu controller normalizes desktop pet window preferences", () => {
+  assert.deepEqual(defaultCuuControllerPreferences(), {
+    attention_mode: "normal",
+    sound_mode: "on",
+    reduced_motion: false,
+    queue_limit: 5,
+    pet_scale_percent: 100,
+    pet_opacity_percent: 100,
+    pet_pass_through: false
+  });
+
+  const controller = createCuuController({
+    preferences: {
+      pet_scale_percent: 125,
+      pet_opacity_percent: 80,
+      pet_pass_through: true
+    }
+  });
+
+  assert.equal(controller.snapshot().preferences.pet_scale_percent, 125);
+  assert.equal(controller.snapshot().preferences.pet_opacity_percent, 80);
+  assert.equal(controller.snapshot().preferences.pet_pass_through, true);
+
+  const normalized = controller.setPreferences({
+    pet_scale_percent: 111 as 100,
+    pet_opacity_percent: 42 as 100,
+    pet_pass_through: false
+  });
+
+  assert.equal(normalized.preferences.pet_scale_percent, 100);
+  assert.equal(normalized.preferences.pet_opacity_percent, 100);
+  assert.equal(normalized.preferences.pet_pass_through, false);
 });

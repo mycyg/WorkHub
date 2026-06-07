@@ -2,15 +2,16 @@ use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubS
 use workhub_client_tauri::deep_link::{deep_link_plan_from_url, DEEP_LINK_SCHEMES};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::pet_commands::{
-    body_position_from_window_position, pet_window_rect_from_position, restore_saved_body_position,
-    sample_pet_cursor_near_command_plan, save_pet_window_position_command_plan,
-    set_pet_window_mode_command_plan, start_pet_window_drag_command_plan,
+    body_position_from_window_position_with_settings, pet_window_rect_from_position_with_settings,
+    restore_saved_body_position, sample_pet_cursor_near_command_plan,
+    save_pet_window_position_command_plan, set_pet_window_mode_command_plan,
+    set_pet_window_settings_command_plan, start_pet_window_drag_command_plan,
     PetWindowModeCommandInput, PetWindowRuntimeCommandPlan, PetWindowRuntimeState,
-    PetWindowSavePositionCommandInput, PetWindowSavedPlacement,
+    PetWindowSavePositionCommandInput, PetWindowSavedPlacement, PetWindowSettingsCommandInput,
 };
 use workhub_client_tauri::pet_window::{
-    LogicalPosition, LogicalRect, PetWindowMode, PetWindowPointerInput,
-    DEFAULT_PET_CURSOR_NEAR_RADIUS,
+    LogicalPosition, LogicalRect, PetWindowMode, PetWindowPlacementPlan, PetWindowPointerInput,
+    PetWindowSettings, DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
 use workhub_client_tauri::single_instance::single_instance_plan_from_args;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
@@ -54,30 +55,22 @@ fn set_pet_window_mode(
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?;
     let body_position = state.body_position.or_else(|| {
-        current_position.map(|position| body_position_from_window_position(state.mode, position))
+        current_position.map(|position| {
+            body_position_from_window_position_with_settings(state.mode, position, state.settings)
+        })
     });
     let plan = set_pet_window_mode_command_plan(PetWindowModeCommandInput {
         mode,
         work_area: work_area_for_pet_window(&window),
         body_position,
+        settings: Some(state.settings),
     });
     let placement = plan
         .placement
         .as_ref()
         .ok_or_else(|| "pet placement plan is missing".to_string())?;
 
-    window
-        .set_size(LogicalSize::new(
-            placement.size.width as f64,
-            placement.size.height as f64,
-        ))
-        .map_err(|error| format!("failed to resize pet window: {error}"))?;
-    window
-        .set_position(TauriLogicalPosition::new(
-            placement.position.x as f64,
-            placement.position.y as f64,
-        ))
-        .map_err(|error| format!("failed to position pet window: {error}"))?;
+    apply_pet_window_placement(&window, placement, "set mode")?;
     keep_pet_window_above_desktop(&window)?;
     window
         .show()
@@ -87,7 +80,76 @@ fn set_pet_window_mode(
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?;
     state.mode = mode;
-    state.body_position = Some(body_position_from_window_position(mode, placement.position));
+    state.body_position = Some(body_position_from_window_position_with_settings(
+        mode,
+        placement.position,
+        state.settings,
+    ));
+
+    Ok(plan)
+}
+
+#[tauri::command]
+fn set_pet_window_settings(
+    app: tauri::AppHandle,
+    runtime_state: State<'_, Mutex<PetWindowRuntimeState>>,
+    scale_percent: u16,
+    opacity_percent: u8,
+    pass_through: bool,
+) -> Result<PetWindowRuntimeCommandPlan, String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or_else(|| "pet window is not available".to_string())?;
+    let scale_factor = scale_factor_for_window(&window);
+    let current_position = window
+        .outer_position()
+        .ok()
+        .map(|position| physical_position_to_logical(position, scale_factor));
+    let state = *runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?;
+    let body_position = state.body_position.or_else(|| {
+        current_position.map(|position| {
+            body_position_from_window_position_with_settings(state.mode, position, state.settings)
+        })
+    });
+    let plan = set_pet_window_settings_command_plan(PetWindowSettingsCommandInput {
+        scale_percent,
+        opacity_percent,
+        pass_through,
+        mode: state.mode,
+        work_area: work_area_for_pet_window(&window),
+        body_position,
+    });
+    let settings = plan
+        .settings
+        .as_ref()
+        .ok_or_else(|| "pet settings plan is missing".to_string())?;
+    let next_settings = PetWindowSettings {
+        scale_percent: settings.scale_percent,
+        opacity_percent: settings.opacity_percent,
+        pass_through: settings.pass_through,
+    };
+    let placement = plan
+        .placement
+        .as_ref()
+        .ok_or_else(|| "pet placement plan is missing".to_string())?;
+
+    apply_pet_window_placement(&window, placement, "set settings")?;
+    window
+        .set_ignore_cursor_events(settings.pass_through)
+        .map_err(|error| format!("failed to set pet window click-through: {error}"))?;
+    keep_pet_window_above_desktop(&window)?;
+
+    let mut state = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?;
+    state.settings = next_settings;
+    state.body_position = Some(body_position_from_window_position_with_settings(
+        state.mode,
+        placement.position,
+        next_settings,
+    ));
 
     Ok(plan)
 }
@@ -118,13 +180,18 @@ fn save_pet_window_position(app: tauri::AppHandle) -> Result<PetWindowRuntimeCom
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .mode;
+    let settings = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?
+        .settings;
     let position = physical_position_to_logical(position, scale_factor);
-    let body_position = body_position_from_window_position(
+    let body_position = body_position_from_window_position_with_settings(
         mode,
         LogicalPosition {
             x: position.x,
             y: position.y,
         },
+        settings,
     );
     runtime_state
         .lock()
@@ -154,6 +221,10 @@ fn sample_pet_cursor_near(app: tauri::AppHandle) -> Result<PetWindowRuntimeComma
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .mode;
+    let settings = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?
+        .settings;
     let scale_factor = scale_factor_for_window(&window);
     let cursor = app
         .cursor_position()
@@ -168,12 +239,13 @@ fn sample_pet_cursor_near(app: tauri::AppHandle) -> Result<PetWindowRuntimeComma
             x: cursor.x,
             y: cursor.y,
         },
-        window: pet_window_rect_from_position(
+        window: pet_window_rect_from_position_with_settings(
             mode,
             LogicalPosition {
                 x: position.x,
                 y: position.y,
             },
+            settings,
         ),
         near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
     }))
@@ -358,37 +430,35 @@ fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?
         .body_position;
+    let settings = runtime_state
+        .lock()
+        .map_err(|_| "pet runtime state is poisoned".to_string())?
+        .settings;
     let plan = set_pet_window_mode_command_plan(PetWindowModeCommandInput {
         mode: PetWindowMode::BodyOnly,
         work_area: work_area_for_pet_window(&window),
         body_position,
+        settings: Some(settings),
     });
     let placement = plan
         .placement
         .as_ref()
         .ok_or_else(|| "pet startup placement plan is missing".to_string())?;
 
+    apply_pet_window_placement(&window, placement, "startup")?;
     window
-        .set_size(LogicalSize::new(
-            placement.size.width as f64,
-            placement.size.height as f64,
-        ))
-        .map_err(|error| format!("failed to resize pet window at startup: {error}"))?;
-    window
-        .set_position(TauriLogicalPosition::new(
-            placement.position.x as f64,
-            placement.position.y as f64,
-        ))
-        .map_err(|error| format!("failed to position pet window at startup: {error}"))?;
+        .set_ignore_cursor_events(settings.pass_through)
+        .map_err(|error| format!("failed to set pet window startup click-through: {error}"))?;
     keep_pet_window_above_desktop(&window)?;
 
     let mut state = runtime_state
         .lock()
         .map_err(|_| "pet runtime state is poisoned".to_string())?;
     state.mode = PetWindowMode::BodyOnly;
-    state.body_position = Some(body_position_from_window_position(
+    state.body_position = Some(body_position_from_window_position_with_settings(
         PetWindowMode::BodyOnly,
         placement.position,
+        settings,
     ));
 
     // The pet webview shows itself through set_pet_window_mode after the first DOM paint,
@@ -416,6 +486,25 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
         .map_err(|error| format!("failed to create pet window: {error}"))?;
 
     Ok(())
+}
+
+fn apply_pet_window_placement(
+    window: &tauri::WebviewWindow,
+    placement: &PetWindowPlacementPlan,
+    reason: &str,
+) -> Result<(), String> {
+    window
+        .set_size(LogicalSize::new(
+            placement.size.width as f64,
+            placement.size.height as f64,
+        ))
+        .map_err(|error| format!("failed to resize pet window for {reason}: {error}"))?;
+    window
+        .set_position(TauriLogicalPosition::new(
+            placement.position.x as f64,
+            placement.position.y as f64,
+        ))
+        .map_err(|error| format!("failed to position pet window for {reason}: {error}"))
 }
 
 fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -679,6 +768,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             set_pet_window_mode,
+            set_pet_window_settings,
             start_pet_window_drag,
             save_pet_window_position,
             sample_pet_cursor_near,

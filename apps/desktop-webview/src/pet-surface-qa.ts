@@ -38,15 +38,18 @@ export function createDesktopPetVisualQaReport(input: {
       hasAll(input.idle.css, [
         ".wh-pet-surface",
         "position:relative",
-        "width:180px",
-        "height:220px",
+        "width:var(--wh-pet-window-w,180px)",
+        "height:var(--wh-pet-window-h,220px)",
         ".wh-pet-surface[data-pet-window-mode=card]",
-        "width:380px",
-        "height:560px",
-        "right:8px",
-        "bottom:8px",
+        "width:var(--wh-pet-window-w,380px)",
+        "height:var(--wh-pet-window-h,560px)",
+        "right:calc(8px * var(--wh-pet-scale,1))",
+        "bottom:calc(8px * var(--wh-pet-scale,1))",
         "pointer-events:none"
-      ]),
+      ]) &&
+        input.idle.html.includes('data-pet-scale-percent="100"') &&
+        input.idle.html.includes('data-pet-window-width="180"') &&
+        input.idle.html.includes('data-pet-window-height="220"'),
       "Cuu must be anchored inside the local Tauri pet window canvas without depending on the WebView viewport."
     ),
     qaCheck(
