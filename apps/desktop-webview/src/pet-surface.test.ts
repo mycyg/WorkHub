@@ -24,7 +24,8 @@ import {
   desktopPetAliveIdlePolicy,
   desktopPetInitialIdleAction,
   renderDesktopPetSurface,
-  resolveDesktopSurface
+  resolveDesktopSurface,
+  scheduleDesktopPetFirstPaint
 } from "./pet-surface.js";
 import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
 import { desktopPetWindowModeForCard, resolveDesktopPetWindowBridge } from "./pet-window-bridge.js";
@@ -236,6 +237,48 @@ test("desktop surface resolver accepts the dedicated pet html entry flag", () =>
       target.__WORKHUB_SURFACE__ = previous;
     }
   }
+});
+
+test("pet first-paint scheduler waits for two animation frames before showing the window", () => {
+  const calls: string[] = [];
+  const rafCallbacks: FrameRequestCallback[] = [];
+  const timeoutCallbacks: Array<() => void> = [];
+  const cancel = scheduleDesktopPetFirstPaint(() => calls.push("ready"), {
+    requestAnimationFrame(callback) {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    },
+    setTimeout(callback) {
+      timeoutCallbacks.push(callback);
+      return timeoutCallbacks.length;
+    },
+    clearTimeout() {}
+  });
+
+  assert.deepEqual(calls, []);
+  rafCallbacks.shift()?.(0);
+  assert.deepEqual(calls, []);
+  rafCallbacks.shift()?.(16);
+  assert.deepEqual(calls, ["ready"]);
+  timeoutCallbacks.shift()?.();
+  assert.deepEqual(calls, ["ready"]);
+  cancel();
+});
+
+test("pet first-paint scheduler still releases hidden webviews through the timeout fallback", () => {
+  const calls: string[] = [];
+  const timeoutCallbacks: Array<() => void> = [];
+  scheduleDesktopPetFirstPaint(() => calls.push("ready"), {
+    setTimeout(callback) {
+      timeoutCallbacks.push(callback);
+      return timeoutCallbacks.length;
+    },
+    clearTimeout() {}
+  });
+
+  assert.deepEqual(calls, []);
+  timeoutCallbacks.shift()?.();
+  assert.deepEqual(calls, ["ready"]);
 });
 
 test("desktop surface resolver treats the Tauri pet window label as the pet surface", () => {

@@ -98,6 +98,41 @@ export const desktopPetAliveIdlePolicy = {
   sleeping_loop_interval_ms: 12000
 } satisfies Partial<CuuIdleSchedulerPolicy>;
 
+export type DesktopPetFirstPaintClock = {
+  requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+  setTimeout?: (callback: () => void, timeout: number) => number;
+  clearTimeout?: (handle: number) => void;
+};
+
+export function scheduleDesktopPetFirstPaint(
+  callback: () => void,
+  clock: DesktopPetFirstPaintClock = globalThis as DesktopPetFirstPaintClock
+): () => void {
+  let cancelled = false;
+  const run = () => {
+    if (cancelled) {
+      return;
+    }
+    cancelled = true;
+    callback();
+  };
+  const timeout = clock.setTimeout?.(run, 64);
+  const raf = clock.requestAnimationFrame;
+
+  if (raf) {
+    raf(() => {
+      raf(run);
+    });
+  }
+
+  return () => {
+    cancelled = true;
+    if (timeout !== undefined) {
+      clock.clearTimeout?.(timeout);
+    }
+  };
+}
+
 export function createDesktopPetIdleScheduler(now_ms = Date.now()): CuuIdleScheduler {
   return createCuuIdleScheduler({
     now_ms,
@@ -235,8 +270,12 @@ export async function bootDesktopPetSurface(
   let syncingPetWindowMode: DesktopPetWindowMode | undefined;
   let failedPetWindowMode: DesktopPetWindowMode | undefined;
   let petWindowModeError: string | undefined;
+  let renderGeneration = 0;
+  let cancelPendingFirstPaintSync: (() => void) | undefined;
 
   const render = () => {
+    renderGeneration += 1;
+    const generation = renderGeneration;
     const desiredMode = desktopPetWindowModeForCard(currentCard);
     const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
     const surface = renderDesktopPetSurface({
@@ -248,7 +287,14 @@ export async function bootDesktopPetSurface(
       window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
-    syncPetWindowMode(desiredMode);
+    cancelPendingFirstPaintSync?.();
+    cancelPendingFirstPaintSync = scheduleDesktopPetFirstPaint(() => {
+      if (generation !== renderGeneration) {
+        return;
+      }
+      cancelPendingFirstPaintSync = undefined;
+      syncPetWindowMode(desiredMode);
+    });
   };
 
   const setCard = (card: CuuCard | undefined, status?: string) => {
@@ -371,6 +417,7 @@ export async function bootDesktopPetSurface(
     subscribed: runtime.subscribed,
     async dispose() {
       window.clearInterval(idleTimer);
+      cancelPendingFirstPaintSync?.();
       pointerSensor.dispose();
       await runtime.dispose();
     }

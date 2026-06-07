@@ -4,6 +4,8 @@ param(
   [int]$FrameCount = 32,
   [int]$IntervalMs = 180,
   [int]$PixelStep = 2,
+  [int]$MinFirstFrameOrangePixels = 8000,
+  [int]$MinFirstFrameVisualPixels = 12000,
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
 )
@@ -200,6 +202,106 @@ function New-WindowFrame {
   }
 }
 
+function Measure-CuuFrameVisualPixels {
+  param([string]$Path)
+
+  $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $step = [Math]::Max(1, [int][Math]::Floor(([Math]::Max($bitmap.Width, $bitmap.Height)) / 360))
+    $samples = 0
+    $orangePixels = 0
+    $creamPixels = 0
+    $darkPixels = 0
+
+    for ($y = 0; $y -lt $bitmap.Height; $y += $step) {
+      for ($x = 0; $x -lt $bitmap.Width; $x += $step) {
+        $color = $bitmap.GetPixel($x, $y)
+        $samples += 1
+
+        $isCuuOrange = $color.R -ge 145 -and
+          $color.G -ge 65 -and
+          $color.G -le 210 -and
+          $color.B -le 170 -and
+          $color.R -ge ($color.G + 18) -and
+          $color.G -ge ($color.B + 4)
+        $isCream = $color.R -ge 220 -and
+          $color.G -ge 190 -and
+          $color.B -ge 145 -and
+          $color.R -ge $color.B
+        $isDarkDetail = $color.R -le 80 -and
+          $color.G -le 80 -and
+          $color.B -le 95
+
+        if ($isCuuOrange) {
+          $orangePixels += 1
+        }
+        if ($isCream) {
+          $creamPixels += 1
+        }
+        if ($isDarkDetail) {
+          $darkPixels += 1
+        }
+      }
+    }
+
+    $visualPixels = $orangePixels + [Math]::Min($creamPixels, $darkPixels * 4)
+    [pscustomobject]@{
+      samples = $samples
+      orange_pixels = $orangePixels
+      cream_pixels = $creamPixels
+      dark_pixels = $darkPixels
+      visual_pixels = $visualPixels
+      sample_step = $step
+      width = $bitmap.Width
+      height = $bitmap.Height
+    }
+  } finally {
+    $bitmap.Dispose()
+  }
+}
+
+function Wait-ForCuuVisualWindow {
+  param(
+    [int]$TargetProcessId,
+    [int]$TimeoutSeconds,
+    [string]$ProbePath,
+    [int]$MinOrangePixels,
+    [int]$MinVisualPixels
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastPet = $null
+  $lastReport = $null
+  $attempt = 0
+  do {
+    $attempt += 1
+    $pet = Select-CuuWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $TargetProcessId)
+    if ($pet -and $pet.Visible) {
+      New-WindowFrame -Window $pet -Path $ProbePath
+      $lastPet = $pet
+      $lastReport = Measure-CuuFrameVisualPixels -Path $ProbePath
+      if ($lastReport.orange_pixels -ge $MinOrangePixels -and $lastReport.visual_pixels -ge $MinVisualPixels) {
+        return [pscustomobject]@{
+          Passed = $true
+          Pet = $pet
+          PixelReport = $lastReport
+          Attempts = $attempt
+          ProbePath = $ProbePath
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+
+  [pscustomobject]@{
+    Passed = $false
+    Pet = $lastPet
+    PixelReport = $lastReport
+    Attempts = $attempt
+    ProbePath = $ProbePath
+  }
+}
+
 function Measure-FrameDiff {
   param([string]$BasePath, [string]$Path, [int]$Step)
   $base = [System.Drawing.Bitmap]::FromFile($BasePath)
@@ -306,10 +408,16 @@ try {
 
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $process = Start-Process -FilePath $exePath -WorkingDirectory $srcTauriRoot -PassThru
-  $pet = Wait-ForCuuWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds
-  if (-not $pet) {
+  $firstFrameProbe = Join-Path $OutDir "first-frame-probe.png"
+  $firstFrameGate = Wait-ForCuuVisualWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds -ProbePath $firstFrameProbe -MinOrangePixels $MinFirstFrameOrangePixels -MinVisualPixels $MinFirstFrameVisualPixels
+  if (-not $firstFrameGate.Pet) {
     throw "Cuu pet window was not found by title."
   }
+  if (-not $firstFrameGate.Passed) {
+    $pixelReport = if ($firstFrameGate.PixelReport) { $firstFrameGate.PixelReport | ConvertTo-Json -Compress } else { "null" }
+    throw "Cuu pet first visual frame did not reach pixel thresholds orange>=$MinFirstFrameOrangePixels visual>=$MinFirstFrameVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
+  }
+  $pet = $firstFrameGate.Pet
 
   $frames = [System.Collections.Generic.List[string]]::new()
   $rects = [System.Collections.Generic.List[object]]::new()
@@ -347,6 +455,14 @@ try {
     interval_ms = $IntervalMs
     frames_dir = $framesDir
     contact_sheet = $contactSheet
+    first_frame_gate = [pscustomobject]@{
+      passed = $firstFrameGate.Passed
+      attempts = $firstFrameGate.Attempts
+      probe_path = $firstFrameGate.ProbePath
+      min_orange_pixels = $MinFirstFrameOrangePixels
+      min_visual_pixels = $MinFirstFrameVisualPixels
+      pixel_report = $firstFrameGate.PixelReport
+    }
     max_vs_first_mean_abs_delta = ($diffs | ForEach-Object { $_.vs_first.mean_abs_delta } | Measure-Object -Maximum).Maximum
     max_vs_previous_mean_abs_delta = ($diffs | ForEach-Object { $_.vs_previous.mean_abs_delta } | Measure-Object -Maximum).Maximum
     max_vs_first_changed_pixels_gt8 = ($diffs | ForEach-Object { $_.vs_first.changed_pixels_gt8 } | Measure-Object -Maximum).Maximum

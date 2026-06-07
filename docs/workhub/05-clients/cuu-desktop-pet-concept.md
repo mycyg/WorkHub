@@ -12,7 +12,7 @@ owner: workflow
 > **当前默认视觉路线**：见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。用户已明确反馈当前 PSD draft 有恐怖谷风险，因此 Cuu P1 默认改为参考 [BongoCat](https://github.com/ayangweb/BongoCat) 思路的低恐怖谷扁平小猫 renderer；PSD / Live2D 只保留为实验线，过美术 QA 后才能回到默认。
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；下一步主线是先增强 Bongo Cuu 动作并做真实 Tauri 录屏，Live2D 继续精修。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4 和 P1c first-painted 首帧门禁。下一步主线是 Bongo 动作二轮、窗口体验和 Live2D 精修并行。
 
 ## 1. 角色定位
 
@@ -114,7 +114,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。这条路线的目标是先让 Cuu 可爱、稳定、愿意常驻，再逐步补更明显的挥手、抱文件、审批敲桌、检索和庆祝动作。
+这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。P1b 已补挥手、抱文件、审批打回、检索、同步、庆祝和拖拽动作，P1c 已补 first-painted 首帧门禁；后续继续增强动作幅度和窗口体验。
 
 ### 3.6 当前实现差距
 
@@ -132,10 +132,10 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 但这些还不等于「桌宠已经完成」：
 
 - 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；已有 Live2D 分层拆件概念图和施工专篇；但还没有正式分层 PSD、Cubism `.moc3` / `.model3.json` 或 Tauri Live2D runtime。
-- 当前默认 pet surface 已切到 `bongo_cuu`：扁平、稳定、低恐怖谷，DOM/CSS 组件数 `24`，保留 Cuu 的围兜、蝴蝶结、红珠和尾巴识别点。
+- 当前默认 pet surface 已切到 `bongo_cuu`：扁平、稳定、低恐怖谷，DOM/CSS 组件数 `31`，保留 Cuu 的围兜、蝴蝶结、红珠和尾巴识别点，并有 search-glass / sync-ring / spark 等业务道具层。
 - `psd_draft_probe` 从 144 层 PSD draft 中选出 72 个运行层渲染，能证明眼睛、尾巴、耳朵、流苏等层被真实挂载；但它仍是 `draft_created_not_visual_pass`，因恐怖谷风险只保留为实验线，不能替代精修 PSD / Cubism。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
-- 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、显示 body-only Cuu，并在 mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；同日 card mode motion capture 已确认事件卡触发后窗口可从 `194 x 228` 扩到 `394 x 568`，最终 fresh 抓帧中 Cuu 完整身体可见、轻卡右侧有 HiDPI 留白；最新 dev asset path 修复后，body-only 第一屏可见 `idle_tail_sway`，不再依赖 inline 静态 fallback 或缩放呼吸；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
+- 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、预定位 body-only Cuu，并由 pet surface 首屏后调用 `set_pet_window_mode` 显示；mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；同日 card mode motion capture 已确认事件卡触发后窗口可从 `194 x 228` 扩到 `394 x 568`，最终 fresh 抓帧中 Cuu 完整身体可见、轻卡右侧有 HiDPI 留白；2026-06-08 P1c contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再依赖 inline 静态 fallback、缩放呼吸或 blank 首帧；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
 - 拖拽/hover 的 webview bridge 已落，并已接真实 Tauri `startDragging`、mode resize/position/show、cursor-near 采样和 body anchor 位置落盘；bridge 现在会校验 Rust placement，缺失 invoke 或 placement 时显式进入 diagnostic/compact fallback，不再静默裁切；仍缺收起、真实独立设置页、多屏实测恢复和低电量降帧。
 - 证据卡已能触发 typed `knowledge-search` 并回显结果；「用这些证据继续」已通过 `POST /api/workitems/{id}/evidence-bindings` 绑定到当前任务上下文。仍缺真实知识库持久化、证据详情展开和完整检索页分页。
 - 已有 Windows debug `PrintWindow` 自动 smoke 和多帧 motion capture，可对透明/layered WebView2 的 `Cuu` 顶层窗口做可见像素、尺寸变化和帧差检查；还没有自动化 alpha 边缘、真实帧率、HiDPI、多屏和点击区域 QA。
@@ -204,11 +204,11 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 剩余差距：
 
 - 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
-- 下一步 Hatch Pack 不再是为修“只露耳朵”兜底，而是为了提升 body anchor 一致性、姿态可爱度和待机/任务动作的鲜活感。
+- 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是作为动作 storyboard / fallback；默认主线继续打磨 Bongo Cuu，Live2D 继续精修。
 - 离线卡已完成 P0 人话化，但审批 / 澄清 / 证据 / 预算等轻卡仍需继续按概念图做气泡式、选项优先和少文字化。
 - 当前动作仍是 sprite atlas，不是最终 Live2D 活体表现；Hatch Pack 要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
 
-下一步不应先堆更多抽象状态，而应制作 Hatch Pet 规格的 Cuu 多动作包，再把 pet body renderer 从旧 18 clip 切到 Hatch Pack，最后并行推进 Live2D 分层 PSD。
+下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、窗口设置和动作幅度做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
 
 ### 3.7 施工进展（2026-06-06）
 
@@ -235,7 +235,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - `packages/cuu/src/idle-scheduler.ts`：新增 Cuu 活体 idle scheduler，覆盖呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲和挥手等微动作语义。
 - `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
 - `client-tauri/src-tauri/src/pet_commands.rs`：新增 Cuu 独立窗口 command scaffold，固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`，并让 capability 开放最小 `core:window:allow-start-dragging`。
-- `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；setup 会用 `WebviewWindowBuilder::from_config` 动态创建 `create:false` 的 `pet` window，并注入 `window.__WORKHUB_SURFACE__="pet"`；随后恢复/夹取 `pet-window-state.json` 的 body anchor，并在启动期按 body-only 模式显示 Cuu；`set_pet_window_mode` 已执行 resize/position/show，启动、显示/切换和 mode resize 时会显式保持 `pet` always-on-top；monitor work area、window outer position 与 cursor position 已做 HiDPI physical→logical 换算；`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实桌面 cursor 与 pet window rect。
+- `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；setup 会用 `WebviewWindowBuilder::from_config` 动态创建 `create:false` 的 `pet` window，并注入 `window.__WORKHUB_SURFACE__="pet"`；随后恢复/夹取 `pet-window-state.json` 的 body anchor，并在启动期按 body-only 模式预定位 Cuu；`set_pet_window_mode` 已执行 resize/position/show，显示/切换和 mode resize 时会显式保持 `pet` always-on-top；monitor work area、window outer position 与 cursor position 已做 HiDPI physical→logical 换算；`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实桌面 cursor 与 pet window rect。
 - `client-tauri/src-tauri/src/deep_link.rs` + `main.rs` + `apps/desktop-webview/src/browser.ts`：已接 `tauri-plugin-deep-link`，`workhub://` / `yqgl://` 可安全映射到 WorkHub 主窗 route，并同时发 `navigate` 与 `deep-link` 事件；desktop webview 已消费 safe `navigate` route，Cuu 可把复杂轻卡动作交给主窗承接。
 - `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 与 Rust cursor sample 喂给 idle scheduler。
 - `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
@@ -249,7 +249,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 - 18 个动作的正式透明 PNG / WebP 已落 P1 pack；pet surface 静态视觉 QA 和 Windows debug `PrintWindow` runtime smoke / motion capture 已落；2026-06-07 已修复 dev sprite asset path 并验证真实 `idle_tail_sway` / card worried/offline 姿态可见；后续仍需做体积压缩、anchor 微调、alpha 边缘、跨平台透明 capture 和长时间性能 QA。
 - `cuu.sprite.json` 已有运行时 JSON manifest，并覆盖业务状态与 idle / interaction 微动作。
-- 独立 Tauri `pet` window runtime 已有初版；生产 Tauri 通过 Rust injected surface flag 分流，浏览器调试保留 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html`；Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge 已落，并已把启动期 Cuu body-only 显示、mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；HiDPI 坐标换算和 runtime topmost 已接；基础托盘显隐、deep-link 主窗唤起、single-instance 聚焦/协议 URL 处理和 high/urgent 系统通知已落；2026-06-07 已通过 Windows debug `PrintWindow` smoke，仍缺多显示器实测、通知点击联动、跨平台透明 capture 和 alpha 边缘 QA。
+- 独立 Tauri `pet` window runtime 已有初版；生产 Tauri 通过 Rust injected surface flag 分流，浏览器调试保留 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html`；Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge 已落，并已把启动期 Cuu body-only 预定位、first-painted 后 show、mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；HiDPI 坐标换算和 runtime topmost 已接；基础托盘显隐、deep-link 主窗唤起、single-instance 聚焦/协议 URL 处理和 high/urgent 系统通知已落；2026-06-08 P1c 已通过 Windows `PrintWindow` first-frame gate，仍缺多显示器实测、通知点击联动、跨平台透明 capture 和 alpha 边缘 QA。
 - 真实 Tauri 设置页承接、系统通知偏好/去重、收起/恢复、多屏监视器恢复策略和透明窗口长驻 QA。
 - 正式 Live2D 分层 PSD、Cubism 绑定、`.model3.json` 导出和 Tauri Live2D runtime。
 - 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。

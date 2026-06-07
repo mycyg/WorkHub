@@ -20,6 +20,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
@@ -31,7 +32,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。下一步主线是增强 Bongo Cuu 动作并做真实 Tauri 录屏；Live2D 继续精修。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4 和 P1c first-painted 首帧门禁；下一步转向窗口体验、动作幅度二轮和 Live2D 精修。
 
 ---
 
@@ -254,10 +255,10 @@ visuals:
 | PSD 隐藏 | 通过；DOM 中 `live2d=null`，`layers=[]`，`data-cuu-live2d-layer-count="0"` |
 | 全身可见 | 通过；多帧截图中 Cuu 全身可见，不是只露耳朵 |
 | 动作 | P1 技术通过；尾巴、头、眨眼、爪、耳朵已有 keyframes |
-| 鲜活感 | 继续增强；当前动作安全但偏温和，后续要补更明显的挥手、抱文件、敲桌、检索和庆祝 |
-| Tauri 真实窗口 | 已补技术验证；P1b 真实 `Cuu` hwnd 录屏通过，但启动首帧仍有空白/局部过渡 |
+| 鲜活感 | 继续增强；P1b 已补挥手、抱文件、检索、同步和庆祝，后续要加大动作幅度和卡片联动 |
+| Tauri 真实窗口 | 已补 P1c first-painted 门禁；最新真实 `Cuu` hwnd 录屏 frame 000 即 body-only 全身可见 |
 
-下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活，并修掉 cold-start 首帧过渡。
+下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活，并补窗口设置与动作幅度二轮。
 
 ### 0.5.1 CUX-BONGO-002：Bongo Cuu 动作增强与真实 Tauri 录屏（2026-06-08）
 
@@ -286,9 +287,35 @@ visuals:
 | 低恐怖谷 | 通过；仍是稳定扁平 Cuu，没有 PSD 恐怖谷和多肢体幻觉 |
 | 默认 idle | 通过；8 帧 browser CDP 中尾巴、头、眼有可见变化，最高 `18.97%` 像素相对首帧变化 |
 | 业务动作 | 通过 P1b；状态墙中 wave/search/sync/revise/celebrate 肉眼可辨 |
-| 真实 Tauri | 技术通过；`cuu-tauri-motion-capture.ps1` 输出 GIF/MP4，frame 004 起 body-only 全身可见，frame 009 起 card mode 全身可见 |
-| 启动首帧 | **未完美**；frame 000-003 有空白/右侧局部过渡，说明 `pet` window visible 早于 webview first paint |
-| 下一步 | 补 `pet-ready` / first-painted handshake，Rust 只在 Cuu body 已绘制后 show，或 motion QA 加启动稳定等待并单独保存冷启动缺口 |
+| 真实 Tauri | 技术通过；P1b `cuu-tauri-motion-capture.ps1` 输出 GIF/MP4，曾在 frame 000-001 记录空白帧，已由 CUX-BONGO-003 修复 |
+| 启动首帧 | **历史未完美**；P1b frame 000-003 有空白/右侧局部过渡，说明 `pet` window visible 早于 webview first paint |
+| 下一步 | 见 CUX-BONGO-003：Rust 启动只预定位，pet surface 首屏后同步窗口模式，motion QA 等首帧像素达标后再录 |
+
+### 0.5.2 CUX-BONGO-003：Cuu first-painted 首帧稳定（2026-06-08）
+
+本轮继续处理 P1b 真实 Tauri 证据里的 cold-start blank：旧 contact sheet 的 frame 000-001 是黑空帧，不能作为“启动就有桌宠”的通过证据。修复后 Rust 启动期只计算并设置 body-only 窗口尺寸/位置/置顶，不再抢先 `show()`；`pet-surface.ts` 在首屏 DOM 渲染后通过两帧 `requestAnimationFrame` 或 64ms timeout fallback 再调用 `set_pet_window_mode`；motion capture 脚本新增 `first-frame-probe.png` 像素门槛，通过后才写入正式 `frame-000.png`。
+
+![Cuu Bongo P1c first-painted real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
+
+本轮新增 / 修改：
+
+| 文件 | 作用 |
+|---|---|
+| `client-tauri/src-tauri/src/main.rs` | `prepare_pet_window_on_startup` 只预定位和保持置顶，不在 setup 里直接 show pet window |
+| `apps/desktop-webview/src/pet-surface.ts` | 新增 `scheduleDesktopPetFirstPaint`，首屏 DOM 后再同步 `body_only/card` 窗口模式 |
+| `apps/desktop-webview/src/pet-surface.test.ts` | 新增 rAF 两帧与 hidden webview timeout fallback 测试 |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `MinFirstFrameOrangePixels` / `MinFirstFrameVisualPixels`，首帧 probe 达标后才开始录制 |
+| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
+
+验收结论：
+
+| 检查项 | 结论 |
+|---|---|
+| 首帧 | 通过；新 contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再出现黑空帧 |
+| 像素门槛 | 通过；`first_frame_gate.passed=true`，第 7 次 probe 达到 `orange_pixels=9408`、`visual_pixels=15530` |
+| 真实录屏 | 通过；24 帧 `PrintWindow` 输出 contact sheet / GIF / MP4 / diff report |
+| 回归口径 | 任何 `frame-000.png` 橘色像素为 0、只露耳朵或只显示半身，都不能作为桌宠 motion QA 通过 |
+| 仍待提升 | Bongo 动作幅度仍偏温和；下一步应做窗口设置（缩放/透明/贴边/hover 避让）和动作二轮，而不是回退恐怖谷 PSD |
 
 ### 0.6 P1.0 双语运行时底座（2026-06-07）
 
@@ -1062,6 +1089,7 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 | idle 最大变化 | `max_vs_first_changed_pixels_gt8 > 1000` |
 | 事件卡尺寸 | card mode 宽 >= 360，高 >= 520 |
 | Cuu 可见像素 | orange pixels >= 80，visual pixels >= 180 |
+| 首帧 probe | `orange_pixels >= 8000` 且 `visual_pixels >= 12000` 后才允许写入正式 frame 000 |
 | 空白帧 | 不允许连续 3 帧 visual pixels < 180 |
 
 ### 7.3 文档更新门
@@ -1082,9 +1110,9 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 
 推荐顺序：
 
-1. **Bongo cold-start 稳定**：补 `pet-ready` / first-painted handshake，Rust 不应在 webview 尚未绘制时让 `Cuu` window 可见；frame 000-003 空白/局部必须消失。
-2. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
-3. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
+1. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
+2. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
+3. **Pet window 设置与窗口能力**：补缩放、透明度、贴边、hover 避让、显示/隐藏快捷入口和拖拽后位置截图。
 4. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
 5. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏肉眼通过后才允许进入默认候选。
 6. **Web Home 真页面**：按 AI-first concept 改首屏。

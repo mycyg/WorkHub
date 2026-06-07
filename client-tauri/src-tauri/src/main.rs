@@ -349,7 +349,7 @@ fn execute_window_control(
     Ok(plan)
 }
 
-fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
+fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
     let window = app
         .get_webview_window("pet")
         .ok_or_else(|| "pet window is not available".to_string())?;
@@ -381,9 +381,6 @@ fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
         ))
         .map_err(|error| format!("failed to position pet window at startup: {error}"))?;
     keep_pet_window_above_desktop(&window)?;
-    window
-        .show()
-        .map_err(|error| format!("failed to show pet window at startup: {error}"))?;
 
     let mut state = runtime_state
         .lock()
@@ -394,6 +391,8 @@ fn show_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
         placement.position,
     ));
 
+    // The pet webview shows itself through set_pet_window_mode after the first DOM paint,
+    // so motion capture no longer records cold-start blank frames.
     Ok(())
 }
 
@@ -670,7 +669,7 @@ fn main() {
                     state.body_position = Some(restore_saved_body_position(&saved, work_area));
                 }
             }
-            show_pet_window_on_startup(app)?;
+            prepare_pet_window_on_startup(app)?;
             install_workhub_tray(app)?;
             install_workhub_deep_links(app)?;
             let shell_config = load_workhub_shell_config(&app.handle())?;

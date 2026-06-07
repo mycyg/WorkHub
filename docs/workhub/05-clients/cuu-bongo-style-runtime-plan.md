@@ -9,6 +9,7 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -43,13 +44,16 @@ visuals:
 
 ![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
 
+![Cuu Bongo P1c first-painted Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
 | 状态墙多帧 | 12 个状态同屏；wave/search/sync/revise/celebrate 等动作可肉眼区分，最高 `25.17%` 像素相对首帧变化 |
 | 真实 Tauri 录屏 | `scripts/qa/cuu-tauri-motion-capture.ps1` 通过；输出 contact sheet、GIF、MP4 和 diff report |
-| 真实窗口残留 | frame 000-003 有启动期空白/局部过渡；frame 004 起全身可见，frame 009 起 card mode 全身可见 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 技术通过但仍需 `pet-ready` 后再 show，避免启动首帧空白 |
+| first-painted gate | 通过；`first_frame_gate.passed=true`，第 7 次 probe 后达到 `orange_pixels=9408`、`visual_pixels=15530` |
+| 真实窗口首帧 | 通过；P1c contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再把 blank 帧收进证据 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；下一步转向窗口体验和动作幅度二轮 |
 
 证据文件：
 
@@ -224,10 +228,10 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 
 真实 Tauri 门：
 
-- 已用 `scripts/qa/cuu-tauri-motion-capture.ps1 -SkipBuild -FrameCount 24 -IntervalMs 180` 抓真实 `Cuu` 顶层窗口。
-- 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-tauri/`。
+- 已用 `scripts/qa/cuu-tauri-motion-capture.ps1 -WaitSeconds 12 -FrameCount 24 -IntervalMs 180` 抓真实 `Cuu` 顶层窗口。
+- 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/`。
 - browser CDP 只能作为快速视觉检查，不能替代最终透明窗口录屏。
-- 下一步必须补 `pet-ready` / first-painted handshake，避免 Tauri window visible 后前几帧空白或局部过渡。
+- motion capture 会先用 `first-frame-probe.png` 等到 `orange_pixels>=8000` 且 `visual_pixels>=12000`，通过后才开始写入 `frame-000.png`。
 
 ---
 
@@ -237,7 +241,7 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 |---|---|---|---|
 | BONGO-P1a | 默认低恐怖谷 renderer | `cuu-bongo-runtime.ts` | 已落；浏览器截图和 DOM 证明默认不是 PSD |
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
-| BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **技术通过**：真实窗口全身可见；待修首帧空白/局部过渡后再标完美 |
+| BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
 | BONGO-P1d | 设置和窗口能力 | scale / opacity / pass-through / hide-on-hover / keep-in-screen | 对齐 BongoCat 的桌宠窗口体验 |
 | BONGO-P2 | 可替换模型机制 | Cuu model preset + custom model slot | 可从默认 Bongo Cuu 切到未来 Live2D |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
