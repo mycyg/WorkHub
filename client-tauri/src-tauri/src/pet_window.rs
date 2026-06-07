@@ -80,6 +80,8 @@ pub struct PetWindowPointerDecision {
     pub inside_window: bool,
     pub cursor_near: bool,
     pub distance_to_window_px: u32,
+    pub look_x_percent: i16,
+    pub look_y_percent: i16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,6 +230,18 @@ pub fn pet_pointer_decision(input: PetWindowPointerInput) -> PetWindowPointerDec
         inside_window: distance == 0,
         cursor_near: distance <= input.near_radius,
         distance_to_window_px: distance,
+        look_x_percent: pointer_axis_percent(
+            input.cursor.x,
+            input.window.x,
+            input.window.width,
+            input.near_radius,
+        ),
+        look_y_percent: pointer_axis_percent(
+            input.cursor.y,
+            input.window.y,
+            input.window.height,
+            input.near_radius,
+        ),
     }
 }
 
@@ -333,6 +347,15 @@ fn distance_to_rect(point: LogicalPosition, rect: LogicalRect) -> u32 {
         0
     };
     (((dx * dx + dy * dy) as f64).sqrt().round()) as u32
+}
+
+fn pointer_axis_percent(cursor: i32, origin: i32, size: u32, near_radius: u32) -> i16 {
+    let half_size = (size as f64 / 2.0).max(1.0);
+    let center = origin as f64 + half_size;
+    let radius = half_size + near_radius as f64;
+    (((cursor as f64 - center) / radius) * 100.0)
+        .round()
+        .clamp(-100.0, 100.0) as i16
 }
 
 #[cfg(test)]
@@ -470,9 +493,15 @@ mod tests {
 
         assert_eq!(inside.inside_window, true);
         assert_eq!(inside.cursor_near, true);
+        assert_eq!(inside.look_x_percent, -43);
+        assert_eq!(inside.look_y_percent, -44);
         assert_eq!(nearby.inside_window, false);
         assert_eq!(nearby.cursor_near, true);
+        assert_eq!(nearby.look_x_percent, 86);
+        assert_eq!(nearby.look_y_percent, 71);
         assert_eq!(far.cursor_near, false);
+        assert_eq!(far.look_x_percent, 100);
+        assert_eq!(far.look_y_percent, 100);
     }
 
     #[test]

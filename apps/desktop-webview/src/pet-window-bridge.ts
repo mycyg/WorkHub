@@ -14,6 +14,11 @@ export type DesktopPetPointerSnapshot = {
   cursor_near: boolean;
   hovered: boolean;
   dragging: boolean;
+  look_x: number;
+  look_y: number;
+  avoidance_x: number;
+  avoidance_y: number;
+  hover_avoidance: "none" | "soft";
   last_pointer_ms?: number;
 };
 
@@ -22,7 +27,7 @@ export type DesktopPetWindowBridge = {
   setSettings?: (settings: DesktopPetWindowSettings) => void | Promise<void>;
   startDragging?: () => void | Promise<void>;
   savePosition?: () => void | Promise<void>;
-  sampleCursorNear?: () => boolean | Promise<boolean>;
+  sampleCursorNear?: () => PetCursorSampleResult | Promise<PetCursorSampleResult>;
   diagnostics?: DesktopPetWindowBridgeDiagnostics;
 };
 
@@ -33,12 +38,24 @@ export type DesktopPetWindowBridgeDiagnostics = {
   missing: string[];
 };
 
-type PetCursorSampleResult =
+export type PetCursorSampleResult =
   | boolean
   | {
       pointer?: {
+        insideWindow?: boolean;
+        inside_window?: boolean;
         cursorNear?: boolean;
         cursor_near?: boolean;
+        distanceToWindowPx?: number;
+        distance_to_window_px?: number;
+        lookX?: number;
+        look_x?: number;
+        lookXPercent?: number;
+        look_x_percent?: number;
+        lookY?: number;
+        look_y?: number;
+        lookYPercent?: number;
+        look_y_percent?: number;
       };
     };
 
@@ -167,7 +184,7 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
           },
           sampleCursorNear: async () => {
             const value = await invoke("sample_pet_cursor_near");
-            return readCursorNear(value);
+            return readCursorSample(value);
           }
         }
       : {
@@ -190,18 +207,14 @@ export function createDesktopPetPointerSensor(
   } = {}
 ): DesktopPetPointerSensor {
   const now = input.now ?? Date.now;
-  let state: DesktopPetPointerSnapshot = {
-    cursor_near: false,
-    hovered: false,
-    dragging: false
-  };
+  let state = normalizeDesktopPetPointerSnapshot({});
 
   const update = (patch: Partial<DesktopPetPointerSnapshot>) => {
-    state = {
+    state = normalizeDesktopPetPointerSnapshot({
       ...state,
       ...patch,
       last_pointer_ms: now()
-    };
+    });
   };
   const interact = (interaction: CuuIdleInteraction) => {
     input.onInteraction?.(interaction, now());
@@ -211,25 +224,25 @@ export function createDesktopPetPointerSensor(
     if (event.relatedTarget instanceof Node && root.contains(event.relatedTarget)) {
       return;
     }
-    update({ cursor_near: true, hovered: true });
+    update(pointerPatchFromEvent(root, event, { cursor_near: true, hovered: true }));
     interact("hover");
   };
   const onPointerOut = (event: PointerEvent) => {
     if (event.relatedTarget instanceof Node && root.contains(event.relatedTarget)) {
       return;
     }
-    update({ cursor_near: false, hovered: false, dragging: false });
+    update({ cursor_near: false, hovered: false, dragging: false, look_x: 0, look_y: 0, avoidance_x: 0, avoidance_y: 0, hover_avoidance: "none" });
     interact("release");
   };
-  const onPointerMove = () => {
-    update({ cursor_near: true });
+  const onPointerMove = (event: PointerEvent) => {
+    update(pointerPatchFromEvent(root, event, { cursor_near: true }));
   };
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target instanceof Element ? event.target.closest("[data-pet-drag-handle]") : null;
     if (!target || event.button !== 0) {
       return;
     }
-    update({ cursor_near: true, hovered: true, dragging: true });
+    update(pointerPatchFromEvent(root, event, { cursor_near: true, hovered: true, dragging: true }));
     interact("drag");
     void input.bridge?.startDragging?.();
   };
@@ -264,15 +277,109 @@ export function createDesktopPetPointerSensor(
   };
 }
 
-function readCursorNear(value: unknown): boolean {
-  if (value === true) {
-    return true;
+export function normalizeDesktopPetPointerSnapshot(input: Partial<DesktopPetPointerSnapshot>): DesktopPetPointerSnapshot {
+  const cursorNear = Boolean(input.cursor_near);
+  const hovered = Boolean(input.hovered);
+  const dragging = Boolean(input.dragging);
+  const lookX = clampPointerAxis(input.look_x ?? 0);
+  const lookY = clampPointerAxis(input.look_y ?? 0);
+  const hoverAvoidance = !dragging && hovered ? input.hover_avoidance ?? "soft" : "none";
+  const fallbackAvoidance = hoverAvoidance === "soft" ? avoidanceFromLook(lookX, lookY) : { x: 0, y: 0 };
+  return {
+    cursor_near: cursorNear,
+    hovered,
+    dragging,
+    look_x: cursorNear || hovered ? lookX : 0,
+    look_y: cursorNear || hovered ? lookY : 0,
+    avoidance_x: hoverAvoidance === "soft" ? clampPointerAxis(input.avoidance_x ?? fallbackAvoidance.x) : 0,
+    avoidance_y: hoverAvoidance === "soft" ? clampPointerAxis(input.avoidance_y ?? fallbackAvoidance.y) : 0,
+    hover_avoidance: hoverAvoidance,
+    ...(input.last_pointer_ms !== undefined ? { last_pointer_ms: input.last_pointer_ms } : {})
+  };
+}
+
+export function desktopPetPointerSnapshotFromSample(
+  sample: PetCursorSampleResult | undefined,
+  previous: DesktopPetPointerSnapshot
+): DesktopPetPointerSnapshot {
+  if (sample === undefined) {
+    return normalizeDesktopPetPointerSnapshot(previous);
+  }
+  if (typeof sample === "boolean") {
+    return normalizeDesktopPetPointerSnapshot({
+      ...previous,
+      cursor_near: sample
+    });
+  }
+  const pointer = sample.pointer;
+  if (!pointer) {
+    return normalizeDesktopPetPointerSnapshot(previous);
+  }
+  const cursorNear = pointer.cursorNear ?? pointer.cursor_near ?? previous.cursor_near;
+  const lookX = readLookAxis(pointer.lookX ?? pointer.look_x ?? pointer.lookXPercent ?? pointer.look_x_percent);
+  const lookY = readLookAxis(pointer.lookY ?? pointer.look_y ?? pointer.lookYPercent ?? pointer.look_y_percent);
+  return normalizeDesktopPetPointerSnapshot({
+    ...previous,
+    cursor_near: cursorNear,
+    ...(lookX !== undefined ? { look_x: lookX } : cursorNear ? {} : { look_x: 0 }),
+    ...(lookY !== undefined ? { look_y: lookY } : cursorNear ? {} : { look_y: 0 })
+  });
+}
+
+export function pointerPatchFromEvent(
+  root: HTMLElement,
+  event: PointerEvent,
+  patch: Partial<DesktopPetPointerSnapshot>
+): Partial<DesktopPetPointerSnapshot> {
+  const rect = root.getBoundingClientRect();
+  const halfWidth = Math.max(rect.width / 2, 1);
+  const halfHeight = Math.max(rect.height / 2, 1);
+  const lookX = clampPointerAxis((event.clientX - (rect.left + halfWidth)) / halfWidth);
+  const lookY = clampPointerAxis((event.clientY - (rect.top + halfHeight)) / halfHeight);
+  const dragging = Boolean(patch.dragging);
+  const hovered = patch.hovered ?? true;
+  const avoidance = !dragging && hovered ? avoidanceFromLook(lookX, lookY) : { x: 0, y: 0 };
+  return {
+    hovered,
+    ...patch,
+    look_x: lookX,
+    look_y: lookY,
+    avoidance_x: avoidance.x,
+    avoidance_y: avoidance.y,
+    hover_avoidance: !dragging && hovered ? "soft" : "none"
+  };
+}
+
+function readCursorSample(value: unknown): PetCursorSampleResult {
+  if (value === true || value === false) {
+    return value;
   }
   if (!value || typeof value !== "object") {
     return false;
   }
   const sample = value as Extract<PetCursorSampleResult, object>;
-  return sample?.pointer?.cursorNear === true || sample?.pointer?.cursor_near === true;
+  return sample.pointer ? sample : false;
+}
+
+function readLookAxis(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return clampPointerAxis(Math.abs(value) > 1 ? value / 100 : value);
+}
+
+function avoidanceFromLook(lookX: number, lookY: number) {
+  return {
+    x: lookX === 0 ? -0.45 : -Math.sign(lookX) * Math.min(0.72, Math.abs(lookX) * 0.58 + 0.18),
+    y: lookY === 0 ? -0.28 : -Math.sign(lookY) * Math.min(0.5, Math.abs(lookY) * 0.36 + 0.12)
+  };
+}
+
+function clampPointerAxis(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(-1, Math.min(1, value));
 }
 
 function assertPetWindowModeResult(value: unknown, expectedMode: DesktopPetWindowMode) {

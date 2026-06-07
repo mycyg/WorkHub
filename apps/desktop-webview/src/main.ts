@@ -168,9 +168,13 @@ export {
 
 export {
   createDesktopPetPointerSensor,
+  desktopPetPointerSnapshotFromSample,
   desktopPetWindowModeForCard,
   desktopPetWindowSettingsFromPreferences,
+  normalizeDesktopPetPointerSnapshot,
+  pointerPatchFromEvent,
   resolveDesktopPetWindowBridge,
+  type PetCursorSampleResult,
   type DesktopPetPointerSensor,
   type DesktopPetPointerSnapshot,
   type DesktopPetOpacityPercent,

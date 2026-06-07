@@ -6,7 +6,7 @@ param(
   [int]$PixelStep = 2,
   [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
-  [ValidateSet("idle", "input-handfeel")]
+  [ValidateSet("idle", "input-handfeel", "look-avoidance")]
   [string]$Scenario = "idle",
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-motion"),
   [switch]$UseRealAppData
@@ -413,14 +413,17 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance") {
     return $null
   }
 
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
-  $nearX = [int]($Window.Rect.Left - 36)
+  $nearLeftX = [int]($Window.Rect.Left - 36)
+  $nearRightX = [int]($Window.Rect.Right + 36)
   $nearY = $centerY
+  $hoverX = if ($ScenarioName -eq "look-avoidance") { [int][Math]::Round($centerX + [Math]::Min(42, $Window.Rect.Width * 0.24)) } else { $centerX }
+  $hoverY = if ($ScenarioName -eq "look-avoidance") { [int][Math]::Round($centerY - [Math]::Min(34, $Window.Rect.Height * 0.2)) } else { $centerY }
   $dragX = [int]($centerX - 48)
   $dragY = [int]($centerY - 28)
 
@@ -430,13 +433,24 @@ function Invoke-CuuInteractionScenarioFrame {
 
   switch ($FrameIndex) {
     1 {
-      $action = "cursor_near_outside"
-      $x = $nearX
+      $action = if ($ScenarioName -eq "look-avoidance") { "cursor_near_left_outside" } else { "cursor_near_outside" }
+      $x = $nearLeftX
+      $y = $nearY
+      Set-CuuCursorPosition -X $x -Y $y
+    }
+    4 {
+      if ($ScenarioName -ne "look-avoidance") {
+        break
+      }
+      $action = "cursor_near_right_outside"
+      $x = $nearRightX
       $y = $nearY
       Set-CuuCursorPosition -X $x -Y $y
     }
     7 {
-      $action = "hover_inside"
+      $action = if ($ScenarioName -eq "look-avoidance") { "hover_top_right_inside" } else { "hover_inside" }
+      $x = $hoverX
+      $y = $hoverY
       Set-CuuCursorPosition -X $x -Y $y
     }
     11 {
@@ -470,7 +484,8 @@ function Invoke-CuuInteractionScenarioFrame {
     return $null
   }
 
-  Start-Sleep -Milliseconds 90
+  $postDelayMs = if ($ScenarioName -eq "look-avoidance" -and $action.StartsWith("cursor_near")) { 320 } else { 110 }
+  Start-Sleep -Milliseconds $postDelayMs
   [pscustomobject]@{
     frame = $FrameIndex
     action = $action
@@ -521,7 +536,7 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  if ($Scenario -eq "input-handfeel") {
+  if ($Scenario -ne "idle") {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
   }

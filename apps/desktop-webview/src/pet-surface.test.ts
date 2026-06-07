@@ -30,8 +30,11 @@ import {
 } from "./pet-surface.js";
 import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
 import {
+  desktopPetPointerSnapshotFromSample,
   desktopPetWindowModeForCard,
   desktopPetWindowSettingsFromPreferences,
+  normalizeDesktopPetPointerSnapshot,
+  pointerPatchFromEvent,
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
 
@@ -491,7 +494,7 @@ test("pet surface scales Cuu, opacity and pass-through from window settings", ()
     }
   });
 
-  assert.match(surface.html, /style="--wh-pet-scale:1.25;--wh-pet-opacity:0.8;--wh-pet-window-w:225px;--wh-pet-window-h:275px"/u);
+  assert.match(surface.html, /style="--wh-pet-scale:1\.25;--wh-pet-opacity:0\.8;--wh-pet-window-w:225px;--wh-pet-window-h:275px/u);
   assert.match(surface.html, /data-pet-scale-percent="125"/u);
   assert.match(surface.html, /data-pet-opacity-percent="80"/u);
   assert.match(surface.html, /data-pet-pass-through="true"/u);
@@ -504,7 +507,12 @@ test("pet surface exposes input-reactive pointer state for Bongo-style QA", () =
   assert.deepEqual(defaultDesktopPetPointerSnapshot(), {
     cursor_near: false,
     hovered: false,
-    dragging: false
+    dragging: false,
+    look_x: 0,
+    look_y: 0,
+    avoidance_x: 0,
+    avoidance_y: 0,
+    hover_avoidance: "none"
   });
 
   const surface = renderDesktopPetSurface({
@@ -513,6 +521,11 @@ test("pet surface exposes input-reactive pointer state for Bongo-style QA", () =
       cursor_near: true,
       hovered: true,
       dragging: true,
+      look_x: 0.42,
+      look_y: -0.18,
+      avoidance_x: 0,
+      avoidance_y: 0,
+      hover_avoidance: "none",
       last_pointer_ms: 1234
     }
   });
@@ -520,11 +533,68 @@ test("pet surface exposes input-reactive pointer state for Bongo-style QA", () =
   assert.match(surface.html, /data-pet-cursor-near="true"/u);
   assert.match(surface.html, /data-pet-hovered="true"/u);
   assert.match(surface.html, /data-pet-dragging="true"/u);
+  assert.match(surface.html, /data-pet-look-x="0\.42"/u);
+  assert.match(surface.html, /data-pet-look-y="-0\.18"/u);
+  assert.match(surface.html, /data-pet-hover-avoidance="none"/u);
   assert.match(surface.html, /data-pet-last-pointer-ms="1234"/u);
+  assert.match(surface.html, /--wh-pet-look-head-x-px:3\.78px/u);
+  assert.match(surface.html, /--wh-pet-look-eye-y-px:-0\.72px/u);
   assert.match(surface.html, /data-cuu-idle-action="look_at_mouse"/u);
   assert.match(surface.html, /data-cuu-bongo-requested-state="look_at_mouse"/u);
   assert.match(surface.css, /data-pet-cursor-near=true.*?saturate\(1\.04\)/u);
   assert.match(surface.css, /data-pet-dragging=true.*?cursor:grabbing/u);
+  assert.match(surface.css, /data-pet-cursor-near=true.*?--wh-pet-look-head-x-px/u);
+  assert.match(surface.css, /data-pet-hover-avoidance=soft.*?transition-duration:120ms/u);
+});
+
+test("pet pointer helpers normalize Rust look percent and hover avoidance", () => {
+  const previous = defaultDesktopPetPointerSnapshot();
+  const sampled = desktopPetPointerSnapshotFromSample(
+    {
+      pointer: {
+        cursor_near: true,
+        look_x_percent: 43,
+        look_y_percent: -25
+      }
+    },
+    previous
+  );
+
+  assert.deepEqual(sampled, {
+    cursor_near: true,
+    hovered: false,
+    dragging: false,
+    look_x: 0.43,
+    look_y: -0.25,
+    avoidance_x: 0,
+    avoidance_y: 0,
+    hover_avoidance: "none"
+  });
+
+  const root = {
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 200, height: 100 };
+    }
+  } as HTMLElement;
+  const patch = pointerPatchFromEvent(root, { clientX: 180, clientY: 20 } as PointerEvent, { cursor_near: true });
+  const hovered = normalizeDesktopPetPointerSnapshot({
+    ...sampled,
+    ...patch
+  });
+
+  assert.equal(hovered.look_x, 0.8);
+  assert.equal(hovered.look_y, -0.6);
+  assert.equal(hovered.hover_avoidance, "soft");
+  assert.ok(hovered.avoidance_x < 0);
+  assert.ok(hovered.avoidance_y > 0);
+
+  const dragging = normalizeDesktopPetPointerSnapshot({
+    ...hovered,
+    dragging: true
+  });
+  assert.equal(dragging.hover_avoidance, "none");
+  assert.equal(dragging.avoidance_x, 0);
+  assert.equal(dragging.avoidance_y, 0);
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {
@@ -872,7 +942,9 @@ test("pet window bridge accepts Rust cursor sample command plans", async () => {
             pointer: {
               insideWindow: false,
               cursorNear: true,
-              distanceToWindowPx: 24
+              distanceToWindowPx: 24,
+              lookXPercent: 58,
+              lookYPercent: -12
             }
           };
         }
@@ -880,5 +952,13 @@ test("pet window bridge accepts Rust cursor sample command plans", async () => {
     }
   });
 
-  assert.equal(await bridge?.sampleCursorNear?.(), true);
+  assert.deepEqual(await bridge?.sampleCursorNear?.(), {
+    pointer: {
+      insideWindow: false,
+      cursorNear: true,
+      distanceToWindowPx: 24,
+      lookXPercent: 58,
+      lookYPercent: -12
+    }
+  });
 });

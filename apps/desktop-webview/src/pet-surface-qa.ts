@@ -4,6 +4,7 @@ export type DesktopPetVisualQaCheckId =
   | "transparent_window"
   | "right_bottom_independent_surface"
   | "pet_body_hit_area"
+  | "pointer_reactive_pose"
   | "no_main_shell"
   | "bongo_runtime_contract"
   | "card_mode_light_bubble"
@@ -61,6 +62,17 @@ export function createDesktopPetVisualQaReport(input: {
           hasAll(input.idle.css, [".wh-cuu-atlas", "pointer-events:none"])) &&
         input.idle.html.includes('data-pet-drag-handle="true"'),
       "only the pet body and bubble should receive pointer input; Cuu visual pixels stay visual-only."
+    ),
+    qaCheck(
+      "pointer_reactive_pose",
+      input.idle.html.includes('data-pet-look-x="0"') &&
+        input.idle.html.includes('data-pet-hover-avoidance="none"') &&
+        input.idle.html.includes("--wh-pet-look-head-x-px:0px") &&
+        input.idle.css.includes("--wh-pet-avoid-x-px") &&
+        input.idle.bongo.css.includes("--wh-pet-look-head-x-px") &&
+        input.idle.bongo.css.includes("--wh-pet-look-eye-x-px") &&
+        input.idle.bongo.css.includes("data-pet-hover-avoidance=soft"),
+      "Bongo-style Cuu must expose continuous pointer look variables and a hover avoidance pose for screenshot QA."
     ),
     qaCheck(
       "no_main_shell",
@@ -158,6 +170,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     transparent_window: "transparent pet window",
     right_bottom_independent_surface: "right-bottom independent surface",
     pet_body_hit_area: "pet body hit area",
+    pointer_reactive_pose: "pointer-reactive pose",
     no_main_shell: "no main shell",
     bongo_runtime_contract: "Bongo-style runtime contract",
     card_mode_light_bubble: "card-mode light bubble",

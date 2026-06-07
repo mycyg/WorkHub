@@ -33,8 +33,10 @@ import {
 } from "./desktop-cuu-runtime.js";
 import {
   createDesktopPetPointerSensor,
+  desktopPetPointerSnapshotFromSample,
   desktopPetWindowModeForCard,
   desktopPetWindowSettingsFromPreferences,
+  normalizeDesktopPetPointerSnapshot,
   resolveDesktopPetWindowBridge,
   type DesktopPetPointerSensor,
   type DesktopPetPointerSnapshot,
@@ -66,10 +68,11 @@ export const desktopPetSurfaceCss = [
   "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38}",
   ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,180px);height:var(--wh-pet-window-h,220px);background:transparent;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
   ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,380px);height:var(--wh-pet-window-h,560px)}",
-  ".wh-pet-body{position:absolute;right:calc(8px * var(--wh-pet-scale,1));bottom:calc(8px * var(--wh-pet-scale,1));width:calc(148px * var(--wh-pet-scale,1));height:calc(197px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto}",
+  ".wh-pet-body{position:absolute;right:calc(8px * var(--wh-pet-scale,1));bottom:calc(8px * var(--wh-pet-scale,1));width:calc(148px * var(--wh-pet-scale,1));height:calc(197px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto;transform:translate(var(--wh-pet-avoid-x-px,0px),var(--wh-pet-avoid-y-px,0px));transition:transform 160ms ease-out}",
   ".wh-pet-body:active{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hovered=true] .wh-pet-body{cursor:pointer}",
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
+  ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-bongo{filter:drop-shadow(0 16px 18px rgba(35,27,20,.2)) saturate(1.04)}",
   ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;box-sizing:border-box;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(64px * var(--wh-pet-scale,1));bottom:calc(96px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));height:calc(210px * var(--wh-pet-scale,1))}",
@@ -217,7 +220,7 @@ export function renderDesktopPetSurface(input: {
   const compactCard = Boolean(input.card && input.window_mode_error);
   const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
   const settings = input.pet_window_settings ?? defaultDesktopPetWindowSettings();
-  const pointer = input.pointer_snapshot ?? defaultDesktopPetPointerSnapshot();
+  const pointer = normalizeDesktopPetPointerSnapshot(input.pointer_snapshot ?? defaultDesktopPetPointerSnapshot());
   const scaleRatio = settings.scale_percent / 100;
   const baseWindowSize = petWindowSize(windowMode);
   const scaledWindowSize = {
@@ -260,7 +263,20 @@ export function renderDesktopPetSurface(input: {
     `--wh-pet-scale:${scaleRatio}`,
     `--wh-pet-opacity:${settings.opacity_percent / 100}`,
     `--wh-pet-window-w:${scaledWindowSize.width}px`,
-    `--wh-pet-window-h:${scaledWindowSize.height}px`
+    `--wh-pet-window-h:${scaledWindowSize.height}px`,
+    `--wh-pet-look-x:${formatPointerNumber(pointer.look_x)}`,
+    `--wh-pet-look-y:${formatPointerNumber(pointer.look_y)}`,
+    `--wh-pet-avoid-x:${formatPointerNumber(pointer.avoidance_x)}`,
+    `--wh-pet-avoid-y:${formatPointerNumber(pointer.avoidance_y)}`,
+    `--wh-pet-avoid-x-px:${formatPointerNumber(pointer.avoidance_x * 22 * scaleRatio)}px`,
+    `--wh-pet-avoid-y-px:${formatPointerNumber(pointer.avoidance_y * 12 * scaleRatio)}px`,
+    `--wh-pet-look-head-x-px:${formatPointerNumber(pointer.look_x * 9 * scaleRatio)}px`,
+    `--wh-pet-look-head-y-px:${formatPointerNumber(pointer.look_y * 4 * scaleRatio)}px`,
+    `--wh-pet-look-eye-x-px:${formatPointerNumber(pointer.look_x * 9 * scaleRatio)}px`,
+    `--wh-pet-look-eye-y-px:${formatPointerNumber(pointer.look_y * 4 * scaleRatio)}px`,
+    `--wh-pet-look-face-x-px:${formatPointerNumber(pointer.look_x * 4 * scaleRatio)}px`,
+    `--wh-pet-look-face-y-px:${formatPointerNumber(pointer.look_y * 2 * scaleRatio)}px`,
+    `--wh-pet-look-rotate-deg:${formatPointerNumber(pointer.look_x * 5)}deg`
   ].join(";");
 
   return {
@@ -268,7 +284,7 @@ export function renderDesktopPetSurface(input: {
     bongo,
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${bongo.css}${sprite.css}`,
-    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
         ${bongo.html}
       </button>
@@ -286,11 +302,7 @@ export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
 }
 
 export function defaultDesktopPetPointerSnapshot(): DesktopPetPointerSnapshot {
-  return {
-    cursor_near: false,
-    hovered: false,
-    dragging: false
-  };
+  return normalizeDesktopPetPointerSnapshot({});
 }
 
 function petWindowSize(mode: DesktopPetWindowMode) {
@@ -524,14 +536,14 @@ export async function bootDesktopPetSurface(
     void tickIdle().finally(() => {
       samplingCursor = false;
     });
-  }, 1000);
+  }, 250);
 
   async function tickIdle() {
     const pointer = pointerSensor?.snapshot() ?? pointerSnapshot;
-    const sampledCursorNear = await Promise.resolve(petWindowBridge?.sampleCursorNear?.()).catch(() => undefined);
-    const cursorNear = sampledCursorNear ?? pointer.cursor_near;
-    const nextPointerSnapshot = { ...pointer, cursor_near: cursorNear };
+    const sampledPointer = await Promise.resolve(petWindowBridge?.sampleCursorNear?.()).catch(() => undefined);
+    const nextPointerSnapshot = desktopPetPointerSnapshotFromSample(sampledPointer, pointer);
     const pointerChanged = !desktopPetPointerStateEqual(pointerSnapshot, nextPointerSnapshot);
+    const cursorNear = nextPointerSnapshot.cursor_near;
     const enteredCursorNear = cursorNear && !lastCursorNear;
     pointerSnapshot = nextPointerSnapshot;
     lastCursorNear = cursorNear;
@@ -636,7 +648,21 @@ function desktopPetWindowSettingsKey(settings: DesktopPetWindowSettings) {
 }
 
 function desktopPetPointerStateEqual(a: DesktopPetPointerSnapshot, b: DesktopPetPointerSnapshot) {
-  return a.cursor_near === b.cursor_near && a.hovered === b.hovered && a.dragging === b.dragging;
+  return a.cursor_near === b.cursor_near &&
+    a.hovered === b.hovered &&
+    a.dragging === b.dragging &&
+    a.hover_avoidance === b.hover_avoidance &&
+    formatPointerNumber(a.look_x) === formatPointerNumber(b.look_x) &&
+    formatPointerNumber(a.look_y) === formatPointerNumber(b.look_y) &&
+    formatPointerNumber(a.avoidance_x) === formatPointerNumber(b.avoidance_x) &&
+    formatPointerNumber(a.avoidance_y) === formatPointerNumber(b.avoidance_y);
+}
+
+function formatPointerNumber(value: number) {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.001) {
+    return "0";
+  }
+  return String(Math.round(value * 1000) / 1000);
 }
 
 function renderDesktopPetBubble(input: {

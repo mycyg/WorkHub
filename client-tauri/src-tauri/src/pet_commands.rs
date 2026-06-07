@@ -435,5 +435,7 @@ mod tests {
         assert_eq!(plan.command, SAMPLE_PET_CURSOR_NEAR_COMMAND);
         assert_eq!(pointer.inside_window, true);
         assert_eq!(pointer.cursor_near, true);
+        assert_eq!(pointer.look_x_percent, -4);
+        assert_eq!(pointer.look_y_percent, -3);
     }
 }
