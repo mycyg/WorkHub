@@ -11,6 +11,7 @@ owner: workflow
 >
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；结论是 Cuu 已有轻微动效，但事件卡片会被 body-only 小窗裁切，必须优先修复。
 
 ## 1. 角色定位
 
@@ -113,6 +114,26 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 - 已有 Windows debug `PrintWindow` 自动 smoke，可对透明/layered WebView2 的 `Cuu` 顶层窗口做可见像素检查；还没有自动化 alpha 边缘、帧率、HiDPI、多屏和点击区域 QA。
 
 因此后续验收不能只看 Cuu 卡片是否生成，必须看 Cuu 是否真实可见、会动、可点、不挡事，并能在主窗隐藏后继续承接提醒。
+
+### 3.6.1 当前真实动作审计（2026-06-07）
+
+![Cuu motion contact sheet](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
+
+本轮多帧捕获资产：
+
+- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.gif`
+- MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.mp4`
+- 原始帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/frames/frame-000.png` 到 `frame-031.png`
+- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/motion-diff-report.json`
+
+审计结论：
+
+- Cuu body-only 独立窗口可见，前半段有轻微呼吸/缩放/轮廓变化。
+- 动作表现仍偏弱，离“QQ 宠物式活体入口”还有差距。
+- `CUX-MOTION-001`：第 20 帧附近出现离线卡片，窗口仍为 `194 x 228` body-only 尺寸，卡片和 Cuu 被裁切；说明 `set_pet_window_mode("card")` 或前端 bridge fallback 需要 P0 修复。
+- 单张 smoke 截图只能证明启动可见，不能证明长时间运行、事件触发和卡片展开正确；后续 Cuu 验收必须包含多帧截图、GIF/MP4 和 diff report。
+
+下一步不应先堆更多抽象状态，而应按 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 先修 card mode resize，再制作 Hatch Pet 规格的 Cuu 多动作包。
 
 ### 3.7 施工进展（2026-06-06）
 

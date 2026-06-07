@@ -1,0 +1,80 @@
+﻿[
+    {
+        "name":  "web-home",
+        "url":  "http://127.0.0.1:5173/#/",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-home.png",
+        "bytes":  164418
+    },
+    {
+        "name":  "web-intake",
+        "url":  "http://127.0.0.1:5173/#/intake/00000000-0000-4000-8000-000000000105",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-intake.png",
+        "bytes":  148043
+    },
+    {
+        "name":  "web-approvals",
+        "url":  "http://127.0.0.1:5173/#/approvals",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-approvals.png",
+        "bytes":  176910
+    },
+    {
+        "name":  "web-workitem",
+        "url":  "http://127.0.0.1:5173/#/workitems/00000000-0000-4000-8000-000000000104",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-workitem.png",
+        "bytes":  191610
+    },
+    {
+        "name":  "web-proposal",
+        "url":  "http://127.0.0.1:5173/#/proposals/00000000-0000-4000-8000-000000000108",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-proposal.png",
+        "bytes":  239280
+    },
+    {
+        "name":  "web-replay",
+        "url":  "http://127.0.0.1:5173/#/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-replay.png",
+        "bytes":  204259
+    },
+    {
+        "name":  "web-cost",
+        "url":  "http://127.0.0.1:5173/#/dashboard/cost",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\web-cost.png",
+        "bytes":  136054
+    },
+    {
+        "name":  "desktop-home",
+        "url":  "http://127.0.0.1:1420/#/",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\desktop-home.png",
+        "bytes":  205663
+    },
+    {
+        "name":  "desktop-intake",
+        "url":  "http://127.0.0.1:1420/#/intake/00000000-0000-4000-8000-000000000105",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\desktop-intake.png",
+        "bytes":  160241
+    },
+    {
+        "name":  "desktop-proposal",
+        "url":  "http://127.0.0.1:1420/#/proposals/00000000-0000-4000-8000-000000000108",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\desktop-proposal.png",
+        "bytes":  219116
+    },
+    {
+        "name":  "desktop-cost",
+        "url":  "http://127.0.0.1:1420/#/dashboard/cost",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\desktop-cost.png",
+        "bytes":  146958
+    },
+    {
+        "name":  "desktop-cuu-demo",
+        "url":  "http://127.0.0.1:1420/?cuuDemo=1#/",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\desktop-cuu-demo.png",
+        "bytes":  244375
+    },
+    {
+        "name":  "pet-browser-preview",
+        "url":  "http://127.0.0.1:1420/pet.html",
+        "file":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-current-state\\pet-browser-preview.png",
+        "bytes":  25579
+    }
+]

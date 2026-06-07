@@ -239,6 +239,18 @@ Rust 客户端当前已有 shell contract crate、desktop webview bridge、Tauri
 
 Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 React SPA routes、四态、响应式、Cuu bubble、视觉回归和 option-first 主路径。
 
+### 4.4 当前真实截图与动作审计（2026-06-07）
+
+对应文档：[`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)
+
+![当前页面截图总览](./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png)
+
+这张 contact sheet 是当前 Web、desktop webview、browser pet preview 和真实 Tauri `Cuu` 窗口的基线截图。它用于校准后续施工：当前页面仍是 P0.5 shell，离 AI-first 首页、选项优先 intake、Rust 单件事干活桌和 Cuu 独立桌宠概念图还有明显差距。
+
+![Cuu 多帧动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
+
+这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，但也暴露 `CUX-MOTION-001`：事件卡片触发后窗口仍停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工必须先修 card mode resize，再推进 Hatch Pet 多动作包和 Live2D。
+
 ---
 
 ## 5. 资产目录

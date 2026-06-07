@@ -1,0 +1,15 @@
+﻿{
+    "passed":  true,
+    "process_id":  106448,
+    "frames":  32,
+    "interval_ms":  180,
+    "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-07-cuu-motion\\frames",
+    "rect":  {
+                 "Left":  1844,
+                 "Top":  860,
+                 "Right":  2038,
+                 "Bottom":  1088,
+                 "Width":  194,
+                 "Height":  228
+             }
+}

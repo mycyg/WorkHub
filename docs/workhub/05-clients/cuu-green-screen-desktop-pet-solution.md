@@ -8,6 +8,8 @@ owner: workflow
 # Cuu 绿幕素材与独立桌宠方案
 
 > 结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。P1 用 GPT Image 生成绿幕多帧素材，经本地抠图、裁切、对齐、打包成 sprite atlas，先让 Cuu 真实可见、会动、可测试；长期高表现力路线优先走 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 Live2D 分层 PSD + Cubism 绑定。GIF 只做临时预览，不作为最终桌宠目标。
+>
+> 2026-06-07 真实动作审计见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 窗口做 32 帧抓取、GIF/MP4 与像素差异报告，发现 `CUX-MOTION-001`：事件卡触发后 `pet` 窗口未扩到 card mode，气泡被 body-only 小窗裁切。
 
 ## 1. 目标体验
 
@@ -28,6 +30,7 @@ Cuu 应该像多年前 QQ 宠物那类“桌面常驻角色”，但行为更克
 | 桌面载体 | Tauri 独立 `pet` window | 主窗隐藏后仍常驻，符合桌宠定位 |
 | 状态调度 | TS `CuuController` + animation queue | 业务状态仍来自 daemon，动画不进 Rust |
 | 后续升级 | Live2D 分层 PSD + Cubism runtime；Rive 可选 | Live2D 最符合“活着的小猫桌宠”；Rive 可作为中间路线但不替代 Live2D 主目标 |
+| 宠物包补强 | Hatch Pet 8 x 9 spritesheet 规格 | 在 Live2D 前先得到更一致、更可爱的多动作 Cuu，并能形成固定 QA 合同 |
 
 不要把 Cuu 做成：
 
@@ -35,6 +38,57 @@ Cuu 应该像多年前 QQ 宠物那类“桌面常驻角色”，但行为更克
 - 只会显示一个 Bot 图标的状态灯。
 - SVG 符号或渐变圆点。
 - 依赖用户先打开页面才能看到的组件。
+
+### 2.1 Hatch Pet 补充路线
+
+用户提到的 [Hatch Pet recipe](https://github.com/freestylefly/CodexGuide/blob/main/docs%2Frecipes%2Fhatch-pet-photo.md) 可作为 WorkHub Cuu P1.1 的补强路线。它不替代本文的绿幕 / 抠图 / 独立窗口方案，也不替代 Live2D 长期目标；它提供的是一套更规整的宠物包规格，适合快速把 Cuu 从“有素材”推进到“像一个完整桌宠”。
+
+WorkHub 采用的 Hatch Pet 合同：
+
+| 项 | 规格 |
+|---|---|
+| spritesheet | `1536 x 1872` PNG/WebP |
+| grid | 8 列 x 9 行 |
+| cell | `192 x 208` |
+| 背景 | 透明；生成阶段可用绿幕，入包前必须抠成 alpha |
+| unused cells | 完全透明 |
+| states | `idle`、`running-right`、`running-left`、`waving`、`jumping`、`failed`、`waiting`、`running`、`review` |
+| metadata | `pet.json` 记录名称、帧率、状态行、锚点、预览和版本 |
+
+WorkHub Cuu 映射：
+
+| WorkHub Cuu state | Hatch state |
+|---|---|
+| `idle_breathe` / `idle_blink` / `idle_tail_sway` | `idle` |
+| `thinking_tail` / `syncing_files_spin` | `running` |
+| `asking_approval_bounce` / `tap_bubble` | `waiting` |
+| `searching_evidence_peek` / `carrying_document_step` | `review` |
+| `worried_ears` / `offline_sleep` | `failed` |
+| `celebrating_jump` / `wave_hello` | `jumping` 或 `waving` |
+| `drag_hold` / `look_at_mouse` | `idle` 的高优先变体 |
+
+Hatch Pack 目标落点：
+
+```text
+apps/desktop-webview/src/assets/cuu/hatch/cuu-hatch-v1/
+  spritesheet.png
+  spritesheet.webp
+  pet.json
+  contact-sheet.png
+  motion-preview.gif
+  qa-report.json
+packages/cuu/src/hatch-state-map.ts
+apps/desktop-webview/src/cuu-hatch-assets.ts
+apps/desktop-webview/src/cuu-hatch-runtime.ts
+```
+
+验收重点：
+
+- 角色必须保持用户参考猫的原创 Q 版识别点：橘色虎斑、奶油脸/爪、白蕾丝围兜、黑蝴蝶结、珍珠流苏与红珠。
+- 5 秒 idle 捕获中不能像静态贴图；至少有呼吸、眨眼、尾巴或看向鼠标中的两类变化。
+- `waiting` 必须一眼看出“需要用户点选”，`review` 必须一眼看出“正在看交付物/证据”。
+- 不出现文字、水印、额外动物、绿色边缘、裁耳裁尾或脚底 anchor 漂移。
+- Hatch sprite 可以成为 Live2D 加载失败时的长期 fallback。
 
 ## 3. 绿幕生图管线
 
