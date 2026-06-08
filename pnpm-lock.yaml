@@ -218,6 +218,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@workhub/cuu':
+        specifier: workspace:*
+        version: link:../cuu
     devDependencies:
       '@workhub/agent':
         specifier: workspace:*

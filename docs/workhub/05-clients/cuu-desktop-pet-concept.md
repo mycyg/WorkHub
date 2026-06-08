@@ -10,9 +10,10 @@ owner: workflow
 > **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的橘色卡通小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
 >
 > **当前默认视觉路线**：见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。用户已明确反馈当前 PSD draft 有恐怖谷风险，因此 Cuu P1 默认改为参考 [BongoCat](https://github.com/ayangweb/BongoCat) 思路的低恐怖谷扁平小猫 renderer；当前默认模型包是 `cuu-bongo-p1`，由 `CuuModelPackManifest` 标记为 `approved_default`。PSD / Live2D 只保留为实验线，只有过美术 QA、真实桌宠录屏和 model pack 默认门禁后才能回到默认。
+> **当前 Web rail 视觉修正**：2026-06-08 追加 `cuu-polished-idle-v1` 生成图资产，用 GPT Image 生成绿幕 Cuu 并抠图成透明 PNG，替换主窗右侧栏早期粗糙 CSS 小猫；该资产只修正主窗 rail 占位视觉，不替代独立 `pet` window 的动态验收。
 > **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 窗口设置矩阵真实截图、P1e-b hover/tap/drag 真实录屏、P1e-c 连续看鼠标 / hover 避让真实录屏、P1e-d-a pointer smoothing / drag grip 真实录屏和 P1e-d-b 60s idle jitter / flicker 长驻 QA。下一步主线是 Bongo 动作二轮、真实设置页 UI 截图、多屏恢复、长驻性能采样、model pack settings UI 和 Live2D 精修并行。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 窗口设置矩阵真实截图、P1e-b hover/tap/drag 真实录屏、P1e-c 连续看鼠标 / hover 避让真实录屏、P1e-d-a pointer smoothing / drag grip 真实录屏、P1e-d-b 60s idle jitter / flicker 长驻 QA、BONGO-P2a-b 模型包设置 UI 和 BONGO-P2a-c Web rail 生成图资产。下一步主线是 Bongo 动作二轮、完整设置写盘、多屏恢复、长驻性能采样、full hide/pass-through 安全恢复和 Live2D 精修并行。
 
 ## 1. 角色定位
 
@@ -119,6 +120,12 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 ![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
 
 这张图是后续 Cuu v2 的低恐怖谷风格基准。它保留参考猫的橘色虎斑、奶油脸和爪、白围兜、黑蝴蝶结、红珠，但把眼睛、毛发、爪子和尾巴都压成可绑定、可复用、低细节的 mascot 形状。它用于指导 Bongo 动作二轮和 Live2D Cubism v2 重绘，不代表最终 PSD 已通过。
+
+![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
+
+![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
+
+这组图是主窗右侧 Cuu rail 的 P1 视觉修正：绿幕源图保存在 `assets/cuu/generated-polished/cuu-polished-idle-v1-green.png`，透明抠图用于 `apps/web/public/assets/cuu/cuu-polished-idle-v1-alpha.png` 和 `apps/desktop-webview/public/assets/cuu/cuu-polished-idle-v1-alpha.png`。它比 CSS procedural 小猫更接近参考猫的橘色虎斑、蕾丝围兜、黑蝴蝶结和红珠识别点；但由于还不是分层 rig，后续 Live2D 仍必须重新拆眼皮、眼球、嘴型、尾巴、围兜、流苏和爪子。
 
 ![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
 

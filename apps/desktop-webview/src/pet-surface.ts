@@ -219,6 +219,7 @@ export function renderDesktopPetSurface(input: {
   pointer_smoothing_alpha?: number | undefined;
   window_mode_error?: string | undefined;
   window_mode_status?: "syncing" | "failed" | undefined;
+  requested_model_pack_id?: string | undefined;
 } = {}): DesktopPetSurfaceRender {
   const compactCard = Boolean(input.card && input.window_mode_error);
   const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
@@ -251,8 +252,14 @@ export function renderDesktopPetSurface(input: {
         prefer_background_clip_sheet: true
       });
   const bongo = input.card
-    ? renderDesktopCuuBongoForMotion(motion, { display_width_px: displayWidth })
-    : renderDesktopCuuBongoForIdleAction(input.idle_action ?? "idle_breathe", { display_width_px: displayWidth });
+    ? renderDesktopCuuBongoForMotion(motion, {
+        display_width_px: displayWidth,
+        requested_model_pack_id: input.requested_model_pack_id
+      })
+    : renderDesktopCuuBongoForIdleAction(input.idle_action ?? "idle_breathe", {
+        display_width_px: displayWidth,
+        requested_model_pack_id: input.requested_model_pack_id
+      });
   const visualMode = "bongo_cuu";
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({
@@ -413,6 +420,7 @@ export async function bootDesktopPetSurface(
       status_text: statusText,
       include_reject_reasons: Boolean(pendingAction),
       pet_window_settings: petWindowSettings,
+      requested_model_pack_id: controller.snapshot().preferences.pet_model_pack_id,
       pointer_snapshot: pointerSnapshot,
       window_mode_error: compactCard ? petWindowModeError ?? "Cuu 轻卡窗口正在展开。" : undefined,
       window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined

@@ -21,6 +21,7 @@ export type DesktopCuuBongoRender = {
 
 export type DesktopCuuBongoRenderOptions = {
   display_width_px?: number;
+  requested_model_pack_id?: string | null | undefined;
 };
 
 const componentCount = 31;
@@ -173,7 +174,7 @@ function renderDesktopCuuBongo(
   const displayWidth = options.display_width_px ?? 148;
   const displayHeight = Math.round(displayWidth * 1.16);
   const style = `--wh-cuu-bongo-w:${displayWidth}px;--wh-cuu-bongo-h:${displayHeight}px`;
-  const modelPackSelection = resolveCuuVisibleModelPack();
+  const modelPackSelection = resolveCuuVisibleModelPack({ requested_pack_id: options.requested_model_pack_id });
   const modelPack = modelPackSelection.active_pack;
 
   return {

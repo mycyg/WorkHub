@@ -1,6 +1,7 @@
 import type { CuuState } from "@workhub/contracts";
 
 import type { CuuCard } from "./cards.js";
+import { normalizeCuuSelectableModelPackId, type CuuModelPackId } from "./model-pack.js";
 
 export type CuuAttentionMode = "normal" | "quiet" | "do_not_disturb";
 export type CuuSoundMode = "on" | "muted";
@@ -16,6 +17,7 @@ export type CuuControllerPreferences = {
   pet_opacity_percent: CuuPetOpacityPercent;
   pet_pass_through: boolean;
   pet_hide_on_hover: boolean;
+  pet_model_pack_id?: CuuModelPackId;
 };
 
 export type CuuPresentationSurface = "notice" | "badge" | "none";
@@ -233,6 +235,7 @@ export function createCuuController(input: {
 
 function normalizePreferences(input: Partial<CuuControllerPreferences> | undefined): CuuControllerPreferences {
   const queueLimit = input?.queue_limit ?? defaultPreferences.queue_limit;
+  const modelPackId = normalizeCuuSelectableModelPackId(input?.pet_model_pack_id);
   return {
     attention_mode: input?.attention_mode ?? defaultPreferences.attention_mode,
     sound_mode: input?.sound_mode ?? defaultPreferences.sound_mode,
@@ -241,7 +244,8 @@ function normalizePreferences(input: Partial<CuuControllerPreferences> | undefin
     pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
     pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
     pet_pass_through: input?.pet_pass_through === true,
-    pet_hide_on_hover: input?.pet_hide_on_hover === true
+    pet_hide_on_hover: input?.pet_hide_on_hover === true,
+    ...(modelPackId ? { pet_model_pack_id: modelPackId } : {})
   };
 }
 

@@ -84,6 +84,9 @@ function pageAliases(page: GoldPathRenderedPage) {
   if (page.key === "cost") {
     aliases.add("/dashboard/cost");
   }
+  if (page.key === "settings") {
+    aliases.add("/settings");
+  }
   return [...aliases];
 }
 
@@ -125,6 +128,9 @@ export function resolveGoldPathPageKey(routeMap: Record<string, PageKey>, href: 
   }
   if (route.startsWith("/agent-runs/")) {
     return "replay";
+  }
+  if (route.startsWith("/settings")) {
+    return "settings";
   }
   if (route.startsWith("/api/sessions/")) {
     return "workitem";

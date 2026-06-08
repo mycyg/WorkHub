@@ -18,6 +18,11 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-bongo-p2a-model-pack-loader/pet-bongo-p2a-model-pack-cdp-frame-0000.png
+  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png
+  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png
+  - ./assets/cuu/generated-polished/cuu-polished-idle-v1-green.png
+  - ./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png
+  - ./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png
 ---
 
 # Cuu Bongo-style 低恐怖谷桌宠路线
@@ -76,6 +81,16 @@ visuals:
 
 ![Cuu Bongo P2a model pack loader browser frame](./assets/audit/2026-06-08-cuu-bongo-p2a-model-pack-loader/pet-bongo-p2a-model-pack-cdp-frame-0000.png)
 
+![Cuu Settings model pack zh-CN](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png)
+
+![Cuu Settings model pack en-US](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png)
+
+![Cuu polished generated green-screen source](./assets/cuu/generated-polished/cuu-polished-idle-v1-green.png)
+
+![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
+
+![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
+
 | 检查项 | 结果 |
 |---|---|
 | 默认 idle 多帧 | 8 帧 browser CDP；尾巴/头/眼可见变化，最高 `18.97%` 像素相对首帧变化 |
@@ -90,7 +105,9 @@ visuals:
 | 60s idle jitter / flicker | 通过 P1e-d-b；`idle-long-run` 真实 Tauri 场景抓取 31 帧、间隔 2000ms，`long_run.passed=true`，first-frame `orange_pixels=9406`、`visual_pixels=15530`，最低帧仍有 `orange_pixels=9287`、`visual_pixels=15417`，无低可见帧、无窗口漂移，24 个相邻帧超过变化阈值 |
 | 窗口设置矩阵 | 通过 P1d-c；`scripts/qa/cuu-tauri-settings-capture.ps1` 真实 Tauri 抓取 default、scale-75、scale-150、opacity-60、pass-through、hide-on-hover、combo-125-80-pass-hide 7 个场景；report `passed=true`，scale-75 首帧窗口 `150 x 173`，scale-150 为 `285 x 338`，opacity-60 仍可见，所有场景都不是空白或只露耳朵 |
 | Model pack loader | 通过 BONGO-P2a-a；browser CDP 抓取 `/pet.html`，DOM 记录 `cuuModelPack="cuu-bongo-p1"`、`cuuModelPackSelectionReason="registry_default"`、`live2d=null`、`layers=[]`，证明默认 surface 没有切回 PSD / Live2D 实验线 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1d-c 设置矩阵真实截图通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门；BONGO-P2a-a model pack registry / loader 已落，默认 surface 只会激活 `cuu-bongo-p1`。下一步转向真实设置页 UI 截图、多屏恢复、model pack UI 展示、动作幅度二轮和 Live2D 精修 |
+| Model pack settings UI | 通过 BONGO-P2a-b；Gold Path `/settings` 与桌面偏好气泡都读取 `describeCuuModelPackChoices()`，中英截图确认 `cuu-bongo-p1` 当前默认、`cuu-live2d-cubism-v2` 实验锁定且不可点 |
+| Web rail 生成图资产 | 通过 BONGO-P2a-c；Gold Path 右侧 Cuu rail 不再默认展示临时 CSS 几何小猫，而是加载 `./assets/cuu/cuu-polished-idle-v1-alpha.png`，并保留 CSS fallback；审计截图确认橘猫、蕾丝围兜、黑蝴蝶结、红珠和全身轮廓可见 |
+| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1d-c 设置矩阵真实截图通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门；BONGO-P2a-a model pack registry / loader、BONGO-P2a-b settings UI 和 BONGO-P2a-c Web rail 生成图资产已落，默认 surface 只会激活 `cuu-bongo-p1`，Live2D/PSD 实验线不会被用户误设为默认。下一步转向多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮和 Live2D 精修 |
 
 证据文件：
 
@@ -117,6 +134,19 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p2a-model-pack-loader/
   pet-bongo-p2a-model-pack-cdp-frame-3600.png
   pet-bongo-p2a-model-pack-cdp-dom.json
   pet-bongo-p2a-model-pack-cdp-report.json
+
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-settings-model-pack-ui/
+  cuu-settings-model-pack-zh-cn.png
+  cuu-settings-model-pack-en-us.png
+  cuu-settings-model-pack-report.json
+
+docs/workhub/05-clients/assets/cuu/generated-polished/
+  cuu-polished-idle-v1-green.png
+  cuu-polished-idle-v1-alpha.png
+  cuu-polished-idle-v1-alpha-cropped.png
+
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-polished-rail/
+  cuu-polished-rail-home.png
 ```
 
 ---
@@ -176,6 +206,8 @@ apps/desktop-webview/src/cuu-bongo-runtime.ts
 2026-06-08 新增代码口径：`packages/cuu/src/model-pack.ts` 已加入 `plannedCuuLive2DCubismModelPack`。它可以被设置页和文档展示为未来路线，但 `assertCuuModelPackCanBeDefault()` 会拒绝它作为默认；`cuu-bongo-p1` 的默认窗口能力也已收紧到 `transparent_window / always_on_top / draggable / pass_through / scale / opacity / hide_on_hover / keep_in_screen` 全部 supported。
 
 2026-06-08 BONGO-P2a-a 追加：`packages/cuu/src/model-pack.ts` 已从单个常量升级为 registry / loader。新增 `listCuuModelPacks()`、`getCuuModelPack()`、`describeCuuModelPackChoices()`、`resolveCuuVisibleModelPack()`；`cuu-bongo-p1` 是唯一可激活默认包，`cuu-live2d-cubism-v2` 会以 `experimental_locked` 出现在 settings 候选中但不能被设为默认，未知的 `cuu-psd-draft-v1` 请求会回退到 Bongo。`apps/desktop-webview/src/cuu-bongo-runtime.ts` 现在从 loader 读取默认包，并在 DOM 输出 `data-cuu-model-pack-selection-reason="registry_default"`；`pet-surface-qa.ts` 会校验该属性，防止 PSD / Live2D 实验线绕过默认门。
+
+2026-06-08 BONGO-P2a-b 追加：模型包选择已经从“只在 runtime 里锁默认”推进到真实设置入口。`packages/ui/src/gold-path/render.ts` 新增 `/settings` 页面，`packages/ui/src/gold-path/i18n.ts` 提供中英双语文案；`apps/desktop-webview/src/cuu-preferences.ts` 在右上角 Cuu 气泡偏好里展示同一候选列表；`apps/desktop-webview/src/browser.ts` 负责点击保存、锁定提示和 localStorage 持久化；`packages/cuu/src/controller.ts` 只接受 `normalizeCuuSelectableModelPackId()` 允许的包 ID。当前唯一可选择项是 `cuu-bongo-p1`，`cuu-live2d-cubism-v2` 只显示为“实验锁定 / Experiment locked”，按钮 disabled，不会写入偏好，也不会绕过 default gate。
 
 2026-06-08 P1e-c 输入凝视 / hover 避让真实证据：
 
@@ -250,12 +282,25 @@ Model pack loader 当前行为：
 | `cuu-live2d-cubism-v2` | `cuu-bongo-p1` | `experimental_locked` | Live2D 候选可展示在设置页，但缺 visual gate、motion、Cubism 录屏，不能默认 |
 | `cuu-psd-draft-v1` / unknown | `cuu-bongo-p1` | `unknown_requested_pack` | PSD draft 不进入 registry；即使未来加入，也必须先过 default gate |
 
+Model pack settings UI 当前行为：
+
+| 入口 | 数据源 | 可选项 | 锁定项 | 保存行为 |
+|---|---|---|---|---|
+| Gold Path `/settings` | `describeCuuModelPackChoices()` | `cuu-bongo-p1`，显示“当前默认 / Current default” | `cuu-live2d-cubism-v2`，显示“实验锁定 / Experiment locked”且按钮 disabled | 点击可选项写入 `CuuController.preferences.pet_model_pack_id` 与 localStorage，显示已保存提示 |
+| Cuu 偏好气泡 | 同上 | `cuu-bongo-p1` | `cuu-live2d-cubism-v2` | 只允许 `normalizeCuuSelectableModelPackId()` 通过的包进入偏好；非法/实验包会被归一化删除 |
+
 ---
 
 ## 2. 当前实现落点
 
 ```text
+packages/cuu/src/controller.ts
+packages/cuu/src/model-pack.ts
+packages/ui/src/gold-path/render.ts
+packages/ui/src/gold-path/i18n.ts
 apps/desktop-webview/src/cuu-bongo-runtime.ts
+apps/desktop-webview/src/cuu-preferences.ts
+apps/desktop-webview/src/browser.ts
 apps/desktop-webview/src/pet-surface.ts
 apps/desktop-webview/src/pet-surface-qa.ts
 apps/desktop-webview/src/pet-surface.test.ts
@@ -437,6 +482,8 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/
 
 ```text
 pnpm --filter @workhub/cuu test
+pnpm --filter @workhub/ui test
+pnpm --filter @workhub/desktop-webview test
 ```
 
 必须通过：
@@ -444,6 +491,19 @@ pnpm --filter @workhub/cuu test
 - `Cuu Bongo model pack is the approved low-uncanny default`
 - `Cuu default model pack covers all business and idle actions`
 - `Cuu PSD draft packs are blocked from becoming the default surface`
+- `/settings` page lists `cuu-bongo-p1` as default-ready and `cuu-live2d-cubism-v2` as experimental-locked / disabled
+- Cuu preference normalization keeps `cuu-bongo-p1` and rejects Live2D / unknown model pack IDs
+
+设置页截图门：
+
+```text
+docs/workhub/05-clients/assets/audit/2026-06-08-cuu-settings-model-pack-ui/
+  cuu-settings-model-pack-zh-cn.png
+  cuu-settings-model-pack-en-us.png
+  cuu-settings-model-pack-report.json
+```
+
+必须肉眼确认：中英文页面都显示 Cuu Settings、Bongo 当前默认、Live2D 实验锁定；锁定按钮 disabled，文本不溢出，不把 Live2D 误呈现成可启用。
 
 ---
 
@@ -455,13 +515,14 @@ pnpm --filter @workhub/cuu test
 | BONGO-P1b | 加强动作可读性 | 更明显的眨眼、挥手、抱文件、检索、庆祝、拖拽姿态 | **已落**：多帧截图中 wave/search/sync/revise/celebrate 可辨 |
 | BONGO-P1c | 真实 Tauri 录屏 | Windows `PrintWindow` GIF/MP4/contact sheet | **已通过**：Rust 启动只预定位，pet surface 首屏后同步窗口模式；motion QA 首帧像素门槛通过，frame 000 不再空白 |
 | BONGO-P1d-a | 设置和窗口能力契约 | scale / opacity / pass-through 偏好、DOM/CSS、TS bridge、Rust command、几何缩放 | **已落**：`set_pet_window_settings`、`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through`、scaled body/card placement 和静态 QA 均已可测 |
-| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | **已落 P1d-b-a / P1d-c**：`pet_hide_on_hover` 偏好、DOM/Rust settings、QA 注入和真实 Tauri soft hide/recover 录屏通过；窗口设置矩阵已覆盖 scale / opacity / pass-through / hide-on-hover 组合截图；仍待真实设置页 UI 截图、多屏恢复和 full hide/pass-through 安全策略 |
+| BONGO-P1d-b | 设置体验与窗口手感 QA | hide-on-hover / keep-in-screen / 多屏恢复 / 设置页截图 | **已落 P1d-b-a / P1d-c / P2a-b 设置入口**：`pet_hide_on_hover` 偏好、DOM/Rust settings、QA 注入和真实 Tauri soft hide/recover 录屏通过；窗口设置矩阵已覆盖 scale / opacity / pass-through / hide-on-hover 组合截图；Cuu Settings 页已补模型包选择截图；仍待多屏恢复和 full hide/pass-through 安全策略 |
 | BONGO-P1e-a | 输入手感合同 | `cursor_near` interaction、立即 `look_at_mouse`、DOM pointer QA attrs | **已落单测**：靠近不再等几秒；`data-pet-cursor-near` / `hovered` / `dragging` 可被截图脚本读取 |
 | BONGO-P1e-b | 输入手感真实 QA | hover / tap / drag 真实 Tauri 录屏，QA 隔离 SSE 干扰 | **已通过底座**：contact sheet/GIF/MP4/report 已落；全程 Cuu 可见，hover 有抬爪反馈，drag 会移动窗口；后续继续做鼠标平滑视线和 hover 避让 |
 | BONGO-P1e-c | 连续看鼠标与 hover 避让 | Rust `look_x/y_percent`、TS pointer snapshot、CSS pose variables、hover 反向避让、`look-avoidance` 真实 Tauri 录屏 | **已通过**：左右靠近、hover、tap、drag 7 个事件录屏；全程 Cuu 可见，首帧像素门过，drag 后窗口移动 |
 | BONGO-P1e-d | 输入手感细抛光 | pointer smoothing / easing、hover 避让阈值、drag grip 持续姿态、长驻 60s jitter QA | **已落 P1e-d-a / P1e-d-b**：pointer smoothing alpha、drag grip 持续姿态、`drag-smoothing` 真实 Tauri 录屏通过；`idle-long-run` 60 秒长驻可见 / 防闪烁 QA 通过；仍待多屏边界避让和动作幅度二轮 |
 | BONGO-P2a-a | 可替换模型 registry / 默认选择 | `CuuModelPackManifest` loader、settings choices、default fallback | **已落**：`listCuuModelPacks()` / `describeCuuModelPackChoices()` / `resolveCuuVisibleModelPack()`；请求 Live2D/未知包会回退 Bongo，DOM 暴露 selection reason |
-| BONGO-P2a-b | 设置页模型包 UI | Cuu settings VM + candidate list + locked reason | 待落：设置页展示 `cuu-bongo-p1` 已启用、`cuu-live2d-cubism-v2` 实验锁定，并附真实 UI 截图 |
+| BONGO-P2a-b | 设置页模型包 UI | Cuu settings page + Cuu preference panel + candidate list + locked reason | **已落**：`/settings` 展示 `cuu-bongo-p1` 已启用、`cuu-live2d-cubism-v2` 实验锁定；右上角 Cuu 偏好气泡使用同一 registry；中英真实截图已进入 `2026-06-08-cuu-settings-model-pack-ui/` |
+| BONGO-P2a-c | Web rail 生成图默认资产 | GPT Image 绿幕源图、chroma-key 抠图、public alpha PNG、Gold Path rail bitmap fallback | **已落**：`packages/ui/src/gold-path/render.ts` 优先加载透明 PNG，CSS 小猫仅作加载失败 fallback；截图已进入 `2026-06-08-cuu-polished-rail/` |
 | L2D-P2+ | 精修 PSD / Cubism | `cuu-live2d-v0.psd`、`.model3.json` | 只有美术 QA 通过后才允许替换 Bongo 默认 |
 
 当前取舍：**P1 先让 Cuu 可爱、稳定、愿意常驻；P2/P3 再追求 Live2D 高表现力。**
@@ -470,7 +531,7 @@ pnpm --filter @workhub/cuu test
 
 | 子任务 | TS/Rust 落点 | 验收 |
 |---|---|---|
-| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸；`main.rs` 支持 QA 初始化脚本注入 scale | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；scale-75 / scale-150 均可见且不裁切，card mode 仍需后续设置页 UI 截图覆盖 |
+| 缩放 | `CuuPreferencePanel` 新增 75/100/125/150；`packages/cuu/src/controller.ts` 写入 `pet_scale_percent`；`pet-surface.ts` 输出 CSS 变量和缩放后的 body/card size；Rust `pet_window.rs` / `pet_commands.rs` 按 scale 计算窗口尺寸；`main.rs` 支持 QA 初始化脚本注入 scale | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；scale-75 / scale-150 均可见且不裁切，card mode 仍需后续真实 Tauri card fixture 覆盖 |
 | 透明度 | preference 写入 `pet_opacity_percent`；pet surface root 设置 `--wh-pet-opacity`；Rust command 返回 settings plan，暂不依赖平台窗口 opacity；`main.rs` 支持 QA 初始化脚本注入 opacity | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；opacity-60 首帧仍可见，后续补真实设置页 UI 里 bubble 文本可读性 |
 | 点击穿透 | Rust command `set_pet_window_settings` 调用 Tauri `set_ignore_cursor_events(pass_through)`；TS bridge 校验 settings plan；`main.rs` 支持 QA 初始化脚本注入 pass-through | **P1d-a 已落单测，P1d-c 已补真实 Tauri 设置矩阵**；pass-through 截图证明设置能进入 pet surface；后续实测桌宠不挡鼠标，并设计 hover/card 时临时关闭穿透的安全规则 |
 | 悬停避让 | `packages/cuu/src/controller.ts` 写入 `pet_hide_on_hover`；`cuu-preferences.ts` 提供“悬停避让”开关；`pet-window-bridge.ts`/Rust settings plan 统一 `hide_on_hover`；`pet-surface.ts` 用 `data-pet-hover-hidden`、`--wh-pet-hide-*` 做可恢复 soft dodge；`desktopPetPointerSnapshotFromSample()` 在 Rust outside sample 时清掉 hover，防止软隐藏后不恢复 | **P1d-b-a 已落并录屏**；后续若做 BongoCat 式全透明隐藏，必须先设计托盘/快捷键/边缘热区恢复策略 |
@@ -497,8 +558,10 @@ P1d-a / P1d-b-a / P1d-c 当前测试门：
 ```text
 pnpm --filter @workhub/cuu test
 pnpm --filter @workhub/desktop-webview test
+pnpm --filter @workhub/ui test
 pnpm --filter @workhub/cuu typecheck
 pnpm --filter @workhub/desktop-webview typecheck
+pnpm --filter @workhub/ui typecheck
 cargo test --manifest-path client-tauri/src-tauri/Cargo.toml
 powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario hide-on-hover
 powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-settings-capture.ps1

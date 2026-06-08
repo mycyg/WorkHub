@@ -1,0 +1,64 @@
+{
+  "route": "/settings",
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "screenshots": [
+    "cuu-settings-model-pack-zh-cn.png",
+    "cuu-settings-model-pack-en-us.png"
+  ],
+  "model_pack_choices": [
+    {
+      "pack_id": "cuu-bongo-p1",
+      "status": "default_ready",
+      "selected": true,
+      "can_select_in_settings": true,
+      "can_be_default": true,
+      "issue_codes": []
+    },
+    {
+      "pack_id": "cuu-live2d-cubism-v2",
+      "status": "experimental_locked",
+      "selected": false,
+      "can_select_in_settings": false,
+      "can_be_default": false,
+      "issue_codes": [
+        "default_blocked",
+        "default_not_approved",
+        "visual_gate_failed",
+        "visual_gate_failed",
+        "visual_gate_failed",
+        "visual_gate_failed",
+        "visual_gate_failed",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_window_affordance",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion",
+        "missing_motion"
+      ]
+    }
+  ]
+}

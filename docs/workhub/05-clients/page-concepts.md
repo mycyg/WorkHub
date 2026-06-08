@@ -179,6 +179,12 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。P1d-a 已补尺寸、透明度和点击穿透窗口合同；P1d-b-a 已补 hide-on-hover soft dodge；P1e-a 已补 cursor-near 立即 `look_at_mouse` 与 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` 输入 QA 属性。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 
+![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
+
+![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
+
+2026-06-08 追加的 `cuu-polished-idle-v1` 是 Web / Gold Path 右侧栏的生成图资产：先用 GPT Image 生成 Cuu 绿幕图，再抠成透明 PNG，最终替换掉早期粗糙 CSS 小猫。它用于当前主窗页面视觉占位和后续 Live2D 重绘参考，但不代表独立桌宠 `pet` window 的动态验收已完成。
+
 ### 3.1.2 Cuu Live2D 分层概念
 
 ![Cuu Live2D 分层拆件概念](./assets/cuu/cuu-live2d-layer-breakdown-concept.png)
@@ -235,7 +241,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1d-c 窗口设置矩阵真实截图、Bongo P1e-b/P1e-c/P1e-d-a/P1e-d-b 真实输入/长驻录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、真实 Tauri Bongo GIF/MP4、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺 Bongo 动作二轮幅度、真实设置页 UI 截图、full hide/pass-through 安全恢复、多屏恢复实测、正式 Live2D 模型、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
+Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、Web rail 生成图替换、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1d-c 窗口设置矩阵真实截图、Bongo P1e-b/P1e-c/P1e-d-a/P1e-d-b 真实输入/长驻录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、真实 Tauri Bongo GIF/MP4、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺 Bongo 动作二轮幅度、真实设置页 UI 截图、full hide/pass-through 安全恢复、多屏恢复实测、正式 Live2D 模型、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 

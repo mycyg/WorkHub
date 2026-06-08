@@ -1,6 +1,7 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import {
   createCuuController,
+  normalizeCuuSelectableModelPackId,
   type CuuCard,
   type CuuController,
   type CuuControllerDecision,
@@ -35,7 +36,8 @@ import {
 import {
   bindCuuPreferencePanel,
   desktopCuuPreferenceCss,
-  loadCuuPreferences
+  loadCuuPreferences,
+  saveCuuPreferences
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import {
@@ -274,13 +276,22 @@ function findCuuCardForAction(controller: CuuController, anchor: HTMLAnchorEleme
   return cards.find((card) => card.id === cardId);
 }
 
+function updateSettingsModelPackButtons(shellRoot: HTMLElement, selectedPackId: string | undefined) {
+  for (const button of shellRoot.querySelectorAll<HTMLButtonElement>("[data-cuu-settings-model-pack-id]")) {
+    button.setAttribute("aria-pressed", button.dataset.cuuSettingsModelPackId === selectedPackId ? "true" : "false");
+  }
+}
+
 function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
   client: BrowserApiClient,
   cuuController: CuuController,
   locale: WorkHubLocale,
-  input: { listen?: DesktopShellListen | undefined } = {}
+  input: {
+    listen?: DesktopShellListen | undefined;
+    onPreferencesChanged?: (snapshot: CuuControllerSnapshot) => void;
+  } = {}
 ) {
   let pendingReviewHref: string | undefined;
   let pendingCuuAction: DesktopCuuActionRequest | undefined;
@@ -299,6 +310,26 @@ function bindGoldPathNavigation(
   };
 
   shellRoot.addEventListener("click", async (event) => {
+    const modelPackButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-cuu-settings-model-pack-id]") : null;
+    if (modelPackButton) {
+      event.preventDefault();
+      if (modelPackButton.dataset.cuuSettingsModelPackSelectable !== "true") {
+        showNotice(shellRoot, goldPathT(locale, "runtime.modelPackLocked"));
+        return;
+      }
+      const modelPackId = normalizeCuuSelectableModelPackId(modelPackButton.dataset.cuuSettingsModelPackId);
+      if (!modelPackId) {
+        showNotice(shellRoot, goldPathT(locale, "runtime.modelPackLocked"));
+        return;
+      }
+      const snapshot = cuuController.setPreferences({ pet_model_pack_id: modelPackId });
+      saveCuuPreferences(snapshot.preferences);
+      updateSettingsModelPackButtons(shellRoot, modelPackId);
+      input.onPreferencesChanged?.(snapshot);
+      showNotice(shellRoot, goldPathT(locale, "runtime.modelPackSaved"));
+      return;
+    }
+
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
     if (reasonButton && pendingCuuAction) {
       try {
@@ -448,21 +479,32 @@ async function boot() {
     root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
     const realShellListen = resolveDesktopShellListen();
-    bindLocaleSwitch(root, locale);
-    bindGoldPathNavigation(root, shell, client, cuuController, locale, { listen: realShellListen });
     const cuuDecisions = new Map<string, CuuControllerDecision>();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const syncPetWindowPreferences = (snapshot: CuuControllerSnapshot) => {
       void Promise.resolve(petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(snapshot.preferences))).catch(() => undefined);
     };
+    let refreshCuuPreferencePanel: (() => void) | undefined;
+    bindLocaleSwitch(root, locale);
+    bindGoldPathNavigation(root, shell, client, cuuController, locale, {
+      listen: realShellListen,
+      onPreferencesChanged(snapshot) {
+        syncPetWindowPreferences(snapshot);
+        updateCuuQueueBadge(root, snapshot, locale);
+        refreshCuuPreferencePanel?.();
+      }
+    });
     bindCuuQueueBadge(root, cuuController, locale);
     syncPetWindowPreferences(cuuController.snapshot());
-    bindCuuPreferencePanel(root, cuuController, {
+    const preferencePanelBinding = bindCuuPreferencePanel(root, cuuController, {
+      locale,
       onChange(snapshot) {
         syncPetWindowPreferences(snapshot);
         updateCuuQueueBadge(root, snapshot, locale);
+        updateSettingsModelPackButtons(root, snapshot.preferences.pet_model_pack_id);
       }
     });
+    refreshCuuPreferencePanel = preferencePanelBinding.refresh;
     const demoMode = cuuDemoMode();
     const demoListener =
       !realShellListen && demoMode !== "off"

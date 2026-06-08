@@ -1,13 +1,18 @@
 import {
+  describeCuuModelPackChoices,
   defaultCuuControllerPreferences,
+  normalizeCuuSelectableModelPackId,
   type CuuController,
   type CuuPetOpacityPercent,
   type CuuPetScalePercent,
   type CuuControllerPreferences,
-  type CuuControllerSnapshot
+  type CuuControllerSnapshot,
+  type CuuModelPackChoice
 } from "@workhub/cuu";
 
 export const CUU_PREFERENCES_STORAGE_KEY = "workhub_cuu_preferences";
+
+export type CuuPreferenceLocale = "zh-CN" | "en-US";
 
 export type CuuPreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -27,6 +32,12 @@ export const desktopCuuPreferenceCss = [
   ".wh-cuu-preferences[hidden]{display:none}.wh-cuu-preferences strong{font-size:13px}.wh-cuu-pref-row{display:grid;gap:6px}.wh-cuu-pref-options{display:flex;gap:6px;flex-wrap:wrap}",
   ".wh-cuu-pref-options button{border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;color:var(--wh-app-ink);padding:7px 9px;font-weight:800;cursor:pointer}",
   ".wh-cuu-pref-options button[aria-pressed=true]{border-color:rgba(53,92,255,.32);background:rgba(53,92,255,.08);color:var(--wh-app-blue)}",
+  ".wh-cuu-pref-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}",
+  ".wh-cuu-pref-model{display:grid;gap:4px;min-height:54px;border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;color:var(--wh-app-ink);padding:8px;text-align:left;font:800 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer}",
+  ".wh-cuu-pref-model[aria-pressed=true]{border-color:rgba(53,92,255,.35);background:rgba(53,92,255,.08);color:var(--wh-app-blue);box-shadow:inset 3px 0 0 var(--wh-app-blue)}",
+  ".wh-cuu-pref-model[disabled]{cursor:not-allowed;opacity:.58;background:#f8fafc;color:#667085}",
+  ".wh-cuu-pref-model-name,.wh-cuu-pref-model-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-cuu-pref-model-status{font-size:10px;color:#667085}",
   ".wh-cuu-pref-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}",
   ".wh-cuu-pref-toggle label{display:flex;align-items:center;gap:8px}.wh-cuu-pref-toggle input{width:16px;height:16px;accent-color:var(--wh-app-blue)}",
   ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid var(--wh-app-line);border-radius:8px;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink)}"
@@ -67,6 +78,7 @@ export function normalizeCuuPreferences(input: Partial<CuuControllerPreferences>
   const attentionMode = input?.attention_mode;
   const soundMode = input?.sound_mode;
   const queueLimit = Number(input?.queue_limit ?? defaults.queue_limit);
+  const modelPackId = normalizeCuuSelectableModelPackId(input?.pet_model_pack_id);
   return {
     attention_mode: attentionMode === "quiet" || attentionMode === "do_not_disturb" ? attentionMode : defaults.attention_mode,
     sound_mode: soundMode === "muted" ? "muted" : defaults.sound_mode,
@@ -75,11 +87,17 @@ export function normalizeCuuPreferences(input: Partial<CuuControllerPreferences>
     pet_scale_percent: normalizePetScalePercent(input?.pet_scale_percent),
     pet_opacity_percent: normalizePetOpacityPercent(input?.pet_opacity_percent),
     pet_pass_through: input?.pet_pass_through === true,
-    pet_hide_on_hover: input?.pet_hide_on_hover === true
+    pet_hide_on_hover: input?.pet_hide_on_hover === true,
+    ...(modelPackId ? { pet_model_pack_id: modelPackId } : {})
   };
 }
 
-export function renderCuuPreferencePanel(snapshot: CuuControllerSnapshot) {
+export function renderCuuPreferencePanel(
+  snapshot: CuuControllerSnapshot,
+  input: { locale?: CuuPreferenceLocale | string | undefined } = {}
+) {
+  const locale = normalizePreferenceLocale(input.locale);
+  const copy = cuuPreferenceCopy[locale];
   const preferences = snapshot.preferences;
   const modeButton = (mode: CuuControllerPreferences["attention_mode"], label: string) =>
     `<button type="button" data-cuu-attention-mode="${mode}" aria-pressed="${preferences.attention_mode === mode ? "true" : "false"}">${label}</button>`;
@@ -89,49 +107,56 @@ export function renderCuuPreferencePanel(snapshot: CuuControllerSnapshot) {
     `<button type="button" data-cuu-pet-scale="${value}" aria-pressed="${preferences.pet_scale_percent === value ? "true" : "false"}">${value}%</button>`;
   const opacityButton = (value: CuuPetOpacityPercent) =>
     `<button type="button" data-cuu-pet-opacity="${value}" aria-pressed="${preferences.pet_opacity_percent === value ? "true" : "false"}">${value}%</button>`;
+  const modelPackChoices = describeCuuModelPackChoices({ selected_pack_id: preferences.pet_model_pack_id });
 
   return `<strong>Cuu</strong>
-    <div class="wh-cuu-pref-row">
-      <span>提醒</span>
-      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 提醒模式">
-        ${modeButton("normal", "正常")}
-        ${modeButton("quiet", "安静")}
-        ${modeButton("do_not_disturb", "勿扰")}
+    <div class="wh-cuu-pref-row" data-cuu-model-pack-row="true">
+      <span>${copy.modelPack}</span>
+      <div class="wh-cuu-pref-models" role="group" aria-label="${copy.modelPackAria}">
+        ${modelPackChoices.map((choice) => renderModelPackChoice(choice, locale)).join("")}
       </div>
     </div>
     <div class="wh-cuu-pref-row">
-      <span>声音</span>
-      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 声音">
-        ${soundButton("on", "开启")}
-        ${soundButton("muted", "静音")}
+      <span>${copy.attention}</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="${copy.attentionAria}">
+        ${modeButton("normal", copy.normal)}
+        ${modeButton("quiet", copy.quiet)}
+        ${modeButton("do_not_disturb", copy.doNotDisturb)}
+      </div>
+    </div>
+    <div class="wh-cuu-pref-row">
+      <span>${copy.sound}</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="${copy.soundAria}">
+        ${soundButton("on", copy.soundOn)}
+        ${soundButton("muted", copy.muted)}
       </div>
     </div>
     <div class="wh-cuu-pref-toggle">
-      <label><input type="checkbox" data-cuu-reduced-motion ${preferences.reduced_motion ? "checked" : ""}>减少动效</label>
-      <span>${snapshot.queue.length + snapshot.badge_count} 条待处理</span>
+      <label><input type="checkbox" data-cuu-reduced-motion ${preferences.reduced_motion ? "checked" : ""}>${copy.reducedMotion}</label>
+      <span>${copy.pending(snapshot.queue.length + snapshot.badge_count)}</span>
     </div>
     <div class="wh-cuu-pref-row">
-      <span>尺寸</span>
-      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 桌宠尺寸">
+      <span>${copy.size}</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="${copy.sizeAria}">
         ${petScaleOptions.map(scaleButton).join("")}
       </div>
     </div>
     <div class="wh-cuu-pref-row">
-      <span>透明度</span>
-      <div class="wh-cuu-pref-options" role="group" aria-label="Cuu 桌宠透明度">
+      <span>${copy.opacity}</span>
+      <div class="wh-cuu-pref-options" role="group" aria-label="${copy.opacityAria}">
         ${petOpacityOptions.map(opacityButton).join("")}
       </div>
     </div>
     <div class="wh-cuu-pref-toggle">
-      <label><input type="checkbox" data-cuu-pet-pass-through ${preferences.pet_pass_through ? "checked" : ""}>点击穿透</label>
+      <label><input type="checkbox" data-cuu-pet-pass-through ${preferences.pet_pass_through ? "checked" : ""}>${copy.passThrough}</label>
       <span>${preferences.pet_scale_percent}% · ${preferences.pet_opacity_percent}%</span>
     </div>
     <div class="wh-cuu-pref-toggle">
-      <label><input type="checkbox" data-cuu-pet-hide-on-hover ${preferences.pet_hide_on_hover ? "checked" : ""}>悬停避让</label>
-      <span>${preferences.pet_hide_on_hover ? "软隐藏" : "常驻"}</span>
+      <label><input type="checkbox" data-cuu-pet-hide-on-hover ${preferences.pet_hide_on_hover ? "checked" : ""}>${copy.hideOnHover}</label>
+      <span>${preferences.pet_hide_on_hover ? copy.softHide : copy.alwaysOn}</span>
     </div>
     <div class="wh-cuu-pref-queue">
-      <label for="wh-cuu-queue-limit">队列上限</label>
+      <label for="wh-cuu-queue-limit">${copy.queueLimit}</label>
       <input id="wh-cuu-queue-limit" type="number" min="0" max="12" step="1" value="${preferences.queue_limit}" data-cuu-queue-limit>
     </div>`;
 }
@@ -142,12 +167,14 @@ export function bindCuuPreferencePanel(
   input: {
     storage?: CuuPreferenceStorage | undefined;
     onChange?: (snapshot: CuuControllerSnapshot) => void;
+    locale?: CuuPreferenceLocale | string | undefined;
   } = {}
 ): CuuPreferencePanelBinding {
-  const toggle = ensureCuuPreferenceToggle(shellRoot);
-  const panel = ensureCuuPreferencePanel(shellRoot);
+  const locale = normalizePreferenceLocale(input.locale);
+  const toggle = ensureCuuPreferenceToggle(shellRoot, locale);
+  const panel = ensureCuuPreferencePanel(shellRoot, locale);
   const refresh = () => {
-    panel.innerHTML = renderCuuPreferencePanel(controller.snapshot());
+    panel.innerHTML = renderCuuPreferencePanel(controller.snapshot(), { locale });
   };
   const update = (preferences: Partial<CuuControllerPreferences>) => {
     const snapshot = controller.setPreferences(preferences);
@@ -176,6 +203,14 @@ export function bindCuuPreferencePanel(
     const opacityButton = target?.closest<HTMLButtonElement>("[data-cuu-pet-opacity]");
     if (opacityButton) {
       update({ pet_opacity_percent: Number(opacityButton.dataset.cuuPetOpacity) as CuuPetOpacityPercent });
+      return;
+    }
+    const modelPackButton = target?.closest<HTMLButtonElement>("[data-cuu-model-pack-id]");
+    if (modelPackButton && modelPackButton.dataset.cuuModelPackSelectable === "true") {
+      const modelPackId = normalizeCuuSelectableModelPackId(modelPackButton.dataset.cuuModelPackId);
+      if (modelPackId) {
+        update({ pet_model_pack_id: modelPackId });
+      }
     }
   });
 
@@ -209,9 +244,10 @@ export function bindCuuPreferencePanel(
   return { element: panel, toggle, refresh };
 }
 
-function ensureCuuPreferenceToggle(shellRoot: HTMLElement) {
+function ensureCuuPreferenceToggle(shellRoot: HTMLElement, locale: CuuPreferenceLocale) {
   const existing = shellRoot.querySelector<HTMLButtonElement>("[data-cuu-preferences-toggle]");
   if (existing) {
+    existing.setAttribute("aria-label", cuuPreferenceCopy[locale].toggleAria);
     return existing;
   }
   const button = document.createElement("button");
@@ -220,21 +256,23 @@ function ensureCuuPreferenceToggle(shellRoot: HTMLElement) {
   button.dataset.cuuPreferencesToggle = "true";
   button.setAttribute("aria-controls", "wh-cuu-preferences-panel");
   button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-label", cuuPreferenceCopy[locale].toggleAria);
   button.textContent = "Cuu";
   shellRoot.appendChild(button);
   return button;
 }
 
-function ensureCuuPreferencePanel(shellRoot: HTMLElement) {
+function ensureCuuPreferencePanel(shellRoot: HTMLElement, locale: CuuPreferenceLocale) {
   const existing = shellRoot.querySelector<HTMLElement>("[data-cuu-preferences]");
   if (existing) {
+    existing.setAttribute("aria-label", cuuPreferenceCopy[locale].panelAria);
     return existing;
   }
   const panel = document.createElement("section");
   panel.id = "wh-cuu-preferences-panel";
   panel.className = "wh-cuu-preferences";
   panel.dataset.cuuPreferences = "true";
-  panel.setAttribute("aria-label", "Cuu 偏好");
+  panel.setAttribute("aria-label", cuuPreferenceCopy[locale].panelAria);
   panel.hidden = true;
   shellRoot.appendChild(panel);
   return panel;
@@ -263,4 +301,105 @@ function normalizePetOpacityPercent(value: unknown): CuuPetOpacityPercent {
   return petOpacityOptions.includes(value as CuuPetOpacityPercent)
     ? value as CuuPetOpacityPercent
     : defaultCuuControllerPreferences().pet_opacity_percent;
+}
+
+function renderModelPackChoice(choice: CuuModelPackChoice, locale: CuuPreferenceLocale) {
+  const copy = cuuPreferenceCopy[locale];
+  const disabled = choice.can_select_in_settings ? "" : " disabled";
+  return `<button type="button" class="wh-cuu-pref-model" data-cuu-model-pack-id="${escapeHtml(choice.pack_id)}" data-cuu-model-pack-status="${escapeHtml(choice.status)}" data-cuu-model-pack-selectable="${choice.can_select_in_settings ? "true" : "false"}" aria-pressed="${choice.selected ? "true" : "false"}"${disabled}>
+    <span class="wh-cuu-pref-model-name">${escapeHtml(modelPackLabel(choice.pack_id, locale))}</span>
+    <span class="wh-cuu-pref-model-status">${escapeHtml(modelPackStatusLabel(choice.status, locale, copy))}</span>
+  </button>`;
+}
+
+function modelPackLabel(packId: string, locale: CuuPreferenceLocale) {
+  if (packId === "cuu-live2d-cubism-v2") {
+    return locale === "en-US" ? "Live2D V2" : "Live2D V2";
+  }
+  return locale === "en-US" ? "Bongo Cuu P1" : "Bongo Cuu P1";
+}
+
+function modelPackStatusLabel(
+  status: CuuModelPackChoice["status"],
+  locale: CuuPreferenceLocale,
+  copy: typeof cuuPreferenceCopy[CuuPreferenceLocale]
+) {
+  if (status === "default_ready") {
+    return copy.current;
+  }
+  if (status === "experimental_locked") {
+    return copy.experimentalLocked;
+  }
+  return locale === "en-US" ? "Blocked" : "已阻止";
+}
+
+function normalizePreferenceLocale(locale: string | undefined): CuuPreferenceLocale {
+  return locale === "en-US" ? "en-US" : "zh-CN";
+}
+
+const cuuPreferenceCopy = {
+  "zh-CN": {
+    toggleAria: "打开 Cuu 偏好",
+    panelAria: "Cuu 偏好",
+    modelPack: "形象",
+    modelPackAria: "Cuu 模型包",
+    current: "当前默认",
+    experimentalLocked: "实验锁定",
+    attention: "提醒",
+    attentionAria: "Cuu 提醒模式",
+    normal: "正常",
+    quiet: "安静",
+    doNotDisturb: "勿扰",
+    sound: "声音",
+    soundAria: "Cuu 声音",
+    soundOn: "开启",
+    muted: "静音",
+    reducedMotion: "减少动效",
+    pending: (count: number) => `${count} 条待处理`,
+    size: "尺寸",
+    sizeAria: "Cuu 桌宠尺寸",
+    opacity: "透明度",
+    opacityAria: "Cuu 桌宠透明度",
+    passThrough: "点击穿透",
+    hideOnHover: "悬停避让",
+    softHide: "软隐藏",
+    alwaysOn: "常驻",
+    queueLimit: "队列上限"
+  },
+  "en-US": {
+    toggleAria: "Open Cuu preferences",
+    panelAria: "Cuu preferences",
+    modelPack: "Look",
+    modelPackAria: "Cuu model pack",
+    current: "Current default",
+    experimentalLocked: "Experiment locked",
+    attention: "Attention",
+    attentionAria: "Cuu attention mode",
+    normal: "Normal",
+    quiet: "Quiet",
+    doNotDisturb: "Focus",
+    sound: "Sound",
+    soundAria: "Cuu sound",
+    soundOn: "On",
+    muted: "Muted",
+    reducedMotion: "Reduce motion",
+    pending: (count: number) => `${count} pending`,
+    size: "Size",
+    sizeAria: "Cuu pet size",
+    opacity: "Opacity",
+    opacityAria: "Cuu pet opacity",
+    passThrough: "Click through",
+    hideOnHover: "Dodge hover",
+    softHide: "Soft hide",
+    alwaysOn: "Always on",
+    queueLimit: "Queue limit"
+  }
+} as const;
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;");
 }

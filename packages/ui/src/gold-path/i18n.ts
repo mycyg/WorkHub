@@ -89,6 +89,23 @@ export type GoldPathCopyKey =
   | "cost.estimatedTitle"
   | "cost.statusTitle"
   | "cost.statusFallback"
+  | "settings.kicker"
+  | "settings.title"
+  | "settings.summary"
+  | "settings.defaultCat"
+  | "settings.currentDefault"
+  | "settings.live2d"
+  | "settings.experimentalLocked"
+  | "settings.bongoReason"
+  | "settings.live2dReason"
+  | "settings.pick"
+  | "settings.locked"
+  | "settings.handfeelTitle"
+  | "settings.handfeelBody"
+  | "settings.languageTitle"
+  | "settings.languageBody"
+  | "runtime.modelPackSaved"
+  | "runtime.modelPackLocked"
   | "boot.web.title"
   | "boot.web.message"
   | "boot.web.errorTitle"
@@ -184,6 +201,23 @@ const goldPathCopy = {
     "cost.estimatedTitle": "估算成本",
     "cost.statusTitle": "预算状态",
     "cost.statusFallback": "ok",
+    "settings.kicker": "Cuu settings",
+    "settings.title": "Cuu 设置",
+    "settings.summary": "这里管理桌宠形象、窗口手感和语言。默认形象必须先通过低恐怖谷和真实动作验收。",
+    "settings.defaultCat": "默认小猫",
+    "settings.currentDefault": "当前启用",
+    "settings.live2d": "Live2D 实验形象",
+    "settings.experimentalLocked": "实验锁定",
+    "settings.bongoReason": "稳定、可爱、动作清楚，作为当前默认桌宠。",
+    "settings.live2dReason": "还没有通过分层、骨骼、物理和真实录屏验收，暂时不能设为默认。",
+    "settings.pick": "使用这个形象",
+    "settings.locked": "等验收后开放",
+    "settings.handfeelTitle": "窗口手感",
+    "settings.handfeelBody": "尺寸、透明度、点击穿透和悬停避让继续由 Cuu 快捷面板管理。",
+    "settings.languageTitle": "语言",
+    "settings.languageBody": "顶部语言切换会同步页面固定文案；动态内容后续继续接入 locale。",
+    "runtime.modelPackSaved": "Cuu 形象已保持为默认小猫。",
+    "runtime.modelPackLocked": "这个形象还在实验锁定，不能设为默认。",
     "boot.web.title": "正在打开 WorkHub",
     "boot.web.message": "连接 API daemon，读取 P0.5 Gold Path 页面 VM。",
     "boot.web.errorTitle": "API daemon 还没连上",
@@ -278,6 +312,23 @@ const goldPathCopy = {
     "cost.estimatedTitle": "Estimated cost",
     "cost.statusTitle": "Budget status",
     "cost.statusFallback": "ok",
+    "settings.kicker": "Cuu settings",
+    "settings.title": "Cuu settings",
+    "settings.summary": "Manage the pet look, window feel, and language. A default look must pass low-uncanny and real-motion QA first.",
+    "settings.defaultCat": "Default cat",
+    "settings.currentDefault": "Current default",
+    "settings.live2d": "Live2D experiment",
+    "settings.experimentalLocked": "Experiment locked",
+    "settings.bongoReason": "Stable, cute, and readable in motion, so it is the current default pet.",
+    "settings.live2dReason": "It has not passed layered art, rigging, physics, and real recording QA yet, so it cannot become the default.",
+    "settings.pick": "Use this look",
+    "settings.locked": "Opens after QA",
+    "settings.handfeelTitle": "Window feel",
+    "settings.handfeelBody": "Size, opacity, click-through, and hover dodge stay in the Cuu quick panel.",
+    "settings.languageTitle": "Language",
+    "settings.languageBody": "The top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.",
+    "runtime.modelPackSaved": "Cuu is kept on the default cat look.",
+    "runtime.modelPackLocked": "This look is still experiment-locked and cannot become the default.",
     "boot.web.title": "Opening WorkHub",
     "boot.web.message": "Connecting to the API daemon and loading the P0.5 Gold Path page VM.",
     "boot.web.errorTitle": "API daemon is not connected",

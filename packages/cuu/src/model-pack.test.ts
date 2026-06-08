@@ -7,6 +7,7 @@ import {
   defaultCuuBongoModelPack,
   getCuuModelPack,
   listCuuModelPacks,
+  normalizeCuuSelectableModelPackId,
   plannedCuuLive2DCubismModelPack,
   requiredCuuModelPackMotionStates,
   resolveCuuVisibleModelPack,
@@ -41,6 +42,9 @@ test("Cuu model pack registry keeps Bongo as the visible default and Live2D as l
   assert.equal(getCuuModelPack("cuu-bongo-p1")?.runtime_kind, "bongo_cuu");
   assert.equal(getCuuModelPack("cuu-live2d-cubism-v2")?.runtime_kind, "live2d_cubism");
   assert.equal(getCuuModelPack("missing-pack"), undefined);
+  assert.equal(normalizeCuuSelectableModelPackId("cuu-bongo-p1"), "cuu-bongo-p1");
+  assert.equal(normalizeCuuSelectableModelPackId("cuu-live2d-cubism-v2"), undefined);
+  assert.equal(normalizeCuuSelectableModelPackId("cuu-psd-draft-v1"), undefined);
 
   const defaultSelection = resolveCuuVisibleModelPack();
   assert.equal(defaultSelection.active_pack.pack_id, "cuu-bongo-p1");

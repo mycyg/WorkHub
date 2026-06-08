@@ -281,6 +281,8 @@ export const cuuModelPackRegistry = [
   plannedCuuLive2DCubismModelPack
 ] as const satisfies readonly CuuModelPackManifest[];
 
+export type CuuModelPackId = (typeof cuuModelPackRegistry)[number]["pack_id"];
+
 export function listCuuModelPacks(): CuuModelPackManifest[] {
   return [...cuuModelPackRegistry];
 }
@@ -293,7 +295,7 @@ export function getCuuModelPack(packId: string | null | undefined): CuuModelPack
   return cuuModelPackRegistry.find((pack) => pack.pack_id === normalized);
 }
 
-export function describeCuuModelPackChoices(input: { selected_pack_id?: string | null } = {}): CuuModelPackChoice[] {
+export function describeCuuModelPackChoices(input: { selected_pack_id?: string | null | undefined } = {}): CuuModelPackChoice[] {
   const selection = input.selected_pack_id === undefined
     ? resolveCuuVisibleModelPack()
     : resolveCuuVisibleModelPack({ requested_pack_id: input.selected_pack_id });
@@ -317,7 +319,15 @@ export function describeCuuModelPackChoices(input: { selected_pack_id?: string |
   });
 }
 
-export function resolveCuuVisibleModelPack(input: { requested_pack_id?: string | null } = {}): CuuModelPackSelection {
+export function normalizeCuuSelectableModelPackId(packId: unknown): CuuModelPackId | undefined {
+  const pack = getCuuModelPack(String(packId ?? ""));
+  if (!pack || defaultReadinessIssues(pack).length > 0) {
+    return undefined;
+  }
+  return pack.pack_id as CuuModelPackId;
+}
+
+export function resolveCuuVisibleModelPack(input: { requested_pack_id?: string | null | undefined } = {}): CuuModelPackSelection {
   const defaultPack = defaultCuuBongoModelPack;
   const requestedPackId = String(input.requested_pack_id ?? "").trim() || undefined;
   const requestedPack = getCuuModelPack(requestedPackId);

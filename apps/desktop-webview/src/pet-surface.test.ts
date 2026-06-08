@@ -761,6 +761,27 @@ test("desktop Cuu Bongo renderer makes P1b business and idle actions readable", 
   assert.match(drag.css, /wh-cuu-bongo-grip/u);
 });
 
+test("desktop Cuu model-pack preferences stay behind the default-readiness gate", () => {
+  const bongo = renderDesktopPetSurface({
+    idle_action: "idle_tail_sway",
+    requested_model_pack_id: "cuu-bongo-p1"
+  });
+  const live2d = renderDesktopPetSurface({
+    idle_action: "idle_tail_sway",
+    requested_model_pack_id: "cuu-live2d-cubism-v2"
+  });
+
+  assert.equal(bongo.bongo.model_pack_id, "cuu-bongo-p1");
+  assert.equal(bongo.bongo.model_pack_selection_reason, "requested_default_ready");
+  assert.match(bongo.html, /data-cuu-model-pack-selection-reason="requested_default_ready"/u);
+
+  assert.equal(live2d.bongo.model_pack_id, "cuu-bongo-p1");
+  assert.equal(live2d.bongo.model_pack_selection_reason, "experimental_locked");
+  assert.match(live2d.html, /data-cuu-model-pack="cuu-bongo-p1"/u);
+  assert.match(live2d.html, /data-cuu-model-pack-selection-reason="experimental_locked"/u);
+  assert.doesNotMatch(live2d.html, /data-cuu-live2d-runtime="psd_draft_probe"/u);
+});
+
 test("pet surface starts with a non-static runtime action fixture and fast idle cadence", () => {
   assert.equal(desktopPetInitialIdleAction, "idle_tail_sway");
 

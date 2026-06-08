@@ -34,7 +34,7 @@ function surfaceVm() {
   } as const;
 }
 
-test("gold path renderer creates the seven P0.5 pages from one shared VM", () => {
+test("gold path renderer creates the P0.5 pages plus Cuu settings from one shared VM", () => {
   const rendered = renderGoldPathSurface(surfaceVm(), "web");
 
   assert.equal(rendered.fixtureId, "weekly_report_manifest_doc");
@@ -45,7 +45,8 @@ test("gold path renderer creates the seven P0.5 pages from one shared VM", () =>
     "workitem",
     "proposal",
     "replay",
-    "cost"
+    "cost",
+    "settings"
   ]);
   assert.equal(rendered.pages.every((page) => page.html.includes("wh-shell")), true);
 });
@@ -71,12 +72,31 @@ test("gold path renderer localizes static page chrome while keeping VM content i
   const rendered = renderGoldPathSurface(surfaceVm(), "web", { locale: "en-US" });
   const home = rendered.pages.find((page) => page.key === "home");
   const cost = rendered.pages.find((page) => page.key === "cost");
+  const settings = rendered.pages.find((page) => page.key === "settings");
 
   assert.equal(home?.html.includes("Needs your decision"), true);
   assert.equal(home?.html.includes("The board is fallback only"), true);
   assert.equal(home?.html.includes("Cuu ·"), true);
+  assert.equal(home?.html.includes("./assets/cuu/cuu-polished-idle-v1-alpha.png"), true);
+  assert.equal(home?.html.includes("data-cuu-asset=\"bitmap\""), true);
+  assert.equal(rendered.css.includes("data-cuu-state=carrying_document] .wh-cuu-portrait"), true);
   assert.equal(cost?.html.includes("Budget and cost"), true);
   assert.equal(cost?.html.includes("Regular users see their own slice"), true);
+  assert.equal(settings?.html.includes("Default cat"), true);
+  assert.equal(settings?.html.includes("Experiment locked"), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-selectable=\"false\""), true);
+});
+
+test("Cuu settings page exposes model-pack choices without allowing Live2D as default", () => {
+  const settings = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "settings");
+
+  assert.equal(settings?.route, "/settings");
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id=\"cuu-bongo-p1\""), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-status=\"default_ready\""), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id=\"cuu-live2d-cubism-v2\""), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-status=\"experimental_locked\""), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-selectable=\"false\""), true);
+  assert.equal(settings?.html.includes("disabled"), true);
 });
 
 test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {
