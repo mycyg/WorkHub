@@ -1,6 +1,7 @@
 import type {
   DeliverableChangeManifest,
   RiskLevel,
+  WorkHubLocale,
   WorkItemMode,
   WorkItemStatus
 } from "@workhub/contracts";
@@ -47,6 +48,7 @@ export const users = pgTable(
     id: id(),
     nickname: varchar("nickname", { length: 64 }).notNull(),
     cookieToken: varchar("cookie_token", { length: 128 }).notNull(),
+    preferredLocale: varchar("preferred_locale", { length: 16 }).$type<WorkHubLocale>().notNull().default("zh-CN"),
     availabilityStatus: varchar("availability_status", { length: 16 }).notNull().default("free"),
     availabilityText: varchar("availability_text", { length: 128 }),
     availabilityUpdatedAt: timestampTz("availability_updated_at"),

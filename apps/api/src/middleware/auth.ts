@@ -6,7 +6,7 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
 import { authDefaults, settings as defaultSettings, type Settings } from "@workhub/config";
-import type { ActorKind } from "@workhub/contracts";
+import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
   createClientDeviceRepository,
   createDatabaseClient,
@@ -136,11 +136,16 @@ export async function readCookieToken(c: Context, runtimeSettings: Settings = de
 }
 
 export function toIdentityResponse(user: UserAuthRow, created: boolean) {
+  const locale = user.preferredLocale ?? defaultWorkHubLocale;
   const response = {
     id: user.id,
     nickname: user.nickname,
     display_name: user.nickname,
     created,
+    locale,
+    preferences: {
+      locale
+    },
     is_admin: user.isAdmin,
     availability_status: user.availabilityStatus
   };

@@ -104,6 +104,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async me() {
       throw new Error("not needed");
     },
+    async updatePreferences() {
+      throw new Error("not needed");
+    },
     async notifications() {
       throw new Error("not needed");
     },

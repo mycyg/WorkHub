@@ -238,6 +238,7 @@ visuals:
 
 - Cuu 形象与交互：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)
 - 当前模型二选项：[`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)
+- 桌宠参考包审查：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)
 - 页面概念图索引：[`page-concepts.md`](./page-concepts.md)
 - Web 页面规划：[`web-app.md`](./web-app.md)
 - API / 事件：[`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)

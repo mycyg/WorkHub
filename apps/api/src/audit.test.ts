@@ -42,6 +42,7 @@ function user(): UserAuthRow {
     id: userId,
     nickname: "alice",
     cookieToken: "cookie-alice",
+    preferredLocale: "zh-CN",
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,

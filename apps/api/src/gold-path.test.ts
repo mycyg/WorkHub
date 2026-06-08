@@ -33,6 +33,7 @@ function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
     id: userId,
     nickname: "gold-path-user",
     cookieToken: "cookie-gold-path",
+    preferredLocale: "zh-CN",
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,

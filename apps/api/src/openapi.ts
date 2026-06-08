@@ -12,6 +12,12 @@ export function getOpenApiDocument() {
           summary: "Check daemon health"
         }
       },
+      "/api/auth/preferences": {
+        patch: {
+          tags: ["auth"],
+          summary: "Update the current user's lightweight preferences such as locale"
+        }
+      },
       "/api/pages/attention": {
         get: {
           tags: ["pages"],

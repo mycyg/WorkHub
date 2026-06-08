@@ -14,6 +14,12 @@ import {
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+type IdentityLocaleCarrier = {
+  locale?: unknown;
+  preferences?: {
+    locale?: unknown;
+  };
+} | null | undefined;
 
 function browserLocale(): WorkHubLocale {
   return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
@@ -23,7 +29,32 @@ function setDocumentLocale(locale: WorkHubLocale) {
   document.documentElement.lang = locale;
 }
 
-function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale) {
+function isWorkHubLocale(value: unknown): value is WorkHubLocale {
+  return value === "zh-CN" || value === "en-US";
+}
+
+function identityLocale(identity: IdentityLocaleCarrier): WorkHubLocale | undefined {
+  const locale = identity?.preferences?.locale ?? identity?.locale;
+  return isWorkHubLocale(locale) ? locale : undefined;
+}
+
+function persistBrowserLocale(locale: WorkHubLocale) {
+  window.localStorage.setItem(workHubLocaleStorageKey, locale);
+  setDocumentLocale(locale);
+}
+
+function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {
+  const locale = identityLocale(identity) ?? fallback;
+  persistBrowserLocale(locale);
+  return locale;
+}
+
+async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
+  const me = await client.me().catch(() => null);
+  return applyIdentityLocale(me, fallback);
+}
+
+function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client: BrowserApiClient) {
   shellRoot.addEventListener("click", (event) => {
     const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-locale]") : null;
     if (!button) {
@@ -33,8 +64,10 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale) {
     if (nextLocale === locale) {
       return;
     }
-    window.localStorage.setItem(workHubLocaleStorageKey, nextLocale);
-    window.location.reload();
+    persistBrowserLocale(nextLocale);
+    void client.updatePreferences({ locale: nextLocale }).catch(() => undefined).finally(() => {
+      window.location.reload();
+    });
   });
 }
 
@@ -179,7 +212,7 @@ async function boot() {
   if (!root) {
     return;
   }
-  const locale = browserLocale();
+  let locale = browserLocale();
   setDocumentLocale(locale);
   root.innerHTML = renderGoldPathBootDocument({
     title: goldPathT(locale, "boot.web.title"),
@@ -188,6 +221,7 @@ async function boot() {
 
   try {
     const client = createApiClient({ baseUrl: "" });
+    locale = await resolveBootLocale(client, locale);
     let surfaceVm;
     try {
       surfaceVm = await client.pages.goldPath({ locale });
@@ -195,7 +229,7 @@ async function boot() {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
-      await client.identify({ nickname: "P0.5 Reviewer" });
+      locale = applyIdentityLocale(await client.identify({ nickname: "P0.5 Reviewer" }), locale);
       surfaceVm = await client.pages.goldPath({ locale });
     }
     const rendered = renderGoldPathSurface(surfaceVm, "web", { locale });
@@ -206,7 +240,7 @@ async function boot() {
       locale
     });
     root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
-    bindLocaleSwitch(root, locale);
+    bindLocaleSwitch(root, locale, client);
     bindGoldPathNavigation(root, shell, client, locale);
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({

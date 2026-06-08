@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "preferred_locale" varchar(16) DEFAULT 'zh-CN' NOT NULL;

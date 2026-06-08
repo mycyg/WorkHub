@@ -2,6 +2,17 @@ import { z } from "zod";
 
 import { clientDeviceSchema, userSchema } from "./domain/identity.js";
 import { identityContextSchema } from "./identity.js";
+import { workHubLocaleInputSchema, workHubLocaleSchema } from "./locale.js";
+
+export const userPreferencesSchema = z.object({
+  locale: workHubLocaleSchema
+});
+export type UserPreferences = z.infer<typeof userPreferencesSchema>;
+
+export const updateUserPreferencesRequestSchema = z.object({
+  locale: workHubLocaleInputSchema
+});
+export type UpdateUserPreferencesRequest = z.infer<typeof updateUserPreferencesRequestSchema>;
 
 export const identifyRequestSchema = z.object({
   nickname: z.string().min(1).max(64),
@@ -17,6 +28,8 @@ export const identifyResponseSchema = userSchema.pick({
 }).extend({
   display_name: z.string().min(1).max(96),
   created: z.boolean(),
+  locale: workHubLocaleSchema,
+  preferences: userPreferencesSchema,
   availability_text: z.string().max(128).optional()
 });
 export type IdentifyResponse = z.infer<typeof identifyResponseSchema>;

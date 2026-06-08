@@ -32,6 +32,7 @@ function user(): DbUserAuthRow {
     id: userId,
     nickname: "proposal-reviewer",
     cookieToken: "cookie-proposal-reviewer",
+    preferredLocale: "zh-CN",
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,

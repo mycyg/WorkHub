@@ -20,3 +20,5 @@ export function normalizeWorkHubLocale(value: unknown): WorkHubLocale {
   }
   return defaultWorkHubLocale;
 }
+
+export const workHubLocaleInputSchema = z.preprocess((value) => normalizeWorkHubLocale(value), workHubLocaleSchema);

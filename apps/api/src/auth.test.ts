@@ -13,6 +13,7 @@ import type {
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
+import type { WorkHubLocale } from "@workhub/contracts";
 
 import {
   COOKIE_NAME,
@@ -36,6 +37,7 @@ function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
     id: "10000000-0000-4000-8000-000000000001",
     nickname: "alice",
     cookieToken: "cookie-alice",
+    preferredLocale: "zh-CN",
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,
@@ -102,6 +104,16 @@ class MemoryUsers implements UserRepository {
       return null;
     }
     row.cookieToken = cookieToken;
+    row.updatedAt = now;
+    return row;
+  }
+
+  async updatePreferredLocale(userId: string, locale: WorkHubLocale) {
+    const row = this.rows.find((candidate) => candidate.id === userId && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.preferredLocale = locale;
     row.updatedAt = now;
     return row;
   }
@@ -293,6 +305,37 @@ test("admin nickname claim accepts the configured secret", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Set-Cookie")?.includes(COOKIE_NAME), true);
+});
+
+test("identity exposes and updates the bilingual locale preference", async () => {
+  const alice = user();
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([alice], [], runtimeSettings)));
+  const cookie = await signedCookie(alice.cookieToken, runtimeSettings);
+
+  const before = await app.request("/api/auth/me", {
+    headers: { Cookie: cookie }
+  });
+  assert.equal(before.status, 200);
+  const beforeBody = await before.json() as { preferences: { locale: string } };
+  assert.equal(beforeBody.preferences.locale, "zh-CN");
+
+  const updated = await app.request("/api/auth/preferences", {
+    method: "PATCH",
+    body: JSON.stringify({ locale: "en" }),
+    headers: { Cookie: cookie, "Content-Type": "application/json" }
+  });
+  assert.equal(updated.status, 200);
+  const updatedBody = await updated.json() as { locale: string };
+  assert.equal(updatedBody.locale, "en-US");
+
+  const after = await app.request("/api/auth/me", {
+    headers: { Cookie: cookie }
+  });
+  const body = await after.json() as { locale: string; preferences: { locale: string } };
+  assert.equal(body.locale, "en-US");
+  assert.equal(body.preferences.locale, "en-US");
 });
 
 test("nickname validation rejects tombstones and controls but allows non-ASCII names", () => {

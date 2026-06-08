@@ -26,7 +26,9 @@ import type {
   SessionVM,
   StartAgentRunRequest,
   StructuredHandoff,
+  UpdateUserPreferencesRequest,
   UseEvidenceForTaskRequest,
+  UserPreferences,
   WorkHubLocale,
   WorkItemDetailVM
 } from "@workhub/contracts";
@@ -85,6 +87,8 @@ export type IdentityResponse = {
   nickname: string;
   display_name: string;
   created: boolean;
+  locale: WorkHubLocale;
+  preferences: UserPreferences;
   is_admin: boolean;
   availability_status: string;
   availability_text?: string;
@@ -113,6 +117,7 @@ export type WorkHubApiClient = {
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
   me: () => Promise<IdentityResponse | null>;
+  updatePreferences: (payload: UpdateUserPreferencesRequest) => Promise<IdentityResponse>;
   notifications: () => Promise<NotificationList>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;

@@ -19,6 +19,8 @@ import {
   nextQuestionRequestSchema,
   replayTracePageVmSchema,
   respondApprovalRequestSchema,
+  updateUserPreferencesRequestSchema,
+  userPreferencesSchema,
   deliverableChangeManifestSchema,
   deliverableManifestFixtures,
   evidenceBubbleSchema,
@@ -44,6 +46,8 @@ test("shared locale contract normalizes the bilingual product surface", () => {
   assert.equal(normalizeWorkHubLocale("en_US"), "en-US");
   assert.equal(normalizeWorkHubLocale("zh-Hans-CN"), "zh-CN");
   assert.equal(normalizeWorkHubLocale("fr-FR"), "zh-CN");
+  assert.deepEqual(userPreferencesSchema.parse({ locale: "zh-CN" }), { locale: "zh-CN" });
+  assert.deepEqual(updateUserPreferencesRequestSchema.parse({ locale: "en" }), { locale: "en-US" });
 });
 
 test("agent trace VM carries F08 replay and structured handoff fields", () => {
@@ -190,6 +194,8 @@ test("auth contracts expose F04 identity and device shapes", () => {
       nickname: "小云",
       display_name: "小云",
       created: false,
+      locale: "zh-CN",
+      preferences: { locale: "zh-CN" },
       is_admin: false,
       availability_status: "free"
     },

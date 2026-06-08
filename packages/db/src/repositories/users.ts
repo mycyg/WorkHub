@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { eq } from "drizzle-orm";
 
+import type { WorkHubLocale } from "@workhub/contracts";
+
 import type { WorkHubDb } from "../client.js";
 import { users } from "../schema/index.js";
 
@@ -17,6 +19,7 @@ export type CreateUserInput = {
   nickname: string;
   cookieToken: string;
   isAdmin?: boolean;
+  preferredLocale?: WorkHubLocale;
 };
 
 export type UserRepository = {
@@ -26,6 +29,7 @@ export type UserRepository = {
   createUser: (input: CreateUserInput) => Promise<UserAuthRow>;
   getOrCreateActiveByNickname: (nickname: string, newCookieToken: string) => Promise<GetOrCreateUserResult>;
   rotateCookieToken: (userId: string, cookieToken: string) => Promise<UserAuthRow | null>;
+  updatePreferredLocale?: (userId: string, locale: WorkHubLocale) => Promise<UserAuthRow | null>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -63,6 +67,7 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
           id: input.id ?? randomUUID(),
           nickname: input.nickname,
           cookieToken: input.cookieToken,
+          preferredLocale: input.preferredLocale ?? "zh-CN",
           isAdmin: input.isAdmin ?? false
         })
         .returning();
@@ -86,6 +91,16 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
       const rows = await db
         .update(users)
         .set({ cookieToken, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning();
+      const user = rows[0] ?? null;
+      return user && user.deletedAt === null ? user : null;
+    },
+
+    async updatePreferredLocale(userId, locale) {
+      const rows = await db
+        .update(users)
+        .set({ preferredLocale: locale, updatedAt: new Date() })
         .where(eq(users.id, userId))
         .returning();
       const user = rows[0] ?? null;

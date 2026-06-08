@@ -96,7 +96,7 @@ git diff --check
 
 | 阶段 | 工作 | 验收 |
 |---|---|---|
-| P1.3 User locale preference | 增 `me.locale` / user preference schema / settings action；登录后跨设备同步语言 | Web、desktop 主窗、pet 三端首屏语言一致 |
+| P1.3 User locale preference | **已落**：`me.locale` / `preferences.locale` / `PATCH /api/auth/preferences`；登录后跨设备同步语言；详情见 [`i18n-user-locale-preference-p1-3.md`](./i18n-user-locale-preference-p1-3.md) | Web、desktop 主窗、pet 三端共享 `workhub.locale`，已登录用户以服务端偏好为准 |
 | P1.4 Visual regression | 给 Gold Path 与非 Gold Path helper 做中英 screenshot/DOM dump，检查文字不溢出 | 英文固定文案不挤压按钮、卡片、rail；主窗无 Cuu 形象 |
 | P1.5 Server-generated multilingual VM | Agent / daemon 在生成 summary、proposal、evidence digest 时接 locale | 英文新任务的 summary 可由服务端生成英文；历史中文内容保留原文 |
 | P1.6 OpenAPI contract | `openapi.json` 写入 `locale` query 与 `meta.locale` | codegen 后 Page VM client 不丢 locale |

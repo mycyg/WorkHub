@@ -51,7 +51,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   const calls: string[] = [];
   const client = createApiClient({
     fetchFn: async (input, init) => {
-      const body = String(input).includes("/next-question") && typeof init?.body === "string" ? ` ${init.body}` : "";
+      const body = (String(input).includes("/next-question") || String(input).includes("/auth/preferences")) && typeof init?.body === "string"
+        ? ` ${init.body}`
+        : "";
       calls.push(`${init?.method ?? "GET"} ${input}${body}`);
       return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
         status: 200,
@@ -61,6 +63,8 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   });
 
   await client.pages.goldPath();
+  await client.me();
+  await client.updatePreferences({ locale: "en-US" });
   await client.pages.workItem("work-1");
   await client.pages.proposal("proposal-1");
   await client.createSession({ intent_text: "帮我整理客户周报模板。" });
@@ -94,6 +98,8 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
 
   assert.deepEqual(calls, [
     "GET /api/pages/gold-path",
+    "GET /api/auth/me",
+    'PATCH /api/auth/preferences {"locale":"en-US"}',
     "GET /api/pages/workitems/work-1",
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions",

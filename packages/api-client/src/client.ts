@@ -147,6 +147,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     me: () => request<IdentityResponse | null>("/api/auth/me"),
+    updatePreferences: (payload) =>
+      request<IdentityResponse>("/api/auth/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      }),
     notifications: () => request("/api/notifications"),
     createSession: (payload = {}) =>
       request("/api/sessions", {

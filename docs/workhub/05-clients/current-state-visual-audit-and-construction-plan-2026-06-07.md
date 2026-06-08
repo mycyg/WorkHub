@@ -34,7 +34,7 @@ visuals:
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
 | Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run 与黑/白 look-only 已有真实 Tauri 证据 | 仍缺审批、检索、同步、拖拽、hide-on-hover、settings matrix 和长期稳定性 |
 | Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
-| 多语言 | 中英 locale 合同已落 | 需要覆盖更多非 Gold Path 页面和桌宠固定文案 |
+| 多语言 | 中英 locale 合同、非 Gold Path helper、用户语言偏好已落；Web / desktop / pet 共享 `workhub.locale` | 需要补中英视觉回归、pet 右键设置菜单和服务端生成内容 locale |
 
 ## 2. 已保留的有效截图
 
@@ -169,6 +169,8 @@ visuals:
 | settings matrix report | 待生成 |
 | Web 主窗无 Cuu 截图 | 待生成 |
 | desktop 主窗无 Cuu 截图 | 待生成 |
+| 中英 locale preference API | 已生成：`PATCH /api/auth/preferences`、`users.preferred_locale`、[`i18n-user-locale-preference-p1-3.md`](./i18n-user-locale-preference-p1-3.md) |
+| 桌宠参考包审查 | 已生成：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)，只借鉴状态机、资源包和窗口交互，不直接纳入未授权素材 |
 
 ## 8. 完成标准
 
