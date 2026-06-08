@@ -15,12 +15,7 @@ import {
 } from "../middleware/auth.js";
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
-import {
-  buildP05GoldPathSurfacePage,
-  getP05GoldPathFixture,
-  isP05ProposalId,
-  isP05WorkItemId
-} from "../pages/gold-path.js";
+import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage } from "../pages/proposals.js";
 import {
   createApprovalService,
@@ -46,6 +41,8 @@ export type PageRoutesDependencies = {
   ledgerStore?: CostLedgerStore;
   allowUnauthenticatedGoldPath?: boolean;
 };
+
+const workItemPageUnavailableMessage = "真实事项详情 Page VM 尚未接入；演示 fixture 只保留在 /api/pages/gold-path 页面包。";
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
@@ -93,21 +90,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   });
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), (c) => {
-    if (!isP05WorkItemId(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个事项页面。" });
-    }
-    return c.json(pageEnvelope(getP05GoldPathFixture().workItemDetail, requestLocale(c)));
+    throw new HTTPException(501, { message: workItemPageUnavailableMessage });
   });
 
   routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {
-    if (!isP05ProposalId(c.req.param("id"))) {
-      const proposal = await proposals.get(c.req.param("id"));
-      if (!proposal) {
-        throw new HTTPException(404, { message: "没有找到这个变更申请。" });
-      }
-      return c.json(pageEnvelope(buildProposalDetailPage(proposal), requestLocale(c)));
+    const proposal = await proposals.get(c.req.param("id"));
+    if (!proposal) {
+      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
     }
-    return c.json(pageEnvelope(getP05GoldPathFixture().proposalDetail, requestLocale(c)));
+    return c.json(pageEnvelope(buildProposalDetailPage(proposal), requestLocale(c)));
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {

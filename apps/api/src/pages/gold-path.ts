@@ -41,19 +41,3 @@ export function buildP05GoldPathSurfacePage(): GoldPathSurfaceVM {
 export function getP05GoldPathFixture() {
   return validateP05GoldPathFixture(createP05GoldPathFixture());
 }
-
-export function isP05SessionId(id: string) {
-  return id === p05GoldPathIds.session;
-}
-
-export function isP05WorkItemId(id: string) {
-  return id === p05GoldPathIds.workItem;
-}
-
-export function isP05ProposalId(id: string) {
-  return id === p05GoldPathIds.proposal;
-}
-
-export function isP05AgentRunId(id: string) {
-  return id === p05GoldPathIds.run;
-}

@@ -133,7 +133,7 @@ export function getOpenApiDocument() {
       "/api/sessions": {
         post: {
           tags: ["sessions"],
-          summary: "Create a P0.5 intake session"
+          summary: "Create an option-first intake session"
         }
       },
       "/api/sessions/{id}/next-question": {

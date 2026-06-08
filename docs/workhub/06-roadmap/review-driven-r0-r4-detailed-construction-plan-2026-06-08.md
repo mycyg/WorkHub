@@ -126,13 +126,17 @@ R0 退出门：
 
 3. **让 Replay 读真实 DB**
    - **状态：部分完成。** `GET /api/agent-runs/:id/replay` 仍通过 queue facade 读取，但 queue facade 已有 DB fallback，可在内存 miss 时还原 `agent_runs + agent_steps`。
-   - **2026-06-08 追加切片**：AgentRun replay 的 P0.5 fixture fallback 已改成显式 `allowP05ReplayFixture` opt-in；生产默认 route 不再返回硬编码 replay。
-   - 剩余：补真实 PG route + daemon restart 后 `/replay` 验收证据；把 sessions/workitems/proposals/page detail 中的 P0.5 route set 迁出生产业务 route。
+   - **2026-06-08 追加切片**：AgentRun replay 的 P0.5 fixture fallback 已完全移出生产 route；`/agent-runs/:id/replay` 只读真实 run/trace/snapshot/audit。
+   - **2026-06-08 追加验收**：Linux 测试机真实 PG smoke 已通过，daemon restart 后 `/agent-runs/:id` 与 `/replay` 可读回。
+   - 剩余：把 replay 依赖的 merge/main 状态做实，避免只靠 proposal 状态与 merge snapshot id。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
 4. **隔离 fixture**
-   - `isP05*` 从生产业务 route 迁出到 demo/test-only 边界。
-   - `gold-path.test.ts` 允许 fake LLM，但必须走真实 service/repository。
+   - **状态：2026-06-08 已完成代码切片。**
+   - `isP05*` 已从生产业务 route 删除；`apps/api/src/routes/*` grep 不再出现 P0.5 id matcher。
+   - `sessions/workitems/knowledge/pages/workitems` 在真实 service 接入前返回 501 fail-closed。
+   - `pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`，不再返回 P0.5 proposal/review/merge fixture。
+   - 仅 `/api/pages/gold-path` 保留 P0.5 demo bundle，用于概念/页面 VM 展示，不再作为 R1 完成证据。
 
 5. **补审批人与 merge 真实语义**
    - escalation/review 不再 self-approve。
@@ -150,9 +154,10 @@ R0 退出门：
 - 已通过：`pnpm --filter @workhub/db typecheck`。
 - 已通过：`pnpm --filter @workhub/api typecheck`。
 - 已通过：`pnpm --filter @workhub/db test`，覆盖新增 AgentRun 恢复字段与 `agent_steps.seq`。
-- 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当前仍由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
+- 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当时由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
-- 未完成：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出、proposal merge/main 状态完整语义。
+- 后续已补：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出生产业务 route。
+- 未完成：proposal merge/main 状态完整语义；sessions/workitems/knowledge/page workitem 真实 service 仍是 501 fail-closed。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -196,7 +201,25 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo c
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭。仍不能宣称 R1 全部完成，因为 P0.5 route set 仍有生产分支残留，proposal merge/main 状态也未完整落地。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭。
+
+### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
+
+已落代码切片：
+
+- `apps/api/src/routes/agent-runs.ts` 删除 `allowP05ReplayFixture` 和 P0.5 replay fallback。
+- `apps/api/src/routes/proposals.ts` 删除 P0.5 proposal/review/merge 分支，所有读写都走 `ProposalService`。
+- `apps/api/src/routes/pages.ts` 只保留 `/api/pages/gold-path` demo bundle；`/api/pages/proposals/:id` 只读真实 proposal；`/api/pages/workitems/:id` 在真实 service 接入前返回 501。
+- `apps/api/src/routes/sessions.ts`、`workitems.ts`、`knowledge.ts` 在真实 service 接入前返回 501，避免用固定 fixture 冒充产品链路。
+- `apps/api/src/pages/gold-path.ts` 删除未使用的 `isP05*` id matcher，减少误接回生产 route 的风险。
+
+验证：
+
+- `rg -n "isP05|p05GoldPathIds|getP05GoldPathFixture|allowP05ReplayFixture|P0\\.5" apps/api/src/routes apps/api/src/openapi.ts -S` 只剩 `/api/pages/gold-path` 的 OpenAPI 摘要。
+- `pnpm --filter @workhub/api typecheck` 通过。
+- `pnpm --filter @workhub/api test` 通过，当前 59/59；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
+
+仍不能宣称 R1 全部完成，因为 proposal merge/main 状态、approver owner routing、真实 sessions/workitems/knowledge/page workitem service 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

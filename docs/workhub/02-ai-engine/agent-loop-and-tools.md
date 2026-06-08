@@ -59,15 +59,16 @@ R1 当前代码切片已落：
 - `apps/api/src/routes/agent-runs.ts` 默认在 enqueue 后自动 pump `queue.run(run_id)`，不再要求客户端或测试调用 `runNext()` 才开始执行；测试可用 `autoRun:false` 隔离 queue 单元行为。
 - `packages/db/src/repositories/agent-runs.ts` 与 `apps/api/src/services/agent-run-persistence.ts` 已接入 AgentRun/AgentStep write-through persistence；默认 queue 会把 run 状态、预算、usage、workdir、handoff、trace 写入 DB，且 `get/trace/workdir/listActive` 在内存 miss 时从 persistence 读回。
 - `agent_steps` 已用 `seq` 做 trace 排序，取消错误的 `(agent_run_id, step_no)` 唯一约束；同一 step 内可同时保存 `tool_call/tool_result/think/final` 多条记录。
+- 真实 PostgreSQL restart/replay smoke 已通过：一条 file-only run 在 Linux 测试机落 `agent_runs/agent_steps/proposals/snapshots/audit_logs` 后，新 queue 可读回 `/agent-runs/:id` 与 `/replay`。
+- P0.5 fixture 已从生产业务 route 迁出：`/agent-runs/:id/replay` 不再有 fixture fallback，`sessions/workitems/knowledge/page workitem` 在真实 service 接入前失败关闭，只有 `/api/pages/gold-path` 保留 demo bundle。
 
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace；`/agent-runs/:id/replay` 的 P0.5 replay fixture fallback 已改为显式 `allowP05ReplayFixture` opt-in，生产默认不再用硬编码 replay 冒充成功。
-- 仍需迁移更大的 P0.5 route set（sessions/workitems/proposals/page detail）到 demo/test-only 边界。
-- 尚缺真实 PostgreSQL 端到端证据：file-only work item 经 route 跑完后重启 daemon，再查询 `GET /api/agent-runs/:id` 和 `/replay`。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，但 proposal merge/main 状态仍需做实。
+- sessions/workitems/knowledge/page workitem 真实服务尚未接入；当前 501 fail-closed 是治理结果，不是产品完成。
 
-后续施工必须先完成 R1 的真实 PG 纵切与 fixture 隔离，再回到 Web/Cuu 产品化。
+后续施工必须先完成 proposal merge/main、审批人路由与真实 sessions/workitems/knowledge 服务，再回到 Web/Cuu 产品化。
 
 ---
 

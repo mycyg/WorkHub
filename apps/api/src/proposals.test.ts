@@ -236,7 +236,7 @@ function appWithProposalRoutes() {
   const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
-  app.route("/api/proposals", createProposalRoutes({ auth, proposals, allowUnauthenticatedGoldPath: false }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
   app.route("/api/pages", createPageRoutes({ auth, proposals, allowUnauthenticatedGoldPath: false }));
   return { app, runtimeSettings };
 }

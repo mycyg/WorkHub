@@ -22,7 +22,7 @@ import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
-import { createCostRoutes } from "./routes/cost.js";
+import { createInMemoryProposalService } from "./services/proposals.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -248,22 +248,22 @@ test("P0.5 gold path preview still closes when unauthenticated preview is disabl
   assert.equal(response.status, 401);
 });
 
-test("P0.5 route set returns option question, evidence bubble, proposal detail, work item detail, and replay", async () => {
+test("production routes fail closed instead of serving the P0.5 fixture route set", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
   const auth = authDeps(runtimeSettings);
+  const proposals = createInMemoryProposalService({ now: () => now });
   app.route("/api", createSessionRoutes({ auth }));
   app.route("/api", createWorkItemRoutes({ auth }));
   app.route("/api/knowledge", createKnowledgeRoutes({ auth }));
-  app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
-  app.route("/api", createAgentRunRoutes({
+  app.route("/api/pages", createPageRoutes({
     auth,
     queue: emptyQueue(),
-    autoRun: false,
-    allowP05ReplayFixture: true
+    proposals,
+    allowUnauthenticatedGoldPath: false
   }));
-  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
-  app.route("/api/cost", createCostRoutes({ auth }));
+  app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue(), autoRun: false }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
   const headers = { Cookie: await cookie(runtimeSettings) };
 
   const session = await app.request("/api/sessions", {
@@ -288,192 +288,40 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   const proposal = await app.request(`/api/pages/proposals/${p05GoldPathIds.proposal}`, { headers });
   const workitem = await app.request(`/api/pages/workitems/${p05GoldPathIds.workItem}`, { headers });
   const replay = await app.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
-  const costUsage = await app.request("/api/cost/usage", { headers });
-
-  assert.equal(session.status, 200);
-  assert.equal(question.status, 200);
-  assert.equal(createdWorkItem.status, 201);
-  assert.equal(evidence.status, 200);
-  assert.equal(proposal.status, 200);
-  assert.equal(workitem.status, 200);
-  assert.equal(replay.status, 200);
-  assert.equal(costUsage.status, 200);
-
-  const sessionBody = await session.json() as {
-    data: {
-      session_id: string;
-      topic: string;
-      stream_href: string;
-      next_question_href: string;
-      question: { free_text: { collapsed_by_default: boolean } };
-    };
-  };
-  const questionBody = await question.json() as {
-    data: { body?: string; free_text: { collapsed_by_default: boolean }; recommended_option_ids?: string[] };
-  };
-  const createdWorkItemBody = await createdWorkItem.json() as {
-    data: { workitem: { id: string; status: string; summary_md?: string }; latest_proposal?: unknown; agent_trace_preview: unknown[] };
-  };
-  const evidenceBody = await evidence.json() as { data: { evidence_refs: unknown[] } };
-  const proposalBody = await proposal.json() as {
-    data: { review_actions: { request_changes: { requires_reason?: boolean } } };
-  };
-  const workItemBody = await workitem.json() as { data: { latest_proposal?: unknown } };
+  const proposalReview = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  const proposalMerge = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
   const evidenceBound = await app.request(`/api/workitems/${p05GoldPathIds.workItem}/evidence-bindings`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       evidence_bubble_id: p05GoldPathIds.evidenceBubble,
-      evidence_refs: evidenceBody.data.evidence_refs
+      evidence_refs: [
+        {
+          id: "10000000-0000-4000-8000-000000000301",
+          source_type: "meeting",
+          source_id: "meeting-1",
+          title: "真实检索未接入前的测试证据"
+        }
+      ]
     })
   });
-  assert.equal(evidenceBound.status, 200);
-  const evidenceBoundBody = await evidenceBound.json() as {
-    data: { workitem: { status: string; summary_md?: string }; evidence_refs: unknown[]; acceptance: { id?: string; status?: string }[] };
-  };
-  const replayBody = await replay.json() as {
-    ok: true;
-    data: { cost?: { active_notices: { usage_ratio: number; options?: unknown[] }[] } };
-  };
-  const costUsageBody = await costUsage.json() as {
-    ok: true;
-    data: { me: { max_tokens: number }; scopes: unknown[]; active_notices: unknown[]; generated_at: string };
-  };
 
-  assert.equal(sessionBody.data.session_id, p05GoldPathIds.session);
-  assert.equal(sessionBody.data.topic, `session:${p05GoldPathIds.session}`);
-  assert.equal(sessionBody.data.stream_href, `/api/push/stream/session/${p05GoldPathIds.session}`);
-  assert.equal(sessionBody.data.next_question_href, `/api/sessions/${p05GoldPathIds.session}/next-question`);
-  assert.equal(sessionBody.data.question.free_text.collapsed_by_default, true);
-  assert.equal(questionBody.data.free_text.collapsed_by_default, true);
-  assert.equal(questionBody.data.body?.includes("已收到：风险优先"), true);
-  assert.deepEqual(questionBody.data.recommended_option_ids, ["risk-first"]);
-  assert.equal(createdWorkItemBody.data.workitem.id, p05GoldPathIds.workItem);
-  assert.equal(createdWorkItemBody.data.workitem.status, "ai_working");
-  assert.equal(createdWorkItemBody.data.latest_proposal, undefined);
-  assert.equal(createdWorkItemBody.data.agent_trace_preview.length >= 1, true);
-  assert.equal(createdWorkItemBody.data.workitem.summary_md?.includes("已选择：风险优先"), true);
-  assert.equal(evidenceBody.data.evidence_refs.length, 3);
-  assert.equal(evidenceBoundBody.data.workitem.status, "ai_working");
-  assert.equal(evidenceBoundBody.data.workitem.summary_md?.includes("3 条证据"), true);
-  assert.equal(evidenceBoundBody.data.evidence_refs.length, 3);
-  assert.equal(evidenceBoundBody.data.acceptance.some((item) => item.id === "evidence-bound" && item.status === "met"), true);
-  assert.equal(proposalBody.data.review_actions.request_changes.requires_reason, true);
-  assert.equal(workItemBody.data.latest_proposal !== undefined, true);
-  assert.equal((replayBody.data.cost?.active_notices[0]?.usage_ratio ?? 0) >= 0.8, true);
-  assert.equal((replayBody.data.cost?.active_notices[0]?.options?.length ?? 0) >= 2, true);
-  assert.equal(costUsageBody.data.me.max_tokens, 500000);
-  assert.equal(costUsageBody.data.scopes.length >= 2, true);
-  assert.equal(typeof costUsageBody.data.generated_at, "string");
-});
-
-test("P0.5 replay fixture is explicit opt-in and production routes fail closed by default", async () => {
-  const runtimeSettings = settings();
-  const auth = authDeps(runtimeSettings);
-  const headers = { Cookie: await cookie(runtimeSettings) };
-  const defaultApp = withErrors(new Hono<AuthEnv>());
-  defaultApp.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue(), autoRun: false }));
-  const demoApp = withErrors(new Hono<AuthEnv>());
-  demoApp.route("/api", createAgentRunRoutes({
-    auth,
-    queue: emptyQueue(),
-    autoRun: false,
-    allowP05ReplayFixture: true
-  }));
-
-  const defaultResponse = await defaultApp.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
-  const demoResponse = await demoApp.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
-
-  assert.equal(defaultResponse.status, 404);
-  assert.equal(demoResponse.status, 200);
-});
-
-test("P0.5 proposal review requires a reason on request changes and feeds it back to the next Agent context", async () => {
-  const runtimeSettings = settings();
-  const app = withErrors(new Hono<AuthEnv>());
-  const auth = authDeps(runtimeSettings);
-  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
-  const headers = { Cookie: await cookie(runtimeSettings) };
-
-  const missingReason = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ decision: "request_changes" })
-  });
-  assert.equal(missingReason.status, 422);
-
-  const response = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ decision: "request_changes", reason_md: "证据不足，请补充客户风险列表。" })
-  });
-
-  assert.equal(response.status, 200);
-  const body = await response.json() as {
-    ok: true;
-    data: {
-      status: string;
-      decision: string;
-      next_agent_context?: { correction: string; reason_fed_back: boolean };
-      event: { type: string; attention?: { cuu_state?: string } };
-      feedback_event?: { type: string; cuu_state?: string; data: { reason_fed_back?: boolean } };
-      audit_logs?: { action: string; detail_json: { reason_fed_back?: boolean } }[];
-    };
-  };
-  assert.equal(body.data.status, "revision_requested");
-  assert.equal(body.data.decision, "request_changes");
-  assert.equal(body.data.next_agent_context?.correction, "证据不足，请补充客户风险列表。");
-  assert.equal(body.data.next_agent_context?.reason_fed_back, true);
-  assert.equal(body.data.event.type, "proposal.reviewed");
-  assert.equal(body.data.event.attention?.cuu_state, "revision_requested");
-  assert.equal(body.data.feedback_event?.type, "revision.fedback");
-  assert.equal(body.data.feedback_event?.cuu_state, "revision_requested");
-  assert.equal(body.data.feedback_event?.data.reason_fed_back, true);
-  assert.equal(body.data.audit_logs?.some((log) => log.action === "reason_fed_back"), true);
-  assert.equal(body.data.audit_logs?.[0]?.detail_json.reason_fed_back, true);
-});
-
-test("P0.5 proposal approve and merge expose merged event, notification, audit facts, and rollback entry", async () => {
-  const runtimeSettings = settings();
-  const app = withErrors(new Hono<AuthEnv>());
-  const auth = authDeps(runtimeSettings);
-  app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
-  const headers = { Cookie: await cookie(runtimeSettings) };
-
-  const review = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/review`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ decision: "approve" })
-  });
-  assert.equal(review.status, 200);
-  const reviewBody = await review.json() as { ok: true; data: { next_action?: { href: string } } };
-  assert.equal(reviewBody.data.next_action?.href, `/api/proposals/${p05GoldPathIds.proposal}/merge`);
-
-  const merge = await app.request(`/api/proposals/${p05GoldPathIds.proposal}/merge`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({})
-  });
-
-  assert.equal(merge.status, 200);
-  const mergeBody = await merge.json() as {
-    ok: true;
-    data: {
-      status: string;
-      merge_snapshot_id: string;
-      rollback_available: boolean;
-      rollback: { available: boolean };
-      events: { type: string }[];
-      audit_logs: { action: string; snapshot_id?: string }[];
-      attention: { cuu_state?: string };
-    };
-  };
-  assert.equal(mergeBody.data.status, "merged");
-  assert.equal(mergeBody.data.merge_snapshot_id, p05GoldPathIds.mergeSnapshot);
-  assert.equal(mergeBody.data.rollback_available, true);
-  assert.equal(mergeBody.data.rollback.available, true);
-  assert.equal(mergeBody.data.events.some((event) => event.type === "proposal.merged"), true);
-  assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
-  assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id === p05GoldPathIds.mergeSnapshot), true);
-  assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
+  assert.equal(session.status, 501);
+  assert.equal(question.status, 501);
+  assert.equal(createdWorkItem.status, 501);
+  assert.equal(evidence.status, 501);
+  assert.equal(workitem.status, 501);
+  assert.equal(proposal.status, 404);
+  assert.equal(replay.status, 404);
+  assert.equal(proposalReview.status, 404);
+  assert.equal(proposalMerge.status, 404);
+  assert.equal(evidenceBound.status, 501);
 });

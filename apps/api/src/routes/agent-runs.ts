@@ -17,10 +17,6 @@ import {
   type AgentRunQueueRecord
 } from "../workers/agent-runner.js";
 import { buildReplayTracePage, toAgentRunLiveVm, toAgentStepVm, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
-import {
-  getP05GoldPathFixture,
-  isP05AgentRunId
-} from "../pages/gold-path.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 function auditLogRunId(detailJson: unknown) {
@@ -45,7 +41,6 @@ export type AgentRunRoutesDependencies = {
   snapshots?: SnapshotRepository;
   autoRun?: boolean;
   onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
-  allowP05ReplayFixture?: boolean;
 };
 
 export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
@@ -120,9 +115,6 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
 
   routes.get("/agent-runs/:id/replay", createCurrentUserMiddleware(authSource), async (c) => {
     const run = await queue.get(c.req.param("id"));
-    if (!run && deps.allowP05ReplayFixture === true && isP05AgentRunId(c.req.param("id"))) {
-      return c.json({ ok: true, data: getP05GoldPathFixture().replay });
-    }
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
