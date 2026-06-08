@@ -6,6 +6,7 @@ owner: workflow
 date: 2026-06-08
 visuals:
   - ./assets/shared/prd-concept-gap-map.png
+  - ./assets/shared/r0-governance-boundary-concept.svg
   - ./assets/desktop/desktop-rust-shell-gap-roadmap.png
   - ./assets/web/web-real-ui-gap-roadmap.png
   - ./assets/cuu/cuu-character-animation-states.png
@@ -26,6 +27,8 @@ visuals:
 ## 1. 总体差距
 
 ![PRD / 概念复现差距地图](./assets/shared/prd-concept-gap-map.png)
+
+![R0 主窗与 Cuu 边界](./assets/shared/r0-governance-boundary-concept.svg)
 
 | 领域 | 已落地 | 未复现 |
 |---|---|---|
@@ -73,7 +76,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 - `./assets/cuu/cuu-option-first-clarify.png`
 - 源帧：`./assets/audit/2026-06-08-cuu-live2d-model-preview/`
 
-这只解决了 `assets/cuu/` 三张 Cuu 专图的偏差。Claude 审查指出 `assets/shared/` 下仍有橘猫，旧 current-state 截图也仍有橘猫进入主窗，因此概念治理状态应改为：**Cuu 专图已对，shared/旧截图未对，R0 必须修**。P1.10 已证明黑猫 Hijiki 在真实 Tauri pet window 中有 32 帧 motion_liveness，但 R1 前不继续扩外观矩阵。
+这只解决了 `assets/cuu/` 三张 Cuu 专图的偏差。Claude 审查指出 `assets/shared/` 下仍有橘猫，旧 current-state 截图也仍有橘猫进入主窗，因此概念治理状态应改为：**Cuu 专图已对，旧 shared PNG/旧截图未对，当前权威边界图为 `r0-governance-boundary-concept.svg`**。P1.10 已证明黑猫 Hijiki 在真实 Tauri pet window 中有 32 帧 motion_liveness，但 R1 前不继续扩外观矩阵。
 
 ![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
@@ -177,6 +180,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 优先级 | 工作 |
 |---|---|
 | R0 | 冻结 Cuu 外观；旧橘猫 current-state 截图判 fail/stale；shared 橘猫概念图排队替换 |
+| R0 | 使用 `r0-governance-boundary-concept.svg` 作为主窗无 Cuu 的当前概念基准；旧 shared PNG 仅可作为历史草图引用 |
 | R0 | 主窗截图审查，确认无 Cuu 本体回流；补透明 pet smoke |
 | R0 | 命门 OQ-2/OQ-3 owner + v1 阈值落定；D-1 正名为 TS-first 重写 |
 | R1 | 已完成局部：真实 AgentLoop manifest 自动打开 DB-backed Proposal；下一步：DB-backed AgentRun/AgentStep + queue pump + 真实 approve/merge/replay |

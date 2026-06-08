@@ -5,6 +5,7 @@ status: audit-reset
 owner: workflow
 date: 2026-06-08
 visuals:
+  - ./assets/shared/r0-governance-boundary-concept.svg
   - ./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
@@ -32,6 +33,8 @@ visuals:
 > **Claude 审查修正**：`D:/workhub审查报告` 进一步指出，`2026-06-07-current-state` 里的 Web/desktop 主窗橘猫和 `tauri-pet-printwindow.png` 橘猫黑底应判为 FAIL/stale，而不是“待复核”。本篇自此把这些旧截图列为失败样例；当前施工入口切换到 [`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md)。
 
 ## 1. 当前结论
+
+![R0 主窗与 Cuu 边界](./assets/shared/r0-governance-boundary-concept.svg)
 
 | 维度 | 当前状态 | 与概念图差距 |
 |---|---|---|

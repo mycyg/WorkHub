@@ -7,13 +7,16 @@ date: 2026-06-08
 source_review: D:/workhub审查报告
 visuals:
   - ../05-clients/assets/shared/r0-r4-recovery-roadmap.svg
+  - ../05-clients/assets/shared/r0-governance-boundary-concept.svg
 ---
 
 # R0-R4 纠偏施工路线
 
-> 本篇把 `D:/workhub审查报告` 的 Claude 审查结论收进仓库文档树，作为 2026-06-08 之后的施工优先级。它不替代 PRD，而是修正当前执行顺序：先止血对账，再证明真实纵切，最后再回到 Cuu 与 Web 产品化。
+> 本篇把 `D:/workhub审查报告` 的 Claude 审查结论收进仓库文档树，作为 2026-06-08 之后的施工优先级。它不替代 PRD，而是修正当前执行顺序：先止血对账，再证明真实纵切，最后再回到 Cuu 与 Web 产品化。逐项领取与验收细节见 [`review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./review-driven-r0-r4-detailed-construction-plan-2026-06-08.md)。
 
 ![R0-R4 recovery roadmap](../05-clients/assets/shared/r0-r4-recovery-roadmap.svg)
+
+![R0 governance boundary](../05-clients/assets/shared/r0-governance-boundary-concept.svg)
 
 ## 0. 新铁律
 

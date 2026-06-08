@@ -26,7 +26,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 
 ## 目标
 
-把现有「需求管理大师」的 **28 个 SQLAlchemy ORM 实体**(`app/models.py`,核验为 28 个 `class …(Base)`,Master「35 实体」为含人侧子表/沿用家族的概数)**结构化迁入** WorkHub 的 `app/models/` 包,并完成三件 AI-native 地基改造:
+把现有「需求管理大师」的 **28 个 SQLAlchemy ORM 实体**(`app/models.py`,核验为 28 个 `class …(Base)`,早期 Master 的实体家族概数不再作为精确口径)**结构化迁入** WorkHub 的 `app/models/` 包,并完成三件 AI-native 地基改造:
 
 1. **横切列补齐**:为可变业务实体补 `version`(乐观锁)、`deleted_at`(软删除)、`org_id`/`workspace_id`(租户作用域),消灭 `Requirement` 等表缺软删/版本列的不一致。
 2. **`Requirement → WorkItem` 演进**:ORM 类改名 + 全部 `requirement_id` FK 改名 `work_item_id`,新增 AI-native 字段(`mode`/`human_reserved`/`current_spec_id`/`main_branch_id`/`latest_confidence_id`),并把状态串域演进为新状态机(状态映射在 F3 数据迁移落地,本组件只定 ORM 形态与转移表常量)。

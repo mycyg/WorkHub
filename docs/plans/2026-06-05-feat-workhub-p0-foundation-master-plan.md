@@ -19,6 +19,8 @@ origin: docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md
 P0「地基」把现有 **需求管理大师**(FastAPI 单体 + SQLite 单 worker + Tauri/Web 客户端)的业务经验迁移演进为 **WorkHub 的可并发地基**:一个 **TS-first headless agent daemon**(Hono/Node + OpenAPI + SSE)+ **PostgreSQL** + **消息 broker**,把 `auto_agent` 的行为抽象成可复用的 **TypeScript Agent 引擎核心**,并补齐 **分层权限 / 审计快照 / provider 抽象** 等 AI-native 必需底座。
 
 > **2026-06-05 技术路线修正**:后续施工默认以 TypeScript 为主语言。F1-F11 中仍出现的 FastAPI/SQLAlchemy/Drizzle migration 口径保留为现有系统的行为锚点;真正新仓模块/端口/页面返回以 [`p0-foundation/_ts-first-module-port-page-alignment.md`](./p0-foundation/_ts-first-module-port-page-alignment.md) 为准。
+>
+> **2026-06-08 Claude 审查修正**:本计划不再表述为“迁移现有地基、非重写”。当前权威口径是**参考既有 Python/FastAPI 行为锚点的 TS-first 重写与演进**。P0/P1 的完成定义也不再接受 fixture 假通道:必须走真实 AgentLoop、真实服务、真实持久化与可重启 replay。详细纠偏计划见 [`../workhub/06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](../workhub/06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md)。
 
 **P0 不做**上层产品功能(智能派活、协作分支-提议-合并、桌宠 Cuu、双向同步、看板)——这些是 P1–P5。P0 只做"让上面这些能被稳地建起来"的地基。
 但 P0 **必须先冻结体验与交付物契约**:选项式澄清、证据气泡、任意交付物变更申请、Cuu 事件状态、side-effect 快照红线的 payload/事件/验收门禁见 [`p0-foundation/_experience-deliverable-contracts.md`](./p0-foundation/_experience-deliverable-contracts.md)。这些不是 UI 施工,而是防止后续返工的 API/事件/数据契约。
@@ -50,7 +52,7 @@ P0「地基」把现有 **需求管理大师**(FastAPI 单体 + SQLite 单 worke
                    行级/乐观锁                  跨 worker SSE 事件 + presence
 ```
 
-迁移策略(决策 D-1):**迁移现有地基再演进**,不重写。安全敏感代码(鉴权链、权限不对称、沙箱)**逐字移植**,不"顺手重构"。
+迁移策略(决策 D-1):**参考既有行为锚点的 TS-first 重写与演进**。安全敏感行为(鉴权链、权限不对称、沙箱)必须等价保真并有回归测试,不得借“重写”放松约束。
 
 ## 5. 组件分解(F1–F11)—— 整体规划的核心
 
@@ -59,7 +61,7 @@ P0「地基」把现有 **需求管理大师**(FastAPI 单体 + SQLite 单 worke
 | ID | 组件 | 一句话目标 | 关键交付 | 依赖 | 首要风险 |
 |---|---|---|---|---|---|
 | **F1** | 仓库/构建脚手架 + 配置 | 可移植的 greenfield 骨架 | settings 重构、npm workspace、去 `/srv/yqgl` 硬编码、provider/budget 配置块 | — | 硬编码绝对路径散落在运行时代码(非仅 config) |
-| **F2** | 实体与模型移植 | 35 实体迁入 + 新增实体 + `requirements→work_items` | 移植 35 类、加 `version`/`deleted_at`/tenant 列、新增 Branch/Proposal/AgentRun/ConfidenceRecord/EscalationEvent/Snapshot/PermissionPolicy/AuditLog/UserProfile/Org/Workspace | F1 | `requirements→work_items` 牵动 15+ 表 FK |
+| **F2** | 实体与模型移植 | 旧系统实体行为锚点 + WorkHub 新实体 + `requirements→work_items` | 以 28 个 legacy ORM class 行为锚点和当前 41 张 PG 表为校准口径,加 `version`/`deleted_at`/tenant 列,新增 Branch/Proposal/AgentRun/ConfidenceRecord/EscalationEvent/Snapshot/PermissionPolicy/AuditLog/UserProfile/Org/Workspace | F1 | `requirements→work_items` 牵动 15+ 表 FK |
 | **F3** | PostgreSQL + Drizzle migrations | 换库 + 真迁移体系 | 换 engine、删 SQLite PRAGMA 行为、init Drizzle schema/migrations、首迁移、类型审校(`utcnow`→`timestamptz`、Text-JSON→JSONB、String(32)→UUID) | F2 | 类型强转**静默出错**(naive datetime vs timestamptz) |
 | **F4** | 鉴权/身份移植 | 双通道鉴权 + 设备门**逐字移植** | cookie+worker-token 优先级链、设备令牌门、`require_stream_user`、admin-claim、AI actor 一等身份 | F2 | token-beats-cookie 是已修过的 outage,**禁止重写** |
 | **F5** | 事件 bus → broker | 解除单 worker 的事件半边 | `PushBus` 抽象 + Redis/LISTEN-NOTIFY 后端、`presence`→Redis、topic 鉴权门、新事件 taxonomy | F3(与 F3 **成对**解除单 worker) | broker 化后**跨用户事件泄漏**(NFR-08,有前科) |
@@ -126,7 +128,7 @@ F1 ──► F2 ──► F3 ──┬─► F5 ─┐
 - [ ] web + Tauri 客户端经 **OpenAPI 生成的类型化客户端** + 跨域成功访问 daemon。
 - [ ] `QuestionCard` / `EvidenceRef` / `DeliverableChangeManifest` / `WorkHubEvent` / `CuuState` 进入 shared/OpenAPI 类型或等价生成产物;至少 `.docx/.pptx/.xlsx/image/folder` 五类交付物 fixture 可生成变更申请 manifest。
 - [ ] 新 SSE 事件使用正式事件名常量;不新增 `agent.run.started` / `proposal.ready` 等概念别名作为实现名;`permission.ask`、`proposal.opened`、`knowledge.evidence.ready`、`sync.conflict` 可映射到 Cuu 状态。
-- [ ] P0.5 Gold Path 可用 fixture 完整跑通:option-first intake → AgentRun → Manifest → Proposal → approve/reject → replay。
+- [ ] P0.5 Gold Path 的 fixture 仅作为 demo/test seed；R1 完成门必须走真实 AgentLoop → Manifest → DB-backed Proposal → approve/reject → real replay,不得用 `p05*` 分支冒充跑通。
 - [ ] `GET /api/agent-runs/:id/replay` 返回 `ReplayTraceVM`;至少 12 个 eval fixtures 中 P0 必需项通过。
 - [ ] 每个组件 PR 能通过 TS target path audit:声明 Behavior source、Target TS paths、contracts/db/events/page VM 归属。
 

@@ -1,0 +1,51 @@
+<svg width="1280" height="760" viewBox="0 0 1280 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="760" fill="#F6F7FB"/>
+  <text x="56" y="62" fill="#111827" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700">R0 Concept Governance Boundary</text>
+  <text x="56" y="96" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="16">WorkHub main windows stay serious. Cuu only lives in an independent transparent Tauri pet window.</text>
+
+  <rect x="56" y="134" width="486" height="460" rx="18" fill="#FFFFFF" stroke="#D6DCE8" stroke-width="2"/>
+  <rect x="82" y="164" width="434" height="54" rx="12" fill="#EEF2F7"/>
+  <circle cx="109" cy="191" r="8" fill="#94A3B8"/>
+  <circle cx="132" cy="191" r="8" fill="#CBD5E1"/>
+  <circle cx="155" cy="191" r="8" fill="#CBD5E1"/>
+  <text x="82" y="251" fill="#111827" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Web / Desktop Main Window</text>
+  <text x="82" y="283" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="15">Attention workspace, one decision, evidence, risk and actions.</text>
+  <rect x="82" y="318" width="286" height="48" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="104" y="349" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="15">Need your decision</text>
+  <rect x="82" y="382" width="286" height="48" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="104" y="413" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="15">Evidence and replay facts</text>
+  <rect x="82" y="446" width="286" height="48" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="104" y="477" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="15">Proposal / change package</text>
+  <rect x="386" y="318" width="130" height="176" rx="12" fill="#FFF7ED" stroke="#FDBA74" stroke-width="2"/>
+  <path d="M414 354L484 424M484 354L414 424" stroke="#EA580C" stroke-width="8" stroke-linecap="round"/>
+  <text x="404" y="529" fill="#9A3412" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700">No Cuu body</text>
+  <text x="404" y="552" fill="#9A3412" font-family="Inter, Arial, sans-serif" font-size="13">No role card</text>
+  <text x="404" y="574" fill="#9A3412" font-family="Inter, Arial, sans-serif" font-size="13">No legacy orange pet</text>
+
+  <rect x="612" y="134" width="534" height="460" rx="18" fill="#FFFFFF" stroke="#D6DCE8" stroke-width="2"/>
+  <text x="638" y="183" fill="#111827" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Independent Pet Window</text>
+  <text x="638" y="215" fill="#64748B" font-family="Inter, Arial, sans-serif" font-size="15">Transparent, always-on-top, fixed bottom-right anchor, full body visible.</text>
+  <rect x="830" y="244" width="204" height="262" rx="28" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <ellipse cx="932" cy="419" rx="68" ry="94" fill="#1F2937"/>
+  <circle cx="932" cy="327" r="52" fill="#111827"/>
+  <path d="M895 290L876 244L917 276" fill="#111827"/>
+  <path d="M965 276L1006 244L987 290" fill="#111827"/>
+  <circle cx="913" cy="327" r="7" fill="#F8FAFC"/>
+  <circle cx="956" cy="327" r="7" fill="#F8FAFC"/>
+  <path d="M928 348C935 354 944 354 951 348" stroke="#F8FAFC" stroke-width="4" stroke-linecap="round"/>
+  <path d="M873 438C825 444 801 468 794 506" stroke="#111827" stroke-width="18" stroke-linecap="round"/>
+  <text x="858" y="546" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="700">Hijiki default / Tororo optional</text>
+  <rect x="638" y="258" width="240" height="58" rx="14" fill="#EEF6FF" stroke="#BFDBFE"/>
+  <text x="660" y="293" fill="#1E3A8A" font-family="Inter, Arial, sans-serif" font-size="15">Approval bubble</text>
+  <rect x="638" y="336" width="240" height="58" rx="14" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="660" y="371" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="15">Option-first clarify</text>
+  <rect x="638" y="414" width="240" height="58" rx="14" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="660" y="449" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="15">Search / evidence chips</text>
+
+  <rect x="225" y="637" width="830" height="74" rx="18" fill="#111827"/>
+  <text x="258" y="668" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700">Shared contract, not shared mascot placement</text>
+  <text x="258" y="696" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="14">PageVM, CuuState, SSE events, Proposal, Replay and Budget payloads align across surfaces. Visual placement does not.</text>
+
+  <path d="M542 364H612" stroke="#94A3B8" stroke-width="3" stroke-dasharray="8 8"/>
+  <path d="M612 364L594 354V374L612 364Z" fill="#94A3B8"/>
+</svg>

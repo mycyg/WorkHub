@@ -201,7 +201,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 | `spec_ready` | `ai_working` | 默认派给 AI 工人(`human_reserved=false`);创建 `Branch`(actor=AI)+ `AgentRun` |
 | `spec_ready` | `pm_mode` | `human_reserved=true` 或无可执行工人 → 直接走人 |
 | `ai_working` | `in_review` | **confidence: high**:`AgentRun` 完成 → `ConfidenceRecord(grade=high)` → 自动生成 `Proposal`(按策略可自动 `merged`,见下) |
-| `ai_working` | `in_review` | **confidence: mid**:生成 `Proposal` + 标记需人工抽检 |
+| `ai_working` | `in_review` | **confidence: medium**:生成 `Proposal` + 标记需人工抽检 |
 | `ai_working` | `escalated` | **confidence: low / high_risk / blocked**:三触发器或 doom-loop/超预算(§7.4) |
 | `ai_working` | `ai_working` | 工具调用循环内自旋(不换状态,增 `AgentStep`) |
 | `escalated` | `pm_mode` | `EscalationEvent` 落库 → AI 切 `mode=pm`,生成派活+排期简报(FR-PM-001) |
@@ -367,14 +367,14 @@ PRD §8.2 / FR-ESC-001。每次产出生成一条,驱动 §5 的 confidence 分�
 | `agent_run_id` | FK→agent_runs.id?, index | 产出该结果的 run |
 | `confidence_score` | float | 0–1 综合置信度 |
 | `risk_score` | float | 0–1 综合风险 |
-| `grade` | str(8) | `high` / `mid` / `low`(置信度档) |
-| `risk_level` | str(8) | `low` / `mid` / `high` |
+| `grade` | str(8) | `high` / `medium` / `low`(置信度档) |
+| `risk_level` | str(8) | `low` / `medium` / `high` |
 | `verdict` | str(16) | 分级裁决:`auto_merge` / `human_spotcheck` / `escalate`(§5 三分叉) |
 | `signals_json` | JSONB | 各信号原值(见下表),可解释/可标定 |
 | `rationale_md` | Text | 人话理由("我比较有把握,但建议你扫一眼") |
 | `created_at` | DateTime | |
 
-> ⚠️ 枚举一致性:`grade`/`risk_level` 用 `mid`,而现有 `Requirement.estimate_confidence` 是 `low\|medium\|high`(正则强制,[`schemas.py:227/250`](../../../app/schemas.py)),[glossary §3.3](../00-overview/glossary-dejargon.md) 亦以此三档为人话渲染基准。`mid` vs `medium` 会造成枚举漂移——**实现期统一**(建议两个枚举都用 `medium`,与现有正则及 glossary 对齐),并把新档同步登记到 `shared/src/design/status-vocab.ts` 的人话标签,避免用户面漏出裸枚举。
+> ⚠️ 枚举一致性:R0 后 `grade`/`risk_level` 权威值统一为 `medium`,与现有 `Requirement.estimate_confidence` 的 `low\|medium\|high` 正则([`schemas.py:227/250`](../../../app/schemas.py))和 [glossary §3.3](../00-overview/glossary-dejargon.md) 对齐。旧 `mid` 只作为兼容读别名,生产 contract 不再新增,并把新档同步登记到 `shared/src/design/status-vocab.ts` 的人话标签,避免用户面漏出裸枚举。
 
 **置信度信号表**(PRD §8.2;v1 以 ②③ 为主、① 为辅、④ 随数据接入):
 
@@ -392,7 +392,7 @@ PRD §8.2 / FR-ESC-001。每次产出生成一条,驱动 §5 的 confidence 分�
 | `grade` × `risk_level` | `verdict` | §5 去向 |
 |---|---|---|
 | high + low(review 过 + 清单全过 + 低风险) | `auto_merge` | 自动 Proposal,策略允许则自动 merge |
-| mid / 部分不确定 / 中风险 | `human_spotcheck` | Proposal + 人工抽检(快速通过/打回) |
+| medium / 部分不确定 / 中风险 | `human_spotcheck` | Proposal + 人工抽检(快速通过/打回) |
 | low / high_risk / blocked / doom-loop / 超预算 | `escalate` | 创建 `EscalationEvent`,转 pm |
 
 ### 7.4 新增:`EscalationEvent`(升级事件,命门)

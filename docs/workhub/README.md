@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**46 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
+> 状态(2026-06-08):**47 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
 
 ---
 
@@ -131,6 +131,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 |---|---|---|
 | `phasing-p0-p5.md` | 各阶段范围、出入口标准、依赖 | ✅ |
 | `recovery-r0-r4-roadmap-2026-06-08.md` | **纠偏路线**:冻结 Cuu 外观、修正概念/文档 drift、R1 真实纵切、R2 多 worker、R3 Cuu 指令入口、R4 Web 产品化 | active |
+| `review-driven-r0-r4-detailed-construction-plan-2026-06-08.md` | **Claude 审查后详细施工计划**:按当前 main 校准 R0-R4 任务、验收门、概念治理、模块开工阅读清单 | active |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

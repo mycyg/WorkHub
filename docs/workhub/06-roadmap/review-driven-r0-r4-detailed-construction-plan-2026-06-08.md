@@ -1,0 +1,242 @@
+---
+module: 06-roadmap
+layer: review-driven construction plan
+status: active
+owner: workflow
+date: 2026-06-08
+source_review:
+  - D:/workhub审查报告/00-WorkHub-项目审查总报告-2026-06-08.md
+  - D:/workhub审查报告/01-后续施工计划与路线修正.md
+  - D:/workhub审查报告/02-概念图与现状对照核对.md
+  - D:/workhub审查报告/施工计划/
+visuals:
+  - ../05-clients/assets/shared/r0-governance-boundary-concept.svg
+  - ../05-clients/assets/shared/r0-r4-recovery-roadmap.svg
+---
+
+# Claude 审查后详细施工计划
+
+> 本篇把 `D:/workhub审查报告` 的结论转成仓库内可执行计划，并按当前 `main` 已落代码校准。它是 [`recovery-r0-r4-roadmap-2026-06-08.md`](./recovery-r0-r4-roadmap-2026-06-08.md) 的细化版。
+
+![R0 governance boundary](../05-clients/assets/shared/r0-governance-boundary-concept.svg)
+
+## 0. 审查结论转译
+
+Claude 审查指出的问题不是“代码质量差”，而是“范围优先级与真实验收定义偏了”。本仓当前应执行的纠偏如下：
+
+| 审查问题 | 当前校准 | 施工结论 |
+|---|---|---|
+| Cuu 外观投入过多，且 P1 的 `FR-PET-002` 未做 | Cuu 黑/白 Live2D runtime 已存在，外观不再是主线 | R1 通过前冻结 Cuu 外观；R3 只恢复 Cuu 出站 Agent 入口 |
+| Gold Path fixture 冒充完成 | `AgentLoopResult.manifest -> ProposalService.createFromManifest` 与 route auto-pump 已部分落代码，但 AgentRun 仍在内存 | R1 下一刀必须做 DB-backed AgentRun/AgentStep 与真实 replay |
+| 业务状态仍有内存 Map | Proposal 默认已 DB-backed；AgentRun/trace/workdir 仍是 Map | R1 优先 AgentRunStore；R2 再做 SKIP LOCKED 多 worker |
+| 文档写 Python 迁移，现实是 TS-first 重写 | README、phasing、F 系列已有部分修正，但仍需避免旧 plan 被当目标路径 | 本篇和 TS-first 审计为后续施工权威；旧 Python 行号只作行为锚点 |
+| 概念图/截图仍有橘猫与主窗 Cuu | `assets/cuu/` 已换黑/白；旧 shared 图和旧 current-state 截图标记 stale/fail | 以本篇 R0 概念治理图和 Cuu 专图作为当前边界；旧图只可作历史证据 |
+| `mid`/`medium` 漂移 | `confidence-risk-escalation.md` 已规定 `medium` | 本轮清理 FR/phasing 的 `mid` 表述 |
+
+## 1. 不变铁律
+
+| 铁律 | 执行方式 |
+|---|---|
+| R1 前不做 Cuu 外观 | 不新增模型、动效、设置矩阵、录屏矩阵、改色、素材生成。只允许修主窗边界、透明窗、旧证据标注等 R0 治理项。 |
+| fixture 不算完成 | `p05*` 只可作为 demo/test fixture；生产 route、R1 验收和文档“已完成”不得依赖硬编码 manifest/replay。 |
+| 真实纵切先于多端 polish | 先跑通 `WorkItem -> AgentRun -> Manifest -> Proposal -> Review/Merge -> Replay`，再做 Web 产品化或 Cuu 指令入口。 |
+| TS-first 是目标路径 | 代码落 `apps/*`、`packages/*`、`client-tauri/*`；旧 Python/FastAPI 只解释旧行为，不作为新仓施工路径。 |
+| 每个模块完工必须有证据 | 至少包含 typecheck/test、数据流审查、PRD/概念图对账、必要截图或 DOM/report。 |
+
+## 2. 当前权威概念边界
+
+当前有效概念图分三类：
+
+| 类别 | 当前权威图 | 用途 |
+|---|---|---|
+| 纠偏路线 | `assets/shared/r0-r4-recovery-roadmap.svg` | 施工顺序：R0 -> R1 -> R2 -> R3 -> R4 |
+| 主窗 / Cuu 边界 | `assets/shared/r0-governance-boundary-concept.svg` | 主窗严肃无 Cuu；Cuu 只在透明独立 pet window |
+| Cuu 形象 | `assets/cuu/cuu-character-animation-states.png`、`cuu-desktop-approval-search.png`、`cuu-option-first-clarify.png` | 黑猫 Hijiki 默认、白猫 Tororo 可选；只作已有模型基准 |
+
+旧 `assets/shared/ts-first-runtime-concept.png`、`endpoint-page-cuu-alignment.png`、`prd-concept-gap-map.png`、`shared-component-atlas.png` 若仍含橘猫，只能作为历史概念草图，不能作为当前视觉通过证据。旧 `2026-06-07-current-state` 截图若出现橘猫或主窗 Cuu，判定为失败样例。
+
+## 3. R0 止血与对账
+
+目标：停止范围倒挂，让计划、文档、概念图、截图证据回到同一口径。
+
+### R0-1 范围冻结
+
+| 任务 | 落点 | 验收 |
+|---|---|---|
+| README 写明当前施工顺序和冻结规则 | `docs/workhub/README.md` | 明确 R1 前冻结 Cuu 外观 |
+| Cuu 文档写 `frozen-until-R1-except-governance` | `cuu-desktop-pet-concept.md` | 外观工作不可作为下一步任务 |
+| 已完成动效证据降级为冻结前 evidence | `current-state-visual-audit-*` | 文档不再把 Cuu QA 当当前主线 |
+
+当前状态：已基本完成。本轮继续补“详细计划”和“概念边界图”。
+
+### R0-2 概念治理
+
+| 任务 | 落点 | 验收 |
+|---|---|---|
+| 主窗边界图 | `r0-governance-boundary-concept.svg` | 图中明确主窗无 Cuu，pet window 独立 |
+| 概念索引更新 | `page-concepts.md` | 新图进入第 2 节，旧橘猫图标 stale |
+| 差距审计更新 | `prd-concept-reproduction-gap-audit.md` | shared 旧图/旧截图不再被视为通过 |
+| 后续截图计划 | `current-state-visual-audit-*` | Web/desktop 主窗无 Cuu 截图列为 R0 evidence |
+
+### R0-3 命门拍板
+
+`confidence-risk-escalation.md` 已锁定 `policy_version=confidence-risk-v0.1-r0-2026-06-08`、owner、权重、阈值和 `medium` 枚举。本阶段只允许“按真实数据改版本”，不得无版本热改。
+
+### R0-4 文档去 drift
+
+| 漂移 | 修正 |
+|---|---|
+| `mid` | 生产 contract 和文档权威写 `medium`；旧 `mid` 只可作兼容读别名 |
+| Python 目标路径 | F01-F11 旧路径均为行为锚点；实际施工看 `Target TS paths` 和本篇 R1/R2 |
+| P0 完成幻觉 | P0/R1 完成必须要求真实 PG、真实 route、真实 replay，不以 fixture 通过 |
+
+R0 退出门：
+
+- README、roadmap、Cuu 文档、page-concepts 都指向本篇和新治理图。
+- `functional-requirements.md` 与 `phasing-p0-p5.md` 不再用 `mid` 作为权威枚举。
+- 旧橘猫截图/概念图只在“失败样例 / stale”上下文出现。
+
+## 4. R1 真实纵切
+
+目标：一条真实需求端到端跑通，并且重启后可查。
+
+### R1 当前已完成切片
+
+| 切片 | 当前状态 | 剩余限制 |
+|---|---|---|
+| Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
+| Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews` | merge 还未完整写 main 状态和真实 rollback |
+
+### R1 必做顺序
+
+1. **补 AgentRun schema 与 migration**
+   - `agent_runs`:补 `title`、`actor_user_id`、`total_timeout_s`、`max_tokens`、`max_cost_cny`、`budget_decision_json`、`workdir_ref`、`handoff_json`。
+   - `agent_steps`:补 `seq` 或等价排序字段；取消 `run_id + step_no` 唯一误设，因为同一 step 会有 `tool_call/tool_result/think/final` 多条 trace record。
+   - 迁移必须可从空 PG 重建，不能只改 TypeScript schema。
+
+2. **新增 DB-backed AgentRunStore**
+   - 目标路径：`packages/db/src/repositories/agent-runs.ts`、`apps/api/src/services/agent-run-persistence.ts`。
+   - 方法：`createRun`、`updateRun`、`replaceTrace`、`setWorkdir`、`findById`、`listActive`。
+   - queue 可以先保留执行协调，但 run truth 必须写 DB；R2 再把 claim/drainer 完全 PG 化。
+
+3. **让 Replay 读真实 DB**
+   - `GET /api/agent-runs/:id/replay` 优先从 DB `agent_runs + agent_steps + snapshots + audit_logs` 组装 `ReplayTraceVM`。
+   - 当前进程 Map 只作执行期缓存，不作回放真相源。
+
+4. **隔离 fixture**
+   - `isP05*` 从生产业务 route 迁出到 demo/test-only 边界。
+   - `gold-path.test.ts` 允许 fake LLM，但必须走真实 service/repository。
+
+5. **补审批人与 merge 真实语义**
+   - escalation/review 不再 self-approve。
+   - `Proposal.merge` 不只改 proposal 状态，还要写 main 状态、merge snapshot 和 audit fact。
+
+### R1 验收
+
+- 一条 file-only work item 经真实 route 跑完，产生 DB `agent_run`、`agent_steps`、`proposal`、`review`、`audit`、`snapshot`。
+- daemon 重启后，`GET /api/agent-runs/:id` 与 `/replay` 仍返回同一 run。
+- 生产 route 中不能用 hardcoded manifest/replay 证明通过。
+- 快照红线、provider 单出口、预算计量不回退。
+
+## 5. R2 多 worker 与订阅边界
+
+目标：兑现地基存在的理由，多实例下不重复执行、不丢事件、不泄漏。
+
+施工顺序：
+
+1. `claimNextQueued()` 使用 `FOR UPDATE SKIP LOCKED` 或等价 CAS，多个实例可以同时跑 pump。
+2. `running` run 增加 `claimed_by`、`claimed_at`、heartbeat；崩溃后 stuck-job 可回收。
+3. 去掉 `startingWorkItems` 等进程内抢占状态，改 DB 唯一约束或条件插入。
+4. PushBus / presence 默认切 Redis 或 PG broker；补 unsubscribe 引用计数。
+5. `/api/push/stream` 的 `all` topic 删除或 admin-only；资源 topic 订阅前强制 `can_view`。
+6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、CORS+cookie、revert、escalation approver、非 owner 403。
+
+R2 验收：
+
+- `WORKHUB_WORKERS=2` 下 R1 纵切仍通过。
+- 同一 work item 并发 enqueue 只有一个 run 执行。
+- A 实例发布事件，B 实例订阅者收到。
+- 非 owner 订阅他人 run/workitem/proposal 被拒。
+
+## 6. R3 Cuu Agent 入口
+
+目标：补 `FR-PET-002`，让 Cuu 成为小白入口，而不是继续做外观。
+
+范围：
+
+- 点 Cuu 出现真实输入/选项气泡，不是静态 hint。
+- 桌宠出站走 Web 同一 API：session、intake、workitem、agent-run、proposal review/merge。
+- 出站动作经真实鉴权与权限引擎，不开 Cuu 专用后门。
+- SSE/CuuState 回流显示 pending/success/failure。
+
+禁止：
+
+- 不新增模型、改色、动效、设置矩阵。
+- 不把 Cuu 放回 Web/desktop 主窗。
+- 不让 Cuu 绕过 proposal/review/permission 规则。
+
+R3 验收：
+
+- 一句话从 Cuu 触发 R1/R2 真实链路。
+- Cuu 可查状态、确认、打回，并有失败态。
+- 主窗依然无 Cuu 本体。
+
+## 7. R4 Web 产品化
+
+目标：把 Web 从预览壳补成真实产品界面。
+
+优先页：
+
+| 页面 | 必做 |
+|---|---|
+| `/` | attention workspace，只递一件最需要判断的事 |
+| `/intake/:id` | option-first 控件全量接入，free text 折叠 |
+| `/workitems/:id` | 真实状态、验收项、trace、proposal timeline |
+| `/proposals/:id` | 多类型交付物变更包，文档/PPT/表格/图片/文件夹 |
+| `/agent-runs/:id/replay` | 真实 AgentStep/Snapshot/Audit 回放 |
+| `/dashboard/cost` | P-COST 真实 usage 与 BudgetNotice |
+| `/approvals` | 正确 approver、理由回灌、委派/记住规则入口 |
+
+每页四态：
+
+- loading：短文案/局部 skeleton，不阻塞整页。
+- empty：说明没有当前事项，并给下一步入口。
+- error：错误人话 + retry。
+- forbidden：说明无权限 + 申请/返回入口。
+
+R4 验收：
+
+- 高频页四态都有截图或 Playwright smoke。
+- 页面接真实多场景数据，不再只有“客户周报”单硬编码。
+- zh-CN/en-US 截图通过，Rust 系统串纳入 locale contract。
+- 主窗口无 Cuu 本体。
+
+## 8. 模块开工前阅读清单
+
+| 模块 | 必读文档 | 必读概念/证据 |
+|---|---|---|
+| AgentRun DB | `agent-loop-and-tools.md`、本篇 R1、`api-contract.md` | `r0-r4-recovery-roadmap.svg` |
+| Proposal / Review | `branch-proposal-merge.md`、`review-and-approval.md`、`requirements-workitem.md` | `web-deliverable-change-request.png` |
+| Replay / Eval | `_agent-eval-replay-plan.md`、`explainability.md` | `web-real-ui-gap-roadmap.png` |
+| Push / broker | `system-architecture.md`、`api-contract.md`、本篇 R2 | endpoint/page/Cuu 对齐图只作旧概念参考，若含橘猫视为 stale |
+| Web 页面 | `web-app.md`、`page-concepts.md`、本篇 R4 | Web concept atlas + `r0-governance-boundary-concept.svg` |
+| Cuu | `cuu-desktop-pet-concept.md`、`cuu-live2d-cat-options-current-plan.md`、本篇 R3 | Cuu 黑/白 Live2D 三张专图；旧橘猫图只作失败证据 |
+| Rust shell | `desktop-pet-tauri.md`、`current-state-visual-audit-*` | desktop gap roadmap + pet motion reports |
+
+## 9. 提交与验证纪律
+
+每完成一个模块：
+
+1. 审查是否符合本篇、PRD、概念图。
+2. 更新对应计划文档和验收证据。
+3. 运行相关 typecheck/test；有 UI 或桌宠变化时补截图/录屏/DOM report。
+4. `git diff --name-only` 确认无 `reference/` / `references/`。
+5. 提交并推送 `main`。
+
+本轮文档补齐验收：
+
+- 本篇进入 README 与 roadmap。
+- 新 R0 概念治理图进入 `page-concepts.md`。
+- `mid` 权威枚举改为 `medium`。
+- `git diff --check` 通过。

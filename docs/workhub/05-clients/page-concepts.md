@@ -27,6 +27,7 @@ date: 2026-06-08
 - 体验 payload：[`../../plans/p0-foundation/_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)
 - Gold Path：[`../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md`](../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md)
 - R0-R4 纠偏路线：[`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md)
+- 审查后详细施工计划：[`../06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](../06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md)
 - Cuu 概念：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)
 - Cuu 二选项：[`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)
 - Rust 客户端：[`desktop-pet-tauri.md`](./desktop-pet-tauri.md)
@@ -36,6 +37,12 @@ date: 2026-06-08
 ![R0-R4 纠偏施工路线](./assets/shared/r0-r4-recovery-roadmap.svg)
 
 这张图是 2026-06-08 后的施工优先级概念图：先冻结 Cuu 外观与旧橘猫方向，补 R0 文档/截图/策略对账；再用 R1 真实纵切证明 AgentRun -> Proposal -> Replay；R2 才做多 worker；R3 才恢复 Cuu 作为 Agent 入口；R4 再做 Web 产品化。
+
+### 2.1 R0 主窗 / Cuu 边界
+
+![R0 主窗与 Cuu 边界](./assets/shared/r0-governance-boundary-concept.svg)
+
+这张图是 Claude 审查后新增的概念治理基准：Web / desktop 主窗只承载严肃工作界面和证据，不显示 Cuu 本体、角色卡或旧橘猫；Cuu 只存在于独立透明 Tauri pet window，并通过 `CuuState` / SSE / Page VM 与主窗共享数据，而不是共享视觉位置。
 
 ## 3. Web 端概念图
 

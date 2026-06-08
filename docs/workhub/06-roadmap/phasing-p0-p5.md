@@ -193,7 +193,7 @@ P0 过的判据是**「在 PostgreSQL 上、多 worker 的 daemon,跑通现有�
 3. **预算耗尽 → 结构化交接件**(`FR-WORKER-003`):超 `MAX_TURNS`/超时不静默截断,强制产出「已做/未做/下一步」`handoff_md`(现状 `auto_agent.py` 超 `MAX_TURNS=15`/`TOTAL_TIMEOUT_DEFAULT` 仅返回失败 `AutoResult`,P1 升级为结构化交接)。
 4. **副作用可回滚**(`FR-WORKER-004` / `NFR-04`):AI 每次副作用前打 `Snapshot`(借鉴 opencode「每步 git 快照」);雏形是网盘版本(`ProjectDriveVersion`)+ 可撤销操作日志(`ProjectDriveOperation.undone_at`)。**安全红线**。
 5. **置信度 + 风险分级**(`FR-ESC-001`):每次产出生成 `ConfidenceRecord`(置信度 + 风险 + 分级裁决 + 依据);v1 信号以 **② `llm_review` 判分**(`auto_agent.py:544` 的 `meets_requirement`)+ **③ 验收清单逐条命中率**(`AcceptanceCriteria.status` 的 `met/总数`)为主,① AI 自评为辅([data-model §7.3 信号表](../01-architecture/data-model.md))。**对用户以人话呈现,绝不暴露数值**([glossary §3.3](../00-overview/glossary-dejargon.md))。
-6. **三档裁决分叉**(对齐 PRD §8.2):`high+low → auto_merge`(自动 Proposal,策略可自动合并)/ `mid → human_spotcheck`(人工抽检)/ `low/high_risk/blocked → escalate`(转 PM)。
+6. **三档裁决分叉**(对齐 PRD §8.2):`high+low_risk → auto_merge`(自动 Proposal,策略可自动合并)/ `medium → human_spotcheck`(人工抽检)/ `low/high_risk/blocked → escalate`(转 PM)。旧文档或 fixture 中的 `mid` 只作兼容读别名,生产 contract 不再新增。
 7. **三个升级触发器中的两个(P1 必备)**(`FR-ESC-002`):① **不合格** ← `llm_review` 判分不过;② **用户不满意** ← 负责人打回(`Review.decision=reject`,演进自 `RevisionRequest`,现 `app/routers/deliveries.py:267`)。
 8. **打回带理由回灌**(`FR-ESC-003`):`reject` 的 `reason_md` **必填**(现 `RevisionRequest.reason_md` 已 NOT NULL),作为上下文回灌 AI,**同分支续做**而非重来(`in_review → ai_working`,对齐 opencode CorrectedError)。
 9. **去黑话 Proposal/Review 的最小实现**:AI 工人产出落 `Proposal`(去黑话 PR,演进自 `Delivery`),`auto_merge` 档可一跳 `ai_working → in_review → merged`。**P1 的 Branch/Proposal 是「单 actor」简化版**(只有 AI 一支 + main),**多人多分支并行留 P3**。
