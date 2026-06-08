@@ -139,8 +139,12 @@ R0 退出门：
    - 仅 `/api/pages/gold-path` 保留 P0.5 demo bundle，用于概念/页面 VM 展示，不再作为 R1 完成证据。
 
 5. **补审批人与 merge 真实语义**
-   - escalation/review 不再 self-approve。
-   - `Proposal.merge` 不只改 proposal 状态，还要写 main 状态、merge snapshot 和 audit fact。
+   - **状态：2026-06-08 已完成最小真实切片。**
+   - `packages/db/src/repositories/proposals.ts` 在同一事务内处理 `review/merge`：打回写 `Proposal.status=rejected` 并把 branch 解回 `open`；采纳写 `Proposal.status=merged`、`merge_snapshot_id`、`Branch.status=merged/head_ref/version+1`、`WorkItem.status=merged/main_branch_id/accepted_at/version+1`。
+   - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
+   - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
+   - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、merge audit repo 持久化、文件物理采纳、冲突调解、revert 仍未完成。
 
 ### R1 验收
 
@@ -157,7 +161,7 @@ R0 退出门：
 - 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当时由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
 - 后续已补：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出生产业务 route。
-- 未完成：proposal merge/main 状态完整语义；sessions/workitems/knowledge/page workitem 真实 service 仍是 501 fail-closed。
+- 未完成：sessions/workitems/knowledge/page workitem 真实 service 仍是 501 fail-closed；merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -175,14 +179,15 @@ pnpm qa:r1-pg-smoke
 4. 通过真实 `createAgentRunRoutes` 发起 `/api/workitems/:id/agent-runs`。
 5. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
 6. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
-7. 输出 JSON 证据：`agent_runs`、`agent_steps`、`proposals`、`snapshots`、`audit_logs` 行数与 replay 计数。
+7. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
+8. 输出 JSON 证据：`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
 
 当前本机实测：
 
 - `pnpm qa:r1-pg-smoke` 可加载脚本，但因 `127.0.0.1:5432` 无 PostgreSQL 返回 `ECONNREFUSED`。
 - 本机 `docker` 与 `psql` 不在 PATH，无法在 Windows 本机直接拉起或检查 PG。
 
-Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo commit `fca5634`）：
+Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前工作树 patch）：
 
 ```json
 {
@@ -192,8 +197,16 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo c
     "agent_runs": 1,
     "agent_steps": 4,
     "proposals": 1,
+    "branches": 1,
     "snapshots": 1,
     "audit_logs": 1
+  },
+  "merge": {
+    "proposal_status": "merged",
+    "branch_status": "merged",
+    "work_item_status": "merged",
+    "main_branch_id": "92529c5e-46dc-476f-a7df-0d0dbfd1929d",
+    "merge_snapshot_id": "7e168a97-240f-4458-864a-de74037a48d3"
   },
   "replay_steps": 4,
   "replay_snapshots": 1,
@@ -201,7 +214,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo c
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；merge/main 最小真实切片已由 Linux PG smoke 验证通过。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -219,7 +232,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo c
 - `pnpm --filter @workhub/api typecheck` 通过。
 - `pnpm --filter @workhub/api test` 通过，当前 59/59；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 
-仍不能宣称 R1 全部完成，因为 proposal merge/main 状态、approver owner routing、真实 sessions/workitems/knowledge/page workitem service 仍未落地。
+仍不能宣称 R1 全部完成，因为真实 sessions/workitems/knowledge/page workitem service、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

@@ -47,6 +47,24 @@ test("approver recipients prefer explicit approver and filter actor/deleted user
   assert.deepEqual(recipients, ["80000000-0000-4000-8000-000000000003"]);
 });
 
+test("approver recipients fall back to project owner without routing to the actor", () => {
+  const milestone = lifecycleMilestones.escalated;
+  assert.ok(milestone);
+  const { approverUserId: _approverUserId, ...workItemWithoutApprover } = baseContext.workItem;
+  const recipients = resolveLifecycleRecipients(milestone, {
+    ...baseContext,
+    workItem: {
+      ...workItemWithoutApprover,
+      submitterUserId: "80000000-0000-4000-8000-000000000002",
+      projectOwnerUserId: "80000000-0000-4000-8000-000000000005"
+    },
+    newStatus: "escalated",
+    actor: { id: "80000000-0000-4000-8000-000000000002", label: "提交人" }
+  });
+
+  assert.deepEqual(recipients, ["80000000-0000-4000-8000-000000000005"]);
+});
+
 test("template rendering uses safe replace semantics instead of format parsing", () => {
   const rendered = renderLifecycleTemplate("{code} {title} {actor}", {
     code: "WH-1",

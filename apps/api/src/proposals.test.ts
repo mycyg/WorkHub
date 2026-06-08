@@ -157,6 +157,13 @@ function ids() {
 class MemoryProposalRepository implements ProposalRepository {
   private rows = new Map<string, StoredProposalRows>();
   private reviewCount = 0;
+  public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
+  public readonly workItemRows = new Map<string, {
+    status: string;
+    mainBranchId: string | null;
+    acceptedAt: Date | null;
+    version: number;
+  }>();
 
   async createFromManifest(input: Parameters<ProposalRepository["createFromManifest"]>[0]) {
     const at = input.at ?? now;
@@ -181,6 +188,17 @@ class MemoryProposalRepository implements ProposalRepository {
       reviews: []
     };
     this.rows.set(stored.proposal.id, stored);
+    this.branchRows.set(stored.proposal.branchId, {
+      status: "proposed",
+      headRef: input.manifest.base.branch_head_ref ?? null,
+      version: 0
+    });
+    this.workItemRows.set(stored.proposal.workItemId, {
+      status: "in_review",
+      mainBranchId: null,
+      acceptedAt: null,
+      version: 0
+    });
     return stored;
   }
 
@@ -213,6 +231,12 @@ class MemoryProposalRepository implements ProposalRepository {
     stored.proposal.status = input.decision === "approve" ? "reviewed" : "rejected";
     stored.proposal.reviewedAt = at;
     stored.proposal.updatedAt = at;
+    if (input.decision === "reject") {
+      const branch = this.branchRows.get(stored.proposal.branchId);
+      if (branch) {
+        branch.status = "open";
+      }
+    }
     return stored;
   }
 
@@ -226,6 +250,19 @@ class MemoryProposalRepository implements ProposalRepository {
     stored.proposal.mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
     stored.proposal.mergedAt = at;
     stored.proposal.updatedAt = at;
+    const branch = this.branchRows.get(stored.proposal.branchId);
+    if (branch) {
+      branch.status = "merged";
+      branch.headRef = stored.proposal.mergeSnapshotId;
+      branch.version += 1;
+    }
+    const workItem = this.workItemRows.get(stored.proposal.workItemId);
+    if (workItem) {
+      workItem.status = "merged";
+      workItem.mainBranchId = stored.proposal.branchId;
+      workItem.acceptedAt = at;
+      workItem.version += 1;
+    }
     return stored;
   }
 }
@@ -255,7 +292,8 @@ async function createProposal(app: Hono<AuthEnv>, runtimeSettings: Settings, ite
 }
 
 test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {
-  const service = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids() });
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
   const itemManifest = manifest(1);
 
   const created = await service.createFromManifest({
@@ -284,8 +322,42 @@ test("DB-backed proposal service maps repository rows into the public proposal c
   assert.equal(reviewed.reviews[0]?.reviewer_user_id, userId);
   assert.equal(merged.status, "merged");
   assert.equal(merged.merge_snapshot_id, "91000000-0000-4000-8000-000000000102");
+  assert.equal(repository.branchRows.get(created.branch_id)?.status, "merged");
+  assert.equal(repository.branchRows.get(created.branch_id)?.headRef, merged.merge_snapshot_id);
+  assert.equal(repository.workItemRows.get(created.work_item_id)?.status, "merged");
+  assert.equal(repository.workItemRows.get(created.work_item_id)?.mainBranchId, created.branch_id);
   assert.equal(listed.length, 1);
   assert.equal(listed[0]?.id, created.id);
+});
+
+test("proposal service blocks unreviewed merges and unlocks rejected branches", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = manifest(2);
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+
+  await assert.rejects(
+    () => service.merge({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    /需要先确认/
+  );
+  assert.equal(repository.branchRows.get(created.branch_id)?.status, "proposed");
+
+  await service.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "request_changes",
+    reasonMd: "请补齐证据。"
+  });
+
+  assert.equal(repository.branchRows.get(created.branch_id)?.status, "open");
+  await assert.rejects(
+    () => service.merge({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    /已经被打回/
+  );
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {

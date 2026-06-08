@@ -61,14 +61,15 @@ R1 当前代码切片已落：
 - `agent_steps` 已用 `seq` 做 trace 排序，取消错误的 `(agent_run_id, step_no)` 唯一约束；同一 step 内可同时保存 `tool_call/tool_result/think/final` 多条记录。
 - 真实 PostgreSQL restart/replay smoke 已通过：一条 file-only run 在 Linux 测试机落 `agent_runs/agent_steps/proposals/snapshots/audit_logs` 后，新 queue 可读回 `/agent-runs/:id` 与 `/replay`。
 - P0.5 fixture 已从生产业务 route 迁出：`/agent-runs/:id/replay` 不再有 fixture fallback，`sessions/workitems/knowledge/page workitem` 在真实 service 接入前失败关闭，只有 `/api/pages/gold-path` 保留 demo bundle。
+- Proposal merge/main 最小真实切片已落：DB repository 在 review/merge 时更新 `reviews/proposals/branches/work_items`；打回解锁 branch，采纳写 `work_items.status=merged/main_branch_id/accepted_at` 与 branch head/version；AgentRun 通知可通过 DB WorkItem context resolver 路由到 submitter/project owner/assignee 上下文。
 
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，但 proposal merge/main 状态仍需做实。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，但 merge 的文件物理采纳、冲突调解与 audit repo 持久化仍需做实。
 - sessions/workitems/knowledge/page workitem 真实服务尚未接入；当前 501 fail-closed 是治理结果，不是产品完成。
 
-后续施工必须先完成 proposal merge/main、审批人路由与真实 sessions/workitems/knowledge 服务，再回到 Web/Cuu 产品化。
+后续施工必须先完成真实 sessions/workitems/knowledge 服务、文件物理采纳/冲突调解/merge audit、完整审批中心，再回到 Web/Cuu 产品化。
 
 ---
 

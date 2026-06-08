@@ -237,6 +237,9 @@ export function createInMemoryProposalService(options: {
       if (proposal.status === "merged") {
         return proposal;
       }
+      if (proposal.status !== "reviewed") {
+        throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
+      }
 
       const at = now().toISOString();
       const updated = proposalSchema.parse({
@@ -338,6 +341,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
       }
       if (proposal.status === "merged") {
         return proposal;
+      }
+      if (proposal.status !== "reviewed") {
+        throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
       }
 
       const rows = await repository.merge({

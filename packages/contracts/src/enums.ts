@@ -62,7 +62,7 @@ export const branchKinds = ["work", "main"] as const;
 export const branchKindSchema = z.enum(branchKinds);
 export type BranchKind = z.infer<typeof branchKindSchema>;
 
-export const branchStatuses = ["open", "merged", "abandoned"] as const;
+export const branchStatuses = ["open", "proposed", "merged", "abandoned", "superseded"] as const;
 export const branchStatusSchema = z.enum(branchStatuses);
 export type BranchStatus = z.infer<typeof branchStatusSchema>;
 

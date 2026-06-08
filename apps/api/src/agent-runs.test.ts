@@ -48,6 +48,7 @@ const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000021";
 const strangerId = "10000000-0000-4000-8000-000000000099";
 const adminId = "10000000-0000-4000-8000-000000000098";
+const projectOwnerId = "10000000-0000-4000-8000-000000000097";
 const workItemId = "50000000-0000-4000-8000-000000000021";
 const snapshotId = "70000000-0000-4000-8000-000000000025";
 const confidenceId = "72000000-0000-4000-8000-000000000025";
@@ -306,6 +307,22 @@ class MemoryWorkItems implements WorkItemRepository {
 
   async findWorkItemForHumanReservedGuard(id: string) {
     return this.rows.get(id) ?? null;
+  }
+
+  async findWorkItemForNotificationContext(id: string) {
+    const row = this.rows.get(id);
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      code: row.code,
+      title: row.title,
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: row.submitterUserId,
+      claimedByUserId: row.claimedByUserId,
+      projectOwnerUserId: projectOwnerId
+    };
   }
 
   async markHumanReservedPmMode(input: Parameters<WorkItemRepository["markHumanReservedPmMode"]>[0]) {
@@ -998,7 +1015,12 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   const snapshots = new MemorySnapshots();
   const auditLogs = new MemoryAuditLogs();
   const decisions = new MemoryAiDecisions();
-  const milestoneNotifications: { newStatus: string; approverUserId?: string }[] = [];
+  const milestoneNotifications: {
+    newStatus: string;
+    code: string;
+    approverUserId?: string;
+    projectOwnerUserId?: string;
+  }[] = [];
   const publishedEvents: {
     topic: string;
     type: string;
@@ -1008,7 +1030,9 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     async notifyMilestone(context) {
       milestoneNotifications.push({
         newStatus: context.newStatus,
-        ...(context.workItem.approverUserId ? { approverUserId: context.workItem.approverUserId } : {})
+        code: context.workItem.code,
+        ...(context.workItem.approverUserId ? { approverUserId: context.workItem.approverUserId } : {}),
+        ...(context.workItem.projectOwnerUserId ? { projectOwnerUserId: context.workItem.projectOwnerUserId } : {})
       });
       return [];
     }
@@ -1029,6 +1053,14 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
       settings: runtimeSettings
     }),
     notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Executable worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
     eventBus: {
       async publish(topic, type, data) {
         publishedEvents.push({
@@ -1089,7 +1121,12 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(decisions.confidenceRows[0]?.verdict, "human_spotcheck");
   assert.equal(decisions.confidenceRows[0]?.grade, "high");
   assert.equal(decisions.escalationRows.length, 0);
-  assert.deepEqual(milestoneNotifications, [{ newStatus: "in_review", approverUserId: userId }]);
+  assert.deepEqual(milestoneNotifications, [{
+    newStatus: "in_review",
+    code: "WH-21",
+    approverUserId: userId,
+    projectOwnerUserId: projectOwnerId
+  }]);
 
   const runResponse = await app.request(`/api/agent-runs/${startBody.data.run_id}`, {
     headers: { Cookie: await cookie(runtimeSettings) }

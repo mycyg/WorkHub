@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 
 import type { ActorKind, DeliverableChangeManifest } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { branches, proposals, reviews } from "../schema/index.js";
+import { branches, proposals, reviews, workItems } from "../schema/index.js";
 
 export type BranchRow = typeof branches.$inferSelect;
 export type ProposalRow = typeof proposals.$inferSelect;
@@ -168,7 +168,20 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
 
     async review(input) {
       const at = input.at ?? new Date();
+      let found = false;
       await db.transaction(async (tx) => {
+        const proposalRows = await tx
+          .select({
+            branchId: proposals.branchId
+          })
+          .from(proposals)
+          .where(eq(proposals.id, input.proposalId))
+          .limit(1);
+        const proposal = proposalRows[0];
+        if (!proposal) {
+          return;
+        }
+        found = true;
         await tx.insert(reviews).values({
           id: randomUUID(),
           proposalId: input.proposalId,
@@ -188,22 +201,72 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             updatedAt: at
           })
           .where(eq(proposals.id, input.proposalId));
+        if (input.decision === "reject") {
+          await tx
+            .update(branches)
+            .set({
+              status: "open",
+              updatedAt: at
+            })
+            .where(eq(branches.id, proposal.branchId));
+        }
       });
+      if (!found) {
+        return null;
+      }
       return readStoredProposal(db, input.proposalId);
     },
 
     async merge(input) {
       const at = input.at ?? new Date();
       const mergeSnapshotId = input.mergeSnapshotId ?? randomUUID();
-      await db
-        .update(proposals)
-        .set({
-          status: "merged",
-          mergeSnapshotId,
-          mergedAt: at,
-          updatedAt: at
-        })
-        .where(eq(proposals.id, input.proposalId));
+      let found = false;
+      await db.transaction(async (tx) => {
+        const proposalRows = await tx
+          .select({
+            workItemId: proposals.workItemId,
+            branchId: proposals.branchId
+          })
+          .from(proposals)
+          .where(eq(proposals.id, input.proposalId))
+          .limit(1);
+        const proposal = proposalRows[0];
+        if (!proposal) {
+          return;
+        }
+        found = true;
+        await tx
+          .update(proposals)
+          .set({
+            status: "merged",
+            mergeSnapshotId,
+            mergedAt: at,
+            updatedAt: at
+          })
+          .where(eq(proposals.id, input.proposalId));
+        await tx
+          .update(branches)
+          .set({
+            status: "merged",
+            headRef: mergeSnapshotId,
+            version: sql`${branches.version} + 1`,
+            updatedAt: at
+          })
+          .where(eq(branches.id, proposal.branchId));
+        await tx
+          .update(workItems)
+          .set({
+            status: "merged",
+            mainBranchId: proposal.branchId,
+            acceptedAt: at,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: at
+          })
+          .where(eq(workItems.id, proposal.workItemId));
+      });
+      if (!found) {
+        return null;
+      }
       return readStoredProposal(db, input.proposalId);
     }
   };

@@ -242,7 +242,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 | `kind` | str(16), default `work` | `work`(工作副本) / `main`(正式版,每 WorkItem 一条) |
 | `base_snapshot_id` | FK→snapshots.id?, index | 从哪个 main 快照拉出(三方合并的 base) |
 | `head_ref` | str(128) | 当前内容指针(指向底层 content store / drive 版本集) |
-| `status` | str(16), default `open` | `open` / `proposed` / `merged` / `abandoned` |
+| `status` | str(16), default `open` | `open` / `proposed` / `merged` / `abandoned` / `superseded` |
 | `version` | int, default 0 | 乐观锁(head 推进 CAS) |
 | `created_at`/`updated_at` | DateTime | |
 
@@ -262,10 +262,10 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 | `summary_md` | Text | "AI 做了什么/为什么"的人话说明(可解释,FR-EXPLAIN-001) |
 | `diff_manifest` | JSONB `[]` | 变更清单(新增/改/删的 drive item + 版本号),供审阅渲染 |
 | `confidence_id` | FK→confidence_records.id?, index | 这轮提议的分级裁决(§7.3) |
-| `status` | str(16), default `open` | `open` / `approved` / `rejected` / `merged` / `superseded` |
+| `status` | str(16), default `opened` | `opened` / `reviewed` / `rejected` / `merged` |
 | `merge_snapshot_id` | FK→snapshots.id?, index | 合并成功后产生的 main 新快照 |
-| `created_by_kind` | str(16) | `ai` / `human` |
-| `created_by_user_id` | FK→users.id? | |
+| `opened_by_kind` | str(16) | `ai` / `human` / `system` |
+| `opened_by_user_id` | FK→users.id? | |
 | `created_at`/`updated_at` | DateTime | |
 | `UniqueConstraint` | `(branch_id, round)` | 一支一轮一提议 |
 

@@ -33,7 +33,7 @@ import {
   type ToolExecutionContext,
   type ToolResult
 } from "@workhub/tools";
-import { makeWorkHubEvent, topics, toCuuState } from "@workhub/events";
+import { makeWorkHubEvent, topics, toCuuState, type LifecycleWorkItemRef } from "@workhub/events";
 import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
 
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
@@ -47,6 +47,10 @@ import {
 } from "../services/agent-run-confidence.js";
 import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
+import {
+  createAgentRunNotificationWorkItemResolver,
+  type AgentRunNotificationWorkItemResolver
+} from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 
@@ -183,6 +187,7 @@ export function createInMemoryAgentRunQueue(options: {
   humanReserved?: HumanReservedGuard | false;
   proposals?: AgentRunProposalSink | false;
   notifications?: AgentRunNotificationPublisher | false;
+  notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
   systemPrompt?: string;
@@ -198,6 +203,7 @@ export function createInMemoryAgentRunQueue(options: {
   const defaultTools = createToolRegistry(createBuiltInFileTools());
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
+  const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
@@ -583,15 +589,26 @@ export function createInMemoryAgentRunQueue(options: {
       return;
     }
     const notifications = options.notifications ?? createNotificationService();
+    const resolvedWorkItem = await notificationWorkItem?.(run);
+    const submitterUserId = resolvedWorkItem?.submitterUserId ?? run.actor_id;
+    const workItem: LifecycleWorkItemRef = {
+      id: resolvedWorkItem?.id ?? run.work_item_id,
+      code: resolvedWorkItem?.code ?? "当前事项",
+      title: resolvedWorkItem?.title ?? run.title,
+      submitterUserId,
+      ...(resolvedWorkItem?.projectId ? { projectId: resolvedWorkItem.projectId } : {}),
+      ...(resolvedWorkItem?.assigneeUserIds ? { assigneeUserIds: resolvedWorkItem.assigneeUserIds } : {}),
+      ...(resolvedWorkItem?.leadUserId ? { leadUserId: resolvedWorkItem.leadUserId } : {}),
+      ...(resolvedWorkItem?.projectOwnerUserId ? { projectOwnerUserId: resolvedWorkItem.projectOwnerUserId } : {}),
+      ...(resolvedWorkItem?.approverUserId
+        ? { approverUserId: resolvedWorkItem.approverUserId }
+        : newStatus === "in_review"
+          ? { approverUserId: submitterUserId }
+          : {})
+    };
     try {
       await notifications.notifyMilestone({
-        workItem: {
-          id: run.work_item_id,
-          code: "当前事项",
-          title: run.title,
-          submitterUserId: run.actor_id,
-          approverUserId: run.actor_id
-        },
+        workItem,
         actor: {
           id: "ai-auto",
           label: "AI 工人"
@@ -940,7 +957,8 @@ export function getDefaultAgentRunQueue() {
     confidence: createAgentRunConfidenceRecorder(),
     humanReserved: createHumanReservedGuard(),
     proposals: getDefaultProposalService(),
-    persistence: getDefaultAgentRunPersistence()
+    persistence: getDefaultAgentRunPersistence(),
+    notificationWorkItem: createAgentRunNotificationWorkItemResolver()
   });
   return defaultQueue;
 }

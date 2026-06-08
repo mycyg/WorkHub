@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import type { WorkItemMode, WorkItemStatus } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { workItems } from "../schema/index.js";
+import { projects, workItems } from "../schema/index.js";
 
 const humanReservedGuardColumns = {
   id: workItems.id,
@@ -14,6 +14,16 @@ const humanReservedGuardColumns = {
   humanReserved: workItems.humanReserved,
   submitterUserId: workItems.submitterUserId,
   claimedByUserId: workItems.claimedByUserId
+};
+
+const notificationContextColumns = {
+  id: workItems.id,
+  code: workItems.code,
+  title: workItems.title,
+  projectId: workItems.projectId,
+  submitterUserId: workItems.submitterUserId,
+  claimedByUserId: workItems.claimedByUserId,
+  projectOwnerUserId: projects.ownerUserId
 };
 
 const pmModeEligibleStatuses = ["spec_ready", "ai_working", "escalated", "pm_mode", "in_review"] as const;
@@ -29,8 +39,19 @@ export type WorkItemHumanReservedRow = {
   claimedByUserId: string | null;
 };
 
+export type WorkItemNotificationContextRow = {
+  id: string;
+  code: string;
+  title: string | null;
+  projectId: string;
+  submitterUserId: string;
+  claimedByUserId: string | null;
+  projectOwnerUserId: string | null;
+};
+
 export type WorkItemRepository = {
   findWorkItemForHumanReservedGuard: (workItemId: string) => Promise<WorkItemHumanReservedRow | null>;
+  findWorkItemForNotificationContext: (workItemId: string) => Promise<WorkItemNotificationContextRow | null>;
   markHumanReservedPmMode: (input: {
     workItemId: string;
     at: Date;
@@ -43,6 +64,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemRepository {
       const rows = await db
         .select(humanReservedGuardColumns)
         .from(workItems)
+        .where(eq(workItems.id, workItemId))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async findWorkItemForNotificationContext(workItemId) {
+      const rows = await db
+        .select(notificationContextColumns)
+        .from(workItems)
+        .innerJoin(projects, eq(workItems.projectId, projects.id))
         .where(eq(workItems.id, workItemId))
         .limit(1);
       return rows[0] ?? null;

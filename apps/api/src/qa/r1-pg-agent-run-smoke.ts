@@ -8,6 +8,7 @@ import { loadSettings } from "@workhub/config";
 import {
   auditLogs,
   agentRuns,
+  branches,
   createAgentRunRepository,
   createAuditLogRepository,
   createClientDeviceRepository,
@@ -164,6 +165,7 @@ async function main() {
     const auditRepo = createAuditLogRepository(db);
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
+    const proposalService = createDbProposalService(createProposalRepository(db));
     const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
@@ -174,7 +176,7 @@ async function main() {
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
       persistence,
-      proposals: createDbProposalService(createProposalRepository(db)),
+      proposals: proposalService,
       confidence: false,
       humanReserved: false,
       notifications: false,
@@ -208,6 +210,25 @@ async function main() {
     if (executed.status !== "succeeded") {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
     }
+    const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
+      rows.filter((row) => row.workItemId === workItem.id)
+    );
+    const proposalBeforeMerge = proposalRowsBeforeMerge[0];
+    if (!proposalBeforeMerge) {
+      throw new Error("Expected AgentRun to open a proposal.");
+    }
+    await proposalService.review({
+      proposalId: proposalBeforeMerge.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const merged = await proposalService.merge({
+      proposalId: proposalBeforeMerge.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+    });
+    if (merged.status !== "merged" || !merged.merge_snapshot_id) {
+      throw new Error(`Expected merged proposal with snapshot, got ${merged.status}`);
+    }
 
     const restartedPersistence = createDbAgentRunPersistence(createAgentRunRepository(db));
     const restartedQueue = createInMemoryAgentRunQueue({
@@ -235,13 +256,29 @@ async function main() {
     if (replayAfterRestart.status !== 200) {
       throw new Error(`Expected restart replay read 200, got ${replayAfterRestart.status}: ${await replayAfterRestart.text()}`);
     }
-    const [agentRunRows, stepRows, proposalRows, snapshotRows, auditRows] = await Promise.all([
+    const [agentRunRows, stepRows, proposalRows, branchRows, workItemRows, snapshotRows, auditRows] = await Promise.all([
       db.select().from(agentRuns).then((rows) => rows.filter((row) => row.id === runId)),
       restartedQueue.trace(runId),
       db.select().from(proposals).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
+      db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
+      db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItem.id)),
       db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
       db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItem.id))
     ]);
+    const proposalAfterMerge = proposalRows[0];
+    const branchAfterMerge = branchRows.find((row) => row.id === proposalAfterMerge?.branchId);
+    const workItemAfterMerge = workItemRows[0];
+    if (proposalAfterMerge?.status !== "merged") {
+      throw new Error(`Expected proposal.status merged, got ${proposalAfterMerge?.status ?? "missing"}`);
+    }
+    if (branchAfterMerge?.status !== "merged") {
+      throw new Error(`Expected branch.status merged, got ${branchAfterMerge?.status ?? "missing"}`);
+    }
+    if (workItemAfterMerge?.status !== "merged" || workItemAfterMerge.mainBranchId !== proposalAfterMerge.branchId) {
+      throw new Error(
+        `Expected work item main branch merge, got status=${workItemAfterMerge?.status ?? "missing"} main=${workItemAfterMerge?.mainBranchId ?? "missing"}`
+      );
+    }
     const replay = await replayAfterRestart.json() as {
       data: { steps: unknown[]; snapshots: unknown[]; audit_logs: unknown[] };
     };
@@ -255,8 +292,16 @@ async function main() {
         agent_runs: agentRunRows.length,
         agent_steps: stepRows.length,
         proposals: proposalRows.length,
+        branches: branchRows.length,
         snapshots: snapshotRows.length,
         audit_logs: auditRows.length
+      },
+      merge: {
+        proposal_status: proposalAfterMerge.status,
+        branch_status: branchAfterMerge?.status,
+        work_item_status: workItemAfterMerge.status,
+        main_branch_id: workItemAfterMerge.mainBranchId,
+        merge_snapshot_id: proposalAfterMerge.mergeSnapshotId
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
