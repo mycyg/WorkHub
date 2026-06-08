@@ -37,3 +37,24 @@ test("work item renderer supports the just-created AI-working state before a pro
   assert.equal(rendered.html.includes("我开始处理了"), true);
   assert.equal(rendered.primaryHrefs.includes(`/agent-runs/${fixture.replay.run.id}/replay`), true);
 });
+
+test("work item renderer localizes fixed labels and hides raw status in English", () => {
+  const fixture = createP05GoldPathFixture();
+  const { latest_proposal: _latestProposal, ...detailWithoutProposal } = fixture.workItemDetail;
+  const justCreated = {
+    ...detailWithoutProposal,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      status: "ai_working" as const
+    },
+    agent_trace_preview: []
+  };
+  const rendered = renderWorkItemDetail(justCreated, "web", { locale: "en-US" });
+
+  assert.equal(rendered.html.includes("Live AI work"), true);
+  assert.equal(rendered.html.includes("Acceptance checklist"), true);
+  assert.equal(rendered.html.includes("AI working"), true);
+  assert.equal(rendered.html.includes("ai_working"), false);
+  assert.equal(rendered.html.includes("AI has started"), true);
+  assert.equal(rendered.html.includes("AI 会先读证据"), false);
+});

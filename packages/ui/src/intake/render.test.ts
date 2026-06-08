@@ -62,3 +62,14 @@ test("desktop intake keeps the same session contract with a desktop wrapper", ()
   assert.equal(page.streamHref, session.stream_href);
   assert.equal(page.nextQuestionHref, session.next_question_href);
 });
+
+test("intake renderer localizes fixed helper chrome in English", () => {
+  const page = renderIntakeSession(session, "web", { locale: "en-US" });
+
+  assert.equal(page.html.includes("Option intake"), true);
+  assert.equal(page.html.includes("AI recommended"), true);
+  assert.equal(page.html.includes("Other / add context"), true);
+  assert.equal(page.html.includes(">Continue<"), true);
+  assert.equal(page.html.includes("AI 推荐"), false);
+  assert.equal(page.html.includes("这次周报偏向哪种口吻？"), true);
+});

@@ -68,6 +68,19 @@ Web 端语言切换遵循“AI-native 但不打扰”的原则：控件只占右
 | Cuu 文案边界 | Cuu card adapter、desktop shell bridge、pet 轻气泡固定文案双语 | Live2D pet card fixture 做中英截图验收 |
 | 动态内容边界 | 用户原文、LLM 摘要、证据摘录、proposal manifest 不在客户端假翻译 | Agent/daemon 生成可本地化摘要时接 locale |
 
+### 0.3 P1.2 非 Gold Path render helpers（2026-06-08 已落）
+
+P1.2 把中英双语从 Gold Path shell 延伸到未来真实 routes 会复用的 typed render helpers。详细说明见 [`i18n-nongoldpath-render-helpers-p1-2.md`](./i18n-nongoldpath-render-helpers-p1-2.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Helper 词表 | `packages/ui/src/i18n.ts` 提供非 Gold Path fixed-copy、enum label、count formatter | 真实 React routes 迁移时复用，不重新散落硬编码 |
+| Intake | `renderIntakeSession(...,{ locale })` 支持 `AI recommended` / `Continue` / free-text 固定标签 | 服务端按 locale 生成 question body / option 文案 |
+| WorkItem | `renderWorkItemDetail(...,{ locale })` 支持 `Live AI work` / `Acceptance checklist`；可见 `ai_working` 改为 `AI working` | 视觉截图确认状态 badge 不溢出 |
+| Proposal | `renderProposalDetail(...,{ locale })` 支持 `What changed` / `Check results`；可见 `text_doc`、`generated` 等 enum 人话化 | action.label 后续由服务端 Page VM 按 locale 输出 |
+| AgentRun | `renderAgentRunLive(...,{ locale })` 支持 `Cancel run` / `View replay` / `Tool result` / `Running` 等固定标签 | replay/trace 真实页面接同一词表 |
+| Web facade | `apps/web/src/main.ts` 的 `renderWeb*` / `loadWeb*` 可传 locale | browser route 层从 `workhub.locale` 贯穿所有真实页面 |
+
 ---
 
 ## 0. 一句话与三条 Web 端地基

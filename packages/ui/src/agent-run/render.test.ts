@@ -99,3 +99,15 @@ test("agent run renderer celebrates completed runs without showing cancel action
   assert.equal(rendered.html.includes("做完啦"), true);
   assert.equal(rendered.html.includes("取消执行"), false);
 });
+
+test("agent run renderer localizes fixed labels and visible run status in English", () => {
+  const rendered = renderAgentRunLive(baseRun, "web", { locale: "en-US" });
+
+  assert.equal(rendered.html.includes("Live AI work"), true);
+  assert.equal(rendered.html.includes("Cancel run"), true);
+  assert.equal(rendered.html.includes("Running"), true);
+  assert.equal(rendered.html.includes("Thinking"), true);
+  assert.equal(rendered.html.includes(">running<"), false);
+  assert.equal(rendered.html.includes("AI 实时执行"), false);
+  assert.equal(rendered.html.includes("Cuu 正在读取项目文档。"), true);
+});

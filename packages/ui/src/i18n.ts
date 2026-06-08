@@ -1,0 +1,248 @@
+import {
+  normalizeWorkHubLocale,
+  type AgentRunStatus,
+  type AgentStepPhase,
+  type DeliverableTargetKind,
+  type EvidenceSourceType,
+  type WorkHubLocale,
+  type WorkItemStatus
+} from "@workhub/contracts";
+
+export type UiRenderOptions = {
+  locale?: WorkHubLocale;
+};
+
+type Copy = Record<WorkHubLocale, string>;
+
+const copy = {
+  "intake.kicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
+  "intake.aiRecommended": { "zh-CN": "AI 推荐", "en-US": "AI recommended" },
+  "intake.freeText": { "zh-CN": "其他 / 补充", "en-US": "Other / add context" },
+  "intake.freeTextPlaceholder": { "zh-CN": "需要时再补一句。", "en-US": "Add one sentence only if needed." },
+  "intake.defaultBody": { "zh-CN": "先点一个选项，我再继续。", "en-US": "Pick one option and I will keep going." },
+  "intake.progressAria": { "zh-CN": "澄清进度", "en-US": "Clarification progress" },
+  "intake.continue": { "zh-CN": "继续", "en-US": "Continue" },
+
+  "generic.status": { "zh-CN": "状态", "en-US": "Status" },
+  "generic.acceptance": { "zh-CN": "验收", "en-US": "Acceptance" },
+  "generic.evidence": { "zh-CN": "证据", "en-US": "Evidence" },
+  "generic.risk": { "zh-CN": "风险", "en-US": "Risk" },
+  "generic.changes": { "zh-CN": "改动", "en-US": "Changes" },
+  "generic.checks": { "zh-CN": "检查", "en-US": "Checks" },
+  "generic.steps": { "zh-CN": "步骤", "en-US": "Steps" },
+  "generic.budget": { "zh-CN": "预算", "en-US": "Budget" },
+  "generic.model": { "zh-CN": "模型", "en-US": "Model" },
+  "generic.rollback": { "zh-CN": "回滚", "en-US": "Rollback" },
+  "generic.snapshot": { "zh-CN": "快照", "en-US": "Snapshot" },
+  "generic.open": { "zh-CN": "打开", "en-US": "Open" },
+  "generic.openSource": { "zh-CN": "打开来源", "en-US": "Open source" },
+  "generic.continueViewing": { "zh-CN": "继续查看", "en-US": "Keep reviewing" },
+  "generic.aiStatus": { "zh-CN": "AI 状态", "en-US": "AI status" },
+  "generic.currentThing": { "zh-CN": "当前一件事", "en-US": "Current focus" },
+  "generic.noEvidence": { "zh-CN": "没有找到可展示的证据。", "en-US": "No displayable evidence yet." },
+
+  "workitem.kicker": { "zh-CN": "任务", "en-US": "Work item" },
+  "workitem.defaultSummary": {
+    "zh-CN": "AI 会把这件事拆成可执行的下一步。",
+    "en-US": "AI will turn this into a clear next step."
+  },
+  "workitem.emptyTrace": {
+    "zh-CN": "AI 已准备好，下一步会开始读取证据。",
+    "en-US": "AI is ready. The next step will start reading evidence."
+  },
+  "workitem.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
+  "workitem.emptyAcceptance": { "zh-CN": "暂无验收项。", "en-US": "No acceptance items yet." },
+  "workitem.acceptanceItem": { "zh-CN": "验收项", "en-US": "Acceptance item" },
+  "workitem.liveTitle": { "zh-CN": "AI 实时执行", "en-US": "Live AI work" },
+  "workitem.acceptanceTitle": { "zh-CN": "验收清单", "en-US": "Acceptance checklist" },
+  "workitem.deliveryPending": { "zh-CN": "交付物待确认", "en-US": "Deliverable needs review" },
+  "workitem.started": { "zh-CN": "我开始处理了", "en-US": "AI has started" },
+  "workitem.currentStatus": { "zh-CN": "当前状态", "en-US": "Current status" },
+  "workitem.proposalReady": {
+    "zh-CN": "AI 已经把改动整理成一份可审的变更申请。",
+    "en-US": "AI has packaged the changes into a reviewable request."
+  },
+  "workitem.willReadEvidence": {
+    "zh-CN": "AI 会先读证据，再生成可审批的交付物。",
+    "en-US": "AI will read evidence first, then prepare a reviewable deliverable."
+  },
+
+  "proposal.kicker": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },
+  "proposal.railComplete": { "zh-CN": "完成啦", "en-US": "Finished" },
+  "proposal.railCarrying": { "zh-CN": "带着交付物", "en-US": "Carrying a deliverable" },
+  "proposal.rollbackAvailable": { "zh-CN": "可回滚", "en-US": "Rollback available" },
+  "proposal.rollbackUnavailable": { "zh-CN": "不可回滚", "en-US": "No rollback" },
+  "proposal.changeSummary": { "zh-CN": "这次改了什么", "en-US": "What changed" },
+  "proposal.checkResults": { "zh-CN": "检查结果", "en-US": "Check results" },
+  "proposal.comments": { "zh-CN": "负责人意见", "en-US": "Owner comments" },
+
+  "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
+  "agent.emptyTrace": {
+    "zh-CN": "AI 已排队，开始后会把关键步骤放在这里。",
+    "en-US": "AI is queued. Key steps will appear here after it starts."
+  },
+  "agent.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
+  "agent.emptyHandoff": { "zh-CN": "暂无交接事项。", "en-US": "No handoff items yet." },
+  "agent.defaultSummary": {
+    "zh-CN": "AI 会把关键步骤和证据变化记录在这里。",
+    "en-US": "AI will record key steps and evidence changes here."
+  },
+  "agent.fallbackTitle": { "zh-CN": "AI 执行", "en-US": "AI run" },
+  "agent.liveTitle": { "zh-CN": "AI 实时执行", "en-US": "Live AI work" },
+  "agent.handoff": { "zh-CN": "交接", "en-US": "Handoff" },
+  "agent.viewReplay": { "zh-CN": "查看回放", "en-US": "View replay" },
+  "agent.backToTask": { "zh-CN": "回到任务", "en-US": "Back to task" },
+  "agent.abort": { "zh-CN": "取消执行", "en-US": "Cancel run" },
+  "agent.done": { "zh-CN": "做完啦", "en-US": "Done" },
+  "agent.needsAttention": { "zh-CN": "需要关注", "en-US": "Needs attention" },
+  "agent.thinking": { "zh-CN": "正在思考", "en-US": "Thinking" },
+  "agent.celebratingBody": {
+    "zh-CN": "AI 已经把这次执行整理好了，可以查看回放和交付物。",
+    "en-US": "AI has organized this run. You can review the replay and deliverables."
+  },
+  "agent.runningBody": {
+    "zh-CN": "AI 只把关键节点递给你，完整过程放进回放。",
+    "en-US": "AI will surface only key moments here; the full process stays in replay."
+  },
+  "agent.handoffDone": { "zh-CN": "已完成", "en-US": "Done" },
+  "agent.handoffRemaining": { "zh-CN": "还剩", "en-US": "Remaining" },
+  "agent.handoffNext": { "zh-CN": "下一步", "en-US": "Next" },
+  "agent.handoffBlocker": { "zh-CN": "阻塞", "en-US": "Blocked" }
+} satisfies Record<string, Copy>;
+
+const workItemStatusLabels = {
+  intake: { "zh-CN": "收集需求", "en-US": "Intake" },
+  ai_clarifying: { "zh-CN": "AI 澄清中", "en-US": "AI clarifying" },
+  spec_ready: { "zh-CN": "规格已就绪", "en-US": "Spec ready" },
+  ai_working: { "zh-CN": "AI 正在处理", "en-US": "AI working" },
+  escalated: { "zh-CN": "需要负责人介入", "en-US": "Needs owner" },
+  pm_mode: { "zh-CN": "PM 模式处理中", "en-US": "PM mode" },
+  in_review: { "zh-CN": "等待确认", "en-US": "In review" },
+  merged: { "zh-CN": "已采纳", "en-US": "Merged" },
+  done: { "zh-CN": "已完成", "en-US": "Done" },
+  cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
+} satisfies Record<WorkItemStatus, Copy>;
+
+const agentRunStatusLabels = {
+  queued: { "zh-CN": "排队中", "en-US": "Queued" },
+  running: { "zh-CN": "执行中", "en-US": "Running" },
+  succeeded: { "zh-CN": "已完成", "en-US": "Succeeded" },
+  failed: { "zh-CN": "失败", "en-US": "Failed" },
+  escalated: { "zh-CN": "已升级", "en-US": "Escalated" },
+  budget_exhausted: { "zh-CN": "预算已用尽", "en-US": "Budget exhausted" },
+  cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
+} satisfies Record<AgentRunStatus, Copy>;
+
+const agentStepPhaseLabels = {
+  think: { "zh-CN": "思考", "en-US": "Thinking" },
+  tool_call: { "zh-CN": "调用工具", "en-US": "Tool call" },
+  tool_result: { "zh-CN": "工具结果", "en-US": "Tool result" },
+  final: { "zh-CN": "最终整理", "en-US": "Final" }
+} satisfies Record<AgentStepPhase, Copy>;
+
+const deliverableTargetLabels = {
+  structured_record: { "zh-CN": "结构化记录", "en-US": "Structured record" },
+  text_doc: { "zh-CN": "文档", "en-US": "Text document" },
+  binary_doc: { "zh-CN": "二进制文档", "en-US": "Binary document" },
+  spreadsheet: { "zh-CN": "表格", "en-US": "Spreadsheet" },
+  slide_deck: { "zh-CN": "演示文稿", "en-US": "Slide deck" },
+  image: { "zh-CN": "图片", "en-US": "Image" },
+  folder: { "zh-CN": "文件夹", "en-US": "Folder" },
+  archive: { "zh-CN": "归档包", "en-US": "Archive" },
+  spec_doc: { "zh-CN": "规格文档", "en-US": "Spec document" }
+} satisfies Record<DeliverableTargetKind, Copy>;
+
+const evidenceSourceLabels = {
+  drive_file: { "zh-CN": "网盘文件", "en-US": "Drive file" },
+  meeting: { "zh-CN": "会议", "en-US": "Meeting" },
+  comment: { "zh-CN": "评论", "en-US": "Comment" },
+  work_item: { "zh-CN": "任务", "en-US": "Work item" },
+  spec_doc: { "zh-CN": "规格文档", "en-US": "Spec document" },
+  agent_step: { "zh-CN": "执行步骤", "en-US": "Agent step" },
+  audit_log: { "zh-CN": "审计记录", "en-US": "Audit log" },
+  external_url: { "zh-CN": "外部链接", "en-US": "External URL" }
+} satisfies Record<EvidenceSourceType, Copy>;
+
+const checkStatusLabels: Record<string, Copy> = {
+  passed: { "zh-CN": "通过", "en-US": "Passed" },
+  failed: { "zh-CN": "失败", "en-US": "Failed" },
+  warning: { "zh-CN": "有提醒", "en-US": "Warning" },
+  skipped: { "zh-CN": "已跳过", "en-US": "Skipped" },
+  open: { "zh-CN": "待确认", "en-US": "Open" },
+  done: { "zh-CN": "已完成", "en-US": "Done" }
+};
+
+const changeTypeLabels: Record<string, Copy> = {
+  created: { "zh-CN": "新建", "en-US": "Created" },
+  updated: { "zh-CN": "更新", "en-US": "Updated" },
+  deleted: { "zh-CN": "删除", "en-US": "Deleted" },
+  renamed: { "zh-CN": "重命名", "en-US": "Renamed" },
+  moved: { "zh-CN": "移动", "en-US": "Moved" },
+  replaced: { "zh-CN": "替换", "en-US": "Replaced" },
+  generated: { "zh-CN": "生成", "en-US": "Generated" }
+};
+
+const previewKindLabels: Record<string, Copy> = {
+  text: { "zh-CN": "文本预览", "en-US": "Text preview" },
+  image: { "zh-CN": "图片预览", "en-US": "Image preview" },
+  pdf: { "zh-CN": "PDF 预览", "en-US": "PDF preview" },
+  office_preview: { "zh-CN": "Office 预览", "en-US": "Office preview" },
+  download: { "zh-CN": "下载", "en-US": "Download" }
+};
+
+export type UiCopyKey = keyof typeof copy;
+
+export function uiLocale(options?: UiRenderOptions | WorkHubLocale): WorkHubLocale {
+  if (typeof options === "string") {
+    return normalizeWorkHubLocale(options);
+  }
+  return normalizeWorkHubLocale(options?.locale);
+}
+
+export function uiT(locale: WorkHubLocale, key: UiCopyKey): string {
+  return copy[key][locale];
+}
+
+export function uiCount(locale: WorkHubLocale, count: number, zhUnit: string, enSingular: string, enPlural = `${enSingular}s`) {
+  return locale === "zh-CN" ? `${count} ${zhUnit}` : `${count} ${count === 1 ? enSingular : enPlural}`;
+}
+
+export function uiHumanize(value: string) {
+  return value.replace(/_/gu, " ");
+}
+
+function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
+  return map[value]?.[locale] ?? uiHumanize(value);
+}
+
+export function workItemStatusLabel(locale: WorkHubLocale, status: WorkItemStatus | string) {
+  return labelFromMap(locale, status, workItemStatusLabels);
+}
+
+export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatus | string) {
+  return labelFromMap(locale, status, agentRunStatusLabels);
+}
+
+export function agentStepPhaseLabel(locale: WorkHubLocale, phase: AgentStepPhase | string) {
+  return labelFromMap(locale, phase, agentStepPhaseLabels);
+}
+
+export function deliverableTargetLabel(locale: WorkHubLocale, kind: DeliverableTargetKind | string) {
+  return labelFromMap(locale, kind, deliverableTargetLabels);
+}
+
+export function evidenceSourceLabel(locale: WorkHubLocale, source: EvidenceSourceType | string) {
+  return labelFromMap(locale, source, evidenceSourceLabels);
+}
+
+export function changeTypeLabel(locale: WorkHubLocale, type: string) {
+  return labelFromMap(locale, type, changeTypeLabels);
+}
+
+export function checkStatusLabel(locale: WorkHubLocale, status: string) {
+  return labelFromMap(locale, status, checkStatusLabels);
+}
+
+export function previewKindLabel(locale: WorkHubLocale, kind: string) {
+  return labelFromMap(locale, kind, previewKindLabels);
+}

@@ -1,5 +1,14 @@
 import type { AgentRunLiveVM, AgentStep, CuuState } from "@workhub/contracts";
 
+import {
+  agentRunStatusLabel,
+  agentStepPhaseLabel,
+  uiCount,
+  uiLocale,
+  uiT,
+  type UiRenderOptions
+} from "../i18n.js";
+
 export type AgentRunRenderSurface = "web" | "desktop";
 
 export type AgentRunRenderedPage = {
@@ -65,62 +74,69 @@ function statusClass(status: AgentRunLiveVM["status"]) {
   return "wh-pill wh-pill-warn";
 }
 
-function renderTrace(steps: AgentStep[]) {
+function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (steps.length === 0) {
-    return '<p class="wh-subtle">Cuu 已排队，开始后会把关键步骤放在这里。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "agent.emptyTrace"))}</p>`;
   }
   return `<div class="wh-trace">${steps
     .map(
       (step) =>
-        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? "记录了一步。")}</p>${step.snapshot_id ? `<span class="wh-pill">snapshot</span>` : ""}</div></div>`
+        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "agent.stepFallback"))}</p>${step.snapshot_id ? `<span class="wh-pill">${escapeHtml(uiT(locale, "generic.snapshot"))}</span>` : ""}</div></div>`
     )
     .join("")}</div>`;
 }
 
-function renderHandoff(vm: AgentRunLiveVM) {
+function renderHandoff(vm: AgentRunLiveVM, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (!vm.handoff) {
-    return '<p class="wh-subtle">暂无交接事项。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "agent.emptyHandoff"))}</p>`;
   }
   const lines = [
-    ...vm.handoff.done.map((line) => `已完成: ${line}`),
-    ...vm.handoff.remaining.map((line) => `还剩: ${line}`),
-    ...vm.handoff.next_steps.map((line) => `下一步: ${line}`),
-    ...vm.handoff.blockers.map((line) => `阻塞: ${line}`)
+    ...vm.handoff.done.map((line) => `${uiT(locale, "agent.handoffDone")}: ${line}`),
+    ...vm.handoff.remaining.map((line) => `${uiT(locale, "agent.handoffRemaining")}: ${line}`),
+    ...vm.handoff.next_steps.map((line) => `${uiT(locale, "agent.handoffNext")}: ${line}`),
+    ...vm.handoff.blockers.map((line) => `${uiT(locale, "agent.handoffBlocker")}: ${line}`)
   ];
   return lines.map((line) => `<div class="wh-row"><span>${escapeHtml(line)}</span></div>`).join("");
 }
 
-export function renderAgentRunLive(vm: AgentRunLiveVM, surface: AgentRunRenderSurface): AgentRunRenderedPage {
+export function renderAgentRunLive(
+  vm: AgentRunLiveVM,
+  surface: AgentRunRenderSurface,
+  options?: UiRenderOptions
+): AgentRunRenderedPage {
+  const locale = uiLocale(options);
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const cuuState = cuuStateFor(vm);
   const latestStep = vm.trace.at(-1);
-  const title = vm.title || `AI run ${vm.run_id}`;
+  const title = vm.title || `${uiT(locale, "agent.fallbackTitle")} ${vm.run_id}`;
   const active = vm.status === "queued" || vm.status === "running";
   const main = `<section class="wh-run-main" data-run-id="${escapeHtml(vm.run_id)}">
-    <span class="wh-kicker">Live trace</span>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "agent.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>
-    <p class="wh-subtle">${escapeHtml(latestStep?.output_excerpt ?? "Cuu 会把关键步骤和证据变化记录在这里。")}</p>
+    <p class="wh-subtle">${escapeHtml(latestStep?.output_excerpt ?? uiT(locale, "agent.defaultSummary"))}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>状态</strong><p><span class="${statusClass(vm.status)}">${escapeHtml(vm.status)}</span></p></article>
-      <article class="wh-card"><strong>预算</strong><p class="wh-subtle">${vm.usage.token_in + vm.usage.token_out} / ${vm.budget.max_tokens} tokens</p></article>
-      <article class="wh-card"><strong>步骤</strong><p class="wh-subtle">${vm.trace.length} 条</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.status"))}</strong><p><span class="${statusClass(vm.status)}">${escapeHtml(agentRunStatusLabel(locale, vm.status))}</span></p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.budget"))}</strong><p class="wh-subtle">${vm.usage.token_in + vm.usage.token_out} / ${vm.budget.max_tokens} tokens</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.steps"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.trace.length, "条", "step"))}</p></article>
     </div>
-    <h2>AI 实时执行</h2>
-    <article class="wh-card">${renderTrace(vm.trace)}</article>
-    <h2>交接</h2>
-    <article class="wh-card">${renderHandoff(vm)}</article>
+    <h2>${escapeHtml(uiT(locale, "agent.liveTitle"))}</h2>
+    <article class="wh-card">${renderTrace(vm.trace, { locale })}</article>
+    <h2>${escapeHtml(uiT(locale, "agent.handoff"))}</h2>
+    <article class="wh-card">${renderHandoff(vm, { locale })}</article>
     <div class="wh-actions">
-      <a class="wh-btn wh-btn-primary" href="${escapeHtml(vm.replay_href)}">查看回放</a>
-      <a class="wh-btn" href="/workitems/${escapeHtml(vm.work_item_id)}">回到任务</a>
-      ${active ? `<a class="wh-btn wh-btn-danger" href="/api/agent-runs/${escapeHtml(vm.run_id)}/abort" data-method="POST">取消执行</a>` : ""}
+      <a class="wh-btn wh-btn-primary" href="${escapeHtml(vm.replay_href)}">${escapeHtml(uiT(locale, "agent.viewReplay"))}</a>
+      <a class="wh-btn" href="/workitems/${escapeHtml(vm.work_item_id)}">${escapeHtml(uiT(locale, "agent.backToTask"))}</a>
+      ${active ? `<a class="wh-btn wh-btn-danger" href="/api/agent-runs/${escapeHtml(vm.run_id)}/abort" data-method="POST">${escapeHtml(uiT(locale, "agent.abort"))}</a>` : ""}
     </div>
   </section>`;
   const rail = `<aside class="wh-run-rail">
-    <span class="wh-kicker">Cuu</span>
-    <h2>${cuuState === "celebrating" ? "做完啦" : cuuState === "worried" ? "需要关注" : "正在思考"}</h2>
-    <p class="wh-subtle">${cuuState === "celebrating" ? "我把这次执行整理好了，可以查看回放和交付物。" : "我会只把关键节点递给你，完整过程放进回放。"}</p>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "generic.aiStatus"))}</span>
+    <h2>${escapeHtml(cuuState === "celebrating" ? uiT(locale, "agent.done") : cuuState === "worried" ? uiT(locale, "agent.needsAttention") : uiT(locale, "agent.thinking"))}</h2>
+    <p class="wh-subtle">${escapeHtml(cuuState === "celebrating" ? uiT(locale, "agent.celebratingBody") : uiT(locale, "agent.runningBody"))}</p>
     <article class="wh-card">
-      <strong>模型</strong>
+      <strong>${escapeHtml(uiT(locale, "generic.model"))}</strong>
       <p class="wh-subtle">${escapeHtml(vm.run.model)}</p>
       <span class="wh-pill">${escapeHtml(vm.budget_decision.model_route.reason)}</span>
     </article>

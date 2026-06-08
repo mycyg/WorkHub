@@ -14,7 +14,7 @@ test("proposal renderer keeps the change package shape visible", () => {
   assert.equal(rendered.changeCount, vm.manifest.changes.length);
   assert.equal(rendered.evidenceCount, vm.evidence_refs.length);
   assert.equal(rendered.cuuState, "carrying_document");
-  assert.equal(rendered.html.includes("Deliverable change request"), true);
+  assert.equal(rendered.html.includes("交付物变更申请"), true);
   assert.equal(rendered.css.includes(".wh-proposal"), true);
   assert.equal(rendered.html.includes("这次改了什么"), true);
   assert.equal(rendered.html.includes("检查结果"), true);
@@ -32,4 +32,17 @@ test("proposal renderer stays non-kanban and non-git while exposing deliverable 
   assert.equal(rendered.html.includes("data-change-kind=\"text_doc\""), true);
   assert.equal(rendered.html.includes("data-action-id=\"approve\""), true);
   assert.equal(rendered.html.includes("data-action-id=\"request_changes\""), true);
+});
+
+test("proposal renderer localizes fixed labels and visible enum labels in English", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const rendered = renderProposalDetail(vm, "web", { locale: "en-US" });
+
+  assert.equal(rendered.html.includes("Deliverable change request"), true);
+  assert.equal(rendered.html.includes("What changed"), true);
+  assert.equal(rendered.html.includes("Check results"), true);
+  assert.equal(rendered.html.includes("Text document"), true);
+  assert.equal(rendered.html.includes("Generated"), true);
+  assert.equal(rendered.html.includes("交付物变更申请"), false);
+  assert.equal(rendered.html.includes("data-change-kind=\"text_doc\""), true);
 });

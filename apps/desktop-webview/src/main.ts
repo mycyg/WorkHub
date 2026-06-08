@@ -56,20 +56,24 @@ export function startDesktopIntakeSession(client: WorkHubApiClient, payload: Cre
   return client.createSession(payload);
 }
 
-export async function renderDesktopIntakeSession(client: WorkHubApiClient, payload: CreateSessionRequest = {}) {
-  return renderIntakeSession(await startDesktopIntakeSession(client, payload), "desktop");
+export async function renderDesktopIntakeSession(
+  client: WorkHubApiClient,
+  payload: CreateSessionRequest = {},
+  locale?: WorkHubLocale
+) {
+  return renderIntakeSession(await startDesktopIntakeSession(client, payload), "desktop", locale ? { locale } : undefined);
 }
 
 export function createDesktopWorkItem(client: WorkHubApiClient, payload: CreateWorkItemRequest) {
   return client.createWorkItem(payload);
 }
 
-export function loadDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
-  return client.pages.workItem(workItemId);
+export function loadDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale) {
+  return client.pages.workItem(workItemId, locale ? { locale } : undefined);
 }
 
-export async function renderDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
-  return renderWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId), "desktop");
+export async function renderDesktopWorkItemDetail(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale) {
+  return renderWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId, locale), "desktop", locale ? { locale } : undefined);
 }
 
 export function startDesktopAgentRun(
@@ -88,16 +92,16 @@ export function loadDesktopAgentRunTrace(client: WorkHubApiClient, runId: string
   return client.getAgentRunTrace(runId, after);
 }
 
-export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string) {
-  return renderAgentRunLive(await loadDesktopAgentRun(client, runId), "desktop");
+export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
+  return renderAgentRunLive(await loadDesktopAgentRun(client, runId), "desktop", locale ? { locale } : undefined);
 }
 
-export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
-  return client.pages.proposal(proposalId);
+export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
+  return client.pages.proposal(proposalId, locale ? { locale } : undefined);
 }
 
-export async function renderDesktopProposalDetail(client: WorkHubApiClient, proposalId: string) {
-  return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId), "desktop");
+export async function renderDesktopProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
+  return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId, locale), "desktop", locale ? { locale } : undefined);
 }
 
 export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: WorkHubLocale): CuuCard {
@@ -105,7 +109,7 @@ export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: W
 }
 
 export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale): Promise<CuuCard> {
-  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId), locale ? { locale } : undefined);
+  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId, locale), locale ? { locale } : undefined);
 }
 
 export async function loadDesktopIntakeCuuCard(
@@ -125,7 +129,7 @@ export async function createDesktopWorkItemCuuCard(
 }
 
 export async function loadDesktopWorkItemCuuCard(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale): Promise<CuuCard> {
-  return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId), locale ? { locale } : undefined);
+  return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId, locale), locale ? { locale } : undefined);
 }
 
 export async function startDesktopAgentRunCuuCard(

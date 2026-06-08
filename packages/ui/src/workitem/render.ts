@@ -6,6 +6,16 @@ import type {
   WorkItemStatus
 } from "@workhub/contracts";
 
+import {
+  checkStatusLabel,
+  evidenceSourceLabel,
+  uiCount,
+  uiLocale,
+  uiT,
+  workItemStatusLabel,
+  type UiRenderOptions
+} from "../i18n.js";
+
 export type WorkItemRenderSurface = "web" | "desktop";
 
 export type WorkItemRenderedPage = {
@@ -77,40 +87,43 @@ function statusClass(status: WorkItemStatus) {
   return "wh-pill";
 }
 
-function renderTrace(steps: AgentStep[]) {
+function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (steps.length === 0) {
-    return '<p class="wh-subtle">Cuu 已准备好，下一步会开始读取证据。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "workitem.emptyTrace"))}</p>`;
   }
   return `<div class="wh-trace">${steps
     .map(
       (step) =>
-        `<div class="wh-trace-row"><span class="wh-trace-dot">${step.step_no}</span><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? "记录了一步。")}</p></div></div>`
+        `<div class="wh-trace-row"><span class="wh-trace-dot">${step.step_no}</span><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p></div></div>`
     )
     .join("")}</div>`;
 }
 
-function evidenceRows(evidenceRefs: EvidenceRef[]) {
+function evidenceRows(evidenceRefs: EvidenceRef[], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (evidenceRefs.length === 0) {
-    return '<p class="wh-subtle">暂无可展示证据。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "generic.noEvidence"))}</p>`;
   }
   return evidenceRefs
     .map(
       (ref) =>
-        `<div class="wh-row"><div><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p></div><span class="wh-pill">${escapeHtml(ref.source_type)}</span></div>`
+        `<div class="wh-row"><div><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p></div><span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span></div>`
     )
     .join("");
 }
 
-function acceptanceRows(items: unknown[]) {
+function acceptanceRows(items: unknown[], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (items.length === 0) {
-    return '<p class="wh-subtle">暂无验收项。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "workitem.emptyAcceptance"))}</p>`;
   }
   return items
     .map((item, index) => {
       const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
-      const title = record.title ?? `验收项 ${index + 1}`;
-      const status = record.status ?? "open";
-      return `<div class="wh-row"><strong>${escapeHtml(title)}</strong><span class="wh-pill">${escapeHtml(status)}</span></div>`;
+      const title = record.title ?? `${uiT(locale, "workitem.acceptanceItem")} ${index + 1}`;
+      const status = String(record.status ?? "open");
+      return `<div class="wh-row"><strong>${escapeHtml(title)}</strong><span class="wh-pill">${escapeHtml(checkStatusLabel(locale, status))}</span></div>`;
     })
     .join("");
 }
@@ -125,41 +138,46 @@ function primaryHrefs(vm: WorkItemDetailVM) {
   ].filter((value): value is string => Boolean(value));
 }
 
-export function renderWorkItemDetail(vm: WorkItemDetailVM, surface: WorkItemRenderSurface): WorkItemRenderedPage {
+export function renderWorkItemDetail(
+  vm: WorkItemDetailVM,
+  surface: WorkItemRenderSurface,
+  options?: UiRenderOptions
+): WorkItemRenderedPage {
+  const locale = uiLocale(options);
   const hasProposal = Boolean(vm.latest_proposal);
   const cuuState = cuuStateFor(vm.workitem.status, hasProposal);
   const hrefs = primaryHrefs(vm);
   const title = vm.workitem.title ?? vm.workitem.code;
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
-  const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? "Cuu 会把这件事拆成可执行的下一步。");
+  const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
   const main = `<section class="wh-main" data-workitem-id="${escapeHtml(vm.workitem.id)}">
-    <span class="wh-kicker">Work item</span>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>
     <p class="wh-subtle">${escapeHtml(summary)}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>状态</strong><p><span class="${statusClass(vm.workitem.status)}">${escapeHtml(vm.workitem.status)}</span></p></article>
-      <article class="wh-card"><strong>验收</strong><p class="wh-subtle">${vm.acceptance.length} 项</p></article>
-      <article class="wh-card"><strong>证据</strong><p class="wh-subtle">${vm.evidence_refs.length} 条来源</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.status"))}</strong><p><span class="${statusClass(vm.workitem.status)}">${escapeHtml(workItemStatusLabel(locale, vm.workitem.status))}</span></p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.acceptance"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.acceptance.length, "项", "item"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.evidence"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.evidence_refs.length, "条来源", "source"))}</p></article>
     </div>
-    <h2>AI 实时执行</h2>
-    <article class="wh-card">${renderTrace(vm.agent_trace_preview)}</article>
-    <h2>验收清单</h2>
-    <article class="wh-card">${acceptanceRows(vm.acceptance)}</article>
-    <h2>证据</h2>
-    <article class="wh-card">${evidenceRows(vm.evidence_refs)}</article>
+    <h2>${escapeHtml(uiT(locale, "workitem.liveTitle"))}</h2>
+    <article class="wh-card">${renderTrace(vm.agent_trace_preview, { locale })}</article>
+    <h2>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h2>
+    <article class="wh-card">${acceptanceRows(vm.acceptance, { locale })}</article>
+    <h2>${escapeHtml(uiT(locale, "generic.evidence"))}</h2>
+    <article class="wh-card">${evidenceRows(vm.evidence_refs, { locale })}</article>
     ${
       hrefs.length
         ? `<div class="wh-actions">${hrefs
-            .map((href, index) => `<a class="${index === 0 ? "wh-btn wh-btn-primary" : "wh-btn"}" href="${escapeHtml(href)}">${index === 0 ? "继续查看" : "打开"}</a>`)
+            .map((href, index) => `<a class="${index === 0 ? "wh-btn wh-btn-primary" : "wh-btn"}" href="${escapeHtml(href)}">${escapeHtml(index === 0 ? uiT(locale, "generic.continueViewing") : uiT(locale, "generic.open"))}</a>`)
             .join("")}</div>`
         : ""
     }
   </section>`;
   const rail = `<aside class="wh-rail">
-    <span class="wh-kicker">Cuu</span>
-    <h2>${cuuState === "carrying_document" ? "交付物待确认" : cuuState === "thinking" ? "我开始处理了" : "当前状态"}</h2>
-    <p class="wh-subtle">${hasProposal ? "我已经把改动整理成一份可审的变更申请。" : "我会先读证据，再生成可审批的交付物。"}</p>
-    <article class="wh-card"><strong>当前一件事</strong><p class="wh-subtle">${escapeHtml(title)}</p></article>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "generic.aiStatus"))}</span>
+    <h2>${escapeHtml(cuuState === "carrying_document" ? uiT(locale, "workitem.deliveryPending") : cuuState === "thinking" ? uiT(locale, "workitem.started") : uiT(locale, "workitem.currentStatus"))}</h2>
+    <p class="wh-subtle">${escapeHtml(hasProposal ? uiT(locale, "workitem.proposalReady") : uiT(locale, "workitem.willReadEvidence"))}</p>
+    <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.currentThing"))}</strong><p class="wh-subtle">${escapeHtml(title)}</p></article>
   </aside>`;
 
   return {

@@ -52,9 +52,10 @@ export function startWebIntakeSession(
 
 export async function renderWebIntakeSession(
   client: WorkHubApiClient = webApiClient,
-  payload: CreateSessionRequest = {}
+  payload: CreateSessionRequest = {},
+  locale?: WorkHubLocale
 ) {
-  return renderIntakeSession(await startWebIntakeSession(client, payload), "web");
+  return renderIntakeSession(await startWebIntakeSession(client, payload), "web", locale ? { locale } : undefined);
 }
 
 export function createWebWorkItem(
@@ -64,12 +65,12 @@ export function createWebWorkItem(
   return client.createWorkItem(payload);
 }
 
-export function loadWebWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
-  return client.pages.workItem(workItemId);
+export function loadWebWorkItemDetail(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale) {
+  return client.pages.workItem(workItemId, locale ? { locale } : undefined);
 }
 
-export async function renderWebWorkItemDetail(client: WorkHubApiClient, workItemId: string) {
-  return renderWorkItemDetail(await loadWebWorkItemDetail(client, workItemId), "web");
+export async function renderWebWorkItemDetail(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale) {
+  return renderWorkItemDetail(await loadWebWorkItemDetail(client, workItemId, locale), "web", locale ? { locale } : undefined);
 }
 
 export function startWebAgentRun(
@@ -88,14 +89,14 @@ export function loadWebAgentRunTrace(client: WorkHubApiClient, runId: string, af
   return client.getAgentRunTrace(runId, after);
 }
 
-export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string) {
-  return renderAgentRunLive(await loadWebAgentRun(client, runId), "web");
+export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
+  return renderAgentRunLive(await loadWebAgentRun(client, runId), "web", locale ? { locale } : undefined);
 }
 
-export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
-  return client.pages.proposal(proposalId);
+export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
+  return client.pages.proposal(proposalId, locale ? { locale } : undefined);
 }
 
-export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
-  return renderProposalDetail(await loadWebProposalDetail(client, proposalId), "web");
+export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
+  return renderProposalDetail(await loadWebProposalDetail(client, proposalId, locale), "web", locale ? { locale } : undefined);
 }

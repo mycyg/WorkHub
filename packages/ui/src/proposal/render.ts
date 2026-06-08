@@ -7,6 +7,18 @@ import type {
   ProposalDetailVM
 } from "@workhub/contracts";
 
+import {
+  changeTypeLabel,
+  checkStatusLabel,
+  deliverableTargetLabel,
+  evidenceSourceLabel,
+  previewKindLabel,
+  uiCount,
+  uiLocale,
+  uiT,
+  type UiRenderOptions
+} from "../i18n.js";
+
 export type ProposalRenderSurface = "web" | "desktop";
 
 export type ProposalRenderedPage = {
@@ -65,10 +77,11 @@ function renderActions(actions: ActionSpec[]) {
     .join("")}</div>`;
 }
 
-function renderChange(change: DeliverableChange) {
+function renderChange(change: DeliverableChange, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   const path = change.target_ref.path ?? change.target_ref.entity_id ?? change.target_ref.entity_type;
   const preview = change.preview_ref
-    ? `<a class="wh-pill" href="${escapeHtml(change.preview_ref.href)}">${escapeHtml(change.preview_ref.kind)}</a>`
+    ? `<a class="wh-pill" href="${escapeHtml(change.preview_ref.href)}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
     : "";
   return `<div class="wh-row" data-change-kind="${escapeHtml(change.target_kind)}" data-change-type="${escapeHtml(change.change_type)}">
     <div>
@@ -76,51 +89,59 @@ function renderChange(change: DeliverableChange) {
       <p class="wh-subtle">${escapeHtml(path)}</p>
     </div>
     <div>
-      <span class="wh-pill">${escapeHtml(change.target_kind)}</span>
-      <span class="wh-pill">${escapeHtml(change.change_type)}</span>
+      <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span>
+      <span class="wh-pill">${escapeHtml(changeTypeLabel(locale, change.change_type))}</span>
       ${preview}
     </div>
   </div>`;
 }
 
-function renderCheck(check: DeliverableCheck) {
+function renderCheck(check: DeliverableCheck, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   return `<div class="wh-check" data-status="${escapeHtml(check.status)}">
     <strong>${escapeHtml(check.label)}</strong>
-    <span class="wh-subtle">${escapeHtml(check.status)}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span>
+    <span class="wh-subtle">${escapeHtml(checkStatusLabel(locale, check.status))}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span>
   </div>`;
 }
 
-function renderEvidence(evidenceRefs: EvidenceRef[]) {
+function renderEvidence(evidenceRefs: EvidenceRef[], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (evidenceRefs.length === 0) {
-    return '<p class="wh-subtle">没有找到可展示的证据。</p>';
+    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "generic.noEvidence"))}</p>`;
   }
   return evidenceRefs
     .map(
       (ref) =>
-        `<article class="wh-card" data-evidence-source="${escapeHtml(ref.source_type)}"><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p>${ref.href ? `<a class="wh-pill" href="${escapeHtml(ref.href)}">打开来源</a>` : `<span class="wh-pill">${escapeHtml(ref.source_type)}</span>`}</article>`
+        `<article class="wh-card" data-evidence-source="${escapeHtml(ref.source_type)}"><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p>${ref.href ? `<a class="wh-pill" href="${escapeHtml(ref.href)}">${escapeHtml(uiT(locale, "generic.openSource"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}</article>`
     )
     .join("");
 }
 
-function renderRail(vm: ProposalDetailVM) {
+function renderRail(vm: ProposalDetailVM, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   const manifest = vm.manifest;
   return `<aside class="wh-proposal-rail">
-    <span class="wh-kicker">Cuu state</span>
-    <h2>${vm.status === "merged" ? "完成啦" : "带着交付物"}</h2>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "generic.aiStatus"))}</span>
+    <h2>${escapeHtml(vm.status === "merged" ? uiT(locale, "proposal.railComplete") : uiT(locale, "proposal.railCarrying"))}</h2>
     <p class="wh-subtle">${escapeHtml(manifest.risk.human_label)}</p>
     <article class="wh-card">
-      <strong>回滚</strong>
+      <strong>${escapeHtml(uiT(locale, "generic.rollback"))}</strong>
       <p class="wh-subtle">${escapeHtml(manifest.rollback.description)}</p>
-      <span class="${manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger"}">${manifest.rollback.available ? "可回滚" : "不可回滚"}</span>
+      <span class="${manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger"}">${escapeHtml(manifest.rollback.available ? uiT(locale, "proposal.rollbackAvailable") : uiT(locale, "proposal.rollbackUnavailable"))}</span>
     </article>
     <article class="wh-card">
-      <strong>证据</strong>
-      <p class="wh-subtle">${vm.evidence_refs.length} 条来源</p>
+      <strong>${escapeHtml(uiT(locale, "generic.evidence"))}</strong>
+      <p class="wh-subtle">${escapeHtml(uiCount(locale, vm.evidence_refs.length, "条来源", "source"))}</p>
     </article>
   </aside>`;
 }
 
-export function renderProposalDetail(vm: ProposalDetailVM, surface: ProposalRenderSurface): ProposalRenderedPage {
+export function renderProposalDetail(
+  vm: ProposalDetailVM,
+  surface: ProposalRenderSurface,
+  options?: UiRenderOptions
+): ProposalRenderedPage {
+  const locale = uiLocale(options);
   const actionList = [
     vm.review_actions.approve,
     vm.review_actions.request_changes,
@@ -129,21 +150,21 @@ export function renderProposalDetail(vm: ProposalDetailVM, surface: ProposalRend
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 260);
   const main = `<section class="wh-proposal-main">
-    <span class="wh-kicker">Deliverable change request</span>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(vm.title)}</h1>
     <p class="wh-subtle">${escapeHtml(summary)}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>改动</strong><p class="wh-subtle">${vm.manifest.changes.length} 项文件或对象</p></article>
-      <article class="wh-card"><strong>检查</strong><p class="wh-subtle">${vm.manifest.checks.length} 项检查已记录</p></article>
-      <article class="wh-card"><strong>风险</strong><p class="wh-subtle">${escapeHtml(vm.manifest.risk.human_label)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.changes"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.manifest.changes.length, "项文件或对象", "change"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.checks"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.manifest.checks.length, "项检查已记录", "recorded check"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.risk"))}</strong><p class="wh-subtle">${escapeHtml(vm.manifest.risk.human_label)}</p></article>
     </div>
-    <h2>这次改了什么</h2>
-    <div class="wh-card">${vm.manifest.changes.map(renderChange).join("")}</div>
-    <h2>检查结果</h2>
-    <div class="wh-grid">${vm.manifest.checks.map(renderCheck).join("")}</div>
-    <h2>证据</h2>
-    <div class="wh-grid">${renderEvidence(vm.evidence_refs)}</div>
-    ${vm.comments.length > 0 ? `<h2>负责人意见</h2><div class="wh-card">${vm.comments.map((comment) => `<div class="wh-row"><strong>${escapeHtml(comment.author_label)}</strong><p class="wh-subtle">${escapeHtml(comment.body)}</p></div>`).join("")}</div>` : ""}
+    <h2>${escapeHtml(uiT(locale, "proposal.changeSummary"))}</h2>
+    <div class="wh-card">${vm.manifest.changes.map((change) => renderChange(change, { locale })).join("")}</div>
+    <h2>${escapeHtml(uiT(locale, "proposal.checkResults"))}</h2>
+    <div class="wh-grid">${vm.manifest.checks.map((check) => renderCheck(check, { locale })).join("")}</div>
+    <h2>${escapeHtml(uiT(locale, "generic.evidence"))}</h2>
+    <div class="wh-grid">${renderEvidence(vm.evidence_refs, { locale })}</div>
+    ${vm.comments.length > 0 ? `<h2>${escapeHtml(uiT(locale, "proposal.comments"))}</h2><div class="wh-card">${vm.comments.map((comment) => `<div class="wh-row"><strong>${escapeHtml(comment.author_label)}</strong><p class="wh-subtle">${escapeHtml(comment.body)}</p></div>`).join("")}</div>` : ""}
     ${renderActions(actionList)}
   </section>`;
 
@@ -153,7 +174,7 @@ export function renderProposalDetail(vm: ProposalDetailVM, surface: ProposalRend
     workItemId: vm.work_item_id,
     title: vm.title,
     css: proposalCss,
-    html: `<div class="${rootClass}"><main class="wh-proposal"><div class="wh-proposal-frame">${main}${renderRail(vm)}</div></main></div>`,
+    html: `<div class="${rootClass}"><main class="wh-proposal"><div class="wh-proposal-frame">${main}${renderRail(vm, { locale })}</div></main></div>`,
     actionHrefs: actionList.map((action) => action.href),
     changeCount: vm.manifest.changes.length,
     evidenceCount: vm.evidence_refs.length,

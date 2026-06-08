@@ -396,8 +396,10 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).surface, "desktop");
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).html.includes("wh-desktop"), true);
+  assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work", "en-US")).html.includes("Live AI work"), true);
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
+  assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
   assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 });
@@ -416,6 +418,7 @@ test("desktop webview starts option-first intake sessions through the typed clie
   assert.equal(rendered.route, `/intake/${intakeSession.session_id}`);
   assert.equal(rendered.html.includes("wh-desktop"), true);
   assert.equal(rendered.html.includes("简洁版"), true);
+  assert.equal((await renderDesktopIntakeSession(client, { intent_text: "帮我整理客户周报" }, "en-US")).html.includes("AI recommended"), true);
   assert.equal(card.kind, "question");
   assert.equal(card.payload_ref?.entity_type, "session");
   assert.equal(card.input?.free_text_collapsed_by_default, true);
@@ -454,6 +457,7 @@ test("desktop webview starts agent runs and renders the live trace with Cuu stat
   const client = fakeClient(surface);
   const started = await startDesktopAgentRun(client, liveRun.work_item_id, { title: "生成客户周报模板" });
   const rendered = await renderDesktopAgentRunLive(client, liveRun.run_id);
+  const english = await renderDesktopAgentRunLive(client, liveRun.run_id, "en-US");
   const trace = await loadDesktopAgentRunTrace(client, liveRun.run_id, 0);
   const startedCard = await startDesktopAgentRunCuuCard(client, liveRun.work_item_id, { title: "生成客户周报模板" });
   const loadedCard = await loadDesktopAgentRunCuuCard(client, liveRun.run_id);
@@ -463,6 +467,8 @@ test("desktop webview starts agent runs and renders the live trace with Cuu stat
   assert.equal(started.run_id, liveRun.run_id);
   assert.equal(rendered.cuuState, "thinking");
   assert.equal(rendered.html.includes("wh-desktop"), true);
+  assert.equal(english.html.includes("Live AI work"), true);
+  assert.equal(english.html.includes("Cancel run"), true);
   assert.equal(trace[0]?.phase, "think");
   assert.equal(startedCard.kind, "trace");
   assert.equal(loadedCard.state, "thinking");

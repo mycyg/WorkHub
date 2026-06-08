@@ -1086,9 +1086,9 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 ## 6. 后续施工计划
 
-### 6.0 P1.0 / P1.1：中英双语运行时与 locale 合同
+### 6.0 P1.0 / P1.1 / P1.2：中英双语运行时与 locale 合同
 
-状态：**2026-06-07 已完成客户端固定文案底座；2026-06-08 已完成 P1.1 locale 合同传播。详细说明见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。动态用户内容和 daemon/Agent 摘要仍保留原文，后续由 P1.3+ 服务端生成多语言 VM。**
+状态：**2026-06-07 已完成客户端固定文案底座；2026-06-08 已完成 P1.1 locale 合同传播与 P1.2 非 Gold Path helper 固定文案双语。详细说明见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md) 与 [`i18n-nongoldpath-render-helpers-p1-2.md`](./i18n-nongoldpath-render-helpers-p1-2.md)。动态用户内容和 daemon/Agent 摘要仍保留原文，后续由 P1.3+ 服务端生成多语言 VM。**
 
 | ID | 任务 | Target paths | 验收 |
 |---|---|---|---|
@@ -1097,7 +1097,7 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 | I18N-P1-03 | Web / desktop 主窗切换 | `apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` | **已落**：右上角 `中 / EN`，切换持久化并 reload，Page VM 请求带 locale |
 | I18N-P1-04 | 桌面 Cuu / pet 固定文案 | `packages/cuu/src/i18n.ts`、`apps/desktop-webview/src/pet-surface.ts`、`desktop-cuu-runtime.ts`、`shell-events.ts` | **已落 P1.1**：Cuu card fallback、动作 label、pet 轻气泡、SSE 状态和动作反馈支持中英；Web/main 不展示 Cuu 形象 |
 | I18N-P1-05 | Page VM locale 字段契约 | `packages/api-client/src/*`、`apps/api/src/routes/pages.ts` | **已落 P1.1**：`GET /api/pages/*?locale=`、response `meta.locale`、typed client `PageRequestOptions.locale` |
-| I18N-P1-06 | 非 Gold Path helpers | `packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*` | 待做 P1.2：固定标签抽词表，英文模式不残留中文按钮或 snake_case |
+| I18N-P1-06 | 非 Gold Path helpers | `packages/ui/src/i18n.ts`、`packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*`、`apps/web/src/main.ts`、`apps/desktop-webview/src/main.ts` | **已落 P1.2**：固定标签抽词表，Web/desktop facade 可传 locale，可见 enum 人话化，英文模式不残留中文按钮或 snake_case |
 | I18N-P1-07 | 视觉截图门 | `scripts/qa/*` / Playwright route screenshots | 待做：Web、desktop main、pet card 中/英两个 viewport 截图，检查文字不溢出 |
 
 ### 6.1 P0 立即修复：Cuu card mode 与 motion QA

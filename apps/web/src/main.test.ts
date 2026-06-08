@@ -388,8 +388,10 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
   assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).surface, "web");
   assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).html.includes("AI 实时执行"), true);
+  assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work", "en-US")).html.includes("Live AI work"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
+  assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
 });
 
 test("web surface starts option-first intake sessions through the typed client", async () => {
@@ -405,6 +407,7 @@ test("web surface starts option-first intake sessions through the typed client",
   assert.equal(rendered.route, `/intake/${intakeSession.session_id}`);
   assert.equal(rendered.html.includes("简洁版"), true);
   assert.equal(rendered.freeTextCollapsed, true);
+  assert.equal((await renderWebIntakeSession(client, { intent_text: "帮我整理客户周报" }, "en-US")).html.includes("AI recommended"), true);
 });
 
 test("web surface creates work items through the typed client without pet adapters", async () => {
@@ -437,6 +440,7 @@ test("web surface starts agent runs and renders the live trace", async () => {
   const client = fakeClient(surface);
   const started = await startWebAgentRun(client, liveRun.work_item_id, { title: "生成客户周报模板" });
   const rendered = await renderWebAgentRunLive(client, liveRun.run_id);
+  const english = await renderWebAgentRunLive(client, liveRun.run_id, "en-US");
   const trace = await loadWebAgentRunTrace(client, liveRun.run_id, 0);
 
   assert.equal(webSurface.pages.includes("/api/workitems/:id/agent-runs"), true);
@@ -444,5 +448,7 @@ test("web surface starts agent runs and renders the live trace", async () => {
   assert.equal(started.run_id, liveRun.run_id);
   assert.equal(rendered.cuuState, "thinking");
   assert.equal(rendered.html.includes("AI 实时执行"), true);
+  assert.equal(english.html.includes("Live AI work"), true);
+  assert.equal(english.html.includes("Cancel run"), true);
   assert.equal(trace[0]?.phase, "think");
 });

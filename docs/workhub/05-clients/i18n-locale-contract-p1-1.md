@@ -135,7 +135,7 @@ git diff --check
 
 | 阶段 | 工作 | 验收 |
 |---|---|---|
-| P1.2 Non-GoldPath render helpers | `packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*` 抽固定文案词表，禁止散落中文按钮和 snake_case label | 英文模式下非 Gold Path helper 的固定 label 不残留中文 |
+| P1.2 Non-GoldPath render helpers | **已落**：`packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*` 抽固定文案词表，Web/desktop facade 可传 locale | 英文模式下非 Gold Path helper 的固定 label 不残留中文；详情见 [`i18n-nongoldpath-render-helpers-p1-2.md`](./i18n-nongoldpath-render-helpers-p1-2.md) |
 | P1.3 User locale preference | `me.locale` / user preference schema / settings action；登录后跨设备同步语言 | Web、desktop 主窗、pet 三端首屏语言一致 |
 | P1.4 Visual regression | Web + desktop main + pet card fixture 做中英截图，检查文本不溢出、不遮挡 Cuu | 中英两套 screenshot / DOM dump 进入审计文档 |
 | P1.5 Server-generated multilingual VM | Agent / daemon 在生成 summary、proposal、evidence digest 时接 `locale`，明确哪些内容可双语生成、哪些保持用户原文 | 英文新任务的 proposal summary 可由服务端生成英文，历史中文内容仍保留原文 |

@@ -1,5 +1,7 @@
 import type { CuuState, QuestionCard, SessionVM } from "@workhub/contracts";
 
+import { uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
+
 export type IntakeRenderSurface = "web" | "desktop";
 
 export type IntakeRenderedSession = {
@@ -59,7 +61,8 @@ function progressPercent(question: QuestionCard) {
   return Math.round((score / question.progress.length) * 100);
 }
 
-function renderOptions(question: QuestionCard) {
+function renderOptions(question: QuestionCard, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   const recommended = new Set(question.recommended_option_ids ?? []);
   return question.options
     .map((option) => {
@@ -67,23 +70,29 @@ function renderOptions(question: QuestionCard) {
       return `<button class="wh-option" type="button" data-option-id="${escapeHtml(option.id)}" data-recommended="${recommended.has(option.id)}">
         <strong>${escapeHtml(option.label)}</strong>
         <p class="wh-subtle">${escapeHtml(description)}</p>
-        ${recommended.has(option.id) ? '<span class="wh-pill wh-pill-primary">AI 推荐</span>' : ""}
+        ${recommended.has(option.id) ? `<span class="wh-pill wh-pill-primary">${escapeHtml(uiT(locale, "intake.aiRecommended"))}</span>` : ""}
       </button>`;
     })
     .join("");
 }
 
-function renderFreeText(question: QuestionCard) {
+function renderFreeText(question: QuestionCard, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
   if (!question.free_text.enabled) {
     return "";
   }
   return `<details class="wh-card wh-free-text" ${question.free_text.collapsed_by_default ? "" : "open"}>
-    <summary>其他 / 补充</summary>
-    <p class="wh-subtle">${escapeHtml(question.free_text.placeholder ?? "需要时再补一句。")}</p>
+    <summary>${escapeHtml(uiT(locale, "intake.freeText"))}</summary>
+    <p class="wh-subtle">${escapeHtml(question.free_text.placeholder ?? uiT(locale, "intake.freeTextPlaceholder"))}</p>
   </details>`;
 }
 
-export function renderIntakeSession(session: SessionVM, surface: IntakeRenderSurface): IntakeRenderedSession {
+export function renderIntakeSession(
+  session: SessionVM,
+  surface: IntakeRenderSurface,
+  options?: UiRenderOptions
+): IntakeRenderedSession {
+  const locale = uiLocale(options);
   const question = {
     ...session.question,
     session_id: session.question.session_id ?? session.session_id,
@@ -93,13 +102,13 @@ export function renderIntakeSession(session: SessionVM, surface: IntakeRenderSur
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const pct = progressPercent(question);
   const main = `<section class="wh-intake-main" data-session-id="${escapeHtml(session.session_id)}">
-    <span class="wh-kicker">Option Intake</span>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "intake.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(question.title)}</h1>
-    <p class="wh-subtle">${escapeHtml(question.body ?? "先点一个选项，我再继续。")}</p>
-    <div class="wh-progress" aria-label="clarification progress"><span style="width:${pct}%"></span></div>
-    <div class="wh-grid">${renderOptions(question)}</div>
-    ${renderFreeText(question)}
-    <div class="wh-actions"><a class="wh-btn" href="${escapeHtml(question.submit.href)}" data-method="${escapeHtml(question.submit.method)}">继续</a></div>
+    <p class="wh-subtle">${escapeHtml(question.body ?? uiT(locale, "intake.defaultBody"))}</p>
+    <div class="wh-progress" aria-label="${escapeHtml(uiT(locale, "intake.progressAria"))}"><span style="width:${pct}%"></span></div>
+    <div class="wh-grid">${renderOptions(question, { locale })}</div>
+    ${renderFreeText(question, { locale })}
+    <div class="wh-actions"><a class="wh-btn" href="${escapeHtml(question.submit.href)}" data-method="${escapeHtml(question.submit.method)}">${escapeHtml(uiT(locale, "intake.continue"))}</a></div>
   </section>`;
 
   return {

@@ -181,9 +181,10 @@ shared/
 | Web 运行时接线 | `apps/web/src/browser.ts`、`apps/web/src/main.ts` | 已从 `localStorage` / `navigator.language` 读取语言，切换后 reload 并持久化；Page VM 请求带 locale |
 | Desktop webview / pet 接线 | `apps/desktop-webview/src/browser.ts`、`apps/desktop-webview/src/main.ts`、`apps/desktop-webview/src/pet-surface.ts` | 主窗 Page VM 请求带 locale；独立 pet 轻气泡、shell status 和动作结果固定文案可中英切换 |
 | Cuu card 固定文案 | `packages/cuu/src/i18n.ts`、`packages/cuu/src/cards.ts` | approval、budget、cost、replay、event fallback、action label 等固定文案双语；动态摘要保留原文 |
+| 非 Gold Path helpers | `packages/ui/src/i18n.ts`、`packages/ui/src/intake`、`workitem`、`proposal`、`agent-run` | P1.2 已落：固定文案双语；可见 enum label 人话化；Web/desktop facade 可传 locale |
 | 测试门 | `packages/contracts`、`packages/ui`、`packages/api-client`、`apps/api`、`apps/web`、`apps/desktop-webview`、`packages/cuu` | 已覆盖 locale 规范化、page query/meta、英文静态文案、Cuu fixed copy 和两端入口函数 |
 
-边界：本轮只本地化**客户端固定文案**，不伪造后端返回的任务标题、摘要、证据摘录、proposal manifest 或 event summary。下一阶段是 `P1.2 Non-GoldPath render helpers`：把 `packages/ui/src/intake`、`workitem`、`proposal`、`agent-run` 的固定标签抽成词表，并做中英截图门。详细合同见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。
+边界：本轮只本地化**客户端固定文案**，不伪造后端返回的任务标题、摘要、证据摘录、proposal manifest 或 event summary。P1.2 细节见 [`i18n-nongoldpath-render-helpers-p1-2.md`](./i18n-nongoldpath-render-helpers-p1-2.md)。下一阶段是 `P1.3 User locale preference` 与 `P1.4 Visual regression`：把 locale 写进用户偏好，并用截图确认中英文本不溢出。
 
 ---
 
