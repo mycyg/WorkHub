@@ -121,8 +121,8 @@ P1.6 不替代真实视觉验收。后续必须补：
 
 1. 黑猫 idle 10s、hover、tap、drag、approval、search、done 多帧录屏；其中 approval 已有 P1.7 短版 smoke，仍需正式长录。
 2. 白猫同场景多帧录屏。
-3. `data-cuu-behavior-state` 与 `data-cuu-live2d-renderer-state` 写入 capture report；P1.7 当前写入 `expected_behavior_contract`，actual DOM attrs 待 WebView2/CDP 或 SSE fixture 补齐。
+3. `data-cuu-behavior-state` 与 `data-cuu-live2d-renderer-state` 写入 capture report；P1.8 已补 approval actual DOM attrs 首证据，黑/白全业务矩阵仍待扩展。
 4. 确认 hover look-only 不改变窗口 rect、不重建 iframe。
 5. 确认 card mode 不裁切 Cuu 和轻气泡。
 
-后续业务录屏方案见 [`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)。
+后续业务录屏方案见 [`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)，actual DOM 与气泡锚点证据见 [`cuu-tauri-actual-dom-and-anchor-qa-p1-8.md`](./cuu-tauri-actual-dom-and-anchor-qa-p1-8.md)。

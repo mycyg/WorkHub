@@ -27,7 +27,11 @@ use workhub_client_tauri::window_controls::{
     ShellWindowControlAction, ShellWindowControlPlan, ShellWindowControlSource,
 };
 
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -46,6 +50,7 @@ const WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_OPACITY
 const WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV: &str = "WORKHUB_CUU_QA_PET_PASS_THROUGH";
 const WORKHUB_CUU_QA_MODEL_PACK_ID_ENV: &str = "WORKHUB_CUU_QA_MODEL_PACK_ID";
 const WORKHUB_CUU_QA_SCENARIO_ENV: &str = "WORKHUB_CUU_QA_SCENARIO";
+const WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV: &str = "WORKHUB_CUU_QA_DOM_REPORT_PATH";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
@@ -55,6 +60,7 @@ struct CuuQaPreferenceOverrides {
     pet_hide_on_hover: Option<bool>,
     pet_model_pack_id: Option<String>,
     pet_qa_scenario: Option<String>,
+    pet_qa_dom_report: bool,
 }
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -88,6 +94,7 @@ where
             &get_env,
             &["clarify", "approval", "search", "sync", "done", "offline"],
         ),
+        pet_qa_dom_report: workhub_env_string_nonempty(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV, &get_env),
     }
 }
 
@@ -124,6 +131,15 @@ where
 {
     let value = get_env(name)?.trim().to_string();
     allowed.contains(&value.as_str()).then_some(value)
+}
+
+fn workhub_env_string_nonempty<F>(name: &str, get_env: &F) -> bool
+where
+    F: Fn(&str) -> Option<String>,
+{
+    get_env(name)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -393,6 +409,43 @@ fn toggle_pet_window(app: tauri::AppHandle) -> Result<ShellWindowControlPlan, St
     )
 }
 
+#[tauri::command]
+fn write_cuu_qa_dom_report(report_json: String) -> Result<(), String> {
+    let Some(path) = std::env::var(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    else {
+        return Ok(());
+    };
+    let report: serde_json::Value = serde_json::from_str(&report_json)
+        .map_err(|error| format!("failed to parse Cuu QA DOM report JSON: {error}"))?;
+    write_cuu_qa_dom_report_to_path(&path, &report)
+}
+
+fn write_cuu_qa_dom_report_to_path(
+    path: &Path,
+    report: &serde_json::Value,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Cuu QA DOM report directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(report)
+        .map_err(|error| format!("failed to serialize Cuu QA DOM report: {error}"))?;
+    fs::write(path, raw).map_err(|error| {
+        format!(
+            "failed to write Cuu QA DOM report {}: {error}",
+            path.display()
+        )
+    })
+}
+
 fn work_area_for_pet_window(window: &tauri::WebviewWindow) -> LogicalRect {
     let monitor = match window.current_monitor() {
         Ok(Some(monitor)) => Some(monitor),
@@ -630,12 +683,17 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
         .pet_qa_scenario
         .map(|scenario| format!(r#" window.__WORKHUB_CUU_QA_SCENARIO__ = "{scenario}";"#))
         .unwrap_or_default();
+    let dom_report_script = if preferences.pet_qa_dom_report {
+        r#" window.__WORKHUB_CUU_QA_DOM_REPORT__ = true;"#
+    } else {
+        ""
+    };
 
     if fields.is_empty() {
-        format!(r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}"#)
+        format!(r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{dom_report_script}"#)
     } else {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}"#,
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{dom_report_script}"#,
             fields.join(", "),
         )
     }
@@ -967,7 +1025,8 @@ fn main() {
             focus_main_route,
             show_pet_window,
             hide_pet_window,
-            toggle_pet_window
+            toggle_pet_window,
+            write_cuu_qa_dom_report
         ])
         .run(tauri::generate_context!())
         .expect("failed to run WorkHub Tauri shell");
@@ -1053,6 +1112,7 @@ mod tests {
                 pet_hide_on_hover: Some(true),
                 pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
                 pet_qa_scenario: None,
+                pet_qa_dom_report: false,
             }
         );
     }
@@ -1074,6 +1134,7 @@ mod tests {
                 pet_hide_on_hover: None,
                 pet_model_pack_id: None,
                 pet_qa_scenario: None,
+                pet_qa_dom_report: false,
             }
         );
     }
@@ -1105,6 +1166,7 @@ mod tests {
             pet_hide_on_hover: Some(true),
             pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
             pet_qa_scenario: Some("approval".to_string()),
+            pet_qa_dom_report: true,
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
@@ -1113,5 +1175,52 @@ mod tests {
         assert!(script.contains("pet_hide_on_hover: true"));
         assert!(script.contains(r#"pet_model_pack_id: "cuu-tororo-live2d-cubism2""#));
         assert!(script.contains(r#"__WORKHUB_CUU_QA_SCENARIO__ = "approval""#));
+        assert!(script.contains("__WORKHUB_CUU_QA_DOM_REPORT__ = true"));
+    }
+
+    #[test]
+    fn cuu_qa_preferences_env_enables_dom_report_when_path_is_present() {
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[(
+                WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
+                "C:\\temp\\cuu-tauri-dom-report.json"
+            )]))
+            .pet_qa_dom_report,
+            true
+        );
+        assert_eq!(
+            workhub_cuu_qa_preferences_from_env(named_env(&[(
+                WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
+                " "
+            )]))
+            .pet_qa_dom_report,
+            false
+        );
+    }
+
+    #[test]
+    fn cuu_qa_dom_report_writer_writes_pretty_json_to_the_env_owned_path() {
+        let path = std::env::temp_dir().join(format!(
+            "workhub-cuu-qa-dom-report-{}-{}.json",
+            std::process::id(),
+            "writer"
+        ));
+        let _ = fs::remove_file(&path);
+        let report = serde_json::json!({
+            "contract": "workhub.cuu.tauri.actual-dom-report",
+            "surface": {
+                "data": {
+                    "data_pet_window_mode": "card",
+                    "data_cuu_behavior_state": "asking_approval"
+                }
+            }
+        });
+
+        write_cuu_qa_dom_report_to_path(&path, &report).expect("writes Cuu QA DOM report");
+
+        let raw = fs::read_to_string(&path).expect("reads Cuu QA DOM report");
+        assert!(raw.contains("workhub.cuu.tauri.actual-dom-report"));
+        assert!(raw.contains("data_cuu_behavior_state"));
+        let _ = fs::remove_file(&path);
     }
 }

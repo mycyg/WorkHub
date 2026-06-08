@@ -9,6 +9,7 @@ visuals:
   - ./assets/cuu/cuu-desktop-approval-search.png
   - ./assets/cuu/cuu-option-first-clarify.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-scripted-smoke/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Tauri Business Motion Capture P1.7
@@ -33,7 +34,7 @@ visuals:
 | `apps/desktop-webview/src/cuu-qa-scenarios.test.ts` | 验证 push-event / sse-status payload、Cuu state、action 和 evidence refs |
 | `apps/desktop-webview/src/pet-surface.ts` | 在 QA 场景存在时使用 scripted listener；正常路径仍走 Tauri `__TAURI__.event.listen` |
 | `client-tauri/src-tauri/src/main.rs` | 新增 `WORKHUB_CUU_QA_SCENARIO` 白名单注入 `window.__WORKHUB_CUU_QA_SCENARIO__` |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | `-Scenario` 扩展业务态，并在报告写入 `expected_behavior_contract` |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | `-Scenario` 扩展业务态，并在报告写入 `expected_behavior_contract`；P1.8 继续补 `actual_dom_report` |
 
 ## 3. Scenario Matrix
 
@@ -68,7 +69,7 @@ visuals:
 }
 ```
 
-限制：当前 Tauri `PrintWindow` 证据能证明真实窗口、尺寸、像素和多帧变化；它不能直接读取 WebView DOM。`expected_behavior_contract` 来自同一源码映射，后续如果要证明 actual DOM attrs，需要增加 WebView2/CDP 调试通道或本地 SSE fixture + DOM probe。
+P1.8 更新：当前 Tauri `PrintWindow` 证据已补真实 WebView DOM attrs 落盘，不再只靠 `expected_behavior_contract`。详见 [`cuu-tauri-actual-dom-and-anchor-qa-p1-8.md`](./cuu-tauri-actual-dom-and-anchor-qa-p1-8.md)。P1.7 本身仍只定义业务场景注入和录屏入口。
 
 澄清限制：当前 `clarify` 通过轻量 `AttentionItem(kind=clarification)` 进入 Cuu question card；完整 `QuestionCard` 的 option-first chips / progress / collapsed free text 仍需专用 fixture 或 direct QA card injection。
 
@@ -86,6 +87,12 @@ visuals:
 | report | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-scripted-smoke/motion-diff-report.json` |
 
 本证据只说明：业务审批卡可以进入真实 Tauri `pet` window，窗口扩到 card mode，Cuu 与轻卡同时可见，并且报告携带 P1.6 expected behavior contract。它不替代黑/白全场景长录屏。
+
+P1.8 已补一组更严格的 approval anchor smoke：
+
+![Hijiki approval anchor smoke](./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png)
+
+该证据新增：气泡锚点贴近 Cuu、首帧必须有 Cuu 与轻框、`actual_dom_matches_expected=true`。
 
 ## 6. Command Examples
 
@@ -114,7 +121,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 
 1. 跑黑猫全量矩阵：`clarify`、`approval`、`search`、`sync`、`done`、`offline`，每个至少 32 帧。
 2. 跑白猫同等矩阵，证明二选项都真实可用。
-3. 为 `motion-diff-report.json` 增加 card-mode rect gate：业务 card 场景必须稳定在 `520x640` 级别，不能停留 compact fallback。
-4. 增加 actual DOM attrs 采集方案：优先 WebView2/CDP，如果代价过高再走本地 SSE fixture + browser DOM probe。
+3. 为 `motion-diff-report.json` 增加 card-mode rect gate summary：业务 card 场景必须稳定在 `520x640` 级别，不能停留 compact fallback。
+4. 将 P1.8 actual DOM attrs gate 扩展到黑/白全业务矩阵。
 5. 将 settings matrix 与业务场景合并：scale 75/150、opacity 60、pass-through、hide-on-hover 均要能恢复。
 6. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补对应截图方案。

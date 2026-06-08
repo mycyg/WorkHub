@@ -5,6 +5,7 @@ param(
   [int]$IntervalMs = 180,
   [int]$PixelStep = 2,
   [int]$MinFirstFrameVisualPixels = 12000,
+  [int]$MinBusinessCardVisualPixelsAtScale100 = 54000,
   [double]$MinLongRunVisualRatio = 0.7,
   [int]$MinLongRunChangedFrames = 3,
   [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "clarify", "approval", "search", "sync", "done", "offline")]
@@ -171,6 +172,27 @@ function Get-CuuExpectedBehaviorForScenario {
       }
     }
   }
+}
+
+function Test-CuuActualDomMatchesExpected {
+  param(
+    [object]$Expected,
+    [object]$Actual
+  )
+  if (-not $Expected -or -not $Actual -or -not $Actual.surface -or -not $Actual.surface.data) {
+    return $false
+  }
+  foreach ($property in $Expected.PSObject.Properties) {
+    if ($null -eq $property.Value) {
+      continue
+    }
+    $actualProperty = $Actual.surface.data.PSObject.Properties[$property.Name]
+    $actualValue = if ($actualProperty) { $actualProperty.Value } else { $null }
+    if ($actualValue -ne $property.Value) {
+      return $false
+    }
+  }
+  return $true
 }
 
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuMotionWin32").Type) {
@@ -736,8 +758,11 @@ function Invoke-CuuInteractionScenarioFrame {
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$OutDir = (Resolve-Path -LiteralPath $OutDir).Path
 $framesDir = Join-Path $OutDir "frames"
 New-Item -ItemType Directory -Force -Path $framesDir | Out-Null
+$domReportPath = Join-Path $OutDir "cuu-tauri-dom-report.json"
+Remove-Item -LiteralPath $domReportPath -ErrorAction SilentlyContinue
 Set-Location $repoRoot
 
 if (-not $SkipBuild) {
@@ -766,6 +791,7 @@ $originalCuuQaPetOpacityPercent = $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT
 $originalCuuQaPetPassThrough = $env:WORKHUB_CUU_QA_PET_PASS_THROUGH
 $originalCuuQaModelPackId = $env:WORKHUB_CUU_QA_MODEL_PACK_ID
 $originalCuuQaScenario = $env:WORKHUB_CUU_QA_SCENARIO
+$originalCuuQaDomReportPath = $env:WORKHUB_CUU_QA_DOM_REPORT_PATH
 $process = $null
 $devServerProcess = $null
 $isolatedRoot = $null
@@ -795,6 +821,7 @@ try {
   $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT = "$PetScalePercent"
   $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT = "$PetOpacityPercent"
   $env:WORKHUB_CUU_QA_MODEL_PACK_ID = $ModelPackId
+  $env:WORKHUB_CUU_QA_DOM_REPORT_PATH = $domReportPath
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
@@ -810,16 +837,25 @@ try {
     Set-CuuCursorPosition -X 120 -Y 120
   }
 
+  $firstFrameMinVisualPixels = $MinFirstFrameVisualPixels
+  if ($isBusinessScenario) {
+    $scaleRatioForGate = $PetScalePercent / 100.0
+    $firstFrameMinVisualPixels = [Math]::Max(
+      $MinFirstFrameVisualPixels,
+      [int][Math]::Round($MinBusinessCardVisualPixelsAtScale100 * $scaleRatioForGate * $scaleRatioForGate)
+    )
+  }
+
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $process = Start-Process -FilePath $exePath -WorkingDirectory $srcTauriRoot -PassThru
   $firstFrameProbe = Join-Path $OutDir "first-frame-probe.png"
-  $firstFrameGate = Wait-ForCuuVisualWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds -ProbePath $firstFrameProbe -MinVisualPixels $MinFirstFrameVisualPixels
+  $firstFrameGate = Wait-ForCuuVisualWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds -ProbePath $firstFrameProbe -MinVisualPixels $firstFrameMinVisualPixels
   if (-not $firstFrameGate.Pet) {
     throw "Cuu pet window was not found by title."
   }
   if (-not $firstFrameGate.Passed) {
     $pixelReport = if ($firstFrameGate.PixelReport) { $firstFrameGate.PixelReport | ConvertTo-Json -Compress } else { "null" }
-    throw "Cuu pet first visual frame did not reach pixel threshold visual>=$MinFirstFrameVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
+    throw "Cuu pet first visual frame did not reach pixel threshold visual>=$firstFrameMinVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
   }
   $pet = $firstFrameGate.Pet
   if ($Scenario -eq "look-only") {
@@ -910,7 +946,22 @@ try {
     }
   }
 
-  $capturePassed = if ($longRunReport) { $longRunReport.passed } else { $true }
+  $actualDomReport = $null
+  $actualDomReportAvailable = Test-Path -LiteralPath $domReportPath
+  if ($actualDomReportAvailable) {
+    try {
+      $actualDomReport = Get-Content -LiteralPath $domReportPath -Raw | ConvertFrom-Json
+    } catch {
+      $actualDomReport = [pscustomobject]@{
+        parse_error = $_.Exception.Message
+        raw_path = $domReportPath
+      }
+    }
+  }
+  $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport
+
+  $motionGatePassed = if ($longRunReport) { $longRunReport.passed } else { $true }
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -919,6 +970,10 @@ try {
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
     expected_behavior_contract = $expectedBehavior
+    motion_gate_passed = $motionGatePassed
+    actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
+    actual_dom_matches_expected = $actualDomMatchesExpected
+    actual_dom_report = $actualDomReport
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
@@ -937,7 +992,7 @@ try {
       passed = $firstFrameGate.Passed
       attempts = $firstFrameGate.Attempts
       probe_path = $firstFrameGate.ProbePath
-      min_visual_pixels = $MinFirstFrameVisualPixels
+      min_visual_pixels = $firstFrameMinVisualPixels
       pixel_report = $firstFrameGate.PixelReport
     }
     max_vs_first_mean_abs_delta = ($diffs | ForEach-Object { $_.vs_first.mean_abs_delta } | Measure-Object -Maximum).Maximum
@@ -951,7 +1006,7 @@ try {
   $reportPath = Join-Path $OutDir "motion-diff-report.json"
   $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath -Encoding UTF8
   if (-not $capturePassed) {
-    throw "Cuu long-run motion capture failed. See $reportPath"
+    throw "Cuu motion capture failed. See $reportPath"
   }
 
   $ffmpeg = Get-Command "ffmpeg" -ErrorAction SilentlyContinue
@@ -981,6 +1036,9 @@ try {
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
     expected_behavior_contract = $expectedBehavior
+    motion_gate_passed = $motionGatePassed
+    actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
+    actual_dom_matches_expected = $actualDomMatchesExpected
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
@@ -1009,6 +1067,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_PASS_THROUGH" -Value $originalCuuQaPetPassThrough
   Restore-EnvVar -Name "WORKHUB_CUU_QA_MODEL_PACK_ID" -Value $originalCuuQaModelPackId
   Restore-EnvVar -Name "WORKHUB_CUU_QA_SCENARIO" -Value $originalCuuQaScenario
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_DOM_REPORT_PATH" -Value $originalCuuQaDomReportPath
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
     $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())

@@ -215,6 +215,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(18px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(318px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
   assert.match(card.html, /data-cuu-behavior-phase="loop"/u);
   assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
@@ -400,8 +401,24 @@ test("pet surface renders compact fallback while card mode is not confirmed", ()
   assert.match(card.html, /data-pet-window-mode-status="failed"/u);
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-cuu-action-id="approve"/u);
+  assert.match(card.css, /data-pet-card-layout=compact\] \.wh-pet-bubble\{left:auto;right:calc\(8px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(224px \* var\(--wh-pet-scale,1\)\)/u);
   assert.doesNotMatch(card.html, /data-cuu-action-id="request_changes"/u);
   assert.doesNotMatch(card.html, /data-pet-reason/u);
+});
+
+test("pet surface hides transient compact cards while the Cuu window is expanding", () => {
+  const card = renderDesktopPetSurface({
+    card: approvalCard(),
+    window_mode_error: "Cuu 正在展开审批卡片。",
+    window_mode_status: "syncing"
+  });
+
+  assert.match(card.html, /data-pet-window-mode="body_only"/u);
+  assert.match(card.html, /data-pet-card-layout="compact"/u);
+  assert.match(card.html, /data-pet-window-mode-status="syncing"/u);
+  assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
+  assert.doesNotMatch(card.html, /class="wh-pet-bubble"/u);
+  assert.doesNotMatch(card.html, /data-cuu-card-id="approval-card"/u);
 });
 
 test("pet surface keeps offline Cuu fully visible in card mode", () => {

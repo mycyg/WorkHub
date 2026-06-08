@@ -23,6 +23,7 @@ import {
   setDesktopCuuCatLive2DBehaviorState,
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
+import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
@@ -78,13 +79,13 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
   ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(16px * var(--wh-pet-scale,1));bottom:calc(18px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(16px * var(--wh-pet-scale,1));right:auto;top:calc(16px * var(--wh-pet-scale,1));bottom:auto;width:calc(300px * var(--wh-pet-scale,1));max-height:calc(390px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:auto;right:calc(18px * var(--wh-pet-scale,1));top:auto;bottom:calc(318px * var(--wh-pet-scale,1));width:calc(304px * var(--wh-pet-scale,1));max-height:calc(300px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:3}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-actions{max-width:100%}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(156px * var(--wh-pet-scale,1));height:calc(218px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:calc(8px * var(--wh-pet-scale,1));right:auto;top:calc(8px * var(--wh-pet-scale,1));bottom:auto;width:calc(124px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:auto;right:calc(8px * var(--wh-pet-scale,1));top:auto;bottom:calc(224px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-title{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
@@ -265,7 +266,8 @@ export function renderDesktopPetSurface(input: {
         requested_model_pack_id: input.requested_model_pack_id
       });
   const visualMode = "live2d_cat";
-  const bubble = input.card || input.status_text || input.include_reject_reasons
+  const suppressTransientCompactBubble = compactCard && input.window_mode_status === "syncing";
+  const bubble = !suppressTransientCompactBubble && (input.card || input.status_text || input.include_reject_reasons)
     ? renderDesktopPetBubble({
         card: input.card,
         status_text: input.status_text,
@@ -642,6 +644,7 @@ export async function bootDesktopPetSurface(
         pointer_smoothing_alpha: desktopPetPointerSmoothingAlpha
       })
     ) {
+      writeDesktopPetQaDomSnapshot(root, "patch");
       syncPetWindowSettings(petWindowSettings);
       return;
     }
@@ -661,6 +664,7 @@ export async function bootDesktopPetSurface(
       locale
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    writeDesktopPetQaDomSnapshot(root, "render");
     lastStructuralRenderKey = structuralRenderKey;
     syncPetWindowSettings(petWindowSettings);
     cancelPendingFirstPaintSync?.();
