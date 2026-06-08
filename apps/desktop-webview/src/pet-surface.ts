@@ -7,6 +7,7 @@ import {
   cuuT,
   type CuuCard,
   type CuuController,
+  type CuuControllerPreferences,
   type CuuIdleMicroAction,
   type CuuIdleScheduler,
   type CuuIdleSchedulerPolicy,
@@ -20,7 +21,7 @@ import {
   renderDesktopCuuCatLive2DForMotion,
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
-import { loadCuuPreferences } from "./cuu-preferences.js";
+import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
   resolveDesktopCuuAction,
@@ -111,7 +112,17 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-chip[data-selected=true]{background:#eef4ff;border-color:#355cff;color:#2444bf}",
   ".wh-pet-action[data-tone=primary],.wh-pet-reason{background:#355cff;border-color:#355cff;color:#fff}",
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
-  ".wh-pet-status{margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750}"
+  ".wh-pet-status{margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750}",
+  ".wh-pet-menu{position:absolute;right:10px;bottom:72px;z-index:8;box-sizing:border-box;width:184px;display:grid;gap:8px;border:1px solid rgba(38,49,70,.16);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 44px rgba(30,39,58,.2);padding:10px;pointer-events:auto;backdrop-filter:blur(10px)}",
+  ".wh-pet-menu[hidden]{display:none}",
+  ".wh-pet-menu-title{font-size:12px;line-height:1.2;font-weight:900;color:#222b38}",
+  ".wh-pet-menu-group{display:grid;gap:5px;min-width:0}",
+  ".wh-pet-menu-label{font-size:10px;line-height:1.1;font-weight:900;color:#667085;text-transform:uppercase}",
+  ".wh-pet-menu-row{display:flex;gap:5px;flex-wrap:wrap}",
+  ".wh-pet-menu button{border:1px solid rgba(38,49,70,.14);border-radius:8px;background:#fff;color:#222b38;padding:6px 8px;font:850 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;min-height:28px}",
+  ".wh-pet-menu button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:#eef4ff;color:#2444bf;box-shadow:inset 3px 0 0 #355cff}",
+  ".wh-pet-menu button[data-pet-menu-danger=true]{background:#fff4f3;border-color:rgba(238,107,95,.3);color:#b42318}",
+  ".wh-pet-menu-action{width:100%;text-align:left}"
 ].join("");
 
 export const desktopPetInitialIdleAction: CuuIdleMicroAction = "idle_tail_sway";
@@ -259,6 +270,11 @@ export function renderDesktopPetSurface(input: {
         window_mode_error: input.window_mode_error
       }, locale)
     : "";
+  const menu = renderDesktopPetSettingsMenu({
+    locale,
+    requested_model_pack_id: input.requested_model_pack_id,
+    hide_on_hover: settings.hide_on_hover
+  });
   const cardAttrs = input.card
     ? ` data-pet-card-kind="${escapeHtml(input.card.kind)}" data-pet-card-priority="${escapeHtml(input.card.priority)}" data-pet-card-has-context="${petCardHasContext(input.card) ? "true" : "false"}"`
     : "";
@@ -295,6 +311,7 @@ export function renderDesktopPetSurface(input: {
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}">
         ${live2d.html}
       </button>
+      ${menu}
       ${bubble}
     </section>`
   };
@@ -306,6 +323,91 @@ export function desktopPetLocale(input?: unknown): WorkHubLocale {
     navigator?: Navigator;
   };
   return normalizeWorkHubLocale(input ?? target.localStorage?.getItem(workHubLocaleStorageKey) ?? target.navigator?.language);
+}
+
+function renderDesktopPetSettingsMenu(input: {
+  locale: WorkHubLocale;
+  requested_model_pack_id?: string | undefined;
+  hide_on_hover: boolean;
+}) {
+  const copy = desktopPetSettingsMenuCopy[input.locale];
+  const selectedModel = input.requested_model_pack_id === "cuu-tororo-live2d-cubism2"
+    ? "cuu-tororo-live2d-cubism2"
+    : "cuu-hijiki-live2d-cubism2";
+  const modelButton = (id: "cuu-hijiki-live2d-cubism2" | "cuu-tororo-live2d-cubism2", label: string) =>
+    `<button type="button" data-pet-menu-model="${id}" aria-pressed="${selectedModel === id ? "true" : "false"}">${escapeHtml(label)}</button>`;
+  const localeButton = (locale: WorkHubLocale, label: string) =>
+    `<button type="button" data-pet-menu-locale="${locale}" aria-pressed="${input.locale === locale ? "true" : "false"}">${escapeHtml(label)}</button>`;
+
+  return `<nav class="wh-pet-menu" data-pet-settings-menu="true" aria-label="${escapeHtml(copy.aria)}" hidden>
+    <div class="wh-pet-menu-title">${escapeHtml(copy.title)}</div>
+    <div class="wh-pet-menu-group">
+      <div class="wh-pet-menu-label">${escapeHtml(copy.model)}</div>
+      <div class="wh-pet-menu-row">
+        ${modelButton("cuu-hijiki-live2d-cubism2", copy.blackCat)}
+        ${modelButton("cuu-tororo-live2d-cubism2", copy.whiteCat)}
+      </div>
+    </div>
+    <div class="wh-pet-menu-group">
+      <div class="wh-pet-menu-label">${escapeHtml(copy.language)}</div>
+      <div class="wh-pet-menu-row">
+        ${localeButton("zh-CN", "中文")}
+        ${localeButton("en-US", "EN")}
+      </div>
+    </div>
+    <div class="wh-pet-menu-group">
+      <button type="button" class="wh-pet-menu-action" data-pet-menu-toggle-hover="true" aria-pressed="${input.hide_on_hover ? "true" : "false"}">${escapeHtml(copy.hideOnHover)}</button>
+      <button type="button" class="wh-pet-menu-action" data-pet-menu-open-settings="true">${escapeHtml(copy.openSettings)}</button>
+      <button type="button" class="wh-pet-menu-action" data-pet-menu-hide="true" data-pet-menu-danger="true">${escapeHtml(copy.hideCuu)}</button>
+    </div>
+  </nav>`;
+}
+
+const desktopPetSettingsMenuCopy = {
+  "zh-CN": {
+    aria: "Cuu 桌宠设置菜单",
+    title: "Cuu 设置",
+    model: "形象",
+    blackCat: "黑猫",
+    whiteCat: "白猫",
+    language: "语言",
+    hideOnHover: "悬停避让",
+    openSettings: "打开设置",
+    hideCuu: "隐藏 Cuu",
+    modelChanged: "Cuu 形象已更新。",
+    localeChanged: "语言已更新。",
+    hoverEnabled: "悬停避让已开启。",
+    hoverDisabled: "悬停避让已关闭。",
+    openSettingsFallback: "请从托盘打开设置。",
+    hideFallback: "请从托盘隐藏 Cuu。"
+  },
+  "en-US": {
+    aria: "Cuu desktop pet settings menu",
+    title: "Cuu settings",
+    model: "Look",
+    blackCat: "Black cat",
+    whiteCat: "White cat",
+    language: "Language",
+    hideOnHover: "Dodge hover",
+    openSettings: "Open settings",
+    hideCuu: "Hide Cuu",
+    modelChanged: "Cuu look updated.",
+    localeChanged: "Language updated.",
+    hoverEnabled: "Dodge hover is on.",
+    hoverDisabled: "Dodge hover is off.",
+    openSettingsFallback: "Open settings from the tray.",
+    hideFallback: "Hide Cuu from the tray."
+  }
+} as const;
+
+function setPetSettingsMenuOpen(root: HTMLElement, open: boolean) {
+  const surface = root.querySelector<HTMLElement>("[data-wh-surface=pet]");
+  const menu = root.querySelector<HTMLElement>("[data-pet-settings-menu]");
+  if (!surface || !menu) {
+    return;
+  }
+  menu.hidden = !open;
+  surface.dataset.petMenuOpen = open ? "true" : "false";
 }
 
 export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
@@ -453,7 +555,7 @@ export async function bootDesktopPetSurface(
     petWindowBridge?: DesktopPetWindowBridge | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
-  const locale = desktopPetLocale();
+  let locale = desktopPetLocale();
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
@@ -550,6 +652,27 @@ export async function bootDesktopPetSurface(
     render();
   };
 
+  const updatePetPreferences = (preferences: Partial<CuuControllerPreferences>, message?: string) => {
+    const snapshot = controller.setPreferences(preferences);
+    saveCuuPreferences(snapshot.preferences);
+    if (message) {
+      statusText = message;
+    }
+    render();
+  };
+
+  const setLocalePreference = (nextLocale: WorkHubLocale) => {
+    locale = nextLocale;
+    try {
+      globalThis.localStorage?.setItem(workHubLocaleStorageKey, nextLocale);
+    } catch {
+      // Local storage may be unavailable in isolated test surfaces.
+    }
+    statusText = desktopPetSettingsMenuCopy[locale].localeChanged;
+    void client.updatePreferences({ locale: nextLocale }).catch(() => undefined);
+    render();
+  };
+
   render();
 
   pointerSensor = createDesktopPetPointerSensor(root, {
@@ -570,6 +693,78 @@ export async function bootDesktopPetSurface(
   });
 
   root.addEventListener("click", async (event) => {
+    const menuTarget = event.target instanceof Element ? event.target : null;
+    const modelButton = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-model]");
+    if (modelButton) {
+      event.preventDefault();
+      setPetSettingsMenuOpen(root, false);
+      const modelPackId = modelButton.dataset.petMenuModel === "cuu-tororo-live2d-cubism2"
+        ? "cuu-tororo-live2d-cubism2"
+        : "cuu-hijiki-live2d-cubism2";
+      updatePetPreferences({ pet_model_pack_id: modelPackId }, desktopPetSettingsMenuCopy[locale].modelChanged);
+      return;
+    }
+
+    const localeButton = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-locale]");
+    if (localeButton) {
+      event.preventDefault();
+      setPetSettingsMenuOpen(root, false);
+      setLocalePreference(normalizeWorkHubLocale(localeButton.dataset.petMenuLocale));
+      return;
+    }
+
+    const hoverToggle = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-toggle-hover]");
+    if (hoverToggle) {
+      event.preventDefault();
+      setPetSettingsMenuOpen(root, false);
+      const enabled = controller.snapshot().preferences.pet_hide_on_hover;
+      updatePetPreferences(
+        { pet_hide_on_hover: !enabled },
+        !enabled ? desktopPetSettingsMenuCopy[locale].hoverEnabled : desktopPetSettingsMenuCopy[locale].hoverDisabled
+      );
+      return;
+    }
+
+    const openSettingsButton = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-open-settings]");
+    if (openSettingsButton) {
+      event.preventDefault();
+      setPetSettingsMenuOpen(root, false);
+      if (!petWindowBridge?.focusMainRoute) {
+        statusText = desktopPetSettingsMenuCopy[locale].openSettingsFallback;
+        render();
+        return;
+      }
+      try {
+        await petWindowBridge.focusMainRoute("/settings");
+      } catch {
+        statusText = desktopPetSettingsMenuCopy[locale].openSettingsFallback;
+        render();
+      }
+      return;
+    }
+
+    const hideButton = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-hide]");
+    if (hideButton) {
+      event.preventDefault();
+      setPetSettingsMenuOpen(root, false);
+      if (!petWindowBridge?.hidePetWindow) {
+        statusText = desktopPetSettingsMenuCopy[locale].hideFallback;
+        render();
+        return;
+      }
+      try {
+        await petWindowBridge.hidePetWindow();
+      } catch {
+        statusText = desktopPetSettingsMenuCopy[locale].hideFallback;
+        render();
+      }
+      return;
+    }
+
+    if (menuTarget && !menuTarget.closest("[data-pet-settings-menu]")) {
+      setPetSettingsMenuOpen(root, false);
+    }
+
     const optionButton = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-option-id]") : null;
     if (optionButton && currentCard?.input) {
       event.preventDefault();
@@ -645,6 +840,15 @@ export async function bootDesktopPetSurface(
       statusText = actionMessage(error, locale);
       render();
     }
+  });
+
+  root.addEventListener("contextmenu", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.closest("[data-wh-surface=pet]")) {
+      return;
+    }
+    event.preventDefault();
+    setPetSettingsMenuOpen(root, true);
   });
 
   const runtime = await bindDesktopShellCuuRuntime({

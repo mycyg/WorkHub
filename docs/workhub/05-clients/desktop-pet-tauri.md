@@ -31,7 +31,7 @@ visuals:
 | `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry，创建 `main` / `pet`，注入 `window.__WORKHUB_SURFACE__`，注册 commands / plugins / SSE worker |
 | `client-tauri/src-tauri/src/pet_window.rs` | `pet` 几何、右下角定位、body/card 尺寸、work area 夹取、scale/opacity/pass-through/hide-on-hover |
 | `client-tauri/src-tauri/src/pet_commands.rs` | `set_pet_window_mode`、`set_pet_window_settings`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` |
-| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出 |
+| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、打开收件箱、打开设置、退出 |
 | `client-tauri/src-tauri/src/notify.rs` | high/urgent 系统通知计划和去重 |
 | `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
@@ -77,7 +77,7 @@ visuals:
 | 隐藏主窗 | hide main window |
 | 显示/隐藏 Cuu | toggle pet window |
 | 收件箱 | deep-link `/inbox` |
-| 设置 | deep-link `/settings` |
+| 设置 | deep-link `/settings`，也是 Cuu 设置恢复入口 |
 | 退出 | graceful shutdown |
 
 ## 4. Rust IPC 契约
@@ -228,6 +228,7 @@ visuals:
 | 黑猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | idle 10s、hover、tap、drag、approval、search |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据 | 继续补 tap、drag、approval、search |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 继续补 idle、tap、drag、approval、search |
+| 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 未闭环 | 托盘和热键恢复门 |
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |
@@ -238,6 +239,7 @@ visuals:
 
 - Cuu 形象与交互：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)
 - 当前模型二选项：[`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)
+- Pet 右键设置菜单：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)
 - 桌宠参考包审查：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)
 - 页面概念图索引：[`page-concepts.md`](./page-concepts.md)
 - Web 页面规划：[`web-app.md`](./web-app.md)

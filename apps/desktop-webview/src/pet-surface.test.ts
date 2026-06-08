@@ -194,6 +194,12 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.html, /data-cuu-live2d-framing="transparent_full_body"/u);
   assert.match(idle.html, /data-cuu-live2d-model="hijiki"/u);
   assert.match(idle.html, /data-cuu-live2d-appearance="black_cat"/u);
+  assert.match(idle.html, /class="wh-pet-menu"[^>]*data-pet-settings-menu="true"[^>]*hidden/u);
+  assert.match(idle.html, /data-pet-menu-model="cuu-hijiki-live2d-cubism2" aria-pressed="true"/u);
+  assert.match(idle.html, /data-pet-menu-model="cuu-tororo-live2d-cubism2" aria-pressed="false"/u);
+  assert.match(idle.html, /data-pet-menu-locale="zh-CN" aria-pressed="true"/u);
+  assert.match(idle.html, /data-pet-menu-open-settings="true"/u);
+  assert.doesNotMatch(idle.html, /data-pet-menu-pass-through/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
   assert.doesNotMatch(idle.html, /wh-cuu-legacy|wh-cuu-atlas|wh-cuu-sprite|experimental_draft_probe/u);
@@ -335,6 +341,14 @@ test("pet surface localizes fixed approval bubble controls in English", () => {
   assert.match(card.html, /class="wh-pet-evidence-title">Evidence/u);
   assert.match(card.html, /data-pet-reason="Not enough evidence"/u);
   assert.doesNotMatch(card.html, /data-pet-reason="证据不足"|class="wh-pet-kind">审批|>急</u);
+
+  const idle = renderDesktopPetSurface({ locale: "en-US", requested_model_pack_id: "cuu-tororo-live2d-cubism2" });
+  assert.match(idle.html, /Cuu settings/u);
+  assert.match(idle.html, /Black cat/u);
+  assert.match(idle.html, /White cat/u);
+  assert.match(idle.html, /data-pet-menu-model="cuu-tororo-live2d-cubism2" aria-pressed="true"/u);
+  assert.match(idle.html, /data-pet-menu-locale="en-US" aria-pressed="true"/u);
+  assert.doesNotMatch(idle.html, /Cuu 设置|黑猫|白猫/u);
 });
 
 test("pet surface starts with a non-static runtime action fixture and fast idle cadence", () => {
@@ -447,8 +461,17 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   await tauri?.setMode?.("card");
   await tauri?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true, hide_on_hover: true });
   await tauri?.startDragging?.();
+  await tauri?.focusMainRoute?.("/settings");
+  await tauri?.hidePetWindow?.();
   assert.equal(await tauri?.sampleCursorNear?.(), true);
-  assert.deepEqual(calls, ["set_pet_window_mode:card", "set_pet_window_settings:125", "startDragging", "sample_pet_cursor_near:"]);
+  assert.deepEqual(calls, [
+    "set_pet_window_mode:card",
+    "set_pet_window_settings:125",
+    "startDragging",
+    "focus_main_route:",
+    "hide_pet_window:",
+    "sample_pet_cursor_near:"
+  ]);
 });
 
 test("pet window bridge rejects unavailable invoke and maps preferences", async () => {

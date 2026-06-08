@@ -16,8 +16,9 @@ use workhub_client_tauri::pet_window::{
 use workhub_client_tauri::single_instance::single_instance_plan_from_args;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
-    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_QUIT_ID,
-    TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
+    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
+    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID,
+    WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -662,6 +663,8 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         .ok_or_else(|| "missing toggle-pet tray action".to_string())?;
     let open_inbox = tray_menu_action_plan_by_id(TRAY_OPEN_INBOX_ID)
         .ok_or_else(|| "missing open-inbox tray action".to_string())?;
+    let open_settings = tray_menu_action_plan_by_id(TRAY_OPEN_SETTINGS_ID)
+        .ok_or_else(|| "missing open-settings tray action".to_string())?;
     let quit = tray_menu_action_plan_by_id(TRAY_QUIT_ID)
         .ok_or_else(|| "missing quit tray action".to_string())?;
 
@@ -679,6 +682,10 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         MenuItemBuilder::with_id(open_inbox.id.as_str(), open_inbox.label.as_str())
             .build(app)
             .map_err(|error| format!("failed to build open-inbox tray item: {error}"))?;
+    let open_settings_item =
+        MenuItemBuilder::with_id(open_settings.id.as_str(), open_settings.label.as_str())
+            .build(app)
+            .map_err(|error| format!("failed to build open-settings tray item: {error}"))?;
     let quit_item = MenuItemBuilder::with_id(quit.id.as_str(), quit.label.as_str())
         .build(app)
         .map_err(|error| format!("failed to build quit tray item: {error}"))?;
@@ -689,6 +696,7 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         .separator()
         .item(&toggle_pet_item)
         .item(&open_inbox_item)
+        .item(&open_settings_item)
         .separator()
         .item(&quit_item)
         .build()

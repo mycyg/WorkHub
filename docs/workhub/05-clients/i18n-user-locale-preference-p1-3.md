@@ -102,7 +102,7 @@ P1.4 不再只做抽象 locale 截图，应和 Cuu 桌宠设置入口合并推�
 
 | 下一模块 | 工作 | 验收 |
 |---|---|---|
-| Pet right-click settings | 在独立 `pet` window 右键打开紧凑设置菜单：黑猫/白猫、中文/EN、点击穿透、悬停避让、打开设置、隐藏 Cuu | zh-CN/en-US DOM dump 或截图；菜单不造成 Cuu 位移或 iframe 重建 |
+| Pet right-click settings | **已落**：独立 `pet` window 右键紧凑菜单支持黑猫/白猫、中文/EN、悬停避让、打开设置、隐藏 Cuu；详情见 [`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md) | 待补 zh-CN/en-US DOM dump 或截图；菜单不造成 Cuu 位移或 iframe 重建 |
 | Tray settings deep-link | 托盘增加“设置 / Settings”，打开 `/settings` | Rust tests + desktop bridge smoke |
 | Locale visual regression | Web 主窗、desktop 主窗、Cuu pet card 各生成中英截图 | 固定按钮/标签不残留错误语言；主窗无 Cuu 本体 |
 | Server multilingual VM | Agent / daemon 生成新任务 summary 时接 locale | 英文新任务的服务端摘要可生成英文；历史中文内容保持原文 |

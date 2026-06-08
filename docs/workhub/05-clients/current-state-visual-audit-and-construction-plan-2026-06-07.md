@@ -104,7 +104,7 @@ visuals:
 |---|---|---|
 | Cuu 鲜活感 | 黑猫 idle 与黑/白 hover 已补真实窗口证据，但业务动作还未覆盖 | approval/search/sync/done/offline GIF/MP4/contact sheet/diff report |
 | Cuu 任务动作 | 业务状态到 `.mtn` 的映射还需要场景化验收 | approval/search/sync/done/offline 事件录屏 |
-| 桌面交互 | hover 固定锚点已通过；tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
+| 桌面交互 | hover 固定锚点已通过；pet 右键设置轻菜单已补；tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
 | 主窗无 Cuu | 已做源码收束，但需要截图确认 | Web 与 desktop 主窗截图审查 |
 | 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
 | 授权 | Hijiki/Tororo 来源需商用确认 | 授权记录或原创替换计划 |
@@ -167,6 +167,7 @@ visuals:
 | 白猫 idle contact sheet | 待生成 |
 | 白猫 approval/search GIF/MP4 | 待生成 |
 | settings matrix report | 待生成 |
+| pet 右键设置菜单 | 已生成：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)；真实 zh-CN/en-US 截图 / DOM dump 待补 |
 | Web 主窗无 Cuu 截图 | 待生成 |
 | desktop 主窗无 Cuu 截图 | 待生成 |
 | 中英 locale preference API | 已生成：`PATCH /api/auth/preferences`、`users.preferred_locale`、[`i18n-user-locale-preference-p1-3.md`](./i18n-user-locale-preference-p1-3.md) |

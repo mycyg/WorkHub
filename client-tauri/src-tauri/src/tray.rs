@@ -12,10 +12,12 @@ pub const TRAY_SHOW_MAIN_ID: &str = "show-main";
 pub const TRAY_HIDE_MAIN_ID: &str = "hide-main";
 pub const TRAY_TOGGLE_PET_ID: &str = "toggle-pet";
 pub const TRAY_OPEN_INBOX_ID: &str = "open-inbox";
+pub const TRAY_OPEN_SETTINGS_ID: &str = "open-settings";
 pub const TRAY_QUIT_ID: &str = "quit";
 
 pub const MAIN_TRAY_FOCUS_ROUTE: &str = "/";
 pub const INBOX_TRAY_ROUTE: &str = "/inbox";
+pub const SETTINGS_TRAY_ROUTE: &str = "/settings";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +26,7 @@ pub enum TrayMenuActionKind {
     HideMain,
     TogglePet,
     OpenInbox,
+    OpenSettings,
     Quit,
 }
 
@@ -59,6 +62,11 @@ pub fn default_tray_menu_items() -> Vec<TrayMenuActionPlan> {
             "Open inbox",
             TrayMenuActionKind::OpenInbox,
         ),
+        tray_menu_action_plan(
+            TRAY_OPEN_SETTINGS_ID,
+            "Settings",
+            TrayMenuActionKind::OpenSettings,
+        ),
         tray_menu_action_plan(TRAY_QUIT_ID, "Quit WorkHub", TrayMenuActionKind::Quit),
     ]
 }
@@ -76,6 +84,9 @@ fn tray_menu_action_plan(id: &str, label: &str, kind: TrayMenuActionKind) -> Tra
         TrayMenuActionKind::TogglePet => Some(toggle_pet_window(ShellWindowControlSource::Tray)),
         TrayMenuActionKind::OpenInbox => {
             focus_main_route(ShellWindowControlSource::Tray, INBOX_TRAY_ROUTE).ok()
+        }
+        TrayMenuActionKind::OpenSettings => {
+            focus_main_route(ShellWindowControlSource::Tray, SETTINGS_TRAY_ROUTE).ok()
         }
         TrayMenuActionKind::Quit => None,
     };
@@ -106,12 +117,13 @@ mod tests {
             .map(|item| item.id.as_str())
             .collect::<HashSet<_>>();
 
-        assert_eq!(items.len(), 5);
+        assert_eq!(items.len(), 6);
         assert_eq!(ids.len(), items.len());
         assert!(ids.contains(TRAY_SHOW_MAIN_ID));
         assert!(ids.contains(TRAY_HIDE_MAIN_ID));
         assert!(ids.contains(TRAY_TOGGLE_PET_ID));
         assert!(ids.contains(TRAY_OPEN_INBOX_ID));
+        assert!(ids.contains(TRAY_OPEN_SETTINGS_ID));
         assert!(ids.contains(TRAY_QUIT_ID));
     }
 
@@ -150,6 +162,18 @@ mod tests {
         assert_eq!(control.action, ShellWindowControlAction::ShowAndFocus);
         assert_eq!(control.source, ShellWindowControlSource::Tray);
         assert_eq!(control.route, Some(INBOX_TRAY_ROUTE.to_string()));
+        assert_eq!(control.focus, true);
+    }
+
+    #[test]
+    fn opens_settings_through_a_safe_main_route() {
+        let plan = tray_menu_action_plan_by_id(TRAY_OPEN_SETTINGS_ID).unwrap();
+        let control = plan.window_control.unwrap();
+
+        assert_eq!(control.label, "main");
+        assert_eq!(control.action, ShellWindowControlAction::ShowAndFocus);
+        assert_eq!(control.source, ShellWindowControlSource::Tray);
+        assert_eq!(control.route, Some(SETTINGS_TRAY_ROUTE.to_string()));
         assert_eq!(control.focus, true);
     }
 
