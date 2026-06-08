@@ -1,317 +1,223 @@
 ---
 module: 05-clients
-layer: C-WEB / C-PET
-status: concept
+layer: C-WEB / C-DESKTOP / C-PET
+status: current-concept-index
 owner: workflow
+date: 2026-06-08
 ---
 
 # WorkHub 页面概念图索引
 
-> 本页收纳前期生成的页面概念图，便于后续开发从文档树直接理解产品方向。概念图用于表达信息架构、视觉密度和交互倾向，不等同于最终 UI 截图。
+> 本页收纳仍有效的概念图。概念图表达产品方向、信息密度和交互原则，不等同于最终 UI 截图。Cuu 当前只保留独立 `pet` window 中的黑猫 / 白猫 Live2D 二选项；Web 与 desktop 主窗保持严肃工作界面。
 
-## 阅读原则
+## 1. 阅读原则
 
-- **最终方向**：AI 负责过滤复杂度，用户默认只处理当前需要判断的一件事。
-- **看板降级**：看板是高级管理视图，不是默认首页。
-- **桌宠独立**：项目检索、轻审批、澄清提醒优先由独立 Cuu 桌宠承接；Web 与主应用保持严肃工作界面，不内嵌桌宠、Cuu rail 或 Cuu bubble。
-- **Cuu 二选项**：当前桌宠形象只保留黑猫 Hijiki / 白猫 Tororo 两个 Live2D 选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)；旧橘猫、Bongo、PSD draft、sprite/atlas 图只作为历史反例或交互参考。
-- **选项优先**：澄清流程默认点选项，打字只是「其他 / 补充」兜底。
-- **Cuu 为准**：早期非小猫桌宠图只保留交互探索价值；桌宠形象以 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 为准。
-- **落地契约**：页面里的注意力卡、选项澄清、证据气泡、交付物变更包、Cuu 状态映射，统一落到 P0 横切契约 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)，后续开发不得各端各造一套 payload。
-- **纵切优先**：概念图的第一条可施工路径以 [`_gold-path-p0-5-vertical-slice.md`](../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md) 为准；P1+ 交互增强见 [`_interaction-extension-backlog.md`](../../plans/p0-foundation/_interaction-extension-backlog.md)。
+| 原则 | 说明 |
+|---|---|
+| AI 默认过滤复杂度 | 默认只递给用户一件最需要判断的事 |
+| 看板降级 | 看板是高级/兜底视图，不是默认首页 |
+| 澄清点选项 | 打字只是折叠兜底 |
+| Cuu 独立 | Cuu 不进入 Web / desktop 主窗，只在桌面右下角独立存在 |
+| 交付物多样 | 变更申请像 GitHub PR，但对象可以是文档、表格、PPT、图片、文件夹 |
+| 三端同源 | Web、desktop 主窗、Cuu 气泡都消费同一 Page VM / payload contract |
+| 中英双语 | 概念落地时必须同步 zh-CN / en-US 固定文案 |
 
----
+落地契约：
 
-## 1. Web 端概念图
+- 体验 payload：[`../../plans/p0-foundation/_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)
+- Gold Path：[`../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md`](../../plans/p0-foundation/_gold-path-p0-5-vertical-slice.md)
+- Cuu 概念：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)
+- Cuu 二选项：[`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)
+- Rust 客户端：[`desktop-pet-tauri.md`](./desktop-pet-tauri.md)
 
-对应文档：[`web-app.md`](./web-app.md)
+## 2. Web 端概念图
 
-### 1.1 AI-first 首页
+### 2.1 AI-first 首页
 
 ![Web AI-first 首页](./assets/web/web-ai-first-home.png)
 
-默认首页不应是重型看板，而是 AI 整理后的「需要你决定什么 / AI 正在做什么 / 哪里可能出事」。
+默认首页不做重型项目看板，而是展示：
 
-### 1.1.1 项目工作台细化
+- 需要你决定什么。
+- AI 正在做什么。
+- 哪些事项可能出事。
+- 成本、风险、证据的轻量摘要。
+
+### 2.2 项目工作台
 
 ![Web 项目工作台细化](./assets/web/web-project-attention-workspace.png)
 
-项目页默认不是全量任务管理，而是「本项目现在需要注意什么」。左侧保留项目上下文，中间展示需要判断的一件事与 AI 正在做的背景任务，右侧只展示严肃证据、风险和下一步建议；Cuu 若出现，只在独立桌宠窗口里提醒和 deep-link 到该页面。
+项目页默认是 attention workspace。左侧是项目上下文，中间是一件要处理的事，右侧是证据、风险、下一步建议。
 
-### 1.2 P0-P5 核心页面图谱
-
-![Web 核心页面图谱](./assets/web/web-core-pages-atlas.png)
-
-覆盖登录门、项目列表、项目工作台、提需求、AI 澄清、工作项详情。后续实现时，澄清页应继续收敛为选项优先，而不是聊天墙。
-
-### 1.2.1 选项优先提需求
+### 2.3 选项优先提需求
 
 ![Web 选项优先提需求](./assets/web/web-option-first-intake-wizard.png)
 
-提需求阶段不应先要求长篇输入。默认由 AI 把意图拆成可点选项，用户只补附件、DDL、负责人和验收项；大文本域只作为「其他 / 补充」折叠项。独立 Cuu 桌宠可以提醒用户来处理该澄清，但 Web 页面本身不放桌宠形象。
+提需求阶段不应要求用户先写长文本。AI 把意图拆成可点击选项，用户补附件、DDL、负责人、验收项即可。
 
-### 1.3 P6-P11 运营页面图谱
+### 2.4 核心页面图谱
+
+![Web 核心页面图谱](./assets/web/web-core-pages-atlas.png)
+
+覆盖登录门、项目列表、项目工作台、提需求、AI 澄清、工作项详情。后续实现要优先复现真实业务流，而不是堆展示卡片。
+
+### 2.5 运营页面图谱
 
 ![Web 运营页面图谱](./assets/web/web-operations-pages-atlas.png)
 
-覆盖 AI 注意力首页、资源排期、项目健康、知识搜索、日程、通知。注意：知识搜索后续更推荐作为 Cuu 桌宠气泡能力，Web 页面可作为完整检索/管理兜底。
+资源排期、项目健康、知识搜索、日程、通知都属于完整工作台能力。知识搜索的默认入口应优先下沉到 Cuu 气泡，Web 页面做兜底和管理。
 
-### 1.4 P12-P15 + W1/W2 页面图谱
+### 2.6 文件会议审批图谱
 
 ![Web 文件会议审批图谱](./assets/web/web-files-meetings-approvals-atlas.png)
 
-覆盖网盘项目选择、项目网盘、项目会议、审批中心、提议详情、404。提议详情沿用 GitHub PR 的「说明/文件/证据/评论/通过或打回」结构，但对象是任意交付物，不限代码。
+网盘、会议、审批、提议详情、404 都需要同一套证据语言：发生了什么、依据是什么、需要人做什么。
 
-### 1.5 工作项详情
+### 2.7 工作项详情
 
 ![工作项详情概念](./assets/web/web-workitem-detail.png)
 
-工作项详情需要呈现：当前状态、验收项、AI 执行轨迹、置信语气、升级简报、交付物预览和提议时间线。
+工作项详情要呈现状态、验收项、AI 执行轨迹、置信语气、升级简报、交付物预览和提议时间线。
 
-### 1.6 审批中心
+### 2.8 审批中心
 
 ![审批中心概念](./assets/web/web-approval-center.png)
 
 审批中心是负责人视角的阻塞收件箱。核心动作是通过、打回、委派和记住规则。
 
-### 1.7 交付物变更申请
+### 2.9 交付物变更申请
 
 ![交付物变更申请概念](./assets/web/web-deliverable-change-request.png)
 
-变更申请像 PR，但不是代码 diff。它要能描述文档、表格、PPT、图片、文件夹和版本变化。
+变更申请要像 GitHub PR 一样清楚，但不是代码专用。页面必须支持文档、表格、PPT、图片、文件夹和版本变化。
 
-### 1.8 项目资料 / 会议 / 知识
+### 2.10 项目资料 / 会议 / 知识
 
 ![项目资料会议知识概念](./assets/web/web-project-drive-meetings-knowledge.png)
 
-项目资料页聚合网盘、会议和知识证据。后续可把「主动查询」下沉给 Cuu，把完整资料管理留在 Web。
+项目资料页聚合网盘、会议和知识证据。文件评论、会议洞察、资料变更都可以触发需求草稿或 Cuu 提醒。
 
-### 1.8.1 会议洞察转需求草稿
+### 2.11 会议洞察转需求草稿
 
 ![会议洞察转需求草稿](./assets/web/web-meeting-insight-to-draft.png)
 
-会议页要把 ASR、纪要、洞察、证据和需求草稿串起来。原则是：AI 可以发现变化，但绝不直接改正式状态；必须先变成草稿或审批项。
+AI 可以发现变化，但不能直接改正式状态；必须先生成草稿、澄清或审批项。
 
-### 1.8.2 网盘预览与变更草稿
+### 2.12 网盘预览与变更草稿
 
 ![网盘预览与变更草稿](./assets/web/web-drive-preview-change-draft.png)
 
-网盘页不仅是文件管理器。文件评论、版本变化、文件夹重命名都可能触发 Cuu 的「这像是变更申请」提示，用户确认后才进入澄清或提议。
+网盘页不是单纯文件管理器。文件评论、版本变化、文件夹重命名都可能变成“是否创建变更申请”的选项提示。
 
-### 1.9 早期工作台探索
+### 2.13 早期工作台探索
 
 ![早期 Web 工作台探索](./assets/web/web-workbench-dashboard-early.png)
 
-这张图保留为反例/探索记录：它偏重看板和信息密度，后续不作为默认首页目标。
+这张图保留为反例/探索记录：它偏重看板和信息密度，不作为默认首页目标。
 
----
+## 3. Rust/Tauri 客户端概念图
 
-## 2. Rust/Tauri 客户端概念图
-
-对应文档：[`desktop-pet-tauri.md`](./desktop-pet-tauri.md)
-
-### 2.1 单件事干活桌
+### 3.1 单件事干活桌
 
 ![单件事干活桌](./assets/desktop/desktop-one-thing-work-desk.png)
 
-Rust 客户端的默认主窗不应是 dashboard，而是被唤起时处理一个决定、一个任务或一个本地动作。
+客户端主窗被唤起时，应该让用户处理一个决定、一个任务或一个本地动作，而不是进入复杂管理面板。
 
-### 2.2 客户端主窗概念
+### 3.2 客户端主窗
 
-![Rust 客户端主窗概念](./assets/desktop/desktop-rust-client-concept.png)
+![Rust 客户端概念](./assets/desktop/desktop-rust-client-concept.png)
 
-表达 Tauri 主窗、连接灯、本地执行、权限确认、同步队列和桌宠小窗之间的关系。
+桌面主窗保留严肃工作风格：左侧导航、中间任务、右侧证据/状态。本地能力由 Rust shell 提供，业务 UI 由 TS webview 渲染。
 
-### 2.3 客户端核心页面图谱
+### 3.3 设备设置与更新
 
-![客户端核心页面图谱](./assets/desktop/desktop-core-pages-atlas.png)
+![设备设置与更新](./assets/desktop/desktop-device-setup-update.png)
 
-覆盖 onboarding、单件事 Hub、任务详情、本地文件同步、收件箱、设置。
+设备令牌、连接状态、更新、系统权限都属于桌面客户端设置；这里不展示 Cuu 本体。
 
-### 2.4 本地执行页面图谱
+### 3.4 同步冲突处理
 
-![客户端本地执行图谱](./assets/desktop/desktop-local-execution-atlas.png)
+![同步冲突处理](./assets/desktop/desktop-sync-conflict-resolver.png)
 
-覆盖接活、权限询问、交付物变更包、冲突解决、交付向导、托盘/通知/deep-link。
+本地同步必须可解释、可回滚。冲突页要用普通语言说明“哪个文件、谁改了、建议怎么处理”。
 
-### 2.4.1 本地同步与冲突解决
+### 3.5 支持页面图谱
 
-![本地同步与冲突解决](./assets/desktop/desktop-sync-conflict-resolver.png)
+![桌面支持页面图谱](./assets/desktop/desktop-support-pages-atlas.png)
 
-Rust 客户端是本地文件与云端事实之间的安全阀。冲突页必须给出本地版本、云端版本、AI 合并建议、证据、风险和回滚方案。
+支持收件箱、离线状态、诊断、同步、设置等桌面特有页面。
 
-### 2.4.2 设备设置与部署入口
+## 4. Cuu 桌宠概念图
 
-![设备设置与部署入口](./assets/desktop/desktop-device-setup-update.png)
+### 4.1 Cuu 动效状态
 
-设置页承接 LAN-first 部署、设备令牌、本地目录、同步模式、自启动、桌宠显隐、更新通道、托盘和诊断日志。
+![Cuu 动效状态](./assets/cuu/cuu-character-animation-states.png)
 
-### 2.5 辅助上下文页面图谱
+这张图定义动作语义：idle、thinking、approval、carrying、search、sync、worried、revision、celebrating、offline。当前黑猫/白猫都要承接这些状态。
 
-![客户端辅助上下文图谱](./assets/desktop/desktop-support-pages-atlas.png)
-
-覆盖澄清、项目网盘、项目会议、知识证据、我的负载/日程、项目快报。它们是当前工作的辅助页，不应抢走主入口。
-
----
-
-## 3. 桌宠 / 澄清 / 检索概念图
-
-对应文档：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)、[`desktop-pet-tauri.md`](./desktop-pet-tauri.md)
-
-### 3.1 Cuu 桌宠最终概念
-
-![Cuu 角色动效状态表](./assets/cuu/cuu-character-animation-states.png)
+### 4.2 Cuu 审批与项目检索
 
 ![Cuu 桌面审批与项目检索](./assets/cuu/cuu-desktop-approval-search.png)
 
+Cuu 的核心价值是桌面右下角独立存在，用气泡承接轻审批、项目检索、交付物变更摘要和澄清提醒。
+
+### 4.3 Cuu 选项优先澄清
+
 ![Cuu 选项优先澄清](./assets/cuu/cuu-option-first-clarify.png)
 
-Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目，展开后承接审批卡、证据卡和澄清选项。
+Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / 补充”兜底。
 
-### 3.1.1 Cuu 资产生产流水线
+### 4.4 Pet 交付物变更
 
-![Cuu 资产生产流水线](./assets/cuu/cuu-asset-production-pipeline.png)
+![Pet 交付物变更包](./assets/pet/pet-deliverable-change-package.png)
 
-这张图定义美术资产从 AI 生图到透明 PNG、精修、sprite / Rive / Live2D / Lottie 运行时的可选路线。
+桌宠只展示摘要和关键动作；完整说明 deep-link 到 proposal 页面。
 
-### 3.1.1.1 Cuu sprite-atlas 默认运行态与 Bongo fallback
+### 4.5 Pet 项目检索气泡
 
-![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+![Pet 项目检索气泡](./assets/pet/pet-project-search-bubble.png)
 
-2026-06-08 后续修正：Bongo-style renderer 只保留为动作行为参考和 fallback，不能再作为默认视觉通过口径。当前独立 `pet` surface 默认应渲染 `sprite_atlas` 真实图像素材，DOM 以 `data-cuu-visual-mode="sprite_atlas"`、`data-cuu-image-runtime="sprite_atlas"`、`data-cuu-render-mode="img_stack"` 为准；未精修 PSD layer 与 CSS/线条临摹都不得默认暴露。
+项目检索不默认打开复杂搜索页。Cuu 先给 chips：找文件、总结会议、解释改动、列证据。
 
-![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
+## 5. 当前真实审计图
 
-![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
-
-2026-06-08 追加的 `cuu-polished-idle-v1` 曾用于 Web / Gold Path 右侧栏视觉修补，但该主窗 rail 方案已撤回。图片只保留为历史参考和后续 Live2D / sprite 重绘素材参考；Web / 主应用不再显示 Cuu。
-
-### 3.1.2 Cuu Live2D 分层概念
-
-![Cuu Live2D 分层拆件概念](./assets/cuu/cuu-live2d-layer-breakdown-concept.png)
-
-这张图定义 Cuu 的 Live2D 分层方向：正面完整小猫作为基准，耳朵、眼睛、眼皮、嘴型、围兜、蝴蝶结、珍珠流苏、爪子、身体和尾巴段拆成可绑定部件。正式施工细节见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。GIF 只作为临时预览，不作为最终桌宠目标。
-
-### 3.1.3 Cuu 动画架构选型
-
-![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
-
-桌宠动画不宜退化成 GIF、符号图标或 CSS 临摹。当前推荐路径是：P1 默认用真实 PNG `sprite_atlas` clip sheet 先让 Cuu 在透明桌面窗口里可见、可动、全身不裁切；Bongo/Hatch 只作为动作 storyboard 与 fallback；并行推进 Live2D 分层 PSD，但只有精修 PSD、Cubism 和真实 Tauri 录屏通过后，才允许替换默认。
-
-### 3.1.4 WorkHub 实现路线图
-
-![WorkHub 实现路线图](./assets/cuu/cuu-implementation-roadmap.png)
-
-这张图把 Web、Rust/Tauri、daemon、Cuu 资产、QA/部署放到同一个阶段视图里，便于后续从概念进入施工。
-
-### 3.2 早期桌宠交互探索
-
-![早期桌宠交付物变更包探索](./assets/pet/pet-deliverable-change-package.png)
-
-![早期项目检索气泡探索](./assets/pet/pet-project-search-bubble.png)
-
-![早期选项澄清探索](./assets/pet/pet-option-first-clarify.png)
-
-这三张保留为交互结构参考：项目检索属于桌宠气泡，澄清应选项优先。形象层面以后以 Cuu 为准。
-
----
-
-## 4. 模块 / 端口 / 页面返回概念图
-
-对应文档：[`_ts-first-module-port-page-alignment.md`](../../plans/p0-foundation/_ts-first-module-port-page-alignment.md)
-
-### 4.1 TS-first Runtime
-
-![WorkHub TS-first Runtime](./assets/shared/ts-first-runtime-concept.png)
-
-这张图定义后续施工的语言边界和运行时边界：TypeScript Core 承载 API、Agent、事件、契约和共享 UI；Rust shell 承接本地能力；Python 只作为可选文档处理 worker。
-
-### 4.2 Endpoint → Page → Cuu Alignment
-
-![WorkHub Endpoint Page Cuu Alignment](./assets/shared/endpoint-page-cuu-alignment.png)
-
-这张图定义模块、端口、返回 payload、页面和 Cuu 状态之间的对齐关系。后续新增页面时，必须先补齐对应的 endpoint、Page VM、事件和 Cuu 承接方式。
-
-### 4.3 PRD / 概念复现差距地图
-
-对应文档：[`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)
-
-![PRD / 概念复现差距地图](./assets/shared/prd-concept-gap-map.png)
-
-这张图把当前「已落地的契约和 P0.5 纵切」「仍处于原型的 Web / desktop-webview / Rust shell contract」「距离完整概念还缺的 Live2D 高表现力模型、多屏恢复、本地同步、真实 SPA 页面、安装包和跨平台视觉 QA」放到同一张图里。它用于识别缺口，不作为精确完成率。
-
-![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
-
-Cuu 当前口径已经收束为独立 `pet` window 的黑猫 Hijiki / 白猫 Tororo Live2D Cubism2 二选项。已落能力包括卡片适配、motion hints、controller 策略 MVP、审批/澄清动作提交基础、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、Windows debug `PrintWindow` 像素 smoke、P1.1 Cuu/pet 固定文案双语；Web rail / 主窗 Cuu 入口已撤回。Bongo、PSD draft、sprite/atlas、橘猫改色和 Web rail 只保留为历史反例或工具链参考，不再作为默认、fallback 或用户选项。仍缺黑猫/白猫真实 Tauri motion capture、任务动作映射、full hide/pass-through 安全恢复、多屏恢复实测、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
-
-![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
-
-Rust 客户端当前已有 shell contract crate、desktop webview bridge、Tauri v2 最小 runtime、主窗/透明桌宠窗、托盘、SSE、通知、deep-link 和 single-instance 基础；要复现概念图，还需要设备令牌 vault、通知点击/偏好、多屏恢复、安装包、本地同步、updater 和诊断。
-
-![Web 真页面差距路线](./assets/web/web-real-ui-gap-roadmap.png)
-
-Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 React SPA routes、四态、响应式、视觉回归和 option-first 主路径；Cuu bubble 不属于 Web 页面，只属于独立桌宠。
-
-### 4.4 当前真实截图与动作审计（2026-06-07）
-
-对应文档：[`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)
+### 5.1 页面总览
 
 ![当前页面截图总览](./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png)
 
-这张 contact sheet 是当前 Web、desktop webview、browser pet preview 和真实 Tauri `Cuu` 窗口的基线截图。它用于校准后续施工：当前页面仍是 P0.5 shell，离 AI-first 首页、选项优先 intake、Rust 单件事干活桌和 Cuu 独立桌宠概念图还有明显差距。
+该图证明页面骨架存在，但不代表最终体验已完成。
 
-![Cuu 多帧动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
+### 5.2 Cuu 早期窗口回归门
 
-这张 motion contact sheet 来自真实 Tauri `Cuu` 顶层窗口的 32 帧 `PrintWindow(PW_RENDERFULLCONTENT)` 抓取，并已输出 GIF/MP4。它证明当前 Cuu 有轻微呼吸/轮廓变化，也暴露了已修复的 `CUX-MOTION-001`：事件卡片触发后窗口曾停在 body-only 尺寸，导致离线卡片和 Cuu 被裁切。后续 Cuu 施工应在已修好的 card mode 基础上继续推进 Bongo Cuu 多动作包和真实 Tauri 录屏，Live2D 只作为精修实验线。
+![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
-![Cuu card mode 修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
+![Cuu card mode 裁切失败样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
 
-这张第一轮修复后 contact sheet 只能证明 **窗口扩展和卡片裁切问题已收口**：事件卡触发后真实 `Cuu` 窗口可进入 card mode。但它不能作为 Cuu 视觉通过证据，因为关键帧中 Cuu body 基本只露出耳朵 / 局部。后续概念还原必须把“只露耳朵”判失败。
+![Cuu card mode full-body 修复样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
-![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
+这些图只作为回归门：不能只看单帧，不能只露耳朵，card mode 不能裁切。当前 Cuu 通过标准以黑猫/白猫 Live2D 真实录屏为准。
 
-这张最终 fresh contact sheet 证明本轮 P0 裁切问题已修复：card mode 进入后 Cuu 完整身体可见，离线轻卡是人话文案，HiDPI 物理截图中右侧留白正常。它仍不是“Cuu 已完成”的证据，因为动作仍偏轻；后续默认路线改为 Bongo Cuu 动作增强和真实 Tauri 录屏，Live2D PSD / Cubism 只有精修通过后才替换默认。Hatch/sprite 只作为 fallback。
+## 6. 后续补图计划
 
-![Cuu Bongo-style 默认动作抓取](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+| 编号 | 概念图 / 截图 | 目的 |
+|---|---|---|
+| IMG-CUU-01 | 黑猫真实 Tauri idle contact sheet | 证明默认模型有持续动作 |
+| IMG-CUU-02 | 白猫真实 Tauri idle contact sheet | 证明可选模型真实可用 |
+| IMG-CUU-03 | 黑/白 approval/search/card mode 录屏 | 证明任务状态能触发动作 |
+| IMG-CUU-04 | settings matrix 截图 | 证明 scale/opacity/pass-through/hide-on-hover |
+| IMG-WEB-01 | Web 主窗无 Cuu 本体截图 | 验证主窗边界 |
+| IMG-DESK-01 | desktop 主窗无 Cuu 本体截图 | 验证桌面主窗边界 |
+| IMG-I18N-01 | zh-CN/en-US 页面组图 | 验证双语 |
 
-这张 browser CDP contact sheet 是新的默认 Cuu 方向：低恐怖谷、全身可见、无 PSD layer 暴露。它还不能替代真实 Tauri 顶层窗口录屏，但已经把“不要把恐怖谷 PSD 默认给用户看”固化成概念和 QA 基线。
+## 7. 施工对齐
 
-![Cuu Bongo P1b 状态墙](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
+每个模块开工前先读对应文档和概念图：
 
-这张状态墙证明 Bongo Cuu 已不只是待机图：wave / search / sync / revise / carry / celebrate / drag 均有独立道具层或姿态。它仍偏 P1 低恐怖谷，不追求拟真毛发和复杂 Live2D，但已经比静态 fallback 更符合“桌宠活着”的验收方向。
-
-![Cuu Bongo P1c 首帧稳定真实 Tauri 录屏](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
-
-这张真实 Tauri `PrintWindow` contact sheet 是当前首帧验收依据：frame 000 就有 body-only Cuu 全身，不再出现 P1b 证据里的 black blank。`motion-diff-report.json` 记录 `first_frame_gate.passed=true`，首帧 probe 达到 `orange_pixels=9408`、`visual_pixels=15530` 后才开始写正式帧。
-
-![Cuu Bongo P1d-b 悬停避让真实 Tauri 录屏](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
-
-这张真实 Tauri contact sheet 是当前 hide-on-hover soft dodge 验收依据：frame 000-003 完整可见，frame 004-013 hover 软隐藏，frame 014-017 离开恢复，frame 018 后再次软隐藏。它不是 full pass-through 隐身；后续若升级到 BongoCat 式全透明避让，必须先补托盘、快捷键和边缘热区恢复。
-
-![Cuu Bongo P1e-d-b 60s 长驻真实 Tauri 录屏](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
-
-这张真实 Tauri contact sheet 是当前长驻稳定验收依据：31 帧约 60 秒内 Cuu 全身可见、窗口不漂移、没有低可见帧，并且报告中有相邻帧变化。它通过的是“稳定常驻门”，不是动作幅度二轮的最终视觉门。
-
-![Cuu Pet card P1.2 审批轻卡](./assets/audit/2026-06-08-cuu-pet-card-p1-2-normal/cuu-pet-card-p1-2-contact-sheet.png)
-
-这张 browser CDP contact sheet 是 P1.2 轻卡验收基线：Cuu 仍在右下角全身可见，审批气泡不加载主窗 shell，操作按钮先出现，下面保留「这次改了什么」和「风险与回滚」摘要。完整证据列表不应塞进这张轻卡，应由 deep-link 打开主窗证据/项目检索页。
-
----
-
-## 5. 资产目录
-
-- `assets/web/`：Web 页面与审批/交付物概念图。
-- `assets/desktop/`：Rust/Tauri 客户端主窗、本地执行、同步与托盘概念图。
-- `assets/pet/`：早期桌宠交互探索图。
-- `assets/cuu/`：Cuu 最终桌宠形象与交互概念图。
-- `assets/shared/`：跨端组件与交互元件图谱。
-
-## 6. 共享组件图谱
-
-对应文档：[`shared-ui-kit.md`](./shared-ui-kit.md)
-
-![共享组件图谱](./assets/shared/shared-component-atlas.png)
-
-共享组件图谱把「单件事卡」「审批卡」「证据 chip」「选项卡」「Cuu 气泡」「文件行」「风险徽标」「回滚面板」「同步进度」「冲突选择」「托盘通知」「空态」收成一套跨端 UI 语言。后续实现优先落 C-UIKIT，Web 与 Rust 客户端只组合，不各自复制。
-
-后续新增概念图时，优先放在对应端的资产目录，并在本页补一段说明，避免概念散落在生成目录里。
+| 模块 | 必读 |
+|---|---|
+| Web 页面 | `web-app.md` + 本文第 2 节 |
+| Rust 客户端 | `desktop-pet-tauri.md` + 本文第 3 节 |
+| Cuu 桌宠 | `cuu-desktop-pet-concept.md` + `cuu-live2d-cat-options-current-plan.md` + 本文第 4/5 节 |
+| Proposal | `requirements-workitem.md` + `_experience-deliverable-contracts.md` |
+| Knowledge / Search | `knowledge-base.md` + Cuu 检索气泡概念图 |
+| i18n | `i18n-locale-contract-p1-1.md` + `i18n-nongoldpath-render-helpers-p1-2.md` |

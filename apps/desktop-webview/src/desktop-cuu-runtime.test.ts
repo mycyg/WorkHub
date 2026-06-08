@@ -368,7 +368,7 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.match(html, /wh-cuu-card-mark/u);
   assert.match(html, /不用打字，点选即可。/u);
   assert.match(html, /data-cuu-action-id="submit"/u);
-  assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-bongo/u);
+  assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-legacy/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
   assert.doesNotMatch(desktopCuuNoticeCss, /wh-cuu-sprite/u);
 

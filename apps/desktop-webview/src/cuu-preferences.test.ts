@@ -77,8 +77,8 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
   });
   saveCuuPreferences(normalized, storage);
   assert.deepEqual(loadCuuPreferences(storage), normalized);
-  assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "cuu-bongo-p1" }).pet_model_pack_id, undefined);
-  assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "cuu-live2d-cubism-v2" }).pet_model_pack_id, undefined);
+  assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "legacy-cuu-pack" }).pet_model_pack_id, undefined);
+  assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "unsupported-cuu-pack" }).pet_model_pack_id, undefined);
 });
 
 test("Cuu preferences accept Rust-injected QA overrides", () => {
@@ -100,7 +100,7 @@ test("Cuu preferences accept Rust-injected QA overrides", () => {
         pet_opacity_percent: 100,
         pet_pass_through: false,
         pet_hide_on_hover: false,
-        pet_model_pack_id: "cuu-bongo-p1",
+        pet_model_pack_id: "legacy-cuu-pack",
         queue_limit: 9
       })
     }));
@@ -138,8 +138,8 @@ test("Cuu preference panel renders clickable modes and queue state", () => {
   assert.match(html, /白猫/u);
   assert.match(html, /当前默认/u);
   assert.match(html, /可选择/u);
-  assert.doesNotMatch(html, /cuu-bongo-p1/u);
-  assert.doesNotMatch(html, /cuu-live2d-cubism-v2/u);
+  assert.doesNotMatch(html, /legacy-cuu-pack/u);
+  assert.doesNotMatch(html, /unsupported-cuu-pack/u);
   assert.match(html, /data-cuu-attention-mode="normal"/u);
   assert.match(html, /data-cuu-attention-mode="do_not_disturb" aria-pressed="true"/u);
   assert.match(html, /data-cuu-sound-mode="muted" aria-pressed="true"/u);
@@ -163,8 +163,8 @@ test("Cuu preference panel renders English black and white model-pack copy only"
   assert.match(html, /White cat/u);
   assert.match(html, /Current default/u);
   assert.match(html, /Available/u);
-  assert.doesNotMatch(html, /Bongo fallback/u);
-  assert.doesNotMatch(html, /Live2D V2/u);
+  assert.doesNotMatch(html, /Legacy fallback/u);
+  assert.doesNotMatch(html, /Unsupported model/u);
   assert.doesNotMatch(html, /data-cuu-model-pack-selectable="false"[^>]*disabled/u);
   assert.match(html, /Reduce motion/u);
   assert.doesNotMatch(html, /减少动效/u);

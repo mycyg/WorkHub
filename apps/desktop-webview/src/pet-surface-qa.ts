@@ -7,7 +7,7 @@ export type DesktopPetVisualQaCheckId =
   | "pointer_reactive_pose"
   | "image_hover_hide_handfeel"
   | "no_main_shell"
-  | "image_asset_runtime_contract"
+  | "live2d_cat_runtime_contract"
   | "card_mode_light_bubble"
   | "heavy_card_context"
   | "option_first_card";
@@ -89,7 +89,7 @@ export function createDesktopPetVisualQaReport(input: {
       "the pet window must not load the Gold Path shell or free-text-first controls."
     ),
     qaCheck(
-      "image_asset_runtime_contract",
+      "live2d_cat_runtime_contract",
       input.idle.visual_mode === "live2d_cat" &&
         input.idle.live2d.runtime_kind === "live2d_cubism2_cat" &&
         input.idle.live2d.status === "approved_cat_option" &&
@@ -107,10 +107,10 @@ export function createDesktopPetVisualQaReport(input: {
         !input.idle.html.includes('data-cuu-fallback-image-runtime=') &&
         !input.idle.html.includes('data-cuu-image-motion=') &&
         !input.idle.html.includes('class="wh-cuu-atlas') &&
-        !input.idle.html.includes("wh-cuu-bongo-paw") &&
-        !input.idle.html.includes("wh-cuu-bongo-eye") &&
-        !input.idle.html.includes("wh-cuu-bongo-tail") &&
-        !input.idle.html.includes('data-cuu-live2d-runtime="psd_draft_probe"') &&
+        !input.idle.html.includes("wh-cuu-legacy-paw") &&
+        !input.idle.html.includes("wh-cuu-legacy-eye") &&
+        !input.idle.html.includes("wh-cuu-legacy-tail") &&
+        !input.idle.html.includes('data-cuu-live2d-runtime="experimental_draft_probe"') &&
         input.idle.css.includes("@keyframes wh-cuu-cat-live2d-working") &&
         input.idle.css.includes("prefers-reduced-motion"),
       "idle Cuu must default to the user-approved Hijiki black cat Live2D model; only black/white Live2D cat options may be visible."
@@ -180,7 +180,7 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     pointer_reactive_pose: "pointer-reactive pose",
     image_hover_hide_handfeel: "image hover-hide handfeel",
     no_main_shell: "no main shell",
-    image_asset_runtime_contract: "image asset runtime contract",
+    live2d_cat_runtime_contract: "Live2D cat runtime contract",
     card_mode_light_bubble: "card-mode light bubble",
     heavy_card_context: "heavy card context",
     option_first_card: "option-first card"

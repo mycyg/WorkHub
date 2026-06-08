@@ -4,7 +4,6 @@ param(
   [int]$FrameCount = 32,
   [int]$IntervalMs = 180,
   [int]$PixelStep = 2,
-  [int]$MinFirstFrameOrangePixels = 8000,
   [int]$MinFirstFrameVisualPixels = 12000,
   [double]$MinLongRunVisualRatio = 0.7,
   [int]$MinLongRunChangedFrames = 3,
@@ -238,9 +237,10 @@ function Measure-CuuFrameVisualPixels {
   $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
   try {
     $step = [Math]::Max(1, [int][Math]::Floor(([Math]::Max($bitmap.Width, $bitmap.Height)) / 360))
+    $background = $bitmap.GetPixel(0, 0)
     $samples = 0
-    $orangePixels = 0
-    $creamPixels = 0
+    $foregroundPixels = 0
+    $lightPixels = 0
     $darkPixels = 0
 
     for ($y = 0; $y -lt $bitmap.Height; $y += $step) {
@@ -248,25 +248,22 @@ function Measure-CuuFrameVisualPixels {
         $color = $bitmap.GetPixel($x, $y)
         $samples += 1
 
-        $isCuuOrange = $color.R -ge 145 -and
-          $color.G -ge 65 -and
-          $color.G -le 210 -and
-          $color.B -le 170 -and
-          $color.R -ge ($color.G + 18) -and
-          $color.G -ge ($color.B + 4)
-        $isCream = $color.R -ge 220 -and
-          $color.G -ge 190 -and
-          $color.B -ge 145 -and
-          $color.R -ge $color.B
+        $distanceFromBackground = [Math]::Abs($color.R - $background.R) +
+          [Math]::Abs($color.G - $background.G) +
+          [Math]::Abs($color.B - $background.B)
+        $isForeground = $distanceFromBackground -ge 30
+        $isLightDetail = $color.R -ge 180 -and
+          $color.G -ge 180 -and
+          $color.B -ge 155
         $isDarkDetail = $color.R -le 80 -and
           $color.G -le 80 -and
           $color.B -le 95
 
-        if ($isCuuOrange) {
-          $orangePixels += 1
+        if ($isForeground) {
+          $foregroundPixels += 1
         }
-        if ($isCream) {
-          $creamPixels += 1
+        if ($isLightDetail) {
+          $lightPixels += 1
         }
         if ($isDarkDetail) {
           $darkPixels += 1
@@ -274,13 +271,12 @@ function Measure-CuuFrameVisualPixels {
       }
     }
 
-    $visualPixels = $orangePixels + [Math]::Min($creamPixels, $darkPixels * 4)
     [pscustomobject]@{
       samples = $samples
-      orange_pixels = $orangePixels
-      cream_pixels = $creamPixels
+      foreground_pixels = $foregroundPixels
+      light_pixels = $lightPixels
       dark_pixels = $darkPixels
-      visual_pixels = $visualPixels
+      visual_pixels = $foregroundPixels
       sample_step = $step
       width = $bitmap.Width
       height = $bitmap.Height
@@ -295,7 +291,6 @@ function Wait-ForCuuVisualWindow {
     [int]$TargetProcessId,
     [int]$TimeoutSeconds,
     [string]$ProbePath,
-    [int]$MinOrangePixels,
     [int]$MinVisualPixels
   )
 
@@ -310,7 +305,7 @@ function Wait-ForCuuVisualWindow {
       New-WindowFrame -Window $pet -Path $ProbePath
       $lastPet = $pet
       $lastReport = Measure-CuuFrameVisualPixels -Path $ProbePath
-      if ($lastReport.orange_pixels -ge $MinOrangePixels -and $lastReport.visual_pixels -ge $MinVisualPixels) {
+      if ($lastReport.visual_pixels -ge $MinVisualPixels) {
         return [pscustomobject]@{
           Passed = $true
           Pet = $pet
@@ -659,13 +654,13 @@ try {
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $process = Start-Process -FilePath $exePath -WorkingDirectory $srcTauriRoot -PassThru
   $firstFrameProbe = Join-Path $OutDir "first-frame-probe.png"
-  $firstFrameGate = Wait-ForCuuVisualWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds -ProbePath $firstFrameProbe -MinOrangePixels $MinFirstFrameOrangePixels -MinVisualPixels $MinFirstFrameVisualPixels
+  $firstFrameGate = Wait-ForCuuVisualWindow -TargetProcessId $process.Id -TimeoutSeconds $WaitSeconds -ProbePath $firstFrameProbe -MinVisualPixels $MinFirstFrameVisualPixels
   if (-not $firstFrameGate.Pet) {
     throw "Cuu pet window was not found by title."
   }
   if (-not $firstFrameGate.Passed) {
     $pixelReport = if ($firstFrameGate.PixelReport) { $firstFrameGate.PixelReport | ConvertTo-Json -Compress } else { "null" }
-    throw "Cuu pet first visual frame did not reach pixel thresholds orange>=$MinFirstFrameOrangePixels visual>=$MinFirstFrameVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
+    throw "Cuu pet first visual frame did not reach pixel threshold visual>=$MinFirstFrameVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
   }
   $pet = $firstFrameGate.Pet
 
@@ -714,10 +709,8 @@ try {
   if ($Scenario -eq "idle-long-run") {
     $baselinePixels = $firstFrameGate.PixelReport
     $minLongRunVisualPixels = [Math]::Floor($baselinePixels.visual_pixels * $MinLongRunVisualRatio)
-    $minLongRunOrangePixels = [Math]::Floor($baselinePixels.orange_pixels * $MinLongRunVisualRatio)
     $lowVisualFrames = @($framePixelReports | Where-Object {
-      $_.pixel_report.visual_pixels -lt $minLongRunVisualPixels -or
-      $_.pixel_report.orange_pixels -lt $minLongRunOrangePixels
+      $_.pixel_report.visual_pixels -lt $minLongRunVisualPixels
     })
     $firstRect = $rects[0]
     $rectDriftFrames = @()
@@ -742,14 +735,12 @@ try {
       passed = $longRunPassed
       min_visual_ratio = $MinLongRunVisualRatio
       min_visual_pixels = $minLongRunVisualPixels
-      min_orange_pixels = $minLongRunOrangePixels
       low_visual_frames = @($lowVisualFrames | ForEach-Object { $_.frame })
       rect_drift_frames = $rectDriftFrames
       changed_frames_gt8_threshold = 60
       changed_frames_gt8_count = $changedFrames.Count
       min_changed_frames = $MinLongRunChangedFrames
       min_frame_visual_pixels = ($framePixelReports | ForEach-Object { $_.pixel_report.visual_pixels } | Measure-Object -Minimum).Minimum
-      min_frame_orange_pixels = ($framePixelReports | ForEach-Object { $_.pixel_report.orange_pixels } | Measure-Object -Minimum).Minimum
     }
   }
 
@@ -776,7 +767,6 @@ try {
       passed = $firstFrameGate.Passed
       attempts = $firstFrameGate.Attempts
       probe_path = $firstFrameGate.ProbePath
-      min_orange_pixels = $MinFirstFrameOrangePixels
       min_visual_pixels = $MinFirstFrameVisualPixels
       pixel_report = $firstFrameGate.PixelReport
     }

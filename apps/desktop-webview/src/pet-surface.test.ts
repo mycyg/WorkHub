@@ -195,7 +195,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.html, /data-cuu-live2d-appearance="black_cat"/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
-  assert.doesNotMatch(idle.html, /wh-cuu-bongo|wh-cuu-atlas|wh-cuu-sprite|psd_draft_probe/u);
+  assert.doesNotMatch(idle.html, /wh-cuu-legacy|wh-cuu-atlas|wh-cuu-sprite|experimental_draft_probe/u);
   assert.doesNotMatch(idle.html, /data-cuu-fallback-visual-mode|data-cuu-image-motion/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.doesNotMatch(idle.html, /textarea|<input\b/iu);
@@ -218,9 +218,9 @@ test("pet surface selects the white Live2D cat option and rejects old model pack
     idle_action: "idle_tail_sway",
     requested_model_pack_id: "cuu-tororo-live2d-cubism2"
   });
-  const oldBongo = renderDesktopPetSurface({
+  const legacyRequest = renderDesktopPetSurface({
     idle_action: "idle_tail_sway",
-    requested_model_pack_id: "cuu-bongo-p1"
+    requested_model_pack_id: "legacy-cuu-pack"
   });
 
   assert.equal(white.live2d.model_pack_id, "cuu-tororo-live2d-cubism2");
@@ -231,9 +231,9 @@ test("pet surface selects the white Live2D cat option and rejects old model pack
   assert.match(white.html, /data-cuu-live2d-appearance="white_cat"/u);
   assert.match(white.html, /cuu\/live2d\/tororo\/cuu-tororo\.html/u);
 
-  assert.equal(oldBongo.live2d.model_pack_id, "cuu-hijiki-live2d-cubism2");
-  assert.equal(oldBongo.live2d.model_pack_selection_reason, "unknown_requested_pack");
-  assert.doesNotMatch(oldBongo.html, /wh-cuu-bongo/u);
+  assert.equal(legacyRequest.live2d.model_pack_id, "cuu-hijiki-live2d-cubism2");
+  assert.equal(legacyRequest.live2d.model_pack_selection_reason, "unknown_requested_pack");
+  assert.doesNotMatch(legacyRequest.html, /wh-cuu-legacy/u);
 });
 
 test("pet surface exposes input-reactive pointer state for Live2D cat QA", () => {

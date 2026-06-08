@@ -1,480 +1,169 @@
 ---
 module: 05-clients
 layer: C-WEB / C-PET / Cuu / Rust shell
-status: draft
+status: current-gap-audit
 owner: workflow
-date: 2026-06-06
+date: 2026-06-08
 visuals:
   - ./assets/shared/prd-concept-gap-map.png
-  - ./assets/cuu/cuu-runtime-gap-roadmap.png
-  - ./assets/cuu/cuu-live2d-layer-breakdown-concept.png
-  - ./assets/cuu/cuu-live2d-front-model-concept.png
-  - ./assets/cuu/cuu-live2d-psd-production-board.png
   - ./assets/desktop/desktop-rust-shell-gap-roadmap.png
   - ./assets/web/web-real-ui-gap-roadmap.png
   - ./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png
-  - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
-  - ./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png
-  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png
-  - ./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png
-  - ./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png
 ---
 
 # PRD 与概念设计复现差距审计
 
-> **一句话**：当前 WorkHub 已经打下 TS-first 契约、API、Page VM、Gold Path、Cuu 卡片、Cuu 18 clip 绿幕 motion pack、基础 idle scheduler、Rust injected pet surface、pet window 几何/拖拽桥、pet command scaffold、启动期 pet body-only 预定位、first-painted 后 show、真实 cursor sampling、`pet-window-state.json` 位置落盘、pet surface 静态视觉 QA、Windows Tauri `PrintWindow` 像素 smoke、最小 Tauri runtime 入口、基础 tray menu、SSE global worker 和 Rust shell contract 的地基，但距离 PRD 与概念图里的完整体验还有明显距离：**Cuu 已有业务状态与 idle / interaction 微动作 full coverage，并能从 Rust 读取 cursor proximity、恢复上次 body anchor 并在首屏渲染后显示 body-only 透明桌宠；Rust/Tauri 已能安装基础托盘、执行主窗/桌宠显隐、连接全局 SSE、转发事件并弹 high/urgent OS 通知；2026-06-07 已通过 Windows debug smoke，确认独立 `Cuu` 窗口 visible/topmost、主窗隐藏后仍可见且在右下角显示 Cuu 和气泡。同日多帧 motion capture 发现 `CUX-MOTION-001`：事件卡片触发后窗口没有扩展，气泡被 body-only 小窗裁切；第一轮 card layout 又暴露只露耳朵 / 局部的失败样例；随后已完成 card mode bridge / placement / compact fallback / full-body HiDPI 站位 / 离线人话卡修复，复核显示窗口可扩到 `394 x 568` 且 Cuu 完整身体可见。随后用户复核确认 8 层裁片 prototype 肉眼差异不足、非 PSD/Cubism，不算鲜活感通过。本轮已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 运行探针，证明“批量生成部件 -> 抠图编号 -> 调整大小拼接 -> 运行时分层渲染”可行；但因 PSD draft 有恐怖谷风险，默认视觉已切到 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 又补了 Bongo P1b 动作增强、真实 Tauri `PrintWindow` 录屏、P1c first-frame gate、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、BONGO-P2a-b Settings 模型包 UI、BONGO-P1d-a 窗口手感契约、BONGO-P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、BONGO-P1d-c 窗口设置矩阵真实截图、BONGO-P1e-a 输入响应合同、BONGO-P1e-b hover/tap/drag 真实录屏底座、BONGO-P1e-c 连续看鼠标 / hover 避让真实录屏、BONGO-P1e-d-a pointer smoothing / drag grip 真实录屏和 BONGO-P1e-d-b 60s idle jitter / flicker 真实录屏：wave/search/sync/revise/celebrate 可辨，GIF/MP4 已产出，最新 frame 000 已是 body-only Cuu 全身可见，`cuu-bongo-p1` 是当前唯一 `approved_default` 与可选模型包，`resolveCuuVisibleModelPack()` 会把 Live2D 实验包和未知 PSD 请求回退到 Bongo，默认 DOM 暴露 `data-cuu-model-pack-selection-reason="registry_default"`，Settings 页面和 Cuu 偏好气泡显示 Bongo 当前默认、Live2D 实验锁定且不可点，scale / opacity / pass-through / hide-on-hover 已有 TS/Rust 合同和 7 场景截图矩阵，cursor-near 首次进入附近区域会立即 `look_at_mouse`，surface DOM 可读 hover/near/drag/look/avoidance/smoothing/soft-hide 状态，真实 Tauri 输入录屏无离线卡片污染且拖拽坐标生效，hide-on-hover 录屏能看到软隐藏、离开恢复、再次隐藏，60 秒长驻录屏无低可见帧、无窗口漂移且有相邻帧变化。仍缺多屏恢复实测、full hide/pass-through 安全恢复、动作幅度二轮、PSD 清理、遮挡补画、Cubism 绑定、通知点击/偏好、动态未读/审批托盘状态、设备 token 后的私有 SSE 重启、跨平台透明 capture、长期性能 QA 与生产压缩，Web 还不是完整 React SPA，概念图中的本地同步尚未复现。**
+> 当前权威结论：WorkHub 已有 TS-first contracts、Page VM、Gold Path、P-COST、Replay、desktop webview、Tauri shell、Cuu pet window 地基；但距离 PRD 中“AI-native 工作中台 + 严肃主界面 + 活着的桌宠入口 + 中英双语 + 完整验收”仍未完成。Cuu 已收束为黑猫 / 白猫 Live2D 二选项，旧实验视觉路线不再是计划、资产或验收目标。
 
-> **2026-06-08 二选项收束覆盖说明**：上面的长段保留历史审计语境，但当前施工口径以本条为准：Web / desktop 主窗已撤回 Cuu rail、Cuu notice、queue badge 和主窗模型包设置；Cuu 只存在于独立 `pet` window。用户已否决 CSS/几何临摹、PSD draft、橘猫改色和 sprite/atlas 作为默认视觉，因此源码已清理这些路线。当前模型包 registry 只保留 `cuu-hijiki-live2d-cubism2` 黑猫与 `cuu-tororo-live2d-cubism2` 白猫，黑猫默认、白猫可选；旧 pack id 请求回落黑猫。当前实施说明见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
-
-本篇用于防止后续施工把「已有契约」误判为「体验已完成」。所有判断基于 2026-06-06 当前仓库：
-
-- Web：`apps/web`
-- 桌面 webview：`apps/desktop-webview`
-- Rust shell contract：`client-tauri/src-tauri`
-- Cuu adapter：`packages/cuu`
-- 共享 UI render helpers：`packages/ui`
-- 契约/API：`packages/contracts`、`apps/api`、`packages/api-client`
-
----
-
-## 0. 概念图
-
-### 0.1 总体差距地图
+## 1. 总体差距
 
 ![PRD / 概念复现差距地图](./assets/shared/prd-concept-gap-map.png)
 
-这张图只表达差距结构，不作为精确完成率。真实施工判断以本文表格和验收门为准。
+| 领域 | 已落地 | 未复现 |
+|---|---|---|
+| AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM | 真实后端持久化、真实 worker 执行、权限闭环、完整 eval/replay 数据 |
+| Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换 | 完整 SPA 信息架构、真实数据流、空/错/载入/权限四态、视觉 polish |
+| Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
+| Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略 |
+| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同 | 黑/白真实 Tauri 多帧录屏、任务动作语义、长期性能、授权或原创替换 |
+| 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
+| 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向 | 文档/PPT/表格/图片/文件夹 diff 预览、证据引用、审批写回 |
 
-### 0.2 Cuu 运行时差距路线
+## 2. 概念图对齐
 
-![Cuu runtime gap roadmap](./assets/cuu/cuu-runtime-gap-roadmap.png)
-
-### 0.3 Rust / Tauri shell 差距路线
-
-![Rust shell gap roadmap](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
-
-### 0.4 Web 真页面差距路线
+### 2.1 Web 真页面差距
 
 ![Web real UI gap roadmap](./assets/web/web-real-ui-gap-roadmap.png)
 
-### 0.5 当前真实截图 / Cuu 动作审计
+Web 的产品哲学是“AI 递一件事给人处理”，不是传统重看板。当前页面已经有入口，但仍需：
 
-对应文档：[`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)
+- 首页从 demo shell 进化为 attention workspace。
+- 看板退到高级视图，只展示用户需要知道的信息。
+- 澄清页默认点击选项，free text 只作为折叠兜底。
+- Proposal 页面要支持多类型交付物，不只代码 diff。
+- Cost / Replay / Audit 要能从真实 AgentRun 数据生成。
 
-![当前页面截图总览](./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png)
+### 2.2 Rust 客户端差距
 
-![Cuu motion contact sheet](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
+![Rust shell gap roadmap](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
-![Cuu card mode 修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
+Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本地能力由 shell 托底”。当前还缺：
 
-![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
+- 安装/更新/签名/托盘恢复的完整工程链。
+- 设备令牌后的私有 SSE 与系统通知。
+- 本地文件同步、spec watch、离线缓存、回滚快照。
+- Windows/macOS/Linux 三端透明窗口与截图 QA。
 
-![Cuu Bongo-style 低恐怖谷默认截图](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
+### 2.3 Cuu 桌宠差距
 
-![Cuu Bongo / Live2D v2 低恐怖谷风格板](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
+![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
-![Cuu Bongo P1b state gallery](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
+![Cuu card mode 裁切失败样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
 
-![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
+![Cuu card mode full-body 修复样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
-![Cuu Bongo P1c first-painted real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
+这些截图只保留为回归门：不能只看单帧、不能只露耳朵、不能把裁切修复当成“鲜活感通过”。当前真正要验证的是黑猫 Hijiki 与白猫 Tororo 的 Live2D runtime。
 
-![Cuu Bongo P1e input handfeel real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png)
+## 3. 当前实现证据
 
-![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
-
-![Cuu Bongo P1d-b hide-on-hover real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
-
-![Cuu Bongo P1e-d-b 60s idle jitter real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
-
-![Cuu Bongo P1d-c settings matrix real Tauri screenshots](./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png)
-
-![Cuu Settings model pack zh-CN](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png)
-
-![Cuu Settings model pack en-US](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png)
-
-![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
-
-![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
-
-本轮真实截图确认：Web 与 desktop 主窗仍是 P0.5 shell；Cuu 能独立出现在右下角。首轮 motion capture 暴露事件卡片触发后未进入 card mode；第一轮修复暴露 Cuu 只露耳朵 / 局部；最终 HiDPI fresh 抓帧确认窗口扩展、Cuu 完整身体、离线人话卡和右侧安全留白均已收口。随后 8 层裁片 prototype 被判定为视觉不通过。本轮新增的 `generated-psd-draft-v1` 和 `psd_draft_probe` 证明“生成零件 -> 抠图编号 -> 调整大小拼接 -> PSD 分层运行”可行；但用户复核认为 PSD draft 有恐怖谷风险，因此默认视觉已切到 `bongo_cuu` 低恐怖谷 renderer。本次追加 `cuu-bongo-low-uncanny-v2-style-board.png`，把下一轮 Live2D / Bongo 动作二轮的视觉方向从写实 PSD 调整为圆润扁平 mascot。随后 Bongo P1b 已补挥手、检索、同步、打回、抱文件、庆祝和拖拽动作，并通过 browser 状态墙与真实 Tauri GIF/MP4 录屏；P1c 已补 first-painted 首帧门禁，新 contact sheet 的 frame 000 不再是 blank；P1e-b 已补真实鼠标 hover/tap/drag 录屏，24 帧全程 Cuu 可见、无离线卡片污染，拖拽窗口坐标确实移动；P1e-c 已补左右 cursor-near、hover_top_right、tap、drag/release 真实录屏，Cuu 有连续看鼠标和 hover 轻避让；P1e-d-a 已补 pointer smoothing、drag grip 持续姿态和 `drag-smoothing` 真实录屏；P1d-b-a 已补 `hide-on-hover` 真实录屏，frame 004-013 软隐藏，frame 014-017 离开恢复，frame 018 后再次软隐藏；P1d-c 已补 7 场景设置矩阵截图，覆盖 default、75/150 缩放、60 透明度、pass-through、hide-on-hover 和组合设置；BONGO-P2a-b 已补 `/settings` 中英截图和 Cuu 偏好模型包入口，Bongo 当前默认、Live2D 实验锁定；P1e-d-b 已补 60 秒 `idle-long-run` 长驻录屏，31 帧无低可见帧和窗口漂移，24 个相邻帧有可测变化。Live2D 需要按低恐怖谷 v2 重绘并导入 Cubism，而不是把未精修 PSD 默认展示给用户。
-
-2026-06-08 追加的 `cuu-polished-idle-v1` 是对 Web rail 低质占位的直接修复：绿幕源图保存在 `assets/cuu/generated-polished/`，抠图透明 PNG 同步到 Web / desktop webview public assets，Gold Path rail 优先显示生成图，CSS 小猫只作为 fallback。这个切片关闭的是“右侧栏视觉太粗糙”的体验缺口；它不关闭“桌宠独立窗口 Live2D 鲜活感”的缺口。
-
----
-
-## 1. 结论摘要
-
-### 1.1 离 P0.5 Gold Path 还有多远
-
-P0.5 的「可点击纵切」已经有一批核心底座：
-
-- `apps/api` 已有 `sessions`、`workitems`、`agent-runs`、`proposals`、`approvals`、`cost`、`replay`、`push` 等 route group。
-- `packages/contracts` 已有页面 VM、事件、Cuu 状态、proposal、approval、replay、cost 等契约。
-- `packages/ui` 已有 Gold Path / intake / workitem / proposal / agent-run 的 render helpers。
-- `apps/web` 和 `apps/desktop-webview` 都能消费同一 Gold Path Page VM。
-- `packages/cuu` 已能把事件 / 页面 VM 映射成 Cuu 卡片，并带 `CuuMotionHint`。
-
-但 P0.5 仍缺这些会影响真实体验的东西：
-
-- Web 端还偏「render helper + Gold Path shell」，不是完整可导航、可长期使用的 SPA。
-- Cuu 已有卡片、motion hint、controller MVP、基础 idle scheduler、Rust injected pet surface、浏览器调试 surface、pet surface 静态视觉 QA、pet window 几何合同、command scaffold、webview pointer/drag bridge、Windows debug `PrintWindow` 像素 smoke、黑猫 Hijiki / 白猫 Tororo Live2D Cubism2 模型包、二选项 registry / loader、Live2D cat runtime、偏好页二选项和 QA 门禁；历史绿幕/alpha motion pack、sprite/atlas、Bongo-style、PSD draft probe 与真实 Tauri 录屏保留为失败证据和动作 QA 参考，但已退出当前源码运行路径。真实形态仍缺 Hijiki/Tororo 独立 `pet` window 长驻录屏、card mode 录屏、多屏恢复、full hide/pass-through 安全恢复、跨平台透明 capture、长期性能 QA 与商用授权/原创替换。
-- 桌面端是 webview adapter + Rust contract crate + Tauri config/capability scaffold + 最小 `build.rs` / `main.rs` runtime 入口，还不是可安装的 Tauri v2 桌面应用。
-- `client-tauri/src-tauri` 当前已有 `tauri` / `tauri-build` 依赖、`tauri.conf.json` / capability scaffold、`build.rs`、`main.rs` pet command handler、启动期 shell config file/env loader、基础 tray setup、基础 SSE worker、deep-link plugin、notification plugin 和 single-instance plugin，并已把 mode resize/position/show、drag、save-position、cursor sampling、tray 左键/右键窗口动作、SSE global stream、token-gated `/me` stream plan、`workhub://` / `yqgl://` deep-link 路由转发、high/urgent OS 通知、第二次启动聚焦/协议 URL 处理执行到真实 Tauri API，位置保存到 Tauri Config `pet-window-state.json`；但还没有设备注册/secure vault/token 更新后的私有 SSE restart、多屏恢复实测、动态未读/审批托盘状态、通知点击/偏好、updater。
-- pet surface 输出级静态视觉 QA 和 Windows debug Tauri 像素 smoke 已形成门禁；Playwright alpha 边缘 fixture、跨平台透明 capture、Cuu 帧率/多屏/HiDPI 检查尚未形成门禁。
-
-### 1.2 离完整 PRD / 概念图复现还有多远
-
-完整 PRD 复现比 P0.5 远得多。当前更接近「TS-first P0.5 骨架」，不是 P1-P5 完整产品：
-
-| 范围 | 当前状态 | 距离完整概念的主要缺口 |
+| 模块 | 关键文件 | 当前结论 |
 |---|---|---|
-| 契约 / Page VM / typed client | 已具备主链路雏形 | OpenAPI 生成、全量页面 VM、权限脱敏、raw endpoint 仍需继续收敛 |
-| AgentRun / proposal / replay / cost | P0.5 纵切已成形 | 真实 LLM loop、eval runner、side-effect 工具、全量快照回滚、模型成本账本还需加深 |
-| Web | Gold Path shell + render helpers；P1.2 已让 intake/workitem/proposal/agent-run helper 固定文案支持中英并把可见 enum 人话化；当前口径为严肃工作界面，不内嵌 Cuu rail / Cuu bubble | 全量真实 React SPA、路由、状态、响应式、四态、视觉回归、AI-first 选项澄清和完整兜底页面 |
-| Desktop webview | 能消费同一 VM；主窗只渲染严肃 Gold Path / settings shell，Cuu 只在独立 `pet` window，支持 Rust injected pet surface、pet pointer/drag bridge、safe `navigate` listener 与 Rust command scaffold 对齐 | 仍缺本地动作面板、设置/诊断、同步中心、跨平台透明 capture 和长期性能 QA；主窗不得重新出现 Cuu notice / queue badge / 模型包设置入口 |
-| Rust shell | config/http/sse/event/window planning/control planning crate + Tauri config/capability scaffold + 最小 Tauri `main.rs` command handler，pet 启动显示/mode/drag/save-position/cursor-sample 已执行到窗口 / AppHandle API，位置已落盘，shell config file/env loader 已接，基础 tray menu 已安装并执行窗口动作，SSE global worker 已能转发 `push-event`/`sse-status`，有 token 时计划 `/me` 私有流，deep-link 已能转 `navigate`/`deep-link` 且 desktop webview 已消费 safe `navigate` route，high/urgent OS 通知和 single-instance 聚焦/协议 URL plan 已落 | 缺设备注册/secure vault/token 更新后私有 SSE restart、多屏恢复实测、动态托盘状态、OS 通知点击来源/偏好/去重、本地 sync/delivery/updater |
-| Cuu | 卡片、状态、motion hint、controller、基础 idle scheduler、Rust injected pet surface、浏览器调试 pet surface、pet window 几何/拖拽端口、pet command scaffold、启动期 body-only 预定位、first-painted 后 show、Rust cursor sample、位置落盘、HiDPI 坐标换算、运行期 topmost、Windows debug `PrintWindow` 像素 smoke、card mode 窗口扩展 / 完整身体 / HiDPI 边距 / 离线人话卡修复、黑猫 Hijiki / 白猫 Tororo Live2D Cubism2 资产包、Live2D cat runtime、二选项偏好页、历史 Bongo/PSD/sprite 失败证据与施工专篇 | Cuu 已通过“不能只露耳朵”和“首帧不能 blank”的 P0 门槛，也已收束为两个低恐怖谷 Live2D 小猫选项；但仍缺 Hijiki/Tororo 真实 Tauri 长驻录屏、card mode 动作录屏、full hide/pass-through 安全恢复、多屏恢复实测、通知点击/偏好、跨平台透明 capture、长期性能 QA、商用授权或原创模型替换 |
-| 项目检索 / 知识库 | API/证据契约方向明确；Cuu `knowledge-search` 可调用 typed API 并回显 evidence card；`use_for_current_task` 可把 evidence refs 带回 WorkItem VM | 缺完整检索页、证据详情展开、权限内检索结果分页和真实知识库持久化 |
-| 同步 / 本地交付 | 规划完整 | 当前 WorkHub 仓库未落真实本地 sync worker、冲突 resolver、delivery package |
-| QA / 发布 | 单元测试、构建基础、pet surface 静态视觉 QA、Windows debug Tauri 像素 smoke | 缺端到端视觉 QA、alpha 边缘 QA、跨平台透明 capture、Tauri 安装包、updater/autostart 验证 |
+| Cuu model registry | `packages/cuu/src/model-pack.ts` | 只保留黑猫/白猫；未知请求回退黑猫 |
+| Cuu Live2D runtime | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 按 pack id 选择 Hijiki/Tororo |
+| Cuu pet surface | `apps/desktop-webview/src/pet-surface.ts` | 独立 pet window，Live2D cat + 轻气泡 |
+| Cuu preferences | `apps/desktop-webview/src/cuu-preferences.ts` | 模型选择只显示黑猫/白猫 |
+| Cuu QA | `apps/desktop-webview/src/pet-surface-qa.ts` | 检查透明 root、Live2D cat runtime、无旧实验回流 |
+| Tauri pet window | `client-tauri/src-tauri/src/pet_window.rs` | body/card 几何、scale/opacity/pass-through/hide-on-hover |
+| Tauri commands | `client-tauri/src-tauri/src/pet_commands.rs` | window mode/settings/drag/save/cursor sample |
+| Desktop shell | `apps/desktop-webview/src/browser.ts` | 主窗/pet surface 分流 |
+| Proposal contracts | `packages/contracts/src/deliverable-change.ts` | 多类型交付物变更包方向 |
+| Cost governance | `docs/workhub/02-ai-engine/cost-governance.md` | P-COST 文档和 Page VM 规划已补 |
 
----
+## 4. PRD 明确要求逐项差距
 
-## 2. 当前实现事实
-
-### 2.1 已经落地
-
-| 领域 | 当前代码 | 说明 |
+| PRD / 头脑风暴要求 | 当前状态 | 剩余施工 |
 |---|---|---|
-| API route groups | `apps/api/src/routes/*` | 覆盖 auth、sessions、workitems、agent-runs、proposals、approvals、cost、audit、push 等 P0.5 核心路由 |
-| Page assembler | `apps/api/src/pages/*` | Gold Path、proposal、replay、cost 等页面 VM 已有聚合层 |
-| contracts | `packages/contracts/src/*` | 共享 DTO、page VM、event、domain schema 是前后端和 Cuu 的同源基础 |
-| API client | `packages/api-client/src/*` | Web / desktop-webview 消费同一 client |
-| Cuu cards | `packages/cuu/src/cards.ts` | 能从 session、workitem、proposal、agent live、event 生成 `CuuCard` |
-| Cuu motion hints | `packages/cuu/src/motion.ts` | 已定义 `idle_breathe`、`thinking_tail`、`asking_approval_bounce` 等状态名，但只是 hint |
-| Web shell | `apps/web/src/browser.ts` | 读取 `/api/pages/gold-path` 并渲染 shell，可做 P0.5 预览 |
-| Desktop webview shell | `apps/desktop-webview/src/browser.ts` | 可读取同一 VM；Rust injected `__WORKHUB_SURFACE__`、Tauri window label、`/pet`、`?surface=pet`、`#surface=pet` 或 `pet.html` 会进入独立 pet surface；主窗只消费 safe `navigate` route 并切到严肃 Gold Path 面板，不再内嵌 Cuu notice / queue badge |
-| Desktop Cuu bridge | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 把 Tauri/mock listener 的 `push-event` / `sse-status` 转成 `CuuCard`，由独立 pet surface 消费；不再把 Cuu card 注入主窗 notice |
-| Cuu historical failed routes | `docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md`、`docs/workhub/05-clients/cuu-green-screen-desktop-pet-solution.md`、`docs/workhub/05-clients/cuu-live2d-layered-asset-plan.md` | sprite manifest、atlas runtime、Bongo renderer、PSD draft runtime 和旧 generated asset source 已退出源码；相关截图和计划只作为失败证据、动作合同参考和未来原创模型路线 |
-| Cuu Live2D cat runtime | `packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-cat-live2d-runtime.ts`、`apps/desktop-webview/public/cuu/live2d/{hijiki,tororo}/*` | 当前只保留黑猫 Hijiki / 白猫 Tororo 两个 Cubism2 模型包；黑猫默认，白猫可选；未知或旧 pack id 回退黑猫 |
-| Cuu pet surface | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Live2D cat runtime 和一张轻气泡，不加载 Gold Path 主壳；不再挂载 Bongo、sprite/atlas、PSD draft 或静态 fallback；P1.2 已渲染 kind / priority / sections / progress / evidence refs / input hint，操作区前置，打回理由是固定按钮；P1d-a 已输出 scale / opacity / pass-through DOM 属性、CSS 变量和缩放后窗口尺寸 |
-| Cuu pet visual QA | `apps/desktop-webview/src/pet-surface-qa.ts` | 静态检查透明 root、CSS 变量驱动的右下角独立 surface、点击/拖拽热区、非主壳、Live2D cat runtime、黑猫/白猫二选项、card mode 轻气泡、选项优先、heavy card context 和默认窗口手感属性；禁止回到 Bongo/CSS、sprite/atlas 或 PSD draft |
-| Cuu idle scheduler | `packages/cuu/src/idle-scheduler.ts` | 纯 TS 调度呼吸、眨眼、尾巴、看鼠标、睡觉、醒来、拖动、轻敲、挥手等微动作；当前先输出动作语义，后续要映射到 Hijiki/Tororo 或原创 Cubism motion |
-| Cuu pet geometry / commands / bridge | `client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、`client-tauri/src-tauri/src/main.rs`、`apps/desktop-webview/src/pet-window-bridge.ts` | 已固定 body-only/card 双模式、右下角定位、展开锚点、work area clamp、鼠标接近判定、拖拽 plan、`set_pet_window_mode` / `set_pet_window_settings` / `start_pet_window_drag` / `save_pet_window_position` / `sample_pet_cursor_near` command 名，已在 `main.rs` 注册 command；setup 会动态创建 `create:false` 的 `pet` window 并注入 pet surface flag；启动期 body-only 显示、mode resize/position/show、settings scale/pass-through、drag、save-position 已执行到 Tauri window API，cursor sampling 已执行到 Tauri AppHandle，body anchor 防漂移与 `pet-window-state.json` 落盘已落，并把 hover/drag/release/cursor sample 接进 pet surface |
-| Cuu controller / preference MVP | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | 已把提醒收敛为 show / replace / queue / drop 决策；desktop runtime 会尊重勿扰与队列策略；偏好模型只同步到独立 pet window / tray / 未来客户端设置，不在主窗展示 Cuu queue badge 或模型包入口；`knowledge-search` action 可回显 evidence card，`use_for_current_task` 可绑定当前证据到 WorkItem |
-| Rust contract crate | `client-tauri/src-tauri/src/*` | 有 config、HTTP request plan、SSE frame parser、event channel naming、`main` / `pet` window plan、show/hide/focus/toggle control plan 与真实 Tauri command、pet geometry/command plan |
-| Tauri scaffold | `client-tauri/src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/default.json,icons/icon.ico,src/main.rs,tests/tauri_scaffold.rs}` | 已把 desktop webview dev/build、`main` / `pet` window config、最小 capability、`withGlobalTauri:true`、Tauri Windows icon、`tauri::Builder` command handler、pet window API 执行和 scaffold contract tests 落到当前仓库；`cargo check` / `cargo test` 可通过 |
+| AI 是主力，看板只显示必要信息 | 文档和部分页面已转向 Gold Path / attention | 真实首页重构、减少 dashboard 首屏重量 |
+| 澄清让用户点击选项 | 概念图和 payload 合同已写 | 所有澄清路径接入 single/multi/rank/confirm controls |
+| 变更申请像 GitHub PR，但对象多样 | Manifest fixture 和 proposal page 有基础 | 文档/PPT/表格/图片/文件夹预览与证据引用 |
+| 知识库/项目检索由 Cuu 气泡承接 | 概念图已写 | Cuu search card + API endpoint + result bubble |
+| Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落 | 真实 Tauri 多帧录屏、动作语义、长期性能 |
+| Cuu 不在 Web/主窗里 | 当前文档和代码收束中 | 截图审查确认无主窗 Cuu 本体 |
+| Rust 客户端哲学是轻、气泡、少打扰 | Tauri shell 和文档已对齐 | 托盘、通知、deep-link、恢复策略、安装包 |
+| 中英双语 | locale 地基已落 | 全页面、Cuu、Rust 系统文案补齐 |
+| 完整测试验收 | 有单元测试和部分 QA 脚本 | UI 截图、桌宠录屏、编译、跨平台 smoke 全链路 |
 
-### 2.2 容易误判的地方
+## 5. Cuu 当前施工路线
 
-`desktop-pet-tauri.md` 仍保留大量旧项目迁移参照，例如 `client-tauri/web-src`、旧复杂动态菜单版 `tray.rs`、`sync.rs`、`spec_watch.rs`、`invoke_handler!`、`commands/*.rs`。这些是**旧「需求管理大师」实现经验或目标设计锚点**，不是当前 WorkHub 仓库已经全部存在的源文件。当前 WorkHub 已新增自己的 `client-tauri/src-tauri/src/tray.rs`，但它只代表基础托盘契约与窗口动作入口，不等于旧项目里的未读/同步/接单状态动态菜单已经完整迁移。`tauri.conf.json` 现在已经是当前 WorkHub scaffold 的真实文件，但只代表配置入口，不代表完整生产桌面壳已完成。
-
-当前 WorkHub 的真实状态是：
-
-```text
-client-tauri/src-tauri/
-  Cargo.toml       # 已有 serde / tauri / tauri-build
-  build.rs         # tauri_build::build()
-  tauri.conf.json  # Tauri config scaffold,withGlobalTauri:true
-  capabilities/default.json
-  tests/tauri_scaffold.rs
-  src/main.rs      # 最小 tauri::Builder + pet command handler
-  src/config.rs
-  src/events.rs
-  src/http.rs
-  src/lib.rs
-  src/pet_commands.rs
-  src/pet_window.rs
-  src/sse.rs
-  src/sse_worker.rs
-  src/tray.rs
-  src/window_controls.rs
-  src/windows.rs
-
-apps/desktop-webview/
-  src/browser.ts
-  src/main.ts
-  src/shell-events.ts
-  src/desktop-cuu-runtime.ts
-  src/cuu-sprite-runtime.ts
-  src/cuu-atlas-assets.ts
-  src/cuu-atlas-runtime.ts
-  src/pet-surface.ts
-  src/assets/cuu/
-packages/cuu/
-  src/idle-scheduler.ts
-```
-
-因此后续施工必须把旧锚点写成「Behavior source / 迁移参照」，把当前目标写成「Target TS/Rust paths」。
-
----
-
-## 3. Cuu 差距审计
-
-### 3.1 当前已具备
-
-- `CuuState` 与状态名已在 contracts / Cuu package 内可用。
-- `CuuMotionHint` 已覆盖所有 Cuu state。
-- Cuu 卡片能覆盖澄清、审批、证据、预算、proposal、agent live、offline 等主场景。
-- Desktop webview 已有 scripted event demo，可模拟 Cuu notice。
-- 概念图已经固定 Cuu 的小猫形象、动作状态、资产生产流水线、动画架构选型。
-- `cuu-live2d-layered-asset-plan.md`、`cuu-live2d-layer-breakdown-concept.png`、`cuu-live2d-front-model-concept.png`、`cuu-live2d-psd-production-board.png` 和 `cuu-live2d-v0-layer-manifest.json` 已把 Live2D 分层 PSD / Cubism / GIF 兜底规则写成可施工合同。
-- 已有 18 clip GPT Image 绿幕 sprite sheets、透明 alpha 图和 motion pack atlas，像素检查四角透明且所有 clip 可见绿边统计为 0。
-- Rust injected pet surface 与 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html` 浏览器调试入口已能只显示 Cuu atlas 本体和轻气泡，是 Tauri `pet` window 的前端入口。
-- 基础 idle scheduler 已能 deterministic 触发呼吸、尾巴、眨眼、睡觉、醒来、拖动、释放和点击反馈；pet surface 已把 pointer hover/drag/release 接进 scheduler。2026-06-07 已修复 Tauri dev server sprite asset 路径，真实 `Cuu` 顶层窗口 motion capture 已看到 body-only `idle_tail_sway` 和 card mode worried/offline 姿态；只显示静态 fallback、只靠缩放或只露耳朵均判失败。
-
-### 3.2 缺口
-
-| 缺口 | 为什么重要 | 目标落点 |
+| 阶段 | 目标 | 产物 |
 |---|---|---|
-| 真实小猫动画资产 | 当前运行时只承认黑猫 Hijiki / 白猫 Tororo 两个 Live2D Cubism2 模型包；绿幕 motion pack、sprite/atlas、Bongo-style、PSD draft 已退出源码。要复现概念图仍需对两个现成模型补独立 `pet` window 多帧录屏、card mode 录屏、full hide/pass-through 安全恢复、商用授权或原创替换、帧率与长驻性能验证 | `packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-cat-live2d-runtime.ts`、`apps/desktop-webview/public/cuu/live2d/{hijiki,tororo}/*` |
-| Live2D 二选项资产化 | 当前已内置 Hijiki / Tororo Cubism2 `.moc` / texture / motion / pose / html / model json；仍需真实 Tauri capture fixture、跨平台透明 capture、模型授权记录、资源压缩策略和未来原创 Cubism 替换门禁 | `apps/desktop-webview/public/cuu/live2d/*`、`docs/workhub/05-clients/cuu-live2d-cat-options-current-plan.md` |
-| CuuController 生产化 | 策略、badge、队列推进、desktop preference panel MVP、`pet_hide_on_hover` 与窗口手感字段已落；还需要 click/restore 细化、真实 Tauri Settings 页面承接、full hide/pass-through 安全恢复和系统通知偏好 | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/browser.ts`、未来 `apps/desktop-webview/src/cuu/*` |
-| 动画 renderer | 当前默认 renderer 是 `live2d_cubism2_cat`；pet surface QA 会拦截 PSD、Bongo/CSS、sprite/atlas、主壳/非选项优先回退；Windows debug smoke 已验证真实 pet 窗口可见像素，但还缺 Hijiki/Tororo 真实动作录屏、动作语义映射、跨平台透明 capture 与长期性能 QA | `packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-cat-live2d-runtime.ts`、`apps/desktop-webview/src/pet-surface-qa.ts` |
-| 独立 pet window | Rust 动态创建 `create:false` 的 `pet` window、injected pet surface、browser/debug surface、body-only/card 几何合同、settings 几何合同、command scaffold、前端 bridge、主窗隐藏后像素 smoke 已落；仍缺多屏恢复实测、安装包 smoke 和跨平台透明 capture | `client-tauri/src-tauri/src/windows.rs`、`client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、Tauri `pet` window、`apps/desktop-webview/src/pet-surface.ts`、`scripts/qa/cuu-tauri-smoke.ps1` |
-| 拖拽 / 收起 / 静音 / 勿扰 | 静音 / 勿扰 / 减少动效 / 队列上限 / 尺寸 / 透明度 / 点击穿透 / 悬停避让已有 desktop webview 面板；拖拽 bridge、Rust drag plan、真实位置记忆、pass-through 命令、hide-on-hover soft dodge、pointer smoothing、drag grip 持续姿态和 60s idle-long-run 可见性 QA 已落；收起细节、full hide/pass-through 安全恢复与真实 Tauri Settings 承接仍待补 | Rust window state + TS preference |
-| 活体 idle scheduler | 基础 scheduler、pointer hover/drag/release bridge、Rust cursor sample、pointer smoothing、dragging 时 `drag_hold` 保持和 60s idle-long-run 可见性 QA 地基已落；后续要把 idle / interaction 语义映射到 Hijiki/Tororo Live2D motion 与 Cubism 参数；仍缺系统 idle 采样、多屏实测和长驻性能 QA | `apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-window-bridge.ts`、`packages/cuu/src/idle-scheduler.ts` |
-| 气泡卡动作真实提交 | Cuu 卡片按钮必须真正调用 API，不只是展示 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` + `packages/api-client` |
-| 视觉 / 性能 QA | pet surface 静态合同已能验透明语义、右下角独立 surface、真实 atlas 和选项优先；Windows debug smoke 已能对真实 `Cuu` hwnd 做像素检查；透明边缘、帧率、CPU/GPU、HiDPI、多屏和跨平台 capture 仍必须在真实 Tauri 窗口验收 | Playwright + Tauri smoke + pixel checks |
+| CUX-L2D-01 | 黑猫默认可验收 | Hijiki idle/hover/tap/drag/approval/search/offline 录屏 |
+| CUX-L2D-02 | 白猫可选可验收 | Tororo 同场景录屏 |
+| CUX-L2D-03 | 设置矩阵 | scale、opacity、pass-through、hide-on-hover、card mode 报告 |
+| CUX-L2D-04 | 主窗边界 | Web/desktop 主窗截图证明无 Cuu 本体 |
+| CUX-L2D-05 | 恢复策略 | 托盘恢复 pass-through/full hide、多屏恢复 |
+| CUX-L2D-06 | 授权/原创替换 | 授权记录或原创等效模型计划 |
 
-### 3.3 Cuu 施工路线
+## 6. Web 与页面施工路线
 
-| 阶段 | 目标 | 产物 | 验收 |
-|---|---|---|---|
-| Cuu-P1a | 把 motion hint 绑定 sprite / atlas manifest | `defaultCuuSpriteManifest`、`CuuSpriteAtlasManifest`、`CuuSpriteState` 校验 | **业务状态与 micro-action full coverage 已落**：每个 `CuuState` 有 procedural clip、fps、reduced-motion 文案，18 个真实 atlas clip 已落，并可通过 `require_full_motion_coverage` 与 `require_idle_micro_action_coverage`；下一步做 anchor/压缩/QA，禁止回到主窗替换 |
-| Cuu-P1b | 在独立 desktop pet window 渲染可动 Cuu | `CuuController`、atlas renderer、bubble layer、pet surface QA | **P1 已落**：pet surface 可渲染真实 PNG sprite-atlas，controller 已能决策 show/queue/drop，idle scheduler 与 pointer bridge 已接，pet surface 静态视觉合同、Windows `PrintWindow` smoke、motion capture、dev asset path 修复和非缩放动作验收已落；下一步重做更精致真实图像部件、做 alpha 边缘和跨平台透明 capture QA |
-| Cuu-P1c | 选项澄清 / 审批 / 证据气泡可点 | Cuu card action handler + pet surface | 审批/下一题/知识检索回显/证据带回当前任务已落；Pet card P1.2 已把审批/澄清轻卡上下文和 option-first DOM 渲染落地；P1.2b 已把 `selected_option_ids` 真实提交到 session API；待证据详情展开、预算/证据/sync fixture 和完整检索页 |
-| Cuu-P2a | 独立 `pet` window | Tauri window + open/hide command + pet surface | **基础已落**：Rust 动态创建真实透明 `pet` window，注入 pet surface flag，body/card 几何、拖拽/模式 bridge、位置记忆、主窗隐藏后可见像素 smoke 已落；待收起细节、多屏恢复、安装包 smoke 和跨平台透明 capture |
-| Cuu-P2b | Rive state machine | `.riv` + runtime adapter | push-event 触发自然过渡，失败可降级到 sprite |
-| Cuu-P3 | Live2D 分层模型 | 分层 PSD、Cubism `.moc3` / `.model3.json`、Tauri runtime adapter | Cuu 的呼吸、眨眼、看鼠标、耳朵、尾巴、流苏可由事件触发，加载失败可降级 sprite |
-
-### 3.4 Cuu 资产生产细化
-
-完整施工方案见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。本节只保留审计摘要。
-
-1. **锁定角色规范**：橘色虎斑、奶油脸/爪、白蕾丝围兜、黑蝴蝶结、珍珠流苏、红珠。
-2. **GPT Image 生成绿幕动作帧**：第一批至少 18 个动作，每个动作 6-12 帧，统一 `#00ff00` 背景和脚底 anchor。
-3. **抠图 / 去底 / 对齐**：优先 chroma-key + despill；裁切后按动作统一 canvas 和脚底 anchor，避免动画抖动。
-4. **一致性修正**：眼睛大小、围兜位置、蝴蝶结角度、流苏长度、尾巴方向。
-5. **打包**：P1 用 sprite atlas；P2 用 Rive；P3 评估 Live2D。
-6. **运行时 QA**：在 Tauri 透明窗口看边缘、阴影、点击区域、缩放、低电量、长时间常驻。
-
----
-
-## 4. Rust / Tauri 客户端差距审计
-
-### 4.1 当前已具备
-
-- `client-tauri/src-tauri/src/config.rs`：server url、device token、device name 的基础结构；支持 Tauri Config `workhub-shell-config.json` 与 `WORKHUB_*` / legacy `YQGL_CLIENT_TOKEN` 环境变量加载，空 token 不算可信设备。
-- `http.rs`：daemon URL 和 device token header plan。
-- `sse.rs`：SSE target、frame parser、chunk buffer、push payload/status payload、startup target 选择。
-- `sse_worker.rs`：真实后台 SSE worker，使用 `tauri::async_runtime::spawn` + `reqwest` rustls stream，按 shell config 连接 global stream；有可信设备 token 时才加入 `/me`，按 chunk 解析并 emit `push-event` / `sse-status`；收到 high/urgent 私有事件时调用 `notify.rs` 生成 system notification plan。
-- `notify.rs`：系统通知策略、进程内 dedupe 和 Tauri plugin adapter；全局流、普通 notice 不弹 OS 通知，预算耗尽/告警、审批、proposal、run/escalation、sync conflict 和 high/urgent notification 可形成 `ShellSystemNotificationPlan`，SSE 重放不会重复弹同一 `id/event/route`。
-- `events.rs`：`push-event`、`sse-status`、`navigate`、`deep-link`、`tray-action`、`system-notification`、`single-instance` channel 命名；desktop webview 已解析 safe `navigate` route string / `{route}` / `{path}`。
-- `windows.rs`：`main` / `pet` window plan contract，`pet` 固定 transparent、decorations false、always-on-top、skip taskbar。
-- `window_controls.rs`：`show/hide/focus/toggle main/pet` 的 typed control plan 与 command 名称；deep-link route 做安全校验，pet 操作不抢焦点；`main.rs` 已注册同名 Tauri command 并执行到真实 window API。
-- `deep_link.rs`：`workhub://` / `yqgl://` route 白名单、target 映射与 path traversal 防护；`main.rs` 已接 `tauri-plugin-deep-link`，启动 URL / 运行时 URL 会执行主窗聚焦并发 `deep-link` 事件。
-- `single_instance.rs`：第二次启动 argv/cwd 解析、主窗聚焦 plan、`workhub://` / `yqgl://` URL 提取与非法协议 URL 诊断；`main.rs` 已接 `tauri-plugin-single-instance` 并复用 deep-link 执行路径。
-- `tray.rs`：基础 tray menu contract，固定 `workhub-main-tray`、tooltip、五个菜单项和 `TrayMenuActionPlan`；`main.rs` 已用 `TrayIconBuilder` 安装真实托盘，左键打开主窗，右键菜单可打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出。
-- `tauri.conf.json`：声明 desktop webview 的 `devUrl=1420` / build dist、`main` 与 `pet` window config；`skipTaskbar` 暂留在 WorkHub 自有 plan，避免未确认字段提前进入 Tauri schema。
-- `capabilities/default.json`：当前只给 `main` / `pet` `core:default`，文件系统、shell、process 等能力后续按模块最小化开启。
-- `tests/tauri_scaffold.rs`：把配置与 `ShellWindowPlan` / capability 绑定成可测契约。
-- `lib.rs` 明确 Rust 只拥有本地壳能力，不复制 permission / workitem status / domain DTO / Cuu animation state。
-- `main.rs` 已注册 `tauri-plugin-notification`，OS notification 由 Rust 侧按 `notify.rs` plan 请求权限并展示。
-
-### 4.2 缺口
-
-| 缺口 | 当前事实 | 目标 |
+| 阶段 | 页面 | 核心改造 |
 |---|---|---|
-| Tauri v2 runtime | 已有 `tauri` / `tauri-build` 依赖、`tauri.conf.json` / capability scaffold、`build.rs`、`main.rs` command handler；`pet` window config `create:false`，setup 动态创建并注入 pet surface flag；pet 启动显示/mode/drag/save-position 已执行到 window API，cursor sampling 已执行到 AppHandle，body anchor 位置已写入 `pet-window-state.json`，shell config file/env loader、基础托盘、SSE global-or-me worker、deep-link plugin、notification plugin 与 single-instance plugin 已在 setup 安装 | 补设备注册/secure vault/token 更新后 worker restart、多屏恢复实测、安装包 smoke |
-| 主窗口 | 已有 `main` window plan + Tauri config + `show/hide/focus` control plan；`main.rs` 已注册 `show_main_window` / `hide_main_window` / `focus_main_route` 并执行到真实 Tauri window API；desktop webview 已消费 safe `navigate`；托盘、菜单、deep-link、system notification plan 和第二次启动可打开/隐藏/聚焦主窗 | `main` window 承载 desktop webview；后续补 OS notification click source 和跨平台 smoke |
-| Cuu pet window | 已有 `pet` window plan + Tauri config + `show/hide/toggle` control plan；生产 Tauri 由 Rust 动态创建 `create:false` pet window 并注入 surface flag，浏览器调试保留 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html`；body/card 几何 plan、command scaffold 与拖拽 bridge 已落；`main.rs` 已在 setup 启动显示 body-only Cuu，并注册 `show_pet_window` / `hide_pet_window` / `toggle_pet_window` 执行到真实 Tauri window API；托盘可 toggle Cuu；Windows debug smoke 已证明主窗隐藏后 `Cuu` 窗口仍可见；`skipTaskbar` 仍在 WorkHub plan | `pet` window：transparent / decorations false / always-on-top / skip taskbar；后续补多屏恢复实测、安装包 smoke 和跨平台透明 capture |
-| 托盘 | 已有 `src/tray.rs` contract 与 `main.rs` Tauri `TrayIconBuilder` runtime；左键打开 WorkHub，右键菜单支持打开/隐藏主窗、显示/隐藏 Cuu、打开收件箱、退出，并广播 `tray-action` plan | 未读/审批状态、tooltip/title 更新、同步子菜单、通知点击联动 |
-| 系统通知 | 已有 `notify.rs` high/urgent policy、进程内 dedupe、`tauri-plugin-notification` runtime、`system-notification` plan event；`sse_worker.rs` 只对私有流的预算/审批/proposal/run/conflict/high notice 触发；webview 已能消费后续点击产生的 safe `navigate` | OS notification click source、勿扰/偏好接线、去重持久化、安装包权限 smoke |
-| deep-link / single-instance | 已接 `tauri-plugin-deep-link` 与 `tauri-plugin-single-instance`、scheme 配置、启动/运行时 URL listener、route 白名单、第二次启动 argv/cwd plan 和 `navigate`/`deep-link`/`single-instance` 事件；支持 `workhub://open/task/{id}`、proposal、run replay、approval、inbox、settings、me、cost 和兼容 `yqgl://r|p|inbox...` | 安装包协议注册 smoke、通知点击联动和更多业务 target |
-| 设备令牌 vault | 当前可从 config file/env 读取 token 并只展示 tail；尚未安全保存 | 安全保存、token tail 展示、重新注册、失效恢复 |
-| SSE worker | 已有 `sse_worker.rs` runtime；当前 setup 从 shell config file/env 读取配置，连接 `/api/push/stream`，发 `push-event` 和 `sse-status`，5s retry；`/me` 仅在 config 有可信 token 时进入 plan | 接设备注册/secure vault 后的 ConfigState 和 worker restart，补 run/session/proposal 按需订阅和端到端 smoke |
-| local sync/delivery | 当前无本地 worker | 文件监听、路径 containment、下载/上传/冲突/交付打包 |
-| updater/autostart | 当前无插件 | P5 接 updater + autostart，LAN-first manifest |
-| diagnostics | 当前无 UI/runtime | SSE、server、token、filesystem、tray、Cuu runtime 检查 |
+| WEB-P1 | `/` | Attention workspace，默认只给一件事 |
+| WEB-P2 | `/intake/:id` | option-first 澄清控件全量接入 |
+| WEB-P3 | `/proposals/:id` | 多类型交付物变更说明与预览 |
+| WEB-P4 | `/knowledge` / Cuu search | Web 做兜底，Cuu 气泡做默认入口 |
+| WEB-P5 | `/dashboard/cost` | P-COST Usage / BudgetNotice / CostSummaryVM 接真实数据 |
+| WEB-P6 | `/agent-runs/:id/replay` | Eval/replay fixture 与真实 trace 对齐 |
+| WEB-P7 | 全页面 | 中英双语、空/错/载入/权限四态 |
 
-### 4.3 Rust shell 施工路线
+## 7. Rust / Tauri 施工路线
 
-| 阶段 | Rust 目标 | TS/webview 目标 | 验收 |
-|---|---|---|---|
-| Rust-P1a | 保持 contract crate，补 Tauri scaffold | desktop-webview 继续消费 API client | **window plan + window control plan + `tauri.conf.json` + capability scaffold + `tauri` dependency + `build.rs` + `main.rs` command handler + window control API + 基础 tray menu + SSE global worker + deep-link handler + high/urgent system notification + single-instance 执行已落**；下一步真实配置/设备 token、click-through、偏好与持久化接线 |
-| Rust-P1b | 实现 `push-event` / `sse-status` emit worker | `bindDesktopShellCuuRuntime` 订阅真实 Tauri listener | **基础已落**：global SSE 可触发 Cuu notice，不依赖 mock；config file/env token 可让启动期计划 `/me`；待设备注册/secure vault 后 `/me` restart 与 E2E smoke |
-| Rust-P2a | 主窗 + pet window + tray | 设置页显示连接/token/pet 开关 | **启动期 pet body-only 显示 + 主窗隐藏后 Cuu 像素 smoke 已落**；继续补托盘状态动态、多屏可恢复、安装包 smoke 和 Settings 承接 |
-| Rust-P2b | OS notification click source / dedup / preference bridge + device vault；deep-link route expansion | **webview 响应 safe `navigate` 已落**；继续接通知点击来源与偏好 | 系统通知点击能打开 proposal / approval，勿扰时只入队不弹窗，二次启动协议 URL 在安装包 smoke 中确认 |
-| Rust-P3 | local sync / delivery / conflict | sync center / conflict resolver | 文件改动可形成 proposal 或 conflict choice |
-| Rust-P5 | updater / autostart / diagnostics | 设置页更新与诊断 | 安装包、升级、开机自启可测试 |
-
-### 4.4 端口和运行边界
-
-| 服务 | 当前 / 目标端口 | 说明 |
+| 阶段 | 模块 | 核心改造 |
 |---|---|---|
-| API daemon | `8787` | 唯一真相源，Rust 不读 DB |
-| Web SPA | `5173` | 浏览器 surface |
-| Desktop webview dev | `1420` | Tauri dev 时加载该 webview |
-| Rust shell | 无固定 HTTP 端口 | 只持本地窗口/托盘/文件/通知能力 |
+| PET-R1 | window recovery | 多屏、缩放、离屏、窗口状态恢复 |
+| PET-R2 | tray recovery | Cuu 显隐、主窗、收件箱、设置、pass-through 恢复 |
+| PET-R3 | notification | high/urgent 去重、点击 deep-link、静默策略 |
+| PET-R4 | private SSE | 设备令牌、私有流重连、状态回传 |
+| PET-R5 | local sync | spec watch、网盘同步、本地缓存 |
+| PET-R6 | packaging | Windows/macOS/Linux 构建、签名、安装 smoke |
 
-Rust 不应复制这些逻辑：
+## 8. 验收矩阵
 
-- permission policy
-- workitem status machine
-- approval routing
-- domain DTO
-- Cuu animation state machine
+| 验收 | 证据 |
+|---|---|
+| 文档树正确 | README 文档数量与 `git ls-files docs/workhub/*.md` 统计一致 |
+| Cuu 二选项 | model registry / preferences / QA tests |
+| 无旧实验源码入口 | tracked source 搜索无旧 renderer 文件和 public 入口 |
+| Web 主窗无 Cuu | Playwright 截图 + DOM dump |
+| Desktop 主窗无 Cuu | Tauri/webview 截图 + DOM dump |
+| Cuu motion | 黑/白 contact sheet、GIF/MP4、diff report |
+| Rust window | Tauri smoke、settings matrix、多屏恢复报告 |
+| i18n | zh-CN/en-US screenshots + locale tests |
+| TypeScript 目标路径 | `_ts-target-path-audit.md` 和 `_ts-first-module-port-page-alignment.md` 对齐 |
+| Git hygiene | 不提交 `reference/` / `references/` |
 
-Rust 应只做：
+## 9. 当前最短 Gold Path
 
-- 本地能力执行
-- 安全路径边界
-- 设备令牌持有
-- 事件转发
-- 系统集成
+1. 用户打开 Web 或 desktop 主窗，看到一件待处理事项。
+2. 事项需要澄清时，用户点击选项完成输入。
+3. AI 生成交付物变更包，页面显示 GitHub-like 说明。
+4. 审批需要用户动作时，Cuu 在桌面右下角提醒。
+5. 用户通过 Cuu 轻卡同意、打回或查看详情。
+6. 结果写入 proposal / audit / replay / cost。
+7. 全流程有中英双语和可回放证据。
 
----
+## 10. 下一步优先级
 
-## 5. Web 差距审计
-
-### 5.1 当前已具备
-
-- `apps/web/src/browser.ts` 能加载 Gold Path Page VM 并绑定基础导航。
-- `apps/web/src/main.ts` 暴露 typed client helpers 和 Cuu card adapter。
-- `packages/ui` 有多个 render helper，可作为真实 React 页面组件的前身。
-
-### 5.2 缺口
-
-| 页面 / 能力 | 当前 | 目标 |
-|---|---|---|
-| AI-first Home | Gold Path shell 内展示 | 真 SPA 首页：当前一件事、后台 run、预算/风险、Cuu 提醒 |
-| Option Intake | render helper | 真实 route、step state、option action、free text fallback |
-| WorkItem Detail | render helper | live trace、proposal、evidence、acceptance、状态四态 |
-| Proposal Detail | render helper + API action | 非代码 PR 细分 target renderer、review/merge/rollback |
-| Approval Center | VM / shell 支持 | 阻塞收件箱、过滤、委派、记住规则 |
-| Replay Work | render helper | 人话 timeline、raw 脱敏展开、cost footer、snapshot/revert |
-| Cost Dashboard | Page VM | 管理者全量 / 普通用户切片、预算策略、告警 |
-| Knowledge fallback | API/概念 | 完整检索页作为 Cuu 检索气泡兜底 |
-| Visual QA | 无稳定门禁 | desktop/mobile screenshot、空/错/载/无权限状态 |
-
-### 5.3 Web 施工路线
-
-| 阶段 | 目标 | 产物 | 验收 |
-|---|---|---|---|
-| Web-P1a | 把 render helper 收敛成 React components | `apps/web/src/routes/*`、`packages/ui` components | 可路由、可交互、类型同源 |
-| Web-P1b | Gold Path 全页真实可点 | Home、Intake、WorkItem、Proposal、Approval、Replay | 用户能完成一次 option-first→proposal→review→merge |
-| Web-P1c | 四态齐全 | loading / empty / error / permission | 每页 fixture 覆盖四态 |
-| Web-P2 | Cuu bubble / Attention queue 整合 | Cuu compact helper | 浏览器中也能看到轻卡，但不抢桌宠主入口 |
-| Web-P3 | 高级页面 | knowledge fallback、meeting/drive、cost admin | Cuu 轻检索和 Web 完整检索互通 |
-| Web-QA | 视觉回归 | Playwright screenshots | 无重叠、无默认 Kanban、移动端可读 |
-
----
-
-## 6. Gold Path 缺口与后续门禁
-
-### 6.1 P0.5 还需补的关键点
-
-| Gold Path 步骤 | 已有 | 待补 |
-|---|---|---|
-| 一句话输入 | `POST /api/sessions` | Web/Rust 真 route 与附件/项目上下文 |
-| 选项澄清 | `QuestionCard` / render helper | Cuu 气泡和页面 action 真提交 |
-| 创建 WorkItem | `POST /api/workitems` | 页面从 session 选项生成 workitem 的完整流 |
-| AgentRun | route + live VM | 真实 runner / SSE / trace / abort / handoff |
-| 预算 | `packages/cost` + cost pages | provider usage 全量接账本、budget event fixture |
-| 证据 | evidence contract | Cuu-first 项目检索和证据卡 |
-| Proposal | service + page | 多 target renderer、rollback、review reason 回灌 |
-| Merge | API action | audit/snapshot/revert 和通知闭环 |
-| Replay | `ReplayTraceVM` | raw endpoint、redaction、visual page、eval runner |
-
-### 6.2 必须新增的验收门
-
-- Web 与 desktop-webview 必须渲染同一 Page VM fixture。
-- Cuu 至少能真实播放 `idle → thinking → asking_approval → carrying_document → celebrating`，并在 60 秒 idle 内出现呼吸、眨眼、尾巴、睡觉/看鼠标中的至少两类微动作。
-- `CuuMotionHint.sprite_state` 必须能在 runtime 中找到对应资产。
-- Cuu card mode 中角色必须完整、可爱、稳定地站在右下角；只露耳朵、裁尾、裁爪、脚底 anchor 漂移都判失败。
-- 桌宠窗口必须可拖动、可收起、可静音，且主窗隐藏后仍显示。
-- Rust shell 不得复制权限 / 状态机 / DTO；所有业务裁决来自 daemon。
-- Proposal 必须支持非代码 target，不得只做 code diff。
-- Replay 至少展示 5 个关键步骤，含 evidence、snapshot、cost。
-- 所有视觉页必须覆盖 loading / empty / error / permission。
-- Playwright 截图需覆盖桌面和移动端；Tauri 透明窗口需做非空像素检查。
-
----
-
-## 7. 后续计划 Backlog
-
-| ID | 主题 | Owner path | 依赖 | 退出标准 |
-|---|---|---|---|---|
-| GAP-CUU-01 | Sprite manifest schema | `packages/cuu`、`packages/contracts` | Cuu state 已有 | **MVP + full coverage 已落**：每个 state 有可校验 procedural clip，真实 atlas schema、runtime JSON、18 clip motion pack、内联静态 fallback 和 pet surface 静态视觉 QA 已落；待 anchor、压缩产物、生产 JSON 扩展、alpha 边缘和跨平台 capture QA |
-| GAP-CUU-02 | Sprite runtime | `apps/desktop-webview/src/cuu-sprite-runtime.ts`、`apps/desktop-webview/src/cuu-atlas-runtime.ts`、`apps/desktop-webview/src/pet-surface-qa.ts`、`packages/cuu/src/idle-scheduler.ts` | GAP-CUU-01 | **MVP 已落**：notice 可渲染 procedural sprite，pet surface 可渲染 18 clip motion pack atlas，基础 idle scheduler 与 pointer bridge 已落，idle micro action 可选真实 atlas clip，静态 QA 会拦截非透明/非独立/非选项优先回退，Windows debug smoke 会验证真实 pet window 可见像素；待主窗替换、跨平台 Tauri 输入与透明 capture QA |
-| GAP-CUU-02B | Controller visual completion | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/browser.ts` | GAP-CUU-02 | **MVP 已落**：show / replace / queue / badge / drop 可测，desktop badge、超时推进、偏好面板、`pet_hide_on_hover` 和窗口手感字段已接；待真实 Tauri Settings 页面、通知点击/偏好和真实窗口视觉 QA |
-| GAP-CUU-03 | Cuu 气泡 action | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | API client | **基础已落**：approval / next question / knowledge-search / use_for_current_task 可提交；evidence card 可带 `evidence_refs` 回 WorkItem VM；待证据详情展开与完整检索页 |
-| GAP-CUU-04 | 独立 pet window | `client-tauri/src-tauri` + `apps/desktop-webview/src/pet-surface.ts` + `apps/desktop-webview/src/pet-surface-qa.ts` + `apps/desktop-webview/src/pet-window-bridge.ts` + `scripts/qa/cuu-tauri-smoke.ps1` | Rust scaffold + 绿幕 atlas | **surface + 静态视觉 QA + 几何/命令/拖拽端口 + hide-on-hover soft dodge + 真实 Tauri `pet` window startup + HiDPI 坐标换算 + runtime topmost + Windows debug `PrintWindow` 像素 smoke 已落**；待可拖动截图、多屏恢复实测、安装包 smoke、跨平台透明 capture 和长期 idle 性能 QA |
-| CUX-MOTION-001 | card mode resize / 裁切修复 | `apps/desktop-webview/src/pet-window-bridge.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/shell-events.ts`、`client-tauri/src-tauri/src/main.rs`、`scripts/qa/cuu-tauri-motion-capture.ps1` | GAP-CUU-04 | **已修**：事件卡触发后 `pet` 窗口可进入 card mode，invoke/placement 失败会走 compact fallback；最终 fresh 抓帧证明 Cuu 完整身体可见、card bubble 有 HiDPI 安全边距、离线卡不暴露 raw SSE error |
-| CUX-MOTION-002 | 非缩放鲜活感 / 真实动作资源 | `apps/desktop-webview/src/cuu-atlas-runtime.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface.test.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-MOTION-001 fixed | **已修 P1**：dev server `/src/assets/...` 不再被误改成 `./assets/...`，pet surface 运行态不依赖 inline 静态 fallback，body-only 默认 `idle_tail_sway`，真实 Tauri contact sheet 可见摇尾和 card mode 姿态；只露耳朵、只缩放、只显示 fallback 均判失败 |
-| CUX-BONGO-001 | Bongo-style 低恐怖谷默认 Cuu | `apps/desktop-webview/src/cuu-bongo-runtime.ts`、`apps/desktop-webview/src/pet-surface.ts`、`docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | CUX-MOTION-002 | **历史已落，当前已撤回**：Bongo 曾用于从 PSD 恐怖谷止损，但用户已否决 CSS/几何临摹；源码不再保留 Bongo runtime，也不得恢复为默认或用户选项 |
-| CUX-BONGO-002 | Bongo P1b 动作增强与真实 Tauri 录屏 | `apps/desktop-webview/src/cuu-bongo-runtime.ts`、`apps/desktop-webview/src/pet-surface.test.ts`、`apps/desktop-webview/src/pet-surface-qa.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-BONGO-001 | **已落 P1b**：31 组件、search/sync/spark 道具层、wave/search/sync/revise/carry/celebrate/drag 可辨；browser 状态墙与真实 Tauri GIF/MP4 已产出 |
-| CUX-BONGO-003 | Bongo P1c first-painted 首帧稳定 | `client-tauri/src-tauri/src/main.rs`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface.test.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-BONGO-002 | **已修**：Rust 启动只预定位 `pet` window，pet surface 首屏后同步窗口模式；motion capture 先等 `first_frame_gate` 达标后才写 frame 000，真实 Tauri contact sheet frame 000 已是 Cuu 全身可见 |
-| CUX-BONGO-004 | BongoCat 参考吸收与默认模型包门禁 | `packages/cuu/src/model-pack.ts`、`packages/cuu/src/model-pack.test.ts`、`docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | CUX-BONGO-003 | **历史已落，当前已撤回**：BongoCat 输入/低恐怖谷经验保留为参考；`cuu-bongo-p1` 不再是 approved default，也不再展示为可选项 |
-| CUX-BONGO-013 | Model pack registry / loader 默认锁定 | `packages/cuu/src/model-pack.ts`、`packages/cuu/src/model-pack.test.ts`、`apps/desktop-webview/src/pet-surface-qa.ts` | CUX-BONGO-004 | **已由 Live2D 二选项覆盖**：registry 现在只暴露黑猫 Hijiki / 白猫 Tororo；旧 Bongo、PSD、sprite/atlas 和未知 pack id 回退黑猫 |
-| CUX-BONGO-014 | Settings 模型包 UI 与偏好保存 | `packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-preferences.ts` | CUX-BONGO-013 | **已由 Live2D 二选项覆盖**：Cuu 偏好只应展示黑猫/白猫；主窗 `/settings` 不展示 Cuu 模型包入口 |
-| CUX-LIVE2D-CAT-001 | 黑猫 / 白猫 Live2D 二选项收束 | `packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-cat-live2d-runtime.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/public/cuu/live2d/{hijiki,tororo}`、`docs/workhub/05-clients/cuu-live2d-cat-options-current-plan.md` | CUX-BONGO-014 | **当前主线**：默认黑猫 Hijiki，可选白猫 Tororo；Web / desktop 主窗无 Cuu 形象；旧视觉路线不进 DOM；待补黑/白真实 Tauri motion capture、授权确认和原创替换计划 |
-| CUX-BONGO-015 | Web rail 生成图视觉替换 | `docs/workhub/05-clients/assets/cuu/generated-polished/*`、`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-polished-rail/*` | CUX-BONGO-014 | **历史已落，当前已撤回**：生成图只保留为历史审计和未来独立桌宠素材参考；Gold Path / Web / desktop 主窗不再展示 Cuu rail |
-| CUX-BONGO-005 | Bongo P1d-a 窗口手感契约 | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/pet-window-bridge.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface-qa.ts`、`client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、`client-tauri/src-tauri/src/main.rs` | CUX-BONGO-004 | **已落 P1d-a**：`pet_scale_percent` / `pet_opacity_percent` / `pet_pass_through` 进入 Cuu preferences；surface 输出窗口手感 DOM/CSS；TS bridge 调用 `set_pet_window_settings`；Rust 按 scale 重算 body/card placement 并执行 `set_ignore_cursor_events` |
-| CUX-BONGO-009 | Bongo P1d-b-a hide-on-hover 软隐藏 / 恢复 | `packages/cuu/src/controller.ts`、`apps/desktop-webview/src/cuu-preferences.ts`、`apps/desktop-webview/src/pet-window-bridge.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface-qa.ts`、`client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、`client-tauri/src-tauri/src/main.rs`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-BONGO-005 | **已落 P1d-b-a**：`pet_hide_on_hover` 进入 Cuu preferences；surface 输出 soft-hide DOM/CSS；TS bridge/Rust settings 统一 `hide_on_hover`；真实 Tauri `hide-on-hover` 录屏覆盖 hover 后软隐藏、离开恢复、再次隐藏；后续 full hide/pass-through 必须先做恢复策略 |
-| CUX-BONGO-011 | Bongo P1d-c 窗口设置矩阵真实截图 | `client-tauri/src-tauri/src/main.rs`、`apps/desktop-webview/src/cuu-preferences.test.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1`、`scripts/qa/cuu-tauri-settings-capture.ps1`、`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-settings/*` | CUX-BONGO-005 / CUX-BONGO-009 | **已落 P1d-c**：真实 Tauri 设置矩阵覆盖 default、scale-75、scale-150、opacity-60、pass-through、hide-on-hover、combo；report `passed=true`，所有 case 首帧非空、Cuu 全身可见、不是只露耳朵 |
-| CUX-BONGO-006 | Bongo P1e 输入响应合同与真实录屏 | `packages/cuu/src/idle-scheduler.ts`、`packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface.test.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1`、`client-tauri/src-tauri/src/main.rs` | CUX-BONGO-005 | **已落 P1e-a + P1e-b 底座**：`cursor_near` 首次进入附近区域立即 `look_at_mouse`；surface 输出 hover/near/drag DOM attrs；`input-handfeel` 真实 Tauri 录屏覆盖 hover/tap/drag，QA 隔离 SSE 离线卡污染，拖拽坐标生效 |
-| CUX-BONGO-007 | Bongo P1e-c 连续看鼠标与 hover 避让 | `client-tauri/src-tauri/src/pet_window.rs`、`client-tauri/src-tauri/src/pet_commands.rs`、`apps/desktop-webview/src/pet-window-bridge.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/cuu-bongo-runtime.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-BONGO-006 | **已落 P1e-c**：Rust 返回 `look_x/y_percent`，TS 归一到 `look_x/look_y` 与 `hover_avoidance`，Bongo CSS pose 驱动头/眼/面部凝视和 hover 避让；`look-avoidance` 真实 Tauri 录屏覆盖 left/right cursor-near、hover、tap、drag/release，首帧像素门和 GIF/MP4 通过 |
-| CUX-BONGO-008 | Bongo P1e-d-a 输入平滑与 drag grip | `apps/desktop-webview/src/pet-window-bridge.ts`、`apps/desktop-webview/src/pet-surface.ts`、`apps/desktop-webview/src/pet-surface-qa.ts`、`apps/desktop-webview/src/pet-surface.test.ts`、`scripts/qa/cuu-tauri-motion-capture.ps1` | CUX-BONGO-007 | **已落 P1e-d-a**：`desktopPetPointerSmoothingAlpha=0.58`，Rust sample 经 TS 低通平滑；hover / drag 本地 pose 优先；dragging 时保持 `drag_hold`；`drag-smoothing` 真实 Tauri 录屏覆盖 left/right/left cursor-near、hover、tap、两段 drag move、release，首帧像素门和 GIF/MP4 通过 |
-| GAP-CUU-05 | Live2D 分层模型 | `docs/workhub/05-clients/cuu-live2d-layered-asset-plan.md`、`apps/desktop-webview/src/assets/cuu/live2d`、未来 `apps/desktop-webview/src/cuu-live2d-runtime.ts` | Cuu 形象规范 + Bongo / sprite 降级层 | **分层概念图 + 正面基准稿 + PSD 生产板 + 绿幕零件板 + 144 层 PSD draft v1 + `contract_only`/prototype manifest + PSD probe 测试门禁已落**；因恐怖谷风险为实验线，待 PSD 清理、遮挡补画、Cubism 绑定、`.model3.json` 导出、Tauri runtime 与 Bongo fallback |
-| GAP-CUU-06 | Hatch Pet 多动作包 fallback | `apps/desktop-webview/src/assets/cuu/hatch/cuu-hatch-v1/*`、`packages/cuu/src/hatch-state-map.ts`、`apps/desktop-webview/src/cuu-hatch-runtime.ts` | Cubism 短期阻塞或 fallback 需求 | 按 8 x 9 / 192 x 208 / 9 state 合同生成 Cuu Q 版 spritesheet、`pet.json`、contact sheet、GIF 预览和 QA report；只作为 fallback / motion storyboard，不替代 Live2D 主线 |
-| GAP-RUST-01 | Tauri v2 scaffold | `client-tauri/src-tauri` | 当前 contract crate | **window plan + window control plan + window control commands + pet geometry/command plan + config/capability scaffold + 最小 Tauri `build.rs`/`main.rs` + dynamic pet creation + Rust injected pet surface + pet startup display + HiDPI physical→logical 换算 + runtime topmost + pet window API + cursor sampling + `pet-window-state.json` 位置落盘 + 基础 tray menu + Windows Tauri 像素 smoke 已落**；待补多屏恢复实测、安装包 smoke 和跨平台 capture |
-| GAP-RUST-02 | SSE worker emit | `client-tauri/src-tauri/src/sse_worker.rs` | GAP-RUST-01 | **基础已落**：global stream 真实连接/重试/emit；待真实配置、token 后私有流 restart、run/session/proposal 按需订阅 |
-| GAP-RUST-03 | Tray / notification / deep-link / single-instance | `client-tauri/src-tauri/src/{tray,notify,deep_link,single_instance}.rs`、`apps/desktop-webview/src/{browser,shell-events}.ts` | GAP-RUST-01 | **Tray basics + deep-link basics + webview navigate listener + high/urgent system notification basics + process dedupe + single-instance basics 已落**；待补动态未读/审批菜单、OS notification click source / persistent dedup / preference bridge、安装包协议和系统通知权限 smoke |
-| GAP-RUST-04 | Local sync / delivery | `client-tauri/src-tauri/src/{sync,delivery}.rs` | sync contract | 本地变更能走 proposal / conflict |
-| GAP-WEB-01 | Real SPA routes | `apps/web/src/routes` | Page VM | Gold Path 全链路可点 |
-| GAP-WEB-02 | Visual QA | `apps/web/tests`、`apps/desktop-webview/tests` | Real routes | 截图无重叠、四态完整 |
-| GAP-GOLD-01 | Eval / Replay runner | `packages/agent`、`packages/audit` | Replay contract | fixtures 能生成 replay + cost footer |
-| GAP-DOC-01 | 旧锚点标注 | `docs/workhub/05-clients/*` | 本审计 | Behavior source 与 current implementation 不混用 |
-
----
-
-## 8. 修改相关文档的规则
-
-后续若新增概念图或实现计划：
-
-1. 概念图放在 `docs/workhub/05-clients/assets/{web|desktop|cuu|shared}`。
-2. `page-concepts.md` 必须补索引。
-3. 若涉及 Cuu 动画，`cuu-desktop-pet-concept.md` 必须补 runtime / asset / QA 说明。
-4. 若涉及 Rust/Tauri，`desktop-pet-tauri.md` 必须同时写清「当前 WorkHub 代码」和「旧项目迁移参照」。
-5. 若涉及 Web 页面，`web-app.md` 必须补 route、Page VM、Cuu 承接和四态。
-6. 若涉及计划执行，PR 必须写 `Target TS paths` / `Target Rust paths`。
-
----
-
-## 9. 最小下一步建议
-
-推荐下一个施工切片不要直接追 Live2D，也不要先做复杂看板，而是：
-
-1. **Pet card P1.2c**：P1.2 已落审批 / 澄清轻卡上下文、option button、本地选中态和 browser CDP 截图；P1.2b 已补 `selected_option_ids` 到 session API；继续补证据详情 deep-link、预算 / evidence / sync fixtures，并把 P1.2 card fixture 接进真实 Tauri `PrintWindow` capture。
-2. **Bongo P1d-b / P1e-d 动作与窗口体验**：P1d-a 已补缩放、透明度和点击穿透契约，P1d-b-a 已补 hide-on-hover 软隐藏 / 恢复真实录屏，P1d-c 已补窗口设置矩阵真实截图，P1e-a/P1e-b/P1e-c/P1e-d-a/P1e-d-b 已补 cursor-near、pointer DOM attrs、hover/tap/drag、连续看鼠标、hover 避让、pointer smoothing、drag grip 和 60s idle jitter / flicker 真实录屏，BONGO-P2a-a/P2a-b/P2a-c 已补 model pack registry / loader / Settings UI / Web rail 生成图资产；下一步补多屏恢复、显示/隐藏快捷入口、full hide/pass-through 安全恢复、长驻性能采样，并加大抱文件 / 审批敲桌 / 完成庆祝的动作幅度。
-3. **GAP-CUU-05 Live2D PSD + Cubism**：card mode 只露耳朵已作为 P0 bug 修复并保留回归样例；8 层裁片 prototype 和未精修 PSD draft 都不能默认展示。继续清理 `generated-psd-draft-v1`、补画遮挡、导入 Cubism 并录屏验证眨眼、呼吸、尾巴、流苏和任务动作；只有美术 QA 通过后才允许替换 Bongo 默认。
-4. **GAP-CUU-04 + GAP-RUST-01**：在独立 `pet` window 已可见、card mode geometry 和 first-painted 首帧已修的基础上，继续补拖拽后位置截图、多屏恢复、安装包 smoke 和跨平台透明 capture。
-5. **GAP-RUST-02**：真实 SSE 推到 pet webview，事件驱动 Cuu 动作和气泡。
-6. **GAP-WEB-01**：把 Gold Path shell 升级成真实 React SPA routes，先做 AI-first Home 和 option-first Intake。
-6. **GAP-WEB-02**：建立视觉 QA 门，防止概念还原时出现重叠、空白、移动端不可读。
-
-这样能最快把「AI-native 地基」变成用户能感知的体验：Cuu 会动、用户能点、Web 能走完、Rust 壳开始真正承接桌面能力。
+| 优先级 | 工作 |
+|---|---|
+| P0 | 完成 Cuu 黑/白真实 Tauri 录屏和设置矩阵 |
+| P0 | 主窗截图审查，确认无 Cuu 本体回流 |
+| P0 | 跑 Cuu / desktop webview / contracts tests |
+| P1 | Web attention workspace 真页面化 |
+| P1 | Proposal 多类型交付物预览 |
+| P1 | Cuu search / knowledge 气泡 |
+| P1 | Rust tray recovery + private SSE |
+| P2 | 跨平台客户端 smoke 和安装包 |

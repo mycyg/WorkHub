@@ -23,8 +23,8 @@ test("Cuu model pack registry only exposes black and white Live2D cats", () => {
   ]);
   assert.equal(getCuuModelPack("cuu-hijiki-live2d-cubism2"), defaultCuuBlackCatLive2DModelPack);
   assert.equal(getCuuModelPack("cuu-tororo-live2d-cubism2"), defaultCuuWhiteCatLive2DModelPack);
-  assert.equal(getCuuModelPack("cuu-bongo-p1"), undefined);
-  assert.equal(getCuuModelPack("cuu-live2d-cubism-v2"), undefined);
+  assert.equal(getCuuModelPack("legacy-cuu-pack"), undefined);
+  assert.equal(getCuuModelPack("unsupported-cuu-pack"), undefined);
 });
 
 test("both approved cat model packs can be default-ready choices", () => {
@@ -54,9 +54,8 @@ test("both approved cat model packs can be default-ready choices", () => {
 test("Cuu defaults to black cat and allows selecting white cat only", () => {
   assert.equal(normalizeCuuSelectableModelPackId("cuu-hijiki-live2d-cubism2"), "cuu-hijiki-live2d-cubism2");
   assert.equal(normalizeCuuSelectableModelPackId("cuu-tororo-live2d-cubism2"), "cuu-tororo-live2d-cubism2");
-  assert.equal(normalizeCuuSelectableModelPackId("cuu-bongo-p1"), undefined);
-  assert.equal(normalizeCuuSelectableModelPackId("cuu-live2d-cubism-v2"), undefined);
-  assert.equal(normalizeCuuSelectableModelPackId("cuu-psd-draft-v1"), undefined);
+  assert.equal(normalizeCuuSelectableModelPackId("legacy-cuu-pack"), undefined);
+  assert.equal(normalizeCuuSelectableModelPackId("unsupported-cuu-pack"), undefined);
 
   const defaultSelection = resolveCuuVisibleModelPack();
   assert.equal(defaultSelection.active_pack.pack_id, "cuu-hijiki-live2d-cubism2");
@@ -67,7 +66,7 @@ test("Cuu defaults to black cat and allows selecting white cat only", () => {
   assert.equal(whiteSelection.active_pack.pack_id, "cuu-tororo-live2d-cubism2");
   assert.equal(whiteSelection.reason, "requested_default_ready");
 
-  const unknownSelection = resolveCuuVisibleModelPack({ requested_pack_id: "cuu-bongo-p1" });
+  const unknownSelection = resolveCuuVisibleModelPack({ requested_pack_id: "legacy-cuu-pack" });
   assert.equal(unknownSelection.active_pack.pack_id, "cuu-hijiki-live2d-cubism2");
   assert.equal(unknownSelection.reason, "unknown_requested_pack");
   assert.equal(unknownSelection.fallback_pack?.pack_id, "cuu-hijiki-live2d-cubism2");

@@ -115,18 +115,18 @@ export const deliverableManifestFixtures: DeliverableChangeManifest[] = [
   {
     ...baseManifest,
     title: "生成图片素材",
-    summary_md: "新增一张绿幕素材图。",
+    summary_md: "新增一张 Live2D 桌宠验收截图。",
     changes: [
       {
         id: "88888888-8888-4888-8888-888888888888",
         target_kind: "image",
         target_ref: {
           entity_type: "drive_item",
-          path: "/outputs/cuu-green.png",
+          path: "/outputs/cuu-live2d-hijiki-idle.png",
           sha256_after: sha
         },
         change_type: "generated",
-        human_summary: "生成了 Cuu 绿幕图。",
+        human_summary: "生成了 Cuu 黑猫桌宠 idle 截图。",
         machine_summary: { image_size_after: "1024x1024" },
         preview_ref: { kind: "image", href: "/api/previews/image-1" }
       }

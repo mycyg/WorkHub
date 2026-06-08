@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const chromePath = process.env.CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const url = process.env.CUU_PET_URL ?? "http://127.0.0.1:1420/pet.html";
-const captureKind = process.env.CUU_PET_CAPTURE_KIND ?? "bongo-cuu";
-const waitSelector = process.env.CUU_PET_WAIT_SELECTOR ?? '[data-cuu-bongo-runtime="bongo_cuu"]';
-const outDir = resolve(process.env.CUU_PET_CAPTURE_DIR ?? "docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime");
+const captureKind = process.env.CUU_PET_CAPTURE_KIND ?? "live2d-cat";
+const waitSelector = process.env.CUU_PET_WAIT_SELECTOR ?? '[data-cuu-live2d-runtime="live2d_cubism2_cat"]';
+const outDir = resolve(process.env.CUU_PET_CAPTURE_DIR ?? "docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime");
 const width = Number(process.env.CUU_PET_CAPTURE_WIDTH ?? 240);
 const height = Number(process.env.CUU_PET_CAPTURE_HEIGHT ?? 280);
 const delays = (process.env.CUU_PET_CAPTURE_DELAYS ?? "0,900,1800,2700,3600")
@@ -72,16 +72,9 @@ try {
     expression: `(() => {
       const root = document.querySelector('[data-wh-surface="pet"]');
       const live = document.querySelector('[data-cuu-live2d-runtime]');
-      const bongo = document.querySelector('[data-cuu-bongo-runtime]');
       return {
         surface: root ? {...root.dataset} : null,
-        bongo: bongo ? {...bongo.dataset} : null,
-        live2d: live ? {...live.dataset} : null,
-        layers: Array.from(document.querySelectorAll('[data-psd-layer]')).slice(0, 90).map((node) => ({
-          layer: node.getAttribute('data-psd-layer'),
-          bindTarget: node.getAttribute('data-psd-bind-target'),
-          defaultVisible: node.getAttribute('data-psd-default-visible')
-        }))
+        live2d: live ? {...live.dataset} : null
       };
     })()`
   });

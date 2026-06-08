@@ -29,7 +29,7 @@ export type CuuModelPackComponent =
 
 export type CuuModelPackVisualGate = {
   low_uncanny: boolean;
-  no_psd_default: boolean;
+  no_experimental_default: boolean;
   full_body_visible: boolean;
   stable_identity: boolean;
   no_ai_artifact: boolean;
@@ -145,7 +145,7 @@ export const requiredCuuDefaultWindowAffordances: CuuModelPackWindowAffordance[]
 
 export const cuuDefaultModelPackVisualGate: CuuModelPackVisualGate = {
   low_uncanny: true,
-  no_psd_default: true,
+  no_experimental_default: true,
   full_body_visible: true,
   stable_identity: true,
   no_ai_artifact: true,

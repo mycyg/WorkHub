@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**38 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、历史 Bongo-style / 绿幕 / PSD 失败复盘、Cuu Live2D 分层资产方案、BongoCat 参考吸收、当前真实截图/动作审计;详见各篇 frontmatter)。
+> 状态(2026-06-08):**37 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
 
 ---
 
@@ -110,11 +110,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `web-app.md` | **C-WEB**:信息架构、路由/页面清单、关键组件、状态管理、实时订阅、空/错/载入态 | ✅ |
 | `desktop-pet-tauri.md` | **C-PET**:Rust 侧能力(托盘/通知/提醒/deep-link/spec_watch/双向同步)、桌宠窗口与人格、本地 Agent、webview↔Rust 边界、安装/更新 | ✅ |
 | `page-concepts.md` | **C-WEB/C-PET**:页面概念图索引,覆盖 Web、Rust 客户端、桌宠/澄清/检索视觉方向 | concept |
-| `cuu-desktop-pet-concept.md` | **C-PET/Cuu**:小猫桌宠形象、动效状态、审批/检索气泡、选项优先澄清概念图 | concept |
-| `cuu-live2d-cat-options-current-plan.md` | **C-PET/Cuu/Live2D**:当前唯一可选模型包为黑猫 Hijiki 与白猫 Tororo,废弃 Bongo/橘猫/PSD/sprite/atlas 失败路线,定义源码/QA/偏好页收束口径 | current |
-| `cuu-bongo-style-runtime-plan.md` | **C-PET/Cuu/Bongo-style**:历史 BongoCat 参考吸收、失败证据、低恐怖谷取舍与反例;不再作为当前运行时或用户选项 | historical |
-| `cuu-green-screen-desktop-pet-solution.md` | **C-PET/Cuu**:历史绿幕生图、抠图裁切、sprite atlas 方案复盘;当前不进入 Cuu 可选项 | historical |
-| `cuu-live2d-layered-asset-plan.md` | **C-PET/Cuu/Live2D**:分层 PSD、图层树、GPT Image 拆件、Cubism 绑定、Tauri runtime 与 GIF 兜底规则;作为未来原创模型替换路线 | concept |
+| `cuu-desktop-pet-concept.md` | **C-PET/Cuu**:Cuu 只在独立桌宠窗口出现;黑猫/白猫 Live2D 形象、动效状态、审批/检索气泡、选项优先澄清概念图 | current |
+| `cuu-live2d-cat-options-current-plan.md` | **C-PET/Cuu/Live2D**:当前唯一可选模型包为黑猫 Hijiki 与白猫 Tororo;定义源码、QA、偏好页、真实录屏验收收束口径 | current |
 | `i18n-locale-contract-p1-1.md` | **C-WEB/C-PET/Cuu/Contracts**:中英双语 locale 合同、API Page VM query/meta、typed client、Cuu 固定文案与后续多语言路线 | current |
 | `i18n-nongoldpath-render-helpers-p1-2.md` | **C-WEB/C-PET/C-UIKIT**:非 Gold Path helper 固定文案双语、可见 enum 人话标签、Web/Desktop facade locale 接线 | current |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |

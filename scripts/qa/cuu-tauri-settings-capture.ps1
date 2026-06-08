@@ -1,7 +1,7 @@
 param(
   [switch]$SkipBuild,
   [int]$WaitSeconds = 10,
-  [string]$OutDir = "docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-settings",
+  [string]$OutDir = "docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-settings",
   [switch]$UseRealAppData
 )
 
@@ -111,13 +111,13 @@ if (-not $SkipBuild) {
 }
 
 $cases = @(
-  [pscustomobject]@{ id = "default"; scale = 100; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minOrange = 8000; minVisual = 12000 },
-  [pscustomobject]@{ id = "scale-75"; scale = 75; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minOrange = 4000; minVisual = 6500 },
-  [pscustomobject]@{ id = "scale-150"; scale = 150; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minOrange = 8000; minVisual = 12000 },
-  [pscustomobject]@{ id = "opacity-60"; scale = 100; opacity = 60; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minOrange = 300; minVisual = 500 },
-  [pscustomobject]@{ id = "pass-through"; scale = 100; opacity = 100; pass = $true; hide = $false; scenario = "idle"; frames = 4; interval = 240; minOrange = 8000; minVisual = 12000 },
-  [pscustomobject]@{ id = "hide-on-hover"; scale = 100; opacity = 100; pass = $false; hide = $true; scenario = "hide-on-hover"; frames = 20; interval = 180; minOrange = 8000; minVisual = 12000 },
-  [pscustomobject]@{ id = "combo-125-80-pass-hide"; scale = 125; opacity = 80; pass = $true; hide = $true; scenario = "idle"; frames = 4; interval = 240; minOrange = 1000; minVisual = 1600 }
+  [pscustomobject]@{ id = "default"; scale = 100; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "scale-75"; scale = 75; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 6500 },
+  [pscustomobject]@{ id = "scale-150"; scale = 150; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "opacity-60"; scale = 100; opacity = 60; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 500 },
+  [pscustomobject]@{ id = "pass-through"; scale = 100; opacity = 100; pass = $true; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "hide-on-hover"; scale = 100; opacity = 100; pass = $false; hide = $true; scenario = "hide-on-hover"; frames = 20; interval = 180; minVisual = 12000 },
+  [pscustomobject]@{ id = "combo-125-80-pass-hide"; scale = 125; opacity = 80; pass = $true; hide = $true; scenario = "idle"; frames = 4; interval = 240; minVisual = 1600 }
 )
 
 $caseReports = @()
@@ -130,7 +130,6 @@ foreach ($case in $cases) {
     Scenario = $case.scenario
     PetScalePercent = $case.scale
     PetOpacityPercent = $case.opacity
-    MinFirstFrameOrangePixels = $case.minOrange
     MinFirstFrameVisualPixels = $case.minVisual
     OutDir = $caseOutDir
     DisableSse = $true
@@ -159,7 +158,6 @@ foreach ($case in $cases) {
       pet_hide_on_hover = [bool]$case.hide
     }
     scenario = $case.scenario
-    min_first_frame_orange_pixels = $case.minOrange
     min_first_frame_visual_pixels = $case.minVisual
     first_frame = $firstFrame
     contact_sheet = $capture.contact_sheet

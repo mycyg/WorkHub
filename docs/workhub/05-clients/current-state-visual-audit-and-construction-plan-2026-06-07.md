@@ -1,36 +1,14 @@
 ---
 module: 05-clients
 layer: C-WEB / C-DESKTOP / C-PET / Cuu
-status: audit
+status: audit-reset
 owner: workflow
-date: 2026-06-07
+date: 2026-06-08
 visuals:
   - ./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.gif
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
-  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-card-layout.gif
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png
-  - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.gif
-  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png
-  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif
-  - ./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png
-  - ./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png
-  - ./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png
-  - ./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png
-  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png
-  - ./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png
-  - ./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png
-  - ./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png
   - ./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
@@ -40,1397 +18,156 @@ visuals:
 
 # 当前真实截图审计与后续施工计划
 
-> 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
->
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype、Bongo-style 手绘或不精致 PSD 都不能算鲜活感通过。
->
-> **2026-06-08 当前口径变更**：Cuu 可选项已收束为两个已批准的 Cubism2 Live2D 小猫模型包：黑猫 `cuu-hijiki-live2d-cubism2` 与白猫 `cuu-tororo-live2d-cubism2`。`cuu-bongo-p1`、橘猫改色、Bongo-style DOM renderer、sprite/atlas、绿幕裁片与 PSD draft probe 均退出运行时源码和用户可选项，只保留在本文下方作为历史失败证据与验收反例。`resolveCuuVisibleModelPack()` 对未知或旧 pack id 统一回退黑猫；Settings / Cuu 偏好气泡只展示黑猫与白猫。下一步转向独立桌宠窗口的 Live2D 录屏 QA、多屏恢复、pass-through 安全恢复和动作鲜活感验收。
->
-> **2026-06-08 视觉资产补充**：用户指出 Web 右侧栏的临时 CSS Cuu 太粗糙。已用 GPT Image 生成新的 Cuu 绿幕源图，经过 chroma-key 抠图、裁切和 public alpha 资产同步后，Gold Path rail 默认加载透明 PNG，CSS 几何小猫只保留为图片加载失败 fallback。该资产只代表 Web rail P1 视觉升级，不替代 Live2D / Cubism 最终验收。
+> 本文记录“当前实现距离 PRD / 概念图还有多远”。2026-06-08 之后，Cuu 视觉路线重置为黑猫 / 白猫 Live2D 二选项；之前未通过用户复核的实验素材、主窗角色栏和临时 renderer 已从当前路线移除，不能再作为验收证据。
 
----
+## 1. 当前结论
 
-## 0. 本轮截图与录像资产
+| 维度 | 当前状态 | 与概念图差距 |
+|---|---|---|
+| Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
+| Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
+| Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D | 仍缺两只模型的真实 Tauri 多帧录屏、动作语义验证和长期稳定性 |
+| Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
+| 多语言 | 中英 locale 合同已落 | 需要覆盖更多非 Gold Path 页面和桌宠固定文案 |
 
-### 0.1 当前页面总览
+## 2. 已保留的有效截图
+
+### 2.1 页面总览
 
 ![当前页面截图总览](./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png)
 
-截图来源：
+这组截图仍可用于证明页面骨架存在：
 
-| 截图 | URL / 来源 | 用途 |
+| 截图 | 路由 / 来源 | 仍然有效的判断 |
 |---|---|---|
-| `web-home.png` | `http://127.0.0.1:5173/#/` | Web Gold Path 首页 |
-| `web-intake.png` | `http://127.0.0.1:5173/#/intake/...` | Web 选项澄清页 |
-| `web-approvals.png` | `http://127.0.0.1:5173/#/approvals` | Web 审批中心入口 |
-| `web-workitem.png` | `http://127.0.0.1:5173/#/workitems/...` | Web 工作项详情 |
-| `web-proposal.png` | `http://127.0.0.1:5173/#/proposals/...` | Web 交付物变更申请 |
-| `web-replay.png` | `http://127.0.0.1:5173/#/agent-runs/.../replay` | Web replay |
-| `web-cost.png` | `http://127.0.0.1:5173/#/dashboard/cost` | Web 成本页 |
-| `desktop-home.png` | `http://127.0.0.1:1420/#/` | desktop webview 主窗首页 |
-| `desktop-cuu-demo.png` | `http://127.0.0.1:1420/?cuuDemo=1#/` | desktop webview 内 Cuu demo |
-| `pet-browser-preview.png` | `http://127.0.0.1:1420/pet.html` | browser pet surface 预览 |
-| `tauri-pet-printwindow.png` | Tauri `Cuu` hwnd `PrintWindow` | 真实独立桌宠窗口截图 |
+| `web-home.png` | Web Gold Path | AI-first shell 已有 |
+| `web-intake.png` | 澄清页 | option-first 方向已出现 |
+| `web-approvals.png` | 审批中心 | 审批入口已存在 |
+| `web-workitem.png` | 工作项详情 | trace / 状态区已有 |
+| `web-proposal.png` | 交付物变更 | GitHub-like 说明方向已有 |
+| `web-replay.png` | Replay | eval/replay 入口已有 |
+| `web-cost.png` | Cost | P-COST 页面入口已有 |
+| `desktop-home.png` | Desktop webview | 桌面主窗 shell 已有 |
+| `pet-browser-preview.png` | Browser pet preview | 只能证明 pet surface 可预览，不能证明真实桌宠合格 |
+| `tauri-pet-printwindow.png` | Tauri `pet` hwnd | 只能证明真实窗口可抓取，不能证明当前黑/白模型已验收 |
 
-### 0.1.1 Cuu Web Rail 生成图资产
+### 2.2 失败样例仍作为回归门
 
-![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
+![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
-![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
+![Cuu card mode 裁切失败样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
 
-本次替换的是 Web / Gold Path 右侧栏的 Cuu 静态视觉资产：`packages/ui/src/gold-path/render.ts` 优先加载 `./assets/cuu/cuu-polished-idle-v1-alpha.png`，`apps/web/public/assets/cuu/` 与 `apps/desktop-webview/public/assets/cuu/` 同步透明 PNG，文档目录保留绿幕源图、抠图结果和截图。截图门只证明当前右侧栏不再是粗糙 CSS 占位；桌面独立 `pet` window 的动态鲜活感仍以真实 Tauri motion capture、Bongo 动作二轮和后续 Live2D 绑定为准。
+![Cuu card mode full-body 修复样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
-### 0.2 Cuu 动作多帧抓取
+这些图不再证明 Cuu 当前视觉通过；它们只保留三个回归门：
 
-![Cuu motion contact sheet](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
+- 不能只靠单帧 smoke 说桌宠通过。
+- 不能在 card mode 只露耳朵或局部。
+- 必须用真实窗口多帧截图证明动作和布局。
 
-动图文件：
+## 3. 当前源码事实
 
-- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.gif`
-- MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/cuu-motion-printwindow.mp4`
-- 原始帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/frames/frame-000.png` 到 `frame-031.png`
-- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-motion/motion-diff-report.json`
-
-本轮抓取参数：
-
-| 项 | 值 |
+| 区域 | 当前事实 |
 |---|---|
-| 捕获对象 | 真实 Tauri `Cuu` 顶层窗口 |
-| 捕获方式 | Win32 `PrintWindow(PW_RENDERFULLCONTENT)` |
-| 帧数 | 32 |
-| 间隔 | 180ms |
-| 总时长 | 约 5.76 秒 |
-| 窗口物理尺寸 | 194 x 228 |
-| 最大相对首帧平均差异 | `40.637` |
-| 最大相邻帧平均差异 | `40.528` |
-| 最大相对首帧变化像素 | `11882` |
-| 最大相邻帧变化像素 | `11817` |
+| 模型包 | `packages/cuu/src/model-pack.ts` 只注册黑猫和白猫 |
+| 运行时 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` 选择 Hijiki / Tororo iframe |
+| Pet surface | `apps/desktop-webview/src/pet-surface.ts` 只渲染 Live2D cat runtime + 轻气泡 |
+| 偏好 | `apps/desktop-webview/src/cuu-preferences.ts` 只展示黑猫 / 白猫 |
+| QA | `apps/desktop-webview/src/pet-surface-qa.ts` 禁止旧实验 runtime/class/data attr 回流 |
+| 主窗 | `packages/ui/src/gold-path/render.ts` 和 desktop main shell 不再承载 Cuu 本体 |
+| Rust window | `client-tauri/src-tauri/src/pet_window.rs` / `pet_commands.rs` 承担几何、设置、拖拽和 cursor sample |
 
-解释：
+## 4. 已清理内容
 
-- 前半段确实有轻微动作，主要表现为 Cuu 的呼吸/缩放/轮廓边缘变化。
-- 第 20 帧附近出现 `SSE stream returned HTTP 401` 的离线卡片，窗口仍停在 body-only 小尺寸，气泡和 Cuu 被挤在 194 x 228 范围内。
-- 这说明单张 smoke 截图只能证明「启动时可见」，不能证明「长时间活着、遇到事件时布局正确」。
-- 后续 QA 必须把多帧截图 / GIF / 像素差异作为桌宠验收门。
+这轮清理的原则是：失败路线不再作为文件、脚本、用户选项或验收目标继续存在。
 
-### 0.3 Cuu card mode 修复后多帧抓取
-
-第一轮修复只证明窗口可以扩到 card mode，但关键帧中 Cuu 仍只露耳朵 / 局部，因此这组图必须保留为失败证据：
-
-![Cuu card mode 第一轮修复后失败证据](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png)
-
-![Cuu card mode 第一轮 frame 012 失败证据](./assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-card-mode.png)
-
-随后修复 card mode 中离线状态的可见动作、轻卡文案与 HiDPI 安全边距，fresh build 后重新抓取：
-
-![Cuu card mode HiDPI 完整身体修复后动作抓取](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
-
-关键通过帧：
-
-![Cuu card mode full body frame 012](./assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-full-body-hidpi-card-mode.png)
-
-本轮修复后资产：
-
-- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-card-layout.gif`
-- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png`
-- 最终 GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.gif`
-- 最终 MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-printwindow-after-full-body-hidpi-fix.mp4`
-- 最终 Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png`
-- 最终关键帧：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/frame-012-full-body-hidpi-card-mode.png`
-- 修复前对照：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-before-card-layout.png`
-- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-card-layout.json`
-- 最终像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/motion-diff-report-after-full-body-hidpi-fix.json`
-- 启动 smoke 截图：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/tauri-pet-smoke-after-card-mode.png`
-
-窗口 / 布局修复结果：
-
-| 检查项 | 结果 |
+| 类别 | 处理 |
 |---|---|
-| `set_pet_window_mode("card")` 是否被真实调用 | 通过；bridge 同时支持 `__TAURI__.core.invoke` 和 legacy `__TAURI__.invoke` |
-| Rust placement 是否被前端校验 | 通过；缺少 placement 或尺寸低于阈值会抛错，不再静默 |
-| 事件卡出现后窗口尺寸 | 第 10 帧起由 `194 x 228` 扩到 `394 x 568` |
-| card bubble 布局 | 已固定在扩展窗口左上，避免被右下角 Cuu body 或窗口底部裁切 |
-| HiDPI 安全边距 | 通过；card bubble 收窄到 260px 逻辑宽，fresh `PrintWindow` 关键帧右侧有明确留白 |
-| Cuu body 在 card mode 中完整可见 | 通过；最终关键帧显示完整坐姿、围兜、爪子和尾巴局部，不再只露耳朵 / 头部 |
-| 离线卡表达 | 通过本轮 P0 修正；`sse-status` raw error 不再进入用户卡片，显示“连接有点不稳 / 重连中” |
-| invoke 不可用时 | 走 compact fallback，只显示极短标题和一个动作按钮，并记录 `data-pet-window-mode-error` |
-| motion QA | `scripts/qa/cuu-tauri-motion-capture.ps1` 可输出 frames、contact sheet、GIF/MP4、diff report |
-| smoke QA | `scripts/qa/cuu-tauri-smoke.ps1` 会自动拉起 desktop webview dev server，避免误抓 WebView 错误页 |
+| 旧实验图形资产 | 已从当前文档资产和 public 入口移除 |
+| 旧运行时脚本 | 已删除生成/拆件脚本 |
+| 旧模型 ID | tests 和偏好归一化改用 generic legacy id，未知请求回退黑猫 |
+| 旧 QA 像素门 | 不再用特定颜色像素作为通过标准，改为 foreground/visual pixels |
+| 主窗 Cuu 视觉 | 撤回，Web / desktop 主窗保持严肃 |
 
-#### CUX-MOTION-002：Cuu 非缩放鲜活感修复（2026-06-07）
+## 5. 当前不算通过的点
 
-用户验收口径更新：**只露耳朵是失败；只有大小变化 / 呼吸缩放也是失败；静态 fallback 在动不能算通过。** 因此在 card mode 修复后又追加了一轮真实 `Cuu` 顶层窗口 motion capture，确认动作 PNG 真的在 Tauri dev server 下加载并渲染。
-
-![Cuu alive motion after dev asset path fix](./assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png)
-
-关键通过帧：
-
-![Cuu idle tail sway frame 003](./assets/audit/2026-06-07-cuu-alive-motion-fix/frame-003-idle-tail-sway.png)
-
-![Cuu card worried visible frame 010](./assets/audit/2026-06-07-cuu-alive-motion-fix/frame-010-card-worried-visible.png)
-
-![Cuu smoke after dev asset path fix](./assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png)
-
-本轮修复后资产：
-
-- GIF：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.gif`
-- MP4：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-printwindow-after-dev-asset-path-fix.mp4`
-- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/cuu-motion-contact-sheet-after-dev-asset-path-fix.png`
-- 关键帧：`frame-003-idle-tail-sway.png`、`frame-010-card-worried-visible.png`
-- 像素报告：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/motion-diff-report-after-dev-asset-path-fix.json`
-- Smoke 截图：`docs/workhub/05-clients/assets/audit/2026-06-07-cuu-alive-motion-fix/tauri-pet-smoke-after-dev-asset-path-fix.png`
-
-根因与修复：
-
-| 项 | 结论 |
-|---|---|
-| 静态 fallback 伪通过 | 之前 Tauri dev 下外部 clip sheet PNG 路径错误，inline fallback 一直可见，导致看起来只有缩放/呼吸 |
-| dev 资源路径 | `documentRelativeAssetPath` 曾把 `/src/assets/...` 错误归一成 `./assets/...`，导致 dev server 404；现在只把打包态 `/assets/...` 转为 `./assets/...` |
-| 运行态渲染 | pet surface 改用 clip sheet background sprite，不再让运行态静态 fallback 盖住动作帧 |
-| 起始动作 | body-only 默认从 `idle_tail_sway` 开始，第一屏就是可见待机动作；scheduler 使用更快的 blink/tail/look cadence |
-| 验收结果 | 第 001-008 帧可见 Cuu 摇尾/姿态变化；第 010 帧起进入 card mode，Cuu 全身可见且动作资源仍可见 |
-| Smoke 像素 | 去掉静态 fallback 后仍通过：`orange_pixels=7858`、`visual_pixels=9900`，主窗隐藏后 `Cuu` 仍 visible/topmost |
-
-仍待提升项：
-
-| 检查项 | 结果 | 处理 |
+| 要求 | 为什么还不能算通过 | 需要的证据 |
 |---|---|---|
-| Cuu 鲜活感 P1 | **历史阶段曾通过、当前已废弃**：Bongo / sprite 录屏曾证明 QA 链路可行，但视觉被用户否决，不再作为默认或可选模型 | 迁移同等 QA 门到黑猫/白猫 Live2D，继续做多屏恢复和 full hide/pass-through 安全恢复 |
-| Live2D 表现力 | **实验线冻结默认**：绿幕零件板、144 层 PSD draft v1、manifest/report 已落；因恐怖谷风险不得默认，尚未 Cubism 绑定 | 按低恐怖谷 v2 重绘/精修 PSD，补画遮挡，导入 Cubism，录屏验收后再申请 model pack 晋级 |
+| Cuu 鲜活感 | 现在只是换到 Live2D runtime，尚未对黑/白模型录制真实窗口动作 | 黑猫/白猫 GIF/MP4/contact sheet/diff report |
+| Cuu 任务动作 | 业务状态到 `.mtn` 的映射还需要场景化验收 | approval/search/sync/done/offline 事件录屏 |
+| 桌面交互 | hover/tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
+| 主窗无 Cuu | 已做源码收束，但需要截图确认 | Web 与 desktop 主窗截图审查 |
+| 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
+| 授权 | Hijiki/Tororo 来源需商用确认 | 授权记录或原创替换计划 |
 
-仍然没有完成的体验差距：
+## 6. 下一轮施工计划
 
-- 历史失败证据必须保留：第一轮 card layout 图中 Cuu 只露耳朵 / 局部，不能作为通过截图；后续任何回归再次出现都直接判失败。
-- 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
-- 历史 Bongo 阶段曾达到 P1 可见、可动、可设置门槛，但视觉方案已退出当前源码；后续「尾巴/流苏轻物理、任务动作更夸张、Cubism mesh 物理」必须落在 Hijiki/Tororo Live2D 或未来授权原创 Cubism 模型上。
+### 6.1 黑猫录屏
 
-### 0.4 CUX-L2D-001：PSD Draft Runtime Probe（2026-06-08）
+产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/`
 
-用户最新验收口径：Cuu 不能只是 8 层裁片、不能只有缩放，也不能用一张静态图伪装动作；如果要走 Live2D，必须先把 PSD 分层做细。为此，本轮把 144 层 `generated-psd-draft-v1` 接成 `psd_draft_probe` 运行探针。随后用户复核认为该 PSD 草案有恐怖谷风险，因此它只保留为实验线，不再作为默认 pet surface。
-
-![Cuu PSD draft runtime probe](./assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png)
-
-本轮新增资产：
-
-- 多帧 contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-contact-sheet-grid.png`
-- 原始截图：`pet-psd-draft-cdp-frame-0000.png`、`pet-psd-draft-cdp-frame-0700.png`、`pet-psd-draft-cdp-frame-1400.png`、`pet-psd-draft-cdp-frame-2100.png`、`pet-psd-draft-cdp-frame-2800.png`、`pet-psd-draft-cdp-frame-3500.png`、`pet-psd-draft-cdp-frame-4800.png`、`pet-psd-draft-cdp-frame-5200.png`
-- DOM：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-dom.json`
-- 像素差分：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/pet-psd-draft-cdp-diff-report.json`
-
-本轮代码落点：
-
-| 文件 | 作用 |
-|---|---|
-| `packages/cuu/src/live2d-psd-draft.ts` | 校验 PSD draft runtime probe 必需层，防止缺眼睛/尾巴/流苏仍被当成通过 |
-| `apps/desktop-webview/src/cuu-live2d-psd-draft-assets.ts` | 从 144 层 draft 中显式列出 72 个运行时探针层和坐标 |
-| `apps/desktop-webview/src/cuu-live2d-psd-draft-runtime.ts` | 渲染 layer PNG、data attrs 和 tail/ear/eye/mouth/bow/tassel/paw 动作 |
-| `apps/desktop-webview/src/pet-surface.ts` | 曾用于验证 `psd_draft_probe -> prototype_layered -> sprite_atlas`；该路线后续被 Bongo 止损，再被黑猫/白猫 Live2D 二选项覆盖 |
-| `scripts/qa/cuu-pet-browser-capture.mjs` | 通过 Chrome CDP 多帧截图、DOM dump 和报告生成 |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全身可见 | 通过；多帧截图中不是只露耳朵、局部或空白 |
-| 实验 renderer | 通过；实验截图中 `data-cuu-visual-mode="live2d_psd_draft"`，DOM 里有 `data-cuu-live2d-runtime="psd_draft_probe"` |
-| 真实分层 | 通过；DOM 可见 `Eye_L_Closed`、`Tail_01`、`Tassel_L_01` 等 PSD layer |
-| 非缩放动作 | 技术通过；CSS 中尾巴、耳朵、眼睛、嘴型、蝴蝶结、流苏、爪子独立运动 |
-| 动作鲜活感 | **未通过最终验收**；仍是 CSS 层动画，不是 Cubism mesh / physics |
-| 美术质量 | **未通过最终验收**；尾巴、绿边、遮挡补画和部分生成件仍需精修 |
-| Tauri 真实窗口 | 待补；本轮为 browser pet surface CDP 截图，下一轮必须跑真实 Tauri `Cuu` 顶层窗口录屏 |
-
-下一步施工：
-
-1. 冻结 `generated-psd-draft-v1` 为运行时探针，不再沿用它的拟真眼睛、写实毛发和尾巴拼接方向做默认候选。
-2. 以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，重做低恐怖谷 `face-core`、`body-core`、`tail-chain`、`collar-lace`、`bow-tassel`、`paint-behind` 绿幕零件板。
-3. 自动抠图后只把候选部件放进 v2 PSD / Cubism pipeline；正式 PSD 仍必须人工清理边缘、修遮挡、统一线条和脸部比例。
-4. 用 Cubism Editor 导入 v2 精修 PSD，绑定 `ParamEyeOpen`、`ParamTailSway`、`ParamTasselSwing`、`ParamPawTap`、`ParamAngleX/Y`、`ParamEyeBallX/Y` 等参数。
-5. 录制真实 Tauri 透明 `Cuu` window 多秒动作，验收眨眼、尾巴、耳朵、流苏、看鼠标和任务动作。
-
-### 0.5 CUX-BONGO-001：低恐怖谷默认 Cuu（2026-06-08，历史反例）
-
-> **2026-06-08 后续覆盖**：本节记录 Bongo 用于从 PSD 恐怖谷中止损的历史过程。用户随后明确否决 CSS/几何临摹作为最终视觉，源码已清理 Bongo runtime。当前默认只允许黑猫 Hijiki / 白猫 Tororo Live2D 二选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
-
-用户复核结论：PSD draft 会触发恐怖谷风险，不适合作为默认桌宠。参考 [BongoCat](https://github.com/ayangweb/BongoCat) 后，当时曾把 pet renderer 改为 `bongo_cuu`：扁平圆润、少状态强反馈、形体稳定，不依赖 AI 生成肢体。该路线现在只作为历史反例与动作 storyboard。
-
-2026-06-08 BONGO-REF 追加：参考项目已下载到 `reference/BongoCat/` 学习，不提交。当前吸收的是模型包、输入动作映射、独立窗口手感和低恐怖谷默认哲学；代码中新增 `CuuModelPackManifest`，把“默认可展示”变成可测试合同。任何 PSD draft 即使能渲染，也不得标记为默认候选。BONGO-P2a-a 已进一步把 `listCuuModelPacks()`、`describeCuuModelPackChoices()`、`resolveCuuVisibleModelPack()` 接进代码：Live2D 候选可在设置页展示为 `experimental_locked`，但默认 surface 会回退到 `cuu-bongo-p1`。
-
-![Cuu Bongo-style runtime](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
-
-![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 31 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档、桌面、检索放大镜、同步环和庆祝星点；默认包 ID 来自 `resolveCuuVisibleModelPack()` |
-| `apps/desktop-webview/src/pet-surface.ts` | 默认 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"` |
-| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu、不允许默认 HTML 出现 PSD layer，并校验 `data-cuu-model-pack-selection-reason="registry_default"` |
-| `packages/cuu/src/model-pack.ts` | 新增 Cuu 模型包默认门禁和 registry / loader：`cuu-bongo-p1` 是 `approved_default`，Live2D 候选 `experimental_locked`，PSD draft 默认候选会失败 |
-| `packages/cuu/src/model-pack.test.ts` | 覆盖 Bongo 默认可用、18 个动作全覆盖、registry / loader 回退、settings choices、PSD draft 不能默认、planned Live2D Cubism 不能默认 |
-| `scripts/qa/cuu-pet-browser-capture.mjs` | 默认等待 `[data-cuu-bongo-runtime="bongo_cuu"]` 并抓多帧截图 |
-| `docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | 新增默认路线专篇 |
-| `docs/workhub/05-clients/assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png` | 新增低恐怖谷 v2 风格基准，指导 Bongo 动作二轮和 Live2D 重绘 |
-
-截图证据：
-
-- Contact sheet：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png`
-- DOM：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-dom.json`
-- Diff：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-diff-report.json`
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 恐怖谷止损 | 通过；默认不再展示 PSD draft |
-| 默认 renderer | 通过；`data-cuu-visual-mode="bongo_cuu"`，`data-cuu-model-pack="cuu-bongo-p1"`，`data-cuu-model-pack-selection-reason="registry_default"` |
-| 默认模型包门禁 | 通过；`assertCuuModelPackCanBeDefault(defaultCuuBongoModelPack)` 通过，PSD draft pack 被拒绝 |
-| PSD 隐藏 | 通过；DOM 中 `live2d=null`，`layers=[]`，`data-cuu-live2d-layer-count="0"` |
-| 全身可见 | 通过；多帧截图中 Cuu 全身可见，不是只露耳朵 |
-| 动作 | P1 技术通过；尾巴、头、眨眼、爪、耳朵已有 keyframes |
-| 鲜活感 | 继续增强；P1b 已补挥手、抱文件、检索、同步和庆祝，后续要加大动作幅度和卡片联动 |
-| Tauri 真实窗口 | 已补 P1c first-painted 门禁；最新真实 `Cuu` hwnd 录屏 frame 000 即 body-only 全身可见 |
-
-下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。窗口设置已落 P1d-a 的 scale / opacity / pass-through 合同、P1d-b-a 的 hide-on-hover soft dodge 和 P1d-c 的真实设置矩阵截图，model pack registry / loader 已接入默认 renderer；BONGO-P2a-b 已补真实 Settings 页面和 Cuu 偏好气泡里的模型包选择，Bongo 显示为当前默认，Live2D 显示为实验锁定且不可启用。后续继续补多屏恢复、full hide/pass-through 安全恢复和动作幅度二轮。Live2D 只能在 Cubism 导出、录屏和 model pack gate 全部通过后申请替换默认。
-
-### 0.5.0 BONGO-P2a-b：模型包设置页中英截图（2026-06-08）
-
-![Cuu Settings model pack zh-CN](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-zh-cn.png)
-
-![Cuu Settings model pack en-US](./assets/audit/2026-06-08-cuu-settings-model-pack-ui/cuu-settings-model-pack-en-us.png)
-
-本轮把模型包选择从隐藏的 runtime gate 推进到用户可见但安全的设置入口：
-
-| 检查项 | 结论 |
-|---|---|
-| `/settings` 页面 | 已落；Gold Path shell 新增 Settings 页面，显示 Cuu 外观、窗口手感和语言偏好说明 |
-| 模型包数据源 | 通过；页面和 Cuu 偏好气泡都读取 `describeCuuModelPackChoices()`，不是各自硬编码 |
-| Bongo 默认 | 通过；`cuu-bongo-p1` 显示为当前默认 / Current default，用户可重新选择并保存 |
-| Live2D 锁定 | 通过；`cuu-live2d-cubism-v2` 显示实验锁定 / Experiment locked，按钮 disabled，不会写入 `pet_model_pack_id` |
-| 中英双语 | 通过；`zh-CN` 与 `en-US` 截图都已生成，文本没有挤压或溢出 |
-| 运行时回退 | 通过；即使外部请求 Live2D，`resolveCuuVisibleModelPack()` 仍返回 Bongo 与 `experimental_locked` reason |
-
-代码落点：
-
-```text
-packages/ui/src/gold-path/render.ts
-packages/ui/src/gold-path/i18n.ts
-packages/ui/src/gold-path/app-shell.ts
-packages/cuu/src/model-pack.ts
-packages/cuu/src/controller.ts
-apps/desktop-webview/src/cuu-preferences.ts
-apps/desktop-webview/src/browser.ts
-```
-
-### 0.5.1 CUX-BONGO-002：Bongo Cuu 动作增强与真实 Tauri 录屏（2026-06-08）
-
-本轮继续按用户反馈处理“Cuu 不能像死图、不能只靠缩放”的问题：不再追加恐怖谷 PSD，而是在默认 `bongo_cuu` 上增强动作可读性。新增道具层和 keyframes：放大镜 / 检索光线、同步旋转环、庆祝星点、挥手抬爪、抱文件、打回点头、拖拽抓握、看鼠标。
-
-![Cuu Bongo P1b idle](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-idle-contact-sheet-grid.png)
-
-![Cuu Bongo P1b state gallery](./assets/audit/2026-06-08-cuu-bongo-p1b-runtime/pet-bongo-p1b-gallery-contact-sheet-grid.png)
-
-![Cuu Bongo P1b real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1b-tauri/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 组件数从 24 升到 31，补 `search-glass`、`sync-ring`、`spark` 和 P1b 状态动画 |
-| `apps/desktop-webview/src/pet-surface.test.ts` | 新增 P1b business / idle actions readable 测试，覆盖 search/sync/revise/carry/wave/drag |
-| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 合同要求 31 组件、检索/同步/庆祝部件和关键 keyframes |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-runtime/` | browser idle 与状态墙多帧截图、DOM 和 diff report |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1b-tauri/` | 真实 Tauri `Cuu` 顶层窗口 frames、contact sheet、GIF、MP4、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 低恐怖谷 | 通过；仍是稳定扁平 Cuu，没有 PSD 恐怖谷和多肢体幻觉 |
-| 默认 idle | 通过；8 帧 browser CDP 中尾巴、头、眼有可见变化，最高 `18.97%` 像素相对首帧变化 |
-| 业务动作 | 通过 P1b；状态墙中 wave/search/sync/revise/celebrate 肉眼可辨 |
-| 真实 Tauri | 技术通过；P1b `cuu-tauri-motion-capture.ps1` 输出 GIF/MP4，曾在 frame 000-001 记录空白帧，已由 CUX-BONGO-003 修复 |
-| 启动首帧 | **历史未完美**；P1b frame 000-003 有空白/右侧局部过渡，说明 `pet` window visible 早于 webview first paint |
-| 下一步 | 见 CUX-BONGO-003：Rust 启动只预定位，pet surface 首屏后同步窗口模式，motion QA 等首帧像素达标后再录 |
-
-### 0.5.2 CUX-BONGO-003：Cuu first-painted 首帧稳定（2026-06-08）
-
-本轮继续处理 P1b 真实 Tauri 证据里的 cold-start blank：旧 contact sheet 的 frame 000-001 是黑空帧，不能作为“启动就有桌宠”的通过证据。修复后 Rust 启动期只计算并设置 body-only 窗口尺寸/位置/置顶，不再抢先 `show()`；`pet-surface.ts` 在首屏 DOM 渲染后通过两帧 `requestAnimationFrame` 或 64ms timeout fallback 再调用 `set_pet_window_mode`；motion capture 脚本新增 `first-frame-probe.png` 像素门槛，通过后才写入正式 `frame-000.png`。
-
-![Cuu Bongo P1c first-painted real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `client-tauri/src-tauri/src/main.rs` | `prepare_pet_window_on_startup` 只预定位和保持置顶，不在 setup 里直接 show pet window |
-| `apps/desktop-webview/src/pet-surface.ts` | 新增 `scheduleDesktopPetFirstPaint`，首屏 DOM 后再同步 `body_only/card` 窗口模式 |
-| `apps/desktop-webview/src/pet-surface.test.ts` | 新增 rAF 两帧与 hidden webview timeout fallback 测试 |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `MinFirstFrameOrangePixels` / `MinFirstFrameVisualPixels`，首帧 probe 达标后才开始录制 |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1c-first-paint/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 首帧 | 通过；新 contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再出现黑空帧 |
-| 像素门槛 | 通过；`first_frame_gate.passed=true`，第 7 次 probe 达到 `orange_pixels=9408`、`visual_pixels=15530` |
-| 真实录屏 | 通过；24 帧 `PrintWindow` 输出 contact sheet / GIF / MP4 / diff report |
-| 回归口径 | 任何 `frame-000.png` 橘色像素为 0、只露耳朵或只显示半身，都不能作为桌宠 motion QA 通过 |
-| 仍待提升 | Bongo 动作幅度仍偏温和；真实设置页模型包 UI 已补，下一步应做贴边、多屏恢复、full hide/pass-through 安全恢复和动作二轮，而不是回退恐怖谷 PSD |
-
-### 0.5.3 CUX-BONGO-004：输入响应合同与 DOM 可观测性（2026-06-08）
-
-本轮继续吸收 BongoCat 的“输入驱动动作”设计哲学，但不采集无关设备输入：只围绕桌宠窗口自身 hover / tap / drag 和 Rust `sample_pet_cursor_near` 做本地手感。`cursor_near` 首次进入附近区域会立即触发 `look_at_mouse`，不再等下一次 look interval；睡着时仍先 `wake_up`。pet surface 会把 pointer state 写入 DOM，方便 browser CDP、Tauri `PrintWindow` 和后续长时间录屏做自动判定。
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `packages/cuu/src/idle-scheduler.ts` | 新增 `CuuIdleInteraction="cursor_near"` 与 `cursor_near_start` reason，首次靠近立即映射 `look_at_mouse` |
-| `apps/desktop-webview/src/pet-surface.ts` | `renderDesktopPetSurface()` 接收 `DesktopPetPointerSnapshot`，输出 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` / `data-pet-last-pointer-ms` |
-| `packages/cuu/src/model-pack.ts` | 将 Bongo 默认包的 `scale` / `opacity` / `pass_through` 从 `planned` 收敛为 `supported`，对齐 P1d-a 真实 bridge |
-| `apps/desktop-webview/src/pet-surface.test.ts`、`packages/cuu/src/idle-scheduler.test.ts`、`packages/cuu/src/model-pack.test.ts` | 新增输入响应、DOM QA attrs 和窗口能力状态断言 |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| cursor-near 立即响应 | 通过单测；首次进入附近区域触发 `look_at_mouse` |
-| hover / drag 可观测 | 通过单测；DOM 有 `data-pet-hovered` / `data-pet-dragging` |
-| 默认模型包状态 | 通过单测；P1d-a 已实现的 scale / opacity / pass-through 不再标 planned |
-| 真实录屏 | 已补 P1e-b 底座；见下一节 hover / near / tap / drag 场景录屏和 diff report |
-
-### 0.5.4 CUX-BONGO-006：输入手感真实 Tauri 录屏（2026-06-08）
-
-P1e-a 只证明“合同可观测”，还不能证明用户真的在桌面右下角靠近、悬停、点击、拖动 Cuu 时有反馈。本轮把 `scripts/qa/cuu-tauri-motion-capture.ps1` 扩展出 `input-handfeel` 场景，用真实 Win32 鼠标移动与按键触发 `cursor_near_outside -> hover_inside -> tap_body -> drag_start -> drag_move -> drag_release`，并重新抓取真实 Tauri `Cuu` 顶层窗口。
-
-![Cuu Bongo P1e input handfeel real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `client-tauri/src-tauri/src/main.rs` | 新增 QA 专用 `WORKHUB_DISABLE_SSE` 开关；普通客户端仍启动 SSE，只有录制纯输入手感时隔离离线卡片 |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario input-handfeel`、Win32 `SetCursorPos` / `mouse_event`、scenario events 记录和 `sse_disabled_for_scenario` 报告字段 |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-input-handfeel/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全身可见 | 通过；24 帧全程 body-only Cuu 全身可见，没有只露耳朵、空白帧或离线卡片插队 |
-| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=9416`、`visual_pixels=15536` |
-| 输入事件 | 通过；report 记录 6 个 scenario events：frame 1 near、7 hover、11 tap、15 drag start、16 drag move、18 release |
-| hover / tap 表现 | 通过底座；contact sheet 中 hover/tap 阶段出现抬爪/爪击反馈 |
-| drag 表现 | 通过底座；窗口 rect 从 `1844,860` 移到 `1748,804`，证明真实窗口拖动生效 |
-| QA 隔离 | 通过；`sse_disabled_for_scenario=true`，本次只验证输入手感，不让离线卡污染画面 |
-| 仍待提升 | P1e-c 已补连续凝视与 hover 避让，P1e-d-a 已补 pointer smoothing 和 drag grip 持续姿态，P1d-b-a 已补 hide-on-hover soft dodge，P1e-d-b 已补 60s jitter / flicker 可见性 QA；下一步做多屏边界避让、full hide/pass-through 安全恢复和 Live2D 同合同接参 |
-
-### 0.5.5 CUX-BONGO-007：连续看鼠标与 hover 避让真实 Tauri 录屏（2026-06-08）
-
-P1e-b 证明了 hover/tap/drag 底座，但还没有证明 Cuu 会“看着鼠标”，也没有证明 hover 时会避开鼠标目标。本轮参考 BongoCat 的输入参数思想，把 Rust `sample_pet_cursor_near` 从 boolean 升级为方向采样，并在 webview 里统一成 `DesktopPetPointerSnapshot`：`look_x/look_y` 控制头、眼、鼻口、胡须方向，`hover_avoidance` 控制轻微反向避让，drag 时取消避让并保持抓握语义。
-
-![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `client-tauri/src-tauri/src/pet_window.rs` | `PetWindowPointerDecision` 新增 `look_x_percent` / `look_y_percent`，以 pet window 中心和 near radius 计算 `-100..100` 指针方向 |
-| `client-tauri/src-tauri/src/pet_commands.rs` | `sample_pet_cursor_near` command plan 暴露 look percent，保持 Rust 不拥有动画状态 |
-| `apps/desktop-webview/src/pet-window-bridge.ts` | 新增 `look_x/look_y/avoidance_x/avoidance_y/hover_avoidance` snapshot，合并 Rust cursor sample 与 DOM pointer event |
-| `apps/desktop-webview/src/pet-surface.ts` | 输出 `data-pet-look-x/y`、`data-pet-hover-avoidance`、`--wh-pet-look-*`、`--wh-pet-avoid-*`，轮询间隔改为 `250ms` |
-| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | `look_at_mouse` 状态使用 CSS 变量驱动头/眼/面部凝视和 hover 反向避让 |
-| `apps/desktop-webview/src/pet-surface-qa.ts` | 新增 pointer-reactive pose 静态 QA |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario look-avoidance`，真实 Win32 鼠标触发 left/right cursor-near、hover、tap、drag/release |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全身可见 | 通过；24 帧全程 body-only Cuu 可见，没有只露耳朵、空白帧或离线卡片插队 |
-| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=10737`、`visual_pixels=16870` |
-| 输入事件 | 通过；report 记录 7 个 scenario events：left cursor-near、right cursor-near、hover_top_right、tap、drag start、drag move、release |
-| 连续凝视 | 阶段通过；contact sheet 中 left/right cursor-near 帧有头/眼/面部方向差异，后续仍需 smoothing 和 Live2D 参数绑定 |
-| hover 避让 | 阶段通过；hover_top_right 帧出现轻微反向位移和抬爪反馈，不再只是缩放 |
-| drag 表现 | 通过；窗口 rect 最终移动到 `1748,804`，证明真实窗口拖动仍生效 |
-| QA 隔离 | 通过；`sse_disabled_for_scenario=true`，本次只验证输入手感，不让离线卡污染画面 |
-| 仍待提升 | 这仍是 Bongo CSS pose，不是 Cubism 物理；P1e-d-a 已补 pointer smoothing 和 drag grip 持续姿态，P1d-b-a 已补 hide-on-hover soft dodge，P1e-d-b 已补 60s jitter / flicker 可见性 QA；下一步补多屏边界避让、full hide/pass-through 安全恢复和 Live2D 同合同接参 |
-
-### 0.5.6 CUX-BONGO-008：输入平滑与 drag grip 持续姿态（2026-06-08）
-
-用户复核后指出 Cuu 的动作仍有卡顿感，且 PSD/AI 分层路线容易产生恐怖谷。参考 BongoCat 的输入阻尼思路后，本轮不继续堆 PSD draft，而是在默认 `bongo_cuu` 上先补真实输入手感：Rust cursor sample 继续提供目标方向，TS bridge 负责低通平滑，本地 hover/drag pose 优先，拖拽期间 Cuu 保持 `drag_hold` 抓握语义，避免被普通 idle tick 抢回眨眼或看鼠标。
-
-![Cuu Bongo P1e-d drag smoothing real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `apps/desktop-webview/src/pet-window-bridge.ts` | 新增 `DesktopPetPointerSmoothingOptions`、`smoothDesktopPetPointerSnapshot()`；`desktopPetPointerSnapshotFromSample()` 支持 `smoothing_alpha`，并在 hover / drag 时保留本地 DOM pointer pose，不让 Rust sample 覆盖 |
-| `apps/desktop-webview/src/pet-surface.ts` | 新增 `desktopPetPointerSmoothingAlpha=0.58`，输出 `data-pet-pointer-smoothing-alpha` 和 `--wh-pet-pointer-smoothing-alpha`；tick 采样时做平滑，dragging 时钉住 `drag_hold` |
-| `apps/desktop-webview/src/pet-surface-qa.ts` | pointer-reactive QA 增加 smoothing alpha 门禁 |
-| `apps/desktop-webview/src/pet-surface.test.ts` | 覆盖 smoothing 数值、drag/hover 本地优先、DOM QA 属性 |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario drag-smoothing`；隔离 appdata 改到系统临时目录并在 finally 清理，避免把 WebView 临时目录混进 docs 证据资产 |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-d-drag-smoothing/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全身可见 | 通过；24 帧 body-only Cuu 可见，没有空白帧、只露耳朵或卡片插队 |
-| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=9090`、`visual_pixels=14540` |
-| 输入事件 | 通过；report 记录 9 个 scenario events：left/right/left cursor-near、hover_top_right、tap、drag start、两段 drag move、release |
-| pointer smoothing | 通过单测与 DOM QA；`data-pet-pointer-smoothing-alpha="0.58"`，Rust sample 左右跳转会经 TS bridge 插值 |
-| drag grip | 阶段通过；dragging 时 idle action 保持 `drag_hold`，两段 drag move 后窗口 rect 从 `(1844,860)` 移到 `(1710,780)` |
-| QA 隔离 | 通过；`sse_disabled_for_scenario=true`，且新脚本不再把 `isolated-appdata` 放入证据目录 |
-| 仍待提升 | 还不是 Live2D / Cubism 物理；P1e-d-b 已补 60s jitter / flicker 可见性 QA；需要继续补多屏边界避让、full hide/pass-through 安全恢复、跨平台透明 capture、性能采样和更高表现力资产 |
-
-### 0.5.7 CUX-BONGO-009：hide-on-hover 软隐藏 / 恢复真实 Tauri 录屏（2026-06-08）
-
-用户提到 BongoCat 的窗口手感后，本轮吸收的是“鼠标压到桌宠时不挡路”的思路，但没有直接照搬全透明 + pass-through。WorkHub 当前先做可恢复 soft dodge：Cuu 在 hover 时轻微向远离鼠标方向退开、缩小并降低透明度；cursor 离开窗口和 near radius 后，TS bridge 会清理 hover snapshot，Cuu 恢复常驻可见。这样既降低挡鼠标的问题，也避免新用户把桌宠彻底弄丢。
-
-![Cuu Bongo P1d-b hide-on-hover real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `packages/cuu/src/controller.ts` | `CuuControllerPreferences` 新增 `pet_hide_on_hover`，默认关闭，避免普通用户突然丢失桌宠 |
-| `apps/desktop-webview/src/cuu-preferences.ts` | 偏好面板新增“悬停避让”开关，并允许 Rust QA 初始化脚本注入该偏好 |
-| `apps/desktop-webview/src/pet-window-bridge.ts` | `DesktopPetWindowSettings` 新增 `hide_on_hover`；Rust sample 确认 cursor 离开窗口和 near radius 后清空 hover，防止软隐藏后不恢复 |
-| `apps/desktop-webview/src/pet-surface.ts` | 输出 `data-pet-hide-on-hover` / `data-pet-hover-hidden` / `data-pet-hover-hide-mode` 和 `--wh-pet-hide-*`，在 body-only 且无 card 时执行 soft dodge |
-| `client-tauri/src-tauri/src/pet_window.rs`、`pet_commands.rs`、`main.rs` | Rust settings plan / command / invoke handler 对齐 `hide_on_hover`；`WORKHUB_CUU_QA_HIDE_ON_HOVER=1` 只作为 motion capture 注入开关 |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario hide-on-hover`，录制 hover 后软隐藏、离开恢复、再次隐藏；启动前把鼠标移到安全位置，避免第一帧误隐藏 |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-b-hide-on-hover/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全身可见 | 通过；frame 000-003 是完整 body-only Cuu，不再出现只露耳朵或空白首帧 |
-| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=9291`、`visual_pixels=15423` |
-| 软隐藏 | 通过；frame 004-013 进入 hover soft hide，身体缩小、透明并避让 |
-| 离开恢复 | 通过；frame 014-017 cursor leave 后恢复完整可见 |
-| 再次隐藏 | 通过；frame 018 后再次 hover，Cuu 再次进入 soft hide |
-| 动作差异 | 通过；`max_vs_first_mean_abs_delta=58.368`，`max_vs_previous_mean_abs_delta=57.379`，不是静态图缩放伪通过 |
-| 后续边界 | full hide / pass-through 暂不默认启用；必须先补托盘、快捷键、边缘热区和自动恢复策略 |
-
-### 0.5.8 CUX-BONGO-010：60s idle jitter / flicker 长驻 QA（2026-06-08）
-
-用户多次强调 Cuu 不能是死图，也不能只是大小变化；同时桌宠需要长期待在桌面右下角。P1e-d-b 不追求大幅演出，而是补一条稳定长驻门：真实 Tauri `Cuu` 顶层窗口连续约 60 秒抓 31 帧，逐帧记录可见像素、窗口 rect 和相邻差异，防止空白帧、只露耳朵、可见像素骤降、窗口漂移或完全静态误通过。
-
-![Cuu Bongo P1e-d-b 60s idle jitter real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/cuu-motion-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 新增 `-Scenario idle-long-run`，报告写入 `frame_pixel_reports` 与 `long_run` 汇总；按可见像素比例、窗口漂移和相邻变化帧数判定 |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1e-60s-idle-jitter/` | 真实 Tauri frames、contact sheet、GIF、MP4、first-frame probe、diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 全程可见 | 通过；31 帧 body-only Cuu 可见，没有空白帧、只露耳朵、低可见帧或卡片插队 |
-| 首帧像素门 | 通过；`first_frame_gate.passed=true`，`orange_pixels=9406`、`visual_pixels=15530` |
-| 长驻可见性 | 通过；最低帧仍有 `orange_pixels=9287`、`visual_pixels=15417`，高于首帧 70% 阈值 |
-| 窗口稳定 | 通过；`rect_drift_frames=[]`，60 秒内窗口未漂移 |
-| 不是死图 | 阶段通过；`changed_frames_gt8_count=24`，满足最少 3 个相邻变化帧门槛 |
-| 仍待提升 | contact sheet 肉眼变化较克制，主要证明稳定和非静态；动作幅度二轮、CPU/GPU 长驻采样和跨平台透明 capture 仍待补 |
-
-### 0.5.9 CUX-BONGO-011：窗口设置矩阵真实 Tauri 截图（2026-06-08）
-
-P1d-a 已经把 scale / opacity / pass-through 做成 TS/Rust 合同，P1d-b-a 已经把 hide-on-hover 做成可恢复 soft dodge。这个切片补的是“真实窗口证据”：用同一套 Tauri `Cuu` 顶层窗口，分别注入不同设置，确认 Cuu 不是只在单测里变化，也不会因为缩放、透明度或穿透组合变成空白、只露耳朵、被裁切。
-
-![Cuu Bongo P1d-c settings matrix real Tauri screenshots](./assets/audit/2026-06-08-cuu-bongo-p1d-settings/cuu-settings-contact-sheet.png)
-
-本轮新增 / 修改：
-
-| 文件 | 作用 |
-|---|---|
-| `client-tauri/src-tauri/src/main.rs` | 初始化脚本支持 `WORKHUB_CUU_QA_PET_SCALE_PERCENT` / `WORKHUB_CUU_QA_PET_OPACITY_PERCENT` / `WORKHUB_CUU_QA_PET_PASS_THROUGH` / `WORKHUB_CUU_QA_HIDE_ON_HOVER`，把 QA 偏好注入 pet webview |
-| `apps/desktop-webview/src/cuu-preferences.test.ts` | 覆盖 Rust 注入偏好会优先于 localStorage，包括 scale、opacity、pass-through、hide-on-hover 和 queue limit |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | 支持 settings 参数与 `-DisableSse`，每次 report 写入 `cuu_qa_preferences` |
-| `scripts/qa/cuu-tauri-settings-capture.ps1` | 新增设置矩阵 wrapper：一次跑 default、scale-75、scale-150、opacity-60、pass-through、hide-on-hover、combo-125-80-pass-hide，并生成总 contact sheet / JSON report |
-| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-bongo-p1d-settings/` | 真实 Tauri settings matrix contact sheet、per-case frames、GIF、first-frame probe 和 diff report |
-
-验收结论：
-
-| 检查项 | 结论 |
-|---|---|
-| 设置矩阵 | 通过；`settings-capture-report.json` 里 `passed=true`，共 7 个 case |
-| 缩放 | 通过；default 首帧窗口 `194 x 228`，scale-75 为 `150 x 173`，scale-150 为 `285 x 338`，肉眼可见尺寸变化且 Cuu 全身可见 |
-| 透明度 | 通过；opacity-60 仍有可见像素并在 contact sheet 中明显变淡，不是空白帧 |
-| pass-through | 阶段通过；设置可注入到 pet surface 且截图可见，真实“点击不挡鼠标”仍归 full pass-through 安全恢复切片 |
-| hide-on-hover | 通过；矩阵 case 可与 P1d-b-a 软隐藏录屏互相印证 |
-| 组合设置 | 通过；125% scale + 80% opacity + pass-through + hide-on-hover 组合首帧窗口 `239 x 283`，没有只露耳朵或裁切 |
-| 后续边界 | 设置页模型包 UI 截图已完成；多屏恢复和 full hide/pass-through 安全恢复仍未完成，不能把 P1d 全部宣告结束 |
-
-### 0.6 P1.0 双语运行时底座（2026-06-07）
-
-本轮在 Cuu motion 修复后，先补了客户端级中英双语底座，避免后续 Web / desktop 主窗 / Cuu 气泡各自发明一套语言切换。
-
-![Web English runtime screenshot](./assets/audit/2026-06-07-i18n-runtime/web-home-en-us.png)
-
-| 检查项 | 当前结论 |
-|---|---|
-| 设计对齐 | 语言切换放在右上角轻量 segmented control，不抢 AI-first 主路径；符合概念图里“主界面只保留必要入口”的方向 |
-| 已落路径 | `packages/ui/src/gold-path/i18n.ts`、`packages/ui/src/gold-path/render.ts`、`packages/ui/src/gold-path/app-shell.ts`、`apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` |
-| 已落能力 | `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome、Web/desktop 运行时提示；后续主窗已撤回 Cuu rail / queue badge |
-| 测试 | `@workhub/ui` 覆盖 locale 规范化、英文静态文案、shell 语言按钮；`@workhub/web` / `@workhub/desktop-webview` 覆盖 locale 入口函数 |
-| 未完成 | API Page VM 动态标题/摘要、proposal manifest、证据摘录仍跟随 daemon 原文；后续必须让 daemon/Agent 按 locale 生成可本地化摘要 |
-
-验收口径：切到 English 后，静态框架必须出现 `Needs your decision` / `Budget and cost` / `Language`，审批原因按钮也必须是英文；如果任务标题仍是中文，只能说明服务端 VM 尚未做多语种，不能把它伪装成本地化完成。
-
-### 0.7 P1.1 Locale Contract Propagation（2026-06-08）
-
-P1.1 已把双语能力从 Gold Path shell 推进到跨端合同，详见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。
-
-| 检查项 | 当前结论 |
-|---|---|
-| 合同来源 | `packages/contracts/src/locale.ts` 是 `WorkHubLocale` / storage key / normalize 的单一真相源 |
-| API 对齐 | `GET /api/pages/*?locale=` 已回 `meta.locale`；`packages/api-client` 的 `pages.*` 方法可带 `PageRequestOptions.locale` |
-| Web / desktop 主窗 | `apps/web` 与 `apps/desktop-webview` 加载 Gold Path Page VM 时传当前 locale；主窗保持严肃界面，不展示 Cuu 形象 |
-| Cuu / pet | `packages/cuu/src/i18n.ts`、Cuu card adapter、desktop shell bridge、独立 pet 轻气泡固定文案支持中英；动态 event summary 原样保留 |
-| 仍未完成 | `packages/ui/src/intake/workitem/proposal/agent-run` 非 Gold Path helper 固定标签仍需 P1.2 抽词表；还缺中英视觉截图门和 `me.locale` 跨设备偏好 |
-
----
-
-## 1. 设计基线
-
-本轮审计采用这些概念图作为目标，不把当前实现截图误读为最终 UI。
-
-### 1.1 Web AI-first 首页目标
-
-![Web AI-first 首页](./assets/web/web-ai-first-home.png)
-
-目标特征：
-
-- 默认页是 AI 整理后的注意力中心，不是全量看板。
-- 中央第一屏展示「需要你决定」「AI 正在做」「风险」。
-- 看板入口只是高级视图按钮，不是首页主体。
-- 右侧 Assistant / Cuu 区域承担摘要、下一步、证据上下文。
-- 顶部有自然语言输入入口，用户可以直接说目标。
-
-### 1.2 Web 选项优先提需求目标
-
-![Web 选项优先提需求](./assets/web/web-option-first-intake-wizard.png)
-
-目标特征：
-
-- 主交互是选项卡，不是大文本框。
-- 有 stepper、附件、截止时间、负责人、验收项。
-- Cuu 推荐项以气泡承接，文字输入折叠为「其他 / 补充」。
-- 右侧有 Request Summary 和 AI confidence，用户知道自己已经给了什么信息。
-
-### 1.3 Rust 客户端单件事干活桌目标
-
-![单件事干活桌](./assets/desktop/desktop-one-thing-work-desk.png)
-
-目标特征：
-
-- 主窗不是 Web shell 原样复刻，而是一个本地桌面工作面板。
-- 默认只处理当前一个决定或一个本地动作。
-- 顶部有连接状态、托盘状态、窗口控制、工作空间切换。
-- 中心卡片是可审批 / 可打回 / 可查看证据的变更包。
-- 底部保留后台同步、AI 正在做、本地文件状态。
-
-### 1.4 Cuu 桌面审批与项目检索目标
-
-![Cuu 桌面审批与项目检索](./assets/cuu/cuu-desktop-approval-search.png)
-
-目标特征：
-
-- Cuu 是桌面右下角独立存在的可爱小猫，不活在主窗里面。
-- Cuu 有动作轨迹、主动靠近、挥手、提示，不只是静态图。
-- 轻卡可展开为审批 / 证据 / 项目检索，不需要打开完整主窗。
-- 复杂任务再 deep-link 到 WorkHub 主窗。
-
----
-
-## 2. 当前实现总体判断
-
-| 范围 | 当前截图事实 | 与概念图的距离 | 严重度 |
-|---|---|---|---|
-| Web 首页 | 有 Gold Path 左栏、中心单卡和严肃页面设置；Cuu rail / 主窗桌宠入口已撤回 | 还不是 AI-first Command Center；缺顶部自然语言输入、任务流、风险流、Next best actions 和完整右侧业务上下文 | P1 |
-| Web intake | 有选项卡和按钮 | 方向正确，但缺 stepper、附件/DDL/负责人/验收项、request summary、Cuu 推荐气泡和折叠文本输入 | P1 |
-| Web proposal | 有交付物卡、按钮、部分输出 | 接近 PR-like 方向，但缺文件/证据/评论/风险/回滚的完整结构和可视 diff | P1 |
-| Web replay | 有 trace/replay 页面 | 仍偏数据面板，缺人话 timeline、cost footer、snapshot/revert、脱敏 raw 展开 | P2 |
-| Web cost | 有预算卡 | 只是基础页面，缺策略编辑、usage trend、告警说明、团队/用户视图切换 | P2 |
-| Desktop 主窗 | 基本与 Web shell 一致 | 缺 Rust 客户端设计哲学：单件事干活桌、本地执行、同步、设备、托盘、诊断 | P1 |
-| 中英双语 | P1.1 已有 shared locale contract、Page VM `locale` query/meta、Cuu/pet 固定文案双语 | 动态 Page VM 内容仍是 daemon/Agent 原文，需要服务端按 locale 生成摘要与截图门 | P1 |
-| 主窗内 Cuu | 已撤回 Cuu 形象、notice、queue badge 和模型包入口 | 主窗后续只承载严肃页面；任何 Cuu 视觉回归都算失败 | P1 |
-| 独立 Cuu | 只保留黑猫 Hijiki / 白猫 Tororo Live2D 二选项；独立 `pet` window、card mode、HiDPI placement 和 pet bridge 已有基础 | 仍缺黑/白两套真实 Tauri motion capture、任务动作映射、多屏恢复、长期性能和授权替换计划 | P1 |
-| Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 当前默认是 `cuu-hijiki-live2d-cubism2` 黑猫，白猫 `cuu-tororo-live2d-cubism2` 可选；Bongo、PSD draft、sprite/atlas、橘猫改色和 Web rail 均为历史失败路线，不再作为默认、fallback 或用户选项 | 需要补黑猫/白猫真实 Tauri 录屏、授权确认或原创等效模型替换、任务动作 mapping 和截图/录屏门禁 | P1 |
-| Live2D 资产路线 | 当前使用现成 Hijiki/Tororo Cubism2 模型包跑通二选项；此前绿幕零件板、144 层 PSD 草案和 Bongo 录屏只保留为反例与工具链参考 | 若未来重启原创 Cuu，只能新增原创黑猫/白猫候选包，并在美术 QA、Cubism 绑定、真实录屏和 model pack gate 全部通过后替换 | P1 |
-
-一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
-
----
-
-## 3. 页面逐项差距
-
-### 3.1 AI-first Home
-
-当前截图：`assets/audit/2026-06-07-current-state/web-home.png`
-
-![当前 Web 首页](./assets/audit/2026-06-07-current-state/web-home.png)
-
-当前优点：
-
-- 左侧 Gold Path 导航清楚。
-- 中央能显示当前待审批事项。
-- 右侧 Cuu rail 已撤回；证据、成本、审批应以严肃业务区块呈现，Cuu 视觉只归独立桌宠。
-- 按钮可以表达「打开审批 / 同意 / 打回」。
-
-当前问题：
-
-- 第一屏大量空白，信息层级不像一个成熟工作台。
-- 标题「Cuu 等你审批客户周报模板」更像测试 fixture，不像 WorkHub 首页。
-- 「AI 正在做」「需要你决定」「当前入口」只是三张等权小卡，没有工作流状态和优先级。
-- 没有顶部输入框，用户无法直接告诉 WorkHub 要做什么。
-- 没有「Next best actions」和「Evidence & context」的右侧推进行为。
-- 左侧导航暴露 motion state 字符串，如 `carrying_document`、`asking_approval`，这对小白非常不友好。
-- 视觉语言与概念图差距大：当前是浅色 demo shell，概念图是成熟 SaaS attention center。
-
-目标改造：
-
-| 位置 | 目标 |
-|---|---|
-| 顶部 | 加全局 command input：「告诉 WorkHub 你想完成什么...」 |
-| 主区第一块 | `Needs your decision`，按优先级展示 1-3 个需要用户点的事项 |
-| 主区第二块 | `AI is working on`，展示后台 run，不做重看板 |
-| 主区第三块 | `Risks to notice`，只显示需要人类注意的风险 |
-| 右侧 | `Cuu / WorkHub Assistant`，包括今日摘要、下一步、证据上下文 |
-| 左侧 | motion state 不可见，只显示页面名和必要 badge |
-
-验收标准：
-
-- 1440px 桌面截图第一屏必须同时看到当前决定、后台 run、风险和 Cuu 证据。
-- 不出现 `snake_case` motion state。
-- 看板入口不是默认主体，只作为二级按钮。
-- 首页不要求用户理解项目管理术语即可点下一步。
-
-### 3.2 Option Intake
-
-当前截图：`assets/audit/2026-06-07-current-state/web-intake.png`
-
-![当前 Web Intake](./assets/audit/2026-06-07-current-state/web-intake.png)
-
-当前优点：
-
-- 已经不是聊天墙，主路径是点选项。
-- 有推荐选项和继续按钮。
-- 页面简单，不重。
-
-当前问题：
-
-- 选项只有 3 个，且语义偏模板，不像真实需求收集。
-- 缺 stepper，用户不知道后续还要补什么。
-- 缺附件、Deadline、Reviewer、Acceptance check 这些真实交付信息。
-- 缺右侧 Request Summary，用户不能确认已填字段。
-- Cuu 没有真实出现，推荐不是小猫气泡。
-- 「其他 / 补充」未折叠承接。
-
-目标改造：
-
-| 模块 | 目标 |
-|---|---|
-| Stepper | `What do you need? -> Add details -> Attach files -> Review & submit -> AI clarification` |
-| Option cards | 5 个一级意图：创建/更新、分析/研究、自动化/构建、审阅/批准、其他 |
-| Details | DDL、附件、负责人、验收项，默认轻量可点 |
-| Cuu 推荐 | 小猫在已选卡旁提示「我建议选这个」 |
-| Summary | 右侧实时累积项目、类型、DDL、reviewers、acceptance checks |
-| Free text | 折叠在底部，标签为「其他 / 补充」 |
-
-验收标准：
-
-- 首屏不出现大文本输入。
-- 375px 移动端选项卡不横向溢出。
-- 用户不用打字即可完成一条最小需求草稿。
-
-### 3.3 Approval Center
-
-当前截图：`assets/audit/2026-06-07-current-state/web-approvals.png`
-
-当前优点：
-
-- 已有审批卡、通过/打回按钮。
-- 与 Gold Path 的 proposal/action 契约已有连接。
-
-当前问题：
-
-- 审批中心不是阻塞收件箱，缺筛选、排序、来源、负责人、风险。
-- 缺「记住规则」「委派」「打回理由」的一等入口。
-- 缺批量但轻量的 pending queue。
-- 缺 Cuu 桌宠与审批中心之间的状态同步。
-
-目标改造：
-
-- 左侧：待我审批、我发起、已处理、规则。
-- 中间：按 urgency 和风险排序的审批列表。
-- 右侧：选中项摘要、证据、风险、可回滚性。
-- 动作：通过、打回并选原因、委派、记住一次/总是。
-
-验收标准：
-
-- 审批卡必须可完全由按钮完成，不强迫打字。
-- 打回必须有 3 个推荐理由 + 「其他」。
-- Cuu 轻卡点击「打开审批」能定位到同一条审批。
-
-### 3.4 WorkItem Detail
-
-当前截图：`assets/audit/2026-06-07-current-state/web-workitem.png`
-
-当前优点：
-
-- 能展示工作项详情和 AI 执行轨迹。
-- 有验收项意识。
-- 与 proposal/replay/cost 链路有关联。
-
-当前问题：
-
-- 信息结构偏 render helper，缺真实详情页节奏。
-- 缺状态四态、权限态、编辑态。
-- 缺「AI 现在在做什么」的实时流。
-- 缺交付物预览、变更包入口和风险解释。
-- Cuu 的状态没有在详情页形成可感知的协作层。
-
-目标改造：
-
-| 区域 | 目标 |
-|---|---|
-| Header | 标题、状态、人话下一步、负责人、DDL、风险 |
-| Current Focus | 当前需要处理的一件事 |
-| AI Trace | 事件流、工具调用、证据、成本 |
-| Acceptance | 验收项可勾选，可绑定证据 |
-| Deliverables | 文件/文档/PPT/表格/图片预览 |
-| Proposal timeline | 变更申请、审批、merge、rollback |
-| Cuu | 只弹关键轻卡，不变成聊天墙 |
-
-### 3.5 Proposal Detail / 非代码 PR
-
-当前截图：`assets/audit/2026-06-07-current-state/web-proposal.png`
-
-当前优点：
-
-- 当前页面最接近概念：已有交付物变更申请、输出物、动作按钮。
-- 已经不是代码 diff 限定，有文档/报告意识。
-
-当前问题：
-
-- 缺 GitHub PR 式结构：说明、文件、证据、评论、检查、回滚。
-- 文件变化没有 renderer 区分：文档、表格、PPT、图片、文件夹。
-- 缺风险和审核意见的清晰区域。
-- 通过/打回按钮还不够贴近负责人决策。
-
-目标改造：
-
-| Tab | 内容 |
-|---|---|
-| Overview | AI summary、why now、risk、rollback |
-| Files | 按 target type 展示变更，不限代码 |
-| Evidence | 会议、网盘、历史任务、用户评论 |
-| Checks | 验收项、policy、预算、权限 |
-| Discussion | 审核评论与 Cuu 打回理由 |
-
-验收标准：
-
-- 文件 target renderer 至少覆盖 `docx/md/xlsx/csv/pptx/image/folder/json/config/code`。
-- LLM 生成 PR 说明必须字段化：summary、files_changed、evidence_refs、risk、rollback、review_questions。
-- 用户能一眼判断「同意后会改什么」。
-
-### 3.6 Replay / Cost
-
-当前问题：
-
-- Replay 仍像日志面板，不像给人看的复盘。
-- Cost 仍像预算 fixture，不像治理页面。
-
-目标：
-
-- Replay：人话 timeline + tool trace + evidence + snapshot + rollback + cost footer。
-- Cost：普通用户看自己额度；管理员看团队策略、usage trend、告警、模型路由影响。
-
----
-
-## 4. 桌宠 Cuu 当前动作审计
-
-### 4.1 已证明的事实
-
-| 项 | 当前结论 |
-|---|---|
-| 独立窗口 | 已有真实 Tauri `pet` window |
-| 主窗隐藏后常驻 | smoke 通过 |
-| 右下角定位 | smoke 通过 |
-| 可见像素 | startup smoke 通过，只能证明启动期 Cuu 可见 |
-| 多帧动作 | 多帧抓取显示前半段有轻微呼吸/轮廓变化 |
-| 事件后布局 | 首轮发现离线卡片触发后窗口仍 body-only；本轮已修复 card mode 扩窗、完整身体站位和 HiDPI 右侧留白 |
-| Card mode Cuu body | **通过本轮 P0 门槛**：最终关键帧中 Cuu 完整可见；只露耳朵历史图保留为回归失败样例 |
-| 视觉可爱度 | 参考照特征有了，但当前不是概念图里的 Q 版活体宠物 |
-
-### 4.2 Motion Capture 发现的问题
-
-#### CUX-MOTION-001：事件卡片触发后窗口没有扩展（已修）
-
-证据：
-
-- `frame-000` 到 `frame-018`：Cuu 可见，有轻微动效。
-- `frame-020` 起：离线卡片出现，内容被挤在 194 x 228 的小窗口里。
-- `motion-diff-report.json` 在第 20 帧出现最大相邻帧差异，说明不是稳定 idle，而是事件 UI 突然进入。
-
-可能根因：
-
-- `pet-surface.ts` 已调用 `syncPetWindowMode("card")`，但 Tauri bridge 的 `setMode` 可能没有真正可用。
-- `resolveDesktopPetWindowBridge()` 可能只解析到了 window `startDragging`，没有解析到 `__TAURI__.core.invoke`，导致 `set_pet_window_mode` 未执行。
-- `syncPetWindowMode()` 对 `setMode` 是 fire-and-forget，失败没有状态、日志和 fallback。
-- 即使 Rust command 成功，前端也没有等待 resize 后再渲染 card 布局，截图可能抓到过渡裁切。
-
-修复方向：
-
-1. 在 desktop webview 内新增 `resolveTauriInvoke()`，同时支持 `window.__TAURI__.core.invoke`、`window.__TAURI__.invoke`、`window.__TAURI_INTERNALS__.invoke` 或通过 bundler 引入 `@tauri-apps/api/core`。
-2. `syncPetWindowMode()` 必须 catch error 并写入 `data-pet-window-mode-error`，测试能断言失败。
-3. card 进入时先请求 Rust resize，再渲染 card 或至少保留 body-only safe mini bubble。
-4. smoke 增加 `Wait-ForPetCardWindowSize`：触发一张卡后，窗口必须扩展到接近 380 x 560。
-5. 如果 resize 失败，pet surface 必须走 compact card layout，不允许内容被裁到不可读。
-
-验收：
-
-- 触发 `sse-status:closed/401` 后，`Cuu` 窗口尺寸从约 180 x 220 扩到约 380 x 560。
-- card 截图中标题、正文、按钮、Cuu 本体都完整可见。
-- `PrintWindow` 多帧 contact sheet 中不能出现大面积黑/透明空白掩盖卡片。
-
-2026-06-07 修复后复核：
-
-- **窗口扩展 / card 裁切修复通过**：修复后 motion report 显示第 10 帧起窗口从 `194 x 228` 扩到 `394 x 568`。
-- **Cuu body 完整可见通过本轮 P0 门槛**：最终 HiDPI 关键帧中 Cuu 完整坐姿可见，card bubble 右侧有安全留白，离线卡不再显示 raw SSE error。
-- 因此 `CUX-MOTION-001` 可以关闭；“鲜活感不足”继续转入 `CUX-MOTION-002` / `GAP-CUU-05 Live2D PSD + Cubism`。`GAP-CUU-06 Hatch Pack` 只作为 fallback / 过渡方案保留。
-
-#### CUX-MOTION-002：当前动作太弱，不像活体桌宠
-
-证据：
-
-- 动作主要是轻微 scale / breathe，无法表达走动、挥手、跳跃、审批、检索、同步。
-- 概念图里的 Cuu 有明显身体动作、尾巴、表情、气泡互动；当前更像静态贴纸。
-- 当前 main shell 内 Cuu 仍是抽象橘色图标，和独立 pet 的参考照风格不一致。
-- 历史第一轮修复曾出现 card mode 只露出 Cuu 耳朵 / 局部；这个回归样例必须长期保留，后续任何只露耳朵、裁尾、裁爪都判失败。
-
-修复方向：
-
-- 短期清理 `generated-psd-draft-v1`：修绿边、尾巴重拆、头底/耳朵拆分、遮挡补画、表情层整理。
-- 中期导入 Live2D Cubism：绑定眼睛、眼皮、嘴、耳朵、尾巴、流苏、呼吸、看鼠标。
-- Hatch Pet 8 x 9 spritesheet 只在 Cubism 工具链短期阻塞时作为 fallback 施工，不再作为首要主线。
-
-验收：
-
-- 5 秒 idle 不能像一张死图，必须能看出呼吸和眨眼。
-- 60 秒 idle 至少出现眨眼、尾巴、耳朵、看鼠标、打盹/醒来中的两类随机待机动作。
-- 任务事件必须先触发对应动作，再出现气泡。
-- card mode 中 Cuu 必须完整、可爱、稳定地站在右下角；只露耳朵、裁尾、裁爪、离开 anchor 都判失败。
-
----
-
-## 5. Hatch Pet 路线可行性
-
-用户提到的 [Hatch Pet recipe](https://github.com/freestylefly/CodexGuide/blob/main/docs%2Frecipes%2Fhatch-pet-photo.md) 很适合 WorkHub 当前阶段。它的价值不在于取代 Live2D，而在于提供一套 **可验证的宠物包生产规格**。
-
-### 5.1 Hatch Pet 合同
-
-Codex Hatch Pet 本地合同：
-
-```text
-spritesheet: 1536 x 1872 PNG/WebP
-grid: 8 columns x 9 rows
-cell: 192 x 208
-background: transparent
-unused cells: fully transparent
-
-${CODEX_HOME}/pets/<pet-name>/
-  pet.json
-  spritesheet.webp
-```
-
-默认状态行：
-
-| Hatch state | WorkHub Cuu 映射 |
-|---|---|
-| `idle` | `idle_breathe` / `idle_blink` |
-| `running-right` | 拖拽向右 / 桌面走动 |
-| `running-left` | 拖拽向左 / 桌面走动 |
-| `waving` | `wave_hello` / 提醒用户 |
-| `jumping` | `celebrating_jump` |
-| `failed` | `offline_sleep` / `worried_ears` |
-| `waiting` | `asking_approval_bounce` |
-| `running` | `thinking_tail` / `syncing_files_spin` |
-| `review` | `revision_requested_nod` / proposal review |
-
-### 5.2 为什么它能改善现在的 Cuu
-
-当前 WorkHub 的 18 clip motion pack 有几个问题：
-
-- 单个 PNG 行太大，bundle 里很多 1MB+ 图，另有 20MB atlas。
-- 动作生成来自不同批次，角色一致性有风险。
-- runtime 既要处理大 atlas，又要处理 clip sheet fallback，复杂度偏高。
-- 当前独立 pet 的视觉更像照片剪出来的小猫，Q 版宠物感不足。
-
-Hatch Pet 路线的优势：
-
-- 固定 192 x 208 cell，适合桌面右下角小宠物。
-- 8 x 9 网格天然适合 CSS background-position 或 Canvas renderer。
-- 透明 unused cells 可被自动校验。
-- 9 个状态足够覆盖「活着」「等待用户」「出错」「审查」「庆祝」。
-- 可以用用户参考照做 canonical base，再生成一致的 Q 版状态行。
-
-### 5.3 WorkHub Cuu Hatch Pack Fallback 规格
-
-定位：Hatch Pack 只在 Live2D / Cubism 短期阻塞时作为高质量 sprite fallback，不替代正式桌宠主线。它仍可用于 motion storyboard、fallback renderer 和跨平台降级，但不能作为最终“活体 Cuu”验收。
-
-目标新增资产：
-
-```text
-apps/desktop-webview/src/assets/cuu/hatch/
-  cuu-hatch-v1/
-    pet.json
-    spritesheet.webp
-    spritesheet.png                # 可选调试源
-    contact-sheet.png
-    motion-preview.gif
-    qa-report.json
-    source/
-      canonical-base.png           # 原创 Q 版基准图，不放用户原照片
-      row-idle.png
-      row-waiting.png
-      ...
-```
-
-Manifest shape：
-
-```ts
-export type CuuHatchPetManifest = {
-  id: "cuu-hatch-v1";
-  display_name: "Cuu";
-  source: "hatch-pet";
-  spritesheet_path: string;
-  grid: {
-    columns: 8;
-    rows: 9;
-    cell_width: 192;
-    cell_height: 208;
-  };
-  states: Record<
-    "idle" | "running_right" | "running_left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review",
-    {
-      row: number;
-      frames: number;
-      fps: number;
-      loop: boolean;
-      maps_to: string[];
-    }
-  >;
-};
-```
-
-Renderer target：
-
-```text
-apps/desktop-webview/src/cuu-hatch-assets.ts
-apps/desktop-webview/src/cuu-hatch-runtime.ts
-apps/desktop-webview/src/pet-surface.ts
-packages/cuu/src/hatch-state-map.ts
-```
-
-### 5.4 生成规则
-
-Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
-
-- Q 版橘色虎斑小猫。
-- 大眼睛，亲近但不幼稚。
-- 白色蕾丝围兜。
-- 黑色蝴蝶结。
-- 珍珠流苏和小红珠。
-- 全身可读，脚底 anchor 稳定。
-- 透明或纯 chroma-key 背景。
-- 不要文字、UI、气泡、阴影、场景、额外小猫。
-
-不提交内容：
-
-- 用户提供的原始参考照片。
-- 失败生图批次。
-- 本地临时 `reference` / `references` 目录。
-
-可提交内容：
-
-- 原创 Q 版 Cuu spritesheet。
-- contact sheet / GIF preview。
-- QA 报告。
-- manifest 和 runtime。
-
-### 5.5 与 Live2D 的关系
-
-| 阶段 | 目标 | 为什么 |
+| 场景 | 触发 | 验收 |
 |---|---|---|
-| P1 Live2D 二选项手感 | 用黑猫 Hijiki / 白猫 Tororo 跑独立 `pet` window、first-frame、长驻、hover/drag、card mode 和多屏恢复录屏 QA | 用户已放弃橘猫改色、Bongo、PSD draft 和 sprite/atlas；当前默认桌宠必须先稳定、可见、可动、低恐怖谷 |
-| P2 原创 Live2D PSD v1 | 若要替换现成模型，重新设计授权原创 Cuu，精细分层、补画遮挡、导入 Cubism | 用户仍希望长期有分层精细、活体动作；但替换必须等美术 QA、Cubism 录屏和 model pack gate 全部通过 |
-| P2 Cubism runtime | 对 Hijiki/Tororo 和未来原创模型统一接 `.model.json` / `.moc` / motions / physics / pose，并映射 Tauri pointer contract | 解决眨眼、眼神、耳朵、尾巴、轻物理和鼠标互动 |
-| Fallback Hatch Pack | Cubism 阻塞时才考虑高质量多动作 sprite 降级 | 成本低、格式固定、QA 容易，但不是当前主表现 |
-| Hybrid runtime | Live2D 主表现，Hatch / atlas sprite 仅作为故障恢复或未来授权素材补充 | 高表现力 + 可靠降级，但不能恢复已否决的低质视觉 |
+| idle 10s | 无事件 | 持续动作，非空，非整体缩放 |
+| hover | 鼠标靠近 | 看向鼠标或姿态变化 |
+| tap | 点击 Cuu | 气泡或反馈动作 |
+| drag | 拖拽窗口 | 位置变化、释放后保存 |
+| approval | 注入审批卡 | 动作 + 轻卡完整 |
+| search | 注入检索卡 | 气泡 chips 可见 |
+| offline | SSE offline | 人话提示，不刷屏 |
 
-结论：**当前最适合的下一步是把 Hijiki 黑猫 / Tororo 白猫 Live2D 在独立 `pet` window 中跑稳，并用真实录屏验证待机、眨眼、看鼠标、hover/drag、任务卡和长驻稳定。Bongo、橘猫改色、PSD draft、sprite/atlas 都是历史反例，不再作为默认、fallback 或可选项。**
+### 6.2 白猫录屏
 
----
+产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/`
 
-## 6. 后续施工计划
+白猫必须复用同一组场景，验证模型切换不是只改设置文案。
 
-### 6.0 P1.0 / P1.1 / P1.2：中英双语运行时与 locale 合同
+### 6.3 Settings matrix
 
-状态：**2026-06-07 已完成客户端固定文案底座；2026-06-08 已完成 P1.1 locale 合同传播与 P1.2 非 Gold Path helper 固定文案双语。详细说明见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md) 与 [`i18n-nongoldpath-render-helpers-p1-2.md`](./i18n-nongoldpath-render-helpers-p1-2.md)。动态用户内容和 daemon/Agent 摘要仍保留原文，后续由 P1.3+ 服务端生成多语言 VM。**
+产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-settings/`
 
-| ID | 任务 | Target paths | 验收 |
-|---|---|---|---|
-| I18N-P1-01 | 共享 locale 类型与词表 | `packages/contracts/src/locale.ts`、`packages/ui/src/gold-path/i18n.ts` | **已落 P1.1**：`WorkHubLocale`、`workhub.locale`、`normalizeWorkHubLocale()` 归 contracts；UI 提供 `goldPathT()` |
-| I18N-P1-02 | Gold Path 静态 chrome 本地化 | `packages/ui/src/gold-path/render.ts`、`app-shell.ts` | **已落**：首页/澄清/审批/proposal/replay/cost 固定标签支持中英 |
-| I18N-P1-03 | Web / desktop 主窗切换 | `apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` | **已落**：右上角 `中 / EN`，切换持久化并 reload，Page VM 请求带 locale |
-| I18N-P1-04 | 桌面 Cuu / pet 固定文案 | `packages/cuu/src/i18n.ts`、`apps/desktop-webview/src/pet-surface.ts`、`desktop-cuu-runtime.ts`、`shell-events.ts` | **已落 P1.1**：Cuu card fallback、动作 label、pet 轻气泡、SSE 状态和动作反馈支持中英；Web/main 不展示 Cuu 形象 |
-| I18N-P1-05 | Page VM locale 字段契约 | `packages/api-client/src/*`、`apps/api/src/routes/pages.ts` | **已落 P1.1**：`GET /api/pages/*?locale=`、response `meta.locale`、typed client `PageRequestOptions.locale` |
-| I18N-P1-06 | 非 Gold Path helpers | `packages/ui/src/i18n.ts`、`packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*`、`apps/web/src/main.ts`、`apps/desktop-webview/src/main.ts` | **已落 P1.2**：固定标签抽词表，Web/desktop facade 可传 locale，可见 enum 人话化，英文模式不残留中文按钮或 snake_case |
-| I18N-P1-07 | 视觉截图门 | `scripts/qa/*` / Playwright route screenshots | 待做：Web、desktop main、pet card 中/英两个 viewport 截图，检查文字不溢出 |
-
-### 6.1 P0 立即修复：Cuu card mode 与 motion QA
-
-目标：先修掉「事件卡片被小窗裁切」。
-
-状态：**2026-06-07 已完成 card mode bridge / placement / compact fallback / full-body HiDPI 修复并通过 Windows debug motion capture；剩余问题转入 P1.1 Live2D PSD v1 / Cubism 与 P1.2 轻卡视觉深化。**
-
-| ID | 任务 | Target paths | 验收 |
-|---|---|---|---|
-| CUX-P0-01 | Tauri invoke bridge 审计 | `apps/desktop-webview/src/pet-window-bridge.ts` | **已落**：支持 core / legacy invoke，并暴露 diagnostics |
-| CUX-P0-02 | card mode resize await / fallback | `apps/desktop-webview/src/pet-surface.ts` | **已落**：card mode 等待 Rust placement；失败走 compact layout |
-| CUX-P0-03 | Rust command diagnostic | `client-tauri/src-tauri/src/main.rs` / `pet_commands.rs` | **已落基础**：前端校验 command 返回 placement；Rust 测试覆盖既有 window plan |
-| CUX-P0-04 | 多帧 motion capture QA 脚本 | `scripts/qa/cuu-tauri-motion-capture.ps1` | **已落**：输出 frames、contact sheet、GIF/MP4、diff report |
-| CUX-P0-05 | smoke 扩展 card 验收 | `scripts/qa/cuu-tauri-smoke.ps1` | **已落基础**：自动拉起 1420 dev server，避免抓到 WebView 错误页 |
-
-已新增测试：
-
-- `pet-surface.test.ts`：覆盖 compact fallback、legacy invoke、缺失 placement、缺失 invoke、Rust injected pet surface diagnostic、Tauri `pet` label diagnostic、card mode CSS 锚点。
-- Rust tests：继续覆盖 `pet_window.rs` / `pet_commands.rs` 的 route、size、position 与 active mode plan。
-
-实现路径：
-
-```text
-apps/desktop-webview/src/pet-window-bridge.ts
-  - resolveDesktopPetWindowBridge()
-  - DesktopPetWindowBridgeDiagnostics
-  - assertPetWindowModeResult()
-
-apps/desktop-webview/src/pet-surface.ts
-  - confirmedPetWindowMode / syncingPetWindowMode / failedPetWindowMode
-  - data-pet-card-layout="compact|full"
-  - card mode left/top bubble CSS
-
-scripts/qa/cuu-tauri-motion-capture.ps1
-  - PrintWindow frame capture
-  - contact sheet
-  - diff JSON
-  - optional GIF / MP4
-
-scripts/qa/cuu-tauri-smoke.ps1
-  - auto-start desktop-webview dev server on 1420 when needed
-```
-
-新的验收证据目录：
-
-```text
-docs/workhub/05-clients/assets/audit/2026-06-07-cuu-card-mode-fix/
-```
-
-### 6.2 P1.1：Cuu Live2D PSD v1 清理与 Cubism 准备
-
-目标：把当前 `generated-psd-draft-v1` 从“脚本拼装草案”推进到“可导入 Cubism 的生产 PSD”。Hatch Pack / GIF / sprite 只作为 fallback 或 motion storyboard，不再作为首要路线。
-
-当前已落：
-
-```text
-scripts/assets/extract-cuu-generated-parts.py
-scripts/assets/build-cuu-live2d-generated-psd.py
-apps/desktop-webview/src/assets/cuu/live2d/source/generated-parts-v0/
-apps/desktop-webview/src/assets/cuu/live2d/source/generated-psd-draft-v1/
-docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-*-components.png
-docs/workhub/05-clients/assets/cuu/cuu-live2d-generated-psd-draft-v1-preview.png
-```
-
-已验证：
-
-- PSD 可由 `psd-tools` 打开：`1200 x 1600` canvas、9 个顶层组、144 个叶子图层。
-- `layers/*.png` 与 manifest 一一对应：144 个图层 PNG。
-- 图层来源可追踪：`source_board`、`source_part_id`、`origin`、`bind_target`、`note` 均写入 manifest。
-- 视觉仍不通过：尾巴段叠合偏厚，轮廓仍有少量绿边，遮挡补画未完成，尚未导入 Cubism。
-
-施工步骤：
-
-| ID | 任务 | Target paths | 验收 |
-|---|---|---|---|
-| CUX-L2D-01 | PSD 导入工具确认 | 本机 Krita / Photoshop / Live2D Cubism | 打开 `cuu-live2d-generated-psd-draft-v1.psd` 后 9 个组、144 层不丢失 |
-| CUX-L2D-02 | 绿边二次清理 | `scripts/assets/build-cuu-live2d-generated-psd.py`、`layers/*.png` | 轮廓在黑/白/透明棋盘三种背景下无明显绿边 |
-| CUX-L2D-03 | 尾巴重拆 | `generated-parts-v1`、`Tail_Base/01/02/03/Tip` | 默认预览只有一条自然尾巴，不出现厚重叠影 |
-| CUX-L2D-04 | 耳朵/头底拆分 | `Head_BaseClean`、`Ear_*` | 头底不再包含可见重复耳朵结构，耳朵可单独摇动 |
-| CUX-L2D-05 | 遮挡补画 | `Body_PaintBehind_*`、`LaceBib_Back`、`Tail_Root` | 摆动围兜、尾巴、爪子时不露洞 |
-| CUX-L2D-06 | 表情层整理 | `Eye_*`、`Mouth_*`、`80_Expressions` | 闭眼、惊讶、微笑、说话嘴型均可单独开关 |
-| CUX-L2D-07 | Cubism 参数草图 | `cuu-live2d-layered-asset-plan.md`、Cubism project | 建立呼吸、眼睛、眼皮、嘴、耳、尾、蝴蝶结、流苏参数 |
-| CUX-L2D-08 | 导出 runtime 包 | `apps/desktop-webview/src/assets/cuu/live2d/exported/` | 产出 `.model3.json`、`.moc3`、textures、physics、motions |
-| CUX-L2D-09 | Tauri runtime 接入 | `apps/desktop-webview/src/cuu-live2d-runtime.ts`、`pet-surface.ts` | pet window 默认加载 Cubism；失败时回落 atlas |
-| CUX-L2D-10 | 多秒录屏验收 | `docs/workhub/05-clients/assets/audit/<date>-cuu-live2d-cubism/` | GIF/MP4 显示眨眼、呼吸、尾巴、流苏、任务动作，不只是缩放 |
-
-需要的工具：
-
-- **Krita**：可本机安装，用于打开 PSD、检查图层、修边、导出中间 PNG。
-- **Live2D Cubism Editor**：用于 PSD 导入、网格、变形器、参数、物理和 motion。
-- **Python / psd-tools / Pillow / OpenCV**：继续做批量抠图、去绿、拼装、manifest/report。
-- **GPT Image**：继续生成更细的尾巴段、耳朵干净底、遮挡补画素材；每次生图都用绿幕或透明需求，并由脚本编号入库。
-
-通过标准：
-
-- 不能再用“图层数量多”当通过；必须能在 Cubism 中绑定并导出。
-- 不能再用“不同等待时间截图像素有差异”当通过；必须录制多秒动作并肉眼看到不同身体部位有连续运动。
-- 不能再用“只有缩放/呼吸”当通过；idle 至少包含眨眼、呼吸、尾巴/流苏微动、偶发看鼠标。
-- 不能出现只露耳朵、裁尾、裁爪、多腿、角色变脸、饰品漂移或绿幕边。
-
-Hatch Pack 保留策略：
-
-- 若 Cubism 工具链短期阻塞，可按 Hatch Pet 合同生成 `cuu-hatch-v1` 作为 sprite fallback。
-- Hatch 只解决过渡动画和回退，不替代正式 Live2D。
-- Hatch 输出仍需通过同样的 motion capture；只有 GIF 预览不能算桌宠验收。
-
-### 6.3 P1.2：桌宠轻卡重做
-
-目标：让 Cuu 气泡像概念图，而不是把 Web notice 挤进小窗。
-
-页面 / 卡片类型：
-
-| 卡片 | 内容 | 动作 |
-|---|---|---|
-| Approval card | 摘要、风险、证据数、文件数 | 通过、打回、打开详情 |
-| Clarify card | 一个问题、3-5 个选项 | 选择、其他、稍后 |
-| Evidence card | 证据摘要、来源 chip | 用这些证据、打开完整检索 |
-| Offline card | 离线说明、重连状态 | 打开设置、稍后 |
-| Budget card | 当前额度、影响 | 降级模型、打开成本页 |
-
-布局原则：
-
-- body-only：只显示 Cuu 本体 + 极短 badge，不显示长文本。
-- card：窗口扩到 `380 x 560`，Cuu 固定右下，卡片从左上展开。
-- compact fallback：如果 resize 失败，最多 1 行标题 + 1 个按钮，不渲染长正文。
-- 不允许横向溢出，不允许按钮被 Cuu 遮挡。
-
-Target paths：
-
-```text
-apps/desktop-webview/src/pet-card-layout.ts
-apps/desktop-webview/src/pet-surface.ts
-apps/desktop-webview/src/pet-surface-qa.ts
-apps/desktop-webview/src/pet-surface.test.ts
-```
-
-2026-06-08 施工状态：
-
-![Cuu Pet card P1.2 normal approval contact sheet](./assets/audit/2026-06-08-cuu-pet-card-p1-2-normal/cuu-pet-card-p1-2-contact-sheet.png)
-
-![Cuu Pet card P1.2 reject-reason contact sheet](./assets/audit/2026-06-08-cuu-pet-card-p1-2/cuu-pet-card-p1-2-contact-sheet.png)
-
-已落：
-
-- `apps/desktop-webview/src/pet-surface.ts` 现在会把 `CuuCard.kind` / `priority` / `sections` / `progress` / `evidence_refs` / `input` 渲染进独立桌宠轻卡；正常审批态能同时看到 Cuu 全身、主按钮、变更摘要和风险摘要。
-- 轻卡根节点新增 `data-pet-card-kind`、`data-pet-card-priority`、`data-pet-card-has-context`；bubble 新增 kind / priority badge、PR 式 section、证据摘要、progress、option-first input hint。
-- 澄清卡的 chips 已变成可点击 option button；单选会本地切换选中态并提示「点确认继续」，打字仍保持折叠，不在桌宠窗里放 textarea。
-- P1.2b 已把 `selected_option_ids` 接成 contracts / API / api-client / desktop runtime 闭环：未选时桌宠提示先点选项，已选时 `nextQuestion(sessionId, { selected_option_ids })` 会把 option id 发回 session API。
-- 操作区前置：chips 后立即展示「同意 / 打回」等按钮；打回原因状态下仍能看到固定原因按钮，不再把按钮挤到不可见区域。
-- `pet-surface-qa.ts` 新增 `heavy_card_context` 门禁，防止审批 / proposal / evidence / budget 的 PR-like context 被再次丢掉。
-- 浏览器 CDP 抓帧已生成两组证据：正常审批态展示摘要与风险；打回原因态展示按钮和原因选择。两组截图中 Cuu 均为 Bongo-style 全身可见，不再只露耳朵，也没有多腿 AI 幻觉。
-
-仍未完成：
-
-- 证据区域在轻卡高度内只适合摘要；完整证据列表、证据详情、引用定位和二次追问需要 deep-link 到主窗证据/项目检索页。
-- Budget / evidence / sync / offline 四类卡已具备同一渲染能力，但仍需要分别制作真实事件 fixture 和截图验收。
-- 这次是 browser CDP 视觉证据；下一轮要把 P1.2 card fixture 接进真实 Tauri `PrintWindow` motion capture，验证透明顶层窗口中的同一布局。
-
-已落 P1.2b Target paths：
-
-```text
-packages/contracts/src/experience.ts
-packages/api-client/src/client.ts
-apps/api/src/routes/sessions.ts
-apps/desktop-webview/src/desktop-cuu-runtime.ts
-apps/desktop-webview/src/pet-surface.ts
-apps/desktop-webview/src/pet-surface.test.ts
-apps/desktop-webview/src/desktop-cuu-runtime.test.ts
-apps/api/src/gold-path.test.ts
-packages/api-client/src/api-client.test.ts
-packages/contracts/src/contracts.test.ts
-```
-
-后续 P1.2c Target paths：
-
-```text
-apps/desktop-webview/src/shell-events.ts
-apps/desktop-webview/src/pet-surface.ts
-apps/desktop-webview/src/pet-surface.test.ts
-docs/workhub/05-clients/assets/audit/<date>-cuu-pet-card-p1-2-tauri/
-```
-
-### 6.4 P1.3：Web 真页面路线
-
-目标：把 Gold Path shell 从 render helper demo 变成真实 SPA。
-
-优先顺序：
-
-1. `apps/web/src/routes/home.tsx`：AI-first Home。
-2. `apps/web/src/routes/intake.tsx`：Option Intake。
-3. `apps/web/src/routes/proposal.tsx`：非代码 PR。
-4. `apps/web/src/routes/workitem.tsx`：WorkItem Detail。
-5. `apps/web/src/routes/replay.tsx`：Replay Work。
-6. `apps/web/src/routes/cost.tsx`：Cost Dashboard。
-
-共享组件：
-
-```text
-packages/ui/src/components/attention-card.ts
-packages/ui/src/components/option-card.ts
-packages/ui/src/components/cuu-side-panel.ts
-packages/ui/src/components/proposal-change-renderer.ts
-packages/ui/src/components/replay-timeline.ts
-packages/ui/src/components/budget-summary.ts
-```
-
-验收：
-
-- 首页 1440px 截图接近 `web-ai-first-home.png`。
-- Intake 1440px 截图接近 `web-option-first-intake-wizard.png`。
-- 移动端 375px 截图无横向滚动。
-- 页面四态齐全：loading / empty / error / permission。
-- 看板不是默认首页。
-
-### 6.5 P1.4：Rust 主窗单件事干活桌
-
-目标：desktop main window 不再只是 Web shell，而是符合 Rust 客户端概念。
-
-Target Rust：
-
-```text
-client-tauri/src-tauri/src/window_controls.rs
-client-tauri/src-tauri/src/tray.rs
-client-tauri/src-tauri/src/config.rs
-client-tauri/src-tauri/src/notify.rs
-client-tauri/src-tauri/src/sse_worker.rs
-```
-
-Target TS：
-
-```text
-apps/desktop-webview/src/routes/one-thing-desk.ts
-apps/desktop-webview/src/routes/settings.ts
-apps/desktop-webview/src/routes/sync-center.ts
-apps/desktop-webview/src/routes/diagnostics.ts
-```
-
-主窗页面：
-
-| 页面 | 目标 |
+| case | 需要覆盖 |
 |---|---|
-| One Thing Desk | 当前需要用户决定的一件事 |
-| Inbox | 审批、打回、冲突、预算、离线 |
-| Local Files | 本地目录、同步状态、文件变更 |
-| Settings | 设备 token、server、Cuu、通知、启动项 |
-| Diagnostics | SSE、API、权限、pet runtime、日志 |
+| default | 黑猫默认 body-only |
+| white-cat | 白猫 body-only |
+| scale-75 | 缩小后仍全身可见 |
+| scale-150 | 放大后不越界 |
+| opacity-60 | 可见但不遮挡 |
+| pass-through | 可开启，并可通过托盘恢复 |
+| hide-on-hover | soft hide 后能恢复 |
+| card-mode | 轻卡展开不裁切 |
 
-验收：
+### 6.4 文档回写
 
-- 主窗隐藏后 Cuu 仍在。
-- Cuu 点击复杂卡片可 deep-link 打开对应主窗页面。
-- 设置页可切换 Cuu 显隐、勿扰、声音、减少动效。
-- 托盘 tooltip 能显示连接 / 待审批状态。
+录屏完成后更新：
 
-### 6.6 P2：Live2D Cubism 导出与桌宠运行时
+- 本文第 7 节追加真实证据。
+- [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md) 更新验收状态。
+- [`desktop-pet-tauri.md`](./desktop-pet-tauri.md) 更新 Rust/Tauri smoke 状态。
+- [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md) 更新差距表。
 
-P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠运行时。
+## 7. 待填真实证据
 
-步骤：
-
-1. 导入清理后的 `cuu-live2d-generated-psd-v1.psd` 到 Live2D Cubism。
-2. 建 mesh / deformer：`Head`、`Body`、`Ear_L/R`、`Eye_L/R`、`Mouth`、`Tail_01..Tip`、`Bow`、`LaceBib`、`Tassel_L/R`。
-3. 建参数：`ParamAngleX/Y/Z`、`ParamBodyAngleX/Y`、`ParamEyeLOpen/ROpen`、`ParamEyeBallX/Y`、`ParamMouthOpenY/Form`、`ParamTailSway/Curl`、`ParamBibSway`、`ParamBowBounce`、`ParamTasselSwingL/R`。
-4. 建 physics：尾巴链、左右流苏链、蝴蝶结轻回弹、耳朵微动。
-5. 建 motions：`idle`、`blink`、`look_at_mouse`、`thinking`、`approval_waiting`、`searching_evidence`、`celebrate`、`worried/offline`。
-6. 导出 `.model3.json`、`.moc3`、textures、`physics3.json`、`motions/*.motion3.json`、`expressions/*.exp3.json`。
-7. Tauri pet surface 用 Cubism SDK for Web 加载，atlas / Hatch sprite 仅作为 fallback。
-8. 录制 Windows / Linux / macOS 至少各一套 motion capture；Linux 可用用户提供的测试环境做透明窗口与动作截图。
-
-验收：
-
-- 眼睛会看鼠标，眨眼不是遮罩假眨。
-- 尾巴和流苏有轻物理，动作连续不卡顿。
-- idle 10 秒内有呼吸、眨眼、尾巴/流苏微动；60 秒内有至少两类随机微动作。
-- 审批、澄清、检索、完成、离线至少 5 个业务状态有对应动作。
-- idle CPU/GPU 可接受；reduced-motion 下停用复杂动作并保留轻提示。
-- 多秒 GIF/MP4 肉眼通过，不再出现五条腿、角色漂移、绿边、只露耳朵或只有缩放变化。
-
----
-
-## 7. QA 与截图门禁
-
-### 7.1 新增截图门
-
-| QA | 输出 | 必须检查 |
-|---|---|---|
-| Web screenshot | `docs/.../assets/audit/<date>/web-*.png` | 首页、intake、proposal、replay、cost |
-| Desktop screenshot | `desktop-*.png` | 主窗、Cuu demo、settings、sync |
-| Pet startup smoke | `tauri-pet-printwindow.png` | 可见、topmost、右下角 |
-| Pet motion capture | frames + GIF + MP4 + diff JSON | 5 秒内不是静态；事件卡不裁切 |
-| Mobile screenshot | 375px PNG | 无横向滚动、按钮不溢出 |
-| Concept comparison | Markdown audit | 当前 vs 概念差距更新 |
-
-### 7.2 Motion QA 通过阈值
-
-建议初始阈值：
-
-| 指标 | 阈值 |
+| 证据 | 当前状态 |
 |---|---|
-| idle 5 秒变化帧 | 至少 8 帧相对前一帧 `changed_pixels_gt8 > 300` |
-| idle 最大变化 | `max_vs_first_changed_pixels_gt8 > 1000` |
-| 事件卡尺寸 | card mode 宽 >= 360，高 >= 520 |
-| Cuu 可见像素 | orange pixels >= 80，visual pixels >= 180 |
-| 首帧 probe | `orange_pixels >= 8000` 且 `visual_pixels >= 12000` 后才允许写入正式 frame 000 |
-| 空白帧 | 不允许连续 3 帧 visual pixels < 180 |
+| 黑猫 idle contact sheet | 待生成 |
+| 黑猫 approval/search GIF/MP4 | 待生成 |
+| 白猫 idle contact sheet | 待生成 |
+| 白猫 approval/search GIF/MP4 | 待生成 |
+| settings matrix report | 待生成 |
+| Web 主窗无 Cuu 截图 | 待生成 |
+| desktop 主窗无 Cuu 截图 | 待生成 |
 
-### 7.3 文档更新门
+## 8. 完成标准
 
-每轮 UI / Cuu / Rust 主窗施工后必须更新：
+这轮 Cuu 模块只有在以下条件同时满足时，才可称为“当前 PRD 口径下通过”：
 
-1. 本文或新的 `current-state-visual-audit-<date>.md`。
-2. `page-concepts.md` 的审计资产索引。
-3. `prd-concept-reproduction-gap-audit.md` 的差距状态。
-4. 涉及 Cuu 时更新 `cuu-desktop-pet-concept.md`。
-5. 涉及 Rust 时更新 `desktop-pet-tauri.md`。
-
----
-
-## 8. 下一轮推荐施工切片
-
-不要先铺更多页面。当前最影响「像不像产品」的是 Cuu 和首页。
-
-推荐顺序：
-
-1. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
-2. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
-3. **Pet window 设置与输入手感细抛光**：P1d-a/P1d-b-a/P1d-c/P1e-a/P1e-b/P1e-c/P1e-d-a/P1e-d-b 已补缩放、透明度、点击穿透、hide-on-hover 软隐藏 / 恢复、窗口设置矩阵真实截图、cursor-near 立即看鼠标、pointer DOM attrs、hover/near/tap/drag 真实录屏、连续凝视、hover 避让、pointer smoothing、drag grip 持续姿态和 60s idle jitter / flicker 长驻 QA；BONGO-P2a-b 已补 `/settings` 和 Cuu 偏好气泡里的模型包 UI。下一步补贴边、多屏恢复、full hide/pass-through 安全恢复、显示/隐藏快捷入口和长驻性能采样。
-4. **Cuu model pack 晋级规则**：loader 与 UI 已接入 runtime；下一步不是开放 Live2D，而是给 Live2D Cubism pack 补低恐怖谷 v2 美术、参数绑定、真实 Tauri 录屏和 model pack gate 证据，全部通过后才允许从 `experimental_locked` 晋级。
-5. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
-6. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏和 model pack gate 都通过后才允许进入默认候选。
-7. **Web Home 真页面**：按 AI-first concept 改首屏。
-8. **Option Intake 真页面**：补 stepper、附件、summary、Cuu 推荐。
-9. **Desktop One Thing Desk**：主窗变成本地单件事干活桌。
-
-这条路径最符合项目设计哲学：**用户先看到 Cuu 活起来，再看到 WorkHub 把复杂任务收成几个可点选择，而不是先学会一堆看板。**
+- 源码、偏好、QA 只承认黑猫/白猫。
+- 删除旧实验文件、脚本、public 入口和过期文档入口。
+- Web / desktop 主窗没有 Cuu 本体。
+- 黑猫/白猫真实 Tauri 多帧录屏通过。
+- 动作不是只缩放。
+- card mode 不裁切。
+- pass-through / hide-on-hover 有恢复策略。
+- `git diff --name-only` 不含 `reference/` / `references/`。

@@ -43,7 +43,7 @@ P0 仍然是地基期。完整 Web 新页、Cuu 动画窗、Live2D/Rive 资产�
 | UX-3 | 澄清默认点选项,打字只是折叠兜底 | `QuestionCard.input_mode=single_choice|multi_choice|rank|confirm`;`free_text` 必须标 optional |
 | UX-4 | 知识库/项目检索默认由 Cuu 气泡承接 | `EvidenceBubble` payload;Web knowledge page 只做完整检索兜底 |
 | UX-5 | 变更申请像 PR,但对象不是代码 | `DeliverableChangeManifest` v0 |
-| UX-6 | Cuu 是会动的橘猫入口,不是状态图标 | 事件到 `cuu_state` 的映射必须进入 SSE payload 或客户端映射表 |
+| UX-6 | Cuu 是会动的黑猫/白猫 Live2D 桌宠入口,不是状态图标 | 事件到 `cuu_state` 的映射必须进入 SSE payload 或客户端映射表 |
 | UX-7 | 用户面去黑话 | payload 可以有内部枚举,但必须同时给 `human_label` / `summary_text` |
 | UX-8 | 浏览器不做本地高权限动作 | F11 / generated client 保留 Web vs Tauri 能力差异 |
 

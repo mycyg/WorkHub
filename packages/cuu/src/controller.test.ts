@@ -144,7 +144,7 @@ test("Cuu controller normalizes desktop pet window preferences", () => {
     pet_opacity_percent: 42 as 100,
     pet_pass_through: false,
     pet_hide_on_hover: false,
-    pet_model_pack_id: "cuu-bongo-p1"
+    pet_model_pack_id: "legacy-cuu-pack"
   });
 
   assert.equal(normalized.preferences.pet_scale_percent, 100);

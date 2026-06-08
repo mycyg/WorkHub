@@ -3,7 +3,6 @@ param(
   [int]$WaitSeconds = 8,
   [int]$ContentWaitSeconds = 20,
   [int]$MaxEdgeGapPx = 120,
-  [int]$MinCuuOrangePixels = 80,
   [int]$MinCuuVisualPixels = 180,
   [string]$OutDir = (Join-Path $env:TEMP "workhub-cuu-tauri-smoke"),
   [switch]$UseRealAppData
@@ -377,8 +376,8 @@ function Measure-CuuVisualPixels {
     if ($right -le $left -or $bottom -le $top) {
       return [pscustomobject]@{
         samples = 0
-        orange_pixels = 0
-        cream_pixels = 0
+        foreground_pixels = 0
+        light_pixels = 0
         dark_pixels = 0
         visual_pixels = 0
         sample_step = 1
@@ -388,9 +387,10 @@ function Measure-CuuVisualPixels {
     $width = $right - $left
     $height = $bottom - $top
     $step = [Math]::Max(1, [int][Math]::Floor(([Math]::Max($width, $height)) / 360))
+    $background = $bitmap.GetPixel(0, 0)
     $samples = 0
-    $orangePixels = 0
-    $creamPixels = 0
+    $foregroundPixels = 0
+    $lightPixels = 0
     $darkPixels = 0
 
     for ($screenY = $top; $screenY -lt $bottom; $screenY += $step) {
@@ -398,25 +398,22 @@ function Measure-CuuVisualPixels {
         $color = $bitmap.GetPixel($screenX - $VirtualBounds.Left, $screenY - $VirtualBounds.Top)
         $samples += 1
 
-        $isCuuOrange = $color.R -ge 145 -and
-          $color.G -ge 65 -and
-          $color.G -le 210 -and
-          $color.B -le 170 -and
-          $color.R -ge ($color.G + 18) -and
-          $color.G -ge ($color.B + 4)
-        $isCream = $color.R -ge 220 -and
-          $color.G -ge 190 -and
-          $color.B -ge 145 -and
-          $color.R -ge $color.B
+        $distanceFromBackground = [Math]::Abs($color.R - $background.R) +
+          [Math]::Abs($color.G - $background.G) +
+          [Math]::Abs($color.B - $background.B)
+        $isForeground = $distanceFromBackground -ge 30
+        $isLightDetail = $color.R -ge 180 -and
+          $color.G -ge 180 -and
+          $color.B -ge 155
         $isDarkDetail = $color.R -le 80 -and
           $color.G -le 80 -and
           $color.B -le 95
 
-        if ($isCuuOrange) {
-          $orangePixels += 1
+        if ($isForeground) {
+          $foregroundPixels += 1
         }
-        if ($isCream) {
-          $creamPixels += 1
+        if ($isLightDetail) {
+          $lightPixels += 1
         }
         if ($isDarkDetail) {
           $darkPixels += 1
@@ -424,13 +421,12 @@ function Measure-CuuVisualPixels {
       }
     }
 
-    $visualPixels = $orangePixels + [Math]::Min($creamPixels, $darkPixels * 4)
     [pscustomobject]@{
       samples = $samples
-      orange_pixels = $orangePixels
-      cream_pixels = $creamPixels
+      foreground_pixels = $foregroundPixels
+      light_pixels = $lightPixels
       dark_pixels = $darkPixels
-      visual_pixels = $visualPixels
+      visual_pixels = $foregroundPixels
       sample_step = $step
     }
   } finally {
@@ -443,7 +439,6 @@ function Wait-ForCuuVisualPixels {
     [int]$TargetProcessId,
     [int]$TimeoutSeconds,
     [string]$ScreenshotPath,
-    [int]$MinOrangePixels,
     [int]$MinVisualPixels
   )
 
@@ -467,7 +462,7 @@ function Wait-ForCuuVisualPixels {
       }
       $lastReport = Measure-CuuVisualPixels -Path $ScreenshotPath -Rect $windowRect -VirtualBounds $bounds
       $lastPet = $pet
-      if ($lastReport.orange_pixels -ge $MinOrangePixels -and $lastReport.visual_pixels -ge $MinVisualPixels) {
+      if ($lastReport.visual_pixels -ge $MinVisualPixels) {
         return [pscustomobject]@{
           Pet = $pet
           PixelReport = $lastReport
@@ -555,9 +550,8 @@ try {
     Assert-Smoke (-not $mainAfterHide.Visible) "WorkHub main window did not hide during smoke QA."
   }
 
-  $visualCapture = Wait-ForCuuVisualPixels -TargetProcessId $process.Id -TimeoutSeconds $ContentWaitSeconds -ScreenshotPath $screenshotPath -MinOrangePixels $MinCuuOrangePixels -MinVisualPixels $MinCuuVisualPixels
+  $visualCapture = Wait-ForCuuVisualPixels -TargetProcessId $process.Id -TimeoutSeconds $ContentWaitSeconds -ScreenshotPath $screenshotPath -MinVisualPixels $MinCuuVisualPixels
   Assert-Smoke ($null -ne $visualCapture.PixelReport) "Cuu pet window could not be captured after the main window was hidden."
-  Assert-Smoke ($visualCapture.PixelReport.orange_pixels -ge $MinCuuOrangePixels) "Cuu orange fur pixels were below threshold in the pet window screenshot."
   Assert-Smoke ($visualCapture.PixelReport.visual_pixels -ge $MinCuuVisualPixels) "Cuu visual pixels were below threshold in the pet window screenshot."
 
   [pscustomobject]@{

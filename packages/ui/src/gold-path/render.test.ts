@@ -96,7 +96,7 @@ test("settings page stays serious and keeps pet model choice out of the main app
   assert.equal(settings?.title, "Settings");
   assert.equal(settings?.html.includes("应用设置"), true);
   assert.equal(settings?.html.includes("桌宠形象只在独立桌宠窗口里配置和验收"), true);
-  assert.equal(settings?.html.includes("cuu-bongo-p1"), false);
+  assert.equal(settings?.html.includes("legacy-cuu-pack"), false);
   assert.equal(settings?.html.includes("Live2D 实验形象"), false);
   assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id"), false);
 });
