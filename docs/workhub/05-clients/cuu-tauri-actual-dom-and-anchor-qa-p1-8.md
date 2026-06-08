@@ -40,7 +40,7 @@ Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但�
 
 | Mode | Bubble anchor | Intent |
 |---|---|---|
-| `card/full` | `right: 18px; bottom: 318px; width: 304px` | 气泡贴近 Cuu 头顶 / 身边 |
+| `card/full` | P1.9 校准为 `right: 112px; bottom: 332px; width: 304px` | 气泡贴近 Cuu 头顶 / 身边，右圆角不贴边 |
 | `card/compact failed` | `right: 8px; bottom: 224px; width: 150px` | 只有扩展失败时显示小型救援卡 |
 | `card/compact syncing` | 不渲染 bubble | 避免窗口扩展中先出现“只有框没有猫”的过渡画面 |
 
@@ -95,7 +95,7 @@ Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但�
 | `passed` | `true` |
 | `motion_gate_passed` | `true` |
 | `actual_dom_matches_expected` | `true` |
-| first frame visual pixels | `59885` |
+| first frame visual pixels | `83220` |
 
 ## 6. Reference Package Assessment
 
@@ -109,8 +109,11 @@ Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但�
 
 ## 7. Next Construction Plan
 
-1. 把 P1.8 actual DOM gate 扩展到 `clarify` / `search` / `sync` / `done` / `offline`。
-2. 对白猫 Tororo 跑同样的 approval anchor smoke，确保二选项都符合锚点与 DOM 合同。
-3. 给 `motion-diff-report.json` 增加 bubble/card rect summary：记录 frame 级窗口 rect、首帧视觉阈值、DOM surface attrs。
-4. 补 Linux/macOS capture 策略：Windows 用 `PrintWindow`；Linux 测试机需要 Wayland/X11 截图方案；macOS 后续用窗口截图 API 或 Playwright webview fallback。
-5. 将“syncing 阶段不显示 transient bubble”纳入视觉回归：任何只有框、没有猫的首帧都不能算通过。
+1. 已推进到 P1.9：actual DOM gate 扩展到黑猫 `clarify` / `search` / `sync` / `done` / `offline`，并补白猫 Tororo approval smoke。
+2. 已推进到 P1.9：`done` 改为透明 `card` canvas + `tip` bubble，避免 body-only 小窗口裁切气泡。
+3. 已推进到 P1.9：actual DOM gate 加强到 live2d runtime / model pack / bubble / primary action。
+4. 待推进：给 `motion-diff-report.json` 增加 bubble/card rect summary 和自动 bbox gate，而不仅是人工抽查。
+5. 待推进：补 Linux/macOS capture 策略；Windows 当前继续用 `PrintWindow`。
+6. 待推进：将“syncing 阶段不显示 transient bubble”纳入 DOM snapshot history，任何只有框、没有猫的首帧都不能算通过。
+
+延伸文档：[`cuu-tauri-business-matrix-and-card-framing-p1-9.md`](./cuu-tauri-business-matrix-and-card-framing-p1-9.md)。

@@ -48,7 +48,7 @@ test("Cuu behavior manifest keeps approval and evidence states card-first", () =
   assert.equal(manifest.states.asking_approval.loop[0]?.interruptible, false);
   assert.equal(manifest.states.searching_evidence.window_mode, "card");
   assert.equal(manifest.states.searching_evidence.loop[0]?.motion, "searching_evidence_peek");
-  assert.equal(manifest.states.thinking.window_mode, "body_only");
+  assert.equal(manifest.states.thinking.window_mode, "card");
   assert.equal(manifest.states.thinking.bubble_mode, "tip");
 });
 

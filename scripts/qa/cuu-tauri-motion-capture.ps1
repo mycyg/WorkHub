@@ -144,9 +144,9 @@ function Get-CuuExpectedBehaviorForScenario {
         data_cuu_behavior_phase = "loop"
         data_cuu_live2d_motion = "celebrating_jump"
         data_cuu_live2d_renderer_state = "mtn/06.mtn"
-        data_cuu_behavior_expected_window_mode = "body_only"
+        data_cuu_behavior_expected_window_mode = "card"
         data_cuu_behavior_expected_bubble_mode = "tip"
-        data_pet_window_mode = "body_only"
+        data_pet_window_mode = "card"
       }
     }
     "offline" {
@@ -177,7 +177,9 @@ function Get-CuuExpectedBehaviorForScenario {
 function Test-CuuActualDomMatchesExpected {
   param(
     [object]$Expected,
-    [object]$Actual
+    [object]$Actual,
+    [string]$ExpectedModelPackId,
+    [string]$Scenario
   )
   if (-not $Expected -or -not $Actual -or -not $Actual.surface -or -not $Actual.surface.data) {
     return $false
@@ -189,6 +191,58 @@ function Test-CuuActualDomMatchesExpected {
     $actualProperty = $Actual.surface.data.PSObject.Properties[$property.Name]
     $actualValue = if ($actualProperty) { $actualProperty.Value } else { $null }
     if ($actualValue -ne $property.Value) {
+      return $false
+    }
+  }
+  if (-not $Actual.live2d -or -not $Actual.live2d.present -or -not $Actual.live2d.data) {
+    return $false
+  }
+  $requiredLive2D = @{
+    data_cuu_live2d_runtime = "live2d_cubism2_cat"
+    data_cuu_live2d_framing = "transparent_full_body"
+    data_cuu_live2d_status = "approved_cat_option"
+    data_cuu_model_pack = $ExpectedModelPackId
+  }
+  foreach ($entry in $requiredLive2D.GetEnumerator()) {
+    $actualProperty = $Actual.live2d.data.PSObject.Properties[$entry.Key]
+    $actualValue = if ($actualProperty) { $actualProperty.Value } else { $null }
+    if ($actualValue -ne $entry.Value) {
+      return $false
+    }
+  }
+  foreach ($property in $Expected.PSObject.Properties) {
+    if ($null -eq $property.Value -or -not $property.Name.StartsWith("data_cuu_", [System.StringComparison]::Ordinal)) {
+      continue
+    }
+    $actualProperty = $Actual.live2d.data.PSObject.Properties[$property.Name]
+    $actualValue = if ($actualProperty) { $actualProperty.Value } else { $null }
+    if ($actualValue -ne $property.Value) {
+      return $false
+    }
+  }
+  if ($Expected.data_cuu_behavior_expected_bubble_mode -ne "none") {
+    if (-not $Actual.bubble -or -not $Actual.bubble.present -or -not $Actual.bubble.data) {
+      return $false
+    }
+    if ($Actual.bubble.data.data_pet_bubble -ne "true") {
+      return $false
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_cuu_card_id) -or [string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_pet_bubble_kind)) {
+      return $false
+    }
+  }
+  $expectedActionByScenario = @{
+    approval = "approve"
+    clarify = "submit_option"
+    search = "use_for_current_task"
+    sync = "open_sync"
+    done = "view_replay"
+  }
+  if ($expectedActionByScenario.ContainsKey($Scenario)) {
+    if (-not $Actual.primary_action -or -not $Actual.primary_action.present -or -not $Actual.primary_action.data) {
+      return $false
+    }
+    if ($Actual.primary_action.data.data_cuu_action_id -ne $expectedActionByScenario[$Scenario]) {
       return $false
     }
   }
@@ -838,7 +892,8 @@ try {
   }
 
   $firstFrameMinVisualPixels = $MinFirstFrameVisualPixels
-  if ($isBusinessScenario) {
+  $firstFrameUsesBusinessCardGate = $isBusinessScenario -and $expectedBehavior.data_pet_window_mode -eq "card"
+  if ($firstFrameUsesBusinessCardGate) {
     $scaleRatioForGate = $PetScalePercent / 100.0
     $firstFrameMinVisualPixels = [Math]::Max(
       $MinFirstFrameVisualPixels,
@@ -958,7 +1013,7 @@ try {
       }
     }
   }
-  $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport
+  $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $ModelPackId -Scenario $Scenario
 
   $motionGatePassed = if ($longRunReport) { $longRunReport.passed } else { $true }
   $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected
@@ -993,6 +1048,7 @@ try {
       attempts = $firstFrameGate.Attempts
       probe_path = $firstFrameGate.ProbePath
       min_visual_pixels = $firstFrameMinVisualPixels
+      business_card_gate = $firstFrameUsesBusinessCardGate
       pixel_report = $firstFrameGate.PixelReport
     }
     max_vs_first_mean_abs_delta = ($diffs | ForEach-Object { $_.vs_first.mean_abs_delta } | Measure-Object -Maximum).Maximum

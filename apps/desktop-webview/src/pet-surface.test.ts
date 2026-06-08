@@ -137,6 +137,19 @@ function offlineCard(): CuuCard {
   };
 }
 
+function completionCard(): CuuCard {
+  return {
+    id: "completion-card",
+    kind: "completion",
+    state: "celebrating",
+    motion: cuuMotionForState("celebrating"),
+    title: "这次执行完成了",
+    message: "Cuu 已经完成本次执行。",
+    priority: "normal",
+    actions: [{ id: "view_replay", label: "查看回放", tone: "primary", method: "GET", href: "/agent-runs/run-1/replay" }]
+  };
+}
+
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
   assert.equal(resolveDesktopSurface({ pathname: "/pet", search: "" }), "pet");
   assert.equal(resolveDesktopSurface({ pathname: "/", search: "?surface=pet" }), "pet");
@@ -215,7 +228,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(18px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(318px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(112px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(332px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
   assert.match(card.html, /data-cuu-behavior-phase="loop"/u);
   assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
@@ -421,6 +434,19 @@ test("pet surface hides transient compact cards while the Cuu window is expandin
   assert.doesNotMatch(card.html, /data-cuu-card-id="approval-card"/u);
 });
 
+test("pet surface keeps completion cards as anchored celebration tips", () => {
+  const card = renderDesktopPetSurface({ card: completionCard() });
+
+  assert.match(card.html, /data-pet-window-mode="card"/u);
+  assert.match(card.html, /data-pet-card-layout="full"/u);
+  assert.match(card.html, /data-pet-bubble-kind="completion"/u);
+  assert.match(card.html, /data-cuu-live2d-motion="celebrating_jump"/u);
+  assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
+  assert.match(card.html, /data-cuu-behavior-expected-bubble-mode="tip"/u);
+  assert.match(card.html, /data-cuu-action-id="view_replay"/u);
+  assert.equal(desktopPetWindowModeForCard(completionCard()), "card");
+});
+
 test("pet surface keeps offline Cuu fully visible in card mode", () => {
   const card = renderDesktopPetSurface({ card: offlineCard() });
 
@@ -453,6 +479,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   };
   assert.equal(desktopPetWindowModeForCard(undefined), "body_only");
   assert.equal(desktopPetWindowModeForCard(approvalCard()), "card");
+  assert.equal(desktopPetWindowModeForCard(completionCard()), "card");
   assert.equal(resolveDesktopPetWindowBridge({ __WORKHUB_PET__: mockBridge }), mockBridge);
 
   const tauri = resolveDesktopPetWindowBridge({

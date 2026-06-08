@@ -44,10 +44,10 @@ visuals:
 | `approval` | scripted `push-event` / `permission.ask` | `asking_approval` | `asking_approval_bounce` | `mtn/01.mtn` | `card` |
 | `search` | scripted `push-event` / `knowledge.evidence.ready` | `searching_evidence` | `searching_evidence_peek` | `mtn/04.mtn` | `card` |
 | `sync` | scripted `push-event` / `sync.progress` | `syncing_files` | `syncing_files_spin` | `mtn/04.mtn` | `card` |
-| `done` | scripted `push-event` / `agent_run.step` | `celebrating` | `celebrating_jump` | `mtn/06.mtn` | `body_only` |
+| `done` | scripted `push-event` / `agent_run.step` | `celebrating` | `celebrating_jump` | `mtn/06.mtn` | `card` + `tip` bubble |
 | `offline` | scripted `sse-status` / `retrying` | `offline` | `worried_ears` | `mtn/08.mtn` | `card` |
 
-说明：`offline` 在 card mode 中故意使用 `worried_ears`，避免 `offline_sleep` 把全身压低导致裁切误判。
+说明：`offline` 在 card mode 中故意使用 `worried_ears`，避免 `offline_sleep` 把全身压低导致裁切误判。P1.9 后，`done` 也使用透明 `card` canvas 承载轻提示；语义仍是 `bubble_mode=tip`，不是重型看板卡。
 
 ## 4. Report Contract
 
@@ -119,9 +119,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 
 ## 7. Next Construction Plan
 
-1. 跑黑猫全量矩阵：`clarify`、`approval`、`search`、`sync`、`done`、`offline`，每个至少 32 帧。
-2. 跑白猫同等矩阵，证明二选项都真实可用。
-3. 为 `motion-diff-report.json` 增加 card-mode rect gate summary：业务 card 场景必须稳定在 `520x640` 级别，不能停留 compact fallback。
-4. 将 P1.8 actual DOM attrs gate 扩展到黑/白全业务矩阵。
+1. P1.9 已跑黑猫 8 帧 smoke 矩阵：`clarify`、`approval`、`search`、`sync`、`done`、`offline`；下一步升级为每场至少 32 帧。
+2. P1.9 已跑白猫 approval smoke；下一步跑白猫同等矩阵，证明二选项都真实可用。
+3. 为 `motion-diff-report.json` 增加 card-mode rect / bbox gate summary：业务 card 场景必须稳定在 `520x640` 级别，不能停留 compact fallback，也不能裁猫或裁气泡。
+4. P1.9 已加强 actual DOM attrs gate；下一步补 DOM snapshot history，证明 syncing 过渡没有“只有框没有猫”。
 5. 将 settings matrix 与业务场景合并：scale 75/150、opacity 60、pass-through、hide-on-hover 均要能恢复。
 6. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补对应截图方案。

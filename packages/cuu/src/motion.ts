@@ -315,7 +315,7 @@ function bubbleModeForState(state: CuuState): CuuBehaviorBubbleMode {
 }
 
 function windowModeForState(state: CuuState): CuuBehaviorWindowMode {
-  return bubbleModeForState(state) === "card" ? "card" : "body_only";
+  return state === "idle" ? "body_only" : "card";
 }
 
 function priorityForState(state: CuuState): number {

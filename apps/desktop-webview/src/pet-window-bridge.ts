@@ -1,4 +1,10 @@
-import type { CuuControllerPreferences, CuuIdleInteraction } from "@workhub/cuu";
+import {
+  cuuBehaviorStateForState,
+  resolveCuuVisibleModelPack,
+  type CuuCard,
+  type CuuControllerPreferences,
+  type CuuIdleInteraction
+} from "@workhub/cuu";
 
 export type DesktopPetWindowMode = "body_only" | "card";
 export type DesktopPetScalePercent = 75 | 100 | 125 | 150;
@@ -122,8 +128,16 @@ type TauriGlobal = {
   };
 };
 
-export function desktopPetWindowModeForCard(card: unknown): DesktopPetWindowMode {
-  return card ? "card" : "body_only";
+export function desktopPetWindowModeForCard(
+  card: Pick<CuuCard, "state" | "motion"> | undefined | null,
+  input: { requested_model_pack_id?: string | null | undefined } = {}
+): DesktopPetWindowMode {
+  if (!card) {
+    return "body_only";
+  }
+  const selection = resolveCuuVisibleModelPack({ requested_pack_id: input.requested_model_pack_id });
+  const behavior = cuuBehaviorStateForState(selection.active_pack.behavior_manifest, card.motion.state);
+  return behavior.window_mode;
 }
 
 export function desktopPetWindowSettingsFromPreferences(

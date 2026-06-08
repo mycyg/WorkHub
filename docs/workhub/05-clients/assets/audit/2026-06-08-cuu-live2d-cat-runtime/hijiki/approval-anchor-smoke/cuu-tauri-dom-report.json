@@ -10,7 +10,7 @@
     "selector": "[data-pet-bubble]",
     "text": "Cuu审批急 需要审批 点同意后才会正式交付。 同意打回打开"
   },
-  "captured_at_iso": "2026-06-08T08:27:32.195Z",
+  "captured_at_iso": "2026-06-08T09:14:08.880Z",
   "contract": "workhub.cuu.tauri.actual-dom-report",
   "live2d": {
     "data": {
@@ -57,7 +57,7 @@
     "present": false,
     "selector": "[data-chip-id],[data-pet-option-id]"
   },
-  "reason": "patch",
+  "reason": "render",
   "surface": {
     "data": {
       "data_cuu_behavior_coverage": "partial",
@@ -92,7 +92,6 @@
       "data_pet_hover_hidden": "false",
       "data_pet_hover_hide_mode": "off",
       "data_pet_hovered": "false",
-      "data_pet_last_pointer_ms": "1780907251871",
       "data_pet_look_x": "0",
       "data_pet_look_y": "0",
       "data_pet_opacity_percent": "100",

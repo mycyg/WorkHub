@@ -59,6 +59,7 @@ visuals:
 | QA 模型注入 | `scripts/qa/cuu-tauri-motion-capture.ps1` / `client-tauri/src-tauri/src/main.rs` | 允许 QA 用黑猫或白猫 pack id 启动 pet window；`look-only` 验证 hover 不移动窗口 |
 | QA 业务场景注入 | `apps/desktop-webview/src/cuu-qa-scenarios.ts` / `WORKHUB_CUU_QA_SCENARIO` | 允许真实 Tauri pet window 录 `clarify` / `approval` / `search` / `sync` / `done` / `offline` |
 | QA actual DOM / anchor | `apps/desktop-webview/src/cuu-qa-dom-report.ts` / `WORKHUB_CUU_QA_DOM_REPORT_PATH` | P1.8 已允许真实 Tauri pet window 把 runtime DOM attrs 写入 report；approval 气泡锚点贴近 Cuu |
+| QA business matrix / framing | `scripts/qa/cuu-tauri-motion-capture.ps1` / `apps/desktop-webview/src/pet-surface.ts` | P1.9 已补黑猫业务 smoke 矩阵、白猫 approval、强 actual DOM gate；card 画布已校准为不裁猫、不裁气泡 |
 
 ## 5. 已清理范围
 
@@ -89,6 +90,8 @@ Cuu 保留业务状态和 idle 微动作语义：
 | `offline` | 离线/重连 | sleep/worry motion |
 
 同一套语义服务黑猫和白猫。后续如果替换原创模型，也必须保持 pack id、motion key、window affordance 合同兼容。
+
+窗口口径：`idle` 才使用 `body_only` 小透明窗口；只要出现业务气泡或任务提示，就使用透明 `card` canvas 承载气泡与 Cuu。`done` 的业务语义仍是轻提示，即 `bubble_mode=tip`，但窗口模式为 `card`，避免 body-only 小窗口把完成提示裁成残影。
 
 ### 6.1 VPet / Pixel Cat Reference Lessons
 
@@ -122,7 +125,7 @@ P1.6 源码合同已经落地，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-b
 | `enter` / `loop` / `exit` | 已落源码合同，coverage 标记为 `partial` |
 | `idle_random` | 已落 breathe / blink / tail / look / wave 池 |
 | desktop runtime attrs | 已输出 `data-cuu-behavior-*` 与 `data-cuu-live2d-renderer-state` |
-| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；黑/白全矩阵待补 |
+| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；P1.9 已落黑猫业务 smoke 矩阵 + 白猫 approval；32 帧正式矩阵待补 |
 
 最小字段：
 
@@ -156,17 +159,17 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 - pet window 首帧非空，全身可见，不是只露耳朵。
 - Cuu 有持续动作，不只是缩放。
 - 鼠标靠近不移动整只 Cuu，不闪烁，不重建 iframe；黑猫/白猫 `look-only` capture 的窗口 rect 必须稳定。
-- 审批 / 检索 / 澄清气泡必须围绕 Cuu 出现，不能回到窗口左上角；P1.8 approval anchor smoke 是当前回归门。
+- 审批 / 检索 / 澄清 / 完成气泡必须围绕 Cuu 出现，不能回到窗口左上角；P1.9 business matrix 是当前回归门。
 - 黑猫/白猫切换后 iframe、model json、data attrs 一致。
 - Web / desktop 主窗没有 Cuu 形象 DOM。
 - 旧实验 class、runtime data attribute 或模型 ID 不出现在运行态 HTML。
 
 ## 8. 后续施工计划
 
-1. 继续录黑猫真实 Tauri motion：tap、drag、clarify、search、sync、done、offline；approval 已有短版 smoke，仍需 32 帧正式版。
-2. 继续录白猫同等场景，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
+1. 继续把 P1.9 的 8 帧 smoke 升级为 32 帧正式矩阵：黑猫 `clarify/search/sync/done/offline/approval` 与白猫同等场景。
+2. 继续录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 3. 输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`。
 4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
 5. 主窗 `/settings` 与托盘 pass-through 恢复门已落；继续补 settings matrix、多屏恢复、full hide 录屏和通知点击 deep-link。
 6. 完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
-7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落，P1.8 actual DOM / 气泡锚点首证据已落；继续补真实录屏全矩阵和 settings matrix，不能把源码合同或单个 smoke 当作视觉通过。
+7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落，P1.8 actual DOM / 气泡锚点首证据已落，P1.9 黑猫业务 smoke 矩阵与白猫 approval 已落；继续补 32 帧正式矩阵和 settings matrix，不能把源码合同或 smoke 当作最终视觉通过。

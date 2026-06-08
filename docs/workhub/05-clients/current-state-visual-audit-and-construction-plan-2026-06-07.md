@@ -20,7 +20,9 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/look-only/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-scripted-smoke/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/done-actual-dom-smoke/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/look-only/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/approval-anchor-smoke/cuu-motion-contact-sheet.png
 ---
 
 # 当前真实截图审计与后续施工计划
@@ -34,7 +36,7 @@ visuals:
 | Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
 | Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
-| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run、黑/白 look-only、黑猫 approval scripted smoke 与 approval anchor smoke 已有真实 Tauri 证据；VPet/像素猫参考包已完成只读审查；P1.6 behavior manifest、P1.7 业务录屏入口与 P1.8 actual DOM / 气泡锚点 QA 已落 | 仍缺白猫业务动作、search/sync/done/offline 全矩阵、拖拽、hide-on-hover、settings matrix、长期稳定性 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run、黑/白 look-only、黑猫 approval scripted smoke、P1.8 approval anchor smoke、P1.9 黑猫业务 smoke 矩阵和白猫 approval smoke 已有真实 Tauri 证据；VPet/像素猫参考包已完成只读审查；P1.6 behavior manifest、P1.7 业务录屏入口、P1.8 actual DOM / 气泡锚点 QA 与 P1.9 card framing QA 已落 | 仍缺 32 帧正式矩阵、白猫全业务动作、拖拽、hide-on-hover、settings matrix、长期稳定性 |
 | Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
 | 多语言 | 中英 locale 合同、非 Gold Path helper、用户语言偏好、pet 右键菜单和 settings 恢复面板源码已落；Web / desktop / pet 共享 `workhub.locale` | 需要补中英视觉回归和服务端生成内容 locale |
 
@@ -91,6 +93,7 @@ visuals:
 | P1.6 behavior manifest | `packages/cuu/src/motion.ts`、`packages/cuu/src/model-pack.ts`、`apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` 已输出 `data-cuu-behavior-*` 与真实 `.mtn` attrs |
 | P1.7 business capture | `apps/desktop-webview/src/cuu-qa-scenarios.ts`、`client-tauri/src-tauri/src/main.rs`、`scripts/qa/cuu-tauri-motion-capture.ps1` 已支持 env-gated 业务态录屏；黑猫 approval smoke 已生成 |
 | P1.8 actual DOM / 锚点 QA | `apps/desktop-webview/src/cuu-qa-dom-report.ts`、`client-tauri/src-tauri/src/main.rs`、`scripts/qa/cuu-tauri-motion-capture.ps1` 已把真实 DOM attrs 写入 report；approval 气泡改为 Cuu 邻近锚点，业务首帧必须有猫体像素 |
+| P1.9 business matrix / framing QA | 黑猫 `approval/clarify/search/sync/done/offline` 与白猫 `approval` 已重跑真实 Tauri capture；actual DOM gate 已校验 Live2D runtime/model pack/bubble/action；card 画布已校准为不裁猫、不裁气泡 |
 
 ## 4. 已清理内容
 
@@ -108,8 +111,8 @@ visuals:
 
 | 要求 | 为什么还不能算通过 | 需要的证据 |
 |---|---|---|
-| Cuu 鲜活感 | 黑猫 idle、黑/白 hover 与黑猫 approval smoke 已补真实窗口证据，但业务动作尚未全量覆盖 | search/sync/done/offline、白猫业务场景 GIF/MP4/contact sheet/diff report |
-| Cuu 任务动作 | 业务状态到 `.mtn` 的 `CuuBehaviorManifest` 源码合同已落；P1.7/P1.8 已能注入业务场景、录黑猫 approval、并校验 actual DOM attrs | 黑/白 clarify/search/sync/done/offline 事件录屏，报告继续扩展 actual DOM attrs 全矩阵 |
+| Cuu 鲜活感 | P1.9 已补黑猫业务 smoke 矩阵和白猫 approval，但每场只有 8 帧，motion gate 尚未用严格 changed-pixel 阈值证明长期流畅 | 黑/白 32 帧正式矩阵、changed-pixel/liveness threshold、长时间 idle/业务循环 |
+| Cuu 任务动作 | 业务状态到 `.mtn` 的 `CuuBehaviorManifest` 源码合同已落；P1.9 已能注入业务场景并强校验 actual DOM attrs | 白猫全业务矩阵、direct QuestionCard option-first chip、DOM snapshot history |
 | 桌面交互 | hover 固定锚点已通过；pet 右键设置轻菜单已补；主窗/托盘 pass-through 恢复门已落；tap/drag/pass-through/hide-on-hover 仍需真实复测 | Tauri motion capture + settings matrix |
 | 主窗无 Cuu | 已做源码收束，但需要截图确认 | Web 与 desktop 主窗截图审查 |
 | 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
@@ -117,25 +120,24 @@ visuals:
 
 ## 6. 下一轮施工计划
 
-### 6.1 黑猫录屏
+### 6.1 黑猫正式矩阵
 
 产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/`
 
 | 场景 | 触发 | 验收 |
 |---|---|---|
-| idle 10s | 无事件 | 持续动作，非空，非整体缩放 |
-| hover | 鼠标靠近 | 窗口 rect 固定，不能整只 Cuu 位移/闪烁 |
-| tap | 点击 Cuu | 气泡或反馈动作 |
-| drag | 拖拽窗口 | 位置变化、释放后保存 |
-| approval | 注入审批卡 | 动作 + 轻卡完整 |
-| search | 注入检索卡 | 气泡 chips 可见 |
-| offline | SSE offline | 人话提示，不刷屏 |
+| idle 10s | 无事件 | 已有 smoke；正式版需 32+ 帧，持续动作，非空，非整体缩放 |
+| hover | 鼠标靠近 | 已有 look-only；正式版需窗口 rect 固定，不能整只 Cuu 位移/闪烁 |
+| tap | 点击 Cuu | 待录：气泡或反馈动作 |
+| drag | 拖拽窗口 | 待录：位置变化、释放后保存 |
+| approval | 注入审批卡 | 已有 P1.9 smoke；正式版需 32+ 帧 + liveness threshold |
+| clarify/search/sync/done/offline | 注入业务卡 | 已有 P1.9 smoke；正式版需 32+ 帧 + stronger motion gate |
 
 ### 6.2 白猫录屏
 
 产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/`
 
-白猫必须复用同一组场景，验证模型切换不是只改设置文案。
+白猫必须复用同一组场景，验证模型切换不是只改设置文案。P1.9 只完成白猫 approval smoke，其他业务场景仍待补。
 
 ### 6.3 Settings matrix
 
@@ -150,7 +152,7 @@ visuals:
 | opacity-60 | 可见但不遮挡 |
 | pass-through | 可开启，并可通过托盘恢复 |
 | hide-on-hover | soft hide 后能恢复 |
-| card-mode | 轻卡展开不裁切 |
+| card-mode | P1.9 smoke 已证明 100% scale 不裁切；settings matrix 仍需覆盖 75/150 scale |
 
 ### 6.4 P1.6 鲜活动作状态机
 
@@ -161,8 +163,8 @@ visuals:
 | motion manifest | `packages/cuu/src/motion.ts` | 已落：`enter` / `loop` / `exit`、priority、interruptible、idle random pool 单测 |
 | pack coverage | `packages/cuu/src/model-pack.ts` | 已落：黑猫/白猫均声明 `coverage=partial`，未知 pack 回黑猫 |
 | runtime API | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 已落：`setDesktopCuuCatLive2DBehaviorState` patch data attrs，不重建 iframe |
-| event binding | `apps/desktop-webview/src/pet-surface.ts` | 已落源码 attrs；approval/search/sync/done/offline 真实录屏待补 |
-| motion evidence | `scripts/qa/cuu-tauri-motion-capture.ps1` | 已补业务场景入口与黑猫 approval smoke；待补黑猫/白猫各录 clarify、search、sync、done、offline、tap、drag |
+| event binding | `apps/desktop-webview/src/pet-surface.ts` | 已落源码 attrs；P1.9 已补黑猫业务 smoke 与白猫 approval；待补白猫全业务与正式 32 帧 |
+| motion evidence | `scripts/qa/cuu-tauri-motion-capture.ps1` | 已补业务场景入口、强 actual DOM gate、黑猫业务 smoke 矩阵；待补 32 帧正式矩阵、tap、drag |
 
 ### 6.5 文档回写
 
@@ -182,10 +184,11 @@ visuals:
 | 黑猫 hover fixed anchor | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/look-only/cuu-motion-contact-sheet.png` |
 | 黑猫 approval scripted smoke | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-scripted-smoke/cuu-motion-contact-sheet.png`，含 GIF/MP4/report |
 | 黑猫 approval anchor + actual DOM smoke | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png`，`actual_dom_matches_expected=true` |
-| 黑猫 search/sync/done/offline GIF/MP4 | 待生成 |
+| 黑猫 clarify/search/sync/done/offline GIF/MP4 | 已生成 8 帧 smoke：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/*-actual-dom-smoke/` |
 | 白猫 hover fixed anchor | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/look-only/cuu-motion-contact-sheet.png` |
 | 白猫 idle contact sheet | 待生成 |
-| 白猫 approval/search GIF/MP4 | 待生成 |
+| 白猫 approval GIF/MP4 | 已生成 8 帧 smoke：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/approval-anchor-smoke/` |
+| 白猫 clarify/search/sync/done/offline GIF/MP4 | 待生成 |
 | settings matrix report | 待生成 |
 | pet 右键设置菜单 | 已生成：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)；真实 zh-CN/en-US 截图 / DOM dump 待补 |
 | pet settings 恢复门 | 已生成：[`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md)；真实 pass-through 恢复录屏 / matrix 待补 |
@@ -195,7 +198,8 @@ visuals:
 | 桌宠参考包审查 | 已生成：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)，只借鉴状态机、资源包和窗口交互，不直接纳入未授权素材 |
 | P1.6 鲜活动作状态机 | 已生成：[`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md)；源码合同已落，真实 Tauri 业务动作录屏待补 |
 | P1.7 业务动作录屏入口 | 已生成：[`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)；黑猫 approval smoke 已落，黑/白全矩阵待补 |
-| P1.8 actual DOM / 气泡锚点 QA | 已生成：[`cuu-tauri-actual-dom-and-anchor-qa-p1-8.md`](./cuu-tauri-actual-dom-and-anchor-qa-p1-8.md)；黑猫 approval anchor smoke 已落，后续扩展到全矩阵 |
+| P1.8 actual DOM / 气泡锚点 QA | 已生成：[`cuu-tauri-actual-dom-and-anchor-qa-p1-8.md`](./cuu-tauri-actual-dom-and-anchor-qa-p1-8.md)；黑猫 approval anchor smoke 已落 |
+| P1.9 business matrix / card framing QA | 已生成：[`cuu-tauri-business-matrix-and-card-framing-p1-9.md`](./cuu-tauri-business-matrix-and-card-framing-p1-9.md)；黑猫业务 smoke 矩阵与白猫 approval 已落，32 帧正式矩阵待补 |
 
 ## 8. 完成标准
 

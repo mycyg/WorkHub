@@ -1,0 +1,446 @@
+﻿{
+    "passed":  true,
+    "scenario":  "approval",
+    "business_scenario":  true,
+    "sse_disabled_for_scenario":  true,
+    "cuu_qa_hide_on_hover":  false,
+    "expected_behavior_contract":  {
+                                       "data_cuu_behavior_state":  "asking_approval",
+                                       "data_cuu_behavior_phase":  "loop",
+                                       "data_cuu_live2d_motion":  "asking_approval_bounce",
+                                       "data_cuu_live2d_renderer_state":  "mtn/01.mtn",
+                                       "data_cuu_behavior_expected_window_mode":  "card",
+                                       "data_cuu_behavior_expected_bubble_mode":  "card",
+                                       "data_pet_window_mode":  "card"
+                                   },
+    "motion_gate_passed":  true,
+    "actual_dom_report_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\tororo\\approval-anchor-smoke\\cuu-tauri-dom-report.json",
+    "actual_dom_matches_expected":  true,
+    "actual_dom_report":  {
+                              "bubble":  {
+                                             "data":  {
+                                                          "data_cuu_card_id":  "20000000-0000-4000-8000-000000000212",
+                                                          "data_pet_bubble":  "true",
+                                                          "data_pet_bubble_kind":  "approval",
+                                                          "data_pet_bubble_priority":  "urgent"
+                                                      },
+                                             "present":  true,
+                                             "selector":  "[data-pet-bubble]",
+                                             "text":  "Cuu审批急 需要审批 点同意后才会正式交付。 同意打回打开"
+                                         },
+                              "captured_at_iso":  "2026-06-08T09:15:37.482Z",
+                              "contract":  "workhub.cuu.tauri.actual-dom-report",
+                              "live2d":  {
+                                             "data":  {
+                                                          "data_cuu_behavior_coverage":  "partial",
+                                                          "data_cuu_behavior_expected_bubble_mode":  "card",
+                                                          "data_cuu_behavior_expected_window_mode":  "card",
+                                                          "data_cuu_behavior_manifest_version":  "1",
+                                                          "data_cuu_behavior_phase":  "loop",
+                                                          "data_cuu_behavior_priority":  "90",
+                                                          "data_cuu_behavior_state":  "asking_approval",
+                                                          "data_cuu_live2d_appearance":  "white_cat",
+                                                          "data_cuu_live2d_frame_url":  "./cuu/live2d/tororo/cuu-tororo.html",
+                                                          "data_cuu_live2d_framing":  "transparent_full_body",
+                                                          "data_cuu_live2d_interruptible":  "false",
+                                                          "data_cuu_live2d_layer_count":  "native_moc",
+                                                          "data_cuu_live2d_loop":  "true",
+                                                          "data_cuu_live2d_model":  "tororo",
+                                                          "data_cuu_live2d_model_url":  "./cuu/live2d/tororo/cuu-tororo.model.json",
+                                                          "data_cuu_live2d_motion":  "asking_approval_bounce",
+                                                          "data_cuu_live2d_renderer_state":  "mtn/01.mtn",
+                                                          "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                          "data_cuu_live2d_state":  "asking_approval_bounce",
+                                                          "data_cuu_live2d_status":  "approved_cat_option",
+                                                          "data_cuu_model_pack":  "cuu-tororo-live2d-cubism2",
+                                                          "data_cuu_model_pack_selection_reason":  "requested_default_ready"
+                                                      },
+                                             "present":  true,
+                                             "selector":  ".wh-cuu-cat-live2d",
+                                             "text":  "Cuu"
+                                         },
+                              "primary_action":  {
+                                                     "data":  {
+                                                                  "data_cuu_action_id":  "approve",
+                                                                  "data_method":  "POST",
+                                                                  "data_requires_reason":  "false",
+                                                                  "data_tone":  "primary"
+                                                              },
+                                                     "present":  true,
+                                                     "selector":  "[data-cuu-action-id]",
+                                                     "text":  "同意"
+                                                 },
+                              "primary_chip":  {
+                                                   "data":  {
+
+                                                            },
+                                                   "present":  false,
+                                                   "selector":  "[data-chip-id],[data-pet-option-id]"
+                                               },
+                              "reason":  "render",
+                              "surface":  {
+                                              "data":  {
+                                                           "data_cuu_behavior_coverage":  "partial",
+                                                           "data_cuu_behavior_expected_bubble_mode":  "card",
+                                                           "data_cuu_behavior_expected_window_mode":  "card",
+                                                           "data_cuu_behavior_manifest_version":  "1",
+                                                           "data_cuu_behavior_phase":  "loop",
+                                                           "data_cuu_behavior_priority":  "90",
+                                                           "data_cuu_behavior_state":  "asking_approval",
+                                                           "data_cuu_idle_action":  "idle_tail_sway",
+                                                           "data_cuu_live2d_appearance":  "white_cat",
+                                                           "data_cuu_live2d_frame_url":  "./cuu/live2d/tororo/cuu-tororo.html",
+                                                           "data_cuu_live2d_layer_count":  "native_moc",
+                                                           "data_cuu_live2d_model":  "tororo",
+                                                           "data_cuu_live2d_model_url":  "./cuu/live2d/tororo/cuu-tororo.model.json",
+                                                           "data_cuu_live2d_motion":  "asking_approval_bounce",
+                                                           "data_cuu_live2d_renderer_state":  "mtn/01.mtn",
+                                                           "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                           "data_cuu_live2d_status":  "approved_cat_option",
+                                                           "data_cuu_model_pack":  "cuu-tororo-live2d-cubism2",
+                                                           "data_cuu_model_pack_selection_reason":  "requested_default_ready",
+                                                           "data_cuu_state":  "asking_approval",
+                                                           "data_cuu_visual_mode":  "live2d_cat",
+                                                           "data_pet_card_has_context":  "false",
+                                                           "data_pet_card_kind":  "approval",
+                                                           "data_pet_card_layout":  "full",
+                                                           "data_pet_card_priority":  "urgent",
+                                                           "data_pet_cursor_near":  "false",
+                                                           "data_pet_dragging":  "false",
+                                                           "data_pet_hide_on_hover":  "false",
+                                                           "data_pet_hover_avoidance":  "none",
+                                                           "data_pet_hover_hidden":  "false",
+                                                           "data_pet_hover_hide_mode":  "off",
+                                                           "data_pet_hovered":  "false",
+                                                           "data_pet_look_x":  "0",
+                                                           "data_pet_look_y":  "0",
+                                                           "data_pet_opacity_percent":  "100",
+                                                           "data_pet_pass_through":  "false",
+                                                           "data_pet_pointer_smoothing_alpha":  "0.58",
+                                                           "data_pet_scale_percent":  "100",
+                                                           "data_pet_window_height":  "640",
+                                                           "data_pet_window_mode":  "card",
+                                                           "data_pet_window_width":  "520",
+                                                           "data_wh_surface":  "pet"
+                                                       },
+                                              "present":  true,
+                                              "selector":  "[data-wh-surface=pet]",
+                                              "text":  "Cuu Cuu 设置 形象 黑猫 白猫 语言 中文 EN 悬停避让 打开设置 隐藏 Cuu Cuu审批急 需要审批 点同意后才会正式交付。 同意打回打开"
+                                          },
+                              "version":  1
+                          },
+    "cuu_qa_preferences":  {
+                               "pet_scale_percent":  100,
+                               "pet_opacity_percent":  100,
+                               "pet_pass_through":  false,
+                               "pet_hide_on_hover":  false,
+                               "pet_model_pack_id":  "cuu-tororo-live2d-cubism2",
+                               "pet_qa_scenario":  "approval"
+                           },
+    "scenario_events":  [
+
+                        ],
+    "process_id":  44768,
+    "frame_count":  8,
+    "interval_ms":  180,
+    "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\tororo\\approval-anchor-smoke\\frames",
+    "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\tororo\\approval-anchor-smoke\\cuu-motion-contact-sheet.png",
+    "first_frame_gate":  {
+                             "passed":  true,
+                             "attempts":  8,
+                             "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\tororo\\approval-anchor-smoke\\first-frame-probe.png",
+                             "min_visual_pixels":  54000,
+                             "business_card_gate":  true,
+                             "pixel_report":  {
+                                                  "samples":  332800,
+                                                  "foreground_pixels":  83619,
+                                                  "light_pixels":  77935,
+                                                  "dark_pixels":  250640,
+                                                  "visual_pixels":  83619,
+                                                  "sample_step":  1,
+                                                  "width":  520,
+                                                  "height":  640
+                                              }
+                         },
+    "max_vs_first_mean_abs_delta":  3.301,
+    "max_vs_previous_mean_abs_delta":  2.176,
+    "max_vs_first_changed_pixels_gt8":  2167,
+    "max_vs_previous_changed_pixels_gt8":  1733,
+    "frame_pixel_reports":  [
+                                {
+                                    "frame":  0,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83269,
+                                                         "light_pixels":  77627,
+                                                         "dark_pixels":  250996,
+                                                         "visual_pixels":  83269,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  1,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83407,
+                                                         "light_pixels":  77778,
+                                                         "dark_pixels":  250815,
+                                                         "visual_pixels":  83407,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  2,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83869,
+                                                         "light_pixels":  78256,
+                                                         "dark_pixels":  250384,
+                                                         "visual_pixels":  83869,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  3,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83582,
+                                                         "light_pixels":  77936,
+                                                         "dark_pixels":  250655,
+                                                         "visual_pixels":  83582,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  4,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83138,
+                                                         "light_pixels":  77554,
+                                                         "dark_pixels":  251108,
+                                                         "visual_pixels":  83138,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  5,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83227,
+                                                         "light_pixels":  77652,
+                                                         "dark_pixels":  250984,
+                                                         "visual_pixels":  83227,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  6,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83500,
+                                                         "light_pixels":  77885,
+                                                         "dark_pixels":  250739,
+                                                         "visual_pixels":  83500,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                },
+                                {
+                                    "frame":  7,
+                                    "pixel_report":  {
+                                                         "samples":  332800,
+                                                         "foreground_pixels":  83936,
+                                                         "light_pixels":  78291,
+                                                         "dark_pixels":  250294,
+                                                         "visual_pixels":  83936,
+                                                         "sample_step":  1,
+                                                         "width":  520,
+                                                         "height":  640
+                                                     }
+                                }
+                            ],
+    "long_run":  null,
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.472,
+                                        "changed_pixels_gt8":  1240,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.472,
+                                           "changed_pixels_gt8":  1240,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.142,
+                                        "changed_pixels_gt8":  2167,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.176,
+                                           "changed_pixels_gt8":  1681,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.971,
+                                        "changed_pixels_gt8":  1612,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.789,
+                                           "changed_pixels_gt8":  1339,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  4,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0.85,
+                                        "changed_pixels_gt8":  935,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.092,
+                                           "changed_pixels_gt8":  1733,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  5,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.909,
+                                        "changed_pixels_gt8":  1244,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.571,
+                                           "changed_pixels_gt8":  1090,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  6,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  2.536,
+                                        "changed_pixels_gt8":  1527,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.317,
+                                           "changed_pixels_gt8":  991,
+                                           "samples":  83200
+                                       }
+                   },
+                   {
+                       "frame":  7,
+                       "rect":  {
+                                    "Left":  1504,
+                                    "Top":  440,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  520,
+                                    "Height":  640
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.301,
+                                        "changed_pixels_gt8":  2118,
+                                        "samples":  83200
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.052,
+                                           "changed_pixels_gt8":  1649,
+                                           "samples":  83200
+                                       }
+                   }
+               ]
+}

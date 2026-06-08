@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**44 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计、pet 右键菜单、settings 恢复门、P1.6 behavior manifest、P1.7 Tauri 业务动作录屏入口与 P1.8 actual DOM / 气泡锚点 QA;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
+> 状态(2026-06-08):**45 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计、pet 右键菜单、settings 恢复门、P1.6 behavior manifest、P1.7 Tauri 业务动作录屏入口、P1.8 actual DOM / 气泡锚点 QA 与 P1.9 业务矩阵 / card framing QA;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
 
 ---
 
@@ -120,6 +120,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `cuu-behavior-manifest-p1-6.md` | **C-PET/Cuu/Live2D**:P1.6 鲜活动作状态机源码合同,定义 `CuuBehaviorManifest`、Start/Loop/End、idle random、真实 `.mtn` QA attrs | current |
 | `cuu-tauri-business-motion-capture-p1-7.md` | **C-PET/Cuu/Tauri QA**:P1.7 业务动作录屏入口,用 env-gated scripted events 让真实 pet window 录 approval/search/sync/done/offline | current |
 | `cuu-tauri-actual-dom-and-anchor-qa-p1-8.md` | **C-PET/Cuu/Tauri QA**:P1.8 真实 WebView DOM attrs 落盘、approval 气泡 Cuu 邻近锚点、首帧猫体 gate | current |
+| `cuu-tauri-business-matrix-and-card-framing-p1-9.md` | **C-PET/Cuu/Tauri QA**:P1.9 黑猫业务 smoke 矩阵、白猫 approval、card/tip 透明画布定位、强 actual DOM gate | current |
 | `desktop-pet-reference-package-audit-2026-06-08.md` | **C-PET/Cuu/Reference**:`reference` 压缩包复用价值审查,VPet/像素猫只借鉴状态机、资源包和窗口交互,不提交引用资产 | current |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `current-state-visual-audit-and-construction-plan-2026-06-07.md` | **C-WEB/C-PET/Cuu/Rust shell**:真实页面截图、Cuu 黑/白 Live2D 概念源帧、Tauri 多帧动作抓取与下一轮施工验收门 | audit |

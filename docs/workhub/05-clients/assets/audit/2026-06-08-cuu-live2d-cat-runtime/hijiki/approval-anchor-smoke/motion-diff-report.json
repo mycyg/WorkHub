@@ -28,7 +28,7 @@
                                              "selector":  "[data-pet-bubble]",
                                              "text":  "Cuu审批急 需要审批 点同意后才会正式交付。 同意打回打开"
                                          },
-                              "captured_at_iso":  "2026-06-08T08:27:32.195Z",
+                              "captured_at_iso":  "2026-06-08T09:14:08.880Z",
                               "contract":  "workhub.cuu.tauri.actual-dom-report",
                               "live2d":  {
                                              "data":  {
@@ -77,7 +77,7 @@
                                                    "present":  false,
                                                    "selector":  "[data-chip-id],[data-pet-option-id]"
                                                },
-                              "reason":  "patch",
+                              "reason":  "render",
                               "surface":  {
                                               "data":  {
                                                            "data_cuu_behavior_coverage":  "partial",
@@ -112,7 +112,6 @@
                                                            "data_pet_hover_hidden":  "false",
                                                            "data_pet_hover_hide_mode":  "off",
                                                            "data_pet_hovered":  "false",
-                                                           "data_pet_last_pointer_ms":  "1780907251871",
                                                            "data_pet_look_x":  "0",
                                                            "data_pet_look_y":  "0",
                                                            "data_pet_opacity_percent":  "100",
@@ -141,7 +140,7 @@
     "scenario_events":  [
 
                         ],
-    "process_id":  53740,
+    "process_id":  51412,
     "frame_count":  8,
     "interval_ms":  180,
     "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\hijiki\\approval-anchor-smoke\\frames",
@@ -151,30 +150,31 @@
                              "attempts":  7,
                              "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\hijiki\\approval-anchor-smoke\\first-frame-probe.png",
                              "min_visual_pixels":  54000,
+                             "business_card_gate":  true,
                              "pixel_report":  {
                                                   "samples":  332800,
-                                                  "foreground_pixels":  59885,
-                                                  "light_pixels":  40787,
-                                                  "dark_pixels":  288007,
-                                                  "visual_pixels":  59885,
+                                                  "foreground_pixels":  83220,
+                                                  "light_pixels":  58206,
+                                                  "dark_pixels":  270610,
+                                                  "visual_pixels":  83220,
                                                   "sample_step":  1,
                                                   "width":  520,
                                                   "height":  640
                                               }
                          },
-    "max_vs_first_mean_abs_delta":  0.505,
-    "max_vs_previous_mean_abs_delta":  0.387,
-    "max_vs_first_changed_pixels_gt8":  1136,
-    "max_vs_previous_changed_pixels_gt8":  955,
+    "max_vs_first_mean_abs_delta":  0.806,
+    "max_vs_previous_mean_abs_delta":  0.729,
+    "max_vs_first_changed_pixels_gt8":  1871,
+    "max_vs_previous_changed_pixels_gt8":  1779,
     "frame_pixel_reports":  [
                                 {
                                     "frame":  0,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  58954,
-                                                         "light_pixels":  40788,
-                                                         "dark_pixels":  288058,
-                                                         "visual_pixels":  58954,
+                                                         "foreground_pixels":  83438,
+                                                         "light_pixels":  58208,
+                                                         "dark_pixels":  270643,
+                                                         "visual_pixels":  83438,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -184,10 +184,10 @@
                                     "frame":  1,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  58897,
-                                                         "light_pixels":  40789,
-                                                         "dark_pixels":  288075,
-                                                         "visual_pixels":  58897,
+                                                         "foreground_pixels":  82694,
+                                                         "light_pixels":  58207,
+                                                         "dark_pixels":  270651,
+                                                         "visual_pixels":  82694,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -197,10 +197,10 @@
                                     "frame":  2,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  59899,
-                                                         "light_pixels":  40788,
-                                                         "dark_pixels":  288076,
-                                                         "visual_pixels":  59899,
+                                                         "foreground_pixels":  82754,
+                                                         "light_pixels":  58207,
+                                                         "dark_pixels":  270673,
+                                                         "visual_pixels":  82754,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -210,10 +210,10 @@
                                     "frame":  3,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  59940,
-                                                         "light_pixels":  40789,
-                                                         "dark_pixels":  288088,
-                                                         "visual_pixels":  59940,
+                                                         "foreground_pixels":  82956,
+                                                         "light_pixels":  58205,
+                                                         "dark_pixels":  270662,
+                                                         "visual_pixels":  82956,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -223,10 +223,10 @@
                                     "frame":  4,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  60430,
-                                                         "light_pixels":  40788,
-                                                         "dark_pixels":  288084,
-                                                         "visual_pixels":  60430,
+                                                         "foreground_pixels":  83323,
+                                                         "light_pixels":  58207,
+                                                         "dark_pixels":  270684,
+                                                         "visual_pixels":  83323,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -236,10 +236,10 @@
                                     "frame":  5,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  60261,
-                                                         "light_pixels":  40788,
-                                                         "dark_pixels":  288074,
-                                                         "visual_pixels":  60261,
+                                                         "foreground_pixels":  83509,
+                                                         "light_pixels":  58205,
+                                                         "dark_pixels":  270731,
+                                                         "visual_pixels":  83509,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -249,10 +249,10 @@
                                     "frame":  6,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  59491,
-                                                         "light_pixels":  40787,
-                                                         "dark_pixels":  288090,
-                                                         "visual_pixels":  59491,
+                                                         "foreground_pixels":  82903,
+                                                         "light_pixels":  58205,
+                                                         "dark_pixels":  270668,
+                                                         "visual_pixels":  82903,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -262,10 +262,10 @@
                                     "frame":  7,
                                     "pixel_report":  {
                                                          "samples":  332800,
-                                                         "foreground_pixels":  59006,
-                                                         "light_pixels":  40787,
-                                                         "dark_pixels":  288068,
-                                                         "visual_pixels":  59006,
+                                                         "foreground_pixels":  82711,
+                                                         "light_pixels":  58205,
+                                                         "dark_pixels":  270677,
+                                                         "visual_pixels":  82711,
                                                          "sample_step":  1,
                                                          "width":  520,
                                                          "height":  640
@@ -306,13 +306,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.083,
-                                        "changed_pixels_gt8":  178,
+                                        "mean_abs_delta":  0.68,
+                                        "changed_pixels_gt8":  1671,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.083,
-                                           "changed_pixels_gt8":  178,
+                                           "mean_abs_delta":  0.68,
+                                           "changed_pixels_gt8":  1671,
                                            "samples":  83200
                                        }
                    },
@@ -327,13 +327,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.153,
-                                        "changed_pixels_gt8":  327,
+                                        "mean_abs_delta":  0.693,
+                                        "changed_pixels_gt8":  1690,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.195,
-                                           "changed_pixels_gt8":  464,
+                                           "mean_abs_delta":  0.339,
+                                           "changed_pixels_gt8":  766,
                                            "samples":  83200
                                        }
                    },
@@ -348,13 +348,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.337,
-                                        "changed_pixels_gt8":  839,
+                                        "mean_abs_delta":  0.695,
+                                        "changed_pixels_gt8":  1713,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.37,
-                                           "changed_pixels_gt8":  918,
+                                           "mean_abs_delta":  0.284,
+                                           "changed_pixels_gt8":  665,
                                            "samples":  83200
                                        }
                    },
@@ -369,13 +369,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.505,
-                                        "changed_pixels_gt8":  1136,
+                                        "mean_abs_delta":  0.294,
+                                        "changed_pixels_gt8":  669,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.306,
-                                           "changed_pixels_gt8":  793,
+                                           "mean_abs_delta":  0.631,
+                                           "changed_pixels_gt8":  1572,
                                            "samples":  83200
                                        }
                    },
@@ -390,13 +390,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.365,
-                                        "changed_pixels_gt8":  893,
+                                        "mean_abs_delta":  0.458,
+                                        "changed_pixels_gt8":  1125,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.387,
-                                           "changed_pixels_gt8":  955,
+                                           "mean_abs_delta":  0.302,
+                                           "changed_pixels_gt8":  839,
                                            "samples":  83200
                                        }
                    },
@@ -411,13 +411,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.277,
-                                        "changed_pixels_gt8":  663,
+                                        "mean_abs_delta":  0.72,
+                                        "changed_pixels_gt8":  1724,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.366,
-                                           "changed_pixels_gt8":  919,
+                                           "mean_abs_delta":  0.729,
+                                           "changed_pixels_gt8":  1779,
                                            "samples":  83200
                                        }
                    },
@@ -432,13 +432,13 @@
                                     "Height":  640
                                 },
                        "vs_first":  {
-                                        "mean_abs_delta":  0.178,
-                                        "changed_pixels_gt8":  422,
+                                        "mean_abs_delta":  0.806,
+                                        "changed_pixels_gt8":  1871,
                                         "samples":  83200
                                     },
                        "vs_previous":  {
-                                           "mean_abs_delta":  0.211,
-                                           "changed_pixels_gt8":  519,
+                                           "mean_abs_delta":  0.267,
+                                           "changed_pixels_gt8":  736,
                                            "samples":  83200
                                        }
                    }
