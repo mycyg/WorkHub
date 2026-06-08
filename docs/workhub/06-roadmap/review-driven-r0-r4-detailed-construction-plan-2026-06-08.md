@@ -12,6 +12,10 @@ source_review:
 visuals:
   - ../05-clients/assets/shared/r0-governance-boundary-concept.svg
   - ../05-clients/assets/shared/r0-r4-recovery-roadmap.svg
+  - ../05-clients/assets/shared/ts-first-runtime-concept.png
+  - ../05-clients/assets/shared/endpoint-page-cuu-alignment.png
+  - ../05-clients/assets/shared/prd-concept-gap-map.png
+  - ../05-clients/assets/shared/shared-component-atlas.png
 ---
 
 # Claude 审查后详细施工计划
@@ -30,7 +34,7 @@ Claude 审查指出的问题不是“代码质量差”，而是“范围优先�
 | Gold Path fixture 冒充完成 | `AgentLoopResult.manifest -> ProposalService.createFromManifest` 与 route auto-pump 已部分落代码，但 AgentRun 仍在内存 | R1 下一刀必须做 DB-backed AgentRun/AgentStep 与真实 replay |
 | 业务状态仍有内存协调 | Proposal 默认已 DB-backed；AgentRun/trace/workdir 已 write-through DB，但 claim/drainer 仍靠进程内 Map/Set | R1 补真实 PG 重启验收；R2 再做 SKIP LOCKED 多 worker |
 | 文档写 Python 迁移，现实是 TS-first 重写 | README、phasing、F 系列已有部分修正，但仍需避免旧 plan 被当目标路径 | 本篇和 TS-first 审计为后续施工权威；旧 Python 行号只作行为锚点 |
-| 概念图/截图仍有橘猫与主窗 Cuu | `assets/cuu/` 已换黑/白；旧 shared 图和旧 current-state 截图标记 stale/fail | 以本篇 R0 概念治理图和 Cuu 专图作为当前边界；旧图只可作历史证据 |
+| 概念图/截图仍有橘猫与主窗 Cuu | `assets/cuu/` 已换黑/白；4 张 shared PNG 已原位替换；旧 current-state 截图仍标记 stale/fail | 以 R0 概念治理图、4 张新 shared 图和 Cuu 专图作为当前边界；旧截图只可作历史证据 |
 | `mid`/`medium` 漂移 | `confidence-risk-escalation.md` 已规定 `medium` | 本轮清理 FR/phasing 的 `mid` 表述 |
 
 ## 1. 不变铁律
@@ -51,9 +55,10 @@ Claude 审查指出的问题不是“代码质量差”，而是“范围优先�
 |---|---|---|
 | 纠偏路线 | `assets/shared/r0-r4-recovery-roadmap.svg` | 施工顺序：R0 -> R1 -> R2 -> R3 -> R4 |
 | 主窗 / Cuu 边界 | `assets/shared/r0-governance-boundary-concept.svg` | 主窗严肃无 Cuu；Cuu 只在透明独立 pet window |
+| 横切 shared 图 | `assets/shared/ts-first-runtime-concept.png`、`endpoint-page-cuu-alignment.png`、`prd-concept-gap-map.png`、`shared-component-atlas.png` | 已按 R0 口径原位替换：黑/白 Cuu、独立 pet window、无主窗 Cuu |
 | Cuu 形象 | `assets/cuu/cuu-character-animation-states.png`、`cuu-desktop-approval-search.png`、`cuu-option-first-clarify.png` | 黑猫 Hijiki 默认、白猫 Tororo 可选；只作已有模型基准 |
 
-旧 `assets/shared/ts-first-runtime-concept.png`、`endpoint-page-cuu-alignment.png`、`prd-concept-gap-map.png`、`shared-component-atlas.png` 若仍含橘猫，只能作为历史概念草图，不能作为当前视觉通过证据。旧 `2026-06-07-current-state` 截图若出现橘猫或主窗 Cuu，判定为失败样例。
+外部审查报告附件中的旧 shared 图不再作为当前证据；仓内同名 PNG 已替换。旧 `2026-06-07-current-state` 截图若出现橘猫或主窗 Cuu，仍判定为失败样例。
 
 ## 3. R0 止血与对账
 
@@ -74,7 +79,7 @@ Claude 审查指出的问题不是“代码质量差”，而是“范围优先�
 | 任务 | 落点 | 验收 |
 |---|---|---|
 | 主窗边界图 | `r0-governance-boundary-concept.svg` | 图中明确主窗无 Cuu，pet window 独立 |
-| 概念索引更新 | `page-concepts.md` | 新图进入第 2 节，旧橘猫图标 stale |
+| 概念索引更新 | `page-concepts.md` | R0 治理图与 4 张新 shared PNG 进入第 2 节；旧橘猫截图只保留失败样例说明 |
 | 差距审计更新 | `prd-concept-reproduction-gap-audit.md` | shared 旧图/旧截图不再被视为通过 |
 | 后续截图计划 | `current-state-visual-audit-*` | Web/desktop 主窗无 Cuu 截图列为 R0 evidence |
 
@@ -94,7 +99,7 @@ R0 退出门：
 
 - README、roadmap、Cuu 文档、page-concepts 都指向本篇和新治理图。
 - `functional-requirements.md` 与 `phasing-p0-p5.md` 不再用 `mid` 作为权威枚举。
-- 旧橘猫截图/概念图只在“失败样例 / stale”上下文出现。
+- 旧橘猫截图只在“失败样例 / stale”上下文出现；当前 shared PNG 不再含橘猫。
 
 ## 4. R1 真实纵切
 
@@ -230,7 +235,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 
 - `rg -n "isP05|p05GoldPathIds|getP05GoldPathFixture|allowP05ReplayFixture|P0\\.5" apps/api/src/routes apps/api/src/openapi.ts -S` 只剩 `/api/pages/gold-path` 的 OpenAPI 摘要。
 - `pnpm --filter @workhub/api typecheck` 通过。
-- `pnpm --filter @workhub/api test` 通过，当前 59/59；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
+- `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 
 仍不能宣称 R1 全部完成，因为真实 sessions/workitems/knowledge/page workitem service、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
 
@@ -314,7 +319,7 @@ R4 验收：
 | AgentRun DB | `agent-loop-and-tools.md`、本篇 R1、`api-contract.md` | `r0-r4-recovery-roadmap.svg` |
 | Proposal / Review | `branch-proposal-merge.md`、`review-and-approval.md`、`requirements-workitem.md` | `web-deliverable-change-request.png` |
 | Replay / Eval | `_agent-eval-replay-plan.md`、`explainability.md` | `web-real-ui-gap-roadmap.png` |
-| Push / broker | `system-architecture.md`、`api-contract.md`、本篇 R2 | endpoint/page/Cuu 对齐图只作旧概念参考，若含橘猫视为 stale |
+| Push / broker | `system-architecture.md`、`api-contract.md`、本篇 R2 | `endpoint-page-cuu-alignment.png` 当前版本：页面与 CuuState 分离，Cuu 只在 pet window |
 | Web 页面 | `web-app.md`、`page-concepts.md`、本篇 R4 | Web concept atlas + `r0-governance-boundary-concept.svg` |
 | Cuu | `cuu-desktop-pet-concept.md`、`cuu-live2d-cat-options-current-plan.md`、本篇 R3 | Cuu 黑/白 Live2D 三张专图；旧橘猫图只作失败证据 |
 | Rust shell | `desktop-pet-tauri.md`、`current-state-visual-audit-*` | desktop gap roadmap + pet motion reports |

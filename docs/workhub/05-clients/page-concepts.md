@@ -44,6 +44,26 @@ date: 2026-06-08
 
 这张图是 Claude 审查后新增的概念治理基准：Web / desktop 主窗只承载严肃工作界面和证据，不显示 Cuu 本体、角色卡或旧橘猫；Cuu 只存在于独立透明 Tauri pet window，并通过 `CuuState` / SSE / Page VM 与主窗共享数据，而不是共享视觉位置。
 
+### 2.2 R0 shared 概念图原位替换
+
+> 2026-06-08 修订：以下 4 张 shared PNG 已按 `D:/workhub审查报告` 的结论重绘，不再含橘猫，也不再把 Cuu 作为 Web / desktop 主窗元素。它们现在是后续模块开工前可直接阅读的当前概念图。
+
+![TS-first Runtime](./assets/shared/ts-first-runtime-concept.png)
+
+这张图定义当前工程边界：Web、desktop 主窗、Rust shell、Cuu pet window 都是客户端表面；TS daemon / contracts / AgentLoop / Proposal / Approval / Cost 是核心；PostgreSQL / Redis / object storage 是共享基础设施。Cuu 只在独立 pet window 中消费事件，不进入主窗。
+
+![Endpoint Page Cuu Alignment](./assets/shared/endpoint-page-cuu-alignment.png)
+
+这张图定义 endpoint -> payload -> page -> CuuState 的落点。页面列是严肃页面，CuuState 列是独立桌宠气泡和动作，不得把“映射到 Cuu”理解为“把猫嵌进页面”。
+
+![PRD Concept Gap Map](./assets/shared/prd-concept-gap-map.png)
+
+这张图把当前 `main` 的真实状态分为三类：已建地基、部分真实切片、仍缺模块。它同步了 2026-06-08 后已完成的 R1 PG smoke、DB-backed Proposal review/merge，同时保留 sessions / workitems / knowledge / page workitem、CostLedger、R2 多 worker、Cuu 出站 Agent 入口等缺口。
+
+![Shared Component Atlas](./assets/shared/shared-component-atlas.png)
+
+这张图定义共享 UI 组件语气。主窗口组件保持严肃；Pet Bubble 属于独立 Cuu surface，不是主窗右栏装饰。
+
 ## 3. Web 端概念图
 
 ### 3.1 AI-first 首页

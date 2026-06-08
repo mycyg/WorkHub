@@ -8,6 +8,10 @@ source_review: D:/workhub审查报告
 visuals:
   - ../05-clients/assets/shared/r0-r4-recovery-roadmap.svg
   - ../05-clients/assets/shared/r0-governance-boundary-concept.svg
+  - ../05-clients/assets/shared/ts-first-runtime-concept.png
+  - ../05-clients/assets/shared/endpoint-page-cuu-alignment.png
+  - ../05-clients/assets/shared/prd-concept-gap-map.png
+  - ../05-clients/assets/shared/shared-component-atlas.png
 ---
 
 # R0-R4 纠偏施工路线
@@ -34,14 +38,14 @@ visuals:
 | 项 | 施工内容 | 当前落点 |
 |---|---|---|
 | R0-1 范围冻结 | README、Cuu 文档、roadmap 明确“R1 前冻结 Cuu 外观”。 | 本篇、README、`cuu-desktop-pet-concept.md` |
-| R0-2 概念治理 | 旧 `2026-06-07-current-state` 橘猫截图判为 stale/fail；shared 旧橘猫概念图标记待替换；主窗口无 Cuu 本体作为截图验收门。 | `prd-concept-reproduction-gap-audit.md`、`current-state-visual-audit-*`、`page-concepts.md` |
+| R0-2 概念治理 | 旧 `2026-06-07-current-state` 橘猫截图判为 stale/fail；4 张 shared PNG 已原位替换为黑/白 Live2D 与“主窗无 Cuu”口径；主窗口无 Cuu 本体仍作为截图验收门。 | `prd-concept-reproduction-gap-audit.md`、`current-state-visual-audit-*`、`page-concepts.md` |
 | R0-3 命门拍板 | `confidence-risk-escalation.md` 锁定 v1 owner、policy_version、阈值、风险维度默认值；`07-open-questions.md` 更新 OQ-2/OQ-3。 | `02-ai-engine/confidence-risk-escalation.md`、`07-open-questions.md` |
 | R0-4 文档去 drift | D-1 正名为“参考 Python 行为的 TS-first 重写”；F03 迁移路线收敛到 Drizzle Kit；实体数、`medium` 枚举口径收敛。 | README、`phasing-p0-p5.md`、后续 plans 清理 |
 
 R0 退出门：
 
 - 主窗口截图和概念图入口不再把 Cuu 身体当作严肃工作界面元素。
-- 旧橘猫截图只作为“失败样例/历史审计”，不再作为当前通过证据。
+- 旧橘猫截图只作为“失败样例/历史审计”，不再作为当前通过证据；shared 概念图当前版本已不含橘猫。
 - OQ-2/OQ-3 有 v1 owner 和可执行默认值。
 - 文档树明确后续施工顺序为 R0 -> R1 -> R2 -> R3 -> R4。
 
@@ -75,7 +79,7 @@ R1 退出门：
 - AgentRun replay fixture fallback 已完全移出生产 route：`/api/agent-runs/:id/replay` 只读真实 queue/persistence/audit/snapshot，不再接受 `allowP05ReplayFixture`。
 - P0.5 route set 已从生产业务 route 迁出：`sessions/workitems/knowledge/pages/workitems` 在真实服务接入前返回 501 fail-closed；`pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`；仅 `/api/pages/gold-path` 保留 demo bundle。
 - R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 route、DB-backed AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；最新通过证据为 `agent_runs=1`、`agent_steps=4`、`proposals=1`、`branches=1`、`snapshots=1`、`audit_logs=1`、`proposal/branch/work_item=merged`、`replay_steps=4`。
-- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 59/59 通过。
+- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 60/60 通过。
 
 仍不能宣称 R1 完成：
 

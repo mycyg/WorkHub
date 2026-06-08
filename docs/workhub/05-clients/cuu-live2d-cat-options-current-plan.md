@@ -40,6 +40,10 @@ visuals:
 | `./assets/cuu/cuu-character-animation-states.png` | Hijiki + Tororo 实际浏览器运行帧 | 定义二选项外观和 motion state 语义 |
 | `./assets/cuu/cuu-desktop-approval-search.png` | 黑猫 Hijiki 独立 pet window | 定义审批、项目检索、交付物摘要气泡 |
 | `./assets/cuu/cuu-option-first-clarify.png` | 白猫 Tororo 气泡镜像 | 定义 option-first 澄清和“主窗无 Cuu 本体”边界 |
+| `./assets/shared/ts-first-runtime-concept.png` | 黑猫独立 pet window | 定义 TS-first runtime 中 Cuu 只作为独立客户端 surface |
+| `./assets/shared/endpoint-page-cuu-alignment.png` | 黑/白 CuuState pet column | 定义 endpoint/page 与 CuuState 分离，页面列不嵌 Cuu 本体 |
+| `./assets/shared/prd-concept-gap-map.png` | 黑/白二选项 | 定义当前已建/部分/仍缺缺口，不再展示旧橘猫北极星 |
+| `./assets/shared/shared-component-atlas.png` | 黑猫 Pet Bubble | 定义 pet bubble 是独立 Cuu surface，不是主窗组件 |
 | `./assets/audit/2026-06-08-cuu-live2d-model-preview/hijiki/` | 黑猫源帧、DOM、report | 概念图源证据 |
 | `./assets/audit/2026-06-08-cuu-live2d-model-preview/tororo/` | 白猫源帧、DOM、report | 概念图源证据 |
 
@@ -164,12 +168,14 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 - Web / desktop 主窗没有 Cuu 形象 DOM。
 - 旧实验 class、runtime data attribute 或模型 ID 不出现在运行态 HTML。
 
-## 8. 后续施工计划
+## 8. 后续施工计划（冻结后重排）
 
-1. 继续把 P1.9 的 8 帧 smoke 升级为 32 帧正式矩阵：黑猫 `clarify/search/sync/done/offline/approval` 与白猫同等场景。
-2. 继续录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
-3. 输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`。
-4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
-5. 主窗 `/settings` 与托盘 pass-through 恢复门已落；继续补 settings matrix、多屏恢复、full hide 录屏和通知点击 deep-link。
-6. 完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
-7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落，P1.8 actual DOM / 气泡锚点首证据已落，P1.9 黑猫业务 smoke 矩阵与白猫 approval 已落；继续补 32 帧正式矩阵和 settings matrix，不能把源码合同或 smoke 当作最终视觉通过。
+R1 真实纵切通过前，不再把 Cuu 外观矩阵作为当前施工任务。以下事项按优先级重排：
+
+1. 当前立即项：主窗无 Cuu 截图复核、透明 pet smoke、文档资产对账、真实回归修复。
+2. 当前工程主线：继续 R1/R2 后端缺口，尤其是真实 `sessions/workitems/knowledge/page workitem` service、CostLedger 默认 store、PG queue claim 与多 worker。
+3. R3 后恢复：把 P1.9 的 8 帧 smoke 升级为 32 帧正式矩阵，覆盖黑猫 `clarify/search/sync/done/offline/approval` 与白猫同等场景。
+4. R3 后恢复：录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
+5. R3 后恢复：输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`，并回写当前审计文档。
+6. 发布前必须完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
+7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落，P1.8 actual DOM / 气泡锚点首证据已落，P1.9 黑猫业务 smoke 矩阵与白猫 approval 已落；这些是冻结前回归证据，不能当作最终视觉通过，也不能作为 R1 前继续外观扩面的理由。

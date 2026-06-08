@@ -98,7 +98,7 @@ visuals:
 | Pet surface | `apps/desktop-webview/src/pet-surface.ts` 只渲染 Live2D cat runtime + 轻气泡 |
 | 偏好 | `apps/desktop-webview/src/cuu-preferences.ts` 只展示黑猫 / 白猫 |
 | QA | `apps/desktop-webview/src/pet-surface-qa.ts` 禁止旧实验 runtime/class/data attr 回流 |
-| 概念图 | `./assets/cuu/cuu-character-animation-states.png`、`./assets/cuu/cuu-desktop-approval-search.png`、`./assets/cuu/cuu-option-first-clarify.png` 已同步为黑/白 Live2D 版 |
+| 概念图 | `./assets/cuu/cuu-character-animation-states.png`、`./assets/cuu/cuu-desktop-approval-search.png`、`./assets/cuu/cuu-option-first-clarify.png` 已同步为黑/白 Live2D 版；4 张 shared PNG 已按 R0 边界原位替换 |
 | 概念源帧 | `./assets/audit/2026-06-08-cuu-live2d-model-preview/` 保留 Hijiki / Tororo 浏览器模型帧、DOM 和 report |
 | 主窗 | `packages/ui/src/gold-path/render.ts` 和 desktop main shell 不再承载 Cuu 本体 |
 | Rust window | `client-tauri/src-tauri/src/pet_window.rs` / `pet_commands.rs` 承担几何、设置、拖拽和 cursor sample |
@@ -132,7 +132,9 @@ visuals:
 | 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
 | 授权 | Hijiki/Tororo 来源需商用确认 | 授权记录或原创替换计划 |
 
-## 6. 下一轮施工计划
+## 6. 冻结后的下一轮施工计划
+
+R1 真实纵切通过前，以下黑/白 Cuu 矩阵只保留为**验收 backlog**，不作为当前下一施工队列。当前允许继续做的 Cuu 相关工作只有治理项：主窗无 Cuu 截图、透明 pet smoke、真实回归修复、文档对账。真正的当前工程队列切到 `sessions/workitems/knowledge/page workitem` 真实服务、CostLedger 默认 store、R2 queue claim 等后端纵切缺口。
 
 ### 6.1 黑猫正式矩阵
 
@@ -140,18 +142,18 @@ visuals:
 
 | 场景 | 触发 | 验收 |
 |---|---|---|
-| idle 10s | 无事件 | 已有 smoke；正式版需 32+ 帧，持续动作，非空，非整体缩放 |
-| hover | 鼠标靠近 | 已有 look-only；正式版需窗口 rect 固定，不能整只 Cuu 位移/闪烁 |
-| tap | 点击 Cuu | 待录：气泡或反馈动作 |
-| drag | 拖拽窗口 | 待录：位置变化、释放后保存 |
-| approval | 注入审批卡 | 已有 P1.9 smoke；正式版需 32+ 帧 + liveness threshold |
-| clarify/search/sync/done/offline | 注入业务卡 | 已有 P1.9 smoke；正式版需 32+ 帧 + stronger motion gate |
+| idle 10s | 无事件 | R1 后恢复；已有 smoke，正式版需 32+ 帧，持续动作，非空，非整体缩放 |
+| hover | 鼠标靠近 | R1 后恢复；已有 look-only，正式版需窗口 rect 固定，不能整只 Cuu 位移/闪烁 |
+| tap | 点击 Cuu | R3 出站入口施工时恢复；录气泡或反馈动作 |
+| drag | 拖拽窗口 | R1 后恢复；录位置变化、释放后保存 |
+| approval | 注入审批卡 | R3 后恢复；已有 P1.9 smoke，正式版需 32+ 帧 + liveness threshold |
+| clarify/search/sync/done/offline | 注入业务卡 | R3 后恢复；已有 P1.9 smoke，正式版需 32+ 帧 + stronger motion gate |
 
 ### 6.2 白猫录屏
 
 产物目录：`docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/`
 
-白猫必须复用同一组场景，验证模型切换不是只改设置文案。P1.9 只完成白猫 approval smoke，其他业务场景仍待补。
+白猫必须复用同一组场景，验证模型切换不是只改设置文案。P1.9 只完成白猫 approval smoke，其他业务场景仍待补；这些补录在 R1 通过前冻结。
 
 ### 6.3 Settings matrix
 
@@ -159,14 +161,14 @@ visuals:
 
 | case | 需要覆盖 |
 |---|---|
-| default | 黑猫默认 body-only |
-| white-cat | 白猫 body-only |
-| scale-75 | 缩小后仍全身可见 |
-| scale-150 | 放大后不越界 |
-| opacity-60 | 可见但不遮挡 |
-| pass-through | 可开启，并可通过托盘恢复 |
-| hide-on-hover | soft hide 后能恢复 |
-| card-mode | P1.9 smoke 已证明 100% scale 不裁切；settings matrix 仍需覆盖 75/150 scale |
+| default | R1 后恢复：黑猫默认 body-only |
+| white-cat | R1 后恢复：白猫 body-only |
+| scale-75 | R1 后恢复：缩小后仍全身可见 |
+| scale-150 | R1 后恢复：放大后不越界 |
+| opacity-60 | R1 后恢复：可见但不遮挡 |
+| pass-through | R1 后恢复：可开启，并可通过托盘恢复 |
+| hide-on-hover | R1 后恢复：soft hide 后能恢复 |
+| card-mode | R1 后恢复：P1.9 smoke 已证明 100% scale 不裁切；settings matrix 仍需覆盖 75/150 scale |
 
 ### 6.4 P1.6 鲜活动作状态机
 
