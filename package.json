@@ -18,6 +18,7 @@
     "audit:portable-config": "tsx scripts/dev/check-portable-config.ts",
     "audit:target-paths": "tsx scripts/dev/check-target-paths.ts",
     "audit:migrations": "tsx scripts/dev/check-migrations.ts",
+    "qa:r1-pg-smoke": "pnpm --filter @workhub/api qa:r1-pg-smoke",
     "db:generate": "pnpm --filter @workhub/db generate",
     "db:migrate": "pnpm --filter @workhub/db migrate",
     "db:check": "pnpm --filter @workhub/db check"

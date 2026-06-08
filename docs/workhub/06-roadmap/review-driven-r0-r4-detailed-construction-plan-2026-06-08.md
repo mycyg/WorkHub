@@ -154,6 +154,30 @@ R0 退出门：
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
 - 未完成：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出、proposal merge/main 状态完整语义。
 
+### R1.2 真实 PG smoke 入口（2026-06-08）
+
+新增可重复验收命令：
+
+```powershell
+pnpm qa:r1-pg-smoke
+```
+
+该脚本位于 `apps/api/src/qa/r1-pg-agent-run-smoke.ts`，执行顺序：
+
+1. 读取 `DATABASE_URL`，拒绝 `APP_ENV=production`。
+2. 执行 Drizzle migrations。
+3. 写入最小 seed：org、workspace、owner user、project、file-only work item。
+4. 通过真实 `createAgentRunRoutes` 发起 `/api/workitems/:id/agent-runs`。
+5. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
+6. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
+7. 输出 JSON 证据：`agent_runs`、`agent_steps`、`proposals`、`snapshots`、`audit_logs` 行数与 replay 计数。
+
+当前本机实测：
+
+- `pnpm qa:r1-pg-smoke` 可加载脚本，但因 `127.0.0.1:5432` 无 PostgreSQL 返回 `ECONNREFUSED`。
+- 本机 `docker` 与 `psql` 不在 PATH，无法在 Windows 本机直接拉起或检查 PG。
+- 下一步应在 Linux 测试机或已安装 PG/Docker 的环境运行该命令，获取真实通过输出后再关闭 R1 restart 验收缺口。
+
 ## 5. R2 多 worker 与订阅边界
 
 目标：兑现地基存在的理由，多实例下不重复执行、不丢事件、不泄漏。
