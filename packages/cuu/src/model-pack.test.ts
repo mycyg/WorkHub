@@ -45,6 +45,13 @@ test("both approved cat model packs can be default-ready choices", () => {
     assert.equal(pack.window_affordances.scale, "supported");
     assert.equal(pack.window_affordances.opacity, "supported");
     assert.equal(pack.window_affordances.hide_on_hover, "supported");
+    assert.equal(pack.behavior_manifest_version, 1);
+    assert.equal(pack.behavior_manifest.version, 1);
+    assert.equal(pack.behavior_manifest.model_pack_id, pack.pack_id);
+    assert.equal(pack.behavior_manifest.states.asking_approval.window_mode, "card");
+    assert.equal(pack.behavior_manifest.states.asking_approval.bubble_mode, "card");
+    assert.equal(pack.behavior_manifest.states.idle.window_mode, "body_only");
+    assert.equal(pack.behavior_manifest.idle_random.length >= 5, true);
   }
 
   assert.match(defaultCuuBlackCatLive2DModelPack.source.reference_url ?? "", /imuncle\/live2d\/tree\/master\/model\/hijiki/u);
@@ -106,5 +113,8 @@ test("Cuu approved cat packs cover all business and idle actions", () => {
     assert.equal(pack.motions.searching_evidence_peek?.renderer_state, "mtn/04.mtn");
     assert.equal(pack.motions.syncing_files_spin?.renderer_state, "mtn/04.mtn");
     assert.equal(pack.motions.celebrating_jump?.renderer_state, "mtn/06.mtn");
+    assert.equal(pack.behavior_manifest.states.searching_evidence.loop[0]?.motion, "searching_evidence_peek");
+    assert.equal(pack.behavior_manifest.states.syncing_files.loop[0]?.motion, "syncing_files_spin");
+    assert.equal(pack.behavior_manifest.states.celebrating.loop[0]?.motion, "celebrating_jump");
   }
 });

@@ -121,13 +121,13 @@ type CuuBehaviorManifest = {
 };
 ```
 
-## 4. Next Construction Slice
+## 4. P1.6 Landing And Next Slice
 
-下一块 Cuu 施工建议从“设置恢复门”推进到“鲜活动作运行时”：
+P1.6 源码合同已落，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md)：
 
-1. 新增 `packages/cuu/src/motion.ts`，定义 `CuuBehaviorManifest`、状态优先级、start/loop/end slot 和 idle random pool。
-2. 在 `packages/cuu/src/model-pack.ts` 为黑猫/白猫分别挂同构 manifest；没有真实 motion 的状态先映射到最近似 Live2D motion，但必须在 manifest 中显式标记 `coverage: partial`。
-3. 在 `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` 增加 `setCuuBehaviorState(state, reason)`，只向已有 iframe/runtime 发送 motion 请求，不重建 iframe。
-4. 在 `apps/desktop-webview/src/pet-surface.ts` 把 approval/search/sync/done/offline 等事件接入行为状态机，并保留用户 hover/tap/drag 的高优先级临时动作。
-5. 增加录屏验收：idle 10s、hover look-only 5s、tap、drag、approval card、search bubble、done celebration，黑猫/白猫各一组。
-6. 保留 `reference` 只读；不得把 VPet 或像素猫素材复制到 `apps/desktop-webview/public`。
+1. `packages/cuu/src/motion.ts` 已定义 `CuuBehaviorManifest`、状态优先级、start/loop/end slot 和 idle random pool。
+2. `packages/cuu/src/model-pack.ts` 已为黑猫/白猫分别挂同构 manifest；当前 `coverage=partial`，诚实标记为复用有限 `.mtn`。
+3. `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` 已增加 `setDesktopCuuCatLive2DBehaviorState`，只 patch 已有 Live2D root 的 behavior attrs，不重建 iframe。
+4. `apps/desktop-webview/src/pet-surface.ts` 已输出 `data-cuu-behavior-*` 和 `data-cuu-live2d-renderer-state`，后续录屏可直接采集。
+5. 后续仍需真实录屏验收：idle 10s、hover look-only 5s、tap、drag、approval card、search bubble、done celebration，黑猫/白猫各一组。
+6. `reference` 继续只读；不得把 VPet 或像素猫素材复制到 `apps/desktop-webview/public`。

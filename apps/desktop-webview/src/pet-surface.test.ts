@@ -194,6 +194,11 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.html, /data-cuu-live2d-framing="transparent_full_body"/u);
   assert.match(idle.html, /data-cuu-live2d-model="hijiki"/u);
   assert.match(idle.html, /data-cuu-live2d-appearance="black_cat"/u);
+  assert.match(idle.html, /data-cuu-behavior-manifest-version="1"/u);
+  assert.match(idle.html, /data-cuu-behavior-state="idle"/u);
+  assert.match(idle.html, /data-cuu-behavior-phase="idle_random"/u);
+  assert.match(idle.html, /data-cuu-behavior-expected-window-mode="body_only"/u);
+  assert.match(idle.html, /data-cuu-live2d-renderer-state="mtn\/00_idle\.mtn"/u);
   assert.match(idle.html, /class="wh-pet-menu"[^>]*data-pet-settings-menu="true"[^>]*hidden/u);
   assert.match(idle.html, /data-pet-menu-model="cuu-hijiki-live2d-cubism2" aria-pressed="true"/u);
   assert.match(idle.html, /data-pet-menu-model="cuu-tororo-live2d-cubism2" aria-pressed="false"/u);
@@ -210,6 +215,12 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
+  assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
+  assert.match(card.html, /data-cuu-behavior-phase="loop"/u);
+  assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
+  assert.match(card.html, /data-cuu-behavior-expected-bubble-mode="card"/u);
+  assert.match(card.html, /data-cuu-live2d-motion="asking_approval_bounce"/u);
+  assert.match(card.html, /data-cuu-live2d-renderer-state="mtn\/01\.mtn"/u);
   assert.match(card.html, /data-pet-card-has-context="true"/u);
   assert.match(card.html, /class="wh-pet-kind">审批/u);
   assert.match(card.html, /data-pet-section-id="changes"/u);
@@ -278,6 +289,8 @@ test("pet surface exposes input-reactive pointer state for Live2D cat QA", () =>
   assert.match(surface.html, /data-pet-pointer-smoothing-alpha="0\.58"/u);
   assert.match(surface.html, /--wh-pet-look-head-x-px:3\.78px/u);
   assert.match(surface.html, /data-cuu-live2d-state="look_at_mouse"/u);
+  assert.match(surface.html, /data-cuu-behavior-state="idle"/u);
+  assert.match(surface.html, /data-cuu-behavior-phase="idle_random"/u);
   assert.match(surface.css, /data-pet-cursor-near=true.*?\.wh-cuu-cat-live2d/u);
   assert.doesNotMatch(surface.css, /data-pet-cursor-near=true\]\s+\.wh-cuu-cat-live2d\{transform:/u);
   assert.match(surface.css, /data-pet-dragging=true.*?cursor:grabbing/u);

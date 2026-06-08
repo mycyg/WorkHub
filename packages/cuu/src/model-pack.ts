@@ -1,4 +1,11 @@
-import { allCuuMotionHints, type CuuMotionClipState } from "./motion.js";
+import {
+  allCuuMotionHints,
+  createCuuBehaviorManifest,
+  cuuDefaultLive2DRendererStateForClip,
+  type CuuBehaviorManifest,
+  type CuuBehaviorModelPackId,
+  type CuuMotionClipState
+} from "./motion.js";
 import { cuuIdleMicroActionSpecs, type CuuIdleMicroAction } from "./idle-scheduler.js";
 
 export type CuuModelPackRuntimeKind = "live2d_cubism";
@@ -69,6 +76,8 @@ export type CuuModelPackManifest = {
   };
   components: CuuModelPackComponent[];
   motions: Partial<Record<CuuMotionClipState, CuuModelPackMotionBinding>>;
+  behavior_manifest_version: 1;
+  behavior_manifest: CuuBehaviorManifest;
   window_affordances: Partial<Record<CuuModelPackWindowAffordance, CuuModelPackSupportLevel>>;
 };
 
@@ -119,6 +128,9 @@ export type CuuModelPackIssue = {
     | "visual_gate_failed"
     | "missing_component"
     | "missing_motion"
+    | "missing_behavior_manifest"
+    | "behavior_manifest_mismatch"
+    | "missing_behavior_state"
     | "missing_window_affordance";
   path: string;
   message: string;
@@ -355,6 +367,11 @@ function createCuuCatLive2DModelPack(input: {
     },
     components: ["body", "head", "ears", "eyes", "tail", "paws"],
     motions: createCatLive2DMotionBindings(),
+    behavior_manifest_version: 1,
+    behavior_manifest: createCuuBehaviorManifest({
+      model_pack_id: input.pack_id as CuuBehaviorModelPackId,
+      coverage: "partial"
+    }),
     window_affordances: {
       transparent_window: "supported",
       always_on_top: "supported",
@@ -410,6 +427,7 @@ function validateDefaultReady(issues: CuuModelPackIssue[], manifest: CuuModelPac
       });
     }
   }
+  validateBehaviorManifest(issues, manifest);
 }
 
 function requiredBusinessMotionStates(): CuuMotionClipState[] {
@@ -438,20 +456,49 @@ function createCatLive2DMotionBindings(): Partial<Record<CuuMotionClipState, Cuu
 }
 
 function catLive2DRendererStateForCuuState(state: CuuMotionClipState): string {
-  if (state === "celebrating_jump" || state === "wave_hello") {
-    return "mtn/06.mtn";
+  return cuuDefaultLive2DRendererStateForClip(state);
+}
+
+function validateBehaviorManifest(issues: CuuModelPackIssue[], manifest: CuuModelPackManifest) {
+  if (manifest.behavior_manifest_version !== 1 || manifest.behavior_manifest.version !== 1) {
+    issues.push({
+      code: "missing_behavior_manifest",
+      path: "behavior_manifest",
+      message: "Default Cuu model pack must expose behavior manifest version 1."
+    });
+    return;
   }
-  if (state === "asking_approval_bounce" || state === "tap_bubble") {
-    return "mtn/01.mtn";
+  if (manifest.behavior_manifest.model_pack_id !== manifest.pack_id) {
+    issues.push({
+      code: "behavior_manifest_mismatch",
+      path: "behavior_manifest.model_pack_id",
+      message: "Cuu behavior manifest must belong to the same model pack."
+    });
   }
-  if (state === "thinking_tail" || state === "searching_evidence_peek" || state === "syncing_files_spin") {
-    return "mtn/04.mtn";
+  for (const hint of allCuuMotionHints()) {
+    const behavior = manifest.behavior_manifest.states[hint.state];
+    if (!behavior?.loop.length) {
+      issues.push({
+        code: "missing_behavior_state",
+        path: `behavior_manifest.states.${hint.state}`,
+        message: `Cuu behavior manifest must cover state ${hint.state}.`
+      });
+      continue;
+    }
+    const loopMotion = behavior.loop[0]?.motion;
+    if (loopMotion && !manifest.motions[loopMotion]) {
+      issues.push({
+        code: "missing_behavior_state",
+        path: `behavior_manifest.states.${hint.state}.loop`,
+        message: `Cuu behavior state ${hint.state} points at missing motion ${loopMotion}.`
+      });
+    }
   }
-  if (state === "worried_ears" || state === "offline_sleep" || state === "sleeping_curl") {
-    return "mtn/08.mtn";
+  if (!manifest.behavior_manifest.idle_random.length) {
+    issues.push({
+      code: "missing_behavior_state",
+      path: "behavior_manifest.idle_random",
+      message: "Cuu behavior manifest must define idle random micro actions."
+    });
   }
-  if (state === "drag_hold") {
-    return "mtn/05.mtn";
-  }
-  return "mtn/00_idle.mtn";
 }

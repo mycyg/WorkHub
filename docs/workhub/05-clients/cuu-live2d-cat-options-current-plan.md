@@ -107,9 +107,20 @@ Cuu 保留业务状态和 idle 微动作语义：
 |---|---|
 | `packages/cuu/src/motion.ts` | 定义 `CuuBehaviorManifest`、状态优先级、start/loop/end slot、idle random pool |
 | `packages/cuu/src/model-pack.ts` | 黑猫/白猫模型包挂载同构 manifest，声明 motion coverage |
-| `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 暴露 `setCuuBehaviorState`，向现有 Live2D iframe/runtime 发 motion，不重建 iframe |
+| `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 暴露 `setDesktopCuuCatLive2DBehaviorState`，patch 现有 Live2D root 的 behavior attrs，不重建 iframe |
 | `apps/desktop-webview/src/pet-surface.ts` | 把 AI 事件、用户 hover/tap/drag、气泡 card mode 接入状态机 |
 | `scripts/qa/cuu-tauri-motion-capture.ps1` | 录制黑猫/白猫多状态 motion evidence |
+
+P1.6 源码合同已经落地，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md)。当前状态：
+
+| 项 | 状态 |
+|---|---|
+| `CuuBehaviorManifest` 类型与生成 | 已落 `packages/cuu/src/motion.ts` |
+| 黑猫/白猫 model pack manifest | 已挂 `behavior_manifest_version=1` |
+| `enter` / `loop` / `exit` | 已落源码合同，coverage 标记为 `partial` |
+| `idle_random` | 已落 breathe / blink / tail / look / wave 池 |
+| desktop runtime attrs | 已输出 `data-cuu-behavior-*` 与 `data-cuu-live2d-renderer-state` |
+| 真实 Tauri motion evidence | 未完成，仍需黑/白多场景录屏 |
 
 最小字段：
 
@@ -155,4 +166,4 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
 5. 主窗 `/settings` 与托盘 pass-through 恢复门已落；继续补 settings matrix、多屏恢复、full hide 录屏和通知点击 deep-link。
 6. 完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
-7. 实施 `CuuBehaviorManifest` P1.6，把 VPet/像素猫参考结论落成 motion 状态机和真实录屏证据。
+7. P1.6 `CuuBehaviorManifest` 源码合同已落；继续补真实录屏证据和 settings matrix，不能把源码合同当作视觉通过。

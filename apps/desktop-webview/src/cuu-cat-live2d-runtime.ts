@@ -1,10 +1,18 @@
 import {
+  cuuBehaviorStateForState,
+  cuuDefaultMotionDurationForClip,
+  cuuMotionSlotForClip,
   resolveCuuVisibleModelPack,
+  type CuuBehaviorBubbleMode,
+  type CuuBehaviorCoverage,
+  type CuuBehaviorPhase,
+  type CuuBehaviorWindowMode,
   type CuuIdleMicroAction,
   type CuuMotionClipState,
   type CuuModelPackSelectionReason,
   type CuuMotionHint
 } from "@workhub/cuu";
+import type { CuuState } from "@workhub/contracts";
 
 export type DesktopCuuCatLive2DModelKey = "hijiki" | "tororo";
 export type DesktopCuuCatLive2DAppearance = "black_cat" | "white_cat";
@@ -18,6 +26,14 @@ export type DesktopCuuCatLive2DRender = {
   model_pack_selection_reason: CuuModelPackSelectionReason;
   state: CuuMotionClipState | CuuIdleMicroAction;
   motion_state: CuuMotionClipState;
+  renderer_state: string;
+  behavior_manifest_version: 1;
+  behavior_state: CuuState;
+  behavior_phase: CuuBehaviorPhase;
+  behavior_coverage: CuuBehaviorCoverage;
+  behavior_priority: number;
+  behavior_window_mode: CuuBehaviorWindowMode;
+  behavior_bubble_mode: CuuBehaviorBubbleMode;
   model_key: DesktopCuuCatLive2DModelKey;
   appearance: DesktopCuuCatLive2DAppearance;
   model_url: string;
@@ -28,6 +44,23 @@ export type DesktopCuuCatLive2DRender = {
 export type DesktopCuuCatLive2DRenderOptions = {
   display_width_px?: number;
   requested_model_pack_id?: string | null | undefined;
+};
+
+export type DesktopCuuCatLive2DBehaviorState = {
+  model_pack_id: string;
+  model_pack_selection_reason: CuuModelPackSelectionReason;
+  behavior_manifest_version: 1;
+  behavior_state: CuuState;
+  behavior_phase: CuuBehaviorPhase;
+  behavior_coverage: CuuBehaviorCoverage;
+  behavior_priority: number;
+  behavior_window_mode: CuuBehaviorWindowMode;
+  behavior_bubble_mode: CuuBehaviorBubbleMode;
+  motion_state: CuuMotionClipState;
+  renderer_state: string;
+  duration_ms: number;
+  interruptible: boolean;
+  loop: boolean;
 };
 
 const catLive2DModels = {
@@ -69,19 +102,95 @@ export function renderDesktopCuuCatLive2DForMotion(
   motion: CuuMotionHint,
   options: DesktopCuuCatLive2DRenderOptions = {}
 ): DesktopCuuCatLive2DRender {
-  return renderDesktopCuuCatLive2D(motion.sprite_state, options);
+  return renderDesktopCuuCatLive2D(motion.sprite_state, {
+    ...options,
+    behavior_state: motion.state,
+    behavior_phase: "loop"
+  });
 }
 
 export function renderDesktopCuuCatLive2DForIdleAction(
   state: CuuMotionClipState | CuuIdleMicroAction,
   options: DesktopCuuCatLive2DRenderOptions = {}
 ): DesktopCuuCatLive2DRender {
-  return renderDesktopCuuCatLive2D(state, options);
+  return renderDesktopCuuCatLive2D(state, {
+    ...options,
+    behavior_state: "idle",
+    behavior_phase: "idle_random"
+  });
+}
+
+export function resolveDesktopCuuCatLive2DBehaviorState(input: {
+  state: CuuState;
+  motion_state?: CuuMotionClipState | undefined;
+  phase?: CuuBehaviorPhase | undefined;
+  requested_model_pack_id?: string | null | undefined;
+}): DesktopCuuCatLive2DBehaviorState {
+  const selection = resolveCuuVisibleModelPack({ requested_pack_id: input.requested_model_pack_id });
+  const behavior = cuuBehaviorStateForState(selection.active_pack.behavior_manifest, input.state);
+  const phase = input.phase ?? "loop";
+  const motionState = input.motion_state ?? behavior.loop[0]?.motion ?? "idle_breathe";
+  const slot = phase === "idle_random"
+    ? selection.active_pack.behavior_manifest.idle_random.find((candidate) => candidate.motion === motionState)
+    : phase === "enter"
+      ? behavior.enter
+      : phase === "exit"
+        ? behavior.exit
+        : behavior.loop.find((candidate) => candidate.motion === motionState) ?? behavior.loop[0];
+  const resolvedSlot = slot ?? cuuMotionSlotForClip(motionState, { coverage: behavior.coverage });
+  return {
+    model_pack_id: selection.active_pack.pack_id,
+    model_pack_selection_reason: selection.reason,
+    behavior_manifest_version: selection.active_pack.behavior_manifest.version,
+    behavior_state: input.state,
+    behavior_phase: phase,
+    behavior_coverage: resolvedSlot.coverage,
+    behavior_priority: behavior.priority,
+    behavior_window_mode: behavior.window_mode,
+    behavior_bubble_mode: behavior.bubble_mode,
+    motion_state: motionState,
+    renderer_state: resolvedSlot.renderer_state,
+    duration_ms: resolvedSlot.min_duration_ms ?? cuuDefaultMotionDurationForClip(motionState),
+    interruptible: resolvedSlot.interruptible,
+    loop: resolvedSlot.loop
+  };
+}
+
+export function setDesktopCuuCatLive2DBehaviorState(
+  root: ParentNode,
+  input: {
+    state: CuuState;
+    motion_state?: CuuMotionClipState | undefined;
+    phase?: CuuBehaviorPhase | undefined;
+    requested_model_pack_id?: string | null | undefined;
+  }
+): boolean {
+  const target = root.querySelector<HTMLElement>(".wh-cuu-cat-live2d");
+  if (!target) {
+    return false;
+  }
+  const behavior = resolveDesktopCuuCatLive2DBehaviorState(input);
+  target.dataset.cuuBehaviorManifestVersion = String(behavior.behavior_manifest_version);
+  target.dataset.cuuBehaviorState = behavior.behavior_state;
+  target.dataset.cuuBehaviorPhase = behavior.behavior_phase;
+  target.dataset.cuuBehaviorCoverage = behavior.behavior_coverage;
+  target.dataset.cuuBehaviorPriority = String(behavior.behavior_priority);
+  target.dataset.cuuBehaviorExpectedWindowMode = behavior.behavior_window_mode;
+  target.dataset.cuuBehaviorExpectedBubbleMode = behavior.behavior_bubble_mode;
+  target.dataset.cuuLive2dState = behavior.motion_state;
+  target.dataset.cuuLive2dMotion = behavior.motion_state;
+  target.dataset.cuuLive2dRendererState = behavior.renderer_state;
+  target.dataset.cuuLive2dLoop = behavior.loop ? "true" : "false";
+  target.dataset.cuuLive2dInterruptible = behavior.interruptible ? "true" : "false";
+  return true;
 }
 
 function renderDesktopCuuCatLive2D(
   state: CuuMotionClipState | CuuIdleMicroAction,
-  options: DesktopCuuCatLive2DRenderOptions
+  options: DesktopCuuCatLive2DRenderOptions & {
+    behavior_state: CuuState;
+    behavior_phase: CuuBehaviorPhase;
+  }
 ): DesktopCuuCatLive2DRender {
   const selection = resolveCuuVisibleModelPack({ requested_pack_id: options.requested_model_pack_id });
   const model = modelConfigForPack(selection.active_pack.pack_id);
@@ -94,9 +203,15 @@ function renderDesktopCuuCatLive2D(
   ].join(";");
   const iframeUrl = documentRelativeAssetPath(model.iframe_url);
   const modelUrl = documentRelativeAssetPath(model.model_url);
+  const behavior = resolveDesktopCuuCatLive2DBehaviorState({
+    state: options.behavior_state,
+    motion_state: motionState,
+    phase: options.behavior_phase,
+    requested_model_pack_id: selection.active_pack.pack_id
+  });
 
   return {
-    html: `<div class="wh-cuu-cat-live2d" data-cuu-live2d-runtime="live2d_cubism2_cat" data-cuu-live2d-status="approved_cat_option" data-cuu-live2d-framing="transparent_full_body" data-cuu-live2d-model="${escapeHtml(model.model_key)}" data-cuu-live2d-appearance="${escapeHtml(model.appearance)}" data-cuu-live2d-state="${escapeHtml(state)}" data-cuu-live2d-motion="${escapeHtml(motionFileForState(motionState))}" data-cuu-live2d-model-url="${escapeHtml(modelUrl)}" data-cuu-live2d-frame-url="${escapeHtml(iframeUrl)}" data-cuu-live2d-layer-count="native_moc" data-cuu-model-pack="${escapeHtml(selection.active_pack.pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(selection.reason)}" aria-label="${escapeHtml(labelForState(motionState, model.label))}" style="${escapeHtml(style)}"><iframe class="wh-cuu-cat-live2d-frame" title="${escapeHtml(model.label)}" src="${escapeHtml(iframeUrl)}" loading="eager"></iframe><span class="wh-cuu-cat-live2d-fallback" aria-hidden="true">Cuu</span></div>`,
+    html: `<div class="wh-cuu-cat-live2d" data-cuu-live2d-runtime="live2d_cubism2_cat" data-cuu-live2d-status="approved_cat_option" data-cuu-live2d-framing="transparent_full_body" data-cuu-live2d-model="${escapeHtml(model.model_key)}" data-cuu-live2d-appearance="${escapeHtml(model.appearance)}" data-cuu-live2d-state="${escapeHtml(state)}" data-cuu-live2d-motion="${escapeHtml(behavior.motion_state)}" data-cuu-live2d-renderer-state="${escapeHtml(behavior.renderer_state)}" data-cuu-live2d-loop="${behavior.loop ? "true" : "false"}" data-cuu-live2d-interruptible="${behavior.interruptible ? "true" : "false"}" data-cuu-live2d-model-url="${escapeHtml(modelUrl)}" data-cuu-live2d-frame-url="${escapeHtml(iframeUrl)}" data-cuu-live2d-layer-count="native_moc" data-cuu-behavior-manifest-version="${behavior.behavior_manifest_version}" data-cuu-behavior-state="${escapeHtml(behavior.behavior_state)}" data-cuu-behavior-phase="${escapeHtml(behavior.behavior_phase)}" data-cuu-behavior-coverage="${escapeHtml(behavior.behavior_coverage)}" data-cuu-behavior-priority="${escapeHtml(behavior.behavior_priority)}" data-cuu-behavior-expected-window-mode="${escapeHtml(behavior.behavior_window_mode)}" data-cuu-behavior-expected-bubble-mode="${escapeHtml(behavior.behavior_bubble_mode)}" data-cuu-model-pack="${escapeHtml(selection.active_pack.pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(selection.reason)}" aria-label="${escapeHtml(labelForState(motionState, model.label))}" style="${escapeHtml(style)}"><iframe class="wh-cuu-cat-live2d-frame" title="${escapeHtml(model.label)}" src="${escapeHtml(iframeUrl)}" loading="eager"></iframe><span class="wh-cuu-cat-live2d-fallback" aria-hidden="true">Cuu</span></div>`,
     css: desktopCuuCatLive2DCss,
     runtime_kind: "live2d_cubism2_cat",
     status: "approved_cat_option",
@@ -104,52 +219,24 @@ function renderDesktopCuuCatLive2D(
     model_pack_selection_reason: selection.reason,
     state,
     motion_state: motionState,
+    renderer_state: behavior.renderer_state,
+    behavior_manifest_version: behavior.behavior_manifest_version,
+    behavior_state: behavior.behavior_state,
+    behavior_phase: behavior.behavior_phase,
+    behavior_coverage: behavior.behavior_coverage,
+    behavior_priority: behavior.behavior_priority,
+    behavior_window_mode: behavior.behavior_window_mode,
+    behavior_bubble_mode: behavior.behavior_bubble_mode,
     model_key: model.model_key,
     appearance: model.appearance,
     model_url: modelUrl,
     iframe_url: iframeUrl,
-    duration_ms: durationForState(motionState)
+    duration_ms: behavior.duration_ms
   };
 }
 
 function modelConfigForPack(packId: string): (typeof catLive2DModels)[keyof typeof catLive2DModels] {
   return catLive2DModels[packId as keyof typeof catLive2DModels] ?? catLive2DModels["cuu-hijiki-live2d-cubism2"];
-}
-
-function motionFileForState(state: CuuMotionClipState) {
-  switch (state) {
-    case "celebrating_jump":
-    case "wave_hello":
-      return "mtn/06.mtn";
-    case "asking_approval_bounce":
-    case "tap_bubble":
-      return "mtn/01.mtn";
-    case "thinking_tail":
-    case "searching_evidence_peek":
-    case "syncing_files_spin":
-      return "mtn/04.mtn";
-    case "worried_ears":
-    case "offline_sleep":
-    case "sleeping_curl":
-      return "mtn/08.mtn";
-    case "drag_hold":
-      return "mtn/05.mtn";
-    default:
-      return "mtn/00_idle.mtn";
-  }
-}
-
-function durationForState(state: CuuMotionClipState) {
-  if (state === "celebrating_jump" || state === "wave_hello") {
-    return 980;
-  }
-  if (state === "asking_approval_bounce" || state === "tap_bubble") {
-    return 1200;
-  }
-  if (state === "offline_sleep" || state === "sleeping_curl") {
-    return 3200;
-  }
-  return 2200;
 }
 
 function labelForState(state: CuuMotionClipState, modelLabel: string) {

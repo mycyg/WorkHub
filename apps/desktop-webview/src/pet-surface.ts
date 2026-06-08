@@ -19,6 +19,8 @@ import { normalizeWorkHubLocale, workHubLocaleStorageKey, type WorkHubLocale } f
 import {
   renderDesktopCuuCatLive2DForIdleAction,
   renderDesktopCuuCatLive2DForMotion,
+  resolveDesktopCuuCatLive2DBehaviorState,
+  setDesktopCuuCatLive2DBehaviorState,
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
 import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
@@ -308,7 +310,7 @@ export function renderDesktopPetSurface(input: {
     live2d,
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${live2d.css}`,
-    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-renderer-state="${escapeHtml(live2d.renderer_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-behavior-manifest-version="${live2d.behavior_manifest_version}" data-cuu-behavior-state="${escapeHtml(live2d.behavior_state)}" data-cuu-behavior-phase="${escapeHtml(live2d.behavior_phase)}" data-cuu-behavior-coverage="${escapeHtml(live2d.behavior_coverage)}" data-cuu-behavior-priority="${escapeHtml(live2d.behavior_priority)}" data-cuu-behavior-expected-window-mode="${escapeHtml(live2d.behavior_window_mode)}" data-cuu-behavior-expected-bubble-mode="${escapeHtml(live2d.behavior_bubble_mode)}" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}">
         ${live2d.html}
       </button>
@@ -494,13 +496,29 @@ function patchDesktopPetSurfaceRuntimeState(
     delete surface.dataset.petLastPointerMs;
   }
   if (!input.card) {
+    const behavior = resolveDesktopCuuCatLive2DBehaviorState({
+      state: "idle",
+      motion_state: input.idle_action,
+      phase: "idle_random",
+      requested_model_pack_id: surface.dataset.cuuModelPack
+    });
     surface.dataset.cuuIdleAction = input.idle_action;
-    surface.dataset.cuuState = input.idle_action;
+    surface.dataset.cuuState = behavior.behavior_state;
     surface.dataset.cuuLive2dMotion = input.idle_action;
-    const live2d = surface.querySelector<HTMLElement>(".wh-cuu-cat-live2d");
-    if (live2d) {
-      live2d.dataset.cuuLive2dState = input.idle_action;
-    }
+    surface.dataset.cuuLive2dRendererState = behavior.renderer_state;
+    surface.dataset.cuuBehaviorManifestVersion = String(behavior.behavior_manifest_version);
+    surface.dataset.cuuBehaviorState = behavior.behavior_state;
+    surface.dataset.cuuBehaviorPhase = behavior.behavior_phase;
+    surface.dataset.cuuBehaviorCoverage = behavior.behavior_coverage;
+    surface.dataset.cuuBehaviorPriority = String(behavior.behavior_priority);
+    surface.dataset.cuuBehaviorExpectedWindowMode = behavior.behavior_window_mode;
+    surface.dataset.cuuBehaviorExpectedBubbleMode = behavior.behavior_bubble_mode;
+    setDesktopCuuCatLive2DBehaviorState(root, {
+      state: "idle",
+      motion_state: input.idle_action,
+      phase: "idle_random",
+      requested_model_pack_id: surface.dataset.cuuModelPack
+    });
   }
   return true;
 }
