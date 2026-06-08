@@ -26,6 +26,11 @@ import {
   type ProposalService
 } from "../services/proposals.js";
 import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
+import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
 } from "../workers/agent-runner.js";
@@ -39,10 +44,9 @@ export type PageRoutesDependencies = {
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
+  workItems?: WorkItemService;
   allowUnauthenticatedGoldPath?: boolean;
 };
-
-const workItemPageUnavailableMessage = "真实事项详情 Page VM 尚未接入；演示 fixture 只保留在 /api/pages/gold-path 页面包。";
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
@@ -68,6 +72,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
+  const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const activeRuns = await queue.listActive();
@@ -89,8 +94,19 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json(pageEnvelope(data, requestLocale(c)));
   });
 
-  routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), (c) => {
-    throw new HTTPException(501, { message: workItemPageUnavailableMessage });
+  routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const data = await workItems.detailPage({
+        workItemId: c.req.param("id"),
+        actor: c.var.actor
+      });
+      return c.json(pageEnvelope(data, requestLocale(c)));
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw new HTTPException(error.status as 400, { message: error.message });
+      }
+      throw error;
+    }
   });
 
   routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {

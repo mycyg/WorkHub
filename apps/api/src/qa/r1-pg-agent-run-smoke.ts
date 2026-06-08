@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +13,7 @@ import {
   createClientDeviceRepository,
   createDatabaseClient,
   createProposalRepository,
+  createWorkItemRepository,
   createSnapshotRepository,
   createUserRepository,
   defaultSeedFixture,
@@ -34,8 +34,13 @@ import { ZodError } from "zod";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
+import { createKnowledgeRoutes } from "../routes/knowledge.js";
+import { createPageRoutes } from "../routes/pages.js";
+import { createSessionRoutes } from "../routes/sessions.js";
+import { createWorkItemRoutes } from "../routes/workitems.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createDbProposalService } from "../services/proposals.js";
+import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
 
 function executableAgentClient(): AgentLoopClient {
@@ -118,32 +123,6 @@ async function ensureDefaultSeed(db: ReturnType<typeof createDatabaseClient>["db
   await db.insert(projects).values(defaultSeedFixture.projects).onConflictDoNothing();
 }
 
-async function createSmokeWorkItem(db: ReturnType<typeof createDatabaseClient>["db"]) {
-  const id = randomUUID();
-  const code = `R1-PG-${Date.now()}`;
-  const rows = await db
-    .insert(workItems)
-    .values({
-      id,
-      code,
-      projectId: defaultSeedIds.projectId,
-      workspaceId: defaultSeedIds.workspaceId,
-      submitterUserId: defaultSeedIds.adminUserId,
-      title: "R1 PG smoke file-only task",
-      rawDescription: "Write a small markdown deliverable into outputs/ and produce a reviewable proposal.",
-      summaryMd: "R1 PG smoke task.",
-      status: "spec_ready",
-      mode: "worker",
-      humanReserved: false
-    })
-    .returning();
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Failed to create smoke work item");
-  }
-  return row;
-}
-
 async function main() {
   const settings = loadSettings(process.env);
   if (settings.appEnv === "production") {
@@ -155,7 +134,6 @@ async function main() {
   try {
     const db = client.db;
     await ensureDefaultSeed(db);
-    const workItem = await createSmokeWorkItem(db);
     const auth: AuthDependencies = {
       users: createUserRepository(db),
       devices: createClientDeviceRepository(db),
@@ -166,6 +144,7 @@ async function main() {
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const proposalService = createDbProposalService(createProposalRepository(db));
+    const workItemService = createDbWorkItemService(createWorkItemRepository(db));
     const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
@@ -183,6 +162,16 @@ async function main() {
       eventBus: false
     });
     const app = withErrors(new Hono<AuthEnv>());
+    app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
+    app.route("/api", createWorkItemRoutes({ auth, workItems: workItemService }));
+    app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
+    app.route("/api/pages", createPageRoutes({
+      auth,
+      queue,
+      proposals: proposalService,
+      workItems: workItemService,
+      allowUnauthenticatedGoldPath: false
+    }));
     app.route("/api", createAgentRunRoutes({
       auth,
       queue,
@@ -196,7 +185,73 @@ async function main() {
     }
     const cookie = await generateSignedCookie(COOKIE_NAME, seedUser.cookieToken, settings.auth.cookieSecret);
     const headers = { Cookie: cookie };
-    const start = await app.request(`/api/workitems/${workItem.id}/agent-runs`, {
+    const session = await app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        intent_text: "Write a small markdown deliverable into outputs/ and produce a reviewable proposal."
+      })
+    });
+    if (session.status !== 200) {
+      throw new Error(`Expected session create 200, got ${session.status}: ${await session.text()}`);
+    }
+    const sessionBody = await session.json() as { data: { session_id: string } };
+    const nextQuestion = await app.request(`/api/sessions/${sessionBody.data.session_id}/next-question`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+    });
+    if (nextQuestion.status !== 200) {
+      throw new Error(`Expected next question 200, got ${nextQuestion.status}: ${await nextQuestion.text()}`);
+    }
+    const createdWorkItem = await app.request("/api/workitems", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        session_id: sessionBody.data.session_id,
+        selected_option_ids: ["document-draft"]
+      })
+    });
+    if (createdWorkItem.status !== 201) {
+      throw new Error(`Expected work item create 201, got ${createdWorkItem.status}: ${await createdWorkItem.text()}`);
+    }
+    const createdWorkItemBody = await createdWorkItem.json() as { data: { workitem: { id: string; status: string } } };
+    const workItemId = createdWorkItemBody.data.workitem.id;
+    if (createdWorkItemBody.data.workitem.status !== "spec_ready") {
+      throw new Error(`Expected spec_ready work item, got ${createdWorkItemBody.data.workitem.status}`);
+    }
+    const knowledge = await app.request("/api/knowledge/search", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query: "markdown deliverable", work_item_id: workItemId })
+    });
+    if (knowledge.status !== 200) {
+      throw new Error(`Expected knowledge search 200, got ${knowledge.status}: ${await knowledge.text()}`);
+    }
+    const knowledgeBody = await knowledge.json() as {
+      data: { evidence_refs: { id: string; source_type: string; source_id: string; title: string }[] };
+    };
+    if (knowledgeBody.data.evidence_refs.length < 1) {
+      throw new Error("Expected knowledge search to find the newly created work item as evidence.");
+    }
+    const evidenceBound = await app.request(`/api/workitems/${workItemId}/evidence-bindings`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ evidence_refs: knowledgeBody.data.evidence_refs })
+    });
+    if (evidenceBound.status !== 200) {
+      throw new Error(`Expected evidence binding 200, got ${evidenceBound.status}: ${await evidenceBound.text()}`);
+    }
+    const workItemPage = await app.request(`/api/pages/workitems/${workItemId}`, { headers });
+    if (workItemPage.status !== 200) {
+      throw new Error(`Expected work item page 200, got ${workItemPage.status}: ${await workItemPage.text()}`);
+    }
+    const workItemPageBody = await workItemPage.json() as { data: { evidence_refs: unknown[] } };
+    if (workItemPageBody.data.evidence_refs.length < 1) {
+      throw new Error("Expected work item page to include bound evidence refs.");
+    }
+
+    const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
       method: "POST",
       headers,
       body: JSON.stringify({ title: "R1 PG smoke run" })
@@ -211,7 +266,7 @@ async function main() {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
     }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
-      rows.filter((row) => row.workItemId === workItem.id)
+      rows.filter((row) => row.workItemId === workItemId)
     );
     const proposalBeforeMerge = proposalRowsBeforeMerge[0];
     if (!proposalBeforeMerge) {
@@ -259,11 +314,11 @@ async function main() {
     const [agentRunRows, stepRows, proposalRows, branchRows, workItemRows, snapshotRows, auditRows] = await Promise.all([
       db.select().from(agentRuns).then((rows) => rows.filter((row) => row.id === runId)),
       restartedQueue.trace(runId),
-      db.select().from(proposals).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
-      db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
-      db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItem.id)),
-      db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItem.id)),
-      db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItem.id))
+      db.select().from(proposals).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
+      db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
+      db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
+      db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
+      db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId))
     ]);
     const proposalAfterMerge = proposalRows[0];
     const branchAfterMerge = branchRows.find((row) => row.id === proposalAfterMerge?.branchId);
@@ -285,8 +340,14 @@ async function main() {
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
-      work_item_id: workItem.id,
+      work_item_id: workItemId,
       run_id: runId,
+      intake: {
+        session_status: session.status,
+        work_item_status: createdWorkItemBody.data.workitem.status,
+        evidence_refs: knowledgeBody.data.evidence_refs.length,
+        page_evidence_refs: workItemPageBody.data.evidence_refs.length
+      },
       run_status: (await runAfterRestart.json() as { data: { status: string } }).data.status,
       db_rows: {
         agent_runs: agentRunRows.length,

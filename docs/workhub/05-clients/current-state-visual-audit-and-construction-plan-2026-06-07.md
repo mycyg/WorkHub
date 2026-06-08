@@ -134,7 +134,7 @@ visuals:
 
 ## 6. 冻结后的下一轮施工计划
 
-R1 真实纵切通过前，以下黑/白 Cuu 矩阵只保留为**验收 backlog**，不作为当前下一施工队列。当前允许继续做的 Cuu 相关工作只有治理项：主窗无 Cuu 截图、透明 pet smoke、真实回归修复、文档对账。真正的当前工程队列切到 `sessions/workitems/knowledge/page workitem` 真实服务、CostLedger 默认 store、R2 queue claim 等后端纵切缺口。
+R1 真实纵切通过前，以下黑/白 Cuu 矩阵只保留为**验收 backlog**，不作为当前下一施工队列。当前允许继续做的 Cuu 相关工作只有治理项：主窗无 Cuu 截图、透明 pet smoke、真实回归修复、文档对账。`sessions/workitems/knowledge/page workitem` 已接入 R1 最小真实服务；真正的当前工程队列切到 CostLedger 默认 store、merge 文件物理采纳/冲突调解、R2 queue claim 等后端纵切缺口。
 
 ### 6.1 黑猫正式矩阵
 

@@ -8,25 +8,51 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 
 export type SessionRoutesDependencies = {
   auth?: AuthDependencySource;
+  workItems?: WorkItemService;
 };
 
-const serviceUnavailableMessage = "真实澄清会话服务尚未接入；演示 fixture 只保留在 /api/pages/gold-path 页面包。";
+function handleWorkItemError(error: unknown): never {
+  if (error instanceof WorkItemServiceError) {
+    throw new HTTPException(error.status as 400, { message: error.message });
+  }
+  throw error;
+}
 
 export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
+  const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.post("/sessions", createCurrentUserMiddleware(authSource), async (c) => {
-    createSessionRequestSchema.parse(await optionalJson(c.req));
-    throw new HTTPException(501, { message: serviceUnavailableMessage });
+    const payload = createSessionRequestSchema.parse(await optionalJson(c.req));
+    try {
+      const data = await workItems.createSession({ payload, actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
   });
 
   routes.post("/sessions/:id/next-question", createCurrentUserMiddleware(authSource), async (c) => {
-    nextQuestionRequestSchema.parse(await optionalJson(c.req));
-    throw new HTTPException(501, { message: serviceUnavailableMessage });
+    const payload = nextQuestionRequestSchema.parse(await optionalJson(c.req));
+    try {
+      const data = await workItems.nextQuestion({
+        sessionId: c.req.param("id"),
+        payload,
+        actor: c.var.actor
+      });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
   });
 
   return routes;

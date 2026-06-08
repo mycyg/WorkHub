@@ -230,6 +230,7 @@ export function createInMemoryAgentRunQueue(options: {
   const runs = new Map<string, AgentRunQueueRecord>();
   const runWorkdirs = new Map<string, string>();
   const startingWorkItems = new Set<string>();
+  const tracePersistenceChains = new Map<string, Promise<void>>();
 
   function activeForWorkItem(workItemId: string) {
     if (startingWorkItems.has(workItemId)) {
@@ -285,7 +286,7 @@ export function createInMemoryAgentRunQueue(options: {
   async function persistCreatedRun(run: AgentRunQueueRecord) {
     await persistence?.createRun(run);
     if (run.trace.length > 0) {
-      await persistence?.replaceTrace(run.run_id, run.trace);
+      await queueTracePersistence(run);
     }
   }
 
@@ -295,14 +296,31 @@ export function createInMemoryAgentRunQueue(options: {
 
   async function persistRunWithTrace(run: AgentRunQueueRecord) {
     await persistRun(run);
-    await persistence?.replaceTrace(run.run_id, run.trace);
+    await queueTracePersistence(run);
+  }
+
+  function queueTracePersistence(run: AgentRunQueueRecord) {
+    if (!persistence) {
+      return Promise.resolve();
+    }
+    const previous = tracePersistenceChains.get(run.run_id) ?? Promise.resolve();
+    const task = previous
+      .catch(() => undefined)
+      .then(() => persistence.replaceTrace(run.run_id, run.trace));
+    tracePersistenceChains.set(run.run_id, task);
+    void task.finally(() => {
+      if (tracePersistenceChains.get(run.run_id) === task) {
+        tracePersistenceChains.delete(run.run_id);
+      }
+    });
+    return task;
   }
 
   function persistTraceInBackground(run: AgentRunQueueRecord) {
     if (!persistence) {
       return;
     }
-    void persistence.replaceTrace(run.run_id, run.trace).catch((error) => {
+    void queueTracePersistence(run).catch((error) => {
       console.warn("WorkHub AgentRun trace persistence failed", error);
     });
   }

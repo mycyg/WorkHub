@@ -12,12 +12,23 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 
 export type WorkItemRoutesDependencies = {
   auth?: AuthDependencySource;
+  workItems?: WorkItemService;
 };
 
-const serviceUnavailableMessage = "真实工作项服务尚未接入；演示 fixture 只保留在 /api/pages/gold-path 页面包。";
+function handleWorkItemError(error: unknown): never {
+  if (error instanceof WorkItemServiceError) {
+    throw new HTTPException(error.status as 400, { message: error.message });
+  }
+  throw error;
+}
 
 async function readJsonBody(c: Context) {
   const text = await c.req.text();
@@ -34,15 +45,30 @@ async function readJsonBody(c: Context) {
 export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
+  const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.post("/workitems", createCurrentUserMiddleware(authSource), async (c) => {
-    createWorkItemRequestSchema.parse(await readJsonBody(c));
-    throw new HTTPException(501, { message: serviceUnavailableMessage });
+    const payload = createWorkItemRequestSchema.parse(await readJsonBody(c));
+    try {
+      const data = await workItems.createWorkItem({ payload, actor: c.var.actor });
+      return c.json({ ok: true, data }, 201);
+    } catch (error) {
+      handleWorkItemError(error);
+    }
   });
 
   routes.post("/workitems/:id/evidence-bindings", createCurrentUserMiddleware(authSource), async (c) => {
-    useEvidenceForTaskRequestSchema.parse(await readJsonBody(c));
-    throw new HTTPException(501, { message: serviceUnavailableMessage });
+    const payload = useEvidenceForTaskRequestSchema.parse(await readJsonBody(c));
+    try {
+      const data = await workItems.bindEvidence({
+        workItemId: c.req.param("id"),
+        payload,
+        actor: c.var.actor
+      });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
   });
 
   return routes;

@@ -139,7 +139,7 @@ R0 退出门：
 4. **隔离 fixture**
    - **状态：2026-06-08 已完成代码切片。**
    - `isP05*` 已从生产业务 route 删除；`apps/api/src/routes/*` grep 不再出现 P0.5 id matcher。
-   - `sessions/workitems/knowledge/pages/workitems` 在真实 service 接入前返回 501 fail-closed。
+   - `sessions/workitems/knowledge/pages/workitems` 已接入 R1 最小真实 service：option-first intake、work item 创建、knowledge evidence bubble、work item page VM 与 evidence binding 走 DB/内存可注入服务，不再使用 P0.5 fixture。
    - `pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`，不再返回 P0.5 proposal/review/merge fixture。
    - 仅 `/api/pages/gold-path` 保留 P0.5 demo bundle，用于概念/页面 VM 展示，不再作为 R1 完成证据。
 
@@ -166,7 +166,8 @@ R0 退出门：
 - 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当时由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
 - 后续已补：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出生产业务 route。
-- 未完成：sessions/workitems/knowledge/page workitem 真实 service 仍是 501 fail-closed；merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
+- 后续已补：R1 最小真实 `sessions/workitems/knowledge/page workitem` service 已接入，并纳入 API test 与 PG smoke。
+- 未完成：CostLedger 默认 store、merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -180,12 +181,17 @@ pnpm qa:r1-pg-smoke
 
 1. 读取 `DATABASE_URL`，拒绝 `APP_ENV=production`。
 2. 执行 Drizzle migrations。
-3. 写入最小 seed：org、workspace、owner user、project、file-only work item。
-4. 通过真实 `createAgentRunRoutes` 发起 `/api/workitems/:id/agent-runs`。
-5. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
-6. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
-7. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
-8. 输出 JSON 证据：`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
+3. 写入最小 seed：org、workspace、owner user、project、knowledge document。
+4. 通过真实 `POST /api/sessions` 创建 option-first session/work item。
+5. 通过真实 `POST /api/sessions/:id/next-question` 记录澄清选择。
+6. 通过真实 `POST /api/workitems` 将 session 固化为 `spec_ready` work item。
+7. 通过真实 `POST /api/knowledge/search` 返回 EvidenceBubble，再用 `POST /api/workitems/:id/evidence-bindings` 绑定证据。
+8. 通过真实 `GET /api/pages/workitems/:id` 读取 WorkItemDetailVM。
+9. 通过真实 `createAgentRunRoutes` 发起 `/api/workitems/:id/agent-runs`。
+10. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
+11. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
+12. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
+13. 输出 JSON 证据：intake/evidence/page evidence、`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
 
 当前本机实测：
 
@@ -197,6 +203,14 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 ```json
 {
   "ok": true,
+  "work_item_id": "b9e30126-5d19-4ac7-8061-1600c4b00955",
+  "run_id": "fe4df610-c877-4aea-bdf3-03e99dc27c18",
+  "intake": {
+    "session_status": 200,
+    "work_item_status": "spec_ready",
+    "evidence_refs": 1,
+    "page_evidence_refs": 1
+  },
   "run_status": "succeeded",
   "db_rows": {
     "agent_runs": 1,
@@ -210,8 +224,8 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "proposal_status": "merged",
     "branch_status": "merged",
     "work_item_status": "merged",
-    "main_branch_id": "92529c5e-46dc-476f-a7df-0d0dbfd1929d",
-    "merge_snapshot_id": "7e168a97-240f-4458-864a-de74037a48d3"
+    "main_branch_id": "8cb85cde-57fd-4257-bce4-6e0d06d6698c",
+    "merge_snapshot_id": "dd1b46ef-a066-43e9-84e0-d886682e104a"
   },
   "replay_steps": 4,
   "replay_snapshots": 1,
@@ -219,7 +233,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；merge/main 最小真实切片已由 Linux PG smoke 验证通过。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> AgentRun -> proposal -> merge -> replay 纵切已由 Linux PG smoke 验证通过。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -227,9 +241,11 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 
 - `apps/api/src/routes/agent-runs.ts` 删除 `allowP05ReplayFixture` 和 P0.5 replay fallback。
 - `apps/api/src/routes/proposals.ts` 删除 P0.5 proposal/review/merge 分支，所有读写都走 `ProposalService`。
-- `apps/api/src/routes/pages.ts` 只保留 `/api/pages/gold-path` demo bundle；`/api/pages/proposals/:id` 只读真实 proposal；`/api/pages/workitems/:id` 在真实 service 接入前返回 501。
-- `apps/api/src/routes/sessions.ts`、`workitems.ts`、`knowledge.ts` 在真实 service 接入前返回 501，避免用固定 fixture 冒充产品链路。
+- `apps/api/src/routes/pages.ts` 只保留 `/api/pages/gold-path` demo bundle；`/api/pages/proposals/:id` 只读真实 proposal；`/api/pages/workitems/:id` 读取真实 `WorkItemService`。
+- `apps/api/src/routes/sessions.ts`、`workitems.ts`、`knowledge.ts` 已接入真实 `WorkItemService`，避免用固定 fixture 冒充产品链路。
 - `apps/api/src/pages/gold-path.ts` 删除未使用的 `isP05*` id matcher，减少误接回生产 route 的风险。
+- `apps/api/src/services/work-items.ts` 新增 R1 最小真实 service；`packages/db/src/repositories/work-items.ts` 新增 DB repository；`apps/api/src/qa/r1-pg-agent-run-smoke.ts` 将 intake/knowledge/page 纳入 smoke。
+- `apps/api/src/workers/agent-runner.ts` 串行化同一 run 的 trace persistence，避免 background trace 与 final trace 在真实 PG 下抢写 `agent_steps`。
 
 验证：
 
@@ -237,7 +253,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 - `pnpm --filter @workhub/api typecheck` 通过。
 - `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 
-仍不能宣称 R1 全部完成，因为真实 sessions/workitems/knowledge/page workitem service、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1 全部完成，因为 CostLedger 默认 store、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

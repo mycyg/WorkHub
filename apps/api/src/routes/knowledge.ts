@@ -7,19 +7,50 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import {
+  getDefaultWorkItemService,
+  knowledgeSearchRequestSchema,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 
 export type KnowledgeRoutesDependencies = {
   auth?: AuthDependencySource;
+  workItems?: WorkItemService;
 };
 
-const serviceUnavailableMessage = "真实知识库检索服务尚未接入；演示 fixture 只保留在 /api/pages/gold-path 页面包。";
+async function readJsonBody(req: { text: () => Promise<string> }) {
+  const text = await req.text();
+  if (!text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HTTPException(400, { message: "知识库检索请求不是有效的 JSON。" });
+  }
+}
+
+function handleWorkItemError(error: unknown): never {
+  if (error instanceof WorkItemServiceError) {
+    throw new HTTPException(error.status as 400, { message: error.message });
+  }
+  throw error;
+}
 
 export function createKnowledgeRoutes(deps: KnowledgeRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
+  const workItems = deps.workItems ?? getDefaultWorkItemService();
 
-  routes.post("/search", createCurrentUserMiddleware(authSource), (c) => {
-    throw new HTTPException(501, { message: serviceUnavailableMessage });
+  routes.post("/search", createCurrentUserMiddleware(authSource), async (c) => {
+    const payload = knowledgeSearchRequestSchema.parse(await readJsonBody(c.req));
+    try {
+      const data = await workItems.searchKnowledge({ payload, actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
   });
 
   return routes;
