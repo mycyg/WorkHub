@@ -61,24 +61,24 @@ export type DesktopPetSurfaceRuntime = {
 };
 
 export const desktopPetSurfaceCss = [
-  "html,body,#root{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}",
-  "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38}",
-  ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,180px);height:var(--wh-pet-window-h,220px);background:transparent;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
-  ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,380px);height:var(--wh-pet-window-h,560px)}",
-  ".wh-pet-body{position:absolute;right:calc(8px * var(--wh-pet-scale,1));bottom:calc(8px * var(--wh-pet-scale,1));width:calc(148px * var(--wh-pet-scale,1));height:calc(197px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:transparent;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
+  "html,body,#root{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden}",
+  "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38;background:rgba(0,0,0,0)!important}",
+  ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,260px);height:var(--wh-pet-window-h,340px);border:0;background:rgba(0,0,0,0)!important;box-shadow:none;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
+  ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,520px);height:var(--wh-pet-window-h,640px)}",
+  ".wh-pet-body{position:absolute;right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:rgba(0,0,0,0)!important;box-shadow:none;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
   ".wh-pet-body:active{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hovered=true] .wh-pet-body{cursor:pointer}",
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
-  ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;box-sizing:border-box;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(64px * var(--wh-pet-scale,1));bottom:calc(96px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));height:calc(210px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(16px * var(--wh-pet-scale,1));right:auto;top:calc(16px * var(--wh-pet-scale,1));bottom:auto;width:calc(260px * var(--wh-pet-scale,1));max-height:calc(320px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
+  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(16px * var(--wh-pet-scale,1));bottom:calc(18px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(16px * var(--wh-pet-scale,1));right:auto;top:calc(16px * var(--wh-pet-scale,1));bottom:auto;width:calc(300px * var(--wh-pet-scale,1));max-height:calc(390px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:3}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-actions{max-width:100%}",
-  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(118px * var(--wh-pet-scale,1));height:calc(157px * var(--wh-pet-scale,1))}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(156px * var(--wh-pet-scale,1));height:calc(218px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:calc(8px * var(--wh-pet-scale,1));right:auto;top:calc(8px * var(--wh-pet-scale,1));bottom:auto;width:calc(124px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-title{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
@@ -228,6 +228,8 @@ export function renderDesktopPetSurface(input: {
   const hoverHidden = settings.hide_on_hover && pointer.hovered && !pointer.dragging && windowMode === "body_only" && !input.card;
   const hideX = hoverHidden ? (pointer.avoidance_x || -0.45) * 42 * scaleRatio : 0;
   const hideY = hoverHidden ? (pointer.avoidance_y || 0.24) * 24 * scaleRatio : 0;
+  const avoidX = hoverHidden ? pointer.avoidance_x * 22 * scaleRatio : 0;
+  const avoidY = hoverHidden ? pointer.avoidance_y * 12 * scaleRatio : 0;
   const baseWindowSize = petWindowSize(windowMode);
   const scaledWindowSize = {
     width: Math.round(baseWindowSize.width * scaleRatio),
@@ -237,7 +239,7 @@ export function renderDesktopPetSurface(input: {
     has_card: Boolean(input.card),
     compact_card: compactCard
   }, locale);
-  const displayWidth = input.display_width_px ?? Math.round((compactCard ? 92 : input.card ? 138 : 148) * scaleRatio);
+  const displayWidth = input.display_width_px ?? Math.round((compactCard ? 150 : 230) * scaleRatio);
   const live2d = input.card
     ? renderDesktopCuuCatLive2DForMotion(motion, {
         display_width_px: displayWidth,
@@ -270,8 +272,8 @@ export function renderDesktopPetSurface(input: {
     `--wh-pet-pointer-smoothing-alpha:${formatPointerNumber(pointerSmoothingAlpha)}`,
     `--wh-pet-avoid-x:${formatPointerNumber(pointer.avoidance_x)}`,
     `--wh-pet-avoid-y:${formatPointerNumber(pointer.avoidance_y)}`,
-    `--wh-pet-avoid-x-px:${formatPointerNumber(pointer.avoidance_x * 22 * scaleRatio)}px`,
-    `--wh-pet-avoid-y-px:${formatPointerNumber(pointer.avoidance_y * 12 * scaleRatio)}px`,
+    `--wh-pet-avoid-x-px:${formatPointerNumber(avoidX)}px`,
+    `--wh-pet-avoid-y-px:${formatPointerNumber(avoidY)}px`,
     `--wh-pet-hide-x-px:${formatPointerNumber(hideX)}px`,
     `--wh-pet-hide-y-px:${formatPointerNumber(hideY)}px`,
     `--wh-pet-hide-scale:${hoverHidden ? "0.92" : "1"}`,
@@ -319,10 +321,81 @@ export function defaultDesktopPetPointerSnapshot(): DesktopPetPointerSnapshot {
   return normalizeDesktopPetPointerSnapshot({});
 }
 
+function patchDesktopPetSurfaceRuntimeState(
+  root: HTMLElement,
+  input: {
+    idle_action: CuuIdleMicroAction;
+    card?: CuuCard | undefined;
+    pet_window_settings: DesktopPetWindowSettings;
+    pointer_snapshot: DesktopPetPointerSnapshot;
+    pointer_smoothing_alpha: number;
+  }
+): boolean {
+  const surface = root.querySelector<HTMLElement>(".wh-pet-surface");
+  if (!surface) {
+    return false;
+  }
+  const settings = input.pet_window_settings;
+  const pointer = normalizeDesktopPetPointerSnapshot(input.pointer_snapshot);
+  const scaleRatio = settings.scale_percent / 100;
+  const windowMode = surface.dataset.petWindowMode === "card" ? "card" : "body_only";
+  const hoverHidden = settings.hide_on_hover && pointer.hovered && !pointer.dragging && windowMode === "body_only" && !input.card;
+  const hideX = hoverHidden ? (pointer.avoidance_x || -0.45) * 42 * scaleRatio : 0;
+  const hideY = hoverHidden ? (pointer.avoidance_y || 0.24) * 24 * scaleRatio : 0;
+  const avoidX = hoverHidden ? pointer.avoidance_x * 22 * scaleRatio : 0;
+  const avoidY = hoverHidden ? pointer.avoidance_y * 12 * scaleRatio : 0;
+  const dynamicVars: Record<string, string> = {
+    "--wh-pet-look-x": formatPointerNumber(pointer.look_x),
+    "--wh-pet-look-y": formatPointerNumber(pointer.look_y),
+    "--wh-pet-pointer-smoothing-alpha": formatPointerNumber(input.pointer_smoothing_alpha),
+    "--wh-pet-avoid-x": formatPointerNumber(pointer.avoidance_x),
+    "--wh-pet-avoid-y": formatPointerNumber(pointer.avoidance_y),
+    "--wh-pet-avoid-x-px": `${formatPointerNumber(avoidX)}px`,
+    "--wh-pet-avoid-y-px": `${formatPointerNumber(avoidY)}px`,
+    "--wh-pet-hide-x-px": `${formatPointerNumber(hideX)}px`,
+    "--wh-pet-hide-y-px": `${formatPointerNumber(hideY)}px`,
+    "--wh-pet-hide-scale": hoverHidden ? "0.92" : "1",
+    "--wh-pet-hide-opacity": hoverHidden ? "0.36" : "1",
+    "--wh-pet-look-head-x-px": `${formatPointerNumber(pointer.look_x * 9 * scaleRatio)}px`,
+    "--wh-pet-look-head-y-px": `${formatPointerNumber(pointer.look_y * 4 * scaleRatio)}px`,
+    "--wh-pet-look-eye-x-px": `${formatPointerNumber(pointer.look_x * 9 * scaleRatio)}px`,
+    "--wh-pet-look-eye-y-px": `${formatPointerNumber(pointer.look_y * 4 * scaleRatio)}px`,
+    "--wh-pet-look-face-x-px": `${formatPointerNumber(pointer.look_x * 4 * scaleRatio)}px`,
+    "--wh-pet-look-face-y-px": `${formatPointerNumber(pointer.look_y * 2 * scaleRatio)}px`,
+    "--wh-pet-look-rotate-deg": `${formatPointerNumber(pointer.look_x * 5)}deg`
+  };
+  for (const [name, value] of Object.entries(dynamicVars)) {
+    surface.style.setProperty(name, value);
+  }
+  surface.dataset.petCursorNear = pointer.cursor_near ? "true" : "false";
+  surface.dataset.petHovered = pointer.hovered ? "true" : "false";
+  surface.dataset.petDragging = pointer.dragging ? "true" : "false";
+  surface.dataset.petLookX = formatPointerNumber(pointer.look_x);
+  surface.dataset.petLookY = formatPointerNumber(pointer.look_y);
+  surface.dataset.petHoverAvoidance = pointer.hover_avoidance;
+  surface.dataset.petPointerSmoothingAlpha = formatPointerNumber(input.pointer_smoothing_alpha);
+  surface.dataset.petHoverHidden = hoverHidden ? "true" : "false";
+  if (pointer.last_pointer_ms !== undefined) {
+    surface.dataset.petLastPointerMs = String(pointer.last_pointer_ms);
+  } else {
+    delete surface.dataset.petLastPointerMs;
+  }
+  if (!input.card) {
+    surface.dataset.cuuIdleAction = input.idle_action;
+    surface.dataset.cuuState = input.idle_action;
+    surface.dataset.cuuLive2dMotion = input.idle_action;
+    const live2d = surface.querySelector<HTMLElement>(".wh-cuu-cat-live2d");
+    if (live2d) {
+      live2d.dataset.cuuLive2dState = input.idle_action;
+    }
+  }
+  return true;
+}
+
 function petWindowSize(mode: DesktopPetWindowMode) {
   return mode === "card"
-    ? { width: 380, height: 560 }
-    : { width: 180, height: 220 };
+    ? { width: 520, height: 640 }
+    : { width: 260, height: 340 };
 }
 
 function desktopPetVisibleMotion(
@@ -406,26 +479,56 @@ export async function bootDesktopPetSurface(
   let pointerSensor: DesktopPetPointerSensor | undefined;
   let renderGeneration = 0;
   let cancelPendingFirstPaintSync: (() => void) | undefined;
+  let lastStructuralRenderKey: string | undefined;
 
   const render = () => {
-    renderGeneration += 1;
-    const generation = renderGeneration;
     const petWindowSettings = desktopPetWindowSettingsFromPreferences(controller.snapshot().preferences);
+    const preferences = controller.snapshot().preferences;
     const desiredMode = desktopPetWindowModeForCard(currentCard);
     const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
+    const windowModeError = compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined;
+    const windowModeStatus = compactCard ? petWindowModeError ? "failed" : "syncing" : undefined;
+    const structuralRenderKey = desktopPetStructuralRenderKey({
+      card: currentCard,
+      status_text: statusText,
+      include_reject_reasons: Boolean(pendingAction),
+      pet_window_settings: petWindowSettings,
+      requested_model_pack_id: preferences.pet_model_pack_id,
+      compact_card: compactCard,
+      window_mode_error: windowModeError,
+      window_mode_status: windowModeStatus,
+      locale
+    });
+    if (
+      structuralRenderKey === lastStructuralRenderKey &&
+      patchDesktopPetSurfaceRuntimeState(root, {
+        idle_action: idleAction,
+        card: currentCard,
+        pet_window_settings: petWindowSettings,
+        pointer_snapshot: pointerSnapshot,
+        pointer_smoothing_alpha: desktopPetPointerSmoothingAlpha
+      })
+    ) {
+      syncPetWindowSettings(petWindowSettings);
+      return;
+    }
+
+    renderGeneration += 1;
+    const generation = renderGeneration;
     const surface = renderDesktopPetSurface({
       card: currentCard,
       idle_action: idleAction,
       status_text: statusText,
       include_reject_reasons: Boolean(pendingAction),
       pet_window_settings: petWindowSettings,
-      requested_model_pack_id: controller.snapshot().preferences.pet_model_pack_id,
+      requested_model_pack_id: preferences.pet_model_pack_id,
       pointer_snapshot: pointerSnapshot,
-      window_mode_error: compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined,
-      window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined,
+      window_mode_error: windowModeError,
+      window_mode_status: windowModeStatus,
       locale
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    lastStructuralRenderKey = structuralRenderKey;
     syncPetWindowSettings(petWindowSettings);
     cancelPendingFirstPaintSync?.();
     cancelPendingFirstPaintSync = scheduleDesktopPetFirstPaint(() => {
@@ -682,6 +785,30 @@ export async function bootDesktopPetSurface(
 
 function desktopPetWindowSettingsKey(settings: DesktopPetWindowSettings) {
   return `${settings.scale_percent}:${settings.opacity_percent}:${settings.pass_through ? "1" : "0"}:${settings.hide_on_hover ? "1" : "0"}`;
+}
+
+function desktopPetStructuralRenderKey(input: {
+  card?: CuuCard | undefined;
+  status_text?: string | undefined;
+  include_reject_reasons: boolean;
+  pet_window_settings: DesktopPetWindowSettings;
+  requested_model_pack_id?: string | undefined;
+  compact_card: boolean;
+  window_mode_error?: string | undefined;
+  window_mode_status?: "syncing" | "failed" | undefined;
+  locale: WorkHubLocale;
+}) {
+  return JSON.stringify({
+    card: input.card ?? null,
+    status_text: input.status_text ?? null,
+    include_reject_reasons: input.include_reject_reasons,
+    pet_window_settings: input.pet_window_settings,
+    requested_model_pack_id: input.requested_model_pack_id ?? null,
+    compact_card: input.compact_card,
+    window_mode_error: input.window_mode_error ?? null,
+    window_mode_status: input.window_mode_status ?? null,
+    locale: input.locale
+  });
 }
 
 function desktopPetPointerStateEqual(a: DesktopPetPointerSnapshot, b: DesktopPetPointerSnapshot) {

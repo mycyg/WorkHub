@@ -1,0 +1,1013 @@
+﻿{
+    "passed":  true,
+    "scenario":  "idle-long-run",
+    "sse_disabled_for_scenario":  true,
+    "cuu_qa_hide_on_hover":  false,
+    "cuu_qa_preferences":  {
+                               "pet_scale_percent":  100,
+                               "pet_opacity_percent":  100,
+                               "pet_pass_through":  false,
+                               "pet_hide_on_hover":  false,
+                               "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                           },
+    "scenario_events":  [
+
+                        ],
+    "process_id":  43908,
+    "frame_count":  28,
+    "interval_ms":  220,
+    "frames_dir":  "docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\hijiki\\idle-long-run\\frames",
+    "contact_sheet":  "docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\hijiki\\idle-long-run\\cuu-motion-contact-sheet.png",
+    "first_frame_gate":  {
+                             "passed":  true,
+                             "attempts":  7,
+                             "probe_path":  "docs\\workhub\\05-clients\\assets\\audit\\2026-06-08-cuu-live2d-cat-runtime\\hijiki\\idle-long-run\\first-frame-probe.png",
+                             "min_visual_pixels":  12000,
+                             "pixel_report":  {
+                                                  "samples":  88400,
+                                                  "foreground_pixels":  20886,
+                                                  "light_pixels":  1,
+                                                  "dark_pixels":  87781,
+                                                  "visual_pixels":  20886,
+                                                  "sample_step":  1,
+                                                  "width":  260,
+                                                  "height":  340
+                                              }
+                         },
+    "max_vs_first_mean_abs_delta":  7.625,
+    "max_vs_previous_mean_abs_delta":  7.785,
+    "max_vs_first_changed_pixels_gt8":  3742,
+    "max_vs_previous_changed_pixels_gt8":  3791,
+    "frame_pixel_reports":  [
+                                {
+                                    "frame":  0,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20835,
+                                                         "light_pixels":  3,
+                                                         "dark_pixels":  87807,
+                                                         "visual_pixels":  20835,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  1,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20624,
+                                                         "light_pixels":  2,
+                                                         "dark_pixels":  87827,
+                                                         "visual_pixels":  20624,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  2,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20732,
+                                                         "light_pixels":  1,
+                                                         "dark_pixels":  87843,
+                                                         "visual_pixels":  20732,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  3,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20722,
+                                                         "light_pixels":  1,
+                                                         "dark_pixels":  87837,
+                                                         "visual_pixels":  20722,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  4,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20562,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87833,
+                                                         "visual_pixels":  20562,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  5,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20621,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87829,
+                                                         "visual_pixels":  20621,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  6,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20587,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87811,
+                                                         "visual_pixels":  20587,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  7,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20660,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87796,
+                                                         "visual_pixels":  20660,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  8,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20701,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87786,
+                                                         "visual_pixels":  20701,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  9,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20743,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87789,
+                                                         "visual_pixels":  20743,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  10,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20666,
+                                                         "light_pixels":  2,
+                                                         "dark_pixels":  87827,
+                                                         "visual_pixels":  20666,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  11,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20763,
+                                                         "light_pixels":  1,
+                                                         "dark_pixels":  87799,
+                                                         "visual_pixels":  20763,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  12,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20793,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87803,
+                                                         "visual_pixels":  20793,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  13,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20810,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87808,
+                                                         "visual_pixels":  20810,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  14,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20699,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87874,
+                                                         "visual_pixels":  20699,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  15,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20728,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87931,
+                                                         "visual_pixels":  20728,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  16,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20671,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87924,
+                                                         "visual_pixels":  20671,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  17,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20702,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87933,
+                                                         "visual_pixels":  20702,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  18,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20692,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87938,
+                                                         "visual_pixels":  20692,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  19,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20754,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87945,
+                                                         "visual_pixels":  20754,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  20,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20852,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87815,
+                                                         "visual_pixels":  20852,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  21,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20920,
+                                                         "light_pixels":  2,
+                                                         "dark_pixels":  87845,
+                                                         "visual_pixels":  20920,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  22,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  21029,
+                                                         "light_pixels":  14,
+                                                         "dark_pixels":  87877,
+                                                         "visual_pixels":  21029,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  23,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20973,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87991,
+                                                         "visual_pixels":  20973,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  24,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  21075,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  88001,
+                                                         "visual_pixels":  21075,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  25,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  21068,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  88004,
+                                                         "visual_pixels":  21068,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  26,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  21043,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  88011,
+                                                         "visual_pixels":  21043,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                },
+                                {
+                                    "frame":  27,
+                                    "pixel_report":  {
+                                                         "samples":  88400,
+                                                         "foreground_pixels":  20987,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  87997,
+                                                         "visual_pixels":  20987,
+                                                         "sample_step":  1,
+                                                         "width":  260,
+                                                         "height":  340
+                                                     }
+                                }
+                            ],
+    "long_run":  {
+                     "enabled":  true,
+                     "passed":  true,
+                     "min_visual_ratio":  0.7,
+                     "min_visual_pixels":  14620,
+                     "low_visual_frames":  [
+
+                                           ],
+                     "rect_drift_frames":  [
+
+                                           ],
+                     "changed_frames_gt8_threshold":  60,
+                     "changed_frames_gt8_count":  27,
+                     "min_changed_frames":  3,
+                     "min_frame_visual_pixels":  20562
+                 },
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.449,
+                                        "changed_pixels_gt8":  862,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.449,
+                                           "changed_pixels_gt8":  862,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  2.899,
+                                        "changed_pixels_gt8":  1622,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.022,
+                                           "changed_pixels_gt8":  1226,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.31,
+                                        "changed_pixels_gt8":  2721,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.187,
+                                           "changed_pixels_gt8":  2804,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  4,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.309,
+                                        "changed_pixels_gt8":  2773,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.925,
+                                           "changed_pixels_gt8":  1210,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  5,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.768,
+                                        "changed_pixels_gt8":  2238,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.418,
+                                           "changed_pixels_gt8":  2483,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  6,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.494,
+                                        "changed_pixels_gt8":  2490,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.505,
+                                           "changed_pixels_gt8":  1648,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  7,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  2.202,
+                                        "changed_pixels_gt8":  1300,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.265,
+                                           "changed_pixels_gt8":  2792,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  8,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.805,
+                                        "changed_pixels_gt8":  2485,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.768,
+                                           "changed_pixels_gt8":  2952,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  9,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.635,
+                                        "changed_pixels_gt8":  2845,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.907,
+                                           "changed_pixels_gt8":  1123,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  10,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.11,
+                                        "changed_pixels_gt8":  638,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.377,
+                                           "changed_pixels_gt8":  2779,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  11,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.379,
+                                        "changed_pixels_gt8":  1974,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  3.057,
+                                           "changed_pixels_gt8":  1899,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  12,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.361,
+                                        "changed_pixels_gt8":  1977,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.823,
+                                           "changed_pixels_gt8":  560,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  13,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.061,
+                                        "changed_pixels_gt8":  2269,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.7,
+                                           "changed_pixels_gt8":  2946,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  14,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.172,
+                                        "changed_pixels_gt8":  649,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.423,
+                                           "changed_pixels_gt8":  2381,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  15,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  3.68,
+                                        "changed_pixels_gt8":  2071,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  3.252,
+                                           "changed_pixels_gt8":  1994,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  16,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  2.183,
+                                        "changed_pixels_gt8":  1419,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  2.265,
+                                           "changed_pixels_gt8":  1407,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  17,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  6.427,
+                                        "changed_pixels_gt8":  3187,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  6.503,
+                                           "changed_pixels_gt8":  3317,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  18,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.226,
+                                        "changed_pixels_gt8":  815,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  6.66,
+                                           "changed_pixels_gt8":  3355,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  19,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.346,
+                                        "changed_pixels_gt8":  2758,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  5.585,
+                                           "changed_pixels_gt8":  2906,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  20,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.614,
+                                        "changed_pixels_gt8":  2413,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  7.785,
+                                           "changed_pixels_gt8":  3791,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  21,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.487,
+                                        "changed_pixels_gt8":  2321,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.314,
+                                           "changed_pixels_gt8":  919,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  22,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  6.587,
+                                        "changed_pixels_gt8":  3256,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  3.917,
+                                           "changed_pixels_gt8":  2081,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  23,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.723,
+                                        "changed_pixels_gt8":  883,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  6.106,
+                                           "changed_pixels_gt8":  3103,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  24,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  4.932,
+                                        "changed_pixels_gt8":  2550,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.38,
+                                           "changed_pixels_gt8":  2352,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  25,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.034,
+                                        "changed_pixels_gt8":  2593,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.43,
+                                           "changed_pixels_gt8":  256,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  26,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  5.123,
+                                        "changed_pixels_gt8":  2610,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.359,
+                                           "changed_pixels_gt8":  193,
+                                           "samples":  22100
+                                       }
+                   },
+                   {
+                       "frame":  27,
+                       "rect":  {
+                                    "Left":  1764,
+                                    "Top":  740,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  260,
+                                    "Height":  340
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  7.625,
+                                        "changed_pixels_gt8":  3742,
+                                        "samples":  22100
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  4.569,
+                                           "changed_pixels_gt8":  2473,
+                                           "samples":  22100
+                                       }
+                   }
+               ]
+}

@@ -16,6 +16,9 @@ visuals:
   - ./assets/cuu/cuu-character-animation-states.png
   - ./assets/cuu/cuu-desktop-approval-search.png
   - ./assets/cuu/cuu-option-first-clarify.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/idle-long-run/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/look-only/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/look-only/cuu-motion-contact-sheet.png
 ---
 
 # 当前真实截图审计与后续施工计划
@@ -29,7 +32,7 @@ visuals:
 | Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
 | Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
-| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；核心概念图已用真实模型帧重绘 | 仍缺两只模型的真实 Tauri 多帧录屏、动作语义验证和长期稳定性 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run 与黑/白 look-only 已有真实 Tauri 证据 | 仍缺审批、检索、同步、拖拽、hide-on-hover、settings matrix 和长期稳定性 |
 | Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
 | 多语言 | 中英 locale 合同已落 | 需要覆盖更多非 Gold Path 页面和桌宠固定文案 |
 
@@ -81,6 +84,7 @@ visuals:
 | 概念源帧 | `./assets/audit/2026-06-08-cuu-live2d-model-preview/` 保留 Hijiki / Tororo 浏览器模型帧、DOM 和 report |
 | 主窗 | `packages/ui/src/gold-path/render.ts` 和 desktop main shell 不再承载 Cuu 本体 |
 | Rust window | `client-tauri/src-tauri/src/pet_window.rs` / `pet_commands.rs` 承担几何、设置、拖拽和 cursor sample |
+| Hover 稳定性 | `apps/desktop-webview/src/pet-surface.ts` pointer/idle tick 只 patch CSS variables / `data-*`，不重建 Live2D iframe |
 
 ## 4. 已清理内容
 
@@ -98,9 +102,9 @@ visuals:
 
 | 要求 | 为什么还不能算通过 | 需要的证据 |
 |---|---|---|
-| Cuu 鲜活感 | 现在只是换到 Live2D runtime，尚未对黑/白模型录制真实窗口动作 | 黑猫/白猫 GIF/MP4/contact sheet/diff report |
+| Cuu 鲜活感 | 黑猫 idle 与黑/白 hover 已补真实窗口证据，但业务动作还未覆盖 | approval/search/sync/done/offline GIF/MP4/contact sheet/diff report |
 | Cuu 任务动作 | 业务状态到 `.mtn` 的映射还需要场景化验收 | approval/search/sync/done/offline 事件录屏 |
-| 桌面交互 | hover/tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
+| 桌面交互 | hover 固定锚点已通过；tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
 | 主窗无 Cuu | 已做源码收束，但需要截图确认 | Web 与 desktop 主窗截图审查 |
 | 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
 | 授权 | Hijiki/Tororo 来源需商用确认 | 授权记录或原创替换计划 |
@@ -114,7 +118,7 @@ visuals:
 | 场景 | 触发 | 验收 |
 |---|---|---|
 | idle 10s | 无事件 | 持续动作，非空，非整体缩放 |
-| hover | 鼠标靠近 | 看向鼠标或姿态变化 |
+| hover | 鼠标靠近 | 窗口 rect 固定，不能整只 Cuu 位移/闪烁 |
 | tap | 点击 Cuu | 气泡或反馈动作 |
 | drag | 拖拽窗口 | 位置变化、释放后保存 |
 | approval | 注入审批卡 | 动作 + 轻卡完整 |
@@ -156,8 +160,10 @@ visuals:
 | 证据 | 当前状态 |
 |---|---|
 | 黑/白 Live2D 概念图 | 已同步到 `./assets/cuu/`，源帧已入 `./assets/audit/2026-06-08-cuu-live2d-model-preview/` |
-| 黑猫 idle contact sheet | 待生成 |
+| 黑猫 idle contact sheet | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/idle-long-run/cuu-motion-contact-sheet.png` |
+| 黑猫 hover fixed anchor | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/look-only/cuu-motion-contact-sheet.png` |
 | 黑猫 approval/search GIF/MP4 | 待生成 |
+| 白猫 hover fixed anchor | 已生成：`./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/look-only/cuu-motion-contact-sheet.png` |
 | 白猫 idle contact sheet | 待生成 |
 | 白猫 approval/search GIF/MP4 | 待生成 |
 | settings matrix report | 待生成 |
@@ -173,6 +179,7 @@ visuals:
 - Web / desktop 主窗没有 Cuu 本体。
 - 黑猫/白猫真实 Tauri 多帧录屏通过。
 - 动作不是只缩放。
+- 鼠标靠近不移动窗口、不移动整只 Cuu、不重建 iframe。
 - card mode 不裁切。
 - pass-through / hide-on-hover 有恢复策略。
 - `git diff --name-only` 不含 `reference/` / `references/`。

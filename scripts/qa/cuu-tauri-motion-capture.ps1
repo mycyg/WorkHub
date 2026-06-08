@@ -7,7 +7,7 @@ param(
   [int]$MinFirstFrameVisualPixels = 12000,
   [double]$MinLongRunVisualRatio = 0.7,
   [int]$MinLongRunChangedFrames = 3,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "drag-smoothing", "hide-on-hover")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -419,11 +419,12 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover") {
     return $null
   }
 
   $isLookAvoidance = $ScenarioName -eq "look-avoidance"
+  $isLookOnly = $ScenarioName -eq "look-only"
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
@@ -443,6 +444,63 @@ function Invoke-CuuInteractionScenarioFrame {
   $action = $null
   $x = $centerX
   $y = $centerY
+
+  if ($isLookOnly) {
+    switch ($FrameIndex) {
+      1 {
+        $action = "cursor_near_left_outside"
+        $x = $nearLeftX
+        $y = $nearY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      4 {
+        $action = "cursor_near_right_outside"
+        $x = $nearRightX
+        $y = $nearY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      7 {
+        $action = "hover_top_right_inside"
+        $x = $hoverX
+        $y = $hoverY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      12 {
+        $action = "cursor_leave"
+        $x = $leaveX
+        $y = $leaveY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      16 {
+        $action = "hover_inside_again"
+        $x = $hoverX
+        $y = $hoverY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+      21 {
+        $action = "cursor_leave_recover"
+        $x = $leaveX
+        $y = $leaveY
+        Set-CuuCursorPosition -X $x -Y $y
+      }
+    }
+
+    if (-not $action) {
+      return $null
+    }
+
+    $postDelayMs = if ($action.StartsWith("hover") -or $action.StartsWith("cursor_near")) { 320 } else { 180 }
+    Start-Sleep -Milliseconds $postDelayMs
+    return [pscustomobject]@{
+      frame = $FrameIndex
+      action = $action
+      cursor = [pscustomobject]@{
+        x = $x
+        y = $y
+      }
+      window_rect = $Window.Rect
+    }
+  }
 
   if ($isHideOnHover) {
     switch ($FrameIndex) {
@@ -667,6 +725,13 @@ try {
     throw "Cuu pet first visual frame did not reach pixel threshold visual>=$MinFirstFrameVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
   }
   $pet = $firstFrameGate.Pet
+  if ($Scenario -eq "look-only") {
+    Start-Sleep -Milliseconds 700
+    $stabilizedPet = Select-CuuWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    if ($stabilizedPet) {
+      $pet = $stabilizedPet
+    }
+  }
 
   $frames = [System.Collections.Generic.List[string]]::new()
   $rects = [System.Collections.Generic.List[object]]::new()

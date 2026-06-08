@@ -32,6 +32,7 @@ use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     path::BaseDirectory,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    utils::config::Color,
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
     PhysicalPosition as TauriPhysicalPosition, State, WebviewWindowBuilder,
 };
@@ -567,13 +568,30 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
             std::env::var(name).ok()
         }));
 
-    WebviewWindowBuilder::from_config(app.handle(), pet_config)
+    let window = WebviewWindowBuilder::from_config(app.handle(), pet_config)
         .map_err(|error| format!("failed to create pet window builder: {error}"))?
+        .transparent(true)
+        .background_color(Color(0, 0, 0, 0))
+        .skip_taskbar(true)
+        .shadow(false)
         .initialization_script(initialization_script)
         .build()
         .map_err(|error| format!("failed to create pet window: {error}"))?;
+    configure_pet_window_chrome(&window)?;
 
     Ok(())
+}
+
+fn configure_pet_window_chrome(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_background_color(Some(Color(0, 0, 0, 0)))
+        .map_err(|error| format!("failed to make pet window background transparent: {error}"))?;
+    window
+        .set_shadow(false)
+        .map_err(|error| format!("failed to disable pet window shadow: {error}"))?;
+    window
+        .set_skip_taskbar(true)
+        .map_err(|error| format!("failed to keep pet window out of taskbar: {error}"))
 }
 
 fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> String {

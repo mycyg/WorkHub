@@ -32,27 +32,27 @@ export function createDesktopPetVisualQaReport(input: {
   const checks = [
     qaCheck(
       "transparent_window",
-      hasAll(input.idle.css, ["html,body,#root", "background:transparent", ".wh-pet-surface", "overflow:hidden"]),
-      "pet surface root and body must stay transparent for the Tauri pet window."
+      hasAll(input.idle.css, ["html,body,#root", "background:rgba(0,0,0,0)!important", ".wh-pet-surface", "box-shadow:none", "overflow:hidden"]),
+      "pet surface root, body and surface must stay alpha-transparent for the Tauri pet window."
     ),
     qaCheck(
       "right_bottom_independent_surface",
       hasAll(input.idle.css, [
         ".wh-pet-surface",
         "position:relative",
-        "width:var(--wh-pet-window-w,180px)",
-        "height:var(--wh-pet-window-h,220px)",
+        "width:var(--wh-pet-window-w,260px)",
+        "height:var(--wh-pet-window-h,340px)",
         ".wh-pet-surface[data-pet-window-mode=card]",
-        "width:var(--wh-pet-window-w,380px)",
-        "height:var(--wh-pet-window-h,560px)",
-        "right:calc(8px * var(--wh-pet-scale,1))",
-        "bottom:calc(8px * var(--wh-pet-scale,1))",
+        "width:var(--wh-pet-window-w,520px)",
+        "height:var(--wh-pet-window-h,640px)",
+        "right:calc(4px * var(--wh-pet-scale,1))",
+        "bottom:calc(4px * var(--wh-pet-scale,1))",
         "pointer-events:none"
       ]) &&
         input.idle.html.includes('data-pet-scale-percent="100"') &&
-        input.idle.html.includes('data-pet-window-width="180"') &&
-        input.idle.html.includes('data-pet-window-height="220"'),
-      "Cuu must be anchored inside the local Tauri pet window canvas without depending on the WebView viewport."
+        input.idle.html.includes('data-pet-window-width="260"') &&
+        input.idle.html.includes('data-pet-window-height="340"'),
+      "Cuu must be anchored in a full-body transparent Tauri pet window, not a small framed WebView card."
     ),
     qaCheck(
       "pet_body_hit_area",
@@ -70,8 +70,8 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.html.includes("--wh-pet-pointer-smoothing-alpha:0.58") &&
         input.idle.css.includes("--wh-pet-avoid-x-px") &&
         input.idle.css.includes(".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-cat-live2d") &&
-        input.idle.css.includes("transform:translate(var(--wh-pet-look-head-x-px"),
-      "Cuu must expose continuous pointer look variables, smoothing alpha and a hover avoidance pose for screenshot QA."
+        !input.idle.css.includes(".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-cat-live2d{transform:"),
+      "Cuu must expose pointer look variables without translating or rotating the whole desktop pet body."
     ),
     qaCheck(
       "image_hover_hide_handfeel",
@@ -96,6 +96,7 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.live2d.model_pack_id === "cuu-hijiki-live2d-cubism2" &&
         input.idle.html.includes('data-cuu-live2d-runtime="live2d_cubism2_cat"') &&
         input.idle.html.includes('data-cuu-live2d-status="approved_cat_option"') &&
+        input.idle.html.includes('data-cuu-live2d-framing="transparent_full_body"') &&
         input.idle.html.includes('data-cuu-live2d-model="hijiki"') &&
         input.idle.html.includes('data-cuu-live2d-appearance="black_cat"') &&
         input.idle.html.includes('data-cuu-live2d-frame-url="./cuu/live2d/hijiki/cuu-hijiki.html"') &&
@@ -117,7 +118,7 @@ export function createDesktopPetVisualQaReport(input: {
     ),
     qaCheck(
       "card_mode_light_bubble",
-      hasAll(input.card.css, [".wh-pet-bubble", "right:132px", "bottom:28px", "width:min(250px,calc(100vw - 148px))"]) &&
+      hasAll(input.card.css, [".wh-pet-bubble", "right:calc(254px * var(--wh-pet-scale,1))", "bottom:calc(36px * var(--wh-pet-scale,1))", "width:min(286px,calc(100vw - 254px))"]) &&
         input.card.html.includes('data-pet-window-mode="card"') &&
         input.card.html.includes('data-pet-bubble="true"'),
       "expanded mode must remain a small option bubble beside Cuu, not a full application panel."

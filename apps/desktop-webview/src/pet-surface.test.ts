@@ -187,10 +187,11 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.equal(idle.live2d.motion_state, "idle_tail_sway");
   assert.match(idle.html, /data-wh-surface="pet"/u);
   assert.match(idle.html, /data-pet-window-mode="body_only"/u);
-  assert.match(idle.html, /data-pet-window-width="180"/u);
-  assert.match(idle.html, /data-pet-window-height="220"/u);
+  assert.match(idle.html, /data-pet-window-width="260"/u);
+  assert.match(idle.html, /data-pet-window-height="340"/u);
   assert.match(idle.html, /data-cuu-visual-mode="live2d_cat"/u);
   assert.match(idle.html, /data-cuu-live2d-runtime="live2d_cubism2_cat"/u);
+  assert.match(idle.html, /data-cuu-live2d-framing="transparent_full_body"/u);
   assert.match(idle.html, /data-cuu-live2d-model="hijiki"/u);
   assert.match(idle.html, /data-cuu-live2d-appearance="black_cat"/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
@@ -272,6 +273,7 @@ test("pet surface exposes input-reactive pointer state for Live2D cat QA", () =>
   assert.match(surface.html, /--wh-pet-look-head-x-px:3\.78px/u);
   assert.match(surface.html, /data-cuu-live2d-state="look_at_mouse"/u);
   assert.match(surface.css, /data-pet-cursor-near=true.*?\.wh-cuu-cat-live2d/u);
+  assert.doesNotMatch(surface.css, /data-pet-cursor-near=true\]\s+\.wh-cuu-cat-live2d\{transform:/u);
   assert.match(surface.css, /data-pet-dragging=true.*?cursor:grabbing/u);
 });
 
@@ -415,7 +417,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
         async invoke(command: string, args?: Record<string, unknown>) {
           calls.push(`${command}:${args?.mode ?? args?.scalePercent ?? ""}`);
           if (command === "set_pet_window_mode") {
-            return { placement: { mode: args?.mode, size: { width: 380, height: 560 } } };
+            return { placement: { mode: args?.mode, size: { width: 520, height: 640 } } };
           }
           if (command === "set_pet_window_settings") {
             return {

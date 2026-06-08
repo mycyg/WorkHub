@@ -286,7 +286,7 @@ mod tests {
         let plan = set_pet_window_mode_command_plan(PetWindowModeCommandInput {
             mode: PetWindowMode::Card,
             work_area: work_area(),
-            body_position: Some(LogicalPosition { x: 1716, y: 796 }),
+            body_position: Some(LogicalPosition { x: 1600, y: 650 }),
             settings: None,
         });
 
@@ -296,9 +296,9 @@ mod tests {
         assert_eq!(plan.label, "pet");
         assert_eq!(plan.focus, false);
         assert_eq!(placement.mode, PetWindowMode::Card);
-        assert_eq!(placement.position, LogicalPosition { x: 1516, y: 456 });
-        assert_eq!(placement.size.width, 380);
-        assert_eq!(placement.size.height, 560);
+        assert_eq!(placement.position, LogicalPosition { x: 1340, y: 350 });
+        assert_eq!(placement.size.width, 520);
+        assert_eq!(placement.size.height, 640);
         assert_eq!(settings.scale_percent, 100);
     }
 
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(plan.label, "pet");
         assert_eq!(plan.focus, false);
         assert_eq!(placement.mode, PetWindowMode::BodyOnly);
-        assert_eq!(placement.position, LogicalPosition { x: 1716, y: 796 });
+        assert_eq!(placement.position, LogicalPosition { x: 1636, y: 676 });
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
             hide_on_hover: true,
             mode: PetWindowMode::Card,
             work_area: work_area(),
-            body_position: Some(LogicalPosition { x: 1600, y: 700 }),
+            body_position: Some(LogicalPosition { x: 1500, y: 500 }),
         });
 
         let placement = plan.placement.expect("placement should be present");
@@ -336,9 +336,9 @@ mod tests {
 
         assert_eq!(plan.command, SET_PET_WINDOW_SETTINGS_COMMAND);
         assert_eq!(placement.mode, PetWindowMode::Card);
-        assert_eq!(placement.size.width, 475);
-        assert_eq!(placement.size.height, 700);
-        assert_eq!(placement.position, LogicalPosition { x: 1350, y: 275 });
+        assert_eq!(placement.size.width, 650);
+        assert_eq!(placement.size.height, 800);
+        assert_eq!(placement.position, LogicalPosition { x: 1175, y: 125 });
         assert_eq!(settings.scale_percent, 125);
         assert_eq!(settings.opacity_percent, 80);
         assert_eq!(settings.pass_through, true);
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn card_window_position_converts_back_to_body_anchor_without_drift() {
-        let body = LogicalPosition { x: 1716, y: 796 };
+        let body = LogicalPosition { x: 1340, y: 350 };
         let card = place_pet_window_from_body_anchor(
             work_area(),
             body,
@@ -373,7 +373,7 @@ mod tests {
             PetWindowSettings::default(),
         );
 
-        assert_eq!(card.position, LogicalPosition { x: 1516, y: 456 });
+        assert_eq!(card.position, LogicalPosition { x: 1080, y: 50 });
         assert_eq!(
             body_position_from_window_position(PetWindowMode::Card, card.position),
             body
@@ -394,8 +394,8 @@ mod tests {
             LogicalRect {
                 x: 10,
                 y: 20,
-                width: 180,
-                height: 220
+                width: 260,
+                height: 340
             }
         );
         assert_eq!(
@@ -403,8 +403,8 @@ mod tests {
             LogicalRect {
                 x: 10,
                 y: 20,
-                width: 380,
-                height: 560
+                width: 520,
+                height: 640
             }
         );
     }
@@ -418,19 +418,19 @@ mod tests {
 
         assert_eq!(
             restore_saved_body_position(&saved, work_area()),
-            LogicalPosition { x: 24, y: 796 }
+            LogicalPosition { x: 24, y: 676 }
         );
     }
 
     #[test]
     fn cursor_near_command_returns_pointer_decision_for_scheduler() {
         let plan = sample_pet_cursor_near_command_plan(PetWindowPointerInput {
-            cursor: LogicalPosition { x: 1800, y: 900 },
+            cursor: LogicalPosition { x: 1750, y: 820 },
             window: LogicalRect {
-                x: 1716,
-                y: 796,
-                width: 180,
-                height: 220,
+                x: 1636,
+                y: 676,
+                width: 260,
+                height: 340,
             },
             near_radius: 72,
         });
@@ -439,7 +439,7 @@ mod tests {
         assert_eq!(plan.command, SAMPLE_PET_CURSOR_NEAR_COMMAND);
         assert_eq!(pointer.inside_window, true);
         assert_eq!(pointer.cursor_near, true);
-        assert_eq!(pointer.look_x_percent, -4);
-        assert_eq!(pointer.look_y_percent, -3);
+        assert_eq!(pointer.look_x_percent, -8);
+        assert_eq!(pointer.look_y_percent, -11);
     }
 }

@@ -52,11 +52,11 @@ visuals:
 | 模型白名单 | `packages/cuu/src/model-pack.ts` | 只注册黑猫/白猫；校验 default-ready、动作覆盖、窗口能力 |
 | 偏好归一化 | `packages/cuu/src/controller.ts` | 只接受可选模型包 ID；旧 ID 归一化为 `undefined` |
 | 桌宠渲染 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 根据模型包选择 Hijiki/Tororo iframe、model json 与状态动作 |
-| 桌宠窗口 | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Live2D cat + 轻气泡 |
+| 桌宠窗口 | `apps/desktop-webview/src/pet-surface.ts` | 只渲染 Live2D cat + 轻气泡；pointer/idle 变化走 DOM patch，不重建 iframe |
 | Cuu 偏好 | `apps/desktop-webview/src/cuu-preferences.ts` | 中英双语二选项；选中为当前，另一项为可选择 |
 | QA 合同 | `apps/desktop-webview/src/pet-surface-qa.ts` | 验证独立透明窗口、Live2D cat runtime、无旧实验 DOM |
 | 主窗事件卡 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 只保留严肃通知桥接，不渲染 Cuu 形象 |
-| QA 模型注入 | `scripts/qa/cuu-tauri-motion-capture.ps1` / `client-tauri/src-tauri/src/main.rs` | 允许 QA 用黑猫或白猫 pack id 启动 pet window |
+| QA 模型注入 | `scripts/qa/cuu-tauri-motion-capture.ps1` / `client-tauri/src-tauri/src/main.rs` | 允许 QA 用黑猫或白猫 pack id 启动 pet window；`look-only` 验证 hover 不移动窗口 |
 
 ## 5. 已清理范围
 
@@ -101,14 +101,15 @@ Cuu 保留业务状态和 idle 微动作语义：
 
 - pet window 首帧非空，全身可见，不是只露耳朵。
 - Cuu 有持续动作，不只是缩放。
+- 鼠标靠近不移动整只 Cuu，不闪烁，不重建 iframe；黑猫/白猫 `look-only` capture 的窗口 rect 必须稳定。
 - 黑猫/白猫切换后 iframe、model json、data attrs 一致。
 - Web / desktop 主窗没有 Cuu 形象 DOM。
 - 旧实验 class、runtime data attribute 或模型 ID 不出现在运行态 HTML。
 
 ## 8. 后续施工计划
 
-1. 录黑猫真实 Tauri motion：idle、hover、tap、drag、approval、search、sync、done、offline。
-2. 录白猫同等场景，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
+1. 继续录黑猫真实 Tauri motion：tap、drag、approval、search、sync、done、offline。
+2. 继续录白猫同等场景，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 3. 输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`。
 4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
 5. 完成多屏恢复、full hide/pass-through 安全恢复、托盘显隐和通知点击 deep-link。

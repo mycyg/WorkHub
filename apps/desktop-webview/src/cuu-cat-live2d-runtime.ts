@@ -48,15 +48,15 @@ const catLive2DModels = {
 } as const;
 
 const desktopCuuCatLive2DCss = [
-  ".wh-cuu-cat-live2d{position:relative;display:block;width:var(--wh-cuu-cat-w);height:var(--wh-cuu-cat-h);pointer-events:none;isolation:isolate;overflow:hidden;flex:0 0 auto;filter:drop-shadow(0 14px 18px rgba(20,16,14,.24));transform-origin:50% 88%;transition:transform 120ms ease-out,filter 120ms ease-out}",
-  ".wh-cuu-cat-live2d-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:none;overflow:hidden}",
+  ".wh-cuu-cat-live2d{position:relative;display:block;width:var(--wh-cuu-cat-w);height:var(--wh-cuu-cat-h);border:0;background:rgba(0,0,0,0)!important;pointer-events:none;isolation:isolate;overflow:hidden;flex:0 0 auto;filter:drop-shadow(0 14px 18px rgba(20,16,14,.24));transform-origin:50% 88%;transition:transform 120ms ease-out,filter 120ms ease-out}",
+  ".wh-cuu-cat-live2d-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(0,0,0,0)!important;pointer-events:none;overflow:hidden}",
   ".wh-cuu-cat-live2d-fallback{display:none}",
   ".wh-cuu-cat-live2d[data-cuu-live2d-state=asking_approval_bounce],.wh-cuu-cat-live2d[data-cuu-live2d-state=tap_bubble]{animation:wh-cuu-cat-live2d-attention 1200ms ease-in-out infinite}",
   ".wh-cuu-cat-live2d[data-cuu-live2d-state=celebrating_jump],.wh-cuu-cat-live2d[data-cuu-live2d-state=wave_hello]{animation:wh-cuu-cat-live2d-celebrate 980ms ease-out infinite}",
   ".wh-cuu-cat-live2d[data-cuu-live2d-state=thinking_tail],.wh-cuu-cat-live2d[data-cuu-live2d-state=searching_evidence_peek],.wh-cuu-cat-live2d[data-cuu-live2d-state=syncing_files_spin]{animation:wh-cuu-cat-live2d-working 2200ms ease-in-out infinite}",
   ".wh-cuu-cat-live2d[data-cuu-live2d-state=worried_ears],.wh-cuu-cat-live2d[data-cuu-live2d-state=offline_sleep]{filter:drop-shadow(0 12px 16px rgba(20,16,14,.2)) saturate(.82);animation:wh-cuu-cat-live2d-worried 2600ms ease-in-out infinite}",
   ".wh-cuu-cat-live2d[data-cuu-live2d-state=drag_hold]{animation:wh-cuu-cat-live2d-drag 1000ms ease-in-out infinite}",
-  ".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-cat-live2d{transform:translate(var(--wh-pet-look-head-x-px,0px),var(--wh-pet-look-head-y-px,0px)) rotate(var(--wh-pet-look-rotate-deg,0deg));filter:drop-shadow(0 16px 18px rgba(20,16,14,.26)) saturate(1.03)}",
+  ".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-cat-live2d{filter:drop-shadow(0 16px 18px rgba(20,16,14,.26)) saturate(1.03)}",
   "@keyframes wh-cuu-cat-live2d-attention{0%,100%{transform:translateY(0) scale(1)}42%{transform:translateY(-6px) scale(1.018)}72%{transform:translateY(1px) scale(.995)}}",
   "@keyframes wh-cuu-cat-live2d-celebrate{0%,100%{transform:translateY(0) rotate(0deg)}45%{transform:translateY(-9px) rotate(-2deg)}70%{transform:translateY(-1px) rotate(2deg)}}",
   "@keyframes wh-cuu-cat-live2d-working{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-2px) rotate(1.5deg)}}",
@@ -85,8 +85,8 @@ function renderDesktopCuuCatLive2D(
 ): DesktopCuuCatLive2DRender {
   const selection = resolveCuuVisibleModelPack({ requested_pack_id: options.requested_model_pack_id });
   const model = modelConfigForPack(selection.active_pack.pack_id);
-  const displayWidth = options.display_width_px ?? 148;
-  const displayHeight = Math.round(displayWidth * 1.34);
+  const displayWidth = options.display_width_px ?? 230;
+  const displayHeight = Math.round(displayWidth * 1.39);
   const motionState = state as CuuMotionClipState;
   const style = [
     `--wh-cuu-cat-w:${displayWidth}px`,
@@ -96,7 +96,7 @@ function renderDesktopCuuCatLive2D(
   const modelUrl = documentRelativeAssetPath(model.model_url);
 
   return {
-    html: `<div class="wh-cuu-cat-live2d" data-cuu-live2d-runtime="live2d_cubism2_cat" data-cuu-live2d-status="approved_cat_option" data-cuu-live2d-model="${escapeHtml(model.model_key)}" data-cuu-live2d-appearance="${escapeHtml(model.appearance)}" data-cuu-live2d-state="${escapeHtml(state)}" data-cuu-live2d-motion="${escapeHtml(motionFileForState(motionState))}" data-cuu-live2d-model-url="${escapeHtml(modelUrl)}" data-cuu-live2d-frame-url="${escapeHtml(iframeUrl)}" data-cuu-live2d-layer-count="native_moc" data-cuu-model-pack="${escapeHtml(selection.active_pack.pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(selection.reason)}" aria-label="${escapeHtml(labelForState(motionState, model.label))}" style="${escapeHtml(style)}"><iframe class="wh-cuu-cat-live2d-frame" title="${escapeHtml(model.label)}" src="${escapeHtml(iframeUrl)}" loading="eager"></iframe><span class="wh-cuu-cat-live2d-fallback" aria-hidden="true">Cuu</span></div>`,
+    html: `<div class="wh-cuu-cat-live2d" data-cuu-live2d-runtime="live2d_cubism2_cat" data-cuu-live2d-status="approved_cat_option" data-cuu-live2d-framing="transparent_full_body" data-cuu-live2d-model="${escapeHtml(model.model_key)}" data-cuu-live2d-appearance="${escapeHtml(model.appearance)}" data-cuu-live2d-state="${escapeHtml(state)}" data-cuu-live2d-motion="${escapeHtml(motionFileForState(motionState))}" data-cuu-live2d-model-url="${escapeHtml(modelUrl)}" data-cuu-live2d-frame-url="${escapeHtml(iframeUrl)}" data-cuu-live2d-layer-count="native_moc" data-cuu-model-pack="${escapeHtml(selection.active_pack.pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(selection.reason)}" aria-label="${escapeHtml(labelForState(motionState, model.label))}" style="${escapeHtml(style)}"><iframe class="wh-cuu-cat-live2d-frame" title="${escapeHtml(model.label)}" src="${escapeHtml(iframeUrl)}" loading="eager"></iframe><span class="wh-cuu-cat-live2d-fallback" aria-hidden="true">Cuu</span></div>`,
     css: desktopCuuCatLive2DCss,
     runtime_kind: "live2d_cubism2_cat",
     status: "approved_cat_option",

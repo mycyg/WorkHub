@@ -107,12 +107,12 @@ pub const DEFAULT_PET_CURSOR_NEAR_RADIUS: u32 = 72;
 pub const DEFAULT_PET_WINDOW_SCALE_PERCENT: u16 = 100;
 pub const DEFAULT_PET_WINDOW_OPACITY_PERCENT: u8 = 100;
 pub const PET_BODY_ONLY_SIZE: LogicalSize = LogicalSize {
-    width: 180,
-    height: 220,
+    width: 260,
+    height: 340,
 };
 pub const PET_CARD_SIZE: LogicalSize = LogicalSize {
-    width: 380,
-    height: 560,
+    width: 520,
+    height: 640,
 };
 
 impl Default for PetWindowSettings {
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(plan.route, "/");
         assert_eq!(plan.mode, PetWindowMode::BodyOnly);
         assert_eq!(plan.size, PET_BODY_ONLY_SIZE);
-        assert_eq!(plan.position, LogicalPosition { x: 1716, y: 796 });
+        assert_eq!(plan.position, LogicalPosition { x: 1636, y: 676 });
         assert_eq!(plan.focus, false);
         assert_eq!(plan.transparent, true);
         assert_eq!(plan.decorations, false);
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn card_mode_expands_left_and_up_from_body_anchor() {
-        let body = LogicalPosition { x: 1696, y: 796 };
+        let body = LogicalPosition { x: 1600, y: 650 };
         let plan = place_pet_window_from_body_anchor(
             primary_work_area(),
             body,
@@ -405,7 +405,7 @@ mod tests {
 
         assert_eq!(plan.mode, PetWindowMode::Card);
         assert_eq!(plan.size, PET_CARD_SIZE);
-        assert_eq!(plan.position, LogicalPosition { x: 1496, y: 456 });
+        assert_eq!(plan.position, LogicalPosition { x: 1340, y: 350 });
     }
 
     #[test]
@@ -416,7 +416,7 @@ mod tests {
             pass_through: true,
             hide_on_hover: true,
         };
-        let body = LogicalPosition { x: 1600, y: 700 };
+        let body = LogicalPosition { x: 1500, y: 500 };
         let body_plan = place_pet_window_from_body_anchor(
             primary_work_area(),
             body,
@@ -436,18 +436,18 @@ mod tests {
         assert_eq!(
             body_plan.size,
             LogicalSize {
-                width: 225,
-                height: 275
+                width: 325,
+                height: 425
             }
         );
         assert_eq!(
             card_plan.size,
             LogicalSize {
-                width: 475,
-                height: 700
+                width: 650,
+                height: 800
             }
         );
-        assert_eq!(card_plan.position, LogicalPosition { x: 1350, y: 275 });
+        assert_eq!(card_plan.position, LogicalPosition { x: 1175, y: 125 });
         assert_eq!(visual.scale_percent, 125);
         assert_eq!(visual.opacity_percent, 80);
         assert_eq!(visual.pass_through, true);
@@ -470,7 +470,7 @@ mod tests {
             PetWindowSettings::default(),
         );
 
-        assert_eq!(plan.position, LogicalPosition { x: 124, y: 406 });
+        assert_eq!(plan.position, LogicalPosition { x: 124, y: 286 });
     }
 
     #[test]
@@ -478,8 +478,8 @@ mod tests {
         let window = LogicalRect {
             x: 100,
             y: 100,
-            width: 180,
-            height: 220,
+            width: 260,
+            height: 340,
         };
 
         let inside = pet_pointer_decision(PetWindowPointerInput {
@@ -488,24 +488,24 @@ mod tests {
             near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
         });
         let nearby = pet_pointer_decision(PetWindowPointerInput {
-            cursor: LogicalPosition { x: 330, y: 340 },
+            cursor: LogicalPosition { x: 420, y: 470 },
             window,
             near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
         });
         let far = pet_pointer_decision(PetWindowPointerInput {
-            cursor: LogicalPosition { x: 500, y: 500 },
+            cursor: LogicalPosition { x: 600, y: 600 },
             window,
             near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
         });
 
         assert_eq!(inside.inside_window, true);
         assert_eq!(inside.cursor_near, true);
-        assert_eq!(inside.look_x_percent, -43);
-        assert_eq!(inside.look_y_percent, -44);
+        assert_eq!(inside.look_x_percent, -54);
+        assert_eq!(inside.look_y_percent, -58);
         assert_eq!(nearby.inside_window, false);
         assert_eq!(nearby.cursor_near, true);
-        assert_eq!(nearby.look_x_percent, 86);
-        assert_eq!(nearby.look_y_percent, 71);
+        assert_eq!(nearby.look_x_percent, 94);
+        assert_eq!(nearby.look_y_percent, 83);
         assert_eq!(far.cursor_near, false);
         assert_eq!(far.look_x_percent, 100);
         assert_eq!(far.look_y_percent, 100);

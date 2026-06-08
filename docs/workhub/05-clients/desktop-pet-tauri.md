@@ -62,9 +62,12 @@ visuals:
 | label | `pet` |
 | 形态 | transparent、decorations false、always-on-top、skip-taskbar |
 | 默认位置 | 当前屏幕 work area 右下角 |
+| body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
+| card 尺寸 | `520x640` logical px，从 body anchor 向左上展开轻气泡 |
 | 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡 |
 | 模型 | 黑猫默认，白猫可选 |
-| 不允许 | 主窗 UI、完整看板、旧实验 renderer、静态图片 fallback |
+| hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
+| 不允许 | 白框/卡片底、主窗 UI、完整看板、旧实验 renderer、静态图片 fallback |
 
 ### 3.3 Tray
 
@@ -115,6 +118,7 @@ visuals:
 - `pass_through=true` 必须仍可通过托盘恢复。
 - `hide_on_hover=true` 先走 soft hide，full hide 需要额外恢复策略验证。
 - scale 后 body/card 仍以右下角为锚点，不漂移到屏外。
+- 默认 hover 不触发 hide，不移动整只 Cuu；只有显式 `hide_on_hover=true` 才允许透明度和小幅 soft hide。
 
 ### 4.3 `sample_pet_cursor_near`
 
@@ -153,6 +157,8 @@ visuals:
 - 每个模型都要有真实多帧截图，不接受单帧 smoke。
 - 捕获必须证明动作不是整体缩放。
 - 首帧必须非空、全身可见、不是只露耳朵。
+- 鼠标靠近必须通过 `look-only` capture：不点击、不拖拽、窗口 rect 全程一致。
+- Pet surface 运行态只能 patch CSS variables / `data-*`，不能因 pointer tick 重建 Live2D iframe。
 - card mode 不得裁切 Cuu 或气泡操作。
 
 ## 6. 主窗页面规划
@@ -220,7 +226,8 @@ visuals:
 | 缺口 | 状态 | 下一步 |
 |---|---|---|
 | 黑猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | idle 10s、hover、tap、drag、approval、search |
-| 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | 同黑猫 |
+| 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据 | 继续补 tap、drag、approval、search |
+| 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 继续补 idle、tap、drag、approval、search |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 未闭环 | 托盘和热键恢复门 |
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |
