@@ -1,0 +1,13 @@
+{
+  "url": "http://127.0.0.1:1420/cuu/live2d/hijiki/cuu-hijiki.html",
+  "width": 320,
+  "height": 380,
+  "wait_selector": "html[data-live2d-status=\"running\"]",
+  "frames": [
+    "pet-hijiki-live2d-model-cdp-frame-0000.png",
+    "pet-hijiki-live2d-model-cdp-frame-0800.png",
+    "pet-hijiki-live2d-model-cdp-frame-1600.png",
+    "pet-hijiki-live2d-model-cdp-frame-2400.png"
+  ],
+  "captured_at": "2026-06-08T05:19:53.975Z"
+}

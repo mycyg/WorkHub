@@ -8,6 +8,9 @@ visuals:
   - ./assets/shared/prd-concept-gap-map.png
   - ./assets/desktop/desktop-rust-shell-gap-roadmap.png
   - ./assets/web/web-real-ui-gap-roadmap.png
+  - ./assets/cuu/cuu-character-animation-states.png
+  - ./assets/cuu/cuu-desktop-approval-search.png
+  - ./assets/cuu/cuu-option-first-clarify.png
   - ./assets/audit/2026-06-07-current-state/current-state-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-card-layout.png
@@ -28,7 +31,7 @@ visuals:
 | Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换 | 完整 SPA 信息架构、真实数据流、空/错/载入/权限四态、视觉 polish |
 | Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
 | Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略 |
-| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同 | 黑/白真实 Tauri 多帧录屏、任务动作语义、长期性能、授权或原创替换 |
+| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧 | 黑/白真实 Tauri 多帧录屏、任务动作语义、长期性能、授权或原创替换 |
 | 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
 | 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向 | 文档/PPT/表格/图片/文件夹 diff 预览、证据引用、审批写回 |
 
@@ -58,6 +61,17 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 - Windows/macOS/Linux 三端透明窗口与截图 QA。
 
 ### 2.3 Cuu 桌宠差距
+
+![Cuu 黑/白 Live2D 动效状态](./assets/cuu/cuu-character-animation-states.png)
+
+2026-06-08 已把 Cuu 核心概念图同步为当前真实黑猫 Hijiki / 白猫 Tororo Live2D 模型：
+
+- `./assets/cuu/cuu-character-animation-states.png`
+- `./assets/cuu/cuu-desktop-approval-search.png`
+- `./assets/cuu/cuu-option-first-clarify.png`
+- 源帧：`./assets/audit/2026-06-08-cuu-live2d-model-preview/`
+
+这解决了“概念图仍像旧橘猫/手绘实验图”的偏差，但没有解决桌宠鲜活感的最终验收。下一步必须在 Tauri `pet` window 中录黑猫/白猫多帧 idle、hover、tap、drag、approval、search、offline，并证明动作不是整体缩放。
 
 ![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
@@ -90,7 +104,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 澄清让用户点击选项 | 概念图和 payload 合同已写 | 所有澄清路径接入 single/multi/rank/confirm controls |
 | 变更申请像 GitHub PR，但对象多样 | Manifest fixture 和 proposal page 有基础 | 文档/PPT/表格/图片/文件夹预览与证据引用 |
 | 知识库/项目检索由 Cuu 气泡承接 | 概念图已写 | Cuu search card + API endpoint + result bubble |
-| Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落 | 真实 Tauri 多帧录屏、动作语义、长期性能 |
+| Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落，概念图已同步真实模型帧 | 真实 Tauri 多帧录屏、动作语义、长期性能 |
 | Cuu 不在 Web/主窗里 | 当前文档和代码收束中 | 截图审查确认无主窗 Cuu 本体 |
 | Rust 客户端哲学是轻、气泡、少打扰 | Tauri shell 和文档已对齐 | 托盘、通知、deep-link、恢复策略、安装包 |
 | 中英双语 | locale 地基已落 | 全页面、Cuu、Rust 系统文案补齐 |

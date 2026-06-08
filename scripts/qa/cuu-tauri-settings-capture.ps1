@@ -67,7 +67,8 @@ function New-SettingsContactSheet {
           $row = [Math]::Floor($i / $cols)
           $x = $col * $cellWidth
           $y = $row * $cellHeight
-          $label = "{0}  {1}% / {2}% / pass:{3} / hide:{4}" -f $entry.case.id, $entry.case.settings.pet_scale_percent, $entry.case.settings.pet_opacity_percent, $entry.case.settings.pet_pass_through, $entry.case.settings.pet_hide_on_hover
+          $modelLabel = if ($entry.case.settings.pet_model_pack_id -eq "cuu-tororo-live2d-cubism2") { "white" } else { "black" }
+          $label = "{0}  {1} / {2}% / {3}% / pass:{4} / hide:{5}" -f $entry.case.id, $modelLabel, $entry.case.settings.pet_scale_percent, $entry.case.settings.pet_opacity_percent, $entry.case.settings.pet_pass_through, $entry.case.settings.pet_hide_on_hover
           $graphics.DrawString($label, $font, $brush, [single]($x + 8), [single]($y + 8))
           $imageX = $x + [Math]::Floor(($cellWidth - $entry.bitmap.Width) / 2)
           $imageY = $y + 32 + [Math]::Floor(($maxHeight - $entry.bitmap.Height) / 2)
@@ -111,13 +112,14 @@ if (-not $SkipBuild) {
 }
 
 $cases = @(
-  [pscustomobject]@{ id = "default"; scale = 100; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
-  [pscustomobject]@{ id = "scale-75"; scale = 75; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 6500 },
-  [pscustomobject]@{ id = "scale-150"; scale = 150; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
-  [pscustomobject]@{ id = "opacity-60"; scale = 100; opacity = 60; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 500 },
-  [pscustomobject]@{ id = "pass-through"; scale = 100; opacity = 100; pass = $true; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
-  [pscustomobject]@{ id = "hide-on-hover"; scale = 100; opacity = 100; pass = $false; hide = $true; scenario = "hide-on-hover"; frames = 20; interval = 180; minVisual = 12000 },
-  [pscustomobject]@{ id = "combo-125-80-pass-hide"; scale = 125; opacity = 80; pass = $true; hide = $true; scenario = "idle"; frames = 4; interval = 240; minVisual = 1600 }
+  [pscustomobject]@{ id = "default"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 100; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "white-cat"; modelPack = "cuu-tororo-live2d-cubism2"; scale = 100; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "scale-75"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 75; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 6500 },
+  [pscustomobject]@{ id = "scale-150"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 150; opacity = 100; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "opacity-60"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 100; opacity = 60; pass = $false; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 500 },
+  [pscustomobject]@{ id = "pass-through"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 100; opacity = 100; pass = $true; hide = $false; scenario = "idle"; frames = 4; interval = 240; minVisual = 12000 },
+  [pscustomobject]@{ id = "hide-on-hover"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 100; opacity = 100; pass = $false; hide = $true; scenario = "hide-on-hover"; frames = 20; interval = 180; minVisual = 12000 },
+  [pscustomobject]@{ id = "combo-125-80-pass-hide"; modelPack = "cuu-hijiki-live2d-cubism2"; scale = 125; opacity = 80; pass = $true; hide = $true; scenario = "idle"; frames = 4; interval = 240; minVisual = 1600 }
 )
 
 $caseReports = @()
@@ -130,6 +132,7 @@ foreach ($case in $cases) {
     Scenario = $case.scenario
     PetScalePercent = $case.scale
     PetOpacityPercent = $case.opacity
+    ModelPackId = $case.modelPack
     MinFirstFrameVisualPixels = $case.minVisual
     OutDir = $caseOutDir
     DisableSse = $true
@@ -156,6 +159,7 @@ foreach ($case in $cases) {
       pet_opacity_percent = $case.opacity
       pet_pass_through = [bool]$case.pass
       pet_hide_on_hover = [bool]$case.hide
+      pet_model_pack_id = $case.modelPack
     }
     scenario = $case.scenario
     min_first_frame_visual_pixels = $case.minVisual

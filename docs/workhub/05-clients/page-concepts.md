@@ -149,17 +149,19 @@ AI 可以发现变化，但不能直接改正式状态；必须先生成草稿�
 
 ## 4. Cuu 桌宠概念图
 
+> 2026-06-08 同步：以下三张 Cuu 核心概念图已原位替换为黑猫 Hijiki / 白猫 Tororo Live2D 版，且使用真实浏览器模型帧作为视觉基准。旧橘猫、手绘几何猫、改色实验图和主窗角色栏不再属于当前概念集。
+
 ### 4.1 Cuu 动效状态
 
 ![Cuu 动效状态](./assets/cuu/cuu-character-animation-states.png)
 
-这张图定义动作语义：idle、thinking、approval、carrying、search、sync、worried、revision、celebrating、offline。当前黑猫/白猫都要承接这些状态。
+这张图定义动作语义：idle、thinking、approval、carrying、search、sync、worried、revision、celebrating、offline。当前黑猫/白猫都要承接这些状态，后续原创替换模型也必须保持同一 motion contract。
 
 ### 4.2 Cuu 审批与项目检索
 
 ![Cuu 桌面审批与项目检索](./assets/cuu/cuu-desktop-approval-search.png)
 
-Cuu 的核心价值是桌面右下角独立存在，用气泡承接轻审批、项目检索、交付物变更摘要和澄清提醒。
+Cuu 的核心价值是桌面右下角独立存在，用气泡承接轻审批、项目检索、交付物变更摘要和澄清提醒。图中的主窗只做严肃页面示意，不代表 Cuu 本体进入主窗。
 
 ### 4.3 Cuu 选项优先澄清
 
@@ -196,6 +198,15 @@ Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / �
 ![Cuu card mode full-body 修复样例](./assets/audit/2026-06-07-cuu-card-mode-fix/cuu-motion-contact-sheet-after-full-body-hidpi-fix.png)
 
 这些图只作为回归门：不能只看单帧，不能只露耳朵，card mode 不能裁切。当前 Cuu 通过标准以黑猫/白猫 Live2D 真实录屏为准。
+
+### 5.3 黑/白 Live2D 概念源帧
+
+源帧目录：
+
+- `./assets/audit/2026-06-08-cuu-live2d-model-preview/hijiki/`
+- `./assets/audit/2026-06-08-cuu-live2d-model-preview/tororo/`
+
+这组源帧证明概念图使用的是当前真实模型外观；它不能替代 Tauri `pet` window motion capture。后续验收仍要补黑猫/白猫独立窗口多场景录屏和 settings matrix。
 
 ## 6. 后续补图计划
 

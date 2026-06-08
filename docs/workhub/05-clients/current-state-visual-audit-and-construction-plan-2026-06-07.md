@@ -13,7 +13,9 @@ visuals:
   - ./assets/web/web-ai-first-home.png
   - ./assets/web/web-option-first-intake-wizard.png
   - ./assets/desktop/desktop-one-thing-work-desk.png
+  - ./assets/cuu/cuu-character-animation-states.png
   - ./assets/cuu/cuu-desktop-approval-search.png
+  - ./assets/cuu/cuu-option-first-clarify.png
 ---
 
 # 当前真实截图审计与后续施工计划
@@ -27,7 +29,7 @@ visuals:
 | Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
 | Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
-| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D | 仍缺两只模型的真实 Tauri 多帧录屏、动作语义验证和长期稳定性 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；核心概念图已用真实模型帧重绘 | 仍缺两只模型的真实 Tauri 多帧录屏、动作语义验证和长期稳定性 |
 | Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
 | 多语言 | 中英 locale 合同已落 | 需要覆盖更多非 Gold Path 页面和桌宠固定文案 |
 
@@ -75,6 +77,8 @@ visuals:
 | Pet surface | `apps/desktop-webview/src/pet-surface.ts` 只渲染 Live2D cat runtime + 轻气泡 |
 | 偏好 | `apps/desktop-webview/src/cuu-preferences.ts` 只展示黑猫 / 白猫 |
 | QA | `apps/desktop-webview/src/pet-surface-qa.ts` 禁止旧实验 runtime/class/data attr 回流 |
+| 概念图 | `./assets/cuu/cuu-character-animation-states.png`、`./assets/cuu/cuu-desktop-approval-search.png`、`./assets/cuu/cuu-option-first-clarify.png` 已同步为黑/白 Live2D 版 |
+| 概念源帧 | `./assets/audit/2026-06-08-cuu-live2d-model-preview/` 保留 Hijiki / Tororo 浏览器模型帧、DOM 和 report |
 | 主窗 | `packages/ui/src/gold-path/render.ts` 和 desktop main shell 不再承载 Cuu 本体 |
 | Rust window | `client-tauri/src-tauri/src/pet_window.rs` / `pet_commands.rs` 承担几何、设置、拖拽和 cursor sample |
 
@@ -151,6 +155,7 @@ visuals:
 
 | 证据 | 当前状态 |
 |---|---|
+| 黑/白 Live2D 概念图 | 已同步到 `./assets/cuu/`，源帧已入 `./assets/audit/2026-06-08-cuu-live2d-model-preview/` |
 | 黑猫 idle contact sheet | 待生成 |
 | 黑猫 approval/search GIF/MP4 | 待生成 |
 | 白猫 idle contact sheet | 待生成 |

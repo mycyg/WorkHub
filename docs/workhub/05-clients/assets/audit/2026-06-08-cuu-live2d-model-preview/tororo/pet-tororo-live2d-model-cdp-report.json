@@ -1,0 +1,13 @@
+{
+  "url": "http://127.0.0.1:1420/cuu/live2d/tororo/cuu-tororo.html",
+  "width": 320,
+  "height": 380,
+  "wait_selector": "html[data-live2d-status=\"running\"]",
+  "frames": [
+    "pet-tororo-live2d-model-cdp-frame-0000.png",
+    "pet-tororo-live2d-model-cdp-frame-0800.png",
+    "pet-tororo-live2d-model-cdp-frame-1600.png",
+    "pet-tororo-live2d-model-cdp-frame-2400.png"
+  ],
+  "captured_at": "2026-06-08T05:20:10.340Z"
+}

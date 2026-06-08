@@ -40,6 +40,8 @@ visuals:
 | `apps/desktop-webview/src/pet-window-bridge.ts` | TS 调用 Rust window commands，整合 pointer/drag/cursor sample |
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 黑猫/白猫 Live2D iframe/runtime 适配 |
 | `packages/cuu/src/model-pack.ts` | 当前只注册黑猫/白猫模型包 |
+| `docs/workhub/05-clients/assets/cuu/*.png` | 当前 Cuu 概念图，已同步为黑猫/白猫 Live2D 版 |
+| `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-model-preview/` | Hijiki / Tororo 浏览器模型源帧，供概念图和后续 Tauri capture 对照 |
 
 ## 3. 窗口规划
 
@@ -133,6 +135,8 @@ visuals:
 
 模型白名单见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
 
+当前 Cuu 概念图已经同步到黑猫 Hijiki / 白猫 Tororo Live2D 模型；Rust/Tauri 验收不能再参照旧橘猫、手绘猫或临时改色稿。概念源帧只证明模型外观和浏览器模型页可用，Tauri `pet` window 仍必须单独验证透明窗口、右下角定位、完整显示、拖拽、pass-through、hide-on-hover 和 card mode。
+
 | 业务状态 | Cuu 动作语义 | 当前 Live2D 映射 |
 |---|---|---|
 | idle | 待机、眨眼、尾巴 | idle motion |
@@ -215,8 +219,8 @@ visuals:
 
 | 缺口 | 状态 | 下一步 |
 |---|---|---|
-| 黑猫真实长驻录屏 | 未补 | idle 10s、hover、tap、drag、approval、search |
-| 白猫真实长驻录屏 | 未补 | 同黑猫 |
+| 黑猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | idle 10s、hover、tap、drag、approval、search |
+| 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | 同黑猫 |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 未闭环 | 托盘和热键恢复门 |
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |

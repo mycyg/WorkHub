@@ -13,6 +13,8 @@ param(
   [int]$PetScalePercent = 100,
   [ValidateSet(60, 80, 100)]
   [int]$PetOpacityPercent = 100,
+  [ValidateSet("cuu-hijiki-live2d-cubism2", "cuu-tororo-live2d-cubism2")]
+  [string]$ModelPackId = "cuu-hijiki-live2d-cubism2",
   [switch]$PetPassThrough,
   [switch]$PetHideOnHover,
   [switch]$DisableSse,
@@ -615,6 +617,7 @@ $originalCuuQaHideOnHover = $env:WORKHUB_CUU_QA_HIDE_ON_HOVER
 $originalCuuQaPetScalePercent = $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT
 $originalCuuQaPetOpacityPercent = $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT
 $originalCuuQaPetPassThrough = $env:WORKHUB_CUU_QA_PET_PASS_THROUGH
+$originalCuuQaModelPackId = $env:WORKHUB_CUU_QA_MODEL_PACK_ID
 $process = $null
 $devServerProcess = $null
 $isolatedRoot = $null
@@ -636,6 +639,7 @@ try {
   }
   $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT = "$PetScalePercent"
   $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT = "$PetOpacityPercent"
+  $env:WORKHUB_CUU_QA_MODEL_PACK_ID = $ModelPackId
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
@@ -756,6 +760,7 @@ try {
       pet_opacity_percent = $PetOpacityPercent
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
+      pet_model_pack_id = $ModelPackId
     }
     scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
@@ -814,6 +819,7 @@ try {
       pet_opacity_percent = $PetOpacityPercent
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
+      pet_model_pack_id = $ModelPackId
     }
     frames_dir = $framesDir
     contact_sheet = $contactSheet
@@ -833,6 +839,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_SCALE_PERCENT" -Value $originalCuuQaPetScalePercent
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_OPACITY_PERCENT" -Value $originalCuuQaPetOpacityPercent
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_PASS_THROUGH" -Value $originalCuuQaPetPassThrough
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_MODEL_PACK_ID" -Value $originalCuuQaModelPackId
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
     $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())

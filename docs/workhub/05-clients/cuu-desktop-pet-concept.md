@@ -57,11 +57,13 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 
 ## 4. 概念图索引
 
+> 2026-06-08 同步：本节三张概念图已原位替换为黑猫 Hijiki / 白猫 Tororo Live2D 版。图中模型来自真实浏览器运行帧，源帧保存在 `./assets/audit/2026-06-08-cuu-live2d-model-preview/`；旧橘猫、手绘几何猫、改色实验图不再是概念目标。
+
 ### 4.1 动效状态表
 
 ![Cuu 角色动效状态表](./assets/cuu/cuu-character-animation-states.png)
 
-这张概念图定义动作语义，而不是限定具体美术。当前黑猫/白猫都必须承接这些状态：
+这张概念图用黑猫/白猫真实 Live2D 帧建立视觉基准，同时定义动作语义。当前黑猫/白猫都必须承接这些状态：
 
 | 状态 | 触发 | Cuu 表现 | 验收方式 |
 |---|---|---|---|
@@ -83,6 +85,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 这张概念图定义 Cuu 的工作方式：
 
 - Cuu 常驻桌面，不要求用户先打开主窗。
+- 图中的主窗只是严肃页面示意；Cuu 本体只在独立 pet window，不进入 Web / desktop 主窗。
 - 审批事项先用轻气泡提醒，再展开为可操作卡片。
 - 项目检索属于桌宠功能：用户通过 chips 选择“找相关文件”“总结上次会议”“解释这次改动”。
 - 变更申请可以是文档、PPT、表格、图片、文件夹或代码，不局限于 PR。
@@ -97,10 +100,23 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - 推荐项排第一并可高亮。
 - 兜底输入折叠在底部，只在选项无法表达时使用。
 - 已确认信息以简短 chips 展示，用户知道还剩几步。
+- 图中白猫代表可选 Tororo 模型；交互合同与黑猫完全一致。
 
-## 5. 交互合同
+## 5. 当前视觉资产基准
 
-### 5.1 Cuu 气泡
+| 资产 | 当前内容 | 用途 |
+|---|---|---|
+| `./assets/cuu/cuu-character-animation-states.png` | Hijiki / Tororo 真实帧 + 状态语义表 | Cuu 动作状态和二选项视觉基准 |
+| `./assets/cuu/cuu-desktop-approval-search.png` | 黑猫独立 pet window + 审批/检索气泡 | 桌面右下角工作方式 |
+| `./assets/cuu/cuu-option-first-clarify.png` | 白猫气泡 + option-first 澄清页 | 澄清交互和主窗边界 |
+| `./assets/audit/2026-06-08-cuu-live2d-model-preview/hijiki/` | 黑猫浏览器模型帧与 DOM/report | 证明概念图使用真实模型源 |
+| `./assets/audit/2026-06-08-cuu-live2d-model-preview/tororo/` | 白猫浏览器模型帧与 DOM/report | 证明白猫不是配置文字假切换 |
+
+这些资产只证明“当前概念图已经同步到黑/白 Live2D 模型”。它们不能替代后续 Tauri `pet` window 多场景录屏；桌宠最终通过仍以真实窗口 motion capture、settings matrix 和主窗无 Cuu 截图为准。
+
+## 6. 交互合同
+
+### 6.1 Cuu 气泡
 
 | 字段 | 说明 |
 |---|---|
@@ -112,7 +128,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 | `card.motion` | 绑定 Cuu 动作语义 |
 | `card.priority` | `low`、`normal`、`high`、`urgent` |
 
-### 5.2 用户输入
+### 6.2 用户输入
 
 | 输入 | 行为 |
 |---|---|
@@ -122,7 +138,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 | 点击气泡选项 | 发送 typed action，不要求输入文本 |
 | 长时间无事 | 进入睡眠或低频 idle |
 
-### 5.3 与主窗边界
+### 6.3 与主窗边界
 
 主窗可以显示同一事件的完整页面，但不显示 Cuu 本体。允许的入口是：
 
@@ -130,7 +146,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - Cuu 气泡按钮：查看详情、打开审批、打开检索结果。
 - 主窗设置页：只显示严肃的桌面客户端设置，不放 Cuu 形象。
 
-## 6. 验收门
+## 7. 验收门
 
 视觉验收：
 
@@ -147,7 +163,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - `apps/desktop-webview/src/pet-surface.ts` 只渲染 Live2D cat runtime。
 - QA 禁止旧实验 runtime/class/data attribute 回流。
 
-## 7. 后续施工
+## 8. 后续施工
 
 1. 为黑猫录制真实 Tauri idle、hover、tap、drag、approval、search、offline 多帧素材。
 2. 为白猫录制同等素材，验证模型切换不是只换配置文本。

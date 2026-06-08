@@ -42,13 +42,15 @@ const WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV: &str = "WORKHUB_CUU_QA_HIDE_ON_HOVER";
 const WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_SCALE_PERCENT";
 const WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_OPACITY_PERCENT";
 const WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV: &str = "WORKHUB_CUU_QA_PET_PASS_THROUGH";
+const WORKHUB_CUU_QA_MODEL_PACK_ID_ENV: &str = "WORKHUB_CUU_QA_MODEL_PACK_ID";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
     pet_scale_percent: Option<u16>,
     pet_opacity_percent: Option<u8>,
     pet_pass_through: Option<bool>,
     pet_hide_on_hover: Option<bool>,
+    pet_model_pack_id: Option<String>,
 }
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -72,6 +74,11 @@ where
         ),
         pet_pass_through: workhub_env_flag_value(WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, &get_env),
         pet_hide_on_hover: workhub_env_flag_value(WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, &get_env),
+        pet_model_pack_id: workhub_env_string_allowed(
+            WORKHUB_CUU_QA_MODEL_PACK_ID_ENV,
+            &get_env,
+            &["cuu-hijiki-live2d-cubism2", "cuu-tororo-live2d-cubism2"],
+        ),
     }
 }
 
@@ -100,6 +107,14 @@ where
 {
     let value = get_env(name)?.trim().parse::<u8>().ok()?;
     allowed.contains(&value).then_some(value)
+}
+
+fn workhub_env_string_allowed<F>(name: &str, get_env: &F, allowed: &[&str]) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let value = get_env(name)?.trim().to_string();
+    allowed.contains(&value.as_str()).then_some(value)
 }
 
 #[tauri::command]
@@ -581,6 +596,9 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
             if hide_on_hover { "true" } else { "false" }
         ));
     }
+    if let Some(model_pack_id) = preferences.pet_model_pack_id {
+        fields.push(format!("pet_model_pack_id: \"{model_pack_id}\""));
+    }
 
     if fields.is_empty() {
         r#"window.__WORKHUB_SURFACE__ = "pet";"#.to_string()
@@ -961,12 +979,17 @@ mod tests {
                 (WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV, "60"),
                 (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "true"),
                 (WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV, "1"),
+                (
+                    WORKHUB_CUU_QA_MODEL_PACK_ID_ENV,
+                    "cuu-tororo-live2d-cubism2"
+                ),
             ])),
             CuuQaPreferenceOverrides {
                 pet_scale_percent: Some(150),
                 pet_opacity_percent: Some(60),
                 pet_pass_through: Some(true),
                 pet_hide_on_hover: Some(true),
+                pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
             }
         );
     }
@@ -978,12 +1001,14 @@ mod tests {
                 (WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV, "110"),
                 (WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV, "75"),
                 (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "0"),
+                (WORKHUB_CUU_QA_MODEL_PACK_ID_ENV, "legacy-cuu-pack"),
             ])),
             CuuQaPreferenceOverrides {
                 pet_scale_percent: None,
                 pet_opacity_percent: None,
                 pet_pass_through: Some(false),
                 pet_hide_on_hover: None,
+                pet_model_pack_id: None,
             }
         );
     }
@@ -999,11 +1024,13 @@ mod tests {
             pet_opacity_percent: Some(80),
             pet_pass_through: Some(true),
             pet_hide_on_hover: Some(true),
+            pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
         assert!(script.contains("pet_opacity_percent: 80"));
         assert!(script.contains("pet_pass_through: true"));
         assert!(script.contains("pet_hide_on_hover: true"));
+        assert!(script.contains(r#"pet_model_pack_id: "cuu-tororo-live2d-cubism2""#));
     }
 }
