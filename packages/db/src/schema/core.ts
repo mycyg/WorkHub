@@ -795,16 +795,24 @@ export const agentRuns = pgTable(
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
     mode: varchar("mode", { length: 16 }).$type<WorkItemMode>().notNull(),
     actor: varchar("actor", { length: 32 }).notNull(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    title: varchar("title", { length: 256 }).notNull().default("AI worker run"),
     status: varchar("status", { length: 16 }).notNull().default("queued"),
     model: varchar("model", { length: 64 }).notNull(),
     turnsUsed: integer("turns_used").notNull().default(0),
     maxTurns: integer("max_turns").notNull(),
+    totalTimeoutS: integer("total_timeout_s").notNull().default(300),
+    maxTokens: integer("max_tokens").notNull().default(120000),
+    maxCostCny: numeric("max_cost_cny", { precision: 12, scale: 6 }).notNull().default("5"),
     seconds: doublePrecision("seconds"),
     tokenIn: integer("token_in").notNull().default(0),
     tokenOut: integer("token_out").notNull().default(0),
     costEstimate: numeric("cost_estimate", { precision: 12, scale: 6 }),
+    budgetDecisionJson: jsonb("budget_decision_json").$type<JsonObject>().notNull().default({}),
     outcomeReason: varchar("outcome_reason", { length: 256 }),
     handoffMd: text("handoff_md"),
+    handoffJson: jsonb("handoff_json").$type<JsonObject>(),
+    workdirRef: varchar("workdir_ref", { length: 512 }),
     startedAt: timestampTz("started_at"),
     finishedAt: timestampTz("finished_at"),
     ...timestamps()
@@ -814,6 +822,7 @@ export const agentRuns = pgTable(
     index("agent_runs_workspace_id_idx").on(table.workspaceId),
     index("agent_runs_work_item_id_idx").on(table.workItemId),
     index("agent_runs_branch_id_idx").on(table.branchId),
+    index("agent_runs_actor_user_id_idx").on(table.actorUserId),
     index("agent_runs_status_idx").on(table.status)
   ]
 );
@@ -823,6 +832,7 @@ export const agentSteps = pgTable(
   {
     id: id(),
     agentRunId: uuid("agent_run_id").notNull().references(() => agentRuns.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull().default(0),
     stepNo: integer("step_no").notNull(),
     phase: varchar("phase", { length: 32 }).notNull(),
     toolName: varchar("tool_name", { length: 64 }),
@@ -833,8 +843,8 @@ export const agentSteps = pgTable(
     createdAt: createdAt()
   },
   (table) => [
-    uniqueIndex("agent_steps_run_step_uq").on(table.agentRunId, table.stepNo),
     index("agent_steps_agent_run_id_idx").on(table.agentRunId),
+    index("agent_steps_run_seq_idx").on(table.agentRunId, table.seq),
     index("agent_steps_snapshot_id_idx").on(table.snapshotId)
   ]
 );

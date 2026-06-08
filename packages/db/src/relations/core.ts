@@ -96,6 +96,7 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
 export const agentRunsRelations = relations(agentRuns, ({ many, one }) => ({
   workItem: one(workItems, { fields: [agentRuns.workItemId], references: [workItems.id] }),
   branch: one(branches, { fields: [agentRuns.branchId], references: [branches.id] }),
+  actorUser: one(users, { fields: [agentRuns.actorUserId], references: [users.id] }),
   steps: many(agentSteps),
   approvals: many(approvalRequests)
 }));

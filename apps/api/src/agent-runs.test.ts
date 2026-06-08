@@ -38,7 +38,10 @@ import { createInMemoryProposalService } from "./services/proposals.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
-  type AgentRunNotificationPublisher
+  type AgentRunNotificationPublisher,
+  type AgentRunPersistence,
+  type AgentRunQueueRecord,
+  type AgentRunTraceStepRecord
 } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -49,6 +52,56 @@ const workItemId = "50000000-0000-4000-8000-000000000021";
 const snapshotId = "70000000-0000-4000-8000-000000000025";
 const confidenceId = "72000000-0000-4000-8000-000000000025";
 const escalationId = "73000000-0000-4000-8000-000000000025";
+
+class MemoryAgentRunPersistence implements AgentRunPersistence {
+  public readonly rows = new Map<string, AgentRunQueueRecord>();
+  public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
+
+  async createRun(run: AgentRunQueueRecord) {
+    this.rows.set(run.run_id, structuredClone(run));
+  }
+
+  async updateRun(run: AgentRunQueueRecord) {
+    this.rows.set(run.run_id, structuredClone(run));
+  }
+
+  async replaceTrace(runId: string, trace: AgentRunTraceStepRecord[]) {
+    this.traceWrites.push(structuredClone(trace));
+    const run = this.rows.get(runId);
+    if (run) {
+      this.rows.set(runId, {
+        ...run,
+        trace: structuredClone(trace),
+        updated_at: run.updated_at
+      });
+    }
+  }
+
+  async setWorkdir(runId: string, workdir: string) {
+    const run = this.rows.get(runId);
+    if (run) {
+      this.rows.set(runId, {
+        ...run,
+        workdir_ref: workdir
+      });
+    }
+  }
+
+  async get(runId: string) {
+    const run = this.rows.get(runId);
+    return run ? structuredClone(run) : null;
+  }
+
+  async getWorkdir(runId: string) {
+    return this.rows.get(runId)?.workdir_ref ?? null;
+  }
+
+  async listActive() {
+    return [...this.rows.values()]
+      .filter((run) => run.status === "queued" || run.status === "running")
+      .map((run) => structuredClone(run));
+  }
+}
 
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
   return {
@@ -999,7 +1052,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(startBody.data.status, "queued");
 
   const executed = await queue.runNext();
-  assert.equal(executed?.status, "succeeded");
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace.at(-1)));
   assert.equal(await queue.workdir(startBody.data.run_id), workdir);
   assert.equal(executed?.usage.token_in, 15);
   assert.equal(executed?.usage.token_out, 25);
@@ -1076,6 +1129,80 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);
+});
+
+test("agent run queue writes through to persistence and restores DB-backed run state", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-persist-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-persist-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000026",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Persistent worker run"
+  });
+  assert.equal(persistence.rows.get(run.run_id)?.status, "queued");
+
+  const coldQueueBeforeRun = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  assert.equal((await coldQueueBeforeRun.get(run.run_id))?.status, "queued");
+  assert.deepEqual((await coldQueueBeforeRun.listActive()).map((item) => item.run_id), [run.run_id]);
+
+  const executed = await queue.runNext();
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace.at(-1)));
+  assert.equal(await persistence.getWorkdir(run.run_id), workdir);
+  assert.equal(persistence.rows.get(run.run_id)?.status, "succeeded");
+  assert.deepEqual(persistence.rows.get(run.run_id)?.trace.map((step) => step.phase), [
+    "tool_call",
+    "tool_result",
+    "think",
+    "final"
+  ]);
+  assert.equal(persistence.traceWrites.at(-1)?.at(-1)?.phase, "final");
+
+  const coldQueueAfterRun = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  assert.equal((await coldQueueAfterRun.get(run.run_id))?.status, "succeeded");
+  assert.equal(await coldQueueAfterRun.workdir(run.run_id), workdir);
+  assert.deepEqual((await coldQueueAfterRun.trace(run.run_id)).map((step) => step.phase), [
+    "tool_call",
+    "tool_result",
+    "think",
+    "final"
+  ]);
+  assert.deepEqual(await coldQueueAfterRun.listActive(), []);
 });
 
 test("agent run route auto-pumps queued work after enqueue", async () => {

@@ -323,15 +323,23 @@ PRD §8.8 / FR-SPEC-001:每个 WorkItem/项目有自动维护的 README 规格�
 | `branch_id` | FK→branches.id?, index | 该 run 产出落到的分支 |
 | `mode` | str(16) | `worker` / `pm`(对应 §4.2 WorkItem.mode) |
 | `actor` | str(32) | 执行身份(用于 §8.1 工具菜单过滤 + 审计),如 `ai:worker` |
-| `status` | str(16), default `running` | `queued`/`running`/`succeeded`/`failed`/`escalated`/`budget_exhausted`/`cancelled` |
+| `actor_user_id` | FK→users.id?, index | 发起/授权用户；API 读权限以此还原 `actor_id` |
+| `title` | str(256), default `AI worker run` | Live VM / 列表显示标题 |
+| `status` | str(16), default `queued` | `queued`/`running`/`succeeded`/`failed`/`escalated`/`budget_exhausted`/`cancelled` |
 | `model` | str(64) | 实际调用模型(成本治理/路由,NFR-05;现 `settings.llm_model`) |
 | `turns_used` | int | 已用步数(现 `MAX_TURNS=15`,[`auto_agent.py:36`](../../../app/services/auto_agent.py)) |
 | `max_turns` | int | 硬预算上限(FR-WORKER-003;必填) |
+| `total_timeout_s` | int, default 300 | 单 run 总超时预算 |
+| `max_tokens` | int, default 120000 | 单 run token 硬预算 |
+| `max_cost_cny` | numeric(12,6), default `5` | 单 run 成本硬预算 |
+| `budget_decision_json` | JSONB | P-COST 决策、模型路由、预算告警 payload |
 | `seconds` | float | 耗时(现 `TOTAL_TIMEOUT_DEFAULT=300`) |
 | `token_in`/`token_out` | int | token 计量(成本看板,NFR-11) |
 | `cost_estimate` | float? | 估算成本(NFR-05) |
 | `outcome_reason` | str(256) | 结束原因短描(现 `AutoResult.reason`) |
 | `handoff_md` | Text? | 超预算/卡住时的「已做/未做/下一步」结构化交接件(FR-WORKER-003) |
+| `handoff_json` | JSONB? | `StructuredHandoff` 机器可读版本 |
+| `workdir_ref` | str(512)? | 沙箱 workdir 引用；revert/审计恢复用 |
 | `started_at`/`finished_at` | DateTime? | |
 | `created_at`/`updated_at` | DateTime | |
 
@@ -345,6 +353,7 @@ PRD §8.8 / FR-SPEC-001:每个 WorkItem/项目有自动维护的 README 规格�
 |---|---|---|
 | `id` | UUID PK | |
 | `agent_run_id` | FK→agent_runs.id, CASCADE, index | |
+| `seq` | int, index `(agent_run_id, seq)` | trace 展示与 replay 排序；同一步可有多条 record |
 | `step_no` | int | 第几步(对应 opencode runLoop 的 step++) |
 | `phase` | str(32) | `think` / `tool_call` / `tool_result` / `final` |
 | `tool_name` | str(64)? | 工具名(`list_files`/`read_file`/`write_file`/`run_command`/`submit`…,见 `auto_agent.TOOLS`) |
@@ -353,7 +362,8 @@ PRD §8.8 / FR-SPEC-001:每个 WorkItem/项目有自动维护的 README 规格�
 | `control_signal` | str(16)? | `continue`/`stop`/`compact`/`escalate`(借鉴 opencode 控制信号) |
 | `snapshot_id` | FK→snapshots.id?, index | 该步副作用前的快照(§7.5;可回滚单步) |
 | `created_at` | DateTime | |
-| `UniqueConstraint` | `(agent_run_id, step_no)` | |
+
+> 注意：`step_no` 是语义步号，不唯一。同一次模型 step 可能产生 `think`、多个 `tool_call`、多个 `tool_result` 与最终 `final` record；唯一约束会截断真实 trace，因此排序以 `seq` 为准。
 
 ### 7.3 新增:`ConfidenceRecord`(置信度 + 风险 + 分级裁决,命门)
 
@@ -564,7 +574,7 @@ Proposal 1—? Delivery(打包产物;round 对齐)
 Proposal —? ConfidenceRecord
 
 WorkItem 1—* AgentRun(mode: worker|pm)
-AgentRun 1—* AgentStep(UniqueConstraint run_id+step_no)
+AgentRun 1—* AgentStep(index run_id+seq; step_no is semantic, not unique)
 AgentRun —? ConfidenceRecord —? (drives §5 verdict)
 ConfidenceRecord ——(verdict=escalate)→ EscalationEvent
 AgentStep —? Snapshot   /   Proposal.merge —? Snapshot

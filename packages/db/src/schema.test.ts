@@ -6,7 +6,7 @@ import test from "node:test";
 import { getTableName } from "drizzle-orm";
 
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
-import { auditLogs, proposals, workHubTables, workItems } from "./index.js";
+import { agentRuns, agentSteps, auditLogs, proposals, workHubTables, workItems } from "./index.js";
 
 const F02_TABLE_COUNT = 41;
 
@@ -44,6 +44,18 @@ test("core renamed fields are present on Drizzle table objects", () => {
   assert.equal(workItems.status.name, "status");
   assert.equal(proposals.diffManifest.name, "diff_manifest");
   assert.equal(auditLogs.undoneAt.name, "undone_at");
+});
+
+test("agent run persistence fields support DB-backed replay recovery", () => {
+  assert.equal(agentRuns.title.name, "title");
+  assert.equal(agentRuns.actorUserId.name, "actor_user_id");
+  assert.equal(agentRuns.totalTimeoutS.name, "total_timeout_s");
+  assert.equal(agentRuns.maxTokens.name, "max_tokens");
+  assert.equal(agentRuns.maxCostCny.name, "max_cost_cny");
+  assert.equal(agentRuns.budgetDecisionJson.name, "budget_decision_json");
+  assert.equal(agentRuns.workdirRef.name, "workdir_ref");
+  assert.equal(agentRuns.handoffJson.name, "handoff_json");
+  assert.equal(agentSteps.seq.name, "seq");
 });
 
 test("enum drift is closed in the shared contract package", () => {

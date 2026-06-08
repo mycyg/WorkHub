@@ -48,6 +48,7 @@ import {
 import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
+import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -68,6 +69,7 @@ export type AgentRunQueueRecord = {
   mode: WorkItemMode;
   status: AgentRunQueueStatus;
   title: string;
+  workdir_ref?: string;
   budget: {
     max_steps: number;
     total_timeout_s: number;
@@ -140,6 +142,15 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 export type AgentRunEventBus = Pick<PushBus, "publish">;
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
+export type AgentRunPersistence = {
+  createRun: (run: AgentRunQueueRecord) => Promise<void>;
+  updateRun: (run: AgentRunQueueRecord) => Promise<void>;
+  replaceTrace: (runId: string, trace: AgentRunTraceStepRecord[]) => Promise<void>;
+  setWorkdir: (runId: string, workdir: string, at: Date) => Promise<void>;
+  get: (runId: string) => Promise<AgentRunQueueRecord | null>;
+  getWorkdir: (runId: string) => Promise<string | null>;
+  listActive: () => Promise<AgentRunQueueRecord[]>;
+};
 
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
@@ -173,6 +184,7 @@ export function createInMemoryAgentRunQueue(options: {
   proposals?: AgentRunProposalSink | false;
   notifications?: AgentRunNotificationPublisher | false;
   eventBus?: AgentRunEventBus | false;
+  persistence?: AgentRunPersistence | false;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -187,6 +199,7 @@ export function createInMemoryAgentRunQueue(options: {
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
+  const persistence = options.persistence === false ? undefined : options.persistence;
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -223,8 +236,18 @@ export function createInMemoryAgentRunQueue(options: {
     );
   }
 
-  function queuedRun() {
-    return [...runs.values()].find((run) => run.status === "queued") ?? null;
+  async function persistedActiveForWorkItem(workItemId: string) {
+    const active = await persistence?.listActive();
+    return active?.find((run) => run.work_item_id === workItemId) ?? null;
+  }
+
+  async function queuedRun() {
+    const inMemory = [...runs.values()].find((run) => run.status === "queued");
+    if (inMemory) {
+      return inMemory;
+    }
+    const persisted = await persistence?.listActive();
+    return persisted?.find((run) => run.status === "queued") ?? null;
   }
 
   async function defaultWorkdir(input: AgentRunExecutionInput) {
@@ -251,6 +274,31 @@ export function createInMemoryAgentRunQueue(options: {
   function updateRun(run: AgentRunQueueRecord) {
     runs.set(run.run_id, run);
     return run;
+  }
+
+  async function persistCreatedRun(run: AgentRunQueueRecord) {
+    await persistence?.createRun(run);
+    if (run.trace.length > 0) {
+      await persistence?.replaceTrace(run.run_id, run.trace);
+    }
+  }
+
+  async function persistRun(run: AgentRunQueueRecord) {
+    await persistence?.updateRun(run);
+  }
+
+  async function persistRunWithTrace(run: AgentRunQueueRecord) {
+    await persistRun(run);
+    await persistence?.replaceTrace(run.run_id, run.trace);
+  }
+
+  function persistTraceInBackground(run: AgentRunQueueRecord) {
+    if (!persistence) {
+      return;
+    }
+    void persistence.replaceTrace(run.run_id, run.trace).catch((error) => {
+      console.warn("WorkHub AgentRun trace persistence failed", error);
+    });
   }
 
   function abortActorId(actor: AbortAgentRunActor) {
@@ -354,7 +402,13 @@ export function createInMemoryAgentRunQueue(options: {
   }
 
   async function executeRun(runId: string) {
-    const run = runs.get(runId);
+    let run = runs.get(runId);
+    if (!run) {
+      run = await persistence?.get(runId) ?? undefined;
+      if (run) {
+        runs.set(run.run_id, run);
+      }
+    }
     if (!run) {
       throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
     }
@@ -367,10 +421,17 @@ export function createInMemoryAgentRunQueue(options: {
       status: "running",
       updated_at: now().toISOString()
     });
+    await persistRun(current);
     const executionInput = { run: current, settings };
     const client = await (options.client ?? defaultClient)(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
     runWorkdirs.set(current.run_id, workdir);
+    current = updateRun({
+      ...current,
+      workdir_ref: workdir,
+      updated_at: now().toISOString()
+    });
+    await persistence?.setWorkdir(current.run_id, workdir, now());
     const rawTools = options.tools?.(executionInput) ?? defaultTools;
     const tools: ReturnType<AgentRunToolsProvider> = {
       toModelTools: (ctx) => rawTools.toModelTools(ctx),
@@ -416,6 +477,7 @@ export function createInMemoryAgentRunQueue(options: {
               trace: [...live.trace, ...traceRecordsFromStep(current.run_id, step)],
               updated_at: now().toISOString()
             });
+            persistTraceInBackground(current);
           }
         },
         emit: (event) => emitRunEvent(event, current),
@@ -427,6 +489,7 @@ export function createInMemoryAgentRunQueue(options: {
       }
       await openProposalFromManifest(current, result);
       current = updateRun(finalizeExecutedRun(current, result, now()));
+      await persistRunWithTrace(current);
       await emitFinalRunEvent(current, result);
       await recordRunConfidence(current, result);
       await notifyRunMilestone(current, result.reason);
@@ -456,6 +519,7 @@ export function createInMemoryAgentRunQueue(options: {
         ],
         updated_at: now().toISOString()
       });
+      await persistRunWithTrace(current);
       await emitRunEvent({
         type: eventTypes.agentRunFailed,
         previewText: failureReason,
@@ -542,7 +606,10 @@ export function createInMemoryAgentRunQueue(options: {
 
   return {
     async enqueue(input) {
-      const existing = activeForWorkItem(input.workItemId);
+      let existing = activeForWorkItem(input.workItemId);
+      if (!existing && persistence) {
+        existing = await persistedActiveForWorkItem(input.workItemId) ?? undefined;
+      }
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
       }
@@ -595,6 +662,7 @@ export function createInMemoryAgentRunQueue(options: {
           created_at: at,
           updated_at: at
         };
+        await persistCreatedRun(run);
         runs.set(run.run_id, run);
         return run;
       } finally {
@@ -603,23 +671,28 @@ export function createInMemoryAgentRunQueue(options: {
     },
 
     async get(runId) {
-      return runs.get(runId) ?? null;
+      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
+      if (run) {
+        runs.set(run.run_id, run);
+      }
+      return run;
     },
 
     async workdir(runId) {
-      return runWorkdirs.get(runId) ?? null;
+      return runWorkdirs.get(runId) ?? runs.get(runId)?.workdir_ref ?? await persistence?.getWorkdir(runId) ?? null;
     },
 
     async trace(runId, after = 0) {
-      const run = runs.get(runId);
+      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
       }
+      runs.set(run.run_id, run);
       return run.trace.filter((step) => step.step_no > after);
     },
 
     async abort(runId, actor) {
-      const run = runs.get(runId);
+      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
       }
@@ -635,17 +708,27 @@ export function createInMemoryAgentRunQueue(options: {
         updated_at: now().toISOString()
       };
       runs.set(runId, updated);
+      await persistRun(updated);
       return updated;
     },
 
     async listActive() {
-      return [...runs.values()].filter((run) => run.status === "queued" || run.status === "running");
+      const byId = new Map<string, AgentRunQueueRecord>();
+      for (const run of await persistence?.listActive() ?? []) {
+        byId.set(run.run_id, run);
+      }
+      for (const run of runs.values()) {
+        if (run.status === "queued" || run.status === "running") {
+          byId.set(run.run_id, run);
+        }
+      }
+      return [...byId.values()];
     },
 
     run: executeRun,
 
     async runNext() {
-      const run = queuedRun();
+      const run = await queuedRun();
       return run ? executeRun(run.run_id) : null;
     }
   };
@@ -856,7 +939,8 @@ export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
     humanReserved: createHumanReservedGuard(),
-    proposals: getDefaultProposalService()
+    proposals: getDefaultProposalService(),
+    persistence: getDefaultAgentRunPersistence()
   });
   return defaultQueue;
 }

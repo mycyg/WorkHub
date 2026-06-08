@@ -28,7 +28,7 @@ Claude 审查指出的问题不是“代码质量差”，而是“范围优先�
 |---|---|---|
 | Cuu 外观投入过多，且 P1 的 `FR-PET-002` 未做 | Cuu 黑/白 Live2D runtime 已存在，外观不再是主线 | R1 通过前冻结 Cuu 外观；R3 只恢复 Cuu 出站 Agent 入口 |
 | Gold Path fixture 冒充完成 | `AgentLoopResult.manifest -> ProposalService.createFromManifest` 与 route auto-pump 已部分落代码，但 AgentRun 仍在内存 | R1 下一刀必须做 DB-backed AgentRun/AgentStep 与真实 replay |
-| 业务状态仍有内存 Map | Proposal 默认已 DB-backed；AgentRun/trace/workdir 仍是 Map | R1 优先 AgentRunStore；R2 再做 SKIP LOCKED 多 worker |
+| 业务状态仍有内存协调 | Proposal 默认已 DB-backed；AgentRun/trace/workdir 已 write-through DB，但 claim/drainer 仍靠进程内 Map/Set | R1 补真实 PG 重启验收；R2 再做 SKIP LOCKED 多 worker |
 | 文档写 Python 迁移，现实是 TS-first 重写 | README、phasing、F 系列已有部分修正，但仍需避免旧 plan 被当目标路径 | 本篇和 TS-first 审计为后续施工权威；旧 Python 行号只作行为锚点 |
 | 概念图/截图仍有橘猫与主窗 Cuu | `assets/cuu/` 已换黑/白；旧 shared 图和旧 current-state 截图标记 stale/fail | 以本篇 R0 概念治理图和 Cuu 专图作为当前边界；旧图只可作历史证据 |
 | `mid`/`medium` 漂移 | `confidence-risk-escalation.md` 已规定 `medium` | 本轮清理 FR/phasing 的 `mid` 表述 |
@@ -111,18 +111,23 @@ R0 退出门：
 ### R1 必做顺序
 
 1. **补 AgentRun schema 与 migration**
+   - **状态：2026-06-08 已完成代码切片。**
    - `agent_runs`:补 `title`、`actor_user_id`、`total_timeout_s`、`max_tokens`、`max_cost_cny`、`budget_decision_json`、`workdir_ref`、`handoff_json`。
    - `agent_steps`:补 `seq` 或等价排序字段；取消 `run_id + step_no` 唯一误设，因为同一 step 会有 `tool_call/tool_result/think/final` 多条 trace record。
-   - 迁移必须可从空 PG 重建，不能只改 TypeScript schema。
+   - 落点：`packages/db/src/schema/core.ts`、`packages/db/migrations/0002_rich_maggott.sql`、`packages/db/src/schema.test.ts`。
+   - 迁移已由 Drizzle Kit 生成，可从空 PG 重建；后续不得手写 TS schema 而不生成 migration/meta。
 
 2. **新增 DB-backed AgentRunStore**
+   - **状态：2026-06-08 已完成 write-through + DB fallback 代码切片；R2 前仍不是多 worker claim store。**
    - 目标路径：`packages/db/src/repositories/agent-runs.ts`、`apps/api/src/services/agent-run-persistence.ts`。
    - 方法：`createRun`、`updateRun`、`replaceTrace`、`setWorkdir`、`findById`、`listActive`。
-   - queue 可以先保留执行协调，但 run truth 必须写 DB；R2 再把 claim/drainer 完全 PG 化。
+   - 默认 queue 已注入 persistence：enqueue 创建 DB run，running/final/cancel 状态写 DB，trace replace 写 DB，内存 miss 时 `get/trace/workdir/listActive` 从 DB 读回。
+   - queue 当前仍保留执行协调 Map/Set；R2 再把 claim/drainer 完全 PG 化。
 
 3. **让 Replay 读真实 DB**
-   - `GET /api/agent-runs/:id/replay` 优先从 DB `agent_runs + agent_steps + snapshots + audit_logs` 组装 `ReplayTraceVM`。
-   - 当前进程 Map 只作执行期缓存，不作回放真相源。
+   - **状态：部分完成。** `GET /api/agent-runs/:id/replay` 仍通过 queue facade 读取，但 queue facade 已有 DB fallback，可在内存 miss 时还原 `agent_runs + agent_steps`。
+   - 剩余：移除生产 P0.5 fixture 分支；补真实 PG route + daemon restart 后 `/replay` 验收证据。
+   - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
 4. **隔离 fixture**
    - `isP05*` 从生产业务 route 迁出到 demo/test-only 边界。
@@ -138,6 +143,15 @@ R0 退出门：
 - daemon 重启后，`GET /api/agent-runs/:id` 与 `/replay` 仍返回同一 run。
 - 生产 route 中不能用 hardcoded manifest/replay 证明通过。
 - 快照红线、provider 单出口、预算计量不回退。
+
+### R1.1 本次落地验收（2026-06-08）
+
+- 已通过：`pnpm --filter @workhub/db typecheck`。
+- 已通过：`pnpm --filter @workhub/api typecheck`。
+- 已通过：`pnpm --filter @workhub/db test`，覆盖新增 AgentRun 恢复字段与 `agent_steps.seq`。
+- 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当前仍由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
+- 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
+- 未完成：真实 PostgreSQL daemon restart 验收、P0.5 fixture 迁出、proposal merge/main 状态完整语义。
 
 ## 5. R2 多 worker 与订阅边界
 

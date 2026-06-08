@@ -1,0 +1,254 @@
+import {
+  createAgentRunRepository,
+  createDatabaseClient,
+  type AgentRunForPersistence,
+  type AgentRunRepository,
+  type AgentRunTraceForPersistence,
+  type AgentRunUsageForPersistence,
+  type StoredAgentRunRows,
+  type WorkHubDatabaseClient
+} from "@workhub/db";
+
+import type {
+  AgentRunPersistence,
+  AgentRunQueueRecord,
+  AgentRunQueueStatus,
+  AgentRunTraceStepRecord
+} from "../workers/agent-runner.js";
+
+function toDate(value: string | Date) {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function latestOutcome(run: AgentRunQueueRecord) {
+  return run.trace.at(-1)?.output_excerpt?.slice(0, 256);
+}
+
+function handoffMd(handoff: AgentRunQueueRecord["handoff"]) {
+  if (!handoff) {
+    return undefined;
+  }
+  return [
+    handoff.done.length ? `已完成: ${handoff.done.join("；")}` : undefined,
+    handoff.remaining.length ? `还剩: ${handoff.remaining.join("；")}` : undefined,
+    handoff.next_steps.length ? `下一步: ${handoff.next_steps.join("；")}` : undefined,
+    handoff.blockers.length ? `阻塞: ${handoff.blockers.join("；")}` : undefined
+  ].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function toPersistenceRun(run: AgentRunQueueRecord): AgentRunForPersistence {
+  const outcomeReason = latestOutcome(run);
+  const handoffText = handoffMd(run.handoff);
+  return {
+    runId: run.run_id,
+    workItemId: run.work_item_id,
+    actorUserId: run.actor_id,
+    mode: run.mode,
+    status: run.status,
+    title: run.title,
+    model: run.budget_decision.model_route.model,
+    budget: {
+      maxSteps: run.budget.max_steps,
+      totalTimeoutS: run.budget.total_timeout_s,
+      maxTokens: run.budget.max_tokens,
+      maxCostCny: run.budget.max_cost_cny
+    },
+    budgetDecisionJson: run.budget_decision as unknown as Record<string, unknown>,
+    usage: {
+      stepsUsed: run.usage.steps_used,
+      tokenIn: run.usage.token_in,
+      tokenOut: run.usage.token_out,
+      estimatedCostCny: run.usage.estimated_cost_cny
+    },
+    ...(outcomeReason ? { outcomeReason } : {}),
+    ...(handoffText ? { handoffMd: handoffText } : {}),
+    ...(run.handoff ? { handoffJson: run.handoff as unknown as Record<string, unknown> } : {}),
+    ...(run.workdir_ref ? { workdirRef: run.workdir_ref } : {}),
+    createdAt: toDate(run.created_at),
+    updatedAt: toDate(run.updated_at)
+  };
+}
+
+function toPersistenceTrace(trace: AgentRunTraceStepRecord[]): AgentRunTraceForPersistence[] {
+  return trace.map((step) => ({
+    id: step.id,
+    stepNo: step.step_no,
+    phase: step.phase,
+    ...(step.output_excerpt ? { outputExcerpt: step.output_excerpt } : {}),
+    ...(step.control_signal ? { controlSignal: step.control_signal } : {}),
+    ...(step.snapshot_id ? { snapshotId: step.snapshot_id } : {}),
+    createdAt: toDate(step.created_at)
+  }));
+}
+
+function queueStatus(status: string): AgentRunQueueStatus {
+  switch (status) {
+    case "queued":
+    case "running":
+    case "succeeded":
+    case "failed":
+    case "escalated":
+    case "cancelled":
+      return status;
+    default:
+      return "failed";
+  }
+}
+
+function queueBudgetDecision(rows: StoredAgentRunRows): AgentRunQueueRecord["budget_decision"] {
+  const raw = jsonObject(rows.run.budgetDecisionJson);
+  const route = jsonObject(raw.model_route);
+  if (
+    typeof raw.decision_id === "string" &&
+    typeof raw.allowed === "boolean" &&
+    typeof route.provider === "string" &&
+    typeof route.model === "string" &&
+    typeof route.reason === "string"
+  ) {
+    return raw as AgentRunQueueRecord["budget_decision"];
+  }
+  return {
+    decision_id: `${rows.run.id}:budget`,
+    allowed: true,
+    model_route: {
+      provider: "persisted",
+      model: rows.run.model,
+      reason: "default"
+    }
+  };
+}
+
+function queueUsage(rows: StoredAgentRunRows): AgentRunUsageForPersistence {
+  return {
+    stepsUsed: rows.run.turnsUsed,
+    tokenIn: rows.run.tokenIn,
+    tokenOut: rows.run.tokenOut,
+    estimatedCostCny: rows.run.costEstimate ?? "0"
+  };
+}
+
+function queueHandoff(rows: StoredAgentRunRows): AgentRunQueueRecord["handoff"] {
+  const raw = jsonObject(rows.run.handoffJson);
+  const done = stringArray(raw.done);
+  const remaining = stringArray(raw.remaining);
+  const nextSteps = stringArray(raw.next_steps);
+  const blockers = stringArray(raw.blockers);
+  const artifacts = stringArray(raw.artifacts);
+  if (!done.length && !remaining.length && !nextSteps.length && !blockers.length && !artifacts.length) {
+    return undefined;
+  }
+  return {
+    done,
+    remaining,
+    next_steps: nextSteps,
+    blockers,
+    artifacts,
+    budget_hit: typeof raw.budget_hit === "string" ? raw.budget_hit : "unknown"
+  };
+}
+
+function queueTrace(rows: StoredAgentRunRows): AgentRunTraceStepRecord[] {
+  return rows.steps.map((step) => {
+    const record: AgentRunTraceStepRecord = {
+      id: step.id,
+      step_no: step.stepNo,
+      phase: step.phase as AgentRunTraceStepRecord["phase"],
+      created_at: step.createdAt.toISOString()
+    };
+    if (step.outputExcerpt) {
+      record.output_excerpt = step.outputExcerpt;
+    }
+    if (step.controlSignal) {
+      record.control_signal = step.controlSignal as NonNullable<AgentRunTraceStepRecord["control_signal"]>;
+    }
+    if (step.snapshotId) {
+      record.snapshot_id = step.snapshotId;
+    }
+    return record;
+  });
+}
+
+function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
+  const usage = queueUsage(rows);
+  const handoff = queueHandoff(rows);
+  return {
+    run_id: rows.run.id,
+    work_item_id: rows.run.workItemId,
+    actor_id: rows.run.actorUserId ?? rows.run.actor,
+    mode: rows.run.mode,
+    status: queueStatus(rows.run.status),
+    title: rows.run.title,
+    ...(rows.run.workdirRef ? { workdir_ref: rows.run.workdirRef } : {}),
+    budget: {
+      max_steps: rows.run.maxTurns,
+      total_timeout_s: rows.run.totalTimeoutS,
+      max_tokens: rows.run.maxTokens,
+      max_cost_cny: rows.run.maxCostCny
+    },
+    budget_decision: queueBudgetDecision(rows),
+    usage: {
+      steps_used: usage.stepsUsed,
+      token_in: usage.tokenIn,
+      token_out: usage.tokenOut,
+      estimated_cost_cny: usage.estimatedCostCny
+    },
+    trace: queueTrace(rows),
+    ...(handoff ? { handoff } : {}),
+    created_at: rows.run.createdAt.toISOString(),
+    updated_at: rows.run.updatedAt.toISOString()
+  };
+}
+
+export function createDbAgentRunPersistence(repository: AgentRunRepository): AgentRunPersistence {
+  return {
+    async createRun(run) {
+      await repository.createRun(toPersistenceRun(run));
+    },
+
+    async updateRun(run) {
+      await repository.updateRun(toPersistenceRun(run));
+    },
+
+    async replaceTrace(runId, trace) {
+      await repository.replaceTrace(runId, toPersistenceTrace(trace));
+    },
+
+    async setWorkdir(runId, workdir, at) {
+      await repository.setWorkdir(runId, workdir, at);
+    },
+
+    async get(runId) {
+      const rows = await repository.findById(runId);
+      return rows ? toQueueRun(rows) : null;
+    },
+
+    async getWorkdir(runId) {
+      const rows = await repository.findById(runId);
+      return rows?.run.workdirRef ?? null;
+    },
+
+    async listActive() {
+      const rows = await repository.listActive();
+      return rows.map(toQueueRun);
+    }
+  };
+}
+
+let defaultAgentRunDbClient: WorkHubDatabaseClient | undefined;
+let defaultAgentRunPersistence: AgentRunPersistence | undefined;
+
+export function getDefaultAgentRunPersistence() {
+  if (!defaultAgentRunPersistence) {
+    defaultAgentRunDbClient = createDatabaseClient();
+    defaultAgentRunPersistence = createDbAgentRunPersistence(createAgentRunRepository(defaultAgentRunDbClient.db));
+  }
+  return defaultAgentRunPersistence;
+}

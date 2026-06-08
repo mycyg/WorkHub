@@ -128,7 +128,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 | `Review`(自 `RevisionRequest`) | §6.3 | `proposal_id` FK CASCADE;`decision=approve|reject`;`reason_md`(reject 时应用层 NOT NULL);`reason_fed_back_at?`、`reviewer_kind` |
 | `SpecDoc` | §6.5 | `scope_kind=work_item|project`;`work_item_id?`/`project_id?` 二选一;`content_sha256`、`version`(+`version_id_col`) |
 | `AgentRun` | §7.1 | `work_item_id` FK CASCADE、`branch_id?`;`mode`、`actor`、`status`、`model`、`turns_used`、`max_turns`(必填)、`token_in/out`、`cost_estimate?`、`handoff_md?` |
-| `AgentStep` | §7.2 | `agent_run_id` FK CASCADE;`step_no`、`phase`、`tool_name?`、`input_json` JSONB、`output_excerpt`、`control_signal?`、`snapshot_id?`;`UniqueConstraint(agent_run_id, step_no)` |
+| `AgentStep` | §7.2 | `agent_run_id` FK CASCADE;`seq` 排序索引、`step_no` 语义步号、`phase`、`tool_name?`、`input_json` JSONB、`output_excerpt`、`control_signal?`、`snapshot_id?`;同一 `step_no` 可有多条 trace record |
 | `ConfidenceRecord` | §7.3 | `work_item_id`/`proposal_id?`/`agent_run_id?`;`confidence_score`/`risk_score` float、`grade`/`risk_level`(**`low|medium|high`**)、`verdict`、`signals_json` JSONB、`rationale_md` |
 | `EscalationEvent` | §7.4 | `work_item_id`/`agent_run_id?`/`confidence_id?`;`trigger`(枚举 `unqualified\|user_unsatisfied\|user_forbidden\|doom_loop\|budget_exhausted`,**以 data-model §7.4 与 api-contract §2.7 为准**)、`reason_md`、`handoff_json` JSONB、`suggested_lead_user_id?`、`resolved_at?` |
 | `Snapshot` | §7.5 | `work_item_id`/`branch_id?`;`kind=pre_step|merge|manual`、`ref`、`content_sha256?`、`created_by_kind`、`reverted_at?`(沿用 `undone_at` 范式) |
@@ -198,7 +198,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 3. **改名零残留**:`rg "requirement_id|requirements\.id" app/models.py app/schemas.py` **零命中**;`rg "class Requirement\b" app/models` 零命中,`class WorkItem` 命中 1。
 4. **列类型 PG 化**:断言 `WorkItem.created_at.type` 为 `DateTime(timezone=True)`;`AgentStep.input_json.type` 为 `JSONB`;`WorkItem.id.type` 为 `Uuid`。
 5. **乐观锁就绪**:`WorkItem.__mapper_args__["version_id_col"]` 指向 `version` 列;`SpecDoc`/`Branch` 同。
-6. **唯一约束**:`Proposal` 含 `UniqueConstraint(branch_id, round)`;`AgentStep` 含 `(agent_run_id, step_no)`;`Workspace` 含 `(org_id, slug)`。
+6. **唯一约束**:`Proposal` 含 `UniqueConstraint(branch_id, round)`;`AgentStep` 不对 `(agent_run_id, step_no)` 加唯一约束，改用 `(agent_run_id, seq)` 排序索引;`Workspace` 含 `(org_id, slug)`。
 7. **枚举一致**:`CONFIDENCE_GRADES == ("low","medium","high")`;源码内 `rg "\bmid\b" app/models app/schemas` 在 grade/risk 语境零命中。
 8. **审计不软删**:`AuditLog` 无 `deleted_at` 列、有 `created_at` index(`hasattr(AuditLog,"deleted_at") is False`)。
 9. **关系往返**:`WorkItem.branches`/`AgentRun.steps`/`Branch.proposals` relationship 双向 `back_populates` 一致(SQLAlchemy `configure_mappers()` 无警告)。

@@ -53,7 +53,7 @@ R0 退出门：
 |---|---|---|
 | R1-0 Queue pump | `POST /workitems/:id/agent-runs` 后 daemon 自动 drain queue，不靠测试手动 `runNext()`。 | **2026-06-08 已落代码切片**：默认 route 会调用 `queue.run(run_id)` 自动 pump，测试覆盖 POST 后无需 `runNext()` 也能 `queued -> succeeded`。 |
 | R1-1 接缝 | `AgentLoopResult.manifest` 传给 `ProposalService.createFromManifest`，真实 run 成功后自动 opened proposal。 | **2026-06-08 已落代码切片**：`apps/api/src/workers/agent-runner.ts` 成功 run 会打开 proposal 并发布 `proposal.opened`；`apps/api/src/agent-runs.test.ts` 覆盖真实 AgentLoop manifest。下一步仍需用真实 route/DB 端到端验收。 |
-| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | **2026-06-08 部分落地**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`。未完成：AgentRun/AgentStep queue store、CostLedger 默认 store、重启后 replay/run 查询。 |
+| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | **2026-06-08 部分落地**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`；`packages/db/src/repositories/agent-runs.ts` + `apps/api/src/services/agent-run-persistence.ts` 已支持 AgentRun/AgentStep write-through 与 DB fallback。未完成：CostLedger 默认 store、真实 PG 重启后 replay/run 查询验收。 |
 | R1-3 删除 fixture 生产分支 | `isP05*` 只保留测试夹具，不出现在生产路由判断。 | 生产路由 grep 清零 |
 | R1-4 审批人路由 | 自审批 stub 改为 WorkItem owner / 项目负责人 / permission routing。 | escalation 或 review 发给正确 approver |
 
@@ -71,21 +71,22 @@ R1 退出门：
 - `AgentLoopResult.manifest -> ProposalService.createFromManifest` 已由 queue 注入的 proposal sink 承接；成功 run 后发布 `workitem:{id}` 上的 `proposal.opened`，Cuu 状态为 `carrying_document`。
 - 默认 `ProposalService` 已从内存实现切到 DB-backed lazy service，写入 `branches`、`proposals`、`reviews`；内存 service 只保留为测试/显式注入隔离用。
 - `POST /workitems/:id/agent-runs` 默认自动 pump：route enqueue 后后台执行 `queue.run(run_id)`；测试用 `autoRun:false` 保留手动 queue 单元边界。
-- 验证：`pnpm --filter @workhub/api test -- agent-runs.test.ts`、`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/db typecheck` 已通过。
+- AgentRun persistence 已落代码切片：`agent_runs` 补 `title/actor_user_id/budget_decision_json/workdir_ref/handoff_json` 等恢复字段，`agent_steps` 补 `seq` 并取消错误唯一约束；默认 queue 写穿透 DB，内存 miss 时可从 DB 读回 run/trace/workdir/listActive。
+- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"` 已通过；最后一个命令当前实际跑完整 API test suite，61/61 通过。
 
 仍不能宣称 R1 完成：
 
-- 默认 AgentRun queue 仍以内存 Map/Set 保存 run、trace、workdir，daemon 重启会丢 run 状态；Replay 只能查当前进程队列或 P0.5 fixture。
-- AgentRun schema 仍缺 live VM 所需的 `title` / budget decision / workdir / handoff JSON 等持久字段；不能把当前 `agent_runs` 表伪装成完整 queue truth。
+- AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
+- 真实 PostgreSQL 重启后 `/agent-runs/:id` 与 `/replay` 还缺运行证据；当前测试只验证 fake persistence 冷启动恢复。
 - 生产 routes 中仍存在 P0.5 `isP05*` 分支，R1 完成前必须迁出到 demo/test-only 路径。
 - proposal merge 目前只落 proposal 状态与 `merge_snapshot_id`，还未把具体交付物采纳为 main 状态，也未完成 approver owner routing。
 
 下一施工顺序：
 
-1. 补 AgentRun 持久化字段/映射：确认 `agent_runs` 是否新增 `title`、`budget_json`、`budget_decision_json`、`workdir_ref`、`handoff_json`，然后生成 Drizzle migration。
-2. 增加 DB-backed `AgentRunStore`：`agent_runs` / `agent_steps` 持久化，queue 只保留执行协调，不再把 run truth 存 Map。
-3. 用真实 DB route 跑一条 file-only work item：run -> manifest -> proposal -> review/merge -> replay，并记录重启后查询证据。
-4. 清理生产 P0.5 fixture 分支，只保留 `/api/pages/gold-path` demo bundle。
+1. 用真实 PostgreSQL route 跑一条 file-only work item：run -> manifest -> proposal -> review/merge -> replay，并记录 daemon restart 后查询证据。
+2. 清理生产 P0.5 fixture 分支，只保留 `/api/pages/gold-path` demo bundle。
+3. 补 proposal merge/main 状态、merge snapshot 与 approver owner routing。
+4. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
 ## 3. R2 真正解除单 worker
 
