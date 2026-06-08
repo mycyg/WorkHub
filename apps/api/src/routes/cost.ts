@@ -65,7 +65,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
     return c.json({ ok: true, data: toApiBudgetPolicy(policy) });
   });
 
-  routes.get("/usage", createCurrentUserMiddleware(authSource), (c) => {
+  routes.get("/usage", createCurrentUserMiddleware(authSource), async (c) => {
     const teamId = settings.auth.defaultWorkspaceId;
     const decision = decideRunBudget({
       settings,
@@ -74,7 +74,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
         teamId
       },
       policies: policyStore.listPolicies(settings),
-      usage: ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
+      usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     const data = buildCostSummary({
       settings,

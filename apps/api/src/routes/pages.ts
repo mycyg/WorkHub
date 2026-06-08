@@ -126,14 +126,14 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         teamId
       },
       policies: policyStore.listPolicies(settings),
-      usage: ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
+      usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     const data = buildCostDashboardPage({
       settings,
       isAdmin: c.var.currentUser.isAdmin,
       userId: c.var.currentUser.id,
       budgetUsages: decision.usages,
-      ledgerEntries: ledgerStore.entries
+      ledgerEntries: ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries
     });
     return c.json(pageEnvelope(data, requestLocale(c)));
   });

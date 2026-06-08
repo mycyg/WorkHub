@@ -57,7 +57,7 @@ R0 退出门：
 |---|---|---|
 | R1-0 Queue pump | `POST /workitems/:id/agent-runs` 后 daemon 自动 drain queue，不靠测试手动 `runNext()`。 | **2026-06-08 已落代码切片**：默认 route 会调用 `queue.run(run_id)` 自动 pump，测试覆盖 POST 后无需 `runNext()` 也能 `queued -> succeeded`。 |
 | R1-1 接缝 | `AgentLoopResult.manifest` 传给 `ProposalService.createFromManifest`，真实 run 成功后自动 opened proposal。 | **2026-06-08 已落代码切片**：`apps/api/src/workers/agent-runner.ts` 成功 run 会打开 proposal 并发布 `proposal.opened`；`apps/api/src/agent-runs.test.ts` 覆盖真实 AgentLoop manifest。下一步仍需用真实 route/DB 端到端验收。 |
-| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | **2026-06-08 部分落地**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`；`packages/db/src/repositories/agent-runs.ts` + `apps/api/src/services/agent-run-persistence.ts` 已支持 AgentRun/AgentStep write-through 与 DB fallback；真实 PG restart/replay smoke 已通过。未完成：CostLedger 默认 store。 |
+| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | **2026-06-08 部分落地**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`；`packages/db/src/repositories/agent-runs.ts` + `apps/api/src/services/agent-run-persistence.ts` 已支持 AgentRun/AgentStep write-through 与 DB fallback；`packages/db/src/repositories/cost-ledger.ts` + `usage_records/cost_ledger_entries` 已支持默认 DB-backed CostLedger；真实 PG restart/replay/cost smoke 已通过。未完成：BudgetPolicy 持久化与审计。 |
 | R1-3 删除 fixture 生产分支 | `isP05*` 不出现在生产路由判断；没有真实 service 的 route 失败关闭。 | **2026-06-08 已落代码切片**：生产 routes grep 清零，仅 `/api/pages/gold-path` 保留 demo bundle。 |
 | R1-4 审批人路由 | 自审批 stub 改为 WorkItem owner / 项目负责人 / permission routing。 | **2026-06-08 已落最小真实切片**：AgentRun 通知新增 DB WorkItem context resolver，默认读取 submitter/project owner/assignee 并交给 lifecycle approver fallback；`packages/events` 覆盖 project owner fallback。完整 permission policy routing 仍属 R2/R3 审批中心。 |
 | R1-5 Intake/WorkItem/Knowledge/Page VM | `sessions/workitems/knowledge/pages/workitems` 从 501 失败关闭升级为真实最小服务。 | **2026-06-08 已落代码切片**：`apps/api/src/services/work-items.ts` + `packages/db/src/repositories/work-items.ts` 接入 option-first intake、work item 创建/固化、knowledge evidence bubble、evidence binding、WorkItemDetailVM；API test 与 Linux PG smoke 已覆盖。 |
@@ -79,20 +79,21 @@ R1 退出门：
 - AgentRun persistence 已落代码切片：`agent_runs` 补 `title/actor_user_id/budget_decision_json/workdir_ref/handoff_json` 等恢复字段，`agent_steps` 补 `seq` 并取消错误唯一约束；默认 queue 写穿透 DB，内存 miss 时可从 DB 读回 run/trace/workdir/listActive。
 - AgentRun replay fixture fallback 已完全移出生产 route：`/api/agent-runs/:id/replay` 只读真实 queue/persistence/audit/snapshot，不再接受 `allowP05ReplayFixture`。
 - P0.5 route set 已从生产业务 route 迁出：`sessions/workitems/knowledge/pages/workitems` 已改为 R1 最小真实 service；`pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`；仅 `/api/pages/gold-path` 保留 demo bundle。
-- R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 intake/work item/knowledge/page route、DB-backed AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；最新通过证据为 `session_status=200`、`work_item_status=spec_ready`、`evidence_refs=1`、`page_evidence_refs=1`、`agent_runs=1`、`agent_steps=4`、`proposals=1`、`branches=1`、`snapshots=1`、`audit_logs=1`、`proposal/branch/work_item=merged`、`replay_steps=4`。
+- CostLedger 默认 store 已从内存切到 DB-backed：`usage_records` 保存 provider 原始调用事实，`cost_ledger_entries` 按 workitem/user/team/eval scope 幂等归集；`/api/cost/usage` 与 `/api/pages/cost` 会从 DB 读取 ledger。
+- R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 intake/work item/knowledge/page route、DB-backed CostLedger/AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；最新通过证据为 `session_status=200`、`work_item_status=spec_ready`、`evidence_refs=1`、`page_evidence_refs=1`、`usage_records=1`、`cost_ledger_entries=3`、`page_total_cost_cny=0.007`、`agent_runs=1`、`agent_steps=4`、`proposals=1`、`branches=1`、`snapshots=1`、`audit_logs=1`、`proposal/branch/work_item=merged`、`replay_steps=4`。
 - 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 60/60 通过。
 
 仍不能宣称 R1 完成：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 Linux 测试机已给出真实 PG 通过证据。
-- CostLedger 默认 store 尚未接入；预算页 VM 仍不能作为真实成本治理证据。
+- BudgetPolicy 更新仍是内存 override，尚未落 `budget_policies` 与 `AuditLog(action="budget_policy.updated")`；预算策略持久化仍不能宣称完成。
 - proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version。完整文件物理采纳、冲突调解、audit repo 持久化仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 接 CostLedger 默认 store，让预算拒绝/告警/usage ledger 可被真实 route 与 page VM 读取。
-2. 补完整 merge audit repo、文件物理采纳与冲突调解。
+1. 补完整 merge audit repo、文件物理采纳与冲突调解。
+2. 补 BudgetPolicy 持久化与 `budget_policy.updated` 审计。
 3. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
 ## 3. R2 真正解除单 worker

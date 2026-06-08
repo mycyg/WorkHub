@@ -1,11 +1,21 @@
 import { settings } from "@workhub/config";
-import { createMemoryCostLedgerStore, type CostLedgerStore } from "@workhub/cost";
+import {
+  createDatabaseClient,
+  createDbCostLedgerStore,
+  type WorkHubDatabaseClient
+} from "@workhub/db";
+import type { CostLedgerStore } from "@workhub/cost";
 
-const defaultCostLedgerStore = createMemoryCostLedgerStore({
-  teamId: settings.auth.defaultWorkspaceId,
-  evalSuite: "nightly"
-});
+let defaultDbClient: WorkHubDatabaseClient | undefined;
+let defaultCostLedgerStore: CostLedgerStore | undefined;
 
 export function getDefaultCostLedgerStore(): CostLedgerStore {
+  if (!defaultCostLedgerStore) {
+    defaultDbClient = createDatabaseClient();
+    defaultCostLedgerStore = createDbCostLedgerStore(defaultDbClient.db, {
+      teamId: settings.auth.defaultWorkspaceId,
+      evalSuite: "nightly"
+    });
+  }
   return defaultCostLedgerStore;
 }

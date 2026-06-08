@@ -216,7 +216,11 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
 test("cost policy routes fail closed for non-admins and invalid policy updates", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api/cost", createCostRoutes({ auth: authDeps(runtimeSettings), policyStore: createMemoryBudgetPolicyStore() }));
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId })
+  }));
 
   const userHeaders = { Cookie: await cookie(runtimeSettings, "cookie-cost-user") };
   const adminHeaders = { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") };

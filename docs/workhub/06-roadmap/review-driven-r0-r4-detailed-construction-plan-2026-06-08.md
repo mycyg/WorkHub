@@ -167,7 +167,8 @@ R0 退出门：
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
 - 后续已补：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出生产业务 route。
 - 后续已补：R1 最小真实 `sessions/workitems/knowledge/page workitem` service 已接入，并纳入 API test 与 PG smoke。
-- 未完成：CostLedger 默认 store、merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
+- 后续已补：CostLedger 默认 store 已接 `usage_records/cost_ledger_entries` 与 DB-backed repository，并纳入 PG smoke 的 cost usage/page 断言。
+- 未完成：BudgetPolicy 持久化与审计、merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -191,7 +192,7 @@ pnpm qa:r1-pg-smoke
 10. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
 11. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
 12. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
-13. 输出 JSON 证据：intake/evidence/page evidence、`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
+13. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page 汇总、`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
 
 当前本机实测：
 
@@ -203,8 +204,8 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 ```json
 {
   "ok": true,
-  "work_item_id": "b9e30126-5d19-4ac7-8061-1600c4b00955",
-  "run_id": "fe4df610-c877-4aea-bdf3-03e99dc27c18",
+  "work_item_id": "17b2b227-7282-4bac-939c-023e389dccaf",
+  "run_id": "69f541b3-3876-4e93-91ae-c27c107c1af6",
   "intake": {
     "session_status": 200,
     "work_item_status": "spec_ready",
@@ -218,14 +219,22 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "proposals": 1,
     "branches": 1,
     "snapshots": 1,
-    "audit_logs": 1
+    "audit_logs": 1,
+    "usage_records": 1,
+    "cost_ledger_entries": 3
+  },
+  "cost": {
+    "usage_me_token_in": 1500,
+    "usage_team_token_in": 1500,
+    "page_total_cost_cny": "0.007",
+    "page_token_in": 1500
   },
   "merge": {
     "proposal_status": "merged",
     "branch_status": "merged",
     "work_item_status": "merged",
-    "main_branch_id": "8cb85cde-57fd-4257-bce4-6e0d06d6698c",
-    "merge_snapshot_id": "dd1b46ef-a066-43e9-84e0-d886682e104a"
+    "main_branch_id": "26b6e22e-a505-4b0d-bb2f-dcc823de7566",
+    "merge_snapshot_id": "09bc2886-028f-4feb-8de3-65e37d073905"
   },
   "replay_steps": 4,
   "replay_snapshots": 1,
@@ -233,7 +242,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> AgentRun -> proposal -> merge -> replay 纵切已由 Linux PG smoke 验证通过。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> DB CostLedger -> AgentRun -> proposal -> merge -> replay 纵切已由 Linux PG smoke 验证通过。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -246,14 +255,17 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 - `apps/api/src/pages/gold-path.ts` 删除未使用的 `isP05*` id matcher，减少误接回生产 route 的风险。
 - `apps/api/src/services/work-items.ts` 新增 R1 最小真实 service；`packages/db/src/repositories/work-items.ts` 新增 DB repository；`apps/api/src/qa/r1-pg-agent-run-smoke.ts` 将 intake/knowledge/page 纳入 smoke。
 - `apps/api/src/workers/agent-runner.ts` 串行化同一 run 的 trace persistence，避免 background trace 与 final trace 在真实 PG 下抢写 `agent_steps`。
+- `packages/db/src/repositories/cost-ledger.ts` 新增 DB-backed `CostLedgerStore`；`apps/api/src/services/cost-ledger-store.ts` 的生产默认 store 已切 DB，`createInMemoryAgentRunQueue()` 仍默认内存 ledger 以保留单元测试隔离。
+- `packages/db/migrations/0003_amused_raider.sql` 新增 `usage_records` 与 `cost_ledger_entries`，幂等键为 `usage_record_id + scope_kind + scope_id + period_bucket`。
 
 验证：
 
 - `rg -n "isP05|p05GoldPathIds|getP05GoldPathFixture|allowP05ReplayFixture|P0\\.5" apps/api/src/routes apps/api/src/openapi.ts -S` 只剩 `/api/pages/gold-path` 的 OpenAPI 摘要。
 - `pnpm --filter @workhub/api typecheck` 通过。
 - `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
+- `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 10/10；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1 全部完成，因为 CostLedger 默认 store、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

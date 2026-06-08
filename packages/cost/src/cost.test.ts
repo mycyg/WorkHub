@@ -166,7 +166,7 @@ test("cost ledger reconciles usage into scoped entries and budget snapshots", as
   assert.equal(ledger.entries.length, 3);
   assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), ["team", "user", "workitem"]);
 
-  const snapshots = ledger.usageSnapshots({
+  const snapshots = await ledger.usageSnapshots({
     workItemId: "workitem-1",
     userId: "user-1",
     teamId: "team-1"
@@ -191,6 +191,8 @@ test("eval usage is reconciled separately from user and team quota", async () =>
 
   assert.equal(ledger.entries.length, 1);
   assert.deepEqual(ledger.entries[0]?.scope, { kind: "eval", suite: "nightly" });
-  assert.equal(ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" }).every((snapshot) => snapshot.tokenIn === 0), true);
-  assert.equal(ledger.usageSnapshots({ evalSuite: "nightly" })[0]?.estimatedCostCny, "0.002");
+  const userSnapshots = await ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" });
+  const evalSnapshots = await ledger.usageSnapshots({ evalSuite: "nightly" });
+  assert.equal(userSnapshots.every((snapshot) => snapshot.tokenIn === 0), true);
+  assert.equal(evalSnapshots[0]?.estimatedCostCny, "0.002");
 });

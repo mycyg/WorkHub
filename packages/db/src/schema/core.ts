@@ -849,6 +849,75 @@ export const agentSteps = pgTable(
   ]
 );
 
+export const usageRecords = pgTable(
+  "usage_records",
+  {
+    id: varchar("id", { length: 512 }).primaryKey(),
+    runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    actorId: varchar("actor_id", { length: 128 }),
+    provider: varchar("provider", { length: 64 }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
+    task: varchar("task", { length: 64 }).notNull(),
+    source: varchar("source", { length: 32 }).notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    estimatedCostCny: numeric("estimated_cost_cny", { precision: 12, scale: 6 }).notNull().default("0"),
+    createdAt: timestampTz("created_at").notNull()
+  },
+  (table) => [
+    index("usage_records_run_id_idx").on(table.runId),
+    index("usage_records_work_item_id_idx").on(table.workItemId),
+    index("usage_records_user_id_idx").on(table.userId),
+    index("usage_records_created_at_idx").on(table.createdAt),
+    index("usage_records_provider_model_idx").on(table.provider, table.model)
+  ]
+);
+
+export const costLedgerEntries = pgTable(
+  "cost_ledger_entries",
+  {
+    id: id(),
+    usageRecordId: varchar("usage_record_id", { length: 512 }).notNull().references(() => usageRecords.id, {
+      onDelete: "cascade"
+    }),
+    policyId: varchar("policy_id", { length: 128 }),
+    runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    teamId: uuid("team_id").references(() => workspaces.id, { onDelete: "set null" }),
+    scopeKind: varchar("scope_kind", { length: 16 }).notNull(),
+    scopeId: varchar("scope_id", { length: 128 }).notNull(),
+    scopeJson: jsonb("scope_json").$type<JsonObject>().notNull(),
+    periodBucket: varchar("period_bucket", { length: 16 }).notNull(),
+    tokenIn: integer("token_in").notNull().default(0),
+    tokenOut: integer("token_out").notNull().default(0),
+    estimatedCostCny: numeric("estimated_cost_cny", { precision: 12, scale: 6 }).notNull().default("0"),
+    unitPriceCny: numeric("unit_price_cny", { precision: 12, scale: 6 }),
+    currency: varchar("currency", { length: 3 }).notNull().default("CNY"),
+    provider: varchar("provider", { length: 64 }),
+    model: varchar("model", { length: 128 }).notNull(),
+    source: varchar("source", { length: 32 }).notNull(),
+    createdAt: timestampTz("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("cost_ledger_entries_usage_scope_uq").on(
+      table.usageRecordId,
+      table.scopeKind,
+      table.scopeId,
+      table.periodBucket
+    ),
+    index("cost_ledger_entries_run_id_idx").on(table.runId),
+    index("cost_ledger_entries_work_item_id_idx").on(table.workItemId),
+    index("cost_ledger_entries_user_id_idx").on(table.userId),
+    index("cost_ledger_entries_team_id_idx").on(table.teamId),
+    index("cost_ledger_entries_scope_idx").on(table.scopeKind, table.scopeId),
+    index("cost_ledger_entries_period_bucket_idx").on(table.periodBucket),
+    index("cost_ledger_entries_created_at_idx").on(table.createdAt)
+  ]
+);
+
 export const confidenceRecords = pgTable(
   "confidence_records",
   {
@@ -1029,6 +1098,8 @@ export const workHubTables = {
   specDocs,
   agentRuns,
   agentSteps,
+  usageRecords,
+  costLedgerEntries,
   confidenceRecords,
   escalationEvents,
   snapshots,

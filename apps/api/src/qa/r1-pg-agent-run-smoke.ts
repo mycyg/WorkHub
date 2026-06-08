@@ -8,10 +8,12 @@ import {
   auditLogs,
   agentRuns,
   branches,
+  costLedgerEntries,
   createAgentRunRepository,
   createAuditLogRepository,
   createClientDeviceRepository,
   createDatabaseClient,
+  createDbCostLedgerStore,
   createProposalRepository,
   createWorkItemRepository,
   createSnapshotRepository,
@@ -23,10 +25,12 @@ import {
   projects,
   runMigrations,
   snapshots,
+  usageRecords,
   users,
   workItems,
   workspaces
 } from "@workhub/db";
+import { buildUsageRecord } from "@workhub/cost";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -34,6 +38,7 @@ import { ZodError } from "zod";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
+import { createCostRoutes } from "../routes/cost.js";
 import { createKnowledgeRoutes } from "../routes/knowledge.js";
 import { createPageRoutes } from "../routes/pages.js";
 import { createSessionRoutes } from "../routes/sessions.js";
@@ -145,6 +150,10 @@ async function main() {
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const proposalService = createDbProposalService(createProposalRepository(db));
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));
+    const ledgerStore = createDbCostLedgerStore(db, {
+      teamId: settings.auth.defaultWorkspaceId,
+      evalSuite: "nightly"
+    });
     const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
@@ -170,8 +179,10 @@ async function main() {
       queue,
       proposals: proposalService,
       workItems: workItemService,
+      ledgerStore,
       allowUnauthenticatedGoldPath: false
     }));
+    app.route("/api/cost", createCostRoutes({ auth, ledgerStore }));
     app.route("/api", createAgentRunRoutes({
       auth,
       queue,
@@ -265,6 +276,34 @@ async function main() {
     if (executed.status !== "succeeded") {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
     }
+    await ledgerStore.recordUsage(buildUsageRecord({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      task: "worker",
+      runId,
+      workItemId,
+      userId: defaultSeedIds.adminUserId,
+      inputTokens: 1500,
+      outputTokens: 500,
+      costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+      createdAt: new Date("2026-06-08T12:00:00.000Z")
+    }));
+    const costUsage = await app.request("/api/cost/usage", { headers });
+    const costPage = await app.request("/api/pages/cost", { headers });
+    if (costUsage.status !== 200) {
+      throw new Error(`Expected cost usage 200, got ${costUsage.status}: ${await costUsage.text()}`);
+    }
+    if (costPage.status !== 200) {
+      throw new Error(`Expected cost page 200, got ${costPage.status}: ${await costPage.text()}`);
+    }
+    const costUsageBody = await costUsage.json() as { data: { me: { token_in: number }; team?: { token_in: number } } };
+    const costPageBody = await costPage.json() as { data: { total_cost_cny: string; token_in: number } };
+    if (costUsageBody.data.me.token_in !== 1500 || costUsageBody.data.team?.token_in !== 1500) {
+      throw new Error("Expected DB cost usage to include user and team ledger scopes.");
+    }
+    if (costPageBody.data.total_cost_cny !== "0.007" || costPageBody.data.token_in !== 1500) {
+      throw new Error(`Expected DB cost page totals, got ${JSON.stringify(costPageBody.data)}`);
+    }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
       rows.filter((row) => row.workItemId === workItemId)
     );
@@ -311,14 +350,26 @@ async function main() {
     if (replayAfterRestart.status !== 200) {
       throw new Error(`Expected restart replay read 200, got ${replayAfterRestart.status}: ${await replayAfterRestart.text()}`);
     }
-    const [agentRunRows, stepRows, proposalRows, branchRows, workItemRows, snapshotRows, auditRows] = await Promise.all([
+    const [
+      agentRunRows,
+      stepRows,
+      proposalRows,
+      branchRows,
+      workItemRows,
+      snapshotRows,
+      auditRows,
+      usageRecordRows,
+      costLedgerRows
+    ] = await Promise.all([
       db.select().from(agentRuns).then((rows) => rows.filter((row) => row.id === runId)),
       restartedQueue.trace(runId),
       db.select().from(proposals).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
       db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
-      db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId))
+      db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId)),
+      db.select().from(usageRecords).then((rows) => rows.filter((row) => row.runId === runId)),
+      db.select().from(costLedgerEntries).then((rows) => rows.filter((row) => row.runId === runId))
     ]);
     const proposalAfterMerge = proposalRows[0];
     const branchAfterMerge = branchRows.find((row) => row.id === proposalAfterMerge?.branchId);
@@ -355,7 +406,15 @@ async function main() {
         proposals: proposalRows.length,
         branches: branchRows.length,
         snapshots: snapshotRows.length,
-        audit_logs: auditRows.length
+        audit_logs: auditRows.length,
+        usage_records: usageRecordRows.length,
+        cost_ledger_entries: costLedgerRows.length
+      },
+      cost: {
+        usage_me_token_in: costUsageBody.data.me.token_in,
+        usage_team_token_in: costUsageBody.data.team?.token_in,
+        page_total_cost_cny: costPageBody.data.total_cost_cny,
+        page_token_in: costPageBody.data.token_in
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

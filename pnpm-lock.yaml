@@ -178,6 +178,9 @@ importers:
       '@workhub/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@workhub/cost':
+        specifier: workspace:*
+        version: link:../cost
       drizzle-orm:
         specifier: ^0.44.2
         version: 0.44.2(@types/pg@8.20.0)(pg@8.21.0)

@@ -6,9 +6,18 @@ import test from "node:test";
 import { getTableName } from "drizzle-orm";
 
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
-import { agentRuns, agentSteps, auditLogs, proposals, workHubTables, workItems } from "./index.js";
+import {
+  agentRuns,
+  agentSteps,
+  auditLogs,
+  costLedgerEntries,
+  proposals,
+  usageRecords,
+  workHubTables,
+  workItems
+} from "./index.js";
 
-const F02_TABLE_COUNT = 41;
+const F02_TABLE_COUNT = 43;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -32,6 +41,8 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("audit_logs"), true);
   assert.equal(tableNames.includes("snapshots"), true);
   assert.equal(tableNames.includes("approval_requests"), true);
+  assert.equal(tableNames.includes("usage_records"), true);
+  assert.equal(tableNames.includes("cost_ledger_entries"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
@@ -56,6 +67,19 @@ test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.workdirRef.name, "workdir_ref");
   assert.equal(agentRuns.handoffJson.name, "handoff_json");
   assert.equal(agentSteps.seq.name, "seq");
+});
+
+test("cost ledger persistence fields support P-COST usage recovery", () => {
+  assert.equal(usageRecords.id.name, "id");
+  assert.equal(usageRecords.runId.name, "run_id");
+  assert.equal(usageRecords.workItemId.name, "work_item_id");
+  assert.equal(usageRecords.userId.name, "user_id");
+  assert.equal(usageRecords.estimatedCostCny.name, "estimated_cost_cny");
+  assert.equal(costLedgerEntries.usageRecordId.name, "usage_record_id");
+  assert.equal(costLedgerEntries.scopeKind.name, "scope_kind");
+  assert.equal(costLedgerEntries.scopeId.name, "scope_id");
+  assert.equal(costLedgerEntries.scopeJson.name, "scope_json");
+  assert.equal(costLedgerEntries.periodBucket.name, "period_bucket");
 });
 
 test("enum drift is closed in the shared contract package", () => {

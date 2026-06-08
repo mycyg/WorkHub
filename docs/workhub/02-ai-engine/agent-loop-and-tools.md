@@ -62,15 +62,16 @@ R1 当前代码切片已落：
 - 真实 PostgreSQL restart/replay smoke 已通过：一条 file-only run 在 Linux 测试机落 `agent_runs/agent_steps/proposals/snapshots/audit_logs` 后，新 queue 可读回 `/agent-runs/:id` 与 `/replay`。
 - P0.5 fixture 已从生产业务 route 迁出：`/agent-runs/:id/replay` 不再有 fixture fallback；`sessions/workitems/knowledge/page workitem` 已接 R1 最小真实 service，只有 `/api/pages/gold-path` 保留 demo bundle。
 - `apps/api/src/services/work-items.ts` 与 `packages/db/src/repositories/work-items.ts` 已接入 option-first intake、work item 创建/固化、knowledge evidence bubble、evidence binding 与 WorkItemDetailVM；Linux PG smoke 已覆盖 `session_status=200`、`work_item_status=spec_ready`、`evidence_refs=1`。
+- CostLedger 默认 store 已 DB-backed：`usage_records` 保存 provider 原始 usage，`cost_ledger_entries` 按 workitem/user/team/eval scope 幂等归集；`/api/cost/usage` 与 `/api/pages/cost` 读 DB ledger，Linux PG smoke 覆盖 `usage_records=1`、`cost_ledger_entries=3` 与成本页汇总。
 - Proposal merge/main 最小真实切片已落：DB repository 在 review/merge 时更新 `reviews/proposals/branches/work_items`；打回解锁 branch，采纳写 `work_items.status=merged/main_branch_id/accepted_at` 与 branch head/version；AgentRun 通知可通过 DB WorkItem context resolver 路由到 submitter/project owner/assignee 上下文。
 
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
 - Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，但 merge 的文件物理采纳、冲突调解与 audit repo 持久化仍需做实。
-- CostLedger 默认 store 尚未接入；预算使用、告警和拒绝仍不能作为真实成本治理证据。
+- BudgetPolicy 更新仍是内存 override，尚未持久化为 `budget_policies` 与审计日志；完整 P-COST 策略治理仍需后续切片。
 
-后续施工必须先完成 CostLedger 默认 store、文件物理采纳/冲突调解/merge audit、完整审批中心，再回到 Web/Cuu 产品化。
+后续施工必须先完成文件物理采纳/冲突调解/merge audit、BudgetPolicy 持久化与完整审批中心，再回到 Web/Cuu 产品化。
 
 ---
 

@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { BudgetScope, CostLedgerEntry, UsageRecord } from "./types.js";
 import type { BudgetUsageSnapshot } from "./decision.js";
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type LedgerScopeIds = {
   workItemId?: string;
   userId?: string;
@@ -96,7 +98,9 @@ export type CostLedgerStore = {
   records: readonly UsageRecord[];
   entries: readonly CostLedgerEntry[];
   recordUsage: (record: UsageRecord) => Promise<void> | void;
-  usageSnapshots: (scopeIds: LedgerScopeIds) => BudgetUsageSnapshot[];
+  usageSnapshots: (scopeIds: LedgerScopeIds) => MaybePromise<BudgetUsageSnapshot[]>;
+  listEntries?: () => MaybePromise<readonly CostLedgerEntry[]>;
+  listRecords?: () => MaybePromise<readonly UsageRecord[]>;
 };
 
 export function createMemoryCostLedgerStore(options: {
@@ -132,6 +136,12 @@ export function createMemoryCostLedgerStore(options: {
     },
     usageSnapshots(scopeIds) {
       return ledgerUsageSnapshots(entries, scopeIds);
+    },
+    listEntries() {
+      return entries;
+    },
+    listRecords() {
+      return records;
     }
   };
 }

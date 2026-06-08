@@ -315,6 +315,8 @@ type CostDashboardVM = {
 
 ## 8. 验收门禁
 
+- **2026-06-08 当前实现状态**：C1/C3/C4/C6 已落最小真实切片。`usage_records` 与 `cost_ledger_entries` 由 Drizzle migration `0003_amused_raider.sql` 创建；`packages/db/src/repositories/cost-ledger.ts` 实现 DB-backed `CostLedgerStore`；`apps/api/src/services/cost-ledger-store.ts` 的生产默认 store 已切 DB；`/api/cost/usage` 与 `/api/pages/cost` 会从 DB ledger 读取。尚未完成：`budget_policies` 表、policy 更新审计、事件发出与 Cuu budget bubble。
+
 - `RunBudget.max_cost` 来源必须可追溯到 `BudgetDecision`，不得在 AgentLoop 内硬编码。
 - provider 的每次真实调用都产生 `UsageRecord`，并能幂等聚合为 `CostLedgerEntry`；`AgentRun.token_in/token_out/cost_estimate` 只能从 ledger 回填为摘要缓存。
 - 重试、compact、review token 均计入 run 成本。
@@ -333,7 +335,7 @@ type CostDashboardVM = {
 |---|---|---|---|
 | contracts | `packages/contracts/src/cost.ts` | `BudgetPolicy`、`BudgetScope`、`BudgetUsage`、`BudgetDecision`、`UsageRecord`、`CostLedgerEntry`、`CostSummaryVM`、`BudgetNotice`、`CostDashboardVM` Zod schema | route/page local type |
 | cost package | `packages/cost/src/policies.ts`, `packages/cost/src/decision.ts`, `packages/cost/src/ledger.ts`, `packages/cost/src/model-route.ts` | policy merge、预算裁决、账本写入、模型路由建议 | AgentLoop 内硬编码三级配额 |
-| DB | `packages/db/src/schema/cost.ts`, `packages/db/src/repositories/cost.ts` | `budget_policies`、`usage_records`、`cost_ledger_entries` 表与查询 helper | Dashboard 直接读 provider usage |
+| DB | `packages/db/src/schema/core.ts`, `packages/db/src/repositories/cost-ledger.ts` | 当前已落 `usage_records`、`cost_ledger_entries` 表与查询 helper；后续补 `budget_policies` | Dashboard 直接读 provider usage |
 | API | `apps/api/src/routes/cost.ts`, `apps/api/src/pages/cost.ts` | `/api/cost/*` 与 `/api/pages/cost` | 客户端拼多个散接口生成成本页 |
 | events | `packages/events/src/event-types.ts`, `packages/events/src/toAttentionItem.ts`, `packages/events/src/toCuuState.ts` | `usage.recorded`、`budget.warning`、`budget.exhausted` 常量与映射 | 页面/Cuu 手写事件字符串 |
 | client | `packages/api-client/src/*`, `apps/web/src/pages/*`, `apps/desktop-webview/src/*` | typed client、成本页、OneThing budget strip、Cuu budget bubble | Rust/Web 本地重算预算状态 |

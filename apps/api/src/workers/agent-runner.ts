@@ -15,6 +15,7 @@ import {
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import { eventTypes, type CuuState, type WorkItemMode } from "@workhub/contracts";
 import {
+  createMemoryCostLedgerStore,
   decideRunBudget,
   type BudgetDecision,
   type BudgetDecisionTrace,
@@ -173,7 +174,7 @@ export function createInMemoryAgentRunQueue(options: {
   settings?: Settings;
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
-  usage?: (input: EnqueueAgentRunInput) => BudgetUsageSnapshot[];
+  usage?: (input: EnqueueAgentRunInput) => BudgetUsageSnapshot[] | Promise<BudgetUsageSnapshot[]>;
   decideBudget?: BudgetDecisionProvider;
   client?: AgentRunClientProvider;
   workdir?: AgentRunWorkdirProvider;
@@ -199,14 +200,17 @@ export function createInMemoryAgentRunQueue(options: {
   const nextId = options.id ?? randomUUID;
   const settings = options.settings ?? runtimeSettings;
   const policyStore = options.policyStore ?? getDefaultBudgetPolicyStore();
-  const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
+  const ledgerStore = options.ledgerStore ?? createMemoryCostLedgerStore({
+    teamId: settings.auth.defaultWorkspaceId,
+    evalSuite: "nightly"
+  });
   const defaultTools = createToolRegistry(createBuiltInFileTools());
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
-  const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
+  const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
       scopeIds: {
@@ -215,11 +219,11 @@ export function createInMemoryAgentRunQueue(options: {
         teamId: input.settings.auth.defaultWorkspaceId
       },
       policies: policyStore.listPolicies(input.settings),
-      usage: options.usage?.(input) ?? ledgerStore.usageSnapshots({
+      usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
         workItemId: input.workItemId,
         userId: input.actorId,
         teamId: input.settings.auth.defaultWorkspaceId
-      }),
+      })),
       modelRoute: {
         provider: input.settings.llm.defaultProvider,
         model: input.settings.llm.model,
@@ -974,6 +978,7 @@ export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
     humanReserved: createHumanReservedGuard(),
+    ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver()
