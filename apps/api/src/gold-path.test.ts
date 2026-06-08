@@ -256,7 +256,7 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   app.route("/api", createWorkItemRoutes({ auth }));
   app.route("/api/knowledge", createKnowledgeRoutes({ auth }));
   app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
-  app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue() }));
+  app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue(), autoRun: false }));
   app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
   app.route("/api/cost", createCostRoutes({ auth }));
   const headers = { Cookie: await cookie(runtimeSettings) };

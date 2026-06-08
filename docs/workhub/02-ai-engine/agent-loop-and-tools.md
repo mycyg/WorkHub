@@ -56,11 +56,12 @@ R1 当前代码切片已落：
 - `packages/agent/src/loop/loop.ts` 在自然停止且 `outputs/` 有交付物时生成 `AgentLoopResult.manifest`。
 - `apps/api/src/workers/agent-runner.ts` 成功执行后把 manifest 注入 `ProposalService.createFromManifest`，并发布 `proposal.opened` 事件；这替代旧 `submit` 唯一完成信号，符合“AI 不再请求动作即完成”的 PRD 口径。
 - 默认 proposal 服务已由 `apps/api/src/services/proposals.ts` 接到 `packages/db/src/repositories/proposals.ts`，落 `branches/proposals/reviews`；测试可显式注入内存 service。
+- `apps/api/src/routes/agent-runs.ts` 默认在 enqueue 后自动 pump `queue.run(run_id)`，不再要求客户端或测试调用 `runNext()` 才开始执行；测试可用 `autoRun:false` 隔离 queue 单元行为。
 
 R1 仍未完成：
 
 - `AgentRunQueue` 本体仍以内存 Map/Set 保存 run、trace、workdir；重启后 run/replay 会丢。
-- enqueue 后还没有 daemon 自动 pump，route 测试仍显式调用 `queue.runNext()`。
+- `agent_runs` 当前表结构还不能完整恢复 `AgentRunLiveVM`：缺 `title`、budget decision、workdir ref、handoff JSON 等 queue truth 字段。
 - Replay 仍依赖当前进程 run trace 或 P0.5 fixture；还不是全量 DB-backed `AgentRun + AgentStep + Snapshot + AuditLog`。
 
 后续施工必须先补 DB-backed `AgentRunStore` 和 queue pump，再回到 Web/Cuu 产品化。

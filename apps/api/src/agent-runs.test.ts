@@ -413,6 +413,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+async function waitForRunStatus(
+  queue: ReturnType<typeof createInMemoryAgentRunQueue>,
+  runId: string,
+  status: string,
+  attempts = 100
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const run = await queue.get(runId);
+    if (run?.status === status) {
+      return run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const latest = await queue.get(runId);
+  throw new Error(`Timed out waiting for run ${runId} to reach ${status}; latest=${latest?.status ?? "missing"}`);
+}
+
 function executableAgentClient(): AgentLoopClient {
   const responses = [
     {
@@ -546,7 +563,7 @@ test("agent run enqueue consumes P-COST decisions before creating a run", async 
     ]
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, autoRun: false }));
 
   const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -586,7 +603,7 @@ test("agent run enqueue returns budget_exhausted before queueing new work", asyn
     ]
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, autoRun: false }));
 
   const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -637,7 +654,7 @@ test("agent run enqueue uses ledger snapshots when no usage fixture is injected"
     id: () => "40000000-0000-4000-8000-000000000024"
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, autoRun: false }));
 
   const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -763,7 +780,8 @@ test("agent run read routes are limited to the run owner or an admin actor", asy
     ]),
     queue,
     snapshots,
-    auditLogs
+    auditLogs,
+    autoRun: false
   }));
 
   const queued = await queue.enqueue({
@@ -881,7 +899,7 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
     })
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, autoRun: false }));
 
   const blocked = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -969,7 +987,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     }
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs }));
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs, autoRun: false }));
 
   const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -1057,6 +1075,44 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(replayBody.data.audit_logs.some((log) => log.action === "confidence.scored"), true);
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
+  assert.equal(await queue.runNext(), null);
+});
+
+test("agent run route auto-pumps queued work after enqueue", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-autopump-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-autopump-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000028",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    confidence: false,
+    notifications: false,
+    eventBus: false
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs }));
+
+  const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Auto-pumped worker run" })
+  });
+  assert.equal(start.status, 202);
+  const startBody = await start.json() as { ok: true; data: { run_id: string; status: string } };
+  assert.equal(startBody.data.status, "queued");
+
+  const executed = await waitForRunStatus(queue, startBody.data.run_id, "succeeded");
+  assert.equal(executed.status, "succeeded");
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
   assert.equal(await queue.runNext(), null);
 });
 

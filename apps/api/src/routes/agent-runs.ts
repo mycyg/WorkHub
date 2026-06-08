@@ -43,6 +43,8 @@ export type AgentRunRoutesDependencies = {
   queue?: AgentRunQueue;
   auditLogs?: AuditLogRepository;
   snapshots?: SnapshotRepository;
+  autoRun?: boolean;
+  onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
 };
 
 export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
@@ -65,6 +67,15 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       ...(payload.title ? { title: payload.title } : {}),
       ...(payload.mode ? { mode: payload.mode } : {})
     });
+    if (deps.autoRun !== false) {
+      void queue.run(run.run_id).catch((error) => {
+        if (deps.onAutoRunError) {
+          deps.onAutoRunError(error, run);
+          return;
+        }
+        console.warn("WorkHub AgentRun auto pump failed", error);
+      });
+    }
     return c.json({ ok: true, data: toAgentRunLiveVm(run) }, 202);
   });
 
