@@ -173,8 +173,10 @@ AI 对一处冲突给出的**候选合并结果** = 去黑话的「AI 拟的合�
 不在本篇定义全字段(归 [`agent-loop-and-tools.md`](../02-ai-engine/agent-loop-and-tools.md)),但**协作层依赖三点**,在此固定接口:
 
 1. **AI 工人 = 分支作者**:一次 `AgentRun` 绑定一个 `Branch`(`Branch.owner_agent_run_id`)。AI 在沙箱里干活(延续 `app/services/auto_agent.py` 的工具集 `list/read/write/mkdir/move/delete/run_command/zip/submit`、沙箱 `_safe_path`、预算 `MAX_TURNS=15`/`TOTAL_TIMEOUT_DEFAULT=300s`),产物落进该分支而非直接进 main。
-2. **`submit` → 生成 Proposal**:`auto_agent.py` 现有 `submit` 工具(`auto_agent.py:143`)与"产物目录非空才算成功"(`_has_deliverables`, `auto_agent.py:510`)的判定,演进为"提交 = 把分支 head 打成 Proposal"。
+2. **自然停止 + `outputs/` → manifest → Proposal**:`submit` 不再是唯一完成信号。当前 TS-first 口径是 `AgentLoop` 在模型自然停止且 `outputs/` 非空时生成 `DeliverableChangeManifest`，`AgentRunQueue` 成功后调用 `ProposalService.createFromManifest` 自动打开 Proposal。`submit` 只作为可选收尾标注保留，不能作为 R1 完成证据。
 3. **`llm_review` → ConfidenceRecord**:现有 `llm_review`(`auto_agent.py:544`,输出 `{meets_requirement, reason}`)是置信度信号源之一,产物归到 `Proposal.confidence_record_id`,决定 auto-merge / 抽检 / 升级(本篇 §7 只消费裁决结果)。
+
+> **2026-06-08 实现切片**：`apps/api/src/workers/agent-runner.ts` 已把成功 run 的 manifest 接到 proposal service，并发 `proposal.opened`；`packages/db/src/repositories/proposals.ts` 已能持久化 `Branch/Proposal/Review`。未完成的是 `AgentRun/AgentStep` DB store、queue pump、merge 写 main 与真实 replay。
 
 ### 3.8 快照(Snapshot)的物理形态
 

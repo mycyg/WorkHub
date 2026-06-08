@@ -29,13 +29,13 @@ visuals:
 
 | 领域 | 已落地 | 未复现 |
 |---|---|---|
-| AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM | 真实后端持久化、真实 worker 执行、权限闭环、完整 eval/replay 数据 |
+| AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM；2026-06-08 已补 `AgentLoopResult.manifest -> ProposalService` 自动开 proposal，且 Proposal 默认 DB-backed | AgentRun/AgentStep queue 仍未 DB-backed，enqueue 后自动 pump、真实 replay、权限闭环、完整 eval/replay 数据仍缺 |
 | Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换 | 完整 SPA 信息架构、真实数据流、空/错/载入/权限四态、视觉 polish |
 | Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge、`/settings` pet 恢复面板 | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
 | Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample、托盘 `restore-pet-interaction` 源码门 | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略、恢复录屏 |
 | Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧、pass-through 源码恢复门、P1.6 behavior manifest 源码合同、P1.7 业务录屏入口与黑猫 approval smoke | 黑/白真实 Tauri 全量业务录屏、settings matrix、长期性能、授权或原创替换 |
 | 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
-| 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向 | 文档/PPT/表格/图片/文件夹 diff 预览、证据引用、审批写回 |
+| 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向；DB-backed `branches/proposals/reviews` repository 已落 | 文档/PPT/表格/图片/文件夹 diff 预览、证据引用、审批写回、merge 写 main 与重启后 replay |
 
 ## 2. 概念图对齐
 
@@ -179,7 +179,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | R0 | 冻结 Cuu 外观；旧橘猫 current-state 截图判 fail/stale；shared 橘猫概念图排队替换 |
 | R0 | 主窗截图审查，确认无 Cuu 本体回流；补透明 pet smoke |
 | R0 | 命门 OQ-2/OQ-3 owner + v1 阈值落定；D-1 正名为 TS-first 重写 |
-| R1 | 真实 AgentLoop -> manifest -> ProposalService -> PG -> approve/merge -> Replay 纵切 |
+| R1 | 已完成局部：真实 AgentLoop manifest 自动打开 DB-backed Proposal；下一步：DB-backed AgentRun/AgentStep + queue pump + 真实 approve/merge/replay |
 | R2 | 多 worker、PG queue claim、Redis bus/presence、订阅边界 |
 | R3 | Cuu 自然语言 / option-first 出站 Agent 入口，不新增外观 |
 | R4 | Web attention workspace 真页面化、四态、中英双语全量补齐 |

@@ -47,6 +47,7 @@ import {
 } from "../services/agent-run-confidence.js";
 import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
+import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -138,6 +139,7 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
 };
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 export type AgentRunEventBus = Pick<PushBus, "publish">;
+export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
 
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
@@ -168,6 +170,7 @@ export function createInMemoryAgentRunQueue(options: {
   auditLogs?: AuditLogRepository;
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
+  proposals?: AgentRunProposalSink | false;
   notifications?: AgentRunNotificationPublisher | false;
   eventBus?: AgentRunEventBus | false;
   systemPrompt?: string;
@@ -182,6 +185,7 @@ export function createInMemoryAgentRunQueue(options: {
   const ledgerStore = options.ledgerStore ?? getDefaultCostLedgerStore();
   const defaultTools = createToolRegistry(createBuiltInFileTools());
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
+  const proposalSink = options.proposals === false ? undefined : options.proposals;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const decideBudget = options.decideBudget ?? ((input: BudgetDecisionInput) =>
     decideRunBudget({
@@ -306,6 +310,49 @@ export function createInMemoryAgentRunQueue(options: {
     }, run, cuuState);
   }
 
+  async function emitProposalOpenedEvent(run: AgentRunQueueRecord, proposal: StoredProposal) {
+    if (!eventBus) {
+      return;
+    }
+
+    const topic = topics.workitem(run.work_item_id).topic;
+    const envelope = makeWorkHubEvent({
+      type: eventTypes.proposalOpened,
+      topic,
+      actor: { actor_kind: "ai", label: "WorkHub AI" },
+      work_item_id: run.work_item_id,
+      run_id: run.run_id,
+      proposal_id: proposal.id,
+      preview_text: `AI 已生成变更申请: ${proposal.title}`,
+      cuu_state: "carrying_document",
+      data: {
+        proposal_id: proposal.id,
+        work_item_id: run.work_item_id,
+        run_id: run.run_id,
+        branch_id: proposal.branch_id,
+        title: proposal.title,
+        status: proposal.status,
+        manifest: proposal.diff_manifest
+      }
+    });
+    await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
+  }
+
+  async function openProposalFromManifest(run: AgentRunQueueRecord, result: AgentLoopResult) {
+    if (!proposalSink || result.status !== "succeeded" || !result.manifest) {
+      return;
+    }
+
+    const proposal = await proposalSink.createFromManifest({
+      workItemId: run.work_item_id,
+      manifest: result.manifest,
+      actor: { actor_kind: "ai", label: "WorkHub AI" },
+      title: result.manifest.title,
+      ...(result.manifest.branch_id ? { branchId: result.manifest.branch_id } : {})
+    });
+    await emitProposalOpenedEvent(run, proposal);
+  }
+
   async function executeRun(runId: string) {
     const run = runs.get(runId);
     if (!run) {
@@ -378,6 +425,7 @@ export function createInMemoryAgentRunQueue(options: {
       if (drifted) {
         return drifted;
       }
+      await openProposalFromManifest(current, result);
       current = updateRun(finalizeExecutedRun(current, result, now()));
       await emitFinalRunEvent(current, result);
       await recordRunConfidence(current, result);
@@ -807,7 +855,8 @@ let defaultQueue: AgentRunQueue | undefined;
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
-    humanReserved: createHumanReservedGuard()
+    humanReserved: createHumanReservedGuard(),
+    proposals: getDefaultProposalService()
   });
   return defaultQueue;
 }

@@ -14,15 +14,17 @@ import {
 import type {
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
+  ProposalRepository,
   UserAuthRow as DbUserAuthRow,
-  UserRepository as DbUserRepository
+  UserRepository as DbUserRepository,
+  StoredProposalRows
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
-import { createInMemoryProposalService } from "./services/proposals.js";
+import { createDbProposalService, createInMemoryProposalService } from "./services/proposals.js";
 
 const now = new Date("2026-06-06T00:00:00.000Z");
 const userId = "91000000-0000-4000-8000-000000000001";
@@ -152,6 +154,82 @@ function ids() {
   return () => values.shift() ?? "91000000-0000-4000-8000-000000000199";
 }
 
+class MemoryProposalRepository implements ProposalRepository {
+  private rows = new Map<string, StoredProposalRows>();
+  private reviewCount = 0;
+
+  async createFromManifest(input: Parameters<ProposalRepository["createFromManifest"]>[0]) {
+    const at = input.at ?? now;
+    const stored: StoredProposalRows = {
+      proposal: {
+        id: input.proposalId ?? input.manifest.proposal_id ?? "91000000-0000-4000-8000-000000000151",
+        workItemId: input.workItemId,
+        branchId: input.branchId ?? input.manifest.branch_id ?? "91000000-0000-4000-8000-000000000152",
+        round: 1,
+        title: input.title ?? input.manifest.title,
+        status: "opened",
+        diffManifest: input.manifest,
+        confidenceId: null,
+        mergeSnapshotId: null,
+        openedByKind: input.actor.actorKind,
+        openedByUserId: input.actor.actorUserId ?? null,
+        reviewedAt: null,
+        mergedAt: null,
+        createdAt: at,
+        updatedAt: at
+      },
+      reviews: []
+    };
+    this.rows.set(stored.proposal.id, stored);
+    return stored;
+  }
+
+  async findById(proposalId: string) {
+    return this.rows.get(proposalId) ?? null;
+  }
+
+  async listByWorkItem(workItemId: string) {
+    return [...this.rows.values()].filter((row) => row.proposal.workItemId === workItemId);
+  }
+
+  async review(input: Parameters<ProposalRepository["review"]>[0]) {
+    const stored = this.rows.get(input.proposalId);
+    if (!stored) {
+      return null;
+    }
+    const at = input.at ?? now;
+    this.reviewCount += 1;
+    stored.reviews.push({
+      id: `91000000-0000-4000-8000-${String(160 + this.reviewCount).padStart(12, "0")}`,
+      proposalId: input.proposalId,
+      reviewerKind: input.actor.actorKind,
+      reviewerUserId: input.actor.actorUserId ?? null,
+      decision: input.decision,
+      reasonMd: input.reasonMd ?? null,
+      reasonFedBackAt: input.reasonFedBackAt ?? null,
+      createdAt: at,
+      updatedAt: at
+    });
+    stored.proposal.status = input.decision === "approve" ? "reviewed" : "rejected";
+    stored.proposal.reviewedAt = at;
+    stored.proposal.updatedAt = at;
+    return stored;
+  }
+
+  async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
+    const stored = this.rows.get(input.proposalId);
+    if (!stored) {
+      return null;
+    }
+    const at = input.at ?? now;
+    stored.proposal.status = "merged";
+    stored.proposal.mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
+    stored.proposal.mergedAt = at;
+    stored.proposal.updatedAt = at;
+    return stored;
+  }
+}
+
 function appWithProposalRoutes() {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
@@ -175,6 +253,40 @@ async function createProposal(app: Hono<AuthEnv>, runtimeSettings: Settings, ite
   assert.equal(response.status, 201);
   return response.json() as Promise<{ ok: true; data: { id: string; diff_manifest: DeliverableChangeManifest } }>;
 }
+
+test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {
+  const service = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids() });
+  const itemManifest = manifest(1);
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  const reviewed = await service.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+  const merged = await service.merge({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+  const listed = await service.listByWorkItem(itemManifest.work_item_id);
+
+  assert.equal(created.id, "91000000-0000-4000-8000-000000000101");
+  assert.equal(created.branch_id, itemManifest.branch_id);
+  assert.equal(created.diff_manifest.proposal_id, created.id);
+  assert.equal(created.diff_manifest.branch_id, created.branch_id);
+  assert.equal(created.opened_by_kind, "ai");
+  assert.equal(reviewed.status, "reviewed");
+  assert.equal(reviewed.reviews[0]?.decision, "approve");
+  assert.equal(reviewed.reviews[0]?.reviewer_user_id, userId);
+  assert.equal(merged.status, "merged");
+  assert.equal(merged.merge_snapshot_id, "91000000-0000-4000-8000-000000000102");
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0]?.id, created.id);
+});
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {
   const { app, runtimeSettings } = appWithProposalRoutes();

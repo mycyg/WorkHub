@@ -8,6 +8,13 @@ import {
   type Proposal,
   type Review
 } from "@workhub/contracts";
+import {
+  createDatabaseClient,
+  createProposalRepository,
+  type ProposalRepository,
+  type StoredProposalRows,
+  type WorkHubDatabaseClient
+} from "@workhub/db";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -72,6 +79,54 @@ function cloneManifestWithIds(input: {
     branch_id: input.branchId,
     base
   });
+}
+
+function iso(value: Date | string | null | undefined) {
+  if (!value) {
+    return undefined;
+  }
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function actorToRepository(actor: ProposalActor) {
+  return {
+    actorKind: actor.actor_kind,
+    ...(actor.actor_user_id ? { actorUserId: actor.actor_user_id } : {})
+  };
+}
+
+function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
+  const proposal = proposalSchema.parse({
+    id: rows.proposal.id,
+    work_item_id: rows.proposal.workItemId,
+    branch_id: rows.proposal.branchId,
+    round: rows.proposal.round,
+    title: rows.proposal.title,
+    status: rows.proposal.status,
+    diff_manifest: rows.proposal.diffManifest,
+    ...(rows.proposal.confidenceId ? { confidence_id: rows.proposal.confidenceId } : {}),
+    ...(rows.proposal.mergeSnapshotId ? { merge_snapshot_id: rows.proposal.mergeSnapshotId } : {}),
+    opened_by_kind: rows.proposal.openedByKind,
+    ...(rows.proposal.openedByUserId ? { opened_by_user_id: rows.proposal.openedByUserId } : {}),
+    ...(iso(rows.proposal.reviewedAt) ? { reviewed_at: iso(rows.proposal.reviewedAt) } : {}),
+    ...(iso(rows.proposal.mergedAt) ? { merged_at: iso(rows.proposal.mergedAt) } : {}),
+    created_at: iso(rows.proposal.createdAt),
+    updated_at: iso(rows.proposal.updatedAt)
+  });
+  return {
+    ...proposal,
+    reviews: rows.reviews.map((row) => reviewSchema.parse({
+      id: row.id,
+      proposal_id: row.proposalId,
+      reviewer_kind: row.reviewerKind,
+      ...(row.reviewerUserId ? { reviewer_user_id: row.reviewerUserId } : {}),
+      decision: row.decision,
+      ...(row.reasonMd ? { reason_md: row.reasonMd } : {}),
+      ...(iso(row.reasonFedBackAt) ? { reason_fed_back_at: iso(row.reasonFedBackAt) } : {}),
+      created_at: iso(row.createdAt),
+      updated_at: iso(row.updatedAt)
+    }))
+  };
 }
 
 export function createInMemoryProposalService(options: {
@@ -199,9 +254,112 @@ export function createInMemoryProposalService(options: {
   };
 }
 
+export function createDbProposalService(repository: ProposalRepository, options: {
+  now?: () => Date;
+  id?: () => string;
+} = {}): ProposalService {
+  const now = options.now ?? (() => new Date());
+  const nextId = options.id ?? randomUUID;
+
+  async function requireProposal(proposalId: string) {
+    const rows = await repository.findById(proposalId);
+    if (!rows) {
+      throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+    }
+    return storedRowsToProposal(rows);
+  }
+
+  return {
+    async createFromManifest(input) {
+      if (input.manifest.work_item_id !== input.workItemId) {
+        throw new ProposalServiceError(422, "manifest_workitem_mismatch", "变更申请与事项不匹配。");
+      }
+
+      const at = now();
+      const createdAt = at.toISOString();
+      const proposalId = input.manifest.proposal_id ?? nextId();
+      if (await repository.findById(proposalId)) {
+        throw new ProposalServiceError(409, "proposal_already_exists", "这份变更申请已经存在。");
+      }
+      const branchId = input.branchId ?? input.manifest.branch_id ?? nextId();
+      const manifest = cloneManifestWithIds({
+        manifest: input.manifest,
+        proposalId,
+        branchId,
+        workItemId: input.workItemId,
+        createdAt
+      });
+      const rows = await repository.createFromManifest({
+        proposalId,
+        branchId,
+        workItemId: input.workItemId,
+        manifest,
+        actor: actorToRepository(input.actor),
+        title: input.title ?? manifest.title,
+        at
+      });
+      return storedRowsToProposal(rows);
+    },
+
+    async get(proposalId) {
+      const rows = await repository.findById(proposalId);
+      return rows ? storedRowsToProposal(rows) : null;
+    },
+
+    async listByWorkItem(workItemId) {
+      const rows = await repository.listByWorkItem(workItemId);
+      return rows.map(storedRowsToProposal);
+    },
+
+    async review(input) {
+      const proposal = await requireProposal(input.proposalId);
+      if (proposal.status === "merged") {
+        throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
+      }
+
+      const at = now();
+      const rows = await repository.review({
+        proposalId: input.proposalId,
+        actor: actorToRepository(input.actor),
+        decision: input.decision === "approve" ? "approve" : "reject",
+        ...(input.reasonMd ? { reasonMd: input.reasonMd, reasonFedBackAt: at } : {}),
+        at
+      });
+      if (!rows) {
+        throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+      }
+      return storedRowsToProposal(rows);
+    },
+
+    async merge(input) {
+      const proposal = await requireProposal(input.proposalId);
+      if (proposal.status === "rejected") {
+        throw new ProposalServiceError(409, "proposal_rejected", "这份变更申请已经被打回，不能采纳。");
+      }
+      if (proposal.status === "merged") {
+        return proposal;
+      }
+
+      const rows = await repository.merge({
+        proposalId: input.proposalId,
+        mergeSnapshotId: nextId(),
+        at: now()
+      });
+      if (!rows) {
+        throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+      }
+      return storedRowsToProposal(rows);
+    }
+  };
+}
+
 let defaultProposalService: ProposalService | undefined;
+let defaultProposalDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultProposalService() {
-  defaultProposalService ??= createInMemoryProposalService();
+  if (!defaultProposalService) {
+    defaultProposalDbClient = createDatabaseClient();
+    defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db));
+  }
   return defaultProposalService;
 }

@@ -49,8 +49,8 @@ R0 退出门：
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
 | R1-0 Queue pump | `POST /workitems/:id/agent-runs` 后 daemon 自动 drain queue，不靠测试手动 `runNext()`。 | run 状态自动 `queued -> running -> terminal` |
-| R1-1 接缝 | `AgentLoopResult.manifest` 传给 `ProposalService.createFromManifest`，真实 run 成功后自动 opened proposal。 | `GET /workitems/:id/proposals` 返回真实 run 产物 |
-| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | 重启后 replay/proposal/run 仍可查 |
+| R1-1 接缝 | `AgentLoopResult.manifest` 传给 `ProposalService.createFromManifest`，真实 run 成功后自动 opened proposal。 | **2026-06-08 已落代码切片**：`apps/api/src/workers/agent-runner.ts` 成功 run 会打开 proposal 并发布 `proposal.opened`；`apps/api/src/agent-runs.test.ts` 覆盖真实 AgentLoop manifest。下一步仍需用真实 route/DB 端到端验收。 |
+| R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger 从内存 Map 切到 PostgreSQL repo。 | **2026-06-08 部分落地**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`。未完成：AgentRun/AgentStep queue store、CostLedger 默认 store、重启后 replay/run 查询。 |
 | R1-3 删除 fixture 生产分支 | `isP05*` 只保留测试夹具，不出现在生产路由判断。 | 生产路由 grep 清零 |
 | R1-4 审批人路由 | 自审批 stub 改为 WorkItem owner / 项目负责人 / permission routing。 | escalation 或 review 发给正确 approver |
 
@@ -60,6 +60,28 @@ R1 退出门：
 - 数据落 PostgreSQL，daemon 重启后不丢。
 - ReplayTraceVM 来自真实 run/step/snapshot/audit，不是 fixture。
 - 快照红线、provider 单出口、预算计量不回退。
+
+### 2.1 R1 当前代码状态（2026-06-08）
+
+已完成的真实切片：
+
+- `AgentLoopResult.manifest -> ProposalService.createFromManifest` 已由 queue 注入的 proposal sink 承接；成功 run 后发布 `workitem:{id}` 上的 `proposal.opened`，Cuu 状态为 `carrying_document`。
+- 默认 `ProposalService` 已从内存实现切到 DB-backed lazy service，写入 `branches`、`proposals`、`reviews`；内存 service 只保留为测试/显式注入隔离用。
+- 验证：`pnpm --filter @workhub/api test -- agent-runs.test.ts`、`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/db typecheck` 已通过。
+
+仍不能宣称 R1 完成：
+
+- 默认 AgentRun queue 仍以内存 Map/Set 保存 run、trace、workdir，daemon 重启会丢 run 状态；Replay 只能查当前进程队列或 P0.5 fixture。
+- `POST /workitems/:id/agent-runs` 还需要 daemon 自动 pump，不应靠测试调用 `queue.runNext()`。
+- 生产 routes 中仍存在 P0.5 `isP05*` 分支，R1 完成前必须迁出到 demo/test-only 路径。
+- proposal merge 目前只落 proposal 状态与 `merge_snapshot_id`，还未把具体交付物采纳为 main 状态，也未完成 approver owner routing。
+
+下一施工顺序：
+
+1. 增加 DB-backed `AgentRunStore`：`agent_runs` / `agent_steps` 持久化，queue 只保留执行协调，不再把 run truth 存 Map。
+2. 给 API daemon 加 queue pump：enqueue 后后台 drain，测试覆盖 `POST` 后无需 `runNext()`。
+3. 用真实 DB route 跑一条 file-only work item：run -> manifest -> proposal -> review/merge -> replay，并记录重启后查询证据。
+4. 清理生产 P0.5 fixture 分支，只保留 `/api/pages/gold-path` demo bundle。
 
 ## 3. R2 真正解除单 worker
 

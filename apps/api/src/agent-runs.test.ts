@@ -34,6 +34,7 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
+import { createInMemoryProposalService } from "./services/proposals.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
@@ -1057,6 +1058,80 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);
+});
+
+test("successful agent run opens a proposal from its generated manifest", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-proposal-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-proposal-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const proposalIds = [
+    "60000000-0000-4000-8000-000000000025",
+    "61000000-0000-4000-8000-000000000025"
+  ];
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => {
+      const id = proposalIds.shift();
+      if (!id) {
+        throw new Error("No fake proposal id queued");
+      }
+      return id;
+    }
+  });
+  const publishedEvents: {
+    topic: string;
+    type: string;
+    data: WorkHubEvent<Record<string, unknown>>;
+  }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000027",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: false,
+    notifications: false,
+    eventBus: {
+      async publish(topic, type, data) {
+        publishedEvents.push({
+          topic,
+          type,
+          data: data as WorkHubEvent<Record<string, unknown>>
+        });
+      }
+    }
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Executable worker run"
+  });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0]?.id, "60000000-0000-4000-8000-000000000025");
+  assert.equal(opened[0]?.branch_id, "61000000-0000-4000-8000-000000000025");
+  assert.equal(opened[0]?.diff_manifest.work_item_id, workItemId);
+  assert.equal(opened[0]?.diff_manifest.changes[0]?.target_ref.path, "/outputs/result.md");
+  assert.equal(opened[0]?.opened_by_kind, "ai");
+
+  const proposalEvent = publishedEvents.find((event) => event.type === eventTypes.proposalOpened);
+  assert.equal(proposalEvent?.topic, topics.workitem(workItemId).topic);
+  assert.equal(proposalEvent?.data.run_id, queued.run_id);
+  assert.equal(proposalEvent?.data.proposal_id, opened[0]?.id);
+  assert.equal(proposalEvent?.data.cuu_state, "carrying_document");
+  assert.equal(proposalEvent?.data.data["branch_id"], opened[0]?.branch_id);
 });
 
 test("agent run confidence recording opens an escalation for failed deliverables", async () => {
