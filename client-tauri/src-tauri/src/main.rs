@@ -45,6 +45,7 @@ const WORKHUB_CUU_QA_PET_SCALE_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_SCALE_PER
 const WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_OPACITY_PERCENT";
 const WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV: &str = "WORKHUB_CUU_QA_PET_PASS_THROUGH";
 const WORKHUB_CUU_QA_MODEL_PACK_ID_ENV: &str = "WORKHUB_CUU_QA_MODEL_PACK_ID";
+const WORKHUB_CUU_QA_SCENARIO_ENV: &str = "WORKHUB_CUU_QA_SCENARIO";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
@@ -53,6 +54,7 @@ struct CuuQaPreferenceOverrides {
     pet_pass_through: Option<bool>,
     pet_hide_on_hover: Option<bool>,
     pet_model_pack_id: Option<String>,
+    pet_qa_scenario: Option<String>,
 }
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -80,6 +82,11 @@ where
             WORKHUB_CUU_QA_MODEL_PACK_ID_ENV,
             &get_env,
             &["cuu-hijiki-live2d-cubism2", "cuu-tororo-live2d-cubism2"],
+        ),
+        pet_qa_scenario: workhub_env_string_allowed(
+            WORKHUB_CUU_QA_SCENARIO_ENV,
+            &get_env,
+            &["clarify", "approval", "search", "sync", "done", "offline"],
         ),
     }
 }
@@ -619,12 +626,17 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
         fields.push(format!("pet_model_pack_id: \"{model_pack_id}\""));
     }
 
+    let scenario_script = preferences
+        .pet_qa_scenario
+        .map(|scenario| format!(r#" window.__WORKHUB_CUU_QA_SCENARIO__ = "{scenario}";"#))
+        .unwrap_or_default();
+
     if fields.is_empty() {
-        r#"window.__WORKHUB_SURFACE__ = "pet";"#.to_string()
+        format!(r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}"#)
     } else {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};"#,
-            fields.join(", ")
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}"#,
+            fields.join(", "),
         )
     }
 }
@@ -969,9 +981,7 @@ mod tests {
         move |_| value.map(str::to_string)
     }
 
-    fn named_env(
-        entries: &'static [(&'static str, &'static str)],
-    ) -> impl Fn(&str) -> Option<String> {
+    fn named_env<'a>(entries: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| {
             entries
                 .iter()
@@ -1042,6 +1052,7 @@ mod tests {
                 pet_pass_through: Some(true),
                 pet_hide_on_hover: Some(true),
                 pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
+                pet_qa_scenario: None,
             }
         );
     }
@@ -1054,6 +1065,7 @@ mod tests {
                 (WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV, "75"),
                 (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "0"),
                 (WORKHUB_CUU_QA_MODEL_PACK_ID_ENV, "legacy-cuu-pack"),
+                (WORKHUB_CUU_QA_SCENARIO_ENV, "orange"),
             ])),
             CuuQaPreferenceOverrides {
                 pet_scale_percent: None,
@@ -1061,8 +1073,23 @@ mod tests {
                 pet_pass_through: Some(false),
                 pet_hide_on_hover: None,
                 pet_model_pack_id: None,
+                pet_qa_scenario: None,
             }
         );
+    }
+
+    #[test]
+    fn cuu_qa_preferences_env_accepts_business_motion_scenarios() {
+        for scenario in ["clarify", "approval", "search", "sync", "done", "offline"] {
+            assert_eq!(
+                workhub_cuu_qa_preferences_from_env(named_env(&[(
+                    WORKHUB_CUU_QA_SCENARIO_ENV,
+                    scenario
+                )]))
+                .pet_qa_scenario,
+                Some(scenario.to_string())
+            );
+        }
     }
 
     #[test]
@@ -1077,6 +1104,7 @@ mod tests {
             pet_pass_through: Some(true),
             pet_hide_on_hover: Some(true),
             pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
+            pet_qa_scenario: Some("approval".to_string()),
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
@@ -1084,5 +1112,6 @@ mod tests {
         assert!(script.contains("pet_pass_through: true"));
         assert!(script.contains("pet_hide_on_hover: true"));
         assert!(script.contains(r#"pet_model_pack_id: "cuu-tororo-live2d-cubism2""#));
+        assert!(script.contains(r#"__WORKHUB_CUU_QA_SCENARIO__ = "approval""#));
     }
 }

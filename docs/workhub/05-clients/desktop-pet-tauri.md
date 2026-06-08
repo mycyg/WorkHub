@@ -252,7 +252,7 @@ visuals:
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |
 | 商用授权 | 未确认 | 联系授权或原创替换 |
 | 主窗彻底严肃化 | 进行中 | 搜索截图确认无 Cuu 本体 |
-| 鲜活动作状态机 | P1.6 `CuuBehaviorManifest` 源码合同已落，见 [`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md) | 继续补真实 motion capture、settings matrix 和状态事件录屏 |
+| 鲜活动作状态机 | P1.6 `CuuBehaviorManifest` 源码合同已落；P1.7 业务 motion capture 入口与黑猫 approval smoke 已落 | 继续补黑/白全矩阵 motion capture、settings matrix 和 actual DOM attrs |
 
 ## 10. 与其他文档的边界
 
@@ -261,6 +261,7 @@ visuals:
 - Pet 右键设置菜单：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)
 - Pet settings 恢复门：[`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md)
 - Cuu behavior manifest：[`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md)
+- Cuu Tauri business motion capture：[`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)
 - 桌宠参考包审查：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)
 - 页面概念图索引：[`page-concepts.md`](./page-concepts.md)
 - Web 页面规划：[`web-app.md`](./web-app.md)

@@ -33,6 +33,7 @@ import {
   type DesktopShellListen,
   type DesktopShellUnlisten
 } from "./desktop-cuu-runtime.js";
+import { createDesktopPetQaShellListenFromGlobal } from "./cuu-qa-scenarios.js";
 import {
   createDesktopPetPointerSensor,
   desktopPetPointerSnapshotFromSample,
@@ -588,7 +589,7 @@ export async function bootDesktopPetSurface(
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
-  const shellListen = input.listen ?? resolveDesktopShellListen();
+  const shellListen = input.listen ?? createDesktopPetQaShellListenFromGlobal() ?? resolveDesktopShellListen();
   const client = createApiClient({
     baseUrl: "",
     getClientToken: clientToken

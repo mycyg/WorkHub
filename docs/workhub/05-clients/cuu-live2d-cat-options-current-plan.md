@@ -57,6 +57,7 @@ visuals:
 | QA 合同 | `apps/desktop-webview/src/pet-surface-qa.ts` | 验证独立透明窗口、Live2D cat runtime、无旧实验 DOM |
 | 主窗事件卡 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 只保留严肃通知桥接，不渲染 Cuu 形象 |
 | QA 模型注入 | `scripts/qa/cuu-tauri-motion-capture.ps1` / `client-tauri/src-tauri/src/main.rs` | 允许 QA 用黑猫或白猫 pack id 启动 pet window；`look-only` 验证 hover 不移动窗口 |
+| QA 业务场景注入 | `apps/desktop-webview/src/cuu-qa-scenarios.ts` / `WORKHUB_CUU_QA_SCENARIO` | 允许真实 Tauri pet window 录 `clarify` / `approval` / `search` / `sync` / `done` / `offline` |
 
 ## 5. 已清理范围
 
@@ -120,7 +121,7 @@ P1.6 源码合同已经落地，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-b
 | `enter` / `loop` / `exit` | 已落源码合同，coverage 标记为 `partial` |
 | `idle_random` | 已落 breathe / blink / tail / look / wave 池 |
 | desktop runtime attrs | 已输出 `data-cuu-behavior-*` 与 `data-cuu-live2d-renderer-state` |
-| 真实 Tauri motion evidence | 未完成，仍需黑/白多场景录屏 |
+| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；黑猫 `approval-scripted-smoke` 已生成，黑/白全矩阵待补 |
 
 最小字段：
 
@@ -160,10 +161,10 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 
 ## 8. 后续施工计划
 
-1. 继续录黑猫真实 Tauri motion：tap、drag、approval、search、sync、done、offline。
+1. 继续录黑猫真实 Tauri motion：tap、drag、clarify、search、sync、done、offline；approval 已有短版 smoke，仍需 32 帧正式版。
 2. 继续录白猫同等场景，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 3. 输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`。
 4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
 5. 主窗 `/settings` 与托盘 pass-through 恢复门已落；继续补 settings matrix、多屏恢复、full hide 录屏和通知点击 deep-link。
 6. 完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
-7. P1.6 `CuuBehaviorManifest` 源码合同已落；继续补真实录屏证据和 settings matrix，不能把源码合同当作视觉通过。
+7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落；继续补真实录屏全矩阵和 settings matrix，不能把源码合同或单个 smoke 当作视觉通过。

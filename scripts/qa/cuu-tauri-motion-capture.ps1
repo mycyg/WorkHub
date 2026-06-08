@@ -7,7 +7,7 @@ param(
   [int]$MinFirstFrameVisualPixels = 12000,
   [double]$MinLongRunVisualRatio = 0.7,
   [int]$MinLongRunChangedFrames = 3,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "clarify", "approval", "search", "sync", "done", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -33,6 +33,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "offline")
 
 function Invoke-Checked {
   param([string]$FilePath, [string[]]$ArgumentList)
@@ -82,6 +83,94 @@ function Start-DesktopWebviewDevServerIfNeeded {
     throw "desktop webview dev server did not open port $Port in time."
   }
   return $process
+}
+
+function Test-CuuBusinessScenario {
+  param([string]$ScenarioName)
+  return $businessScenarios -contains $ScenarioName
+}
+
+function Get-CuuExpectedBehaviorForScenario {
+  param([string]$ScenarioName)
+  switch ($ScenarioName) {
+    "clarify" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "asking_approval"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "asking_approval_bounce"
+        data_cuu_live2d_renderer_state = "mtn/01.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "approval" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "asking_approval"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "asking_approval_bounce"
+        data_cuu_live2d_renderer_state = "mtn/01.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "search" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "searching_evidence"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "searching_evidence_peek"
+        data_cuu_live2d_renderer_state = "mtn/04.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "sync" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "syncing_files"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "syncing_files_spin"
+        data_cuu_live2d_renderer_state = "mtn/04.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "done" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "celebrating"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "celebrating_jump"
+        data_cuu_live2d_renderer_state = "mtn/06.mtn"
+        data_cuu_behavior_expected_window_mode = "body_only"
+        data_cuu_behavior_expected_bubble_mode = "tip"
+        data_pet_window_mode = "body_only"
+      }
+    }
+    "offline" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "offline"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    default {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "idle"
+        data_cuu_behavior_phase = "idle_random"
+        data_cuu_live2d_motion = $null
+        data_cuu_live2d_renderer_state = "mtn/00_idle.mtn"
+        data_cuu_behavior_expected_window_mode = "body_only"
+        data_cuu_behavior_expected_bubble_mode = "none"
+        data_pet_window_mode = "body_only"
+      }
+    }
+  }
 }
 
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuMotionWin32").Type) {
@@ -676,6 +765,7 @@ $originalCuuQaPetScalePercent = $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT
 $originalCuuQaPetOpacityPercent = $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT
 $originalCuuQaPetPassThrough = $env:WORKHUB_CUU_QA_PET_PASS_THROUGH
 $originalCuuQaModelPackId = $env:WORKHUB_CUU_QA_MODEL_PACK_ID
+$originalCuuQaScenario = $env:WORKHUB_CUU_QA_SCENARIO
 $process = $null
 $devServerProcess = $null
 $isolatedRoot = $null
@@ -694,6 +784,13 @@ try {
   if ($Scenario -ne "idle" -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
+  }
+  $expectedBehavior = Get-CuuExpectedBehaviorForScenario -ScenarioName $Scenario
+  $isBusinessScenario = Test-CuuBusinessScenario -ScenarioName $Scenario
+  if ($isBusinessScenario) {
+    $env:WORKHUB_CUU_QA_SCENARIO = $Scenario
+  } else {
+    Remove-Item -Path "Env:WORKHUB_CUU_QA_SCENARIO" -ErrorAction SilentlyContinue
   }
   $env:WORKHUB_CUU_QA_PET_SCALE_PERCENT = "$PetScalePercent"
   $env:WORKHUB_CUU_QA_PET_OPACITY_PERCENT = "$PetOpacityPercent"
@@ -818,14 +915,17 @@ try {
   $report = [pscustomobject]@{
     passed = $capturePassed
     scenario = $Scenario
+    business_scenario = $isBusinessScenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
+    expected_behavior_contract = $expectedBehavior
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
+      pet_qa_scenario = if ($isBusinessScenario) { $Scenario } else { $null }
     }
     scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
@@ -877,14 +977,17 @@ try {
   [pscustomobject]@{
     passed = $capturePassed
     scenario = $Scenario
+    business_scenario = $isBusinessScenario
     sse_disabled_for_scenario = $sseDisabledForScenario
     cuu_qa_hide_on_hover = $cuuQaHideOnHover
+    expected_behavior_contract = $expectedBehavior
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
+      pet_qa_scenario = if ($isBusinessScenario) { $Scenario } else { $null }
     }
     frames_dir = $framesDir
     contact_sheet = $contactSheet
@@ -905,6 +1008,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_OPACITY_PERCENT" -Value $originalCuuQaPetOpacityPercent
   Restore-EnvVar -Name "WORKHUB_CUU_QA_PET_PASS_THROUGH" -Value $originalCuuQaPetPassThrough
   Restore-EnvVar -Name "WORKHUB_CUU_QA_MODEL_PACK_ID" -Value $originalCuuQaModelPackId
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_SCENARIO" -Value $originalCuuQaScenario
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
     $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())

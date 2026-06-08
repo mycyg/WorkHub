@@ -37,6 +37,8 @@ visuals:
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.test.ts` | 验证 approval/idle 行为数据、黑白二选项、无旧实验视觉 |
 | `apps/desktop-webview/src/pet-surface.ts` | pet surface 输出 `data-cuu-behavior-*`；idle tick patch 同步 behavior attrs，不重建 iframe |
 | `apps/desktop-webview/src/pet-surface.test.ts` | 验证 pet HTML 中有 manifest version、behavior state/phase/window/bubble、renderer state |
+| `apps/desktop-webview/src/cuu-qa-scenarios.ts` | P1.7 追加：把业务场景转成 env-gated scripted push-event / sse-status |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | P1.7 追加：真实 Tauri capture 可选择 `clarify` / `approval` / `search` / `sync` / `done` / `offline` |
 
 ## 3. Manifest Contract
 
@@ -117,8 +119,10 @@ Pet surface 与 Live2D root 现在会输出：
 
 P1.6 不替代真实视觉验收。后续必须补：
 
-1. 黑猫 idle 10s、hover、tap、drag、approval、search、done 多帧录屏。
+1. 黑猫 idle 10s、hover、tap、drag、approval、search、done 多帧录屏；其中 approval 已有 P1.7 短版 smoke，仍需正式长录。
 2. 白猫同场景多帧录屏。
-3. `data-cuu-behavior-state` 与 `data-cuu-live2d-renderer-state` 写入 capture report。
+3. `data-cuu-behavior-state` 与 `data-cuu-live2d-renderer-state` 写入 capture report；P1.7 当前写入 `expected_behavior_contract`，actual DOM attrs 待 WebView2/CDP 或 SSE fixture 补齐。
 4. 确认 hover look-only 不改变窗口 rect、不重建 iframe。
 5. 确认 card mode 不裁切 Cuu 和轻气泡。
+
+后续业务录屏方案见 [`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)。
