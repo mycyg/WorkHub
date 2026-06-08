@@ -60,7 +60,7 @@ function selectedOptionLabels(input: CreateWorkItemRequest) {
 function buildCreatedWorkItemDetail(input: CreateWorkItemRequest, submitterUserId: string): WorkItemDetailVM {
   const fixture = getP05GoldPathFixture();
   const selectedLabels = selectedOptionLabels(input);
-  const optionText = selectedLabels.length ? `已选择：${selectedLabels.join("、")}。` : "已采用 Cuu 推荐口径。";
+  const optionText = selectedLabels.length ? `已选择：${selectedLabels.join("、")}。` : "已采用 AI 推荐口径。";
   const rawDescription = input.raw_description ?? fixture.workItem.raw_description;
   const title = input.title ?? fixture.workItem.title;
   const {
@@ -78,7 +78,7 @@ function buildCreatedWorkItemDetail(input: CreateWorkItemRequest, submitterUserI
       submitter_user_id: submitterUserId,
       title,
       raw_description: rawDescription,
-      summary_md: `Cuu 已把澄清选项整理成工作项，${optionText}接下来会读取会议、网盘和评论证据。`,
+      summary_md: `AI 已把澄清选项整理成工作项，${optionText}接下来会读取会议、网盘和评论证据。`,
       status: input.kickoff_agent === false ? "spec_ready" : "ai_working",
       version: 2,
       updated_at: new Date().toISOString()
@@ -134,7 +134,7 @@ function bindEvidenceAcceptance(acceptance: unknown[], evidenceCount: number) {
     return {
       ...record,
       status: "met",
-      detail: `Cuu 已带回 ${evidenceCount} 条证据引用。`
+      detail: `AI 已绑定 ${evidenceCount} 条证据引用。`
     };
   });
   if (found) {
@@ -146,7 +146,7 @@ function bindEvidenceAcceptance(acceptance: unknown[], evidenceCount: number) {
       id: "evidence-bound",
       title: "输出前必须绑定会议/网盘/评论证据",
       status: "met",
-      detail: `Cuu 已带回 ${evidenceCount} 条证据引用。`
+      detail: `AI 已绑定 ${evidenceCount} 条证据引用。`
     }
   ];
 }
@@ -158,7 +158,7 @@ function buildEvidenceBoundWorkItemDetail(input: UseEvidenceForTaskRequest): Wor
     ...fixture.workItemDetail,
     workitem: {
       ...fixture.workItemDetail.workitem,
-      summary_md: `Cuu 已把 ${input.evidence_refs.length} 条证据绑定到当前任务，下一步会基于这些来源起草交付物。`,
+      summary_md: `AI 已把 ${input.evidence_refs.length} 条证据绑定到当前任务，下一步会基于这些来源起草交付物。`,
       status: "ai_working",
       updated_at: new Date().toISOString()
     },

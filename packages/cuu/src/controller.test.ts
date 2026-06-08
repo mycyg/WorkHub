@@ -129,7 +129,7 @@ test("Cuu controller normalizes desktop pet window preferences", () => {
       pet_opacity_percent: 80,
       pet_pass_through: true,
       pet_hide_on_hover: true,
-      pet_model_pack_id: "cuu-bongo-p1"
+      pet_model_pack_id: "cuu-tororo-live2d-cubism2"
     }
   });
 
@@ -137,14 +137,14 @@ test("Cuu controller normalizes desktop pet window preferences", () => {
   assert.equal(controller.snapshot().preferences.pet_opacity_percent, 80);
   assert.equal(controller.snapshot().preferences.pet_pass_through, true);
   assert.equal(controller.snapshot().preferences.pet_hide_on_hover, true);
-  assert.equal(controller.snapshot().preferences.pet_model_pack_id, "cuu-bongo-p1");
+  assert.equal(controller.snapshot().preferences.pet_model_pack_id, "cuu-tororo-live2d-cubism2");
 
   const normalized = controller.setPreferences({
     pet_scale_percent: 111 as 100,
     pet_opacity_percent: 42 as 100,
     pet_pass_through: false,
     pet_hide_on_hover: false,
-    pet_model_pack_id: "cuu-live2d-cubism-v2"
+    pet_model_pack_id: "cuu-bongo-p1"
   });
 
   assert.equal(normalized.preferences.pet_scale_percent, 100);

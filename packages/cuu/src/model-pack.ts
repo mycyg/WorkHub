@@ -1,12 +1,11 @@
-import { allCuuMotionHints } from "./motion.js";
+import { allCuuMotionHints, type CuuMotionClipState } from "./motion.js";
 import { cuuIdleMicroActionSpecs, type CuuIdleMicroAction } from "./idle-scheduler.js";
-import type { CuuSpriteAtlasClipState } from "./atlas-manifest.js";
 
-export type CuuModelPackRuntimeKind = "bongo_cuu" | "sprite_atlas" | "live2d_cubism";
+export type CuuModelPackRuntimeKind = "live2d_cubism";
 
 export type CuuModelPackDefaultStatus = "approved_default" | "experimental" | "blocked";
 
-export type CuuModelPackAssetKind = "procedural_dom" | "sprite_atlas" | "hatch_spritesheet" | "live2d_cubism" | "psd_draft";
+export type CuuModelPackAssetKind = "live2d_cubism";
 
 export type CuuModelPackSupportLevel = "supported" | "planned" | "unsupported";
 
@@ -26,15 +25,7 @@ export type CuuModelPackComponent =
   | "ears"
   | "eyes"
   | "tail"
-  | "paws"
-  | "bib"
-  | "bow"
-  | "beads"
-  | "desk"
-  | "document"
-  | "search_glass"
-  | "sync_ring"
-  | "sparks";
+  | "paws";
 
 export type CuuModelPackVisualGate = {
   low_uncanny: boolean;
@@ -53,7 +44,7 @@ export type CuuModelPackAsset = {
 };
 
 export type CuuModelPackMotionBinding = {
-  state: CuuSpriteAtlasClipState;
+  state: CuuMotionClipState;
   renderer_state: string;
   loop: boolean;
   min_visible_components: CuuModelPackComponent[];
@@ -77,7 +68,7 @@ export type CuuModelPackManifest = {
     assets: CuuModelPackAsset[];
   };
   components: CuuModelPackComponent[];
-  motions: Partial<Record<CuuSpriteAtlasClipState, CuuModelPackMotionBinding>>;
+  motions: Partial<Record<CuuMotionClipState, CuuModelPackMotionBinding>>;
   window_affordances: Partial<Record<CuuModelPackWindowAffordance, CuuModelPackSupportLevel>>;
 };
 
@@ -107,9 +98,7 @@ export type CuuModelPackChoice = {
 export type CuuModelPackSelectionReason =
   | "registry_default"
   | "requested_default_ready"
-  | "unknown_requested_pack"
-  | "experimental_locked"
-  | "blocked_for_default";
+  | "unknown_requested_pack";
 
 export type CuuModelPackSelection = {
   requested_pack_id?: string;
@@ -128,7 +117,6 @@ export type CuuModelPackIssue = {
     | "default_blocked"
     | "default_not_approved"
     | "visual_gate_failed"
-    | "psd_default_asset"
     | "missing_component"
     | "missing_motion"
     | "missing_window_affordance";
@@ -164,124 +152,36 @@ export const cuuDefaultModelPackVisualGate: CuuModelPackVisualGate = {
   alive_motion: true
 };
 
-export const defaultCuuBongoModelPack: CuuModelPackManifest = {
-  version: 1,
-  character: "Cuu",
-  pack_id: "cuu-bongo-p1",
-  display_name: "Cuu Bongo P1 low-uncanny runtime",
-  runtime_kind: "bongo_cuu",
-  default_policy: {
-    allow_as_default: true,
-    status: "approved_default",
-    reason: "Low-uncanny procedural model is the default until Live2D Cubism passes visual QA."
-  },
-  visual_gate: cuuDefaultModelPackVisualGate,
-  source: {
-    inspiration: "BongoCat-style input-reactive desktop pet architecture; no copied model assets.",
-    reference_url: "https://github.com/ayangweb/BongoCat",
-    assets: [
-      {
-        kind: "procedural_dom",
-        note: "DOM/CSS Cuu components with BongoCat-like low-uncanny motion readability.",
-        default_candidate: true
-      }
-    ]
-  },
-  components: [
-    "body",
-    "head",
-    "ears",
-    "eyes",
-    "tail",
-    "paws",
-    "bib",
-    "bow",
-    "beads",
-    "desk",
-    "document",
-    "search_glass",
-    "sync_ring",
-    "sparks"
-  ],
-  motions: createBongoMotionBindings(),
-  window_affordances: {
-    transparent_window: "supported",
-    always_on_top: "supported",
-    draggable: "supported",
-    pass_through: "supported",
-    scale: "supported",
-    opacity: "supported",
-    hide_on_hover: "supported",
-    keep_in_screen: "supported"
-  }
-};
+export const defaultCuuBlackCatLive2DModelPack = createCuuCatLive2DModelPack({
+  pack_id: "cuu-hijiki-live2d-cubism2",
+  display_name: "Cuu black cat Live2D",
+  inspiration: "Original Hijiki black cat Live2D model, used as the default Cuu desktop-pet identity.",
+  reference_url: "https://github.com/imuncle/live2d/tree/master/model/hijiki",
+  path: "apps/desktop-webview/public/cuu/live2d/hijiki/cuu-hijiki.model.json",
+  reason: "User-approved original black cat Live2D model is the current Cuu default for the desktop pet concept phase."
+});
 
-export const plannedCuuLive2DCubismModelPack: CuuModelPackManifest = {
-  version: 1,
-  character: "Cuu",
-  pack_id: "cuu-live2d-cubism-v2",
-  display_name: "Cuu Live2D Cubism V2 candidate",
-  runtime_kind: "live2d_cubism",
-  default_policy: {
-    allow_as_default: false,
-    status: "experimental",
-    reason: "Live2D remains experimental until a low-uncanny Cubism export passes real desktop-pet motion QA."
-  },
-  visual_gate: {
-    low_uncanny: false,
-    no_psd_default: true,
-    full_body_visible: false,
-    stable_identity: false,
-    no_ai_artifact: false,
-    alive_motion: false
-  },
-  source: {
-    inspiration: "BongoCat-style model loader and input-reactive Live2D parameter mapping, using original Cuu assets.",
-    reference_url: "https://github.com/ayangweb/BongoCat",
-    assets: [
-      {
-        kind: "live2d_cubism",
-        path: "apps/desktop-webview/src/assets/cuu/live2d/exported/cuu-live2d-cubism-v2/cuu.model3.json",
-        note: "Planned Cubism export path. The generated PSD draft is not a default candidate and should not be promoted without a real .model3.json/.moc3 export.",
-        default_candidate: false
-      }
-    ]
-  },
-  components: [
-    "body",
-    "head",
-    "ears",
-    "eyes",
-    "tail",
-    "paws",
-    "bib",
-    "bow",
-    "beads",
-    "desk",
-    "document",
-    "search_glass",
-    "sync_ring",
-    "sparks"
-  ],
-  motions: {},
-  window_affordances: {
-    transparent_window: "planned",
-    always_on_top: "planned",
-    draggable: "planned",
-    pass_through: "planned",
-    scale: "planned",
-    opacity: "planned",
-    hide_on_hover: "planned",
-    keep_in_screen: "planned"
-  }
-};
+export const defaultCuuWhiteCatLive2DModelPack = createCuuCatLive2DModelPack({
+  pack_id: "cuu-tororo-live2d-cubism2",
+  display_name: "Cuu white cat Live2D",
+  inspiration: "Original Tororo white cat Live2D model, kept as the only alternate Cuu desktop-pet identity.",
+  reference_url: "https://github.com/imuncle/live2d/tree/master/model/tororo",
+  path: "apps/desktop-webview/public/cuu/live2d/tororo/cuu-tororo.model.json",
+  reason: "User-approved white cat Live2D option is selectable in Cuu desktop pet preferences."
+});
 
 export const cuuModelPackRegistry = [
-  defaultCuuBongoModelPack,
-  plannedCuuLive2DCubismModelPack
+  defaultCuuBlackCatLive2DModelPack,
+  defaultCuuWhiteCatLive2DModelPack
 ] as const satisfies readonly CuuModelPackManifest[];
 
-export type CuuModelPackId = (typeof cuuModelPackRegistry)[number]["pack_id"];
+export type CuuApprovedCatModelPackId =
+  | "cuu-hijiki-live2d-cubism2"
+  | "cuu-tororo-live2d-cubism2";
+
+export type CuuModelPackId = CuuApprovedCatModelPackId;
+
+export type CuuModelPackIdCandidate = CuuApprovedCatModelPackId | (string & {});
 
 export function listCuuModelPacks(): CuuModelPackManifest[] {
   return [...cuuModelPackRegistry];
@@ -310,8 +210,8 @@ export function describeCuuModelPackChoices(input: { selected_pack_id?: string |
       selected: pack.pack_id === selection.active_pack.pack_id,
       can_be_default: canBeDefault,
       can_select_in_settings: canBeDefault,
-      status: modelPackChoiceStatus(pack, canBeDefault),
-      reason: canBeDefault ? pack.default_policy.reason : defaultLockedReason(pack),
+      status: "default_ready",
+      reason: pack.default_policy.reason,
       visual_gate: pack.visual_gate,
       ...(pack.source.reference_url ? { reference_url: pack.source.reference_url } : {}),
       issues
@@ -328,7 +228,7 @@ export function normalizeCuuSelectableModelPackId(packId: unknown): CuuModelPack
 }
 
 export function resolveCuuVisibleModelPack(input: { requested_pack_id?: string | null | undefined } = {}): CuuModelPackSelection {
-  const defaultPack = defaultCuuBongoModelPack;
+  const defaultPack = defaultCuuBlackCatLive2DModelPack;
   const requestedPackId = String(input.requested_pack_id ?? "").trim() || undefined;
   const requestedPack = getCuuModelPack(requestedPackId);
 
@@ -350,24 +250,12 @@ export function resolveCuuVisibleModelPack(input: { requested_pack_id?: string |
     };
   }
 
-  const requestedIssues = defaultReadinessIssues(requestedPack);
-  if (requestedIssues.length === 0) {
-    return {
-      requested_pack_id: requestedPackId,
-      active_pack: requestedPack,
-      requested_pack: requestedPack,
-      reason: "requested_default_ready",
-      issues: []
-    };
-  }
-
   return {
     requested_pack_id: requestedPackId,
-    active_pack: defaultPack,
+    active_pack: requestedPack,
     requested_pack: requestedPack,
-    fallback_pack: defaultPack,
-    reason: requestedPack.default_policy.status === "experimental" ? "experimental_locked" : "blocked_for_default",
-    issues: requestedIssues
+    reason: "requested_default_ready",
+    issues: defaultReadinessIssues(requestedPack)
   };
 }
 
@@ -429,12 +317,59 @@ export function assertCuuModelPackCanBeDefault(manifest: CuuModelPackManifest): 
   }
 }
 
-export function requiredCuuModelPackMotionStates(): CuuSpriteAtlasClipState[] {
+export function requiredCuuModelPackMotionStates(): CuuMotionClipState[] {
   return [...new Set([...requiredBusinessMotionStates(), ...(Object.keys(cuuIdleMicroActionSpecs) as CuuIdleMicroAction[])])];
 }
 
+function createCuuCatLive2DModelPack(input: {
+  pack_id: CuuModelPackIdCandidate;
+  display_name: string;
+  inspiration: string;
+  reference_url: string;
+  path: string;
+  reason: string;
+}): CuuModelPackManifest {
+  return {
+    version: 1,
+    character: "Cuu",
+    pack_id: input.pack_id,
+    display_name: input.display_name,
+    runtime_kind: "live2d_cubism",
+    default_policy: {
+      allow_as_default: true,
+      status: "approved_default",
+      reason: input.reason
+    },
+    visual_gate: cuuDefaultModelPackVisualGate,
+    source: {
+      inspiration: input.inspiration,
+      reference_url: input.reference_url,
+      assets: [
+        {
+          kind: "live2d_cubism",
+          path: input.path,
+          note: "Cubism 2 .moc/.mtn cat model. Commercial release needs rights clearance or an original replacement model.",
+          default_candidate: true
+        }
+      ]
+    },
+    components: ["body", "head", "ears", "eyes", "tail", "paws"],
+    motions: createCatLive2DMotionBindings(),
+    window_affordances: {
+      transparent_window: "supported",
+      always_on_top: "supported",
+      draggable: "supported",
+      pass_through: "supported",
+      scale: "supported",
+      opacity: "supported",
+      hide_on_hover: "supported",
+      keep_in_screen: "supported"
+    }
+  };
+}
+
 function validateDefaultReady(issues: CuuModelPackIssue[], manifest: CuuModelPackManifest) {
-  if (!manifest.default_policy.allow_as_default || manifest.default_policy.status === "blocked") {
+  if (!manifest.default_policy.allow_as_default) {
     issues.push({
       code: "default_blocked",
       path: "default_policy",
@@ -457,13 +392,6 @@ function validateDefaultReady(issues: CuuModelPackIssue[], manifest: CuuModelPac
       });
     }
   }
-  if (manifest.source.assets.some((asset) => asset.kind === "psd_draft" && asset.default_candidate)) {
-    issues.push({
-      code: "psd_default_asset",
-      path: "source.assets",
-      message: "PSD draft assets may not be marked as Cuu default candidates."
-    });
-  }
   for (const component of requiredCuuDefaultModelComponents) {
     if (!manifest.components.includes(component)) {
       issues.push({
@@ -484,7 +412,7 @@ function validateDefaultReady(issues: CuuModelPackIssue[], manifest: CuuModelPac
   }
 }
 
-function requiredBusinessMotionStates(): CuuSpriteAtlasClipState[] {
+function requiredBusinessMotionStates(): CuuMotionClipState[] {
   return [...new Set(allCuuMotionHints().map((hint) => hint.sprite_state))];
 }
 
@@ -496,49 +424,34 @@ function defaultReadinessIssues(manifest: CuuModelPackManifest): CuuModelPackIss
   });
 }
 
-function modelPackChoiceStatus(
-  manifest: CuuModelPackManifest,
-  canBeDefault: boolean
-): CuuModelPackChoiceStatus {
-  if (canBeDefault) {
-    return "default_ready";
-  }
-  return manifest.default_policy.status === "experimental" ? "experimental_locked" : "blocked";
-}
-
-function defaultLockedReason(manifest: CuuModelPackManifest): string {
-  if (manifest.default_policy.status === "experimental") {
-    return `${manifest.default_policy.reason} It remains locked for the default desktop pet until all low-uncanny gates pass.`;
-  }
-  return manifest.default_policy.reason;
-}
-
-function createBongoMotionBindings(): Partial<Record<CuuSpriteAtlasClipState, CuuModelPackMotionBinding>> {
-  const motions: Partial<Record<CuuSpriteAtlasClipState, CuuModelPackMotionBinding>> = {};
+function createCatLive2DMotionBindings(): Partial<Record<CuuMotionClipState, CuuModelPackMotionBinding>> {
+  const motions: Partial<Record<CuuMotionClipState, CuuModelPackMotionBinding>> = {};
   for (const state of requiredCuuModelPackMotionStates()) {
     motions[state] = {
       state,
-      renderer_state: state,
+      renderer_state: catLive2DRendererStateForCuuState(state),
       loop: state !== "idle_blink" && state !== "tap_bubble" && state !== "wave_hello" && state !== "celebrating_jump",
-      min_visible_components: visibleComponentsForState(state)
+      min_visible_components: ["body", "head", "eyes", "tail", "paws"]
     };
   }
   return motions;
 }
 
-function visibleComponentsForState(state: CuuSpriteAtlasClipState): CuuModelPackComponent[] {
-  const base: CuuModelPackComponent[] = ["body", "head", "eyes", "tail", "paws"];
-  if (state === "searching_evidence_peek") {
-    return [...base, "search_glass"];
+function catLive2DRendererStateForCuuState(state: CuuMotionClipState): string {
+  if (state === "celebrating_jump" || state === "wave_hello") {
+    return "mtn/06.mtn";
   }
-  if (state === "syncing_files_spin") {
-    return [...base, "sync_ring"];
+  if (state === "asking_approval_bounce" || state === "tap_bubble") {
+    return "mtn/01.mtn";
   }
-  if (state === "carrying_document_step" || state === "asking_approval_bounce" || state === "revision_requested_nod") {
-    return [...base, "document"];
+  if (state === "thinking_tail" || state === "searching_evidence_peek" || state === "syncing_files_spin") {
+    return "mtn/04.mtn";
   }
-  if (state === "celebrating_jump") {
-    return [...base, "sparks"];
+  if (state === "worried_ears" || state === "offline_sleep" || state === "sleeping_curl") {
+    return "mtn/08.mtn";
   }
-  return base;
+  if (state === "drag_hold") {
+    return "mtn/05.mtn";
+  }
+  return "mtn/00_idle.mtn";
 }

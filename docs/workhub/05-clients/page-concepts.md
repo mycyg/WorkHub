@@ -13,7 +13,8 @@ owner: workflow
 
 - **最终方向**：AI 负责过滤复杂度，用户默认只处理当前需要判断的一件事。
 - **看板降级**：看板是高级管理视图，不是默认首页。
-- **桌宠优先**：项目检索、轻审批、澄清提醒优先由 Cuu 桌宠承接。
+- **桌宠独立**：项目检索、轻审批、澄清提醒优先由独立 Cuu 桌宠承接；Web 与主应用保持严肃工作界面，不内嵌桌宠、Cuu rail 或 Cuu bubble。
+- **Cuu 二选项**：当前桌宠形象只保留黑猫 Hijiki / 白猫 Tororo 两个 Live2D 选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)；旧橘猫、Bongo、PSD draft、sprite/atlas 图只作为历史反例或交互参考。
 - **选项优先**：澄清流程默认点选项，打字只是「其他 / 补充」兜底。
 - **Cuu 为准**：早期非小猫桌宠图只保留交互探索价值；桌宠形象以 [`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md) 为准。
 - **落地契约**：页面里的注意力卡、选项澄清、证据气泡、交付物变更包、Cuu 状态映射，统一落到 P0 横切契约 [`_experience-deliverable-contracts.md`](../../plans/p0-foundation/_experience-deliverable-contracts.md)，后续开发不得各端各造一套 payload。
@@ -35,7 +36,7 @@ owner: workflow
 
 ![Web 项目工作台细化](./assets/web/web-project-attention-workspace.png)
 
-项目页默认不是全量任务管理，而是「本项目现在需要注意什么」。左侧保留项目上下文，中间展示需要判断的一件事与 AI 正在做的背景任务，右侧由 Cuu 提供证据和下一步建议。
+项目页默认不是全量任务管理，而是「本项目现在需要注意什么」。左侧保留项目上下文，中间展示需要判断的一件事与 AI 正在做的背景任务，右侧只展示严肃证据、风险和下一步建议；Cuu 若出现，只在独立桌宠窗口里提醒和 deep-link 到该页面。
 
 ### 1.2 P0-P5 核心页面图谱
 
@@ -47,7 +48,7 @@ owner: workflow
 
 ![Web 选项优先提需求](./assets/web/web-option-first-intake-wizard.png)
 
-提需求阶段不应先要求长篇输入。默认由 Cuu 把意图拆成可点选项，用户只补附件、DDL、负责人和验收项；大文本域只作为「其他 / 补充」折叠项。
+提需求阶段不应先要求长篇输入。默认由 AI 把意图拆成可点选项，用户只补附件、DDL、负责人和验收项；大文本域只作为「其他 / 补充」折叠项。独立 Cuu 桌宠可以提醒用户来处理该澄清，但 Web 页面本身不放桌宠形象。
 
 ### 1.3 P6-P11 运营页面图谱
 
@@ -173,17 +174,17 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 这张图定义美术资产从 AI 生图到透明 PNG、精修、sprite / Rive / Live2D / Lottie 运行时的可选路线。
 
-### 3.1.1.1 Cuu Bongo-style 默认运行态
+### 3.1.1.1 Cuu sprite-atlas 默认运行态与 Bongo fallback
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-2026-06-08 起，Cuu P1 默认视觉先采用参考 BongoCat 思路的低恐怖谷 renderer：扁平、圆润、少状态强反馈，默认 DOM 为 `data-cuu-visual-mode="bongo_cuu"`，不暴露未精修 PSD layer。P1d-a 已补尺寸、透明度和点击穿透窗口合同；P1d-b-a 已补 hide-on-hover soft dodge；P1e-a 已补 cursor-near 立即 `look_at_mouse` 与 `data-pet-cursor-near` / `data-pet-hovered` / `data-pet-dragging` 输入 QA 属性。详见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
+2026-06-08 后续修正：Bongo-style renderer 只保留为动作行为参考和 fallback，不能再作为默认视觉通过口径。当前独立 `pet` surface 默认应渲染 `sprite_atlas` 真实图像素材，DOM 以 `data-cuu-visual-mode="sprite_atlas"`、`data-cuu-image-runtime="sprite_atlas"`、`data-cuu-render-mode="img_stack"` 为准；未精修 PSD layer 与 CSS/线条临摹都不得默认暴露。
 
 ![Cuu polished generated alpha asset](./assets/cuu/generated-polished/cuu-polished-idle-v1-alpha-cropped.png)
 
 ![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
 
-2026-06-08 追加的 `cuu-polished-idle-v1` 是 Web / Gold Path 右侧栏的生成图资产：先用 GPT Image 生成 Cuu 绿幕图，再抠成透明 PNG，最终替换掉早期粗糙 CSS 小猫。它用于当前主窗页面视觉占位和后续 Live2D 重绘参考，但不代表独立桌宠 `pet` window 的动态验收已完成。
+2026-06-08 追加的 `cuu-polished-idle-v1` 曾用于 Web / Gold Path 右侧栏视觉修补，但该主窗 rail 方案已撤回。图片只保留为历史参考和后续 Live2D / sprite 重绘素材参考；Web / 主应用不再显示 Cuu。
 
 ### 3.1.2 Cuu Live2D 分层概念
 
@@ -195,7 +196,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu 动画架构选型](./assets/cuu/cuu-animation-architecture-options.png)
 
-桌宠动画不宜退化成 GIF 或符号图标。当前推荐路径是：P1 默认用 `bongo_cuu` 低恐怖谷 renderer 保证 Cuu 先可爱、稳定地出现在透明桌面窗口；atlas / Hatch 作为 fallback；并行推进 Live2D 分层 PSD，但只有精修 PSD、Cubism 和真实 Tauri 录屏通过后，才允许替换默认。
+桌宠动画不宜退化成 GIF、符号图标或 CSS 临摹。当前推荐路径是：P1 默认用真实 PNG `sprite_atlas` clip sheet 先让 Cuu 在透明桌面窗口里可见、可动、全身不裁切；Bongo/Hatch 只作为动作 storyboard 与 fallback；并行推进 Live2D 分层 PSD，但只有精修 PSD、Cubism 和真实 Tauri 录屏通过后，才允许替换默认。
 
 ### 3.1.4 WorkHub 实现路线图
 
@@ -241,7 +242,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、procedural sprite runtime、Bongo-style 默认 renderer、Web rail 生成图替换、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1d-c 窗口设置矩阵真实截图、Bongo P1e-b/P1e-c/P1e-d-a/P1e-d-b 真实输入/长驻录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、真实 Tauri Bongo GIF/MP4、controller 策略 MVP、desktop badge / 队列推进、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、内联静态 fallback 与 Windows debug `PrintWindow` 像素 smoke；仍缺 Bongo 动作二轮幅度、真实设置页 UI 截图、full hide/pass-through 安全恢复、多屏恢复实测、正式 Live2D 模型、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
+Cuu 当前已有卡片适配、motion hints、真实 PNG `sprite_atlas` 默认 pet surface、Bongo-style fallback / 行为原型、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1d-c 窗口设置矩阵真实截图、Bongo P1e-b/P1e-c/P1e-d-a/P1e-d-b 真实输入/长驻录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、controller 策略 MVP、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、Windows debug `PrintWindow` 像素 smoke；已撤回 Web rail / 主窗 Cuu 入口。仍缺更精致真实图像素材重生成、正式 Live2D 模型、动作幅度二轮、full hide/pass-through 安全恢复、多屏恢复实测、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 
@@ -249,7 +250,7 @@ Rust 客户端当前已有 shell contract crate、desktop webview bridge、Tauri
 
 ![Web 真页面差距路线](./assets/web/web-real-ui-gap-roadmap.png)
 
-Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 React SPA routes、四态、响应式、Cuu bubble、视觉回归和 option-first 主路径。
+Web 当前更接近 typed render helpers + Gold Path shell。后续要补真实 React SPA routes、四态、响应式、视觉回归和 option-first 主路径；Cuu bubble 不属于 Web 页面，只属于独立桌宠。
 
 ### 4.4 当前真实截图与动作审计（2026-06-07）
 

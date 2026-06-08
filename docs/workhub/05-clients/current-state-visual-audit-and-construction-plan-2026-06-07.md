@@ -42,7 +42,9 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、BONGO-P2a-b 设置页模型包 UI、P1d-a 窗口手感合同、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 设置矩阵真实截图、P1e-a 输入响应合同、P1e-b hover/tap/drag 真实输入录屏、P1e-c 连续看鼠标 / hover 避让真实输入录屏、P1e-d-a pointer smoothing / drag grip 真实录屏和 P1e-d-b 60s idle jitter / flicker 真实录屏；`cuu-bongo-p1` 是当前唯一可默认展示且可由用户选择的 Cuu 模型包，`resolveCuuVisibleModelPack()` 会把 Live2D 实验包和未知 PSD 请求回退到 Bongo，Settings 页面和 Cuu 偏好气泡都把 Live2D 显示为实验锁定。下一步转向多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮和 Live2D 精修。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype、Bongo-style 手绘或不精致 PSD 都不能算鲜活感通过。
+>
+> **2026-06-08 当前口径变更**：Cuu 可选项已收束为两个已批准的 Cubism2 Live2D 小猫模型包：黑猫 `cuu-hijiki-live2d-cubism2` 与白猫 `cuu-tororo-live2d-cubism2`。`cuu-bongo-p1`、橘猫改色、Bongo-style DOM renderer、sprite/atlas、绿幕裁片与 PSD draft probe 均退出运行时源码和用户可选项，只保留在本文下方作为历史失败证据与验收反例。`resolveCuuVisibleModelPack()` 对未知或旧 pack id 统一回退黑猫；Settings / Cuu 偏好气泡只展示黑猫与白猫。下一步转向独立桌宠窗口的 Live2D 录屏 QA、多屏恢复、pass-through 安全恢复和动作鲜活感验收。
 >
 > **2026-06-08 视觉资产补充**：用户指出 Web 右侧栏的临时 CSS Cuu 太粗糙。已用 GPT Image 生成新的 Cuu 绿幕源图，经过 chroma-key 抠图、裁切和 public alpha 资产同步后，Gold Path rail 默认加载透明 PNG，CSS 几何小猫只保留为图片加载失败 fallback。该资产只代表 Web rail P1 视觉升级，不替代 Live2D / Cubism 最终验收。
 
@@ -193,14 +195,14 @@ visuals:
 
 | 检查项 | 结果 | 处理 |
 |---|---|---|
-| Cuu 鲜活感 P1 | **阶段通过但仍需增强**：Bongo 默认已通过真实 Tauri 多帧录屏、输入手感、60s idle 和设置矩阵；但动作幅度仍偏温和，不等于最终 Live2D 活体 | 继续做 Bongo 动作幅度二轮、多屏恢复和 full hide/pass-through 安全恢复 |
+| Cuu 鲜活感 P1 | **历史阶段曾通过、当前已废弃**：Bongo / sprite 录屏曾证明 QA 链路可行，但视觉被用户否决，不再作为默认或可选模型 | 迁移同等 QA 门到黑猫/白猫 Live2D，继续做多屏恢复和 full hide/pass-through 安全恢复 |
 | Live2D 表现力 | **实验线冻结默认**：绿幕零件板、144 层 PSD draft v1、manifest/report 已落；因恐怖谷风险不得默认，尚未 Cubism 绑定 | 按低恐怖谷 v2 重绘/精修 PSD，补画遮挡，导入 Cubism，录屏验收后再申请 model pack 晋级 |
 
 仍然没有完成的体验差距：
 
 - 历史失败证据必须保留：第一轮 card layout 图中 Cuu 只露耳朵 / 局部，不能作为通过截图；后续任何回归再次出现都直接判失败。
 - 历史伪通过证据也必须保留：只有静态 fallback 呼吸 / 缩放不能算 Cuu 活着；后续 motion QA 必须看到真实 clip sheet 或 Live2D 姿态变化。
-- 现阶段 Bongo 已达到 P1 默认可见、可动、低恐怖谷、可设置的阶段门槛；距离「尾巴/流苏轻物理、任务动作更夸张、Cubism mesh 物理」仍需要 Live2D / Cubism 精修路线。
+- 历史 Bongo 阶段曾达到 P1 可见、可动、可设置门槛，但视觉方案已退出当前源码；后续「尾巴/流苏轻物理、任务动作更夸张、Cubism mesh 物理」必须落在 Hijiki/Tororo Live2D 或未来授权原创 Cubism 模型上。
 
 ### 0.4 CUX-L2D-001：PSD Draft Runtime Probe（2026-06-08）
 
@@ -1058,13 +1060,13 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 | 阶段 | 目标 | 为什么 |
 |---|---|---|
-| P1 Bongo 默认手感 | 继续打磨 `bongo_cuu` 动作幅度、多屏和 full hide/pass-through 安全恢复；真实设置页模型包 UI 与 60s jitter 已补 | 用户已指出 PSD draft 有恐怖谷风险；默认桌宠必须先可爱、稳定、低恐怖谷 |
-| P2 Live2D PSD v1 | 清理 `generated-psd-draft-v1`，补画遮挡，修尾巴/耳朵/绿边 | 用户仍希望长期有分层精细、活体动作；但默认替换必须等美术 QA、Cubism 录屏和 model pack gate 全部通过 |
-| P2 Cubism runtime | 导出 `.model3.json` / `.moc3` / physics / motions 并接 Tauri pet window | 解决眨眼、眼神、耳朵、尾巴、流苏和鼠标互动 |
-| Fallback Hatch Pack | Cubism 阻塞时提供高质量多动作 sprite 降级 | 成本低、格式固定、QA 容易，但不是最终主表现 |
-| Hybrid runtime | Live2D 主表现，Hatch / atlas sprite fallback | 高表现力 + 可靠降级 |
+| P1 Live2D 二选项手感 | 用黑猫 Hijiki / 白猫 Tororo 跑独立 `pet` window、first-frame、长驻、hover/drag、card mode 和多屏恢复录屏 QA | 用户已放弃橘猫改色、Bongo、PSD draft 和 sprite/atlas；当前默认桌宠必须先稳定、可见、可动、低恐怖谷 |
+| P2 原创 Live2D PSD v1 | 若要替换现成模型，重新设计授权原创 Cuu，精细分层、补画遮挡、导入 Cubism | 用户仍希望长期有分层精细、活体动作；但替换必须等美术 QA、Cubism 录屏和 model pack gate 全部通过 |
+| P2 Cubism runtime | 对 Hijiki/Tororo 和未来原创模型统一接 `.model.json` / `.moc` / motions / physics / pose，并映射 Tauri pointer contract | 解决眨眼、眼神、耳朵、尾巴、轻物理和鼠标互动 |
+| Fallback Hatch Pack | Cubism 阻塞时才考虑高质量多动作 sprite 降级 | 成本低、格式固定、QA 容易，但不是当前主表现 |
+| Hybrid runtime | Live2D 主表现，Hatch / atlas sprite 仅作为故障恢复或未来授权素材补充 | 高表现力 + 可靠降级，但不能恢复已否决的低质视觉 |
 
-结论：**当前最适合的下一步是先把 Bongo Cuu 的常驻窗口手感和真实录屏 QA 做稳；Live2D PSD / Cubism 继续并行实验，但在恐怖谷和 Cubism 门禁通过前不得替换默认。Hatch Pet 是 fallback，不是退回 GIF，也不是最终主路线。**
+结论：**当前最适合的下一步是把 Hijiki 黑猫 / Tororo 白猫 Live2D 在独立 `pet` window 中跑稳，并用真实录屏验证待机、眨眼、看鼠标、hover/drag、任务卡和长驻稳定。Bongo、橘猫改色、PSD draft、sprite/atlas 都是历史反例，不再作为默认、fallback 或可选项。**
 
 ---
 

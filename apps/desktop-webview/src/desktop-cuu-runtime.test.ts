@@ -18,7 +18,6 @@ import {
   type DesktopShellEventEnvelope,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
-import { renderDesktopCuuSprite } from "./cuu-sprite-runtime.js";
 import type { DesktopShellPushPayload } from "./shell-events.js";
 
 function shellPayload(event: string, data: unknown): DesktopShellPushPayload {
@@ -323,20 +322,6 @@ test("scripted desktop shell listener dispatches scheduled push and status event
 });
 
 test("desktop Cuu notice renders compact option-first actions", () => {
-  const sprite = renderDesktopCuuSprite({
-    state: "asking_approval",
-    sprite_state: "asking_approval_bounce",
-    emphasis: "urgent",
-    loop: true,
-    reduced_motion_fallback: "Cuu 在等你点选。"
-  });
-  const thinkingSprite = renderDesktopCuuSprite({
-    state: "thinking",
-    sprite_state: "thinking_tail",
-    emphasis: "busy",
-    loop: true,
-    reduced_motion_fallback: "Cuu 正在想。"
-  });
   const html = renderDesktopCuuNotice({
     id: "card-1",
     kind: "question",
@@ -363,9 +348,6 @@ test("desktop Cuu notice renders compact option-first actions", () => {
     ]
   });
 
-  assert.equal(sprite.clip.state, "asking_approval_bounce");
-  assert.match(sprite.html, /data-cuu-sprite-state="asking_approval_bounce"/u);
-  assert.match(thinkingSprite.html, /--wh-cuu-frame-transform:rotate\(-2deg\)/u);
   assert.equal(desktopCuuNoticeMessage({
     id: "card-1",
     kind: "offline",
@@ -383,11 +365,12 @@ test("desktop Cuu notice renders compact option-first actions", () => {
     actions: []
   }), "Cuu：连接断开");
   assert.match(html, /data-cuu-state="asking_approval"/u);
-  assert.match(html, /data-cuu-sprite-state="asking_approval_bounce"/u);
-  assert.match(html, /aria-label="Cuu 在等你点选。"/u);
+  assert.match(html, /wh-cuu-card-mark/u);
   assert.match(html, /不用打字，点选即可。/u);
   assert.match(html, /data-cuu-action-id="submit"/u);
+  assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-bongo/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
+  assert.doesNotMatch(desktopCuuNoticeCss, /wh-cuu-sprite/u);
 });
 
 test("desktop Cuu actions submit approval choices through the typed API client", async () => {

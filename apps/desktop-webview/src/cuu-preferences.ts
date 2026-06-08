@@ -308,26 +308,32 @@ function renderModelPackChoice(choice: CuuModelPackChoice, locale: CuuPreference
   const disabled = choice.can_select_in_settings ? "" : " disabled";
   return `<button type="button" class="wh-cuu-pref-model" data-cuu-model-pack-id="${escapeHtml(choice.pack_id)}" data-cuu-model-pack-status="${escapeHtml(choice.status)}" data-cuu-model-pack-selectable="${choice.can_select_in_settings ? "true" : "false"}" aria-pressed="${choice.selected ? "true" : "false"}"${disabled}>
     <span class="wh-cuu-pref-model-name">${escapeHtml(modelPackLabel(choice.pack_id, locale))}</span>
-    <span class="wh-cuu-pref-model-status">${escapeHtml(modelPackStatusLabel(choice.status, locale, copy))}</span>
+    <span class="wh-cuu-pref-model-status">${escapeHtml(modelPackStatusLabel(choice, locale, copy))}</span>
   </button>`;
 }
 
 function modelPackLabel(packId: string, locale: CuuPreferenceLocale) {
-  if (packId === "cuu-live2d-cubism-v2") {
-    return locale === "en-US" ? "Live2D V2" : "Live2D V2";
+  if (packId === "cuu-hijiki-live2d-cubism2") {
+    return locale === "en-US" ? "Black cat" : "黑猫";
   }
-  return locale === "en-US" ? "Bongo Cuu P1" : "Bongo Cuu P1";
+  if (packId === "cuu-tororo-live2d-cubism2") {
+    return locale === "en-US" ? "White cat" : "白猫";
+  }
+  return locale === "en-US" ? "Cat option" : "猫咪选项";
 }
 
 function modelPackStatusLabel(
-  status: CuuModelPackChoice["status"],
+  choice: CuuModelPackChoice,
   locale: CuuPreferenceLocale,
   copy: typeof cuuPreferenceCopy[CuuPreferenceLocale]
 ) {
-  if (status === "default_ready") {
+  if (choice.selected) {
     return copy.current;
   }
-  if (status === "experimental_locked") {
+  if (choice.status === "default_ready" && choice.can_select_in_settings) {
+    return copy.available;
+  }
+  if (choice.status === "experimental_locked") {
     return copy.experimentalLocked;
   }
   return locale === "en-US" ? "Blocked" : "已阻止";
@@ -344,6 +350,7 @@ const cuuPreferenceCopy = {
     modelPack: "形象",
     modelPackAria: "Cuu 模型包",
     current: "当前默认",
+    available: "可选择",
     experimentalLocked: "实验锁定",
     attention: "提醒",
     attentionAria: "Cuu 提醒模式",
@@ -372,6 +379,7 @@ const cuuPreferenceCopy = {
     modelPack: "Look",
     modelPackAria: "Cuu model pack",
     current: "Current default",
+    available: "Available",
     experimentalLocked: "Experiment locked",
     attention: "Attention",
     attentionAria: "Cuu attention mode",

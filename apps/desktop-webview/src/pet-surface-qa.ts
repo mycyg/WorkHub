@@ -5,9 +5,9 @@ export type DesktopPetVisualQaCheckId =
   | "right_bottom_independent_surface"
   | "pet_body_hit_area"
   | "pointer_reactive_pose"
-  | "bongo_hover_hide_handfeel"
+  | "image_hover_hide_handfeel"
   | "no_main_shell"
-  | "bongo_runtime_contract"
+  | "image_asset_runtime_contract"
   | "card_mode_light_bubble"
   | "heavy_card_context"
   | "option_first_card";
@@ -57,10 +57,7 @@ export function createDesktopPetVisualQaReport(input: {
     qaCheck(
       "pet_body_hit_area",
       hasAll(input.idle.css, [".wh-pet-body", "cursor:grab", "pointer-events:auto"]) &&
-        (hasAll(input.idle.css, [".wh-cuu-live2d", "pointer-events:none"]) ||
-          hasAll(input.idle.css, [".wh-cuu-bongo", "pointer-events:none"]) ||
-          hasAll(input.idle.css, [".wh-cuu-psd", "pointer-events:none"]) ||
-          hasAll(input.idle.css, [".wh-cuu-atlas", "pointer-events:none"])) &&
+        hasAll(input.idle.css, [".wh-cuu-cat-live2d", "pointer-events:none"]) &&
         input.idle.html.includes('data-pet-drag-handle="true"'),
       "only the pet body and bubble should receive pointer input; Cuu visual pixels stay visual-only."
     ),
@@ -72,20 +69,19 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.html.includes("--wh-pet-look-head-x-px:0px") &&
         input.idle.html.includes("--wh-pet-pointer-smoothing-alpha:0.58") &&
         input.idle.css.includes("--wh-pet-avoid-x-px") &&
-        input.idle.bongo.css.includes("--wh-pet-look-head-x-px") &&
-        input.idle.bongo.css.includes("--wh-pet-look-eye-x-px") &&
-        input.idle.bongo.css.includes("data-pet-hover-avoidance=soft"),
-      "Bongo-style Cuu must expose continuous pointer look variables, smoothing alpha and a hover avoidance pose for screenshot QA."
+        input.idle.css.includes(".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-cat-live2d") &&
+        input.idle.css.includes("transform:translate(var(--wh-pet-look-head-x-px"),
+      "Cuu must expose continuous pointer look variables, smoothing alpha and a hover avoidance pose for screenshot QA."
     ),
     qaCheck(
-      "bongo_hover_hide_handfeel",
+      "image_hover_hide_handfeel",
       input.idle.html.includes('data-pet-hide-on-hover="false"') &&
         input.idle.html.includes('data-pet-hover-hidden="false"') &&
         input.idle.html.includes('data-pet-hover-hide-mode="off"') &&
         input.idle.html.includes("--wh-pet-hide-opacity:1") &&
         input.idle.css.includes("data-pet-hover-hidden=true") &&
         input.idle.css.includes("--wh-pet-hide-x-px"),
-      "Bongo-style Cuu must expose a recoverable hover hide/dodge state instead of depending on PSD realism or a full invisible window."
+      "image-based Cuu must expose a recoverable hover hide/dodge state instead of depending on a full invisible window."
     ),
     qaCheck(
       "no_main_shell",
@@ -93,40 +89,37 @@ export function createDesktopPetVisualQaReport(input: {
       "the pet window must not load the Gold Path shell or free-text-first controls."
     ),
     qaCheck(
-      "bongo_runtime_contract",
-      input.idle.visual_mode === "bongo_cuu" &&
-        input.idle.bongo.runtime_kind === "bongo_cuu" &&
-        input.idle.bongo.status === "p1_default_low_uncanny" &&
-        input.idle.bongo.component_count >= 20 &&
-        input.idle.bongo.duration_ms >= 700 &&
-        input.idle.html.includes('data-cuu-bongo-runtime="bongo_cuu"') &&
-        input.idle.html.includes('data-cuu-bongo-status="p1_default_low_uncanny"') &&
+      "image_asset_runtime_contract",
+      input.idle.visual_mode === "live2d_cat" &&
+        input.idle.live2d.runtime_kind === "live2d_cubism2_cat" &&
+        input.idle.live2d.status === "approved_cat_option" &&
+        input.idle.live2d.model_pack_id === "cuu-hijiki-live2d-cubism2" &&
+        input.idle.html.includes('data-cuu-live2d-runtime="live2d_cubism2_cat"') &&
+        input.idle.html.includes('data-cuu-live2d-status="approved_cat_option"') &&
+        input.idle.html.includes('data-cuu-live2d-model="hijiki"') &&
+        input.idle.html.includes('data-cuu-live2d-appearance="black_cat"') &&
+        input.idle.html.includes('data-cuu-live2d-frame-url="./cuu/live2d/hijiki/cuu-hijiki.html"') &&
+        input.idle.html.includes('data-cuu-model-pack="cuu-hijiki-live2d-cubism2"') &&
         input.idle.html.includes('data-cuu-model-pack-selection-reason="registry_default"') &&
-        input.idle.html.includes('data-cuu-bongo-component-count="31"') &&
-        input.idle.html.includes("wh-cuu-bongo-paw") &&
-        input.idle.html.includes("wh-cuu-bongo-eye") &&
-        input.idle.html.includes("wh-cuu-bongo-tail") &&
-        input.idle.html.includes("wh-cuu-bongo-search-glass") &&
-        input.idle.html.includes("wh-cuu-bongo-sync-ring") &&
-        input.idle.html.includes("wh-cuu-bongo-spark") &&
+        input.idle.html.includes('class="wh-cuu-cat-live2d-frame"') &&
+        input.idle.css.includes(".wh-cuu-cat-live2d") &&
+        !input.idle.html.includes('data-cuu-fallback-visual-mode=') &&
+        !input.idle.html.includes('data-cuu-fallback-image-runtime=') &&
+        !input.idle.html.includes('data-cuu-image-motion=') &&
+        !input.idle.html.includes('class="wh-cuu-atlas') &&
+        !input.idle.html.includes("wh-cuu-bongo-paw") &&
+        !input.idle.html.includes("wh-cuu-bongo-eye") &&
+        !input.idle.html.includes("wh-cuu-bongo-tail") &&
         !input.idle.html.includes('data-cuu-live2d-runtime="psd_draft_probe"') &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-tail") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-paw-hit-l") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-eye-open") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-wave") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-search-peek") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-sync-ring") &&
-        input.idle.bongo.css.includes("@keyframes wh-cuu-bongo-revision-nod") &&
-        input.idle.bongo.css.includes("prefers-reduced-motion") &&
-        input.idle.sprite.fallback === false,
-      "idle Cuu must default to a low-uncanny Bongo-style renderer; PSD draft probes stay hidden until Cubism-quality art passes visual QA."
+        input.idle.css.includes("@keyframes wh-cuu-cat-live2d-working") &&
+        input.idle.css.includes("prefers-reduced-motion"),
+      "idle Cuu must default to the user-approved Hijiki black cat Live2D model; only black/white Live2D cat options may be visible."
     ),
     qaCheck(
       "card_mode_light_bubble",
       hasAll(input.card.css, [".wh-pet-bubble", "right:132px", "bottom:28px", "width:min(250px,calc(100vw - 148px))"]) &&
         input.card.html.includes('data-pet-window-mode="card"') &&
-        input.card.html.includes('data-pet-bubble="true"') &&
-        input.card.sprite.fallback === false,
+        input.card.html.includes('data-pet-bubble="true"'),
       "expanded mode must remain a small option bubble beside Cuu, not a full application panel."
     ),
     qaCheck(
@@ -185,9 +178,9 @@ function labelFor(id: DesktopPetVisualQaCheckId) {
     right_bottom_independent_surface: "right-bottom independent surface",
     pet_body_hit_area: "pet body hit area",
     pointer_reactive_pose: "pointer-reactive pose",
-    bongo_hover_hide_handfeel: "Bongo hover-hide handfeel",
+    image_hover_hide_handfeel: "image hover-hide handfeel",
     no_main_shell: "no main shell",
-    bongo_runtime_contract: "Bongo-style runtime contract",
+    image_asset_runtime_contract: "image asset runtime contract",
     card_mode_light_bubble: "card-mode light bubble",
     heavy_card_context: "heavy card context",
     option_first_card: "option-first card"

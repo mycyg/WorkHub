@@ -1,7 +1,7 @@
 import type { CuuState } from "@workhub/contracts";
 
 import type { CuuCard } from "./cards.js";
-import { normalizeCuuSelectableModelPackId, type CuuModelPackId } from "./model-pack.js";
+import { normalizeCuuSelectableModelPackId, type CuuModelPackIdCandidate } from "./model-pack.js";
 
 export type CuuAttentionMode = "normal" | "quiet" | "do_not_disturb";
 export type CuuSoundMode = "on" | "muted";
@@ -17,7 +17,7 @@ export type CuuControllerPreferences = {
   pet_opacity_percent: CuuPetOpacityPercent;
   pet_pass_through: boolean;
   pet_hide_on_hover: boolean;
-  pet_model_pack_id?: CuuModelPackId;
+  pet_model_pack_id?: CuuModelPackIdCandidate;
 };
 
 export type CuuPresentationSurface = "notice" | "badge" | "none";

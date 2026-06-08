@@ -7,13 +7,13 @@ owner: workflow
 
 # Cuu 桌宠形象与交互概念
 
-> **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的橘色卡通小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
+> **Cuu** 是 WorkHub 桌宠客户端的默认形象：一只会动、会提醒、会陪用户处理工作的 Live2D 小猫。它不是冷冰冰的状态图标，而是 WorkHub AI-native 体验的常驻入口。
 >
-> **当前默认视觉路线**：见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。用户已明确反馈当前 PSD draft 有恐怖谷风险，因此 Cuu P1 默认改为参考 [BongoCat](https://github.com/ayangweb/BongoCat) 思路的低恐怖谷扁平小猫 renderer；当前默认模型包是 `cuu-bongo-p1`，由 `CuuModelPackManifest` 标记为 `approved_default`。PSD / Live2D 只保留为实验线，只有过美术 QA、真实桌宠录屏和 model pack 默认门禁后才能回到默认。
-> **当前 Web rail 视觉修正**：2026-06-08 追加 `cuu-polished-idle-v1` 生成图资产，用 GPT Image 生成绿幕 Cuu 并抠图成透明 PNG，替换主窗右侧栏早期粗糙 CSS 小猫；该资产只修正主窗 rail 占位视觉，不替代独立 `pet` window 的动态验收。
-> **绿幕素材与独立窗口施工方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案把 Cuu 明确为独立 Tauri `pet` 透明窗口，并规定 GPT Image 绿幕多帧素材、抠图裁切、sprite atlas、idle scheduler 与 QA 门禁。
+> **当前默认视觉路线（2026-06-08 二选项收束）**：Cuu 只存在于独立桌宠 `pet` 透明窗口中，Web 与 desktop 主窗保持严肃工作界面，不再渲染 Cuu rail、Cuu 形象卡片或主窗桌宠设置入口。源码模型包只保留 `cuu-hijiki-live2d-cubism2` 黑猫与 `cuu-tororo-live2d-cubism2` 白猫两个选项；黑猫为默认，白猫可选。橘猫改色、Bongo/CSS、PSD draft、sprite/atlas 和 Web rail 均已废弃为历史证据，不再作为可选模型、默认 fallback 或验收目标。当前实施说明见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
+> **已撤回的 Web rail / 橘猫 / Bongo / sprite 方案**：2026-06-08 曾追加 `cuu-polished-idle-v1`、Bongo-style、PSD draft 与 sprite atlas 路线，但用户复核后分别判定为主窗边界错误、CSS/几何临摹不合格、恐怖谷风险或动作素材不达标。这些资产只保留为历史参考和反例，不再用于 Web / Gold Path / desktop 主窗，也不再进入 Cuu 模型包 registry。
+> **历史绿幕素材方案**：见 [`cuu-green-screen-desktop-pet-solution.md`](./cuu-green-screen-desktop-pet-solution.md)。该方案仍可解释独立 Tauri `pet` 透明窗口、截图 QA 和素材加工链路，但绿幕多帧、sprite atlas 与静态 fallback 不再作为当前模型包或默认验收路线。
 > **Live2D 高表现力路线**：见 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md)。Cuu 的长期目标优先是 Live2D 分层 PSD + Cubism 绑定；GIF 只允许做临时预览，不能作为最终桌宠方案。
-> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。最终已补 card mode bridge 校验、compact fallback、full-body HiDPI 站位、离线人话卡、dev sprite asset 路径、运行态禁用静态 fallback 与 motion capture 脚本；最新抓帧中 body-only 第一屏可见摇尾动作，card mode 中 Cuu 全身可见。但 8 层裁片 Live2D prototype 仍因肉眼差异不足、非 PSD 分层、非 Cubism 绑定而不能算通过。2026-06-08 已补 `psd_draft_probe` 证明分层技术链路可行，但因视觉有恐怖谷风险，默认又切回 `bongo_cuu` 低恐怖谷 renderer；随后已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 窗口设置矩阵真实截图、P1e-b hover/tap/drag 真实录屏、P1e-c 连续看鼠标 / hover 避让真实录屏、P1e-d-a pointer smoothing / drag grip 真实录屏、P1e-d-b 60s idle jitter / flicker 长驻 QA、BONGO-P2a-b 模型包设置 UI 和 BONGO-P2a-c Web rail 生成图资产。下一步主线是 Bongo 动作二轮、完整设置写盘、多屏恢复、长驻性能采样、full hide/pass-through 安全恢复和 Live2D 精修并行。
+> **当前真实动作审计**：见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。2026-06-07 已对真实 Tauri `Cuu` 顶层窗口做 32 帧 `PrintWindow` 抓取并输出 GIF/MP4；首轮发现事件卡片被 body-only 小窗裁切，第一轮 card layout 又暴露“只露耳朵 / 局部”的失败样例，随后发现“只有静态 fallback 呼吸/缩放”也不合格。2026-06-08 已补 `psd_draft_probe`、Bongo 路线、多批真实录屏和输入手感验证，但这些视觉路线均被判定不达标或边界错误。当前代码已收束为黑猫 Hijiki / 白猫 Tororo 两个 Live2D 选项，且 Cuu 只在独立 `pet` surface 出现。下一步主线是 Live2D runtime 真实录屏、多屏恢复、长驻性能采样、full hide/pass-through 安全恢复与动作鲜活感验收。
 
 ## 1. 角色定位
 
@@ -26,15 +26,14 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 ## 2. 视觉特征
 
-参考用户提供的猫咪照片，Cuu 采用原创卡通化处理，保留如下识别点：
+当前概念实现不再推进橘猫改色或原创 PSD 草案，而是以两个原版 Live2D 小猫作为 Cuu 占位形象：
 
-- 橘色虎斑毛色，脸部和爪子偏奶油色。
-- 大而圆的好奇眼神，表情要明显、亲近。
-- 白色蕾丝围兜，黑色蝴蝶结。
-- 珍珠流苏与红色小珠点缀。
-- WorkHub 状态色只作为小面积点缀：靛蓝、珊瑚、绿色。
+- 黑猫 Hijiki：默认模型，稳定、低恐怖谷、动作已由 Cubism 2 `.moc` / `.mtn` 承接。
+- 白猫 Tororo：唯一可选替代形象，使用同一运行时和同一动作语义。
+- 两者都必须完整显示在右下角独立 `pet` window，不允许只露耳朵、只露局部或主窗内嵌。
+- WorkHub 状态色只出现在气泡、卡片和按钮中，不再画到 Cuu 本体上。
 
-不要提交参考原图到公开仓库；当前仓库只沉淀原创概念图。
+用户最初提供的小猫照片只保留为早期灵感，不提交参考原图到公开仓库；商用发布前必须取得 Hijiki/Tororo 授权或替换为原创等效模型。
 
 ## 3. 概念图
 
@@ -111,11 +110,11 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 但这仍不是最终桌宠通过证据，也不再是默认视觉。最终 Live2D 通过必须满足：PSD 在 Cubism 中可导入；眼睛/眼皮/嘴型/耳朵/尾巴/蝴蝶结/流苏有连续参数和物理；桌面右下角独立 `pet` 窗口录屏中能看到眨眼、呼吸、看鼠标、尾巴、任务动作，而不是静态图或缩放变化。
 
-### 3.5.2 Bongo-style 低恐怖谷默认 Cuu
+### 3.5.2 历史 Sprite-atlas 与 Bongo-style 反例
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
-这张图是 2026-06-08 新的默认 Cuu：参考 BongoCat 的低拟真、圆润、少状态强反馈思路，用 DOM/CSS 组件画出橘色小猫、围兜、黑蝴蝶结、红珠、桌面和文档。默认 pet surface 现在是 `data-cuu-visual-mode="bongo_cuu"`、`data-cuu-model-pack="cuu-bongo-p1"`、`data-cuu-model-pack-selection-reason="registry_default"`、`data-cuu-live2d-status="experiment_hidden"`，DOM 中不再出现 `data-psd-layer`。P1b 已补挥手、抱文件、审批打回、检索、同步、庆祝和拖拽动作，P1c 已补 first-painted 首帧门禁，P1d-b-a 已补 hide-on-hover soft dodge；BONGO-REF / BONGO-P2a-a 已让 PSD draft 和 Live2D experimental 候选在默认路径里回退 Bongo。后续继续增强动作幅度、窗口体验和 model pack settings UI。
+这张 Bongo-style contact sheet 保留为行为参考：它证明低拟真、少状态强反馈、输入响应和真实 Tauri 录屏流程可行，但用户已明确否决“线条/CSS 临摹”作为默认视觉。当前 pet surface 不再加载 `sprite_atlas`、`img_stack` 或 `bongo_cuu`；运行时只接受黑猫 Hijiki / 白猫 Tororo Live2D。Bongo、sprite 和 atlas 只能作为历史反例、动作 storyboard 与 QA 教训，不再被主文档称为视觉通过。
 
 ![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
 
@@ -125,7 +124,7 @@ Cuu 的职责是把「AI 在后台工作」变成用户能感知、能信任、�
 
 ![Cuu polished bitmap rail web QA](./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png)
 
-这组图是主窗右侧 Cuu rail 的 P1 视觉修正：绿幕源图保存在 `assets/cuu/generated-polished/cuu-polished-idle-v1-green.png`，透明抠图用于 `apps/web/public/assets/cuu/cuu-polished-idle-v1-alpha.png` 和 `apps/desktop-webview/public/assets/cuu/cuu-polished-idle-v1-alpha.png`。它比 CSS procedural 小猫更接近参考猫的橘色虎斑、蕾丝围兜、黑蝴蝶结和红珠识别点；但由于还不是分层 rig，后续 Live2D 仍必须重新拆眼皮、眼球、嘴型、尾巴、围兜、流苏和爪子。
+这组图是已撤回的主窗右侧 rail 视觉修正记录：绿幕源图和透明抠图仍可作为后续 Live2D / sprite 重绘参考，但 Web、Gold Path 和 desktop 主窗不再展示 Cuu rail。它不能作为桌宠验收证据，因为它不是独立 `pet` window 的多帧动作，也不是分层 rig。后续必须把同类真实图像素材用于独立桌宠 clip sheet、PSD 部件或 Cubism 模型，而不是再塞回主应用。
 
 ![Cuu Bongo P1e look and avoidance real Tauri motion](./assets/audit/2026-06-08-cuu-bongo-p1e-look-avoidance/cuu-motion-contact-sheet.png)
 
@@ -158,9 +157,9 @@ P1e-d-b 后，Cuu 有了真实 Tauri 长驻可见性门：31 帧约 60 秒内没
 
 但这些还不等于「桌宠已经完成」：
 
-- 已有 18 clip 真实小猫绿幕 motion pack，业务状态与 idle / interaction 微动作均已覆盖；已有 Live2D 分层拆件概念图和施工专篇；但还没有正式分层 PSD、Cubism `.moc3` / `.model3.json` 或 Tauri Live2D runtime。
-- 当前默认 pet surface 已切到 `bongo_cuu`：扁平、稳定、低恐怖谷，DOM/CSS 组件数 `31`，保留 Cuu 的围兜、蝴蝶结、红珠和尾巴识别点，并有 search-glass / sync-ring / spark 等业务道具层。
-- `packages/cuu/src/model-pack.ts` 已把 `cuu-bongo-p1` 设为当前唯一 `approved_default`，并要求默认包低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作、覆盖全部业务动作和 idle 微动作。
+- 绿幕 motion pack、sprite atlas、Bongo DOM/CSS 和 PSD draft probe 已退出当前源码运行路径；相关截图只保留为历史审计证据。
+- 当前默认 pet surface 已切到 Live2D cat runtime：独立 `pet` window 只渲染黑猫 Hijiki / 白猫 Tororo Cubism2 `<iframe>`，不再使用真实 PNG motion clip sheet、静态 fallback 或 Bongo DOM/CSS 兜底。
+- `packages/cuu/src/model-pack.ts` 只保留 `cuu-hijiki-live2d-cubism2` 与 `cuu-tororo-live2d-cubism2`；黑猫为默认，白猫可选，旧 pack id 和未知请求统一回退黑猫。
 - `psd_draft_probe` 从 144 层 PSD draft 中选出 72 个运行层渲染，能证明眼睛、尾巴、耳朵、流苏等层被真实挂载；但它仍是 `draft_created_not_visual_pass`，因恐怖谷风险只保留为实验线，不能替代精修 PSD / Cubism。
 - `CuuController`、desktop-webview badge / 队列推进、偏好面板已有 MVP，仍缺真实 Tauri 设置页承接、拖拽位置偏好和长期 idle 行为。
 - 已有真实 Tauri `pet` 透明窗口 runtime 的初版：`pet` window 在 Tauri config 中为 `create:false`，由 Rust setup 动态创建并注入 `window.__WORKHUB_SURFACE__="pet"`；启动期会恢复/夹取 body anchor、预定位 body-only Cuu，并由 pet surface 首屏后调用 `set_pet_window_mode` 显示；mode 切换时从小猫锚点展开卡片；HiDPI physical→logical 坐标换算和运行期 `always-on-top` 已接。2026-06-07 Windows debug smoke 已确认独立 `Cuu` window visible/topmost、右下角显示 Cuu 与气泡，并在主窗隐藏后仍可见；同日 card mode motion capture 已确认事件卡触发后窗口可从 `194 x 228` 扩到 `394 x 568`，最终 fresh 抓帧中 Cuu 完整身体可见、轻卡右侧有 HiDPI 留白；2026-06-08 P1c contact sheet 的 frame 000 已是 body-only Cuu 全身可见，不再依赖 inline 静态 fallback、缩放呼吸或 blank 首帧；仍缺多屏恢复、安装包 smoke、跨平台透明 capture 和长期运行性能 QA。
@@ -243,15 +242,27 @@ P1e-d-b 后，Cuu 有了真实 Tauri 长驻可见性门：31 帧约 60 秒内没
 剩余差距：
 
 - 第一轮 card layout 失败图必须保留为回归样例：只露耳朵 / 局部不能算通过。
-- 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是作为动作 storyboard / fallback；默认主线继续打磨 Bongo Cuu，Live2D 继续精修。
+- 下一步 Hatch/sprite pack 不再是为修“只露耳朵”兜底，而是只作为动作 storyboard / 紧急降级思路；当前默认主线是黑猫 Hijiki / 白猫 Tororo Live2D 二选项。
 - 离线卡与审批 / 澄清轻卡已完成 P1.2 的人话化、选项优先和少文字化基线，P1.2b 已补真实 option payload 提交；证据详情、预算卡、sync conflict 和 Tauri 顶层窗口 P1.2 抓帧仍需继续。
-- 当前默认动作仍是 Bongo DOM/CSS + sprite fallback，不是最终 Live2D 活体表现；P1e-d-b 已证明 60 秒长驻可见和防闪烁，Hatch Pack / Bongo 动作二轮仍要继续做更大幅度的待机、走动、看鼠标、抱文件、任务动作和情绪动作。
+- 当前默认动作不再是 Bongo DOM/CSS 或 sprite fallback；P1e-d-b 只保留为历史长驻 QA 证据。后续要把待机、走动、看鼠标、抱文件、任务动作和情绪动作映射到 Live2D motion / Cubism 参数。
 
-下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Bongo Cuu 的轻卡动作、真实设置页 UI 截图、多屏恢复、长驻性能采样和 full hide/pass-through 安全恢复做到稳定可爱，同时并行推进 Live2D 分层 PSD / Cubism。
+下一步不应先堆更多抽象状态，也不应回退恐怖谷 PSD；应先把 Hijiki / Tororo 在真实 Tauri `pet` 窗口里的轻卡动作、多屏恢复、长驻性能采样和 full hide/pass-through 安全恢复做到稳定可见，再评估是否需要授权原创 Live2D 替换。
 
-### 3.7 施工进展（2026-06-06）
+### 3.7 当前施工进展（2026-06-08）
 
-已落一个 **sprite runtime MVP**，用于把 `CuuMotionHint` 真正接到可渲染的 Cuu 动画层：
+当前有效源码落点：
+
+- `packages/cuu/src/model-pack.ts`：只保留 `cuu-hijiki-live2d-cubism2` 黑猫与 `cuu-tororo-live2d-cubism2` 白猫；旧 pack id 与未知请求回退黑猫。
+- `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts`：根据模型包输出 Live2D Cubism2 cat iframe、runtime kind、motion/state data attrs。
+- `apps/desktop-webview/public/cuu/live2d/hijiki/*`：黑猫 Hijiki 模型、texture、motions、pose、model json 与 runtime html。
+- `apps/desktop-webview/public/cuu/live2d/tororo/*`：白猫 Tororo 模型、texture、motions、pose、model json 与 runtime html。
+- `apps/desktop-webview/src/pet-surface.ts`：独立 `pet` surface 只挂 Live2D cat runtime 和轻气泡，不再挂 Bongo、sprite/atlas、PSD draft 或静态 fallback。
+- `apps/desktop-webview/src/pet-surface-qa.ts`：QA 要求 Live2D cat runtime、黑猫/白猫二选项、非主壳、选项优先，并禁止旧视觉路线回流。
+- `apps/desktop-webview/src/cuu-preferences.ts`：偏好页只展示黑猫 / 白猫。
+
+### 3.7.1 历史施工进展（2026-06-06，已废弃）
+
+以下是曾经落过、后续被用户验收否决并已清理出当前源码的 sprite / atlas / PSD 草案路线。保留这一段只为解释失败来源和回归禁区，不代表当前文件仍存在：
 
 - `packages/cuu/src/sprite-manifest.ts`：新增 `defaultCuuSpriteManifest`、`cuuSpriteClipForMotion`、`validateCuuSpriteManifest`、`assertValidCuuSpriteManifest`。
 - `packages/cuu/src/controller.ts`：新增 `createCuuController`，把 Cuu 提醒收敛为 `show` / `replace` / `queue` / `badge` / `drop` 决策。
@@ -275,11 +286,11 @@ P1e-d-b 后，Cuu 有了真实 Tauri 长驻可见性门：31 帧约 60 秒内没
 - `client-tauri/src-tauri/src/pet_window.rs`：新增 Cuu 独立窗口几何合同，覆盖 body-only/card 双模式、右下角定位、展开锚点、屏幕内 clamp、鼠标接近判定和拖拽 plan。
 - `client-tauri/src-tauri/src/pet_commands.rs`：新增 Cuu 独立窗口 command scaffold，固定 `set_pet_window_mode`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near`，并让 capability 开放最小 `core:window:allow-start-dragging`。
 - `client-tauri/src-tauri/{build.rs,src/main.rs}`：新增最小 Tauri runtime scaffold，接 `tauri-build`、`tauri::Builder`、`generate_context!`、pet command handler；setup 会用 `WebviewWindowBuilder::from_config` 动态创建 `create:false` 的 `pet` window，并注入 `window.__WORKHUB_SURFACE__="pet"`；随后恢复/夹取 `pet-window-state.json` 的 body anchor，并在启动期按 body-only 模式预定位 Cuu；`set_pet_window_mode` 已执行 resize/position/show，显示/切换和 mode resize 时会显式保持 `pet` always-on-top；monitor work area、window outer position 与 cursor position 已做 HiDPI physical→logical 换算；`start_pet_window_drag` 已执行 `start_dragging`，`save_pet_window_position` 已读取真实窗口位置并保存 body anchor，`sample_pet_cursor_near` 已读取真实桌面 cursor 与 pet window rect。
-- `client-tauri/src-tauri/src/deep_link.rs` + `main.rs` + `apps/desktop-webview/src/browser.ts`：已接 `tauri-plugin-deep-link`，`workhub://` / `yqgl://` 可安全映射到 WorkHub 主窗 route，并同时发 `navigate` 与 `deep-link` 事件；desktop webview 已消费 safe `navigate` route，Cuu 可把复杂轻卡动作交给主窗承接。
+- `client-tauri/src-tauri/src/deep_link.rs` + `main.rs` + `apps/desktop-webview/src/browser.ts`：已接 `tauri-plugin-deep-link`，`workhub://` / `yqgl://` 可安全映射到 WorkHub 主窗 route，并同时发 `navigate` 与 `deep-link` 事件；desktop webview 已消费 safe `navigate` route。主窗只承接完整页面和复杂操作，不再嵌入 Cuu rail / Cuu notice。
 - `apps/desktop-webview/src/pet-window-bridge.ts`：新增 pet window bridge，支持 mock / Tauri-like 模式切换、`startDragging`、位置保存和 cursor-near 采样端口；`pet-surface.ts` 已把 pointer hover/drag/release 与 Rust cursor sample 喂给 idle scheduler。
-- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu notice 已嵌入 sprite render，并先经过 controller 判断是否弹出、排队或降级 badge。
-- `apps/desktop-webview/src/cuu-preferences.ts`：新增默认隐藏的偏好面板，支持正常/安静/勿扰、开启/静音、减少动效、队列上限，并持久化到 localStorage。
-- `apps/desktop-webview/src/browser.ts`：新增 queue badge 和偏好面板；启动时会按 Rust injected surface flag、Tauri window label、`/pet`、`?surface=pet`、`#surface=pet` 或 `pet.html` 分流到独立 pet surface，否则加载完整 Gold Path 主壳。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu card/event adapter 保留给独立 `pet` surface 使用；主窗不再把 Cuu notice 嵌入应用 shell。
+- `apps/desktop-webview/src/cuu-preferences.ts`：保留桌宠偏好数据结构与独立桌宠配置面板能力，后续应迁入 `pet` window / tray / settings 的客户端层，不作为 Web 或主应用内的角色入口。
+- `apps/desktop-webview/src/browser.ts`：启动时按 Rust injected surface flag、Tauri window label、`/pet`、`?surface=pet`、`#surface=pet` 或 `pet.html` 分流到独立 pet surface；否则只加载完整 Gold Path 主壳和严肃应用设置，不再注入 Cuu notice、queue badge 或 Cuu 偏好按钮。
 - `apps/desktop-webview/pet.html`：浏览器调试入口，显式设置 `window.__WORKHUB_SURFACE__="pet"`，用于不启动 Tauri 时预览独立桌宠 surface。
 - `scripts/qa/cuu-tauri-smoke.ps1`：Windows debug runtime smoke，启动真实 Tauri app，定位 `Cuu` 顶层窗口，校验 visible/topmost/bottom-right，隐藏主窗，并用 `PrintWindow(PW_RENDERFULLCONTENT)` 对透明/layered WebView2 pet 窗口做像素检查。2026-06-07 严格 smoke 通过：`orange_pixels=8961`、`visual_pixels=11189`。
 - 测试已覆盖：每个 `CuuMotionHint.sprite_state` 都有对应 procedural clip；atlas manifest 可校验真实 motion pack，业务状态可通过 `require_full_motion_coverage`，idle / interaction 微动作可通过 `require_idle_micro_action_coverage`；pet surface 无卡片时会按 scheduler `idle_action` 选择真实 atlas clip；`pet-surface-qa.ts` 会守住透明、右下角、独立 pet surface、真实多帧 atlas、轻气泡和选项优先；Rust pet window command plan 与 pet window bridge 可解析 body/card 模式、Tauri-like command 和拖拽 fallback；desktop notice 能输出 `data-cuu-sprite-state`；pet surface 不渲染 `wh-app-shell`；勿扰模式下 urgent 审批不会弹窗但会保留系统通知意图；queue badge CSS 有锚点；偏好加载/存储/归一化和面板 HTML 有测试；`knowledge-search` 可返回 evidence card；`use_for_current_task` 可提交证据并回显 WorkItem card；Rust `notify.rs` 已测试 high/urgent 私有事件才会形成 OS 通知 plan，并有进程内 dedupe 防 SSE 重放。
@@ -291,7 +302,7 @@ P1e-d-b 后，Cuu 有了真实 Tauri 长驻可见性门：31 帧约 60 秒内没
 - 独立 Tauri `pet` window runtime 已有初版；生产 Tauri 通过 Rust injected surface flag 分流，浏览器调试保留 `/pet` / `?surface=pet` / `#surface=pet` / `pet.html`；Rust window plan / config scaffold、pet 几何合同、command scaffold、最小 Tauri `main.rs`、前端 bridge 已落，并已把启动期 Cuu body-only 预定位、first-painted 后 show、mode/drag/save-position/cursor-sample 执行到真实 Tauri window / AppHandle API；位置会保存到 Tauri Config 目录下的 `pet-window-state.json`，启动时会 clamp 回当前 work area；HiDPI 坐标换算和 runtime topmost 已接；基础托盘显隐、deep-link 主窗唤起、single-instance 聚焦/协议 URL 处理和 high/urgent 系统通知已落；2026-06-08 P1c 已通过 Windows `PrintWindow` first-frame gate，仍缺多显示器实测、通知点击联动、跨平台透明 capture 和 alpha 边缘 QA。
 - 真实 Tauri 设置页承接、系统通知偏好/去重、收起/恢复、多屏监视器恢复策略和透明窗口长驻 QA。
 - 正式 Live2D 分层 PSD、Cubism 绑定、`.model3.json` 导出和 Tauri Live2D runtime。
-- 主窗 notice 仍使用 procedural sprite 作为轻量占位；后续需要评估是否替换为同一套 atlas 或保持主窗轻量、桌宠用真实 atlas。
+- 主窗不再展示 Cuu notice 或 procedural sprite；后续所有 Cuu 轻卡、动作与偏好应在独立 `pet` window、托盘或客户端设置承接，Web / 主应用只保留完整页面 deep-link。
 
 ## 4. 交互原则
 

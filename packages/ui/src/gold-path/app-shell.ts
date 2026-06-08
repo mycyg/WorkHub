@@ -167,7 +167,7 @@ export function renderGoldPathAppShell(
   const nav = rendered.pages
     .map((page) => {
       const active = page.key === activeKey;
-      return `<a href="#${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(page.title)}</span><small>${escapeHtml(page.cuuState)}</small></a>`;
+      return `<a href="#${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(page.title)}</span></a>`;
     })
     .join("");
   const panels = rendered.pages

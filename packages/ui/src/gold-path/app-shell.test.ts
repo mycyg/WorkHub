@@ -49,7 +49,7 @@ test("gold path app shell renders navigable panels around the shared pages", () 
   assert.equal(shell.html.includes("data-wh-panel=\"approvals\""), true);
   assert.equal(shell.html.includes("data-wh-panel=\"settings\""), true);
   assert.equal(shell.html.includes("aria-label=\"Gold Path\""), true);
-  assert.equal(shell.css.includes("wh-cuu-cat"), true);
+  assert.equal(shell.css.includes("wh-cuu-cat"), false);
 });
 
 test("gold path app shell resolves routes and keeps API actions separate from page navigation", () => {
@@ -60,7 +60,7 @@ test("gold path app shell resolves routes and keeps API actions separate from pa
 
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/agent-runs/demo/replay?from=proposal"), "replay");
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/approvals?status=pending"), "approvals");
-  assert.equal(resolveGoldPathPageKey(shell.routeMap, "/settings?panel=cuu"), "settings");
+  assert.equal(resolveGoldPathPageKey(shell.routeMap, "/settings?panel=runtime"), "settings");
   assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/proposals/demo"), {
     kind: "navigate",
     pageKey: "proposal"

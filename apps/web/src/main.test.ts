@@ -2,26 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type AgentRunLiveVM, type GoldPathSurfaceVM, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
+import type { AgentRunLiveVM, GoldPathSurfaceVM, SessionVM } from "@workhub/contracts";
 
 import {
-  loadWebAgentRunCuuCard,
   loadWebAgentRunTrace,
   createWebWorkItem,
-  createWebWorkItemCuuCard,
   renderWebAgentRunLive,
-  loadWebIntakeCuuCard,
-  loadWebProposalCuuCard,
   loadWebGoldPathSurface,
-  loadWebWorkItemCuuCard,
   renderWebIntakeSession,
   renderWebGoldPathSurface,
   renderWebProposalDetail,
   renderWebWorkItemDetail,
   startWebAgentRun,
-  startWebAgentRunCuuCard,
   startWebIntakeSession,
-  webCuuCardFromEvent,
   webSurface
 } from "./main.js";
 
@@ -89,7 +82,7 @@ const liveRun = {
       step_no: 1,
       phase: "think",
       input_json: {},
-      output_excerpt: "Cuu 正在读取项目文档。",
+      output_excerpt: "AI 正在读取项目文档。",
       created_at: "2026-06-05T01:00:01.000Z"
     }
   ],
@@ -226,7 +219,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
         cuu_state: "carrying_document",
         primary: {
           title: "确认周报变更申请",
-          summary_text: "Cuu 已整理好一份 file-only 交付物。",
+          summary_text: "AI 已整理好一份 file-only 交付物。",
           reason_text: "只需要点选批准或要求修改。",
           actions: [{ id: "review", label: "查看申请", href: "/proposals/proposal" }],
           evidence_refs: []
@@ -251,9 +244,9 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
             kind: "approval",
             priority: "high",
             source_ref: { entity_type: "approval_request", entity_id: "approval" },
-            title: "Cuu 等你审批周报草稿",
+            title: "AI 等你审批周报草稿",
             summary_text: "点同意后才进入正式交付。",
-            reason_text: "打回必须写原因，Cuu 会继续改。",
+            reason_text: "打回必须写原因，AI 会继续改。",
             actions: [
               { id: "approve", label: "同意", style: "primary", method: "POST", href: "/api/approvals/approval/respond" },
               {
@@ -306,7 +299,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
           work_item_id: "work",
           title: "周报草稿变更申请",
           summary_md: "新增一份周报草稿。",
-          author: { actor_kind: "ai", label: "Cuu" },
+          author: { actor_kind: "ai", label: "AI" },
           base: {},
           risk: { level: "low", human_label: "低风险", reversible: true },
           rollback: { available: true, description: "删除生成草稿即可回滚。" },
@@ -337,7 +330,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
         comments: []
       },
       replay: {
-        run: { handoff_md: "Cuu 完成了草稿生成。" },
+        run: { handoff_md: "AI 完成了草稿生成。" },
         steps: [
           { step_no: 1, phase: "plan", output_excerpt: "列出章节。" },
           { step_no: 2, phase: "draft", output_excerpt: "生成草稿。" }
@@ -389,7 +382,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(webSurface.pages.includes("/api/pages/gold-path"), true);
-  assert.equal(webSurface.cuuCardAdapter, "@workhub/cuu");
+  assert.equal("cuuCardAdapter" in webSurface, false);
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface))).surface, "web");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
@@ -397,8 +390,6 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal((await renderWebWorkItemDetail(fakeClient(surface), "work")).html.includes("AI 实时执行"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
-  assert.equal((await loadWebWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
-  assert.equal((await loadWebProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 });
 
 test("web surface starts option-first intake sessions through the typed client", async () => {
@@ -406,7 +397,6 @@ test("web surface starts option-first intake sessions through the typed client",
   const client = fakeClient(surface);
   const session = await startWebIntakeSession(client, { intent_text: "帮我整理客户周报" });
   const rendered = await renderWebIntakeSession(client, { intent_text: "帮我整理客户周报" });
-  const card = await loadWebIntakeCuuCard(client, { intent_text: "帮我整理客户周报" });
 
   assert.equal(webSurface.pages.includes("/api/sessions"), true);
   assert.equal(webSurface.pages.includes("/intake/:sessionId"), true);
@@ -415,13 +405,9 @@ test("web surface starts option-first intake sessions through the typed client",
   assert.equal(rendered.route, `/intake/${intakeSession.session_id}`);
   assert.equal(rendered.html.includes("简洁版"), true);
   assert.equal(rendered.freeTextCollapsed, true);
-  assert.equal(card.kind, "question");
-  assert.equal(card.state, "asking_approval");
-  assert.equal(card.payload_ref?.entity_type, "session");
-  assert.equal(card.input?.option_first, true);
 });
 
-test("web surface creates work items through the typed client and maps the result to Cuu", async () => {
+test("web surface creates work items through the typed client without pet adapters", async () => {
   const surface = {
     page_vms: {
       workitem: {
@@ -430,7 +416,7 @@ test("web surface creates work items through the typed client and maps the resul
           code: "WH-001",
           title: "生成周报草稿",
           status: "ai_working",
-          summary_md: "Cuu 已开始处理。"
+          summary_md: "AI 已开始处理。"
         },
         acceptance: [{ title: "绑定证据", status: "open" }],
         agent_trace_preview: [{ agent_run_id: "run", step_no: 1, phase: "think", output_excerpt: "准备读取证据。" }],
@@ -441,22 +427,17 @@ test("web surface creates work items through the typed client and maps the resul
   } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);
   const created = await createWebWorkItem({ session_id: "10000000-0000-4000-8000-000000000101" }, client);
-  const card = await createWebWorkItemCuuCard({ session_id: "10000000-0000-4000-8000-000000000101" }, client);
 
   assert.equal(webSurface.pages.includes("/api/workitems"), true);
   assert.equal(created.workitem.status, "ai_working");
-  assert.equal(card.kind, "trace");
-  assert.equal(card.state, "thinking");
 });
 
-test("web surface starts agent runs and renders the live trace with Cuu state", async () => {
+test("web surface starts agent runs and renders the live trace", async () => {
   const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);
   const started = await startWebAgentRun(client, liveRun.work_item_id, { title: "生成客户周报模板" });
   const rendered = await renderWebAgentRunLive(client, liveRun.run_id);
   const trace = await loadWebAgentRunTrace(client, liveRun.run_id, 0);
-  const startedCard = await startWebAgentRunCuuCard(client, liveRun.work_item_id, { title: "生成客户周报模板" });
-  const loadedCard = await loadWebAgentRunCuuCard(client, liveRun.run_id);
 
   assert.equal(webSurface.pages.includes("/api/workitems/:id/agent-runs"), true);
   assert.equal(webSurface.pages.includes("/api/agent-runs/:id/trace"), true);
@@ -464,23 +445,4 @@ test("web surface starts agent runs and renders the live trace with Cuu state", 
   assert.equal(rendered.cuuState, "thinking");
   assert.equal(rendered.html.includes("AI 实时执行"), true);
   assert.equal(trace[0]?.phase, "think");
-  assert.equal(startedCard.kind, "trace");
-  assert.equal(loadedCard.state, "thinking");
-});
-
-test("web surface exposes the shared Cuu event adapter for floating bubbles", () => {
-  const event: WorkHubEvent<unknown> = {
-    event_id: "event-permission",
-    type: eventTypes.permissionAsk,
-    topic: "user:user",
-    ts: "2026-06-05T01:00:00.000Z",
-    preview_text: "Cuu 需要你批准这次变更。",
-    data: {}
-  };
-
-  const card = webCuuCardFromEvent(event);
-
-  assert.equal(card.kind, "approval");
-  assert.equal(card.state, "asking_approval");
-  assert.equal(card.motion.sprite_state, "asking_approval_bounce");
 });

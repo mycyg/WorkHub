@@ -1,4 +1,5 @@
 import { cuuStates, type CuuState } from "@workhub/contracts";
+import type { CuuIdleMicroAction } from "./idle-scheduler.js";
 
 export type CuuMotionEmphasis = "calm" | "busy" | "urgent" | "celebratory";
 
@@ -13,6 +14,8 @@ export type CuuSpriteState =
   | "revision_requested_nod"
   | "celebrating_jump"
   | "offline_sleep";
+
+export type CuuMotionClipState = CuuSpriteState | CuuIdleMicroAction;
 
 export type CuuMotionHint = {
   state: CuuState;

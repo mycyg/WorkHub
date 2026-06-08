@@ -1,13 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import {
-  createCuuController,
-  normalizeCuuSelectableModelPackId,
-  type CuuCard,
-  type CuuController,
-  type CuuControllerDecision,
-  type CuuControllerSnapshot
-} from "@workhub/cuu";
-import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
@@ -21,24 +13,10 @@ import {
 } from "@workhub/ui/gold-path";
 
 import {
-  bindDesktopShellCuuRuntime,
-  createDesktopCuuDemoScript,
-  createDesktopShellScriptedListener,
-  desktopCuuNoticeMessage,
-  desktopCuuNoticeCss,
-  renderDesktopCuuNotice,
-  resolveDesktopCuuAction,
   resolveDesktopShellListen,
-  submitDesktopCuuAction,
-  type DesktopCuuActionRequest,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
-import {
-  bindCuuPreferencePanel,
-  desktopCuuPreferenceCss,
-  loadCuuPreferences,
-  saveCuuPreferences
-} from "./cuu-preferences.js";
+import { loadCuuPreferences } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import {
   desktopPetWindowSettingsFromPreferences,
@@ -106,88 +84,6 @@ function showNotice(
   }
 }
 
-function ensureCuuQueueBadge(shellRoot: HTMLElement) {
-  const existing = shellRoot.querySelector<HTMLButtonElement>("[data-cuu-queue-badge]");
-  if (existing) {
-    return existing;
-  }
-  const badge = document.createElement("button");
-  badge.type = "button";
-  badge.className = "wh-cuu-queue-badge";
-  badge.dataset.cuuQueueBadge = "true";
-  badge.hidden = true;
-  shellRoot.appendChild(badge);
-  return badge;
-}
-
-function cuuQueueLabel(locale: WorkHubLocale, snapshot: CuuControllerSnapshot) {
-  if (locale === "en-US") {
-    return snapshot.queue.length > 0
-      ? `${snapshot.queue.length} queued, ${snapshot.badge_count} tucked away`
-      : `${snapshot.badge_count} tucked away`;
-  }
-  return snapshot.queue.length > 0
-    ? `排队 ${snapshot.queue.length} 条，收起 ${snapshot.badge_count} 条`
-    : `收起 ${snapshot.badge_count} 条`;
-}
-
-function updateCuuQueueBadge(shellRoot: HTMLElement, snapshot: CuuControllerSnapshot, locale: WorkHubLocale) {
-  const badge = ensureCuuQueueBadge(shellRoot);
-  const total = snapshot.queue.length + snapshot.badge_count;
-  if (total <= 0) {
-    badge.hidden = true;
-    badge.innerHTML = "";
-    return;
-  }
-  const label = cuuQueueLabel(locale, snapshot);
-  badge.innerHTML = `<span class="wh-cuu-queue-count">${total}</span><span class="wh-cuu-queue-text">${escapeHtml(label)}</span>`;
-  badge.title = `Cuu ${label}`;
-  badge.hidden = false;
-}
-
-function bindCuuQueueBadge(shellRoot: HTMLElement, controller: CuuController, locale: WorkHubLocale) {
-  const badge = ensureCuuQueueBadge(shellRoot);
-  badge.addEventListener("click", () => {
-    const activeCard = controller.snapshot().active_card;
-    if (activeCard) {
-      showCuuCard(shellRoot, controller, activeCard, locale);
-      updateCuuQueueBadge(shellRoot, controller.snapshot(), locale);
-      return;
-    }
-    const next = controller.dismiss();
-    updateCuuQueueBadge(shellRoot, next.snapshot, locale);
-    if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
-      showCuuCard(shellRoot, controller, next.card, locale, next);
-    }
-  });
-}
-
-function showCuuCard(
-  shellRoot: HTMLElement,
-  controller: CuuController,
-  card: CuuCard,
-  locale: WorkHubLocale,
-  decision?: CuuControllerDecision
-) {
-  showNotice(
-    shellRoot,
-    desktopCuuNoticeMessage(card),
-    renderDesktopCuuNotice(card),
-    decision?.presentation.timeout_ms ?? cuuNoticeTimeoutMs(card),
-    () => {
-      const next = controller.dismiss(card.id);
-      updateCuuQueueBadge(shellRoot, next.snapshot, locale);
-      if (next.card && (next.outcome === "show" || next.outcome === "replace")) {
-        showCuuCard(shellRoot, controller, next.card, locale, next);
-      }
-    }
-  );
-}
-
-function cuuNoticeTimeoutMs(card: CuuCard) {
-  return card.priority === "urgent" || card.state === "asking_approval" ? 12000 : 7200;
-}
-
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replace(/&/gu, "&amp;")
@@ -233,68 +129,16 @@ function actionMessage(error: unknown, locale: WorkHubLocale) {
   return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
 }
 
-function cuuDemoMode() {
-  const value = new URLSearchParams(window.location.search).get("cuuDemo");
-  if (value === "1" || value === "true") {
-    return "on";
-  }
-  if (value === "offline") {
-    return "offline";
-  }
-  return "off";
-}
-
-function handleCuuActionResult(
-  shellRoot: HTMLElement,
-  controller: CuuController,
-  locale: WorkHubLocale,
-  result: { message: string; card?: CuuCard }
-) {
-  if (!result.card) {
-    showNotice(shellRoot, result.message);
-    return;
-  }
-  const decision = controller.enqueue(result.card);
-  updateCuuQueueBadge(shellRoot, decision.snapshot, locale);
-  if (decision.card && (decision.outcome === "show" || decision.outcome === "replace")) {
-    showCuuCard(shellRoot, controller, decision.card, locale, decision);
-    return;
-  }
-  showNotice(shellRoot, result.message);
-}
-
-function findCuuCardForAction(controller: CuuController, anchor: HTMLAnchorElement) {
-  const cardId = anchor.closest<HTMLElement>("[data-cuu-card-id]")?.dataset.cuuCardId;
-  if (!cardId) {
-    return undefined;
-  }
-  const snapshot = controller.snapshot();
-  const cards = [
-    snapshot.active_card,
-    ...snapshot.queue
-  ].filter((card): card is CuuCard => Boolean(card));
-  return cards.find((card) => card.id === cardId);
-}
-
-function updateSettingsModelPackButtons(shellRoot: HTMLElement, selectedPackId: string | undefined) {
-  for (const button of shellRoot.querySelectorAll<HTMLButtonElement>("[data-cuu-settings-model-pack-id]")) {
-    button.setAttribute("aria-pressed", button.dataset.cuuSettingsModelPackId === selectedPackId ? "true" : "false");
-  }
-}
-
 function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
   client: BrowserApiClient,
-  cuuController: CuuController,
   locale: WorkHubLocale,
   input: {
     listen?: DesktopShellListen | undefined;
-    onPreferencesChanged?: (snapshot: CuuControllerSnapshot) => void;
   } = {}
 ) {
   let pendingReviewHref: string | undefined;
-  let pendingCuuAction: DesktopCuuActionRequest | undefined;
 
   const activateRoute = (route: string) => {
     const pageKey = resolveGoldPathPageKey(shell.routeMap, route);
@@ -310,41 +154,7 @@ function bindGoldPathNavigation(
   };
 
   shellRoot.addEventListener("click", async (event) => {
-    const modelPackButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-cuu-settings-model-pack-id]") : null;
-    if (modelPackButton) {
-      event.preventDefault();
-      if (modelPackButton.dataset.cuuSettingsModelPackSelectable !== "true") {
-        showNotice(shellRoot, goldPathT(locale, "runtime.modelPackLocked"));
-        return;
-      }
-      const modelPackId = normalizeCuuSelectableModelPackId(modelPackButton.dataset.cuuSettingsModelPackId);
-      if (!modelPackId) {
-        showNotice(shellRoot, goldPathT(locale, "runtime.modelPackLocked"));
-        return;
-      }
-      const snapshot = cuuController.setPreferences({ pet_model_pack_id: modelPackId });
-      saveCuuPreferences(snapshot.preferences);
-      updateSettingsModelPackButtons(shellRoot, modelPackId);
-      input.onPreferencesChanged?.(snapshot);
-      showNotice(shellRoot, goldPathT(locale, "runtime.modelPackSaved"));
-      return;
-    }
-
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
-    if (reasonButton && pendingCuuAction) {
-      try {
-        const result = await submitDesktopCuuAction({
-          client,
-          action: pendingCuuAction,
-          reasonMd: reasonButton.dataset.reviewReason ?? "需要调整"
-        });
-        pendingCuuAction = undefined;
-        handleCuuActionResult(shellRoot, cuuController, locale, result);
-      } catch (error) {
-        showNotice(shellRoot, actionMessage(error, locale));
-      }
-      return;
-    }
     if (reasonButton && pendingReviewHref) {
       const proposalAction = proposalActionFromHref(pendingReviewHref);
       if (proposalAction?.action === "review") {
@@ -373,26 +183,6 @@ function bindGoldPathNavigation(
       return;
     }
     const href = anchor.getAttribute("href") ?? "";
-    const cuuAction = resolveDesktopCuuAction(href, {
-      actionId: anchor.dataset.cuuActionId,
-      requiresReason: anchor.dataset.requiresReason === "true",
-      card: findCuuCardForAction(cuuController, anchor)
-    });
-    if (cuuAction) {
-      event.preventDefault();
-      if (cuuAction.kind === "approval-response" && cuuAction.requiresReason && cuuAction.decision === "deny") {
-        pendingCuuAction = cuuAction;
-        showNotice(shellRoot, goldPathT(locale, "runtime.rejectNeedsReason"), reviewReasonButtons(locale));
-        return;
-      }
-      try {
-        const result = await submitDesktopCuuAction({ client, action: cuuAction });
-        handleCuuActionResult(shellRoot, cuuController, locale, result);
-      } catch (error) {
-        showNotice(shellRoot, actionMessage(error, locale));
-      }
-      return;
-    }
     const action = classifyGoldPathHref(shell.routeMap, href, {
       requiresReason: anchor.dataset.requiresReason === "true",
       method: anchor.dataset.method
@@ -466,7 +256,7 @@ async function boot() {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
-      await client.identify({ nickname: "Cuu Desktop Preview" });
+      await client.identify({ nickname: "WorkHub Desktop Preview" });
       surfaceVm = await client.pages.goldPath();
     }
     const rendered = renderGoldPathSurface(surfaceVm, "desktop", { locale });
@@ -476,60 +266,12 @@ async function boot() {
       apiBaseLabel: "device-token aware client",
       locale
     });
-    root.innerHTML = `<style>${shell.css}${desktopCuuNoticeCss}${desktopCuuPreferenceCss}</style>${shell.html}`;
-    const cuuController = createCuuController({ preferences: loadCuuPreferences() });
+    root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
     const realShellListen = resolveDesktopShellListen();
-    const cuuDecisions = new Map<string, CuuControllerDecision>();
     const petWindowBridge = resolveDesktopPetWindowBridge();
-    const syncPetWindowPreferences = (snapshot: CuuControllerSnapshot) => {
-      void Promise.resolve(petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(snapshot.preferences))).catch(() => undefined);
-    };
-    let refreshCuuPreferencePanel: (() => void) | undefined;
+    void Promise.resolve(petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(loadCuuPreferences()))).catch(() => undefined);
     bindLocaleSwitch(root, locale);
-    bindGoldPathNavigation(root, shell, client, cuuController, locale, {
-      listen: realShellListen,
-      onPreferencesChanged(snapshot) {
-        syncPetWindowPreferences(snapshot);
-        updateCuuQueueBadge(root, snapshot, locale);
-        refreshCuuPreferencePanel?.();
-      }
-    });
-    bindCuuQueueBadge(root, cuuController, locale);
-    syncPetWindowPreferences(cuuController.snapshot());
-    const preferencePanelBinding = bindCuuPreferencePanel(root, cuuController, {
-      locale,
-      onChange(snapshot) {
-        syncPetWindowPreferences(snapshot);
-        updateCuuQueueBadge(root, snapshot, locale);
-        updateSettingsModelPackButtons(root, snapshot.preferences.pet_model_pack_id);
-      }
-    });
-    refreshCuuPreferencePanel = preferencePanelBinding.refresh;
-    const demoMode = cuuDemoMode();
-    const demoListener =
-      !realShellListen && demoMode !== "off"
-        ? createDesktopShellScriptedListener(createDesktopCuuDemoScript(surfaceVm, {
-            includeOfflineStatus: demoMode === "offline"
-          }))
-        : undefined;
-    void bindDesktopShellCuuRuntime({
-      listen: realShellListen ?? demoListener?.listen,
-      controller: cuuController,
-      onDecision(decision) {
-        if (decision.card) {
-          cuuDecisions.set(decision.card.id, decision);
-        }
-        updateCuuQueueBadge(root, decision.snapshot, locale);
-      },
-      notify(notice) {
-        showCuuCard(root, cuuController, notice.card, locale, cuuDecisions.get(notice.card.id));
-      }
-    }).then((runtime) => {
-      if (runtime.subscribed && demoListener) {
-        showNotice(root, goldPathT(locale, "runtime.cuuPreviewOn"), undefined, 2400);
-        demoListener.start();
-      }
-    });
+    bindGoldPathNavigation(root, shell, client, locale, { listen: realShellListen });
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
       title: goldPathT(locale, "boot.desktop.errorTitle"),

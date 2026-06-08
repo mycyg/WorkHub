@@ -7,12 +7,15 @@ owner: workflow
 
 # Cuu Live2D 分层资产与建模施工方案
 
-> **结论**：Cuu 的长期高表现力目标应优先走 **Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。现有 sprite atlas 继续保留为 P1 可运行资产和降级层；GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案。  
+> **当前口径（2026-06-08 二选项收束）**：Cuu 当前实现已放弃橘猫改色、PSD draft、Bongo/CSS 和 sprite/atlas runtime，改为只保留黑猫 Hijiki / 白猫 Tororo 两个原版 Live2D Cubism 2 选项。当前实施说明见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。本篇以下 PSD / Cubism 规划保留为未来原创模型替换路线和历史教训，不代表当前源码路径。
+>
+> **结论**：若未来要做原创 Cuu，高表现力目标仍应走 **原创 Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案；PSD draft v1 不能复用为默认候选。
 > **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
 > **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
 > **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。BONGO-P2a-a 已把 registry / loader 落到代码：`resolveCuuVisibleModelPack()` 对 Live2D 候选返回 `experimental_locked` 并回退 Bongo，对未知 PSD 请求返回 `unknown_requested_pack`。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
 > **2026-06-08 P1e 更新**：Bongo 默认已完成 hover/tap/drag 真实 Tauri 输入录屏底座，并在 P1e-c 追加连续看鼠标 / hover 避让真实录屏。Live2D 替换默认前必须重跑 `input-handfeel` 与 `look-avoidance` 两个输入手感门；Cubism 参数必须复用 `look_x/look_y/hover_avoidance` contract，而不是另起一套鼠标协议。分层资产下一步不是继续美化 v1，而是按第 5.6 节做 `generated-parts-v2`：更细的眼皮、嘴型、耳朵、尾巴段、蕾丝、流苏和遮挡补画组件，全部用 manifest 锚点拼装。
 > **2026-06-08 低恐怖谷重启口径**：用户复核当前 PSD draft 后明确反馈“恐怖谷效应”。因此 `generated-psd-draft-v1` 不再作为可修可上的 Live2D 候选，只保留为运行时/manifest 探针。新的 Live2D 路线必须以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，先做低拟真、少层但稳定的 Cubism v2，再逐步增加表情、尾巴、围兜和流苏物理。
+> **2026-06-08 Hijiki 原型更新**：用户找到现成 Live2D 猫模型 `imuncle/live2d/model/hijiki`。已下载到 `reference/imuncle-live2d/` 并制作 `reference/hijiki-cuu-light-orange-prototype-v9-f8e0b2-face-lines/` 原型：保留 Hijiki 的 Cubism 2 `.moc` / `.mtn` / pose，只改 `texture_00.png` 为浅黄色橘猫；眼眶、眼线、嘴唇和口周全部压到 `#F8E0B2` 附近，去掉黑猫眼罩/深唇感。浏览器预览加载 `.moc`、texture、pose、idle motion 均为 200 且无控制台错误。该线只证明“现成猫骨骼 + 改色 texture”可快速跑通 Live2D 桌宠原型；Hijiki 来源许可需单独确认，`reference` 禁止提交，正式产品仍必须使用原创 Cuu 模型或取得明确授权。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
 
 ---
@@ -53,11 +56,11 @@ owner: workflow
 
 ![Cuu Bongo / Live2D v2 low-uncanny style board](./assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png)
 
-这张图是 **当前默认 Cuu**：因为 PSD draft 视觉有恐怖谷风险，P1 默认先使用 Bongo-style 低拟真 renderer。Live2D 专篇继续保留分层资产与 Cubism 施工计划，但默认用户体验不再展示未精修 PSD。
+这张图是 **历史 Bongo fallback 证据**：因为 PSD draft 视觉有恐怖谷风险，当时曾用 Bongo-style 低拟真 renderer 止损；随后用户明确否决 CSS/几何临摹作为默认视觉，当前默认可见层已转向真实 PNG `sprite_atlas` / `img_stack` 与 Live2D。Live2D 专篇继续保留分层资产、Hijiki 原型和 Cubism 施工计划，但默认用户体验不再展示未精修 PSD 或 Bongo/CSS 线条小猫。
 
 新增的低恐怖谷 v2 风格板是后续 Live2D 重启基准：保留橘猫、白围兜、黑蝴蝶结、红珠和任务动作，但把毛发、眼睛和体块都压回圆润、扁平、可绑定的 mascot 语言。正式 PSD 不允许继续沿用 `generated-psd-draft-v1` 的拟真眼珠和写实毛发方向。
 
-默认门禁已代码化：`assertCuuModelPackCanBeDefault()` 要求默认包低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖全部业务动作和 idle 微动作。PSD 分层路线的目标因此不是“把当前草案强行上线”，而是把它推进到真正可绑定、可录屏、可替换默认的 Cubism model pack。
+默认门禁已代码化：`assertCuuModelPackCanBeDefault()` 要求默认包低恐怖谷、非 PSD draft、全身可见、角色稳定、无 AI 肢体幻觉、有活体动作，并覆盖全部业务动作和 idle 微动作。现在还必须额外满足“真实图片资产或已授权 Cubism 模型”条件：Bongo/CSS 只能作 fallback，Hijiki 改色只能作授权待确认的原型。PSD 分层路线的目标因此不是“把当前草案强行上线”，而是把它推进到真正可绑定、可录屏、可替换默认的 Cubism model pack。
 
 ---
 

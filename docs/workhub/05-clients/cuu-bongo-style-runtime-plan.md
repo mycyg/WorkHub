@@ -1,7 +1,7 @@
 ---
 module: 05-clients
-layer: C-PET / Cuu / Bongo-style runtime
-status: p1-default-low-uncanny
+layer: C-PET / Cuu / Bongo-style fallback
+status: fallback-behavior-reference
 owner: workflow
 date: 2026-06-08
 visuals:
@@ -25,17 +25,19 @@ visuals:
   - ./assets/audit/2026-06-08-cuu-polished-rail/cuu-polished-rail-home.png
 ---
 
-# Cuu Bongo-style 低恐怖谷桌宠路线
+# Cuu Bongo-style fallback 与行为参考
 
-> 结论：当前 `generated-psd-draft-v1` 只能作为技术探针，不应该默认展示给用户。Cuu P1 默认视觉改为 **BongoCat 式扁平、稳定、低恐怖谷 renderer**；PSD / Live2D 继续保留为实验线，只有精修 PSD + Cubism + 多秒录屏全部通过后，才允许回到默认。
+> **当前口径（2026-06-08 二选项收束）**：Bongo-style 已退出源码和模型包 registry。Cuu 只保留黑猫 Hijiki / 白猫 Tororo 两个 Live2D 选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。`apps/desktop-webview/src/cuu-bongo-runtime.ts`、sprite/atlas runtime、PSD draft runtime 和相关 shared manifest 均已删除；Bongo 只作为历史反例和动作 storyboard 参考，不再是默认、fallback 或可选项。
 >
-> **2026-06-08 复核更新**：用户再次确认 PSD draft 已触发恐怖谷风险，尤其是拟真眼睛、写实毛发、尾巴/流苏叠层和局部 AI 形体不稳定。后续不再把 `generated-psd-draft-v1` 当成可美化后直接默认的候选，而是把它冻结为工程探针；默认体验继续走低恐怖谷 Bongo Cuu。若要重启 Live2D，必须新开 `cuu-live2d-cubism-v2` 资产线，并先满足本篇和 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 model pack 晋级门。
+> 历史结论：BongoCat 式 renderer 曾解决恐怖谷止损和动作合同问题，但用户明确否决 CSS/几何临摹作为默认视觉；后续不得恢复 `bongo_cuu` 作为默认体验，也不得在偏好页中展示 Bongo 选项。
 
-参考项目：[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)。本仓库只学习架构和交互思路，不复制它的模型或素材；本地参考代码放在 `reference/BongoCat/`，禁止提交。
+参考项目：[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)。本仓库只保留架构和交互学习结论，不复制它的模型或素材；本地参考代码放在 `reference/BongoCat/`，禁止提交。
 
 ---
 
-## 0. 当前截图
+## 0. 历史截图与失败证据
+
+以下截图保留为历史审计证据，不代表当前默认实现。当前实现只验收 Live2D cat runtime。
 
 ![Cuu Bongo-style runtime contact sheet](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
@@ -43,19 +45,20 @@ visuals:
 
 第二张图是 **Cuu Bongo / Live2D v2 低恐怖谷风格板**。它由 GPT Image 生成后同步到文档资产目录，用来替代 PSD draft 的写实参考方向：大形体圆润、五官简化、动作缩略图清楚、保留白围兜/黑蝴蝶结/红珠识别点，但不追求拟真毛发和照片级眼睛。它只作为美术风格基准，不是最终 PSD、sprite 或 Cubism 源。
 
-本轮 browser pet surface 抓图确认：
+历史 browser pet surface 抓图确认（已废弃，不代表当前 DOM）：
 
 | 检查项 | 结果 |
 |---|---|
-| 默认 renderer | `data-cuu-visual-mode="bongo_cuu"` |
-| Bongo runtime | `data-cuu-bongo-runtime="bongo_cuu"` |
-| 默认模型包 | `data-cuu-model-pack="cuu-bongo-p1"` |
-| 低恐怖谷门 | `data-cuu-default-visual-gate="low_uncanny"` |
-| 状态 | `p1_default_low_uncanny` |
-| 组件数 | `31` 个 DOM/CSS 组件 |
+| 历史 renderer | 当时曾切到 `data-cuu-visual-mode="sprite_atlas"`；当前源码已删除 sprite/atlas runtime |
+| 历史图片运行时 | 当时曾使用 `data-cuu-image-runtime="sprite_atlas"` / `data-cuu-render-mode="img_stack"`；当前不再作为运行时 |
+| Bongo runtime | 仅历史行为参考；当前 DOM 不应出现 `data-cuu-bongo-runtime="bongo_cuu"` |
+| 历史模型包 | 当时可见层曾由真实 PNG atlas 承接；当前模型包只保留黑猫/白猫 Live2D |
+| 低恐怖谷门 | 仍保留为视觉审查原则，但不能替代真实图片资产 |
+| 状态 | `historical_failed_route` |
+| 组件数 | 旧验收曾以 `<img>` stack / clip sheet 为准；当前以 Live2D cat runtime 与独立 pet window 录屏为准 |
 | PSD 暴露 | `live2d=null`，`layers=[]`，默认 HTML 不含 `data-psd-layer` |
 | 截图 | 全身可见，不是只露耳朵 / 局部 / 空白 |
-| 动作 | 尾巴、头、眨眼、爪子、耳朵、文档卡状态由 CSS keyframes 驱动 |
+| 动作 | 旧动作证据保留为 storyboard；当前动作验收应落到 Hijiki/Tororo Live2D runtime |
 
 2026-06-08 P1b/P1c 追加证据：
 
@@ -107,7 +110,7 @@ visuals:
 | Model pack loader | 通过 BONGO-P2a-a；browser CDP 抓取 `/pet.html`，DOM 记录 `cuuModelPack="cuu-bongo-p1"`、`cuuModelPackSelectionReason="registry_default"`、`live2d=null`、`layers=[]`，证明默认 surface 没有切回 PSD / Live2D 实验线 |
 | Model pack settings UI | 通过 BONGO-P2a-b；Gold Path `/settings` 与桌面偏好气泡都读取 `describeCuuModelPackChoices()`，中英截图确认 `cuu-bongo-p1` 当前默认、`cuu-live2d-cubism-v2` 实验锁定且不可点 |
 | Web rail 生成图资产 | 通过 BONGO-P2a-c；Gold Path 右侧 Cuu rail 不再默认展示临时 CSS 几何小猫，而是加载 `./assets/cuu/cuu-polished-idle-v1-alpha.png`，并保留 CSS fallback；审计截图确认橘猫、蕾丝围兜、黑蝴蝶结、红珠和全身轮廓可见 |
-| 当前结论 | BONGO-P1b 动作增强通过；BONGO-P1c 首帧稳定通过；BONGO-P1d-a 窗口手感契约通过；BONGO-P1d-b-a hide-on-hover 软隐藏/恢复通过；BONGO-P1d-c 设置矩阵真实截图通过；BONGO-P1e-b 输入手感底座通过；BONGO-P1e-c 连续看鼠标与 hover 避让通过；BONGO-P1e-d-a 已补输入平滑与拖拽抓握保持；BONGO-P1e-d-b 已补 60 秒长驻可见 / 防闪烁门；BONGO-P2a-a model pack registry / loader、BONGO-P2a-b settings UI 和 BONGO-P2a-c Web rail 生成图资产已落，默认 surface 只会激活 `cuu-bongo-p1`，Live2D/PSD 实验线不会被用户误设为默认。下一步转向多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮和 Live2D 精修 |
+| 历史结论 | BONGO-P1b/P1c/P1d/P1e 证明了动作合同、输入手感、first-frame gate 与录屏 QA 可行；但用户已否决 Bongo/CSS、sprite/atlas 与 Web rail 视觉。当前不得恢复 `cuu-bongo-p1`，不得把它展示为默认或可选模型；下一步转向黑猫/白猫 Live2D 真实录屏、多屏恢复和 pass-through 安全恢复 |
 
 证据文件：
 
@@ -322,13 +325,14 @@ scripts/qa/cuu-pet-browser-capture.mjs
 | sync ring | 同步状态的绿色旋转环 |
 | sparks | 完成/庆祝状态的跳跃反馈 |
 
-默认 pet surface 现在只渲染 Bongo Cuu：
+默认 pet surface 当前只渲染真实 PNG atlas；Bongo Cuu 仅作为 fallback / 行为参考：
 
 ```text
 renderDesktopPetSurface()
-  -> renderDesktopCuuAtlasState/Sprite(...)   # fallback 诊断仍保留
-  -> renderDesktopCuuBongo...                 # 默认主视觉
-  -> data-cuu-visual-mode="bongo_cuu"
+  -> renderDesktopCuuAtlasState/Sprite(...)   # 默认主视觉，真实 PNG clip sheet / img stack
+  -> renderDesktopCuuBongo...                 # fallback / 行为参考
+  -> data-cuu-visual-mode="sprite_atlas"
+  -> data-cuu-image-runtime="sprite_atlas"
   -> data-cuu-live2d-status="experiment_hidden"
 ```
 
@@ -344,7 +348,7 @@ packages/cuu/src/live2d-psd-draft.ts                      # PSD draft validator
 
 ## 3. Runtime Contract
 
-当前默认 renderer 的字段：
+历史 Bongo fallback renderer 的字段：
 
 ```ts
 type DesktopCuuBongoRender = {
@@ -360,19 +364,22 @@ type DesktopCuuBongoRender = {
 };
 ```
 
-默认 surface 必须满足：
+当前默认 surface 必须满足：
 
 | 字段 | 目标 |
 |---|---|
-| `visual_mode` | `bongo_cuu` |
-| `data-cuu-bongo-runtime` | `bongo_cuu` |
-| `data-cuu-model-pack` | `cuu-bongo-p1` |
-| `data-cuu-default-visual-gate` | `low_uncanny` |
-| `data-cuu-bongo-status` | `p1_default_low_uncanny` |
+| `visual_mode` | `sprite_atlas` |
+| `data-cuu-image-runtime` | `sprite_atlas` |
+| `data-cuu-render-mode` | `img_stack` |
+| `data-cuu-image-frame-count` | 大于 `1`，真实多帧 |
+| `data-cuu-bongo-runtime` | 默认不得出现；仅 fallback 测试可出现 |
+| `data-cuu-model-pack` | 不得把 `cuu-bongo-p1` 当作当前默认视觉验收 |
+| `data-cuu-default-visual-gate` | 不得只靠 `low_uncanny` 替代真实图片资产 |
+| `data-cuu-bongo-status` | 默认不得出现 |
 | `data-cuu-live2d-status` | `experiment_hidden` |
 | `data-cuu-live2d-layer-count` | `0` |
 | PSD layer DOM | 默认不得出现 |
-| atlas fallback | 仍保留，且 `data-cuu-atlas-fallback="false"` 表示 fallback 资产可用 |
+| Bongo fallback | 仍保留，但只能在图片 runtime 不可用或专项 QA 中触发 |
 
 ### 3.1 Pointer / Input Pose Contract
 

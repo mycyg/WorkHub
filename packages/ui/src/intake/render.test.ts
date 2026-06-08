@@ -48,7 +48,8 @@ test("intake sessions render as option-first pages", () => {
   assert.equal(page.freeTextCollapsed, true);
   assert.equal(page.cuuState, "asking_approval");
   assert.equal(page.html.includes("简洁版"), true);
-  assert.equal(page.html.includes("Cuu 推荐"), true);
+  assert.equal(page.html.includes("AI 推荐"), true);
+  assert.equal(page.html.includes("wh-cuu-avatar"), false);
   assert.equal(page.html.includes("<details"), true);
   assert.equal(page.primaryHrefs[0], session.question.submit.href);
 });

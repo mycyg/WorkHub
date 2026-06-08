@@ -7,7 +7,9 @@ owner: workflow
 
 # Cuu 绿幕素材与独立桌宠方案
 
-> 结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。P1 用 GPT Image 生成绿幕多帧素材，经本地抠图、裁切、对齐、打包成 sprite atlas，先让 Cuu 真实可见、会动、可测试；长期高表现力路线优先走 [`cuu-live2d-layered-asset-plan.md`](./cuu-live2d-layered-asset-plan.md) 的 Live2D 分层 PSD + Cubism 绑定。GIF 只做临时预览，不作为最终桌宠目标。
+> **当前口径（2026-06-08 二选项收束）**：本篇保留“独立 Tauri `pet` 透明窗口”和 motion capture QA 的经验，但绿幕 sprite atlas 源码路线已废弃。当前 Cuu 只保留黑猫 Hijiki / 白猫 Tororo 两个 Live2D 选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
+>
+> 历史结论：Cuu 的最终形态不是主窗口里的符号化浮层，而是一个独立 Tauri `pet` 透明窗口。P1 曾计划用 GPT Image 生成绿幕多帧素材，经本地抠图、裁切、对齐、打包成 sprite atlas；该方案因视觉质量和路线收束被撤回，只作为未来原创资产生产的参考方法。
 >
 > 2026-06-07 真实动作审计见 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md)。本轮已对真实 Tauri `Cuu` 窗口做 32 帧抓取、GIF/MP4 与像素差异报告；首轮发现 `CUX-MOTION-001`：事件卡触发后 `pet` 窗口未扩到 card mode，气泡被 body-only 小窗裁切。第一轮 card layout 又暴露 Cuu 只露耳朵 / 局部的失败样例。同日已补 bridge placement 校验、compact fallback、full-body HiDPI 站位、离线人话卡和 motion capture 脚本，最终 card mode 可扩到 `394 x 568` 且 Cuu 完整身体可见；随后确认 8 层裁片 prototype 动作肉眼差异不足，不能算鲜活感通过。当前主线已切到 Live2D 分层：用 GPT Image 生成绿幕零件板，自动抠图编号后拼出 `cuu-live2d-generated-psd-draft-v1.psd`，Hatch/sprite 仅保留为 fallback 或过渡参考。
 

@@ -34,7 +34,7 @@ function surfaceVm() {
   } as const;
 }
 
-test("gold path renderer creates the P0.5 pages plus Cuu settings from one shared VM", () => {
+test("gold path renderer creates the P0.5 pages plus app settings from one shared VM", () => {
   const rendered = renderGoldPathSurface(surfaceVm(), "web");
 
   assert.equal(rendered.fixtureId, "weekly_report_manifest_doc");
@@ -76,27 +76,29 @@ test("gold path renderer localizes static page chrome while keeping VM content i
 
   assert.equal(home?.html.includes("Needs your decision"), true);
   assert.equal(home?.html.includes("The board is fallback only"), true);
-  assert.equal(home?.html.includes("Cuu ·"), true);
-  assert.equal(home?.html.includes("./assets/cuu/cuu-polished-idle-v1-alpha.png"), true);
-  assert.equal(home?.html.includes("data-cuu-asset=\"bitmap\""), true);
-  assert.equal(rendered.css.includes("data-cuu-state=carrying_document] .wh-cuu-portrait"), true);
+  assert.equal(home?.html.includes("Cuu ·"), false);
+  assert.equal(home?.html.includes("./assets/cuu/"), false);
+  assert.equal(home?.html.includes("data-cuu-asset=\"bitmap\""), false);
+  assert.equal(rendered.css.includes("wh-cuu-portrait"), false);
   assert.equal(cost?.html.includes("Budget and cost"), true);
   assert.equal(cost?.html.includes("Regular users see their own slice"), true);
-  assert.equal(settings?.html.includes("Default cat"), true);
-  assert.equal(settings?.html.includes("Experiment locked"), true);
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-selectable=\"false\""), true);
+  assert.equal(settings?.html.includes("App settings"), true);
+  assert.equal(settings?.html.includes("AI runtime"), true);
+  assert.equal(settings?.html.includes("independent pet window"), true);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-selectable"), false);
+  assert.equal(settings?.html.includes("Cuu settings"), false);
 });
 
-test("Cuu settings page exposes model-pack choices without allowing Live2D as default", () => {
+test("settings page stays serious and keeps pet model choice out of the main app", () => {
   const settings = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "settings");
 
   assert.equal(settings?.route, "/settings");
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id=\"cuu-bongo-p1\""), true);
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-status=\"default_ready\""), true);
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id=\"cuu-live2d-cubism-v2\""), true);
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-status=\"experimental_locked\""), true);
-  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-selectable=\"false\""), true);
-  assert.equal(settings?.html.includes("disabled"), true);
+  assert.equal(settings?.title, "Settings");
+  assert.equal(settings?.html.includes("应用设置"), true);
+  assert.equal(settings?.html.includes("桌宠形象只在独立桌宠窗口里配置和验收"), true);
+  assert.equal(settings?.html.includes("cuu-bongo-p1"), false);
+  assert.equal(settings?.html.includes("Live2D 实验形象"), false);
+  assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id"), false);
 });
 
 test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {

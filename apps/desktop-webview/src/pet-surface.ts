@@ -11,17 +11,11 @@ import {
   type CuuMotionHint
 } from "@workhub/cuu";
 
-import { desktopCuuP1AtlasManifest, desktopCuuP1AtlasManifestUrl, desktopCuuP1ClipSheetImages } from "./cuu-atlas-assets.js";
 import {
-  renderDesktopCuuAtlasSprite,
-  renderDesktopCuuAtlasState,
-  type DesktopCuuAtlasRender
-} from "./cuu-atlas-runtime.js";
-import {
-  renderDesktopCuuBongoForIdleAction,
-  renderDesktopCuuBongoForMotion,
-  type DesktopCuuBongoRender
-} from "./cuu-bongo-runtime.js";
+  renderDesktopCuuCatLive2DForIdleAction,
+  renderDesktopCuuCatLive2DForMotion,
+  type DesktopCuuCatLive2DRender
+} from "./cuu-cat-live2d-runtime.js";
 import { loadCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
@@ -50,9 +44,8 @@ export type DesktopSurface = "main" | "pet";
 export type DesktopPetSurfaceRender = {
   html: string;
   css: string;
-  sprite: DesktopCuuAtlasRender;
-  bongo: DesktopCuuBongoRender;
-  visual_mode: "bongo_cuu" | "live2d_psd_draft" | "live2d_prototype" | "sprite_atlas";
+  live2d: DesktopCuuCatLive2DRender;
+  visual_mode: "live2d_cat";
 };
 
 export type DesktopPetSurfaceRuntime = {
@@ -74,7 +67,6 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
-  ".wh-pet-surface[data-pet-cursor-near=true] .wh-cuu-bongo{filter:drop-shadow(0 16px 18px rgba(35,27,20,.2)) saturate(1.04)}",
   ".wh-pet-bubble{position:absolute;right:132px;bottom:28px;box-sizing:border-box;width:min(250px,calc(100vw - 148px));display:grid;gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px)}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(64px * var(--wh-pet-scale,1));bottom:calc(96px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));height:calc(210px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(16px * var(--wh-pet-scale,1));right:auto;top:calc(16px * var(--wh-pet-scale,1));bottom:auto;width:calc(260px * var(--wh-pet-scale,1));max-height:calc(320px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
@@ -240,27 +232,16 @@ export function renderDesktopPetSurface(input: {
     compact_card: compactCard
   });
   const displayWidth = input.display_width_px ?? Math.round((compactCard ? 92 : input.card ? 138 : 148) * scaleRatio);
-  const sprite = input.card
-    ? renderDesktopCuuAtlasSprite(motion, desktopCuuP1AtlasManifest, {
-        display_width_px: displayWidth,
-        clip_images: desktopCuuP1ClipSheetImages,
-        prefer_background_clip_sheet: true
-      })
-    : renderDesktopCuuAtlasState(input.idle_action ?? "idle_breathe", desktopCuuP1AtlasManifest, {
-        display_width_px: displayWidth,
-        clip_images: desktopCuuP1ClipSheetImages,
-        prefer_background_clip_sheet: true
-      });
-  const bongo = input.card
-    ? renderDesktopCuuBongoForMotion(motion, {
+  const live2d = input.card
+    ? renderDesktopCuuCatLive2DForMotion(motion, {
         display_width_px: displayWidth,
         requested_model_pack_id: input.requested_model_pack_id
       })
-    : renderDesktopCuuBongoForIdleAction(input.idle_action ?? "idle_breathe", {
+    : renderDesktopCuuCatLive2DForIdleAction(input.idle_action ?? "idle_breathe", {
         display_width_px: displayWidth,
         requested_model_pack_id: input.requested_model_pack_id
       });
-  const visualMode = "bongo_cuu";
+  const visualMode = "live2d_cat";
   const bubble = input.card || input.status_text || input.include_reject_reasons
     ? renderDesktopPetBubble({
         card: input.card,
@@ -299,13 +280,12 @@ export function renderDesktopPetSurface(input: {
   ].join(";");
 
   return {
-    sprite,
-    bongo,
+    live2d,
     visual_mode: visualMode,
-    css: `${desktopPetSurfaceCss}${bongo.css}${sprite.css}`,
-    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-bongo-status="${escapeHtml(bongo.status)}" data-cuu-bongo-motion="${escapeHtml(bongo.motion_state)}" data-cuu-bongo-component-count="${escapeHtml(bongo.component_count)}" data-cuu-live2d-status="experiment_hidden" data-cuu-live2d-motion="" data-cuu-live2d-layer-count="0" data-cuu-atlas-fallback="${sprite.fallback ? "true" : "false"}" data-cuu-manifest-url="${escapeHtml(desktopCuuP1AtlasManifestUrl)}">
+    css: `${desktopPetSurfaceCss}${live2d.css}`,
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
-        ${bongo.html}
+        ${live2d.html}
       </button>
       ${bubble}
     </section>`

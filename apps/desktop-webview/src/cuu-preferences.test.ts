@@ -60,7 +60,7 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
     pet_opacity_percent: 80,
     pet_pass_through: true,
     pet_hide_on_hover: true,
-    pet_model_pack_id: "cuu-bongo-p1"
+    pet_model_pack_id: "cuu-tororo-live2d-cubism2"
   });
   const storage = memoryStorage();
 
@@ -73,10 +73,11 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
     pet_opacity_percent: 80,
     pet_pass_through: true,
     pet_hide_on_hover: true,
-    pet_model_pack_id: "cuu-bongo-p1"
+    pet_model_pack_id: "cuu-tororo-live2d-cubism2"
   });
   saveCuuPreferences(normalized, storage);
   assert.deepEqual(loadCuuPreferences(storage), normalized);
+  assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "cuu-bongo-p1" }).pet_model_pack_id, undefined);
   assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "cuu-live2d-cubism-v2" }).pet_model_pack_id, undefined);
 });
 
@@ -89,7 +90,7 @@ test("Cuu preferences accept Rust-injected QA overrides", () => {
       pet_opacity_percent: 60,
       pet_pass_through: true,
       pet_hide_on_hover: true,
-      pet_model_pack_id: "cuu-bongo-p1",
+      pet_model_pack_id: "cuu-tororo-live2d-cubism2",
       queue_limit: 2
     };
 
@@ -99,7 +100,7 @@ test("Cuu preferences accept Rust-injected QA overrides", () => {
         pet_opacity_percent: 100,
         pet_pass_through: false,
         pet_hide_on_hover: false,
-        pet_model_pack_id: "cuu-live2d-cubism-v2",
+        pet_model_pack_id: "cuu-bongo-p1",
         queue_limit: 9
       })
     }));
@@ -108,7 +109,7 @@ test("Cuu preferences accept Rust-injected QA overrides", () => {
     assert.equal(loaded.pet_opacity_percent, 60);
     assert.equal(loaded.pet_pass_through, true);
     assert.equal(loaded.pet_hide_on_hover, true);
-    assert.equal(loaded.pet_model_pack_id, "cuu-bongo-p1");
+    assert.equal(loaded.pet_model_pack_id, "cuu-tororo-live2d-cubism2");
     assert.equal(loaded.queue_limit, 2);
   } finally {
     target.__WORKHUB_CUU_PREFERENCES__ = previous;
@@ -126,15 +127,19 @@ test("Cuu preference panel renders clickable modes and queue state", () => {
       pet_opacity_percent: 60,
       pet_pass_through: true,
       pet_hide_on_hover: true,
-      pet_model_pack_id: "cuu-bongo-p1"
+      pet_model_pack_id: "cuu-hijiki-live2d-cubism2"
     }
   });
   const html = renderCuuPreferencePanel(controller.snapshot());
 
-  assert.match(html, /data-cuu-model-pack-id="cuu-bongo-p1"[^>]*aria-pressed="true"/u);
-  assert.match(html, /data-cuu-model-pack-id="cuu-live2d-cubism-v2"[^>]*data-cuu-model-pack-status="experimental_locked"[^>]*disabled/u);
+  assert.match(html, /data-cuu-model-pack-id="cuu-hijiki-live2d-cubism2"[^>]*aria-pressed="true"/u);
+  assert.match(html, /data-cuu-model-pack-id="cuu-tororo-live2d-cubism2"[^>]*aria-pressed="false"/u);
+  assert.match(html, /黑猫/u);
+  assert.match(html, /白猫/u);
   assert.match(html, /当前默认/u);
-  assert.match(html, /实验锁定/u);
+  assert.match(html, /可选择/u);
+  assert.doesNotMatch(html, /cuu-bongo-p1/u);
+  assert.doesNotMatch(html, /cuu-live2d-cubism-v2/u);
   assert.match(html, /data-cuu-attention-mode="normal"/u);
   assert.match(html, /data-cuu-attention-mode="do_not_disturb" aria-pressed="true"/u);
   assert.match(html, /data-cuu-sound-mode="muted" aria-pressed="true"/u);
@@ -149,16 +154,18 @@ test("Cuu preference panel renders clickable modes and queue state", () => {
   assert.match(html, /0 条待处理/u);
 });
 
-test("Cuu preference panel renders English model-pack copy without exposing experimental defaults", () => {
+test("Cuu preference panel renders English black and white model-pack copy only", () => {
   const controller = createCuuController();
   const html = renderCuuPreferencePanel(controller.snapshot(), { locale: "en-US" });
 
   assert.match(html, /Look/u);
-  assert.match(html, /Bongo Cuu P1/u);
+  assert.match(html, /Black cat/u);
+  assert.match(html, /White cat/u);
   assert.match(html, /Current default/u);
-  assert.match(html, /Live2D V2/u);
-  assert.match(html, /Experiment locked/u);
-  assert.match(html, /data-cuu-model-pack-selectable="false"[^>]*disabled/u);
+  assert.match(html, /Available/u);
+  assert.doesNotMatch(html, /Bongo fallback/u);
+  assert.doesNotMatch(html, /Live2D V2/u);
+  assert.doesNotMatch(html, /data-cuu-model-pack-selectable="false"[^>]*disabled/u);
   assert.match(html, /Reduce motion/u);
   assert.doesNotMatch(html, /减少动效/u);
 });

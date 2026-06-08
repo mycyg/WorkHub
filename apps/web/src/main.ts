@@ -1,7 +1,6 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest } from "@workhub/contracts";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
@@ -29,8 +28,7 @@ export const webSurface = {
     "/api/pages/cost",
     "/api/agent-runs/:id/replay"
   ],
-  consumesTypedClient: "@workhub/api-client",
-  cuuCardAdapter: "@workhub/cuu"
+  consumesTypedClient: "@workhub/api-client"
 } as const;
 
 export const webApiClient = createApiClient({
@@ -100,51 +98,4 @@ export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: stri
 
 export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string) {
   return renderProposalDetail(await loadWebProposalDetail(client, proposalId), "web");
-}
-
-export function webCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
-  return cardFromEvent(event);
-}
-
-export async function loadWebProposalCuuCard(
-  client: WorkHubApiClient = webApiClient,
-  proposalId: string
-): Promise<CuuCard> {
-  return cardFromProposalDetail(await loadWebProposalDetail(client, proposalId));
-}
-
-export async function loadWebIntakeCuuCard(
-  client: WorkHubApiClient = webApiClient,
-  payload: CreateSessionRequest = {}
-): Promise<CuuCard> {
-  return cardFromSessionVm(await startWebIntakeSession(client, payload));
-}
-
-export async function createWebWorkItemCuuCard(
-  payload: CreateWorkItemRequest,
-  client: WorkHubApiClient = webApiClient
-): Promise<CuuCard> {
-  return cardFromWorkItemDetail(await createWebWorkItem(payload, client));
-}
-
-export async function loadWebWorkItemCuuCard(
-  client: WorkHubApiClient = webApiClient,
-  workItemId: string
-): Promise<CuuCard> {
-  return cardFromWorkItemDetail(await loadWebWorkItemDetail(client, workItemId));
-}
-
-export async function startWebAgentRunCuuCard(
-  client: WorkHubApiClient = webApiClient,
-  workItemId: string,
-  payload: StartAgentRunRequest = {}
-): Promise<CuuCard> {
-  return cardFromAgentRunLive(await startWebAgentRun(client, workItemId, payload));
-}
-
-export async function loadWebAgentRunCuuCard(
-  client: WorkHubApiClient = webApiClient,
-  runId: string
-): Promise<CuuCard> {
-  return cardFromAgentRunLive(await loadWebAgentRun(client, runId));
 }

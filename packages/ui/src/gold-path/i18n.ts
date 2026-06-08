@@ -31,8 +31,6 @@ export type GoldPathCopyKey =
   | "shell.typedApi"
   | "shell.localeAria"
   | "empty.evidence"
-  | "cuu.description"
-  | "cuu.budgetReminder"
   | "home.kicker"
   | "home.emptyTitle"
   | "home.emptySummary"
@@ -92,20 +90,14 @@ export type GoldPathCopyKey =
   | "settings.kicker"
   | "settings.title"
   | "settings.summary"
-  | "settings.defaultCat"
-  | "settings.currentDefault"
-  | "settings.live2d"
-  | "settings.experimentalLocked"
-  | "settings.bongoReason"
-  | "settings.live2dReason"
-  | "settings.pick"
-  | "settings.locked"
-  | "settings.handfeelTitle"
-  | "settings.handfeelBody"
+  | "settings.runtimeTitle"
+  | "settings.runtimeBody"
+  | "settings.desktopTitle"
+  | "settings.desktopBody"
+  | "settings.costTitle"
+  | "settings.costBody"
   | "settings.languageTitle"
   | "settings.languageBody"
-  | "runtime.modelPackSaved"
-  | "runtime.modelPackLocked"
   | "boot.web.title"
   | "boot.web.message"
   | "boot.web.errorTitle"
@@ -123,8 +115,7 @@ export type GoldPathCopyKey =
   | "runtime.reason.format"
   | "runtime.rejectNeedsReason"
   | "runtime.rejectReasonFirst"
-  | "runtime.actionPending"
-  | "runtime.cuuPreviewOn";
+  | "runtime.actionPending";
 
 const goldPathCopy = {
   "zh-CN": {
@@ -143,11 +134,9 @@ const goldPathCopy = {
     "shell.typedApi": "typed API",
     "shell.localeAria": "语言切换",
     "empty.evidence": "没有找到可展示的证据。",
-    "cuu.description": "我会把复杂内容收成一件事、几个选项和能追溯的证据。",
-    "cuu.budgetReminder": "预算提醒",
     "home.kicker": "AI-first home",
     "home.emptyTitle": "现在没有阻塞你的事",
-    "home.emptySummary": "Cuu 会在需要你判断时把事项递过来。",
+    "home.emptySummary": "AI 会在需要你判断时把事项递过来。",
     "home.decisionTitle": "需要你决定",
     "home.decisionEmpty": "暂无",
     "home.aiWorkingTitle": "AI 正在做",
@@ -156,7 +145,7 @@ const goldPathCopy = {
     "home.entryText": "看板只是兜底，主路径从这一件事开始。",
     "intake.kicker": "Option intake",
     "intake.bodyFallback": "先点一个选项，我再继续。",
-    "intake.recommended": "Cuu 推荐",
+    "intake.recommended": "AI 推荐",
     "intake.progressLabel": "clarification progress",
     "intake.otherSummary": "其他 / 补充",
     "intake.freeTextFallback": "需要时再补一句。",
@@ -169,7 +158,7 @@ const goldPathCopy = {
     "approvals.slaTitle": "SLA",
     "approvals.slaEmpty": "没有即将超时的审批。",
     "approvals.ruleTitle": "规则",
-    "approvals.ruleText": "打回必须说明原因，Cuu 会据此继续改。",
+    "approvals.ruleText": "打回必须说明原因，AI 会据此继续改。",
     "approvals.factsTitle": "审批事实",
     "approvals.unrouted": "未路由",
     "workitem.kicker": "Work item",
@@ -187,7 +176,7 @@ const goldPathCopy = {
     "proposal.changedTitle": "改了什么",
     "proposal.checksTitle": "检查结果",
     "replay.kicker": "Replay Work",
-    "replay.title": "看看 Cuu 怎么做的",
+    "replay.title": "查看 AI 怎么做的",
     "replay.empty": "关键步骤、证据、快照和成本都在这里。",
     "replay.stepFallback": "记录了一步。",
     "replay.tokenTitle": "Token",
@@ -201,23 +190,17 @@ const goldPathCopy = {
     "cost.estimatedTitle": "估算成本",
     "cost.statusTitle": "预算状态",
     "cost.statusFallback": "ok",
-    "settings.kicker": "Cuu settings",
-    "settings.title": "Cuu 设置",
-    "settings.summary": "这里管理桌宠形象、窗口手感和语言。默认形象必须先通过低恐怖谷和真实动作验收。",
-    "settings.defaultCat": "默认小猫",
-    "settings.currentDefault": "当前启用",
-    "settings.live2d": "Live2D 实验形象",
-    "settings.experimentalLocked": "实验锁定",
-    "settings.bongoReason": "稳定、可爱、动作清楚，作为当前默认桌宠。",
-    "settings.live2dReason": "还没有通过分层、骨骼、物理和真实录屏验收，暂时不能设为默认。",
-    "settings.pick": "使用这个形象",
-    "settings.locked": "等验收后开放",
-    "settings.handfeelTitle": "窗口手感",
-    "settings.handfeelBody": "尺寸、透明度、点击穿透和悬停避让继续由 Cuu 快捷面板管理。",
+    "settings.kicker": "Settings",
+    "settings.title": "应用设置",
+    "settings.summary": "这里管理应用运行、语言、预算和桌面客户端连接；桌宠形象只在独立桌宠窗口里配置和验收。",
+    "settings.runtimeTitle": "AI 运行时",
+    "settings.runtimeBody": "模型路由、工具权限和执行日志走统一契约，页面只展示可判断的信息。",
+    "settings.desktopTitle": "桌面客户端",
+    "settings.desktopBody": "本地执行、同步目录、托盘和独立桌宠窗口属于客户端能力，不嵌入 Web 页面。",
+    "settings.costTitle": "预算",
+    "settings.costBody": "预算与成本使用独立页面和告警事件，不把成本状态混进看板。",
     "settings.languageTitle": "语言",
     "settings.languageBody": "顶部语言切换会同步页面固定文案；动态内容后续继续接入 locale。",
-    "runtime.modelPackSaved": "Cuu 形象已保持为默认小猫。",
-    "runtime.modelPackLocked": "这个形象还在实验锁定，不能设为默认。",
     "boot.web.title": "正在打开 WorkHub",
     "boot.web.message": "连接 API daemon，读取 P0.5 Gold Path 页面 VM。",
     "boot.web.errorTitle": "API daemon 还没连上",
@@ -228,15 +211,14 @@ const goldPathCopy = {
     "boot.desktop.errorMessage": "请先启动 WorkHub API daemon，再刷新桌面 webview。",
     "runtime.actionFail": "动作提交失败，请稍后再试。",
     "runtime.optionSelectedPrefix": "已选择「",
-    "runtime.optionSelectedSuffix": "」，Cuu 会继续推进。",
+    "runtime.optionSelectedSuffix": "」，AI 会继续推进。",
     "runtime.reason.evidence": "证据不足",
     "runtime.reason.tone": "口吻要改",
     "runtime.reason.scope": "范围太大",
     "runtime.reason.format": "交付格式要改",
-    "runtime.rejectNeedsReason": "打回必须说明原因。先点一个原因，Cuu 会带着它继续改。",
-    "runtime.rejectReasonFirst": "先点一个打回原因，Cuu 会把它放进下一轮修改。",
-    "runtime.actionPending": "这个动作还在等待对应服务接线。",
-    "runtime.cuuPreviewOn": "Cuu 事件预览已开启。"
+    "runtime.rejectNeedsReason": "打回必须说明原因。先点一个原因，AI 会带着它继续改。",
+    "runtime.rejectReasonFirst": "先点一个打回原因，AI 会把它放进下一轮修改。",
+    "runtime.actionPending": "这个动作还在等待对应服务接线。"
   },
   "en-US": {
     "state.idle": "Idle",
@@ -254,11 +236,9 @@ const goldPathCopy = {
     "shell.typedApi": "typed API",
     "shell.localeAria": "Language",
     "empty.evidence": "No evidence is ready to show.",
-    "cuu.description": "I turn complex work into one clear decision, a few options, and traceable evidence.",
-    "cuu.budgetReminder": "Budget notice",
     "home.kicker": "AI-first home",
     "home.emptyTitle": "Nothing is blocking you right now",
-    "home.emptySummary": "Cuu will bring work forward when your judgment is needed.",
+    "home.emptySummary": "AI will bring work forward when your judgment is needed.",
     "home.decisionTitle": "Needs your decision",
     "home.decisionEmpty": "Nothing yet",
     "home.aiWorkingTitle": "AI is working",
@@ -267,7 +247,7 @@ const goldPathCopy = {
     "home.entryText": "The board is fallback only. The main path starts from this one thing.",
     "intake.kicker": "Option intake",
     "intake.bodyFallback": "Pick one option and I will keep going.",
-    "intake.recommended": "Cuu recommends",
+    "intake.recommended": "AI recommends",
     "intake.progressLabel": "clarification progress",
     "intake.otherSummary": "Other / add context",
     "intake.freeTextFallback": "Add a short note only when needed.",
@@ -280,7 +260,7 @@ const goldPathCopy = {
     "approvals.slaTitle": "SLA",
     "approvals.slaEmpty": "No approval is close to timing out.",
     "approvals.ruleTitle": "Rule",
-    "approvals.ruleText": "Rejected work must include a reason so Cuu can revise it.",
+    "approvals.ruleText": "Rejected work must include a reason so AI can revise it.",
     "approvals.factsTitle": "Approval facts",
     "approvals.unrouted": "Unrouted",
     "workitem.kicker": "Work item",
@@ -298,7 +278,7 @@ const goldPathCopy = {
     "proposal.changedTitle": "What changed",
     "proposal.checksTitle": "Check results",
     "replay.kicker": "Replay Work",
-    "replay.title": "See how Cuu did it",
+    "replay.title": "See how AI did it",
     "replay.empty": "Key steps, evidence, snapshots, and cost are shown here.",
     "replay.stepFallback": "Recorded one step.",
     "replay.tokenTitle": "Token",
@@ -312,23 +292,17 @@ const goldPathCopy = {
     "cost.estimatedTitle": "Estimated cost",
     "cost.statusTitle": "Budget status",
     "cost.statusFallback": "ok",
-    "settings.kicker": "Cuu settings",
-    "settings.title": "Cuu settings",
-    "settings.summary": "Manage the pet look, window feel, and language. A default look must pass low-uncanny and real-motion QA first.",
-    "settings.defaultCat": "Default cat",
-    "settings.currentDefault": "Current default",
-    "settings.live2d": "Live2D experiment",
-    "settings.experimentalLocked": "Experiment locked",
-    "settings.bongoReason": "Stable, cute, and readable in motion, so it is the current default pet.",
-    "settings.live2dReason": "It has not passed layered art, rigging, physics, and real recording QA yet, so it cannot become the default.",
-    "settings.pick": "Use this look",
-    "settings.locked": "Opens after QA",
-    "settings.handfeelTitle": "Window feel",
-    "settings.handfeelBody": "Size, opacity, click-through, and hover dodge stay in the Cuu quick panel.",
+    "settings.kicker": "Settings",
+    "settings.title": "App settings",
+    "settings.summary": "Manage app runtime, language, budgets, and desktop connectivity here; the pet look is configured and validated only in the independent pet window.",
+    "settings.runtimeTitle": "AI runtime",
+    "settings.runtimeBody": "Model routing, tool permissions, and execution logs use shared contracts while pages show only decision-ready information.",
+    "settings.desktopTitle": "Desktop client",
+    "settings.desktopBody": "Local execution, sync folders, tray behavior, and the independent pet window stay in the client layer, not inside Web pages.",
+    "settings.costTitle": "Budget",
+    "settings.costBody": "Budget and cost use their own page and warning events instead of being mixed into the board.",
     "settings.languageTitle": "Language",
     "settings.languageBody": "The top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.",
-    "runtime.modelPackSaved": "Cuu is kept on the default cat look.",
-    "runtime.modelPackLocked": "This look is still experiment-locked and cannot become the default.",
     "boot.web.title": "Opening WorkHub",
     "boot.web.message": "Connecting to the API daemon and loading the P0.5 Gold Path page VM.",
     "boot.web.errorTitle": "API daemon is not connected",
@@ -339,15 +313,14 @@ const goldPathCopy = {
     "boot.desktop.errorMessage": "Start the WorkHub API daemon, then refresh the desktop webview.",
     "runtime.actionFail": "Action failed. Please try again later.",
     "runtime.optionSelectedPrefix": "Selected \"",
-    "runtime.optionSelectedSuffix": "\". Cuu will keep going.",
+    "runtime.optionSelectedSuffix": "\". AI will keep going.",
     "runtime.reason.evidence": "Evidence is not enough",
     "runtime.reason.tone": "Tone needs work",
     "runtime.reason.scope": "Scope is too large",
     "runtime.reason.format": "Delivery format needs work",
-    "runtime.rejectNeedsReason": "Choose a rejection reason first. Cuu will use it in the next revision.",
-    "runtime.rejectReasonFirst": "Choose a rejection reason first. Cuu will carry it into the next revision.",
-    "runtime.actionPending": "This action is still waiting for its service wiring.",
-    "runtime.cuuPreviewOn": "Cuu event preview is on."
+    "runtime.rejectNeedsReason": "Choose a rejection reason first. AI will use it in the next revision.",
+    "runtime.rejectReasonFirst": "Choose a rejection reason first. AI will carry it into the next revision.",
+    "runtime.actionPending": "This action is still waiting for its service wiring."
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 

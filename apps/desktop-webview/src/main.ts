@@ -139,24 +139,6 @@ export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId
 }
 
 export {
-  desktopCuuSpriteCss,
-  renderDesktopCuuSprite,
-  type DesktopCuuSpriteRender
-} from "./cuu-sprite-runtime.js";
-
-export {
-  desktopCuuP1AtlasManifestUrl,
-  desktopCuuP1AtlasManifest,
-  validateDesktopCuuP1AtlasManifest
-} from "./cuu-atlas-assets.js";
-
-export {
-  desktopCuuAtlasBaseCss,
-  renderDesktopCuuAtlasSprite,
-  type DesktopCuuAtlasRender
-} from "./cuu-atlas-runtime.js";
-
-export {
   bootDesktopPetSurface,
   desktopPetSurfaceCss,
   renderDesktopPetSurface,
