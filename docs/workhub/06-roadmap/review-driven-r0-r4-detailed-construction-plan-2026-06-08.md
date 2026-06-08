@@ -126,7 +126,8 @@ R0 退出门：
 
 3. **让 Replay 读真实 DB**
    - **状态：部分完成。** `GET /api/agent-runs/:id/replay` 仍通过 queue facade 读取，但 queue facade 已有 DB fallback，可在内存 miss 时还原 `agent_runs + agent_steps`。
-   - 剩余：移除生产 P0.5 fixture 分支；补真实 PG route + daemon restart 后 `/replay` 验收证据。
+   - **2026-06-08 追加切片**：AgentRun replay 的 P0.5 fixture fallback 已改成显式 `allowP05ReplayFixture` opt-in；生产默认 route 不再返回硬编码 replay。
+   - 剩余：补真实 PG route + daemon restart 后 `/replay` 验收证据；把 sessions/workitems/proposals/page detail 中的 P0.5 route set 迁出生产业务 route。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
 4. **隔离 fixture**
@@ -151,7 +152,7 @@ R0 退出门：
 - 已通过：`pnpm --filter @workhub/db test`，覆盖新增 AgentRun 恢复字段与 `agent_steps.seq`。
 - 已通过：`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"`；该命令当前仍由 package script 跑完整 `src/*.test.ts`，结果 61/61 通过。
 - 测试覆盖：fake persistence 冷启动读回 queued run、执行后读回 succeeded run、trace、workdir、active 列表。
-- 未完成：真实 PostgreSQL daemon restart 验收、P0.5 fixture 迁出、proposal merge/main 状态完整语义。
+- 未完成：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出、proposal merge/main 状态完整语义。
 
 ## 5. R2 多 worker 与订阅边界
 

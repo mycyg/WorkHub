@@ -72,13 +72,14 @@ R1 退出门：
 - 默认 `ProposalService` 已从内存实现切到 DB-backed lazy service，写入 `branches`、`proposals`、`reviews`；内存 service 只保留为测试/显式注入隔离用。
 - `POST /workitems/:id/agent-runs` 默认自动 pump：route enqueue 后后台执行 `queue.run(run_id)`；测试用 `autoRun:false` 保留手动 queue 单元边界。
 - AgentRun persistence 已落代码切片：`agent_runs` 补 `title/actor_user_id/budget_decision_json/workdir_ref/handoff_json` 等恢复字段，`agent_steps` 补 `seq` 并取消错误唯一约束；默认 queue 写穿透 DB，内存 miss 时可从 DB 读回 run/trace/workdir/listActive。
-- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/api test -- --test-name-pattern "writes through to persistence"` 已通过；最后一个命令当前实际跑完整 API test suite，61/61 通过。
+- AgentRun replay fixture fallback 已改为显式 opt-in：默认 `createAgentRunRoutes` 不再为 P0.5 run id 返回硬编码 replay；P0.5 测试/demo 必须传 `allowP05ReplayFixture:true`。
+- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/api test -- --test-name-pattern "P0.5 replay fixture"` 已通过；最后一个命令当前实际跑完整 API test suite，62/62 通过。
 
 仍不能宣称 R1 完成：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - 真实 PostgreSQL 重启后 `/agent-runs/:id` 与 `/replay` 还缺运行证据；当前测试只验证 fake persistence 冷启动恢复。
-- 生产 routes 中仍存在 P0.5 `isP05*` 分支，R1 完成前必须迁出到 demo/test-only 路径。
+- sessions/workitems/proposals/page detail 中仍存在 P0.5 `isP05*` route set，R1 完成前必须迁出到 demo/test-only 路径。
 - proposal merge 目前只落 proposal 状态与 `merge_snapshot_id`，还未把具体交付物采纳为 main 状态，也未完成 approver owner routing。
 
 下一施工顺序：

@@ -63,7 +63,8 @@ R1 当前代码切片已落：
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，但生产路由里仍保留 P0.5 fixture 分支；R1 完成前必须迁出到 demo/test-only 边界。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace；`/agent-runs/:id/replay` 的 P0.5 replay fixture fallback 已改为显式 `allowP05ReplayFixture` opt-in，生产默认不再用硬编码 replay 冒充成功。
+- 仍需迁移更大的 P0.5 route set（sessions/workitems/proposals/page detail）到 demo/test-only 边界。
 - 尚缺真实 PostgreSQL 端到端证据：file-only work item 经 route 跑完后重启 daemon，再查询 `GET /api/agent-runs/:id` 和 `/replay`。
 
 后续施工必须先完成 R1 的真实 PG 纵切与 fixture 隔离，再回到 Web/Cuu 产品化。

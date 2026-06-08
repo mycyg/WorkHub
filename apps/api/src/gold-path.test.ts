@@ -256,7 +256,12 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   app.route("/api", createWorkItemRoutes({ auth }));
   app.route("/api/knowledge", createKnowledgeRoutes({ auth }));
   app.route("/api/pages", createPageRoutes({ auth, queue: emptyQueue() }));
-  app.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue(), autoRun: false }));
+  app.route("/api", createAgentRunRoutes({
+    auth,
+    queue: emptyQueue(),
+    autoRun: false,
+    allowP05ReplayFixture: true
+  }));
   app.route("/api/proposals", createProposalRoutes({ auth, allowUnauthenticatedGoldPath: false }));
   app.route("/api/cost", createCostRoutes({ auth }));
   const headers = { Cookie: await cookie(runtimeSettings) };
@@ -360,6 +365,27 @@ test("P0.5 route set returns option question, evidence bubble, proposal detail, 
   assert.equal(costUsageBody.data.me.max_tokens, 500000);
   assert.equal(costUsageBody.data.scopes.length >= 2, true);
   assert.equal(typeof costUsageBody.data.generated_at, "string");
+});
+
+test("P0.5 replay fixture is explicit opt-in and production routes fail closed by default", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const headers = { Cookie: await cookie(runtimeSettings) };
+  const defaultApp = withErrors(new Hono<AuthEnv>());
+  defaultApp.route("/api", createAgentRunRoutes({ auth, queue: emptyQueue(), autoRun: false }));
+  const demoApp = withErrors(new Hono<AuthEnv>());
+  demoApp.route("/api", createAgentRunRoutes({
+    auth,
+    queue: emptyQueue(),
+    autoRun: false,
+    allowP05ReplayFixture: true
+  }));
+
+  const defaultResponse = await defaultApp.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
+  const demoResponse = await demoApp.request(`/api/agent-runs/${p05GoldPathIds.run}/replay`, { headers });
+
+  assert.equal(defaultResponse.status, 404);
+  assert.equal(demoResponse.status, 200);
 });
 
 test("P0.5 proposal review requires a reason on request changes and feeds it back to the next Agent context", async () => {
