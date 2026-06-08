@@ -176,7 +176,27 @@ pnpm qa:r1-pg-smoke
 
 - `pnpm qa:r1-pg-smoke` 可加载脚本，但因 `127.0.0.1:5432` 无 PostgreSQL 返回 `ECONNREFUSED`。
 - 本机 `docker` 与 `psql` 不在 PATH，无法在 Windows 本机直接拉起或检查 PG。
-- 下一步应在 Linux 测试机或已安装 PG/Docker 的环境运行该命令，获取真实通过输出后再关闭 R1 restart 验收缺口。
+
+Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，repo commit `fca5634`）：
+
+```json
+{
+  "ok": true,
+  "run_status": "succeeded",
+  "db_rows": {
+    "agent_runs": 1,
+    "agent_steps": 4,
+    "proposals": 1,
+    "snapshots": 1,
+    "audit_logs": 1
+  },
+  "replay_steps": 4,
+  "replay_snapshots": 1,
+  "replay_audit_logs": 1
+}
+```
+
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭。仍不能宣称 R1 全部完成，因为 P0.5 route set 仍有生产分支残留，proposal merge/main 状态也未完整落地。
 
 ## 5. R2 多 worker 与订阅边界
 

@@ -73,22 +73,21 @@ R1 退出门：
 - `POST /workitems/:id/agent-runs` 默认自动 pump：route enqueue 后后台执行 `queue.run(run_id)`；测试用 `autoRun:false` 保留手动 queue 单元边界。
 - AgentRun persistence 已落代码切片：`agent_runs` 补 `title/actor_user_id/budget_decision_json/workdir_ref/handoff_json` 等恢复字段，`agent_steps` 补 `seq` 并取消错误唯一约束；默认 queue 写穿透 DB，内存 miss 时可从 DB 读回 run/trace/workdir/listActive。
 - AgentRun replay fixture fallback 已改为显式 opt-in：默认 `createAgentRunRoutes` 不再为 P0.5 run id 返回硬编码 replay；P0.5 测试/demo 必须传 `allowP05ReplayFixture:true`。
-- R1 PG smoke 入口已新增：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 route、DB-backed AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay。
+- R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 route、DB-backed AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；通过证据为 `agent_runs=1`、`agent_steps=4`、`proposals=1`、`snapshots=1`、`audit_logs=1`、`replay_steps=4`。
 - 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/db typecheck`、`pnpm --filter @workhub/db test`、`pnpm --filter @workhub/api test -- --test-name-pattern "P0.5 replay fixture"` 已通过；最后一个命令当前实际跑完整 API test suite，62/62 通过。
 
 仍不能宣称 R1 完成：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
-- 真实 PostgreSQL 重启后 `/agent-runs/:id` 与 `/replay` 还缺通过证据；本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通。
+- Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 Linux 测试机已给出真实 PG 通过证据。
 - sessions/workitems/proposals/page detail 中仍存在 P0.5 `isP05*` route set，R1 完成前必须迁出到 demo/test-only 路径。
 - proposal merge 目前只落 proposal 状态与 `merge_snapshot_id`，还未把具体交付物采纳为 main 状态，也未完成 approver owner routing。
 
 下一施工顺序：
 
-1. 用真实 PostgreSQL route 跑一条 file-only work item：run -> manifest -> proposal -> review/merge -> replay，并记录 daemon restart 后查询证据。
-2. 清理生产 P0.5 fixture 分支，只保留 `/api/pages/gold-path` demo bundle。
-3. 补 proposal merge/main 状态、merge snapshot 与 approver owner routing。
-4. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
+1. 清理生产 P0.5 fixture 分支，只保留 `/api/pages/gold-path` demo bundle。
+2. 补 proposal merge/main 状态、merge snapshot 与 approver owner routing。
+3. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
 ## 3. R2 真正解除单 worker
 
