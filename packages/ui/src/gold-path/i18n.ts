@@ -1,14 +1,21 @@
-export type WorkHubLocale = "zh-CN" | "en-US";
+import {
+  normalizeWorkHubLocale as normalizeWorkHubLocaleContract,
+  type WorkHubLocale
+} from "@workhub/contracts";
+
+export {
+  defaultWorkHubLocale,
+  normalizeWorkHubLocale,
+  workHubLocaleSchema,
+  workHubLocaleStorageKey,
+  type WorkHubLocale
+} from "@workhub/contracts";
 
 export type WorkHubLocaleOption = {
   locale: WorkHubLocale;
   label: string;
   shortLabel: string;
 };
-
-export const defaultWorkHubLocale: WorkHubLocale = "zh-CN";
-
-export const workHubLocaleStorageKey = "workhub.locale";
 
 export const workHubLocaleOptions = [
   { locale: "zh-CN", label: "中文", shortLabel: "中" },
@@ -324,20 +331,6 @@ const goldPathCopy = {
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 
-export function normalizeWorkHubLocale(value: unknown): WorkHubLocale {
-  if (typeof value !== "string") {
-    return defaultWorkHubLocale;
-  }
-  const normalized = value.trim().toLowerCase().replace(/_/gu, "-");
-  if (normalized === "en" || normalized.startsWith("en-")) {
-    return "en-US";
-  }
-  if (normalized === "zh" || normalized === "zh-cn" || normalized.startsWith("zh-hans")) {
-    return "zh-CN";
-  }
-  return defaultWorkHubLocale;
-}
-
 export function goldPathT(locale: unknown, key: GoldPathCopyKey): string {
-  return goldPathCopy[normalizeWorkHubLocale(locale)][key];
+  return goldPathCopy[normalizeWorkHubLocaleContract(locale)][key];
 }

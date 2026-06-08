@@ -2,14 +2,18 @@ import { createApiClient } from "@workhub/api-client/client";
 import {
   createCuuController,
   createCuuIdleScheduler,
+  cuuFormat,
   cuuMotionForState,
+  cuuT,
   type CuuCard,
   type CuuController,
   type CuuIdleMicroAction,
   type CuuIdleScheduler,
   type CuuIdleSchedulerPolicy,
+  type CuuLocaleOptions,
   type CuuMotionHint
 } from "@workhub/cuu";
+import { normalizeWorkHubLocale, workHubLocaleStorageKey, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   renderDesktopCuuCatLive2DForIdleAction,
@@ -212,7 +216,9 @@ export function renderDesktopPetSurface(input: {
   window_mode_error?: string | undefined;
   window_mode_status?: "syncing" | "failed" | undefined;
   requested_model_pack_id?: string | undefined;
+  locale?: CuuLocaleOptions["locale"];
 } = {}): DesktopPetSurfaceRender {
+  const locale = input.locale ?? desktopPetLocale();
   const compactCard = Boolean(input.card && input.window_mode_error);
   const windowMode = compactCard ? "body_only" : desktopPetWindowModeForCard(input.card);
   const settings = input.pet_window_settings ?? defaultDesktopPetWindowSettings();
@@ -230,7 +236,7 @@ export function renderDesktopPetSurface(input: {
   const motion = desktopPetVisibleMotion(input.card?.motion ?? cuuMotionForState("idle"), {
     has_card: Boolean(input.card),
     compact_card: compactCard
-  });
+  }, locale);
   const displayWidth = input.display_width_px ?? Math.round((compactCard ? 92 : input.card ? 138 : 148) * scaleRatio);
   const live2d = input.card
     ? renderDesktopCuuCatLive2DForMotion(motion, {
@@ -249,7 +255,7 @@ export function renderDesktopPetSurface(input: {
         include_reject_reasons: input.include_reject_reasons,
         compact: compactCard,
         window_mode_error: input.window_mode_error
-      })
+      }, locale)
     : "";
   const cardAttrs = input.card
     ? ` data-pet-card-kind="${escapeHtml(input.card.kind)}" data-pet-card-priority="${escapeHtml(input.card.priority)}" data-pet-card-has-context="${petCardHasContext(input.card) ? "true" : "false"}"`
@@ -284,12 +290,20 @@ export function renderDesktopPetSurface(input: {
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${live2d.css}`,
     html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
-      <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="Cuu 桌宠">
+      <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}">
         ${live2d.html}
       </button>
       ${bubble}
     </section>`
   };
+}
+
+export function desktopPetLocale(input?: unknown): WorkHubLocale {
+  const target = globalThis as typeof globalThis & {
+    localStorage?: Storage;
+    navigator?: Navigator;
+  };
+  return normalizeWorkHubLocale(input ?? target.localStorage?.getItem(workHubLocaleStorageKey) ?? target.navigator?.language);
 }
 
 export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
@@ -311,14 +325,18 @@ function petWindowSize(mode: DesktopPetWindowMode) {
     : { width: 180, height: 220 };
 }
 
-function desktopPetVisibleMotion(motion: CuuMotionHint, input: { has_card: boolean; compact_card: boolean }): CuuMotionHint {
+function desktopPetVisibleMotion(
+  motion: CuuMotionHint,
+  input: { has_card: boolean; compact_card: boolean },
+  locale: WorkHubLocale
+): CuuMotionHint {
   if (input.has_card && !input.compact_card && motion.sprite_state === "offline_sleep") {
     return {
       ...motion,
       sprite_state: "worried_ears",
       emphasis: "urgent",
       loop: true,
-      reduced_motion_fallback: "Cuu 遇到连接问题，正在提醒你。"
+      reduced_motion_fallback: cuuT(locale, "pet.reducedMotionOffline")
     };
   }
   return motion;
@@ -362,6 +380,7 @@ export async function bootDesktopPetSurface(
     petWindowBridge?: DesktopPetWindowBridge | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
+  const locale = desktopPetLocale();
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
@@ -402,8 +421,9 @@ export async function bootDesktopPetSurface(
       pet_window_settings: petWindowSettings,
       requested_model_pack_id: controller.snapshot().preferences.pet_model_pack_id,
       pointer_snapshot: pointerSnapshot,
-      window_mode_error: compactCard ? petWindowModeError ?? "Cuu 轻卡窗口正在展开。" : undefined,
-      window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined
+      window_mode_error: compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined,
+      window_mode_status: compactCard ? petWindowModeError ? "failed" : "syncing" : undefined,
+      locale
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
     syncPetWindowSettings(petWindowSettings);
@@ -452,7 +472,9 @@ export async function bootDesktopPetSurface(
       event.preventDefault();
       const selection = selectPetCardOption(currentCard, optionButton.dataset.petOptionId ?? "");
       currentCard = selection.card;
-      statusText = selection.label ? `已选：${selection.label}，点确认继续。` : "已调整选项，点确认继续。";
+      statusText = selection.label
+        ? cuuFormat(locale, "pet.selectedWithLabel", { label: selection.label })
+        : cuuT(locale, "pet.selectedFallback");
       pendingAction = undefined;
       render();
       return;
@@ -464,11 +486,12 @@ export async function bootDesktopPetSurface(
         const result = await submitDesktopCuuAction({
           client,
           action: pendingAction,
-          reasonMd: reasonButton.dataset.petReason ?? "需要调整"
+          reasonMd: reasonButton.dataset.petReason ?? cuuT(locale, "pet.reasonDefault"),
+          locale
         });
         setCard(result.card ?? currentCard, result.message);
       } catch (error) {
-        statusText = actionMessage(error);
+        statusText = actionMessage(error, locale);
         render();
       }
       return;
@@ -491,7 +514,7 @@ export async function bootDesktopPetSurface(
       const selectedOptionIds = selectedOptionIdsFromCard(currentCard);
       if (selectedOptionIds.length === 0) {
         event.preventDefault();
-        statusText = "先点一个选项，Cuu 再继续。";
+        statusText = cuuT(locale, "pet.optionRequired");
         pendingAction = undefined;
         render();
         return;
@@ -508,15 +531,15 @@ export async function bootDesktopPetSurface(
     event.preventDefault();
     if (action.kind === "approval-response" && action.requiresReason && action.decision === "deny") {
       pendingAction = action;
-      statusText = "先点一个原因，Cuu 会带着它继续改。";
+      statusText = cuuT(locale, "pet.reasonRequired");
       render();
       return;
     }
     try {
-      const result = await submitDesktopCuuAction({ client, action });
+      const result = await submitDesktopCuuAction({ client, action, locale });
       setCard(result.card ?? currentCard, result.message);
     } catch (error) {
-      statusText = actionMessage(error);
+      statusText = actionMessage(error, locale);
       render();
     }
   });
@@ -526,7 +549,8 @@ export async function bootDesktopPetSurface(
     controller,
     notify(notice) {
       setCard(notice.card);
-    }
+    },
+    locale
   });
   let samplingCursor = false;
   const idleTimer = window.setInterval(() => {
@@ -621,7 +645,7 @@ export async function bootDesktopPetSurface(
         }
         syncingPetWindowMode = undefined;
         failedPetWindowMode = mode;
-        petWindowModeError = actionMessage(error);
+        petWindowModeError = actionMessage(error, locale);
       render();
     });
   }
@@ -684,22 +708,22 @@ function renderDesktopPetBubble(input: {
   include_reject_reasons?: boolean | undefined;
   compact?: boolean | undefined;
   window_mode_error?: string | undefined;
-}) {
+}, locale: WorkHubLocale) {
   const card = input.card;
   const compact = Boolean(input.compact);
-  const kind = card && !compact ? `<span class="wh-pet-kind">${escapeHtml(petCardKindLabel(card.kind))}</span>` : "";
+  const kind = card && !compact ? `<span class="wh-pet-kind">${escapeHtml(petCardKindLabel(card.kind, locale))}</span>` : "";
   const priority =
     card && !compact && card.priority !== "normal"
-      ? `<span class="wh-pet-priority" data-priority="${escapeHtml(card.priority)}">${escapeHtml(petPriorityLabel(card.priority))}</span>`
+      ? `<span class="wh-pet-priority" data-priority="${escapeHtml(card.priority)}">${escapeHtml(petPriorityLabel(card.priority, locale))}</span>`
       : "";
   const chips = compact ? "" : (card?.chips ?? []).slice(0, 4).map((chip) => renderPetChip(chip, card)).join("");
   const actions = (card?.actions ?? []).slice(0, compact ? 1 : 3).map(renderPetAction).join("");
   const progress = !compact && card?.progress?.length ? renderPetProgress(card.progress) : "";
   const sections = !compact && card?.sections?.length ? renderPetSections(card.sections) : "";
-  const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs) : "";
-  const inputHint = !compact && card?.input ? renderPetInputHint(card.input) : "";
+  const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs, locale) : "";
+  const inputHint = !compact && card?.input ? renderPetInputHint(card.input, locale) : "";
   const context = [progress, sections, evidence, inputHint].filter(Boolean).join("");
-  const reasons = !compact && input.include_reject_reasons ? renderRejectReasons() : "";
+  const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
   return `<aside class="wh-pet-bubble" data-pet-bubble="true" ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}>
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
@@ -737,8 +761,15 @@ function renderPetAction(action: CuuCard["actions"][number]) {
   return `<a class="wh-pet-action" href="${escapeHtml(action.href)}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
 }
 
-function renderRejectReasons() {
-  return '<div class="wh-pet-reasons"><button class="wh-pet-reason" type="button" data-pet-reason="证据不足">证据不足</button><button class="wh-pet-reason" type="button" data-pet-reason="范围太大">范围太大</button><button class="wh-pet-reason" type="button" data-pet-reason="交付格式要改">交付格式要改</button></div>';
+function renderRejectReasons(locale: WorkHubLocale) {
+  const reasons = [
+    cuuT(locale, "pet.reject.evidence"),
+    cuuT(locale, "pet.reject.scope"),
+    cuuT(locale, "pet.reject.format")
+  ];
+  return `<div class="wh-pet-reasons">${reasons
+    .map((reason) => `<button class="wh-pet-reason" type="button" data-pet-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
+    .join("")}</div>`;
 }
 
 function renderPetProgress(steps: NonNullable<CuuCard["progress"]>) {
@@ -763,22 +794,24 @@ function renderPetSections(sections: NonNullable<CuuCard["sections"]>) {
     .join("");
 }
 
-function renderPetEvidence(evidenceRefs: NonNullable<CuuCard["evidence_refs"]>) {
+function renderPetEvidence(evidenceRefs: NonNullable<CuuCard["evidence_refs"]>, locale: WorkHubLocale) {
   const refs = evidenceRefs.slice(0, 2);
   const hiddenCount = evidenceRefs.length - refs.length;
   const items = refs
     .map((ref) => `<span class="wh-pet-evidence-item" data-evidence-ref-id="${escapeHtml(ref.id)}">${escapeHtml(evidenceLabel(ref))}</span>`)
     .join("");
-  const suffix = hiddenCount > 0 ? `<span class="wh-pet-evidence-item">还有 ${hiddenCount} 条证据</span>` : "";
-  return `<div class="wh-pet-evidence" data-pet-evidence-count="${escapeHtml(evidenceRefs.length)}"><span class="wh-pet-evidence-title">证据</span>${items}${suffix}</div>`;
+  const suffix = hiddenCount > 0
+    ? `<span class="wh-pet-evidence-item">${escapeHtml(cuuFormat(locale, "pet.evidenceMore", { count: hiddenCount }))}</span>`
+    : "";
+  return `<div class="wh-pet-evidence" data-pet-evidence-count="${escapeHtml(evidenceRefs.length)}"><span class="wh-pet-evidence-title">${escapeHtml(cuuT(locale, "pet.evidenceTitle"))}</span>${items}${suffix}</div>`;
 }
 
-function renderPetInputHint(input: NonNullable<CuuCard["input"]>) {
+function renderPetInputHint(input: NonNullable<CuuCard["input"]>, locale: WorkHubLocale) {
   const text = input.option_first
     ? input.free_text_enabled
-      ? "点选项即可，补充文字已折叠"
-      : "点选项即可继续"
-    : "Cuu 需要你补一句";
+      ? cuuT(locale, "pet.input.optionWithText")
+      : cuuT(locale, "pet.input.optionOnly")
+    : cuuT(locale, "pet.input.textNeeded");
   return `<div class="wh-pet-input-hint" data-pet-input-mode="${escapeHtml(input.mode)}" data-pet-option-first="${input.option_first ? "true" : "false"}" data-pet-free-text-collapsed="${input.free_text_collapsed_by_default ? "true" : "false"}">${escapeHtml(text)}</div>`;
 }
 
@@ -787,41 +820,41 @@ function evidenceLabel(ref: NonNullable<CuuCard["evidence_refs"]>[number]) {
   return locator ? `${ref.title} · ${locator}` : ref.title;
 }
 
-function petCardKindLabel(kind: CuuCard["kind"]) {
+function petCardKindLabel(kind: CuuCard["kind"], locale: WorkHubLocale) {
   switch (kind) {
     case "question":
-      return "澄清";
+      return cuuT(locale, "pet.kind.question");
     case "approval":
-      return "审批";
+      return cuuT(locale, "pet.kind.approval");
     case "proposal":
-      return "变更";
+      return cuuT(locale, "pet.kind.proposal");
     case "evidence":
-      return "证据";
+      return cuuT(locale, "pet.kind.evidence");
     case "budget":
-      return "预算";
+      return cuuT(locale, "pet.kind.budget");
     case "sync":
-      return "同步";
+      return cuuT(locale, "pet.kind.sync");
     case "trace":
-      return "进度";
+      return cuuT(locale, "pet.kind.trace");
     case "completion":
-      return "完成";
+      return cuuT(locale, "pet.kind.completion");
     case "offline":
-      return "离线";
+      return cuuT(locale, "pet.kind.offline");
     case "bubble":
-      return "提醒";
+      return cuuT(locale, "pet.kind.bubble");
   }
 }
 
-function petPriorityLabel(priority: CuuCard["priority"]) {
+function petPriorityLabel(priority: CuuCard["priority"], locale: WorkHubLocale) {
   switch (priority) {
     case "urgent":
-      return "急";
+      return cuuT(locale, "pet.priority.urgent");
     case "high":
-      return "高";
+      return cuuT(locale, "pet.priority.high");
     case "low":
-      return "低";
+      return cuuT(locale, "pet.priority.low");
     case "normal":
-      return "普通";
+      return cuuT(locale, "pet.priority.normal");
   }
 }
 
@@ -829,8 +862,8 @@ function clientToken() {
   return globalThis.localStorage?.getItem("workhub_client_token") ?? globalThis.localStorage?.getItem("yqgl_client_token") ?? undefined;
 }
 
-function actionMessage(error: unknown) {
-  return error instanceof Error ? error.message : "动作提交失败，请稍后再试。";
+function actionMessage(error: unknown, locale: WorkHubLocale) {
+  return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
 }
 
 function escapeHtml(value: unknown) {

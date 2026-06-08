@@ -167,20 +167,23 @@ shared/
 
 > **CSS 类的「双轨」现状**：kit 自身的 24 个组件用 Tailwind 原子类（`bg-accent`/`text-ink`…）。但两端老页面里还存在 `button-ghost`/`pill`/`paper-surface`/`app-shell` 这类**应用级语义类**（见 `web/src/App.tsx:215/225`），它们不在 kit 内、由各端 `index.css` 定义。**WorkHub 收敛方向**：高频语义类（按钮、pill、卡面）应上提进 kit 或统一走 `Button`/`Badge`/`Card`，消除两端漂移（开放问题 §10-OQ1）。
 
-### 3.3 WorkHub 当前 i18n 底座（2026-06-07 已落）
+### 3.3 WorkHub 当前 i18n / locale 底座（2026-06-08 已落）
 
-当前 WorkHub 主仓已经先落了 **P1.0 中英双语运行时底座**，位置不在旧 `@yqgl/shared` React 组件包，而在当前 TS-first preview shell：
+当前 WorkHub 主仓已经落到 **P1.1 Locale Contract Propagation**。locale 不再只是 `packages/ui` 内部词表，而是 `packages/contracts` 的跨端合同；`packages/ui` 只负责 Gold Path 固定 chrome 的词表和渲染。
 
 | 能力 | Target TS paths | 当前状态 |
 |---|---|---|
-| locale 类型 / 词表 / storage key | `packages/ui/src/gold-path/i18n.ts` | 已落 `WorkHubLocale = "zh-CN" | "en-US"`、`workhub.locale`、`normalizeWorkHubLocale()`、`goldPathT()` |
-| Gold Path 静态文案本地化 | `packages/ui/src/gold-path/render.ts` | 已覆盖 shell 内静态 chrome、Cuu rail 状态文案、空态、按钮、预算/成本/回放等固定标签 |
+| locale 类型 / storage key | `packages/contracts/src/locale.ts` | 已落 `WorkHubLocale = "zh-CN" | "en-US"`、`workhub.locale`、`defaultWorkHubLocale`、`normalizeWorkHubLocale()` |
+| Gold Path 静态文案本地化 | `packages/ui/src/gold-path/i18n.ts`、`packages/ui/src/gold-path/render.ts` | UI 复用 contracts locale，覆盖 shell 内静态 chrome、空态、按钮、预算/成本/回放等固定标签 |
 | 顶栏语言切换 | `packages/ui/src/gold-path/app-shell.ts` | 已在 Web / desktop webview 共享 shell 右上角渲染 `中 / EN` segmented control |
-| Web 运行时接线 | `apps/web/src/browser.ts`、`apps/web/src/main.ts` | 已从 `localStorage` / `navigator.language` 读取语言，切换后 reload 并持久化 |
-| Desktop webview 接线 | `apps/desktop-webview/src/browser.ts`、`apps/desktop-webview/src/main.ts` | 已接同一套语言切换，并把 Cuu 队列 badge、审批原因按钮、动作失败/未接线提示本地化 |
-| 测试门 | `packages/ui/src/gold-path/*test.ts`、`apps/web/src/main.test.ts`、`apps/desktop-webview/src/main.test.ts` | 已覆盖 locale 规范化、英文静态文案、shell 语言按钮和两端入口函数 |
+| Page VM typed client | `packages/api-client/src/types.ts`、`packages/api-client/src/client.ts` | `PageRequestOptions.locale` 已接入 `pages.goldPath/workItem/proposal/attention/approvals/cost` |
+| API Page envelope | `apps/api/src/routes/pages.ts` | 读取 `?locale=` 或 `Accept-Language`，返回 `meta.locale` |
+| Web 运行时接线 | `apps/web/src/browser.ts`、`apps/web/src/main.ts` | 已从 `localStorage` / `navigator.language` 读取语言，切换后 reload 并持久化；Page VM 请求带 locale |
+| Desktop webview / pet 接线 | `apps/desktop-webview/src/browser.ts`、`apps/desktop-webview/src/main.ts`、`apps/desktop-webview/src/pet-surface.ts` | 主窗 Page VM 请求带 locale；独立 pet 轻气泡、shell status 和动作结果固定文案可中英切换 |
+| Cuu card 固定文案 | `packages/cuu/src/i18n.ts`、`packages/cuu/src/cards.ts` | approval、budget、cost、replay、event fallback、action label 等固定文案双语；动态摘要保留原文 |
+| 测试门 | `packages/contracts`、`packages/ui`、`packages/api-client`、`apps/api`、`apps/web`、`apps/desktop-webview`、`packages/cuu` | 已覆盖 locale 规范化、page query/meta、英文静态文案、Cuu fixed copy 和两端入口函数 |
 
-边界：本轮只本地化**客户端固定文案**，不伪造后端返回的任务标题、摘要、证据摘录、proposal manifest、Cuu card payload。下一阶段要在 `packages/contracts` / `apps/api/routes/pages` 增加字段级 locale 契约，至少让 `GET /api/pages/*` 支持 `locale` 或用户偏好，并让 Cuu card adapter 同步返回对应语言的 `title` / `body` / `action.label`。
+边界：本轮只本地化**客户端固定文案**，不伪造后端返回的任务标题、摘要、证据摘录、proposal manifest 或 event summary。下一阶段是 `P1.2 Non-GoldPath render helpers`：把 `packages/ui/src/intake`、`workitem`、`proposal`、`agent-run` 的固定标签抽成词表，并做中英截图门。详细合同见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。
 
 ---
 

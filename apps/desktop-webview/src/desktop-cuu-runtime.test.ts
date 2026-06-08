@@ -371,6 +371,39 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-bongo/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
   assert.doesNotMatch(desktopCuuNoticeCss, /wh-cuu-sprite/u);
+
+  assert.equal(desktopCuuNoticeMessage({
+    id: "card-en",
+    kind: "offline",
+    state: "offline",
+    motion: {
+      state: "offline",
+      sprite_state: "offline_sleep",
+      emphasis: "calm",
+      loop: true,
+      reduced_motion_fallback: "Cuu is offline."
+    },
+    title: "Disconnected",
+    message: "Reconnecting.",
+    priority: "normal",
+    actions: []
+  }, { locale: "en-US" }), "Cuu: Disconnected");
+  assert.match(renderDesktopCuuNotice({
+    id: "card-en",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu is waiting."
+    },
+    title: "Pick one",
+    message: "No typing needed.",
+    priority: "high",
+    actions: []
+  }, { locale: "en-US" }), /Waiting for you/u);
 });
 
 test("desktop Cuu actions submit approval choices through the typed API client", async () => {
@@ -414,6 +447,11 @@ test("desktop Cuu actions submit approval choices through the typed API client",
     { id: "approval-1", payload: { decision: "allow", remember: "once" } },
     { id: "approval-1", payload: { decision: "deny", reason_md: "证据不足", remember: "once" } }
   ]);
+
+  assert.equal(
+    (await submitDesktopCuuAction({ client, action: allow!, locale: "en-US" })).message,
+    "Cuu got it: this step is approved."
+  );
 });
 
 test("desktop Cuu actions advance option-first clarification sessions", async () => {

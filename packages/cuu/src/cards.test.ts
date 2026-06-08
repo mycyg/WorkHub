@@ -89,6 +89,10 @@ test("question cards stay option-first and keep free text collapsed", () => {
   assert.equal(card.input?.free_text_collapsed_by_default, true);
   assert.equal(card.chips?.find((chip) => chip.id === "brief")?.recommended, true);
   assert.equal(card.actions[0]?.href, "/api/sessions/session-1/next-question");
+
+  const english = cardFromQuestionCard({ ...question, body: undefined }, { locale: "en-US" });
+  assert.equal(english.message, "Pick one option and Cuu will keep going.");
+  assert.equal(english.actions[0]?.label, "Confirm option");
 });
 
 test("session VMs become option-first Cuu question cards", () => {
@@ -191,6 +195,10 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
   assert.equal(card.sections?.some((section) => section.title === "风险与回滚"), true);
   assert.equal(card.chips?.[0]?.label, "docs/weekly-report.md");
   assert.equal(card.evidence_refs?.[0]?.title, "原始需求");
+
+  const english = cardFromProposalDetail(proposal, { locale: "en-US" });
+  assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
+  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback available")), true);
 });
 
 test("work item detail becomes a lightweight Cuu task card", () => {
@@ -361,6 +369,13 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(eventCard.id, "event-budget");
   assert.equal(eventCard.kind, "budget");
   assert.equal(eventCard.actions[0]?.href, `/api/workitems/${workItemId}/pause`);
+
+  const { options: _options, ...budgetNoticeWithoutOptions } = budgetNotice;
+  const english = cardFromBudgetNotice(budgetNoticeWithoutOptions, "budget-card-en", { locale: "en-US" });
+  assert.equal(english.title, "Budget exhausted");
+  assert.equal(english.actions[0]?.label, "Handle budget");
+  assert.equal(english.chips?.[0]?.label, "Task budget");
+  assert.equal(english.chips?.[1]?.description, "Budget usage");
 });
 
 test("generic permission events still map through attention into Cuu approval cards", () => {
@@ -411,4 +426,16 @@ test("agent run events become trace and completion cards for live Cuu updates", 
   assert.equal(doneCard.kind, "completion");
   assert.equal(doneCard.state, "celebrating");
   assert.equal(doneCard.actions[0]?.tone, "primary");
+
+  const { preview_text: _stepPreview, ...stepWithoutPreview } = step;
+  const english = cardFromEvent(stepWithoutPreview, { locale: "en-US" });
+  assert.equal(english.title, "Cuu is working");
+  assert.equal(english.message, "读取项目文档");
+  assert.equal(english.actions[0]?.label, "View replay");
+
+  const englishFallback = cardFromEvent(
+    { ...stepWithoutPreview, data: { kind: "step" } },
+    { locale: "en-US" }
+  );
+  assert.equal(englishFallback.message, "Cuu is organizing the run progress.");
 });

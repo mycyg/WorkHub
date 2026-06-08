@@ -224,7 +224,7 @@ visuals:
 | `packages/cuu/src/live2d-psd-draft.ts` | 校验 PSD draft runtime probe 必需层，防止缺眼睛/尾巴/流苏仍被当成通过 |
 | `apps/desktop-webview/src/cuu-live2d-psd-draft-assets.ts` | 从 144 层 draft 中显式列出 72 个运行时探针层和坐标 |
 | `apps/desktop-webview/src/cuu-live2d-psd-draft-runtime.ts` | 渲染 layer PNG、data attrs 和 tail/ear/eye/mouth/bow/tassel/paw 动作 |
-| `apps/desktop-webview/src/pet-surface.ts` | 曾用于验证 `psd_draft_probe -> prototype_layered -> sprite_atlas`；现默认已切到 `bongo_cuu` |
+| `apps/desktop-webview/src/pet-surface.ts` | 曾用于验证 `psd_draft_probe -> prototype_layered -> sprite_atlas`；该路线后续被 Bongo 止损，再被黑猫/白猫 Live2D 二选项覆盖 |
 | `scripts/qa/cuu-pet-browser-capture.mjs` | 通过 Chrome CDP 多帧截图、DOM dump 和报告生成 |
 
 验收结论：
@@ -247,9 +247,11 @@ visuals:
 4. 用 Cubism Editor 导入 v2 精修 PSD，绑定 `ParamEyeOpen`、`ParamTailSway`、`ParamTasselSwing`、`ParamPawTap`、`ParamAngleX/Y`、`ParamEyeBallX/Y` 等参数。
 5. 录制真实 Tauri 透明 `Cuu` window 多秒动作，验收眨眼、尾巴、耳朵、流苏、看鼠标和任务动作。
 
-### 0.5 CUX-BONGO-001：低恐怖谷默认 Cuu（2026-06-08）
+### 0.5 CUX-BONGO-001：低恐怖谷默认 Cuu（2026-06-08，历史反例）
 
-用户复核结论：PSD draft 会触发恐怖谷风险，不适合作为默认桌宠。参考 [BongoCat](https://github.com/ayangweb/BongoCat) 后，本轮把默认 pet renderer 改为 `bongo_cuu`：扁平圆润、少状态强反馈、形体稳定，不依赖 AI 生成肢体。
+> **2026-06-08 后续覆盖**：本节记录 Bongo 用于从 PSD 恐怖谷中止损的历史过程。用户随后明确否决 CSS/几何临摹作为最终视觉，源码已清理 Bongo runtime。当前默认只允许黑猫 Hijiki / 白猫 Tororo Live2D 二选项，详见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
+
+用户复核结论：PSD draft 会触发恐怖谷风险，不适合作为默认桌宠。参考 [BongoCat](https://github.com/ayangweb/BongoCat) 后，当时曾把 pet renderer 改为 `bongo_cuu`：扁平圆润、少状态强反馈、形体稳定，不依赖 AI 生成肢体。该路线现在只作为历史反例与动作 storyboard。
 
 2026-06-08 BONGO-REF 追加：参考项目已下载到 `reference/BongoCat/` 学习，不提交。当前吸收的是模型包、输入动作映射、独立窗口手感和低恐怖谷默认哲学；代码中新增 `CuuModelPackManifest`，把“默认可展示”变成可测试合同。任何 PSD draft 即使能渲染，也不得标记为默认候选。BONGO-P2a-a 已进一步把 `listCuuModelPacks()`、`describeCuuModelPackChoices()`、`resolveCuuVisibleModelPack()` 接进代码：Live2D 候选可在设置页展示为 `experimental_locked`，但默认 surface 会回退到 `cuu-bongo-p1`。
 
@@ -578,11 +580,23 @@ P1d-a 已经把 scale / opacity / pass-through 做成 TS/Rust 合同，P1d-b-a �
 |---|---|
 | 设计对齐 | 语言切换放在右上角轻量 segmented control，不抢 AI-first 主路径；符合概念图里“主界面只保留必要入口”的方向 |
 | 已落路径 | `packages/ui/src/gold-path/i18n.ts`、`packages/ui/src/gold-path/render.ts`、`packages/ui/src/gold-path/app-shell.ts`、`apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` |
-| 已落能力 | `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome、Cuu rail 状态、Web/desktop 运行时提示、桌面 Cuu 队列 badge 与审批原因按钮 |
+| 已落能力 | `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome、Web/desktop 运行时提示；后续主窗已撤回 Cuu rail / queue badge |
 | 测试 | `@workhub/ui` 覆盖 locale 规范化、英文静态文案、shell 语言按钮；`@workhub/web` / `@workhub/desktop-webview` 覆盖 locale 入口函数 |
-| 未完成 | API Page VM 动态标题/摘要、proposal manifest、Cuu card payload、独立 pet 轻气泡仍跟随 daemon 原文；后续必须从 contracts/API 层补字段级 locale |
+| 未完成 | API Page VM 动态标题/摘要、proposal manifest、证据摘录仍跟随 daemon 原文；后续必须让 daemon/Agent 按 locale 生成可本地化摘要 |
 
 验收口径：切到 English 后，静态框架必须出现 `Needs your decision` / `Budget and cost` / `Language`，审批原因按钮也必须是英文；如果任务标题仍是中文，只能说明服务端 VM 尚未做多语种，不能把它伪装成本地化完成。
+
+### 0.7 P1.1 Locale Contract Propagation（2026-06-08）
+
+P1.1 已把双语能力从 Gold Path shell 推进到跨端合同，详见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。
+
+| 检查项 | 当前结论 |
+|---|---|
+| 合同来源 | `packages/contracts/src/locale.ts` 是 `WorkHubLocale` / storage key / normalize 的单一真相源 |
+| API 对齐 | `GET /api/pages/*?locale=` 已回 `meta.locale`；`packages/api-client` 的 `pages.*` 方法可带 `PageRequestOptions.locale` |
+| Web / desktop 主窗 | `apps/web` 与 `apps/desktop-webview` 加载 Gold Path Page VM 时传当前 locale；主窗保持严肃界面，不展示 Cuu 形象 |
+| Cuu / pet | `packages/cuu/src/i18n.ts`、Cuu card adapter、desktop shell bridge、独立 pet 轻气泡固定文案支持中英；动态 event summary 原样保留 |
+| 仍未完成 | `packages/ui/src/intake/workitem/proposal/agent-run` 非 Gold Path helper 固定标签仍需 P1.2 抽词表；还缺中英视觉截图门和 `me.locale` 跨设备偏好 |
 
 ---
 
@@ -642,18 +656,18 @@ P1d-a 已经把 scale / opacity / pass-through 做成 TS/Rust 合同，P1d-b-a �
 
 | 范围 | 当前截图事实 | 与概念图的距离 | 严重度 |
 |---|---|---|---|
-| Web 首页 | 有 Gold Path 左栏、中心单卡、右侧 Cuu 证据卡 | 还不是 AI-first Command Center；缺顶部自然语言输入、任务流、风险流、Next best actions、右侧 assistant 结构 | P1 |
+| Web 首页 | 有 Gold Path 左栏、中心单卡和严肃页面设置；Cuu rail / 主窗桌宠入口已撤回 | 还不是 AI-first Command Center；缺顶部自然语言输入、任务流、风险流、Next best actions 和完整右侧业务上下文 | P1 |
 | Web intake | 有选项卡和按钮 | 方向正确，但缺 stepper、附件/DDL/负责人/验收项、request summary、Cuu 推荐气泡和折叠文本输入 | P1 |
 | Web proposal | 有交付物卡、按钮、部分输出 | 接近 PR-like 方向，但缺文件/证据/评论/风险/回滚的完整结构和可视 diff | P1 |
 | Web replay | 有 trace/replay 页面 | 仍偏数据面板，缺人话 timeline、cost footer、snapshot/revert、脱敏 raw 展开 | P2 |
 | Web cost | 有预算卡 | 只是基础页面，缺策略编辑、usage trend、告警说明、团队/用户视图切换 | P2 |
 | Desktop 主窗 | 基本与 Web shell 一致 | 缺 Rust 客户端设计哲学：单件事干活桌、本地执行、同步、设备、托盘、诊断 | P1 |
-| 中英双语 | 已有右上角轻量切换，Gold Path 静态 chrome 与运行时提示可切中英 | 动态 Page VM / Cuu payload / 独立 pet 轻卡仍是单语言，需要 API/Contracts 级 locale | P1 |
-| 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
-| 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
+| 中英双语 | P1.1 已有 shared locale contract、Page VM `locale` query/meta、Cuu/pet 固定文案双语 | 动态 Page VM 内容仍是 daemon/Agent 原文，需要服务端按 locale 生成摘要与截图门 | P1 |
+| 主窗内 Cuu | 已撤回 Cuu 形象、notice、queue badge 和模型包入口 | 主窗后续只承载严肃页面；任何 Cuu 视觉回归都算失败 | P1 |
+| 独立 Cuu | 只保留黑猫 Hijiki / 白猫 Tororo Live2D 二选项；独立 `pet` window、card mode、HiDPI placement 和 pet bridge 已有基础 | 仍缺黑/白两套真实 Tauri motion capture、任务动作映射、多屏恢复、长期性能和授权替换计划 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；BONGO-P2a-a 已接 registry / loader，默认 DOM 暴露 `data-cuu-model-pack-selection-reason="registry_default"`；BONGO-P2a-b 已补 `/settings` 与 Cuu 偏好气泡模型包 UI；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1d-b-a 已补 hide-on-hover 软隐藏 / 恢复真实 Tauri 录屏；P1d-c 已补窗口设置矩阵真实 Tauri 截图；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs；P1e-b 已补 hover/tap/drag 真实 Tauri 输入录屏底座；P1e-c 已补连续看鼠标 / hover 避让；P1e-d-a 已补 pointer smoothing / drag grip 真实录屏；P1e-d-b 已补 60s idle jitter / flicker 长驻 QA | 方向正确；还需增强动作幅度、多屏恢复、full hide/pass-through 安全恢复和任务动作真实录屏 | P1 |
-| Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示；未来必须以 `live2d_cubism` model pack 通过默认门禁，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
+| Cuu 默认视觉 | 当前默认是 `cuu-hijiki-live2d-cubism2` 黑猫，白猫 `cuu-tororo-live2d-cubism2` 可选；Bongo、PSD draft、sprite/atlas、橘猫改色和 Web rail 均为历史失败路线，不再作为默认、fallback 或用户选项 | 需要补黑猫/白猫真实 Tauri 录屏、授权确认或原创等效模型替换、任务动作 mapping 和截图/录屏门禁 | P1 |
+| Live2D 资产路线 | 当前使用现成 Hijiki/Tororo Cubism2 模型包跑通二选项；此前绿幕零件板、144 层 PSD 草案和 Bongo 录屏只保留为反例与工具链参考 | 若未来重启原创 Cuu，只能新增原创黑猫/白猫候选包，并在美术 QA、Cubism 绑定、真实录屏和 model pack gate 全部通过后替换 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
 
@@ -671,7 +685,7 @@ P1d-a 已经把 scale / opacity / pass-through 做成 TS/Rust 合同，P1d-b-a �
 
 - 左侧 Gold Path 导航清楚。
 - 中央能显示当前待审批事项。
-- 右侧 Cuu 区域已有证据卡意识。
+- 右侧 Cuu rail 已撤回；证据、成本、审批应以严肃业务区块呈现，Cuu 视觉只归独立桌宠。
 - 按钮可以表达「打开审批 / 同意 / 打回」。
 
 当前问题：
@@ -1072,18 +1086,19 @@ Cuu Hatch Pack 的 prompt 必须锁定这些视觉特征：
 
 ## 6. 后续施工计划
 
-### 6.0 P1.0：中英双语运行时底座
+### 6.0 P1.0 / P1.1：中英双语运行时与 locale 合同
 
-状态：**2026-06-07 已完成客户端固定文案底座；动态 VM / Cuu payload 多语种仍待 P1.3+ 接 API 契约。**
+状态：**2026-06-07 已完成客户端固定文案底座；2026-06-08 已完成 P1.1 locale 合同传播。详细说明见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。动态用户内容和 daemon/Agent 摘要仍保留原文，后续由 P1.3+ 服务端生成多语言 VM。**
 
 | ID | 任务 | Target paths | 验收 |
 |---|---|---|---|
-| I18N-P1-01 | 共享 locale 类型与词表 | `packages/ui/src/gold-path/i18n.ts` | **已落**：`WorkHubLocale`、`workhub.locale`、`normalizeWorkHubLocale()`、`goldPathT()` |
+| I18N-P1-01 | 共享 locale 类型与词表 | `packages/contracts/src/locale.ts`、`packages/ui/src/gold-path/i18n.ts` | **已落 P1.1**：`WorkHubLocale`、`workhub.locale`、`normalizeWorkHubLocale()` 归 contracts；UI 提供 `goldPathT()` |
 | I18N-P1-02 | Gold Path 静态 chrome 本地化 | `packages/ui/src/gold-path/render.ts`、`app-shell.ts` | **已落**：首页/澄清/审批/proposal/replay/cost 固定标签支持中英 |
-| I18N-P1-03 | Web / desktop 主窗切换 | `apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` | **已落**：右上角 `中 / EN`，切换持久化并 reload |
-| I18N-P1-04 | 桌面 Cuu 运行时提示 | `apps/desktop-webview/src/browser.ts` | **已落基础**：队列 badge、审批原因按钮、动作失败/未接线提示随 locale 变化 |
-| I18N-P1-05 | 动态 VM 字段契约 | `packages/contracts/src/pages*`、`apps/api/routes/pages*`、`packages/cuu/src/*` | 待做：`GET /api/pages/*` 与 Cuu card adapter 接用户 locale |
-| I18N-P1-06 | 视觉截图门 | `scripts/qa/*` / Playwright route screenshots | 待做：中/英两个 viewport 截图，检查文字不溢出 |
+| I18N-P1-03 | Web / desktop 主窗切换 | `apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts` | **已落**：右上角 `中 / EN`，切换持久化并 reload，Page VM 请求带 locale |
+| I18N-P1-04 | 桌面 Cuu / pet 固定文案 | `packages/cuu/src/i18n.ts`、`apps/desktop-webview/src/pet-surface.ts`、`desktop-cuu-runtime.ts`、`shell-events.ts` | **已落 P1.1**：Cuu card fallback、动作 label、pet 轻气泡、SSE 状态和动作反馈支持中英；Web/main 不展示 Cuu 形象 |
+| I18N-P1-05 | Page VM locale 字段契约 | `packages/api-client/src/*`、`apps/api/src/routes/pages.ts` | **已落 P1.1**：`GET /api/pages/*?locale=`、response `meta.locale`、typed client `PageRequestOptions.locale` |
+| I18N-P1-06 | 非 Gold Path helpers | `packages/ui/src/intake/*`、`workitem/*`、`proposal/*`、`agent-run/*` | 待做 P1.2：固定标签抽词表，英文模式不残留中文按钮或 snake_case |
+| I18N-P1-07 | 视觉截图门 | `scripts/qa/*` / Playwright route screenshots | 待做：Web、desktop main、pet card 中/英两个 viewport 截图，检查文字不溢出 |
 
 ### 6.1 P0 立即修复：Cuu card mode 与 motion QA
 

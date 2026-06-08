@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   IdentifyRequest,
   IdentityResponse,
+  PageRequestOptions,
   WorkHubApiClient,
   WorkHubApiClientOptions
 } from "./types.js";
@@ -38,6 +39,10 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
 
 function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id: string) {
   return `/api/push/stream/${kind}/${encodeURIComponent(id)}`;
+}
+
+function withPageLocale(path: string, options?: PageRequestOptions) {
+  return options?.locale ? `${path}?locale=${encodeURIComponent(options.locale)}` : path;
 }
 
 async function readJson(response: Response) {
@@ -214,12 +219,12 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     replayAgentRun: (runId) => request(`/api/agent-runs/${runId}/replay`),
     pages: {
-      attention: () => request("/api/pages/attention"),
-      approvals: () => request("/api/pages/approvals"),
-      cost: () => request("/api/pages/cost"),
-      goldPath: () => request("/api/pages/gold-path"),
-      workItem: (id) => request(`/api/pages/workitems/${id}`),
-      proposal: (id) => request(`/api/pages/proposals/${id}`)
+      attention: (options) => request(withPageLocale("/api/pages/attention", options)),
+      approvals: (options) => request(withPageLocale("/api/pages/approvals", options)),
+      cost: (options) => request(withPageLocale("/api/pages/cost", options)),
+      goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),
+      workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
+      proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options))
     }
   };
 }

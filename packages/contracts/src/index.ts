@@ -1,4 +1,5 @@
 export * from "./enums.js";
+export * from "./locale.js";
 export * from "./events.js";
 export * from "./experience.js";
 export * from "./pages.js";

@@ -2,11 +2,14 @@ import {
   createCuuController,
   cardFromEvidenceBubble,
   cardFromWorkItemDetail,
+  cuuFormat,
+  cuuT,
   type CuuCard,
   type CuuCardAction,
   type CuuCardChip,
   type CuuController,
-  type CuuControllerDecision
+  type CuuControllerDecision,
+  type CuuLocaleOptions
 } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM } from "@workhub/contracts";
@@ -220,6 +223,7 @@ export async function bindDesktopShellCuuRuntime(input: {
   onDecision?: (decision: CuuControllerDecision) => void;
   onSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void;
   now?: () => Date;
+  locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopShellCuuRuntime> {
   const listen = input.listen ?? resolveDesktopShellListen();
   if (!listen) {
@@ -239,12 +243,13 @@ export async function bindDesktopShellCuuRuntime(input: {
     const shownCard = decision.card ?? card;
     input.notify({
       card: shownCard,
-      message: desktopCuuNoticeMessage(shownCard),
-      html: renderDesktopCuuNotice(shownCard)
+      message: desktopCuuNoticeMessage(shownCard, input),
+      html: renderDesktopCuuNotice(shownCard, input)
     });
   };
   const bridge = createDesktopShellEventBridge({
     ...(input.now ? { now: input.now } : {}),
+    ...(input.locale ? { locale: input.locale } : {}),
     onCuuCard(card) {
       emitCard(card);
     },
@@ -282,18 +287,18 @@ export async function bindDesktopShellCuuRuntime(input: {
   };
 }
 
-export function desktopCuuNoticeMessage(card: CuuCard) {
-  return `Cuu：${card.title}`;
+export function desktopCuuNoticeMessage(card: CuuCard, options: CuuLocaleOptions = {}) {
+  return cuuFormat(options.locale, "notice.prefix", { title: card.title });
 }
 
-export function renderDesktopCuuNotice(card: CuuCard) {
+export function renderDesktopCuuNotice(card: CuuCard, options: CuuLocaleOptions = {}) {
   const chips = (card.chips ?? []).slice(0, 3).map(renderChip).join("");
   const actions = card.actions.slice(0, 3).map(renderAction).join("");
   return `<section class="wh-cuu-card" data-cuu-card-id="${escapeHtml(card.id)}" data-cuu-state="${escapeHtml(card.state)}" role="status">
     <div class="wh-cuu-card-copy">
       <div class="wh-cuu-card-head">
         <div class="wh-cuu-card-kicker"><span class="wh-cuu-card-mark" aria-hidden="true"></span><span>Cuu</span></div>
-        <span class="wh-cuu-card-state">${escapeHtml(labelForState(card.state))}</span>
+        <span class="wh-cuu-card-state">${escapeHtml(labelForState(card.state, options))}</span>
       </div>
       <strong class="wh-cuu-card-title">${escapeHtml(card.title)}</strong>
       <p class="wh-cuu-card-message">${escapeHtml(card.message)}</p>
@@ -358,10 +363,11 @@ export async function submitDesktopCuuAction(input: {
   client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem">;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
+  locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuActionResult> {
   if (input.action.kind === "approval-response") {
     if (input.action.decision === "deny" && !input.reasonMd?.trim()) {
-      throw new Error("打回需要先选择一个原因。");
+      throw new Error(cuuT(input.locale, "action.reasonRequired"));
     }
     await input.client.respondApproval(input.action.approvalId, {
       decision: input.action.decision,
@@ -369,7 +375,7 @@ export async function submitDesktopCuuAction(input: {
       remember: "once"
     });
     return {
-      message: input.action.decision === "allow" ? "Cuu 已收到：这步已批准。" : "Cuu 已带着原因打回，会继续改。"
+      message: input.action.decision === "allow" ? cuuT(input.locale, "action.approved") : cuuT(input.locale, "action.denied")
     };
   }
 
@@ -378,16 +384,16 @@ export async function submitDesktopCuuAction(input: {
       ...(input.action.query ? { query: input.action.query } : {}),
       ...(input.action.run ? { run: input.action.run } : {})
     });
-    const card = cardFromEvidenceBubble(bubble);
+    const card = cardFromEvidenceBubble(bubble, input);
     return {
-      message: "Cuu 找到了一组项目证据。",
+      message: cuuT(input.locale, "action.evidenceFound"),
       card
     };
   }
 
   if (input.action.kind === "use-evidence-for-task") {
     if (input.action.evidenceRefs.length === 0) {
-      throw new Error("这张证据卡里没有可绑定的证据。");
+      throw new Error(cuuT(input.locale, "action.noEvidence"));
     }
     const detail = await input.client.useEvidenceForWorkItem(input.action.workItemId, {
       ...(input.action.evidenceBubbleId ? { evidence_bubble_id: input.action.evidenceBubbleId } : {}),
@@ -395,8 +401,8 @@ export async function submitDesktopCuuAction(input: {
       note: "Cuu evidence card action: use_for_current_task"
     });
     return {
-      message: "Cuu 已把这些证据放进当前任务。",
-      card: cardFromWorkItemDetail(detail)
+      message: cuuT(input.locale, "action.evidenceBound"),
+      card: cardFromWorkItemDetail(detail, input)
     };
   }
 
@@ -404,7 +410,7 @@ export async function submitDesktopCuuAction(input: {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
   });
   return {
-    message: `下一题：${question.title}`
+    message: cuuFormat(input.locale, "action.nextQuestion", { title: question.title })
   };
 }
 
@@ -484,28 +490,28 @@ function approvalDecisionFromAction(actionId: string | undefined, requiresReason
   return "allow";
 }
 
-function labelForState(state: CuuCard["state"]) {
+function labelForState(state: CuuCard["state"], options: CuuLocaleOptions = {}) {
   switch (state) {
     case "idle":
-      return "待命";
+      return cuuT(options.locale, "state.idle");
     case "thinking":
-      return "思考中";
+      return cuuT(options.locale, "state.thinking");
     case "asking_approval":
-      return "等你点选";
+      return cuuT(options.locale, "state.asking_approval");
     case "carrying_document":
-      return "拿来变更";
+      return cuuT(options.locale, "state.carrying_document");
     case "searching_evidence":
-      return "找到证据";
+      return cuuT(options.locale, "state.searching_evidence");
     case "syncing_files":
-      return "同步中";
+      return cuuT(options.locale, "state.syncing_files");
     case "worried":
-      return "需要留意";
+      return cuuT(options.locale, "state.worried");
     case "revision_requested":
-      return "继续修改";
+      return cuuT(options.locale, "state.revision_requested");
     case "celebrating":
-      return "完成了";
+      return cuuT(options.locale, "state.celebrating");
     case "offline":
-      return "离线";
+      return cuuT(options.locale, "state.offline");
   }
 }
 

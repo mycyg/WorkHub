@@ -303,6 +303,7 @@ test("pet pointer helpers normalize Rust look percent and hover avoidance", () =
 
 test("pet surface renders clarification cards as option-first light cards", () => {
   const card = renderDesktopPetSurface({ card: questionCard() });
+  const english = renderDesktopPetSurface({ card: questionCard(), locale: "en-US" });
 
   assert.match(card.html, /data-pet-card-kind="question"/u);
   assert.match(card.html, /class="wh-pet-kind">澄清/u);
@@ -313,6 +314,25 @@ test("pet surface renders clarification cards as option-first light cards", () =
   assert.match(card.html, /点选项即可，补充文字已折叠/u);
   assert.match(card.html, /data-cuu-action-id="submit_option"/u);
   assert.doesNotMatch(card.html, /textarea|<input\b/iu);
+
+  assert.match(english.html, /class="wh-pet-kind">Clarify/u);
+  assert.match(english.html, /Choose an option; text is folded away/u);
+  assert.match(english.html, /aria-label="Cuu desktop pet"/u);
+});
+
+test("pet surface localizes fixed approval bubble controls in English", () => {
+  const card = renderDesktopPetSurface({
+    card: approvalCard(),
+    status_text: "Choose one reason so Cuu can revise with it.",
+    include_reject_reasons: true,
+    locale: "en-US"
+  });
+
+  assert.match(card.html, /class="wh-pet-kind">Approval/u);
+  assert.match(card.html, /class="wh-pet-priority" data-priority="urgent">Urgent/u);
+  assert.match(card.html, /class="wh-pet-evidence-title">Evidence/u);
+  assert.match(card.html, /data-pet-reason="Not enough evidence"/u);
+  assert.doesNotMatch(card.html, /data-pet-reason="证据不足"|class="wh-pet-kind">审批|>急</u);
 });
 
 test("pet surface starts with a non-static runtime action fixture and fast idle cadence", () => {

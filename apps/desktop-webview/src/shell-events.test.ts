@@ -151,6 +151,14 @@ test("sse-status retrying and closed states become offline Cuu cards", () => {
   assert.equal(retrying?.chips?.[0]?.label, "重连中");
   assert.doesNotMatch(retrying?.title ?? "", /failed to connect|127\.0\.0\.1/u);
   assert.doesNotMatch(retrying?.message ?? "", /failed to connect|127\.0\.0\.1/u);
+
+  const english = desktopCuuCardFromShellSseStatus({
+    stream_kind: "global",
+    stream_path: "/api/push/stream",
+    state: "closed"
+  }, { now, locale: "en-US" });
+  assert.equal(english?.title, "WorkHub is disconnected");
+  assert.equal(english?.chips?.[0]?.label, "Disconnected");
 });
 
 test("desktop shell event bridge dispatches events and Cuu cards to callbacks", () => {

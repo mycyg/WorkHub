@@ -24,6 +24,7 @@ import { toAttentionItem } from "@workhub/events/toAttentionItem";
 import { toCuuState } from "@workhub/events/toCuuState";
 
 import { cuuMotionForState, type CuuMotionHint } from "./motion.js";
+import { cuuFormat, cuuT, type CuuLocaleOptions } from "./i18n.js";
 
 export type CuuCardKind =
   | "bubble"
@@ -203,16 +204,16 @@ function evidenceById(evidenceRefs: EvidenceRef[]) {
   return result;
 }
 
-function budgetScopeChip(scope: BudgetScope): CuuCardChip {
+function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): CuuCardChip {
   switch (scope.kind) {
     case "workitem":
-      return { id: "scope", label: "任务预算", description: scope.workitem_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: scope.workitem_id };
     case "user":
-      return { id: "scope", label: "个人预算", description: scope.user_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: scope.user_id };
     case "team":
-      return { id: "scope", label: "团队预算", description: scope.team_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: scope.team_id };
     case "eval":
-      return { id: "scope", label: "评测预算", description: scope.suite };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: scope.suite };
   }
 }
 
@@ -238,7 +239,7 @@ function agentRunHref(runId: string | undefined) {
   return runId ? `/agent-runs/${runId}/replay` : undefined;
 }
 
-function cardFromAgentRunEvent(event: WorkHubEvent<unknown>): CuuCard {
+function cardFromAgentRunEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOptions = {}): CuuCard {
   const runId = event.run_id ?? (event.topic.startsWith("run:") ? event.topic.slice("run:".length) : undefined);
   const state = toCuuState(event);
   const dataKind = dataStringField(event.data, "kind");
@@ -250,24 +251,24 @@ function cardFromAgentRunEvent(event: WorkHubEvent<unknown>): CuuCard {
   const href = agentRunHref(runId);
   const title = finalEvent
     ? state === "celebrating"
-      ? "这次执行完成了"
-      : "这次执行需要关注"
+      ? cuuT(options.locale, "agentRun.doneTitle")
+      : cuuT(options.locale, "agentRun.attentionTitle")
     : event.type === eventTypes.agentRunStarted
-      ? "Cuu 开始处理了"
-      : "Cuu 正在处理";
+      ? cuuT(options.locale, "agentRun.startedTitle")
+      : cuuT(options.locale, "agentRun.workingTitle");
 
   return withMotion({
     id: event.event_id,
     kind: finalEvent && state === "celebrating" ? "completion" : "trace",
     state,
     title,
-    message: truncate(event.preview_text ?? dataStringField(event.data, "summary") ?? "Cuu 正在整理执行进度。"),
+    message: truncate(event.preview_text ?? dataStringField(event.data, "summary") ?? cuuT(options.locale, "agentRun.progressFallback")),
     priority: state === "worried" ? "high" : "normal",
     actions: href
       ? [
           {
             id: "view_replay",
-            label: "查看回放",
+            label: cuuT(options.locale, "agentRun.viewReplay"),
             tone: finalEvent ? "primary" : "secondary",
             method: "GET",
             href
@@ -337,7 +338,7 @@ export function cardFromAttentionItem(item: AttentionItem): CuuCard {
   });
 }
 
-export function cardFromQuestionCard(question: QuestionCard): CuuCard {
+export function cardFromQuestionCard(question: QuestionCard, options: CuuLocaleOptions = {}): CuuCard {
   const recommended = new Set(question.recommended_option_ids ?? []);
   const chips = question.options.map<CuuCardChip>((option) => {
     const description = option.description ?? option.impact;
@@ -359,12 +360,12 @@ export function cardFromQuestionCard(question: QuestionCard): CuuCard {
     kind: "question",
     state: "asking_approval",
     title: question.title,
-    message: truncate(question.body ?? "点一个选项，Cuu 就继续往下做。"),
+    message: truncate(question.body ?? cuuT(options.locale, "question.bodyFallback")),
     priority: "high",
     actions: [
       {
         id: "submit_option",
-        label: "确认选项",
+        label: cuuT(options.locale, "question.submit"),
         tone: "primary",
         method: question.submit.method,
         href: question.submit.href
@@ -403,14 +404,14 @@ export function cardFromQuestionCard(question: QuestionCard): CuuCard {
   });
 }
 
-export function cardFromSessionVm(session: SessionVM): CuuCard {
+export function cardFromSessionVm(session: SessionVM, options: CuuLocaleOptions = {}): CuuCard {
   const workItemId = session.work_item_id ?? session.question.work_item_id;
   const question = {
     ...session.question,
     session_id: session.question.session_id ?? session.session_id,
     ...(workItemId ? { work_item_id: workItemId } : {})
   };
-  const card = cardFromQuestionCard(question);
+  const card = cardFromQuestionCard(question, options);
 
   return {
     ...card,
@@ -428,16 +429,18 @@ export function cardFromSessionVm(session: SessionVM): CuuCard {
   };
 }
 
-export function cardFromEvidenceBubble(bubble: EvidenceBubble): CuuCard {
+export function cardFromEvidenceBubble(bubble: EvidenceBubble, options: CuuLocaleOptions = {}): CuuCard {
   const missing = bubble.missing_evidence_note
-    ? [{ id: "missing", title: "缺口", lines: [bubble.missing_evidence_note] }]
+    ? [{ id: "missing", title: cuuT(options.locale, "evidence.missingSection"), lines: [bubble.missing_evidence_note] }]
     : [];
 
   return withMotion({
     id: bubble.id,
     kind: "evidence",
     state: "searching_evidence",
-    title: bubble.query_text ? `找到和「${bubble.query_text}」相关的证据` : "Cuu 找到了证据",
+    title: bubble.query_text
+      ? cuuFormat(options.locale, "evidence.titleFound", { query: bubble.query_text })
+      : cuuT(options.locale, "evidence.titleDefault"),
     message: truncate(bubble.summary_text),
     priority: bubble.missing_evidence_note ? "high" : "normal",
     actions: bubble.actions.map((action) => ({
@@ -461,7 +464,7 @@ export function cardFromEvidenceBubble(bubble: EvidenceBubble): CuuCard {
   });
 }
 
-export function cardFromProposalDetail(vm: ProposalDetailVM): CuuCard {
+export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleOptions = {}): CuuCard {
   const state: CuuState =
     vm.status === "merged" ? "celebrating" : vm.status === "rejected" ? "revision_requested" : "carrying_document";
   const changes = vm.manifest.changes.slice(0, 5);
@@ -469,17 +472,19 @@ export function cardFromProposalDetail(vm: ProposalDetailVM): CuuCard {
   const sections: CuuCardSection[] = [
     {
       id: "changes",
-      title: "这次改了什么",
+      title: cuuT(options.locale, "proposal.changesSection"),
       lines: changes.map((change) =>
         change.target_ref.path ? `${change.human_summary} (${change.target_ref.path})` : change.human_summary
       )
     },
     {
       id: "risk",
-      title: "风险与回滚",
+      title: cuuT(options.locale, "proposal.riskSection"),
       lines: [
         vm.manifest.risk.human_label,
-        vm.manifest.risk.reversible ? "可回滚" : "不可完整回滚",
+        vm.manifest.risk.reversible
+          ? cuuT(options.locale, "proposal.rollbackAvailable")
+          : cuuT(options.locale, "proposal.rollbackUnavailable"),
         vm.manifest.rollback.description
       ]
     }
@@ -488,7 +493,7 @@ export function cardFromProposalDetail(vm: ProposalDetailVM): CuuCard {
   if (checks.length) {
     sections.push({
       id: "checks",
-      title: "检查结果",
+      title: cuuT(options.locale, "proposal.checksSection"),
       lines: checks.map((check) => `${check.label}: ${check.status}${check.detail ? ` - ${check.detail}` : ""}`)
     });
   }
@@ -544,7 +549,7 @@ function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuStat
   return "thinking";
 }
 
-export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
+export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleOptions = {}): CuuCard {
   const hasProposal = Boolean(vm.latest_proposal);
   const state = stateForWorkItem(vm.workitem.status, hasProposal);
   const proposalId = vm.latest_proposal?.proposal_id;
@@ -553,7 +558,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
   const actions: CuuCardAction[] = [
     {
       id: "open_workitem",
-      label: "查看任务",
+      label: cuuT(options.locale, "workItem.open"),
       tone: hasProposal ? "secondary" : "primary",
       method: "GET",
       href: `/workitems/${vm.workitem.id}`
@@ -562,7 +567,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
       ? [
           {
             id: "open_proposal",
-            label: "查看变更",
+            label: cuuT(options.locale, "workItem.openProposal"),
             tone: "primary" as const,
             method: "GET" as const,
             href: `/proposals/${proposalId}`
@@ -573,7 +578,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
       ? [
           {
             id: "view_replay",
-            label: "查看回放",
+            label: cuuT(options.locale, "workItem.viewReplay"),
             tone: "secondary" as const,
             method: "GET" as const,
             href: `/agent-runs/${runId}/replay`
@@ -584,7 +589,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
       ? [
           {
             id: "start_agent",
-            label: "开始 AI 执行",
+            label: cuuT(options.locale, "workItem.startAgent"),
             tone: "primary" as const,
             method: "POST" as const,
             href: `/api/workitems/${vm.workitem.id}/agent-runs`
@@ -596,10 +601,10 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
   const sections: CuuCardSection[] = [
     {
       id: "status",
-      title: "当前状态",
+      title: cuuT(options.locale, "workItem.statusSection"),
       lines: [
         vm.workitem.status,
-        latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? "Cuu 已准备继续处理。"
+        latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? cuuT(options.locale, "workItem.readyFallback")
       ]
     }
   ];
@@ -607,10 +612,10 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
   if (vm.acceptance.length) {
     sections.push({
       id: "acceptance",
-      title: "验收",
+      title: cuuT(options.locale, "workItem.acceptanceSection"),
       lines: vm.acceptance.slice(0, 4).map((item, index) => {
         const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
-        const title = record.title ?? `验收项 ${index + 1}`;
+        const title = record.title ?? cuuFormat(options.locale, "workItem.acceptanceFallback", { index: index + 1 });
         const status = record.status ?? "open";
         return `${title}: ${status}`;
       })
@@ -622,7 +627,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM): CuuCard {
     kind: state === "carrying_document" ? "proposal" : state === "celebrating" ? "completion" : "trace",
     state,
     title: vm.workitem.title ?? vm.workitem.code,
-    message: truncate(latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? "Cuu 开始处理这件事了。"),
+    message: truncate(latestStep?.output_excerpt ?? vm.workitem.summary_md ?? vm.workitem.raw_description ?? cuuT(options.locale, "workItem.startedFallback")),
     priority: state === "worried" ? "high" : "normal",
     actions,
     sections,
@@ -654,21 +659,21 @@ function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
   return "thinking";
 }
 
-export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
+export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptions = {}): CuuCard {
   const state = stateForAgentRun(vm.status);
   const latestStep = vm.trace.at(-1);
   const active = vm.status === "queued" || vm.status === "running";
   const actions: CuuCardAction[] = [
     {
       id: "view_replay",
-      label: "查看回放",
+      label: cuuT(options.locale, "agentRun.viewReplay"),
       tone: state === "celebrating" ? "primary" : "secondary",
       method: "GET",
       href: `/agent-runs/${vm.run_id}/replay`
     },
     {
       id: "open_workitem",
-      label: "回到任务",
+      label: cuuT(options.locale, "agentRun.openWorkItem"),
       tone: "secondary",
       method: "GET",
       href: `/workitems/${vm.work_item_id}`
@@ -677,7 +682,7 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
       ? [
           {
             id: "abort_agent_run",
-            label: "取消执行",
+            label: cuuT(options.locale, "agentRun.abort"),
             tone: "danger" as const,
             method: "POST" as const,
             href: `/api/agent-runs/${vm.run_id}/abort`
@@ -688,14 +693,14 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
   const sections: CuuCardSection[] = [
     {
       id: "trace",
-      title: "执行进度",
+      title: cuuT(options.locale, "agentRun.progressSection"),
       lines: vm.trace.length
         ? vm.trace.slice(-4).map((step) => `#${step.step_no} ${step.phase}${step.output_excerpt ? `: ${step.output_excerpt}` : ""}`)
-        : ["Cuu 已排队，稍后开始处理。"]
+        : [cuuT(options.locale, "agentRun.queued")]
     },
     {
       id: "budget",
-      title: "预算",
+      title: cuuT(options.locale, "agentRun.budgetSection"),
       lines: [
         `${vm.usage.token_in + vm.usage.token_out}/${vm.budget.max_tokens} tokens`,
         `¥${vm.usage.estimated_cost_cny}/${vm.budget.max_cost_cny}`
@@ -706,7 +711,7 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
   if (vm.handoff) {
     sections.push({
       id: "handoff",
-      title: "交接",
+      title: cuuT(options.locale, "agentRun.handoffSection"),
       lines: [...vm.handoff.remaining, ...vm.handoff.next_steps, ...vm.handoff.blockers].slice(0, 4)
     });
   }
@@ -715,8 +720,12 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
     id: vm.run_id,
     kind: state === "celebrating" ? "completion" : "trace",
     state,
-    title: state === "celebrating" ? "这次执行完成了" : state === "worried" ? "这次执行需要关注" : "Cuu 开始处理了",
-    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? "Cuu 正在整理执行进度。"),
+    title: state === "celebrating"
+      ? cuuT(options.locale, "agentRun.doneTitle")
+      : state === "worried"
+        ? cuuT(options.locale, "agentRun.attentionTitle")
+        : cuuT(options.locale, "agentRun.startedTitle"),
+    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? cuuT(options.locale, "agentRun.progressFallback")),
     priority: state === "worried" || state === "asking_approval" ? "high" : "normal",
     actions,
     sections,
@@ -734,7 +743,7 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM): CuuCard {
   });
 }
 
-export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice.code}`): CuuCard {
+export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice.code}`, options: CuuLocaleOptions = {}): CuuCard {
   const exhausted = notice.code === "budget_exhausted";
   const actions = notice.options?.map<CuuCardAction>((option) => ({
     id: option.id,
@@ -745,7 +754,7 @@ export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice
   })) ?? [
     {
       id: notice.recommended_action,
-      label: exhausted ? "处理预算" : "查看预算",
+      label: exhausted ? cuuT(options.locale, "budget.handle") : cuuT(options.locale, "budget.view"),
       tone: exhausted ? "danger" : "secondary",
       ...(notice.action_href ? { method: "GET", href: notice.action_href } : {})
     }
@@ -755,17 +764,17 @@ export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice
     id,
     kind: "budget",
     state: exhausted ? "asking_approval" : "worried",
-    title: exhausted ? "预算用完了" : "预算快到线了",
+    title: exhausted ? cuuT(options.locale, "budget.exhaustedTitle") : cuuT(options.locale, "budget.warningTitle"),
     message: truncate(notice.message),
     priority: exhausted ? "urgent" : notice.severity === "critical" ? "high" : "normal",
     actions,
     chips: [
-      budgetScopeChip(notice.scope),
+      budgetScopeChip(notice.scope, options),
       {
         id: "usage",
         label: `${Math.round(notice.usage_ratio * 100)}%`,
         tone: exhausted ? "danger" : "warning",
-        description: "预算使用率"
+        description: cuuT(options.locale, "budget.usageDescription")
       }
     ],
     payload_ref: {
@@ -776,24 +785,28 @@ export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice
   });
 }
 
-export function cardFromCostDashboard(vm: CostDashboardVM): CuuCard {
+export function cardFromCostDashboard(vm: CostDashboardVM, options: CuuLocaleOptions = {}): CuuCard {
   const exhausted = vm.notices.some((notice) => notice.code === "budget_exhausted");
   const warning = vm.notices.length > 0 || vm.top_exhaustion_risks.length > 0;
   const sections: CuuCardSection[] = [
     {
       id: "summary",
-      title: "今日成本",
-      lines: [`总成本 ¥${vm.total_cost_cny}`, `输入 ${vm.token_in} tokens`, `输出 ${vm.token_out} tokens`]
+      title: cuuT(options.locale, "cost.summarySection"),
+      lines: [
+        `${cuuT(options.locale, "cost.total")} ¥${vm.total_cost_cny}`,
+        `${cuuT(options.locale, "cost.input")} ${vm.token_in} tokens`,
+        `${cuuT(options.locale, "cost.output")} ${vm.token_out} tokens`
+      ]
     }
   ];
 
   if (vm.top_exhaustion_risks.length) {
     sections.push({
       id: "risks",
-      title: "预算风险",
+      title: cuuT(options.locale, "cost.risksSection"),
       lines: vm.top_exhaustion_risks
         .slice(0, 4)
-        .map((risk) => `${risk.label}: 还剩 ¥${risk.remaining_cost_cny} (${risk.status})`)
+        .map((risk) => `${risk.label}: ${cuuFormat(options.locale, "cost.remaining", { cost: risk.remaining_cost_cny })} (${risk.status})`)
     });
   }
 
@@ -801,8 +814,10 @@ export function cardFromCostDashboard(vm: CostDashboardVM): CuuCard {
     id: "cost-dashboard",
     kind: "budget",
     state: exhausted ? "asking_approval" : warning ? "worried" : "idle",
-    title: "AI 成本与预算",
-    message: vm.empty_state === "usage_not_connected" ? "成本数据还没有接入。" : `今天已使用 ¥${vm.total_cost_cny}。`,
+    title: cuuT(options.locale, "cost.title"),
+    message: vm.empty_state === "usage_not_connected"
+      ? cuuT(options.locale, "cost.notConnected")
+      : cuuFormat(options.locale, "cost.usedToday", { cost: vm.total_cost_cny }),
     priority: exhausted ? "urgent" : warning ? "high" : "low",
     actions: [],
     sections,
@@ -814,16 +829,19 @@ export function cardFromCostDashboard(vm: CostDashboardVM): CuuCard {
   });
 }
 
-export function cardsFromCostDashboard(vm: CostDashboardVM): CuuCard[] {
-  return [cardFromCostDashboard(vm), ...vm.notices.map((notice, index) => cardFromBudgetNotice(notice, `budget-${index}`))];
+export function cardsFromCostDashboard(vm: CostDashboardVM, options: CuuLocaleOptions = {}): CuuCard[] {
+  return [
+    cardFromCostDashboard(vm, options),
+    ...vm.notices.map((notice, index) => cardFromBudgetNotice(notice, `budget-${index}`, options))
+  ];
 }
 
-export function cardFromReplayTrace(vm: ReplayTraceVM): CuuCard {
+export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions = {}): CuuCard {
   const latestStep = vm.steps.at(-1);
   const sections: CuuCardSection[] = [
     {
       id: "steps",
-      title: "Replay 摘要",
+      title: cuuT(options.locale, "replay.summarySection"),
       lines: vm.steps.slice(-4).map((step) => `#${step.step_no} ${step.phase}${step.output_excerpt ? `: ${step.output_excerpt}` : ""}`)
     }
   ];
@@ -831,7 +849,7 @@ export function cardFromReplayTrace(vm: ReplayTraceVM): CuuCard {
   if (vm.cost) {
     sections.push({
       id: "cost",
-      title: "成本",
+      title: cuuT(options.locale, "replay.costSection"),
       lines: [`${vm.cost.me.scope_label}: ¥${vm.cost.me.estimated_cost_cny}`, `剩余 ¥${vm.cost.me.remaining_cost_cny}`]
     });
   }
@@ -840,8 +858,8 @@ export function cardFromReplayTrace(vm: ReplayTraceVM): CuuCard {
     id: vm.run.id,
     kind: "trace",
     state: vm.run.status === "failed" || vm.run.status === "escalated" ? "worried" : "thinking",
-    title: "执行回放已就绪",
-    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? "Cuu 整理好了这次执行轨迹。"),
+    title: cuuT(options.locale, "replay.title"),
+    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? cuuT(options.locale, "replay.readyFallback")),
     priority: vm.run.status === "failed" || vm.run.status === "escalated" ? "high" : "normal",
     actions: [],
     sections,
@@ -859,14 +877,14 @@ export function cardFromReplayTrace(vm: ReplayTraceVM): CuuCard {
   });
 }
 
-export function cardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
+export function cardFromEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOptions = {}): CuuCard {
   const budgetNotice = budgetNoticeSchema.safeParse(event.data);
   if (budgetNotice.success) {
-    return cardFromBudgetNotice(budgetNotice.data, event.event_id);
+    return cardFromBudgetNotice(budgetNotice.data, event.event_id, options);
   }
 
   if (isAgentRunEvent(event)) {
-    return cardFromAgentRunEvent(event);
+    return cardFromAgentRunEvent(event, options);
   }
 
   const attention = toAttentionItem(event);
@@ -878,8 +896,8 @@ export function cardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
     id: event.event_id,
     kind: "bubble",
     state: toCuuState(event),
-    title: event.preview_text ?? "WorkHub 更新",
-    message: truncate(event.preview_text ?? "Cuu 收到一条新的状态更新。"),
+    title: event.preview_text ?? cuuT(options.locale, "event.defaultTitle"),
+    message: truncate(event.preview_text ?? cuuT(options.locale, "event.defaultMessage")),
     priority: "normal",
     actions: [],
     payload_ref: {
@@ -896,17 +914,17 @@ export function cardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
   });
 }
 
-export function cardsFromGoldPathSurface(surface: GoldPathSurfaceVM): CuuCard[] {
+export function cardsFromGoldPathSurface(surface: GoldPathSurfaceVM, options: CuuLocaleOptions = {}): CuuCard[] {
   const cards = [
     surface.page_vms.attention.primary ? cardFromAttentionItem(surface.page_vms.attention.primary) : undefined,
     ...surface.page_vms.attention.queue.map(cardFromAttentionItem),
-    cardFromQuestionCard(surface.page_vms.question),
-    cardFromWorkItemDetail(surface.page_vms.workitem),
-    cardFromEvidenceBubble(surface.page_vms.evidence),
-    cardFromProposalDetail(surface.page_vms.proposal),
-    cardFromReplayTrace(surface.page_vms.replay),
-    ...cardsFromCostDashboard(surface.page_vms.cost),
-    ...surface.events.map((event) => cardFromEvent(event as WorkHubEvent<unknown>))
+    cardFromQuestionCard(surface.page_vms.question, options),
+    cardFromWorkItemDetail(surface.page_vms.workitem, options),
+    cardFromEvidenceBubble(surface.page_vms.evidence, options),
+    cardFromProposalDetail(surface.page_vms.proposal, options),
+    cardFromReplayTrace(surface.page_vms.replay, options),
+    ...cardsFromCostDashboard(surface.page_vms.cost, options),
+    ...surface.events.map((event) => cardFromEvent(event as WorkHubEvent<unknown>, options))
   ].filter((card): card is CuuCard => Boolean(card));
 
   const seen = new Set<string>();

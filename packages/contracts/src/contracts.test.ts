@@ -15,6 +15,7 @@ import {
   createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
+  normalizeWorkHubLocale,
   nextQuestionRequestSchema,
   replayTracePageVmSchema,
   respondApprovalRequestSchema,
@@ -36,6 +37,13 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("shared locale contract normalizes the bilingual product surface", () => {
+  assert.equal(normalizeWorkHubLocale("en"), "en-US");
+  assert.equal(normalizeWorkHubLocale("en_US"), "en-US");
+  assert.equal(normalizeWorkHubLocale("zh-Hans-CN"), "zh-CN");
+  assert.equal(normalizeWorkHubLocale("fr-FR"), "zh-CN");
 });
 
 test("agent trace VM carries F08 replay and structured handoff fields", () => {

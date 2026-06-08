@@ -44,12 +44,12 @@ export function createDesktopWebviewApiClient(input: {
   });
 }
 
-export function loadDesktopGoldPathSurface(client: WorkHubApiClient) {
-  return client.pages.goldPath();
+export function loadDesktopGoldPathSurface(client: WorkHubApiClient, locale?: WorkHubLocale) {
+  return client.pages.goldPath(locale ? { locale } : undefined);
 }
 
 export async function renderDesktopGoldPathSurface(client: WorkHubApiClient, locale?: WorkHubLocale) {
-  return renderGoldPathSurface(await loadDesktopGoldPathSurface(client), "desktop", { locale });
+  return renderGoldPathSurface(await loadDesktopGoldPathSurface(client, locale), "desktop", { locale });
 }
 
 export function startDesktopIntakeSession(client: WorkHubApiClient, payload: CreateSessionRequest = {}) {
@@ -100,42 +100,45 @@ export async function renderDesktopProposalDetail(client: WorkHubApiClient, prop
   return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId), "desktop");
 }
 
-export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>): CuuCard {
-  return cardFromEvent(event);
+export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: WorkHubLocale): CuuCard {
+  return cardFromEvent(event, locale ? { locale } : undefined);
 }
 
-export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string): Promise<CuuCard> {
-  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId));
+export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale): Promise<CuuCard> {
+  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId), locale ? { locale } : undefined);
 }
 
 export async function loadDesktopIntakeCuuCard(
   client: WorkHubApiClient,
-  payload: CreateSessionRequest = {}
+  payload: CreateSessionRequest = {},
+  locale?: WorkHubLocale
 ): Promise<CuuCard> {
-  return cardFromSessionVm(await startDesktopIntakeSession(client, payload));
+  return cardFromSessionVm(await startDesktopIntakeSession(client, payload), locale ? { locale } : undefined);
 }
 
 export async function createDesktopWorkItemCuuCard(
   client: WorkHubApiClient,
-  payload: CreateWorkItemRequest
+  payload: CreateWorkItemRequest,
+  locale?: WorkHubLocale
 ): Promise<CuuCard> {
-  return cardFromWorkItemDetail(await createDesktopWorkItem(client, payload));
+  return cardFromWorkItemDetail(await createDesktopWorkItem(client, payload), locale ? { locale } : undefined);
 }
 
-export async function loadDesktopWorkItemCuuCard(client: WorkHubApiClient, workItemId: string): Promise<CuuCard> {
-  return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId));
+export async function loadDesktopWorkItemCuuCard(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale): Promise<CuuCard> {
+  return cardFromWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId), locale ? { locale } : undefined);
 }
 
 export async function startDesktopAgentRunCuuCard(
   client: WorkHubApiClient,
   workItemId: string,
-  payload: StartAgentRunRequest = {}
+  payload: StartAgentRunRequest = {},
+  locale?: WorkHubLocale
 ): Promise<CuuCard> {
-  return cardFromAgentRunLive(await startDesktopAgentRun(client, workItemId, payload));
+  return cardFromAgentRunLive(await startDesktopAgentRun(client, workItemId, payload), locale ? { locale } : undefined);
 }
 
-export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId: string): Promise<CuuCard> {
-  return cardFromAgentRunLive(await loadDesktopAgentRun(client, runId));
+export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale): Promise<CuuCard> {
+  return cardFromAgentRunLive(await loadDesktopAgentRun(client, runId), locale ? { locale } : undefined);
 }
 
 export {

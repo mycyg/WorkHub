@@ -199,6 +199,24 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
 });
 
+test("P0.5 page routes echo normalized locale metadata for bilingual clients", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    allowUnauthenticatedGoldPath: true
+  }));
+
+  const english = await app.request("/api/pages/gold-path?locale=en-US");
+  const fallback = await app.request("/api/pages/gold-path?locale=fr-FR");
+
+  assert.equal(english.status, 200);
+  assert.equal(fallback.status, 200);
+  assert.equal((await english.json() as { meta: { locale: string } }).meta.locale, "en-US");
+  assert.equal((await fallback.json() as { meta: { locale: string } }).meta.locale, "zh-CN");
+});
+
 test("P0.5 gold path preview can be served without DB auth when explicitly enabled", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());

@@ -1,5 +1,5 @@
 import { cuuStates, type AttentionItem, type CuuState, type WorkHubEvent } from "@workhub/contracts";
-import { cardFromEvent, cuuMotionForState, type CuuCard } from "@workhub/cuu";
+import { cardFromEvent, cuuMotionForState, cuuT, type CuuCard, type CuuLocaleOptions } from "@workhub/cuu";
 
 export type DesktopShellPushPayload = {
   event: string;
@@ -54,7 +54,7 @@ export type DesktopShellEventBridge = {
   handleSystemNotificationPayload: (input: unknown) => DesktopShellSystemNotificationPlan | undefined;
 };
 
-type DesktopShellBridgeOptions = {
+type DesktopShellBridgeOptions = CuuLocaleOptions & {
   now?: () => Date;
   onEvent?: (event: DesktopShellBridgeEvent) => void;
   onCuuCard?: (card: CuuCard) => void;
@@ -208,17 +208,17 @@ export function workHubEventFromDesktopShellPush(
 
 export function desktopCuuCardFromShellPush(
   payload: DesktopShellPushPayload,
-  options: { now?: () => Date } = {}
+  options: { now?: () => Date } & CuuLocaleOptions = {}
 ): CuuCard | undefined {
   if (passivePushEvents.has(payload.event)) {
     return undefined;
   }
-  return cardFromEvent(workHubEventFromDesktopShellPush(payload, options));
+  return cardFromEvent(workHubEventFromDesktopShellPush(payload, options), options);
 }
 
 export function desktopCuuCardFromShellSseStatus(
   payload: DesktopShellSseStatusPayload,
-  options: { now?: () => Date } = {}
+  options: { now?: () => Date } & CuuLocaleOptions = {}
 ): CuuCard | undefined {
   if (payload.state === "connecting" || payload.state === "open") {
     return undefined;
@@ -231,13 +231,13 @@ export function desktopCuuCardFromShellSseStatus(
     kind: "offline",
     state: "offline",
     motion: cuuMotionForState("offline"),
-    title: retrying ? "连接有点不稳" : "WorkHub 连接断开了",
-    message: retrying ? "Cuu 正在重新连接，恢复后会继续把提醒送到你这里。" : "Cuu 会安静等连接回来，重要事项不会被丢掉。",
+    title: retrying ? cuuT(options.locale, "offline.retryingTitle") : cuuT(options.locale, "offline.closedTitle"),
+    message: retrying ? cuuT(options.locale, "offline.retryingMessage") : cuuT(options.locale, "offline.closedMessage"),
     priority: "normal",
     chips: [
       {
         id: payload.state,
-        label: retrying ? "重连中" : "已断开",
+        label: retrying ? cuuT(options.locale, "offline.retryingChip") : cuuT(options.locale, "offline.closedChip"),
         tone: "warning"
       }
     ],

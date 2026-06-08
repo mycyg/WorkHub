@@ -27,6 +27,7 @@ import type {
   StartAgentRunRequest,
   StructuredHandoff,
   UseEvidenceForTaskRequest,
+  WorkHubLocale,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -62,6 +63,10 @@ export type WorkHubApiClientOptions = {
   credentials?: WorkHubRequestCredentials;
 };
 
+export type PageRequestOptions = {
+  locale?: WorkHubLocale;
+};
+
 export type HealthResponse = {
   ok: true;
   service: string;
@@ -86,12 +91,12 @@ export type IdentityResponse = {
 };
 
 export type PageClient = {
-  attention: () => Promise<AttentionHomeVM>;
-  approvals: () => Promise<ApprovalCenterVM>;
-  cost: () => Promise<CostDashboardVM>;
-  goldPath: () => Promise<GoldPathSurfaceVM>;
-  workItem: (id: string) => Promise<WorkItemDetailVM>;
-  proposal: (id: string) => Promise<ProposalDetailVM>;
+  attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
+  approvals: (options?: PageRequestOptions) => Promise<ApprovalCenterVM>;
+  cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
+  goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
+  workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
+  proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
 
 export type PushStreamClient = {

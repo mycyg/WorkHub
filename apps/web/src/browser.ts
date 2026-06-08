@@ -190,13 +190,13 @@ async function boot() {
     const client = createApiClient({ baseUrl: "" });
     let surfaceVm;
     try {
-      surfaceVm = await client.pages.goldPath();
+      surfaceVm = await client.pages.goldPath({ locale });
     } catch (error) {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
       await client.identify({ nickname: "P0.5 Reviewer" });
-      surfaceVm = await client.pages.goldPath();
+      surfaceVm = await client.pages.goldPath({ locale });
     }
     const rendered = renderGoldPathSurface(surfaceVm, "web", { locale });
     const shell = renderGoldPathAppShell(rendered, {

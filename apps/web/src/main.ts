@@ -35,12 +35,12 @@ export const webApiClient = createApiClient({
   baseUrl: ""
 });
 
-export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient) {
-  return client.pages.goldPath();
+export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient, locale?: WorkHubLocale) {
+  return client.pages.goldPath(locale ? { locale } : undefined);
 }
 
 export async function renderWebGoldPathSurface(client: WorkHubApiClient = webApiClient, locale?: WorkHubLocale) {
-  return renderGoldPathSurface(await loadWebGoldPathSurface(client), "web", { locale });
+  return renderGoldPathSurface(await loadWebGoldPathSurface(client, locale), "web", { locale });
 }
 
 export function startWebIntakeSession(

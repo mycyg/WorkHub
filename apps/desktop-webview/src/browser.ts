@@ -251,13 +251,13 @@ async function boot() {
     });
     let surfaceVm;
     try {
-      surfaceVm = await client.pages.goldPath();
+      surfaceVm = await client.pages.goldPath({ locale });
     } catch (error) {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
       await client.identify({ nickname: "WorkHub Desktop Preview" });
-      surfaceVm = await client.pages.goldPath();
+      surfaceVm = await client.pages.goldPath({ locale });
     }
     const rendered = renderGoldPathSurface(surfaceVm, "desktop", { locale });
     const shell = renderGoldPathAppShell(rendered, {

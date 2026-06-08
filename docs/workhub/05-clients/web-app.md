@@ -25,17 +25,17 @@ owner: workflow
 | Gold Path shell | `apps/web/src/browser.ts` | 读取 `/api/pages/gold-path`，渲染共享 shell，绑定基础导航和 proposal action |
 | Web typed surface | `apps/web/src/main.ts` | 暴露 `loadWebGoldPathSurface`、`renderWebIntakeSession`、`renderWebWorkItemDetail`、`renderWebProposalDetail`、`renderWebAgentRunLive` 等 helpers |
 | Shared render helpers | `packages/ui/src/*` | Gold Path、intake、workitem、proposal、agent-run 的 HTML render helpers |
-| Bilingual shell foundation | `packages/ui/src/gold-path/i18n.ts`、`apps/web/src/browser.ts` | 已支持 `zh-CN` / `en-US` 语言切换、`workhub.locale` 持久化、Gold Path 静态 chrome 与运行时提示本地化 |
-| API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client |
-| Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay 同源 |
+| Bilingual locale contract | `packages/contracts/src/locale.ts`、`packages/ui/src/gold-path/i18n.ts`、`apps/web/src/browser.ts` | 已支持 `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome 与运行时提示本地化 |
+| API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
+| Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
 - 真实 React routes 尚未完整落到 `apps/web/src/routes/*`。
 - 现有 shell 更像 P0.5 preview，不是长期使用的信息架构。
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
-- Cuu bubble 在 Web 中还不是完整交互层；主力 Cuu 仍应归桌宠，Web 只做轻量同步提示和兜底。
-- 动态 Page VM 字段仍是单语言：任务标题、摘要、证据、proposal manifest、Cuu card payload 需要后续从 API / contracts 层补 `locale` 或用户偏好，而不是在客户端临时硬翻译。
+- Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
+- Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
 - 视觉回归、响应式、移动端、空/错/载/无权限、无默认 Kanban 等门禁尚未形成。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
@@ -51,10 +51,22 @@ Web 端语言切换遵循“AI-native 但不打扰”的原则：控件只占右
 | UI 落点 | `packages/ui/src/gold-path/app-shell.ts` 右上角 `中 / EN` | 真实 React shell 迁移后复用同一 `WorkHubLocale` |
 | 页面静态文案 | `packages/ui/src/gold-path/render.ts` 通过 `goldPathT(locale,key)` 渲染 | 全部真实 routes 抽 `copy key`，禁止散落硬编码 |
 | 运行时提示 | `apps/web/src/browser.ts` 的选项选择、打回原因、动作失败、动作未接线 | 后续 toast / command menu / settings 全部接同一词表 |
-| API 动态字段 | 暂未处理，仍展示 daemon 返回原文 | `GET /api/pages/*` 支持 `locale`，或 `me.locale` 驱动服务端 Page VM |
+| API 动态字段 | `GET /api/pages/*` 支持 `locale` query，API envelope 回 `meta.locale`，但 VM 内容仍展示 daemon 原文 | `me.locale` 驱动服务端 Page VM；Agent/daemon 生成 summary 时按 locale 输出 |
 | 验收测试 | `@workhub/ui`、`@workhub/web` 测试已覆盖英文 chrome | 增 Playwright 截图对比中/英两个 viewport，确认无溢出 |
 
 验收口径：切换英文后，静态框架必须出现 `Needs your decision` / `Budget and cost` / `Language`，并且导航、审批原因按钮、错误提示不应残留中文。动态任务内容若仍是中文，必须在文档和后续计划中明确它来自 API VM，不能把它算作本地化完成。
+
+### 0.2 P1.1 Locale Contract Propagation（2026-06-08 已落）
+
+本轮把 locale 从 UI 词表提升为跨端合同。详细施工说明见 [`i18n-locale-contract-p1-1.md`](./i18n-locale-contract-p1-1.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| 合同来源 | `packages/contracts/src/locale.ts` 拥有 `WorkHubLocale`、`workHubLocaleStorageKey`、`normalizeWorkHubLocale()` | 写入 OpenAPI / codegen，避免手写 client 漏字段 |
+| Page request | `packages/api-client` 的 `pages.*` 方法接受 `{ locale }`；Web loader 会传当前 locale | 非 Gold Path 页面迁到真实 routes 后统一使用 typed client |
+| Page response | `apps/api/src/routes/pages.ts` 读取 `?locale=` / `Accept-Language` 并回 `meta.locale` | 用户偏好 `me.locale` 作为服务端默认 |
+| Cuu 文案边界 | Cuu card adapter、desktop shell bridge、pet 轻气泡固定文案双语 | Live2D pet card fixture 做中英截图验收 |
+| 动态内容边界 | 用户原文、LLM 摘要、证据摘录、proposal manifest 不在客户端假翻译 | Agent/daemon 生成可本地化摘要时接 locale |
 
 ---
 

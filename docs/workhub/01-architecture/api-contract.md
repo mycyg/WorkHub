@@ -252,6 +252,20 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 指标定义见 [`../04-modules/dashboards-and-metrics.md`](../04-modules/dashboards-and-metrics.md)。成本不再让客户端拼散字段;页面主口径统一走 `GET /api/pages/cost`,轻量摘要走 `GET /api/cost/usage`。
 
+### 2.14.1 page VM locale envelope **[当前]**
+
+所有 `GET /api/pages/*` Page VM route 均接受可选 `locale` query；未传时可读 `Accept-Language`，最终只允许 `zh-CN` / `en-US`，未知值回退 `zh-CN`。共享合同见 `packages/contracts/src/locale.ts` 与 [`../05-clients/i18n-locale-contract-p1-1.md`](../05-clients/i18n-locale-contract-p1-1.md)。
+
+| 路径族 | 入参 | 出参 envelope | 说明 |
+|---|---|---|---|
+| `GET /api/pages/gold-path` | `?locale=zh-CN\|en-US` | `{ ok:true, data:GoldPathSurfaceVM, meta:{ locale } }` | Web / desktop main 首屏。 |
+| `GET /api/pages/workitems/:id` | `?locale=...` | `{ ok:true, data:WorkItemDetailVM, meta:{ locale } }` | 当前固定 chrome 可按 locale 渲染；任务标题/摘要仍保留 daemon 原文。 |
+| `GET /api/pages/proposals/:id` | `?locale=...` | `{ ok:true, data:ProposalDetailVM, meta:{ locale } }` | proposal manifest 不在客户端硬翻译。 |
+| `GET /api/pages/cost` | `?locale=...` | `{ ok:true, data:CostDashboardVM, meta:{ locale } }` | 成本固定标签由客户端/页面 renderer 本地化；金额和 usage 数字不变。 |
+| `GET /api/pages/attention` / `approvals` | `?locale=...` | `{ ok:true, data:..., meta:{ locale } }` | Cuu / 页面固定 action label 由客户端词表承接。 |
+
+错误 envelope 不因 locale 改变 `ApiErr.code`。后续 `me.locale` 用户偏好落地后，服务端可在未传 query 时优先用用户偏好，再回退 `Accept-Language`。
+
 ### 2.15 cost governance **[新]**
 
 | 方法 路径 | 出参 | 鉴权 | 说明 |

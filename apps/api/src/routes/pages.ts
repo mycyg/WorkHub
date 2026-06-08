@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { settings } from "@workhub/config";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
+import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -46,6 +47,20 @@ export type PageRoutesDependencies = {
   allowUnauthenticatedGoldPath?: boolean;
 };
 
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
+function pageEnvelope<T>(data: T, locale: WorkHubLocale) {
+  return {
+    ok: true,
+    data,
+    meta: {
+      locale
+    }
+  } as const;
+}
+
 export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -59,29 +74,29 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const activeRuns = await queue.listActive();
-    return c.json({ ok: true, data: buildAttentionHomePage({ backgroundRuns: activeRuns }) });
+    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns }), requestLocale(c)));
   });
 
   if (allowUnauthenticatedGoldPath) {
     routes.get("/gold-path", (c) => {
-      return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
+      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(), requestLocale(c)));
     });
   } else {
     routes.get("/gold-path", createCurrentUserMiddleware(authSource), (c) => {
-      return c.json({ ok: true, data: buildP05GoldPathSurfacePage() });
+      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(), requestLocale(c)));
     });
   }
 
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
     const data = await approvals.listPendingForUser(c.var.currentUser);
-    return c.json({ ok: true, data });
+    return c.json(pageEnvelope(data, requestLocale(c)));
   });
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), (c) => {
     if (!isP05WorkItemId(c.req.param("id"))) {
       throw new HTTPException(404, { message: "没有找到这个事项页面。" });
     }
-    return c.json({ ok: true, data: getP05GoldPathFixture().workItemDetail });
+    return c.json(pageEnvelope(getP05GoldPathFixture().workItemDetail, requestLocale(c)));
   });
 
   routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {
@@ -90,9 +105,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       if (!proposal) {
         throw new HTTPException(404, { message: "没有找到这个变更申请。" });
       }
-      return c.json({ ok: true, data: buildProposalDetailPage(proposal) });
+      return c.json(pageEnvelope(buildProposalDetailPage(proposal), requestLocale(c)));
     }
-    return c.json({ ok: true, data: getP05GoldPathFixture().proposalDetail });
+    return c.json(pageEnvelope(getP05GoldPathFixture().proposalDetail, requestLocale(c)));
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {
@@ -113,7 +128,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       budgetUsages: decision.usages,
       ledgerEntries: ledgerStore.entries
     });
-    return c.json({ ok: true, data });
+    return c.json(pageEnvelope(data, requestLocale(c)));
   });
 
   return routes;

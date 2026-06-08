@@ -115,6 +115,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `cuu-bongo-style-runtime-plan.md` | **C-PET/Cuu/Bongo-style**:历史 BongoCat 参考吸收、失败证据、低恐怖谷取舍与反例;不再作为当前运行时或用户选项 | historical |
 | `cuu-green-screen-desktop-pet-solution.md` | **C-PET/Cuu**:历史绿幕生图、抠图裁切、sprite atlas 方案复盘;当前不进入 Cuu 可选项 | historical |
 | `cuu-live2d-layered-asset-plan.md` | **C-PET/Cuu/Live2D**:分层 PSD、图层树、GPT Image 拆件、Cubism 绑定、Tauri runtime 与 GIF 兜底规则;作为未来原创模型替换路线 | concept |
+| `i18n-locale-contract-p1-1.md` | **C-WEB/C-PET/Cuu/Contracts**:中英双语 locale 合同、API Page VM query/meta、typed client、Cuu 固定文案与后续多语言路线 | current |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `current-state-visual-audit-and-construction-plan-2026-06-07.md` | **C-WEB/C-PET/Cuu/Rust shell**:真实页面截图、Cuu 多帧动作抓取、Hatch Pet 路线与下一轮施工验收门 | audit |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |

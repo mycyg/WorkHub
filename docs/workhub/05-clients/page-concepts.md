@@ -242,7 +242,7 @@ Cuu 是当前桌宠形象基线：橘色卡通小猫、会动、可爱、醒目�
 
 ![Cuu runtime 差距路线](./assets/cuu/cuu-runtime-gap-roadmap.png)
 
-Cuu 当前已有卡片适配、motion hints、真实 PNG `sprite_atlas` 默认 pet surface、Bongo-style fallback / 行为原型、Bongo P1b 动作增强、Bongo P1c first-painted 首帧门禁、Bongo P1d-a scale / opacity / pass-through 窗口手感合同、Bongo P1d-b-a hide-on-hover soft dodge、Bongo P1d-c 窗口设置矩阵真实截图、Bongo P1e-b/P1e-c/P1e-d-a/P1e-d-b 真实输入/长驻录屏、pointer smoothing / drag grip、Pet card P1.2 轻卡上下文渲染、P1.2b 真实 `selected_option_ids` 提交、controller 策略 MVP、审批/澄清动作提交基础、18 clip 小猫绿幕 atlas、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、Windows debug `PrintWindow` 像素 smoke；已撤回 Web rail / 主窗 Cuu 入口。仍缺更精致真实图像素材重生成、正式 Live2D 模型、动作幅度二轮、full hide/pass-through 安全恢复、多屏恢复实测、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
+Cuu 当前口径已经收束为独立 `pet` window 的黑猫 Hijiki / 白猫 Tororo Live2D Cubism2 二选项。已落能力包括卡片适配、motion hints、controller 策略 MVP、审批/澄清动作提交基础、Rust injected pet surface、浏览器调试 pet surface、基础 idle scheduler、pet window 几何合同、command scaffold、最小 Tauri runtime 入口、pet window API 执行、拖拽 bridge、Rust cursor sample、`pet-window-state.json` 位置落盘、Windows debug `PrintWindow` 像素 smoke、P1.1 Cuu/pet 固定文案双语；Web rail / 主窗 Cuu 入口已撤回。Bongo、PSD draft、sprite/atlas、橘猫改色和 Web rail 只保留为历史反例或工具链参考，不再作为默认、fallback 或用户选项。仍缺黑猫/白猫真实 Tauri motion capture、任务动作映射、full hide/pass-through 安全恢复、多屏恢复实测、系统通知点击、安装包、P1.2 真实 Tauri card fixture capture、证据详情展开和预算/证据/sync 轻卡 fixture。
 
 ![Rust shell 差距路线](./assets/desktop/desktop-rust-shell-gap-roadmap.png)
 

@@ -118,6 +118,29 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   ]);
 });
 
+test("api client carries locale on typed page VM requests", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.pages.goldPath({ locale: "en-US" });
+  await client.pages.workItem("work/1", { locale: "zh-CN" });
+  await client.pages.proposal("proposal 1", { locale: "en-US" });
+
+  assert.deepEqual(calls, [
+    "/api/pages/gold-path?locale=en-US",
+    "/api/pages/workitems/work%2F1?locale=zh-CN",
+    "/api/pages/proposals/proposal%201?locale=en-US"
+  ]);
+});
+
 test("api client exposes typed push stream URLs for web and desktop clients", () => {
   const relative = createApiClient();
   const daemon = createApiClient({ baseUrl: "http://127.0.0.1:8787/" });
