@@ -7,6 +7,7 @@ import {
   CUU_PREFERENCES_STORAGE_KEY,
   loadCuuPreferences,
   normalizeCuuPreferences,
+  renderDesktopPetSettingsPanel,
   renderCuuPreferencePanel,
   saveCuuPreferences,
   type CuuPreferenceStorage
@@ -168,4 +169,39 @@ test("Cuu preference panel renders English black and white model-pack copy only"
   assert.doesNotMatch(html, /data-cuu-model-pack-selectable="false"[^>]*disabled/u);
   assert.match(html, /Reduce motion/u);
   assert.doesNotMatch(html, /减少动效/u);
+});
+
+test("desktop pet settings panel is a serious recovery surface without model choices", () => {
+  const controller = createCuuController({
+    preferences: {
+      pet_scale_percent: 125,
+      pet_opacity_percent: 80,
+      pet_pass_through: true,
+      pet_hide_on_hover: true,
+      pet_model_pack_id: "cuu-tororo-live2d-cubism2"
+    }
+  });
+  const html = renderDesktopPetSettingsPanel(controller.snapshot());
+
+  assert.match(html, /桌面客户端/u);
+  assert.match(html, /data-cuu-pet-settings-state="pass_through"/u);
+  assert.match(html, /data-cuu-pet-scale="125" aria-pressed="true"/u);
+  assert.match(html, /data-cuu-pet-opacity="80" aria-pressed="true"/u);
+  assert.match(html, /data-cuu-pet-pass-through checked/u);
+  assert.match(html, /data-cuu-pet-hide-on-hover checked/u);
+  assert.match(html, /data-cuu-pet-restore-interaction="true"/u);
+  assert.match(html, /显示桌宠/u);
+  assert.doesNotMatch(html, /data-cuu-model-pack-id|cuu-tororo-live2d-cubism2|白猫|黑猫/u);
+});
+
+test("desktop pet settings panel localizes recovery copy in English", () => {
+  const controller = createCuuController();
+  const html = renderDesktopPetSettingsPanel(controller.snapshot(), { locale: "en-US" });
+
+  assert.match(html, /Desktop client/u);
+  assert.match(html, /Restore interaction/u);
+  assert.match(html, /data-cuu-pet-settings-state="interactive"/u);
+  assert.match(html, /data-cuu-pet-scale="100" aria-pressed="true"/u);
+  assert.match(html, /data-cuu-pet-opacity="100" aria-pressed="true"/u);
+  assert.doesNotMatch(html, /桌面客户端|data-cuu-model-pack-id|Black cat|White cat/u);
 });

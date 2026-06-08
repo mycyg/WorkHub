@@ -17,8 +17,8 @@ use workhub_client_tauri::single_instance::single_instance_plan_from_args;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
     tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID,
-    WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
+    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
+    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -661,6 +661,8 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         .ok_or_else(|| "missing hide-main tray action".to_string())?;
     let toggle_pet = tray_menu_action_plan_by_id(TRAY_TOGGLE_PET_ID)
         .ok_or_else(|| "missing toggle-pet tray action".to_string())?;
+    let restore_pet = tray_menu_action_plan_by_id(TRAY_RESTORE_PET_INTERACTION_ID)
+        .ok_or_else(|| "missing restore-pet-interaction tray action".to_string())?;
     let open_inbox = tray_menu_action_plan_by_id(TRAY_OPEN_INBOX_ID)
         .ok_or_else(|| "missing open-inbox tray action".to_string())?;
     let open_settings = tray_menu_action_plan_by_id(TRAY_OPEN_SETTINGS_ID)
@@ -678,6 +680,12 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         MenuItemBuilder::with_id(toggle_pet.id.as_str(), toggle_pet.label.as_str())
             .build(app)
             .map_err(|error| format!("failed to build toggle-pet tray item: {error}"))?;
+    let restore_pet_item =
+        MenuItemBuilder::with_id(restore_pet.id.as_str(), restore_pet.label.as_str())
+            .build(app)
+            .map_err(|error| {
+                format!("failed to build restore-pet-interaction tray item: {error}")
+            })?;
     let open_inbox_item =
         MenuItemBuilder::with_id(open_inbox.id.as_str(), open_inbox.label.as_str())
             .build(app)
@@ -695,6 +703,7 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         .item(&hide_main_item)
         .separator()
         .item(&toggle_pet_item)
+        .item(&restore_pet_item)
         .item(&open_inbox_item)
         .item(&open_settings_item)
         .separator()
@@ -735,6 +744,19 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
+fn restore_pet_window_interaction(app: &tauri::AppHandle) -> Result<(), String> {
+    let scale_percent = {
+        let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
+        let state = runtime_state
+            .lock()
+            .map_err(|_| "pet runtime state is poisoned".to_string())?;
+        state.settings.scale_percent
+    };
+    let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
+    set_pet_window_settings(app.clone(), runtime_state, scale_percent, 100, false, false)?;
+    Ok(())
+}
+
 fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     let Some(plan) = tray_menu_action_plan_by_id(id) else {
         return Ok(());
@@ -743,6 +765,10 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     if plan.exits_app {
         app.exit(0);
         return Ok(());
+    }
+
+    if plan.id == TRAY_RESTORE_PET_INTERACTION_ID {
+        restore_pet_window_interaction(app)?;
     }
 
     if let Some(control) = plan.window_control.clone() {

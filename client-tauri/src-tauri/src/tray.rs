@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::window_controls::{
-    focus_main_route, hide_main_window, show_main_window, toggle_pet_window,
+    focus_main_route, hide_main_window, show_main_window, show_pet_window, toggle_pet_window,
     ShellWindowControlPlan, ShellWindowControlSource,
 };
 
@@ -11,6 +11,7 @@ pub const WORKHUB_TRAY_TOOLTIP: &str = "WorkHub - Cuu is ready";
 pub const TRAY_SHOW_MAIN_ID: &str = "show-main";
 pub const TRAY_HIDE_MAIN_ID: &str = "hide-main";
 pub const TRAY_TOGGLE_PET_ID: &str = "toggle-pet";
+pub const TRAY_RESTORE_PET_INTERACTION_ID: &str = "restore-pet-interaction";
 pub const TRAY_OPEN_INBOX_ID: &str = "open-inbox";
 pub const TRAY_OPEN_SETTINGS_ID: &str = "open-settings";
 pub const TRAY_QUIT_ID: &str = "quit";
@@ -25,6 +26,7 @@ pub enum TrayMenuActionKind {
     ShowMain,
     HideMain,
     TogglePet,
+    RestorePetInteraction,
     OpenInbox,
     OpenSettings,
     Quit,
@@ -58,6 +60,11 @@ pub fn default_tray_menu_items() -> Vec<TrayMenuActionPlan> {
             TrayMenuActionKind::TogglePet,
         ),
         tray_menu_action_plan(
+            TRAY_RESTORE_PET_INTERACTION_ID,
+            "Restore Cuu interaction",
+            TrayMenuActionKind::RestorePetInteraction,
+        ),
+        tray_menu_action_plan(
             TRAY_OPEN_INBOX_ID,
             "Open inbox",
             TrayMenuActionKind::OpenInbox,
@@ -82,6 +89,9 @@ fn tray_menu_action_plan(id: &str, label: &str, kind: TrayMenuActionKind) -> Tra
         TrayMenuActionKind::ShowMain => Some(show_main_window(ShellWindowControlSource::Tray)),
         TrayMenuActionKind::HideMain => Some(hide_main_window(ShellWindowControlSource::Tray)),
         TrayMenuActionKind::TogglePet => Some(toggle_pet_window(ShellWindowControlSource::Tray)),
+        TrayMenuActionKind::RestorePetInteraction => {
+            Some(show_pet_window(ShellWindowControlSource::Tray))
+        }
         TrayMenuActionKind::OpenInbox => {
             focus_main_route(ShellWindowControlSource::Tray, INBOX_TRAY_ROUTE).ok()
         }
@@ -117,11 +127,12 @@ mod tests {
             .map(|item| item.id.as_str())
             .collect::<HashSet<_>>();
 
-        assert_eq!(items.len(), 6);
+        assert_eq!(items.len(), 7);
         assert_eq!(ids.len(), items.len());
         assert!(ids.contains(TRAY_SHOW_MAIN_ID));
         assert!(ids.contains(TRAY_HIDE_MAIN_ID));
         assert!(ids.contains(TRAY_TOGGLE_PET_ID));
+        assert!(ids.contains(TRAY_RESTORE_PET_INTERACTION_ID));
         assert!(ids.contains(TRAY_OPEN_INBOX_ID));
         assert!(ids.contains(TRAY_OPEN_SETTINGS_ID));
         assert!(ids.contains(TRAY_QUIT_ID));
@@ -151,6 +162,19 @@ mod tests {
         assert_eq!(toggle_control.source, ShellWindowControlSource::Tray);
         assert_eq!(toggle_control.route, Some("/".to_string()));
         assert_eq!(toggle_control.focus, false);
+    }
+
+    #[test]
+    fn restore_pet_interaction_shows_cuu_without_stealing_focus() {
+        let plan = tray_menu_action_plan_by_id(TRAY_RESTORE_PET_INTERACTION_ID).unwrap();
+        let control = plan.window_control.unwrap();
+
+        assert_eq!(plan.kind, TrayMenuActionKind::RestorePetInteraction);
+        assert_eq!(control.label, "pet");
+        assert_eq!(control.action, ShellWindowControlAction::Show);
+        assert_eq!(control.source, ShellWindowControlSource::Tray);
+        assert_eq!(control.route, Some("/".to_string()));
+        assert_eq!(control.focus, false);
     }
 
     #[test]

@@ -31,7 +31,7 @@ visuals:
 | `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry，创建 `main` / `pet`，注入 `window.__WORKHUB_SURFACE__`，注册 commands / plugins / SSE worker |
 | `client-tauri/src-tauri/src/pet_window.rs` | `pet` 几何、右下角定位、body/card 尺寸、work area 夹取、scale/opacity/pass-through/hide-on-hover |
 | `client-tauri/src-tauri/src/pet_commands.rs` | `set_pet_window_mode`、`set_pet_window_settings`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` |
-| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、打开收件箱、打开设置、退出 |
+| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、恢复 Cuu 交互、打开收件箱、打开设置、退出 |
 | `client-tauri/src-tauri/src/notify.rs` | high/urgent 系统通知计划和去重 |
 | `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
@@ -76,6 +76,7 @@ visuals:
 | 打开 WorkHub | show/focus main window |
 | 隐藏主窗 | hide main window |
 | 显示/隐藏 Cuu | toggle pet window |
+| 恢复 Cuu 交互 | 关闭 pass-through / hide-on-hover，恢复 opacity=100，并 show pet window |
 | 收件箱 | deep-link `/inbox` |
 | 设置 | deep-link `/settings`，也是 Cuu 设置恢复入口 |
 | 退出 | graceful shutdown |
@@ -140,6 +141,23 @@ visuals:
 模型白名单见 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
 
 当前 Cuu 概念图已经同步到黑猫 Hijiki / 白猫 Tororo Live2D 模型；Rust/Tauri 验收不能再参照旧橘猫、手绘猫或临时改色稿。概念源帧只证明模型外观和浏览器模型页可用，Tauri `pet` window 仍必须单独验证透明窗口、右下角定位、完整显示、拖拽、pass-through、hide-on-hover 和 card mode。
+
+`reference/VPet-main.zip`、`reference/像素猫meme.zip`、`reference/像素猫meme_扩充版.zip` 的审查结论已经记录在 [`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)。落地边界：
+
+| 参考点 | Rust shell 落点 | TS/Cuu 落点 |
+|---|---|---|
+| VPet 透明窗口与点击穿透 | `pet_window.rs` / `pet_commands.rs` 管理 transparent、topmost、skip-taskbar、pass-through、restore interaction | `pet-surface.ts` 只同步偏好和状态，不直接猜测系统窗口能力 |
+| VPet Start/Loop/End 动作 | Rust 不拥有业务动作，只保证窗口稳定和 capture | `packages/cuu/src/motion.ts` 规划 `enter` / `loop` / `exit` motion slot |
+| VPet touch area / drag | Rust 提供 `start_pet_window_drag`、位置保存和 work area clamp | Live2D canvas 保持 hover/tap/drag 热区，hover 默认只 look-only |
+| 像素猫 random_act | Rust 不参与随机动作决策 | `CuuBehaviorManifest.idle_random` 控制概率、冷却和可打断规则 |
+| 像素猫 action sound | Rust 不默认播放声音 | P2 以后通过用户偏好开启，默认静音 |
+
+禁止事项：
+
+- 不复制 VPet 或像素猫图像、音效到 WorkHub 默认资产。
+- 不把 VPet WPF 代码移植进 Tauri shell。
+- 不让 Rust shell 拥有 AI 业务状态机；Rust 只负责窗口、托盘、通知、deep-link 和本地能力。
+- 不再用 GIF/静态 PNG 作为默认 Cuu；Live2D 黑猫/白猫仍是唯一默认路线。
 
 | 业务状态 | Cuu 动作语义 | 当前 Live2D 映射 |
 |---|---|---|
@@ -230,16 +248,18 @@ visuals:
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 继续补 idle、tap、drag、approval、search |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
-| full hide/pass-through 恢复 | 未闭环 | 托盘和热键恢复门 |
+| full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |
 | 商用授权 | 未确认 | 联系授权或原创替换 |
 | 主窗彻底严肃化 | 进行中 | 搜索截图确认无 Cuu 本体 |
+| 鲜活动作状态机 | 参考包审查已落文档；源码未实现 | P1.6 实施 `CuuBehaviorManifest`、真实 motion capture 和状态事件绑定 |
 
 ## 10. 与其他文档的边界
 
 - Cuu 形象与交互：[`cuu-desktop-pet-concept.md`](./cuu-desktop-pet-concept.md)
 - 当前模型二选项：[`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)
 - Pet 右键设置菜单：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)
+- Pet settings 恢复门：[`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md)
 - 桌宠参考包审查：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)
 - 页面概念图索引：[`page-concepts.md`](./page-concepts.md)
 - Web 页面规划：[`web-app.md`](./web-app.md)

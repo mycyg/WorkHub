@@ -462,6 +462,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   await tauri?.setSettings?.({ scale_percent: 125, opacity_percent: 80, pass_through: true, hide_on_hover: true });
   await tauri?.startDragging?.();
   await tauri?.focusMainRoute?.("/settings");
+  await tauri?.showPetWindow?.();
   await tauri?.hidePetWindow?.();
   assert.equal(await tauri?.sampleCursorNear?.(), true);
   assert.deepEqual(calls, [
@@ -469,6 +470,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
     "set_pet_window_settings:125",
     "startDragging",
     "focus_main_route:",
+    "show_pet_window:",
     "hide_pet_window:",
     "sample_pet_cursor_near:"
   ]);

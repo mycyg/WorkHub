@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**37 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
+> 状态(2026-06-08):**41 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计、pet 右键菜单与 settings 恢复门;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
 
 ---
 
@@ -114,6 +114,10 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `cuu-live2d-cat-options-current-plan.md` | **C-PET/Cuu/Live2D**:当前唯一可选模型包为黑猫 Hijiki 与白猫 Tororo;定义源码、QA、偏好页、真实录屏验收收束口径 | current |
 | `i18n-locale-contract-p1-1.md` | **C-WEB/C-PET/Cuu/Contracts**:中英双语 locale 合同、API Page VM query/meta、typed client、Cuu 固定文案与后续多语言路线 | current |
 | `i18n-nongoldpath-render-helpers-p1-2.md` | **C-WEB/C-PET/C-UIKIT**:非 Gold Path helper 固定文案双语、可见 enum 人话标签、Web/Desktop facade locale 接线 | current |
+| `i18n-user-locale-preference-p1-3.md` | **C-WEB/C-PET/Identity**:用户 locale 偏好持久化、`PATCH /api/auth/preferences`、Web/Desktop/Pet 共享 `workhub.locale` | current |
+| `pet-right-click-settings-menu-p1-4.md` | **C-PET/Cuu/Tauri**:独立 pet window 右键轻菜单,黑猫/白猫、中文/EN、悬停避让、打开设置、隐藏 Cuu | current |
+| `pet-settings-recovery-p1-5.md` | **C-PET/Cuu/Tauri/Settings**:主窗 `/settings` 与托盘恢复 pass-through/hide-on-hover 的源码门和后续 settings matrix | current |
+| `desktop-pet-reference-package-audit-2026-06-08.md` | **C-PET/Cuu/Reference**:`reference` 压缩包复用价值审查,VPet/像素猫只借鉴状态机、资源包和窗口交互,不提交引用资产 | current |
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `current-state-visual-audit-and-construction-plan-2026-06-07.md` | **C-WEB/C-PET/Cuu/Rust shell**:真实页面截图、Cuu 黑/白 Live2D 概念源帧、Tauri 多帧动作抓取与下一轮施工验收门 | audit |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |

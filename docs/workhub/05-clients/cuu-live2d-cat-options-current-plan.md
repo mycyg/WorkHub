@@ -88,6 +88,47 @@ Cuu 保留业务状态和 idle 微动作语义：
 
 同一套语义服务黑猫和白猫。后续如果替换原创模型，也必须保持 pack id、motion key、window affordance 合同兼容。
 
+### 6.1 VPet / Pixel Cat Reference Lessons
+
+`reference/VPet-main.zip` 和两个像素猫素材包已经完成只读审查，详细结论见 [`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)。对 Cuu 当前路线的约束如下：
+
+- 不引入第三套 Cuu 视觉。Cuu 仍然只有黑猫 Hijiki / 白猫 Tororo。
+- 不把 VPet 或像素猫素材复制进 WorkHub 默认资产；仅参考运行时设计。
+- Cuu 后续不能只靠静态首帧或 CSS 缩放，必须有独立行为 manifest。
+- 动作切换采用 `enter` / `loop` / `exit` 三段式，参考 VPet 的 `A_Start` / `B_Loop` / `C_End`，避免任务态突然跳帧。
+- idle 采用随机动作池，参考像素猫 `random_act`，但动作语义收敛到 WorkHub 的 AI 工作状态。
+- 音效如果启用，必须默认静音、可配置、可审计，不进入 P1 默认验收。
+
+### 6.2 `CuuBehaviorManifest` Target
+
+目标文件：
+
+| 文件 | 责任 |
+|---|---|
+| `packages/cuu/src/motion.ts` | 定义 `CuuBehaviorManifest`、状态优先级、start/loop/end slot、idle random pool |
+| `packages/cuu/src/model-pack.ts` | 黑猫/白猫模型包挂载同构 manifest，声明 motion coverage |
+| `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 暴露 `setCuuBehaviorState`，向现有 Live2D iframe/runtime 发 motion，不重建 iframe |
+| `apps/desktop-webview/src/pet-surface.ts` | 把 AI 事件、用户 hover/tap/drag、气泡 card mode 接入状态机 |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | 录制黑猫/白猫多状态 motion evidence |
+
+最小字段：
+
+| 字段 | 说明 |
+|---|---|
+| `version` | manifest 版本，P1 固定为 `1` |
+| `model_pack_id` | 只允许黑猫/白猫 pack id |
+| `states` | `idle`、`thinking`、`asking_approval`、`searching_evidence`、`syncing_files`、`worried`、`celebrating`、`offline` |
+| `enter` / `loop` / `exit` | 每个状态的 Live2D motion slot |
+| `expression` | 可选表情 key |
+| `priority` | 状态抢占顺序，用户拖拽/点击高于后台 idle |
+| `interruptible` | 是否允许新事件打断 |
+| `bubble_mode` | `none` / `tip` / `card` |
+| `window_mode` | `body_only` / `card` |
+| `idle_random` | 带 `probability` 和 `cooldown_ms` 的随机微动作池 |
+| `coverage` | `full` / `partial`，记录当前模型是否有专用 motion |
+
+P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明状态机存在、不会重建 iframe、不会移动全身锚点、不会只做整体缩放。
+
 ## 7. 验收门
 
 必须通过：
@@ -112,5 +153,6 @@ Cuu 保留业务状态和 idle 微动作语义：
 2. 继续录白猫同等场景，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 3. 输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`。
 4. 更新 [`current-state-visual-audit-and-construction-plan-2026-06-07.md`](./current-state-visual-audit-and-construction-plan-2026-06-07.md) 的真实证据表。
-5. 完成多屏恢复、full hide/pass-through 安全恢复、托盘显隐和通知点击 deep-link。
+5. 主窗 `/settings` 与托盘 pass-through 恢复门已落；继续补 settings matrix、多屏恢复、full hide 录屏和通知点击 deep-link。
 6. 完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
+7. 实施 `CuuBehaviorManifest` P1.6，把 VPet/像素猫参考结论落成 motion 状态机和真实录屏证据。

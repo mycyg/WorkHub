@@ -385,6 +385,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(webSurface.pages.includes("/api/pages/gold-path"), true);
+  assert.equal(webSurface.pages.includes("/settings"), true);
   assert.equal("cuuCardAdapter" in webSurface, false);
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderWebGoldPathSurface(fakeClient(surface))).surface, "web");

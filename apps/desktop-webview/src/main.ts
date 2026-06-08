@@ -26,7 +26,8 @@ export const desktopWebviewSurface = {
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
     "/api/pages/cost",
-    "/api/agent-runs/:id/replay"
+    "/api/agent-runs/:id/replay",
+    "/settings"
   ],
   consumesTypedClient: "@workhub/api-client",
   cuuCardAdapter: "@workhub/cuu",

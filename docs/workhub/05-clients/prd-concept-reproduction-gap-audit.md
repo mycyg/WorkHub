@@ -29,9 +29,9 @@ visuals:
 |---|---|---|
 | AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM | 真实后端持久化、真实 worker 执行、权限闭环、完整 eval/replay 数据 |
 | Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换 | 完整 SPA 信息架构、真实数据流、空/错/载入/权限四态、视觉 polish |
-| Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
-| Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略 |
-| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧 | 黑/白真实 Tauri 多帧录屏、任务动作语义、长期性能、授权或原创替换 |
+| Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge、`/settings` pet 恢复面板 | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
+| Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample、托盘 `restore-pet-interaction` 源码门 | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略、恢复录屏 |
+| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧、pass-through 源码恢复门 | 黑/白真实 Tauri 多帧录屏、任务动作语义、settings matrix、长期性能、授权或原创替换 |
 | 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
 | 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向 | 文档/PPT/表格/图片/文件夹 diff 预览、证据引用、审批写回 |
 
@@ -106,7 +106,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 知识库/项目检索由 Cuu 气泡承接 | 概念图已写 | Cuu search card + API endpoint + result bubble |
 | Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落，概念图已同步真实模型帧 | 真实 Tauri 多帧录屏、动作语义、长期性能 |
 | Cuu 不在 Web/主窗里 | 当前文档和代码收束中 | 截图审查确认无主窗 Cuu 本体 |
-| Rust 客户端哲学是轻、气泡、少打扰 | Tauri shell 和文档已对齐 | 托盘、通知、deep-link、恢复策略、安装包 |
+| Rust 客户端哲学是轻、气泡、少打扰 | Tauri shell、托盘 settings、pass-through 恢复源码门已对齐 | 通知、deep-link、真实恢复录屏、安装包 |
 | 中英双语 | locale 地基已落 | 全页面、Cuu、Rust 系统文案补齐 |
 | 完整测试验收 | 有单元测试和部分 QA 脚本 | UI 截图、桌宠录屏、编译、跨平台 smoke 全链路 |
 
@@ -116,9 +116,9 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 |---|---|---|
 | CUX-L2D-01 | 黑猫默认可验收 | Hijiki idle/hover/tap/drag/approval/search/offline 录屏 |
 | CUX-L2D-02 | 白猫可选可验收 | Tororo 同场景录屏 |
-| CUX-L2D-03 | 设置矩阵 | scale、opacity、pass-through、hide-on-hover、card mode 报告 |
+| CUX-L2D-03 | 设置矩阵 | scale、opacity、pass-through、hide-on-hover、card mode、`/settings` 与托盘恢复报告 |
 | CUX-L2D-04 | 主窗边界 | Web/desktop 主窗截图证明无 Cuu 本体 |
-| CUX-L2D-05 | 恢复策略 | 托盘恢复 pass-through/full hide、多屏恢复 |
+| CUX-L2D-05 | 恢复策略 | `/settings` 和托盘恢复源码已落；仍需 pass-through/full hide 录屏、多屏恢复 |
 | CUX-L2D-06 | 授权/原创替换 | 授权记录或原创等效模型计划 |
 
 ## 6. Web 与页面施工路线
@@ -138,7 +138,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 阶段 | 模块 | 核心改造 |
 |---|---|---|
 | PET-R1 | window recovery | 多屏、缩放、离屏、窗口状态恢复 |
-| PET-R2 | tray recovery | Cuu 显隐、主窗、收件箱、设置、pass-through 恢复 |
+| PET-R2 | tray recovery | Cuu 显隐、主窗、收件箱、设置已落；`restore-pet-interaction` 已落；继续补真实恢复录屏 |
 | PET-R3 | notification | high/urgent 去重、点击 deep-link、静默策略 |
 | PET-R4 | private SSE | 设备令牌、私有流重连、状态回传 |
 | PET-R5 | local sync | spec watch、网盘同步、本地缓存 |

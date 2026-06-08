@@ -1,4 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
+import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -16,7 +17,11 @@ import {
   resolveDesktopShellListen,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
-import { loadCuuPreferences } from "./cuu-preferences.js";
+import {
+  bindDesktopPetSettingsPanel,
+  desktopPetSettingsCss,
+  loadCuuPreferences
+} from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import {
   desktopPetWindowSettingsFromPreferences,
@@ -300,10 +305,20 @@ async function boot() {
       apiBaseLabel: "device-token aware client",
       locale
     });
-    root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
+    root.innerHTML = `<style>${shell.css}${desktopPetSettingsCss}</style>${shell.html}`;
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
-    void Promise.resolve(petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(loadCuuPreferences()))).catch(() => undefined);
+    const cuuController = createCuuController({ preferences: loadCuuPreferences() });
+    const syncPetSettings = async (snapshot: CuuControllerSnapshot) => {
+      await petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(snapshot.preferences));
+    };
+    void syncPetSettings(cuuController.snapshot()).catch(() => undefined);
+    bindDesktopPetSettingsPanel(root, cuuController, {
+      locale,
+      bridge: petWindowBridge,
+      onChange: syncPetSettings,
+      onStatus: (message) => showNotice(root, message)
+    });
     bindLocaleSwitch(root, locale, client);
     bindGoldPathNavigation(root, shell, client, locale, { listen: realShellListen });
   } catch (error) {

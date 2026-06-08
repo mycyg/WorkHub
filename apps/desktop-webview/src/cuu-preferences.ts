@@ -10,6 +10,8 @@ import {
   type CuuModelPackChoice
 } from "@workhub/cuu";
 
+import type { DesktopPetWindowBridge } from "./pet-window-bridge.js";
+
 export const CUU_PREFERENCES_STORAGE_KEY = "workhub_cuu_preferences";
 
 export type CuuPreferenceLocale = "zh-CN" | "en-US";
@@ -19,6 +21,11 @@ export type CuuPreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 export type CuuPreferencePanelBinding = {
   element: HTMLElement;
   toggle: HTMLButtonElement;
+  refresh: () => void;
+};
+
+export type DesktopPetSettingsPanelBinding = {
+  element: HTMLElement;
   refresh: () => void;
 };
 
@@ -41,6 +48,26 @@ export const desktopCuuPreferenceCss = [
   ".wh-cuu-pref-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}",
   ".wh-cuu-pref-toggle label{display:flex;align-items:center;gap:8px}.wh-cuu-pref-toggle input{width:16px;height:16px;accent-color:var(--wh-app-blue)}",
   ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid var(--wh-app-line);border-radius:8px;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink)}"
+].join("");
+
+export const desktopPetSettingsCss = [
+  ".wh-desktop-pet-settings{margin-top:18px;display:grid;gap:14px}",
+  ".wh-desktop-pet-settings-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}",
+  ".wh-desktop-pet-settings-head h2{margin:0;font-size:18px;line-height:1.2}",
+  ".wh-desktop-pet-settings-head p{margin:6px 0 0;color:var(--muted);line-height:1.5}",
+  ".wh-desktop-pet-state{display:flex;align-items:center;gap:8px;min-width:max-content;border:1px solid var(--line);border-radius:8px;background:#f8fbff;padding:8px 10px;color:var(--muted);font-size:12px;font-weight:800}",
+  ".wh-desktop-pet-state span{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(36,166,106,.12)}",
+  ".wh-desktop-pet-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}",
+  ".wh-desktop-pet-setting{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}",
+  ".wh-desktop-pet-setting strong{font-size:13px}.wh-desktop-pet-setting p{margin:0;color:var(--muted);line-height:1.45}",
+  ".wh-desktop-pet-options{display:flex;gap:6px;flex-wrap:wrap}",
+  ".wh-desktop-pet-options button,.wh-desktop-pet-action{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:8px 10px;font:800 12px/1.1 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer}",
+  ".wh-desktop-pet-options button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:rgba(53,92,255,.08);color:var(--blue);box-shadow:inset 3px 0 0 var(--blue)}",
+  ".wh-desktop-pet-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:10px}",
+  ".wh-desktop-pet-toggle label{display:flex;align-items:center;gap:8px;font-weight:850}.wh-desktop-pet-toggle input{width:16px;height:16px;accent-color:var(--blue)}",
+  ".wh-desktop-pet-actions{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}",
+  ".wh-desktop-pet-action[data-tone=primary]{background:var(--blue);border-color:var(--blue);color:#fff}.wh-desktop-pet-action[data-tone=danger]{background:#fff4f3;border-color:#f3c5c0;color:#a94137}",
+  "@media (max-width:760px){.wh-desktop-pet-settings-head{display:grid}.wh-desktop-pet-settings-grid{grid-template-columns:1fr}.wh-desktop-pet-state{width:max-content}}"
 ].join("");
 
 export function loadCuuPreferences(storage = defaultStorage()): CuuControllerPreferences {
@@ -161,6 +188,154 @@ export function renderCuuPreferencePanel(
     </div>`;
 }
 
+export function renderDesktopPetSettingsPanel(
+  snapshot: CuuControllerSnapshot,
+  input: { locale?: CuuPreferenceLocale | string | undefined } = {}
+) {
+  const locale = normalizePreferenceLocale(input.locale);
+  const copy = desktopPetSettingsCopy[locale];
+  const preferences = snapshot.preferences;
+  const scaleButton = (value: CuuPetScalePercent) =>
+    `<button type="button" data-cuu-pet-scale="${value}" aria-pressed="${preferences.pet_scale_percent === value ? "true" : "false"}">${value}%</button>`;
+  const opacityButton = (value: CuuPetOpacityPercent) =>
+    `<button type="button" data-cuu-pet-opacity="${value}" aria-pressed="${preferences.pet_opacity_percent === value ? "true" : "false"}">${value}%</button>`;
+  const stateText = [
+    `${preferences.pet_scale_percent}%`,
+    `${preferences.pet_opacity_percent}%`,
+    preferences.pet_pass_through ? copy.passThroughOn : copy.passThroughOff,
+    preferences.pet_hide_on_hover ? copy.hideOnHoverOn : copy.hideOnHoverOff
+  ].join(" · ");
+
+  return `<div class="wh-desktop-pet-settings-head">
+      <div>
+        <h2>${escapeHtml(copy.title)}</h2>
+        <p>${escapeHtml(copy.summary)}</p>
+      </div>
+      <div class="wh-desktop-pet-state" data-cuu-pet-settings-state="${preferences.pet_pass_through ? "pass_through" : "interactive"}"><span aria-hidden="true"></span>${escapeHtml(stateText)}</div>
+    </div>
+    <div class="wh-desktop-pet-settings-grid">
+      <div class="wh-desktop-pet-setting">
+        <strong>${escapeHtml(copy.size)}</strong>
+        <div class="wh-desktop-pet-options" role="group" aria-label="${escapeHtml(copy.sizeAria)}">
+          ${petScaleOptions.map(scaleButton).join("")}
+        </div>
+      </div>
+      <div class="wh-desktop-pet-setting">
+        <strong>${escapeHtml(copy.opacity)}</strong>
+        <div class="wh-desktop-pet-options" role="group" aria-label="${escapeHtml(copy.opacityAria)}">
+          ${petOpacityOptions.map(opacityButton).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="wh-desktop-pet-toggle">
+      <div>
+        <label><input type="checkbox" data-cuu-pet-pass-through ${preferences.pet_pass_through ? "checked" : ""}>${escapeHtml(copy.passThrough)}</label>
+        <p>${escapeHtml(copy.passThroughHelp)}</p>
+      </div>
+    </div>
+    <div class="wh-desktop-pet-toggle">
+      <div>
+        <label><input type="checkbox" data-cuu-pet-hide-on-hover ${preferences.pet_hide_on_hover ? "checked" : ""}>${escapeHtml(copy.hideOnHover)}</label>
+        <p>${escapeHtml(copy.hideOnHoverHelp)}</p>
+      </div>
+    </div>
+    <div class="wh-desktop-pet-actions">
+      <button type="button" class="wh-desktop-pet-action" data-cuu-pet-restore-interaction="true" data-tone="primary">${escapeHtml(copy.restoreInteraction)}</button>
+      <button type="button" class="wh-desktop-pet-action" data-cuu-pet-show="true">${escapeHtml(copy.showPet)}</button>
+      <button type="button" class="wh-desktop-pet-action" data-cuu-pet-hide="true" data-tone="danger">${escapeHtml(copy.hidePet)}</button>
+    </div>`;
+}
+
+export function bindDesktopPetSettingsPanel(
+  shellRoot: HTMLElement,
+  controller: CuuController,
+  input: {
+    storage?: CuuPreferenceStorage | undefined;
+    locale?: CuuPreferenceLocale | string | undefined;
+    bridge?: DesktopPetWindowBridge | undefined;
+    onChange?: (snapshot: CuuControllerSnapshot) => void | Promise<void>;
+    onStatus?: (message: string) => void;
+  } = {}
+): DesktopPetSettingsPanelBinding {
+  const locale = normalizePreferenceLocale(input.locale);
+  const copy = desktopPetSettingsCopy[locale];
+  const panel = ensureDesktopPetSettingsPanel(shellRoot, locale);
+  const refresh = () => {
+    panel.innerHTML = renderDesktopPetSettingsPanel(controller.snapshot(), { locale });
+  };
+  const update = async (preferences: Partial<CuuControllerPreferences>) => {
+    const snapshot = controller.setPreferences(preferences);
+    saveCuuPreferences(snapshot.preferences, input.storage);
+    refresh();
+    await input.onChange?.(snapshot);
+    return snapshot;
+  };
+  const runBridgeAction = async (
+    action: "showPetWindow" | "hidePetWindow",
+    successMessage: string
+  ) => {
+    const bridgeAction = input.bridge?.[action];
+    if (!bridgeAction) {
+      input.onStatus?.(copy.bridgeUnavailable);
+      return;
+    }
+    try {
+      await bridgeAction();
+      input.onStatus?.(successMessage);
+    } catch {
+      input.onStatus?.(copy.bridgeUnavailable);
+    }
+  };
+
+  panel.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const scaleButton = target?.closest<HTMLButtonElement>("[data-cuu-pet-scale]");
+    if (scaleButton) {
+      void update({ pet_scale_percent: Number(scaleButton.dataset.cuuPetScale) as CuuPetScalePercent }).catch(() => input.onStatus?.(copy.applyFailed));
+      return;
+    }
+    const opacityButton = target?.closest<HTMLButtonElement>("[data-cuu-pet-opacity]");
+    if (opacityButton) {
+      void update({ pet_opacity_percent: Number(opacityButton.dataset.cuuPetOpacity) as CuuPetOpacityPercent }).catch(() => input.onStatus?.(copy.applyFailed));
+      return;
+    }
+    if (target?.closest("[data-cuu-pet-restore-interaction]")) {
+      void update({
+        pet_pass_through: false,
+        pet_hide_on_hover: false,
+        pet_opacity_percent: 100
+      })
+        .then(() => runBridgeAction("showPetWindow", copy.restored))
+        .catch(() => input.onStatus?.(copy.applyFailed));
+      return;
+    }
+    if (target?.closest("[data-cuu-pet-show]")) {
+      void runBridgeAction("showPetWindow", copy.shown);
+      return;
+    }
+    if (target?.closest("[data-cuu-pet-hide]")) {
+      void runBridgeAction("hidePetWindow", copy.hidden);
+    }
+  });
+
+  panel.addEventListener("change", (event) => {
+    const target = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!target) {
+      return;
+    }
+    if (target.matches("[data-cuu-pet-pass-through]")) {
+      void update({ pet_pass_through: target.checked }).catch(() => input.onStatus?.(copy.applyFailed));
+      return;
+    }
+    if (target.matches("[data-cuu-pet-hide-on-hover]")) {
+      void update({ pet_hide_on_hover: target.checked }).catch(() => input.onStatus?.(copy.applyFailed));
+    }
+  });
+
+  refresh();
+  return { element: panel, refresh };
+}
+
 export function bindCuuPreferencePanel(
   shellRoot: HTMLElement,
   controller: CuuController,
@@ -275,6 +450,21 @@ function ensureCuuPreferencePanel(shellRoot: HTMLElement, locale: CuuPreferenceL
   panel.setAttribute("aria-label", cuuPreferenceCopy[locale].panelAria);
   panel.hidden = true;
   shellRoot.appendChild(panel);
+  return panel;
+}
+
+function ensureDesktopPetSettingsPanel(shellRoot: HTMLElement, locale: CuuPreferenceLocale) {
+  const existing = shellRoot.querySelector<HTMLElement>("[data-desktop-pet-settings]");
+  if (existing) {
+    existing.setAttribute("aria-label", desktopPetSettingsCopy[locale].panelAria);
+    return existing;
+  }
+  const panel = document.createElement("section");
+  panel.className = "wh-card wh-desktop-pet-settings";
+  panel.dataset.desktopPetSettings = "true";
+  panel.setAttribute("aria-label", desktopPetSettingsCopy[locale].panelAria);
+  const target = shellRoot.querySelector<HTMLElement>("[data-wh-panel=settings] .wh-main") ?? shellRoot;
+  target.appendChild(panel);
   return panel;
 }
 
@@ -401,6 +591,59 @@ const cuuPreferenceCopy = {
     softHide: "Soft hide",
     alwaysOn: "Always on",
     queueLimit: "Queue limit"
+  }
+} as const;
+
+const desktopPetSettingsCopy = {
+  "zh-CN": {
+    panelAria: "桌面客户端桌宠窗口设置",
+    title: "桌面客户端",
+    summary: "管理独立桌宠窗口的可恢复交互。这里不显示桌宠形象；形象切换留在独立桌宠右键菜单里。",
+    size: "窗口尺寸",
+    sizeAria: "桌宠窗口尺寸",
+    opacity: "窗口透明度",
+    opacityAria: "桌宠窗口透明度",
+    passThrough: "点击穿透",
+    passThroughHelp: "开启后鼠标会穿过桌宠。需要从本页或系统托盘恢复可交互状态。",
+    hideOnHover: "悬停避让",
+    hideOnHoverHelp: "只做软隐藏和透明度变化，不移动整只桌宠的锚点。",
+    restoreInteraction: "恢复可交互",
+    showPet: "显示桌宠",
+    hidePet: "隐藏桌宠",
+    passThroughOn: "穿透",
+    passThroughOff: "可交互",
+    hideOnHoverOn: "悬停避让",
+    hideOnHoverOff: "常驻",
+    restored: "桌宠已恢复为可交互状态。",
+    shown: "桌宠窗口已显示。",
+    hidden: "桌宠窗口已隐藏。",
+    applyFailed: "桌宠窗口设置应用失败，请稍后再试。",
+    bridgeUnavailable: "桌面桥接不可用，请从系统托盘恢复。"
+  },
+  "en-US": {
+    panelAria: "Desktop client pet window settings",
+    title: "Desktop client",
+    summary: "Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.",
+    size: "Window size",
+    sizeAria: "Pet window size",
+    opacity: "Window opacity",
+    opacityAria: "Pet window opacity",
+    passThrough: "Click through",
+    passThroughHelp: "When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.",
+    hideOnHover: "Dodge hover",
+    hideOnHoverHelp: "Uses soft hiding and opacity only; the pet anchor must not move.",
+    restoreInteraction: "Restore interaction",
+    showPet: "Show pet",
+    hidePet: "Hide pet",
+    passThroughOn: "click-through",
+    passThroughOff: "interactive",
+    hideOnHoverOn: "dodge hover",
+    hideOnHoverOff: "always on",
+    restored: "Pet interaction has been restored.",
+    shown: "Pet window is visible.",
+    hidden: "Pet window is hidden.",
+    applyFailed: "Could not apply pet window settings. Try again later.",
+    bridgeUnavailable: "Desktop bridge is unavailable. Recover from the system tray."
   }
 } as const;
 

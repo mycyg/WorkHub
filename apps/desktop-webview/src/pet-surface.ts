@@ -28,7 +28,8 @@ import {
   resolveDesktopShellListen,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
-  type DesktopShellListen
+  type DesktopShellListen,
+  type DesktopShellUnlisten
 } from "./desktop-cuu-runtime.js";
 import {
   createDesktopPetPointerSensor,
@@ -379,7 +380,8 @@ const desktopPetSettingsMenuCopy = {
     hoverEnabled: "悬停避让已开启。",
     hoverDisabled: "悬停避让已关闭。",
     openSettingsFallback: "请从托盘打开设置。",
-    hideFallback: "请从托盘隐藏 Cuu。"
+    hideFallback: "请从托盘隐藏 Cuu。",
+    restoredFromTray: "Cuu 已恢复为可交互状态。"
   },
   "en-US": {
     aria: "Cuu desktop pet settings menu",
@@ -396,7 +398,8 @@ const desktopPetSettingsMenuCopy = {
     hoverEnabled: "Dodge hover is on.",
     hoverDisabled: "Dodge hover is off.",
     openSettingsFallback: "Open settings from the tray.",
-    hideFallback: "Hide Cuu from the tray."
+    hideFallback: "Hide Cuu from the tray.",
+    restoredFromTray: "Cuu interaction has been restored."
   }
 } as const;
 
@@ -408,6 +411,14 @@ function setPetSettingsMenuOpen(root: HTMLElement, open: boolean) {
   }
   menu.hidden = !open;
   surface.dataset.petMenuOpen = open ? "true" : "false";
+}
+
+function desktopTrayActionId(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+  const id = (payload as { id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
 }
 
 export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
@@ -559,6 +570,7 @@ export async function bootDesktopPetSurface(
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
+  const shellListen = input.listen ?? resolveDesktopShellListen();
   const client = createApiClient({
     baseUrl: "",
     getClientToken: clientToken
@@ -851,8 +863,26 @@ export async function bootDesktopPetSurface(
     setPetSettingsMenuOpen(root, true);
   });
 
+  let trayActionUnlisten: DesktopShellUnlisten | undefined;
+  const maybeTrayActionUnlisten = await shellListen?.("tray-action", (event) => {
+    if (desktopTrayActionId(event.payload) !== "restore-pet-interaction") {
+      return;
+    }
+    updatePetPreferences(
+      {
+        pet_pass_through: false,
+        pet_hide_on_hover: false,
+        pet_opacity_percent: 100
+      },
+      desktopPetSettingsMenuCopy[locale].restoredFromTray
+    );
+  });
+  if (typeof maybeTrayActionUnlisten === "function") {
+    trayActionUnlisten = maybeTrayActionUnlisten;
+  }
+
   const runtime = await bindDesktopShellCuuRuntime({
-    listen: input.listen ?? resolveDesktopShellListen(),
+    listen: shellListen,
     controller,
     notify(notice) {
       setCard(notice.card);
@@ -917,6 +947,7 @@ export async function bootDesktopPetSurface(
       window.clearInterval(idleTimer);
       cancelPendingFirstPaintSync?.();
       pointerSensor?.dispose();
+      trayActionUnlisten?.();
       await runtime.dispose();
     }
   };

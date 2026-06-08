@@ -32,9 +32,9 @@ visuals:
 | Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
 | Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
-| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run 与黑/白 look-only 已有真实 Tauri 证据 | 仍缺审批、检索、同步、拖拽、hide-on-hover、settings matrix 和长期稳定性 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run 与黑/白 look-only 已有真实 Tauri 证据；VPet/像素猫参考包已完成只读审查 | 仍缺审批、检索、同步、拖拽、hide-on-hover、settings matrix、行为状态机和长期稳定性 |
 | Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
-| 多语言 | 中英 locale 合同、非 Gold Path helper、用户语言偏好已落；Web / desktop / pet 共享 `workhub.locale` | 需要补中英视觉回归、pet 右键设置菜单和服务端生成内容 locale |
+| 多语言 | 中英 locale 合同、非 Gold Path helper、用户语言偏好、pet 右键菜单和 settings 恢复面板源码已落；Web / desktop / pet 共享 `workhub.locale` | 需要补中英视觉回归和服务端生成内容 locale |
 
 ## 2. 已保留的有效截图
 
@@ -85,6 +85,7 @@ visuals:
 | 主窗 | `packages/ui/src/gold-path/render.ts` 和 desktop main shell 不再承载 Cuu 本体 |
 | Rust window | `client-tauri/src-tauri/src/pet_window.rs` / `pet_commands.rs` 承担几何、设置、拖拽和 cursor sample |
 | Hover 稳定性 | `apps/desktop-webview/src/pet-surface.ts` pointer/idle tick 只 patch CSS variables / `data-*`，不重建 Live2D iframe |
+| 参考包结论 | VPet 可借鉴透明窗口、Start/Loop/End 动作、touch area；像素猫可借鉴 `random_act` 和动作/音效 manifest；均不得直接纳入默认资产 |
 
 ## 4. 已清理内容
 
@@ -103,8 +104,8 @@ visuals:
 | 要求 | 为什么还不能算通过 | 需要的证据 |
 |---|---|---|
 | Cuu 鲜活感 | 黑猫 idle 与黑/白 hover 已补真实窗口证据，但业务动作还未覆盖 | approval/search/sync/done/offline GIF/MP4/contact sheet/diff report |
-| Cuu 任务动作 | 业务状态到 `.mtn` 的映射还需要场景化验收 | approval/search/sync/done/offline 事件录屏 |
-| 桌面交互 | hover 固定锚点已通过；pet 右键设置轻菜单已补；tap/drag/pass-through/hide-on-hover 需在当前模型上复测 | Tauri motion capture + settings matrix |
+| Cuu 任务动作 | 业务状态到 `.mtn` 的映射还需要 `CuuBehaviorManifest` 和场景化验收 | P1.6 实施 manifest；approval/search/sync/done/offline 事件录屏 |
+| 桌面交互 | hover 固定锚点已通过；pet 右键设置轻菜单已补；主窗/托盘 pass-through 恢复门已落；tap/drag/pass-through/hide-on-hover 仍需真实复测 | Tauri motion capture + settings matrix |
 | 主窗无 Cuu | 已做源码收束，但需要截图确认 | Web 与 desktop 主窗截图审查 |
 | 跨平台 | 当前主要是 Windows 本机验证 | Linux/macOS smoke 与透明窗口 capture |
 | 授权 | Hijiki/Tororo 来源需商用确认 | 授权记录或原创替换计划 |
@@ -146,7 +147,19 @@ visuals:
 | hide-on-hover | soft hide 后能恢复 |
 | card-mode | 轻卡展开不裁切 |
 
-### 6.4 文档回写
+### 6.4 P1.6 鲜活动作状态机
+
+参考：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md) 与 [`cuu-live2d-cat-options-current-plan.md`](./cuu-live2d-cat-options-current-plan.md)。
+
+| 工作项 | 落点 | 验收 |
+|---|---|---|
+| motion manifest | `packages/cuu/src/motion.ts` | `enter` / `loop` / `exit`、priority、interruptible、idle random pool 单测 |
+| pack coverage | `packages/cuu/src/model-pack.ts` | 黑猫/白猫均声明 `coverage`，未知 pack 回黑猫 |
+| runtime API | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | `setCuuBehaviorState` 不重建 iframe，只发 motion/expression |
+| event binding | `apps/desktop-webview/src/pet-surface.ts` | approval/search/sync/done/offline 状态能切动作和气泡 |
+| motion evidence | `scripts/qa/cuu-tauri-motion-capture.ps1` | 黑猫/白猫各录 idle、hover、tap、drag、approval、search、done |
+
+### 6.5 文档回写
 
 录屏完成后更新：
 
@@ -168,10 +181,12 @@ visuals:
 | 白猫 approval/search GIF/MP4 | 待生成 |
 | settings matrix report | 待生成 |
 | pet 右键设置菜单 | 已生成：[`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md)；真实 zh-CN/en-US 截图 / DOM dump 待补 |
+| pet settings 恢复门 | 已生成：[`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md)；真实 pass-through 恢复录屏 / matrix 待补 |
 | Web 主窗无 Cuu 截图 | 待生成 |
 | desktop 主窗无 Cuu 截图 | 待生成 |
 | 中英 locale preference API | 已生成：`PATCH /api/auth/preferences`、`users.preferred_locale`、[`i18n-user-locale-preference-p1-3.md`](./i18n-user-locale-preference-p1-3.md) |
 | 桌宠参考包审查 | 已生成：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)，只借鉴状态机、资源包和窗口交互，不直接纳入未授权素材 |
+| P1.6 鲜活动作状态机 | 待实现；参考包审查已给出 manifest 和 runtime 落点 |
 
 ## 8. 完成标准
 

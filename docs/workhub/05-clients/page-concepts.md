@@ -215,7 +215,7 @@ Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / �
 | IMG-CUU-01 | 黑猫真实 Tauri idle contact sheet | 证明默认模型有持续动作 |
 | IMG-CUU-02 | 白猫真实 Tauri idle contact sheet | 证明可选模型真实可用 |
 | IMG-CUU-03 | 黑/白 approval/search/card mode 录屏 | 证明任务状态能触发动作 |
-| IMG-CUU-04 | settings matrix 截图 | 证明 scale/opacity/pass-through/hide-on-hover |
+| IMG-CUU-04 | settings matrix 截图 | 证明 scale/opacity/pass-through/hide-on-hover，以及 `/settings` / 托盘恢复门 |
 | IMG-WEB-01 | Web 主窗无 Cuu 本体截图 | 验证主窗边界 |
 | IMG-DESK-01 | desktop 主窗无 Cuu 本体截图 | 验证桌面主窗边界 |
 | IMG-I18N-01 | zh-CN/en-US 页面组图 | 验证双语 |

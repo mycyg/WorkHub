@@ -28,9 +28,9 @@ date: 2026-06-08
 
 原因：一旦开启 pass-through，用户会失去右键入口。如果主窗设置页和托盘恢复策略还没完成，用户可能只能靠重启或手改 storage 恢复。点击穿透必须等以下能力一起落地：
 
-- 主窗严肃 settings 页能关闭 `pet_pass_through`。
-- 托盘有明确“恢复 Cuu 交互”动作。
-- settings matrix 证明开启后可恢复，不只是命令返回成功。
+- 主窗严肃 settings 页能关闭 `pet_pass_through`。P1.5 已落源码恢复门。
+- 托盘有明确“恢复 Cuu 交互”动作。P1.5 已落 `restore-pet-interaction`。
+- settings matrix 证明开启后可恢复，不只是命令返回成功。该项仍待真实截图 / 录屏。
 
 ## 3. Runtime Contract
 
@@ -74,5 +74,5 @@ cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 | 右键菜单真实截图 / DOM dump | zh-CN / en-US 各一份，确认文本不溢出，不遮挡 Cuu 主体 |
 | 菜单模型切换 capture | 黑猫切白猫后真实 Tauri contact sheet，证明不是只改文案 |
 | settings matrix | default / white-cat / scale / opacity / hide-on-hover / card-mode |
-| pass-through recovery | 先做主窗 settings 和托盘恢复，再开放菜单入口 |
+| pass-through recovery | 主窗 settings 和托盘恢复源码已落；真实 matrix 通过前仍不开放右键菜单入口 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

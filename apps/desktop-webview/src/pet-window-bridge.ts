@@ -34,6 +34,7 @@ export type DesktopPetWindowBridge = {
   startDragging?: () => void | Promise<void>;
   savePosition?: () => void | Promise<void>;
   focusMainRoute?: (route: string) => void | Promise<void>;
+  showPetWindow?: () => void | Promise<void>;
   hidePetWindow?: () => void | Promise<void>;
   sampleCursorNear?: () => PetCursorSampleResult | Promise<PetCursorSampleResult>;
   diagnostics?: DesktopPetWindowBridgeDiagnostics;
@@ -196,6 +197,9 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
           },
           focusMainRoute: async (route: string) => {
             await invoke("focus_main_route", { route });
+          },
+          showPetWindow: async () => {
+            await invoke("show_pet_window");
           },
           hidePetWindow: async () => {
             await invoke("hide_pet_window");
