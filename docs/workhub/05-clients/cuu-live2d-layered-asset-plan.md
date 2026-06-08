@@ -10,7 +10,7 @@ owner: workflow
 > **结论**：Cuu 的长期高表现力目标应优先走 **Live2D 分层 PSD -> Cubism 绑定 -> Tauri pet window runtime**。现有 sprite atlas 继续保留为 P1 可运行资产和降级层；GIF 只允许作为临时预览/沟通稿，不能作为最终桌宠方案。  
 > **2026-06-07 更新**：8 层同源裁片 prototype 只能证明运行时分层管线可挂载，视觉验收失败：等待不同时间肉眼差异不足，动作像缩放/位移而不是活体，且不是 PSD / Cubism 可绑定素材。本轮改走 **GPT Image 绿幕零件板 -> 自动抠图编号 -> 144 层 PSD draft v1 -> Cubism 绑定**。`cuu-live2d-generated-psd-draft-v1.psd` 已能打开并保留 9 个顶层组 / 144 个叶子图层，但仍是 `draft_created_not_visual_pass`：尾巴段重叠、边缘抠图、遮挡补画和 Cubism motion capture 未完成前，不能算桌宠最终通过。
 > **2026-06-08 更新**：`psd_draft_probe` 已能直接消费 `generated-psd-draft-v1/layers/*.png` 中 72 个运行时探针层，并通过 DOM / CSS 让眼睛、耳朵、尾巴、蝴蝶结、流苏、爪子与嘴型独立动起来。它回答了“能否用生成图像批量生成很多分层素材，再调整大小拼接”的工程问题：可以，而且必须由 manifest 驱动。但用户复核后确认当前 PSD draft 有恐怖谷风险，所以它已退出默认视觉，降为实验探针；当前默认路线见 [`cuu-bongo-style-runtime-plan.md`](./cuu-bongo-style-runtime-plan.md)。
-> **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
+> **2026-06-08 BONGO-REF 更新**：默认资格现在由 `packages/cuu/src/model-pack.ts` 的 `CuuModelPackManifest` 控制。`cuu-bongo-p1` 是当前唯一 `approved_default`；任何 PSD draft 即使能渲染，也会因为 `default_not_approved` / `visual_gate_failed` / `psd_default_asset` 被挡在默认体验之外。BONGO-P2a-a 已把 registry / loader 落到代码：`resolveCuuVisibleModelPack()` 对 Live2D 候选返回 `experimental_locked` 并回退 Bongo，对未知 PSD 请求返回 `unknown_requested_pack`。Live2D 只有导出 Cubism `.model3.json` / `.moc3`、完成动作和多秒桌宠录屏后，才能作为新的 model pack 申请默认。
 > **2026-06-08 P1e 更新**：Bongo 默认已完成 hover/tap/drag 真实 Tauri 输入录屏底座，并在 P1e-c 追加连续看鼠标 / hover 避让真实录屏。Live2D 替换默认前必须重跑 `input-handfeel` 与 `look-avoidance` 两个输入手感门；Cubism 参数必须复用 `look_x/look_y/hover_avoidance` contract，而不是另起一套鼠标协议。分层资产下一步不是继续美化 v1，而是按第 5.6 节做 `generated-parts-v2`：更细的眼皮、嘴型、耳朵、尾巴段、蕾丝、流苏和遮挡补画组件，全部用 manifest 锚点拼装。
 > **2026-06-08 低恐怖谷重启口径**：用户复核当前 PSD draft 后明确反馈“恐怖谷效应”。因此 `generated-psd-draft-v1` 不再作为可修可上的 Live2D 候选，只保留为运行时/manifest 探针。新的 Live2D 路线必须以 `cuu-bongo-low-uncanny-v2-style-board.png` 为风格基准，先做低拟真、少层但稳定的 Cubism v2，再逐步增加表情、尾巴、围兜和流苏物理。
 > **参考**：拆图方法参考 [Moonku 的 Live2D PSD 拆图教程](https://moonku44.com/live2d-psd/)，运行时边界参考 Live2D 官方 [Cubism SDK for Web](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) 与 [model3.json Web 模型说明](https://docs.live2d.com/en/cubism-sdk-manual/model-web/)。
@@ -307,7 +307,7 @@ docs/workhub/05-clients/assets/audit/2026-06-08-cuu-psd-draft-probe/
 
 ### 3.4 Live2D Model Pack 晋级条件
 
-Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackManifest`。当前代码中已有 `plannedCuuLive2DCubismModelPack` 作为计划占位：它能被设置页展示为未来路线，但 `default_policy.allow_as_default=false`，`assertCuuModelPackCanBeDefault()` 会拒绝它成为默认。
+Live2D 未来要替换 Bongo 默认，必须交付一个新的 `CuuModelPackManifest`。当前代码中已有 `plannedCuuLive2DCubismModelPack` 作为计划占位：它能被设置页展示为未来路线，但 `default_policy.allow_as_default=false`，`assertCuuModelPackCanBeDefault()` 会拒绝它成为默认；`describeCuuModelPackChoices()` 会把它标成 `experimental_locked`，`resolveCuuVisibleModelPack({ requested_pack_id: "cuu-live2d-cubism-v2" })` 会把真实默认 surface 回退到 `cuu-bongo-p1`。
 
 | 字段 | 通过标准 |
 |---|---|

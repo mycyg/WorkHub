@@ -3,9 +3,13 @@ import test from "node:test";
 
 import {
   assertCuuModelPackCanBeDefault,
+  describeCuuModelPackChoices,
   defaultCuuBongoModelPack,
+  getCuuModelPack,
+  listCuuModelPacks,
   plannedCuuLive2DCubismModelPack,
   requiredCuuModelPackMotionStates,
+  resolveCuuVisibleModelPack,
   validateCuuModelPackManifest,
   type CuuModelPackManifest
 } from "./index.js";
@@ -28,6 +32,52 @@ test("Cuu Bongo model pack is the approved low-uncanny default", () => {
   assert.equal(defaultCuuBongoModelPack.window_affordances.opacity, "supported");
   assert.equal(defaultCuuBongoModelPack.window_affordances.hide_on_hover, "supported");
   assert.match(defaultCuuBongoModelPack.source.reference_url ?? "", /ayangweb\/BongoCat/u);
+});
+
+test("Cuu model pack registry keeps Bongo as the visible default and Live2D as locked experimental", () => {
+  const packs = listCuuModelPacks();
+
+  assert.deepEqual(packs.map((pack) => pack.pack_id), ["cuu-bongo-p1", "cuu-live2d-cubism-v2"]);
+  assert.equal(getCuuModelPack("cuu-bongo-p1")?.runtime_kind, "bongo_cuu");
+  assert.equal(getCuuModelPack("cuu-live2d-cubism-v2")?.runtime_kind, "live2d_cubism");
+  assert.equal(getCuuModelPack("missing-pack"), undefined);
+
+  const defaultSelection = resolveCuuVisibleModelPack();
+  assert.equal(defaultSelection.active_pack.pack_id, "cuu-bongo-p1");
+  assert.equal(defaultSelection.reason, "registry_default");
+  assert.deepEqual(defaultSelection.issues, []);
+
+  const live2dSelection = resolveCuuVisibleModelPack({ requested_pack_id: "cuu-live2d-cubism-v2" });
+  assert.equal(live2dSelection.active_pack.pack_id, "cuu-bongo-p1");
+  assert.equal(live2dSelection.requested_pack?.pack_id, "cuu-live2d-cubism-v2");
+  assert.equal(live2dSelection.fallback_pack?.pack_id, "cuu-bongo-p1");
+  assert.equal(live2dSelection.reason, "experimental_locked");
+  assert.ok(live2dSelection.issues.some((issue) => issue.code === "visual_gate_failed"));
+  assert.ok(live2dSelection.issues.some((issue) => issue.code === "missing_motion"));
+
+  const unknownSelection = resolveCuuVisibleModelPack({ requested_pack_id: "cuu-psd-draft-v1" });
+  assert.equal(unknownSelection.active_pack.pack_id, "cuu-bongo-p1");
+  assert.equal(unknownSelection.reason, "unknown_requested_pack");
+  assert.equal(unknownSelection.fallback_pack?.pack_id, "cuu-bongo-p1");
+});
+
+test("Cuu model pack choices are ready for settings UI without allowing PSD-like defaults", () => {
+  const choices = describeCuuModelPackChoices({ selected_pack_id: "cuu-live2d-cubism-v2" });
+  const bongo = choices.find((choice) => choice.pack_id === "cuu-bongo-p1");
+  const live2d = choices.find((choice) => choice.pack_id === "cuu-live2d-cubism-v2");
+
+  assert.equal(bongo?.selected, true);
+  assert.equal(bongo?.can_be_default, true);
+  assert.equal(bongo?.can_select_in_settings, true);
+  assert.equal(bongo?.status, "default_ready");
+  assert.match(bongo?.reference_url ?? "", /ayangweb\/BongoCat/u);
+
+  assert.equal(live2d?.selected, false);
+  assert.equal(live2d?.can_be_default, false);
+  assert.equal(live2d?.can_select_in_settings, false);
+  assert.equal(live2d?.status, "experimental_locked");
+  assert.match(live2d?.reason ?? "", /locked for the default desktop pet/u);
+  assert.ok(live2d?.issues.some((issue) => issue.path === "visual_gate.low_uncanny"));
 });
 
 test("Cuu default model pack covers all business and idle actions", () => {

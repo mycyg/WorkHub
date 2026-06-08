@@ -38,7 +38,7 @@ visuals:
 
 > 本文是 2026-06-07 的真实 UI / 桌宠截图审计。目的不是复述 PRD，而是把「现在实际长什么样」与「概念图希望长什么样」放在同一张桌子上，给后续施工一个能验收的路线。
 >
-> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、P1d-a 窗口手感合同、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 设置矩阵真实截图、P1e-a 输入响应合同、P1e-b hover/tap/drag 真实输入录屏、P1e-c 连续看鼠标 / hover 避让真实输入录屏、P1e-d-a pointer smoothing / drag grip 真实录屏和 P1e-d-b 60s idle jitter / flicker 真实录屏；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，PSD draft 会被 `CuuModelPackManifest` 阻止成为默认。下一步转向真实设置页 UI 截图、多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮、模型包加载器和 Live2D 精修。
+> 核心结论：当前 WorkHub 已有 TS-first Page VM、Gold Path shell、Cuu card、Tauri pet window、Windows `PrintWindow` smoke 和若干真实 Cuu 图形资产，但整体仍是 **P0.5 预览壳**，不是概念图里的完整 AI-native 产品。Web / desktop 主窗仍偏测试面板；Cuu 已能在桌面独立出现，本轮已修掉事件卡片被 body-only 小窗裁切的 P0 缺口，也修掉了“静态 fallback 伪装成动作”的路径问题；但用户复核确认：只靠缩放、弱位移、8 层裁片 prototype 都不能算鲜活感通过。当前已新增 GPT Image 绿幕零件板、144 层 `generated-psd-draft-v1` 和 `psd_draft_probe` 分层运行探针；因 PSD draft 有恐怖谷风险，默认视觉已切到参考 BongoCat 思路的 `bongo_cuu` 低恐怖谷 renderer。2026-06-08 已补 Bongo P1b 动作增强、真实 Tauri GIF/MP4、P1c first-painted 首帧门禁、BONGO-REF model pack 默认门禁、BONGO-P2a-a model pack registry / loader、P1d-a 窗口手感合同、P1d-b-a hide-on-hover 软隐藏 / 恢复真实录屏、P1d-c 设置矩阵真实截图、P1e-a 输入响应合同、P1e-b hover/tap/drag 真实输入录屏、P1e-c 连续看鼠标 / hover 避让真实输入录屏、P1e-d-a pointer smoothing / drag grip 真实录屏和 P1e-d-b 60s idle jitter / flicker 真实录屏；`cuu-bongo-p1` 是当前唯一可默认展示的 Cuu 模型包，`resolveCuuVisibleModelPack()` 会把 Live2D 实验包和未知 PSD 请求回退到 Bongo，默认 DOM 暴露 `data-cuu-model-pack-selection-reason="registry_default"`。下一步转向真实设置页 UI 截图、model pack settings UI、多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮和 Live2D 精修。
 
 ---
 
@@ -235,7 +235,7 @@ visuals:
 
 用户复核结论：PSD draft 会触发恐怖谷风险，不适合作为默认桌宠。参考 [BongoCat](https://github.com/ayangweb/BongoCat) 后，本轮把默认 pet renderer 改为 `bongo_cuu`：扁平圆润、少状态强反馈、形体稳定，不依赖 AI 生成肢体。
 
-2026-06-08 BONGO-REF 追加：参考项目已下载到 `reference/BongoCat/` 学习，不提交。当前吸收的是模型包、输入动作映射、独立窗口手感和低恐怖谷默认哲学；代码中新增 `CuuModelPackManifest`，把“默认可展示”变成可测试合同。任何 PSD draft 即使能渲染，也不得标记为默认候选。
+2026-06-08 BONGO-REF 追加：参考项目已下载到 `reference/BongoCat/` 学习，不提交。当前吸收的是模型包、输入动作映射、独立窗口手感和低恐怖谷默认哲学；代码中新增 `CuuModelPackManifest`，把“默认可展示”变成可测试合同。任何 PSD draft 即使能渲染，也不得标记为默认候选。BONGO-P2a-a 已进一步把 `listCuuModelPacks()`、`describeCuuModelPackChoices()`、`resolveCuuVisibleModelPack()` 接进代码：Live2D 候选可在设置页展示为 `experimental_locked`，但默认 surface 会回退到 `cuu-bongo-p1`。
 
 ![Cuu Bongo-style runtime](./assets/audit/2026-06-08-cuu-bongo-runtime/pet-bongo-cuu-cdp-contact-sheet-grid.png)
 
@@ -245,11 +245,11 @@ visuals:
 
 | 文件 | 作用 |
 |---|---|
-| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 31 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档、桌面、检索放大镜、同步环和庆祝星点 |
+| `apps/desktop-webview/src/cuu-bongo-runtime.ts` | 31 个 DOM/CSS 组件组成低恐怖谷 Cuu，含头、耳、眼、尾、爪、围兜、蝴蝶结、红珠、文档、桌面、检索放大镜、同步环和庆祝星点；默认包 ID 来自 `resolveCuuVisibleModelPack()` |
 | `apps/desktop-webview/src/pet-surface.ts` | 默认 `data-cuu-visual-mode="bongo_cuu"`，`data-cuu-live2d-status="experiment_hidden"` |
-| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu，不允许默认 HTML 出现 PSD layer |
-| `packages/cuu/src/model-pack.ts` | 新增 Cuu 模型包默认门禁：`cuu-bongo-p1` 是 `approved_default`，PSD draft 默认候选会失败 |
-| `packages/cuu/src/model-pack.test.ts` | 覆盖 Bongo 默认可用、18 个动作全覆盖、PSD draft 不能默认、planned Live2D Cubism 不能默认 |
+| `apps/desktop-webview/src/pet-surface-qa.ts` | QA 改为要求默认 Bongo Cuu、不允许默认 HTML 出现 PSD layer，并校验 `data-cuu-model-pack-selection-reason="registry_default"` |
+| `packages/cuu/src/model-pack.ts` | 新增 Cuu 模型包默认门禁和 registry / loader：`cuu-bongo-p1` 是 `approved_default`，Live2D 候选 `experimental_locked`，PSD draft 默认候选会失败 |
+| `packages/cuu/src/model-pack.test.ts` | 覆盖 Bongo 默认可用、18 个动作全覆盖、registry / loader 回退、settings choices、PSD draft 不能默认、planned Live2D Cubism 不能默认 |
 | `scripts/qa/cuu-pet-browser-capture.mjs` | 默认等待 `[data-cuu-bongo-runtime="bongo_cuu"]` 并抓多帧截图 |
 | `docs/workhub/05-clients/cuu-bongo-style-runtime-plan.md` | 新增默认路线专篇 |
 | `docs/workhub/05-clients/assets/cuu/cuu-bongo-low-uncanny-v2-style-board.png` | 新增低恐怖谷 v2 风格基准，指导 Bongo 动作二轮和 Live2D 重绘 |
@@ -265,7 +265,7 @@ visuals:
 | 检查项 | 结论 |
 |---|---|
 | 恐怖谷止损 | 通过；默认不再展示 PSD draft |
-| 默认 renderer | 通过；`data-cuu-visual-mode="bongo_cuu"`，`data-cuu-model-pack="cuu-bongo-p1"` |
+| 默认 renderer | 通过；`data-cuu-visual-mode="bongo_cuu"`，`data-cuu-model-pack="cuu-bongo-p1"`，`data-cuu-model-pack-selection-reason="registry_default"` |
 | 默认模型包门禁 | 通过；`assertCuuModelPackCanBeDefault(defaultCuuBongoModelPack)` 通过，PSD draft pack 被拒绝 |
 | PSD 隐藏 | 通过；DOM 中 `live2d=null`，`layers=[]`，`data-cuu-live2d-layer-count="0"` |
 | 全身可见 | 通过；多帧截图中 Cuu 全身可见，不是只露耳朵 |
@@ -273,7 +273,7 @@ visuals:
 | 鲜活感 | 继续增强；P1b 已补挥手、抱文件、检索、同步和庆祝，后续要加大动作幅度和卡片联动 |
 | Tauri 真实窗口 | 已补 P1c first-painted 门禁；最新真实 `Cuu` hwnd 录屏 frame 000 即 body-only 全身可见 |
 
-下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。窗口设置已落 P1d-a 的 scale / opacity / pass-through 合同、P1d-b-a 的 hide-on-hover soft dodge 和 P1d-c 的真实设置矩阵截图，后续继续补真实设置页 UI、多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮与模型包加载器。Live2D 只能在 Cubism 导出、录屏和 model pack gate 全部通过后申请替换默认。
+下一步不再默认推进 PSD 外观，而是按 `cuu-bongo-style-runtime-plan.md` 继续让 Bongo Cuu 在真实 Tauri 窗口里更鲜活。窗口设置已落 P1d-a 的 scale / opacity / pass-through 合同、P1d-b-a 的 hide-on-hover soft dodge 和 P1d-c 的真实设置矩阵截图，model pack registry / loader 已接入默认 renderer；后续继续补真实设置页 UI、多屏恢复、full hide/pass-through 安全恢复、动作幅度二轮与 model pack settings UI。Live2D 只能在 Cubism 导出、录屏和 model pack gate 全部通过后申请替换默认。
 
 ### 0.5.1 CUX-BONGO-002：Bongo Cuu 动作增强与真实 Tauri 录屏（2026-06-08）
 
@@ -607,7 +607,7 @@ P1d-a 已经把 scale / opacity / pass-through 做成 TS/Rust 合同，P1d-b-a �
 | 主窗内 Cuu | 右侧是抽象小猫/卡片 | 不符合最终 Cuu 角色，主窗内只能做轻同步，不能替代独立桌宠 | P1 |
 | 独立 Cuu | 能独立出现，启动可见，主窗隐藏后仍可见；事件卡片现在能触发 card mode 扩窗，最终 HiDPI 抓帧中完整 Cuu 可见 | 形象有参考照特征，但动作弱；还不够活 | P1 |
 | Motion QA | 已有 32 帧抓取脚本、contact sheet、GIF/MP4、diff JSON | 已能发现并验证 card mode 裁切、只露耳朵和 HiDPI 贴边问题；仍需纳入跨平台与长时间 QA | P1 |
-| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1d-b-a 已补 hide-on-hover 软隐藏 / 恢复真实 Tauri 录屏；P1d-c 已补窗口设置矩阵真实 Tauri 截图；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs；P1e-b 已补 hover/tap/drag 真实 Tauri 输入录屏底座；P1e-c 已补连续看鼠标 / hover 避让；P1e-d-a 已补 pointer smoothing / drag grip 真实录屏；P1e-d-b 已补 60s idle jitter / flicker 长驻 QA | 方向正确；还需增强动作幅度、补真实设置页 UI 截图 / 多屏恢复、full hide/pass-through 安全恢复、模型包加载器和任务动作真实录屏 | P1 |
+| Cuu 默认视觉 | 已切到 `bongo_cuu` 低恐怖谷 renderer，browser CDP 多帧截图、DOM 和 `CuuModelPackManifest` 默认门禁通过；BONGO-P2a-a 已接 registry / loader，默认 DOM 暴露 `data-cuu-model-pack-selection-reason="registry_default"`；P1d-a 已补 scale / opacity / pass-through 窗口手感合同；P1d-b-a 已补 hide-on-hover 软隐藏 / 恢复真实 Tauri 录屏；P1d-c 已补窗口设置矩阵真实 Tauri 截图；P1e-a 已补 cursor-near 立即 `look_at_mouse` 和 pointer DOM QA attrs；P1e-b 已补 hover/tap/drag 真实 Tauri 输入录屏底座；P1e-c 已补连续看鼠标 / hover 避让；P1e-d-a 已补 pointer smoothing / drag grip 真实录屏；P1e-d-b 已补 60s idle jitter / flicker 长驻 QA | 方向正确；还需增强动作幅度、补真实设置页 UI 截图 / 多屏恢复、full hide/pass-through 安全恢复、model pack settings UI 和任务动作真实录屏 | P1 |
 | Live2D 资产路线 | 已生成绿幕零件板、编号组件、`generated-psd-draft-v1` 144 层 PSD 草案、文档预览和 `psd_draft_probe` 运行探针 | 只作为实验线；已证明批量生成部件并按 manifest 调整大小拼接可行，但因恐怖谷风险不能默认展示；未来必须以 `live2d_cubism` model pack 通过默认门禁，还需修绿边、尾巴、遮挡补画、Cubism 绑定和真实 Tauri 录屏验收 | P1 |
 
 一句话：**当前产品的技术地基好于体验完成度；体验上还像一套可点击 PRD 样机。下一阶段必须先把 Cuu 和单件事主路径做“像产品”，再铺全页面。**
@@ -1366,7 +1366,7 @@ P1.1 解决 PSD 生产资料；P2 解决 Cubism 绑定、导出和真实桌宠�
 1. **深化 pet card layout**：审批、澄清、证据、离线、预算五类轻卡继续按人话卡、选项优先和 HiDPI 安全边距打磨，并让卡片出现前先触发对应动作。
 2. **Bongo 动作二轮增强**：抱文件和审批敲桌仍偏保守，下一轮加大文件上浮、双爪节奏和完成反馈，但继续保持低恐怖谷、固定部件。
 3. **Pet window 设置与输入手感细抛光**：P1d-a/P1d-b-a/P1d-c/P1e-a/P1e-b/P1e-c/P1e-d-a/P1e-d-b 已补缩放、透明度、点击穿透、hide-on-hover 软隐藏 / 恢复、窗口设置矩阵真实截图、cursor-near 立即看鼠标、pointer DOM attrs、hover/near/tap/drag 真实录屏、连续凝视、hover 避让、pointer smoothing、drag grip 持续姿态和 60s idle jitter / flicker 长驻 QA。下一步补真实设置页 UI 截图、贴边、多屏恢复、full hide/pass-through 安全恢复、显示/隐藏快捷入口和长驻性能采样。
-4. **Cuu model pack loader**：把 `CuuModelPackManifest` 接入设置页和 runtime 选择器，默认只允许 `approved_default`；experimental pack 只能预览，不能常驻。
+4. **Cuu model pack settings UI**：loader 已接入 runtime；下一步把 `describeCuuModelPackChoices()` 接进设置页，展示 `cuu-bongo-p1` 已启用、`cuu-live2d-cubism-v2` 实验锁定和锁定原因。
 5. **Live2D PSD 精修并行线**：打开并审查 `generated-psd-draft-v1.psd`，修绿边、尾巴、耳朵、遮挡补画；精修前不得替换 Bongo 默认。
 6. **Cubism 基础绑定实验**：完成 idle / blink / look_at_mouse / tail sway / tassel physics，只有多秒录屏和 model pack gate 都通过后才允许进入默认候选。
 7. **Web Home 真页面**：按 AI-first concept 改首屏。

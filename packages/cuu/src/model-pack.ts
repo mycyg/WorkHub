@@ -87,6 +87,39 @@ export type CuuModelPackValidationOptions = {
   require_idle_micro_action_coverage?: boolean;
 };
 
+export type CuuModelPackChoiceStatus = "default_ready" | "experimental_locked" | "blocked";
+
+export type CuuModelPackChoice = {
+  pack_id: string;
+  display_name: string;
+  runtime_kind: CuuModelPackRuntimeKind;
+  default_status: CuuModelPackDefaultStatus;
+  selected: boolean;
+  can_be_default: boolean;
+  can_select_in_settings: boolean;
+  status: CuuModelPackChoiceStatus;
+  reason: string;
+  visual_gate: CuuModelPackVisualGate;
+  reference_url?: string;
+  issues: CuuModelPackIssue[];
+};
+
+export type CuuModelPackSelectionReason =
+  | "registry_default"
+  | "requested_default_ready"
+  | "unknown_requested_pack"
+  | "experimental_locked"
+  | "blocked_for_default";
+
+export type CuuModelPackSelection = {
+  requested_pack_id?: string;
+  active_pack: CuuModelPackManifest;
+  requested_pack?: CuuModelPackManifest;
+  fallback_pack?: CuuModelPackManifest;
+  reason: CuuModelPackSelectionReason;
+  issues: CuuModelPackIssue[];
+};
+
 export type CuuModelPackIssue = {
   code:
     | "invalid_version"
@@ -243,6 +276,91 @@ export const plannedCuuLive2DCubismModelPack: CuuModelPackManifest = {
   }
 };
 
+export const cuuModelPackRegistry = [
+  defaultCuuBongoModelPack,
+  plannedCuuLive2DCubismModelPack
+] as const satisfies readonly CuuModelPackManifest[];
+
+export function listCuuModelPacks(): CuuModelPackManifest[] {
+  return [...cuuModelPackRegistry];
+}
+
+export function getCuuModelPack(packId: string | null | undefined): CuuModelPackManifest | undefined {
+  const normalized = String(packId ?? "").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return cuuModelPackRegistry.find((pack) => pack.pack_id === normalized);
+}
+
+export function describeCuuModelPackChoices(input: { selected_pack_id?: string | null } = {}): CuuModelPackChoice[] {
+  const selection = input.selected_pack_id === undefined
+    ? resolveCuuVisibleModelPack()
+    : resolveCuuVisibleModelPack({ requested_pack_id: input.selected_pack_id });
+  return cuuModelPackRegistry.map((pack) => {
+    const issues = defaultReadinessIssues(pack);
+    const canBeDefault = issues.length === 0;
+    return {
+      pack_id: pack.pack_id,
+      display_name: pack.display_name,
+      runtime_kind: pack.runtime_kind,
+      default_status: pack.default_policy.status,
+      selected: pack.pack_id === selection.active_pack.pack_id,
+      can_be_default: canBeDefault,
+      can_select_in_settings: canBeDefault,
+      status: modelPackChoiceStatus(pack, canBeDefault),
+      reason: canBeDefault ? pack.default_policy.reason : defaultLockedReason(pack),
+      visual_gate: pack.visual_gate,
+      ...(pack.source.reference_url ? { reference_url: pack.source.reference_url } : {}),
+      issues
+    };
+  });
+}
+
+export function resolveCuuVisibleModelPack(input: { requested_pack_id?: string | null } = {}): CuuModelPackSelection {
+  const defaultPack = defaultCuuBongoModelPack;
+  const requestedPackId = String(input.requested_pack_id ?? "").trim() || undefined;
+  const requestedPack = getCuuModelPack(requestedPackId);
+
+  if (!requestedPackId) {
+    return {
+      active_pack: defaultPack,
+      reason: "registry_default",
+      issues: defaultReadinessIssues(defaultPack)
+    };
+  }
+
+  if (!requestedPack) {
+    return {
+      requested_pack_id: requestedPackId,
+      active_pack: defaultPack,
+      fallback_pack: defaultPack,
+      reason: "unknown_requested_pack",
+      issues: []
+    };
+  }
+
+  const requestedIssues = defaultReadinessIssues(requestedPack);
+  if (requestedIssues.length === 0) {
+    return {
+      requested_pack_id: requestedPackId,
+      active_pack: requestedPack,
+      requested_pack: requestedPack,
+      reason: "requested_default_ready",
+      issues: []
+    };
+  }
+
+  return {
+    requested_pack_id: requestedPackId,
+    active_pack: defaultPack,
+    requested_pack: requestedPack,
+    fallback_pack: defaultPack,
+    reason: requestedPack.default_policy.status === "experimental" ? "experimental_locked" : "blocked_for_default",
+    issues: requestedIssues
+  };
+}
+
 export function validateCuuModelPackManifest(
   manifest: CuuModelPackManifest,
   options: CuuModelPackValidationOptions = {}
@@ -358,6 +476,31 @@ function validateDefaultReady(issues: CuuModelPackIssue[], manifest: CuuModelPac
 
 function requiredBusinessMotionStates(): CuuSpriteAtlasClipState[] {
   return [...new Set(allCuuMotionHints().map((hint) => hint.sprite_state))];
+}
+
+function defaultReadinessIssues(manifest: CuuModelPackManifest): CuuModelPackIssue[] {
+  return validateCuuModelPackManifest(manifest, {
+    require_default_ready: true,
+    require_full_motion_coverage: true,
+    require_idle_micro_action_coverage: true
+  });
+}
+
+function modelPackChoiceStatus(
+  manifest: CuuModelPackManifest,
+  canBeDefault: boolean
+): CuuModelPackChoiceStatus {
+  if (canBeDefault) {
+    return "default_ready";
+  }
+  return manifest.default_policy.status === "experimental" ? "experimental_locked" : "blocked";
+}
+
+function defaultLockedReason(manifest: CuuModelPackManifest): string {
+  if (manifest.default_policy.status === "experimental") {
+    return `${manifest.default_policy.reason} It remains locked for the default desktop pet until all low-uncanny gates pass.`;
+  }
+  return manifest.default_policy.reason;
 }
 
 function createBongoMotionBindings(): Partial<Record<CuuSpriteAtlasClipState, CuuModelPackMotionBinding>> {

@@ -1,0 +1,14 @@
+{
+  "url": "http://127.0.0.1:1420/pet.html",
+  "width": 240,
+  "height": 280,
+  "wait_selector": "[data-cuu-bongo-runtime=\"bongo_cuu\"]",
+  "frames": [
+    "pet-bongo-p2a-model-pack-cdp-frame-0000.png",
+    "pet-bongo-p2a-model-pack-cdp-frame-0900.png",
+    "pet-bongo-p2a-model-pack-cdp-frame-1800.png",
+    "pet-bongo-p2a-model-pack-cdp-frame-2700.png",
+    "pet-bongo-p2a-model-pack-cdp-frame-3600.png"
+  ],
+  "captured_at": "2026-06-08T00:13:58.294Z"
+}

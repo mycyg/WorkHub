@@ -101,6 +101,7 @@ export function createDesktopPetVisualQaReport(input: {
         input.idle.bongo.duration_ms >= 700 &&
         input.idle.html.includes('data-cuu-bongo-runtime="bongo_cuu"') &&
         input.idle.html.includes('data-cuu-bongo-status="p1_default_low_uncanny"') &&
+        input.idle.html.includes('data-cuu-model-pack-selection-reason="registry_default"') &&
         input.idle.html.includes('data-cuu-bongo-component-count="31"') &&
         input.idle.html.includes("wh-cuu-bongo-paw") &&
         input.idle.html.includes("wh-cuu-bongo-eye") &&
