@@ -17,7 +17,7 @@ visuals:
 
 > **一句话**:WorkHub 仍然沿用现有「需求管理大师」的业务经验和迁移清单,但新仓施工默认采用 **TypeScript-first**:API daemon、AgentLoop、权限/审计/事件、OpenAPI 契约、Web、Tauri webview、Cuu 轻卡都用 TS 作为主语言;Rust 只承接本地壳能力;Python 只作为可选文档处理 worker。
 >
-> 这份文档是 F1-F11 的横切修正层:若组件 plan 里仍写 FastAPI/SQLAlchemy/Alembic,在概念阶段应理解为**行为锚点与迁移来源**,新实现默认按本文的 TS-first 模块边界落地。
+> 这份文档是 F1-F11 的横切修正层:若组件 plan 里仍写 FastAPI/SQLAlchemy/legacy Python migration tooling,在概念阶段应理解为**行为锚点与迁移来源**,新实现默认按本文的 TS-first 模块边界落地。
 
 ---
 
@@ -317,7 +317,7 @@ export const eventTypes = {
 |---|---|---|
 | F1 | repo + Python settings | pnpm workspace、Node 22、TS config、env schema、Docker compose(Postgres/Redis) |
 | F2 | SQLAlchemy models | `packages/db/src/schema/*.ts` Drizzle schema + Zod DTO |
-| F3 | Alembic | Drizzle Kit migrations + migration drift check |
+| F3 | legacy Python migration tooling | Drizzle Kit migrations + migration drift check |
 | F4 | FastAPI auth deps | Hono middleware + signed cookie + device token repositories |
 | F5 | PushBus broker | Redis pub/sub + `packages/events` + SSE stream writer |
 | F6 | PermissionPolicy/ApprovalRequest | `packages/permissions` evaluator + `ApprovalRequest` repositories |

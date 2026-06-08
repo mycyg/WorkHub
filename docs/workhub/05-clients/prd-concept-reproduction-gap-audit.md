@@ -20,6 +20,8 @@ visuals:
 # PRD 与概念设计复现差距审计
 
 > 当前权威结论：WorkHub 已有 TS-first contracts、Page VM、Gold Path、P-COST、Replay、desktop webview、Tauri shell、Cuu pet window 地基；但距离 PRD 中“AI-native 工作中台 + 严肃主界面 + 活着的桌宠入口 + 中英双语 + 完整验收”仍未完成。Cuu 已收束为黑猫 / 白猫 Live2D 二选项，旧实验视觉路线不再是计划、资产或验收目标。
+>
+> **2026-06-08 Claude 审查修正**：`D:/workhub审查报告` 指出本篇过去低估了两个治理违规：旧 `2026-06-07-current-state` 截图里 Web/desktop 主窗仍有橘猫 Cuu，本身应判 FAIL；4 张 shared 概念图仍含橘猫，也应判 stale。当前代码层已收束到 pet surface，但旧截图/旧 shared 图不能再当“当前通过证据”。后续施工顺序改为 [`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md)。
 
 ## 1. 总体差距
 
@@ -71,7 +73,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 - `./assets/cuu/cuu-option-first-clarify.png`
 - 源帧：`./assets/audit/2026-06-08-cuu-live2d-model-preview/`
 
-这解决了“概念图仍像旧橘猫/手绘实验图”的偏差，但没有解决桌宠鲜活感的最终验收。下一步必须在 Tauri `pet` window 中录黑猫/白猫多帧 idle、hover、tap、drag、approval、search、offline，并证明动作不是整体缩放。
+这只解决了 `assets/cuu/` 三张 Cuu 专图的偏差。Claude 审查指出 `assets/shared/` 下仍有橘猫，旧 current-state 截图也仍有橘猫进入主窗，因此概念治理状态应改为：**Cuu 专图已对，shared/旧截图未对，R0 必须修**。P1.10 已证明黑猫 Hijiki 在真实 Tauri pet window 中有 32 帧 motion_liveness，但 R1 前不继续扩外观矩阵。
 
 ![Cuu 首轮动作抓取](./assets/audit/2026-06-07-cuu-motion/cuu-motion-contact-sheet.png)
 
@@ -154,7 +156,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 无旧实验源码入口 | tracked source 搜索无旧 renderer 文件和 public 入口 |
 | Web 主窗无 Cuu | Playwright 截图 + DOM dump |
 | Desktop 主窗无 Cuu | Tauri/webview 截图 + DOM dump |
-| Cuu motion | 黑/白 contact sheet、GIF/MP4、diff report |
+| Cuu motion | P1.10 以前的黑/白 contact sheet、GIF/MP4、diff report只作为回归证据；R1 前不新增外观矩阵 |
 | Rust window | Tauri smoke、settings matrix、多屏恢复报告 |
 | i18n | zh-CN/en-US screenshots + locale tests |
 | TypeScript 目标路径 | `_ts-target-path-audit.md` 和 `_ts-first-module-port-page-alignment.md` 对齐 |
@@ -174,11 +176,11 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 
 | 优先级 | 工作 |
 |---|---|
-| P0 | 完成 Cuu 黑/白真实 Tauri 录屏和设置矩阵；P1.7 已写入 expected behavior contract，后续补 actual DOM attrs |
-| P0 | 主窗截图审查，确认无 Cuu 本体回流 |
-| P0 | 跑 Cuu / desktop webview / contracts tests |
-| P1 | Web attention workspace 真页面化 |
-| P1 | Proposal 多类型交付物预览 |
-| P1 | Cuu search / knowledge 气泡 |
-| P1 | Rust tray recovery + private SSE |
+| R0 | 冻结 Cuu 外观；旧橘猫 current-state 截图判 fail/stale；shared 橘猫概念图排队替换 |
+| R0 | 主窗截图审查，确认无 Cuu 本体回流；补透明 pet smoke |
+| R0 | 命门 OQ-2/OQ-3 owner + v1 阈值落定；D-1 正名为 TS-first 重写 |
+| R1 | 真实 AgentLoop -> manifest -> ProposalService -> PG -> approve/merge -> Replay 纵切 |
+| R2 | 多 worker、PG queue claim、Redis bus/presence、订阅边界 |
+| R3 | Cuu 自然语言 / option-first 出站 Agent 入口，不新增外观 |
+| R4 | Web attention workspace 真页面化、四态、中英双语全量补齐 |
 | P2 | 跨平台客户端 smoke 和安装包 |

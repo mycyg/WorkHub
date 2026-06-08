@@ -378,9 +378,9 @@ AI 工人执行 → 低置信/高风险/卡住 → **EscalationEvent** → AI �
 
 ## 15. 决策清单
 
-- **D-1 [建议·待确认]** 新仓策略:迁移现有地基入新仓再演进(非重写)。
-- **D-2 [建议·待确认]** 数据底座:SQLite → PostgreSQL。
-- **D-3 [开放]** 部署形态:LAN-first MVP + 云就绪架构;多租户公网延后至 P5。
+- **D-1 [决策·2026-06-08 修订]** 新仓策略:参考现有 Python/FastAPI 行为锚点的 TS-first 重写与演进。复用状态机、沙箱、事件、鉴权、同步等行为不变量;新仓目标实现落 TypeScript/Hono/Drizzle/contracts + Tauri/Rust shell。
+- **D-2 [决策]** 数据底座:SQLite → PostgreSQL。
+- **D-3 [决策]** 部署形态:LAN-first MVP + 云就绪架构;多租户公网延后至 P5。
 - **D-4 [决策]** 不做向量库,延续 grep + 强制引用。
 - **D-5 [决策]** 核心架构:headless daemon + OpenAPI + SSE + 瘦客户端。
 - **D-6 [决策]** 升级判定 = 置信度/风险分级;AI 改动必可解释、可回滚、经审批。

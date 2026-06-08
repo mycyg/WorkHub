@@ -559,7 +559,7 @@ owner: workflow
 |---|---|---|---|---|
 | **FR-PLAT-001** | P0 | P0 | [补] | headless agent daemon 暴露 **OpenAPI 契约 + SSE/WS 事件流**;桌宠/Web/未来移动端皆瘦客户端。 |
 | **FR-PLAT-002** | P0 | P0 | [补] | **SQLite→PostgreSQL** 迁移,逃离单 worker 天花板,支撑多 Agent+多人并发(对齐 [D-2](../../prd/2026-06-04-workhub-prd.md)/[NFR-01](../../prd/2026-06-04-workhub-prd.md))。 |
-| **FR-PLAT-003** | P0 | P0 | [补] | 现有实体/认证/状态机/`auto_agent`/`lifecycle`/`spec_watch`/安全模型**迁移复用**(非重写,对齐 [D-1](../../prd/2026-06-04-workhub-prd.md))。 |
+| **FR-PLAT-003** | P0 | P0 | [补] | 现有实体/认证/状态机/`auto_agent`/`lifecycle`/`spec_watch`/安全模型作为**行为锚点复用**；新仓目标实现为 TS-first/Hono/Drizzle/contracts + Tauri/Rust shell(对齐 R0 修正后的 [D-1](../README.md#4-地基决策已敲定--2026-06-04--2026-06-08-口径修正))。 |
 | **FR-PLAT-004** | P1 | P0 | [补] | 瞬时错误重试+退避(尊重 Retry-After);卡住/超预算优雅降级为人话交接(对齐 [NFR-06](../../prd/2026-06-04-workhub-prd.md))。 |
 
 **验收(AC)**

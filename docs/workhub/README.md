@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-08):**45 篇文档已落盘**(含 P-COST 专篇、PRD/概念复现差距审计、Cuu 黑猫/白猫 Live2D 当前路线、当前真实截图/动作审计、pet 右键菜单、settings 恢复门、P1.6 behavior manifest、P1.7 Tauri 业务动作录屏入口、P1.8 actual DOM / 气泡锚点 QA 与 P1.9 业务矩阵 / card framing QA;详见各篇 frontmatter)。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；失败实验路线已撤出当前文档树和源码入口。
+> 状态(2026-06-08):**46 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
 
 ---
 
@@ -74,7 +74,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `system-architecture.md` | daemon+clients 总图、进程边界、SSE/WS 事件流、部署拓扑 | ✅ |
 | `data-model.md` | 全量实体、字段、ER 图、WorkItem 状态机全转移、软删除/审计字段 | ✅ |
 | `api-contract.md` | OpenAPI 路由组(session/workitem/proposal/permission/event/sync…)、事件类型清单、鉴权中间件 | ✅ |
-| `tech-stack-and-migration.md` | 选型(FastAPI/PG/Tauri/provider)、现有→新仓迁移清单、复用映射 | ✅ |
+| `tech-stack-and-migration.md` | 选型(TS-first/Hono/Drizzle/PG/Tauri/provider)、Python 行为锚点→新仓 TS 重写清单、复用映射 | ✅ |
 | `security-and-permissions.md` | 威胁模型(LAN→云重审)、设备令牌门、RBAC、分层 permission 策略 | ✅ |
 
 ### 02-ai-engine/
@@ -130,6 +130,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | 文档 | 范围 | 状态 |
 |---|---|---|
 | `phasing-p0-p5.md` | 各阶段范围、出入口标准、依赖 | ✅ |
+| `recovery-r0-r4-roadmap-2026-06-08.md` | **纠偏路线**:冻结 Cuu 外观、修正概念/文档 drift、R1 真实纵切、R2 多 worker、R3 Cuu 指令入口、R4 Web 产品化 | active |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级
@@ -139,8 +140,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 
 ---
 
-## 4. 地基决策(已敲定 · 2026-06-04)
-- **D-1** 新仓 = **迁移现有地基再演进**(非重写)。✅
+## 4. 地基决策(已敲定 · 2026-06-04 / 2026-06-08 口径修正)
+- **D-1** 新仓 = **参考既有 Python/FastAPI 行为锚点的 TS-first 重写与演进**。旧 `app/*.py:line` 只用于说明行为来源,不再作为本仓实现路径。✅
 - **D-2** 数据库 = **PostgreSQL**(替换 SQLite)。✅
 - **D-3** 部署 = **LAN-first MVP + 云就绪**;多租户公网延到 P5。✅
 

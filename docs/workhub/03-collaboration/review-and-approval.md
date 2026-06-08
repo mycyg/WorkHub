@@ -67,7 +67,7 @@ owner: workflow
 | `sla_due_at` | `DateTime?` index | SLA 截止(见 §4);`null` = 不超时 |
 | `created_at` / `updated_at` | `DateTime` | `TimestampMixin` |
 | *[扩展]* `kind` | `str(16)` | `tool` \| `proposal` \| `revision` —— 决定走同步门还是异步门(§1.1)。**data-model.md §8.2 当前未列**,本篇为「三类审批共用一表」需此判别列,请 data-model 收口(否则需用 `agent_run_id` 是否为空 + `action_pattern` 前缀间接区分) |
-| *[扩展]* `risk_tier` | `str(8)` | `low` \| `mid` \| `high` —— 由 [`confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md) 评出,**只输入路由/SLA,不在本篇计算**;落库以便 SLA 分档(§4.1)与「高风险不可学」(§6.2)查询 |
+| *[扩展]* `risk_level` | `str(8)` | `low` \| `medium` \| `high` —— 由 [`confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md) 评出,**只输入路由/SLA,不在本篇计算**;落库以便 SLA 分档(§4.1)与「高风险不可学」(§6.2)查询 |
 | *[扩展]* `rationale_json` | JSONB | `Rationale` 三元组(人话理由+grep 证据+trace_ref),见 [`explainability.md`](../02-ai-engine/explainability.md) §2;与 `payload_json` 分列以便审阅 UI 区分「批什么」与「为什么这么提」 |
 | *[扩展]* `assignee_role` | `str(16)?` | 路由命中的角色(`lead`/`owner`/`admin`…),审计用(§7) |
 | *[扩展]* `escalation_event_id` | FK? | 超时/拒绝触发升级时回填(见 §4.3),形成可审计链路 |
@@ -227,16 +227,16 @@ org  →  workspace  →  role  →  session
 
 ### 4.1 截止的计算
 
-`ApprovalRequest.sla_due_at = created_at + sla_duration(kind, risk_tier)`(`sla_due_at` 字段见 data-model.md §8.2)。`sla_duration` 是一张可配置规则表(默认值,可被 org/project 覆盖):
+`ApprovalRequest.sla_due_at = created_at + sla_duration(kind, risk_level)`(`sla_due_at` 字段见 data-model.md §8.2)。`sla_duration` 是一张可配置规则表(默认值,可被 org/project 覆盖):
 
-| `kind` | `risk_tier` | 默认 SLA | 理由 |
+| `kind` | `risk_level` | 默认 SLA | 理由 |
 |---|---|---|---|
 | `tool` | `high` | 30 min | 高风险动作卡着 Runner,要么快批要么快升级 |
-| `tool` | `mid` | 2 h | |
+| `tool` | `medium` | 2 h | |
 | `proposal` / `revision` | * | 24 h | 人审交付物,给足时间;延续"交付后等验收"的现状无硬超时,但 WorkHub 加软超时以驱动催办 |
 | 人工保留命中 | * | `null`(不超时) | 用户明确要自己把关的事,不替他兜底放行 |
 
-> `risk_tier` 来自 [`confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md),本篇只**消费**它做 SLA 分档,不计算。
+> `risk_level` 来自 [`confidence-risk-escalation.md`](../02-ai-engine/confidence-risk-escalation.md),本篇只**消费**它做 SLA 分档,不计算。
 
 ### 4.2 到期处置(按 kind 分流)
 
@@ -293,7 +293,7 @@ org  →  workspace  →  role  →  session
 |---|---|
 | **必须用户显式确认** | 系统只**提议**"以后这类操作不用再问你?",由裁决者点确认(`remember:"always"`)才写 `learned_from_session=true` 规则 —— 不偷偷学(对齐宪法"AI 绝不静默") |
 | **作用域绑定** | 学习规则默认落在**最细可用作用域**(优先 `scope_kind=session/role`,而非 org),避免一次"永远允许"泄漏到整个组织 |
-| **高风险不可学** | `risk_tier=high` 的动作 **禁止**沉淀为 `allow`(只能逐次批);可配置白名单 |
+| **高风险不可学** | `risk_level=high` 的动作 **禁止**沉淀为 `allow`(只能逐次批);可配置白名单 |
 | **可撤销 + 可审计** | 学习规则可一键关闭(`DELETE` 该 `PermissionPolicy`,软删 `deleted_at`);写入/命中都进 `AuditLog`,看板可见(NFR-11) |
 | **deny 优先仍生效** | §3.2 的"`deny` > `ask` > `allow`"对学习规则同样成立 —— 一条 admin `deny` 能压住一条 `learned_from_session=true` 的 allow |
 

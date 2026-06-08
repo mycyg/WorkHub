@@ -154,7 +154,7 @@ registry.set_usage_sink(sink: UsageSink) -> None              # F8/P-COST 注入
 ```
 > **P0 不新增任何对外 HTTP 端点**;daemon API 面变化属 F11。
 
-### Alembic
+### Drizzle migration
 - **本组件无 provider-local 迁移**。`UsageRecord` / `CostLedgerEntry` 的持久化 schema 由 P-COST 所属 `packages/db/src/schema/cost.ts` 负责;F07 不新建自己的 usage 表,只调用注入式 sink。
 
 ### 事件 topic(对齐 Master §6.8 taxonomy)

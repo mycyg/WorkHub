@@ -154,9 +154,9 @@ F05 提供 topic + 扇出 + 鉴权，**不发布业务事件**。产出方与归
 - **降级 PG `LISTEN/NOTIFY`**（无 Redis 部署 / LAN-first 最小依赖）：复用 F3 的 PG，`pg_notify(channel, payload)` + 单 `LISTEN` 连接；**注意** payload 8KB 上限——超限事件只发"提示 + 拉取键"（与 P-1"SSE 只放预览、REST reconcile"契约天然一致）。
 - 二者经 `PushBus` 接口同构；**P0 落一种即可过门禁**，另一种作部署选项（不阻塞）。
 
-### Alembic
+### Drizzle migration
 
-- pub/sub **无表**。presence 若选 PG 后端：一张 `presence`（`user_id` PK、`last_seen_at timestamptz`、`open_streams int`）轻量表，随 F3 Alembic 体系出迁移（`timestamptz`、up/down 可逆）；选 Redis 则无表。
+- pub/sub **无表**。presence 若选 PG 后端：一张 `presence`（`user_id` PK、`last_seen_at timestamptz`、`open_streams int`）轻量表，随 F3 Drizzle migration 体系出迁移（`timestamptz`、up/down 可逆）；选 Redis 则无表。
 
 ### API / 事件
 
@@ -209,7 +209,7 @@ F05 提供 topic + 扇出 + 鉴权，**不发布业务事件**。产出方与归
 
 ### 依赖（上游）
 
-- **F3 PostgreSQL+Alembic**：与 F5 **成对**解除单 worker（Master §6 铁律 3）。F3 提供多 worker-ready engine；选 PG `LISTEN/NOTIFY` 方案时直接复用 F3 的 PG。**两者都到位才 `--workers N`。**
+- **F3 PostgreSQL+Drizzle**：与 F5 **成对**解除单 worker（Master §6 铁律 3）。F3 提供多 worker-ready engine；选 PG `LISTEN/NOTIFY` 方案时直接复用 F3 的 PG。**两者都到位才 `--workers N`。**
 - **F1 仓库/配置**（间接）：`settings.broker_url`（broker 连接）、broker 配置块（Master §3 In）。
 
 ### 被依赖（下游）

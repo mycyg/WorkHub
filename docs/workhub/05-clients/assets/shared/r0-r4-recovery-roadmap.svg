@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">WorkHub R0-R4 recovery roadmap</title>
+  <desc id="desc">A concept diagram showing the corrected route from stop-bleed governance to real vertical slice, multi-worker foundation, Cuu agent entry, and web productization.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#1b2533" flood-opacity="0.16"/>
+    </filter>
+    <linearGradient id="topBand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f4f7fb"/>
+      <stop offset="0.42" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef8f3"/>
+    </linearGradient>
+    <style>
+      .bg{fill:#f6f8fb}
+      .panel{fill:#fff;stroke:#d9e0ea;stroke-width:2;filter:url(#shadow)}
+      .band{fill:url(#topBand)}
+      .title{font:800 46px "Segoe UI","Microsoft YaHei",sans-serif;fill:#172033}
+      .subtitle{font:600 22px "Segoe UI","Microsoft YaHei",sans-serif;fill:#536175}
+      .card-title{font:800 27px "Segoe UI","Microsoft YaHei",sans-serif;fill:#182235}
+      .card-label{font:800 16px "Segoe UI","Microsoft YaHei",sans-serif;fill:#fff}
+      .body{font:600 20px "Segoe UI","Microsoft YaHei",sans-serif;fill:#4d5b70}
+      .small{font:700 16px "Segoe UI","Microsoft YaHei",sans-serif;fill:#64748b}
+      .warn{fill:#fff7ed;stroke:#fed7aa;stroke-width:2}
+      .success{fill:#effaf5;stroke:#bbefd2;stroke-width:2}
+      .line{stroke:#738198;stroke-width:4;fill:none;stroke-linecap:round}
+      .dash{stroke:#94a3b8;stroke-width:3;fill:none;stroke-dasharray:8 10;stroke-linecap:round}
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <rect class="band" x="0" y="0" width="1600" height="170"/>
+  <text class="title" x="80" y="78">WorkHub 纠偏施工路线</text>
+  <text class="subtitle" x="82" y="122">冻结桌宠外观 → 真 AgentLoop + 真 PostgreSQL → 多 worker → Cuu 指令入口 → Web 产品化</text>
+
+  <rect class="warn" x="80" y="196" width="1440" height="86" rx="12"/>
+  <text class="card-title" x="112" y="232">当前铁律</text>
+  <text class="body" x="112" y="264">fixture 不算完成；R1 真实纵切通过前，不再新增 Cuu 外观 / 动效 / 设置矩阵工作。Cuu 只保留独立 pet 窗口黑猫/白猫现状与必要治理修正。</text>
+
+  <g transform="translate(80 330)">
+    <rect class="panel" x="0" y="0" width="260" height="320" rx="16"/>
+    <rect x="0" y="0" width="260" height="58" rx="16" fill="#334155"/>
+    <text class="card-label" x="28" y="37">R0 · 止血对账</text>
+    <text class="card-title" x="28" y="104">先修方向</text>
+    <text class="body" x="28" y="148">冻结 Cuu 外观</text>
+    <text class="body" x="28" y="184">去橘猫 / 去主窗 Cuu</text>
+    <text class="body" x="28" y="220">命门 v1 责任人与阈值</text>
+    <text class="body" x="28" y="256">TS-first 文档去 drift</text>
+  </g>
+
+  <path class="line" d="M352 490 L430 490"/>
+
+  <g transform="translate(430 330)">
+    <rect class="panel" x="0" y="0" width="260" height="320" rx="16"/>
+    <rect x="0" y="0" width="260" height="58" rx="16" fill="#2563eb"/>
+    <text class="card-label" x="28" y="37">R1 · 真纵切</text>
+    <text class="card-title" x="28" y="104">先证价值</text>
+    <text class="body" x="28" y="148">Queue pump 自动执行</text>
+    <text class="body" x="28" y="184">AgentLoop 产 manifest</text>
+    <text class="body" x="28" y="220">Proposal / Replay 落 PG</text>
+    <text class="body" x="28" y="256">重启后数据不丢</text>
+  </g>
+
+  <path class="line" d="M702 490 L780 490"/>
+
+  <g transform="translate(780 330)">
+    <rect class="panel" x="0" y="0" width="260" height="320" rx="16"/>
+    <rect x="0" y="0" width="260" height="58" rx="16" fill="#0f766e"/>
+    <text class="card-label" x="28" y="37">R2 · 多 worker</text>
+    <text class="card-title" x="28" y="104">再证地基</text>
+    <text class="body" x="28" y="148">PG SKIP LOCKED 队列</text>
+    <text class="body" x="28" y="184">Redis bus / presence</text>
+    <text class="body" x="28" y="220">SSE 订阅边界</text>
+    <text class="body" x="28" y="256">2 worker 不脑裂</text>
+  </g>
+
+  <path class="line" d="M1052 490 L1130 490"/>
+
+  <g transform="translate(1130 330)">
+    <rect class="panel" x="0" y="0" width="260" height="320" rx="16"/>
+    <rect x="0" y="0" width="260" height="58" rx="16" fill="#7c3aed"/>
+    <text class="card-label" x="28" y="37">R3 · Cuu 指令入口</text>
+    <text class="card-title" x="28" y="104">补欠的 P1</text>
+    <text class="body" x="28" y="148">自然语言出站</text>
+    <text class="body" x="28" y="184">复用真实 Agent 引擎</text>
+    <text class="body" x="28" y="220">查状态 / 派活 / 确认</text>
+    <text class="body" x="28" y="256">不新增猫外观</text>
+  </g>
+
+  <path class="dash" d="M1260 662 C1260 760 940 782 780 740 C610 696 546 660 526 650"/>
+  <rect class="success" x="430" y="690" width="520" height="112" rx="14"/>
+  <text class="card-title" x="462" y="730">R4 · Web 产品化</text>
+  <text class="body" x="462" y="764">真实数据流 + 空/错/加载/权限四态 + 中英双语全量补齐。</text>
+
+  <rect x="80" y="824" width="1440" height="2" fill="#dbe2ec"/>
+  <text class="small" x="80" y="858">验收口径：每个阶段都必须有命令输出、截图/录屏或持久化数据证明；旧橘猫截图与 fixture 跑通不再作为完成证据。</text>
+</svg>

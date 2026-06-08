@@ -29,7 +29,7 @@ owner: workflow
 
 ## 0. 根基与命名（从现有代码演进）
 
-本篇的编排逻辑不是凭空设计，而是把现有「需求管理大师」里**散落在四处的状态机驱动 + 通知中枢 + 拆解 + 排期** 收拢成一个 headless 的 `PMOrchestrator` 服务（D-1 迁移再演进）。可复用零件映射：
+本篇的编排逻辑不是凭空设计，而是把现有「需求管理大师」里**散落在四处的状态机驱动 + 通知中枢 + 拆解 + 排期** 收拢成一个 headless 的 `PMOrchestrator` 服务（D-1 = 参考旧行为锚点的 TS-first 重写与演进）。可复用零件映射：
 
 | WorkHub 概念 | 现有代码锚点 | 演进动作 |
 |---|---|---|
@@ -99,7 +99,7 @@ class EscalationEvent:
     reason_md: str                 # 人话："为什么卡住"（来自 llm_review.reason / RevisionRequest.reason_md / HumanOnlyPolicy）
     handoff_md: str                # 结构化交接件「已做/未做/下一步/卡点」(Markdown，FR-WORKER-003)
     confidence_record_id: str | None  # 关联的 ConfidenceRecord（数值不外露给用户）
-    risk_tier: str                 # low | medium | high（口径以 confidence-risk-escalation.md §2.2 为准；决定简报语气与默认审批人）
+    risk_level: str                 # low | medium | high（口径以 confidence-risk-escalation.md §2.2 为准；决定简报语气与默认审批人）
     target_user_id: str | None     # 人确认后的最终接手人（上游 §2.2）
     created_at: datetime
     # 经理模式推进的状态（口径同上游 §2.2 的 status）：
@@ -111,7 +111,7 @@ class EscalationEvent:
 
 `trigger` 枚举（**以 [`confidence-risk-escalation.md §6.1`](./confidence-risk-escalation.md) 为权威**）：
 
-| `trigger` | 中文 | 对应现有零件 | 默认 `risk_tier` 影响 |
+| `trigger` | 中文 | 对应现有零件 | 默认 `risk_level` 影响 |
 |---|---|---|---|
 | `unqualified` | 不合格 | `auto_agent.py:544` `llm_review` 判 `meets_requirement=false`（编排处 `auto_agent.py:651`） | 不变（取产出本身风险） |
 | `user_unsatisfied` | 用户不满意（打回） | `RevisionRequest`（`models.py:535`，`reason_md` 必填） | 由早期 `user_rejected` 同义项收敛而来 |

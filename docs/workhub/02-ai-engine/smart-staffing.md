@@ -147,7 +147,7 @@ WorkItemFeatures {
   required_skills: list[{tag: str, weight: float}],   // 从 title/summary_md/raw_description 抽
   domain: str,                                        // 业务域(项目 slug + LLM 归类);对齐 CollaborationGraph.domain_tag(§2.2)
   estimated_effort_hours: float | null,               // 复用 Requirement.estimate_hours
-  risk_band: "low" | "mid" | "high",                  // = ConfidenceRecord.risk_tier(若来自升级;口径见 confidence-risk-escalation)
+  risk_level: "low" | "medium" | "high",                  // = ConfidenceRecord.risk_level(若来自升级;口径见 confidence-risk-escalation)
   needs_lead: bool,                                   // 是否需要一个负责人(几乎恒 true)
   collaborator_slots: int,                            // 建议协作人数(默认 0;按 effort/拆解项推断)
   hard_constraints: {                                 // 硬约束(非 0 即排除)
@@ -403,7 +403,7 @@ proposed ──confirm────────────────> confirme
 
 ## 9. 与上下游的契约边界（一句话各表）
 
-- **上游(谁来调我)**:[pm-mode-orchestration](./pm-mode-orchestration.md) 在升级后第 ② 步调 `propose()`;[confidence-risk-escalation](./confidence-risk-escalation.md) 提供 `ConfidenceRecord.risk_tier`(本篇 §2.4 `risk_band` 即取自它)。命中率 `hit_rate` 的口径在 [data-model §3.3](../01-architecture/data-model.md),非升级文档。
+- **上游(谁来调我)**:[pm-mode-orchestration](./pm-mode-orchestration.md) 在升级后第 ② 步调 `propose()`;[confidence-risk-escalation](./confidence-risk-escalation.md) 提供 `ConfidenceRecord.risk_level`(本篇 §2.4 `risk_level` 即取自它)。命中率 `hit_rate` 的口径在 [data-model §3.3](../01-architecture/data-model.md),非升级文档。
 - **下游(我落到哪)**:确认后写 [`RequirementAssignment`](../../../app/models.py) via [`replace_assignments`](../../../app/services/assignments.py);角色分配进入 [branch-proposal-merge](../03-collaboration/branch-proposal-merge.md) 的分支模型。
 - **横切**:权限用 [`can_manage_requirement_assignees`](../../../app/services/permissions.py);可解释范式用 [explainability](./explainability.md);成本/模型用量记 [P-COST](../README.md);全量字段/状态机以 [data-model](../01-architecture/data-model.md) 为准。
 - **FR 追溯**:`FR-STAFF-001`(onboarding 必填 → §2.1)、`FR-STAFF-002`(提议含理由 → §4)、`FR-STAFF-003`(一键确认/调整 → §5)、`FR-STAFF-004`(冷启动解释式 → §6)、`FR-STAFF-005`(纠正回流 → §7)。

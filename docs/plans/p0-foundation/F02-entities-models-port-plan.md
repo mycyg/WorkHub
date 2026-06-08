@@ -20,6 +20,8 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 > 所有"现有"字段锚定真实代码 `app/models.py`(行号经本次核验)。**严守 Master §6 九铁律**,逐条在 §回滚与风险标注命中。
 > 上游契约以 [data-model.md](../../workhub/01-architecture/data-model.md) 为准;凡跨组件共享字段语义(状态机、租户列、快照引用),本 plan **不重定义**,仅落 ORM 形态并深链规格。Proposal 的交付物变更说明另以 [`_experience-deliverable-contracts.md`](./_experience-deliverable-contracts.md) 的 `DeliverableChangeManifest v0` 为准。
 
+> **2026-06-08 R0 修正读法**：本 plan 保留 `app/models.py` / ORM / `Base.metadata` 作为旧系统行为锚点，但新仓施工目标不是 Python ORM 包。F02 的实际交付物必须落到 `packages/db/src/schema/*`、`packages/db/src/relations/*`、`packages/contracts/src/domain/*`、`packages/contracts/src/enums.ts`；下文凡出现 `app/models/`、`import app.models`、`Base.metadata.create_all()`，均只表示“旧行为应被 Drizzle schema 保真覆盖”的检查语义，不能作为新仓目标路径。以文末 **Target TS paths** 为权威。
+
 ---
 
 ## 目标
@@ -30,9 +32,9 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 2. **`Requirement → WorkItem` 演进**:ORM 类改名 + 全部 `requirement_id` FK 改名 `work_item_id`,新增 AI-native 字段(`mode`/`human_reserved`/`current_spec_id`/`main_branch_id`/`latest_confidence_id`),并把状态串域演进为新状态机(状态映射在 F3 数据迁移落地,本组件只定 ORM 形态与转移表常量)。
 3. **新增 15 个 AI-native 实体**:`Org`/`Workspace`/`UserProfile`/`Branch`/`Proposal`/`Review`(自 `RevisionRequest`)/`SpecDoc`/`AgentRun`/`AgentStep`/`ConfidenceRecord`/`EscalationEvent`/`Snapshot`/`PermissionPolicy`/`ApprovalRequest`/`AuditLog`。
 
-**本组件交付的是"声明式 ORM 模型层 + PG 就绪的列类型/约束/关系",不含运行期逻辑**(Alembic 迁移脚本与数据回填属 F3;权限合并算法属 F6;Agent 引擎读写属 F8;通知登记属 F9;快照运行时属 F10)。本组件为它们提供**正确的表结构地基**。
+**本组件交付的是"声明式 ORM 模型层 + PG 就绪的列类型/约束/关系",不含运行期逻辑**(Drizzle 迁移脚本与数据回填属 F3;权限合并算法属 F6;Agent 引擎读写属 F8;通知登记属 F9;快照运行时属 F10)。本组件为它们提供**正确的表结构地基**。
 
-> 成功判据:`import app.models` 全图可加载(关系/FK 互引无环错),`Base.metadata` 能在一张空 PG 上由 F3 的 Alembic 首迁移建出全部表,且 28 个旧实体的既有字段/约束**零语义丢失**。
+> 成功判据:`import app.models` 全图可加载(关系/FK 互引无环错),`Base.metadata` 能在一张空 PG 上由 F3 的 Drizzle 首迁移建出全部表,且 28 个旧实体的既有字段/约束**零语义丢失**。
 
 ---
 
@@ -51,7 +53,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 
 ### Out(明确推迟到 P1+,或归属其他 P0 组件)
 
-- **Alembic 配置 + 首迁移脚本 + 数据回填/状态映射**(`UPDATE…CASE`、租户回填、`USING ::jsonb`、`requirements`→`work_items` 物理改名 DDL)→ **F3**。
+- **Drizzle 配置 + 首迁移脚本 + 数据回填/状态映射**(`UPDATE…CASE`、租户回填、`USING ::jsonb`、`requirements`→`work_items` 物理改名 DDL)→ **F3**。
 - **`CollaborationGraph` 物化视图/聚合表**(data-model §3.3,聚合自审计/交付,**MVP 推迟**)→ P1(派活)。
 - 权限合并算法、`PermissionPolicy` 运行时求值 → **F6**(本组件只建表)。
 - `AgentRun` 队列/心跳/行锁恢复语义、`AgentStep` 写入时机 → **F8**(本组件只建表)。
@@ -147,7 +149,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 - [ ] **S6 枚举/常量单一真相**:导出 `WORK_ITEM_STATUSES`、`ALLOWED_TRANSITIONS`(自 data-model §5 全转移表)、`CONFIDENCE_GRADES=("low","medium","high")`、`RISK_LEVELS`、`VERDICTS`、`ESCALATION_TRIGGERS=("unqualified","user_unsatisfied","user_forbidden","doom_loop","budget_exhausted")`(以 data-model §7.4 与 api-contract §2.7 为准);**统一 `mid`→`medium`**;同步 `shared/src/design/status-vocab.ts` 人话标签(交 F11,本组件出枚举清单)。
 - [ ] **S7 Pydantic schema 字段名对齐**:`app/schemas.py` 内 `requirement_id`→`work_item_id`(16 处)、`estimate_confidence` 正则保持 `low|medium|high`(已对,`schemas.py:227/250`)、新实体读写 schema 骨架(详细 API schema 属 F11)。
 - [ ] **S8 `DeliverableChangeManifest` 契约接入**:`Proposal.diff_manifest` 的 ORM/Pydantic 类型标为 JSONB/dict,并在 schema docstring / OpenAPI extra 中引用 `_experience-deliverable-contracts.md` §3;不新增表,但交 F8/F10/F11 一份 fixture 清单(`docx/pptx/xlsx/image/folder/structured_record`)。
-- [ ] **S9 自检 gate**:① `import app.models` 全图加载无错;② `Base.metadata.sorted_tables` 含全部新旧表且拓扑可建(FK 无悬空);③ 在临时 PG 上 `Base.metadata.create_all()` 冒烟建表成功(仅本组件自检,正式建表走 F3 Alembic);④ grep 确认 `models.py`/`schemas.py` 内无残留 `requirement_id`。
+- [ ] **S9 自检 gate**:① `import app.models` 全图加载无错;② `Base.metadata.sorted_tables` 含全部新旧表且拓扑可建(FK 无悬空);③ 在临时 PG 上 `Base.metadata.create_all()` 冒烟建表成功(仅本组件自检,正式建表走 F3 Drizzle migration);④ grep 确认 `models.py`/`schemas.py` 内无残留 `requirement_id`。
 - [ ] **S10 交接产物**:向 F3 交"列类型转换清单 + 状态映射表 + 租户回填点";向 F6/F8/F9/F10 交"对应新实体已就绪 + version_id_col 位置";向 F11 交"FK/字段改名的 317 处跨文件清单 + 枚举词表 + `DeliverableChangeManifest` fixture 清单"。
 
 ---
@@ -177,7 +179,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 `ConfidenceRecord.grade` / `risk_level` 与 `WorkItem.estimate_confidence` **统一 `low|medium|high`**;`schemas.py:227/250` 现有正则 `^(low|medium|high)$` 为基准,新实体对齐,**禁用 `mid`**。
 `EscalationEvent.trigger` 单一真相 = `unqualified|user_unsatisfied|user_forbidden|doom_loop|budget_exhausted`(data-model §7.4 + api-contract §2.7);本组件导出 `ESCALATION_TRIGGERS` 常量为消费方基准,页面/route 不得再引入 `user_rejected` 同义项。
 
-### Alembic 契约(交 F3,本组件不写迁移)
+### Drizzle migration 契约(交 F3,本组件不写迁移)
 
 本组件保证 `Base.metadata` 是 F3 `--autogenerate` 的**正确目标**:全部列类型为 PG 原生(`Uuid`/`JSONB`/`timestamptz`),约束/index 在 ORM 声明完整。F3 据此出首迁移 + `requirements→work_items` 改名 DDL + JSON `USING ::jsonb` + 状态 `UPDATE…CASE` + 租户回填 + 软删补列 + 唯一去重预检(data-model §9.5)。
 
@@ -225,7 +227,7 @@ code_root: D:/02_代码与开发/需求管理大师 (app/models.py)
 - **F1**(仓库/配置):需 `app/models/` 包结构位、`config.py` 的 PG `database_url`/连接池块、`from sqlalchemy.dialects.postgresql import JSONB/Uuid` 的 PG 依赖(psycopg)就位。F1 未就绪则本组件无法以 PG 列类型声明落地。
 
 **被依赖(下游,本组件是关键路径 `F1→F2→F3→…` 的第二棒):**
-- **F3**(PG+Alembic):以本组件 `Base.metadata` 为 autogenerate 目标;接本组件交付的"列类型转换清单 + 状态映射 + 租户回填点 + 改名 DDL 范围"。**F3 直接 gate 在 F2 完成**。
+- **F3**(PG+Drizzle):以本组件 `Base.metadata` 为 autogenerate 目标;接本组件交付的"列类型转换清单 + 状态映射 + 租户回填点 + 改名 DDL 范围"。**F3 直接 gate 在 F2 完成**。
 - **F4**(鉴权):依赖 `User`/`ClientDevice` 保真 + `org_id`/`workspace_id` 注入位、AI actor 一等身份字段。
 - **F6**(权限):依赖 `PermissionPolicy`/`ApprovalRequest` 建表 + `WorkItem`/`Proposal` 泛化字段。
 - **F8**(Agent 引擎):依赖 `AgentRun`/`AgentStep`/`Branch` + `version_id_col`(行锁/乐观锁地基)。

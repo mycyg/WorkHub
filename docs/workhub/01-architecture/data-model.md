@@ -519,7 +519,7 @@ PRD NFR-01 / D-2:逃离 SQLite 单 worker 天花板(现 `db.py` 注释明示 `da
 - **JSON 计数器去 race**:现 `Project.next_seq` 在 SQLite 单 worker 下安全;PG 多 worker 下编号自增须走行级锁或 PG `SEQUENCE`,避免 `PROJ-001` 撞号。
 
 ### 9.5 数据迁移与回填
-1. **建模工具**:延续 Alembic(若现仓未用则 P0 引入),为新增表/列出迁移脚本。
+1. **建模工具**:延续 Drizzle Kit(新仓 P0 引入),为新增表/列出迁移脚本。
 2. **租户回填**:为 `Org`/`Workspace` 建默认行,所有现有 `Project`/`WorkItem` 等回填 `workspace_id`(NOT NULL 前先回填再加约束)。
 3. **状态映射**:按 §5 映射表把旧 `Requirement.status` 批量改写为新状态域(`UPDATE` + CASE);旧值留 `AuditLog` 备查。
 4. **`Requirement`→`WorkItem` 重命名**:表/FK 改名(`requirement_id`→`work_item_id`),或保留物理表名 `requirements`、仅 ORM 类改名以降低迁移风险(二选一,详见 `tech-stack-and-migration.md`)。

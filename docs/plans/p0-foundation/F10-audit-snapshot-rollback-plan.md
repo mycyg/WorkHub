@@ -39,7 +39,7 @@ specs:
 
 ### In（P0 必须）
 
-- `AuditLog` 实体(新表)+ `Snapshot` 实体(新表),Alembic 首迁移随 F3 落地。
+- `AuditLog` 实体(新表)+ `Snapshot` 实体(新表),Drizzle 首迁移随 F3 落地。
 - `ActivityLog` / `ProjectDriveOperation` → `AuditLog` 的**数据迁移 + 写入面切换**(双写过渡期内统一到新表)。
 - 通用 `SnapshotService`:`take(scope, ref, ...)` + `revert(to, ...)`,文件域(内容寻址 sha256/CoW 工作树)+ 业务域(before-image + 反向补偿)双载体。
 - AgentLoop 接入点(F8 提供 hook):每步**首个 `side_effect=True` 工具执行前** `take` 快照(`agent-loop-and-tools.md §2.2 ④`);失败 ⇒ fail-closed。
@@ -91,13 +91,13 @@ specs:
 
 ## 实施步骤（有序可勾选）
 
-> 前置:F2(实体框架)、F3(PG + Alembic + timestamptz/JSONB)、F8(AgentLoop + ToolRegistry + `side_effect` 标记 + ctx)已就绪。
+> 前置:F2(实体框架)、F3(PG + Drizzle migration + timestamptz/JSONB)、F8(AgentLoop + ToolRegistry + `side_effect` 标记 + ctx)已就绪。
 
 - [ ] **1. 建模 `AuditLog` + `Snapshot`**(依赖 F2/F3)
   - [ ] 1.1 在 `app/models.py` 新增 `AuditLog`(字段见契约表),JSONB `detail_json`,`created_at` 索引,append-only(无 `deleted_at`)。
   - [ ] 1.2 新增 `Snapshot`(字段见契约表),`ref`/`content_sha256`/`reverted_at`。
   - [ ] 1.3 `AgentStep` 加 `snapshot_id` FK(与 F8 协调,二者同迁移)。
-  - [ ] 1.4 Alembic 迁移脚本:建两表 + 索引(`entity_type`/`entity_id`/`created_at`/`snapshot_id`);up/down 可逆测试(Master §10)。
+  - [ ] 1.4 Drizzle 迁移脚本:建两表 + 索引(`entity_type`/`entity_id`/`created_at`/`snapshot_id`);up/down 可逆测试(Master §10)。
 - [ ] **2. `SnapshotService` 核心**(NEW)
   - [ ] 2.1 文件域 `take`:对 `workdir` 内容寻址快照(复用 drive sha256 范式 P-2),写 `Snapshot(kind='pre_step', ref=..., content_sha256=...)`。
   - [ ] 2.2 业务域 `take`:写操作前抓 before-image,落 `AuditLog.detail_json.before` + 反向补偿描述。
@@ -123,7 +123,7 @@ specs:
   - [ ] 7.1 `undo_drive_operation`(`project_drive.py:1504`)改查 `AuditLog` 可逆行 + 调 `SnapshotService.revert`。
   - [ ] 7.2 逆操作分派(`:1520-1571`)迁入 `SnapshotService` 业务补偿器;端点行为/响应保持兼容。
 - [ ] **8. 数据迁移**(REFACTOR R-1/R-2)
-  - [ ] 8.1 Alembic 数据迁移:`activity_log` 行 → `audit_log`(`entity_type='work_item'`,`actor_kind` 从 nickname 启发式推断 AI 行,无法判定标 `human`)。
+  - [ ] 8.1 Drizzle migration 数据迁移:`activity_log` 行 → `audit_log`(`entity_type='work_item'`,`actor_kind` 从 nickname 启发式推断 AI 行,无法判定标 `human`)。
   - [ ] 8.2 `project_drive_operations` 行 → `audit_log`(`entity_type='drive_item'`,`undone_at` 直迁,payload 入 `detail_json`)。
   - [ ] 8.3 旧表保留只读一个 release(回滚安全),新写全走 `audit_log`。
 - [ ] **9. 验收测试**(见下「验收用例」)
@@ -170,7 +170,7 @@ specs:
 | `reverted_at` | timestamptz? | 已回滚标记(沿用 `ProjectDriveOperation.undone_at` 范式 P-1) |
 | `created_at` | timestamptz | |
 
-### Alembic
+### Drizzle migration
 
 - 随 F3 首迁移族:`create_table('audit_log')` + `create_table('snapshots')` + `audit_log` 索引(`entity_type,entity_id`/`created_at`/`snapshot_id`);`agent_steps.snapshot_id` FK(与 F8 协调列序)。
 - 数据迁移 op:`activity_log`→`audit_log`、`project_drive_operations`→`audit_log`(步骤 7)。
@@ -241,7 +241,7 @@ F10 为 `_experience-deliverable-contracts.md` §3 的 `DeliverableChangeManifes
 
 **回滚策略**
 - 数据迁移期**双表并存一个 release**(步骤 7.3):新写走 `audit_log`,旧 `activity_log`/`project_drive_operations` 保留只读;若 `audit_log` 写入面出问题,可临时切回旧 `_record_op`/`log_activity`(薄封装 R-3.2 保留旧签名,便于一行切换)。
-- Alembic down 还原两新表 + 旧写入面(up/down 可逆测试覆盖)。
+- Drizzle down migration 还原两新表 + 旧写入面(up/down 可逆测试覆盖)。
 - 红线闸门(N-3)用 feature flag 包裹仅限开发排障:非生产可临时把 side-effect 工具整体禁用或只跑只读工具;**不得**把「快照失败」降级为允许写入。生产门(`main.py:227` 范式)下强制 fail-closed,不可降级。
 
 **风险**
@@ -258,7 +258,7 @@ F10 为 `_experience-deliverable-contracts.md` §3 的 `DeliverableChangeManifes
 
 **依赖(上游)**
 - **F2 实体模型**:`AuditLog`/`Snapshot` 是 F2 新增实体清单的一部分;`WorkItem`/`Branch`/`AgentStep` FK 目标须就位。
-- **F3 PostgreSQL + Alembic**:提供 PG 事务(同事务快照+写的硬前提)、JSONB(`detail_json`)、timestamptz(R-5)、行级锁(revert 串行化)、Alembic 迁移体系。F10 无 F3 不成立。
+- **F3 PostgreSQL + Drizzle migration**:提供 PG 事务(同事务快照+写的硬前提)、JSONB(`detail_json`)、timestamptz(R-5)、行级锁(revert 串行化)、Drizzle 迁移体系。F10 无 F3 不成立。
 - **F8 Agent 引擎核心**:提供 AgentLoop 的「副作用前」hook(`§2.2 ④`)、`ToolSpec.side_effect` 标记、执行 ctx、`AgentStep` 持久化(回填 `snapshot_id`)。红线闸门(N-3)挂在 F8 循环上。
 - **F6 权限引擎**(ask-gate 软依赖):N-4 不可逆写 ask 复用 F6 `ApprovalRequest` 阻塞原语 + 审批路由;F6 未就位时 ask-gate 可临时退化为「硬拒绝不可逆写」。
 - **F5 事件 broker**(事件软依赖):`step.snapshot`/`permission.ask` 经 F5 跨 worker 扇出 + 订阅边界鉴权(NFR-08)。

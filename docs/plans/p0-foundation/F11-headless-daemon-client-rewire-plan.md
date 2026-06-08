@@ -161,9 +161,9 @@ specs:
 
 > **跨组件共享处以 Master + 规格为准**。F11 不定义实体/事件 taxonomy 本身,只负责**暴露与改接**。
 
-### 实体字段 / Alembic
+### 实体字段 / Drizzle migration
 
-- F11 **不新增实体**,不产生 Alembic 迁移。`requirements→work_items` 表改名属 **F2/F3**(迁移清单 §2,牵动 15+ FK);F11 只对齐**端点路径与客户端类型**,依赖 F2/F3 的表/迁移已落地。
+- F11 **不新增实体**,不产生 Drizzle 迁移。`requirements→work_items` 表改名属 **F2/F3**(迁移清单 §2,牵动 15+ FK);F11 只对齐**端点路径与客户端类型**,依赖 F2/F3 的表/迁移已落地。
 
 ### API(改名 + headless,详契约见 api-contract)
 
@@ -234,7 +234,7 @@ specs:
 
 - **F1**(配置去硬编码:`WEB_ROOT`/`DOWNLOADS_ROOT` 经 settings;base-URL/CORS 配置块)。
 - **F2**(`requirements→work_items` 实体改名,端点改名的实体侧)。
-- **F3**(PG + Alembic 落地;多 worker 前提)。
+- **F3**(PG + Drizzle migration 落地;多 worker 前提)。
 - **F4**(鉴权链/设备门/`require_stream_user` 不变式;跨域 cookie 仍走此链)。
 - **F5**(事件 broker 内核 + topic 鉴权门;新 SSE topic 暴露的后端)。
 - **F6**(permission/approval 组 handler;`permission.ask` 事件源)。

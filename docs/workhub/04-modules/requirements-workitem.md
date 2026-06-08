@@ -55,7 +55,7 @@ owner: workflow
 | **子实体** | `attachments` / `chat_messages` / `deliveries` / `assignments` / `workspaces` / `task_plans` / `acceptance_items`（`:354-360`） | 详情各 tab | 新增 `confidence_records` / `escalation_events` / `branches` / `proposals` 关系 |
 
 **WorkHub 新增（页面需直接渲染的命门对象，字段定义在邻篇）**：
-- `ConfidenceRecord`（命门篇 §2.1）：`confidence_band`/`risk_tier`/`verdict`/`verdict_reason_md` —— 详情页"AI 把握度"卡的数据源；**数值/阈值绝不下发客户端**（PRD 宪法 §4）。
+- `ConfidenceRecord`（命门篇 §2.1）：`confidence_band`/`risk_level`/`verdict`/`verdict_reason_md` —— 详情页"AI 把握度"卡的数据源；**数值/阈值绝不下发客户端**（PRD 宪法 §4）。
 - `EscalationEvent`（命门篇 §2.2）：`trigger`/`reason_md`/`handoff_md`/`suggested_assignees`/`status` —— 详情页"升级简报"卡。
 - `Branch` / `Proposal`（[`branch-proposal-merge.md`](../03-collaboration/branch-proposal-merge.md)）：详情页"交付物/提议"区与审批弹层。
 
@@ -311,7 +311,7 @@ cancelled                                ── 簇G「已取消」
 - **顶栏**：复用全局顶栏。**主区**：`narrow-container max-w-6xl` 单列（header + 横幅 + tab + tab 内容）。**面板**：改派接单人弹出区（`AssigneeSelector`，`:408-440`）、审批弹层（采纳/打回，WorkHub 新增）。**弹层**：打回写原因 modal、人工保留开关 modal。
 - **关键组件**（现状）：`StatusBadge`、`AssigneeSelector`、`AILiveView`（`:445`，AI 处理时显 trace）、`ActivityTimeline`、`CommentsPanel`、`DeliverablesTab`、`SpeakButton`；tab 内 `WorkspaceBoard`/`DecompositionPanel`/`ChatHistory`（同文件内组件）。
 - **关键组件**（WorkHub 新增，挂在动态横幅/对应 tab）：
-  - **`ConfidenceCard`（AI 把握度卡）**：消费 `ConfidenceRecord`（命门篇 §2.1）。**只渲染人话**：`verdict_reason_md` + band→文案映射（"我比较有把握"/"我不太确定，建议你扫一眼"）+ 验收清单逐条命中徽标 + risk_tier→人话（"这事改动较大/对外，我先请你拍板"）。**绝不显数值**（命门篇 §1）。簇D 时浮现，带 [采纳][打回(写原因)]。
+  - **`ConfidenceCard`（AI 把握度卡）**：消费 `ConfidenceRecord`（命门篇 §2.1）。**只渲染人话**：`verdict_reason_md` + band→文案映射（"我比较有把握"/"我不太确定，建议你扫一眼"）+ 验收清单逐条命中徽标 + risk_level→人话（"这事改动较大/对外，我先请你拍板"）。**绝不显数值**（命门篇 §1）。簇D 时浮现，带 [采纳][打回(写原因)]。
   - **`EscalationBriefCard`（升级简报卡）**：消费 `EscalationEvent` + PM 篇 `EscalationBrief`（§3）。三段式：为什么卡（`reason_md` 首句，附 trace 引用）/ 建议谁做（嵌入 `StaffingSuggestionCard`）/ 计划（`plan_md`）。行动 = `PendingDecision`：[确认这样推进][调整][我自己来定]。
   - **`StaffingSuggestionCard`（派活建议卡）**：消费 `StaffingProposal`/`Suggestion`（smart-staffing 篇 §4.2/§4.3）。每个被荐人显"为什么推荐他"（`why[].headline` + 可点开 `evidence`，含 `caveat` 如"他手上有 1 个逾期"）。行动：[确认这个安排][换个负责人▾][改协作人][我自己来定]。**`_score`/`_subscores` 不下发**（smart-staffing 篇 §4.2 硬约束）。
   - **`ProposalReviewPanel`（提议审批面板）**：演进自 `DeliverablesTab`（`:527`）。簇D `in_review` 时显"AI/人整理好的成果 + 对照验收清单的勾选 + 变更说明"，行动 [采纳（汇入正式版）][打回（写原因）]。打回理由必填 → 回灌（命门篇 §7.2）。

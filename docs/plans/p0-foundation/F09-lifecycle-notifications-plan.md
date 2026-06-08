@@ -116,7 +116,7 @@ specs:
 - `Notification`(`models.py:146`):复用 `type/severity/title/body/target_url/project_id/requirement_id/dedupe_key/user_id`。F2 改名后 `requirement_id`→`work_item_id`(FK 随 `requirements→work_items`)。**无新增列**——F09 是配置(`_MILESTONES`)+ 路由(`_resolve_recipients`)扩展,不改 `Notification` schema。
 - 读侧依赖(F2 建表,F09 只读其字段做 approver 解析):`EscalationEvent.target_user_id` / `status`(权威定义 confidence-risk-escalation §2.2);`ApprovalRequest.routed_to_user_id`(权威 data-model §8.2 / review-and-approval §1.2);`RequirementAssignment.role=='lead'`(`models.py:370`);`Project.owner_user_id`(`models.py:83`)。
 
-### Alembic
+### Drizzle migration
 
 - **F09 不引入新表/新列** → 无独立迁移。`Notification.requirement_id→work_item_id` 的改名随 **F2/F3** 的 `requirements→work_items` 主迁移(15+ 表 FK 一并改),F09 不单独出迁移。若实测发现 `dedupe_key` 长度(`String(256)`)对新 key 不足,则随 F2 主迁移放宽——目前公式 `{status}:{uuid32}:{uuid32}` < 80 字符,**无需放宽**。
 
@@ -168,7 +168,7 @@ specs:
 | **R-D `str.format` 误用** | 新占位符用 `str.format` 渲染 → nickname 含 `{` 时 KeyError/泄漏 | R3 强制走 `subs`+`render`;AC7 + S9 grep | 还原 `render()` |
 | **R-E dedupe key 冲突** | `merged`/`in_review` 一次性事件被同 actor 重投覆盖 | key 含 actor.id(`:159` 范式)+ change-detection guard;AC4 | key 公式纯函数,调整即生效 |
 
-**回滚总评**:F09 改动集中在 `lifecycle.py`(纯数据 dict + 两个纯函数扩展)与 `notifications.py` 出口(随 F5 切换),**无新表、无 Alembic 迁移、无 schema 变更**,回滚成本低、可独立 revert 而不影响 F2/F5/F8 已落地部分。最大不可逆风险来自「漏登记」——这是**遗漏**而非**破坏**,由 AC1 反例守卫 + CI 枚举校验前置拦截。
+**回滚总评**:F09 改动集中在 `lifecycle.py`(纯数据 dict + 两个纯函数扩展)与 `notifications.py` 出口(随 F5 切换),**无新表、无 Drizzle 迁移、无 schema 变更**,回滚成本低、可独立 revert 而不影响 F2/F5/F8 已落地部分。最大不可逆风险来自「漏登记」——这是**遗漏**而非**破坏**,由 AC1 反例守卫 + CI 枚举校验前置拦截。
 
 ---
 

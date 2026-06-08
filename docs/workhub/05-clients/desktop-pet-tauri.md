@@ -14,6 +14,8 @@ visuals:
 # 桌面宠物客户端 C-PET（Tauri v2 + Rust）
 
 > 当前权威口径：C-PET 是 WorkHub 的桌面瘦客户端。Rust shell 负责本地窗口、托盘、通知、deep-link、设备令牌、本地同步和系统能力；业务状态机、权限、AI 运行、页面 VM 仍由 TS-first daemon / contracts / webview 承担。Cuu 只在独立 `pet` window 出现，模型只允许黑猫/白猫 Live2D 二选项。
+>
+> **2026-06-08 纠偏**：R1 真实纵切通过前，C-PET 不再新增 Cuu 外观/动效/设置矩阵施工。Rust shell 的优先级转为支撑 R1/R2：设备令牌、真实 SSE、通知 deep-link、PG/Redis 后端联动与跨平台 smoke。Cuu 仅保留现有黑/白 Live2D 运行时和 R0 治理修正。
 
 ## 1. 产品边界
 
@@ -243,16 +245,25 @@ visuals:
 
 | 缺口 | 状态 | 下一步 |
 |---|---|---|
-| 黑猫真实长驻录屏 | 浏览器模型源帧已补；Tauri 未补 | idle 10s、hover、tap、drag、approval、search |
-| 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据 | 继续补 tap、drag、approval、search |
-| 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 继续补 idle、tap、drag、approval、search |
+| 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
+| 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
+| 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
 | Linux/macOS capture | 未补 | 建立跨平台截图策略 |
 | 商用授权 | 未确认 | 联系授权或原创替换 |
 | 主窗彻底严肃化 | 进行中 | 搜索截图确认无 Cuu 本体 |
-| 鲜活动作状态机 | P1.6 `CuuBehaviorManifest` 源码合同已落；P1.7 业务 motion capture 入口与黑猫 approval smoke 已落 | 继续补黑/白全矩阵 motion capture、settings matrix 和 actual DOM attrs |
+| 鲜活动作状态机 | P1.6 `CuuBehaviorManifest` 源码合同已落；P1.7-P1.10 业务 motion capture、actual DOM、card framing、motion_liveness 已落 | 冻结；后续优先 R1 真 AgentLoop 和 R2 多 worker |
+
+## 9.1 冻结后的 C-PET 优先级
+
+| 优先级 | 工作 | 原因 |
+|---|---|---|
+| R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
+| R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | 补 FR-PET-002，才是 Cuu 欠的 P1 能力 |
+| Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |
 
 ## 10. 与其他文档的边界
 

@@ -8,6 +8,11 @@ param(
   [int]$MinBusinessCardVisualPixelsAtScale100 = 54000,
   [double]$MinLongRunVisualRatio = 0.7,
   [int]$MinLongRunChangedFrames = 3,
+  [int]$MinMotionChangedPixelsGt8 = 60,
+  [int]$MinMotionChangedFramesSmoke = 2,
+  [int]$MinMotionChangedFramesFormal = 6,
+  [int]$MinMotionFrameCountForFormal = 32,
+  [int]$MaxStableRectDriftPx = 2,
   [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "clarify", "approval", "search", "sync", "done", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
@@ -527,6 +532,78 @@ function Measure-FrameDiff {
   }
 }
 
+function Get-CuuRectDriftFrames {
+  param(
+    [object[]]$Rects,
+    [int]$MaxDriftPx
+  )
+  if (-not $Rects -or $Rects.Count -eq 0) {
+    return @()
+  }
+  $firstRect = $Rects[0]
+  $driftFrames = @()
+  for ($i = 0; $i -lt $Rects.Count; $i++) {
+    $rect = $Rects[$i]
+    $drift = [Math]::Abs($rect.Left - $firstRect.Left) +
+      [Math]::Abs($rect.Top - $firstRect.Top) +
+      [Math]::Abs($rect.Width - $firstRect.Width) +
+      [Math]::Abs($rect.Height - $firstRect.Height)
+    if ($drift -gt $MaxDriftPx) {
+      $driftFrames += $i
+    }
+  }
+  return $driftFrames
+}
+
+function New-CuuMotionLivenessReport {
+  param(
+    [string]$ScenarioName,
+    [object[]]$Diffs,
+    [object[]]$Rects,
+    [int]$FrameCount,
+    [int]$ChangedPixelsThreshold,
+    [int]$MinChangedFramesSmoke,
+    [int]$MinChangedFramesFormal,
+    [int]$FormalFrameCount,
+    [int]$MaxRectDriftPx,
+    [bool]$IsBusinessScenario
+  )
+
+  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover")
+  $enabled = $IsBusinessScenario -or ($interactionScenarios -contains $ScenarioName)
+  $quality = if ($FrameCount -ge $FormalFrameCount) { "formal_32" } else { "smoke" }
+  $minChangedFrames = if ($quality -eq "formal_32") { $MinChangedFramesFormal } else { $MinChangedFramesSmoke }
+  [object[]]$changedFrames = @($Diffs | Where-Object {
+    $_.frame -gt 0 -and $_.vs_previous.changed_pixels_gt8 -ge $ChangedPixelsThreshold
+  })
+  $requiresStableRect = $ScenarioName -ne "drag-smoothing"
+  [object[]]$rectDriftFrames = if ($requiresStableRect) {
+    @(Get-CuuRectDriftFrames -Rects $Rects -MaxDriftPx $MaxRectDriftPx)
+  } else {
+    @()
+  }
+  $changedFrameCount = ($changedFrames | Measure-Object).Count
+  $rectDriftFrameCount = ($rectDriftFrames | Measure-Object).Count
+  $passed = -not $enabled -or (
+    $changedFrameCount -ge $minChangedFrames -and
+    (-not $requiresStableRect -or $rectDriftFrameCount -eq 0)
+  )
+
+  [pscustomobject]@{
+    enabled = $enabled
+    passed = $passed
+    quality = $quality
+    min_formal_frame_count = $FormalFrameCount
+    changed_pixels_gt8_threshold = $ChangedPixelsThreshold
+    changed_frames_gt8_count = $changedFrameCount
+    changed_frames = @($changedFrames | ForEach-Object { $_.frame })
+    min_changed_frames = $minChangedFrames
+    requires_stable_rect = $requiresStableRect
+    max_rect_drift_px = $MaxRectDriftPx
+    rect_drift_frames = $rectDriftFrames
+  }
+}
+
 function New-ContactSheet {
   param([string[]]$Frames, [string]$Path)
   $columns = 4
@@ -969,20 +1046,9 @@ try {
     $lowVisualFrames = @($framePixelReports | Where-Object {
       $_.pixel_report.visual_pixels -lt $minLongRunVisualPixels
     })
-    $firstRect = $rects[0]
-    $rectDriftFrames = @()
-    for ($i = 0; $i -lt $rects.Count; $i++) {
-      $rect = $rects[$i]
-      $drift = [Math]::Abs($rect.Left - $firstRect.Left) +
-        [Math]::Abs($rect.Top - $firstRect.Top) +
-        [Math]::Abs($rect.Width - $firstRect.Width) +
-        [Math]::Abs($rect.Height - $firstRect.Height)
-      if ($drift -gt 2) {
-        $rectDriftFrames += $i
-      }
-    }
+    $rectDriftFrames = @(Get-CuuRectDriftFrames -Rects $rects.ToArray() -MaxDriftPx $MaxStableRectDriftPx)
     $changedFrames = @($diffs | Where-Object {
-      $_.frame -gt 0 -and $_.vs_previous.changed_pixels_gt8 -ge 60
+      $_.frame -gt 0 -and $_.vs_previous.changed_pixels_gt8 -ge $MinMotionChangedPixelsGt8
     })
     $longRunPassed = $lowVisualFrames.Count -eq 0 -and
       $rectDriftFrames.Count -eq 0 -and
@@ -994,7 +1060,8 @@ try {
       min_visual_pixels = $minLongRunVisualPixels
       low_visual_frames = @($lowVisualFrames | ForEach-Object { $_.frame })
       rect_drift_frames = $rectDriftFrames
-      changed_frames_gt8_threshold = 60
+      max_rect_drift_px = $MaxStableRectDriftPx
+      changed_frames_gt8_threshold = $MinMotionChangedPixelsGt8
       changed_frames_gt8_count = $changedFrames.Count
       min_changed_frames = $MinLongRunChangedFrames
       min_frame_visual_pixels = ($framePixelReports | ForEach-Object { $_.pixel_report.visual_pixels } | Measure-Object -Minimum).Minimum
@@ -1015,7 +1082,18 @@ try {
   }
   $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $ModelPackId -Scenario $Scenario
 
-  $motionGatePassed = if ($longRunReport) { $longRunReport.passed } else { $true }
+  $motionLivenessReport = New-CuuMotionLivenessReport `
+    -ScenarioName $Scenario `
+    -Diffs $diffs `
+    -Rects $rects.ToArray() `
+    -FrameCount $FrameCount `
+    -ChangedPixelsThreshold $MinMotionChangedPixelsGt8 `
+    -MinChangedFramesSmoke $MinMotionChangedFramesSmoke `
+    -MinChangedFramesFormal $MinMotionChangedFramesFormal `
+    -FormalFrameCount $MinMotionFrameCountForFormal `
+    -MaxRectDriftPx $MaxStableRectDriftPx `
+    -IsBusinessScenario $isBusinessScenario
+  $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
   $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected
 
   $report = [pscustomobject]@{
@@ -1056,6 +1134,7 @@ try {
     max_vs_first_changed_pixels_gt8 = ($diffs | ForEach-Object { $_.vs_first.changed_pixels_gt8 } | Measure-Object -Maximum).Maximum
     max_vs_previous_changed_pixels_gt8 = ($diffs | ForEach-Object { $_.vs_previous.changed_pixels_gt8 } | Measure-Object -Maximum).Maximum
     frame_pixel_reports = $framePixelReports
+    motion_liveness = $motionLivenessReport
     long_run = $longRunReport
     frames = $diffs
   }

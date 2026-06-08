@@ -14,6 +14,8 @@ owner: workflow
 > **术语**:本篇用**内部技术术语**(daemon / Branch / Proposal / merge / escalation);对应用户用语以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威。
 > **扎根**:每期的「复用零件」「退出标准」均锚定现有真实代码(`app/`、`client-tauri/`、`web/`、`shared/`)与已落定的地基文档,严禁臆造。
 
+> **2026-06-08 R0 纠偏说明**：本篇仍是长期 PRD 分期，但当前施工顺序以 [`recovery-r0-r4-roadmap-2026-06-08.md`](./recovery-r0-r4-roadmap-2026-06-08.md) 为准：R0 止血对账 → R1 真实纵切 → R2 多 worker → R3 Cuu Agent 入口 → R4 Web 产品化。D-1 已修正为“参考既有 Python/FastAPI 行为锚点的 TS-first 重写与演进”；旧 `app/*.py` 只作为行为来源，不再作为目标实现路径。Cuu 外观/动效/设置矩阵在 R1 真实纵切通过前冻结，P4 桌宠价值优先恢复为“Cuu 作为 Agent 指令入口”，不是继续打磨模型外观。
+
 本篇小节:
 
 1. 怎么读这张路线图(分期模型、gate 语义、与 L0–L5 / FR 的关系)
@@ -136,12 +138,12 @@ P0 地基就位 ──► P1 证明「AI 干人把关」(纵深打穿一条需�
 
 ### 4.1 范围(做什么)
 
-P0 是**迁移 + 重构**,不是重写(D-1)。逐项对照 [system-architecture §7 迁移清单](../01-architecture/system-architecture.md)(M1–M16):
+P0 是**参考既有行为锚点的 TS-first 地基重写与演进**。旧 Python/FastAPI/Tauri/React 代码提供状态机、SSE、鉴权、沙箱、同步、通知等真实语义；新仓默认落 TypeScript/Hono/Drizzle/contracts，逐项对照 [system-architecture §7 迁移清单](../01-architecture/system-architecture.md)(M1–M16)：
 
-1. **新仓 + 项目骨架**:迁移现有 FastAPI(`app/`)、Tauri(`client-tauri/`)、web(`web/`)、shared(`shared/`)四树入新仓,品牌切到 WorkHub(`YQGL` 标识符迁移期可并存,见 [glossary §9](../00-overview/glossary-dejargon.md))。
+1. **新仓 + 项目骨架**:建立 pnpm workspace、`apps/api`(Hono)、`packages/db`(Drizzle)、`packages/contracts`、Web/Tauri webview/Rust shell 边界；旧 `app/`、`client-tauri/`、`web/`、`shared/` 作为行为锚点与迁移清单，品牌切到 WorkHub(`YQGL` 标识符迁移期可并存,见 [glossary §9](../00-overview/glossary-dejargon.md))。
 2. **daemon 化**:确立 C-DAEMON 为唯一真相源;**把「AI 在请求进程内跑」(`app/services/auto_agent.py` 顶部注释「Runs as an asyncio task in the FastAPI process」)收口为可分离的 Agent Runner 执行域**(M2),由一张 `AgentRun` 表显式拥有生命周期(M3,收编 `app/main.py:176` 的「无主 finalize task」)。
 3. **SQLite → PostgreSQL**(D-2 / M4):删 `app/db.py:8-39` 的 SQLite 专属补丁(`check_same_thread`、WAL/busy_timeout PRAGMA),`settings.database_url` 切 `postgresql+psycopg://…`(现 `app/config.py:9` 默认 `sqlite:///…`);新增连接池;**daemon 不再受「必须单 worker」约束**(现 `app/main.py:384` 注释明说「single-uvicorn-worker model」)。
-4. **实体移植 + 演进骨架**:按 [data-model §9.5](../01-architecture/data-model.md) 迁移 `app/models.py` 全部实体;`Requirement→WorkItem` 重命名(或保留物理表名仅改 ORM 类);新增 `Org/Workspace` 默认行 + 回填 `workspace_id`;补软删除列;`Text` JSON → `JSONB`;**引入 Alembic**(若现仓未用)。新增实体(`Branch/Proposal/AgentRun/ConfidenceRecord/…`)此期**只建表骨架**,逻辑留后续期。
+4. **实体移植 + 演进骨架**:按 [data-model §9.5](../01-architecture/data-model.md) 迁移 `app/models.py` 全部实体;`Requirement→WorkItem` 重命名(或保留物理表名仅改 ORM 类);新增 `Org/Workspace` 默认行 + 回填 `workspace_id`;补软删除列;`Text` JSON → `JSONB`;**引入 Drizzle Kit migrations**(若现仓未用)。新增实体(`Branch/Proposal/AgentRun/ConfidenceRecord/…`)此期**只建表骨架**,逻辑留后续期。
 5. **认证移植**:原样保留 `app/auth.py` 五档鉴权([api-contract §3.1](../01-architecture/api-contract.md))——cookie + worker-token 双通道、`require_stream_user` 轻身份、设备令牌门(M7/M8);叠加 `Org/Workspace` 上下文注入(多租户预留,逻辑 P5)。
 6. **事件网关内核**:`app/services/push_bus.py` 形状原样保留为事件网关内核(M5/M6);topic 体系扩展(`workitem:/agentrun:/…`)此期**只规划命名**,事件发射随对应功能期落地。
 7. **provider registry**(M14):把 `auto_agent.py:34` 的 `AsyncAnthropic(base_url=settings.llm_base_url)`(DeepSeek-via-Anthropic)收进「模型无关 registry」抽象;低风险任务路由廉价模型的**路由逻辑**留 P5(成本治理),P0 只立抽象。

@@ -34,6 +34,26 @@ owner: workflow
 
 ---
 
+## 0.1 R0 v1 默认策略（先施工，后校准）
+
+> **2026-06-08 R0 锁定口径**：Claude 审查报告指出 OQ-2/OQ-3 不能继续停留在“责任人待定”。R0 起，R1/R2 施工先采用本篇 v0.1 默认策略：`policy_version = confidence-risk-v0.1-r0-2026-06-08`；策略 owner 为 **WorkHub product owner（mycyg）+ workflow implementation steward**，后续真实数据校准可改版本号但不得无版本热改。枚举统一用 `medium`，旧文档/旧 fixture 中的 `mid` 只作为兼容别名，生产 contract 不再新增 `mid`。
+
+| 项 | R0 默认值 | 说明 |
+|---|---|---|
+| `policy_version` | `confidence-risk-v0.1-r0-2026-06-08` | 每条 `ConfidenceRecord` 必写入，便于回放与调参追责 |
+| 责任人 | WorkHub product owner（mycyg）+ workflow implementation steward | 业务域 reviewer 后续可加入，但 R1 不再因“谁标定”停工 |
+| 置信度权重 | `review=0.50`、`acceptance=0.35`、`self=0.15` | `self` 只降不升；缺失信号按 §3.5 重分配 |
+| 置信度档 | `high >= 0.85` 且硬验收全过；`medium = [0.60, 0.85)`；`low < 0.60` 或硬失败 | 面向用户只渲染人话档位，不暴露分数 |
+| 风险维度 | `reversibility`、`external`、`monetary`、`blast_radius`、`domain_gate` | 五维先等权输入，聚合仍由 max/mean 主导 |
+| 风险聚合 | `risk_score = 0.6 * max(dims) + 0.4 * mean(dims)` | 单一红线足以拉高总风险 |
+| 风险档 | `low < 0.30`；`medium = [0.30, 0.60)`；`high >= 0.60` | 命中硬升档时直接 `high` |
+| 硬升档 | `external=1` 或 `monetary=1` 或 `domain_gate=1` | 对外、涉钱/合规、需专业资质必须人拍板 |
+| 失败姿态 | `llm_review` 不可用、JSON 不可解析、空产物、必过验收失败 → `grade=low` | 保守优先，不能把“看不清”当“通过” |
+
+R0 默认策略的目标不是完美预测，而是让 R1 真实纵切能用同一套可审计规则跑起来。后续调参必须基于 `ConfidenceRecord`、`Review`、`EscalationEvent` 与 replay 结果，而不是凭感觉改阈值。
+
+---
+
 ## 1. 概念与术语（去黑话锚点）
 
 | 内部概念 | 用户看到的（人话） | 来源 |
@@ -64,10 +84,10 @@ owner: workflow
 | `agent_run_id` | FK → AgentRun | 哪次执行（演进自 `auto_process` 的一次运行） |
 | `round` | `int` | 第几轮产出（对齐 `Delivery.round`） |
 | `confidence_score` | `Numeric(4,3)` ∈ [0,1] | 聚合后置信度（§3.5）。data-model §7.3 同名 |
-| `grade` | `str(8)` | `high` / `mid` / `low`（由 score + §4 阈值落档）。**data-model 权威名（本篇正文亦称 confidence 档）** |
+| `grade` | `str(8)` | `high` / `medium` / `low`（由 score + §4 阈值落档）。**R0 后 contract 权威枚举；旧 `mid` 仅兼容读** |
 | `signals_json` | `JSONB` | 四来源置信度原始分/权重 + 风险五维逐项分（`signals_json.risk.*`，对齐 data-model §7.3 信号表 + §383 风险落点）。可解释/可审计/可标定的全部依据 |
 | `risk_score` | `Numeric(4,3)` ∈ [0,1] | 聚合后风险（§5.2）。data-model §7.3 同名 |
-| `risk_level` | `str(8)` | `low` / `mid` / `high`（§5.3）。**data-model 权威名** |
+| `risk_level` | `str(8)` | `low` / `medium` / `high`（§5.3）。**R0 后 contract 权威枚举；旧 `mid` 仅兼容读** |
 | `verdict` | `str(16)` | 裁决：`auto_merge` / `human_spotcheck` / `escalate`（§6，与 data-model §7.3、§5 三分叉一致） |
 | `rationale_md` | `Text` | 给人看的人话依据（喂呈现层）。data-model §7.3 同名 |
 | `agent_run_id` | FK → AgentRun, nullable | 产出该结果的 run（data-model §7.3 同名） |
@@ -85,10 +105,10 @@ class ConfidenceRecord:
     agent_run_id: str
     round: int
     confidence_score: float            # 0..1
-    grade: str                         # high | mid | low（data-model 权威名）
+    grade: str                         # high | medium | low（R0 contract）
     signals_json: dict                 # {"llm_review":{...}, "acceptance":{...}, "risk":{"reversibility":0.2,"external":1.0,...}}
     risk_score: float                  # 0..1
-    risk_level: str                    # low | mid | high（data-model 权威名）
+    risk_level: str                    # low | medium | high（R0 contract）
     verdict: str                       # auto_merge | human_spotcheck | escalate
     rationale_md: str
     policy_version: str                # 本篇增量
@@ -197,7 +217,7 @@ confidence_score = adjusted · (0.5 + 0.5·c_hist)
 | `grade`（置信度档） | 阈值（v1 建议） | 含义 |
 |---|---|---|
 | `high` | `score ≥ 0.85` **且** `s_acceptance` 全过（无 `unmet` 项） | 高把握 |
-| `mid` | `0.6 ≤ score < 0.85`，或有"部分满足"验收项 | 中等 |
+| `medium` | `0.6 ≤ score < 0.85`，或有"部分满足"验收项 | 中等 |
 | `low` | `score < 0.6`，或任一**必过**验收项 `unmet`，或 `llm_review` 判不过（`s_review = 0`） | 低把握 |
 
 **硬否决（`grade` 强制降到 low，不论数值）**：`llm_review` 明确 `meets_requirement=false`（即来源②的二值仍是一道闸）。这保留了现状 `auto_agent.py` 的"复审不过即失败"语义（`auto_agent.py:651`），只是从"成败"升级为"降到 low 档触发升级"。
@@ -235,7 +255,7 @@ risk_score = 0.6·max(dims) + 0.4·mean(dims)
 | `risk_level` | 条件 |
 |---|---|
 | `low` | `risk_score < 0.3` 且无硬升档维度 |
-| `mid` | `0.3 ≤ risk_score < 0.6` |
+| `medium` | `0.3 ≤ risk_score < 0.6` |
 | `high` | `risk_score ≥ 0.6` 或命中任一硬升档维度 |
 
 ---
@@ -246,10 +266,10 @@ risk_score = 0.6·max(dims) + 0.4·mean(dims)
 
 > 行=置信度档，列=风险档。单元格=`verdict`。**保守优先**：任何"低/高风险/卡住"都压向 `escalate`。
 
-| `grade` \ `risk_level` | `low` 风险 | `mid` 风险 | `high` 风险 |
+| `grade` \ `risk_level` | `low` 风险 | `medium` 风险 | `high` 风险 |
 |---|---|---|---|
 | **`high`** 置信 | **`auto_merge`** 直接生成 Proposal，按策略自动合并 main | **`human_spotcheck`** 生成 Proposal，转人工抽检 | **`escalate`** 高风险必须人拍板 |
-| **`mid`** 置信 | **`human_spotcheck`** 人工抽检（快速 通过/打回） | **`human_spotcheck`** | **`escalate`** |
+| **`medium`** 置信 | **`human_spotcheck`** 人工抽检（快速 通过/打回） | **`human_spotcheck`** | **`escalate`** |
 | **`low`** 置信 | **`escalate`** | **`escalate`** | **`escalate`** |
 
 对应 [PRD §8.2 分级裁决表](../../prd/2026-06-04-workhub-prd.md) 与 [data-model §7.3 分级裁决规则表](../01-architecture/data-model.md)：
@@ -354,7 +374,7 @@ messages = [{
 | 配置块 | 内容 | 默认 |
 |---|---|---|
 | `confidence.weights` | `w_review/w_acceptance/w_self` | 0.50/0.35/0.15 |
-| `confidence.bands` | high/mid/low 阈值 | 0.85 / 0.6 |
+| `confidence.bands` | high/medium/low 阈值 | 0.85 / 0.6 |
 | `confidence.review_scale` | llm_review 五档量表锚点 | {0,.25,.5,.75,1} |
 | `risk.dimension_weights` | 五维度权重与硬升档清单 | external/monetary/domain_gate 为硬升档 |
 | `risk.tiers` | low/medium/high 阈值 | 0.3 / 0.6 |
@@ -363,7 +383,7 @@ messages = [{
 | `escalation.max_reject_rounds_before_human` | 连续打回多少轮后转人 | 2 |
 | `calibration.min_samples` | 校准最小样本 | 20 |
 
-每条 `ConfidenceRecord.policy_version` 记录命中的版本，便于回溯"当时为何这么判"（与成功度量"升级精准度"对账，[PRD §13](../../prd/2026-06-04-workhub-prd.md)）。**标定责任人/初值待业务方共定**（[PRD §16 开放问题 2/3/7](../../prd/2026-06-04-workhub-prd.md)）。
+每条 `ConfidenceRecord.policy_version` 记录命中的版本，便于回溯"当时为何这么判"（与成功度量"升级精准度"对账，[PRD §13](../../prd/2026-06-04-workhub-prd.md)）。R0 默认 owner 与初值见 §0.1；后续业务方校准必须另起 `policy_version`，并在 `07-open-questions.md` 标记为“校准中”，不得回到“待拍板阻塞 R1”。
 
 ---
 
@@ -390,7 +410,7 @@ messages = [{
 |---|---|
 | `llm_review` 调用失败/超时 | 沿用 `auto_agent.py:571` 容错：`s_review` 判**最低分**（保守），并在 `rationale_md` 注明"复审不可用"；绝不当作通过 |
 | 评审输出无法解析 JSON | 同上判最低 → 落 `low` 档 → `escalate`（`auto_agent.py:585` 的现状语义保留） |
-| 无验收项（冷启动） | `s_acceptance=None`，权重重分配；**不**视为满分；置信度更易落 mid/low |
+| 无验收项（冷启动） | `s_acceptance=None`，权重重分配；**不**视为满分；置信度更易落 medium/low |
 | 历史样本不足 | `c_hist=1.0`（不缩放），与冷启动降级一致 |
 | 产物目录为空但 AI 调了 submit | 沿用 `auto_agent.py:451 _has_deliverables` / `:510`：判失败 → `low` → `escalate` |
 | WorkItem 在评分期间被取消 | 沿用 `auto.py:166` 的 race check：`status != ai_working` 则**不写** ConfidenceRecord、不建 Escalation、不发事件 |
@@ -415,4 +435,4 @@ messages = [{
 
 ---
 
-*下一步：把 §9 的 `policy_version` 初值与 §5 风险维度权重交业务方标定（[PRD §16](../../prd/2026-06-04-workhub-prd.md) 开放问题 2/3/7）；`ConfidenceRecord`/`EscalationEvent` 字段并入 [`../01-architecture/data-model.md`](../01-architecture/data-model.md) ER 图与状态机全量转移。*
+*下一步：按 §0.1 的 R0 默认策略施工 R1 真实纵切；R1 产生真实 `ConfidenceRecord` / `EscalationEvent` / `Review` 数据后，再用 replay/eval 做阈值校准。`ConfidenceRecord`/`EscalationEvent` 字段仍需并入 [`../01-architecture/data-model.md`](../01-architecture/data-model.md) ER 图与状态机全量转移。*

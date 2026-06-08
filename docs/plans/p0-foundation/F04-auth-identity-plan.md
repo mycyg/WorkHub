@@ -115,7 +115,7 @@ spec: ../../workhub/01-architecture/security-and-permissions.md
 - `ClientDevice`(`models.py:57`):`client_token_hash`(sha256,**unique 索引,永不存明文**)、`user_id`(FK)、`revoked_at`、`last_seen_at`、`platform`。
 - **F4 → F2 新增需求**:`Org`/`Workspace` 实体(供 N3 上下文);P0 单 Org,字段就位。**不**给 `User` 加密码列(R1 推迟 P5)。
 
-### Alembic(F3 owns;F4 关联项)
+### Drizzle migration(F3 owns;F4 关联项)
 - 无 F4 专属迁移。F4 依赖 F3 把 `is_admin BOOLEAN DEFAULT 0`→`boolean DEFAULT false`、`utcnow()` 时间列→`timestamptz`、`String(32)` id→`UUID`。R1 的 `last_seen_at` 高频更新建议 F3 评估是否需独立索引/HOT update(性能,非正确性)。
 
 ### API(逐字移植,签名不变)
@@ -171,7 +171,7 @@ spec: ../../workhub/01-architecture/security-and-permissions.md
 **依赖**:
 - **F2**(实体模型):`User`/`ClientDevice` 移植 + 新增 `Org`/`Workspace`;F4 依赖 `deleted_at IS NULL`、`cookie_token` 唯一、`client_token_hash` 唯一索引。
 - **F1**(配置)隐含:`cookie_secret`/`cookie_secure`/`admin_claim_secret`/新增 `touch_device_on_auth` 经 `settings`。
-- **F3**(PG/Alembic)对 R1/R5 生效是前提(行级锁、`timestamptz`);F4 的 PORT 段不阻塞于 F3(可先在 PG 上跑移植件,R1 后启用)。
+- **F3**(PG/Drizzle migration)对 R1/R5 生效是前提(行级锁、`timestamptz`);F4 的 PORT 段不阻塞于 F3(可先在 PG 上跑移植件,R1 后启用)。
 
 **被依赖**:
 - **F6 权限引擎**:消费 `Actor`(含 `is_admin`、`org_id`/`workspace_id` scope);F4 提供身份与上下文,F6 做 policy 解析与 RBAC。**admin 读/写不对称、设备门正交于 admin** 的不变式由 F4 移植、F6 不得放松(Master Top #4)。

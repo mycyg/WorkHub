@@ -10,7 +10,7 @@ owner: workflow
 > 本篇回答两个问题:**WorkHub 用什么技术栈、为什么**,以及**怎么把现有「需求管理大师」地基迁进新仓并演进成 headless agent daemon + 瘦客户端**。
 >
 > 上游:[PRD §11 技术架构方向](../../prd/2026-06-04-workhub-prd.md) · [规格树索引](../README.md)。
-> 地基决策见 README §4(**D-1** 迁移非重写、**D-2** SQLite→PostgreSQL、**D-3** LAN-first MVP + 云就绪)。
+> 地基决策见 README §4(**D-1** 参考既有 Python/FastAPI 行为锚点的 TS-first 重写与演进、**D-2** SQLite→PostgreSQL、**D-3** LAN-first MVP + 云就绪)。
 > 术语口径:本篇出现「daemon / Proposal / 分支 / 升级」等以 [glossary-dejargon](../00-overview/glossary-dejargon.md) 为准(对用户隐藏 git 黑话,内部文档可直说)。
 > 兄弟篇:进程总图与事件流细节见 [system-architecture](./system-architecture.md);实体与状态机见 [data-model](./data-model.md);路由组与事件类型见 [api-contract](./api-contract.md);威胁模型与设备令牌门见 [security-and-permissions](./security-and-permissions.md)。本篇只做**选型决策 + 迁移映射 + 重构步骤**,不重复上述细节。
 > **2026-06-05 修订**:新仓后续施工默认 **TypeScript-first**。本文中 FastAPI / SQLAlchemy / Python Agent 的内容保留为现有系统的行为锚点和迁移来源;新实现的模块、端口、页面返回、Cuu 对齐见 [`../../plans/p0-foundation/_ts-first-module-port-page-alignment.md`](../../plans/p0-foundation/_ts-first-module-port-page-alignment.md)。
@@ -37,10 +37,10 @@ owner: workflow
 
 | 层 | 选型 | 现状锚点 | 决策 / 演进 |
 |---|---|---|---|
-| **后端框架** | FastAPI(Python 3.12+;部署 3.13) | `app/main.py`(26 个 router via `include_router`)、`app/pyproject.toml`(`requires-python = ">=3.12"`、systemd 模板 `{{PY313}}`) | **复用**。异步原生、SSE/`StreamingResponse`(`routers/push.py`)、`Depends` 鉴权(`auth.py`)、OpenAPI 自带——正好是 opencode「headless server + OpenAPI + 类型化客户端」想要的形状。 |
-| **ORM** | SQLAlchemy 2.x(`future=True`) | `app/db.py`、`app/models.py`(32KB 实体) | **复用 + 扩展**。`engine` 已开 `pool_pre_ping`,注释明确写着「rescues against silent stale connections if a future deployment swaps to Postgres/MySQL」——迁移意图早已埋好。 |
+| **后端框架** | Hono / Node 22（TS-first） | `app/main.py`(26 个 router via `include_router`)、`routers/push.py`、`auth.py` | **行为锚点，不复用运行时**。旧 FastAPI 证明了路由分组、SSE、OpenAPI、鉴权依赖与生产 fail-closed 的语义；新仓用 Hono route + middleware + OpenAPI registry 复刻这些不变量。 |
+| **ORM** | Drizzle ORM + PostgreSQL | `app/db.py`、`app/models.py`(32KB 实体)、`services/schema_migrations.py` | **替换实现，复用实体语义**。`pool_pre_ping`、软删除、状态机、FK/唯一约束是迁移锚点；目标落 `packages/db/src/schema/*`、relations、repositories 与 Drizzle Kit migrations。 |
 | **数据库** | **PostgreSQL**(替换 SQLite) | `db.py:8` 的 `startswith("sqlite")` 分支、`config.py:9` 默认 `sqlite:////...` | **替换(D-2)**。理由见 §6:多 Agent + 多人并发、业务对象合并需**行级锁 / `SELECT … FOR UPDATE` / 乐观锁**,SQLite 单写者做不到。 |
-| **数据库迁移** | **Drizzle Kit**(替换运行时 `create_all`+ALTER) | `main.py:251` `Base.metadata.create_all`、`services/schema_migrations.py`(idempotent ALTER 补丁) | **新建**。现状自承「currently uses `create_all` instead of Alembic」;新仓用 Drizzle schema + migrations 版本化,多 Agent 并发写 PG 上 schema 不得运行时漂移。详见 §6.3。 |
+| **数据库迁移** | **Drizzle Kit**(替换运行时 `create_all`+ALTER) | `main.py:251` `Base.metadata.create_all`、`services/schema_migrations.py`(idempotent ALTER 补丁) | **新建**。现状仍靠运行期 `create_all` 与补丁式 ALTER；新仓用 Drizzle schema + migrations 版本化,多 Agent 并发写 PG 上 schema 不得运行时漂移。详见 §6.3。 |
 | **LLM 接入** | provider 注册表;**DeepSeek-via-Anthropic** 作为首个 provider | `config.py:22` `llm_base_url=https://api.deepseek.com/anthropic`;**7 个模块**各自 `_client = AsyncAnthropic(...)`(`auto_agent.py:34`、`llm_agent.py:24`、`drive_comment_agent.py:12`、`meeting_agent.py:12`、`delivery_doc.py:23`、`task_decomposition.py:29`、`routers/assistant.py:29`) | **抽象化(D-5)**。现在 7 处硬编码同一个 client;收进统一注册表,低风险任务可路由更便宜模型(成本治理 NFR-05)。详见 §4。 |
 | **实时事件** | SSE(MVP)/ 预留 WS;**外部 broker** | `services/push_bus.py`(进程内 pub/sub)、`routers/push.py`(`/api/push/stream{,/me,/req/{id}}`) | **复用语义 + 换实现**。事件契约(topic + event type)保留;进程内 `PushBus` 在多 worker 下必须换 Redis pub/sub(§6.2)。 |
 | **桌面客户端** | **Tauri v2 + Rust + React webview** | `client-tauri/src-tauri/src/*`(`lib.rs` 14 个 mod、`sse.rs`/`sync.rs`/`spec_watch.rs`/`tray.rs`/`upload.rs`/`reminders.rs`/`deep_link.rs`) | **复用**。Rust 侧已具备 SSE 长连+退避、托盘、通知、deep-link、本地文件监听、分块上传——桌宠(C-PET)直接在此长出。 |

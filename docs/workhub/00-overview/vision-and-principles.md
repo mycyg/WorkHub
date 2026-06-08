@@ -237,7 +237,7 @@ related:
 
 本篇受三条已敲定地基决策约束(见 [README §4](../README.md) 与 [PRD §15](../../prd/2026-06-04-workhub-prd.md));它们不改变愿景 / 宪法的内容,但决定其**落地形态**:
 
-- **D-1 新仓 = 迁移现有「需求管理大师」地基再演进**(非重写):复用已验证的状态机 / [`auto_agent`](../../../app/services/auto_agent.py) / [`lifecycle`](../../../app/services/lifecycle.py) / [`spec_watch`](../../../client-tauri/src-tauri/src/spec_watch.rs) / 安全模型,重构为 **headless agent daemon + 瘦客户端**。→ 宪法各条的"现有代码锚点"因此可直接继承,而非纸上谈兵。
+- **D-1 新仓 = 参考现有「需求管理大师」行为锚点的 TS-first 重写与演进**:复用已验证的状态机 / [`auto_agent`](../../../app/services/auto_agent.py) / [`lifecycle`](../../../app/services/lifecycle.py) / [`spec_watch`](../../../client-tauri/src-tauri/src/spec_watch.rs) / 安全模型的**行为不变量**,目标实现落 TypeScript/Hono/Drizzle/contracts + Tauri/Rust shell。→ 宪法各条的"现有代码锚点"因此可直接继承,但旧 Python/FastAPI 不再是新仓默认实现路径。
 - **D-2 数据库 = PostgreSQL**(替换 SQLite):支撑**多 Agent + 多人并发**与业务对象**合并 / 行级锁**。→ 直接服务宪法 1(AI 默认劳动力 = 高并发)与 [NFR-01](../../prd/2026-06-04-workhub-prd.md);现有 [`auth.py` 注释](../../../app/auth.py) 已坦承 SQLite 单写锁导致的 "database is locked" 痛点,印证必须迁移。
 - **D-3 部署 = LAN-first MVP + 云就绪架构**:延续**设备令牌门**——接活 / 干活类高权限操作要求桌面客户端(服务端校验 [`require_local_client`](../../../app/auth.py),浏览器只能派活 / 审批);多租户公网延到 P5(见 [非目标](#6-非目标non-goals--v1-明确不做))。
 

@@ -1,7 +1,7 @@
 ---
 module: 05-clients
 layer: C-PET / Cuu / Tauri QA / Business Matrix
-status: p1-9-smoke-matrix-landed
+status: p1-9-landed-frozen-after-p1-10
 owner: workflow
 date: 2026-06-08
 visuals:
@@ -13,6 +13,8 @@ visuals:
 # Cuu Tauri Business Matrix + Card Framing QA P1.9
 
 > 本篇记录 P1.9：把 P1.8 的单个 approval anchor smoke 扩展为业务动作 smoke matrix，并修复用户截图指出的“框在红色位置、理想应靠近 Cuu 蓝色位置”的真实问题。P1.9 仍是 smoke，不是最终 32 帧正式验收；但它已经能证明真实 Tauri pet window 中气泡围绕 Cuu、黑猫/白猫模型包不会混用、业务 DOM 合同能落到实际 WebView。
+>
+> **2026-06-08 纠偏更新**：P1.10 已补 motion liveness 硬门和两组 32 帧 evidence；但根据 `D:/workhub审查报告`，R1 真实纵切通过前冻结后续 Cuu 外观/动效/设置矩阵施工。本篇后续计划不再作为立即施工队列，只保留为回归门。
 
 ## 1. User-Facing Problem
 
@@ -107,9 +109,15 @@ P1.9 不关闭以下缺口：
 
 ## 7. Next Construction Plan
 
-1. P1.10：把 `cuu-tauri-motion-capture.ps1` 的 business motion gate 从“非 long-run 默认 true”升级为 changed-pixel 阈值，8 帧 smoke 和 32 帧正式模式分别标记。
-2. P1.11：增加 DOM snapshot history，证明 compact syncing 不出现“只有框没有猫”。
-3. P1.12：补 direct `QuestionCard` option-first capture，要求 `primary_chip.present=true` 和 `data_pet_option_first=true`。
-4. P1.13：跑 Tororo 白猫业务全矩阵。
-5. P1.14：跑 settings matrix：scale/opacity/pass-through/hide-on-hover/drag/full hide/托盘恢复。
-6. P1.15：进入 Linux 测试机 capture，确认透明窗口与截图策略跨平台可用。
+| Item | Status after review | Notes |
+|---|---|---|
+| P1.10 motion liveness gate | landed before freeze | `scripts/qa/cuu-tauri-motion-capture.ps1` 新增 `motion_liveness`，区分 `smoke` / `formal_32`，业务和 look-only 场景要求 changed pixels 与 rect 稳定 |
+| Hijiki approval 32-frame formal | passed | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-formal-liveness-p1-10/` |
+| Hijiki look-only 32-frame formal | passed | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/look-only-formal-anchor-p1-10/` |
+| P1.11 DOM snapshot history | deferred | R1 前不继续 Cuu QA 扩面；仅真实回归时修 |
+| P1.12 option-first direct capture | deferred to R3 | Cuu 恢复施工时优先做出站指令/option-first 功能，而不是纯录屏 |
+| P1.13 Tororo full matrix | deferred | R1 通过前冻结 |
+| P1.14 settings matrix | deferred | R1 通过前冻结 |
+| P1.15 Linux/macOS pet capture | deferred unless release smoke requires it | R2/R4 跨平台 smoke 时再纳入 |
+
+下一施工入口已切换为 [`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md) 的 R0/R1，而非继续扩 Cuu 外观矩阵。

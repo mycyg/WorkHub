@@ -1,7 +1,7 @@
 ---
 module: 05-clients
 layer: C-PET / Cuu
-status: current-concept
+status: frozen-until-R1-except-governance
 owner: workflow
 date: 2026-06-08
 visuals:
@@ -13,6 +13,8 @@ visuals:
 # Cuu 桌宠形象与交互概念
 
 > 当前权威口径：Cuu 只存在于独立 Tauri `pet` 透明窗口里；Web 与 desktop 主窗是严肃工作界面，不出现 Cuu 形象、角色栏、角色卡或主窗模型选择入口。Cuu 当前只允许两个 Live2D Cubism 2 模型包：黑猫 `cuu-hijiki-live2d-cubism2` 和白猫 `cuu-tororo-live2d-cubism2`。黑猫默认，白猫可选。
+>
+> **2026-06-08 纠偏冻结**：根据 `D:/workhub审查报告` 与 [`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md)，R1 真实纵切通过前冻结 Cuu 外观、动效、设置矩阵和新增截图矩阵施工。允许的 Cuu 工作仅限 R0 治理修正：去橘猫、主窗无 Cuu、本篇文档对账、透明 pet smoke、已完成 QA 证据归档。R3 才恢复 Cuu 施工，但目标是 FR-PET-002 自然语言驱动 Agent，不是继续打磨猫外观。
 
 ## 1. 角色定位
 
@@ -165,10 +167,14 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - `apps/desktop-webview/src/pet-surface.ts` 只渲染 Live2D cat runtime。
 - QA 禁止旧实验 runtime/class/data attribute 回流。
 
-## 8. 后续施工
+## 8. 后续施工（冻结后重排）
 
-1. 为黑猫录制真实 Tauri idle、hover、tap、drag、approval、search、offline 多帧素材。
-2. 为白猫录制同等素材，验证模型切换不是只换配置文本。
-3. 把录屏 contact sheet、GIF/MP4、DOM dump、diff report 写回审计文档。
-4. 补多屏恢复、全隐藏恢复、点击穿透恢复、托盘显隐和通知点击 deep-link。
-5. 做授权评估；若授权不足，按同一 pack contract 制作原创黑猫/白猫替换包。
+| 顺序 | 工作 | 状态 |
+|---|---|---|
+| R0 | 去除旧橘猫截图/概念图作为当前证据；主窗无 Cuu 本体；旧 shared 概念图标记 stale 并排队替换 | 立即执行 |
+| R0 | 商用授权结论：Hijiki/Tororo 目前按“未清”处理，发布前必须取得授权或立项原创替换 | 发布阻塞 |
+| R1/R2 | 暂停新增外观、动效、设置矩阵、白猫全矩阵等施工，把工程力转向真实 AgentLoop + PG + 多 worker | 冻结 |
+| R3 | 恢复 Cuu 功能施工：新增自然语言 / option-first 出站指令入口，驱动真实 R1/R2 Agent 引擎 | 待 R1/R2 通过 |
+| R4 | Web / 主窗继续保持严肃无 Cuu 本体；Cuu 只作为独立 pet window 和系统通知入口 | 持续验收 |
+
+已完成的 P1.7-P1.10 动效证据只作为“现有运行时没有退回静态/裁切/漂移”的冻结前证据，不开启新的外观投入。

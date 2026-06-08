@@ -28,6 +28,8 @@ visuals:
 # 当前真实截图审计与后续施工计划
 
 > 本文记录“当前实现距离 PRD / 概念图还有多远”。2026-06-08 之后，Cuu 视觉路线重置为黑猫 / 白猫 Live2D 二选项；之前未通过用户复核的实验素材、主窗角色栏和临时 renderer 已从当前路线移除，不能再作为验收证据。
+>
+> **Claude 审查修正**：`D:/workhub审查报告` 进一步指出，`2026-06-07-current-state` 里的 Web/desktop 主窗橘猫和 `tauri-pet-printwindow.png` 橘猫黑底应判为 FAIL/stale，而不是“待复核”。本篇自此把这些旧截图列为失败样例；当前施工入口切换到 [`../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md)。
 
 ## 1. 当前结论
 
@@ -36,8 +38,8 @@ visuals:
 | Web 主窗 | 已有 Gold Path、澄清、审批、proposal、replay、cost 等页面 VM | 仍偏预览壳，密度、交互和异常态需要继续产品化 |
 | Desktop 主窗 | 已能加载同源 webview 和 Tauri bridge | 必须保持严肃界面，不再出现 Cuu 本体 |
 | Rust shell | 已有 Tauri scaffold、窗口命令、SSE、托盘、通知、deep-link、pet geometry | 需要跨平台 smoke、多屏恢复、安装包、设备令牌门实测 |
-| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；黑猫 idle-long-run、黑/白 look-only、黑猫 approval scripted smoke、P1.8 approval anchor smoke、P1.9 黑猫业务 smoke 矩阵和白猫 approval smoke 已有真实 Tauri 证据；VPet/像素猫参考包已完成只读审查；P1.6 behavior manifest、P1.7 业务录屏入口、P1.8 actual DOM / 气泡锚点 QA 与 P1.9 card framing QA 已落 | 仍缺 32 帧正式矩阵、白猫全业务动作、拖拽、hide-on-hover、settings matrix、长期稳定性 |
-| Cuu 交互 | 已有气泡、轻卡、option-first 方向 | 需要把审批、检索、澄清、交付物变更全部录成可验收场景 |
+| Cuu pet | 当前只允许黑猫 Hijiki / 白猫 Tororo Live2D；P1.10 已新增 approval/look-only 32 帧 motion_liveness 证据；VPet/像素猫参考包已完成只读审查 | R1 前冻结外观/动效/settings 矩阵，只保留回归修复 |
+| Cuu 交互 | 已有气泡、轻卡、option-first 方向 | R3 才恢复施工，优先做 FR-PET-002 出站 Agent 指令入口，不再优先录外观矩阵 |
 | 多语言 | 中英 locale 合同、非 Gold Path helper、用户语言偏好、pet 右键菜单和 settings 恢复面板源码已落；Web / desktop / pet 共享 `workhub.locale` | 需要补中英视觉回归和服务端生成内容 locale |
 
 ## 2. 已保留的有效截图
@@ -60,6 +62,15 @@ visuals:
 | `desktop-home.png` | Desktop webview | 桌面主窗 shell 已有 |
 | `pet-browser-preview.png` | Browser pet preview | 只能证明 pet surface 可预览，不能证明真实桌宠合格 |
 | `tauri-pet-printwindow.png` | Tauri `pet` hwnd | 只能证明真实窗口可抓取，不能证明当前黑/白模型已验收 |
+
+### 2.1.1 2026-06-07 截图的失败判定
+
+| 旧截图 | 失败点 | 新用途 |
+|---|---|---|
+| `web-home.png` | 主窗出现橘猫 Cuu；违反“主窗严肃、Cuu 不进主窗” | 失败样例；R0-2 主窗截图复核必须消除此类元素 |
+| `desktop-home.png` | 若出现 Cuu 本体，同样违反主窗边界 | 失败样例；只能证明旧 shell 曾存在 |
+| `tauri-pet-printwindow.png` | 橘猫 + 黑底；不符合黑/白 Live2D 与透明 pet window | 失败样例；不再证明桌宠当前通过 |
+| `pet-browser-preview.png` | 浏览器预览不是独立 Tauri 桌宠 | 仅用于调试，不计入最终验收 |
 
 ### 2.2 失败样例仍作为回归门
 

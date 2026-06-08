@@ -145,7 +145,7 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
 
 | # | 新增 | 规格依据 |
 |---|---|---|
-| N1 | `AgentRun` / `AgentStep` / `ToolCall` / `ToolResult` 实体 + Alembic 迁移(替瞬时 dataclass `AutoResult`/`AutoOutcome`) | agent-loop §1,FR-WORKER-002 |
+| N1 | `AgentRun` / `AgentStep` / `ToolCall` / `ToolResult` 实体 + Drizzle 迁移(替瞬时 dataclass `AutoResult`/`AutoOutcome`) | agent-loop §1,FR-WORKER-002 |
 | N2 | 显式控制信号引擎 `continue/stop/compact/escalate` + 优先级判定(`app/agent/control.py`) | agent-loop §3.1/§3.2 |
 | N3 | doom-loop 检测:`fingerprint(step)`(工具序列 + 规范化 input 的稳定哈希)+ ring(len=N,默认 3),连续 N 步同指纹 → `escalate` | agent-loop §3.3,FR-ESC-004 |
 | N4 | `compact` 上下文压缩:`approaching_context_window`(阈值 0.8)+ `compact_context`(保留近 K 步 + 早期摘要) | agent-loop §8.2 |
@@ -166,7 +166,7 @@ inventory: docs/plans/p0-foundation/_migration-inventory.md §8 / §3
 > 本组件落地的迁移/接口/事件。跨组件共享(WorkItem 状态机、ConfidenceRecord、Snapshot、PermissionPolicy)
 > 以 Master + 对应规格为准。
 
-### 实体字段(本组件新建,Alembic 迁移落库)
+### 实体字段(本组件新建,Drizzle 迁移落库)
 
 **`AgentRun`**(演进自 `AutoResult`/`AutoOutcome`,agent-loop §1.1):
 ```
@@ -213,7 +213,7 @@ duration_ms int
 **`ToolSpec`**(agent-loop §5.1,registry 注册项):`{id, description, schema, execute(input,ctx)→ToolResult,
 side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/snapshot_handle`。
 
-### Alembic(Master §6.2)
+### Drizzle migration(Master §6.2)
 
 - 新表 `agent_runs` / `agent_steps`,全部 `timestamptz`(禁 naive `utcnow`)、JSON 列用 `JSONB`、
   PK `String(32)`→PG `UUID`(随 F3 类型审校口径)。
@@ -275,9 +275,9 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 - [ ] A4. **回归测试基线**:沙箱逃逸(`../`、绝对路径 → `ValueError`)、命令白名单拒绝、依赖安装拒绝、
       文件/字节预算超限、`to_thread` 不阻塞(Master §8 沙箱逐字移植门禁)。
 
-### 阶段 B — 实体 + 持久化 + Alembic
+### 阶段 B — 实体 + 持久化 + Drizzle migration
 - [ ] B1. 定义 `AgentRun` / `AgentStep` 模型(F2 风格,带 `version`/`deleted_at`/`timestamptz`)。
-- [ ] B2. 写 Alembic 迁移(up/down 可逆,Master §10 测试策略);加索引(见数据契约)。
+- [ ] B2. 写 Drizzle 迁移(up/down 可逆,Master §10 测试策略);加索引(见数据契约)。
 - [ ] B3. `app/agent/persistence.py`:run/step CRUD + `version` 乐观锁封装。
 
 ### 阶段 C — AgentLoop + 控制信号 + 预算(核心)
@@ -361,7 +361,7 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 ## 回滚与风险
 
 **回滚策略**:本组件全程在新模块 `app/agent/*` + 新端点 `agent_run.py` 落地,`auto_agent.py`/`auto.py`
-直到阶段 E4 才删除。任一阶段失败可回退到旧路径(旧端点暂留双跑)。Alembic 迁移 up/down 可逆
+直到阶段 E4 才删除。任一阶段失败可回退到旧路径(旧端点暂留双跑)。Drizzle 迁移 up/down 可逆
 (Master §10),回滚即 `downgrade`。发布前 daemon `--workers 1`(Master §6.3),2-worker 冒烟过门禁后再开 N。
 
 | 风险 | 缓解 |
@@ -381,7 +381,7 @@ side_effect: bool, min_scope: PermScope}`;`ctx` 携带 `workdir/actor/run_id/sna
 ## 依赖与被依赖
 
 **依赖(上游,F08 是汇聚点):**
-- **F3 PostgreSQL+Alembic** — `AgentRun/AgentStep` 落库、行锁/乐观锁、`timestamptz`、JSONB(成对解除单 worker)。
+- **F3 PostgreSQL+Drizzle** — `AgentRun/AgentStep` 落库、行锁/乐观锁、`timestamptz`、JSONB(成对解除单 worker)。
 - **F5 事件 bus→broker** — `run:<run_id>` 跨 worker 扇出 + 订阅边界隐私门 + AgentRun 队列后端。
 - **F6 权限引擎** — `ToolRegistry.visible_for(actor)` 过滤 + `execute` 二次 `min_scope`/`ask` 阻塞原语
   (`awaiting_approval` 入口);审批路由/SLA/合并算法在 F6,本组件只接"过滤 + 阻塞 + 回灌"契约。

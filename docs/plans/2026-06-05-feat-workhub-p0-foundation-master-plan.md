@@ -18,7 +18,7 @@ origin: docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md
 
 P0「地基」把现有 **需求管理大师**(FastAPI 单体 + SQLite 单 worker + Tauri/Web 客户端)的业务经验迁移演进为 **WorkHub 的可并发地基**:一个 **TS-first headless agent daemon**(Hono/Node + OpenAPI + SSE)+ **PostgreSQL** + **消息 broker**,把 `auto_agent` 的行为抽象成可复用的 **TypeScript Agent 引擎核心**,并补齐 **分层权限 / 审计快照 / provider 抽象** 等 AI-native 必需底座。
 
-> **2026-06-05 技术路线修正**:后续施工默认以 TypeScript 为主语言。F1-F11 中仍出现的 FastAPI/SQLAlchemy/Alembic 口径保留为现有系统的行为锚点;真正新仓模块/端口/页面返回以 [`p0-foundation/_ts-first-module-port-page-alignment.md`](./p0-foundation/_ts-first-module-port-page-alignment.md) 为准。
+> **2026-06-05 技术路线修正**:后续施工默认以 TypeScript 为主语言。F1-F11 中仍出现的 FastAPI/SQLAlchemy/Drizzle migration 口径保留为现有系统的行为锚点;真正新仓模块/端口/页面返回以 [`p0-foundation/_ts-first-module-port-page-alignment.md`](./p0-foundation/_ts-first-module-port-page-alignment.md) 为准。
 
 **P0 不做**上层产品功能(智能派活、协作分支-提议-合并、桌宠 Cuu、双向同步、看板)——这些是 P1–P5。P0 只做"让上面这些能被稳地建起来"的地基。
 但 P0 **必须先冻结体验与交付物契约**:选项式澄清、证据气泡、任意交付物变更申请、Cuu 事件状态、side-effect 快照红线的 payload/事件/验收门禁见 [`p0-foundation/_experience-deliverable-contracts.md`](./p0-foundation/_experience-deliverable-contracts.md)。这些不是 UI 施工,而是防止后续返工的 API/事件/数据契约。
@@ -92,7 +92,7 @@ F1 ──► F2 ──► F3 ──┬─► F5 ─┐
 ## 6. 共享规范与标准(每个组件都遵守)
 
 1. **可移植:** 一切路径/URL/密钥经 `settings`;禁止 `/srv/yqgl` 类硬编码进运行时代码。
-2. **PG/迁移:** TS-first 施工默认 Drizzle Kit migrations;若迁移期保留 Python 组件才允许 Alembic。新增可变实体带 `version`(乐观锁)与 `deleted_at`(软删除);JSON→JSONB;时间一律 `timestamptz`(消灭 naive `utcnow`)。
+2. **PG/迁移:** TS-first 施工默认 Drizzle Kit migrations;若迁移期保留 Python 组件才允许 Drizzle migration。新增可变实体带 `version`(乐观锁)与 `deleted_at`(软删除);JSON→JSONB;时间一律 `timestamptz`(消灭 naive `utcnow`)。
 3. **单 worker→多 worker 铁律:** 任何进程内单例必须 broker 化或加 DB 锁;**F3 与 F5 成对发布**,之前不得 `--workers N`。
 4. **安全敏感代码逐字移植(禁止重写):** 鉴权优先级链(`auth.py:104` token-beats-cookie)、权限读/写/设备不对称(`permissions.py`)、沙箱 rlimit/命令白名单/路径前缀(`auto_agent.py`)。
 5. **隐私铁律(NFR-08):** broker 化后,`user:{id}` topic 由身份派生(非路径)、订阅前 `can_view` 门必须在**订阅边界**重新强制;禁止"全量发 Redis 客户端过滤"。
@@ -156,7 +156,7 @@ F1 ──► F2 ──► F3 ──┬─► F5 ─┐
 |---|---|
 | F1 仓库/配置 | `p0-foundation/F01-repo-scaffold-config-plan.md` |
 | F2 实体模型 | `p0-foundation/F02-entities-models-port-plan.md` |
-| F3 PG+Drizzle migrations | `p0-foundation/F03-postgres-alembic-plan.md` |
+| F3 PG+Drizzle migrations | `p0-foundation/F03-postgres-drizzle-plan.md` |
 | F4 鉴权身份 | `p0-foundation/F04-auth-identity-plan.md` |
 | F5 事件 broker | `p0-foundation/F05-event-bus-broker-plan.md` |
 | F6 权限引擎 | `p0-foundation/F06-permission-engine-plan.md` |
@@ -175,7 +175,7 @@ F1 ──► F2 ──► F3 ──┬─► F5 ─┐
 
 ## 12. 来源与参考
 
-- **Origin brainstorm:** [docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md) —— 关键决策:AI-native 默认驾驶、一人两顶帽子、升级=置信度/风险分级、迁移而非重写、PG、LAN-first。
+- **Origin brainstorm:** [docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md) —— 关键决策:AI-native 默认驾驶、一人两顶帽子、升级=置信度/风险分级、参考旧系统行为锚点的 TS-first 重写与演进、PG、LAN-first。
 - **PRD:** [docs/prd/2026-06-04-workhub-prd.md](../prd/2026-06-04-workhub-prd.md)(§7 数据模型、§8 机制、§10 NFR、§12 分期)。
 - **规格树:** [docs/workhub/](../workhub/README.md) —— 尤其 `01-architecture/*`、`02-ai-engine/agent-loop-and-tools.md`、`02-ai-engine/cost-governance.md`。
 - **概念图:** [`05-clients/page-concepts.md`](../workhub/05-clients/page-concepts.md)、[`cuu-desktop-pet-concept.md`](../workhub/05-clients/cuu-desktop-pet-concept.md)、[`ts-first-runtime-concept.png`](../workhub/05-clients/assets/shared/ts-first-runtime-concept.png)、[`endpoint-page-cuu-alignment.png`](../workhub/05-clients/assets/shared/endpoint-page-cuu-alignment.png)(P0 仅取事件 taxonomy、共享类型、端口与页面返回边界;Cuu/页面完整施工属 P3/P4)。

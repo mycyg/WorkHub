@@ -46,11 +46,11 @@ specs:
 - **REFACTOR** `app/models.py:37`:删/修 `YQGL_ADMIN_NICKNAMES` 误导注释(全仓无消费者,安全篇 §2.4 已点名)。
 - **PORT** pydantic-settings 模式、`_validate_runtime_config` fail-closed 门、npm workspace、`@yqgl/shared` —— 原样保留,仅在其上扩展。
 - **NEW(仅配置 schema + 文档,不含逻辑):** provider-registry 配置块、三级预算默认、broker 连接配置、PG pool 配置;`.env.example` 模板;Windows/Linux 双平台 README 起步说明。
-- **CI:** 扩 `verify.yml` 增 `ruff`/`tsc` lint 显式步、配置可移植性回归(导入 config 不触磁盘绝对路径)、Alembic 迁移校验**占位**(F03 落地后填实)。
+- **CI:** 扩 `verify.yml` 增 `ruff`/`tsc` lint 显式步、配置可移植性回归(导入 config 不触磁盘绝对路径)、Drizzle 迁移校验**占位**(F03 落地后填实)。
 
 ### Out(明确推迟,标注去向)
 
-- **删 SQLite PRAGMA、换 PG engine、Alembic init + 首迁移** → **F03**(F01 只翻默认串与加 pool 配置形)。
+- **删 SQLite PRAGMA、换 PG engine、Drizzle Kit init + 首迁移** → **F03**(F01 只翻默认串与加 pool 配置形)。
 - **剥离 SPA 静态托管(`main.py:469-498` 删除)** → **F11**(F01 只把 `WEB_ROOT` 来源去硬编码,保留挂载逻辑,确保迁移期闭环不断,tech-stack §5.2 不变量)。
 - **provider 注册表实现(`app/llm/`、7 处改接)** → **F07**(F01 只落配置块)。
 - **broker 适配器实现、Redis/LISTEN-NOTIFY** → **F05**(F01 只落连接配置串)。
@@ -130,7 +130,7 @@ specs:
 - [ ] D1. `web` job:在现 `tsc -b` 之外,显式加 `ruff`/`tsc` 不影响——已有 typecheck 充分;新增 `shared` 包 typecheck 若缺则补。
 - [ ] D2. `backend` job:加显式 `ruff check app/`(lint)步骤;`smoke_workflow.py` 保留。
 - [ ] D3. 新增 **配置可移植性回归**:CI 在 Linux 且**不创建 `/srv/yqgl`** 的前提下 `python -c "import config"` + 起 TestClient lifespan,验证不依赖任何 POSIX 绝对路径(回归 R1–R4)。
-- [ ] D4. 新增 **Alembic 迁移校验占位** job(allow-failure 或 skip-if-no-migrations),F03 落地首迁移后改为强制(`alembic upgrade head` 从空 PG 重建)。
+- [ ] D4. 新增 **Drizzle 迁移校验占位** job(allow-failure 或 skip-if-no-migrations),F03 落地首迁移后改为强制(`pnpm --filter @workhub/db db:migrate` 从空 PG 重建)。
 
 ### E. 验证
 
@@ -142,7 +142,7 @@ specs:
 
 ## 数据与接口契约
 
-> F01 **不新增实体、不新增 API、不新增事件 topic、不写 Alembic 迁移**。本节只锚定**配置契约**(跨组件共享处以 Master + 规格为准)。
+> F01 **不新增实体、不新增 API、不新增事件 topic、不写 Drizzle 迁移**。本节只锚定**配置契约**(跨组件共享处以 Master + 规格为准)。
 
 ### 配置键契约(`Settings`,供下游组件消费)
 

@@ -37,8 +37,8 @@ owner: workflow
 
 ### 0.3 一句话总览（截至本篇撰写）
 
-- **地基三决策已落定**（D-1 迁移 / D-2 PostgreSQL / D-3 LAN-first），原 PRD `[建议·待确认]` / `[开放]` 现已转 `[决策]`——OQ-1 关闭。
-- **命门级机制（置信度/风险/升级、对象合并、审批路由）的"设计骨架"已完成**，剩下的是**参数标定**（OQ-2/3/7）与**字段收口**（落到 [`data-model.md`](./01-architecture/data-model.md)）。
+- **地基三决策已落定**（D-1 = 参考既有 Python/FastAPI 行为的 **TS-first 重写与演进** / D-2 PostgreSQL / D-3 LAN-first），原 PRD `[建议·待确认]` / `[开放]` 现已转 `[决策]`——OQ-1 关闭。
+- **命门级机制（置信度/风险/升级、对象合并、审批路由）的 R0 施工口径已完成**：OQ-2/OQ-3 v1 默认策略与责任人已落到 [`confidence-risk-escalation.md §0.1`](./02-ai-engine/confidence-risk-escalation.md#01-r0-v1-默认策略先施工后校准)，不再阻塞 R1；剩余是 R1 后基于真实 replay/eval 的校准与字段收口。
 - **真正还要"拍板"的产品级问题集中在 OQ-5（桌宠人格/打扰边界）**；OQ-6 的 L2 首发 file-only 子类已落到 `FR-WORKER-008`，OQ-7 的 v0 默认配额已落到 `cost-governance.md`。
 - **文档落点复核（本次修订重点）**：原列为"待写"的 `05-clients/*`、`06-roadmap/*`、`dashboards-and-metrics.md` 与 P-COST 专篇**均已落盘**，相关开放问题的"无处落定"障碍解除。
 
@@ -52,10 +52,10 @@ owner: workflow
 |---|---|
 | **PRD 原文** | "D-1 / D-3 需你拍板：新仓是迁移还是重写？部署 LAN vs 云？"（[PRD §16.1](../prd/2026-06-04-workhub-prd.md)） |
 | **收敛状态** | ✅ **已收敛** |
-| **决策** | **D-1 = 迁移现有地基再演进（非重写）**；**D-3 = LAN-first MVP + 云就绪架构，多租户公网延到 P5**。见 [README §4 地基决策](./README.md)、本篇导言的"已敲定地基决策"、[vision-and-principles §7](./00-overview/vision-and-principles.md#7-地基决策对宪法的影响必读)。 |
-| **决策依据（扎根代码）** | 迁移可行性：现有 `app/db.py` 的 `engine` 已开 `pool_pre_ping=True` 并注释"rescues … if a future deployment swaps to Postgres/MySQL"（换库伏笔早埋）；`auto_agent`/`lifecycle`/`spec_watch`/`auth` 是踩过坑、扛过并发的资产（见 [tech-stack-and-migration §2.1 选型总表](./01-architecture/tech-stack-and-migration.md)）。LAN-first 依据：`app/auth.py:1` "LAN-only use"、`permissions.py:1` "still LAN/nickname based"——现有信任前提就是可信局域网。 |
+| **决策** | **D-1 = 参考既有 Python/FastAPI 行为锚点的 TS-first 重写与演进**；**D-3 = LAN-first MVP + 云就绪架构，多租户公网延到 P5**。见 [README §4 地基决策](./README.md)、本篇导言的"已敲定地基决策"、[vision-and-principles §7](./00-overview/vision-and-principles.md#7-地基决策对宪法的影响必读)。 |
+| **决策依据（扎根代码）** | 现有 `auto_agent` / `lifecycle` / `spec_watch` / `auth` 是行为资产，不是目标运行时。新仓施工以 TypeScript/Hono/Drizzle/contracts 为默认路径，旧 `app/*.py` 只用来说明已验证过的状态机、沙箱、事件、鉴权与恢复语义。LAN-first 依据：`app/auth.py:1` "LAN-only use"、`permissions.py:1` "still LAN/nickname based"——现有信任前提就是可信局域网。 |
 | **落地** | 迁移工序见 [`tech-stack-and-migration.md §5/§8`](./01-architecture/tech-stack-and-migration.md)；进程切分见 [`system-architecture.md §7`](./01-architecture/system-architecture.md)；云就绪的威胁模型重审清单见 [`security-and-permissions.md §1.3`](./01-architecture/security-and-permissions.md)（R1–R6）。 |
-| **残余子问题** | 见 §3 的 **迁移执行级开放问题**（Alembic 首版、SQLite→PG 类型审校、`Requirement`→`WorkItem` 物理改名 vs 仅 ORM 改名）——属"执行细节待 plan 定"，不阻塞决策。 |
+| **残余子问题** | 见 §3 的 **迁移执行级开放问题**（Drizzle 首版迁移、SQLite→PG 类型审校、`Requirement`→`WorkItem` 物理改名 vs 仅 contract/ORM 改名）——属"执行细节待 plan 定"，不阻塞决策。 |
 
 ---
 
@@ -64,11 +64,11 @@ owner: workflow
 | 维度 | 内容 |
 |---|---|
 | **PRD 原文** | "置信度怎么算：用哪些信号、各档阈值、谁来标定？（8.2）"（[PRD §16.2](../prd/2026-06-04-workhub-prd.md)） |
-| **收敛状态** | 🟡 **方向已定，参数/标定责任人待定** |
+| **收敛状态** | ✅ **R0 v1 默认已收敛；R1 后按真实数据校准** |
 | **机制已定（信号与算法）** | 四来源已锁，落在 [`confidence-risk-escalation.md §3`](./02-ai-engine/confidence-risk-escalation.md)：① AI 自评（辅，**只降不升**防过度自信）② `llm_review` 判分（主，现成零件 `auto_agent.py:544`，由二值升级为五档量表）③ 验收清单逐条命中率（主，`RequirementAcceptanceItem.status`，`models.py:464`）④ 历史校准（随数据，`CollaborationGraph.hit_rate` 的切片，Laplace 平滑）。PRD §8.2 建议"v1 以 ②③ 为主、① 为辅、④ 随数据积累接入"已被采纳。 |
-| **待标定项（🟡）** | （a）四来源权重默认值（规格树建议 `w_review=0.50 / w_acceptance=0.35 / w_self=0.15`）；（b）置信档阈值（建议 `high≥0.85`、`mid∈[0.6,0.85)`、`low<0.6`）；（c）历史校准最小样本 `N`（建议 20）；（d）**标定责任人与初值审批流**——PRD 问"谁来标定"，目前**未指定**。 |
+| **R0 默认（已落）** | `policy_version = confidence-risk-v0.1-r0-2026-06-08`；owner = WorkHub product owner（mycyg）+ workflow implementation steward；四来源权重 `review=0.50 / acceptance=0.35 / self=0.15`；置信档 `high≥0.85`、`medium∈[0.60,0.85)`、`low<0.60`；历史校准最小样本 `N=20`。 |
 | **现状基线（诚实标注）** | 今天 `auto_agent.py` 只有 `llm_review` 一个**二值**判分，失败一律 `status→ready` 转人工（`app/routers/auto.py:244`，`r.status = "ready"`），**没有连续置信度、没有风险维度、没有分级裁决**。这是 P1 旗舰的核心新增，非复述。 |
-| **建议** | 阈值/权重集中为带版本的 `policy_version` 策略对象（[`confidence-risk-escalation.md §9`](./02-ai-engine/confidence-risk-escalation.md)），先用规格树建议值上线，再靠"升级精准度"度量（[PRD §13](../prd/2026-06-04-workhub-prd.md)）回测调参；**标定责任人建议指定为产品 owner + 一名领域业务方共签**，每次调参留 `policy_version` 备查。 |
+| **建议** | R1 先按 R0 默认施工，不再等待“谁标定”拍板；R1 后用"升级精准度"度量（[PRD §13](../prd/2026-06-04-workhub-prd.md)）和 replay/eval 回测调参。任何调参必须新建 `policy_version` 并留审计。 |
 | **归属篇** | [`02-ai-engine/confidence-risk-escalation.md`](./02-ai-engine/confidence-risk-escalation.md)（算法）；字段收口到 [`data-model.md §7.3 ConfidenceRecord`](./01-architecture/data-model.md)。 |
 
 ---
@@ -78,11 +78,11 @@ owner: workflow
 | 维度 | 内容 |
 |---|---|
 | **PRD 原文** | "风险维度：可逆性/对外性/金额/合规/影响人数，权重如何？（8.2）"（[PRD §16.3](../prd/2026-06-04-workhub-prd.md)） |
-| **收敛状态** | 🟡 **维度骨架已定，权重待与业务方共定** |
-| **机制已定（五维度 + 硬升档）** | 落在 [`confidence-risk-escalation.md §5`](./02-ai-engine/confidence-risk-escalation.md)：`reversibility`（可逆性，**有执行前快照 → 封顶 0.4**，与 §8 快照耦合）、`external`（对外性）、`monetary`（金额/合规）、`blast_radius`（影响人数/范围）、`domain_gate`（需专业资质判断——对应 [非目标"不做需资质的事"](./00-overview/vision-and-principles.md#6-非目标non-goals--v1-明确不做)，命中即强制升级）。聚合 `risk_score = 0.6·max + 0.4·mean`；`external/monetary/domain_gate` 任一为 1 → `risk_tier` 直接 `high`（红线"必须人来拍板"）。 |
+| **收敛状态** | ✅ **R0 v1 默认已收敛；业务黑名单与阈值后续校准** |
+| **机制已定（五维度 + 硬升档）** | 落在 [`confidence-risk-escalation.md §5`](./02-ai-engine/confidence-risk-escalation.md)：`reversibility`（可逆性，**有执行前快照 → 封顶 0.4**，与 §8 快照耦合）、`external`（对外性）、`monetary`（金额/合规）、`blast_radius`（影响人数/范围）、`domain_gate`（需专业资质判断——对应 [非目标"不做需资质的事"](./00-overview/vision-and-principles.md#6-非目标non-goals--v1-明确不做)，命中即强制升级）。聚合 `risk_score = 0.6·max + 0.4·mean`；`external/monetary/domain_gate` 任一为 1 → `risk_level` 直接 `high`（红线"必须人来拍板"）。 |
 | **风险与置信度正交** | 已确立：一件 AI 很有把握的事若高风险，**仍不能自动合并**（[PRD §14](../prd/2026-06-04-workhub-prd.md) / 宪法 5）。安全语义另见 [`security-and-permissions.md §6.3 风险门`](./01-architecture/security-and-permissions.md)（第二道闸，叠加在分层 permission 之上）。 |
-| **待标定项（🟡）** | 各维度权重、关键词清单（金额/合规命中词）、`risk.tiers` 阈值（建议 `low<0.3`、`high≥0.6`）——`glossary-dejargon.md:124` 也明标"风险维度待与业务共定"。 |
-| **建议** | 风险维度比置信度**更需业务方拍板**（涉及合规红线），建议与 OQ-2 同批标定，由业务方提供"哪些动作必须人审"的黑名单（直接喂 `domain_gate`/`monetary` 硬升档）。 |
+| **R0 默认（已落）** | 风险档 `low<0.30`、`medium∈[0.30,0.60)`、`high≥0.60`；`external=1` / `monetary=1` / `domain_gate=1` 直接 `high`。五维先等权输入，由 `max/mean` 聚合体现“单红线优先”。 |
+| **建议** | R1 先按 R0 默认施工；业务方后续只需要补“哪些动作必须人审”的黑名单与金额/合规关键词清单，作为 `domain_gate`/`monetary` 硬升档的配置输入。 |
 | **归属篇** | [`02-ai-engine/confidence-risk-escalation.md §5`](./02-ai-engine/confidence-risk-escalation.md)；安全语义 [`security-and-permissions.md §6.3`](./01-architecture/security-and-permissions.md)。 |
 
 ---
@@ -230,7 +230,7 @@ owner: workflow
 | 编号 | 问题 | 收敛状态 | 基线 / 建议 |
 |---|---|---|---|
 | **MG-1** | `Requirement` → `WorkItem` 是物理表/FK 改名，还是保留物理表名 `requirements` 仅改 ORM 类名？ | 🟠 二选一待 plan | 二者均可（[`data-model.md §9.5.4`](./01-architecture/data-model.md)）。建议：**保留物理表名降迁移风险**，仅 ORM 类与新 FK（`work_item_id`）改名，新增表用新名。 |
-| **MG-2** | Alembic 首版迁移：把 `services/schema_migrations.py` 的 idempotent ALTER 字典翻译成首版 migration，删 `main.py:251 create_all` + `ensure_runtime_schema`。 | 🟠 待 plan 执行 | 决策已定（弃运行时 ALTER 用 Alembic，[`tech-stack-and-migration.md §6.3`](./01-architecture/tech-stack-and-migration.md)）；执行细节待 plan。 |
+| **MG-2** | Drizzle 首版迁移：把 `services/schema_migrations.py` 的 idempotent ALTER 字典翻译成 `packages/db/src/schema/*` + Drizzle Kit migration，删运行时 `create_all` + `ensure_runtime_schema`。 | 🟠 待 plan 执行 | 决策已定（弃运行时 ALTER，用 Drizzle schema/migrations，[`tech-stack-and-migration.md §6.3`](./01-architecture/tech-stack-and-migration.md)）；执行细节待 plan。 |
 | **MG-3** | SQLite→PG 类型审校：bool（`DEFAULT 0`→`false`）、时间（naive `utcnow` → `timestamptz`）、昵称大小写唯一（`citext` vs `lower()` 唯一索引）、JSON→JSONB。 | 🟠 待 plan 逐项 | 逐项清单已列（[`tech-stack-and-migration.md §6.3` 步骤 3](./01-architecture/tech-stack-and-migration.md)）；"静默出错"是主要风险。 |
 | **MG-4** | 解除单 worker 的"双件套"：换 DB（行级锁）**+** 进程内单例（`push_bus`/`presence`/任务去重）搬到 Redis——缺一即脑裂。 | ✅ 方向已定 | DEPLOY.md:97 已点名 Redis；`--workers 1` 是强制项非容量选择（[`tech-stack-and-migration.md §6.1/§6.2`](./01-architecture/tech-stack-and-migration.md)）。属执行项，方向无歧义。 |
 | **MG-5** | 编号 `PROJ-NNN` 多 worker 撞号：现 `Project.next_seq` 在 SQLite 单 worker 安全，PG 多 worker 需行级锁或 PG `SEQUENCE`。 | 🟠 待 plan | 已识别（[`data-model.md §9.4`](./01-architecture/data-model.md)）；建议用 PG `SEQUENCE`。 |
@@ -243,7 +243,7 @@ owner: workflow
 
 ### 4.1 已落盘（原"待写"障碍已解除）
 
-> 以下篇目磁盘已存在，且 [README §3 文档树](./README.md) 已同步为 35 篇文档与当前状态。后续若新增/删除文档，README、本文 §4 与 `docs/workhub` 实际文件数必须一起更新。
+> 以下篇目磁盘已存在，且 [README §3 文档树](./README.md) 已同步为 46 篇文档与当前状态。后续若新增/删除文档，README、本文 §4 与 `docs/workhub` 实际文件数必须一起更新。
 
 | 已落盘文档 | 曾阻塞的开放问题 | 复核结论 |
 |---|---|---|
@@ -272,9 +272,9 @@ owner: workflow
 
 | 优先级 | 开放问题 | 为什么先做 | 谁拍板 |
 |---|---|---|---|
-| **P1 阻塞·必须先定** | **OQ-2 / OQ-3**（置信度信号权重 + 风险维度权重的 v1 初值与标定责任人） | 分级裁决是 P1 旗舰命门，无初值则"AI 干、人把关"的反转无法跑通 | 产品 owner + 业务方共签 |
+| **R0 已收敛·R1 实现时验证** | **OQ-2 / OQ-3**（置信度信号权重 + 风险维度权重的 v1 初值与标定责任人） | R0 默认策略已落；R1 要验证它能支撑真实 AgentRun/Proposal/Replay，不再作为开工阻塞 | 产品 owner + workflow implementation steward |
 | **P1 已收敛·实现时验证** | **OQ-6**（首发 L2 file-only 白名单） | 已落 `FR-WORKER-008`;P1 验证 Agent 只在白名单内自动执行 | 工程 + 产品复核 |
-| **P1 阻塞·执行级** | **MG-1~MG-5**（迁移工序：表名/Alembic/类型/broker/编号） | P0 地基阶段第一道闸（[`system-architecture.md §7` 判断 3](./01-architecture/system-architecture.md)：多 worker 前必须收口 AgentRun 拥有权/恢复/事件路由） | 工程 + plan |
+| **P1 阻塞·执行级** | **MG-1~MG-5**（迁移工序：表名/Drizzle/类型/broker/编号） | P0 地基阶段第一道闸（[`system-architecture.md §7` 判断 3](./01-architecture/system-architecture.md)：多 worker 前必须收口 AgentRun 拥有权/恢复/事件路由） | 工程 + plan |
 | **P1 收尾·边定边调** | **OQ-7 / AL-2**（预算默认值 + doom-loop N） | OQ-7 v0 已落 `cost-governance.md`;上线后靠真实 trace / 成本看板调参 | 工程 + 数据 |
 | **P3 前定** | **OQ-4**（对象合并语义：先做 STRUCT 字段级 + DOC 二进制指针） | P3 协作铺开前的深设计专题 | 归属篇 owner |
 | **P4 前定** | **OQ-5 / PJ-1**（桌宠人格/打扰边界） | `desktop-pet-tauri.md` 已落盘并给"克制优先"基调，剩频率数值与最终拍板；P4 桌宠阶段产品命题 | 产品 owner |
@@ -299,4 +299,4 @@ owner: workflow
 
 ---
 
-*本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：把 P1 阻塞项（OQ-2/3 + MG-*）带入 `/workflows:plan`；OQ-6 已转为实现验收项。*
+*本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：按 R0 已锁定的 OQ-2/OQ-3 默认策略推进 R1 真实纵切；MG-* 仍需随 TS-first/Drizzle 施工 plan 继续收口。*

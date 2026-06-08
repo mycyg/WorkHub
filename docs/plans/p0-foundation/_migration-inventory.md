@@ -11,7 +11,7 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 现有「需求管理大师」(`D:\02_代码与开发\需求管理大师`)的 greenfield 演进。以下锚点均经实际代码核验。
 
 核验中与规格有出入/需澄清处:
-- **Alembic 已是声明依赖**(`app/pyproject.toml:13` `"alembic>=1.13"`)但**零配置/零迁移** —— 无 `alembic.ini`、无 `env.py`。运行期仍 `Base.metadata.create_all` + `ensure_runtime_schema` ALTER 补丁。
+- **旧 Python 迁移工具曾是声明依赖但未实际配置**(`app/pyproject.toml:13` 附近可见迁移相关依赖)；新仓不沿用该运行时路线。当前真实状态仍是运行期 `Base.metadata.create_all` + `ensure_runtime_schema` ALTER 补丁，F03 目标改为 Drizzle Kit migrations。
 - **7 处 LLM client 实例化全部确认**,各为一致的 `AsyncAnthropic(base_url=settings.llm_base_url, api_key=settings.llm_api_key)`。
 - **`client-tauri` 已在 npm workspace**(`package.json:7-11`)。
 - 单 worker 约束以中文写在 `DEPLOY.md:97`(非英文)。
@@ -19,17 +19,17 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 ---
 
 ## 1. 仓库/构建脚手架、配置与密钥
-- **EXISTS:** `app/config.py` 单 pydantic-settings(`:7`):DB URL(`:9` 默认 `sqlite:////srv/yqgl/data/yqgl.db`)、`data_dir`(`:10`)、`app_env`(`:11`)、`cookie_secret/secure`(`:12-13`)、`admin_claim_secret`(`:20`)、`llm_base_url/model/api_key`(`:22-24`)、`asr/tts_base_url`(`:26-29`)、`cors_allow_origins=["*"]`(`:43`)。`app/pyproject.toml` `requires-python>=3.12`,声明 `alembic>=1.13`(未用)。根 `package.json` workspaces `["shared","web","client-tauri"]`。生产校验 `app/main.py:227 _validate_runtime_config()`(production + 默认 cookie_secret 或 `"*"` CORS → RuntimeError)。`scripts/set_admin.py` + `YQGL_BOOTSTRAP_NICKNAMES`。
+- **EXISTS:** `app/config.py` 单 pydantic-settings(`:7`):DB URL(`:9` 默认 `sqlite:////srv/yqgl/data/yqgl.db`)、`data_dir`(`:10`)、`app_env`(`:11`)、`cookie_secret/secure`(`:12-13`)、`admin_claim_secret`(`:20`)、`llm_base_url/model/api_key`(`:22-24`)、`asr/tts_base_url`(`:26-29`)、`cors_allow_origins=["*"]`(`:43`)。`app/pyproject.toml` `requires-python>=3.12`，旧迁移相关依赖未形成可用迁移体系。根 `package.json` workspaces `["shared","web","client-tauri"]`。生产校验 `app/main.py:227 _validate_runtime_config()`(production + 默认 cookie_secret 或 `"*"` CORS → RuntimeError)。`scripts/set_admin.py` + `YQGL_BOOTSTRAP_NICKNAMES`。
 - **PORT:** pydantic-settings、`_validate_runtime_config` fail-closed、npm workspace、`@yqgl/shared`。
 - **REFACTOR:** config 扩 PG pool、broker URL、provider-registry 块、三级预算默认;`database_url` 默认→`postgresql+psycopg://`;去 `/srv/yqgl` 硬编码;`models.py:37` 提到的 `YQGL_ADMIN_NICKNAMES` 全仓无消费者(删或实现)。
-- **NEW:** greenfield 骨架;`alembic.ini`+`env.py`+首迁移;provider-registry 配置 schema;Org/Workspace 配置;broker 连接配置。
+- **NEW:** greenfield 骨架;`drizzle.config.ts`+`packages/db/migrations/*` 首迁移;provider-registry 配置 schema;Org/Workspace 配置;broker 连接配置。
 - **RISK:** 硬编码绝对路径 `/srv/yqgl/...` 散落运行时代码(非仅 config):`DOWNLOADS_ROOT`(`main.py:339`)、`WEB_ROOT`(`main.py:469`)、DB 默认(`config.py:9`)、data_dir(`config.py:10`)。greenfield 须全部经 settings,否则不可移植(尤其当前 Windows 开发机)。
 
 ## 2. 数据层
-- **EXISTS:** `app/db.py` `create_engine(future=True, pool_pre_ping=True)`(`:17`,`:14-16` 注释明说为未来 PG/MySQL 埋点);`connect_args={"check_same_thread":False}` 仅 sqlite(`:8`);SQLite-only PRAGMA `_configure_sqlite`(`:30-39`:WAL/synchronous=NORMAL/busy_timeout=5000/foreign_keys=ON);`SessionLocal(autoflush=False, expire_on_commit=False)`(`:42`);`get_db()`(`:45-50`)。`app/models.py` 35 实体,`Base(DeclarativeBase)`(`:16`),`TimestampMixin`(`:20`),`uid()=uuid4().hex`→`String(32)` PK,JSON 存 `Text`;`Requirement` 状态串域(`:328-330`)。`app/services/schema_migrations.py` 幂等运行期 ALTER(docstring 明说"用 create_all 而非 Alembic")。`main.py:251-252` `create_all`+`ensure_runtime_schema`。
+- **EXISTS:** `app/db.py` `create_engine(future=True, pool_pre_ping=True)`(`:17`,`:14-16` 注释明说为未来 PG/MySQL 埋点);`connect_args={"check_same_thread":False}` 仅 sqlite(`:8`);SQLite-only PRAGMA `_configure_sqlite`(`:30-39`:WAL/synchronous=NORMAL/busy_timeout=5000/foreign_keys=ON);`SessionLocal(autoflush=False, expire_on_commit=False)`(`:42`);`get_db()`(`:45-50`)。`app/models.py` 35 实体,`Base(DeclarativeBase)`(`:16`),`TimestampMixin`(`:20`),`uid()=uuid4().hex`→`String(32)` PK,JSON 存 `Text`;`Requirement` 状态串域(`:328-330`)。`app/services/schema_migrations.py` 幂等运行期 ALTER(docstring 明说"用 create_all 而非 Drizzle migration")。`main.py:251-252` `create_all`+`ensure_runtime_schema`。
 - **PORT:** `pool_pre_ping`、`expire_on_commit=False`、`uid()`、`get_db()`、`TimestampMixin`、软删 `deleted_at`、非 sqlite 的 `connect_args={}` 分支(已 PG-ready)。
 - **REFACTOR:** 删 PRAGMA hook;`String(32)`→PG `UUID`;`Text`-JSON→`JSONB`;`datetime.utcnow()`(naive,遍布,如 `main.py:116`/`auth.py:167`)→`timestamptz`;`is_admin BOOLEAN DEFAULT 0`→`boolean DEFAULT false`;可变实体加 `version`(乐观锁);`Project.next_seq`(`PROJ-NNN`)需 PG `SEQUENCE` 或行锁(现仅靠单 worker 安全)。
-- **NEW:** Alembic init + 首迁移;新表 `Branch/Proposal/Review/AgentRun/AgentStep/ConfidenceRecord/EscalationEvent/Snapshot/PermissionPolicy/ApprovalRequest/AuditLog/UserProfile/Org/Workspace/SpecDoc`;`SELECT…FOR UPDATE`;`requirements→work_items` 改名;JSONB GIN 索引;`WHERE deleted_at IS NULL` 偏索引。
+- **NEW:** Drizzle Kit init + 首迁移;新表 `Branch/Proposal/Review/AgentRun/AgentStep/ConfidenceRecord/EscalationEvent/Snapshot/PermissionPolicy/ApprovalRequest/AuditLog/UserProfile/Org/Workspace/SpecDoc`;`SELECT…FOR UPDATE`;`requirements→work_items` 改名;JSONB GIN 索引;`WHERE deleted_at IS NULL` 偏索引。
 - **RISK:** SQLite→PG 类型强转**静默出错**:naive `utcnow()` 遍布且用于崩溃恢复时间数学(`main.py:116` 15 分钟 cutoff),naive/aware 混用比较结果错却不报错 —— stuck-job 清扫可能永不触发或全触发。`requirements→work_items` 改名牵动 15+ 表 `requirement_id` FK。
 
 ## 3. FastAPI daemon
@@ -100,7 +100,7 @@ note: 由 repo-research 对现有「需求管理大师」代码逐一核验生�
 ## (A) 依赖序 P0 组件(各自成 plan)
 1. **F1** 仓库/构建脚手架+配置 —— *blocks 全部*
 2. **F2** 实体模型移植 + `requirements→work_items` —— 依赖 F1
-3. **F3** PostgreSQL+Alembic —— 依赖 F2 —— **地基第一道门**
+3. **F3** PostgreSQL+Drizzle —— 依赖 F2 —— **地基第一道门**
 4. **F4** 鉴权/身份移植 —— 依赖 F2
 5. **F5** 事件 bus→broker —— 依赖 F3,**与 F3 成对**解除单 worker
 6. **F6** 权限引擎 —— 依赖 F2,F4

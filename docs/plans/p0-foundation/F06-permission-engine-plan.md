@@ -38,8 +38,8 @@ specs:
 
 - **资源门移植**:`permissions.py` 8 纯函数 + `PRIVATE_REQUIREMENT_STATUSES`/`ASSIGNMENT_EDITABLE_STATUSES` 常量;`Requirement→WorkItem` 改名适配(F2 牵动);依赖的 `services/assignments.py` 关系 helper(`is_assigned_user`/`lead_assignment`/`has_explicit_assignees`)随迁。
 - **作用域感知**:函数签名扩 `org_id`/`workspace_id` 谓词(F2 提供 Org/Workspace 实体),但**判定语义不变**。
-- **动作门**:`PermissionPolicy` 实体 + Alembic 迁移 + `resolve(actor,tool,args)→effect` 合并算法 + 默认 ask。
-- **审批原语**:`ApprovalRequest` 实体 + Alembic 迁移 + 状态机(`pending/approved/denied/expired/delegated`)+ CAS 裁决 + `route_approver` 路由表 + SLA 截止计算 + 委派 + "永远允许"沉淀。
+- **动作门**:`PermissionPolicy` 实体 + Drizzle 迁移 + `resolve(actor,tool,args)→effect` 合并算法 + 默认 ask。
+- **审批原语**:`ApprovalRequest` 实体 + Drizzle 迁移 + 状态机(`pending/approved/denied/expired/delegated`)+ CAS 裁决 + `route_approver` 路由表 + SLA 截止计算 + 委派 + "永远允许"沉淀。
 - **工具可见性过滤** API(供 F8 调用,本组件出函数,不在 F06 跑 Agent loop)。
 - **API 端点**:`GET/POST /api/approvals*`、`GET/PUT /api/permissions`(签名以 api-contract §2.8 为准)。
 - **事件**:`permission.ask`(api-contract §5 已定)发布点;扩展事件 `permission.decided/reassigned/expired` 标注待收口。
@@ -50,7 +50,7 @@ specs:
 - **SLA 到期后台扫描任务的多 worker 选主实现** → 归 F8/F11 的"后台周期任务域 + leader 选举";F06 只定到期处置语义与 CAS 幂等契约。
 - **同步门"阻塞 Runner"的让出-唤醒实现**(`awaiting_approval` 状态 + resume 信号)→ 归 **F8** Agent 引擎(F06 定 `ApprovalRequest` 落库与裁决到达语义,不实现 Runner 挂起)。
 - **`Snapshot` 实体与 revert 契约 / "快照失败⇒拒绝副作用"红线** → 归 **F10**(F06 的审批 deny 只触发"理由回灌",回滚衔接点留接口)。
-- **置信度/风险 `risk_tier` 的计算** → 归 confidence-risk 文档/P2;F06 只**消费** `risk_tier` 做 SLA 分档与"高风险不可学"。
+- **置信度/风险 `risk_level` 的计算** → 归 confidence-risk 文档/P2;F06 只**消费** `risk_level` 做 SLA 分档与"高风险不可学"。
 - **PM 模式编排 / `EscalationEvent` 的下游处置** → 归 F9/P2;F06 只在"路由失败 no_approver / SLA 超时 approval_timeout"时**创建** EscalationEvent(实体归 F2),不实现其消费。
 - **AI 副作用快照、合并语义、双向同步、看板** → P1+(Master §3 Out)。
 - **真实凭据替昵称(R1)、egress 封网(R2)、行级 RLS(R5)** → 上云强制项,P5(spec §1.3)。
@@ -86,11 +86,11 @@ specs:
 
 - **N-1 `PermissionPolicy` 实体**(data-model §8.1):`id`、`scope_kind ∈ {org,workspace,role,session}`、`scope_id`、`action_pattern`(glob)、`effect ∈ {allow,deny,ask}`、`priority:int`、`learned_from_session:bool=false`、`reason`、`created_by`、`expires_at?`、`org_id/workspace_id?`、`version`(乐观锁)、`deleted_at`(软删)。
 - **N-2 合并算法** `resolve(actor, tool, args) -> effect`:见"数据与接口契约"。确定性、可审计、默认 ask。
-- **N-3 `ApprovalRequest` 实体**(data-model §8.2):`id`、`work_item_id?`、`agent_run_id?`、`kind ∈ {tool,proposal,revision}`[扩展待收口]、`action_pattern`、`payload_json`(JSONB)、`rationale_json?`(JSONB)、`risk_tier ∈ {low,medium,high}`[扩展;**枚举与 data-model §7.3 `ConfidenceRecord.risk_level` 同源,统一用 `medium`(非 `mid`),对齐现有 `estimate_confidence` 正则与 glossary**]、`status ∈ {pending,approved,denied,expired,delegated}` default `pending`、`routed_to_user_id?`、`assignee_role?`[扩展]、`decided_by_user_id?`、`decision_reason_md?`、`delegated_to_user_id?`、`sla_due_at?`、`escalation_event_id?`[扩展]、`org_id/workspace_id?`、`TimestampMixin`、`version`。
+- **N-3 `ApprovalRequest` 实体**(data-model §8.2):`id`、`work_item_id?`、`agent_run_id?`、`kind ∈ {tool,proposal,revision}`[扩展待收口]、`action_pattern`、`payload_json`(JSONB)、`rationale_json?`(JSONB)、`risk_level ∈ {low,medium,high}`[扩展;**枚举与 data-model §7.3 `ConfidenceRecord.risk_level` 同源,统一用 `medium`(非 `medium`),对齐现有 `estimate_confidence` 正则与 glossary**]、`status ∈ {pending,approved,denied,expired,delegated}` default `pending`、`routed_to_user_id?`、`assignee_role?`[扩展]、`decided_by_user_id?`、`decision_reason_md?`、`delegated_to_user_id?`、`sla_due_at?`、`escalation_event_id?`[扩展]、`org_id/workspace_id?`、`TimestampMixin`、`version`。
 - **N-3a 审批 payload 体验切片**:`payload_json.ui` 可选但 P0 推荐写入 `{summary_text, reason_text, evidence_refs, risk, affected_targets, requires_desktop}`;F11/Cuu 可直接映射成 `AttentionItem`。原始工具入参保留在 `payload_json.raw_args`,避免 UI 摘要与执行入参混淆。
 - **N-4 `route_approver(kind, work_item, action_pattern, risk)`**:按 review §3.3 路由表;硬约束=裁决者须过 `can_view_*`、排除软删用户、排除发起者本人;算不出 → 不入 pending,直接 `EscalationEvent(no_approver)`。
   > **EscalationEvent.trigger 枚举对齐**:data-model §7.4 与 api-contract §2.7 现定 `trigger ∈ {unqualified, user_unsatisfied, user_forbidden, doom_loop, budget_exhausted}`;F06 因审批路由失败/超时新增的 `no_approver`(N-4)、`approval_timeout`(N-5)是**审批侧扩展 trigger 值,标注 [扩展待收口],由 F2/data-model §7.4 收口进枚举**——F06 创建 `EscalationEvent` 时用这两值,但实体/枚举权威归 F2。
-- **N-5 SLA**:`sla_due_at = created_at + sla_duration(kind, risk_tier)`(review §4.1 默认表);到期分流(`tool`→升级、`proposal`→催办/改派);**超时只朝"找人"降级,绝不放行**。
+- **N-5 SLA**:`sla_due_at = created_at + sla_duration(kind, risk_level)`(review §4.1 默认表);到期分流(`tool`→升级、`proposal`→催办/改派);**超时只朝"找人"降级,绝不放行**。
 - **N-6 委派** `delegate(approval, to_user)`:CAS `pending`→经 `delegated` 改 `routed_to_user_id` 回 `pending`;仅当前 `routed_to`/admin 可发起;受让人须过 `can_view_*`。
 - **N-7 "永远允许"沉淀**:`respond(remember="always")` → 写 `learned_from_session=true` allow policy(最细作用域、高风险不可学、可撤销可审计)。
 - **N-8 工具可见性过滤** `visible_tools(actor)`:供 F8 组装模型可见菜单(`effect==ask` 仍可见,execute 时阻塞)。
@@ -110,21 +110,21 @@ specs:
 
 ### 阶段 B — 动作门骨架（PermissionPolicy + 合并）
 
-- [ ] B1. 定义 `PermissionPolicy` 实体(N-1)+ Alembic 迁移(JSONB 不涉,GIN 仅 `action_pattern` 视需要;`deleted_at` 偏索引;`(scope_kind, scope_id, action_pattern)` 复合索引)。
+- [ ] B1. 定义 `PermissionPolicy` 实体(N-1)+ Drizzle 迁移(JSONB 不涉,GIN 仅 `action_pattern` 视需要;`deleted_at` 偏索引;`(scope_kind, scope_id, action_pattern)` 复合索引)。
 - [ ] B2. 实现 `resolve(actor, tool, args)`:收集匹配 → 排序键 `(scope 特异度 desc, priority desc, pattern 特异度 desc)` → 平级 `deny>ask>allow` → 无匹配 `ask`;`is_admin` 最高优先 allow-fallback(**不覆盖**资源门)。
 - [ ] B3. 实现 `visible_tools(actor)`(N-8)。
 - [ ] B4. 合并算法单测:覆盖 review §5.3 规则表四行(session allow vs org deny → session 胜;同层 deny vs ask → deny 胜;无匹配 → ask;高风险叠加风险门)。
 
 ### 阶段 C — 审批原语 + 路由 + SLA + 委派
 
-- [ ] C1. 定义 `ApprovalRequest` 实体(N-3)+ Alembic 迁移(`status` 索引、`sla_due_at` 索引、`routed_to_user_id` 索引、`version`)。
+- [ ] C1. 定义 `ApprovalRequest` 实体(N-3)+ Drizzle 迁移(`status` 索引、`sla_due_at` 索引、`routed_to_user_id` 索引、`version`)。
 - [ ] C2. 创建流程 `create_approval`:策略评估(allow/deny 直接返回,不建审批)→ 仅 `ask` 落 `pending` → `route_approver`(N-4)→ 算不出则 `EscalationEvent(no_approver)`(不入 pending)。
 - [ ] C3. 审批 payload 组装(N-3a):写 `payload_json.raw_args` + `payload_json.ui` 摘要;能映射 `_experience-deliverable-contracts.md` 的 `AttentionItem`/`EvidenceRef`,且用户面不暴露内部 tool enum。
 - [ ] C4. 裁决 `respond`:CAS `status==pending`(rowcount==0 → 409 "approval race");`deny` 强校验 `reason_md` 非空(min_length=1,否则 422);写 `AuditLog`(同事务);commit 后 publish `permission.decided`。
 - [ ] C5. `route_approver` 路由表(review §3.3):`proposal/revision`→提交者(`submitter_user_id`,延续现状);`tool`→lead→owner→admin;硬约束(有权/非软删/排除发起者本人)。
 - [ ] C6. SLA:`sla_due_at` 计算(review §4.1 表);到期处置语义(`tool`→`pending→expired` CAS + `EscalationEvent(approval_timeout)`;`proposal`→催办通知 + 二次到期改派)。**后台扫描的多 worker 选主归 F8/F11,F06 定 CAS 幂等契约。**
 - [ ] C7. 委派 `delegate`(N-6):CAS、权限校验、`permission.reassigned` 事件、`decided_by` 仍空。
-- [ ] C8. "永远允许"沉淀(N-7):`remember="always"` → 写 `learned_from_session=true` policy;护栏(最细作用域 / `risk_tier=high` 拒学 / 软删可撤 / 写 AuditLog)。
+- [ ] C8. "永远允许"沉淀(N-7):`remember="always"` → 写 `learned_from_session=true` policy;护栏(最细作用域 / `risk_level=high` 拒学 / 软删可撤 / 写 AuditLog)。
 
 ### 阶段 D — API + 事件 + 审计接线
 
@@ -166,7 +166,7 @@ specs:
 
 ### 实体:`ApprovalRequest`(data-model §8.2;扩展列标 *[待收口]*)
 
-`id`、`work_item_id?`、`agent_run_id?`、`action_pattern(128)`、`payload_json(JSONB)`、`status(16) default pending`、`routed_to_user_id?`、`decided_by_user_id?`、`decision_reason_md? (deny 必填)`、`delegated_to_user_id?`、`sla_due_at?`、`created_at/updated_at`、`org_id/workspace_id?`、`version`;*[待收口]* `kind(16)`、`risk_tier(8)`、`rationale_json(JSONB)`、`assignee_role(16)?`、`escalation_event_id?`。
+`id`、`work_item_id?`、`agent_run_id?`、`action_pattern(128)`、`payload_json(JSONB)`、`status(16) default pending`、`routed_to_user_id?`、`decided_by_user_id?`、`decision_reason_md? (deny 必填)`、`delegated_to_user_id?`、`sla_due_at?`、`created_at/updated_at`、`org_id/workspace_id?`、`version`;*[待收口]* `kind(16)`、`risk_level(8)`、`rationale_json(JSONB)`、`assignee_role(16)?`、`escalation_event_id?`。
 
 `payload_json` 建议分层,既保留执行真相,也给 Cuu/Web 审批卡一眼可读的摘要:
 
@@ -184,7 +184,7 @@ specs:
 }
 ```
 
-### Alembic 迁移
+### Drizzle 迁移
 
 - 两张新表;`PermissionPolicy` 复合索引 `(scope_kind, scope_id, action_pattern)` + `deleted_at` 偏索引;`ApprovalRequest` 索引 `status`、`sla_due_at`、`routed_to_user_id`。所有时间列 `timestamptz`(Master §6 铁律2);up/down 可逆测试。
 
@@ -204,7 +204,7 @@ resolve(actor, tool, args) -> effect:
   # 平级冲突 fail-safe:同最高键多条 → effect 强弱 deny>ask>allow
   return strongest_effect(top_tied(cands, best))
 ```
-> **风险门是独立第二道闸**(spec §6.3):即便命中 allow,高风险/不可逆/对外动作仍叠加风险门 → ask/升级。F06 消费 `risk_tier`,不计算。
+> **风险门是独立第二道闸**(spec §6.3):即便命中 allow,高风险/不可逆/对外动作仍叠加风险门 → ask/升级。F06 消费 `risk_level`,不计算。
 
 ### API（签名以 api-contract §2.8 为准）
 
@@ -259,7 +259,7 @@ resolve(actor, tool, args) -> effect:
 - [ ] AC-12 路由算不出人 → 不入 pending,直接 `EscalationEvent(no_approver)`,**绝不静默 allow**。
 - [ ] AC-13 `tool` SLA 到期 → `pending→expired` CAS + `EscalationEvent(approval_timeout)`;`proposal` 到期 → 催办,**绝不超时即放行/自动合并**。
 - [ ] AC-14 委派:仅当前 routed_to/admin 可发起;经 delegated 改 routed_to 回 pending;`decided_by` 仍空;`permission.reassigned` 发旧 + 新两端。
-- [ ] AC-15 `remember="always"` → 写 `learned_from_session=true` allow(最细作用域);`risk_tier=high` 动作拒学;软删该 policy 可撤销;命中/写入均落 AuditLog。
+- [ ] AC-15 `remember="always"` → 写 `learned_from_session=true` allow(最细作用域);`risk_level=high` 动作拒学;软删该 policy 可撤销;命中/写入均落 AuditLog。
 - [ ] AC-15a 审批卡 payload:`permission.ask` 对应的 `ApprovalRequest.payload_json.ui` 能映射为 `AttentionItem`,含 `summary_text/risk/actions/evidence_refs?`;UI 摘要不包含裸 `tool.delete_file` 这类内部黑话。
 
 **审计**
@@ -273,7 +273,7 @@ resolve(actor, tool, args) -> effect:
 ### 回滚策略
 
 - **分阶段独立**:阶段 A(资源门)可单独发布并回滚——它只是纯函数 + 旧名 alias,不依赖新表;若动作门(B–E)出问题,可关 feature flag 让 `resolve` 一律返回 ASK(最保守,fail-safe)而保留资源门。
-- **新表可回退**:`PermissionPolicy`/`ApprovalRequest` 走 Alembic,`downgrade` 可逆删表(无下游 FK 强依赖时);`learned_from_session` 规则软删即撤。
+- **新表可回退**:`PermissionPolicy`/`ApprovalRequest` 走 Drizzle migration,`downgrade` 可逆删表(无下游 FK 强依赖时);`learned_from_session` 规则软删即撤。
 - **动作门旁路**:未接 F8 前,动作门不 gate 任何真实工具执行——可安全先合表结构与算法,后接执行。
 
 ### 风险
