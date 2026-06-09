@@ -161,10 +161,10 @@ CI 必须通过：
 
 | 风险 | 当前处理 | 后续 |
 |---|---|---|
-| Stuck-job recovery 仍是 primitive | R2.6 已加 periodic requeue、进程内 stats 与 `agent_run.requeued_stale_claim` audit | R2.7 汇总到 release gate，并在 R4/R5 接 dashboard metrics store。 |
+| Stuck-job recovery 曾停在 primitive | R2.6 已加 periodic requeue、进程内 stats 与 `agent_run.requeued_stale_claim` audit；R2.7 已纳入 release gate | R4/R5 接 dashboard metrics store。 |
 | R2.5 前 Proposal route 尚未统一 actor-based read gate | R2.6 已把 Proposal REST/Page 与 Approval REST/Page 全部接 WorkItem gate | R4 接完整角色/策略化 review/merge 权限。 |
-| CORS/cookie、revert、escalation 仍在 R1/R0 其它 smoke 分散覆盖 | R2.5 新增核心 PG+Redis+heartbeat matrix | 后续把 R0/R1/R2 smoke 汇总成一份 release gate。 |
+| CORS/cookie、revert、escalation 仍在 R1/R0 其它 smoke 分散覆盖 | R2.5 新增核心 PG+Redis+heartbeat matrix；R2.7 已检查 `workspace`、`r1-pg-smoke`、`r2-pg-redis-smoke` 持续接线 | 后续如新增 R3/R4 smoke，同步扩展 release gate。 |
 | Org/Workspace 多租户未上线 | `streamActor()` 使用最小权限字段 | 多租户切片必须从 auth deps 传真实 org/workspace。 |
 | Redis pub/sub 非持久 | REST/DB 仍是真相源，SSE 只触发 reconcile | R4 页面保持 reconcile，云部署再评估 durable queue。 |
 
-R2.5 后的 R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限全面收口，详见 [`r2-recovery-rest-auth.md`](./r2-recovery-rest-auth.md)。R2 剩余地基工作主要是 release gate 汇总；完成后进入 R3 Cuu 出站 Agent 入口。
+R2.5 后的 R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限全面收口，详见 [`r2-recovery-rest-auth.md`](./r2-recovery-rest-auth.md)。R2.7 已把 release gate 接入 `pnpm verify`，详见 [`r2-release-gate.md`](./r2-release-gate.md)。下一步进入 R3 Cuu 出站 Agent 入口。

@@ -1805,7 +1805,7 @@ R2.6 已补 stuck-job 后台调度、Proposal/审批 REST 与 Page endpoint 权�
 5. **R2.4 已落**：`/api/push/stream` 的 `all` topic admin-only；资源 topic 默认 fail-closed。详见 [`../02-ai-engine/r2-topic-boundary.md`](../02-ai-engine/r2-topic-boundary.md)。
 6. **R2.5 已落首版**：建 PG + Redis smoke，覆盖 Redis SSE/presence、WorkItem resource auth、长 provider call heartbeat。详见 [`../02-ai-engine/r2-pg-redis-heartbeat-matrix.md`](../02-ai-engine/r2-pg-redis-heartbeat-matrix.md)。
 7. **R2.6 已落**：stuck run 后台 requeue、Proposal/审批 REST 与 Page endpoint read/list/review/merge 权限全面收口。详见 [`../02-ai-engine/r2-recovery-rest-auth.md`](../02-ai-engine/r2-recovery-rest-auth.md)。
-8. **R2.7 待落**：release gate 汇总，把 R0/R1/R2 smoke 与静态 gate 收成一份可读验收报告。
+8. **R2.7 已落**：release gate 汇总，把 R0/R1/R2 smoke 与静态 gate 收成一份可读验收报告。详见 [`../02-ai-engine/r2-release-gate.md`](../02-ai-engine/r2-release-gate.md)。
 
 R2 验收：
 
@@ -1813,6 +1813,7 @@ R2 验收：
 - 同一 work item 并发 enqueue 只有一个 run 执行。
 - A 实例发布事件，B 实例订阅者收到。R2.3 已由 fake Redis adapter test 固定语义；R2.5 已由真实 Redis service smoke 覆盖。
 - 非 owner 订阅他人 run/workitem/proposal 被拒。R2.4 已固定 topic-access 默认 fail-closed；R2.5 已接 WorkItem/Proposal 默认 resolver 并在 PG+Redis smoke 覆盖 WorkItem owner/stranger。
+- release gate 可复跑：`pnpm verify` 会执行 `pnpm qa:r2-release-gate`，检查文档数、R2.1-R2.7 文档、runtime 路径、CI smoke 接线、旧口径、reference discipline、diff check 和 secret-like diff count。
 
 ### R2.1 AgentRun claim / lease（2026-06-10）
 
@@ -1964,13 +1965,71 @@ R2 验收：
 | Redis matrix | CI 真实 Redis publish/subscribe + presence |
 | PG matrix | CI 真实 PostgreSQL claim + heartbeat row 检查 |
 | R2.6 追加 | stuck-job 后台 requeue 调度、Proposal/审批 REST/Page endpoint 权限全面收口已落 |
-| 仍缺 | release gate 汇总 |
+| R2.7 追加 | release gate report 已接入 `pnpm verify`，持续检查 R0/R1/R2 静态门与 CI smoke 接线 |
 
 验证：
 
 - `corepack pnpm --filter @workhub/api test` 通过，96/96。
 - `corepack pnpm --filter @workhub/api typecheck` 通过。
 - 提交前需跑 `corepack pnpm verify`、`git diff --check`、文档数量/secret/reference gate。
+
+### R2.6 Recovery / REST auth（2026-06-10）
+
+本切片关闭 R2 的第六处硬缺口：有 claim/lease 和 heartbeat 后，仍必须有后台恢复调度；有 SSE topic gate 后，REST/Page endpoint 也必须按同一 WorkItem 资源权限收口。
+
+已落代码：
+
+- `apps/api/src/workers/agent-run-recovery.ts`：新增 recovery scheduler，提供 `tick/start/stop/stats`，非重入，恢复后可自动 drain。
+- `apps/api/src/workers/agent-runner.ts`：新增 `recoverExpiredClaims()`，调用 DB primitive，刷新本地 queue cache，并写 `agent_run.requeued_stale_claim` system audit。
+- `apps/api/src/server.ts`：daemon 启动时 start scheduler；shutdown 时 stop scheduler 并关闭 server。
+- `packages/config/src/env.ts`：新增 `AGENT_RUN_LEASE_MS`、`AGENT_RUN_HEARTBEAT_INTERVAL_MS`、`AGENT_RUN_RECOVERY_INTERVAL_MS`。
+- `packages/db/src/repositories/proposals.ts`、`apps/api/src/services/proposals.ts`：新增 `findProposalByMergeProposalId()` / `getByMergeProposal()`，让 candidate choose/apply 先验权再写。
+- `apps/api/src/routes/proposals.ts`：create/list/get/review/merge/conflicts/choose/apply 全部经 WorkItemService gate。
+- `apps/api/src/routes/approvals.ts`、`apps/api/src/routes/pages.ts`：Approval list/page 过滤不可见 WorkItem；respond/delegate 写前 gate。
+- `docs/workhub/02-ai-engine/r2-recovery-rest-auth.md`：记录 recovery contract、REST/Page auth contract 和剩余边界。
+
+当前边界：
+
+| 项 | R2.6 行为 |
+|---|---|
+| Recovery | 过期 claim 回 `queued`，再通过 `runNext()` 重新 claim，不跳过 queue 协议 |
+| Audit | recovery 写 `agent_run.requeued_stale_claim`，actor 为 `system / agent-run-recovery` |
+| Config | recovery interval 默认 30s；`0` 表示禁用 daemon scheduler |
+| Proposal REST/Page | 所有读写先解析所属 WorkItem 并调用 `detailPage({ actor })` |
+| Approval REST/Page | service 身份门保留，route 额外按 `work_item_id` 过滤/阻断 |
+| 仍缺 | 完整角色/策略化 review/merge 权限、持久 metrics dashboard |
+
+验证：
+
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/api test` 通过，100/100。
+- `corepack pnpm verify` 通过。
+- GitHub Actions `verify` run `27242539233` 通过：workspace、R1 PG smoke、R2 PG+Redis smoke 全绿。
+
+### R2.7 Release gate（2026-06-10）
+
+本切片关闭 R2 的最后一处治理缺口：R0/R1/R2 的静态门、CI smoke、文档口径和提交纪律不再靠人工记忆，而是由一条可复跑 report 检查。
+
+已落代码/文档：
+
+- `scripts/qa/r2-release-gate-report.ts`：输出 Markdown gate report；失败时抛错。
+- `package.json`：新增 `qa:r2-release-gate`，并把它接入 `lint`，因此 `pnpm verify` 必跑。
+- `docs/workhub/02-ai-engine/r2-release-gate.md`：记录 gate 清单、报告形状、边界和 R3 入口前置。
+- `docs/workhub/README.md`：文档数更新为 60，并加入 R2.7 文档索引。
+
+当前边界：
+
+| 项 | R2.7 行为 |
+|---|---|
+| 输出 | `pnpm qa:r2-release-gate` 输出 Markdown 表，CI log 可读 |
+| 覆盖 | package scripts、workspace CI、R1 PG smoke、R2 PG+Redis smoke、文档数、R2 文档集、runtime 路径、旧口径、diff check、reference discipline、secret-like diff count |
+| 不覆盖 | 不启动 Postgres/Redis，不查询 GitHub API，不生成截图，不改 Cuu 外观 |
+| 进入 R3 条件 | `pnpm verify` 与 GitHub Actions 全绿，且 release gate PASS |
+
+验证：
+
+- `corepack pnpm qa:r2-release-gate` 应输出 `Overall: PASS`。
+- `corepack pnpm verify` 应继续通过，并在 `lint` 阶段打印 release gate report。
 
 ## 6. R3 Cuu Agent 入口
 

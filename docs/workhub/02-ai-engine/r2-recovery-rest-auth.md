@@ -134,10 +134,10 @@ corepack pnpm --filter @workhub/api test
 
 | 风险 | 后续 |
 |---|---|
-| Release gate 仍分散在 `verify`、R1 PG smoke、R2 PG+Redis smoke | R2.7 汇总 release gate checklist 与 CI job 命名 |
+| Release gate 漂移 | R2.7 已把 package scripts、CI smoke、文档口径、runtime 路径、diff check、reference discipline 和 secret-like diff count 收进 `pnpm qa:r2-release-gate` |
 | Proposal/Approval 的“谁能 review/merge”仍是 WorkItem 可见性 + routed/admin 的 v0 规则 | R4 产品化时接完整 role/permission policy |
 | scheduler stats 只在进程内，不是持久 metrics | R4/R5 接 dashboard metrics store |
 | 多租户 org/workspace 仍依赖默认 auth actor 字段 | 多租户切片从 auth deps 传真实 org/workspace，并在 WorkItem gate 中验证 workspace |
 | Redis pub/sub 非持久 | REST/DB 仍是真相源，SSE 仅触发 reconcile；云部署再评估 durable queue |
 
-R2.6 完成后，R2 地基剩余工作主要是 release gate 汇总；随后进入 R3 Cuu Agent 入口。
+R2.7 完成后，R2 地基首版的验收入口已接入 `pnpm verify`；下一步进入 R3 Cuu Agent 入口。
