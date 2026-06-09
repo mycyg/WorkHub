@@ -228,6 +228,12 @@ test("replay pages carry F10 audit facts and rollback state", () => {
                 target_kind: "delivery",
                 rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。",
                 chosen: true
+              },
+              {
+                option_key: "ai_fusion",
+                target_kind: "text_doc",
+                rationale_md: "AI 生成了一个融合建议，等待用户选择。",
+                merged_value: { proposed_resolution_md: "保留正式版结论，吸收这次版本新增说明。" }
               }
             ]
           }
@@ -347,10 +353,10 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
               href: "/proposals/72000000-0000-4000-8000-000000000002"
             }
           },
-          {
-            id: "accept_incoming",
-            label: "采纳这次版本",
-            summary_text: "明确覆盖当前正式版。",
+            {
+              id: "accept_incoming",
+              label: "采纳这次版本",
+              summary_text: "明确覆盖当前正式版。",
             action: {
               id: "accept_incoming",
               label: "采纳这次版本",
@@ -360,11 +366,22 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
                 conflict_resolution: {
                   accept_incoming_target_keys: ["delivery:/outputs/result.md"]
                 }
+                }
+              }
+            },
+            {
+              id: "ai_fusion",
+              label: "AI 融合建议",
+              summary_text: "查看 AI 生成的融合建议。",
+              action: {
+                id: "open_ai_fusion_candidate",
+                label: "查看建议",
+                method: "GET",
+                href: "/proposals/72000000-0000-4000-8000-000000000002"
               }
             }
-          }
-        ]
-      }
+          ]
+        }
     ]
   });
   const request = mergeProposalRequestSchema.parse(
@@ -372,6 +389,7 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
   );
 
   assert.equal(parsed.conflicts[0]?.recommended_option_id, "keep_current");
+  assert.equal(parsed.conflicts[0]?.options.some((option) => option.id === "ai_fusion"), true);
   assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
 });
 

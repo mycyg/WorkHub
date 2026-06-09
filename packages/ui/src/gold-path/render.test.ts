@@ -198,6 +198,13 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
               rationale_md: "明确采纳这次版本，覆盖当前正式版。",
               recommended: false,
               chosen: true
+            },
+            {
+              option_key: "ai_fusion",
+              target_kind: "text_doc",
+              rationale_md: "AI 建议吸收双方说明，但不替用户裁决。",
+              recommended: false,
+              chosen: false
             }
           ]
         }
@@ -222,8 +229,10 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("决策记录"), true);
   assert.equal(zhReplay?.html.includes("delivery:/outputs/result.md"), true);
   assert.equal(zhReplay?.html.includes("采纳这次版本"), true);
+  assert.equal(zhReplay?.html.includes("AI 融合建议"), true);
   assert.equal(zhReplay?.html.includes("已选择"), true);
   assert.equal(enReplay?.html.includes("Decision record"), true);
   assert.equal(enReplay?.html.includes("Accept this version"), true);
+  assert.equal(enReplay?.html.includes("AI fusion draft"), true);
   assert.equal(enReplay?.html.includes("Chosen"), true);
 });

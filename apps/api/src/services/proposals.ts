@@ -25,6 +25,11 @@ import {
   type StoredProposalRows,
   type WorkHubDatabaseClient
 } from "@workhub/db";
+import {
+  createLlmMergeFusionCandidateGenerator,
+  safelyGenerateMergeFusionCandidates,
+  type MergeFusionCandidateGenerator
+} from "./merge-fusion-candidates.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -308,8 +313,53 @@ function conflictToVm(conflict: {
   incoming_sha256_after?: string;
   existing_ref?: string;
   incoming_version_before?: string;
-}): ProposalConflict {
+}, options: {
+  aiFusionRationale?: string;
+} = {}): ProposalConflict {
   const targetLabel = conflict.target_path ? `「${conflict.target_path}」` : "这处改动";
+  const conflictOptions: ProposalConflict["options"] = [
+    {
+      id: "keep_current",
+      label: "保留正式版",
+      summary_text: "不覆盖当前正式交付物，先回到变更申请看差异。",
+      recommended: true,
+      action: {
+        id: "open_proposal",
+        label: "查看变更申请",
+        method: "GET",
+        href: `/proposals/${conflict.proposal_id}`
+      }
+    },
+    {
+      id: "accept_incoming",
+      label: "采纳这次版本",
+      summary_text: "明确用这次变更覆盖当前正式版，并保留审计与还原入口。",
+      action: {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        method: "POST",
+        href: `/api/proposals/${conflict.proposal_id}/merge`,
+        request_json: {
+          conflict_resolution: {
+            accept_incoming_target_keys: [conflict.target_key]
+          }
+        }
+      }
+    }
+  ];
+  if (options.aiFusionRationale) {
+    conflictOptions.push({
+      id: "ai_fusion",
+      label: "AI 融合建议",
+      summary_text: options.aiFusionRationale,
+      action: {
+        id: "open_ai_fusion_candidate",
+        label: "查看建议",
+        method: "GET",
+        href: `/proposals/${conflict.proposal_id}`
+      }
+    });
+  }
   return {
     id: `${conflict.proposal_id}:${conflict.change_id}:${conflict.target_key}`,
     work_item_id: conflict.work_item_id,
@@ -333,37 +383,21 @@ function conflictToVm(conflict: {
       ...(conflict.incoming_sha256_after ? { sha256_after: conflict.incoming_sha256_after } : {})
     },
     recommended_option_id: "keep_current",
-    options: [
-      {
-        id: "keep_current",
-        label: "保留正式版",
-        summary_text: "不覆盖当前正式交付物，先回到变更申请看差异。",
-        recommended: true,
-        action: {
-          id: "open_proposal",
-          label: "查看变更申请",
-          method: "GET",
-          href: `/proposals/${conflict.proposal_id}`
-        }
-      },
-      {
-        id: "accept_incoming",
-        label: "采纳这次版本",
-        summary_text: "明确用这次变更覆盖当前正式版，并保留审计与还原入口。",
-        action: {
-          id: "accept_incoming",
-          label: "采纳这次版本",
-          method: "POST",
-          href: `/api/proposals/${conflict.proposal_id}/merge`,
-          request_json: {
-            conflict_resolution: {
-              accept_incoming_target_keys: [conflict.target_key]
-            }
-          }
-        }
-      }
-    ]
+    options: conflictOptions
   };
+}
+
+function aiFusionRationaleByConflictKey(
+  supplements: Awaited<ReturnType<MergeFusionCandidateGenerator["generate"]>>
+) {
+  const byKey = new Map<string, string>();
+  for (const supplement of supplements) {
+    const candidate = supplement.candidates.find((item) => item.option_key === "ai_fusion");
+    if (candidate?.rationale_md) {
+      byKey.set(supplement.conflictKey, candidate.rationale_md);
+    }
+  }
+  return byKey;
 }
 
 function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictListResult {
@@ -509,10 +543,12 @@ export function createDbProposalService(repository: ProposalRepository, options:
   now?: () => Date;
   id?: () => string;
   storageRoot?: string;
+  fusionCandidateGenerator?: MergeFusionCandidateGenerator;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
   const storageRoot = options.storageRoot ?? path.join(defaultSettings.dataDir, "project-drive");
+  const fusionCandidateGenerator = options.fusionCandidateGenerator ?? createLlmMergeFusionCandidateGenerator();
 
   async function requireProposal(proposalId: string) {
     const rows = await repository.findById(proposalId);
@@ -566,7 +602,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
     },
 
     async listConflicts(workItemId) {
-      return conflictListResult((await repository.listConflictsByWorkItem(workItemId)).map(conflictToVm));
+      return conflictListResult((await repository.listConflictsByWorkItem(workItemId)).map((conflict) => conflictToVm(conflict)));
     },
 
     async review(input) {
@@ -603,6 +639,18 @@ export function createDbProposalService(repository: ProposalRepository, options:
 
       let rows: StoredProposalRows | null;
       const mergedAt = now();
+      const mergeConflicts = (await repository.listConflictsByWorkItem(proposal.work_item_id))
+        .filter((conflict) => conflict.proposal_id === proposal.id);
+      const candidateSupplements = mergeConflicts.length > 0
+        ? await safelyGenerateMergeFusionCandidates(fusionCandidateGenerator, {
+            proposalId: proposal.id,
+            workItemId: proposal.work_item_id,
+            proposalTitle: proposal.title,
+            manifest: proposal.diff_manifest,
+            conflicts: mergeConflicts,
+            actor: input.actor
+          })
+        : [];
       const adoptedDriveFiles = await adoptDriveFilesForMerge({
         repository,
         proposalId: input.proposalId,
@@ -617,11 +665,16 @@ export function createDbProposalService(repository: ProposalRepository, options:
           ...(input.conflictResolution?.acceptIncomingTargetKeys
             ? { acceptIncomingTargetKeys: input.conflictResolution.acceptIncomingTargetKeys }
             : {}),
+          ...(candidateSupplements.length > 0 ? { candidateSupplements } : {}),
           at: mergedAt
         });
       } catch (error) {
         if (error instanceof ProposalRepositoryMergeConflictError) {
-          throw new ProposalServiceMergeConflictError(error.conflicts.map(conflictToVm));
+          const rationaleByKey = aiFusionRationaleByConflictKey(candidateSupplements);
+          throw new ProposalServiceMergeConflictError(error.conflicts.map((conflict) => {
+            const aiFusionRationale = rationaleByKey.get(conflict.target_key);
+            return conflictToVm(conflict, aiFusionRationale ? { aiFusionRationale } : {});
+          }));
         }
         throw error;
       }

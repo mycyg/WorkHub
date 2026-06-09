@@ -142,7 +142,7 @@ WorkHub 把这条隐式 PR 循环**显式化为 Branch/Proposal**,并让 **AI �
 
 每次 `merge` 触发时落一条,记录冲突探测与解决路径。**合并是否冲突在此判定**(§6)。
 
-> **R1.11-R1.13 已落最小持久化与回放子集**：`packages/db/src/schema/core.ts` 已新增 `merge_attempts` 与 `merge_proposals`。`ProposalRepository.merge()` 会在默认 merge 被冲突 gate 挡住时写 `merge_attempts.result="conflict"` 与未选择的 `merge_proposals` 候选；在显式 `accept_incoming_target_keys` 后成功采纳时写 `merge_attempts.result="merged"`，并把相关 `merge_proposals.chosen_option_key` 记为 `accept_incoming`。R1.13 已把这些行接入 `GET /api/agent-runs/{id}/replay` 的 `merge_timeline[]`。当前仍是 deterministic 两选一候选；LLM 融合候选作为后续第三类 candidate 接入。
+> **R1.11-R1.14 已落最小持久化、回放与 LLM candidate 子集**：`packages/db/src/schema/core.ts` 已新增 `merge_attempts` 与 `merge_proposals`。`ProposalRepository.merge()` 会在默认 merge 被冲突 gate 挡住时写 `merge_attempts.result="conflict"` 与未选择的 `merge_proposals` 候选；在显式 `accept_incoming_target_keys` 后成功采纳时写 `merge_attempts.result="merged"`，并把相关 `merge_proposals.chosen_option_key` 记为 `accept_incoming`。R1.13 已把这些行接入 `GET /api/agent-runs/{id}/replay` 的 `merge_timeline[]`。R1.14 起 service 可通过可注入 `MergeFusionCandidateGenerator` 追加通过质量门的 `ai_fusion` 候选；LLM 未配置或失败时仍降级为 deterministic 两选一。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -159,7 +159,7 @@ WorkHub 把这条隐式 PR 循环**显式化为 Branch/Proposal**,并让 **AI �
 
 AI 对一处冲突给出的**候选合并结果** = 去黑话的「AI 拟的合并方案」。一处冲突可有多个候选供人择一(FR-COLLAB-003)。
 
-> **R1.12 当前实现**：`merge_proposals` 表已落地。默认 409 写入 `keep_current` / `accept_incoming` 两个 deterministic candidate，`recommended_option_key="keep_current"`、`chosen_option_key=null`；用户显式采纳 incoming 的成功 merge 会写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。LLM 生成的融合候选暂未接入。
+> **R1.12-R1.14 当前实现**：`merge_proposals` 表已落地。默认 409 写入 `keep_current` / `accept_incoming` 两个 deterministic candidate，`recommended_option_key="keep_current"`、`chosen_option_key=null`；用户显式采纳 incoming 的成功 merge 会写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 起支持把 LLM 生成且通过质量门的 `ai_fusion` candidate 合并进 `candidates_json` 并在 409 / replay 中展示；当前尚未提供选择 `ai_fusion` 后写回正式版的执行入口。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -301,7 +301,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
   - **conflict**:main 的该文件也产生了新版本(两个 `version_no` 都基于同一 `base`)→ **二进制不合并**,生成 `MergeProposal`,候选 = `{保留 main 版 / 采纳提议版 / 两个都留(改名)}`,人择一(去黑话:「两份文件撞了,要哪个,还是都留下?」)。
 - **回滚/还原**:合并后回退 = 把 `current_version_id` 指回旧版本指针(沿用 `project_drive.py:1525` 的 restore 路径)。R1.8 最小实现已先按 accepted ledger 找上一版同 target / 同 drive item 的 `drive_version_id`，恢复 `ProjectDriveItem.current_version_id`，并写 Drive operation + audit；完整 `Proposal.merged_snapshot_id` 多文件回滚与 redo UI 后续补齐。
 
-> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览；R1.8 已补 `POST .../restore`，可把当前正式交付物还原到上一版并审计。R1.9 已补最小冲突调解 API：`GET /api/workitems/{id}/conflicts` 返回 deterministic 两选一冲突卡，`POST /api/proposals/{id}/merge` 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming。R1.10 已把这份 conflict contract 接到 Web/Desktop/Cuu：页面渲染 option-first 冲突卡，merge 409 notice 可点击重试，独立桌宠可提交同一 payload。R1.11/R1.12 已把冲突尝试、候选方案与显式采纳 incoming 选择写入 `merge_attempts`、`merge_proposals` 与 `proposal.merged` audit detail；R1.13 已把这些记录接入 AgentRun replay timeline。仍未完成的是富预览、云对象存储 adapter、非 delivery change 的结构化合并、LLM 融合候选与多冲突逐项选择工作台。
+> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览；R1.8 已补 `POST .../restore`，可把当前正式交付物还原到上一版并审计。R1.9 已补最小冲突调解 API：`GET /api/workitems/{id}/conflicts` 返回 deterministic 两选一冲突卡，`POST /api/proposals/{id}/merge` 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming。R1.10 已把这份 conflict contract 接到 Web/Desktop/Cuu：页面渲染 option-first 冲突卡，merge 409 notice 可点击重试，独立桌宠可提交同一 payload。R1.11/R1.12 已把冲突尝试、候选方案与显式采纳 incoming 选择写入 `merge_attempts`、`merge_proposals` 与 `proposal.merged` audit detail；R1.13 已把这些记录接入 AgentRun replay timeline；R1.14 已把 LLM `ai_fusion` candidate 生成、质量门、持久化和展示接入同一通道。仍未完成的是富预览、云对象存储 adapter、非 delivery change 的结构化合并、`ai_fusion` 选择写回与多冲突逐项选择工作台。
 
 ### 5.4 DOC 文本三方合并
 
@@ -332,7 +332,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
 - **R1 当前 gate**:在完整 `MergeAttempt` 表落地前，`ProposalRepository.merge` 先读取同一 `work_item_id + target_key` 的 current accepted row。若 incoming 带 `sha256_before/version_before`，必须与 current 对齐；若 `created/generated` 同路径 sha 不同，或 `updated/replaced/deleted` 缺 before ref，则直接返回 `merge_conflict`，避免静默覆盖正式版。AgentRun-backed delivery 还会额外校验 workdir 源文件实际 sha，采纳后 accepted row 必须能指到正式 `ProjectDriveVersion`。
 - **R1.9/R1.10 当前调解入口**:冲突 gate 不再只返回裸 409。`ProposalRepository.listConflictsByWorkItem(work_item_id)` 会列出已确认 proposal 与 current accepted row 的冲突；`ProposalService` 映射为 `ProposalConflictListResult`，每个冲突至少有 `keep_current` 与 `accept_incoming` 两个 option。默认推荐 `keep_current`；只有用户通过 option action 发回 `conflict_resolution.accept_incoming_target_keys`，repository 才允许该 target 覆盖正式版。没有显式选择时仍 409。R1.10 已把这些 option 接到 `packages/ui`、`apps/web`、`apps/desktop-webview` 与 `packages/cuu`：主窗显示严肃冲突卡，独立 Cuu pet window 显示轻卡并透传 action payload。
 - **R1.11 当前审计入口**:每次 `POST /api/proposals/{id}/merge` 都会形成可追踪尝试。默认 merge 若被冲突挡住，事务先写 `merge_attempts(result="conflict", conflicts_json)` 再返回 409；显式采纳 incoming 后成功 merge，写 `merge_attempts(result="merged", accepted_target_keys, conflicts_json)`，并在 `AuditLog(action="proposal.merged").detail_json.merge_attempt_id` 中串起 attempt、snapshot 与 accepted ledger。这样 replay 能解释“为什么当时没合并”和“后来为什么覆盖正式版”。
-- **R1.12/R1.13 当前候选与回放入口**:`merge_attempts` 下会同时写 `merge_proposals`。默认 409 的候选 row 包含 `keep_current` / `accept_incoming`，但 `chosen_option_key=null`；成功采纳 incoming 的 row 写 `chosen_option_key="accept_incoming"` 与 `chosen_by_user_id/chosen_at`。R1.13 的 AgentRun replay 会读取同一数据通道展示 candidate、recommended 与 chosen 状态；后续 LLM 融合候选继续追加为第三类 candidate。
+- **R1.12-R1.14 当前候选与回放入口**:`merge_attempts` 下会同时写 `merge_proposals`。默认 409 的候选 row 包含 `keep_current` / `accept_incoming`，但 `chosen_option_key=null`；成功采纳 incoming 的 row 写 `chosen_option_key="accept_incoming"` 与 `chosen_by_user_id/chosen_at`。R1.13 的 AgentRun replay 会读取同一数据通道展示 candidate、recommended 与 chosen 状态；R1.14 起 service 可把通过质量门的 `ai_fusion` 作为第三类 candidate 传入 repository 并持久化。后续仍需选择 `ai_fusion` 后的真实写回。
 
 ### 6.2 `ConflictItem` 结构(冲突清单)
 
@@ -352,14 +352,14 @@ ConflictItem = {
 
 当 `MergeAttempt.result=conflict`:
 
-1. **逐 `ConflictItem` 生成 `MergeProposal`**:复用 `app/services/auto_agent.py` 现有 LLM 客户端(`AsyncAnthropic` over DeepSeek,`config.py` 端点),system prompt 喂"base/ours/theirs + WorkItem 上下文 + 各方改动理由(`BranchChange.reason`)",要求输出候选 + 人话 `rationale_md`,**禁止输出 git 标记**。STRUCT/DOC_TEXT 可由 AI 融合;DOC_BIN/SET 通常给"二选一/都留"枚举候选(无需 LLM 生成内容,降本)。
+1. **逐 `ConflictItem` 生成 `MergeProposal`**:TS-first 运行时复用 `ProviderRegistry` / Anthropic-compatible provider（DeepSeek 端点由 `packages/config` 配置），system prompt 喂"base/ours/theirs + WorkItem 上下文 + 各方改动理由(`BranchChange.reason`)",要求输出候选 + 人话 `rationale_md`,**禁止输出 git 标记**。STRUCT/DOC_TEXT 可由 AI 融合；DOC_BIN/SET 通常给"二选一/都留"枚举候选(无需 LLM 生成内容,降本)。旧 Python `auto_agent.py` 只作为迁移参考，不再作为新增实现目标。
 2. **呈现**:UI 一张冲突卡:「和别人的改动撞了,AI 给了合并方案,选一个」,展示 `recommended_option_key` + 各候选 `rationale_md`。
 3. **人择一/微调**:写 `chosen_option_key`/`chosen_by_user_id`/`chosen_at`;允许人手动覆盖为自定义值(记为额外 candidate)。
 4. **回到 merging**:所有 `ConflictItem` 都有 `chosen` 后,用选定值组装 `merged` 结果,`merge_strategy=ai_resolved`,写 main。
 
 > AI 调解只**建议**,人**裁决**——与 PRD §5 一致;调解失败/AI 不可用 → 降级为纯"二选一"枚举,绝不阻塞(失败处理见 §8)。
 >
-> **当前 R1.9-R1.12 降级态**：已先落“二选一枚举”作为可用纵切：`keep_current`=保留正式版并回到变更申请；`accept_incoming`=用户明确采纳这次版本，POST body 固定为 `{conflict_resolution:{accept_incoming_target_keys:[target_key]}}`。Web/Desktop/Cuu 都已用 option-first 卡片承载这两个动作，保证小白可以点选，不需要输入文字；R1.11/R1.12 已把冲突尝试、候选方案与用户选择落到 `merge_attempts`、`merge_proposals` 与 `proposal.merged` audit detail。后续再把 LLM 融合候选作为第三类 option 加入同一 contract。
+> **当前 R1.9-R1.14 状态**：已先落“二选一枚举”作为可用纵切：`keep_current`=保留正式版并回到变更申请；`accept_incoming`=用户明确采纳这次版本，POST body 固定为 `{conflict_resolution:{accept_incoming_target_keys:[target_key]}}`。Web/Desktop/Cuu 都已用 option-first 卡片承载这两个动作，保证小白可以点选，不需要输入文字；R1.11/R1.12 已把冲突尝试、候选方案与用户选择落到 `merge_attempts`、`merge_proposals` 与 `proposal.merged` audit detail；R1.13 已在 replay 展示。R1.14 已把 LLM 融合候选接成可注入 service：有 provider 配置时对 `structured_record/text_doc/spec_doc` 尝试生成 `ai_fusion`，写入同一 `merge_proposals.candidates_json`，并在 409 冲突卡里以“AI 融合建议/AI fusion draft”展示为查看型 option。LLM 未配置、失败、JSON 不合格、目标类型不支持时继续降级为两选一。尚未完成的是选择 `ai_fusion` 后真正写回 merged 内容。
 
 ### 6.4 合并策略枚举(写回 `Proposal.merge_strategy`)
 

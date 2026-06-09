@@ -348,15 +348,15 @@ R1.11 审计规则：
 
 ### 6.2.3 新增:`MergeProposal`(冲突候选方案,R1.12)
 
-> **R1.12 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。当前先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。后续 LLM 融合方案作为第三类 candidate 加入同一 `candidates_json`，无需改变 Cuu/Web 的 option-first 点击模型。
+> **R1.12/R1.14 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。R1.12 先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 已允许 API service 传入 `ai_fusion` 候选补充，写入同一 `candidates_json`，并可带 `source="llm"`、`quality_gate` 与 `merged_value`；Cuu/Web 仍保持 option-first 点击模型，AI 不替用户做裁决。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `id` | UUID PK | |
 | `merge_attempt_id` | FK→merge_attempts.id, CASCADE, index | 属于哪次合并尝试 |
 | `conflict_key` | str(768), index | 对应 `ProposalConflict.target_key` / `ConflictItem.key` |
-| `candidates_json` | JSONB `[]` | `[{option_key,target_kind,merged_value?,rationale_md}]`；R1.12 先写保留正式版/采纳这次版本 |
-| `recommended_option_key` | str(64)? | 当前 deterministic 默认 `keep_current`；LLM 方案落地后可由 AI 推荐 |
+| `candidates_json` | JSONB `[]` | `[{option_key,target_kind,merged_value?,rationale_md,source?,quality_gate?}]`；R1.12 写保留正式版/采纳这次版本，R1.14 可追加 `ai_fusion` |
+| `recommended_option_key` | str(64)? | deterministic 默认 `keep_current`；R1.14 起 LLM 方案通过质量门时可推荐 `ai_fusion`，但不自动选择 |
 | `chosen_option_key` | str(64)? | 人最终选择；未选择时为 null |
 | `chosen_by_user_id` | FK→users.id?, SET NULL, index | 谁做了选择 |
 | `chosen_at` | DateTime?, index | 何时选择 |
@@ -367,6 +367,8 @@ R1.12 审计规则：
 - 默认 409 时，`merge_proposals.chosen_option_key` 为空，证明系统只给出候选，没有替用户做决定。
 - 带 `accept_incoming_target_keys` 成功 merge 时，相关 `conflict_key` 的 row 写 `chosen_option_key="accept_incoming"` 与决策人。
 - R1.13 起，`GET /api/agent-runs/{id}/replay` 已读取 `merge_attempts + merge_proposals` 并返回 `merge_timeline[]`，用于展示“当时有哪些候选、推荐哪个、最终谁选了什么”。
+- R1.14 起，`ai_fusion` 候选由 API service 的 `MergeFusionCandidateGenerator` 生成并传给 repository；repository 只负责与 deterministic 候选合并、去重和持久化，不直接调用 LLM。
+- `ai_fusion` 当前是“可审计候选/查看建议”，不是已完成的 `ai_resolved` 写回。真正选择 `ai_fusion` 并把融合内容写入正式版需要后续 `choose` endpoint、文本/结构化合并器与 Drive 写回切片。
 - 现有 `ProposalConflict.options[]` 仍是用户面入口；`merge_proposals` 是 replay、后续调解页与 LLM 候选的持久真相源。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)

@@ -31,6 +31,7 @@ export type CuuCopyKey =
   | "proposal.conflictOpenProposal"
   | "proposal.conflictKeepCurrent"
   | "proposal.conflictAcceptIncoming"
+  | "proposal.conflictAiFusion"
   | "proposal.conflictTargetSection"
   | "proposal.conflictVersionSection"
   | "workItem.open"
@@ -150,6 +151,7 @@ const cuuCopy = {
     "proposal.conflictOpenProposal": "打开变更",
     "proposal.conflictKeepCurrent": "保留正式版",
     "proposal.conflictAcceptIncoming": "采纳这次版本",
+    "proposal.conflictAiFusion": "AI 融合建议",
     "proposal.conflictTargetSection": "撞车对象",
     "proposal.conflictVersionSection": "版本选择",
     "workItem.open": "查看任务",
@@ -268,6 +270,7 @@ const cuuCopy = {
     "proposal.conflictOpenProposal": "Open change",
     "proposal.conflictKeepCurrent": "Keep current",
     "proposal.conflictAcceptIncoming": "Use this version",
+    "proposal.conflictAiFusion": "AI fusion draft",
     "proposal.conflictTargetSection": "Conflicting item",
     "proposal.conflictVersionSection": "Version choice",
     "workItem.open": "Open task",

@@ -343,23 +343,39 @@ class MemoryProposalRepository implements ProposalRepository {
     ];
   }
 
+  private candidatesWithSupplements(
+    conflict: ReturnType<MemoryProposalRepository["conflictsForStored"]>[number],
+    candidateSupplements: NonNullable<Parameters<ProposalRepository["merge"]>[0]["candidateSupplements"]> = []
+  ) {
+    const candidates = this.candidatesForConflict(conflict);
+    const supplement = candidateSupplements.find((item) => item.conflictKey === conflict.target_key);
+    return [
+      ...candidates,
+      ...(supplement?.candidates.filter((candidate) =>
+        candidate.option_key !== "keep_current" && candidate.option_key !== "accept_incoming"
+      ) ?? [])
+    ];
+  }
+
   private recordMergeProposals(input: {
     mergeAttemptId: string;
     actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
     conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
     acceptedTargetKeys: string[];
+    candidateSupplements?: Parameters<ProposalRepository["merge"]>[0]["candidateSupplements"];
     at: Date;
   }) {
     const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
     for (const conflict of input.conflicts) {
+      const supplement = input.candidateSupplements?.find((item) => item.conflictKey === conflict.target_key);
       this.mergeProposalCount += 1;
       const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : null;
       this.mergeProposals.push({
         id: `91000000-0000-4000-8000-${String(360 + this.mergeProposalCount).padStart(12, "0")}`,
         mergeAttemptId: input.mergeAttemptId,
         conflictKey: conflict.target_key,
-        candidatesJson: this.candidatesForConflict(conflict),
-        recommendedOptionKey: "keep_current",
+        candidatesJson: this.candidatesWithSupplements(conflict, input.candidateSupplements ?? []),
+        recommendedOptionKey: supplement?.recommendedOptionKey ?? "keep_current",
         chosenOptionKey: chosen,
         chosenByUserId: chosen ? input.actor?.actorUserId ?? null : null,
         chosenAt: chosen ? input.at : null,
@@ -376,6 +392,7 @@ class MemoryProposalRepository implements ProposalRepository {
     conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
     acceptedTargetKeys: string[];
     mergeSnapshotId?: string;
+    candidateSupplements?: Parameters<ProposalRepository["merge"]>[0]["candidateSupplements"];
     at: Date;
   }) {
     this.attemptCount += 1;
@@ -401,6 +418,7 @@ class MemoryProposalRepository implements ProposalRepository {
       actor: input.actor,
       conflicts: input.conflicts,
       acceptedTargetKeys: input.acceptedTargetKeys,
+      candidateSupplements: input.candidateSupplements,
       at: input.at
     });
     return mergeAttemptId;
@@ -422,6 +440,7 @@ class MemoryProposalRepository implements ProposalRepository {
         result: "conflict",
         conflicts,
         acceptedTargetKeys,
+        candidateSupplements: input.candidateSupplements,
         at
       });
       throw new ProposalRepositoryMergeConflictError(conflicts);
@@ -439,6 +458,7 @@ class MemoryProposalRepository implements ProposalRepository {
       conflicts: resolvedConflicts,
       acceptedTargetKeys,
       mergeSnapshotId,
+      candidateSupplements: input.candidateSupplements,
       at
     });
     for (const change of stored.proposal.diffManifest.changes) {
@@ -476,10 +496,10 @@ function appWithProposalRoutes() {
   return { app, runtimeSettings };
 }
 
-function appWithDbProposalRoutes() {
+function appWithDbProposalRoutes(options: Parameters<typeof createDbProposalService>[1] = {}) {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
-  const proposals = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids() });
+  const proposals = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids(), ...options });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
   app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
@@ -667,6 +687,92 @@ test("proposal service blocks merge when the same target was already accepted wi
   assert.equal(resolvedCandidates[0]?.chosenByUserId, userId);
 });
 
+test("proposal service persists AI fusion candidates when the mediator supplies one", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, {
+    now: () => now,
+    id: ids(),
+    fusionCandidateGenerator: {
+      async generate(input) {
+        const conflict = input.conflicts[0];
+        if (!conflict) {
+          return [];
+        }
+        return [
+          {
+            conflictKey: conflict.target_key,
+            recommendedOptionKey: "ai_fusion",
+            candidates: [
+              {
+                option_key: "ai_fusion",
+                target_kind: conflict.target_kind,
+                rationale_md: "AI 建议保留正式版的结论，同时吸收这次版本里新增的证据说明。",
+                source: "llm",
+                quality_gate: { status: "passed" },
+                merged_value: {
+                  proposed_resolution_md: "保留已采纳交付物，并把新增证据说明作为下一轮修订要求。"
+                }
+              }
+            ]
+          }
+        ];
+      }
+    }
+  });
+  const firstManifest = manifest(3);
+  const secondManifest = manifest(3);
+  const secondChange = secondManifest.changes[0];
+  if (!secondChange) {
+    throw new Error("missing fixture change");
+  }
+  secondManifest.changes = [
+    {
+      ...secondChange,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      target_ref: {
+        ...secondChange.target_ref,
+        sha256_after: "c".repeat(64)
+      },
+      human_summary: "生成了带新增证据说明的同路径文件。"
+    }
+  ];
+
+  const first = await service.createFromManifest({
+    workItemId: firstManifest.work_item_id,
+    manifest: firstManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: first.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  await service.merge({ proposalId: first.id, actor: { actor_kind: "human", actor_user_id: userId } });
+
+  const second = await service.createFromManifest({
+    workItemId: secondManifest.work_item_id,
+    manifest: secondManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  let conflictError: unknown;
+  try {
+    await service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } });
+  } catch (error) {
+    conflictError = error;
+  }
+
+  assert.ok(conflictError instanceof Error);
+  assert.match(conflictError.message, /撞车/);
+  const blockedAttemptId = repository.mergeAttempts.find((attempt) => attempt.proposalId === second.id)?.id;
+  const blockedCandidates = repository.mergeProposals.filter((proposal) => proposal.mergeAttemptId === blockedAttemptId);
+  assert.equal(blockedCandidates.length, 1);
+  assert.equal(blockedCandidates[0]?.recommendedOptionKey, "ai_fusion");
+  assert.equal(
+    (blockedCandidates[0]?.candidatesJson as Array<{ option_key: string }>).some(
+      (candidate) => candidate.option_key === "ai_fusion"
+    ),
+    true
+  );
+});
+
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {
   const { app, runtimeSettings } = appWithProposalRoutes();
   const created = await createProposal(app, runtimeSettings, manifest(0));
@@ -799,7 +905,31 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
 });
 
 test("proposal routes expose conflict cards and accept an explicit incoming resolution", async () => {
-  const { app, runtimeSettings } = appWithDbProposalRoutes();
+  const { app, runtimeSettings } = appWithDbProposalRoutes({
+    fusionCandidateGenerator: {
+      async generate(input) {
+        const conflict = input.conflicts[0];
+        if (!conflict) {
+          return [];
+        }
+        return [
+          {
+            conflictKey: conflict.target_key,
+            candidates: [
+              {
+                option_key: "ai_fusion",
+                target_kind: conflict.target_kind,
+                rationale_md: "AI 已生成一个融合建议；当前版本先展示建议，真正写回仍走安全按钮。",
+                source: "llm",
+                quality_gate: { status: "passed" },
+                merged_value: { proposed_resolution_md: "融合正式版和这次版本的说明。" }
+              }
+            ]
+          }
+        ];
+      }
+    }
+  });
   const firstManifest = manifest(3);
   const secondManifest = manifest(3);
   const secondChange = secondManifest.changes[0];
@@ -854,6 +984,7 @@ test("proposal routes expose conflict cards and accept an explicit incoming reso
   const targetKey = blockedBody.error.details?.conflicts?.[0]?.target_key;
   assert.equal(blockedBody.error.code, "merge_conflict");
   assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "accept_incoming"), true);
+  assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "ai_fusion"), true);
   assert.equal(typeof targetKey, "string");
 
   const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {

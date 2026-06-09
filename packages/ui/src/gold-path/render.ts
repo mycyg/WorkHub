@@ -106,6 +106,9 @@ function mergeOptionLabel(locale: WorkHubLocale, optionKey: string) {
   if (optionKey === "accept_incoming") {
     return t(locale, "replay.acceptIncoming");
   }
+  if (optionKey === "ai_fusion") {
+    return t(locale, "replay.aiFusion");
+  }
   return optionKey;
 }
 

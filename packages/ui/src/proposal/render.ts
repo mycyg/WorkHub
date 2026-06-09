@@ -104,6 +104,9 @@ function conflictOptionLabel(option: ProposalConflictOption, options?: UiRenderO
   if (option.id === "accept_incoming") {
     return uiT(locale, "proposal.conflictAcceptIncoming");
   }
+  if (option.id === "ai_fusion") {
+    return uiT(locale, "proposal.conflictAiFusion");
+  }
   return option.label;
 }
 

@@ -129,7 +129,7 @@ export const mergeProposalRequestSchema = z.object({
 export type MergeProposalRequest = z.input<typeof mergeProposalRequestSchema>;
 
 export const proposalConflictOptionSchema = z.object({
-  id: z.enum(["keep_current", "accept_incoming"]),
+  id: z.enum(["keep_current", "accept_incoming", "ai_fusion"]),
   label: z.string().min(1),
   summary_text: z.string().min(1),
   recommended: z.boolean().optional(),
@@ -159,7 +159,7 @@ export const proposalConflictSchema = z.object({
     sha256_before: z.string().length(64).optional(),
     sha256_after: z.string().length(64).optional()
   }),
-  recommended_option_id: z.enum(["keep_current", "accept_incoming"]),
+  recommended_option_id: z.enum(["keep_current", "accept_incoming", "ai_fusion"]),
   options: z.array(proposalConflictOptionSchema).min(2)
 });
 export type ProposalConflict = z.infer<typeof proposalConflictSchema>;

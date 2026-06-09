@@ -153,17 +153,17 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 
 ### 6.4 变更撞车轻卡（R1.10-R1.13 已落）
 
-R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1.11/R1.12 把点击背后的 attempt、candidate 与 chosen option 落入 `merge_attempts` / `merge_proposals`，R1.13 把这些记录接入 AgentRun replay 的只读决策记录，但不改变 Cuu 外观冻结规则。
+R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1.11/R1.12 把点击背后的 attempt、candidate 与 chosen option 落入 `merge_attempts` / `merge_proposals`，R1.13 把这些记录接入 AgentRun replay 的只读决策记录，R1.14 允许 `ai_fusion` 候选以查看型轻按钮出现，但不改变 Cuu 外观冻结规则。
 
 | 项 | 当前行为 |
 |---|---|
 | 输入 contract | `ProposalConflict` / `ProposalConflictOption`，来源为 `GET /api/workitems/:id/conflicts` 或 merge 409 的 `details.conflicts[]` |
 | Cuu card | `cardFromProposalConflict()` 生成 `kind="proposal"`、`state="asking_approval"`、`payload_ref.entity_type="proposal_conflict"` |
-| 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；另有「打开变更」深链 |
+| 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；`ai_fusion` 显示「AI 融合建议」并打开变更查看；另有「打开变更」深链 |
 | payload | option action 的 `request_json` 原样保存在 Cuu action `payload`，桌宠点击后由 `proposal-merge` typed action 传给 `client.mergeProposal()` |
 | replay | 主窗 `/agent-runs/:id/replay` 会展示 `merge_timeline[]`，解释当时有哪些候选、推荐哪个、最终选了什么 |
 | 边界 | 这是独立 pet window 的轻卡；Web/Desktop 主窗只显示严肃页面，不显示 Cuu 本体 |
-| 非目标 | 当前不生成 LLM 融合候选、不做多冲突逐项历史、不新增猫模型或外观动作 |
+| 非目标 | 当前不把 `ai_fusion` 直接写回正式版、不做多冲突逐项历史、不新增猫模型或外观动作 |
 
 验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；不能要求用户复制 target key 或手写说明。
 

@@ -83,6 +83,7 @@ const copy = {
   "proposal.conflictRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
   "proposal.conflictKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Keep current" },
   "proposal.conflictAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Use this version" },
+  "proposal.conflictAiFusion": { "zh-CN": "AI 融合建议", "en-US": "AI fusion draft" },
   "proposal.conflictExisting": { "zh-CN": "正式版", "en-US": "Current" },
   "proposal.conflictIncoming": { "zh-CN": "这次版本", "en-US": "This version" },
   "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },

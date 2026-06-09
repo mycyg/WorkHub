@@ -99,6 +99,7 @@ export type GoldPathCopyKey =
   | "replay.decisionMerged"
   | "replay.keepCurrent"
   | "replay.acceptIncoming"
+  | "replay.aiFusion"
   | "replay.recommended"
   | "replay.chosen"
   | "replay.noChoice"
@@ -217,6 +218,7 @@ const goldPathCopy = {
     "replay.decisionMerged": "已采纳",
     "replay.keepCurrent": "保留正式版",
     "replay.acceptIncoming": "采纳这次版本",
+    "replay.aiFusion": "AI 融合建议",
     "replay.recommended": "推荐",
     "replay.chosen": "已选择",
     "replay.noChoice": "未选择",
@@ -334,6 +336,7 @@ const goldPathCopy = {
     "replay.decisionMerged": "Accepted",
     "replay.keepCurrent": "Keep accepted version",
     "replay.acceptIncoming": "Accept this version",
+    "replay.aiFusion": "AI fusion draft",
     "replay.recommended": "Recommended",
     "replay.chosen": "Chosen",
     "replay.noChoice": "Not chosen",

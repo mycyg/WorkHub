@@ -65,6 +65,7 @@ export type MergeProposalInput = {
   actor?: ProposalRepositoryActor;
   adoptedDriveFiles?: ProposalAdoptedDriveFileInput[];
   acceptIncomingTargetKeys?: string[];
+  candidateSupplements?: MergeProposalCandidateSupplement[];
   at?: Date;
 };
 
@@ -104,6 +105,21 @@ export type ProposalMergeConflict = {
   incoming_sha256_after?: string;
   existing_ref?: string;
   incoming_version_before?: string;
+};
+
+export type MergeProposalCandidate = {
+  option_key: string;
+  target_kind: DeliverableChange["target_kind"];
+  rationale_md: string;
+  merged_value?: Record<string, unknown>;
+  source?: string;
+  quality_gate?: Record<string, unknown>;
+};
+
+export type MergeProposalCandidateSupplement = {
+  conflictKey: string;
+  candidates: MergeProposalCandidate[];
+  recommendedOptionKey?: string;
 };
 
 export class ProposalRepositoryMergeConflictError extends Error {
@@ -284,6 +300,7 @@ function mergeProposalCandidates(conflict: ProposalMergeConflict) {
       option_key: "keep_current",
       target_kind: conflict.target_kind,
       rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。",
+      source: "deterministic",
       merged_value: {
         source: "current",
         proposal_id: conflict.existing_proposal_id,
@@ -296,6 +313,7 @@ function mergeProposalCandidates(conflict: ProposalMergeConflict) {
       option_key: "accept_incoming",
       target_kind: conflict.target_kind,
       rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。",
+      source: "deterministic",
       merged_value: {
         source: "incoming",
         proposal_id: conflict.proposal_id,
@@ -308,25 +326,55 @@ function mergeProposalCandidates(conflict: ProposalMergeConflict) {
   ];
 }
 
+function supplementsByConflictKey(supplements: MergeProposalCandidateSupplement[] | undefined) {
+  const byKey = new Map<string, MergeProposalCandidateSupplement>();
+  for (const supplement of supplements ?? []) {
+    if (supplement.candidates.length > 0) {
+      byKey.set(supplement.conflictKey, supplement);
+    }
+  }
+  return byKey;
+}
+
+function candidatesWithSupplement(conflict: ProposalMergeConflict, supplement?: MergeProposalCandidateSupplement) {
+  const byOption = new Map<string, MergeProposalCandidate>();
+  for (const candidate of mergeProposalCandidates(conflict)) {
+    byOption.set(candidate.option_key, candidate);
+  }
+  for (const candidate of supplement?.candidates ?? []) {
+    if (!candidate.option_key || candidate.option_key === "keep_current" || candidate.option_key === "accept_incoming") {
+      continue;
+    }
+    byOption.set(candidate.option_key, {
+      ...candidate,
+      target_kind: candidate.target_kind ?? conflict.target_kind
+    });
+  }
+  return [...byOption.values()];
+}
+
 async function recordMergeProposals(
   tx: WorkHubTx,
   input: {
     mergeAttemptId: string;
     conflicts: ProposalMergeConflict[];
     acceptedTargetKeys: string[];
+    candidateSupplements?: MergeProposalCandidateSupplement[];
     actor?: ProposalRepositoryActor;
     at: Date;
   }
 ) {
   const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
+  const supplements = supplementsByConflictKey(input.candidateSupplements);
   for (const conflict of input.conflicts) {
     const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : undefined;
+    const supplement = supplements.get(conflict.target_key);
     await tx.insert(mergeProposals).values({
       id: randomUUID(),
       mergeAttemptId: input.mergeAttemptId,
       conflictKey: conflict.target_key,
-      candidatesJson: mergeProposalCandidates(conflict),
-      recommendedOptionKey: "keep_current",
+      candidatesJson: candidatesWithSupplement(conflict, supplement),
+      recommendedOptionKey: supplement?.recommendedOptionKey ?? "keep_current",
       ...(chosen ? { chosenOptionKey: chosen } : {}),
       ...(chosen && input.actor?.actorUserId ? { chosenByUserId: input.actor.actorUserId } : {}),
       ...(chosen ? { chosenAt: input.at } : {}),
@@ -766,6 +814,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             mergeAttemptId,
             conflicts,
             acceptedTargetKeys: acceptedIncomingTargetKeyList,
+            ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
             ...(input.actor ? { actor: input.actor } : {}),
             at
           });
@@ -818,6 +867,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           mergeAttemptId,
           conflicts: resolvedConflicts,
           acceptedTargetKeys: acceptedIncomingTargetKeyList,
+          ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
           ...(input.actor ? { actor: input.actor } : {}),
           at
         });
