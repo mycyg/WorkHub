@@ -325,6 +325,75 @@ function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationCon
   ].join("\n");
 }
 
+function effectiveAiFusionTargetKind(context: MergeProposalCandidateApplicationContext) {
+  return context.candidate?.target_kind ?? context.conflict.target_kind;
+}
+
+function textFromAiFusionMergedValue(mergedValue: Record<string, unknown> | undefined) {
+  const textKeys = [
+    "merged_text",
+    "content_md",
+    "content",
+    "text",
+    "proposed_resolution_md",
+    "proposed_resolution",
+    "markdown"
+  ];
+  for (const key of textKeys) {
+    const value = mergedValue?.[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function containsGitConflictMarkers(value: string) {
+  return /(^|\n)(<<<<<<<[ \t].*|=======$|>>>>>>>[ \t].*)/u.test(value);
+}
+
+function mimeForAiFusionTextWriteback(input: { filename: string; targetKind: string }) {
+  if (input.targetKind === "spec_doc") {
+    return "text/markdown";
+  }
+  const ext = path.extname(input.filename).toLowerCase();
+  return ext === ".md" || ext === ".markdown" || ext === ".mdx"
+    ? "text/markdown"
+    : "text/plain";
+}
+
+function aiFusionCandidateMaterialization(input: {
+  context: MergeProposalCandidateApplicationContext;
+  filename: string;
+}) {
+  const targetKind = effectiveAiFusionTargetKind(input.context);
+  if (targetKind === "text_doc" || targetKind === "spec_doc") {
+    const content = textFromAiFusionMergedValue(input.context.candidate?.merged_value);
+    if (!content) {
+      throw new ProposalServiceError(
+        409,
+        "merge_candidate_missing_text_result",
+        "这个 AI 融合建议没有可直接写回的正文。"
+      );
+    }
+    if (containsGitConflictMarkers(content)) {
+      throw new ProposalServiceError(
+        409,
+        "merge_candidate_contains_conflict_markers",
+        "AI 融合内容仍有冲突标记，不能直接写回。"
+      );
+    }
+    return {
+      content,
+      mime: mimeForAiFusionTextWriteback({ filename: input.filename, targetKind })
+    };
+  }
+  return {
+    content: aiFusionCandidateMarkdown(input.context),
+    mime: "text/markdown"
+  };
+}
+
 function assertAiFusionApplyContext(context: MergeProposalCandidateApplicationContext) {
   if (context.proposalStatus === "merged") {
     throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
@@ -349,8 +418,11 @@ async function materializeAiFusionCandidate(input: {
   changeId: string;
 }) {
   const root = path.resolve(input.storageRoot);
-  const content = aiFusionCandidateMarkdown(input.context);
   const filename = filenameForAiFusionCandidate(input.context);
+  const { content, mime } = aiFusionCandidateMaterialization({
+    context: input.context,
+    filename
+  });
   const storagePath = path.resolve(
     root,
     safeStorageSegment(input.context.projectId),
@@ -372,7 +444,7 @@ async function materializeAiFusionCandidate(input: {
     storagePath,
     sizeBytes: Buffer.byteLength(content, "utf8"),
     sha256: sha256Text(content),
-    mime: "text/markdown"
+    mime
   };
 }
 

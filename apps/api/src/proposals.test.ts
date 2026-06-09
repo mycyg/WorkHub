@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -162,6 +162,20 @@ function ids() {
     "91000000-0000-4000-8000-000000000106"
   ];
   return () => values.shift() ?? "91000000-0000-4000-8000-000000000199";
+}
+
+async function filesUnder(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await filesUnder(absolute));
+    } else if (entry.isFile()) {
+      files.push(absolute);
+    }
+  }
+  return files;
 }
 
 class MemoryProposalRepository implements ProposalRepository {
@@ -1108,19 +1122,34 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   });
   const firstManifest = manifest(3);
   const secondManifest = manifest(3);
+  const firstChange = firstManifest.changes[0];
   const secondChange = secondManifest.changes[0];
-  if (!secondChange) {
+  if (!firstChange || !secondChange) {
     throw new Error("missing fixture change");
   }
+  firstManifest.changes = [
+    {
+      ...firstChange,
+      target_kind: "text_doc",
+      target_ref: {
+        ...firstChange.target_ref,
+        path: "outputs/result.md",
+        sha256_after: "a".repeat(64)
+      },
+      human_summary: "生成了第一版文本说明。"
+    }
+  ];
   secondManifest.changes = [
     {
       ...secondChange,
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      target_kind: "text_doc",
       target_ref: {
         ...secondChange.target_ref,
+        path: "outputs/result.md",
         sha256_after: "b".repeat(64)
       },
-      human_summary: "生成了另一张同路径图片。"
+      human_summary: "生成了另一版同路径文本说明。"
     }
   ];
   const headers = {
@@ -1224,6 +1253,11 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   assert.deepEqual(repository.mergeAttempts.at(-1)?.acceptedTargetKeys, [targetKey]);
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
   assert.equal(repository.workItemRows.get(secondManifest.work_item_id)?.status, "merged");
+  const materializedFiles = await filesUnder(storageRoot);
+  assert.equal(materializedFiles.length, 1);
+  const resolvedText = await readFile(materializedFiles[0]!, "utf8");
+  assert.equal(resolvedText, "融合正式版和这次版本的说明。");
+  assert.doesNotMatch(resolvedText, /AI 融合正式稿|```json|Merge Proposal ID/u);
 
   const chosenAi = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
     method: "POST",

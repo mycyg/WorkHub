@@ -334,7 +334,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API，R1.16 已补 AI 融合稿物化采纳。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有真实内容三方读取、字段级/text diff3 原位写回和多冲突逐项选择历史。
+R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API，R1.16 已补 AI 融合稿物化采纳，R1.19 已让 `text_doc/spec_doc` 的合格融合正文直接写回正式 Drive version，避免旧 Markdown/JSON 包装污染文本交付物。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有真实 base/ours/theirs 内容读取、字段级结构化 patch、完整 text diff3 和多冲突逐项选择历史。
 
 ### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
 
@@ -696,7 +696,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 仍未完成：
 
-- `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
+- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 候选正文直写与冲突 marker 拒绝；仍缺真实 base/ours/theirs 内容读取、diff3/patch preview、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
 - R1.17 已补 Web/Desktop/Cuu “采用 AI 融合稿”一键入口，并已纳入真实 PG smoke；仍需 React route 产品化和视觉截图验收。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 choose/apply。
 - R1.17 one-click PG smoke 已覆盖 apply 物化链路；R1.16 的 choose-first 路径仍由 API fake repository 测试覆盖，后续若保留 choose-first 产品入口，再补真实 PG choose->apply 专项。
@@ -720,7 +720,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 |---|---|
 | 409 conflict 有合格 `ai_fusion` candidate | conflict 带 `merge_proposal_id`，`ai_fusion` option 显示「采用 AI 融合稿」，action 指向 `/api/merge-proposals/{id}/apply` |
 | `GET /api/workitems/{id}/conflicts` | 与 409 一致返回 `merge_proposal_id` 与 apply action，页面预读和错误恢复路径一致 |
-| 未选择候选直接 apply | 服务端把本次点击写入原 `merge_proposals.chosen_*`，再物化 Markdown 融合稿 |
+| 未选择候选直接 apply | 服务端把本次点击写入原 `merge_proposals.chosen_*`，再物化融合稿；R1.19 起 `text_doc/spec_doc` 直接写候选正文，非文本/结构化目标仍保留 Markdown artifact |
 | 已选择 `ai_fusion` 后 apply | 幂等走同一物化路径；若 proposal 已 merged，返回既有 409，避免重复 accepted row |
 | 已选择非 `ai_fusion` 后 apply | 409 `merge_proposal_apply_requires_ai_fusion`，不覆盖人的既有选择 |
 | `ai_fusion` 无 `merged_value` | 409 `merge_candidate_missing_result` |
@@ -737,7 +737,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 仍未完成：
 
-- `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要真实 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
+- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 的正文直写和冲突 marker 拒绝；仍缺真实 base/ours/theirs 内容读取、diff3、patch preview、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 apply。
 - 真实 PG smoke 已新增 R1.17 one-click 路径：生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay；CI 通过 `.github/workflows/verify.yml` 的 `r1-pg-smoke` job 持续执行。
 - React route 产品化与 Playwright 截图尚未补；当前主窗路径仍由 TS renderer/browser shell 覆盖。
@@ -783,6 +783,40 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `usage.recorded`、`budget.warning`、`budget.exhausted` 事件尚未发出。
 - Cuu budget bubble 仍未接真实 BudgetNotice。
 - BudgetPolicy 更新目前由 route 顺序写 DB + audit，尚未做同事务封装；若后续要把 audit 作为强事务证据，需要把 update + audit 下沉到 DB transaction service。
+
+### R1.19 AI fusion text/spec direct writeback（2026-06-09）
+
+本切片关闭“`text_doc/spec_doc` 采用 AI 融合稿后，正式文件仍是包装说明 + JSON block，而不是用户可直接打开的正文”的缺口。范围刻意收窄：只处理已存在 `ai_fusion.merged_value` 的文本/规格文档正文写回；不在本切片里读取真实 base/ours/theirs，不做 diff3 自动合并，也不做结构化字段 patch。
+
+已落代码：
+
+- `apps/api/src/services/proposals.ts`：`materializeAiFusionCandidate()` 新增目标类型分流。`text_doc/spec_doc` 会从 `merged_value.merged_text/content_md/content/text/proposed_resolution_md/proposed_resolution/markdown` 中提取第一段非空正文，直接写入正式 storage；`structured_record`、二进制、表格、幻灯、图片等非文本目标继续走 R1.16 的 Markdown artifact 降级。
+- 同一 service 增加冲突 marker 安全门：候选正文出现 `<<<<<<<`、`=======`、`>>>>>>>` 时返回 409 `merge_candidate_contains_conflict_markers`，禁止把 git/diff3 脏标记写进正式文件。
+- MIME 规则收敛：`spec_doc` 固定 `text/markdown`；`text_doc` 的 `.md/.markdown/.mdx` 走 `text/markdown`，其它扩展名走 `text/plain`。
+- `apps/api/src/proposals.test.ts`：route 测试把 one-click `ai_fusion` 冲突目标改为 `text_doc`，并断言落盘文件内容等于候选正文，不含“AI 融合正式稿”、`Merge Proposal ID` 或旧 JSON code fence 包装。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts`：真实 PG smoke 的 R1.17 one-click 路径升级为 R1.19 验收，断言 `ProjectDriveVersion.storagePath` 的文本严格等于 deterministic `proposed_resolution_md`，且没有旧包装。
+
+当前契约：
+
+| 场景 | R1.19 行为 |
+|---|---|
+| `ai_fusion.target_kind=text_doc/spec_doc` 且有文本字段 | 直接把候选正文写成正式 Drive version |
+| `target_kind=text_doc/spec_doc` 但没有可提取正文 | 409 `merge_candidate_missing_text_result` |
+| 正文含冲突 marker | 409 `merge_candidate_contains_conflict_markers` |
+| `structured_record` | 暂不字段级 patch；继续物化 Markdown artifact，等待 schema-aware merge 切片 |
+| 二进制/表格/幻灯/图片/文件夹 | 继续走既有保守行为；不做内容合并 |
+
+验证：
+
+- 计划验证命令：`corepack pnpm --filter @workhub/api typecheck`、`corepack pnpm --filter @workhub/api test`、`corepack pnpm verify`、`git diff --check`。
+- 真实 PG 验收：GitHub Actions `r1-pg-smoke` 使用 Postgres service 跑 one-click AI fusion，并检查正式 Drive version 不再包含旧 Markdown/JSON 包装。
+
+仍未完成：
+
+- 真实 base/ours/theirs 内容读取：当前 LLM generator 仍主要基于 conflict/manifest/ref/hash 元数据，不读取正式 Drive 当前正文、incoming workdir 正文与 base snapshot 正文。
+- 真正 diff3：无重叠 hunk 自动合并、重叠 hunk 进入 AI mediation、patch preview、冲突块逐项确认尚未落地。
+- `structured_record` 字段级 merge policy：字段优先级、schema-aware patch、枚举/日期/长文本/子记录规则仍待实现。
+- 多冲突工作台：当前仍是每个 merge proposal row 单独 apply，不支持同页批量选择、编辑 AI 候选和逐项预览。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

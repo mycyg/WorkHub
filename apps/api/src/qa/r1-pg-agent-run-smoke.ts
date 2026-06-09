@@ -918,8 +918,18 @@ async function main() {
       throw new Error("Expected one-click accepted row to point at a ProjectDriveVersion.");
     }
     const oneClickDriveText = await readFile(oneClickDriveVersion.storagePath, "utf8");
-    if (!oneClickDriveText.includes("R1.17 one-click AI fusion")) {
-      throw new Error("Expected one-click Drive version to contain the deterministic AI fusion artifact.");
+    const expectedOneClickFusionText = [
+      "# R1.17 one-click AI fusion",
+      "",
+      "PG smoke fused current accepted content with the incoming proposal.",
+      "",
+      `Conflict key: ${oneClickConflict.target_key}`
+    ].join("\n");
+    if (oneClickDriveText !== expectedOneClickFusionText) {
+      throw new Error("Expected one-click Drive version to contain the direct AI fusion text writeback.");
+    }
+    if (/AI 融合正式稿|```json|Merge Proposal ID/u.test(oneClickDriveText)) {
+      throw new Error("Expected one-click Drive version to omit the old Markdown wrapper.");
     }
     if (
       !oneClickAuditRows.some((row) =>
