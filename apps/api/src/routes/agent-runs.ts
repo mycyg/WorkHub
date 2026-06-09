@@ -1,7 +1,15 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
+import {
+  createDatabaseClient,
+  createProposalRepository,
+  type AuditLogRepository,
+  type MergeAttemptRow,
+  type MergeProposalRow,
+  type SnapshotRepository,
+  type WorkHubDatabaseClient
+} from "@workhub/db";
 import { startAgentRunRequestSchema } from "@workhub/contracts";
 
 import {
@@ -16,7 +24,14 @@ import {
   type AgentRunQueue,
   type AgentRunQueueRecord
 } from "../workers/agent-runner.js";
-import { buildReplayTracePage, toAgentRunLiveVm, toAgentStepVm, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
+import {
+  buildReplayTracePage,
+  toAgentRunLiveVm,
+  toAgentStepVm,
+  toAuditLogFact,
+  toReplayMergeAttemptVm,
+  toSnapshotVm
+} from "../pages/replay.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import {
   getDefaultWorkItemService,
@@ -39,12 +54,45 @@ function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
   throw new HTTPException(403, { message: "你没有权限查看这次 AI 执行。" });
 }
 
+export type ProposalReplayAuditReader = {
+  listByWorkItem: (workItemId: string) => Promise<Array<{ proposal: { id: string } }>>;
+  listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
+  listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
+};
+
+let defaultProposalReplayAuditDbClient: WorkHubDatabaseClient | undefined;
+
+function getDefaultProposalReplayAudit(): ProposalReplayAuditReader {
+  defaultProposalReplayAuditDbClient ??= createDatabaseClient();
+  return createProposalRepository(defaultProposalReplayAuditDbClient.db);
+}
+
+async function buildMergeTimelineForWorkItem(
+  proposalAudit: ProposalReplayAuditReader | undefined,
+  workItemId: string
+) {
+  if (!proposalAudit) {
+    return [];
+  }
+  const proposals = await proposalAudit.listByWorkItem(workItemId);
+  const timeline: ReturnType<typeof toReplayMergeAttemptVm>[] = [];
+  for (const proposal of proposals) {
+    const attempts = await proposalAudit.listMergeAttemptsByProposal(proposal.proposal.id);
+    for (const attempt of attempts) {
+      const mergeProposals = await proposalAudit.listMergeProposalsByAttempt(attempt.id);
+      timeline.push(toReplayMergeAttemptVm({ attempt, mergeProposals }));
+    }
+  }
+  return timeline.sort((left, right) => left.created_at.localeCompare(right.created_at));
+}
+
 export type AgentRunRoutesDependencies = {
   auth?: AuthDependencySource;
   queue?: AgentRunQueue;
   auditLogs?: AuditLogRepository;
   snapshots?: SnapshotRepository;
   workItems?: WorkItemService;
+  proposalAudit?: ProposalReplayAuditReader;
   autoRun?: boolean;
   onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
 };
@@ -54,6 +102,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const replayWorkItems = deps.workItems ?? (deps.queue ? undefined : getDefaultWorkItemService());
+  const replayProposalAudit = deps.proposalAudit ?? (deps.queue ? undefined : getDefaultProposalReplayAudit());
 
   function auditStores() {
     if (deps.auditLogs && deps.snapshots) {
@@ -138,7 +187,11 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       const acceptedDeliverables = replayWorkItems
         ? (await replayWorkItems.detailPage({ workItemId: run.work_item_id, actor: c.var.actor })).accepted_deliverables
         : [];
-      return c.json({ ok: true, data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables }) });
+      const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, run.work_item_id);
+      return c.json({
+        ok: true,
+        data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables, mergeTimeline })
+      });
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
         throw new HTTPException(error.status as 400, { message: error.message });

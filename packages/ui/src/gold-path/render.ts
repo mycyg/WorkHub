@@ -99,6 +99,26 @@ function actions(actions: (AttentionAction | ActionSpec)[]) {
     .join("")}</div>`;
 }
 
+function mergeOptionLabel(locale: WorkHubLocale, optionKey: string) {
+  if (optionKey === "keep_current") {
+    return t(locale, "replay.keepCurrent");
+  }
+  if (optionKey === "accept_incoming") {
+    return t(locale, "replay.acceptIncoming");
+  }
+  return optionKey;
+}
+
+function mergeAttemptLabel(locale: WorkHubLocale, result: string) {
+  if (result === "conflict") {
+    return t(locale, "replay.decisionConflict");
+  }
+  if (result === "merged") {
+    return t(locale, "replay.decisionMerged");
+  }
+  return t(locale, "replay.decisionFallback");
+}
+
 function pageShell(surface: GoldPathRenderSurface, title: string, main: string) {
   const surfaceClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   return `<div class="${surfaceClass}"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main">${main}</section></div></main></div>`;
@@ -284,6 +304,35 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
       return `<article class="wh-card"><strong>${escapeHtml(item.filename ?? item.target_key)}</strong><p class="wh-subtle">${escapeHtml(item.target_path ?? item.target_key)}</p>${actionsHtml ? `<div class="wh-actions">${actionsHtml}</div>` : ""}</article>`;
     })
     .join("");
+  const mergeTimeline = replay.merge_timeline ?? [];
+  const mergeDecisionCards = mergeTimeline
+    .map((attempt) => {
+      const decisions = attempt.decisions.length
+        ? attempt.decisions
+          .map((decision) => {
+            const candidateRows = decision.candidates.length
+              ? decision.candidates
+                .map((candidate) => {
+                  const badges = [
+                    candidate.recommended ? t(locale, "replay.recommended") : "",
+                    candidate.chosen ? t(locale, "replay.chosen") : ""
+                  ].filter(Boolean).join(" · ");
+                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p></div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
+                })
+                .join("")
+              : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;
+            const chosenLabel = decision.chosen_option_key
+              ? mergeOptionLabel(locale, decision.chosen_option_key)
+              : t(locale, "replay.noChoice");
+            const chosenBadge = decision.chosen_option_key ? t(locale, "replay.chosen") : t(locale, "replay.noChoice");
+            return `<div class="wh-list" data-replay-merge-decision="${escapeHtml(decision.id)}"><div class="wh-row"><div><strong>${escapeHtml(decision.conflict_key)}</strong><p class="wh-subtle">${escapeHtml(chosenLabel)}</p></div><span class="wh-pill">${escapeHtml(chosenBadge)}</span></div>${candidateRows}</div>`;
+          })
+          .join("")
+        : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;
+      const targetSummary = attempt.target_keys.length > 0 ? attempt.target_keys.join(", ") : attempt.id;
+      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${decisions}</article>`;
+    })
+    .join("");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "replay.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "replay.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(replay.run.handoff_md ?? replay.run.outcome_reason ?? t(locale, "replay.empty"))}</p>
@@ -293,8 +342,10 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.snapshotTitle"))}</strong><p class="wh-subtle">${replay.snapshots.length}${escapeHtml(t(locale, "replay.snapshotUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.deliverableTitle"))}</strong><p class="wh-subtle">${acceptedDeliverables.length}${escapeHtml(t(locale, "replay.deliverableUnit"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.decisionTitle"))}</strong><p class="wh-subtle">${mergeTimeline.length}${escapeHtml(t(locale, "replay.decisionUnit"))}</p></article>
     </div>
-    ${deliverableCards ? `<h2>${escapeHtml(t(locale, "replay.deliverableTitle"))}</h2><div class="wh-list">${deliverableCards}</div>` : ""}`;
+    ${deliverableCards ? `<h2>${escapeHtml(t(locale, "replay.deliverableTitle"))}</h2><div class="wh-list">${deliverableCards}</div>` : ""}
+    ${mergeDecisionCards ? `<h2>${escapeHtml(t(locale, "replay.decisionTitle"))}</h2><div class="wh-list">${mergeDecisionCards}</div>` : ""}`;
   return {
     key: "replay",
     route: vm.routes.replay,

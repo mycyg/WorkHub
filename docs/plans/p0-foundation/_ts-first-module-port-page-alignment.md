@@ -202,7 +202,7 @@ AI-native 产品不应该让前端拼十几个接口才知道「现在要处理�
 | 会议洞察转草稿 | `POST /api/meetings/:id/insights/:id/draft` | `QuestionCard` or `WorkItemDraftVM` | `source_evidence`, `suggested_options` | thinking / asking |
 | 同步冲突解决 | `GET /api/pages/sync/conflicts` | `SyncConflictResolverVM` | `conflicts`, `choices`, `recommended_choice` | worried |
 | Agent 实时轨迹 | `GET /api/pages/agent-runs/:id` + SSE | `AgentRunTraceVM` | `steps`, `current_step`, `budget`, `snapshot_refs` | thinking |
-| Agent 回放 | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | `steps`, `evidence_refs`, `snapshots`, `cost` | deep-link 打开,复杂 trace 不塞气泡 |
+| Agent 回放 | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | `steps`, `evidence_refs`, `snapshots`, `accepted_deliverables`, `merge_timeline`, `cost` | deep-link 打开,复杂 trace 和 merge timeline 不塞气泡 |
 | 成本治理 | `GET /api/pages/cost` | `CostDashboardVM` | `total_cost_cny`, `trend`, `budget`, `model_breakdown`, `notices` | `budget.warning` 轻气泡;`budget.exhausted` 审批/暂停卡 |
 
 ### 5.1 `AttentionHomeVM`
@@ -245,7 +245,8 @@ type ProposalDetailVM = {
 
 | VM / payload | 字段 | 端点 / 事件 | TS owner | Web 落点 | Rust / Cuu 落点 |
 |---|---|---|---|---|---|
-| `ReplayTraceVM` | `steps[]`, `evidence_refs[]`, `snapshots[]`, `cost` | `GET /api/agent-runs/:id/replay` | `packages/contracts/src/replay.ts`, `apps/api/src/pages/replay.ts` | Replay Work | deep-link 打开;Cuu 不塞完整 trace |
+| `ReplayTraceVM` | `steps[]`, `evidence_refs[]`, `snapshots[]`, `accepted_deliverables[]`, `merge_timeline[]`, `cost` | `GET /api/agent-runs/:id/replay` | `packages/contracts/src/pages.ts`, `apps/api/src/pages/replay.ts` | Replay Work;R1.13 决策记录 | deep-link 打开;Cuu 不塞完整 trace/timeline |
+| `ReplayTraceVM.merge_timeline` | `attempt.result`, `target_keys`, `decisions[].candidates[]`, `recommended`, `chosen` | `GET /api/agent-runs/:id/replay` | `packages/contracts/src/pages.ts`, `apps/api/src/routes/agent-runs.ts`, `packages/db/src/repositories/proposals.ts` | 严肃决策记录;解释保留正式版/采纳这次版本 | Cuu 只提交 option payload;历史由主窗 replay 看 |
 | `ReplayTraceVM.cost` | `input_tokens`, `output_tokens`, `estimated_cost`, `latency_ms` | `GET /api/agent-runs/:id/replay` | `packages/cost` + `packages/audit` facts | Replay footer | Rust footer 只显示当前 run 摘要 |
 | `CostSummaryVM` | `me`, `team`, `scopes`, `active_notices` | `GET /api/cost/usage` | `packages/contracts/src/cost.ts`, `packages/cost/src/usage.ts` | Attention banner / compact budget strip | OneThing budget strip / Cuu 轻气泡 |
 | `BudgetNotice` | `code`, `severity`, `message`, `scope`, `usage_ratio`, `recommended_action`, `options` | `budget.warning`, `budget.exhausted` | `packages/contracts/src/cost.ts`, `packages/events` | Attention item / Cost Dashboard warning | `worried` 或 `asking_approval`;必须点选操作 |

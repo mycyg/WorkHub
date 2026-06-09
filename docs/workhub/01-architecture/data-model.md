@@ -366,7 +366,8 @@ R1.12 审计规则：
 
 - 默认 409 时，`merge_proposals.chosen_option_key` 为空，证明系统只给出候选，没有替用户做决定。
 - 带 `accept_incoming_target_keys` 成功 merge 时，相关 `conflict_key` 的 row 写 `chosen_option_key="accept_incoming"` 与决策人。
-- 当前表不直接改变 public API；现有 `ProposalConflict.options[]` 仍是用户面入口，表是后续 replay、调解页与 LLM 候选的持久真相源。
+- R1.13 起，`GET /api/agent-runs/{id}/replay` 已读取 `merge_attempts + merge_proposals` 并返回 `merge_timeline[]`，用于展示“当时有哪些候选、推荐哪个、最终谁选了什么”。
+- 现有 `ProposalConflict.options[]` 仍是用户面入口；`merge_proposals` 是 replay、后续调解页与 LLM 候选的持久真相源。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 

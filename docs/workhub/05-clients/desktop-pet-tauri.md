@@ -192,7 +192,7 @@ visuals:
 | `/approvals` | 审批中心 | 可由系统通知和 Cuu 气泡进入 |
 | `/proposals/:id` | 交付物变更说明 | GitHub-like 说明，但适配多类型交付物 |
 | `/workitems/:id` | 工作项详情 | 显示本地同步/文件证据入口 |
-| `/agent-runs/:id/replay` | Replay | 调试/审计页面，桌面可带本地 trace 打开 |
+| `/agent-runs/:id/replay` | Replay | 调试/审计页面，桌面可带本地 trace 打开；R1.13 起同源展示 merge decision timeline |
 | `/dashboard/cost` | 成本 | 与 P-COST Page VM 对齐 |
 | `/settings` | 设置 | 语言、设备、AI runtime、桌面 shell；不展示 Cuu 形象 |
 
@@ -260,7 +260,7 @@ visuals:
 
 | 优先级 | 工作 | 原因 |
 |---|---|---|
-| R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
+| R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
 | R3 恢复 | Cuu 自然语言 / option-first 出站入口 | 补 FR-PET-002，才是 Cuu 欠的 P1 能力 |
 | Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |

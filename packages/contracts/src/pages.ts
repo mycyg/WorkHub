@@ -76,6 +76,45 @@ export const acceptedDeliverableRestoreResultSchema = z.object({
 });
 export type AcceptedDeliverableRestoreResult = z.infer<typeof acceptedDeliverableRestoreResultSchema>;
 
+export const replayMergeCandidateVmSchema = z.object({
+  option_key: z.string().min(1),
+  target_kind: z.string().min(1).optional(),
+  rationale_md: z.string().optional(),
+  merged_value: z.record(z.string(), z.unknown()).optional(),
+  recommended: z.boolean().default(false),
+  chosen: z.boolean().default(false)
+});
+export type ReplayMergeCandidateVM = z.infer<typeof replayMergeCandidateVmSchema>;
+
+export const replayMergeDecisionVmSchema = z.object({
+  id: idSchema,
+  conflict_key: z.string().min(1),
+  recommended_option_key: z.string().min(1).optional(),
+  chosen_option_key: z.string().min(1).optional(),
+  chosen_by_user_id: idSchema.optional(),
+  chosen_at: isoDateTimeSchema.optional(),
+  candidates: z.array(replayMergeCandidateVmSchema).default([])
+});
+export type ReplayMergeDecisionVM = z.infer<typeof replayMergeDecisionVmSchema>;
+
+export const replayMergeAttemptVmSchema = z.object({
+  id: idSchema,
+  proposal_id: idSchema,
+  work_item_id: idSchema,
+  branch_id: idSchema.optional(),
+  actor_kind: z.string().min(1),
+  actor_user_id: idSchema.optional(),
+  result: z.string().min(1),
+  merge_snapshot_id: idSchema.optional(),
+  conflict_count: z.number().int().nonnegative(),
+  target_keys: z.array(z.string().min(1)).default([]),
+  accepted_target_keys: z.array(z.string().min(1)).default([]),
+  conflicts: z.array(z.unknown()).default([]),
+  decisions: z.array(replayMergeDecisionVmSchema).default([]),
+  created_at: isoDateTimeSchema
+});
+export type ReplayMergeAttemptVM = z.infer<typeof replayMergeAttemptVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   acceptance: z.array(z.unknown()),
@@ -122,6 +161,7 @@ export const replayTraceVmSchema = z.object({
   snapshots: z.array(snapshotSchema),
   audit_logs: z.array(auditLogFactSchema).optional(),
   accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
+  merge_timeline: z.array(replayMergeAttemptVmSchema).default([]),
   manifest_facts: manifestFactsSchema.optional(),
   cost: costSummaryVmSchema.optional()
 });

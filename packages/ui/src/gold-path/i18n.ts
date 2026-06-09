@@ -92,6 +92,16 @@ export type GoldPathCopyKey =
   | "replay.openDeliverable"
   | "replay.previewDeliverable"
   | "replay.restoreDeliverable"
+  | "replay.decisionTitle"
+  | "replay.decisionUnit"
+  | "replay.decisionFallback"
+  | "replay.decisionConflict"
+  | "replay.decisionMerged"
+  | "replay.keepCurrent"
+  | "replay.acceptIncoming"
+  | "replay.recommended"
+  | "replay.chosen"
+  | "replay.noChoice"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -200,6 +210,16 @@ const goldPathCopy = {
     "replay.openDeliverable": "下载",
     "replay.previewDeliverable": "预览",
     "replay.restoreDeliverable": "还原",
+    "replay.decisionTitle": "决策记录",
+    "replay.decisionUnit": " 次",
+    "replay.decisionFallback": "已记录",
+    "replay.decisionConflict": "遇到撞车",
+    "replay.decisionMerged": "已采纳",
+    "replay.keepCurrent": "保留正式版",
+    "replay.acceptIncoming": "采纳这次版本",
+    "replay.recommended": "推荐",
+    "replay.chosen": "已选择",
+    "replay.noChoice": "未选择",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -307,6 +327,16 @@ const goldPathCopy = {
     "replay.openDeliverable": "Download",
     "replay.previewDeliverable": "Preview",
     "replay.restoreDeliverable": "Restore",
+    "replay.decisionTitle": "Decision record",
+    "replay.decisionUnit": " attempt(s)",
+    "replay.decisionFallback": "Recorded",
+    "replay.decisionConflict": "Conflict found",
+    "replay.decisionMerged": "Accepted",
+    "replay.keepCurrent": "Keep accepted version",
+    "replay.acceptIncoming": "Accept this version",
+    "replay.recommended": "Recommended",
+    "replay.chosen": "Chosen",
+    "replay.noChoice": "Not chosen",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

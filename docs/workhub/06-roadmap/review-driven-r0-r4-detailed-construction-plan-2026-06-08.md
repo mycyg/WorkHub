@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option | 仍未接完整 Drive 富预览/历史/redo UI，也未做 LLM 融合候选和多冲突逐项选择历史 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染 | 仍未接完整 Drive 富预览/历史/redo UI，也未做 LLM 融合候选和多冲突逐项选择工作台 |
 
 ### R1 必做顺序
 
@@ -135,6 +135,7 @@ R0 退出门：
    - **2026-06-08 追加验收**：Linux 测试机真实 PG smoke 已通过，daemon restart 后 `/agent-runs/:id` 与 `/replay` 可读回。
    - **2026-06-09 追加切片**：merge 会创建真实 `snapshots(kind=merge)`、`audit_logs(action=proposal.merged)` 与 `accepted_deliverable_changes`，R1 smoke 会校验这些 DB 行。
    - **2026-06-09 追加切片**：ReplayTraceVM 已返回 `accepted_deliverables[]`，`/api/agent-runs/:id/replay` 可在 restart 后展示正式交付物、下载与文本预览入口。
+   - **2026-06-09 R1.13 追加切片**：ReplayTraceVM 已返回 `merge_timeline[]`，由 `merge_attempts + merge_proposals` 组装，展示当时的冲突目标、候选方案、推荐项与最终选择。
    - 后续已补：R1.8 已接 Drive 指针恢复入口，可把正式交付物还原到上一版并审计。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
@@ -155,7 +156,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、LLM 冲突调解候选仍未完成；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、LLM 冲突调解候选仍未完成；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示。
 
 ### R1 验收
 
@@ -179,7 +180,7 @@ R0 退出门：
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
 - 后续已补：正式交付物读取面最小切片；WorkItem page 与 AgentRun replay 返回 `accepted_deliverables`，并提供下载与文本预览 API。
 - 后续已补：正式交付物最小还原入口；同一路径第二版采纳后可 `POST .../restore` 回到上一版 Drive version，并写 `ProjectDriveOperation` 与审计。
-- 未完成：BudgetPolicy 持久化与审计、LLM 冲突调解候选、完整 approval policy routing 仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口。
+- 未完成：BudgetPolicy 持久化与审计、LLM 冲突调解候选、完整 approval policy routing 仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -516,7 +517,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 - LLM 融合候选生成：STRUCT/DOC_TEXT 需要 base/ours/theirs prompt、candidate rationale、recommended option。
 - 多冲突逐项选择历史：当前 `accepted_target_keys` 可记录多个 key，但 UI 仍是每个 conflict card 自带单 key payload，不是完整冲突工作台。
 - 非 delivery change 的字段级三方合并、文本 diff3、二进制“两份都留”自动改名。
-- Replay 页面尚未显式展示 merge attempt timeline；当前数据已落库，展示面后续补。
+- Replay 页面展示已由 R1.13 接入；当前仍不是完整多冲突工作台。
 
 ### R1.12 MergeProposal deterministic candidates（2026-06-09）
 
@@ -547,7 +548,41 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 - LLM 融合候选生成与质量门：需要给 STRUCT/DOC_TEXT 提供 base/ours/theirs prompt、candidate rationale、推荐项与失败降级。
 - 多冲突逐项选择工作台：当前表能记录多 key，但 UI 仍是每张 conflict card 独立提交。
-- Replay timeline 尚未读取 `merge_attempts + merge_proposals` 展示“当时有哪些候选、谁选了什么”。
+- 完整多冲突逐项选择工作台：R1.13 只展示历史，不提供批量选择/自定义候选编辑。
+
+### R1.13 Replay merge decision timeline（2026-06-09）
+
+本切片关闭“冲突候选和用户选择虽然已落库，但 replay 页面解释不了当时发生了什么”的缺口。范围限定为展示历史，不新增用户选择负担，不改变 Cuu 外观冻结规则。
+
+已落代码：
+
+- `packages/contracts/src/pages.ts`：新增 `ReplayMergeCandidateVM`、`ReplayMergeDecisionVM`、`ReplayMergeAttemptVM`，并在 `ReplayTraceVM` 上暴露 `merge_timeline[]`。
+- `apps/api/src/pages/replay.ts`：新增 `toReplayMergeAttemptVm()`，把 `MergeAttemptRow` / `MergeProposalRow` 转为 replay snake_case VM。
+- `apps/api/src/routes/agent-runs.ts`：`GET /api/agent-runs/:id/replay` 会按 work item 读取 proposal、attempt、proposal candidates，并把排序后的 `merge_timeline` 传入 `buildReplayTracePage()`。
+- `packages/ui/src/gold-path/render.ts`：Replay Work 严肃页面新增“决策记录”统计和 timeline 卡片，展示冲突目标、候选、推荐项和最终选择；Web/Desktop 主窗仍不显示 Cuu 本体。
+- `packages/agent/src/fixtures/gold-path.ts`：P0.5 fixture 默认 `merge_timeline: []`，避免 demo bundle 冒充真实冲突历史。
+
+当前契约：
+
+| 场景 | R1.13 行为 |
+|---|---|
+| 无冲突历史 | `merge_timeline=[]`，页面只显示 0 次决策记录 |
+| 默认 409 冲突 | 若已有 `merge_attempts.result="conflict"` 与未选择候选，replay 可展示候选和未选择状态 |
+| 用户采纳 incoming | replay 展示 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at` 与 chosen candidate |
+| 语言 | 固定 chrome 支持 zh-CN / en-US；动态 rationale 保留服务端原文 |
+| 边界 | 只读历史，不提供自定义候选、不做批量冲突工作台、不调用 LLM |
+
+验证：
+
+- `packages/contracts` typecheck 通过；`src/contracts.test.ts` 15/15 通过。
+- `packages/ui` typecheck 通过；`src/gold-path/render.test.ts` 8/8 通过。
+- `apps/api` typecheck 通过；`src/agent-runs.test.ts` 13/13 通过。
+
+仍未完成：
+
+- LLM 融合候选生成与质量门：需要给 STRUCT/DOC_TEXT 提供 base/ours/theirs prompt、candidate rationale、推荐项与失败降级。
+- 多冲突逐项选择工作台：当前 replay 能解释历史，但用户选择仍分散在每张 conflict card 的单 key payload。
+- 真实 React route 产品化：当前 P0.5 renderer 已能展示 timeline，长期页面仍需迁到 `apps/web/src/routes/*` 组件体系。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

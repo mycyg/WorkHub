@@ -9,11 +9,13 @@ import type {
   CostSummaryVM,
   EvidenceRef,
   ManifestFacts,
+  ReplayMergeCandidateVM,
+  ReplayMergeAttemptVM,
   Snapshot,
   StructuredHandoff
 } from "@workhub/contracts";
 import { buildManifestFacts, type AuditLogFact as InternalAuditLogFact, type SnapshotRef } from "@workhub/audit";
-import type { AuditLogRow, SnapshotRow } from "@workhub/db";
+import type { AuditLogRow, MergeAttemptRow, MergeProposalRow, SnapshotRow } from "@workhub/db";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 
@@ -233,6 +235,66 @@ export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[]): EvidenceRef[
   }));
 }
 
+function optionalRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function mergeCandidateVms(row: MergeProposalRow): ReplayMergeCandidateVM[] {
+  const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
+  const result: ReplayMergeCandidateVM[] = [];
+  for (const candidate of candidates) {
+    const record = optionalRecord(candidate);
+    if (!record) {
+      continue;
+    }
+    const optionKey = typeof record.option_key === "string" ? record.option_key : undefined;
+    if (!optionKey) {
+      continue;
+    }
+    const mergedValue = optionalRecord(record.merged_value);
+    result.push({
+      option_key: optionKey,
+      ...(typeof record.target_kind === "string" ? { target_kind: record.target_kind } : {}),
+      ...(typeof record.rationale_md === "string" ? { rationale_md: record.rationale_md } : {}),
+      ...(mergedValue ? { merged_value: mergedValue } : {}),
+      recommended: row.recommendedOptionKey === optionKey,
+      chosen: row.chosenOptionKey === optionKey
+    });
+  }
+  return result;
+}
+
+export function toReplayMergeAttemptVm(input: {
+  attempt: MergeAttemptRow;
+  mergeProposals: MergeProposalRow[];
+}): ReplayMergeAttemptVM {
+  const attempt = input.attempt;
+  return {
+    id: attempt.id,
+    proposal_id: attempt.proposalId,
+    work_item_id: attempt.workItemId,
+    ...(attempt.branchId ? { branch_id: attempt.branchId } : {}),
+    actor_kind: attempt.actorKind,
+    ...(attempt.actorUserId ? { actor_user_id: attempt.actorUserId } : {}),
+    result: attempt.result,
+    ...(attempt.mergeSnapshotId ? { merge_snapshot_id: attempt.mergeSnapshotId } : {}),
+    conflict_count: attempt.conflictCount,
+    target_keys: attempt.targetKeys,
+    accepted_target_keys: attempt.acceptedTargetKeys,
+    conflicts: attempt.conflictsJson,
+    decisions: input.mergeProposals.map((proposal) => ({
+      id: proposal.id,
+      conflict_key: proposal.conflictKey,
+      ...(proposal.recommendedOptionKey ? { recommended_option_key: proposal.recommendedOptionKey } : {}),
+      ...(proposal.chosenOptionKey ? { chosen_option_key: proposal.chosenOptionKey } : {}),
+      ...(proposal.chosenByUserId ? { chosen_by_user_id: proposal.chosenByUserId } : {}),
+      ...(proposal.chosenAt ? { chosen_at: proposal.chosenAt.toISOString() } : {}),
+      candidates: mergeCandidateVms(proposal)
+    })),
+    created_at: attempt.createdAt.toISOString()
+  };
+}
+
 export function buildReplayCostSummary(run: AgentRunQueueRecord): CostSummaryVM {
   const totalTokens = run.usage.token_in + run.usage.token_out;
   const maxTokens = run.budget.max_tokens;
@@ -298,6 +360,7 @@ export function buildReplayTracePage(input: {
   snapshots?: Snapshot[];
   auditLogs?: AuditLogFact[];
   acceptedDeliverables?: AcceptedDeliverableVM[];
+  mergeTimeline?: ReplayMergeAttemptVM[];
   manifestFacts?: ManifestFacts;
 }) {
   const snapshots = input.snapshots ?? [];
@@ -309,6 +372,7 @@ export function buildReplayTracePage(input: {
     snapshots,
     audit_logs: auditLogs,
     accepted_deliverables: input.acceptedDeliverables ?? [],
+    merge_timeline: input.mergeTimeline ?? [],
     manifest_facts: input.manifestFacts ?? buildReplayManifestFacts({ snapshots, auditLogs }),
     cost: buildReplayCostSummary(input.run)
   };

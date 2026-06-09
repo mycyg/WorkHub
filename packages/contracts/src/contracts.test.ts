@@ -194,6 +194,47 @@ test("replay pages carry F10 audit facts and rollback state", () => {
         accepted_at: "2026-06-05T00:00:00.000Z"
       }
     ],
+    merge_timeline: [
+      {
+        id: "71000000-0000-4000-8000-000000000010",
+        proposal_id: "71000000-0000-4000-8000-000000000006",
+        work_item_id: "71000000-0000-4000-8000-000000000002",
+        branch_id: "71000000-0000-4000-8000-000000000011",
+        actor_kind: "human",
+        actor_user_id: "71000000-0000-4000-8000-000000000012",
+        result: "merged",
+        merge_snapshot_id: "71000000-0000-4000-8000-000000000003",
+        conflict_count: 1,
+        target_keys: ["delivery:/outputs/result.md"],
+        accepted_target_keys: ["delivery:/outputs/result.md"],
+        conflicts: [{ target_key: "delivery:/outputs/result.md" }],
+        decisions: [
+          {
+            id: "71000000-0000-4000-8000-000000000013",
+            conflict_key: "delivery:/outputs/result.md",
+            recommended_option_key: "keep_current",
+            chosen_option_key: "accept_incoming",
+            chosen_by_user_id: "71000000-0000-4000-8000-000000000012",
+            chosen_at: "2026-06-05T00:00:00.000Z",
+            candidates: [
+              {
+                option_key: "keep_current",
+                target_kind: "delivery",
+                rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。",
+                recommended: true
+              },
+              {
+                option_key: "accept_incoming",
+                target_kind: "delivery",
+                rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。",
+                chosen: true
+              }
+            ]
+          }
+        ],
+        created_at: "2026-06-05T00:00:00.000Z"
+      }
+    ],
     manifest_facts: {
       checks: { snapshot_exists: "passed", revert_available: "passed" },
       rollback: {
@@ -209,6 +250,8 @@ test("replay pages carry F10 audit facts and rollback state", () => {
   assert.equal(parsed.manifest_facts?.rollback.available, true);
   assert.equal(parsed.accepted_deliverables[0]?.download_href?.includes("/download"), true);
   assert.equal(parsed.accepted_deliverables[0]?.restore_href?.includes("/restore"), true);
+  assert.equal(parsed.merge_timeline[0]?.decisions[0]?.chosen_option_key, "accept_incoming");
+  assert.equal(parsed.merge_timeline[0]?.decisions[0]?.candidates[0]?.recommended, true);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

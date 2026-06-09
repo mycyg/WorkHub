@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AcceptedDeliverableVM, GoldPathSurfaceVM } from "@workhub/contracts";
+import type { AcceptedDeliverableVM, GoldPathSurfaceVM, ReplayMergeAttemptVM } from "@workhub/contracts";
 import { toCuuState } from "@workhub/events";
 
 import { renderGoldPathSurface } from "./render.js";
@@ -158,4 +158,72 @@ test("replay page surfaces accepted deliverables with preview and download actio
     "/api/workitems/demo/deliverables/accepted-1/download",
     "/api/workitems/demo/deliverables/accepted-1/restore"
   ]);
+});
+
+test("replay page explains merge decisions with bilingual candidate labels", () => {
+  const vm = surfaceVm();
+  const mergeTimeline: ReplayMergeAttemptVM[] = [
+    {
+      id: "76000000-0000-4000-8000-000000000011",
+      proposal_id: "76000000-0000-4000-8000-000000000012",
+      work_item_id: vm.page_vms.replay.run.work_item_id,
+      branch_id: "76000000-0000-4000-8000-000000000013",
+      actor_kind: "human",
+      actor_user_id: "76000000-0000-4000-8000-000000000014",
+      result: "merged",
+      merge_snapshot_id: "76000000-0000-4000-8000-000000000015",
+      conflict_count: 1,
+      target_keys: ["delivery:/outputs/result.md"],
+      accepted_target_keys: ["delivery:/outputs/result.md"],
+      conflicts: [{ target_key: "delivery:/outputs/result.md" }],
+      decisions: [
+        {
+          id: "76000000-0000-4000-8000-000000000016",
+          conflict_key: "delivery:/outputs/result.md",
+          recommended_option_key: "keep_current",
+          chosen_option_key: "accept_incoming",
+          chosen_by_user_id: "76000000-0000-4000-8000-000000000014",
+          chosen_at: "2026-06-05T00:00:00.000Z",
+          candidates: [
+            {
+              option_key: "keep_current",
+              target_kind: "delivery",
+              rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。",
+              recommended: true,
+              chosen: false
+            },
+            {
+              option_key: "accept_incoming",
+              target_kind: "delivery",
+              rationale_md: "明确采纳这次版本，覆盖当前正式版。",
+              recommended: false,
+              chosen: true
+            }
+          ]
+        }
+      ],
+      created_at: "2026-06-05T00:00:00.000Z"
+    }
+  ];
+  const custom: GoldPathSurfaceVM = {
+    ...vm,
+    page_vms: {
+      ...vm.page_vms,
+      replay: {
+        ...vm.page_vms.replay,
+        merge_timeline: mergeTimeline
+      }
+    }
+  };
+
+  const zhReplay = renderGoldPathSurface(custom, "web").pages.find((page) => page.key === "replay");
+  const enReplay = renderGoldPathSurface(custom, "web", { locale: "en-US" }).pages.find((page) => page.key === "replay");
+
+  assert.equal(zhReplay?.html.includes("决策记录"), true);
+  assert.equal(zhReplay?.html.includes("delivery:/outputs/result.md"), true);
+  assert.equal(zhReplay?.html.includes("采纳这次版本"), true);
+  assert.equal(zhReplay?.html.includes("已选择"), true);
+  assert.equal(enReplay?.html.includes("Decision record"), true);
+  assert.equal(enReplay?.html.includes("Accept this version"), true);
+  assert.equal(enReplay?.html.includes("Chosen"), true);
 });

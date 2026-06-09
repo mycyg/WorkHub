@@ -30,7 +30,7 @@ depends:
 6. 系统发出 `proposal.opened`,Cuu 进入 `carrying_document`,Web/Rust 可打开 Proposal Detail。
 7. 用户在审批卡里点「采纳」或「打回」;打回必须给理由,理由回灌给 Agent。
 8. 若采纳,系统合并交付物,发 `proposal.merged`,Cuu `celebrating`,通知写入收件箱。
-9. 全程可打开 AgentRun replay,能看到关键步骤、证据、快照和回滚点。
+9. 全程可打开 AgentRun replay,能看到关键步骤、证据、快照、正式交付物、merge 决策记录和回滚点。
 
 ### 1.2 黄金路径表
 
@@ -45,7 +45,7 @@ depends:
 | 6. 产出变更包 | 非代码 PR 页面 | `proposal.opened` | `DeliverableChangeManifest` | Proposal Detail / Cuu carrying doc | F2,F8,F10,F11 |
 | 7. 审批/打回 | 审批卡、理由、记住规则 | `POST /api/proposals/:id/review` | `AttentionItem` | Approval Center / Cuu approval | F6,F9,F11 |
 | 8. 合并完成 | 完成通知、可回滚入口 | `proposal.merged`, `notification.created` | `AttentionItem` | Timeline / Cuu celebrate | F9,F10,F11 |
-| 9. Replay | “看看 AI 怎么做的” | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | Replay Work | Eval/Replay,F8,F10 |
+| 9. Replay | “看看 AI 怎么做的” | `GET /api/agent-runs/:id/replay` | `ReplayTraceVM` | Replay Work;含 cost、accepted deliverables、merge timeline | Eval/Replay,F8,F10 |
 
 ---
 
@@ -105,7 +105,7 @@ P0.5 是 P0 和 P1 之间的产品验证切片。目标不是完整功能,而是
 | Option Intake | `/intake/:sessionId` | 选项式澄清 |
 | WorkItem Detail | `/workitems/:id` | 工作项状态 + live trace preview |
 | Proposal Detail | `/proposals/:id` | 非代码 PR |
-| Replay Work | `/agent-runs/:id/replay` | AI 关键步骤回放 |
+| Replay Work | `/agent-runs/:id/replay` | AI 关键步骤、正式交付物与 merge 决策记录回放 |
 | Cost Dashboard | `/dashboard/cost` | 管理者看成本与预算;普通用户只看个人切片 |
 | Approval Center | `/approvals` | 阻塞收件箱 |
 
@@ -159,7 +159,7 @@ Agent 不必一开始真调用 LLM。P0.5 可用 scripted trace:
 
 - [ ] 用户从 `/` 进入,能完成一次 option-first intake,全程不需要长篇打字。
 - [ ] Cuu 至少经历 `asking_approval → thinking → carrying_document → celebrating`。
-- [ ] AgentRun replay 页面能展示不少于 5 个关键步骤。
+- [ ] AgentRun replay 页面能展示不少于 5 个关键步骤；有冲突历史时必须展示 `merge_timeline[]` 的候选、推荐项和最终选择。
 - [ ] Replay footer 能展示本次 run 的 `CostSummaryVM` 切片;非 admin 不显示全员成本。
 - [ ] Proposal Detail 能显示非代码变更包,含 `summary/targets/evidence/risk/rollback/checks`。
 - [ ] 用户打回时必须填写理由;理由出现在下一轮 Agent context 中。
@@ -176,6 +176,7 @@ Agent 不必一开始真调用 LLM。P0.5 可用 scripted trace:
 | warning 轻提示 | `BudgetNotice.code="budget_warning"`, `usage_ratio`, `recommended_action`, `options[]` | Cuu/Web 只能给点选项,不得要求用户输入预算处理命令 |
 | exhausted 交接 | `ApiErr.code="budget_exhausted"` 或 `AgentRun.status="budget_exhausted"` + `handoff_md` | 超额不得静默失败;当前 run 必须能解释已做/未做/下一步 |
 | Replay cost footer | `ReplayTraceVM.cost.input_tokens`, `output_tokens`, `estimated_cost`, `latency_ms` | raw token 可按权限折叠,但 footer 摘要必须存在 |
+| Replay merge timeline | `ReplayTraceVM.merge_timeline[].decisions[].candidates[].recommended/chosen` | 有冲突 fixture 时必须解释“保留正式版 / 采纳这次版本”及最终选择 |
 | 成本页对齐 | `GET /api/pages/cost` 返回 `CostDashboardVM.notices` 与 `budget[]` | warning/exhausted 事件重放后,页面 reconcile 能看到同一状态 |
 
 ---

@@ -40,6 +40,8 @@ type ReplayTraceVM = {
   steps: ReplayStepVM[];
   evidence_refs: EvidenceRef[];
   snapshots: SnapshotRef[];
+  accepted_deliverables?: AcceptedDeliverableVM[];
+  merge_timeline?: ReplayMergeAttemptVM[];
   proposal_id?: string;
   cost: {
     input_tokens: number;
@@ -76,6 +78,7 @@ type ReplayStepVM = {
 - 每步都是人话标题 + 摘要 + 可展开 raw。
 - 工具入参/结果默认脱敏;敏感内容只给有权限用户展开。
 - 快照/回滚点必须可见。
+- 正式交付物、还原入口与 merge 决策历史必须可见；R1.13 起 `merge_timeline[]` 要解释候选、推荐项和最终选择。
 - 若 Agent 失败,Replay 仍要解释“失败在哪里、下一步怎么办”。
 
 ---
@@ -99,7 +102,7 @@ type ReplayStepVM = {
 | `budget_threshold_warning` | 成本接近阈值 | provider fixture 写 `UsageRecord`→`CostLedgerEntry`;触发 `budget.warning`;Replay footer 显示当前 run cost summary |
 | `budget_exhausted_handoff` | 成本硬上限耗尽 | `BudgetDecision.allowed=false` 时返回 `ApiErr.code=budget_exhausted`;运行中耗尽时产结构化交接 |
 | `revision_feedback_loop` | 打回理由回灌 | 下一轮 context 包含用户理由 |
-| `sync_conflict_choice` | 冲突调解 | 返回 `ConflictChoice[]` + recommended choice |
+| `sync_conflict_choice` | 冲突调解 | 返回 `ConflictChoice[]` + recommended choice；R1.13 后 replay partial 必须覆盖 `merge_timeline[].decisions[].candidates[]` |
 
 ### 3.2 Eval 输入形态
 
@@ -167,7 +170,7 @@ evals/
 | Option-first | `QuestionCard.options.length >= 2` | 问题是否好点选 |
 | Manifest completeness | target/evidence/risk/rollback/checks | 是否像人能审的 PR |
 | Permission safety | side-effect 前必须 ask/snapshot | 权限文案是否清楚 |
-| Replay readability | steps 关键字段齐全 | 回放是否能解释过程 |
+| Replay readability | steps、accepted deliverables、merge timeline 关键字段齐全 | 回放是否能解释过程和决策 |
 | Cost/latency | token/耗时阈值 | 是否值得自动跑 |
 | Budget policy | warning/exhausted 事件与 `CostLedgerEntry` | 是否该降级或停 |
 | Cuu mapping | event → CuuState | 动作是否符合语境 |
@@ -188,6 +191,7 @@ evals/
 | `DeliverableChangeManifest` | `Proposal.diff_manifest` | 产出说明 |
 | `EvidenceRef` | DB/json | 证据来源 |
 | `CostLedgerEntry` | DB | cost footer、预算阈值、模型路由依据 |
+| `MergeAttempt` / `MergeProposal` | DB | 冲突候选、推荐项、最终选择与决策时间线 |
 
 ### 5.2 Replay endpoint
 
@@ -235,6 +239,7 @@ pnpm eval:report
 - 禁止 hallucinated evidence = 0
 - Side-effect without snapshot/ask = 0
 - Replay endpoint fixture pass = 100%
+- Replay merge timeline fixture pass = 100%;有冲突的 fixture 必须能看到 `recommended` 与 `chosen` 候选
 - Manifest target coverage >= docx/pptx/xlsx/image/folder
 - CuuState mapping coverage >= `permission.ask/proposal.opened/knowledge.evidence.ready/sync.conflict`
 - Budget threshold fixture pass = 100%;`retry`/`compact` usage 必须计入 run 成本,`nightly eval` 必须进 `scope.kind="eval"` 而非用户/team 配额
@@ -262,7 +267,7 @@ pnpm eval:report
 
 | 能力 | 页面 | Cuu |
 |---|---|---|
-| Replay Work | `/agent-runs/:id/replay` | 复杂时 deep-link 打开 |
+| Replay Work | `/agent-runs/:id/replay` | 复杂 trace / merge timeline 只 deep-link 打开 |
 | Evidence confidence | Proposal / Evidence panel | `searching_evidence` 气泡 |
 | Revision feedback | Proposal timeline | `revision_requested` |
 | Snapshot/revert | Proposal Detail / Replay | `worried` if unavailable |
@@ -276,7 +281,7 @@ pnpm eval:report
 2. **ER-2 Fixture runner**:scripted AgentRun fixture 可生成 replay。
 3. **ER-3 Manifest eval**:覆盖 doc/ppt/xlsx/image/folder。
 4. **ER-4 Evidence guard**:source id 必须来自 fixture。
-5. **ER-5 Replay page**:低保真页面渲染 trace。
+5. **ER-5 Replay page**:低保真页面渲染 trace、accepted deliverables 与 merge timeline。
 6. **ER-6 Real model nightly**:接真实 provider,不阻塞本地快速 PR。
 7. **ER-7 Metrics**:把指标写入 AgentRun summary / dashboard seed。
 

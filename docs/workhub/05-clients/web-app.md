@@ -89,9 +89,21 @@ P1.2 把中英双语从 Gold Path shell 延伸到未来真实 routes 会复用�
 |---|---|---|
 | 页面预读冲突 | `renderWebProposalDetail()` 先读 `GET /api/workitems/:id/conflicts`，过滤当前 proposal 后传入 `renderProposalDetail(...,{ conflicts })` | React route 产品化后复用同一 typed loader |
 | merge 时冲突 | `apps/web/src/browser.ts` 捕获 `ApiErr.code="merge_conflict"`，从 `error.details.conflicts[]` 渲染 `renderProposalConflictCards()` | Toast/notice 升级为正式 inline panel，不依赖 P0.5 shell |
-| 选项 payload | 冲突按钮携带 `data-request-json`，点击后调用 `client.mergeProposal(proposalId, payload)`；R1.11/R1.12 已把 blocked/merged attempt、候选方案与 accepted incoming target keys 落审计 | 多冲突逐项选择工作台、merge attempt timeline 展示 |
+| 选项 payload | 冲突按钮携带 `data-request-json`，点击后调用 `client.mergeProposal(proposalId, payload)`；R1.11/R1.12 已把 blocked/merged attempt、候选方案与 accepted incoming target keys 落审计，R1.13 已在 replay 展示 merge timeline | 多冲突逐项选择工作台、LLM 融合候选 |
 | 用户用语 | 「和别人的改动撞车了」「保留正式版」「采纳这次版本」 | LLM 融合候选加入后仍保持 option-first |
 | 边界 | Web/Desktop 主窗只显示严肃冲突卡；Cuu 本体仍只在独立 pet window | Playwright 截图验证主窗无 Cuu |
+
+### 0.5 R1.13 Replay decision timeline（2026-06-09 已落）
+
+Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `packages/ui/src/gold-path/render.ts` 会从 `ReplayTraceVM.merge_timeline[]` 渲染严肃“决策记录”区，展示：
+
+- attempt 结果：`merged` 显示为“已采纳”，`conflict` 显示为“遇到撞车”。
+- 冲突目标：显示 `conflict_key` / `target_keys`，例如 `delivery:/outputs/result.md`。
+- 候选方案：`keep_current` 显示为“保留正式版”，`accept_incoming` 显示为“采纳这次版本”。
+- 审计状态：候选可标记“推荐”和“已选择”；未选择时显示“未选择”。
+- 双语：固定 chrome 已接 `packages/ui/src/gold-path/i18n.ts`，zh-CN / en-US 均有测试；动态 rationale 保留服务端原文，不在客户端硬翻译。
+
+边界：这是只读 replay 解释面，不是新的看板或冲突工作台；Web/Desktop 主窗仍不出现 Cuu 本体。
 
 ---
 
@@ -679,7 +691,7 @@ L1 项目列表 (/)                          ← 一切的入口
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **绑定**：`GET /proposals/{id}`（含 diff 摘要 + ConfidenceRecord 引用）、`POST /proposals/{id}/review {decision, reason_md?}`、`POST /proposals/{id}/merge`、`GET /workitems/{id}/conflicts`。**当前 R1.10-R1.12 TS-first 纵切**：`GET /workitems/{id}/conflicts` 返回的 deterministic `keep_current / accept_incoming` 两选一会在 Proposal 页面与 merge 409 notice 中渲染为可点击卡片；按钮的 `request_json` 会原样传给 `mergeProposal()`；后台已将 attempt、candidate 与 chosen option 落库，后续 timeline 只需读取持久表。**打回必带理由**（空理由 400），理由**回灌**给 AI 同分支续做（FR-ESC-003）。
+- **绑定**：`GET /proposals/{id}`（含 diff 摘要 + ConfidenceRecord 引用）、`POST /proposals/{id}/review {decision, reason_md?}`、`POST /proposals/{id}/merge`、`GET /workitems/{id}/conflicts`。**当前 R1.10-R1.13 TS-first 纵切**：`GET /workitems/{id}/conflicts` 返回的 deterministic `keep_current / accept_incoming` 两选一会在 Proposal 页面与 merge 409 notice 中渲染为可点击卡片；按钮的 `request_json` 会原样传给 `mergeProposal()`；后台已将 attempt、candidate 与 chosen option 落库，`GET /api/agent-runs/:id/replay` 已读取 `merge_attempts + merge_proposals` 并在 replay 页面展示历史。**打回必带理由**（空理由 400），理由**回灌**给 AI 同分支续做（FR-ESC-003）。
 - **SSE**：订 **`workitem:{id}`** 收 `proposal.opened/reviewed/merged`、`conflict.detected`；高置信低风险可策略自动合并（用户视角=「AI 做完了，已采纳」）。
 - **四态**：空/加载/错误=同详情页范式；无权限=仅 reviewer（负责人）可通过/打回。
 - **web↔桌宠**：**Web 主场**（审批/采纳是派活方动作）。本页可作为 `RequirementDetail` 的「提议」tab 内嵌，亦可独立深链。

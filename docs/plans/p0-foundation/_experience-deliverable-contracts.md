@@ -337,6 +337,55 @@ type DeliverableCheck = {
 7. 打回时 `reason_md` 必填,并作为下一轮 AgentRun 输入。
 8. manifest 中任何 `risk.reversible=false` 的条目必须已触发 ask-gate 或被拒绝执行。
 
+### 3.6 Replay merge history（R1.13 已落）
+
+AgentRun replay 必须解释交付物变更是如何进入正式版的。R1.13 已将 `merge_attempts + merge_proposals` 收敛为 `ReplayTraceVM.merge_timeline[]`：
+
+```ts
+type ReplayMergeAttemptVM = {
+  id: string;
+  proposal_id: string;
+  work_item_id: string;
+  branch_id?: string;
+  actor_kind: string;
+  actor_user_id?: string;
+  result: string;
+  merge_snapshot_id?: string;
+  conflict_count: number;
+  target_keys: string[];
+  accepted_target_keys: string[];
+  conflicts: unknown[];
+  decisions: ReplayMergeDecisionVM[];
+  created_at: string;
+};
+
+type ReplayMergeDecisionVM = {
+  id: string;
+  conflict_key: string;
+  recommended_option_key?: string;
+  chosen_option_key?: string;
+  chosen_by_user_id?: string;
+  chosen_at?: string;
+  candidates: ReplayMergeCandidateVM[];
+};
+
+type ReplayMergeCandidateVM = {
+  option_key: string;
+  target_kind?: string;
+  rationale_md?: string;
+  merged_value?: Record<string, unknown>;
+  recommended: boolean;
+  chosen: boolean;
+};
+```
+
+端侧渲染规则：
+
+- Replay 页面只读展示 attempt、candidate、recommended/chosen 状态，不发明新的合并动作。
+- Cuu 只负责冲突轻卡和提交 option payload，不塞完整 timeline。
+- Web/Desktop 主窗展示严肃“决策记录”，不出现 Cuu 本体。
+- 动态 `rationale_md` 保留服务端原文；固定 chrome 走 zh-CN/en-US locale key。
+
 ---
 
 ## 4. 事件命名收敛

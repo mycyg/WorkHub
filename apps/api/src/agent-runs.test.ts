@@ -22,6 +22,8 @@ import type {
   ClientDeviceRepository,
   ConfidenceRecordRow,
   EscalationEventRow,
+  MergeAttemptRow,
+  MergeProposalRow,
   SnapshotRepository,
   SnapshotRow,
   UserAuthRow,
@@ -31,7 +33,7 @@ import type {
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
-import { createAgentRunRoutes } from "./routes/agent-runs.js";
+import { createAgentRunRoutes, type ProposalReplayAuditReader } from "./routes/agent-runs.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
@@ -546,6 +548,62 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
     },
     async restoreAcceptedDeliverable() {
       throw new Error("not needed");
+    }
+  };
+}
+
+function proposalAuditWithMergeTimeline(): ProposalReplayAuditReader {
+  const proposalId = "75000000-0000-4000-8000-000000000001";
+  const mergeAttemptId = "75000000-0000-4000-8000-000000000002";
+  const mergeProposalId = "75000000-0000-4000-8000-000000000003";
+  const targetKey = "delivery:/outputs/result.md";
+  const attempt: MergeAttemptRow = {
+    id: mergeAttemptId,
+    proposalId,
+    workItemId,
+    branchId: "75000000-0000-4000-8000-000000000004",
+    actorKind: "human",
+    actorUserId: userId,
+    result: "merged",
+    mergeSnapshotId: snapshotId,
+    conflictsJson: [{ target_key: targetKey }],
+    acceptedTargetKeys: [targetKey],
+    targetKeys: [targetKey],
+    conflictCount: 1,
+    createdAt: now
+  };
+  const mergeProposal: MergeProposalRow = {
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: targetKey,
+    candidatesJson: [
+      {
+        option_key: "keep_current",
+        target_kind: "delivery",
+        rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。"
+      },
+      {
+        option_key: "accept_incoming",
+        target_kind: "delivery",
+        rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。"
+      }
+    ],
+    recommendedOptionKey: "keep_current",
+    chosenOptionKey: "accept_incoming",
+    chosenByUserId: userId,
+    chosenAt: now,
+    createdAt: now,
+    updatedAt: now
+  };
+  return {
+    async listByWorkItem(candidateWorkItemId) {
+      return candidateWorkItemId === workItemId ? [{ proposal: { id: proposalId } }] : [];
+    },
+    async listMergeAttemptsByProposal(candidateProposalId) {
+      return candidateProposalId === proposalId ? [attempt] : [];
+    },
+    async listMergeProposalsByAttempt(candidateAttemptId) {
+      return candidateAttemptId === mergeAttemptId ? [mergeProposal] : [];
     }
   };
 }
@@ -1154,6 +1212,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     snapshots,
     auditLogs,
     workItems: workItemsWithAcceptedDeliverables([replayDeliverable]),
+    proposalAudit: proposalAuditWithMergeTimeline(),
     autoRun: false
   }));
 
@@ -1236,6 +1295,13 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
       snapshots: { id: string }[];
       audit_logs: { action: string; snapshot_id?: string }[];
       accepted_deliverables: { id: string; download_href?: string; preview_href?: string }[];
+      merge_timeline: {
+        result: string;
+        decisions: {
+          chosen_option_key?: string;
+          candidates: { option_key: string; chosen: boolean; recommended: boolean }[];
+        }[];
+      }[];
       manifest_facts: { rollback: { available: boolean; snapshot_id?: string } };
     };
   };
@@ -1250,6 +1316,20 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(replayBody.data.accepted_deliverables[0]?.id, replayDeliverable.id);
   assert.equal(replayBody.data.accepted_deliverables[0]?.download_href, replayDeliverable.download_href);
   assert.equal(replayBody.data.accepted_deliverables[0]?.preview_href, replayDeliverable.preview_href);
+  assert.equal(replayBody.data.merge_timeline[0]?.result, "merged");
+  assert.equal(replayBody.data.merge_timeline[0]?.decisions[0]?.chosen_option_key, "accept_incoming");
+  assert.equal(
+    replayBody.data.merge_timeline[0]?.decisions[0]?.candidates.some((candidate) =>
+      candidate.chosen && candidate.option_key === "accept_incoming"
+    ),
+    true
+  );
+  assert.equal(
+    replayBody.data.merge_timeline[0]?.decisions[0]?.candidates.some((candidate) =>
+      candidate.recommended && candidate.option_key === "keep_current"
+    ),
+    true
+  );
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);
