@@ -7,6 +7,7 @@ import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
+import { renderAgentRunReplay } from "@workhub/ui/replay";
 
 export const desktopWebviewSurface = {
   name: "C-PET webview",
@@ -92,6 +93,14 @@ export function loadDesktopAgentRun(client: WorkHubApiClient, runId: string) {
 
 export function loadDesktopAgentRunTrace(client: WorkHubApiClient, runId: string, after?: number) {
   return client.getAgentRunTrace(runId, after);
+}
+
+export function loadDesktopAgentRunReplay(client: WorkHubApiClient, runId: string) {
+  return client.replayAgentRun(runId);
+}
+
+export async function renderDesktopAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
+  return renderAgentRunReplay(await loadDesktopAgentRunReplay(client, runId), "desktop", locale ? { locale } : undefined);
 }
 
 export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {

@@ -1,0 +1,180 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
+import type { ReplayTraceVM } from "@workhub/contracts";
+
+import { renderAgentRunReplay } from "./render.js";
+
+const workItemId = "76000000-0000-4000-8000-000000000101";
+const proposalId = "76000000-0000-4000-8000-000000000102";
+const baseTaskId = "76000000-0000-4000-8000-000000000103";
+const newTaskId = "76000000-0000-4000-8000-000000000104";
+
+function replayWithStructuredFields(): ReplayTraceVM {
+  const fixture = createP05GoldPathFixture();
+  return {
+    ...fixture.replay,
+    merge_timeline: [
+      {
+        id: "76000000-0000-4000-8000-000000000111",
+        proposal_id: proposalId,
+        work_item_id: workItemId,
+        branch_id: "76000000-0000-4000-8000-000000000112",
+        actor_kind: "human",
+        actor_user_id: "76000000-0000-4000-8000-000000000113",
+        result: "merged",
+        merge_snapshot_id: "76000000-0000-4000-8000-000000000114",
+        conflict_count: 1,
+        target_keys: ["work_item:task_items"],
+        accepted_target_keys: ["work_item:task_items"],
+        conflicts: [{ target_key: "work_item:task_items" }],
+        decisions: [
+          {
+            id: "76000000-0000-4000-8000-000000000115",
+            conflict_key: "work_item:task_items",
+            recommended_option_key: "ai_fusion",
+            chosen_option_key: "ai_fusion",
+            chosen_by_user_id: "76000000-0000-4000-8000-000000000113",
+            chosen_at: "2026-06-05T00:00:00.000Z",
+            candidates: [
+              {
+                option_key: "ai_fusion",
+                target_kind: "structured_record",
+                rationale_md: "把 AI 拆解的任务项写回最新 dispatch plan。",
+                quality_gate: {
+                  structured_record_patch: {
+                    type: "structured_record_field_patch",
+                    changed_fields: ["title", "task_items"],
+                    merged_value_fields: ["title", "task_items"],
+                    missing_fields: [],
+                    unknown_fields: [],
+                    field_count: 2,
+                    has_structured_result: true,
+                    structured_field_patch_dry_run: {
+                      type: "structured_field_patch_dry_run",
+                      status: "ready",
+                      executable: true,
+                      patch: {
+                        type: "structured_field_patch",
+                        target_entity_type: "work_item",
+                        target_entity_id: workItemId,
+                        source: "ai_fusion",
+                        operations: [
+                          {
+                            op: "set",
+                            target_entity_type: "work_item",
+                            target_entity_id: workItemId,
+                            field: "title",
+                            value_type: "string",
+                            before_value: "旧标题",
+                            current_value: "旧标题",
+                            value: "新标题",
+                            source: "ai_fusion"
+                          },
+                          {
+                            op: "set",
+                            target_entity_type: "work_item",
+                            target_entity_id: workItemId,
+                            field: "task_items",
+                            value_type: "json_array",
+                            before_value: [
+                              { id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 }
+                            ],
+                            current_value: [
+                              { id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 }
+                            ],
+                            value: [
+                              { id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 },
+                              { id: newTaskId, title: "新增风险项", item_type: "risk", sort_order: 1 }
+                            ],
+                            source: "ai_fusion"
+                          }
+                        ]
+                      },
+                      issues: [],
+                      audit_payload: {
+                        target_entity_type: "work_item",
+                        target_entity_id: workItemId,
+                        field_count: 2,
+                        operation_fields: ["title", "task_items"],
+                        source: "ai_fusion"
+                      }
+                    }
+                  }
+                },
+                recommended: true,
+                chosen: true
+              }
+            ]
+          }
+        ],
+        created_at: "2026-06-05T00:00:00.000Z"
+      }
+    ],
+    audit_logs: [
+      ...(fixture.replay.audit_logs ?? []),
+      {
+        id: "76000000-0000-4000-8000-000000000121",
+        actor: { actor_kind: "human", actor_user_id: "76000000-0000-4000-8000-000000000113" },
+        entity: { entity_type: "proposal", entity_id: proposalId },
+        action: "proposal.merged",
+        detail_json: {
+          merge_strategy: "field_merge",
+          merge_snapshot_id: "76000000-0000-4000-8000-000000000114",
+          structured_field_count: 2,
+          structured_field_changes: [
+            {
+              field: "title",
+              valueType: "string",
+              baseValue: "旧标题",
+              beforeValue: "旧标题",
+              afterValue: "新标题",
+              mergeDecision: "fast_path"
+            },
+            {
+              field: "task_items",
+              valueType: "json_array",
+              baseValue: [{ id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 }],
+              beforeValue: [{ id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 }],
+              afterValue: [
+                { id: baseTaskId, title: "原始任务项", item_type: "task", sort_order: 0 },
+                { id: newTaskId, title: "新增风险项", item_type: "risk", sort_order: 1 }
+              ],
+              mergeDecision: "fast_path",
+              itemCount: 2
+            }
+          ]
+        },
+        created_at: "2026-06-05T00:00:00.000Z"
+      }
+    ]
+  };
+}
+
+test("replay renderer exposes structured field operation targets and writeback audit", () => {
+  const vm = replayWithStructuredFields();
+  const zh = renderAgentRunReplay(vm, "web");
+  const en = renderAgentRunReplay(vm, "desktop", { locale: "en-US" });
+
+  assert.equal(zh.surface, "web");
+  assert.equal(zh.stepCount, vm.steps.length);
+  assert.equal(zh.mergeAttemptCount, 1);
+  assert.equal(zh.structuredAuditCount, 1);
+  assert.equal(zh.html.includes("字段级落点"), true);
+  assert.equal(zh.html.includes("字段写回审计"), true);
+  assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
+  assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
+  assert.equal(zh.html.includes("data-replay-structured-field-audit=\"true\""), true);
+  assert.equal(zh.html.includes("data-replay-structured-field-audit=\"task_items\""), true);
+  assert.equal(zh.html.includes("基线: 旧标题"), true);
+  assert.equal(zh.html.includes("写入: 新标题"), true);
+  assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
+  assert.equal(zh.html.includes("策略: fast_path"), true);
+  assert.equal(en.html.includes("Field-level targets"), true);
+  assert.equal(en.html.includes("Field writeback audit"), true);
+  assert.equal(en.html.includes("Base: 旧标题"), true);
+  assert.equal(en.html.includes("After: 新标题"), true);
+  assert.equal(en.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
+  assert.equal(en.html.includes("Decision: fast_path"), true);
+});

@@ -69,7 +69,7 @@ R1 退出门：
 - ReplayTraceVM 来自真实 run/step/snapshot/audit，不是 fixture。
 - 快照红线、provider 单出口、预算计量不回退。
 
-### 2.1 R1 当前代码状态（2026-06-08）
+### 2.1 R1 当前代码状态（2026-06-09）
 
 已完成的真实切片：
 
@@ -86,17 +86,18 @@ R1 退出门：
 - AgentRun-backed delivery 正式文件落盘已落：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内写 `ProjectDriveItem/Version` 并把 `drive_item_id/drive_version_id` 写回 accepted row。
 - 正式交付物读取面已落最小切片：`GET /api/pages/workitems/:id` 返回 `accepted_deliverables[]`，并提供正式文件 download 与文本 preview API；R1 PG smoke 已覆盖页面字段、预览与下载内容。
 - 正式交付物还原入口已落最小切片：`AcceptedDeliverableVM.restore_href` 仅在有上一版时出现；`POST .../restore` 会恢复 `ProjectDriveItem.current_version_id`，切换 current accepted row，并写 Drive operation + audit。
+- Proposal / Replay 字段级落点与审计渲染已落最小切片：`StructuredFieldPatchDryRun.patch.operations[]` 会在 Proposal 冲突卡显示 base/current/after；`proposal.merged.detail_json.structured_field_changes[]` 会在 Replay 严肃页显示 field_merge 写回审计，覆盖标量字段、`acceptance_items` 与 `task_items`。
 - 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 71/71 通过。
 
 仍不能宣称 R1 完成：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 GitHub Actions `r1-pg-smoke` job 和 Linux/CI PostgreSQL 给出真实 PG 通过证据。
-- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit、同 target 冲突 gate、AI fusion candidate、one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、text patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3、重叠 hunk metadata/prompt/quality gate、replay 选择记录、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回与最新 dispatch plan `task_items` 子记录写回已落。完整 Drive 产品化、任务子记录多计划/逐项 UI、重叠 hunk 逐项确认/编辑、React route 级富 patch viewer 和多冲突工作台仍待后续 R1/R2。
+- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit、同 target 冲突 gate、AI fusion candidate、one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、text patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3、重叠 hunk metadata/prompt/quality gate、replay 选择记录、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、最新 dispatch plan `task_items` 子记录写回、字段级 Proposal/Replay 落点与写回审计已落。完整 Drive 产品化、字段级编辑器、任务子记录多计划/逐项 UI、重叠 hunk 逐项确认/编辑、React route 级富 patch viewer 和多冲突工作台仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 补任务子记录多计划/逐项 UI、`ai_fusion` v2 重叠 hunk 逐项确认/编辑、React route 级富 patch viewer 与多冲突工作台；R1.20 已先补 text/spec 的真实 current/incoming/base prompt context，R1.21 已补数据层 text patch preview，R1.22 已补 Replay patch preview 渲染，R1.23 已补 Proposal 采用前最小 patch preview，R1.24 已补无重叠文本 hunk deterministic diff3 candidate；R1.25 已补重叠 hunk metadata/prompt/quality gate，R1.29 已补 WorkItem 标量字段写回，R1.30 已补字段冲突检测，R1.31 已补 `acceptance_items` 子记录写回，R1.32 已补最新 dispatch plan `task_items` 子记录写回。
+1. 补字段级编辑器、任务子记录多计划/逐项 UI、`ai_fusion` v2 重叠 hunk 逐项确认/编辑、React route 级富 patch viewer 与多冲突工作台；R1.20 已先补 text/spec 的真实 current/incoming/base prompt context，R1.21 已补数据层 text patch preview，R1.22 已补 Replay patch preview 渲染，R1.23 已补 Proposal 采用前最小 patch preview，R1.24 已补无重叠文本 hunk deterministic diff3 candidate；R1.25 已补重叠 hunk metadata/prompt/quality gate，R1.29 已补 WorkItem 标量字段写回，R1.30 已补字段冲突检测，R1.31 已补 `acceptance_items` 子记录写回，R1.32 已补最新 dispatch plan `task_items` 子记录写回，R1.33 已补字段级落点和 field_merge 写回审计渲染。
 2. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
 ## 3. R2 真正解除单 worker

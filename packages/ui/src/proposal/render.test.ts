@@ -142,11 +142,55 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
               type: "structured_field_patch_dry_run",
               status: "blocked",
               executable: false,
+              patch: {
+                type: "structured_field_patch",
+                target_entity_type: "work_item",
+                target_entity_id: vm.work_item_id,
+                source: "ai_fusion",
+                operations: [
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: vm.work_item_id,
+                    field: "title",
+                    value_type: "string",
+                    before_value: "旧标题",
+                    current_value: "旧标题",
+                    value: "新标题",
+                    source: "ai_fusion"
+                  },
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: vm.work_item_id,
+                    field: "task_items",
+                    value_type: "json_array",
+                    before_value: [
+                      { id: "10000000-0000-4000-8000-000000000901", title: "原始任务项", item_type: "task" }
+                    ],
+                    current_value: [
+                      { id: "10000000-0000-4000-8000-000000000901", title: "原始任务项", item_type: "task" }
+                    ],
+                    value: [
+                      { id: "10000000-0000-4000-8000-000000000901", title: "原始任务项", item_type: "task" },
+                      { id: "10000000-0000-4000-8000-000000000902", title: "新增风险项", item_type: "risk" }
+                    ],
+                    source: "ai_fusion"
+                  }
+                ]
+              },
               issues: [
                 { severity: "error", code: "missing_declared_field", field: "acceptance_items", message: "missing" },
                 { severity: "error", code: "unknown_field", field: "extra_field", message: "unknown" },
                 { severity: "error", code: "invalid_value_type", field: "due_at", message: "bad date" }
-              ]
+              ],
+              audit_payload: {
+                target_entity_type: "work_item",
+                target_entity_id: vm.work_item_id,
+                field_count: 2,
+                operation_fields: ["title", "task_items"],
+                source: "ai_fusion"
+              }
             }
           }
         },
@@ -189,6 +233,12 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-structured-patch-dry-run-issues=\"3\""), true);
   assert.equal(rendered.html.includes("结构化字段检查"), true);
   assert.equal(rendered.html.includes("Dry-run: 已阻断"), true);
+  assert.equal(rendered.html.includes("字段级落点"), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-operation=\"title\""), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-operation=\"task_items\""), true);
+  assert.equal(rendered.html.includes("基线: 旧标题"), true);
+  assert.equal(rendered.html.includes("写入: 新标题"), true);
+  assert.equal(rendered.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(rendered.html.includes("将写入字段: title, due_at, extra_field"), true);
   assert.equal(rendered.html.includes("缺少字段: acceptance_items"), true);
   assert.equal(rendered.html.includes("额外字段: extra_field"), true);
@@ -211,6 +261,10 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Affected lines: line 2"), true);
   assert.equal(english.html.includes("Structured field check"), true);
   assert.equal(english.html.includes("Dry-run: Blocked"), true);
+  assert.equal(english.html.includes("Field-level targets"), true);
+  assert.equal(english.html.includes("Base: 旧标题"), true);
+  assert.equal(english.html.includes("After: 新标题"), true);
+  assert.equal(english.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
   assert.equal(english.html.includes("Fields to write: title, due_at, extra_field"), true);
   assert.equal(english.html.includes("Missing fields: acceptance_items"), true);
   assert.equal(english.html.includes("Extra fields: extra_field"), true);

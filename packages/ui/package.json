@@ -27,6 +27,10 @@
     "./proposal": {
       "types": "./src/proposal/index.ts",
       "import": "./src/proposal/index.ts"
+    },
+    "./replay": {
+      "types": "./src/replay/index.ts",
+      "import": "./src/replay/index.ts"
     }
   },
   "scripts": {

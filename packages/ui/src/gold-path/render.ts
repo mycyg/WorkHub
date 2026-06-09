@@ -14,6 +14,10 @@ import type {
   ReplayTraceVM
 } from "@workhub/contracts";
 import { goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
+import {
+  renderStructuredFieldAuditDetails,
+  renderStructuredFieldOperationDetails
+} from "../structured-field-details.js";
 
 export type GoldPathRenderSurface = "web" | "desktop";
 export type GoldPathRenderOptions = {
@@ -50,6 +54,7 @@ export const goldPathCss = [
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
   ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
+  ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
@@ -190,6 +195,11 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
   const dryRunLine = dryRunStatus
     ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchDryRun"))}: ${escapeHtml(dryRunStatusLabel(locale, dryRunStatus))} · ${escapeHtml(t(locale, "replay.structuredPatchIssues"))}: ${escapeHtml(String(dryRunIssueCount))}</p>`
     : "";
+  const operationDetails = renderStructuredFieldOperationDetails({
+    operations: objectRecord(dryRun?.["patch"])?.["operations"],
+    locale,
+    surface: "replay"
+  });
   return `<section class="wh-structured" data-replay-structured-record-patch="true" data-structured-patch-option-key="${escapeHtml(candidate.option_key)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}" data-structured-patch-dry-run-status="${escapeHtml(dryRunStatus)}" data-structured-patch-dry-run-issues="${escapeHtml(String(dryRunIssueCount))}">
     <div class="wh-structured-head">
       <strong>${escapeHtml(t(locale, "replay.structuredPatchTitle"))}</strong>
@@ -200,7 +210,7 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
       <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
       <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
     </div>
-    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}
+    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}${operationDetails}
   </section>`;
 }
 
@@ -532,6 +542,11 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
       return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${decisions}</article>`;
     })
     .join("");
+  const structuredAuditCards = renderStructuredFieldAuditDetails({
+    auditLogs: replay.audit_logs ?? [],
+    locale,
+    surface: "replay"
+  });
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "replay.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "replay.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(replay.run.handoff_md ?? replay.run.outcome_reason ?? t(locale, "replay.empty"))}</p>
@@ -544,7 +559,8 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.decisionTitle"))}</strong><p class="wh-subtle">${mergeTimeline.length}${escapeHtml(t(locale, "replay.decisionUnit"))}</p></article>
     </div>
     ${deliverableCards ? `<h2>${escapeHtml(t(locale, "replay.deliverableTitle"))}</h2><div class="wh-list">${deliverableCards}</div>` : ""}
-    ${mergeDecisionCards ? `<h2>${escapeHtml(t(locale, "replay.decisionTitle"))}</h2><div class="wh-list">${mergeDecisionCards}</div>` : ""}`;
+    ${mergeDecisionCards ? `<h2>${escapeHtml(t(locale, "replay.decisionTitle"))}</h2><div class="wh-list">${mergeDecisionCards}</div>` : ""}
+    ${structuredAuditCards ? `<h2>${escapeHtml(t(locale, "replay.structuredPatchTitle"))}</h2>${structuredAuditCards}` : ""}`;
   return {
     key: "replay",
     route: vm.routes.replay,

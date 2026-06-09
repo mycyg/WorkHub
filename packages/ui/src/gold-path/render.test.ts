@@ -240,11 +240,55 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
                     type: "structured_field_patch_dry_run",
                     status: "blocked",
                     executable: false,
+                    patch: {
+                      type: "structured_field_patch",
+                      target_entity_type: "work_item",
+                      target_entity_id: vm.page_vms.replay.run.work_item_id,
+                      source: "ai_fusion",
+                      operations: [
+                        {
+                          op: "set",
+                          target_entity_type: "work_item",
+                          target_entity_id: vm.page_vms.replay.run.work_item_id,
+                          field: "title",
+                          value_type: "string",
+                          before_value: "旧标题",
+                          current_value: "旧标题",
+                          value: "新标题",
+                          source: "ai_fusion"
+                        },
+                        {
+                          op: "set",
+                          target_entity_type: "work_item",
+                          target_entity_id: vm.page_vms.replay.run.work_item_id,
+                          field: "task_items",
+                          value_type: "json_array",
+                          before_value: [
+                            { id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" }
+                          ],
+                          current_value: [
+                            { id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" }
+                          ],
+                          value: [
+                            { id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" },
+                            { id: "76000000-0000-4000-8000-000000000202", title: "新增风险项", item_type: "risk" }
+                          ],
+                          source: "ai_fusion"
+                        }
+                      ]
+                    },
                     issues: [
                       { severity: "error", code: "missing_declared_field", field: "acceptance_items", message: "missing" },
                       { severity: "error", code: "unknown_field", field: "extra_field", message: "unknown" },
                       { severity: "error", code: "invalid_value_type", field: "due_at", message: "bad date" }
-                    ]
+                    ],
+                    audit_payload: {
+                      target_entity_type: "work_item",
+                      target_entity_id: vm.page_vms.replay.run.work_item_id,
+                      field_count: 2,
+                      operation_fields: ["title", "task_items"],
+                      source: "ai_fusion"
+                    }
                   }
                 }
               },
@@ -263,7 +307,44 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
       ...vm.page_vms,
       replay: {
         ...vm.page_vms.replay,
-        merge_timeline: mergeTimeline
+        merge_timeline: mergeTimeline,
+        audit_logs: [
+          ...(vm.page_vms.replay.audit_logs ?? []),
+          {
+            id: "76000000-0000-4000-8000-000000000231",
+            actor: { actor_kind: "human", actor_user_id: "76000000-0000-4000-8000-000000000014" },
+            entity: { entity_type: "proposal", entity_id: "76000000-0000-4000-8000-000000000012" },
+            action: "proposal.merged",
+            detail_json: {
+              merge_strategy: "field_merge",
+              merge_snapshot_id: "76000000-0000-4000-8000-000000000015",
+              structured_field_count: 2,
+              structured_field_changes: [
+                {
+                  field: "title",
+                  valueType: "string",
+                  baseValue: "旧标题",
+                  beforeValue: "旧标题",
+                  afterValue: "新标题",
+                  mergeDecision: "fast_path"
+                },
+                {
+                  field: "task_items",
+                  valueType: "json_array",
+                  baseValue: [{ id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" }],
+                  beforeValue: [{ id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" }],
+                  afterValue: [
+                    { id: "76000000-0000-4000-8000-000000000201", title: "原始任务项", item_type: "task" },
+                    { id: "76000000-0000-4000-8000-000000000202", title: "新增风险项", item_type: "risk" }
+                  ],
+                  mergeDecision: "fast_path",
+                  itemCount: 2
+                }
+              ]
+            },
+            created_at: "2026-06-05T00:00:00.000Z"
+          }
+        ]
       }
     }
   };
@@ -294,6 +375,14 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("data-structured-patch-dry-run-issues=\"3\""), true);
   assert.equal(zhReplay?.html.includes("结构化字段检查"), true);
   assert.equal(zhReplay?.html.includes("Dry-run: 已阻断"), true);
+  assert.equal(zhReplay?.html.includes("字段级落点"), true);
+  assert.equal(zhReplay?.html.includes("字段写回审计"), true);
+  assert.equal(zhReplay?.html.includes("data-replay-structured-field-operation=\"title\""), true);
+  assert.equal(zhReplay?.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
+  assert.equal(zhReplay?.html.includes("data-replay-structured-field-audit=\"true\""), true);
+  assert.equal(zhReplay?.html.includes("data-replay-structured-field-audit=\"task_items\""), true);
+  assert.equal(zhReplay?.html.includes("写入: 新标题"), true);
+  assert.equal(zhReplay?.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(zhReplay?.html.includes("将写入字段: title, due_at, extra_field"), true);
   assert.equal(zhReplay?.html.includes("缺少字段: acceptance_items"), true);
   assert.equal(zhReplay?.html.includes("额外字段: extra_field"), true);
@@ -312,6 +401,10 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(enReplay?.html.includes("Affected lines: line 2"), true);
   assert.equal(enReplay?.html.includes("Structured field check"), true);
   assert.equal(enReplay?.html.includes("Dry-run: Blocked"), true);
+  assert.equal(enReplay?.html.includes("Field-level targets"), true);
+  assert.equal(enReplay?.html.includes("Field writeback audit"), true);
+  assert.equal(enReplay?.html.includes("After: 新标题"), true);
+  assert.equal(enReplay?.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
   assert.equal(enReplay?.html.includes("Fields to write: title, due_at, extra_field"), true);
   assert.equal(enReplay?.html.includes("Missing fields: acceptance_items"), true);
   assert.equal(enReplay?.html.includes("Extra fields: extra_field"), true);

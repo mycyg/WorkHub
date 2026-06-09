@@ -6,11 +6,13 @@ import { eventTypes, type AgentRunLiveVM, type GoldPathSurfaceVM, type ProposalC
 
 import {
   loadDesktopAgentRunCuuCard,
+  loadDesktopAgentRunReplay,
   loadDesktopAgentRunTrace,
   createDesktopWorkItem,
   createDesktopWorkItemCuuCard,
   desktopCuuCardFromEvent,
   desktopWebviewSurface,
+  renderDesktopAgentRunReplay,
   renderDesktopAgentRunLive,
   loadDesktopIntakeCuuCard,
   loadDesktopProposalConflictCuuCards,
@@ -191,7 +193,7 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       throw new Error("not needed");
     },
     async replayAgentRun() {
-      throw new Error("not needed");
+      return surface.page_vms.replay;
     },
     pages: {
       async attention() {
@@ -474,6 +476,9 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).surface, "desktop");
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
   assert.equal((await renderDesktopProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
+  assert.equal((await loadDesktopAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "Cuu 完成了草稿生成。");
+  assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run")).html.includes("查看 AI 怎么做的"), true);
+  assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run", "en-US")).html.includes("See how AI did it"), true);
   assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 

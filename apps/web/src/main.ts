@@ -6,6 +6,7 @@ import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
+import { renderAgentRunReplay } from "@workhub/ui/replay";
 
 export const webSurface = {
   name: "C-WEB",
@@ -93,6 +94,10 @@ export function loadWebAgentRunTrace(client: WorkHubApiClient, runId: string, af
 
 export function loadWebAgentRunReplay(client: WorkHubApiClient, runId: string) {
   return client.replayAgentRun(runId);
+}
+
+export async function renderWebAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
+  return renderAgentRunReplay(await loadWebAgentRunReplay(client, runId), "web", locale ? { locale } : undefined);
 }
 
 export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
