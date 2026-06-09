@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -36,6 +36,7 @@ import {
 import {
   createLlmMergeFusionCandidateGenerator,
   safelyGenerateMergeFusionCandidates,
+  type MergeFusionContentContext,
   type MergeFusionCandidateGenerator
 } from "./merge-fusion-candidates.js";
 
@@ -222,6 +223,122 @@ function shouldAdoptDriveFile(change: DeliverableChange) {
     && change.target_kind !== "folder"
     && change.change_type !== "deleted"
     && !!change.target_ref.path;
+}
+
+const maxFusionContextChars = 16_000;
+
+async function readFusionTextExcerpt(input: {
+  filePath: string;
+  ref?: string;
+  sha256?: string;
+}) {
+  try {
+    const fileStat = await stat(input.filePath);
+    if (!fileStat.isFile()) {
+      return undefined;
+    }
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(input.filePath));
+    return {
+      text: text.length > maxFusionContextChars ? text.slice(0, maxFusionContextChars) : text,
+      bytes: fileStat.size,
+      truncated: text.length > maxFusionContextChars,
+      ...(input.ref ? { ref: input.ref } : {}),
+      ...(input.sha256 ? { sha256: input.sha256 } : {})
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function changeForMergeConflict(
+  manifest: DeliverableChangeManifest,
+  conflict: { change_id: string; target_key: string }
+) {
+  return manifest.changes.find((change) => change.id === conflict.change_id)
+    ?? manifest.changes.find((change) => {
+      const ref = change.target_ref;
+      if (ref.entity_id) {
+        return `${ref.entity_type}:${ref.entity_id}` === conflict.target_key;
+      }
+      if (ref.path) {
+        return `${ref.entity_type}:${normalizeManifestPath(ref.path)}` === conflict.target_key;
+      }
+      return `${ref.entity_type}:${change.id}` === conflict.target_key;
+    });
+}
+
+async function fusionContentContextsForConflicts(input: {
+  repository: ProposalRepository;
+  proposalId: string;
+  conflicts: Array<{
+    target_key: string;
+    target_kind: string;
+    target_path?: string;
+    change_id: string;
+    incoming_version_before?: string;
+    incoming_sha256_before?: string;
+  }>;
+}) {
+  const mergeContext = await input.repository.findMergeContext(input.proposalId);
+  if (!mergeContext) {
+    return undefined;
+  }
+  const contexts: Record<string, MergeFusionContentContext> = {};
+  for (const conflict of input.conflicts) {
+    if (conflict.target_kind !== "text_doc" && conflict.target_kind !== "spec_doc") {
+      continue;
+    }
+    const change = changeForMergeConflict(mergeContext.diffManifest, conflict);
+    const currentFile = await input.repository.findAcceptedDriveFileForTarget({
+      workItemId: mergeContext.workItemId,
+      targetKey: conflict.target_key
+    });
+    const baseFile = (conflict.incoming_version_before || conflict.incoming_sha256_before)
+      ? await input.repository.findAcceptedDriveFileForTarget({
+          workItemId: mergeContext.workItemId,
+          targetKey: conflict.target_key,
+          ...(conflict.incoming_version_before ? { ref: conflict.incoming_version_before } : {}),
+          ...(conflict.incoming_sha256_before ? { sha256: conflict.incoming_sha256_before } : {})
+        })
+      : null;
+    const current = currentFile?.storagePath
+      ? await readFusionTextExcerpt({
+          filePath: currentFile.storagePath,
+          ...(currentFile.acceptedRef ? { ref: currentFile.acceptedRef } : {}),
+          ...(currentFile.sha256After ? { sha256: currentFile.sha256After } : {})
+        })
+      : undefined;
+    const base = baseFile?.storagePath && baseFile.acceptedChangeId !== currentFile?.acceptedChangeId
+      ? await readFusionTextExcerpt({
+          filePath: baseFile.storagePath,
+          ...(baseFile.acceptedRef ? { ref: baseFile.acceptedRef } : {}),
+          ...(baseFile.sha256After ? { sha256: baseFile.sha256After } : {})
+        })
+      : undefined;
+    let incoming: Awaited<ReturnType<typeof readFusionTextExcerpt>> | undefined;
+    if (mergeContext.workdirRef && change?.target_ref.path) {
+      try {
+        incoming = await readFusionTextExcerpt({
+          filePath: sourcePathForChange(mergeContext.workdirRef, change),
+          ...(change.target_ref.version_after ? { ref: change.target_ref.version_after } : {}),
+          ...(change.target_ref.sha256_after ? { sha256: change.target_ref.sha256_after } : {})
+        });
+      } catch {
+        incoming = undefined;
+      }
+    }
+    if (current || incoming || base) {
+      contexts[conflict.target_key] = {
+        conflict_key: conflict.target_key,
+        target_kind: conflict.target_kind,
+        ...(conflict.target_path ? { target_path: conflict.target_path } : {}),
+        ...(current ? { current } : {}),
+        ...(incoming ? { incoming } : {}),
+        ...(base ? { base } : {})
+      };
+    }
+  }
+  return Object.keys(contexts).length > 0 ? contexts : undefined;
 }
 
 async function adoptDriveFilesForMerge(input: {
@@ -929,6 +1046,13 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const mergedAt = now();
       const mergeConflicts = (await repository.listConflictsByWorkItem(proposal.work_item_id))
         .filter((conflict) => conflict.proposal_id === proposal.id);
+      const contentContexts = mergeConflicts.length > 0
+        ? await fusionContentContextsForConflicts({
+            repository,
+            proposalId: proposal.id,
+            conflicts: mergeConflicts
+          })
+        : undefined;
       const candidateSupplements = mergeConflicts.length > 0
         ? await safelyGenerateMergeFusionCandidates(fusionCandidateGenerator, {
             proposalId: proposal.id,
@@ -936,6 +1060,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
             proposalTitle: proposal.title,
             manifest: proposal.diff_manifest,
             conflicts: mergeConflicts,
+            ...(contentContexts ? { contentContexts } : {}),
             actor: input.actor
           })
         : [];

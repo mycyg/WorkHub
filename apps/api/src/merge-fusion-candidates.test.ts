@@ -40,7 +40,7 @@ function conflict(targetKind: ProposalMergeConflict["target_kind"] = "text_doc")
   };
 }
 
-function fakeRegistry(responseText: string) {
+function fakeRegistry(responseText: string, onUserContent?: (content: string) => void) {
   return {
     isConfigured() {
       return true;
@@ -48,7 +48,8 @@ function fakeRegistry(responseText: string) {
     get() {
       return {
         messages: {
-          async create() {
+          async create(input: { messages: Array<{ content: string }> }) {
+            onUserContent?.(input.messages[0]?.content ?? "");
             return {
               id: "msg-fusion",
               content: [{ type: "text", text: responseText }],
@@ -149,4 +150,69 @@ test("LLM merge mediator skips unsupported conflict families before calling the 
 
   assert.equal(result.length, 0);
   assert.equal(called, false);
+});
+
+test("LLM merge mediator prompt includes real text content contexts", async () => {
+  let prompt = "";
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({
+      candidates: [
+        {
+          conflict_key: "delivery:/outputs/report.md",
+          rationale_md: "把正式版结论和来稿证据合并成同一段。",
+          merged_value: { proposed_resolution_md: "融合后的正文" },
+          recommend: true
+        }
+      ]
+    }), (content) => {
+      prompt = content;
+    })
+  });
+
+  await generator.generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [conflict()],
+    contentContexts: {
+      "delivery:/outputs/report.md": {
+        conflict_key: "delivery:/outputs/report.md",
+        target_kind: "text_doc",
+        target_path: "/outputs/report.md",
+        current: {
+          text: "正式版已有结论。",
+          bytes: 24,
+          truncated: false,
+          ref: "v2",
+          sha256: "a".repeat(64)
+        },
+        incoming: {
+          text: "这次新增证据。",
+          bytes: 21,
+          truncated: false,
+          sha256: "b".repeat(64)
+        },
+        base: {
+          text: "分叉时的旧结论。",
+          bytes: 24,
+          truncated: false,
+          ref: "v1"
+        }
+      }
+    }
+  });
+
+  const parsed = JSON.parse(prompt) as {
+    conflicts: Array<{
+      content_context?: {
+        current?: { text?: string };
+        incoming?: { text?: string };
+        base?: { text?: string };
+      };
+    }>;
+  };
+  assert.equal(parsed.conflicts[0]?.content_context?.current?.text, "正式版已有结论。");
+  assert.equal(parsed.conflicts[0]?.content_context?.incoming?.text, "这次新增证据。");
+  assert.equal(parsed.conflicts[0]?.content_context?.base?.text, "分叉时的旧结论。");
 });

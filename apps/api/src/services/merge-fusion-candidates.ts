@@ -30,11 +30,29 @@ export type MergeFusionCandidateGeneratorInput = {
   proposalTitle: string;
   manifest: DeliverableChangeManifest;
   conflicts: ProposalMergeConflict[];
+  contentContexts?: Record<string, MergeFusionContentContext>;
   actor?: ProposalActor;
 };
 
 export type MergeFusionCandidateGenerator = {
   generate: (input: MergeFusionCandidateGeneratorInput) => Promise<MergeProposalCandidateSupplement[]>;
+};
+
+export type MergeFusionTextExcerpt = {
+  text: string;
+  bytes: number;
+  truncated: boolean;
+  ref?: string;
+  sha256?: string;
+};
+
+export type MergeFusionContentContext = {
+  conflict_key: string;
+  target_kind: string;
+  target_path?: string;
+  current?: MergeFusionTextExcerpt;
+  incoming?: MergeFusionTextExcerpt;
+  base?: MergeFusionTextExcerpt;
 };
 
 function textFromContent(content: unknown[]) {
@@ -101,7 +119,8 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
       sha256_before: conflict.incoming_sha256_before,
       sha256_after: conflict.incoming_sha256_after
     },
-    change: changeSummary(input.manifest, conflict)
+    change: changeSummary(input.manifest, conflict),
+    content_context: input.contentContexts?.[conflict.target_key]
   }));
 
   return JSON.stringify({
@@ -111,6 +130,7 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
       "Only create candidates for structured_record, text_doc, or spec_doc conflicts.",
       "Do not include git conflict markers.",
       "Do not decide for the user; provide rationale and a candidate value only.",
+      "Use content_context.current, content_context.incoming, and content_context.base when present.",
       "If content is insufficient, return no candidate for that conflict."
     ],
     output_schema: {

@@ -128,31 +128,42 @@ function deterministicFusionGenerator(): MergeFusionCandidateGenerator {
     async generate(input) {
       return input.conflicts
         .filter((conflict) => conflict.target_kind === "text_doc" || conflict.target_kind === "spec_doc")
-        .map((conflict) => ({
-          conflictKey: conflict.target_key,
-          recommendedOptionKey: "ai_fusion",
-          candidates: [
-            {
-              option_key: "ai_fusion",
-              target_kind: conflict.target_kind,
-              rationale_md: "PG smoke AI 融合稿同时保留正式版与这次版本的关键信息。",
-              source: "llm",
-              quality_gate: {
-                status: "passed",
-                checks: ["pg_smoke_deterministic_generator", "no_git_conflict_markers"]
-              },
-              merged_value: {
-                proposed_resolution_md: [
-                  "# R1.17 one-click AI fusion",
-                  "",
-                  "PG smoke fused current accepted content with the incoming proposal.",
-                  "",
-                  `Conflict key: ${conflict.target_key}`
-                ].join("\n")
+        .map((conflict) => {
+          const context = input.contentContexts?.[conflict.target_key];
+          if (!context?.current?.text || !context.incoming?.text) {
+            throw new Error(`Expected R1.20 fusion content context for ${conflict.target_key}`);
+          }
+          return {
+            conflictKey: conflict.target_key,
+            recommendedOptionKey: "ai_fusion",
+            candidates: [
+              {
+                option_key: "ai_fusion",
+                target_kind: conflict.target_kind,
+                rationale_md: "PG smoke AI 融合稿同时保留正式版与这次版本的关键信息。",
+                source: "llm",
+                quality_gate: {
+                  status: "passed",
+                  checks: [
+                    "pg_smoke_deterministic_generator",
+                    "current_text_context",
+                    "incoming_text_context",
+                    "no_git_conflict_markers"
+                  ]
+                },
+                merged_value: {
+                  proposed_resolution_md: [
+                    "# R1.17 one-click AI fusion",
+                    "",
+                    "PG smoke fused current accepted content with the incoming proposal.",
+                    "",
+                    `Conflict key: ${conflict.target_key}`
+                  ].join("\n")
+                }
               }
-            }
-          ]
-        }));
+            ]
+          };
+        });
     }
   };
 }

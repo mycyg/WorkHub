@@ -248,6 +248,10 @@ class MemoryProposalRepository implements ProposalRepository {
     };
   }
 
+  async findAcceptedDriveFileForTarget() {
+    return null;
+  }
+
   async findById(proposalId: string) {
     return this.rows.get(proposalId) ?? null;
   }

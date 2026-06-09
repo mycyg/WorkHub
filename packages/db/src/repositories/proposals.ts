@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 
 import type { ActorKind, DeliverableChange, DeliverableChangeManifest } from "@workhub/contracts";
 
@@ -75,6 +75,16 @@ export type ProposalAdoptedDriveFileInput = {
   storagePath: string;
   sizeBytes: number;
   sha256?: string;
+  mime?: string;
+};
+
+export type ProposalAcceptedDriveFile = {
+  acceptedChangeId: string;
+  targetKey: string;
+  acceptedRef?: string;
+  sha256After?: string;
+  driveVersionId?: string;
+  storagePath?: string;
   mime?: string;
 };
 
@@ -206,6 +216,12 @@ export class ProposalRepositoryUnsupportedMergeProposalApplyError extends Error 
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
+  findAcceptedDriveFileForTarget: (input: {
+    workItemId: string;
+    targetKey: string;
+    ref?: string;
+    sha256?: string;
+  }) => Promise<ProposalAcceptedDriveFile | null>;
   findMergeProposalCandidateForApply: (
     mergeProposalId: string
   ) => Promise<MergeProposalCandidateApplicationContext | null>;
@@ -336,6 +352,25 @@ async function readCurrentAccepted(
     .orderBy(desc(acceptedDeliverableChanges.createdAt))
     .limit(1);
   return rows[0] ?? null;
+}
+
+function normalizeShaRef(value: string | undefined) {
+  return value?.replace(/^sha256:/iu, "");
+}
+
+function acceptedDriveFileFromRow(row: {
+  accepted: AcceptedDeliverableChangeRow;
+  driveVersion: typeof projectDriveVersions.$inferSelect | null;
+}): ProposalAcceptedDriveFile {
+  return {
+    acceptedChangeId: row.accepted.id,
+    targetKey: row.accepted.targetKey,
+    ...(row.accepted.acceptedRef ? { acceptedRef: row.accepted.acceptedRef } : {}),
+    ...(row.accepted.sha256After ? { sha256After: row.accepted.sha256After } : {}),
+    ...(row.driveVersion?.id ? { driveVersionId: row.driveVersion.id } : {}),
+    ...(row.driveVersion?.storagePath ? { storagePath: row.driveVersion.storagePath } : {}),
+    ...(row.driveVersion?.mime ? { mime: row.driveVersion.mime } : {})
+  };
 }
 
 async function recordMergeAttempt(
@@ -761,6 +796,33 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         .where(eq(proposals.id, proposalId))
         .limit(1);
       return rows[0] ?? null;
+    },
+
+    async findAcceptedDriveFileForTarget(input) {
+      const refSha = normalizeShaRef(input.ref);
+      const sha = normalizeShaRef(input.sha256);
+      const refConditions = [
+        ...(input.ref ? [eq(acceptedDeliverableChanges.acceptedRef, input.ref)] : []),
+        ...(refSha ? [eq(acceptedDeliverableChanges.sha256After, refSha)] : []),
+        ...(sha ? [eq(acceptedDeliverableChanges.sha256After, sha)] : [])
+      ];
+      const conditions = [
+        eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+        eq(acceptedDeliverableChanges.targetKey, input.targetKey),
+        refConditions.length > 0 ? or(...refConditions) : isNull(acceptedDeliverableChanges.supersededAt)
+      ];
+      const rows = await db
+        .select({
+          accepted: acceptedDeliverableChanges,
+          driveVersion: projectDriveVersions
+        })
+        .from(acceptedDeliverableChanges)
+        .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+        .where(and(...conditions))
+        .orderBy(desc(acceptedDeliverableChanges.acceptedVersion), desc(acceptedDeliverableChanges.createdAt))
+        .limit(1);
+      const row = rows[0];
+      return row ? acceptedDriveFileFromRow(row) : null;
     },
 
     async findMergeProposalCandidateForApply(mergeProposalId) {
