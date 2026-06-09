@@ -852,14 +852,14 @@ async function main() {
         }>;
       };
     };
-    const oneClickTimeline = replayAfterOneClickBody.data.merge_timeline?.find((attempt) =>
+    const oneClickTimelines = replayAfterOneClickBody.data.merge_timeline?.filter((attempt) =>
       attempt.proposal_id === oneClickProposal.id
-    );
+    ) ?? [];
     if (
-      !oneClickTimeline?.decisions.some((decision) =>
+      !oneClickTimelines.some((attempt) => attempt.decisions.some((decision) =>
         decision.chosen_option_key === "ai_fusion"
         && decision.candidates.some((candidate) => candidate.option_key === "ai_fusion" && candidate.chosen)
-      )
+      ))
     ) {
       throw new Error("Expected replay timeline to show the chosen AI fusion candidate after one-click apply.");
     }
@@ -929,7 +929,7 @@ async function main() {
         apply_status: oneClickApply.status,
         original_row_chosen_option: originalOneClickMergeProposal.chosenOptionKey,
         accepted_drive_version_id: oneClickAccepted.driveVersionId,
-        replay_timeline_found: !!oneClickTimeline
+        replay_timeline_count: oneClickTimelines.length
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
