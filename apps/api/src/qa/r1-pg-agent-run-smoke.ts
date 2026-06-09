@@ -10,11 +10,13 @@ import {
   agentRuns,
   acceptedDeliverableChanges,
   branches,
+  budgetPolicies,
   costLedgerEntries,
   createAgentRunRepository,
   createAuditLogRepository,
   createClientDeviceRepository,
   createDatabaseClient,
+  createDbBudgetPolicyStore,
   createDbCostLedgerStore,
   createProposalRepository,
   createWorkItemRepository,
@@ -206,6 +208,7 @@ async function main() {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"
     });
+    const policyStore = createDbBudgetPolicyStore(db);
     const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
@@ -215,6 +218,8 @@ async function main() {
       snapshotRoot,
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
+      policyStore,
+      ledgerStore,
       persistence,
       proposals: proposalService,
       confidence: false,
@@ -233,10 +238,11 @@ async function main() {
       queue,
       proposals: proposalService,
       workItems: workItemService,
+      policyStore,
       ledgerStore,
       allowUnauthenticatedGoldPath: false
     }));
-    app.route("/api/cost", createCostRoutes({ auth, ledgerStore }));
+    app.route("/api/cost", createCostRoutes({ auth, policyStore, ledgerStore, auditLogs: auditRepo }));
     app.route("/api", createAgentRunRoutes({
       auth,
       queue,
@@ -332,6 +338,82 @@ async function main() {
     if (executed.status !== "succeeded") {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
     }
+    const policyListBefore = await app.request("/api/cost/policies", { headers });
+    if (policyListBefore.status !== 200) {
+      throw new Error(`Expected cost policy list 200, got ${policyListBefore.status}: ${await policyListBefore.text()}`);
+    }
+    const policyListBeforeBody = await policyListBefore.json() as {
+      data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
+    };
+    if (policyListBeforeBody.data.length !== 4) {
+      throw new Error(`Expected 4 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    }
+    const userPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-user-day-v0");
+    if (!userPolicyBefore || userPolicyBefore.scope_kind !== "user") {
+      throw new Error("Expected pcost-user-day-v0 to be present before policy update.");
+    }
+    const policyUpdate = await app.request("/api/cost/policies/user/pcost-user-day-v0", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ max_tokens: 250000, max_cost_cny: "12.5", on_warning: "notify" })
+    });
+    if (policyUpdate.status !== 200) {
+      throw new Error(`Expected cost policy update 200, got ${policyUpdate.status}: ${await policyUpdate.text()}`);
+    }
+    const policyUpdateBody = await policyUpdate.json() as {
+      data: { id: string; max_tokens: number; max_cost_cny: string; version: number };
+    };
+    if (
+      policyUpdateBody.data.id !== "pcost-user-day-v0"
+      || policyUpdateBody.data.max_tokens !== 250000
+      || policyUpdateBody.data.max_cost_cny !== "12.5"
+      || policyUpdateBody.data.version !== userPolicyBefore.version + 1
+    ) {
+      throw new Error(`Expected persisted policy update response, got ${JSON.stringify(policyUpdateBody.data)}`);
+    }
+    const policyListAfter = await app.request("/api/cost/policies", { headers });
+    if (policyListAfter.status !== 200) {
+      throw new Error(`Expected cost policy readback 200, got ${policyListAfter.status}: ${await policyListAfter.text()}`);
+    }
+    const policyListAfterBody = await policyListAfter.json() as {
+      data: { id: string; max_tokens: number; max_cost_cny: string; version: number }[];
+    };
+    const userPolicyAfter = policyListAfterBody.data.find((policy) => policy.id === "pcost-user-day-v0");
+    if (
+      !userPolicyAfter
+      || userPolicyAfter.max_tokens !== 250000
+      || userPolicyAfter.max_cost_cny !== "12.5"
+      || userPolicyAfter.version !== policyUpdateBody.data.version
+    ) {
+      throw new Error(`Expected cost policy readback to use DB override, got ${JSON.stringify(userPolicyAfter)}`);
+    }
+    const [budgetPolicyRows, budgetPolicyAuditRows] = await Promise.all([
+      db.select().from(budgetPolicies).then((rows) => rows.filter((row) => row.id === "pcost-user-day-v0")),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) =>
+          row.entityType === "budget_policy"
+          && row.entityId === "pcost-user-day-v0"
+          && row.action === "budget_policy.updated"
+        )
+      )
+    ]);
+    if (
+      budgetPolicyRows.length !== 1
+      || budgetPolicyRows[0]?.maxTokens !== 250000
+      || budgetPolicyRows[0]?.version !== policyUpdateBody.data.version
+      || budgetPolicyRows[0]?.workspaceId !== settings.auth.defaultWorkspaceId
+    ) {
+      throw new Error(`Expected one persisted budget_policies override, got ${JSON.stringify(budgetPolicyRows)}`);
+    }
+    if (
+      !budgetPolicyAuditRows.some((row) =>
+        row.detailJson["version_before"] === userPolicyBefore.version
+        && row.detailJson["version_after"] === policyUpdateBody.data.version
+        && (row.detailJson["patch"] as Record<string, unknown> | undefined)?.["max_tokens"] === 250000
+      )
+    ) {
+      throw new Error("Expected budget_policy.updated audit log with before/after versions.");
+    }
     const costUsageBefore = await app.request("/api/cost/usage", { headers });
     const costPageBefore = await app.request("/api/pages/cost", { headers });
     if (costUsageBefore.status !== 200) {
@@ -341,9 +423,19 @@ async function main() {
       throw new Error(`Expected pre-record cost page 200, got ${costPageBefore.status}: ${await costPageBefore.text()}`);
     }
     const costUsageBeforeBody = await costUsageBefore.json() as {
-      data: { me: { token_in: number }; team?: { token_in: number } };
+      data: { me: { token_in: number; max_tokens: number }; team?: { token_in: number } };
     };
-    const costPageBeforeBody = await costPageBefore.json() as { data: { total_cost_cny: string; token_in: number } };
+    const costPageBeforeBody = await costPageBefore.json() as {
+      data: { total_cost_cny: string; token_in: number; budget: { policy_id: string; max_tokens: number }[] };
+    };
+    if (
+      costUsageBeforeBody.data.me.max_tokens !== 250000
+      || !costPageBeforeBody.data.budget.some((usage) =>
+        usage.policy_id === "pcost-user-day-v0" && usage.max_tokens === 250000
+      )
+    ) {
+      throw new Error("Expected cost usage and cost page to read the persisted user budget override.");
+    }
     await ledgerStore.recordUsage(buildUsageRecord({
       provider: "deepseek",
       model: "deepseek-v4-flash",
@@ -897,6 +989,8 @@ async function main() {
         audit_logs: auditRows.length,
         accepted_restore_audit_logs: acceptedRestoreAuditRows.length,
         proposal_merge_audit_logs: proposalAuditRows.length,
+        budget_policies: budgetPolicyRows.length,
+        budget_policy_audit_logs: budgetPolicyAuditRows.length,
         usage_records: usageRecordRows.length,
         cost_ledger_entries: costLedgerRows.length
       },
@@ -908,7 +1002,9 @@ async function main() {
         usage_me_token_delta: userTokenDelta,
         usage_team_token_delta: teamTokenDelta,
         page_cost_cny_delta: pageCostDelta.toFixed(3),
-        page_token_delta: pageTokenDelta
+        page_token_delta: pageTokenDelta,
+        user_policy_version: policyUpdateBody.data.version,
+        user_policy_max_tokens: costUsageBeforeBody.data.me.max_tokens
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

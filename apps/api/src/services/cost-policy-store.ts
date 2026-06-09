@@ -1,7 +1,27 @@
-import { createMemoryBudgetPolicyStore, type BudgetPolicyStore } from "@workhub/cost";
+import {
+  createAuditLogRepository,
+  createDatabaseClient,
+  createDbBudgetPolicyStore,
+  type AuditLogRepository,
+  type WorkHubDatabaseClient
+} from "@workhub/db";
+import type { BudgetPolicyStore } from "@workhub/cost";
 
-const defaultBudgetPolicyStore = createMemoryBudgetPolicyStore();
+let defaultDbClient: WorkHubDatabaseClient | undefined;
+let defaultBudgetPolicyStore: BudgetPolicyStore | undefined;
+let defaultBudgetPolicyAuditLogs: AuditLogRepository | undefined;
+
+function getDefaultDbClient() {
+  defaultDbClient ??= createDatabaseClient();
+  return defaultDbClient;
+}
 
 export function getDefaultBudgetPolicyStore(): BudgetPolicyStore {
+  defaultBudgetPolicyStore ??= createDbBudgetPolicyStore(getDefaultDbClient().db);
   return defaultBudgetPolicyStore;
+}
+
+export function getDefaultBudgetPolicyAuditLogRepository(): AuditLogRepository {
+  defaultBudgetPolicyAuditLogs ??= createAuditLogRepository(getDefaultDbClient().db);
+  return defaultBudgetPolicyAuditLogs;
 }

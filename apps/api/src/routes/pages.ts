@@ -125,7 +125,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         userId: c.var.currentUser.id,
         teamId
       },
-      policies: policyStore.listPolicies(settings),
+      policies: await policyStore.listPolicies(settings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     const data = buildCostDashboardPage({

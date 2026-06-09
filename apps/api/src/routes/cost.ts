@@ -16,6 +16,7 @@ import {
   type BudgetPolicyStore,
   type CostLedgerStore
 } from "@workhub/cost";
+import type { CreateAuditLogInput } from "@workhub/db";
 
 import {
   createCurrentUserMiddleware,
@@ -25,12 +26,20 @@ import {
 } from "../middleware/auth.js";
 import { buildCostSummary } from "../pages/cost.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
-import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
+import {
+  getDefaultBudgetPolicyAuditLogRepository,
+  getDefaultBudgetPolicyStore
+} from "../services/cost-policy-store.js";
+
+type BudgetPolicyAuditWriter = {
+  createAuditLog: (input: CreateAuditLogInput) => Promise<unknown> | unknown;
+};
 
 export type CostRoutesDependencies = {
   auth?: AuthDependencySource;
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
+  auditLogs?: BudgetPolicyAuditWriter;
 };
 
 const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
@@ -41,19 +50,23 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
 
-  routes.get("/policies", createCurrentUserMiddleware(authSource), (c) => {
+  routes.get("/policies", createCurrentUserMiddleware(authSource), async (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
-    const data = policyStore.listPolicies(settings).map(toApiBudgetPolicy);
+    const data = (await policyStore.listPolicies(settings)).map(toApiBudgetPolicy);
     return c.json({ ok: true, data });
   });
 
   routes.put("/policies/:scope/:id", createCurrentUserMiddleware(authSource), async (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
     const scopeKind = scopeKindSchema.parse(c.req.param("scope"));
+    const policyId = c.req.param("id");
     const payload = budgetPolicyUpdateSchema.parse(await c.req.json());
+    const before = (await policyStore.listPolicies(settings)).find((candidate) =>
+      candidate.scopeKind === scopeKind && candidate.id === policyId
+    );
     let policy: CostBudgetPolicy | undefined;
     try {
-      policy = policyStore.updatePolicy(settings, scopeKind, c.req.param("id"), toCostBudgetPolicyPatch(payload));
+      policy = await policyStore.updatePolicy(settings, scopeKind, policyId, toCostBudgetPolicyPatch(payload));
     } catch (error) {
       throw new HTTPException(422, {
         message: error instanceof Error ? error.message : "Budget policy update is invalid."
@@ -62,7 +75,27 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
     if (!policy) {
       throw new HTTPException(404, { message: "Budget policy was not found." });
     }
-    return c.json({ ok: true, data: toApiBudgetPolicy(policy) });
+    const data = toApiBudgetPolicy(policy);
+    await (deps.auditLogs ?? getDefaultBudgetPolicyAuditLogRepository()).createAuditLog({
+      orgId: settings.auth.defaultOrgId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      actorKind: "human",
+      actorUserId: c.var.currentUser.id,
+      actorNickname: c.var.currentUser.nickname,
+      entityType: "budget_policy",
+      entityId: policy.id,
+      action: "budget_policy.updated",
+      detailJson: {
+        scope_kind: scopeKind,
+        policy_id: policy.id,
+        patch: payload,
+        version_before: before?.version,
+        version_after: policy.version,
+        ...(before ? { before: toApiBudgetPolicy(before) } : {}),
+        after: data
+      }
+    });
+    return c.json({ ok: true, data });
   });
 
   routes.get("/usage", createCurrentUserMiddleware(authSource), async (c) => {
@@ -73,7 +106,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
         userId: c.var.currentUser.id,
         teamId
       },
-      policies: policyStore.listPolicies(settings),
+      policies: await policyStore.listPolicies(settings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     const data = buildCostSummary({

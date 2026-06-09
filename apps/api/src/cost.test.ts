@@ -17,6 +17,7 @@ import { loadSettings, type Settings } from "@workhub/config";
 import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore } from "@workhub/cost";
 import type {
   ClientDeviceAuthRow,
+  CreateAuditLogInput,
   ClientDeviceRepository,
   UserAuthRow,
   UserRepository
@@ -181,11 +182,28 @@ async function cookie(runtimeSettings: Settings, cookieToken: string) {
   return generateSignedCookie(COOKIE_NAME, cookieToken, runtimeSettings.auth.cookieSecret);
 }
 
+function captureAuditLogs() {
+  const logs: CreateAuditLogInput[] = [];
+  return {
+    logs,
+    writer: {
+      async createAuditLog(input: CreateAuditLogInput) {
+        logs.push(input);
+      }
+    }
+  };
+}
+
 test("cost policy routes expose configurable P-COST defaults to admins", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
   const policyStore = createMemoryBudgetPolicyStore();
-  app.route("/api/cost", createCostRoutes({ auth: authDeps(runtimeSettings), policyStore }));
+  const auditLogs = captureAuditLogs();
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore,
+    auditLogs: auditLogs.writer
+  }));
   const headers = { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") };
 
   const list = await app.request("/api/cost/policies", { headers });
@@ -211,6 +229,18 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
   const readBack = await app.request("/api/cost/policies", { headers });
   const readBackBody = await readBack.json() as { ok: true; data: { id: string; max_cost_cny: string }[] };
   assert.equal(readBackBody.data.find((policy) => policy.id === "pcost-user-day-v0")?.max_cost_cny, "12.5");
+  assert.equal(auditLogs.logs.length, 1);
+  assert.equal(auditLogs.logs[0]?.action, "budget_policy.updated");
+  assert.equal(auditLogs.logs[0]?.entityType, "budget_policy");
+  assert.equal(auditLogs.logs[0]?.entityId, "pcost-user-day-v0");
+  assert.equal(auditLogs.logs[0]?.actorUserId, adminId);
+  assert.equal(auditLogs.logs[0]?.detailJson?.["version_before"], 1);
+  assert.equal(auditLogs.logs[0]?.detailJson?.["version_after"], 2);
+  assert.deepEqual(auditLogs.logs[0]?.detailJson?.["patch"], {
+    max_tokens: 250000,
+    max_cost_cny: "12.5",
+    on_warning: "notify"
+  });
 });
 
 test("cost policy routes fail closed for non-admins and invalid policy updates", async () => {

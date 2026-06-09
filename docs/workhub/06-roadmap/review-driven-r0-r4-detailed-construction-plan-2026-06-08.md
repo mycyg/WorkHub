@@ -112,6 +112,7 @@ R0 退出门：
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
 | Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回和多冲突逐项选择工作台 |
+| P-COST DB-backed | `CostLedgerStore` 与 `BudgetPolicyStore` 已默认 DB-backed；`budget_policies` 保存 policy override；`PUT /api/cost/policies/:scope/:id` 写 `budget_policy.updated` 审计；R1.18 已把真实 PG policy override 纳入 smoke | 仍未发出 `usage.recorded`、`budget.warning`、`budget.exhausted` 事件；Cuu budget bubble 仍属后续 |
 
 ### R1 必做顺序
 
@@ -137,6 +138,7 @@ R0 退出门：
    - **2026-06-09 追加切片**：ReplayTraceVM 已返回 `accepted_deliverables[]`，`/api/agent-runs/:id/replay` 可在 restart 后展示正式交付物、下载与文本预览入口。
    - **2026-06-09 R1.13 追加切片**：ReplayTraceVM 已返回 `merge_timeline[]`，由 `merge_attempts + merge_proposals` 组装，展示当时的冲突目标、候选方案、推荐项与最终选择。
    - **2026-06-09 R1.17 追加验收**：`qa:r1-pg-smoke` 已覆盖 one-click `ai_fusion`：生成 conflict、返回 `merge_proposal_id`、直接 `POST /api/merge-proposals/{id}/apply`、断言原 row `chosen_*`、accepted ledger、ProjectDriveVersion、audit 与 replay timeline；GitHub Actions 新增 `r1-pg-smoke` job 用 Postgres service 执行。
+   - **2026-06-09 R1.18 追加验收**：`qa:r1-pg-smoke` 已覆盖 `budget_policies` override、`budget_policy.updated` audit、`/api/cost/usage` 与 `/api/pages/cost` 读取 DB policy。
    - 后续已补：R1.8 已接 Drive 指针恢复入口，可把正式交付物还原到上一版并审计。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
@@ -181,7 +183,7 @@ R0 退出门：
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
 - 后续已补：正式交付物读取面最小切片；WorkItem page 与 AgentRun replay 返回 `accepted_deliverables`，并提供下载与文本预览 API。
 - 后续已补：正式交付物最小还原入口；同一路径第二版采纳后可 `POST .../restore` 回到上一版 Drive version，并写 `ProjectDriveOperation` 与审计。
-- 未完成：BudgetPolicy 持久化与审计、LLM 冲突调解候选、完整 approval policy routing 仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口。
+- 未完成：完整 approval policy routing、`ai_fusion` v2 字段级/text diff3 原位写回、多冲突工作台仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口，R1.18 已关闭“BudgetPolicy 只在内存 override、无审计”的缺口。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -740,6 +742,48 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - 真实 PG smoke 已新增 R1.17 one-click 路径：生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay；CI 通过 `.github/workflows/verify.yml` 的 `r1-pg-smoke` job 持续执行。
 - React route 产品化与 Playwright 截图尚未补；当前主窗路径仍由 TS renderer/browser shell 覆盖。
 
+### R1.18 BudgetPolicy PG persistence + audit（2026-06-09）
+
+本切片关闭“P-COST policy 只能内存 override、管理员调参不可重启保留、没有审计证据”的缺口。范围刻意收窄：只落 BudgetPolicy override 持久化、成功 PUT 审计、cost usage/page 读取同一 DB policy；不在本切片里做预算事件推送或 Cuu budget bubble。
+
+已落代码：
+
+- `packages/db/src/schema/core.ts`：新增 `budget_policies` 表，字段覆盖 `scope_kind`、`period`、`max_tokens`、`max_cost_cny`、阈值、动作、`model_route_hint`、`enabled`、`version`、租户字段与更新人字段。
+- `packages/db/migrations/0008_panoramic_dark_phoenix.sql`：创建 `budget_policies` 及 scope/enabled/workspace/updated_by 索引。
+- `packages/db/src/repositories/budget-policies.ts`：实现 DB-backed `BudgetPolicyStore`。读取时把 `budget_policies` override 覆盖到配置 seed；更新时用 `applyBudgetPolicyPatch()` 递增 version，并 upsert 到 DB。
+- `apps/api/src/services/cost-policy-store.ts`：生产默认 `BudgetPolicyStore` 切 DB-backed；同时暴露默认 audit repo，复用同一个 DB client。
+- `apps/api/src/routes/cost.ts`：`GET /api/cost/policies`、`GET /api/cost/usage` 支持 async store；`PUT /api/cost/policies/:scope/:id` 成功后写 `AuditLog(action="budget_policy.updated")`，detail 记录 patch、before/after 与版本。
+- `apps/api/src/workers/agent-runner.ts`：`createInMemoryAgentRunQueue()` 默认保持内存 policy store，避免单测误连 DB；`getDefaultAgentRunQueue()` 显式注入 DB-backed policy store，生产队列读真实 policy。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts`：真实 PG smoke 新增 policy list、PUT、readback、`budget_policies` 行、`budget_policy.updated` audit、cost usage/page policy override 断言。
+
+当前契约：
+
+| 场景 | R1.18 行为 |
+|---|---|
+| 首次读取 policy | 返回配置 seed 的四条 v0 默认 policy，不要求 DB 预填 |
+| 更新默认 policy | upsert 一条 `budget_policies` override，`version = before.version + 1` |
+| 重启后读取 | DB override 覆盖配置 seed；未 override 的 policy 仍由 seed 补齐 |
+| 成功 PUT | 写 `budget_policy.updated` audit，带 `version_before/version_after/patch/before/after` |
+| 单元测试队列 | `createInMemoryAgentRunQueue()` 不隐式连接 DB，必须显式注入才读 DB |
+| 生产默认队列/路由 | `getDefaultAgentRunQueue()`、`createCostRoutes()` 默认读 DB-backed policy store |
+
+验证：
+
+- `corepack pnpm --filter @workhub/db typecheck` 通过。
+- `corepack pnpm --filter @workhub/cost typecheck` 通过。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/db test` 通过，14/14。
+- `corepack pnpm --filter @workhub/api test` 通过，71/71。
+- `corepack pnpm verify` 通过。
+- `corepack pnpm db:check` 通过。
+- 本机 `corepack pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL 服务失败于 `ECONNREFUSED 127.0.0.1:5432`；该项由 GitHub Actions `r1-pg-smoke` Postgres service 作为最终验收。
+
+仍未完成：
+
+- `usage.recorded`、`budget.warning`、`budget.exhausted` 事件尚未发出。
+- Cuu budget bubble 仍未接真实 BudgetNotice。
+- BudgetPolicy 更新目前由 route 顺序写 DB + audit，尚未做同事务封装；若后续要把 audit 作为强事务证据，需要把 update + audit 下沉到 DB transaction service。
+
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
 已落代码切片：
@@ -751,17 +795,17 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `apps/api/src/pages/gold-path.ts` 删除未使用的 `isP05*` id matcher，减少误接回生产 route 的风险。
 - `apps/api/src/services/work-items.ts` 新增 R1 最小真实 service；`packages/db/src/repositories/work-items.ts` 新增 DB repository；`apps/api/src/qa/r1-pg-agent-run-smoke.ts` 将 intake/knowledge/page 纳入 smoke。
 - `apps/api/src/workers/agent-runner.ts` 串行化同一 run 的 trace persistence，避免 background trace 与 final trace 在真实 PG 下抢写 `agent_steps`。
-- `packages/db/src/repositories/cost-ledger.ts` 新增 DB-backed `CostLedgerStore`；`apps/api/src/services/cost-ledger-store.ts` 的生产默认 store 已切 DB，`createInMemoryAgentRunQueue()` 仍默认内存 ledger 以保留单元测试隔离。
-- `packages/db/migrations/0003_amused_raider.sql` 新增 `usage_records` 与 `cost_ledger_entries`，幂等键为 `usage_record_id + scope_kind + scope_id + period_bucket`。
+- `packages/db/src/repositories/cost-ledger.ts` 新增 DB-backed `CostLedgerStore`；`packages/db/src/repositories/budget-policies.ts` 新增 DB-backed `BudgetPolicyStore`；生产默认 cost ledger/policy store 已切 DB，`createInMemoryAgentRunQueue()` 仍默认内存 ledger/policy 以保留单元测试隔离。
+- `packages/db/migrations/0003_amused_raider.sql` 新增 `usage_records` 与 `cost_ledger_entries`，幂等键为 `usage_record_id + scope_kind + scope_id + period_bucket`；`0008_panoramic_dark_phoenix.sql` 新增 `budget_policies`。
 
 验证：
 
 - `rg -n "isP05|p05GoldPathIds|getP05GoldPathFixture|allowP05ReplayFixture|P0\\.5" apps/api/src/routes apps/api/src/openapi.ts -S` 只剩 `/api/pages/gold-path` 的 OpenAPI 摘要。
 - `pnpm --filter @workhub/api typecheck` 通过。
-- `pnpm --filter @workhub/api test` 通过，当前 66/66；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route。
-- `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 10/10；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
+- `pnpm --filter @workhub/api test` 通过，当前 71/71；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route 与 BudgetPolicy audit。
+- `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 14/14；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、AI 冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1/R2 全部完成，因为 `ai_fusion` v2 字段级/text diff3、多冲突工作台、完整 approval policy routing、PG claim/多 worker 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

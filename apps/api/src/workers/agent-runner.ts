@@ -15,6 +15,7 @@ import {
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import { eventTypes, type CuuState, type WorkItemMode } from "@workhub/contracts";
 import {
+  createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
   decideRunBudget,
   type BudgetDecision,
@@ -199,7 +200,7 @@ export function createInMemoryAgentRunQueue(options: {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
   const settings = options.settings ?? runtimeSettings;
-  const policyStore = options.policyStore ?? getDefaultBudgetPolicyStore();
+  const policyStore = options.policyStore ?? createMemoryBudgetPolicyStore();
   const ledgerStore = options.ledgerStore ?? createMemoryCostLedgerStore({
     teamId: settings.auth.defaultWorkspaceId,
     evalSuite: "nightly"
@@ -218,7 +219,7 @@ export function createInMemoryAgentRunQueue(options: {
         userId: input.actorId,
         teamId: input.settings.auth.defaultWorkspaceId
       },
-      policies: policyStore.listPolicies(input.settings),
+      policies: await policyStore.listPolicies(input.settings),
       usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
         workItemId: input.workItemId,
         userId: input.actorId,
@@ -979,6 +980,7 @@ export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
     humanReserved: createHumanReservedGuard(),
+    policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),

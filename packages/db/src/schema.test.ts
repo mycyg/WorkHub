@@ -11,6 +11,7 @@ import {
   agentRuns,
   agentSteps,
   auditLogs,
+  budgetPolicies,
   costLedgerEntries,
   mergeAttempts,
   mergeProposals,
@@ -20,7 +21,7 @@ import {
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 46;
+const F02_TABLE_COUNT = 47;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -49,6 +50,7 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("approval_requests"), true);
   assert.equal(tableNames.includes("usage_records"), true);
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
+  assert.equal(tableNames.includes("budget_policies"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
@@ -123,6 +125,24 @@ test("cost ledger persistence fields support P-COST usage recovery", () => {
   assert.equal(costLedgerEntries.scopeId.name, "scope_id");
   assert.equal(costLedgerEntries.scopeJson.name, "scope_json");
   assert.equal(costLedgerEntries.periodBucket.name, "period_bucket");
+});
+
+test("budget policy persistence fields support P-COST overrides and audit", () => {
+  assert.equal(getTableName(budgetPolicies), "budget_policies");
+  assert.equal(budgetPolicies.id.name, "id");
+  assert.equal(budgetPolicies.scopeKind.name, "scope_kind");
+  assert.equal(budgetPolicies.period.name, "period");
+  assert.equal(budgetPolicies.maxTokens.name, "max_tokens");
+  assert.equal(budgetPolicies.maxCostCny.name, "max_cost_cny");
+  assert.equal(budgetPolicies.warningRatio.name, "warning_ratio");
+  assert.equal(budgetPolicies.criticalRatio.name, "critical_ratio");
+  assert.equal(budgetPolicies.onWarning.name, "on_warning");
+  assert.equal(budgetPolicies.onExhausted.name, "on_exhausted");
+  assert.equal(budgetPolicies.modelRouteHint.name, "model_route_hint");
+  assert.equal(budgetPolicies.enabled.name, "enabled");
+  assert.equal(budgetPolicies.version.name, "version");
+  assert.equal(budgetPolicies.workspaceId.name, "workspace_id");
+  assert.equal(budgetPolicies.updatedByUserId.name, "updated_by_user_id");
 });
 
 test("enum drift is closed in the shared contract package", () => {

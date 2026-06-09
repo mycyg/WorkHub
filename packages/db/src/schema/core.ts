@@ -1008,6 +1008,34 @@ export const costLedgerEntries = pgTable(
   ]
 );
 
+export const budgetPolicies = pgTable(
+  "budget_policies",
+  {
+    id: varchar("id", { length: 128 }).primaryKey(),
+    scopeKind: varchar("scope_kind", { length: 16 }).notNull(),
+    period: varchar("period", { length: 16 }).notNull(),
+    maxTokens: integer("max_tokens").notNull(),
+    maxCostCny: numeric("max_cost_cny", { precision: 12, scale: 6 }).notNull(),
+    warningRatio: numeric("warning_ratio", { precision: 5, scale: 4 }).notNull().default("0.8"),
+    criticalRatio: numeric("critical_ratio", { precision: 5, scale: 4 }).notNull().default("0.95"),
+    onWarning: varchar("on_warning", { length: 32 }).notNull(),
+    onExhausted: varchar("on_exhausted", { length: 32 }).notNull(),
+    modelRouteHint: varchar("model_route_hint", { length: 32 }),
+    enabled: boolean("enabled").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...tenantColumns(),
+    ...timestamps()
+  },
+  (table) => [
+    index("budget_policies_scope_kind_idx").on(table.scopeKind),
+    index("budget_policies_enabled_idx").on(table.enabled),
+    index("budget_policies_workspace_id_idx").on(table.workspaceId),
+    index("budget_policies_updated_by_user_id_idx").on(table.updatedByUserId)
+  ]
+);
+
 export const confidenceRecords = pgTable(
   "confidence_records",
   {
@@ -1193,6 +1221,7 @@ export const workHubTables = {
   agentSteps,
   usageRecords,
   costLedgerEntries,
+  budgetPolicies,
   confidenceRecords,
   escalationEvents,
   snapshots,

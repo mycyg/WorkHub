@@ -17,6 +17,16 @@ export type BudgetPolicyPatch = Partial<
 >;
 
 export type BudgetPolicyStore = {
+  listPolicies: (settings: Settings) => BudgetPolicy[] | Promise<BudgetPolicy[]>;
+  updatePolicy: (
+    settings: Settings,
+    scopeKind: BudgetPolicy["scopeKind"],
+    id: string,
+    patch: BudgetPolicyPatch
+  ) => BudgetPolicy | undefined | Promise<BudgetPolicy | undefined>;
+};
+
+export type SyncBudgetPolicyStore = {
   listPolicies: (settings: Settings) => BudgetPolicy[];
   updatePolicy: (
     settings: Settings,
@@ -108,20 +118,21 @@ export function applyBudgetPolicyPatch(policy: BudgetPolicy, patch: BudgetPolicy
   return next;
 }
 
-export function createMemoryBudgetPolicyStore(seed: BudgetPolicy[] = []): BudgetPolicyStore {
+export function createMemoryBudgetPolicyStore(seed: BudgetPolicy[] = []): SyncBudgetPolicyStore {
   const overrides = new Map<string, BudgetPolicy>();
   for (const policy of seed) {
     overrides.set(policyKey(policy.scopeKind, policy.id), policy);
   }
 
+  const listPolicies = (settings: Settings) =>
+    defaultBudgetPoliciesFromSettings(settings).map(
+      (policy) => overrides.get(policyKey(policy.scopeKind, policy.id)) ?? policy
+    );
+
   return {
-    listPolicies(settings) {
-      return defaultBudgetPoliciesFromSettings(settings).map(
-        (policy) => overrides.get(policyKey(policy.scopeKind, policy.id)) ?? policy
-      );
-    },
+    listPolicies,
     updatePolicy(settings, scopeKind, id, patch) {
-      const current = this.listPolicies(settings).find((policy) => policy.scopeKind === scopeKind && policy.id === id);
+      const current = listPolicies(settings).find((policy) => policy.scopeKind === scopeKind && policy.id === id);
       if (!current) {
         return undefined;
       }
