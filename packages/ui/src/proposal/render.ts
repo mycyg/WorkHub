@@ -59,6 +59,7 @@ export const proposalCss = [
   ".wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-check[data-status=warning],.wh-check[data-status=skipped]{border-left-color:var(--amber)}.wh-check[data-status=failed]{border-left-color:var(--danger)}",
   ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:8px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
+  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -94,6 +95,78 @@ function renderActions(actions: ActionSpec[]) {
 
 function shortFingerprint(value: string | undefined) {
   return value ? value.slice(0, 10) : undefined;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function patchRiskLabel(locale: ReturnType<typeof uiLocale>, risk: string) {
+  if (risk === "low") {
+    return uiT(locale, "proposal.patchRiskLow");
+  }
+  if (risk === "requires_review") {
+    return uiT(locale, "proposal.patchRiskReview");
+  }
+  return uiT(locale, "proposal.patchRiskUnknown");
+}
+
+function patchLineKind(line: string) {
+  if (line.startsWith("+")) {
+    return "add";
+  }
+  if (line.startsWith("-")) {
+    return "remove";
+  }
+  if (line.startsWith("@@")) {
+    return "meta";
+  }
+  return "context";
+}
+
+function renderTextPatchPreview(option: ProposalConflictOption, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const preview = objectRecord(option.quality_gate?.["text_patch_preview"]);
+  if (preview?.["type"] !== "unified_text_patch_preview") {
+    return "";
+  }
+  const stats = objectRecord(preview["stats"]);
+  const hunks = Array.isArray(preview["hunks"]) ? preview["hunks"] : [];
+  const risk = typeof stats?.["overlap_risk"] === "string" ? stats["overlap_risk"] : "unknown";
+  const changed = stats?.["changed"] === false ? uiT(locale, "proposal.patchUnchanged") : uiT(locale, "proposal.patchChanged");
+  const added = typeof stats?.["added_lines"] === "number" ? stats["added_lines"] : 0;
+  const removed = typeof stats?.["removed_lines"] === "number" ? stats["removed_lines"] : 0;
+  const base = preview["base_available"] === true
+    ? uiT(locale, "proposal.patchBaseAvailable")
+    : uiT(locale, "proposal.patchBaseMissing");
+  const hunkLines = hunks.flatMap((hunk) => {
+    const record = objectRecord(hunk);
+    const header = typeof record?.["header"] === "string" ? [record["header"]] : [];
+    const lines = Array.isArray(record?.["lines"])
+      ? record["lines"].filter((line): line is string => typeof line === "string")
+      : [];
+    return [...header, ...lines];
+  });
+  if (hunkLines.length === 0) {
+    return "";
+  }
+  const diffLines = hunkLines
+    .map((line) => `<span class="wh-diff-line" data-patch-line-kind="${escapeHtml(patchLineKind(line))}">${escapeHtml(line)}</span>`)
+    .join("");
+  return `<section class="wh-patch" data-proposal-text-patch-preview="true" data-conflict-option-preview-for="${escapeHtml(option.id)}" data-overlap-risk="${escapeHtml(risk)}">
+    <div class="wh-patch-head">
+      <strong>${escapeHtml(uiT(locale, "proposal.patchTitle"))}</strong>
+      <div class="wh-patch-meta">
+        <span class="wh-pill">${escapeHtml(changed)}</span>
+        <span class="wh-pill">+${escapeHtml(String(added))} / -${escapeHtml(String(removed))}</span>
+        <span class="wh-pill">${escapeHtml(patchRiskLabel(locale, risk))}</span>
+        <span class="wh-pill">${escapeHtml(base)}</span>
+      </div>
+    </div>
+    <pre class="wh-diff">${diffLines}</pre>
+  </section>`;
 }
 
 function conflictOptionLabel(option: ProposalConflictOption, options?: UiRenderOptions) {
@@ -144,12 +217,17 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
     existing ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictExisting"))}: ${escapeHtml(existing)}</span>` : "",
     incoming ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictIncoming"))}: ${escapeHtml(incoming)}</span>` : ""
   ].filter(Boolean).join("");
+  const previews = conflict.options
+    .map((option) => renderTextPatchPreview(option, { locale }))
+    .filter(Boolean)
+    .join("");
 
   return `<article class="wh-conflict-card" data-conflict-id="${escapeHtml(conflict.id)}" data-target-key="${escapeHtml(conflict.target_key)}">
     <strong>${escapeHtml(conflict.headline)}</strong>
     <p class="wh-conflict-summary">${escapeHtml(conflict.summary_text)}</p>
     <div class="wh-conflict-meta">${meta}</div>
     <div class="wh-conflict-options">${conflict.options.map((option) => renderConflictOption(option, { locale })).join("")}</div>
+    ${previews}
   </article>`;
 }
 

@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI；R1.19 已补 text/spec 正文直写；R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 text patch preview；R1.22 已补 Replay 严肃页 patch preview 渲染 | 仍未接完整 Drive 富预览/历史/redo UI、自动 text/spec diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch 和多冲突逐项选择工作台 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI；R1.19 已补 text/spec 正文直写；R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 text patch preview；R1.22 已补 Replay 严肃页 patch preview 渲染；R1.23 已补 Proposal 采用前最小 patch preview | 仍未接完整 Drive 富预览/历史/redo UI、自动 text/spec diff3、React route 级富 patch viewer、字段级结构化 patch 和多冲突逐项选择工作台 |
 | P-COST DB-backed | `CostLedgerStore` 与 `BudgetPolicyStore` 已默认 DB-backed；`budget_policies` 保存 policy override；`PUT /api/cost/policies/:scope/:id` 写 `budget_policy.updated` 审计；R1.18 已把真实 PG policy override 纳入 smoke | 仍未发出 `usage.recorded`、`budget.warning`、`budget.exhausted` 事件；Cuu budget bubble 仍属后续 |
 
 ### R1 必做顺序
@@ -159,7 +159,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口，R1.17 已接 Web/Desktop/Cuu 一键采用 AI 融合稿入口，R1.19 已接 text/spec 正文直写，R1.20 已接真实内容三方读取，R1.21 已接数据层 patch preview，R1.22 已接 Replay 可见 patch preview。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 自动 text diff3、React route 级富 patch viewer、字段级结构化 patch；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口，R1.17 已接 Web/Desktop/Cuu 一键采用 AI 融合稿入口，R1.19 已接 text/spec 正文直写，R1.20 已接真实内容三方读取，R1.21 已接数据层 patch preview，R1.22 已接 Replay 可见 patch preview，R1.23 已接 Proposal 采用前最小 patch preview。
 
 ### R1 验收
 
@@ -183,7 +183,7 @@ R0 退出门：
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
 - 后续已补：正式交付物读取面最小切片；WorkItem page 与 AgentRun replay 返回 `accepted_deliverables`，并提供下载与文本预览 API。
 - 后续已补：正式交付物最小还原入口；同一路径第二版采纳后可 `POST .../restore` 回到上一版 Drive version，并写 `ProjectDriveOperation` 与审计。
-- 未完成：完整 approval policy routing、`ai_fusion` v2 自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch、多冲突工作台仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口，R1.18 已关闭“BudgetPolicy 只在内存 override、无审计”的缺口，R1.19/R1.20/R1.21/R1.22 已关闭 text/spec 正文直写、真实三方文本上下文、数据层 patch preview 与 Replay 可见 patch preview 缺口。
+- 未完成：完整 approval policy routing、`ai_fusion` v2 自动 text diff3、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口，R1.18 已关闭“BudgetPolicy 只在内存 override、无审计”的缺口，R1.19/R1.20/R1.21/R1.22/R1.23 已关闭 text/spec 正文直写、真实三方文本上下文、数据层 patch preview、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview 缺口。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -307,7 +307,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 仍未完成：
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
-- 已由 R1.14/R1.15/R1.16/R1.17/R1.19/R1.20/R1.21/R1.22 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计、Markdown 融合稿正式采纳、冲突卡一键采用、text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 `text_patch_preview`、Replay 可见 patch preview 与真实 PG one-click smoke 已接入；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch 和多冲突工作台。
+- 已由 R1.14/R1.15/R1.16/R1.17/R1.19/R1.20/R1.21/R1.22/R1.23 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计、Markdown 融合稿正式采纳、冲突卡一键采用、text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 `text_patch_preview`、Replay 可见 patch preview、Proposal 采用前最小 patch preview 与真实 PG one-click smoke 已接入；仍缺自动 text diff3、React route 级富 patch viewer、字段级结构化 patch 和多冲突工作台。
 - `/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本，Web/Desktop/Cuu option-first UI 已由 R1.10 接入，`merge_attempts` 与 chosen incoming target 审计已由 R1.11 接入，`merge_proposals` deterministic candidates 与 chosen option 已由 R1.12 接入。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
@@ -334,7 +334,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API，R1.16 已补 AI 融合稿物化采纳，R1.19 已让 `text_doc/spec_doc` 的合格融合正文直接写回正式 Drive version，避免旧 Markdown/JSON 包装污染文本交付物，R1.20 已让候选生成读取真实 current/incoming/base 文本上下文，R1.21 已把 current -> merged patch preview 落入 candidate `quality_gate`，R1.22 已在 Replay 严肃页渲染该 patch preview。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch 和多冲突逐项选择历史。
+R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API，R1.16 已补 AI 融合稿物化采纳，R1.19 已让 `text_doc/spec_doc` 的合格融合正文直接写回正式 Drive version，避免旧 Markdown/JSON 包装污染文本交付物，R1.20 已让候选生成读取真实 current/incoming/base 文本上下文，R1.21 已把 current -> merged patch preview 落入 candidate `quality_gate`，R1.22 已在 Replay 严肃页渲染该 patch preview，R1.23 已在 Proposal 冲突卡渲染采用前最小 diff。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有自动 text diff3、React route 级富 patch viewer、字段级结构化 patch 和多冲突逐项选择历史。
 
 ### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
 
@@ -448,7 +448,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.14 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、推荐项和失败降级已接入。
-- R1.16/R1.19/R1.20/R1.21/R1.22 已补 AI 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview` 与 Replay 可见 patch preview；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch 与多冲突逐项选择历史。
+- R1.16/R1.19/R1.20/R1.21/R1.22/R1.23 已补 AI 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview`、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview；仍缺自动 text diff3、React route 级富 patch viewer、字段级结构化 patch 与多冲突逐项选择历史。
 - Web / Desktop / Cuu 冲突卡真实 UI 接入已由 R1.10 补齐：主界面可把 `details.conflicts` 渲染为按钮卡，Cuu card action 可携带同一 `request_json` 走 proposal merge。
 - 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
 
@@ -485,7 +485,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.14 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、推荐项和失败降级已接入。
-- R1.16/R1.19/R1.20/R1.21/R1.22 已补 AI 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview` 与 Replay 可见 patch preview；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch 与多冲突逐项选择历史。
+- R1.16/R1.19/R1.20/R1.21/R1.22/R1.23 已补 AI 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview`、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview；仍缺自动 text diff3、React route 级富 patch viewer、字段级结构化 patch 与多冲突逐项选择历史。
 - 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
 - 真实 React route 产品化与 Playwright 截图门禁；当前仍是 TS-first shared renderer / shell 纵切。
 
@@ -518,7 +518,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、recommended option、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview` 与 Replay 可见 patch preview 已接入；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer 与字段级结构化 patch。
+- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22/R1.23 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、recommended option、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview`、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview 已接入；仍缺自动 text diff3、React route 级富 patch viewer 与字段级结构化 patch。
 - 多冲突逐项选择历史：当前 `accepted_target_keys` 可记录多个 key，但 UI 仍是每个 conflict card 自带单 key payload，不是完整冲突工作台。
 - 非 delivery change 的字段级三方合并、文本 diff3、二进制“两份都留”自动改名。
 - Replay 页面展示已由 R1.13 接入；当前仍不是完整多冲突工作台。
@@ -550,7 +550,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview` 与 Replay 可见 patch preview 已接入；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer 与字段级结构化 patch。
+- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22/R1.23 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview`、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview 已接入；仍缺自动 text diff3、React route 级富 patch viewer 与字段级结构化 patch。
 - 多冲突逐项选择工作台：当前表能记录多 key，但 UI 仍是每张 conflict card 独立提交。
 - 完整多冲突逐项选择工作台：R1.13 只展示历史，不提供批量选择/自定义候选编辑。
 
@@ -584,7 +584,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview` 与 Replay 可见 patch preview 已接入；仍缺自动 text diff3、Proposal 冲突卡富 patch viewer 与字段级结构化 patch。
+- 已由 R1.14/R1.16/R1.19/R1.20/R1.21/R1.22/R1.23 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级、Markdown 融合稿物化采纳、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 `text_patch_preview`、Replay 可见 patch preview 与 Proposal 采用前最小 patch preview 已接入；仍缺自动 text diff3、React route 级富 patch viewer 与字段级结构化 patch。
 - 多冲突逐项选择工作台：当前 replay 能解释历史，但用户选择仍分散在每张 conflict card 的单 key payload。
 - 真实 React route 产品化：当前 P0.5 renderer 已能展示 timeline，长期页面仍需迁到 `apps/web/src/routes/*` 组件体系。
 
@@ -622,7 +622,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.15 补齐：`POST /api/merge-proposals/{id}/choose` 可把 `ai_fusion` 等候选选择写入 `chosen_option_key/chosen_by_user_id/chosen_at`。
-- 已由 R1.16/R1.17/R1.19/R1.21/R1.22 部分补齐：`ai_fusion` 可物化为正式交付物并走 Drive version / accepted ledger / rollback/audit 链路，冲突卡可一键采用，`text_doc/spec_doc` 会正文直写，candidate 带数据层 patch preview，Replay 可见该 preview；仍缺 `structured_record` 字段合并器、自动 text diff3 与 Proposal 冲突卡富 patch viewer。
+- 已由 R1.16/R1.17/R1.19/R1.21/R1.22/R1.23 部分补齐：`ai_fusion` 可物化为正式交付物并走 Drive version / accepted ledger / rollback/audit 链路，冲突卡可一键采用，`text_doc/spec_doc` 会正文直写，candidate 带数据层 patch preview，Replay 与 Proposal 采用前均可见该 preview；仍缺 `structured_record` 字段合并器、自动 text diff3 与 React route 级富 patch viewer。
 - 多冲突逐项选择工作台：当前仍是每张 conflict card 独立提交，不支持一页批量选择/自定义候选编辑。
 - R1.20 已解除最小 prompt 上下文真空：`text_doc/spec_doc` 冲突的 prompt 会读取 current accepted Drive 文本、incoming workdir 文件文本与可匹配的 base accepted 文本；仍只是截断摘录，不是完整 diff3/patch 输入。
 
@@ -659,7 +659,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.16 部分补齐：已选择的 `ai_fusion.merged_value` 可写成正式 Markdown 融合稿；仍需把它进一步转成结构化字段更新或文本/规格文档 patch。
-- R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 patch preview；R1.22 已补 Replay 可见 patch preview；后续仍需自动 diff3、Proposal 冲突卡富 patch viewer 与结构化字段 patch。
+- R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 patch preview；R1.22 已补 Replay 可见 patch preview；R1.23 已补 Proposal 采用前最小 patch preview；后续仍需自动 diff3、React route 级富 patch viewer 与结构化字段 patch。
 - 多冲突逐项选择工作台：当前可逐 row 选择，但还不是一个严肃批量处理页面。
 
 ### R1.16 AI fusion apply artifact（2026-06-09）
@@ -696,7 +696,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 仍未完成：
 
-- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 候选正文直写与冲突 marker 拒绝；R1.20 已补真实 current/incoming/base prompt context；R1.21 已补数据层 `text_patch_preview`；R1.22 已补 Replay 可见 patch preview；仍缺自动 diff3、Proposal 冲突卡富 patch viewer、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
+- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 候选正文直写与冲突 marker 拒绝；R1.20 已补真实 current/incoming/base prompt context；R1.21 已补数据层 `text_patch_preview`；R1.22 已补 Replay 可见 patch preview；R1.23 已补 Proposal 采用前最小 patch preview；仍缺自动 diff3、React route 级富 patch viewer、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
 - R1.17 已补 Web/Desktop/Cuu “采用 AI 融合稿”一键入口，并已纳入真实 PG smoke；仍需 React route 产品化和视觉截图验收。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 choose/apply。
 - R1.17 one-click PG smoke 已覆盖 apply 物化链路；R1.16 的 choose-first 路径仍由 API fake repository 测试覆盖，后续若保留 choose-first 产品入口，再补真实 PG choose->apply 专项。
@@ -737,7 +737,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 仍未完成：
 
-- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 的正文直写和冲突 marker 拒绝；R1.20 已补真实 current/incoming/base prompt context；R1.21 已补数据层 `text_patch_preview`；R1.22 已补 Replay 可见 patch preview；仍缺自动 diff3、Proposal 冲突卡富 patch viewer、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
+- `ai_fusion` v2 原位写回：R1.19 已补 `text_doc/spec_doc` 的正文直写和冲突 marker 拒绝；R1.20 已补真实 current/incoming/base prompt context；R1.21 已补数据层 `text_patch_preview`；R1.22 已补 Replay 可见 patch preview；R1.23 已补 Proposal 采用前最小 patch preview；仍缺自动 diff3、React route 级富 patch viewer、rollback proof，以及 `structured_record` 字段级 merge policy 与 schema-aware patch。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 apply。
 - 真实 PG smoke 已新增 R1.17 one-click 路径：生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay；CI 通过 `.github/workflows/verify.yml` 的 `r1-pg-smoke` job 持续执行。
 - React route 产品化与 Playwright 截图尚未补；当前主窗路径仍由 TS renderer/browser shell 覆盖。
@@ -813,7 +813,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 仍未完成：
 
-- 真正 diff3：无重叠 hunk 自动合并、重叠 hunk 进入 AI mediation、Proposal 冲突卡富 patch viewer、冲突块逐项确认尚未落地；R1.21 只完成了数据层 current -> merged patch preview，R1.22 只完成了 Replay 可见 patch preview。
+- 真正 diff3：无重叠 hunk 自动合并、重叠 hunk 进入 AI mediation、React route 级富 patch viewer、冲突块逐项确认尚未落地；R1.21 完成了数据层 current -> merged patch preview，R1.22 完成了 Replay 可见 patch preview，R1.23 完成了 Proposal 采用前最小 patch preview。
 - `structured_record` 字段级 merge policy：字段优先级、schema-aware patch、枚举/日期/长文本/子记录规则仍待实现。
 - 多冲突工作台：当前仍是每个 merge proposal row 单独 apply，不支持同页批量选择、编辑 AI 候选和逐项预览。
 
@@ -883,7 +883,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 仍未完成：
 
 - 真正 diff3 自动合并：无重叠 hunk 自动写 merged，重叠 hunk 再交 AI mediation。
-- Patch UI：R1.22 已在 `packages/ui/src/gold-path/render.ts` 的 Replay timeline 中渲染 `quality_gate.text_patch_preview`，显示 changed、增删行、overlap risk、base 状态与 unified hunk；仍未把 preview 下沉到 Proposal 冲突卡 API/VM，也不是 React route 级富 patch viewer。
+- Patch UI：R1.22 已在 `packages/ui/src/gold-path/render.ts` 的 Replay timeline 中渲染 `quality_gate.text_patch_preview`，显示 changed、增删行、overlap risk、base 状态与 unified hunk；R1.23 已把同一 preview 下沉到 `ProposalConflictOption.quality_gate` 并在 `packages/ui/src/proposal/render.ts` 的冲突卡里渲染采用前最小 diff；仍不是 React route 级富 patch viewer。
 
 ### R1.22 Replay patch preview rendering（2026-06-09）
 
@@ -902,7 +902,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 | 数据来源 | 只读 replay `merge_timeline[].decisions[].candidates[].quality_gate.text_patch_preview` |
 | 展示位置 | Gold Path / Replay 严肃页的 merge decision candidate 下方 |
 | 风险提示 | 展示 `overlap_risk`，但不替用户裁决 |
-| Proposal 冲突卡 | 仍只显示 option-first action；要展示 patch preview 需后续扩展 `ProposalConflict` / page VM |
+| Proposal 冲突卡 | R1.23 已扩展 `ProposalConflictOption.quality_gate`，可在 `ai_fusion` option 下展示采用前最小 patch preview |
 | 富 viewer | 尚未做折叠、行号、文件级 tabs、分块大文档、逐项确认、React route 产品化 |
 
 验证：
@@ -913,11 +913,40 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 仍未完成：
 
 - 自动 text diff3 与无重叠 hunk 合并。
-- Proposal 冲突卡富 patch viewer 与用户采用前预览。
+- React route 级富 patch viewer：折叠、行号、文件级 tabs、分块大文档、逐项确认仍未做；R1.23 只关闭“采用前完全看不到 diff”的最小缺口。
 - `structured_record` 字段级 merge policy 与 schema-aware patch。
 - 多冲突工作台：批量选择、编辑 AI 候选、逐项预览、一次性提交。
-- `structured_record` 字段级 merge policy 与 schema-aware patch。
-- 多冲突工作台：批量选择、编辑 AI 候选、逐项预览、一次性提交。
+
+### R1.23 Proposal apply-before patch preview（2026-06-09）
+
+本切片关闭“用户在 Proposal 冲突卡里点 `采用 AI 融合稿` 前看不到具体改动”的最小缺口。范围限定为契约透传与现有 TS renderer：把 `ai_fusion.quality_gate.text_patch_preview` 从 `merge_proposals.candidates_json` 下沉到 `ProposalConflictOption.quality_gate`，让 409 `details.conflicts[]` 与 `GET /api/workitems/{id}/conflicts` 返回同一 preview，再由 Proposal renderer 显示采用前 diff。不做自动 diff3、不做结构化字段 patch、不做多冲突工作台，也不把这次最小 renderer 当成最终 React 富 viewer。
+
+已落代码：
+
+- `packages/contracts/src/domain/collaboration.ts`：`proposalConflictOptionSchema` 新增可选 `quality_gate`，保持旧客户端兼容；没有改变 action payload。
+- `apps/api/src/services/proposals.ts`：`mergeProposalRefsByConflictKey()` 读取 `ai_fusion` candidate 的 `quality_gate`；`conflictToVm()` 把它挂到 `ai_fusion` option；当前 merge 409 和后续 `/conflicts` 查询都走同一透传逻辑。
+- `packages/ui/src/proposal/render.ts`：在冲突卡按钮下渲染 `data-proposal-text-patch-preview`，展示 changed/unchanged、`+N / -N`、overlap risk、base 状态和 unified hunk lines；中英文文案来自 `packages/ui/src/i18n.ts`。
+- `packages/contracts/src/contracts.test.ts`、`packages/ui/src/proposal/render.test.ts`、`apps/api/src/proposals.test.ts`：覆盖 schema 保真、中文/英文 DOM、409 返回和 `/conflicts` 返回。
+
+当前边界：
+
+| 项 | R1.23 行为 |
+|---|---|
+| 数据来源 | 只读 `ai_fusion` candidate 的 `quality_gate.text_patch_preview` |
+| 返回链路 | `POST /api/proposals/{id}/merge` 的 409 与 `GET /api/workitems/{id}/conflicts` 均透传 |
+| 展示位置 | Proposal 冲突卡内、`采用 AI 融合稿` option 下方 |
+| 用户裁决 | 仍是 option-first，人点击才 apply；preview 不会自动选择 |
+| 降级 | 无 preview 时只保留原按钮，不阻塞 keep/accept/apply |
+| 仍缺 | 自动 diff3、结构化字段级 patch、React route 级富 viewer、多冲突工作台 |
+
+验证：
+
+- `corepack pnpm --filter @workhub/contracts typecheck` 通过。
+- `corepack pnpm --filter @workhub/ui typecheck` 通过。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/contracts test` 通过，16/16。
+- `corepack pnpm --filter @workhub/ui test` 通过，26/26。
+- `corepack pnpm --filter @workhub/api test` 通过，72/72。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -940,7 +969,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `pnpm --filter @workhub/api test` 通过，当前 71/71；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route 与 BudgetPolicy audit。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 14/14；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1/R2 全部完成，因为 `ai_fusion` v2 自动 text diff3、Proposal 冲突卡富 patch viewer、字段级结构化 patch、多冲突工作台、完整 approval policy routing、PG claim/多 worker 仍未落地。
+仍不能宣称 R1/R2 全部完成，因为 `ai_fusion` v2 自动 text diff3、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台、完整 approval policy routing、PG claim/多 worker 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

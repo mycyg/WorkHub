@@ -88,6 +88,14 @@ const copy = {
   "proposal.conflictExisting": { "zh-CN": "正式版", "en-US": "Current" },
   "proposal.conflictIncoming": { "zh-CN": "这次版本", "en-US": "This version" },
   "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },
+  "proposal.patchTitle": { "zh-CN": "采用前预览", "en-US": "Preview before apply" },
+  "proposal.patchChanged": { "zh-CN": "有改动", "en-US": "Changed" },
+  "proposal.patchUnchanged": { "zh-CN": "无改动", "en-US": "Unchanged" },
+  "proposal.patchBaseAvailable": { "zh-CN": "有分叉基线", "en-US": "Base available" },
+  "proposal.patchBaseMissing": { "zh-CN": "无分叉基线", "en-US": "Base missing" },
+  "proposal.patchRiskUnknown": { "zh-CN": "风险未知", "en-US": "Risk unknown" },
+  "proposal.patchRiskLow": { "zh-CN": "低重叠风险", "en-US": "Low overlap risk" },
+  "proposal.patchRiskReview": { "zh-CN": "需要复核", "en-US": "Review required" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

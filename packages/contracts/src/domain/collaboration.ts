@@ -163,6 +163,7 @@ export const proposalConflictOptionSchema = z.object({
   label: z.string().min(1),
   summary_text: z.string().min(1),
   recommended: z.boolean().optional(),
+  quality_gate: z.record(z.string(), z.unknown()).optional(),
   action: proposalConflictActionSchema.optional()
 });
 export type ProposalConflictOption = z.infer<typeof proposalConflictOptionSchema>;

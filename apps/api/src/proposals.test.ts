@@ -1115,7 +1115,25 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
                 target_kind: conflict.target_kind,
                 rationale_md: "AI 已生成一个融合稿；用户点击后会写回正式交付物。",
                 source: "llm",
-                quality_gate: { status: "passed" },
+                quality_gate: {
+                  status: "passed",
+                  text_patch_preview: {
+                    type: "unified_text_patch_preview",
+                    base_available: true,
+                    stats: {
+                      changed: true,
+                      added_lines: 1,
+                      removed_lines: 1,
+                      overlap_risk: "requires_review"
+                    },
+                    hunks: [
+                      {
+                        header: "@@ -1 +1 @@",
+                        lines: ["-正式版已有结论。", "+融合后的正文"]
+                      }
+                    ]
+                  }
+                },
                 merged_value: { proposed_resolution_md: "融合正式版和这次版本的说明。" }
               }
             ]
@@ -1198,6 +1216,7 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
           options: Array<{
             id: string;
             label?: string;
+            quality_gate?: Record<string, unknown>;
             action?: { id: string; href: string; request_json?: Record<string, unknown> };
           }>;
         }>;
@@ -1212,6 +1231,11 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   assert.equal(conflict?.options.some((option) => option.id === "accept_incoming"), true);
   assert.equal(aiFusionOption?.label, "采用 AI 融合稿");
   assert.equal(aiFusionOption?.action?.id, "apply_ai_fusion");
+  const blockedPreview = aiFusionOption?.quality_gate?.["text_patch_preview"] as
+    | { type?: string; stats?: { overlap_risk?: string } }
+    | undefined;
+  assert.equal(blockedPreview?.type, "unified_text_patch_preview");
+  assert.equal(blockedPreview?.stats?.overlap_risk, "requires_review");
   assert.equal(typeof targetKey, "string");
   const mergeProposalId = conflict?.merge_proposal_id;
   assert.equal(typeof mergeProposalId, "string");
@@ -1230,7 +1254,7 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
         target_key: string;
         merge_proposal_id?: string;
         recommended_option_id: string;
-        options: Array<{ id: string; action?: { id: string; href: string } }>;
+        options: Array<{ id: string; quality_gate?: Record<string, unknown>; action?: { id: string; href: string } }>;
       }>;
     };
   };
@@ -1241,6 +1265,9 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
     conflictBody.data.conflicts[0]?.options.find((option) => option.id === "ai_fusion")?.action?.href,
     `/api/merge-proposals/${mergeProposalId}/apply`
   );
+  const listedPreview = conflictBody.data.conflicts[0]?.options.find((option) => option.id === "ai_fusion")
+    ?.quality_gate?.["text_patch_preview"] as { type?: string } | undefined;
+  assert.equal(listedPreview?.type, "unified_text_patch_preview");
 
   const resolved = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
     method: "POST",

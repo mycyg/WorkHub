@@ -617,6 +617,7 @@ function conflictToVm(conflict: {
   incoming_version_before?: string;
 }, options: {
   aiFusionRationale?: string;
+  aiFusionQualityGate?: Record<string, unknown>;
   aiFusionMergeProposalId?: string;
   recommendedOptionId?: ProposalConflict["recommended_option_id"];
 } = {}): ProposalConflict {
@@ -659,6 +660,7 @@ function conflictToVm(conflict: {
       label: options.aiFusionMergeProposalId ? "采用 AI 融合稿" : "AI 融合建议",
       summary_text: options.aiFusionRationale,
       recommended: recommendedOptionId === "ai_fusion",
+      ...(options.aiFusionQualityGate ? { quality_gate: options.aiFusionQualityGate } : {}),
       action: {
         id: options.aiFusionMergeProposalId ? "apply_ai_fusion" : "open_ai_fusion_candidate",
         label: options.aiFusionMergeProposalId ? "采用 AI 融合稿" : "查看建议",
@@ -720,10 +722,31 @@ function aiFusionRationaleByConflictKey(
   return byKey;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function aiFusionQualityGateByConflictKey(
+  supplements: Awaited<ReturnType<MergeFusionCandidateGenerator["generate"]>>
+) {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const supplement of supplements) {
+    const candidate = supplement.candidates.find((item) => item.option_key === "ai_fusion");
+    const qualityGate = objectRecord(candidate?.quality_gate);
+    if (qualityGate) {
+      byKey.set(supplement.conflictKey, qualityGate);
+    }
+  }
+  return byKey;
+}
+
 async function mergeProposalRefsByConflictKey(repository: ProposalRepository, proposalId: string) {
   const refs = new Map<string, {
     mergeProposalId: string;
     aiFusionRationale?: string;
+    aiFusionQualityGate?: Record<string, unknown>;
     recommendedOptionId?: ProposalConflict["recommended_option_id"];
   }>();
   const attempts = await repository.listMergeAttemptsByProposal(proposalId);
@@ -736,10 +759,12 @@ async function mergeProposalRefsByConflictKey(repository: ProposalRepository, pr
       const aiFusion = mergeProposalCandidate(row, "ai_fusion");
       const aiFusionRationale =
         typeof aiFusion?.rationale_md === "string" ? aiFusion.rationale_md : undefined;
+      const aiFusionQualityGate = objectRecord(aiFusion?.quality_gate);
       const recommendedOptionId = proposalConflictOptionId(row.recommendedOptionKey);
       refs.set(row.conflictKey, {
         mergeProposalId: row.id,
         ...(aiFusionRationale ? { aiFusionRationale } : {}),
+        ...(aiFusionQualityGate ? { aiFusionQualityGate } : {}),
         ...(recommendedOptionId ? { recommendedOptionId } : {})
       });
     }
@@ -1004,6 +1029,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         const ref = refsByProposal.get(conflict.proposal_id)?.get(conflict.target_key);
         return conflictToVm(conflict, ref ? {
           ...(ref.aiFusionRationale ? { aiFusionRationale: ref.aiFusionRationale } : {}),
+          ...(ref.aiFusionQualityGate ? { aiFusionQualityGate: ref.aiFusionQualityGate } : {}),
           aiFusionMergeProposalId: ref.mergeProposalId,
           ...(ref.recommendedOptionId ? { recommendedOptionId: ref.recommendedOptionId } : {})
         } : {});
@@ -1085,11 +1111,14 @@ export function createDbProposalService(repository: ProposalRepository, options:
         if (error instanceof ProposalRepositoryMergeConflictError) {
           const refsByKey = await mergeProposalRefsByConflictKey(repository, proposal.id);
           const rationaleByKey = aiFusionRationaleByConflictKey(candidateSupplements);
+          const qualityGateByKey = aiFusionQualityGateByConflictKey(candidateSupplements);
           throw new ProposalServiceMergeConflictError(error.conflicts.map((conflict) => {
             const ref = refsByKey.get(conflict.target_key);
             const aiFusionRationale = ref?.aiFusionRationale ?? rationaleByKey.get(conflict.target_key);
+            const aiFusionQualityGate = ref?.aiFusionQualityGate ?? qualityGateByKey.get(conflict.target_key);
             return conflictToVm(conflict, {
               ...(aiFusionRationale ? { aiFusionRationale } : {}),
+              ...(aiFusionQualityGate ? { aiFusionQualityGate } : {}),
               ...(ref?.mergeProposalId ? { aiFusionMergeProposalId: ref.mergeProposalId } : {}),
               ...(ref?.recommendedOptionId ? { recommendedOptionId: ref.recommendedOptionId } : {})
             });

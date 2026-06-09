@@ -105,6 +105,24 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
         id: "ai_fusion",
         label: "采用 AI 融合稿",
         summary_text: "AI 已生成融合稿，点击后写入正式交付物。",
+        quality_gate: {
+          text_patch_preview: {
+            type: "unified_text_patch_preview",
+            base_available: true,
+            stats: {
+              changed: true,
+              added_lines: 1,
+              removed_lines: 1,
+              overlap_risk: "requires_review"
+            },
+            hunks: [
+              {
+                header: "@@ -1 +1 @@",
+                lines: ["-正式版已有结论。", "+融合后的正文"]
+              }
+            ]
+          }
+        },
         action: {
           id: "apply_ai_fusion",
           label: "采用 AI 融合稿",
@@ -125,6 +143,15 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
   assert.equal(rendered.html.includes("采用 AI 融合稿"), true);
+  assert.equal(rendered.html.includes("data-proposal-text-patch-preview=\"true\""), true);
+  assert.equal(rendered.html.includes("data-conflict-option-preview-for=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("data-overlap-risk=\"requires_review\""), true);
+  assert.equal(rendered.html.includes("采用前预览"), true);
+  assert.equal(rendered.html.includes("需要复核"), true);
+  assert.equal(rendered.html.includes("-正式版已有结论。"), true);
+  assert.equal(rendered.html.includes("+融合后的正文"), true);
+  assert.equal(rendered.html.includes("data-patch-line-kind=\"remove\""), true);
+  assert.equal(rendered.html.includes("data-patch-line-kind=\"add\""), true);
   assert.equal(rendered.html.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"), true);
   assert.equal(rendered.html.includes("accept_incoming_target_keys"), true);
   assert.equal(rendered.actionHrefs.includes(`/api/proposals/${vm.proposal_id}/merge`), true);
@@ -133,4 +160,6 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Keep current"), true);
   assert.equal(english.html.includes("Use this version"), true);
   assert.equal(english.html.includes("Use AI fusion draft"), true);
+  assert.equal(english.html.includes("Preview before apply"), true);
+  assert.equal(english.html.includes("Review required"), true);
 });

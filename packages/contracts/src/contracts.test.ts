@@ -377,6 +377,24 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
               id: "ai_fusion",
               label: "采用 AI 融合稿",
               summary_text: "采用 AI 生成的融合稿。",
+              quality_gate: {
+                text_patch_preview: {
+                  type: "unified_text_patch_preview",
+                  base_available: true,
+                  stats: {
+                    changed: true,
+                    added_lines: 1,
+                    removed_lines: 1,
+                    overlap_risk: "requires_review"
+                  },
+                  hunks: [
+                    {
+                      header: "@@ -1 +1 @@",
+                      lines: ["-正式版已有结论。", "+融合后的正文"]
+                    }
+                  ]
+                }
+              },
               action: {
                 id: "apply_ai_fusion",
                 label: "采用 AI 融合稿",
@@ -399,6 +417,11 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
   assert.equal(parsed.conflicts[0]?.recommended_option_id, "keep_current");
   assert.equal(parsed.conflicts[0]?.merge_proposal_id, "72000000-0000-4000-8000-000000000009");
   assert.equal(parsed.conflicts[0]?.options.some((option) => option.id === "ai_fusion"), true);
+  const preview = parsed.conflicts[0]?.options.find((option) => option.id === "ai_fusion")?.quality_gate?.["text_patch_preview"] as
+    | { type?: string; stats?: { overlap_risk?: string } }
+    | undefined;
+  assert.equal(preview?.type, "unified_text_patch_preview");
+  assert.equal(preview?.stats?.overlap_risk, "requires_review");
   assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
   assert.equal(aiFusionRequest.confirm, true);
 });
