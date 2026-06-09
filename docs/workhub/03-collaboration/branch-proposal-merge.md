@@ -297,7 +297,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
   - **conflict**:main 的该文件也产生了新版本(两个 `version_no` 都基于同一 `base`)→ **二进制不合并**,生成 `MergeProposal`,候选 = `{保留 main 版 / 采纳提议版 / 两个都留(改名)}`,人择一(去黑话:「两份文件撞了,要哪个,还是都留下?」)。
 - **回滚**:合并后回退 = 把 `current_version_id` 指回 `Proposal.merged_snapshot_id` 记录的旧指针(沿用 `project_drive.py:1525` 的 restore 路径)。
 
-> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 已能展示 accepted deliverables，并提供下载/文本预览。仍未完成的是 AgentRun replay artifact、revert、富预览、云对象存储 adapter、非 delivery change 的结构化合并与冲突选择 UI。
+> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览。仍未完成的是 revert、富预览、云对象存储 adapter、非 delivery change 的结构化合并与冲突选择 UI。
 
 ### 5.4 DOC 文本三方合并
 

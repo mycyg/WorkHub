@@ -192,6 +192,7 @@ async function main() {
       queue,
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
+      workItems: workItemService,
       autoRun: false
     }));
     const seedUser = defaultSeedFixture.users[0];
@@ -360,6 +361,7 @@ async function main() {
       queue: restartedQueue,
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
+      workItems: workItemService,
       autoRun: false
     }));
     const runAfterRestart = await restartedApp.request(`/api/agent-runs/${runId}`, { headers });
@@ -480,8 +482,20 @@ async function main() {
       throw new Error("Expected persistent proposal.merged audit log linked to the merge snapshot.");
     }
     const replay = await replayAfterRestart.json() as {
-      data: { steps: unknown[]; snapshots: unknown[]; audit_logs: unknown[] };
+      data: {
+        steps: unknown[];
+        snapshots: unknown[];
+        audit_logs: unknown[];
+        accepted_deliverables: { drive_version_id?: string; download_href?: string; preview_href?: string }[];
+      };
     };
+    if (
+      replay.data.accepted_deliverables.length < 1
+      || !replay.data.accepted_deliverables[0]?.drive_version_id
+      || !replay.data.accepted_deliverables[0]?.download_href
+    ) {
+      throw new Error("Expected restart replay to expose accepted deliverables.");
+    }
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -535,6 +549,7 @@ async function main() {
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
       replay_audit_logs: replay.data.audit_logs.length,
+      replay_accepted_deliverables: replay.data.accepted_deliverables.length,
       workdir_ref: await restartedQueue.workdir(runId)
     };
     console.log(JSON.stringify(summary, null, 2));

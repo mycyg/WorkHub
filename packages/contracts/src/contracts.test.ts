@@ -169,6 +169,28 @@ test("replay pages carry F10 audit facts and rollback state", () => {
         created_at: "2026-06-05T00:00:00.000Z"
       }
     ],
+    accepted_deliverables: [
+      {
+        id: "71000000-0000-4000-8000-000000000005",
+        work_item_id: "71000000-0000-4000-8000-000000000002",
+        proposal_id: "71000000-0000-4000-8000-000000000006",
+        change_id: "71000000-0000-4000-8000-000000000009",
+        target_kind: "delivery",
+        target_key: "delivery:/outputs/result.md",
+        change_type: "created",
+        accepted_version: 1,
+        target_path: "/outputs/result.md",
+        sha256: "a".repeat(64),
+        drive_item_id: "71000000-0000-4000-8000-000000000007",
+        drive_version_id: "71000000-0000-4000-8000-000000000008",
+        filename: "result.md",
+        mime: "text/markdown",
+        size_bytes: 120,
+        download_href: "/api/workitems/71000000-0000-4000-8000-000000000002/deliverables/71000000-0000-4000-8000-000000000005/download",
+        preview_href: "/api/workitems/71000000-0000-4000-8000-000000000002/deliverables/71000000-0000-4000-8000-000000000005/preview",
+        accepted_at: "2026-06-05T00:00:00.000Z"
+      }
+    ],
     manifest_facts: {
       checks: { snapshot_exists: "passed", revert_available: "passed" },
       rollback: {
@@ -182,6 +204,7 @@ test("replay pages carry F10 audit facts and rollback state", () => {
   });
 
   assert.equal(parsed.manifest_facts?.rollback.available, true);
+  assert.equal(parsed.accepted_deliverables[0]?.download_href?.includes("/download"), true);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

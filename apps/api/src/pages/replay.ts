@@ -5,6 +5,7 @@ import type {
   AgentRunLiveVM,
   AgentStep,
   AuditLogFact,
+  AcceptedDeliverableVM,
   CostSummaryVM,
   EvidenceRef,
   ManifestFacts,
@@ -296,6 +297,7 @@ export function buildReplayTracePage(input: {
   run: AgentRunQueueRecord;
   snapshots?: Snapshot[];
   auditLogs?: AuditLogFact[];
+  acceptedDeliverables?: AcceptedDeliverableVM[];
   manifestFacts?: ManifestFacts;
 }) {
   const snapshots = input.snapshots ?? [];
@@ -306,6 +308,7 @@ export function buildReplayTracePage(input: {
     evidence_refs: buildReplayEvidenceRefs(auditLogs),
     snapshots,
     audit_logs: auditLogs,
+    accepted_deliverables: input.acceptedDeliverables ?? [],
     manifest_facts: input.manifestFacts ?? buildReplayManifestFacts({ snapshots, auditLogs }),
     cost: buildReplayCostSummary(input.run)
   };

@@ -18,6 +18,11 @@ import {
 } from "../workers/agent-runner.js";
 import { buildReplayTracePage, toAgentRunLiveVm, toAgentStepVm, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
+import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 
 function auditLogRunId(detailJson: unknown) {
   if (!detailJson || typeof detailJson !== "object") {
@@ -39,6 +44,7 @@ export type AgentRunRoutesDependencies = {
   queue?: AgentRunQueue;
   auditLogs?: AuditLogRepository;
   snapshots?: SnapshotRepository;
+  workItems?: WorkItemService;
   autoRun?: boolean;
   onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
 };
@@ -47,6 +53,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const queue = deps.queue ?? getDefaultAgentRunQueue();
+  const replayWorkItems = deps.workItems ?? (deps.queue ? undefined : getDefaultWorkItemService());
 
   function auditStores() {
     if (deps.auditLogs && deps.snapshots) {
@@ -127,7 +134,17 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     const runSnapshotRows = snapshotRows.filter((row) => runSnapshotIds.has(row.id));
     const snapshots = runSnapshotRows.map(toSnapshotVm);
     const auditLogs = runAuditRows.map(toAuditLogFact);
-    return c.json({ ok: true, data: buildReplayTracePage({ run, snapshots, auditLogs }) });
+    try {
+      const acceptedDeliverables = replayWorkItems
+        ? (await replayWorkItems.detailPage({ workItemId: run.work_item_id, actor: c.var.actor })).accepted_deliverables
+        : [];
+      return c.json({ ok: true, data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables }) });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw new HTTPException(error.status as 400, { message: error.message });
+      }
+      throw error;
+    }
   });
 
   return routes;

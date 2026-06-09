@@ -87,6 +87,10 @@ export type GoldPathCopyKey =
   | "replay.costTitle"
   | "replay.snapshotTitle"
   | "replay.snapshotUnit"
+  | "replay.deliverableTitle"
+  | "replay.deliverableUnit"
+  | "replay.openDeliverable"
+  | "replay.previewDeliverable"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -190,6 +194,10 @@ const goldPathCopy = {
     "replay.costTitle": "估算成本",
     "replay.snapshotTitle": "快照",
     "replay.snapshotUnit": " 个回滚点",
+    "replay.deliverableTitle": "正式交付物",
+    "replay.deliverableUnit": " 份",
+    "replay.openDeliverable": "下载",
+    "replay.previewDeliverable": "预览",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -292,6 +300,10 @@ const goldPathCopy = {
     "replay.costTitle": "Estimated cost",
     "replay.snapshotTitle": "Snapshot",
     "replay.snapshotUnit": " rollback point(s)",
+    "replay.deliverableTitle": "Accepted deliverables",
+    "replay.deliverableUnit": " file(s)",
+    "replay.openDeliverable": "Download",
+    "replay.previewDeliverable": "Preview",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

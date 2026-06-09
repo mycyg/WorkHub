@@ -90,6 +90,10 @@ export function loadWebAgentRunTrace(client: WorkHubApiClient, runId: string, af
   return client.getAgentRunTrace(runId, after);
 }
 
+export function loadWebAgentRunReplay(client: WorkHubApiClient, runId: string) {
+  return client.replayAgentRun(runId);
+}
+
 export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
   return renderAgentRunLive(await loadWebAgentRun(client, runId), "web", locale ? { locale } : undefined);
 }

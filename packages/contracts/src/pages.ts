@@ -48,35 +48,37 @@ export const attentionHomeVmSchema = z.object({
 });
 export type AttentionHomeVM = z.infer<typeof attentionHomeVmSchema>;
 
+export const acceptedDeliverableVmSchema = z.object({
+  id: idSchema,
+  work_item_id: idSchema,
+  proposal_id: idSchema,
+  change_id: idSchema,
+  target_kind: z.string().min(1),
+  target_key: z.string().min(1),
+  change_type: z.string().min(1),
+  accepted_version: z.number().int().positive(),
+  target_path: z.string().optional(),
+  sha256: z.string().length(64).optional(),
+  drive_item_id: idSchema.optional(),
+  drive_version_id: idSchema.optional(),
+  filename: z.string().min(1).optional(),
+  mime: z.string().min(1).optional(),
+  size_bytes: z.number().int().nonnegative().optional(),
+  download_href: z.string().min(1).optional(),
+  preview_href: z.string().min(1).optional(),
+  accepted_at: isoDateTimeSchema
+});
+export type AcceptedDeliverableVM = z.infer<typeof acceptedDeliverableVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   acceptance: z.array(z.unknown()),
   agent_trace_preview: z.array(agentStepSchema),
   latest_proposal: deliverableChangeManifestSchema.optional(),
-  accepted_deliverables: z.array(z.object({
-    id: idSchema,
-    work_item_id: idSchema,
-    proposal_id: idSchema,
-    change_id: idSchema,
-    target_kind: z.string().min(1),
-    target_key: z.string().min(1),
-    change_type: z.string().min(1),
-    accepted_version: z.number().int().positive(),
-    target_path: z.string().optional(),
-    sha256: z.string().length(64).optional(),
-    drive_item_id: idSchema.optional(),
-    drive_version_id: idSchema.optional(),
-    filename: z.string().min(1).optional(),
-    mime: z.string().min(1).optional(),
-    size_bytes: z.number().int().nonnegative().optional(),
-    download_href: z.string().min(1).optional(),
-    preview_href: z.string().min(1).optional(),
-    accepted_at: isoDateTimeSchema
-  })).default([]),
+  accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
   evidence_refs: z.array(evidenceRefSchema)
 });
 export type WorkItemDetailVM = z.infer<typeof workItemDetailVmSchema>;
-export type AcceptedDeliverableVM = WorkItemDetailVM["accepted_deliverables"][number];
 
 export const approvalCenterVmSchema = z.object({
   items: z.array(attentionItemSchema),
@@ -113,6 +115,7 @@ export const replayTraceVmSchema = z.object({
   evidence_refs: z.array(evidenceRefSchema),
   snapshots: z.array(snapshotSchema),
   audit_logs: z.array(auditLogFactSchema).optional(),
+  accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
   manifest_facts: manifestFactsSchema.optional(),
   cost: costSummaryVmSchema.optional()
 });

@@ -271,7 +271,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 
 ### 6.2.1 新增:`AcceptedDeliverableChange`(正式采纳账本,R1 最小物理语义)
 
-> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 可展示 accepted deliverables，并提供下载/文本预览。非 delivery change、非 AgentRun 来源、AgentRun replay/revert 与富预览仍按后续 Drive 产品化推进。
+> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 与 AgentRun replay 可展示 accepted deliverables，并提供下载/文本预览。非 delivery change、非 AgentRun 来源、revert 与富预览仍按后续 Drive 产品化推进。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|

@@ -264,6 +264,23 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
   const steps = replay.steps
     .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? t(locale, "replay.stepFallback"))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
     .join("");
+  const acceptedDeliverables = replay.accepted_deliverables ?? [];
+  const deliverableHrefs = acceptedDeliverables
+    .flatMap((item) => [item.preview_href, item.download_href])
+    .filter((item): item is string => Boolean(item));
+  const deliverableCards = acceptedDeliverables
+    .map((item) => {
+      const actionsHtml = [
+        item.preview_href
+          ? `<a class="wh-btn" href="${href(item.preview_href)}">${escapeHtml(t(locale, "replay.previewDeliverable"))}</a>`
+          : "",
+        item.download_href
+          ? `<a class="wh-btn wh-btn-primary" href="${href(item.download_href)}">${escapeHtml(t(locale, "replay.openDeliverable"))}</a>`
+          : ""
+      ].filter(Boolean).join("");
+      return `<article class="wh-card"><strong>${escapeHtml(item.filename ?? item.target_key)}</strong><p class="wh-subtle">${escapeHtml(item.target_path ?? item.target_key)}</p>${actionsHtml ? `<div class="wh-actions">${actionsHtml}</div>` : ""}</article>`;
+    })
+    .join("");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "replay.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "replay.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(replay.run.handoff_md ?? replay.run.outcome_reason ?? t(locale, "replay.empty"))}</p>
@@ -272,13 +289,15 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.tokenTitle"))}</strong><p class="wh-subtle">${replay.cost?.me.total_tokens ?? 0}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.snapshotTitle"))}</strong><p class="wh-subtle">${replay.snapshots.length}${escapeHtml(t(locale, "replay.snapshotUnit"))}</p></article>
-    </div>`;
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.deliverableTitle"))}</strong><p class="wh-subtle">${acceptedDeliverables.length}${escapeHtml(t(locale, "replay.deliverableUnit"))}</p></article>
+    </div>
+    ${deliverableCards ? `<h2>${escapeHtml(t(locale, "replay.deliverableTitle"))}</h2><div class="wh-list">${deliverableCards}</div>` : ""}`;
   return {
     key: "replay",
     route: vm.routes.replay,
     title: "Replay Work",
     html: pageShell(surface, "Replay Work", main),
-    primaryHrefs: [],
+    primaryHrefs: deliverableHrefs,
     cuuState: "thinking"
   };
 }

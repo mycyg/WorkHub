@@ -7,6 +7,7 @@ import type { AgentRunLiveVM, GoldPathSurfaceVM, SessionVM } from "@workhub/cont
 import {
   loadWebAgentRunTrace,
   createWebWorkItem,
+  loadWebAgentRunReplay,
   renderWebAgentRunLive,
   loadWebGoldPathSurface,
   renderWebIntakeSession,
@@ -168,7 +169,7 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       throw new Error("not needed");
     },
     async replayAgentRun() {
-      throw new Error("not needed");
+      return surface.page_vms.replay;
     },
     pages: {
       async attention() {
@@ -385,6 +386,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(webSurface.pages.includes("/api/pages/gold-path"), true);
+  assert.equal(webSurface.pages.includes("/api/agent-runs/:id/replay"), true);
   assert.equal(webSurface.pages.includes("/settings"), true);
   assert.equal("cuuCardAdapter" in webSurface, false);
   assert.equal((await loadWebGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
@@ -396,6 +398,7 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
+  assert.equal((await loadWebAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "AI 完成了草稿生成。");
 });
 
 test("web surface starts option-first intake sessions through the typed client", async () => {

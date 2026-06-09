@@ -11,7 +11,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import { eventTypes, type WorkHubEvent } from "@workhub/contracts";
+import { eventTypes, type AcceptedDeliverableVM, type WorkHubEvent } from "@workhub/contracts";
 import { buildUsageRecord, createMemoryCostLedgerStore, decideRunBudget } from "@workhub/cost";
 import { topics } from "@workhub/events";
 import type {
@@ -35,6 +35,7 @@ import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
+import type { WorkItemService } from "./services/work-items.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
@@ -473,6 +474,76 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
 
 async function cookie(runtimeSettings: Settings, token = "cookie-agent-run") {
   return generateSignedCookie(COOKIE_NAME, token, runtimeSettings.auth.cookieSecret);
+}
+
+function acceptedDeliverable(partial: Partial<AcceptedDeliverableVM> = {}): AcceptedDeliverableVM {
+  return {
+    id: "74000000-0000-4000-8000-000000000001",
+    work_item_id: workItemId,
+    proposal_id: "74000000-0000-4000-8000-000000000002",
+    change_id: "74000000-0000-4000-8000-000000000003",
+    target_kind: "delivery",
+    target_key: "delivery:/outputs/result.md",
+    change_type: "created",
+    accepted_version: 1,
+    target_path: "/outputs/result.md",
+    sha256: "b".repeat(64),
+    drive_item_id: "74000000-0000-4000-8000-000000000004",
+    drive_version_id: "74000000-0000-4000-8000-000000000005",
+    filename: "result.md",
+    mime: "text/markdown",
+    size_bytes: 4,
+    download_href: `/api/workitems/${workItemId}/deliverables/74000000-0000-4000-8000-000000000001/download`,
+    preview_href: `/api/workitems/${workItemId}/deliverables/74000000-0000-4000-8000-000000000001/preview`,
+    accepted_at: now.toISOString(),
+    ...partial
+  };
+}
+
+function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]): WorkItemService {
+  return {
+    async createSession() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async createWorkItem() {
+      throw new Error("not needed");
+    },
+    async bindEvidence() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async detailPage() {
+      return {
+        workitem: {
+          id: workItemId,
+          code: "WH-21",
+          project_id: "50000000-0000-4000-8000-000000000099",
+          submitter_user_id: userId,
+          title: "Executable worker run",
+          status: "merged",
+          priority: "normal",
+          sync_state: "synced",
+          version: 1,
+          mode: "worker",
+          human_reserved: false,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString()
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        accepted_deliverables: deliverables,
+        evidence_refs: []
+      };
+    },
+    async acceptedDeliverableFile() {
+      throw new Error("not needed");
+    }
+  };
 }
 
 function deferred<T>() {
@@ -1072,7 +1143,15 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
     }
   });
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, snapshots, auditLogs, autoRun: false }));
+  const replayDeliverable = acceptedDeliverable();
+  app.route("/api", createAgentRunRoutes({
+    auth: authDeps(runtimeSettings),
+    queue,
+    snapshots,
+    auditLogs,
+    workItems: workItemsWithAcceptedDeliverables([replayDeliverable]),
+    autoRun: false
+  }));
 
   const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
     method: "POST",
@@ -1152,6 +1231,7 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
       cost: { me: { estimated_cost_cny: string } };
       snapshots: { id: string }[];
       audit_logs: { action: string; snapshot_id?: string }[];
+      accepted_deliverables: { id: string; download_href?: string; preview_href?: string }[];
       manifest_facts: { rollback: { available: boolean; snapshot_id?: string } };
     };
   };
@@ -1163,6 +1243,9 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.deepEqual(replayBody.data.snapshots.map((snapshot) => snapshot.id), [snapshotId]);
   assert.equal(replayBody.data.audit_logs.some((log) => log.action === "tool.write_file.snapshot"), true);
   assert.equal(replayBody.data.audit_logs.some((log) => log.action === "confidence.scored"), true);
+  assert.equal(replayBody.data.accepted_deliverables[0]?.id, replayDeliverable.id);
+  assert.equal(replayBody.data.accepted_deliverables[0]?.download_href, replayDeliverable.download_href);
+  assert.equal(replayBody.data.accepted_deliverables[0]?.preview_href, replayDeliverable.preview_href);
   assert.equal(replayBody.data.manifest_facts.rollback.available, true);
   assert.equal(replayBody.data.manifest_facts.rollback.snapshot_id, snapshotId);
   assert.equal(await queue.runNext(), null);

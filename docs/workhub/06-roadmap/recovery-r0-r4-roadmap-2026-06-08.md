@@ -91,11 +91,11 @@ R1 退出门：
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 Linux 测试机已给出真实 PG 通过证据。
 - BudgetPolicy 更新仍是内存 override，尚未落 `budget_policies` 与 `AuditLog(action="budget_policy.updated")`；预算策略持久化仍不能宣称完成。
-- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page accepted deliverables、download/text-preview、merge snapshot、persistent audit 与同 target 冲突 gate 已落。正式交付物 replay/revert、AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
+- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、merge snapshot、persistent audit 与同 target 冲突 gate 已落。正式交付物 revert、AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 补正式交付物 replay VM/revert 入口，以及 AI 冲突调解候选与冲突选择 UI。
+1. 补正式交付物 revert 入口，以及 AI 冲突调解候选与冲突选择 UI。
 2. 补 BudgetPolicy 持久化与 `budget_policy.updated` 审计。
 3. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 

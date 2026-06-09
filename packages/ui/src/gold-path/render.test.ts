@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
+import type { AcceptedDeliverableVM, GoldPathSurfaceVM } from "@workhub/contracts";
 import { toCuuState } from "@workhub/events";
 
 import { renderGoldPathSurface } from "./render.js";
@@ -111,4 +112,46 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
   assert.equal(proposal?.html.includes("data-action-id=\"merge\""), true);
   assert.equal(replay?.html.includes("估算成本"), true);
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
+});
+
+test("replay page surfaces accepted deliverables with preview and download actions", () => {
+  const vm = surfaceVm();
+  const deliverable: AcceptedDeliverableVM = {
+    id: "76000000-0000-4000-8000-000000000001",
+    work_item_id: vm.page_vms.replay.run.work_item_id,
+    proposal_id: "76000000-0000-4000-8000-000000000002",
+    change_id: "76000000-0000-4000-8000-000000000003",
+    target_kind: "delivery",
+    target_key: "delivery:/outputs/result.md",
+    change_type: "created",
+    accepted_version: 1,
+    target_path: "/outputs/result.md",
+    filename: "result.md",
+    mime: "text/markdown",
+    size_bytes: 42,
+    download_href: "/api/workitems/demo/deliverables/accepted-1/download",
+    preview_href: "/api/workitems/demo/deliverables/accepted-1/preview",
+    accepted_at: "2026-06-05T00:00:00.000Z"
+  };
+  const custom: GoldPathSurfaceVM = {
+    ...vm,
+    page_vms: {
+      ...vm.page_vms,
+      replay: {
+        ...vm.page_vms.replay,
+        accepted_deliverables: [deliverable]
+      }
+    }
+  };
+
+  const replay = renderGoldPathSurface(custom, "web").pages.find((page) => page.key === "replay");
+
+  assert.equal(replay?.html.includes("正式交付物"), true);
+  assert.equal(replay?.html.includes("result.md"), true);
+  assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/preview"), true);
+  assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/download"), true);
+  assert.deepEqual(replay?.primaryHrefs, [
+    "/api/workitems/demo/deliverables/accepted-1/preview",
+    "/api/workitems/demo/deliverables/accepted-1/download"
+  ]);
 });

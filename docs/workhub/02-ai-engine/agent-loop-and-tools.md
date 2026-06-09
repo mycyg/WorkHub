@@ -71,10 +71,10 @@ R1 当前代码切片已落：
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace；merge accepted ledger、ProjectDriveVersion adoption、download/text-preview 与 audit 持久化已做实，但正式交付物 replay VM、AI 冲突调解与 revert 执行入口仍需后续切片。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，并已把 WorkItem page 的 `accepted_deliverables[]` 带入 ReplayTraceVM；merge accepted ledger、ProjectDriveVersion adoption、download/text-preview 与 audit 持久化已做实，但 AI 冲突调解与正式交付物 revert 执行入口仍需后续切片。
 - BudgetPolicy 更新仍是内存 override，尚未持久化为 `budget_policies` 与审计日志；完整 P-COST 策略治理仍需后续切片。
 
-后续施工必须先完成正式交付物 replay/revert、AI 冲突调解、BudgetPolicy 持久化与完整审批中心，再回到 Web/Cuu 产品化。
+后续施工必须先完成正式交付物 revert、AI 冲突调解、BudgetPolicy 持久化与完整审批中心，再回到 Web/Cuu 产品化。
 
 ---
 

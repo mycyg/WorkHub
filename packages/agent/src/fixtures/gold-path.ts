@@ -919,6 +919,7 @@ const replay: ReplayTraceVM = {
   evidence_refs: evidenceRefs,
   snapshots,
   audit_logs: auditLogs,
+  accepted_deliverables: [],
   manifest_facts: manifestFacts,
   cost: costSummary
 };
