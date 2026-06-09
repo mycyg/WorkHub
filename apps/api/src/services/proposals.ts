@@ -17,7 +17,8 @@ import {
   type ProposalConflict,
   type ProposalConflictListResult,
   type Proposal,
-  type Review
+  type Review,
+  type StructuredFieldPatchDryRun
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
 import {
@@ -526,13 +527,40 @@ function structuredFieldPatchDryRunForApply(context: MergeProposalCandidateAppli
 function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidateApplicationContext) {
   const dryRun = structuredFieldPatchDryRunForApply(context);
   if (!dryRun || dryRun.status !== "blocked") {
-    return;
+    return dryRun;
   }
   throw new ProposalServiceError(
     409,
     "structured_field_patch_dry_run_failed",
     "这个结构化字段建议没有通过字段补丁 dry-run，不能直接写回。"
   );
+}
+
+function structuredFieldPatchWritebackForApply(context: MergeProposalCandidateApplicationContext): {
+  dryRun: StructuredFieldPatchDryRun;
+} | undefined {
+  if (effectiveAiFusionTargetKind(context) !== "structured_record") {
+    return undefined;
+  }
+  const dryRun = assertStructuredFieldPatchDryRunForApply(context);
+  if (!dryRun) {
+    return undefined;
+  }
+  if (dryRun.status !== "ready" || !dryRun.executable) {
+    throw new ProposalServiceError(
+      409,
+      "structured_field_patch_not_executable",
+      "这个结构化字段建议还需要字段级复核，不能直接写回事项字段。"
+    );
+  }
+  if (dryRun.patch.target_entity_type !== "work_item" || dryRun.patch.target_entity_id !== context.workItemId) {
+    throw new ProposalServiceError(
+      409,
+      "structured_field_patch_target_mismatch",
+      "这个结构化字段建议的目标事项和当前变更申请不一致。"
+    );
+  }
+  return { dryRun };
 }
 
 function mimeForAiFusionTextWriteback(input: { filename: string; targetKind: string }) {
@@ -1237,18 +1265,23 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
       }
       assertAiFusionApplyContext(context);
-      const resolvedDriveFile = await materializeAiFusionCandidate({
-        context,
-        storageRoot,
-        changeId: nextId()
-      });
+      const resolvedStructuredFieldPatch = structuredFieldPatchWritebackForApply(context);
+      const resolvedDriveFile = resolvedStructuredFieldPatch
+        ? undefined
+        : await materializeAiFusionCandidate({
+            context,
+            storageRoot,
+            changeId: nextId()
+          });
       let rows: StoredProposalRows | null;
       try {
         rows = await repository.applyMergeProposalCandidate({
           mergeProposalId: input.mergeProposalId,
           mergeSnapshotId: nextId(),
           actor: actorToRepository(input.actor),
-          resolvedDriveFile,
+          ...(resolvedStructuredFieldPatch
+            ? { resolvedStructuredFieldPatch }
+            : { resolvedDriveFile: resolvedDriveFile as NonNullable<typeof resolvedDriveFile> }),
           at: now()
         });
       } catch (error) {

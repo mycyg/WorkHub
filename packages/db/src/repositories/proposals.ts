@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 
-import type { ActorKind, DeliverableChange, DeliverableChangeManifest } from "@workhub/contracts";
+import type {
+  ActorKind,
+  DeliverableChange,
+  DeliverableChangeManifest,
+  StructuredFieldPatchDryRun,
+  StructuredFieldPatchOperation
+} from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -162,7 +168,12 @@ export type ApplyMergeProposalCandidateInput = {
   mergeSnapshotId?: string;
   actor?: ProposalRepositoryActor;
   resolvedDriveFile?: ProposalAdoptedDriveFileInput;
+  resolvedStructuredFieldPatch?: ProposalStructuredFieldPatchInput;
   at?: Date;
+};
+
+export type ProposalStructuredFieldPatchInput = {
+  dryRun: StructuredFieldPatchDryRun;
 };
 
 export class ProposalRepositoryMergeConflictError extends Error {
@@ -533,6 +544,139 @@ function aiFusionResolvedChange(input: {
     },
     preview_ref: { kind: "text", href: `merge-proposal:${input.mergeProposalId}:ai_fusion` }
   };
+}
+
+type StructuredWorkItemFieldChange = {
+  field: "title" | "summary_md" | "priority" | "due_at";
+  valueType: StructuredFieldPatchOperation["value_type"];
+  beforeValue: unknown;
+  afterValue: unknown;
+};
+
+function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: StructuredWorkItemFieldChange["field"]) {
+  switch (field) {
+    case "title":
+      return row.title;
+    case "summary_md":
+      return row.summaryMd;
+    case "priority":
+      return row.priority;
+    case "due_at":
+      return row.dueAt ? row.dueAt.toISOString() : null;
+  }
+}
+
+function structuredWorkItemFieldValue(operation: StructuredFieldPatchOperation) {
+  switch (operation.field) {
+    case "title":
+    case "summary_md":
+    case "priority":
+      if (typeof operation.value !== "string") {
+        return undefined;
+      }
+      return operation.value;
+    case "due_at":
+      if (operation.value_type === "null") {
+        return null;
+      }
+      if (typeof operation.value !== "string") {
+        return undefined;
+      }
+      return new Date(operation.value);
+    default:
+      return undefined;
+  }
+}
+
+async function applyStructuredWorkItemFieldPatch(
+  tx: WorkHubTx,
+  input: {
+    mergeProposalId: string;
+    workItemId: string;
+    branchId: string;
+    patch: ProposalStructuredFieldPatchInput;
+    at: Date;
+  }
+) {
+  const dryRun = input.patch.dryRun;
+  if (dryRun.status !== "ready" || !dryRun.executable) {
+    throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+      input.mergeProposalId,
+      "structured_field_patch_not_executable",
+      "Structured field patch must be ready before it can update WorkItem fields"
+    );
+  }
+  if (dryRun.patch.target_entity_type !== "work_item" || dryRun.patch.target_entity_id !== input.workItemId) {
+    throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+      input.mergeProposalId,
+      "structured_field_patch_target_mismatch",
+      "Structured field patch target does not match the proposal WorkItem"
+    );
+  }
+
+  const rows = await tx
+    .select()
+    .from(workItems)
+    .where(eq(workItems.id, input.workItemId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+      input.mergeProposalId,
+      "structured_field_patch_target_missing",
+      "Structured field patch target WorkItem is missing"
+    );
+  }
+
+  const update: {
+    title?: string;
+    summaryMd?: string;
+    priority?: string;
+    dueAt?: Date | null;
+  } = {};
+  const fieldChanges: StructuredWorkItemFieldChange[] = [];
+  for (const operation of dryRun.patch.operations) {
+    const value = structuredWorkItemFieldValue(operation);
+    if (value === undefined || !["title", "summary_md", "priority", "due_at"].includes(operation.field)) {
+      throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+        input.mergeProposalId,
+        "structured_field_patch_field_unsupported",
+        `Structured field patch field is not supported in this slice: ${operation.field}`
+      );
+    }
+    const field = operation.field as StructuredWorkItemFieldChange["field"];
+    if (field === "title") update.title = value as string;
+    if (field === "summary_md") update.summaryMd = value as string;
+    if (field === "priority") update.priority = value as string;
+    if (field === "due_at") update.dueAt = value as Date | null;
+    fieldChanges.push({
+      field,
+      valueType: operation.value_type,
+      beforeValue: workItemFieldBeforeValue(row, field),
+      afterValue: value instanceof Date ? value.toISOString() : value
+    });
+  }
+  if (fieldChanges.length === 0) {
+    throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+      input.mergeProposalId,
+      "structured_field_patch_empty",
+      "Structured field patch has no supported WorkItem field operations"
+    );
+  }
+
+  await tx
+    .update(workItems)
+    .set({
+      ...update,
+      status: "merged",
+      mainBranchId: input.branchId,
+      acceptedAt: input.at,
+      version: sql`${workItems.version} + 1`,
+      updatedAt: input.at
+    })
+    .where(eq(workItems.id, input.workItemId));
+
+  return fieldChanges;
 }
 
 async function recordMergeProposals(
@@ -1061,8 +1205,17 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             "Folder merge candidates cannot be applied as AI fusion artifacts"
           );
         }
+        const resolvedStructuredPatch = input.resolvedStructuredFieldPatch;
         const resolvedFile = input.resolvedDriveFile;
-        if (!resolvedFile) {
+        if (candidate.target_kind === "structured_record") {
+          if (!resolvedStructuredPatch) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_missing",
+              "Structured record apply requires a structured field patch"
+            );
+          }
+        } else if (!resolvedFile) {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
             input.mergeProposalId,
             "merge_candidate_artifact_missing",
@@ -1094,6 +1247,106 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             input.mergeProposalId,
             "merge_conflict_change_missing",
             "Merge proposal source change is missing"
+          );
+        }
+        if (candidate.target_kind === "structured_record" && resolvedStructuredPatch) {
+          const fieldChanges = await applyStructuredWorkItemFieldPatch(tx, {
+            mergeProposalId: input.mergeProposalId,
+            workItemId: row.workItemId,
+            branchId: row.branchId,
+            patch: resolvedStructuredPatch,
+            at
+          });
+          await tx.insert(snapshots).values({
+            id: mergeSnapshotId,
+            workItemId: row.workItemId,
+            branchId: row.branchId,
+            kind: "merge",
+            ref: `merge-proposal:${input.mergeProposalId}:structured_field_patch`,
+            createdByKind: input.actor?.actorKind ?? "system",
+            createdAt: at
+          });
+          const mergeAttemptId = await recordMergeAttempt(tx, {
+            proposalId: row.proposalId,
+            workItemId: row.workItemId,
+            branchId: row.branchId,
+            ...(input.actor ? { actor: input.actor } : {}),
+            result: "merged",
+            mergeSnapshotId,
+            conflicts: [conflict],
+            acceptedTargetKeys: [row.mergeProposal.conflictKey],
+            targetKeys: [row.mergeProposal.conflictKey],
+            at
+          });
+          await tx.insert(mergeProposals).values({
+            id: randomUUID(),
+            mergeAttemptId,
+            conflictKey: row.mergeProposal.conflictKey,
+            candidatesJson: row.mergeProposal.candidatesJson,
+            recommendedOptionKey: row.mergeProposal.recommendedOptionKey ?? "ai_fusion",
+            chosenOptionKey: "ai_fusion",
+            chosenByUserId: input.actor?.actorUserId ?? row.mergeProposal.chosenByUserId,
+            chosenAt: at,
+            createdAt: at,
+            updatedAt: at
+          });
+          await tx
+            .update(proposals)
+            .set({
+              status: "merged",
+              mergeSnapshotId,
+              mergedAt: at,
+              updatedAt: at
+            })
+            .where(eq(proposals.id, row.proposalId));
+          await tx
+            .update(branches)
+            .set({
+              status: "merged",
+              headRef: mergeSnapshotId,
+              version: sql`${branches.version} + 1`,
+              updatedAt: at
+            })
+            .where(eq(branches.id, row.branchId));
+          await tx.insert(auditLogs).values({
+            id: randomUUID(),
+            actorKind: input.actor?.actorKind ?? "system",
+            ...(input.actor?.actorUserId ? { actorUserId: input.actor.actorUserId } : {}),
+            entityType: "proposal",
+            entityId: row.proposalId,
+            action: "proposal.merged",
+            detailJson: {
+              work_item_id: row.workItemId,
+              branch_id: row.branchId,
+              merge_strategy: "field_merge",
+              merge_proposal_id: input.mergeProposalId,
+              chosen_option_key: "ai_fusion",
+              merge_snapshot_id: mergeSnapshotId,
+              merge_attempt_id: mergeAttemptId,
+              structured_field_patch: resolvedStructuredPatch.dryRun.patch,
+              structured_field_patch_dry_run: resolvedStructuredPatch.dryRun,
+              structured_field_changes: fieldChanges,
+              structured_field_count: fieldChanges.length,
+              accepted_change_ids: [],
+              accepted_change_count: 0,
+              adopted_drive_version_ids: [],
+              adopted_drive_version_count: 0,
+              conflict_checked: true,
+              conflict_count: 1,
+              accepted_incoming_target_keys: [],
+              resolved_conflict_target_keys: [row.mergeProposal.conflictKey],
+              target_keys: [row.mergeProposal.conflictKey]
+            },
+            snapshotId: mergeSnapshotId,
+            createdAt: at
+          });
+          return;
+        }
+        if (!resolvedFile) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_candidate_artifact_missing",
+            "AI fusion apply requires a materialized artifact"
           );
         }
         const resolvedChange = aiFusionResolvedChange({

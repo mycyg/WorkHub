@@ -202,7 +202,15 @@ class MemoryProposalRepository implements ProposalRepository {
     mainBranchId: string | null;
     acceptedAt: Date | null;
     version: number;
+    title: string | null;
+    summaryMd: string | null;
+    priority: string;
+    dueAt: Date | null;
   }>();
+
+  get acceptedTargetCount() {
+    return this.acceptedByTargetKey.size;
+  }
 
   async createFromManifest(input: Parameters<ProposalRepository["createFromManifest"]>[0]) {
     const at = input.at ?? now;
@@ -236,7 +244,11 @@ class MemoryProposalRepository implements ProposalRepository {
       status: "in_review",
       mainBranchId: null,
       acceptedAt: null,
-      version: 0
+      version: 0,
+      title: null,
+      summaryMd: null,
+      priority: "normal",
+      dueAt: null
     });
     return stored;
   }
@@ -457,7 +469,7 @@ class MemoryProposalRepository implements ProposalRepository {
         "Only ai_fusion candidates can be applied through this route"
       );
     }
-    if (!context.candidate?.merged_value || !input.resolvedDriveFile) {
+    if (!context.candidate?.merged_value || (!input.resolvedDriveFile && !input.resolvedStructuredFieldPatch)) {
       throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
         input.mergeProposalId,
         "merge_candidate_missing_result",
@@ -504,11 +516,6 @@ class MemoryProposalRepository implements ProposalRepository {
       latestProposal.chosenAt = at;
       latestProposal.updatedAt = at;
     }
-    this.acceptedByTargetKey.set(context.conflictKey, {
-      proposalId: stored.proposal.id,
-      changeId: input.resolvedDriveFile.changeId,
-      ...(input.resolvedDriveFile.sha256 ? { sha256After: input.resolvedDriveFile.sha256 } : {})
-    });
     const branch = this.branchRows.get(stored.proposal.branchId);
     if (branch) {
       branch.status = "merged";
@@ -521,6 +528,27 @@ class MemoryProposalRepository implements ProposalRepository {
       workItem.mainBranchId = stored.proposal.branchId;
       workItem.acceptedAt = at;
       workItem.version += 1;
+      for (const operation of input.resolvedStructuredFieldPatch?.dryRun.patch.operations ?? []) {
+        if (operation.field === "title" && typeof operation.value === "string") {
+          workItem.title = operation.value;
+        }
+        if (operation.field === "summary_md" && typeof operation.value === "string") {
+          workItem.summaryMd = operation.value;
+        }
+        if (operation.field === "priority" && typeof operation.value === "string") {
+          workItem.priority = operation.value;
+        }
+        if (operation.field === "due_at") {
+          workItem.dueAt = operation.value_type === "null" ? null : new Date(operation.value as string);
+        }
+      }
+    }
+    if (input.resolvedDriveFile) {
+      this.acceptedByTargetKey.set(context.conflictKey, {
+        proposalId: stored.proposal.id,
+        changeId: input.resolvedDriveFile.changeId,
+        ...(input.resolvedDriveFile.sha256 ? { sha256After: input.resolvedDriveFile.sha256 } : {})
+      });
     }
     return stored;
   }
@@ -1053,6 +1081,101 @@ test("proposal service dry-runs structured field patches before applying AI fusi
       && error.status === 409
       && error.code === "structured_field_patch_dry_run_failed"
   );
+});
+
+test("proposal service applies executable structured field patches to WorkItem scalars", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["title", "summary_md", "priority", "due_at"]
+  };
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000611";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000612";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000613",
+    existing_change_id: "91000000-0000-4000-8000-000000000614",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "更新事项标题、摘要、优先级和截止时间。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            title: "客户周报草稿",
+            summary_md: "整理客户周报素材，保留可追溯证据。",
+            priority: "high",
+            due_at: "2026-06-30T00:00:00.000Z"
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  const workItem = repository.workItemRows.get(itemManifest.work_item_id);
+  assert.equal(merged.status, "merged");
+  assert.equal(workItem?.title, "客户周报草稿");
+  assert.equal(workItem?.summaryMd, "整理客户周报素材，保留可追溯证据。");
+  assert.equal(workItem?.priority, "high");
+  assert.equal(workItem?.dueAt?.toISOString(), "2026-06-30T00:00:00.000Z");
+  assert.equal(workItem?.version, 1);
+  assert.equal(repository.acceptedTargetCount, 0);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.equal(repository.mergeAttempts.at(-1)?.acceptedTargetKeys[0], conflict.target_key);
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {

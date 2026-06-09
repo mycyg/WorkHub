@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -40,6 +40,7 @@ import {
   workspaces
 } from "@workhub/db";
 import { buildUsageRecord } from "@workhub/cost";
+import type { DeliverableChangeManifest } from "@workhub/contracts";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -1004,6 +1005,172 @@ async function main() {
       throw new Error("Expected replay accepted deliverables to include the one-click AI fusion Drive version.");
     }
 
+    const structuredChangeId = randomUUID();
+    const structuredBranchId = randomUUID();
+    const structuredManifest: DeliverableChangeManifest = {
+      version: 0,
+      work_item_id: workItemId,
+      branch_id: structuredBranchId,
+      title: "R1.29 PG smoke structured field patch",
+      summary_md: "验证结构化字段补丁直接写回 WorkItem 标量字段。",
+      author: {
+        actor_kind: "ai",
+        label: "R1.29 PG smoke AI"
+      },
+      base: {
+        snapshot_id: merged.merge_snapshot_id,
+        branch_head_ref: oneClickApplyBody.data.merge_snapshot_id,
+        created_at: new Date().toISOString()
+      },
+      changes: [
+        {
+          id: structuredChangeId,
+          target_kind: "structured_record",
+          target_ref: {
+            entity_type: "work_item",
+            entity_id: workItemId
+          },
+          change_type: "updated",
+          human_summary: "更新事项标题、摘要、优先级和截止时间。",
+          machine_summary: {
+            changed_fields: ["title", "summary_md", "priority", "due_at"]
+          }
+        }
+      ],
+      checks: [
+        {
+          id: "structured-field-patch-ready",
+          label: "结构化字段补丁可执行",
+          status: "passed"
+        }
+      ],
+      evidence_refs: [],
+      risk: {
+        level: "medium",
+        human_label: "中风险",
+        reversible: true
+      },
+      rollback: {
+        available: true,
+        description: "可通过审计与字段旧值恢复。"
+      },
+      review: {
+        suggested_decision: "approve",
+        reason_required_on_reject: true
+      }
+    };
+    const structuredProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: structuredManifest,
+      actor: { actor_kind: "ai", label: "R1.29 PG smoke AI" }
+    });
+    await proposalService.review({
+      proposalId: structuredProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const structuredMergeAttemptId = randomUUID();
+    const structuredMergeProposalId = randomUUID();
+    const structuredConflictKey = `work_item:${workItemId}`;
+    const structuredConflict = {
+      proposal_id: structuredProposal.id,
+      work_item_id: workItemId,
+      proposal_title: structuredProposal.title,
+      target_key: structuredConflictKey,
+      change_id: structuredChangeId,
+      target_kind: "structured_record" as const,
+      change_type: "updated" as const,
+      existing_proposal_id: oneClickProposal.id,
+      existing_change_id: oneClickAccepted.changeId,
+      existing_ref: oneClickApplyBody.data.merge_snapshot_id
+    };
+    const structuredNow = new Date();
+    await db.insert(mergeAttempts).values({
+      id: structuredMergeAttemptId,
+      proposalId: structuredProposal.id,
+      workItemId,
+      branchId: structuredProposal.branch_id,
+      actorKind: "human",
+      actorUserId: defaultSeedIds.adminUserId,
+      result: "conflict",
+      conflictsJson: [structuredConflict],
+      acceptedTargetKeys: [],
+      targetKeys: [structuredConflictKey],
+      conflictCount: 1,
+      createdAt: structuredNow
+    });
+    await db.insert(mergeProposals).values({
+      id: structuredMergeProposalId,
+      mergeAttemptId: structuredMergeAttemptId,
+      conflictKey: structuredConflictKey,
+      candidatesJson: [
+        {
+          option_key: "ai_fusion",
+          target_kind: "structured_record",
+          rationale_md: "PG smoke 直接写回 WorkItem 标量字段。",
+          source: "llm",
+          quality_gate: { status: "passed" },
+          merged_value: {
+            fields: {
+              title: "R1.29 结构化字段写回",
+              summary_md: "PG smoke 已确认结构化字段 patch 直接写入 WorkItem。",
+              priority: "urgent",
+              due_at: "2026-06-30T00:00:00.000Z"
+            }
+          }
+        }
+      ],
+      recommendedOptionKey: "ai_fusion",
+      createdAt: structuredNow,
+      updatedAt: structuredNow
+    });
+    const structuredApply = await proposalService.applyMergeCandidate({
+      mergeProposalId: structuredMergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+    });
+    if (structuredApply.status !== "merged" || !structuredApply.merge_snapshot_id) {
+      throw new Error("Expected structured field patch apply to merge the proposal.");
+    }
+    const [
+      structuredWorkItemRows,
+      structuredAcceptedRows,
+      structuredAuditRows,
+      structuredOriginalMergeProposalRows
+    ] = await Promise.all([
+      db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
+      db.select().from(acceptedDeliverableChanges).then((rows) =>
+        rows.filter((row) => row.proposalId === structuredProposal.id)
+      ),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) => row.entityId === structuredProposal.id && row.action === "proposal.merged")
+      ),
+      db.select().from(mergeProposals).then((rows) => rows.filter((row) => row.id === structuredMergeProposalId))
+    ]);
+    const structuredWorkItem = structuredWorkItemRows[0];
+    if (
+      structuredWorkItem?.title !== "R1.29 结构化字段写回"
+      || structuredWorkItem.summaryMd !== "PG smoke 已确认结构化字段 patch 直接写入 WorkItem。"
+      || structuredWorkItem.priority !== "urgent"
+      || structuredWorkItem.dueAt?.toISOString() !== "2026-06-30T00:00:00.000Z"
+    ) {
+      throw new Error(`Expected structured field patch to update WorkItem scalars, got ${JSON.stringify(structuredWorkItem)}`);
+    }
+    if (structuredAcceptedRows.length !== 0) {
+      throw new Error("Expected structured field patch apply to avoid creating accepted deliverable rows.");
+    }
+    if (structuredOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
+      throw new Error("Expected structured field patch apply to mark the original merge proposal chosen.");
+    }
+    const structuredAudit = structuredAuditRows[0];
+    if (
+      structuredAudit?.detailJson["merge_strategy"] !== "field_merge"
+      || structuredAudit.detailJson["structured_field_count"] !== 4
+      || structuredAudit.detailJson["accepted_change_count"] !== 0
+      || !Array.isArray(structuredAudit.detailJson["structured_field_changes"])
+    ) {
+      throw new Error(`Expected structured field patch audit payload, got ${JSON.stringify(structuredAudit?.detailJson)}`);
+    }
+
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -1072,6 +1239,17 @@ async function main() {
         text_patch_preview: textPatchPreview.type,
         accepted_drive_version_id: oneClickAccepted.driveVersionId,
         replay_timeline_count: oneClickTimelines.length
+      },
+      structured_field_patch: {
+        proposal_id: structuredProposal.id,
+        merge_proposal_id: structuredMergeProposalId,
+        apply_status: structuredApply.status,
+        merge_strategy: structuredAudit.detailJson["merge_strategy"],
+        field_count: structuredAudit.detailJson["structured_field_count"],
+        accepted_change_count: structuredAudit.detailJson["accepted_change_count"],
+        title: structuredWorkItem.title,
+        priority: structuredWorkItem.priority,
+        due_at: structuredWorkItem.dueAt?.toISOString()
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
