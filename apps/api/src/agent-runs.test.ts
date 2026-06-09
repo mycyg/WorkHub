@@ -485,7 +485,7 @@ function acceptedDeliverable(partial: Partial<AcceptedDeliverableVM> = {}): Acce
     target_kind: "delivery",
     target_key: "delivery:/outputs/result.md",
     change_type: "created",
-    accepted_version: 1,
+    accepted_version: 2,
     target_path: "/outputs/result.md",
     sha256: "b".repeat(64),
     drive_item_id: "74000000-0000-4000-8000-000000000004",
@@ -495,6 +495,7 @@ function acceptedDeliverable(partial: Partial<AcceptedDeliverableVM> = {}): Acce
     size_bytes: 4,
     download_href: `/api/workitems/${workItemId}/deliverables/74000000-0000-4000-8000-000000000001/download`,
     preview_href: `/api/workitems/${workItemId}/deliverables/74000000-0000-4000-8000-000000000001/preview`,
+    restore_href: `/api/workitems/${workItemId}/deliverables/74000000-0000-4000-8000-000000000001/restore`,
     accepted_at: now.toISOString(),
     ...partial
   };
@@ -541,6 +542,9 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
       };
     },
     async acceptedDeliverableFile() {
+      throw new Error("not needed");
+    },
+    async restoreAcceptedDeliverable() {
       throw new Error("not needed");
     }
   };

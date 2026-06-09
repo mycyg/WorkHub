@@ -183,6 +183,12 @@ export function getOpenApiDocument() {
           summary: "Preview an accepted formal deliverable when it is text-like"
         }
       },
+      "/api/workitems/{id}/deliverables/{acceptedChangeId}/restore": {
+        post: {
+          tags: ["workitems"],
+          summary: "Restore an accepted formal deliverable to its previous version"
+        }
+      },
       "/api/knowledge/search": {
         post: {
           tags: ["knowledge"],

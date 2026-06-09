@@ -150,6 +150,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async mergeProposal() {
       throw new Error("not needed");
     },
+    async restoreAcceptedDeliverable() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },

@@ -266,7 +266,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
     .join("");
   const acceptedDeliverables = replay.accepted_deliverables ?? [];
   const deliverableHrefs = acceptedDeliverables
-    .flatMap((item) => [item.preview_href, item.download_href])
+    .flatMap((item) => [item.preview_href, item.download_href, item.restore_href])
     .filter((item): item is string => Boolean(item));
   const deliverableCards = acceptedDeliverables
     .map((item) => {
@@ -276,6 +276,9 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
           : "",
         item.download_href
           ? `<a class="wh-btn wh-btn-primary" href="${href(item.download_href)}">${escapeHtml(t(locale, "replay.openDeliverable"))}</a>`
+          : "",
+        item.restore_href
+          ? `<a class="wh-btn wh-btn-danger" href="${href(item.restore_href)}" data-method="POST">${escapeHtml(t(locale, "replay.restoreDeliverable"))}</a>`
           : ""
       ].filter(Boolean).join("");
       return `<article class="wh-card"><strong>${escapeHtml(item.filename ?? item.target_key)}</strong><p class="wh-subtle">${escapeHtml(item.target_path ?? item.target_key)}</p>${actionsHtml ? `<div class="wh-actions">${actionsHtml}</div>` : ""}</article>`;

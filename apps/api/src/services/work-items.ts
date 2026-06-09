@@ -6,6 +6,7 @@ import {
   createDatabaseClient,
   createWorkItemRepository,
   defaultSeedIds,
+  WorkItemAcceptedDeliverableRestoreError,
   type StoredWorkItemDetailRows,
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
@@ -19,6 +20,7 @@ import {
   sessionVmSchema,
   workItemDetailVmSchema,
   type AgentStep,
+  type AcceptedDeliverableRestoreResult,
   type AcceptedDeliverableVM,
   type CreateSessionRequest,
   type CreateWorkItemRequest,
@@ -93,6 +95,11 @@ export type WorkItemService = {
     sizeBytes: number;
     storagePath: string;
   }>;
+  restoreAcceptedDeliverable: (input: {
+    workItemId: string;
+    acceptedChangeId: string;
+    actor: AuthActor;
+  }) => Promise<AcceptedDeliverableRestoreResult>;
 };
 
 type ServiceOptions = {
@@ -311,6 +318,9 @@ function acceptedDeliverableToVm(
     }
     vm.size_bytes = driveVersion.sizeBytes;
     vm.download_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/download`;
+    if (accepted.acceptedVersion > 1) {
+      vm.restore_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/restore`;
+    }
     if (isPreviewableText(driveVersion.mime, driveVersion.filename)) {
       vm.preview_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/preview`;
     }
@@ -675,6 +685,30 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         sizeBytes: row.driveVersion.sizeBytes,
         storagePath: row.driveVersion.storagePath
       };
+    },
+
+    async restoreAcceptedDeliverable(input) {
+      await requireDetail(input.workItemId, input.actor);
+      try {
+        const row = await repository.restoreAcceptedDeliverable({
+          workItemId: input.workItemId,
+          acceptedChangeId: input.acceptedChangeId,
+          actorKind: input.actor.kind,
+          actorUserId: input.actor.userId ?? input.actor.id,
+          at: now()
+        });
+        if (!row) {
+          throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
+        }
+        return {
+          accepted_deliverable: acceptedDeliverableToVm(row)
+        };
+      } catch (error) {
+        if (error instanceof WorkItemAcceptedDeliverableRestoreError) {
+          throw new WorkItemServiceError(409, error.code, error.message);
+        }
+        throw error;
+      }
     }
   };
 }
@@ -843,6 +877,11 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     async acceptedDeliverableFile(input) {
       requireWorkItem(input.workItemId);
       throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
+    },
+
+    async restoreAcceptedDeliverable(input) {
+      requireWorkItem(input.workItemId);
+      throw new WorkItemServiceError(409, "deliverable_no_previous_version", "这份正式交付物还没有上一版可还原。");
     }
   };
 }

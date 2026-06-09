@@ -89,6 +89,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
       }
     ]
   });
+  await client.restoreAcceptedDeliverable("work-1", "accepted-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -115,6 +116,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     'POST /api/sessions/session-1/next-question {"selected_option_ids":["risk-first"]}',
     "POST /api/knowledge/search",
     "POST /api/workitems/work-1/evidence-bindings",
+    "POST /api/workitems/work-1/deliverables/accepted-1/restore",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",

@@ -80,22 +80,23 @@ R1 退出门：
 - AgentRun replay fixture fallback 已完全移出生产 route：`/api/agent-runs/:id/replay` 只读真实 queue/persistence/audit/snapshot，不再接受 `allowP05ReplayFixture`。
 - P0.5 route set 已从生产业务 route 迁出：`sessions/workitems/knowledge/pages/workitems` 已改为 R1 最小真实 service；`pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`；仅 `/api/pages/gold-path` 保留 demo bundle。
 - CostLedger 默认 store 已从内存切到 DB-backed：`usage_records` 保存 provider 原始调用事实，`cost_ledger_entries` 按 workitem/user/team/eval scope 幂等归集；`/api/cost/usage` 与 `/api/pages/cost` 会从 DB 读取 ledger。
-- R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 intake/work item/knowledge/page route、DB-backed CostLedger/AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；最新通过证据为 `session_status=200`、`work_item_status=spec_ready`、`evidence_refs=1`、`page_evidence_refs=1`、`usage_records=1`、`cost_ledger_entries=3`、cost delta `1500 tokens / 0.007 CNY`、`agent_runs=1`、`agent_steps=4`、`proposals=1`、`branches=1`、`accepted_deliverable_changes=1`、`adopted_drive_items=1`、`adopted_drive_versions=1`、`snapshots=2`、`audit_logs=1`、`proposal_merge_audit_logs=1`、`proposal/branch/work_item=merged`、`replay_steps=4`。
+- R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 intake/work item/knowledge/page route、DB-backed CostLedger/AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay。2026-06-09 后 smoke 已覆盖正式交付物 v1 采纳、v2 同路径采纳、restore 回 v1、页面/预览/下载/replay 仍读 v1；输出证据包含 `project_drive_operations`、`accepted_restore_audit_logs`、`restore_status`、`restored_drive_version_id`。
 - Proposal merge accepted ledger 已落：采纳时写 `accepted_deliverable_changes`、merge snapshot、persistent `proposal.merged` audit，并用 sha/version gate 阻断同 target 静默覆盖。
 - AgentRun-backed delivery 正式文件落盘已落：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内写 `ProjectDriveItem/Version` 并把 `drive_item_id/drive_version_id` 写回 accepted row。
 - 正式交付物读取面已落最小切片：`GET /api/pages/workitems/:id` 返回 `accepted_deliverables[]`，并提供正式文件 download 与文本 preview API；R1 PG smoke 已覆盖页面字段、预览与下载内容。
-- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 60/60 通过。
+- 正式交付物还原入口已落最小切片：`AcceptedDeliverableVM.restore_href` 仅在有上一版时出现；`POST .../restore` 会恢复 `ProjectDriveItem.current_version_id`，切换 current accepted row，并写 Drive operation + audit。
+- 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 66/66 通过。
 
 仍不能宣称 R1 完成：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 Linux 测试机已给出真实 PG 通过证据。
 - BudgetPolicy 更新仍是内存 override，尚未落 `budget_policies` 与 `AuditLog(action="budget_policy.updated")`；预算策略持久化仍不能宣称完成。
-- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、merge snapshot、persistent audit 与同 target 冲突 gate 已落。正式交付物 revert、AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
+- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit 与同 target 冲突 gate 已落。AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 补正式交付物 revert 入口，以及 AI 冲突调解候选与冲突选择 UI。
+1. 补 AI 冲突调解候选与冲突选择 UI。
 2. 补 BudgetPolicy 持久化与 `budget_policy.updated` 审计。
 3. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 

@@ -178,7 +178,7 @@ test("replay pages carry F10 audit facts and rollback state", () => {
         target_kind: "delivery",
         target_key: "delivery:/outputs/result.md",
         change_type: "created",
-        accepted_version: 1,
+        accepted_version: 2,
         target_path: "/outputs/result.md",
         sha256: "a".repeat(64),
         drive_item_id: "71000000-0000-4000-8000-000000000007",
@@ -188,6 +188,7 @@ test("replay pages carry F10 audit facts and rollback state", () => {
         size_bytes: 120,
         download_href: "/api/workitems/71000000-0000-4000-8000-000000000002/deliverables/71000000-0000-4000-8000-000000000005/download",
         preview_href: "/api/workitems/71000000-0000-4000-8000-000000000002/deliverables/71000000-0000-4000-8000-000000000005/preview",
+        restore_href: "/api/workitems/71000000-0000-4000-8000-000000000002/deliverables/71000000-0000-4000-8000-000000000005/restore",
         accepted_at: "2026-06-05T00:00:00.000Z"
       }
     ],
@@ -205,6 +206,7 @@ test("replay pages carry F10 audit facts and rollback state", () => {
 
   assert.equal(parsed.manifest_facts?.rollback.available, true);
   assert.equal(parsed.accepted_deliverables[0]?.download_href?.includes("/download"), true);
+  assert.equal(parsed.accepted_deliverables[0]?.restore_href?.includes("/restore"), true);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

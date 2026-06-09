@@ -271,7 +271,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 
 ### 6.2.1 新增:`AcceptedDeliverableChange`(正式采纳账本,R1 最小物理语义)
 
-> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 与 AgentRun replay 可展示 accepted deliverables，并提供下载/文本预览。非 delivery change、非 AgentRun 来源、revert 与富预览仍按后续 Drive 产品化推进。
+> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 与 AgentRun replay 可展示 accepted deliverables，并提供下载/文本预览；R1.8 已补最小还原入口，把当前 Drive 指针恢复到上一版 accepted row 并写审计。非 delivery change、非 AgentRun 来源、富预览与完整 Drive 历史 UI 仍按后续 Drive 产品化推进。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -310,6 +310,13 @@ R1 delivery adoption：
 - `apps/api/src/services/proposals.ts` merge 前读取 `AgentRun.workdir_ref`，从 `target_ref.path` 定位源文件，校验路径边界、文件存在与 sha256。
 - `packages/db/src/repositories/proposals.ts` 在 merge transaction 内创建/复用 Drive 文件夹树 `AI Deliverables/{workItemCode}/outputs/...`，追加 `ProjectDriveVersion`，前移 `ProjectDriveItem.current_version_id`，并把 Drive 指针写回 accepted row。
 - `packages/db/src/repositories/work-items.ts` 读取 WorkItem detail 时左连 current accepted rows 与 Drive item/version；`WorkItemDetailVM.accepted_deliverables[]` 暴露下载/文本预览 href，但不暴露 `storage_path`。
+
+R1 delivery restore：
+
+- `AcceptedDeliverableVM.restore_href` 只在 `accepted_version > 1` 时出现，避免首版交付物给出必失败动作。
+- `POST /api/workitems/{id}/deliverables/{acceptedChangeId}/restore` 在事务内校验 `ProjectDriveItem.current_version_id == accepted.drive_version_id`；若当前版本已被其它动作前移，返回 409。
+- 还原动作将当前 accepted row 标记 `superseded_at`，把上一版同 target / 同 drive item 的 accepted row 重新设为 current，并把 `ProjectDriveItem.current_version_id` 指向上一版 `ProjectDriveVersion`。
+- 还原本身写 `ProjectDriveOperation(op_type="restore_version")` 与 `AuditLog(action="accepted_deliverable.reverted")`；这是 R1 最小审计语义，不等同于完整 Drive 历史/redo UI。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 

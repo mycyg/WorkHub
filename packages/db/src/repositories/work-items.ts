@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
 
@@ -9,9 +9,11 @@ import {
   acceptedDeliverableChanges,
   agentRuns,
   agentSteps,
+  auditLogs,
   chatMessages,
   knowledgeDocuments,
   projectDriveItems,
+  projectDriveOperations,
   projectDriveVersions,
   projects,
   proposals,
@@ -76,6 +78,20 @@ export type WorkItemAcceptedDeliverableRow = {
   driveItem: typeof projectDriveItems.$inferSelect | null;
   driveVersion: typeof projectDriveVersions.$inferSelect | null;
 };
+
+type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
+
+export class WorkItemAcceptedDeliverableRestoreError extends Error {
+  constructor(
+    public readonly code:
+      | "deliverable_not_versioned"
+      | "deliverable_no_previous_version"
+      | "deliverable_version_changed",
+    message: string
+  ) {
+    super(message);
+  }
+}
 
 export type CreateStoredWorkItemInput = {
   id?: string;
@@ -156,6 +172,13 @@ export type WorkItemDataRepository = WorkItemRepository & {
     workItemId: string,
     acceptedChangeId: string
   ) => Promise<WorkItemAcceptedDeliverableRow | null>;
+  restoreAcceptedDeliverable: (input: {
+    workItemId: string;
+    acceptedChangeId: string;
+    actorKind: "human" | "ai" | "system";
+    actorUserId: string;
+    at?: Date;
+  }) => Promise<WorkItemAcceptedDeliverableRow | null>;
   searchKnowledge: (input: WorkItemKnowledgeSearchInput) => Promise<WorkItemKnowledgeSearchRows>;
 };
 
@@ -182,6 +205,25 @@ function acceptedDeliverableQuery(db: WorkHubDb, input: { workItemId: string; ac
     conditions.push(eq(acceptedDeliverableChanges.id, input.acceptedChangeId));
   }
   return db
+    .select(acceptedDeliverableColumns())
+    .from(acceptedDeliverableChanges)
+    .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+    .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+    .where(and(...conditions));
+}
+
+function acceptedDeliverableQueryForTx(
+  tx: WorkHubTx,
+  input: { workItemId: string; acceptedChangeId?: string }
+) {
+  const conditions: SQL[] = [
+    eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+    isNull(acceptedDeliverableChanges.supersededAt)
+  ];
+  if (input.acceptedChangeId) {
+    conditions.push(eq(acceptedDeliverableChanges.id, input.acceptedChangeId));
+  }
+  return tx
     .select(acceptedDeliverableColumns())
     .from(acceptedDeliverableChanges)
     .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
@@ -398,6 +440,135 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
     async findAcceptedDeliverableFile(workItemId, acceptedChangeId) {
       const rows = await acceptedDeliverableQuery(db, { workItemId, acceptedChangeId })
         .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async restoreAcceptedDeliverable(input) {
+      const at = input.at ?? new Date();
+      let restoredAcceptedChangeId: string | undefined;
+      await db.transaction(async (tx) => {
+        const currentRows = await acceptedDeliverableQueryForTx(tx, {
+          workItemId: input.workItemId,
+          acceptedChangeId: input.acceptedChangeId
+        }).limit(1);
+        const current = currentRows[0];
+        if (!current) {
+          return;
+        }
+        if (!current.driveItem || !current.driveVersion || !current.accepted.driveItemId || !current.accepted.driveVersionId) {
+          throw new WorkItemAcceptedDeliverableRestoreError(
+            "deliverable_not_versioned",
+            "这份正式交付物没有可还原的文件版本。"
+          );
+        }
+        if (current.driveItem.currentVersionId !== current.driveVersion.id) {
+          throw new WorkItemAcceptedDeliverableRestoreError(
+            "deliverable_version_changed",
+            "正式交付物版本已经变化，请刷新后重试。"
+          );
+        }
+
+        const previousRows = await tx
+          .select(acceptedDeliverableColumns())
+          .from(acceptedDeliverableChanges)
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+          .where(and(
+            eq(acceptedDeliverableChanges.workItemId, current.accepted.workItemId),
+            eq(acceptedDeliverableChanges.targetKey, current.accepted.targetKey),
+            eq(acceptedDeliverableChanges.driveItemId, current.driveItem.id),
+            lt(acceptedDeliverableChanges.acceptedVersion, current.accepted.acceptedVersion),
+            isNotNull(acceptedDeliverableChanges.supersededAt),
+            isNotNull(acceptedDeliverableChanges.driveVersionId)
+          ))
+          .orderBy(desc(acceptedDeliverableChanges.acceptedVersion), desc(acceptedDeliverableChanges.createdAt))
+          .limit(1);
+        const previous = previousRows[0];
+        if (!previous?.driveVersion) {
+          throw new WorkItemAcceptedDeliverableRestoreError(
+            "deliverable_no_previous_version",
+            "这份正式交付物还没有上一版可还原。"
+          );
+        }
+
+        const updatedItems = await tx
+          .update(projectDriveItems)
+          .set({
+            currentVersionId: previous.driveVersion.id,
+            updatedByUserId: input.actorUserId,
+            updatedAt: at
+          })
+          .where(and(
+            eq(projectDriveItems.id, current.driveItem.id),
+            eq(projectDriveItems.currentVersionId, current.driveVersion.id)
+          ))
+          .returning({ id: projectDriveItems.id });
+        if (updatedItems.length === 0) {
+          throw new WorkItemAcceptedDeliverableRestoreError(
+            "deliverable_version_changed",
+            "正式交付物版本已经变化，请刷新后重试。"
+          );
+        }
+
+        await tx
+          .update(acceptedDeliverableChanges)
+          .set({ supersededAt: at, updatedAt: at })
+          .where(eq(acceptedDeliverableChanges.id, current.accepted.id));
+        await tx
+          .update(acceptedDeliverableChanges)
+          .set({ supersededAt: null, updatedAt: at })
+          .where(eq(acceptedDeliverableChanges.id, previous.accepted.id));
+        await tx
+          .update(workItems)
+          .set({
+            version: sql`${workItems.version} + 1`,
+            updatedAt: at
+          })
+          .where(eq(workItems.id, current.accepted.workItemId));
+        await tx.insert(projectDriveOperations).values({
+          id: randomUUID(),
+          projectId: current.driveItem.projectId,
+          actorUserId: input.actorUserId,
+          opType: "restore_version",
+          payloadJson: {
+            work_item_id: current.accepted.workItemId,
+            accepted_change_id: current.accepted.id,
+            restored_accepted_change_id: previous.accepted.id,
+            drive_item_id: current.driveItem.id,
+            from_drive_version_id: current.driveVersion.id,
+            to_drive_version_id: previous.driveVersion.id,
+            target_key: current.accepted.targetKey
+          },
+          createdAt: at,
+          updatedAt: at
+        });
+        await tx.insert(auditLogs).values({
+          id: randomUUID(),
+          actorKind: input.actorKind,
+          actorUserId: input.actorUserId,
+          entityType: "accepted_deliverable",
+          entityId: current.accepted.id,
+          action: "accepted_deliverable.reverted",
+          detailJson: {
+            work_item_id: current.accepted.workItemId,
+            restored_accepted_change_id: previous.accepted.id,
+            drive_item_id: current.driveItem.id,
+            from_drive_version_id: current.driveVersion.id,
+            to_drive_version_id: previous.driveVersion.id,
+            target_key: current.accepted.targetKey
+          },
+          createdAt: at
+        });
+        restoredAcceptedChangeId = previous.accepted.id;
+      });
+
+      if (!restoredAcceptedChangeId) {
+        return null;
+      }
+      const rows = await acceptedDeliverableQuery(db, {
+        workItemId: input.workItemId,
+        acceptedChangeId: restoredAcceptedChangeId
+      }).limit(1);
       return rows[0] ?? null;
     },
 

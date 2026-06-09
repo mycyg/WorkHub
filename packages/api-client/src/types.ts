@@ -2,6 +2,7 @@ import type {
   ApprovalCenterVM,
   AgentRunLiveVM,
   AgentStep,
+  AcceptedDeliverableRestoreResult,
   AttentionHomeVM,
   BudgetPolicy,
   BudgetPolicyUpdate,
@@ -135,6 +136,10 @@ export type WorkHubApiClient = {
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
+  restoreAcceptedDeliverable: (
+    workItemId: string,
+    acceptedChangeId: string
+  ) => Promise<AcceptedDeliverableRestoreResult>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;

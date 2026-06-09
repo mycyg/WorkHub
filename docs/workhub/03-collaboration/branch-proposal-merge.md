@@ -295,9 +295,9 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
 - WorkHub 扩展:文件改动在分支内表现为**新增 `ProjectDriveVersion`(append-only,不动 main 的 `current_version_id`)**。合并 = 把 `current_version_id` 指针指向提议版本。
   - **clean**:自分叉以来 main 的该文件 `current_version_id` 未变(`ours==base`)→ 直接指针前移(`merge_strategy=version_append`)。
   - **conflict**:main 的该文件也产生了新版本(两个 `version_no` 都基于同一 `base`)→ **二进制不合并**,生成 `MergeProposal`,候选 = `{保留 main 版 / 采纳提议版 / 两个都留(改名)}`,人择一(去黑话:「两份文件撞了,要哪个,还是都留下?」)。
-- **回滚**:合并后回退 = 把 `current_version_id` 指回 `Proposal.merged_snapshot_id` 记录的旧指针(沿用 `project_drive.py:1525` 的 restore 路径)。
+- **回滚/还原**:合并后回退 = 把 `current_version_id` 指回旧版本指针(沿用 `project_drive.py:1525` 的 restore 路径)。R1.8 最小实现已先按 accepted ledger 找上一版同 target / 同 drive item 的 `drive_version_id`，恢复 `ProjectDriveItem.current_version_id`，并写 Drive operation + audit；完整 `Proposal.merged_snapshot_id` 多文件回滚与 redo UI 后续补齐。
 
-> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览。仍未完成的是 revert、富预览、云对象存储 adapter、非 delivery change 的结构化合并与冲突选择 UI。
+> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览；R1.8 已补 `POST .../restore`，可把当前正式交付物还原到上一版并审计。仍未完成的是富预览、云对象存储 adapter、非 delivery change 的结构化合并与冲突选择 UI。
 
 ### 5.4 DOC 文本三方合并
 

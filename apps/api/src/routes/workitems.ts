@@ -154,5 +154,18 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
     }
   });
 
+  routes.post("/workitems/:id/deliverables/:acceptedChangeId/restore", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const data = await workItems.restoreAcceptedDeliverable({
+        workItemId: c.req.param("id"),
+        acceptedChangeId: c.req.param("acceptedChangeId"),
+        actor: c.var.actor
+      });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
   return routes;
 }

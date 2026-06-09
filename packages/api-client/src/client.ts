@@ -215,6 +215,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    restoreAcceptedDeliverable: (workItemId, acceptedChangeId) =>
+      request(
+        `/api/workitems/${encodeURIComponent(workItemId)}/deliverables/${encodeURIComponent(acceptedChangeId)}/restore`,
+        { method: "POST" }
+      ),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>

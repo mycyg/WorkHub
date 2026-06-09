@@ -9,6 +9,7 @@ import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import type { AcceptedDeliverableVM } from "@workhub/contracts";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -18,7 +19,7 @@ import type {
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
-import type { WorkItemService } from "./services/work-items.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-09T00:00:00.000Z");
 const userId = "12000000-0000-4000-8000-000000000001";
@@ -125,7 +126,33 @@ function withErrors(app: Hono<AuthEnv>) {
   return app;
 }
 
-function workItemServiceFor(file: Awaited<ReturnType<WorkItemService["acceptedDeliverableFile"]>>): WorkItemService {
+function acceptedDeliverableVm(partial: Partial<AcceptedDeliverableVM> = {}): AcceptedDeliverableVM {
+  return {
+    id: "72000000-0000-4000-8000-000000000001",
+    work_item_id: "72000000-0000-4000-8000-000000000002",
+    proposal_id: "72000000-0000-4000-8000-000000000003",
+    change_id: "72000000-0000-4000-8000-000000000004",
+    target_kind: "delivery",
+    target_key: "delivery:/outputs/result.md",
+    change_type: "generated",
+    accepted_version: 2,
+    target_path: "/outputs/result.md",
+    filename: "result.md",
+    mime: "text/markdown",
+    size_bytes: 42,
+    download_href: "/api/workitems/work-1/deliverables/accepted-1/download",
+    preview_href: "/api/workitems/work-1/deliverables/accepted-1/preview",
+    restore_href: "/api/workitems/work-1/deliverables/accepted-1/restore",
+    accepted_at: now.toISOString(),
+    ...partial
+  };
+}
+
+function workItemServiceFor(input: {
+  file: Awaited<ReturnType<WorkItemService["acceptedDeliverableFile"]>>;
+  restored?: AcceptedDeliverableVM;
+  restoreError?: Error;
+}): WorkItemService {
   return {
     async createSession() {
       throw new Error("not needed");
@@ -146,7 +173,15 @@ function workItemServiceFor(file: Awaited<ReturnType<WorkItemService["acceptedDe
       throw new Error("not needed");
     },
     async acceptedDeliverableFile() {
-      return file;
+      return input.file;
+    },
+    async restoreAcceptedDeliverable() {
+      if (input.restoreError) {
+        throw input.restoreError;
+      }
+      return {
+        accepted_deliverable: input.restored ?? acceptedDeliverableVm()
+      };
     }
   };
 }
@@ -162,11 +197,13 @@ test("accepted deliverable routes download and preview text without exposing sto
     app.route("/api", createWorkItemRoutes({
       auth: authDeps(runtimeSettings),
       workItems: workItemServiceFor({
-        id: "accepted-1",
-        filename: "result.md",
-        mime: "text/markdown",
-        sizeBytes: Buffer.byteLength(content),
-        storagePath
+        file: {
+          id: "accepted-1",
+          filename: "result.md",
+          mime: "text/markdown",
+          sizeBytes: Buffer.byteLength(content),
+          storagePath
+        }
       })
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
@@ -197,11 +234,13 @@ test("accepted deliverable preview rejects non-text files while download remains
     app.route("/api", createWorkItemRoutes({
       auth: authDeps(runtimeSettings),
       workItems: workItemServiceFor({
-        id: "accepted-2",
-        filename: "image.png",
-        mime: "image/png",
-        sizeBytes: 10,
-        storagePath
+        file: {
+          id: "accepted-2",
+          filename: "image.png",
+          mime: "image/png",
+          sizeBytes: 10,
+          storagePath
+        }
       })
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
@@ -225,11 +264,13 @@ test("accepted deliverable routes return 404 when the indexed storage file is mi
     app.route("/api", createWorkItemRoutes({
       auth: authDeps(runtimeSettings),
       workItems: workItemServiceFor({
-        id: "accepted-3",
-        filename: "missing.md",
-        mime: "text/markdown",
-        sizeBytes: 100,
-        storagePath: join(dir, "missing.md")
+        file: {
+          id: "accepted-3",
+          filename: "missing.md",
+          mime: "text/markdown",
+          sizeBytes: 100,
+          storagePath: join(dir, "missing.md")
+        }
       })
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
@@ -242,4 +283,66 @@ test("accepted deliverable routes return 404 when the indexed storage file is mi
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("accepted deliverable restore returns the restored current deliverable VM", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemRoutes({
+    auth: authDeps(runtimeSettings),
+    workItems: workItemServiceFor({
+      file: {
+        id: "accepted-restore",
+        filename: "result.md",
+        mime: "text/markdown",
+        sizeBytes: 42,
+        storagePath: "not-read-by-restore"
+      },
+      restored: acceptedDeliverableVm({
+        id: "72000000-0000-4000-8000-000000000099",
+        drive_version_id: "72000000-0000-4000-8000-000000000088"
+      })
+    })
+  }));
+
+  const response = await app.request("/api/workitems/work-1/deliverables/accepted-restore/restore", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { accepted_deliverable: AcceptedDeliverableVM } };
+  assert.equal(body.data.accepted_deliverable.id, "72000000-0000-4000-8000-000000000099");
+  assert.equal(body.data.accepted_deliverable.restore_href?.endsWith("/restore"), true);
+});
+
+test("accepted deliverable restore reports version conflicts as a business 409", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemRoutes({
+    auth: authDeps(runtimeSettings),
+    workItems: workItemServiceFor({
+      file: {
+        id: "accepted-conflict",
+        filename: "result.md",
+        mime: "text/markdown",
+        sizeBytes: 42,
+        storagePath: "not-read-by-restore"
+      },
+      restoreError: new WorkItemServiceError(
+        409,
+        "deliverable_no_previous_version",
+        "这份正式交付物还没有上一版可还原。"
+      )
+    })
+  }));
+
+  const response = await app.request("/api/workitems/work-1/deliverables/accepted-conflict/restore", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 409);
+  const body = await response.json() as { error: { message: string } };
+  assert.match(body.error.message, /上一版/u);
 });

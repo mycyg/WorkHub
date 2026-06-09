@@ -124,13 +124,14 @@ test("replay page surfaces accepted deliverables with preview and download actio
     target_kind: "delivery",
     target_key: "delivery:/outputs/result.md",
     change_type: "created",
-    accepted_version: 1,
+    accepted_version: 2,
     target_path: "/outputs/result.md",
     filename: "result.md",
     mime: "text/markdown",
     size_bytes: 42,
     download_href: "/api/workitems/demo/deliverables/accepted-1/download",
     preview_href: "/api/workitems/demo/deliverables/accepted-1/preview",
+    restore_href: "/api/workitems/demo/deliverables/accepted-1/restore",
     accepted_at: "2026-06-05T00:00:00.000Z"
   };
   const custom: GoldPathSurfaceVM = {
@@ -150,8 +151,11 @@ test("replay page surfaces accepted deliverables with preview and download actio
   assert.equal(replay?.html.includes("result.md"), true);
   assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/preview"), true);
   assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/download"), true);
+  assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/restore"), true);
+  assert.equal(replay?.html.includes("data-method=\"POST\""), true);
   assert.deepEqual(replay?.primaryHrefs, [
     "/api/workitems/demo/deliverables/accepted-1/preview",
-    "/api/workitems/demo/deliverables/accepted-1/download"
+    "/api/workitems/demo/deliverables/accepted-1/download",
+    "/api/workitems/demo/deliverables/accepted-1/restore"
   ]);
 });

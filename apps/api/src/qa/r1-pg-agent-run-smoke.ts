@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -25,6 +26,7 @@ import {
   proposals,
   projects,
   projectDriveItems,
+  projectDriveOperations,
   projectDriveVersions,
   runMigrations,
   snapshots,
@@ -50,6 +52,10 @@ import { createDbAgentRunPersistence } from "../services/agent-run-persistence.j
 import { createDbProposalService } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
+
+function sha256Text(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
 
 function executableAgentClient(): AgentLoopClient {
   const responses = [
@@ -344,6 +350,94 @@ async function main() {
     if (merged.status !== "merged" || !merged.merge_snapshot_id) {
       throw new Error(`Expected merged proposal with snapshot, got ${merged.status}`);
     }
+    const firstAcceptedRowsForRestore = await db.select().from(acceptedDeliverableChanges).then((rows) =>
+      rows.filter((row) => row.workItemId === workItemId && row.supersededAt === null && row.driveVersionId)
+    );
+    const firstAcceptedForRestore = firstAcceptedRowsForRestore[0];
+    if (!firstAcceptedForRestore?.driveVersionId || !firstAcceptedForRestore.sha256After) {
+      throw new Error("Expected first accepted deliverable to have a drive version and sha.");
+    }
+    const firstDriveVersionId = firstAcceptedForRestore.driveVersionId;
+    const runWorkdir = await queue.workdir(runId);
+    if (!runWorkdir) {
+      throw new Error("Expected AgentRun workdir before second proposal.");
+    }
+    const secondContent = "R1 PG smoke deliverable v2";
+    await writeFile(path.join(runWorkdir, "outputs", "result.md"), secondContent, "utf8");
+    const secondSha = sha256Text(secondContent);
+    const firstChange = proposalBeforeMerge.diffManifest.changes[0];
+    if (!firstChange) {
+      throw new Error("Expected first proposal to contain a deliverable change.");
+    }
+    const secondManifest: typeof proposalBeforeMerge.diffManifest = {
+      ...proposalBeforeMerge.diffManifest,
+      proposal_id: undefined,
+      branch_id: undefined,
+      title: "R1 PG smoke deliverable v2",
+      summary_md: "更新同一个正式交付物，用于验证还原到上一版。",
+      changes: [
+        {
+          ...firstChange,
+          id: "92000000-0000-4000-8000-000000000201",
+          change_type: "updated",
+          target_ref: {
+            ...firstChange.target_ref,
+            sha256_before: firstAcceptedForRestore.sha256After,
+            sha256_after: secondSha
+          },
+          human_summary: "更新 outputs/result.md 为第二版。"
+        }
+      ]
+    };
+    const secondProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: secondManifest,
+      actor: { actor_kind: "ai", label: "R1 PG smoke AI" },
+      agentRunId: runId
+    });
+    await proposalService.review({
+      proposalId: secondProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const secondMerged = await proposalService.merge({
+      proposalId: secondProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+    });
+    if (secondMerged.status !== "merged") {
+      throw new Error(`Expected second proposal merged, got ${secondMerged.status}`);
+    }
+    const currentBeforeRestoreRows = await db.select().from(acceptedDeliverableChanges).then((rows) =>
+      rows.filter((row) => row.workItemId === workItemId && row.supersededAt === null && row.driveVersionId)
+    );
+    const currentBeforeRestore = currentBeforeRestoreRows[0];
+    if (!currentBeforeRestore?.driveVersionId || currentBeforeRestore.driveVersionId === firstDriveVersionId) {
+      throw new Error("Expected second accepted deliverable to advance the current drive version before restore.");
+    }
+    const restoreResponse = await app.request(
+      `/api/workitems/${workItemId}/deliverables/${currentBeforeRestore.id}/restore`,
+      { method: "POST", headers }
+    );
+    if (restoreResponse.status !== 200) {
+      throw new Error(`Expected accepted deliverable restore 200, got ${restoreResponse.status}: ${await restoreResponse.text()}`);
+    }
+    const restoreBody = await restoreResponse.json() as {
+      data: { accepted_deliverable: { id: string; drive_version_id?: string; preview_href?: string; download_href?: string } };
+    };
+    if (restoreBody.data.accepted_deliverable.drive_version_id !== firstDriveVersionId) {
+      throw new Error("Expected restore response to point back to the first drive version.");
+    }
+    if (!restoreBody.data.accepted_deliverable.preview_href || !restoreBody.data.accepted_deliverable.download_href) {
+      throw new Error("Expected restored deliverable to keep preview and download refs.");
+    }
+    const restorePreview = await app.request(restoreBody.data.accepted_deliverable.preview_href, { headers });
+    if (restorePreview.status !== 200) {
+      throw new Error(`Expected restored preview 200, got ${restorePreview.status}: ${await restorePreview.text()}`);
+    }
+    const restorePreviewBody = await restorePreview.json() as { data: { text: string } };
+    if (!restorePreviewBody.data.text.includes("R1 PG smoke deliverable") || restorePreviewBody.data.text.includes("v2")) {
+      throw new Error("Expected restored preview to show the first accepted deliverable content.");
+    }
 
     const restartedPersistence = createDbAgentRunPersistence(createAgentRunRepository(db));
     const restartedQueue = createInMemoryAgentRunQueue({
@@ -383,6 +477,8 @@ async function main() {
       driveVersionRows,
       snapshotRows,
       auditRows,
+      acceptedRestoreAuditRows,
+      driveOperationRows,
       usageRecordRows,
       costLedgerRows
     ] = await Promise.all([
@@ -396,10 +492,16 @@ async function main() {
       db.select().from(projectDriveVersions),
       db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId)),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) => row.action === "accepted_deliverable.reverted")
+      ),
+      db.select().from(projectDriveOperations).then((rows) =>
+        rows.filter((row) => row.payloadJson["work_item_id"] === workItemId)
+      ),
       db.select().from(usageRecords).then((rows) => rows.filter((row) => row.runId === runId)),
       db.select().from(costLedgerEntries).then((rows) => rows.filter((row) => row.runId === runId))
     ]);
-    const proposalAfterMerge = proposalRows[0];
+    const proposalAfterMerge = proposalRows.find((row) => row.id === secondProposal.id) ?? proposalRows[0];
     const branchAfterMerge = branchRows.find((row) => row.id === proposalAfterMerge?.branchId);
     const workItemAfterMerge = workItemRows[0];
     if (proposalAfterMerge?.status !== "merged") {
@@ -429,11 +531,11 @@ async function main() {
     if (adoptedDriveVersions.length !== acceptedDriveVersionIds.size) {
       throw new Error(`Expected adopted drive versions, got ${adoptedDriveVersions.length}`);
     }
+    const currentAcceptedChangeRows = acceptedChangeRows.filter((row) => row.supersededAt === null);
+    if (currentAcceptedChangeRows.length !== 1 || currentAcceptedChangeRows[0]?.driveVersionId !== firstDriveVersionId) {
+      throw new Error("Expected restore to make the first accepted drive version current again.");
+    }
     for (const version of adoptedDriveVersions) {
-      const item = driveItemRows.find((row) => row.id === version.itemId);
-      if (!item || item.currentVersionId !== version.id) {
-        throw new Error(`Expected drive item current_version_id to point at adopted version ${version.id}`);
-      }
       const storageStat = await stat(version.storagePath);
       if (!storageStat.isFile() || storageStat.size !== version.sizeBytes) {
         throw new Error(`Expected adopted file at ${version.storagePath}`);
@@ -441,6 +543,13 @@ async function main() {
       const content = await readFile(version.storagePath, "utf8");
       if (!content.includes("R1 PG smoke deliverable")) {
         throw new Error("Expected adopted drive file content to match AgentRun output.");
+      }
+    }
+    for (const row of currentAcceptedChangeRows) {
+      const version = driveVersionRows.find((candidate) => candidate.id === row.driveVersionId);
+      const item = version ? driveItemRows.find((candidate) => candidate.id === version.itemId) : undefined;
+      if (!version || !item || item.currentVersionId !== version.id) {
+        throw new Error(`Expected current accepted drive version ${row.driveVersionId ?? "missing"} to be the Drive current version.`);
       }
     }
     const mergedWorkItemPage = await app.request(`/api/pages/workitems/${workItemId}`, { headers });
@@ -459,8 +568,12 @@ async function main() {
       };
     };
     const acceptedDeliverable = mergedWorkItemPageBody.data.accepted_deliverables[0];
-    if (!acceptedDeliverable?.download_href || !acceptedDeliverable.preview_href || !acceptedDeliverable.drive_version_id) {
-      throw new Error("Expected work item page to expose accepted deliverable download and preview refs.");
+    if (
+      !acceptedDeliverable?.download_href
+      || !acceptedDeliverable.preview_href
+      || acceptedDeliverable.drive_version_id !== firstDriveVersionId
+    ) {
+      throw new Error("Expected work item page to expose restored accepted deliverable refs.");
     }
     const previewResponse = await app.request(acceptedDeliverable.preview_href, { headers });
     if (previewResponse.status !== 200) {
@@ -478,8 +591,22 @@ async function main() {
     if (!downloadedText.includes("R1 PG smoke deliverable")) {
       throw new Error("Expected accepted deliverable download to include AgentRun output text.");
     }
+    if (downloadedText.includes("v2")) {
+      throw new Error("Expected accepted deliverable download to use the restored first version.");
+    }
     if (!proposalAuditRows.some((row) => row.action === "proposal.merged" && row.snapshotId === proposalAfterMerge.mergeSnapshotId)) {
       throw new Error("Expected persistent proposal.merged audit log linked to the merge snapshot.");
+    }
+    if (
+      !acceptedRestoreAuditRows.some((row) =>
+        row.detailJson["work_item_id"] === workItemId
+        && row.detailJson["to_drive_version_id"] === firstDriveVersionId
+      )
+    ) {
+      throw new Error("Expected accepted_deliverable.reverted audit log for the restored drive version.");
+    }
+    if (!driveOperationRows.some((row) => row.opType === "restore_version")) {
+      throw new Error("Expected ProjectDriveOperation restore_version row.");
     }
     const replay = await replayAfterRestart.json() as {
       data: {
@@ -491,10 +618,10 @@ async function main() {
     };
     if (
       replay.data.accepted_deliverables.length < 1
-      || !replay.data.accepted_deliverables[0]?.drive_version_id
+      || replay.data.accepted_deliverables[0]?.drive_version_id !== firstDriveVersionId
       || !replay.data.accepted_deliverables[0]?.download_href
     ) {
-      throw new Error("Expected restart replay to expose accepted deliverables.");
+      throw new Error("Expected restart replay to expose restored accepted deliverables.");
     }
     const summary = {
       ok: true,
@@ -518,8 +645,10 @@ async function main() {
           adoptedDriveVersions.some((version) => version.itemId === row.id)
         ).length,
         adopted_drive_versions: adoptedDriveVersions.length,
+        project_drive_operations: driveOperationRows.length,
         snapshots: snapshotRows.length,
         audit_logs: auditRows.length,
+        accepted_restore_audit_logs: acceptedRestoreAuditRows.length,
         proposal_merge_audit_logs: proposalAuditRows.length,
         usage_records: usageRecordRows.length,
         cost_ledger_entries: costLedgerRows.length
@@ -542,9 +671,12 @@ async function main() {
         merge_snapshot_id: proposalAfterMerge.mergeSnapshotId,
         accepted_targets: acceptedChangeRows.map((row) => row.targetKey),
         accepted_drive_version_ids: [...acceptedDriveVersionIds],
+        current_accepted_drive_version_ids: currentAcceptedChangeRows.map((row) => row.driveVersionId),
         accepted_deliverables_on_page: mergedWorkItemPageBody.data.accepted_deliverables.length,
         preview_status: previewResponse.status,
-        download_status: downloadResponse.status
+        download_status: downloadResponse.status,
+        restore_status: restoreResponse.status,
+        restored_drive_version_id: restoreBody.data.accepted_deliverable.drive_version_id
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

@@ -66,9 +66,15 @@ export const acceptedDeliverableVmSchema = z.object({
   size_bytes: z.number().int().nonnegative().optional(),
   download_href: z.string().min(1).optional(),
   preview_href: z.string().min(1).optional(),
+  restore_href: z.string().min(1).optional(),
   accepted_at: isoDateTimeSchema
 });
 export type AcceptedDeliverableVM = z.infer<typeof acceptedDeliverableVmSchema>;
+
+export const acceptedDeliverableRestoreResultSchema = z.object({
+  accepted_deliverable: acceptedDeliverableVmSchema
+});
+export type AcceptedDeliverableRestoreResult = z.infer<typeof acceptedDeliverableRestoreResultSchema>;
 
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
