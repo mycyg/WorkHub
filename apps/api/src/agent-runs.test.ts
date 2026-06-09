@@ -42,8 +42,11 @@ import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
   type AgentRunNotificationPublisher,
+  type AgentRunClaimLease,
+  type AgentRunHeartbeatLease,
   type AgentRunPersistence,
   type AgentRunQueueRecord,
+  type AgentRunRequeueExpiredLeases,
   type AgentRunTraceStepRecord
 } from "./workers/agent-runner.js";
 
@@ -60,6 +63,7 @@ const escalationId = "73000000-0000-4000-8000-000000000025";
 class MemoryAgentRunPersistence implements AgentRunPersistence {
   public readonly rows = new Map<string, AgentRunQueueRecord>();
   public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
+  public readonly claims: { runId: string; workerId: string }[] = [];
 
   async createRun(run: AgentRunQueueRecord) {
     this.rows.set(run.run_id, structuredClone(run));
@@ -104,6 +108,78 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
     return [...this.rows.values()]
       .filter((run) => run.status === "queued" || run.status === "running")
       .map((run) => structuredClone(run));
+  }
+
+  private claimRun(run: AgentRunQueueRecord, claim: AgentRunClaimLease) {
+    const claimed: AgentRunQueueRecord = {
+      ...structuredClone(run),
+      status: "running",
+      claim: {
+        claimed_by: claim.workerId,
+        claimed_at: claim.claimedAt.toISOString(),
+        heartbeat_at: claim.heartbeatAt.toISOString(),
+        lease_expires_at: claim.leaseExpiresAt.toISOString()
+      },
+      updated_at: claim.claimedAt.toISOString()
+    };
+    this.rows.set(run.run_id, structuredClone(claimed));
+    this.claims.push({ runId: run.run_id, workerId: claim.workerId });
+    return structuredClone(claimed);
+  }
+
+  async claimQueued(runId: string, claim: AgentRunClaimLease) {
+    const run = this.rows.get(runId);
+    if (!run || run.status !== "queued") {
+      return null;
+    }
+    return this.claimRun(run, claim);
+  }
+
+  async claimNextQueued(claim: AgentRunClaimLease) {
+    const run = [...this.rows.values()]
+      .filter((candidate) => candidate.status === "queued")
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))[0];
+    return run ? this.claimRun(run, claim) : null;
+  }
+
+  async heartbeatClaim(input: AgentRunHeartbeatLease) {
+    const run = this.rows.get(input.runId);
+    if (!run || run.status !== "running" || run.claim?.claimed_by !== input.workerId) {
+      return null;
+    }
+    const updated: AgentRunQueueRecord = {
+      ...structuredClone(run),
+      claim: {
+        claimed_by: input.workerId,
+        claimed_at: run.claim.claimed_at,
+        heartbeat_at: input.heartbeatAt.toISOString(),
+        lease_expires_at: input.leaseExpiresAt.toISOString()
+      },
+      updated_at: input.heartbeatAt.toISOString()
+    };
+    this.rows.set(input.runId, structuredClone(updated));
+    return structuredClone(updated);
+  }
+
+  async requeueExpiredClaims(input: AgentRunRequeueExpiredLeases) {
+    const requeued: AgentRunQueueRecord[] = [];
+    for (const run of this.rows.values()) {
+      if (
+        run.status === "running" &&
+        run.claim &&
+        new Date(run.claim.lease_expires_at).getTime() < input.expiredBefore.getTime()
+      ) {
+        const updated: AgentRunQueueRecord = {
+          ...structuredClone(run),
+          status: "queued",
+          updated_at: input.requeuedAt.toISOString()
+        };
+        delete updated.claim;
+        this.rows.set(run.run_id, structuredClone(updated));
+        requeued.push(structuredClone(updated));
+      }
+    }
+    return requeued;
   }
 }
 
@@ -1471,6 +1547,84 @@ test("agent run queue writes through to persistence and restores DB-backed run s
     "final"
   ]);
   assert.deepEqual(await coldQueueAfterRun.listActive(), []);
+});
+
+test("agent run queue claims the next persisted run before execution", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-claim-next-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-claim-next-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000027",
+    workerId: "worker-a",
+    leaseMs: 60_000,
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Claimed worker run"
+  });
+
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace.at(-1)));
+  assert.deepEqual(persistence.claims, [{ runId: run.run_id, workerId: "worker-a" }]);
+  assert.equal(persistence.rows.get(run.run_id)?.claim?.claimed_by, "worker-a");
+  assert.equal(persistence.rows.get(run.run_id)?.claim?.lease_expires_at, "2026-06-05T00:01:00.000Z");
+});
+
+test("agent run queue claims by id before direct run execution", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-claim-id-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-claim-id-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000028",
+    workerId: "worker-b",
+    leaseMs: 120_000,
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Direct claimed worker run"
+  });
+
+  const executed = await queue.run(run.run_id);
+
+  assert.equal(executed.status, "succeeded", JSON.stringify(executed.trace.at(-1)));
+  assert.deepEqual(persistence.claims, [{ runId: run.run_id, workerId: "worker-b" }]);
+  assert.equal(persistence.rows.get(run.run_id)?.claim?.claimed_by, "worker-b");
+  assert.equal(persistence.rows.get(run.run_id)?.claim?.lease_expires_at, "2026-06-05T00:02:00.000Z");
 });
 
 test("agent run route auto-pumps queued work after enqueue", async () => {

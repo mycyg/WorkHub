@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, lt } from "drizzle-orm";
 
 import type { WorkItemMode } from "@workhub/contracts";
 
@@ -66,6 +66,25 @@ export type StoredAgentRunRows = {
   steps: AgentStepRow[];
 };
 
+export type AgentRunClaimInput = {
+  workerId: string;
+  claimedAt: Date;
+  heartbeatAt: Date;
+  leaseExpiresAt: Date;
+};
+
+export type AgentRunHeartbeatInput = {
+  runId: string;
+  workerId: string;
+  heartbeatAt: Date;
+  leaseExpiresAt: Date;
+};
+
+export type AgentRunRequeueStaleInput = {
+  expiredBefore: Date;
+  requeuedAt: Date;
+};
+
 export type AgentRunRepository = {
   createRun: (run: AgentRunForPersistence) => Promise<AgentRunRow>;
   updateRun: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
@@ -73,6 +92,10 @@ export type AgentRunRepository = {
   setWorkdir: (runId: string, workdirRef: string, at: Date) => Promise<AgentRunRow | null>;
   findById: (runId: string) => Promise<StoredAgentRunRows | null>;
   listActive: () => Promise<StoredAgentRunRows[]>;
+  claimQueued: (runId: string, claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
+  claimNextQueued: (claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
+  heartbeatClaim: (input: AgentRunHeartbeatInput) => Promise<AgentRunRow | null>;
+  requeueExpiredClaims: (input: AgentRunRequeueStaleInput) => Promise<AgentRunRow[]>;
 };
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
@@ -100,6 +123,18 @@ function terminalFinishedAt(run: AgentRunForPersistence) {
 
 function runningStartedAt(run: AgentRunForPersistence) {
   return run.status === "running" || terminalStatuses.includes(run.status) ? run.createdAt : undefined;
+}
+
+function claimUpdateValues(claim: AgentRunClaimInput): Partial<typeof agentRuns.$inferInsert> {
+  return {
+    status: "running",
+    claimedBy: claim.workerId,
+    claimedAt: claim.claimedAt,
+    heartbeatAt: claim.heartbeatAt,
+    leaseExpiresAt: claim.leaseExpiresAt,
+    startedAt: claim.claimedAt,
+    updatedAt: claim.claimedAt
+  };
 }
 
 function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferInsert {
@@ -182,6 +217,36 @@ async function readStoredAgentRun(db: WorkHubDb, runId: string): Promise<StoredA
 }
 
 export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
+  async function claimById(runId: string, claim: AgentRunClaimInput) {
+    return db.transaction(async (tx) => {
+      const candidates = await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "queued")))
+        .limit(1)
+        .for("update", { skipLocked: true });
+      const candidate = candidates[0];
+      if (!candidate) {
+        return null;
+      }
+      const rows = await tx
+        .update(agentRuns)
+        .set(claimUpdateValues(claim))
+        .where(and(eq(agentRuns.id, candidate.id), eq(agentRuns.status, "queued")))
+        .returning();
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+      const steps = await tx
+        .select()
+        .from(agentSteps)
+        .where(eq(agentSteps.agentRunId, row.id))
+        .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
+      return { run: row, steps };
+    });
+  }
+
   return {
     async createRun(run) {
       const rows = await db.insert(agentRuns).values(runInsertValues(run)).returning();
@@ -246,6 +311,77 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
       return Promise.all(rows.map((row) => readStoredAgentRun(db, row.id))).then((items) =>
         items.filter((item): item is StoredAgentRunRows => Boolean(item))
       );
+    },
+
+    claimQueued(runId, claim) {
+      return claimById(runId, claim);
+    },
+
+    async claimNextQueued(claim) {
+      return db.transaction(async (tx) => {
+        const candidates = await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(eq(agentRuns.status, "queued"))
+          .orderBy(asc(agentRuns.createdAt))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        const candidate = candidates[0];
+        if (!candidate) {
+          return null;
+        }
+        const rows = await tx
+          .update(agentRuns)
+          .set(claimUpdateValues(claim))
+          .where(and(eq(agentRuns.id, candidate.id), eq(agentRuns.status, "queued")))
+          .returning();
+        const row = rows[0];
+        if (!row) {
+          return null;
+        }
+        const steps = await tx
+          .select()
+          .from(agentSteps)
+          .where(eq(agentSteps.agentRunId, row.id))
+          .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
+        return { run: row, steps };
+      });
+    },
+
+    async heartbeatClaim(input) {
+      const rows = await db
+        .update(agentRuns)
+        .set({
+          heartbeatAt: input.heartbeatAt,
+          leaseExpiresAt: input.leaseExpiresAt,
+          updatedAt: input.heartbeatAt
+        })
+        .where(and(
+          eq(agentRuns.id, input.runId),
+          eq(agentRuns.status, "running"),
+          eq(agentRuns.claimedBy, input.workerId)
+        ))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    async requeueExpiredClaims(input) {
+      return db
+        .update(agentRuns)
+        .set({
+          status: "queued",
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+          leaseExpiresAt: null,
+          startedAt: null,
+          updatedAt: input.requeuedAt
+        })
+        .where(and(
+          eq(agentRuns.status, "running"),
+          lt(agentRuns.leaseExpiresAt, input.expiredBefore)
+        ))
+        .returning();
     }
   };
 }

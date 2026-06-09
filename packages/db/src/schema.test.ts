@@ -111,6 +111,10 @@ test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.budgetDecisionJson.name, "budget_decision_json");
   assert.equal(agentRuns.workdirRef.name, "workdir_ref");
   assert.equal(agentRuns.handoffJson.name, "handoff_json");
+  assert.equal(agentRuns.claimedBy.name, "claimed_by");
+  assert.equal(agentRuns.claimedAt.name, "claimed_at");
+  assert.equal(agentRuns.heartbeatAt.name, "heartbeat_at");
+  assert.equal(agentRuns.leaseExpiresAt.name, "lease_expires_at");
   assert.equal(agentSteps.seq.name, "seq");
 });
 

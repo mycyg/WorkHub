@@ -444,6 +444,10 @@ PRD §8.8 / FR-SPEC-001:每个 WorkItem/项目有自动维护的 README 规格�
 | `handoff_md` | Text? | 超预算/卡住时的「已做/未做/下一步」结构化交接件(FR-WORKER-003) |
 | `handoff_json` | JSONB? | `StructuredHandoff` 机器可读版本 |
 | `workdir_ref` | str(512)? | 沙箱 workdir 引用；revert/审计恢复用 |
+| `claimed_by` | str(128)? | R2.1 worker instance id；多 worker claim owner |
+| `claimed_at` | DateTime? | R2.1 claim 成功时间 |
+| `heartbeat_at` | DateTime? | R2.1 最近一次 worker 心跳 |
+| `lease_expires_at` | DateTime? | R2.1 租约到期时间；stuck recovery 依据 |
 | `started_at`/`finished_at` | DateTime? | |
 | `created_at`/`updated_at` | DateTime | |
 
@@ -698,6 +702,8 @@ PermissionPolicy(scope: org|workspace|role|session) ——(effect=ask)→ Approv
 | 合并冲突(同对象并发改) | AI 调解给合并建议,人择一(FR-COLLAB-003);语义按内容类型分派,见 `03-collaboration/branch-proposal-merge.md` |
 | 打回但缺理由 | 应用层拒绝(`Review.reason_md` 必填);保证 §5 回灌闭环有上下文 |
 | AgentRun 超预算 / doom-loop | 强制产出 `handoff_md` 结构化交接(FR-WORKER-003),状态→ `escalated`,不静默截断 |
+| 两个 worker 同时抢同一 AgentRun | R2.1 起用 `FOR UPDATE SKIP LOCKED` claim queued row；只有 claim 成功者可执行，失败者返回空或 `agent_run_not_queued` |
+| worker 崩溃留下 running run | R2.1 已有 `lease_expires_at` 与 `requeueExpiredClaims()` primitive；R2.2 接后台调度 |
 | 工具入参 schema 校验失败 | 回灌"请改输入"可恢复错误(`AgentStep.phase=tool_result`),不崩(沿用 `auto_agent` 现行为) |
 | 非法状态转移 | `422 invalid_transition` + `AuditLog` |
 | 软删用户仍被历史行引用 | 保留行(`deleted_at`),列表/选人器过滤;授权用 `*_user_id` 防昵称重用继承(§1.4) |

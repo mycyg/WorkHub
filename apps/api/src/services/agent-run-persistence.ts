@@ -10,9 +10,12 @@ import {
 } from "@workhub/db";
 
 import type {
+  AgentRunClaimLease,
+  AgentRunHeartbeatLease,
   AgentRunPersistence,
   AgentRunQueueRecord,
   AgentRunQueueStatus,
+  AgentRunRequeueExpiredLeases,
   AgentRunTraceStepRecord
 } from "../workers/agent-runner.js";
 
@@ -179,6 +182,14 @@ function queueTrace(rows: StoredAgentRunRows): AgentRunTraceStepRecord[] {
 function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
   const usage = queueUsage(rows);
   const handoff = queueHandoff(rows);
+  const claim = rows.run.claimedBy && rows.run.claimedAt && rows.run.heartbeatAt && rows.run.leaseExpiresAt
+    ? {
+        claimed_by: rows.run.claimedBy,
+        claimed_at: rows.run.claimedAt.toISOString(),
+        heartbeat_at: rows.run.heartbeatAt.toISOString(),
+        lease_expires_at: rows.run.leaseExpiresAt.toISOString()
+      }
+    : undefined;
   return {
     run_id: rows.run.id,
     work_item_id: rows.run.workItemId,
@@ -202,8 +213,34 @@ function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
     },
     trace: queueTrace(rows),
     ...(handoff ? { handoff } : {}),
+    ...(claim ? { claim } : {}),
     created_at: rows.run.createdAt.toISOString(),
     updated_at: rows.run.updatedAt.toISOString()
+  };
+}
+
+function claimForRepository(claim: AgentRunClaimLease) {
+  return {
+    workerId: claim.workerId,
+    claimedAt: claim.claimedAt,
+    heartbeatAt: claim.heartbeatAt,
+    leaseExpiresAt: claim.leaseExpiresAt
+  };
+}
+
+function heartbeatForRepository(input: AgentRunHeartbeatLease) {
+  return {
+    runId: input.runId,
+    workerId: input.workerId,
+    heartbeatAt: input.heartbeatAt,
+    leaseExpiresAt: input.leaseExpiresAt
+  };
+}
+
+function requeueForRepository(input: AgentRunRequeueExpiredLeases) {
+  return {
+    expiredBefore: input.expiredBefore,
+    requeuedAt: input.requeuedAt
   };
 }
 
@@ -238,6 +275,26 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
     async listActive() {
       const rows = await repository.listActive();
       return rows.map(toQueueRun);
+    },
+
+    async claimQueued(runId, claim) {
+      const rows = await repository.claimQueued(runId, claimForRepository(claim));
+      return rows ? toQueueRun(rows) : null;
+    },
+
+    async claimNextQueued(claim) {
+      const rows = await repository.claimNextQueued(claimForRepository(claim));
+      return rows ? toQueueRun(rows) : null;
+    },
+
+    async heartbeatClaim(input) {
+      const row = await repository.heartbeatClaim(heartbeatForRepository(input));
+      return row ? toQueueRun({ run: row, steps: [] }) : null;
+    },
+
+    async requeueExpiredClaims(input) {
+      const rows = await repository.requeueExpiredClaims(requeueForRepository(input));
+      return rows.map((run) => toQueueRun({ run, steps: [] }));
     }
   };
 }

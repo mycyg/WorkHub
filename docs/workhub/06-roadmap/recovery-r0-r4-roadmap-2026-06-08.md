@@ -101,8 +101,8 @@ R1 退出门：
 
 下一施工顺序：
 
-1. R1.44 已补：Proposal route line editor，包含文件 tab、长 patch 搜索、逐段点选、完整 `text_hunk_overrides` payload 和键盘焦点；详见 [`../05-clients/r1-route-line-editor.md`](../05-clients/r1-route-line-editor.md)。
-2. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
+1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
+2. 继续 R2.2：多实例 pump、定时 heartbeat、`WORKHUB_WORKERS=2` 真实 smoke。
 
 ## 3. R2 真正解除单 worker
 
@@ -110,7 +110,7 @@ R1 退出门：
 
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
-| R2-1 PG 队列 claim | `SELECT ... FOR UPDATE SKIP LOCKED` claim queued run，去掉进程内 Map/Set 抢任务。 | 并发 enqueue 同 work_item 只执行一次 |
+| R2-1 PG 队列 claim | **已落 R2.1**：`claimQueued()` / `claimNextQueued()` 使用 `FOR UPDATE SKIP LOCKED`，`queue.run(id)` 与 `runNext()` 都先 claim；进程内 Map/Set 降为本地缓存与测试 fallback。 | `@workhub/api` claim tests、`@workhub/db` schema test |
 | R2-2 多实例 pump | 每个实例可跑 pump，靠 PG claim 协同；leader 任务用 Redis/PG lock。 | `WORKHUB_WORKERS=2` 跑 R1 链路 |
 | R2-3 Redis bus/presence | PushBus / presence 默认跨 worker，修 unsubscribe 竞态。 | A 实例发布，B 实例订阅者收到 |
 | R2-4 订阅边界 | `/api/push/stream` 全局 all 删除或 admin-only，资源 topic 强制 `can_view`。 | 非 owner 订阅他人 run/workitem/proposal 得 403 |

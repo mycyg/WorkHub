@@ -903,6 +903,10 @@ export const agentRuns = pgTable(
     handoffMd: text("handoff_md"),
     handoffJson: jsonb("handoff_json").$type<JsonObject>(),
     workdirRef: varchar("workdir_ref", { length: 512 }),
+    claimedBy: varchar("claimed_by", { length: 128 }),
+    claimedAt: timestampTz("claimed_at"),
+    heartbeatAt: timestampTz("heartbeat_at"),
+    leaseExpiresAt: timestampTz("lease_expires_at"),
     startedAt: timestampTz("started_at"),
     finishedAt: timestampTz("finished_at"),
     ...timestamps()
@@ -913,7 +917,9 @@ export const agentRuns = pgTable(
     index("agent_runs_work_item_id_idx").on(table.workItemId),
     index("agent_runs_branch_id_idx").on(table.branchId),
     index("agent_runs_actor_user_id_idx").on(table.actorUserId),
-    index("agent_runs_status_idx").on(table.status)
+    index("agent_runs_status_idx").on(table.status),
+    index("agent_runs_claim_idx").on(table.status, table.leaseExpiresAt, table.createdAt),
+    index("agent_runs_claimed_by_idx").on(table.claimedBy)
   ]
 );
 

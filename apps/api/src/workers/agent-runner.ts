@@ -104,6 +104,12 @@ export type AgentRunQueueRecord = {
     artifacts: string[];
     budget_hit: string;
   };
+  claim?: {
+    claimed_by: string;
+    claimed_at: string;
+    heartbeat_at: string;
+    lease_expires_at: string;
+  };
   created_at: string;
   updated_at: string;
 };
@@ -156,6 +162,29 @@ export type AgentRunPersistence = {
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
   getWorkdir: (runId: string) => Promise<string | null>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
+  claimQueued?: (runId: string, claim: AgentRunClaimLease) => Promise<AgentRunQueueRecord | null>;
+  claimNextQueued?: (claim: AgentRunClaimLease) => Promise<AgentRunQueueRecord | null>;
+  heartbeatClaim?: (input: AgentRunHeartbeatLease) => Promise<AgentRunQueueRecord | null>;
+  requeueExpiredClaims?: (input: AgentRunRequeueExpiredLeases) => Promise<AgentRunQueueRecord[]>;
+};
+
+export type AgentRunClaimLease = {
+  workerId: string;
+  claimedAt: Date;
+  heartbeatAt: Date;
+  leaseExpiresAt: Date;
+};
+
+export type AgentRunHeartbeatLease = {
+  runId: string;
+  workerId: string;
+  heartbeatAt: Date;
+  leaseExpiresAt: Date;
+};
+
+export type AgentRunRequeueExpiredLeases = {
+  expiredBefore: Date;
+  requeuedAt: Date;
 };
 
 export type AgentRunQueue = {
@@ -192,6 +221,8 @@ export function createInMemoryAgentRunQueue(options: {
   notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
+  workerId?: string;
+  leaseMs?: number;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -211,6 +242,8 @@ export function createInMemoryAgentRunQueue(options: {
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
+  const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
+  const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -254,12 +287,25 @@ export function createInMemoryAgentRunQueue(options: {
   }
 
   async function queuedRun() {
+    if (persistence?.claimNextQueued) {
+      return persistence.claimNextQueued(createClaimLease());
+    }
     const inMemory = [...runs.values()].find((run) => run.status === "queued");
     if (inMemory) {
       return inMemory;
     }
     const persisted = await persistence?.listActive();
     return persisted?.find((run) => run.status === "queued") ?? null;
+  }
+
+  function createClaimLease(): AgentRunClaimLease {
+    const claimedAt = now();
+    return {
+      workerId,
+      claimedAt,
+      heartbeatAt: claimedAt,
+      leaseExpiresAt: new Date(claimedAt.getTime() + leaseMs)
+    };
   }
 
   async function defaultWorkdir(input: AgentRunExecutionInput) {
@@ -327,6 +373,32 @@ export function createInMemoryAgentRunQueue(options: {
     }
     void queueTracePersistence(run).catch((error) => {
       console.warn("WorkHub AgentRun trace persistence failed", error);
+    });
+  }
+
+  function refreshClaimInBackground(run: AgentRunQueueRecord) {
+    if (!persistence?.heartbeatClaim || !run.claim) {
+      return;
+    }
+    const heartbeatAt = now();
+    const leaseExpiresAt = new Date(heartbeatAt.getTime() + leaseMs);
+    void persistence.heartbeatClaim({
+      runId: run.run_id,
+      workerId,
+      heartbeatAt,
+      leaseExpiresAt
+    }).then((updated) => {
+      const live = runs.get(run.run_id);
+      if (!updated || !live || live.status !== "running") {
+        return;
+      }
+      runs.set(run.run_id, {
+        ...live,
+        ...(updated.claim ? { claim: updated.claim } : {}),
+        updated_at: updated.updated_at
+      });
+    }).catch((error) => {
+      console.warn("WorkHub AgentRun claim heartbeat failed", error);
     });
   }
 
@@ -431,8 +503,20 @@ export function createInMemoryAgentRunQueue(options: {
     await emitProposalOpenedEvent(run, proposal);
   }
 
-  async function executeRun(runId: string) {
-    let run = runs.get(runId);
+  async function executeRun(runId: string, claimedRun?: AgentRunQueueRecord) {
+    let run = claimedRun;
+    const requiresPersistentClaim = !run && Boolean(persistence?.claimQueued);
+    if (requiresPersistentClaim && persistence?.claimQueued) {
+      run = await persistence.claimQueued(runId, createClaimLease()) ?? undefined;
+    }
+    if (!run && requiresPersistentClaim) {
+      const existing = await persistence?.get(runId);
+      if (!existing) {
+        throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
+      }
+      throw new AgentRunnerError(409, "agent_run_not_queued", "这次 AI 执行已经不是排队状态。");
+    }
+    run = run ?? runs.get(runId);
     if (!run) {
       run = await persistence?.get(runId) ?? undefined;
       if (run) {
@@ -442,16 +526,20 @@ export function createInMemoryAgentRunQueue(options: {
     if (!run) {
       throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
     }
-    if (run.status !== "queued") {
+    if (run.status !== "queued" && run.status !== "running") {
       throw new AgentRunnerError(409, "agent_run_not_queued", "这次 AI 执行已经不是排队状态。");
     }
 
-    let current = updateRun({
-      ...run,
-      status: "running",
-      updated_at: now().toISOString()
-    });
-    await persistRun(current);
+    let current = updateRun(run.status === "running"
+      ? run
+      : {
+          ...run,
+          status: "running",
+          updated_at: now().toISOString()
+        });
+    if (run.status !== "running") {
+      await persistRun(current);
+    }
     const executionInput = { run: current, settings };
     const client = await (options.client ?? defaultClient)(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
@@ -508,6 +596,7 @@ export function createInMemoryAgentRunQueue(options: {
               updated_at: now().toISOString()
             });
             persistTraceInBackground(current);
+            refreshClaimInBackground(current);
           }
         },
         emit: (event) => emitRunEvent(event, current),
@@ -770,7 +859,7 @@ export function createInMemoryAgentRunQueue(options: {
 
     async runNext() {
       const run = await queuedRun();
-      return run ? executeRun(run.run_id) : null;
+      return run ? executeRun(run.run_id, run.status === "running" ? run : undefined) : null;
     }
   };
 }

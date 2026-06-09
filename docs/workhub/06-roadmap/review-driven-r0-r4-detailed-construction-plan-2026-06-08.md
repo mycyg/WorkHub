@@ -1798,9 +1798,9 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 施工顺序：
 
-1. `claimNextQueued()` 使用 `FOR UPDATE SKIP LOCKED` 或等价 CAS，多个实例可以同时跑 pump。
-2. `running` run 增加 `claimed_by`、`claimed_at`、heartbeat；崩溃后 stuck-job 可回收。
-3. 去掉 `startingWorkItems` 等进程内抢占状态，改 DB 唯一约束或条件插入。
+1. **R2.1 已落**：`claimNextQueued()` / `claimQueued(run_id)` 使用 `FOR UPDATE SKIP LOCKED`，多个实例可以同时尝试 claim queued run；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
+2. **R2.1 已落首版**：`running` run 增加 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at`；已提供 `requeueExpiredClaims()` stuck-job recovery primitive。
+3. R2.2 继续：`startingWorkItems` 等进程内抢占状态仍需降级为 DB 条件插入/唯一约束，当前只作为本地缓存与测试 fallback。
 4. PushBus / presence 默认切 Redis 或 PG broker；补 unsubscribe 引用计数。
 5. `/api/push/stream` 的 `all` topic 删除或 admin-only；资源 topic 订阅前强制 `can_view`。
 6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、CORS+cookie、revert、escalation approver、非 owner 403。
@@ -1811,6 +1811,39 @@ R2 验收：
 - 同一 work item 并发 enqueue 只有一个 run 执行。
 - A 实例发布事件，B 实例订阅者收到。
 - 非 owner 订阅他人 run/workitem/proposal 被拒。
+
+### R2.1 AgentRun claim / lease（2026-06-10）
+
+本切片关闭 R2 的第一处硬缺口：`AgentRunQueue` 不再只能靠进程内 Map/Set 抢任务。只要 `persistence` 暴露 claim 方法，`queue.run(id)` 与 `queue.runNext()` 都必须先取得 PostgreSQL claim。
+
+已落代码：
+
+- `packages/db/src/schema/core.ts`：`agent_runs` 新增 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at` 与 claim 索引。
+- `packages/db/migrations/0009_easy_morg.sql`：Drizzle migration 与 `0009_snapshot.json`。
+- `packages/db/src/repositories/agent-runs.ts`：新增 `claimQueued()`、`claimNextQueued()`、`heartbeatClaim()`、`requeueExpiredClaims()`。
+- `apps/api/src/services/agent-run-persistence.ts`：把 DB claim 字段映射进 queue record。
+- `apps/api/src/workers/agent-runner.ts`：`run(id)` / `runNext()` 先 claim，record step 后 heartbeat。
+- `apps/api/src/agent-runs.test.ts`：覆盖 by-id claim 与 next claim。
+- `packages/db/src/schema.test.ts`：固定 claim/lease 字段，防 schema drift。
+
+当前边界：
+
+| 项 | R2.1 行为 |
+|---|---|
+| Claim | transaction + `FOR UPDATE SKIP LOCKED` |
+| Lease | 默认 5 分钟；测试可注入 `workerId` / `leaseMs` |
+| Heartbeat | 每次 AgentLoop step record 后续租 |
+| Stuck recovery | repository primitive 已有，尚未接后台调度 |
+| Queue cache | 进程内 Map/Set 仍保留为本地缓存与测试 fallback |
+| 仍缺 | R2.2 多实例 pump、定时 heartbeat、DB 条件插入、真实 `WORKHUB_WORKERS=2` smoke |
+
+验证：
+
+- `corepack pnpm --filter @workhub/db typecheck` 通过。
+- `corepack pnpm --filter @workhub/db test` 通过，14/14。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/api test` 通过，88/88。
+- 提交前仍需跑 `corepack pnpm db:check`、`corepack pnpm audit:migrations`、全量 `corepack pnpm verify`、`reference_paths=0`、`secret_like_matches=0`。
 
 ## 6. R3 Cuu Agent 入口
 
