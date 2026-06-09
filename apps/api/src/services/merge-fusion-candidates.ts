@@ -158,6 +158,169 @@ function changedLineIndexesFromBase(baseText: string, changedText: string) {
   return indexes;
 }
 
+type TextDiffHunk = {
+  baseStart: number;
+  baseEnd: number;
+  original: string[];
+  replacement: string[];
+};
+
+function sameLines(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function diffHunksFromBase(baseText: string, changedText: string) {
+  const base = splitTextLines(baseText);
+  const changed = splitTextLines(changedText);
+  const lcs = Array.from({ length: base.length + 1 }, () =>
+    Array.from({ length: changed.length + 1 }, () => 0)
+  );
+  for (let baseIndex = base.length - 1; baseIndex >= 0; baseIndex -= 1) {
+    for (let changedIndex = changed.length - 1; changedIndex >= 0; changedIndex -= 1) {
+      lcs[baseIndex]![changedIndex] = base[baseIndex] === changed[changedIndex]
+        ? lcs[baseIndex + 1]![changedIndex + 1]! + 1
+        : Math.max(lcs[baseIndex + 1]![changedIndex]!, lcs[baseIndex]![changedIndex + 1]!);
+    }
+  }
+
+  const hunks: TextDiffHunk[] = [];
+  let baseIndex = 0;
+  let changedIndex = 0;
+  let pendingStart: number | undefined;
+  let original: string[] = [];
+  let replacement: string[] = [];
+
+  function ensurePending() {
+    pendingStart ??= baseIndex;
+  }
+
+  function flush() {
+    if (pendingStart === undefined) {
+      return;
+    }
+    hunks.push({
+      baseStart: pendingStart,
+      baseEnd: pendingStart + original.length,
+      original,
+      replacement
+    });
+    pendingStart = undefined;
+    original = [];
+    replacement = [];
+  }
+
+  while (baseIndex < base.length || changedIndex < changed.length) {
+    if (
+      baseIndex < base.length
+      && changedIndex < changed.length
+      && base[baseIndex] === changed[changedIndex]
+    ) {
+      flush();
+      baseIndex += 1;
+      changedIndex += 1;
+      continue;
+    }
+    if (
+      changedIndex < changed.length
+      && (
+        baseIndex === base.length
+        || lcs[baseIndex]![changedIndex + 1]! >= lcs[baseIndex + 1]![changedIndex]!
+      )
+    ) {
+      ensurePending();
+      replacement.push(changed[changedIndex]!);
+      changedIndex += 1;
+      continue;
+    }
+    if (baseIndex < base.length) {
+      ensurePending();
+      original.push(base[baseIndex]!);
+      baseIndex += 1;
+    }
+  }
+  flush();
+  return hunks;
+}
+
+function hunkDuplicates(left: TextDiffHunk, right: TextDiffHunk) {
+  return left.baseStart === right.baseStart
+    && left.baseEnd === right.baseEnd
+    && sameLines(left.replacement, right.replacement);
+}
+
+function hunkOverlaps(left: TextDiffHunk, right: TextDiffHunk) {
+  if (hunkDuplicates(left, right)) {
+    return false;
+  }
+  const leftInsert = left.baseStart === left.baseEnd;
+  const rightInsert = right.baseStart === right.baseEnd;
+  if (leftInsert && rightInsert) {
+    return left.baseStart === right.baseStart;
+  }
+  if (leftInsert) {
+    return left.baseStart >= right.baseStart && left.baseStart <= right.baseEnd;
+  }
+  if (rightInsert) {
+    return right.baseStart >= left.baseStart && right.baseStart <= left.baseEnd;
+  }
+  return left.baseStart < right.baseEnd && right.baseStart < left.baseEnd;
+}
+
+function hasOverlappingDiffHunks(left: TextDiffHunk[], right: TextDiffHunk[]) {
+  return left.some((leftHunk) => right.some((rightHunk) => hunkOverlaps(leftHunk, rightHunk)));
+}
+
+function mergeUniqueHunks(currentHunks: TextDiffHunk[], incomingHunks: TextDiffHunk[]) {
+  const merged = [...currentHunks];
+  for (const incoming of incomingHunks) {
+    if (!merged.some((existing) => hunkDuplicates(existing, incoming))) {
+      merged.push(incoming);
+    }
+  }
+  return merged;
+}
+
+function applyDiffHunks(baseText: string, hunks: TextDiffHunk[]) {
+  const merged = splitTextLines(baseText);
+  const sorted = [...hunks].sort((left, right) =>
+    right.baseStart - left.baseStart || right.baseEnd - left.baseEnd
+  );
+  for (const hunk of sorted) {
+    merged.splice(hunk.baseStart, hunk.baseEnd - hunk.baseStart, ...hunk.replacement);
+  }
+  return merged.join("\n");
+}
+
+function textDiff3Merge(input: MergeFusionContentContext) {
+  if (
+    !input.base?.text
+    || !input.current?.text
+    || !input.incoming?.text
+    || input.base.truncated
+    || input.current.truncated
+    || input.incoming.truncated
+  ) {
+    return undefined;
+  }
+  if (input.current.text === input.incoming.text) {
+    return undefined;
+  }
+  const currentHunks = diffHunksFromBase(input.base.text, input.current.text);
+  const incomingHunks = diffHunksFromBase(input.base.text, input.incoming.text);
+  if (incomingHunks.length === 0 || hasOverlappingDiffHunks(currentHunks, incomingHunks)) {
+    return undefined;
+  }
+  const mergedText = applyDiffHunks(input.base.text, mergeUniqueHunks(currentHunks, incomingHunks));
+  if (mergedText === input.current.text || hasConflictMarkers(mergedText)) {
+    return undefined;
+  }
+  return {
+    mergedText,
+    currentHunks,
+    incomingHunks
+  };
+}
+
 function intersectionSize(left: Set<number>, right: Set<number>) {
   let count = 0;
   for (const value of left) {
@@ -263,6 +426,65 @@ function appendUnique(values: unknown, extra: string[]) {
     ? values.filter((value): value is string => typeof value === "string")
     : [];
   return [...new Set([...existing, ...extra])];
+}
+
+function diff3SupplementFor(input: {
+  conflict: ProposalMergeConflict;
+  context: MergeFusionContentContext | undefined;
+}): MergeProposalCandidateSupplement | undefined {
+  if (
+    (input.conflict.target_kind !== "text_doc" && input.conflict.target_kind !== "spec_doc")
+    || !input.context
+  ) {
+    return undefined;
+  }
+  const diff3 = textDiff3Merge(input.context);
+  if (!diff3) {
+    return undefined;
+  }
+  return {
+    conflictKey: input.conflict.target_key,
+    candidates: [
+      {
+        option_key: "ai_fusion",
+        target_kind: input.conflict.target_kind,
+        rationale_md: "自动合并了正式版和这次版本的非重叠文本改动；重叠改动为 0，采用前仍可查看 diff。",
+        source: "diff3",
+        quality_gate: {
+          status: "passed",
+          checks: [
+            "supported_target_kind",
+            "base_text_context",
+            "current_text_context",
+            "incoming_text_context",
+            "line_text_diff3",
+            "non_overlapping_hunks",
+            "no_git_conflict_markers"
+          ],
+          text_diff3: {
+            type: "line_text_diff3",
+            auto_merge: true,
+            conflict_hunks: 0,
+            current_hunks: diff3.currentHunks.length,
+            incoming_hunks: diff3.incomingHunks.length
+          }
+        },
+        merged_value: {
+          merged_text: diff3.mergedText
+        }
+      }
+    ],
+    recommendedOptionKey: "ai_fusion"
+  };
+}
+
+function deterministicTextDiff3Supplements(input: MergeFusionCandidateGeneratorInput) {
+  return input.conflicts
+    .map((conflict) => diff3SupplementFor({
+      conflict,
+      context: input.contentContexts?.[conflict.target_key]
+    }))
+    .filter((supplement): supplement is MergeProposalCandidateSupplement => Boolean(supplement));
 }
 
 function candidateWithTextPatchPreview(input: {
@@ -418,53 +640,56 @@ export function createLlmMergeFusionCandidateGenerator(options: {
   const registry = options.registry ?? getDefaultProviderRegistry();
   return {
     async generate(input) {
-      const eligibleConflicts = input.conflicts.filter((conflict) => supportedFusionTargetKinds.has(conflict.target_kind));
-      if (eligibleConflicts.length === 0 || !registry.isConfigured()) {
-        return [];
-      }
-
-      const client = registry.get({
-        id: input.actor?.actor_user_id ?? input.proposalId,
-        label: input.actor?.label ?? "proposal-merge-mediator",
-        ...(input.actor?.actor_user_id ? { userId: input.actor.actor_user_id } : {}),
-        workItemId: input.workItemId
-      }, "review");
-      const response = await client.messages.create({
-        maxTokens: 1200,
-        source: "review",
-        system: "You are WorkHub's merge mediator. Return strict JSON only. Never include secrets or git conflict markers.",
-        messages: [
-          {
-            role: "user",
-            content: promptFor({
-              ...input,
-              conflicts: eligibleConflicts
-            })
-          }
-        ]
-      });
-      const parsed = llmFusionResponseSchema.parse(parseJsonObject(textFromContent(response.content)));
-      const byConflict = new Map(input.conflicts.map((conflict) => [conflict.target_key, conflict]));
+      const deterministicSupplements = deterministicTextDiff3Supplements(input);
+      const deterministicKeys = new Set(deterministicSupplements.map((supplement) => supplement.conflictKey));
+      const eligibleConflicts = input.conflicts.filter((conflict) =>
+        supportedFusionTargetKinds.has(conflict.target_kind) && !deterministicKeys.has(conflict.target_key)
+      );
       const supplements: MergeProposalCandidateSupplement[] = [];
-      for (const raw of parsed.candidates) {
-        const conflict = byConflict.get(raw.conflict_key);
-        if (!conflict || !supportedFusionTargetKinds.has(conflict.target_kind)) {
-          continue;
-        }
-        if (hasConflictMarkers(raw.rationale_md) || hasConflictMarkers(raw.merged_value)) {
-          continue;
-        }
-        supplements.push({
-          conflictKey: raw.conflict_key,
-          candidates: [candidateFor({
-            conflict,
-            rationaleMd: raw.rationale_md,
-            ...(raw.merged_value ? { mergedValue: raw.merged_value } : {})
-          })],
-          ...(raw.recommend ? { recommendedOptionKey: "ai_fusion" } : {})
+
+      if (eligibleConflicts.length > 0 && registry.isConfigured()) {
+        const client = registry.get({
+          id: input.actor?.actor_user_id ?? input.proposalId,
+          label: input.actor?.label ?? "proposal-merge-mediator",
+          ...(input.actor?.actor_user_id ? { userId: input.actor.actor_user_id } : {}),
+          workItemId: input.workItemId
+        }, "review");
+        const response = await client.messages.create({
+          maxTokens: 1200,
+          source: "review",
+          system: "You are WorkHub's merge mediator. Return strict JSON only. Never include secrets or git conflict markers.",
+          messages: [
+            {
+              role: "user",
+              content: promptFor({
+                ...input,
+                conflicts: eligibleConflicts
+              })
+            }
+          ]
         });
+        const parsed = llmFusionResponseSchema.parse(parseJsonObject(textFromContent(response.content)));
+        const byConflict = new Map(input.conflicts.map((conflict) => [conflict.target_key, conflict]));
+        for (const raw of parsed.candidates) {
+          const conflict = byConflict.get(raw.conflict_key);
+          if (!conflict || !supportedFusionTargetKinds.has(conflict.target_kind)) {
+            continue;
+          }
+          if (hasConflictMarkers(raw.rationale_md) || hasConflictMarkers(raw.merged_value)) {
+            continue;
+          }
+          supplements.push({
+            conflictKey: raw.conflict_key,
+            candidates: [candidateFor({
+              conflict,
+              rationaleMd: raw.rationale_md,
+              ...(raw.merged_value ? { mergedValue: raw.merged_value } : {})
+            })],
+            ...(raw.recommend ? { recommendedOptionKey: "ai_fusion" } : {})
+          });
+        }
       }
-      return supplementsWithTextPatchPreviews(input, supplements);
+      return supplementsWithTextPatchPreviews(input, [...deterministicSupplements, ...supplements]);
     }
   };
 }
