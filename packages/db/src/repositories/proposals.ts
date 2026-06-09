@@ -1,15 +1,24 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
-import type { ActorKind, DeliverableChangeManifest } from "@workhub/contracts";
+import type { ActorKind, DeliverableChange, DeliverableChangeManifest } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { branches, proposals, reviews, workItems } from "../schema/index.js";
+import {
+  acceptedDeliverableChanges,
+  auditLogs,
+  branches,
+  proposals,
+  reviews,
+  snapshots,
+  workItems
+} from "../schema/index.js";
 
 export type BranchRow = typeof branches.$inferSelect;
 export type ProposalRow = typeof proposals.$inferSelect;
 export type ReviewRow = typeof reviews.$inferSelect;
+export type AcceptedDeliverableChangeRow = typeof acceptedDeliverableChanges.$inferSelect;
 
 export type StoredProposalRows = {
   proposal: ProposalRow;
@@ -44,8 +53,32 @@ export type ReviewProposalInput = {
 export type MergeProposalInput = {
   proposalId: string;
   mergeSnapshotId?: string;
+  actor?: ProposalRepositoryActor;
   at?: Date;
 };
+
+export type ProposalMergeConflict = {
+  target_key: string;
+  change_id: string;
+  target_kind: DeliverableChange["target_kind"];
+  change_type: DeliverableChange["change_type"];
+  existing_proposal_id: string;
+  existing_change_id: string;
+  target_path?: string;
+  existing_sha256_after?: string;
+  incoming_sha256_before?: string;
+  incoming_sha256_after?: string;
+  existing_ref?: string;
+  incoming_version_before?: string;
+};
+
+export class ProposalRepositoryMergeConflictError extends Error {
+  public readonly code = "merge_conflict";
+
+  constructor(public readonly conflicts: ProposalMergeConflict[]) {
+    super("Proposal merge conflicts with accepted deliverables");
+  }
+}
 
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
@@ -77,6 +110,95 @@ async function readStoredProposal(db: WorkHubDb, proposalId: string): Promise<St
     proposal,
     reviews: await readReviewsForProposal(db, proposal.id)
   };
+}
+
+function normalizeTargetPath(path: string) {
+  return path.replace(/\\/gu, "/").replace(/\/{2,}/gu, "/");
+}
+
+function targetKey(change: DeliverableChange) {
+  const ref = change.target_ref;
+  if (ref.entity_id) {
+    return `${ref.entity_type}:${ref.entity_id}`;
+  }
+  if (ref.path) {
+    return `${ref.entity_type}:${normalizeTargetPath(ref.path)}`;
+  }
+  return `${ref.entity_type}:${change.id}`;
+}
+
+function baseVersionRef(change: DeliverableChange) {
+  return change.target_ref.version_before ?? change.target_ref.sha256_before;
+}
+
+function acceptedRef(change: DeliverableChange) {
+  return change.target_ref.version_after
+    ?? change.target_ref.sha256_after
+    ?? change.preview_ref?.href
+    ?? change.id;
+}
+
+function conflictsWithCurrentAccepted(input: {
+  proposalId: string;
+  change: DeliverableChange;
+  targetKey: string;
+  current: AcceptedDeliverableChangeRow;
+}): ProposalMergeConflict | null {
+  const { change, current } = input;
+  if (current.proposalId === input.proposalId) {
+    return null;
+  }
+
+  const incomingShaBefore = change.target_ref.sha256_before;
+  const incomingShaAfter = change.target_ref.sha256_after;
+  const incomingVersionBefore = change.target_ref.version_before;
+  let conflicted = false;
+
+  if (incomingShaBefore) {
+    conflicted = current.sha256After !== incomingShaBefore;
+  } else if (incomingVersionBefore) {
+    conflicted = current.acceptedRef !== incomingVersionBefore;
+  } else if (change.change_type === "created" || change.change_type === "generated") {
+    conflicted = !incomingShaAfter || current.sha256After !== incomingShaAfter;
+  } else {
+    conflicted = true;
+  }
+
+  if (!conflicted) {
+    return null;
+  }
+
+  return {
+    target_key: input.targetKey,
+    change_id: change.id,
+    target_kind: change.target_kind,
+    change_type: change.change_type,
+    existing_proposal_id: current.proposalId,
+    existing_change_id: current.changeId,
+    ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
+    ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
+    ...(incomingShaBefore ? { incoming_sha256_before: incomingShaBefore } : {}),
+    ...(incomingShaAfter ? { incoming_sha256_after: incomingShaAfter } : {}),
+    ...(current.acceptedRef ? { existing_ref: current.acceptedRef } : {}),
+    ...(incomingVersionBefore ? { incoming_version_before: incomingVersionBefore } : {})
+  };
+}
+
+async function readCurrentAccepted(
+  tx: Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0],
+  input: { workItemId: string; targetKey: string }
+) {
+  const rows = await tx
+    .select()
+    .from(acceptedDeliverableChanges)
+    .where(and(
+      eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+      eq(acceptedDeliverableChanges.targetKey, input.targetKey),
+      isNull(acceptedDeliverableChanges.supersededAt)
+    ))
+    .orderBy(desc(acceptedDeliverableChanges.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export function createProposalRepository(db: WorkHubDb): ProposalRepository {
@@ -225,7 +347,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const proposalRows = await tx
           .select({
             workItemId: proposals.workItemId,
-            branchId: proposals.branchId
+            branchId: proposals.branchId,
+            diffManifest: proposals.diffManifest
           })
           .from(proposals)
           .where(eq(proposals.id, input.proposalId))
@@ -235,6 +358,39 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           return;
         }
         found = true;
+        const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow | null>();
+        const conflicts: ProposalMergeConflict[] = [];
+        for (const change of proposal.diffManifest.changes) {
+          const key = targetKey(change);
+          const current = await readCurrentAccepted(tx, { workItemId: proposal.workItemId, targetKey: key });
+          currentByTargetKey.set(key, current);
+          if (current) {
+            const conflict = conflictsWithCurrentAccepted({
+              proposalId: input.proposalId,
+              change,
+              targetKey: key,
+              current
+            });
+            if (conflict) {
+              conflicts.push(conflict);
+            }
+          }
+        }
+        if (conflicts.length > 0) {
+          throw new ProposalRepositoryMergeConflictError(conflicts);
+        }
+        const mergeContentSha = proposal.diffManifest.changes.find((change) => change.target_ref.sha256_after)
+          ?.target_ref.sha256_after;
+        await tx.insert(snapshots).values({
+          id: mergeSnapshotId,
+          workItemId: proposal.workItemId,
+          branchId: proposal.branchId,
+          kind: "merge",
+          ref: `proposal:${input.proposalId}`,
+          ...(mergeContentSha ? { contentSha256: mergeContentSha } : {}),
+          createdByKind: input.actor?.actorKind ?? "system",
+          createdAt: at
+        });
         await tx
           .update(proposals)
           .set({
@@ -263,6 +419,64 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             updatedAt: at
           })
           .where(eq(workItems.id, proposal.workItemId));
+        const acceptedRows: string[] = [];
+        for (const change of proposal.diffManifest.changes) {
+          const key = targetKey(change);
+          const current = currentByTargetKey.get(key) ?? null;
+          if (current) {
+            await tx
+              .update(acceptedDeliverableChanges)
+              .set({ supersededAt: at, updatedAt: at })
+              .where(and(
+                eq(acceptedDeliverableChanges.workItemId, proposal.workItemId),
+                eq(acceptedDeliverableChanges.targetKey, key),
+                isNull(acceptedDeliverableChanges.supersededAt)
+              ));
+          }
+          const acceptedChangeId = randomUUID();
+          acceptedRows.push(acceptedChangeId);
+          await tx.insert(acceptedDeliverableChanges).values({
+            id: acceptedChangeId,
+            workItemId: proposal.workItemId,
+            proposalId: input.proposalId,
+            branchId: proposal.branchId,
+            changeId: change.id,
+            targetKind: change.target_kind,
+            targetEntityType: change.target_ref.entity_type,
+            ...(change.target_ref.entity_id ? { targetEntityId: change.target_ref.entity_id } : {}),
+            ...(change.target_ref.path ? { targetPath: change.target_ref.path } : {}),
+            targetKey: key,
+            changeType: change.change_type,
+            acceptedVersion: (current?.acceptedVersion ?? 0) + 1,
+            ...(baseVersionRef(change) ? { baseVersionRef: baseVersionRef(change) } : {}),
+            acceptedRef: acceptedRef(change),
+            ...(change.target_ref.sha256_before ? { sha256Before: change.target_ref.sha256_before } : {}),
+            ...(change.target_ref.sha256_after ? { sha256After: change.target_ref.sha256_after } : {}),
+            ...(change.preview_ref ? { previewRefJson: change.preview_ref } : {}),
+            manifestChangeJson: change,
+            createdAt: at,
+            updatedAt: at
+          });
+        }
+        await tx.insert(auditLogs).values({
+          id: randomUUID(),
+          actorKind: input.actor?.actorKind ?? "system",
+          ...(input.actor?.actorUserId ? { actorUserId: input.actor.actorUserId } : {}),
+          entityType: "proposal",
+          entityId: input.proposalId,
+          action: "proposal.merged",
+          detailJson: {
+            work_item_id: proposal.workItemId,
+            branch_id: proposal.branchId,
+            merge_snapshot_id: mergeSnapshotId,
+            accepted_change_ids: acceptedRows,
+            accepted_change_count: acceptedRows.length,
+            conflict_checked: true,
+            target_keys: proposal.diffManifest.changes.map(targetKey)
+          },
+          snapshotId: mergeSnapshotId,
+          createdAt: at
+        });
       });
       if (!found) {
         return null;

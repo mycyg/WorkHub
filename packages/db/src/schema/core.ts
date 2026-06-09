@@ -1,4 +1,5 @@
 import type {
+  DeliverableChange,
   DeliverableChangeManifest,
   RiskLevel,
   WorkHubLocale,
@@ -764,6 +765,42 @@ export const reviews = pgTable(
   ]
 );
 
+export const acceptedDeliverableChanges = pgTable(
+  "accepted_deliverable_changes",
+  {
+    id: id(),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+    changeId: uuid("change_id").notNull(),
+    targetKind: varchar("target_kind", { length: 32 }).$type<DeliverableChange["target_kind"]>().notNull(),
+    targetEntityType: varchar("target_entity_type", { length: 32 })
+      .$type<DeliverableChange["target_ref"]["entity_type"]>()
+      .notNull(),
+    targetEntityId: uuid("target_entity_id"),
+    targetPath: varchar("target_path", { length: 512 }),
+    targetKey: varchar("target_key", { length: 768 }).notNull(),
+    changeType: varchar("change_type", { length: 32 }).$type<DeliverableChange["change_type"]>().notNull(),
+    acceptedVersion: integer("accepted_version").notNull().default(1),
+    baseVersionRef: varchar("base_version_ref", { length: 128 }),
+    acceptedRef: varchar("accepted_ref", { length: 512 }),
+    sha256Before: varchar("sha256_before", { length: 64 }),
+    sha256After: varchar("sha256_after", { length: 64 }),
+    previewRefJson: jsonb("preview_ref_json").$type<DeliverableChange["preview_ref"]>(),
+    manifestChangeJson: jsonb("manifest_change_json").$type<DeliverableChange>().notNull(),
+    supersededAt: timestampTz("superseded_at"),
+    ...timestamps()
+  },
+  (table) => [
+    index("accepted_deliverable_changes_work_item_id_idx").on(table.workItemId),
+    index("accepted_deliverable_changes_proposal_id_idx").on(table.proposalId),
+    index("accepted_deliverable_changes_branch_id_idx").on(table.branchId),
+    index("accepted_deliverable_changes_target_idx").on(table.workItemId, table.targetKey),
+    index("accepted_deliverable_changes_current_idx").on(table.workItemId, table.targetKey, table.supersededAt),
+    index("accepted_deliverable_changes_created_at_idx").on(table.createdAt)
+  ]
+);
+
 export const specDocs = pgTable(
   "spec_docs",
   {
@@ -1095,6 +1132,7 @@ export const workHubTables = {
   branches,
   proposals,
   reviews,
+  acceptedDeliverableChanges,
   specDocs,
   agentRuns,
   agentSteps,

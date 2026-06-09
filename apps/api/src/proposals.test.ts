@@ -11,13 +11,14 @@ import {
   deliverableManifestFixtures,
   type DeliverableChangeManifest
 } from "@workhub/contracts";
-import type {
+import {
+  ProposalRepositoryMergeConflictError,
+  type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
-  ProposalRepository,
+  type ProposalRepository,
   UserAuthRow as DbUserAuthRow,
-  UserRepository as DbUserRepository,
-  StoredProposalRows
+  UserRepository as DbUserRepository
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
@@ -157,6 +158,7 @@ function ids() {
 class MemoryProposalRepository implements ProposalRepository {
   private rows = new Map<string, StoredProposalRows>();
   private reviewCount = 0;
+  private acceptedByTargetKey = new Map<string, { proposalId: string; changeId: string; sha256After?: string }>();
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, {
     status: string;
@@ -240,16 +242,73 @@ class MemoryProposalRepository implements ProposalRepository {
     return stored;
   }
 
+  private targetKey(change: DeliverableChangeManifest["changes"][number]) {
+    if (change.target_ref.entity_id) {
+      return `${change.target_ref.entity_type}:${change.target_ref.entity_id}`;
+    }
+    if (change.target_ref.path) {
+      return `${change.target_ref.entity_type}:${change.target_ref.path.replace(/\\/gu, "/").replace(/\/{2,}/gu, "/")}`;
+    }
+    return `${change.target_ref.entity_type}:${change.id}`;
+  }
+
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
     const stored = this.rows.get(input.proposalId);
     if (!stored) {
       return null;
     }
     const at = input.at ?? now;
+    const conflicts = stored.proposal.diffManifest.changes
+      .map((change) => {
+        const key = this.targetKey(change);
+        const current = this.acceptedByTargetKey.get(key);
+        if (!current || current.proposalId === stored.proposal.id) {
+          return null;
+        }
+        if (change.target_ref.sha256_before) {
+          return current.sha256After === change.target_ref.sha256_before ? null : {
+            target_key: key,
+            change_id: change.id,
+            target_kind: change.target_kind,
+            change_type: change.change_type,
+            existing_proposal_id: current.proposalId,
+            existing_change_id: current.changeId,
+            ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
+            ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
+            incoming_sha256_before: change.target_ref.sha256_before,
+            ...(change.target_ref.sha256_after ? { incoming_sha256_after: change.target_ref.sha256_after } : {})
+          };
+        }
+        if (change.change_type === "created" || change.change_type === "generated") {
+          return current.sha256After === change.target_ref.sha256_after ? null : {
+            target_key: key,
+            change_id: change.id,
+            target_kind: change.target_kind,
+            change_type: change.change_type,
+            existing_proposal_id: current.proposalId,
+            existing_change_id: current.changeId,
+            ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
+            ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
+            ...(change.target_ref.sha256_after ? { incoming_sha256_after: change.target_ref.sha256_after } : {})
+          };
+        }
+        return null;
+      })
+      .filter((conflict): conflict is NonNullable<typeof conflict> => conflict !== null);
+    if (conflicts.length > 0) {
+      throw new ProposalRepositoryMergeConflictError(conflicts);
+    }
     stored.proposal.status = "merged";
     stored.proposal.mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
     stored.proposal.mergedAt = at;
     stored.proposal.updatedAt = at;
+    for (const change of stored.proposal.diffManifest.changes) {
+      this.acceptedByTargetKey.set(this.targetKey(change), {
+        proposalId: stored.proposal.id,
+        changeId: change.id,
+        ...(change.target_ref.sha256_after ? { sha256After: change.target_ref.sha256_after } : {})
+      });
+    }
     const branch = this.branchRows.get(stored.proposal.branchId);
     if (branch) {
       branch.status = "merged";
@@ -357,6 +416,59 @@ test("proposal service blocks unreviewed merges and unlocks rejected branches", 
   await assert.rejects(
     () => service.merge({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } }),
     /已经被打回/
+  );
+});
+
+test("proposal service blocks merge when the same target was already accepted with a different file hash", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const firstManifest = manifest(3);
+  const secondManifest = manifest(3);
+  const secondChange = secondManifest.changes[0];
+  if (!secondChange) {
+    throw new Error("missing fixture change");
+  }
+  secondManifest.changes = [
+    {
+      ...secondChange,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      target_ref: {
+        ...secondChange.target_ref,
+        sha256_after: "b".repeat(64)
+      },
+      human_summary: "生成了另一张同路径图片。"
+    }
+  ];
+
+  const first = await service.createFromManifest({
+    workItemId: firstManifest.work_item_id,
+    manifest: firstManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({
+    proposalId: first.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+  await service.merge({
+    proposalId: first.id,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  const second = await service.createFromManifest({
+    workItemId: secondManifest.work_item_id,
+    manifest: secondManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({
+    proposalId: second.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  await assert.rejects(
+    () => service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    /撞车/
   );
 });
 

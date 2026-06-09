@@ -212,11 +212,11 @@ owner: workflow
 **验收(AC)**
 
 - **FR-COLLAB-001**:每 actor 一条 `Branch`(`actor_kind=human|ai`,[data-model §6.1](../01-architecture/data-model.md)),多支互不阻塞;内容引用 Drive 版本家族 + `SpecDoc`,`Branch` 仅持头指针 + 元数据。
-- **FR-COLLAB-002**:`Proposal`(`UniqueConstraint(branch_id, round)`,[data-model §6.2](../01-architecture/data-model.md))→ `Review`(`approve`→`merged` / `reject`+`reason_md`→回灌,见 [`FR-ESC-003`](#2-置信度风险与升级-fr-esc--p-ai-命门))。`Delivery` 作为打包产物附件,`round` 与 `Proposal.round` 对齐([data-model §6.4](../01-architecture/data-model.md))。
+- **FR-COLLAB-002**:`Proposal`(`UniqueConstraint(branch_id, round)`,[data-model §6.2](../01-architecture/data-model.md))→ `Review`(`approve`→`merged` / `reject`+`reason_md`→回灌,见 [`FR-ESC-003`](#2-置信度风险与升级-fr-esc--p-ai-命门))。`Delivery` 作为打包产物附件,`round` 与 `Proposal.round` 对齐([data-model §6.4](../01-architecture/data-model.md))。**2026-06-09 R1 锚点**:`AcceptedDeliverableChange`([data-model §6.2.1](../01-architecture/data-model.md))记录已采纳 manifest change，merge transaction 写 `snapshots(kind=merge)` 与 `audit_logs(action=proposal.merged)`。
 - **FR-COLLAB-003**:同一对象并发改动 → AI 给合并建议,人择一/微调;语义按 [`FR-COLLAB-006`](#5-协作分支提议合并-fr-collab--p-collab--l3) 分派。
 - **FR-COLLAB-004**:用户面零 `branch/commit/PR/merge/conflict/diff/rebase/HEAD/repo`(glossary §1.2 第 1 条,可被 lint/review 检查);文案走 glossary §2 右列(草稿/改动/提交确认/采纳/打回说原因/撞车了 AI 给方案)。**现状先例**:`shared/src/design/status-vocab.ts` 已把 `delivered/accepted` 映射为「已交付/已完成」([`status-vocab.ts:36-38`](../../../shared/src/design/status-vocab.ts)),客户端按钮已是「通过」([`client-tauri/web-src/src/routes/HubDispatch.tsx`](../../../client-tauri/web-src/src/routes/HubDispatch.tsx))。
 - **FR-COLLAB-005**:合并走 `SELECT … FOR UPDATE`(PG 行级锁)+ `version` CAS([data-model §9.4](../01-architecture/data-model.md));冲突重读一次再失败报 409。**前提**:[D-2](../../prd/2026-06-04-workhub-prd.md) SQLite→PG(SQLite 不支持 `FOR UPDATE`,现状靠单 worker 串行,[`db.py:22-39`](../../../app/db.py) 注释明示 `database is locked` 之痛)。
-- **FR-COLLAB-006**:文档类(Markdown/文本)走三方文本 merge;结构化记录类(状态/字段)走字段级 CAS;无法自动合并 → 升级为 [`FR-COLLAB-003`](#5-协作分支提议合并-fr-collab--p-collab--l3) 人工择一(开放问题 4,见 [`../07-open-questions.md`](../07-open-questions.md))。
+- **FR-COLLAB-006**:文档类(Markdown/文本)走三方文本 merge;结构化记录类(状态/字段)走字段级 CAS;无法自动合并 → 升级为 [`FR-COLLAB-003`](#5-协作分支提议合并-fr-collab--p-collab--l3) 人工择一(开放问题 4,见 [`../07-open-questions.md`](../07-open-questions.md))。**2026-06-09 R1 当前 gate**:完整 AI 调解前，DB repository 先用 `accepted_deliverable_changes.target_key + sha/version` 阻断同 target 静默覆盖，返回 409 `merge_conflict`。
 
 ---
 

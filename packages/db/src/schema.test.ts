@@ -7,6 +7,7 @@ import { getTableName } from "drizzle-orm";
 
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
 import {
+  acceptedDeliverableChanges,
   agentRuns,
   agentSteps,
   auditLogs,
@@ -17,7 +18,7 @@ import {
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 43;
+const F02_TABLE_COUNT = 44;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -40,12 +41,23 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("reviews"), true);
   assert.equal(tableNames.includes("audit_logs"), true);
   assert.equal(tableNames.includes("snapshots"), true);
+  assert.equal(tableNames.includes("accepted_deliverable_changes"), true);
   assert.equal(tableNames.includes("approval_requests"), true);
   assert.equal(tableNames.includes("usage_records"), true);
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("accepted deliverable changes capture merged proposal targets for replay and conflict gates", () => {
+  assert.equal(getTableName(acceptedDeliverableChanges), "accepted_deliverable_changes");
+  assert.equal(acceptedDeliverableChanges.workItemId.name, "work_item_id");
+  assert.equal(acceptedDeliverableChanges.proposalId.name, "proposal_id");
+  assert.equal(acceptedDeliverableChanges.targetKey.name, "target_key");
+  assert.equal(acceptedDeliverableChanges.sha256Before.name, "sha256_before");
+  assert.equal(acceptedDeliverableChanges.sha256After.name, "sha256_after");
+  assert.equal(acceptedDeliverableChanges.supersededAt.name, "superseded_at");
 });
 
 test("core renamed fields are present on Drizzle table objects", () => {

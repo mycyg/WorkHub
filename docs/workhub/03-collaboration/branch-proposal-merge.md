@@ -297,6 +297,8 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
   - **conflict**:main 的该文件也产生了新版本(两个 `version_no` 都基于同一 `base`)→ **二进制不合并**,生成 `MergeProposal`,候选 = `{保留 main 版 / 采纳提议版 / 两个都留(改名)}`,人择一(去黑话:「两份文件撞了,要哪个,还是都留下?」)。
 - **回滚**:合并后回退 = 把 `current_version_id` 指回 `Proposal.merged_snapshot_id` 记录的旧指针(沿用 `project_drive.py:1525` 的 restore 路径)。
 
+> **2026-06-09 R1 TS 切片**：完整 `ProjectDriveItem.current_version_id` 前移尚未接入。当前先用 `accepted_deliverable_changes` 作为正式采纳账本：每个 `DeliverableChangeManifest.changes[]` 在 merge 时按 `target_ref.entity_type + entity_id/path/change_id` 生成 `target_key`，写入 append-only accepted row，并把旧 current row 标记 `superseded_at`。这不是终局文件存储，但已经让 R1 具备“正式版可查、同 target 覆盖可阻断、merge audit 可落库”的最小物理语义。
+
 ### 5.4 DOC 文本三方合并
 
 - 优先**三方文本合并**(base/ours/theirs 的行级 merge,类 `diff3`)。无重叠 hunk → 自动合并(`merge_strategy=field_merge`/文本变体)。
@@ -323,6 +325,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
 - **base 再校验**:进入 `merging` 时先比 `Proposal.base_snapshot_id` 与 main 当前 head:
   - 相等 → main 自分叉未变 → 可能 `fast_forward`。
   - 不等 → main 已前进 → 必须三方合并,按 `target_kind` 路由(§5)。
+- **R1 当前 gate**:在完整 `MergeAttempt` 表落地前，`ProposalRepository.merge` 先读取同一 `work_item_id + target_key` 的 current accepted row。若 incoming 带 `sha256_before/version_before`，必须与 current 对齐；若 `created/generated` 同路径 sha 不同，或 `updated/replaced/deleted` 缺 before ref，则直接返回 `merge_conflict`，避免静默覆盖正式版。
 
 ### 6.2 `ConflictItem` 结构(冲突清单)
 

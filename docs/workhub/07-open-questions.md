@@ -92,9 +92,10 @@ owner: workflow
 | 维度 | 内容 |
 |---|---|
 | **PRD 原文** | "业务对象合并语义：文档类 vs 结构化记录类，各自如何 diff/merge？（8.5）"（[PRD §16.4](../prd/2026-06-04-workhub-prd.md)）——PRD §8.5 / §14 均标其为"opencode 未解、WorkHub 必须啃的护城河"。 |
-| **收敛状态** | 🟠 **合并语义骨架已设计，P3 深设计专题；二进制/集合规则较稳，文本/结构化字段冲突的边界仍待实战收口** |
+| **收敛状态** | 🟠 **合并语义骨架已设计；R1 已做最小 accepted ledger + sha/version 冲突阻断；P3 仍需完整 AI 调解、文本/结构化字段实战收口** |
 | **分类已定（target_kind 路由）** | [`branch-proposal-merge.md §5`](./03-collaboration/branch-proposal-merge.md) 已给四类合并语义，**不同 `target_kind` 走不同算法**：① **STRUCT 结构化记录型**（WorkItem 字段/验收项/任务项）→ 字段级三方合并（base/ours/theirs）；② **DOC 文本型**（Drive 文本/`SpecDoc`）→ 三方文本合并，重叠 hunk 不写 `<<<<<<<` 脏标记而整块交 AI 调解；③ **DOC 二进制型** → 版本追加 + 指针择一（不做内容合并）；④ **SET 集合型**（协作者列表/附件）→ 并集去重。 |
 | **现状基线（扎根代码）** | 二进制/版本/指针这一类**已有现实雏形**：`ProjectDriveItem.current_version_id`（`models.py:176`）+ `ProjectDriveVersion.version_no`（append-only，`models.py:192`）+ 同名上传冲突 `conflict: replace|cancel`（`project_drive.py:859`）+ `previous_version_id` 回退（`project_drive.py:1525`）。WorkHub 在其上加"分支指针"即可，**风险最低**。结构化记录与文本三方合并是**全新**。 |
+| **R1 已落检测层** | `accepted_deliverable_changes` 已作为正式采纳账本落 TS/PG。`ProposalRepository.merge` 会对同一 `work_item_id + target_key` 的 current accepted row 做 `sha256_before/version_before` 比对；同路径 generated sha 不同或缺 before 的覆盖写会 409 `merge_conflict`。这解决“静默覆盖正式版”的最低风险，不等于完成 Drive 指针与 AI 调解。 |
 | **可自动消解特例（已定，降打扰）** | `summary_md` 退化为 DOC 文本合并；`progress_percent` 取 `max`；**`status` 主状态永不自动合并**（只由唯一权威单写路径写，§5.5）；标量字段三方规则 + 冲突交人。 |
 | **AI 调解（护城河）** | 冲突 → 逐 `ConflictItem` 生成 `MergeProposal`，复用 `auto_agent` 的 `AsyncAnthropic` 客户端出"候选 + 人话理由"，**禁输出 git 标记**；人择一/微调（FR-COLLAB-003）。AI 不可用 → 降级为纯枚举候选（保留 main / 采纳提议 / 都留），**绝不阻塞**。 |
 | **待落定项（🟠）** | （a）结构化字段"真冲突"的呈现粒度与去黑话措辞如何不让小白懵；（b）文本三方合并的相等性规整规则（行尾/空白）边界；（c）"提议过时 superseded"判定（§6.5）在高并发下的实测稳健性——均列为 **P3 深设计专题**，需真实并发数据。同步层的冲突**检测**已在 [`sync-and-spec.md §3.1 三路真值表`](./03-collaboration/sync-and-spec.md) 落定（检测归同步层、解法归协作层，两篇在"冲突 Proposal"对接）。 |

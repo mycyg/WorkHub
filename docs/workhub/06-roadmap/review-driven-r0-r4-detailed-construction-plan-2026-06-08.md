@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews` | merge 还未完整写 main 状态和真实 rollback |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit 与 accepted deliverable ledger | 仍未接完整 ProjectDrive/object storage 指针，也未做 AI 调解 UI |
 
 ### R1 必做顺序
 
@@ -133,7 +133,8 @@ R0 退出门：
    - **状态：部分完成。** `GET /api/agent-runs/:id/replay` 仍通过 queue facade 读取，但 queue facade 已有 DB fallback，可在内存 miss 时还原 `agent_runs + agent_steps`。
    - **2026-06-08 追加切片**：AgentRun replay 的 P0.5 fixture fallback 已完全移出生产 route；`/agent-runs/:id/replay` 只读真实 run/trace/snapshot/audit。
    - **2026-06-08 追加验收**：Linux 测试机真实 PG smoke 已通过，daemon restart 后 `/agent-runs/:id` 与 `/replay` 可读回。
-   - 剩余：把 replay 依赖的 merge/main 状态做实，避免只靠 proposal 状态与 merge snapshot id。
+   - **2026-06-09 追加切片**：merge 会创建真实 `snapshots(kind=merge)`、`audit_logs(action=proposal.merged)` 与 `accepted_deliverable_changes`，R1 smoke 会校验这些 DB 行。
+   - 剩余：replay 还需要把 accepted deliverable ledger 展成可回放的正式交付物视图；完整 rollback 仍要接 ProjectDrive/object storage。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
 4. **隔离 fixture**
@@ -146,14 +147,18 @@ R0 退出门：
 5. **补审批人与 merge 真实语义**
    - **状态：2026-06-08 已完成最小真实切片。**
    - `packages/db/src/repositories/proposals.ts` 在同一事务内处理 `review/merge`：打回写 `Proposal.status=rejected` 并把 branch 解回 `open`；采纳写 `Proposal.status=merged`、`merge_snapshot_id`、`Branch.status=merged/head_ref/version+1`、`WorkItem.status=merged/main_branch_id/accepted_at/version+1`。
+   - **2026-06-09 追加完成**：新增 `accepted_deliverable_changes` append-only 账本。merge 时按 manifest `target_ref` 生成 `target_key`，把每个被采纳的 change 写为正式版本记录，并 supersede 同一 `work_item_id + target_key` 的旧 current 记录。
+   - **2026-06-09 追加完成**：merge 在同一 PG transaction 内创建 `snapshots(kind=merge)` 与 `audit_logs(action=proposal.merged)`；audit detail 记录 `accepted_change_ids`、`accepted_change_count`、`target_keys`、`conflict_checked=true`。
+   - **2026-06-09 追加完成**：merge 前读取同一 target 的 current accepted row。若 incoming manifest 没有对齐 `sha256_before/version_before`，或 `created/generated` 同路径 sha 与正式版不同，返回 `merge_conflict`，用户面文案为「这份变更和正式版撞车，需要先选择处理方案。」
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、merge audit repo 持久化、文件物理采纳、冲突调解、revert 仍未完成。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、ProjectDrive/object storage 真实文件搬运、AI 冲突调解候选、revert 执行入口仍未完成。
 
 ### R1 验收
 
 - 一条 file-only work item 经真实 route 跑完，产生 DB `agent_run`、`agent_steps`、`proposal`、`review`、`audit`、`snapshot`。
+- merge 后至少产生 1 条 `accepted_deliverable_changes`、1 条 `snapshots(kind=merge)`、1 条 `audit_logs(action=proposal.merged)`；同路径不同 sha 的二次采纳必须 409。
 - daemon 重启后，`GET /api/agent-runs/:id` 与 `/replay` 仍返回同一 run。
 - 生产 route 中不能用 hardcoded manifest/replay 证明通过。
 - 快照红线、provider 单出口、预算计量不回退。
@@ -168,7 +173,8 @@ R0 退出门：
 - 后续已补：真实 PostgreSQL daemon restart 验收、P0.5 route set 整体迁出生产业务 route。
 - 后续已补：R1 最小真实 `sessions/workitems/knowledge/page workitem` service 已接入，并纳入 API test 与 PG smoke。
 - 后续已补：CostLedger 默认 store 已接 `usage_records/cost_ledger_entries` 与 DB-backed repository，并纳入 PG smoke 的 cost usage/page 断言。
-- 未完成：BudgetPolicy 持久化与审计、merge 的文件物理采纳、冲突调解、audit repo 持久化、完整 approval policy routing 仍未完成。
+- 后续已补：merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同路径不同 sha 冲突 gate；API test 覆盖冲突阻断。
+- 未完成：BudgetPolicy 持久化与审计、ProjectDrive/object storage 真实文件搬运、AI 冲突调解候选、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -192,7 +198,8 @@ pnpm qa:r1-pg-smoke
 10. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
 11. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
 12. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
-13. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page 汇总、`agent_runs`、`agent_steps`、`proposals`、`branches`、`snapshots`、`audit_logs` 行数、merge 状态与 replay 计数。
+13. 断言 merge 产生 `accepted_deliverable_changes`、`snapshots(kind=merge)`、`audit_logs(action=proposal.merged)`，且 proposal merge audit 绑定 `merge_snapshot_id`。
+14. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page 汇总、`agent_runs`、`agent_steps`、`proposals`、`branches`、`accepted_deliverable_changes`、`snapshots`、`audit_logs` 行数、merge 状态、accepted targets 与 replay 计数。
 
 当前本机实测：
 
@@ -218,8 +225,10 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "agent_steps": 4,
     "proposals": 1,
     "branches": 1,
-    "snapshots": 1,
+    "accepted_deliverable_changes": 1,
+    "snapshots": 2,
     "audit_logs": 1,
+    "proposal_merge_audit_logs": 1,
     "usage_records": 1,
     "cost_ledger_entries": 3
   },
@@ -234,7 +243,8 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "branch_status": "merged",
     "work_item_status": "merged",
     "main_branch_id": "26b6e22e-a505-4b0d-bb2f-dcc823de7566",
-    "merge_snapshot_id": "09bc2886-028f-4feb-8de3-65e37d073905"
+    "merge_snapshot_id": "09bc2886-028f-4feb-8de3-65e37d073905",
+    "accepted_targets": ["delivery:/outputs/result.md"]
   },
   "replay_steps": 4,
   "replay_snapshots": 1,
@@ -242,7 +252,43 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> DB CostLedger -> AgentRun -> proposal -> merge -> replay 纵切已由 Linux PG smoke 验证通过。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> DB CostLedger -> AgentRun -> proposal -> accepted deliverable ledger -> merge audit -> replay 纵切已由 Linux PG smoke 验证通过。
+
+### R1.4 Merge accepted ledger 与冲突 gate（2026-06-09）
+
+本切片的范围是 **file-only proposal 的最小正式采纳语义**，不是完整网盘/对象存储实现。
+
+已落代码：
+
+- `packages/db/src/schema/core.ts` 新增 `accepted_deliverable_changes`。
+- `packages/db/migrations/0004_little_molly_hayes.sql` 新增表、外键与索引。
+- `packages/db/src/repositories/proposals.ts` 在 merge transaction 内：
+  - 读取 `DeliverableChangeManifest.changes[]`。
+  - 按 `target_ref.entity_type + entity_id/path/change_id` 生成稳定 `target_key`。
+  - 对同一 `work_item_id + target_key` 的 current accepted row 做冲突检查。
+  - clean 时 supersede 旧 current row，并写入新的 accepted row。
+  - 写 `snapshots(kind=merge)` 和 `audit_logs(action=proposal.merged)`。
+- `apps/api/src/services/proposals.ts` 把 repository conflict 转为稳定 `ProposalServiceError(code=merge_conflict,status=409)`。
+- `apps/api/src/proposals.test.ts` 覆盖同路径不同 sha 的二次 merge 必须被阻断。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts` 把 accepted rows 与 persistent proposal merge audit 纳入真实 PG 验收。
+
+当前冲突规则：
+
+| 场景 | R1 行为 |
+|---|---|
+| 首次采纳某 target | 直接写 accepted ledger |
+| incoming 带 `sha256_before` | 必须等于 current `sha256_after`，否则 409 |
+| incoming 带 `version_before` | 必须等于 current `accepted_ref`，否则 409 |
+| `created/generated` 且同 target 已存在 | sha 相同视为幂等，不同则 409 |
+| `updated/replaced/deleted` 但未带 before ref | 保守 409，避免静默覆盖正式版 |
+
+仍未完成：
+
+- 真实 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion` 指针前移。
+- object storage blob 从 run workdir 到正式 bucket/path 的搬运。
+- `MergeAttempt` / `MergeProposal` 表与 AI 候选生成。
+- 冲突选择 UI 与 `/workitems/{id}/conflicts` API。
+- revert 执行入口：当前有 merge snapshot 和 rollback payload，但还没有把 accepted ledger 或 Drive 指针恢复到旧版本的操作。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -265,7 +311,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 - `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 10/10；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、文件物理采纳、冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、ProjectDrive/object storage 真实文件搬运、AI 冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

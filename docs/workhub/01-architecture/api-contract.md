@@ -135,10 +135,12 @@ owner: workflow
 | **[新/演]** `POST /api/proposals/{id}/review` | `{decision: "approve"\|"reject", reason_md?}` | `{ok, status}` | reviewer(负责人) |
 | **[现→演]** `POST /api/requirements/{id}/revisions` | `{reason_md}` | `{ok, status}` | submitter(负责人) | `deliveries.py:267` |
 | **[现→演]** `POST /api/requirements/{id}/accept` | — | `{ok, status}` | submitter(负责人) | `deliveries.py:226` |
-| **[新]** `POST /api/proposals/{id}/merge` | `{strategy?}` | `{ok, merged_at}`(高置信低风险可自动) | reviewer / 策略自动 |
+| **[新]** `POST /api/proposals/{id}/merge` | `{confirm?: true}` | `ProposalMergeResult`(含 `merge_snapshot_id`、rollback、events、audit facts)；409 `merge_conflict` 表示和正式版撞车 | reviewer / 策略自动 |
 | **[新]** `GET /api/workitems/{id}/conflicts` | — | `ConflictOut[]`(AI 调解建议) | 可见性门 |
 
 **打回回灌(命门,沿用 + 强化)**:现有 `request_revision`(`deliveries.py:267`)已要求 `reason_md` 必填、写 `RevisionRequest` 行、CAS `delivered→revision_requested`、发 `revision.requested` 事件(`deliveries.py:321`)。WorkHub 强化为 **PRD FR-ESC-003**:`reject` 的 `reason_md` 作为上下文**回灌**给 AI,在**同分支续做**而非重来(对齐 opencode CorrectedError)。**`reject` 必须带理由**——空理由 `400`。
+
+**R1 merge 返回语义(2026-06-09)**:`POST /api/proposals/{id}/merge` 成功时，DB transaction 已写 `proposals/branches/work_items` 状态、`snapshots(kind=merge)`、`accepted_deliverable_changes`、`audit_logs(action=proposal.merged)`。若同一 target 当前正式版与 incoming `sha256_before/version_before` 不一致，或 generated 同路径 sha 不同，返回 409 `merge_conflict`；用户面说“和正式版撞车”，不显示 merge/conflict 黑话。
 
 ### 2.6 agent-run — AI 工人执行 + trace **[演]**
 

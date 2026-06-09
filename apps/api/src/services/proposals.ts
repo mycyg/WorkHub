@@ -11,6 +11,7 @@ import {
 import {
   createDatabaseClient,
   createProposalRepository,
+  ProposalRepositoryMergeConflictError,
   type ProposalRepository,
   type StoredProposalRows,
   type WorkHubDatabaseClient
@@ -346,11 +347,20 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
       }
 
-      const rows = await repository.merge({
-        proposalId: input.proposalId,
-        mergeSnapshotId: nextId(),
-        at: now()
-      });
+      let rows: StoredProposalRows | null;
+      try {
+        rows = await repository.merge({
+          proposalId: input.proposalId,
+          mergeSnapshotId: nextId(),
+          actor: actorToRepository(input.actor),
+          at: now()
+        });
+      } catch (error) {
+        if (error instanceof ProposalRepositoryMergeConflictError) {
+          throw new ProposalServiceError(409, "merge_conflict", "这份变更和正式版撞车，需要先选择处理方案。");
+        }
+        throw error;
+      }
       if (!rows) {
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }

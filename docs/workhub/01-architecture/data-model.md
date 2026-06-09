@@ -269,6 +269,39 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 | `created_at`/`updated_at` | DateTime | |
 | `UniqueConstraint` | `(branch_id, round)` | 一支一轮一提议 |
 
+### 6.2.1 新增:`AcceptedDeliverableChange`(正式采纳账本,R1 最小物理语义)
+
+> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 与未来 ProjectDrive/object storage 之间的过渡账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。终局仍会把文件类 change 接到 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | |
+| `work_item_id` | FK→work_items.id, CASCADE, index | 所属事项 |
+| `proposal_id` | FK→proposals.id, CASCADE, index | 哪个提议被采纳后产生 |
+| `branch_id` | FK→branches.id?, SET NULL, index | 来源工作副本 |
+| `change_id` | UUID | `DeliverableChange.id` |
+| `target_kind` | str(32) | `binary_doc/text_doc/spreadsheet/slide_deck/image/folder/structured_record/...` |
+| `target_entity_type` | str(32) | `work_item/drive_item/delivery/spec_doc/folder/external` |
+| `target_entity_id` | UUID? | manifest 中的 `target_ref.entity_id` |
+| `target_path` | str(512)? | manifest 中的 `target_ref.path` |
+| `target_key` | str(768), index | 稳定合并键：`entity_type + entity_id/path/change_id` |
+| `change_type` | str(32) | `created/updated/deleted/renamed/moved/replaced/generated` |
+| `accepted_version` | int, default 1 | 同 target 的正式版递增序号 |
+| `base_version_ref` | str(128)? | `version_before` 或 `sha256_before` |
+| `accepted_ref` | str(512)? | `version_after` / `sha256_after` / preview href / change id |
+| `sha256_before` / `sha256_after` | str(64)? | 文件类冲突 gate |
+| `preview_ref_json` | JSONB? | manifest preview ref |
+| `manifest_change_json` | JSONB | 原始 `DeliverableChange` 快照 |
+| `superseded_at` | DateTime? | null 表示当前正式版 |
+| `created_at`/`updated_at` | DateTime | |
+
+R1 冲突 gate：
+
+- incoming 带 `sha256_before` 时，必须等于 current accepted row 的 `sha256_after`。
+- incoming 带 `version_before` 时，必须等于 current accepted row 的 `accepted_ref`。
+- `created/generated` 同 target 已存在且 sha 不同，返回 409 `merge_conflict`。
+- `updated/replaced/deleted` 缺 before ref 时保守 409，避免静默覆盖正式版。
+
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 
 现有 `RevisionRequest`([`models.py:535`](../../../app/models.py))只建模"打回":`requirement_id`、`delivery_id`、`requested_by_nickname`、`reason_md`(NOT NULL——**打回必须带理由**,正是 PRD §8.2 触发器②/FR-ESC-003 的数据基础)。WorkHub 泛化为对称的 `Review`(通过 + 打回都建模):
@@ -570,6 +603,7 @@ WorkItem 1—* RequirementWorkspace 1—* (Item / ProgressUpdate)  (人侧执行
 
 Branch 1—* Proposal(UniqueConstraint branch_id+round)
 Proposal 1—* Review(decision: approve|reject; reject 必带 reason_md)
+Proposal 1—* AcceptedDeliverableChange(正式采纳账本;current row = superseded_at is null)
 Proposal 1—? Delivery(打包产物;round 对齐)
 Proposal —? ConfidenceRecord
 

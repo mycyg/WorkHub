@@ -7,6 +7,7 @@ import { loadSettings } from "@workhub/config";
 import {
   auditLogs,
   agentRuns,
+  acceptedDeliverableChanges,
   branches,
   costLedgerEntries,
   createAgentRunRepository,
@@ -356,6 +357,7 @@ async function main() {
       proposalRows,
       branchRows,
       workItemRows,
+      acceptedChangeRows,
       snapshotRows,
       auditRows,
       usageRecordRows,
@@ -366,6 +368,7 @@ async function main() {
       db.select().from(proposals).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
+      db.select().from(acceptedDeliverableChanges).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId)),
       db.select().from(usageRecords).then((rows) => rows.filter((row) => row.runId === runId)),
@@ -377,6 +380,9 @@ async function main() {
     if (proposalAfterMerge?.status !== "merged") {
       throw new Error(`Expected proposal.status merged, got ${proposalAfterMerge?.status ?? "missing"}`);
     }
+    const proposalAuditRows = await db.select().from(auditLogs).then((rows) =>
+      rows.filter((row) => row.entityId === proposalAfterMerge.id)
+    );
     if (branchAfterMerge?.status !== "merged") {
       throw new Error(`Expected branch.status merged, got ${branchAfterMerge?.status ?? "missing"}`);
     }
@@ -384,6 +390,12 @@ async function main() {
       throw new Error(
         `Expected work item main branch merge, got status=${workItemAfterMerge?.status ?? "missing"} main=${workItemAfterMerge?.mainBranchId ?? "missing"}`
       );
+    }
+    if (acceptedChangeRows.length < proposalAfterMerge.diffManifest.changes.length) {
+      throw new Error(`Expected accepted deliverable changes, got ${acceptedChangeRows.length}`);
+    }
+    if (!proposalAuditRows.some((row) => row.action === "proposal.merged" && row.snapshotId === proposalAfterMerge.mergeSnapshotId)) {
+      throw new Error("Expected persistent proposal.merged audit log linked to the merge snapshot.");
     }
     const replay = await replayAfterRestart.json() as {
       data: { steps: unknown[]; snapshots: unknown[]; audit_logs: unknown[] };
@@ -405,8 +417,10 @@ async function main() {
         agent_steps: stepRows.length,
         proposals: proposalRows.length,
         branches: branchRows.length,
+        accepted_deliverable_changes: acceptedChangeRows.length,
         snapshots: snapshotRows.length,
         audit_logs: auditRows.length,
+        proposal_merge_audit_logs: proposalAuditRows.length,
         usage_records: usageRecordRows.length,
         cost_ledger_entries: costLedgerRows.length
       },
@@ -421,7 +435,8 @@ async function main() {
         branch_status: branchAfterMerge?.status,
         work_item_status: workItemAfterMerge.status,
         main_branch_id: workItemAfterMerge.mainBranchId,
-        merge_snapshot_id: proposalAfterMerge.mergeSnapshotId
+        merge_snapshot_id: proposalAfterMerge.mergeSnapshotId,
+        accepted_targets: acceptedChangeRows.map((row) => row.targetKey)
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
