@@ -46,6 +46,7 @@ owner: workflow
 | `AcceptanceCriteria` | 现有 | [`models.py:464`](../../../app/models.py) | §4.4 |
 | `Branch` | **新增·核心** | — | §6.1 |
 | `Proposal` | **新增·核心** | 演进自 deliver→验收循环 | §6.2 |
+| `MergeAttempt` | **新增·审计** | Proposal merge 冲突检测/选择留痕 | §6.2.2 |
 | `Review` | **演进**(自 `RevisionRequest`) | [`models.py:535`](../../../app/models.py) | §6.3 |
 | `Delivery` | 现有 | [`models.py:515`](../../../app/models.py) | §6.4 |
 | `AgentRun` | **演进**(自 `auto_agent` + `BackgroundJob`) | [`models.py:93`](../../../app/models.py) / `auto_agent.py` | §7.1 |
@@ -317,6 +318,32 @@ R1 delivery restore：
 - `POST /api/workitems/{id}/deliverables/{acceptedChangeId}/restore` 在事务内校验 `ProjectDriveItem.current_version_id == accepted.drive_version_id`；若当前版本已被其它动作前移，返回 409。
 - 还原动作将当前 accepted row 标记 `superseded_at`，把上一版同 target / 同 drive item 的 accepted row 重新设为 current，并把 `ProjectDriveItem.current_version_id` 指向上一版 `ProjectDriveVersion`。
 - 还原本身写 `ProjectDriveOperation(op_type="restore_version")` 与 `AuditLog(action="accepted_deliverable.reverted")`；这是 R1 最小审计语义，不等同于完整 Drive 历史/redo UI。
+
+### 6.2.2 新增:`MergeAttempt`(合并尝试与冲突选择审计,R1.11)
+
+> **R1.11 当前实现表**：`merge_attempts`。它记录每次 `POST /api/proposals/{id}/merge` 的冲突检测结果：默认 merge 被 gate 挡住时写 `result="conflict"`；用户通过 `accept_incoming` option 显式带回 target key 后，成功采纳时写 `result="merged"`，并把 `merge_attempt_id`、`accepted_incoming_target_keys`、`resolved_conflict_target_keys` 写入 `AuditLog(action="proposal.merged").detail_json`。这一步只落 file-only deterministic 两选一的审计事实；LLM 融合候选仍由后续 `MergeProposal` 切片补齐。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | 单次尝试 |
+| `proposal_id` | FK→proposals.id, CASCADE, index | 被尝试合并的变更申请 |
+| `work_item_id` | FK→work_items.id, CASCADE, index | 冗余作用域，便于 replay/audit 查询 |
+| `branch_id` | FK→branches.id?, SET NULL, index | 来源工作副本 |
+| `actor_kind` / `actor_user_id` | str / FK→users.id? | 谁触发本次尝试 |
+| `result` | str(16), index | `conflict` / `merged` / `aborted` / `clean`；R1.11 实际写 `conflict|merged` |
+| `merge_snapshot_id` | FK→snapshots.id?, SET NULL, index | 成功 merge 时关联的 merge snapshot |
+| `conflicts_json` | JSONB `[]` | 被阻断的冲突，或成功时已由用户选择接收 incoming 的冲突 |
+| `accepted_target_keys` | JSONB `[]` | 本次请求显式选择采纳 incoming 的 target keys |
+| `target_keys` | JSONB `[]` | 本次 proposal 涉及的全部 target keys |
+| `conflict_count` | int | `conflicts_json.length`，便于看板聚合 |
+| `created_at` | DateTime | |
+
+R1.11 审计规则：
+
+- 409 `merge_conflict` 不能只返回给前端，必须留下 `merge_attempts.result="conflict"`，否则事后无法解释“为什么没有交付”。
+- 成功 merge 也必须留下 `merge_attempts.result="merged"`；若是带 `accept_incoming_target_keys` 的二次 merge，`conflicts_json` 记录这些已解决冲突。
+- `proposal.merged` audit detail 必须带 `merge_attempt_id`，把正式采纳账本、merge snapshot 与用户选择串起来。
+- `MergeAttempt` 不替代 `accepted_deliverable_changes`：前者证明“当时怎么决策”，后者证明“最终哪些版本进了正式版”。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 

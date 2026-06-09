@@ -12,13 +12,14 @@ import {
   agentSteps,
   auditLogs,
   costLedgerEntries,
+  mergeAttempts,
   proposals,
   usageRecords,
   workHubTables,
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 44;
+const F02_TABLE_COUNT = 45;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -42,12 +43,27 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("audit_logs"), true);
   assert.equal(tableNames.includes("snapshots"), true);
   assert.equal(tableNames.includes("accepted_deliverable_changes"), true);
+  assert.equal(tableNames.includes("merge_attempts"), true);
   assert.equal(tableNames.includes("approval_requests"), true);
   assert.equal(tableNames.includes("usage_records"), true);
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("merge attempts persist conflict decisions for replayable proposal audit", () => {
+  assert.equal(getTableName(mergeAttempts), "merge_attempts");
+  assert.equal(mergeAttempts.proposalId.name, "proposal_id");
+  assert.equal(mergeAttempts.workItemId.name, "work_item_id");
+  assert.equal(mergeAttempts.branchId.name, "branch_id");
+  assert.equal(mergeAttempts.actorKind.name, "actor_kind");
+  assert.equal(mergeAttempts.result.name, "result");
+  assert.equal(mergeAttempts.mergeSnapshotId.name, "merge_snapshot_id");
+  assert.equal(mergeAttempts.conflictsJson.name, "conflicts_json");
+  assert.equal(mergeAttempts.acceptedTargetKeys.name, "accepted_target_keys");
+  assert.equal(mergeAttempts.targetKeys.name, "target_keys");
+  assert.equal(mergeAttempts.conflictCount.name, "conflict_count");
 });
 
 test("accepted deliverable changes capture merged proposal targets for replay and conflict gates", () => {

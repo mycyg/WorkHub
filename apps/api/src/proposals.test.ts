@@ -13,6 +13,7 @@ import {
 } from "@workhub/contracts";
 import {
   ProposalRepositoryMergeConflictError,
+  type MergeAttemptRow,
   type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
@@ -158,7 +159,9 @@ function ids() {
 class MemoryProposalRepository implements ProposalRepository {
   private rows = new Map<string, StoredProposalRows>();
   private reviewCount = 0;
+  private attemptCount = 0;
   private acceptedByTargetKey = new Map<string, { proposalId: string; changeId: string; sha256After?: string }>();
+  public readonly mergeAttempts: MergeAttemptRow[] = [];
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, {
     status: string;
@@ -314,20 +317,73 @@ class MemoryProposalRepository implements ProposalRepository {
       .flatMap((row) => this.conflictsForStored(row));
   }
 
+  async listMergeAttemptsByProposal(proposalId: string) {
+    return this.mergeAttempts.filter((attempt) => attempt.proposalId === proposalId);
+  }
+
+  private recordMergeAttempt(input: {
+    stored: StoredProposalRows;
+    actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
+    result: "conflict" | "merged";
+    conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
+    acceptedTargetKeys: string[];
+    mergeSnapshotId?: string;
+    at: Date;
+  }) {
+    this.attemptCount += 1;
+    const targetKeys = input.stored.proposal.diffManifest.changes.map((change) => this.targetKey(change));
+    this.mergeAttempts.push({
+      id: `91000000-0000-4000-8000-${String(260 + this.attemptCount).padStart(12, "0")}`,
+      proposalId: input.stored.proposal.id,
+      workItemId: input.stored.proposal.workItemId,
+      branchId: input.stored.proposal.branchId,
+      actorKind: input.actor?.actorKind ?? "system",
+      actorUserId: input.actor?.actorUserId ?? null,
+      result: input.result,
+      mergeSnapshotId: input.mergeSnapshotId ?? null,
+      conflictsJson: input.conflicts,
+      acceptedTargetKeys: input.acceptedTargetKeys,
+      targetKeys,
+      conflictCount: input.conflicts.length,
+      createdAt: input.at
+    });
+  }
+
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
     const stored = this.rows.get(input.proposalId);
     if (!stored) {
       return null;
     }
     const at = input.at ?? now;
-    const conflicts = this.conflictsForStored(stored, new Set(input.acceptIncomingTargetKeys ?? []));
+    const acceptedTargetKeys = [...new Set(input.acceptIncomingTargetKeys ?? [])];
+    const allConflicts = this.conflictsForStored(stored);
+    const conflicts = this.conflictsForStored(stored, new Set(acceptedTargetKeys));
     if (conflicts.length > 0) {
+      this.recordMergeAttempt({
+        stored,
+        actor: input.actor,
+        result: "conflict",
+        conflicts,
+        acceptedTargetKeys,
+        at
+      });
       throw new ProposalRepositoryMergeConflictError(conflicts);
     }
+    const mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
+    const resolvedConflicts = allConflicts.filter((conflict) => acceptedTargetKeys.includes(conflict.target_key));
     stored.proposal.status = "merged";
-    stored.proposal.mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
+    stored.proposal.mergeSnapshotId = mergeSnapshotId;
     stored.proposal.mergedAt = at;
     stored.proposal.updatedAt = at;
+    this.recordMergeAttempt({
+      stored,
+      actor: input.actor,
+      result: "merged",
+      conflicts: resolvedConflicts,
+      acceptedTargetKeys,
+      mergeSnapshotId,
+      at
+    });
     for (const change of stored.proposal.diffManifest.changes) {
       this.acceptedByTargetKey.set(this.targetKey(change), {
         proposalId: stored.proposal.id,
@@ -421,6 +477,10 @@ test("DB-backed proposal service maps repository rows into the public proposal c
   assert.equal(repository.branchRows.get(created.branch_id)?.headRef, merged.merge_snapshot_id);
   assert.equal(repository.workItemRows.get(created.work_item_id)?.status, "merged");
   assert.equal(repository.workItemRows.get(created.work_item_id)?.mainBranchId, created.branch_id);
+  assert.equal(repository.mergeAttempts.length, 1);
+  assert.equal(repository.mergeAttempts[0]?.result, "merged");
+  assert.equal(repository.mergeAttempts[0]?.mergeSnapshotId, merged.merge_snapshot_id);
+  assert.deepEqual(repository.mergeAttempts[0]?.acceptedTargetKeys, []);
   assert.equal(listed.length, 1);
   assert.equal(listed[0]?.id, created.id);
 });
@@ -506,6 +566,8 @@ test("proposal service blocks merge when the same target was already accepted wi
     () => service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } }),
     /撞车/
   );
+  assert.equal(repository.mergeAttempts.filter((attempt) => attempt.proposalId === second.id).length, 1);
+  assert.equal(repository.mergeAttempts.find((attempt) => attempt.proposalId === second.id)?.result, "conflict");
   const conflicts = await service.listConflicts(firstManifest.work_item_id);
   const conflict = conflicts.conflicts[0];
 
@@ -525,6 +587,11 @@ test("proposal service blocks merge when the same target was already accepted wi
   });
 
   assert.equal(merged.status, "merged");
+  const attempts = repository.mergeAttempts.filter((attempt) => attempt.proposalId === second.id);
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[1]?.result, "merged");
+  assert.deepEqual(attempts[1]?.acceptedTargetKeys, [conflict?.target_key]);
+  assert.equal(attempts[1]?.conflictCount, 1);
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {

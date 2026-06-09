@@ -10,6 +10,7 @@ import {
   agentRuns,
   auditLogs,
   branches,
+  mergeAttempts,
   projectDriveItems,
   projectDriveVersions,
   proposals,
@@ -22,6 +23,7 @@ export type BranchRow = typeof branches.$inferSelect;
 export type ProposalRow = typeof proposals.$inferSelect;
 export type ReviewRow = typeof reviews.$inferSelect;
 export type AcceptedDeliverableChangeRow = typeof acceptedDeliverableChanges.$inferSelect;
+export type MergeAttemptRow = typeof mergeAttempts.$inferSelect;
 
 export type StoredProposalRows = {
   proposal: ProposalRow;
@@ -116,6 +118,7 @@ export type ProposalRepository = {
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
+  listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
 };
@@ -236,6 +239,40 @@ async function readCurrentAccepted(
     .orderBy(desc(acceptedDeliverableChanges.createdAt))
     .limit(1);
   return rows[0] ?? null;
+}
+
+async function recordMergeAttempt(
+  tx: WorkHubTx,
+  input: {
+    proposalId: string;
+    workItemId: string;
+    branchId: string;
+    actor?: ProposalRepositoryActor;
+    result: "conflict" | "merged" | "aborted" | "clean";
+    mergeSnapshotId?: string;
+    conflicts: ProposalMergeConflict[];
+    acceptedTargetKeys: string[];
+    targetKeys: string[];
+    at: Date;
+  }
+) {
+  const id = randomUUID();
+  await tx.insert(mergeAttempts).values({
+    id,
+    proposalId: input.proposalId,
+    workItemId: input.workItemId,
+    branchId: input.branchId,
+    actorKind: input.actor?.actorKind ?? "system",
+    ...(input.actor?.actorUserId ? { actorUserId: input.actor.actorUserId } : {}),
+    result: input.result,
+    ...(input.mergeSnapshotId ? { mergeSnapshotId: input.mergeSnapshotId } : {}),
+    conflictsJson: input.conflicts,
+    acceptedTargetKeys: input.acceptedTargetKeys,
+    targetKeys: input.targetKeys,
+    conflictCount: input.conflicts.length,
+    createdAt: input.at
+  });
+  return id;
 }
 
 function drivePathSegments(input: { workItemCode: string; change: DeliverableChange }) {
@@ -531,6 +568,14 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       return conflicts;
     },
 
+    async listMergeAttemptsByProposal(proposalId) {
+      return db
+        .select()
+        .from(mergeAttempts)
+        .where(eq(mergeAttempts.proposalId, proposalId))
+        .orderBy(asc(mergeAttempts.createdAt));
+    },
+
     async review(input) {
       const at = input.at ?? new Date();
       let found = false;
@@ -586,6 +631,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       const at = input.at ?? new Date();
       const mergeSnapshotId = input.mergeSnapshotId ?? randomUUID();
       let found = false;
+      let blockedConflicts: ProposalMergeConflict[] = [];
       await db.transaction(async (tx) => {
         const proposalRows = await tx
           .select({
@@ -606,9 +652,12 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           return;
         }
         found = true;
-        const acceptIncomingTargetKeys = new Set(input.acceptIncomingTargetKeys ?? []);
+        const acceptedIncomingTargetKeyList = [...new Set(input.acceptIncomingTargetKeys ?? [])];
+        const acceptIncomingTargetKeys = new Set(acceptedIncomingTargetKeyList);
+        const targetKeys = proposal.diffManifest.changes.map(targetKey);
         const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow | null>();
         const conflicts: ProposalMergeConflict[] = [];
+        const resolvedConflicts: ProposalMergeConflict[] = [];
         for (const change of proposal.diffManifest.changes) {
           const key = targetKey(change);
           const current = await readCurrentAccepted(tx, { workItemId: proposal.workItemId, targetKey: key });
@@ -622,13 +671,29 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               targetKey: key,
               current
             });
-            if (conflict && !acceptIncomingTargetKeys.has(conflict.target_key)) {
-              conflicts.push(conflict);
+            if (conflict) {
+              if (acceptIncomingTargetKeys.has(conflict.target_key)) {
+                resolvedConflicts.push(conflict);
+              } else {
+                conflicts.push(conflict);
+              }
             }
           }
         }
         if (conflicts.length > 0) {
-          throw new ProposalRepositoryMergeConflictError(conflicts);
+          blockedConflicts = conflicts;
+          await recordMergeAttempt(tx, {
+            proposalId: input.proposalId,
+            workItemId: proposal.workItemId,
+            branchId: proposal.branchId,
+            ...(input.actor ? { actor: input.actor } : {}),
+            result: "conflict",
+            conflicts,
+            acceptedTargetKeys: acceptedIncomingTargetKeyList,
+            targetKeys,
+            at
+          });
+          return;
         }
         const adoptedFilesByChangeId = new Map(
           (input.adoptedDriveFiles ?? []).map((file) => [file.changeId, file] as const)
@@ -660,6 +725,18 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           ...(mergeContentSha ? { contentSha256: mergeContentSha } : {}),
           createdByKind: input.actor?.actorKind ?? "system",
           createdAt: at
+        });
+        const mergeAttemptId = await recordMergeAttempt(tx, {
+          proposalId: input.proposalId,
+          workItemId: proposal.workItemId,
+          branchId: proposal.branchId,
+          ...(input.actor ? { actor: input.actor } : {}),
+          result: "merged",
+          mergeSnapshotId,
+          conflicts: resolvedConflicts,
+          acceptedTargetKeys: acceptedIncomingTargetKeyList,
+          targetKeys,
+          at
         });
         await tx
           .update(proposals)
@@ -742,17 +819,24 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             work_item_id: proposal.workItemId,
             branch_id: proposal.branchId,
             merge_snapshot_id: mergeSnapshotId,
+            merge_attempt_id: mergeAttemptId,
             accepted_change_ids: acceptedRows,
             accepted_change_count: acceptedRows.length,
             adopted_drive_version_ids: [...driveAdoptionsByChangeId.values()].map((adoption) => adoption.driveVersionId),
             adopted_drive_version_count: driveAdoptionsByChangeId.size,
             conflict_checked: true,
-            target_keys: proposal.diffManifest.changes.map(targetKey)
+            conflict_count: resolvedConflicts.length,
+            accepted_incoming_target_keys: acceptedIncomingTargetKeyList,
+            resolved_conflict_target_keys: resolvedConflicts.map((conflict) => conflict.target_key),
+            target_keys: targetKeys
           },
           snapshotId: mergeSnapshotId,
           createdAt: at
         });
       });
+      if (blockedConflicts.length > 0) {
+        throw new ProposalRepositoryMergeConflictError(blockedConflicts);
+      }
       if (!found) {
         return null;
       }

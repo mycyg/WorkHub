@@ -89,7 +89,7 @@ P1.2 把中英双语从 Gold Path shell 延伸到未来真实 routes 会复用�
 |---|---|---|
 | 页面预读冲突 | `renderWebProposalDetail()` 先读 `GET /api/workitems/:id/conflicts`，过滤当前 proposal 后传入 `renderProposalDetail(...,{ conflicts })` | React route 产品化后复用同一 typed loader |
 | merge 时冲突 | `apps/web/src/browser.ts` 捕获 `ApiErr.code="merge_conflict"`，从 `error.details.conflicts[]` 渲染 `renderProposalConflictCards()` | Toast/notice 升级为正式 inline panel，不依赖 P0.5 shell |
-| 选项 payload | 冲突按钮携带 `data-request-json`，点击后调用 `client.mergeProposal(proposalId, payload)` | 多冲突逐项选择、chosen option 审计 |
+| 选项 payload | 冲突按钮携带 `data-request-json`，点击后调用 `client.mergeProposal(proposalId, payload)`；R1.11 已把 blocked/merged attempt 与 accepted incoming target keys 落审计 | 多冲突逐项选择工作台、merge attempt timeline 展示 |
 | 用户用语 | 「和别人的改动撞车了」「保留正式版」「采纳这次版本」 | LLM 融合候选加入后仍保持 option-first |
 | 边界 | Web/Desktop 主窗只显示严肃冲突卡；Cuu 本体仍只在独立 pet window | Playwright 截图验证主窗无 Cuu |
 

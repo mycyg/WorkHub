@@ -805,6 +805,34 @@ export const acceptedDeliverableChanges = pgTable(
   ]
 );
 
+export const mergeAttempts = pgTable(
+  "merge_attempts",
+  {
+    id: id(),
+    proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+    actorKind: varchar("actor_kind", { length: 16 }).notNull(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    result: varchar("result", { length: 16 }).notNull(),
+    mergeSnapshotId: uuid("merge_snapshot_id").references((): AnyPgColumn => snapshots.id, { onDelete: "set null" }),
+    conflictsJson: jsonb("conflicts_json").$type<JsonArray>().notNull().default([]),
+    acceptedTargetKeys: jsonb("accepted_target_keys").$type<string[]>().notNull().default([]),
+    targetKeys: jsonb("target_keys").$type<string[]>().notNull().default([]),
+    conflictCount: integer("conflict_count").notNull().default(0),
+    createdAt: createdAt()
+  },
+  (table) => [
+    index("merge_attempts_proposal_id_idx").on(table.proposalId),
+    index("merge_attempts_work_item_id_idx").on(table.workItemId),
+    index("merge_attempts_branch_id_idx").on(table.branchId),
+    index("merge_attempts_actor_user_id_idx").on(table.actorUserId),
+    index("merge_attempts_result_idx").on(table.result),
+    index("merge_attempts_merge_snapshot_id_idx").on(table.mergeSnapshotId),
+    index("merge_attempts_created_at_idx").on(table.createdAt)
+  ]
+);
+
 export const specDocs = pgTable(
   "spec_docs",
   {
@@ -1137,6 +1165,7 @@ export const workHubTables = {
   proposals,
   reviews,
   acceptedDeliverableChanges,
+  mergeAttempts,
   specDocs,
   agentRuns,
   agentSteps,

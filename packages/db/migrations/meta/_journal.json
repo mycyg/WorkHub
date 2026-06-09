@@ -43,6 +43,13 @@
       "when": 1780969137789,
       "tag": "0005_flashy_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780980170511,
+      "tag": "0006_fantastic_nightmare",
+      "breakpoints": true
     }
   ]
 }
