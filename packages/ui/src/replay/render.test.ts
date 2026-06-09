@@ -59,6 +59,14 @@ function replayWithStructuredFields(): ReplayTraceVM {
                       }
                     ]
                   },
+                  text_diff3: {
+                    type: "line_text_diff3",
+                    auto_merge: false,
+                    current_hunks: 1,
+                    incoming_hunks: 1,
+                    conflict_hunks: 1,
+                    conflict_ranges: [{ start_line: 3, end_line: 3 }]
+                  },
                   structured_record_patch: {
                     type: "structured_record_field_patch",
                     changed_fields: ["title", "task_items"],
@@ -193,6 +201,15 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("改动预览"), true);
   assert.equal(zh.html.includes("段落: 1"), true);
   assert.equal(zh.html.includes("行数: 2"), true);
+  assert.equal(zh.html.includes("data-replay-text-diff3=\"true\""), true);
+  assert.equal(zh.html.includes("data-text-diff3-option-key=\"ai_fusion\""), true);
+  assert.equal(zh.html.includes("data-overlap-hunk-review=\"true\""), true);
+  assert.equal(zh.html.includes("data-overlap-hunk-index=\"0\""), true);
+  assert.equal(zh.html.includes("data-overlap-hunk-start-line=\"3\""), true);
+  assert.equal(zh.html.includes("data-overlap-hunk-end-line=\"3\""), true);
+  assert.equal(zh.html.includes("data-overlap-hunk-decision=\"ai_fusion\""), true);
+  assert.equal(zh.html.includes("text_hunk_overrides"), true);
+  assert.equal(zh.html.includes("重叠段 1"), true);
   assert.equal(zh.html.includes("字段写回审计"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
@@ -206,6 +223,9 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Change preview"), true);
   assert.equal(en.html.includes("Hunks: 1"), true);
   assert.equal(en.html.includes("Lines: 2"), true);
+  assert.equal(en.html.includes("Text merge check"), true);
+  assert.equal(en.html.includes("Overlap hunk 1"), true);
+  assert.equal(en.html.includes("Affected lines: line 3"), true);
   assert.equal(en.html.includes("Field writeback audit"), true);
   assert.equal(en.html.includes("Base: 旧标题"), true);
   assert.equal(en.html.includes("After: 新标题"), true);

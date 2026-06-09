@@ -6,6 +6,7 @@ import type {
 } from "@workhub/contracts";
 
 import { uiLocale, type UiRenderOptions } from "../i18n.js";
+import { overlapHunkReviewCss, renderOverlapHunkReview } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
   renderStructuredFieldAuditDetails,
@@ -40,7 +41,8 @@ export const replayCss = [
   ".wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   richPatchViewerCss,
   ".wh-row .wh-patch{margin-top:10px}",
-  ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
+  overlapHunkReviewCss,
+  ".wh-row .wh-diff3{margin-top:10px}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-desktop .wh-replay-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-replay{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-replay-frame{grid-template-columns:1fr}.wh-replay-rail{position:static}.wh-title{font-size:24px}.wh-field-row{grid-template-columns:1fr}}"
@@ -62,11 +64,6 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
-}
-
-function numberField(record: Record<string, unknown> | undefined, key: string) {
-  const value = record?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function mergeOptionLabel(locale: WorkHubLocale, optionKey: string) {
@@ -104,42 +101,17 @@ function renderTextPatchPreview(candidate: ReplayMergeCandidateVM, locale: WorkH
   });
 }
 
-function textDiff3RangeValues(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    const record = objectRecord(item);
-    const start = numberField(record, "start_line");
-    const end = numberField(record, "end_line");
-    return start > 0 && end >= start ? [{ start, end }] : [];
-  });
-}
-
-function textDiff3RangeLabel(locale: WorkHubLocale, start: number, end: number) {
-  if (start === end) {
-    return locale === "zh-CN" ? `第 ${start} 行` : `line ${start}`;
-  }
-  return locale === "zh-CN" ? `第 ${start}-${end} 行` : `lines ${start}-${end}`;
-}
-
 function renderTextDiff3QualityGate(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
   const diff3 = objectRecord(candidate.quality_gate?.["text_diff3"]);
-  if (diff3?.["type"] !== "line_text_diff3") {
-    return "";
-  }
-  const autoMerge = diff3["auto_merge"] === true;
-  const conflictHunks = numberField(diff3, "conflict_hunks");
-  const ranges = textDiff3RangeValues(diff3["conflict_ranges"]);
-  const rangeData = ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start}-${range.end}`).join(",");
-  const rangeLabels = ranges.map((range) => textDiff3RangeLabel(locale, range.start, range.end)).join(", ");
-  return `<section class="wh-diff3" data-replay-text-diff3="true" data-text-diff3-option-key="${escapeHtml(candidate.option_key)}" data-text-diff3-auto-merge="${escapeHtml(String(autoMerge))}" data-text-diff3-conflict-hunks="${escapeHtml(String(conflictHunks))}" data-text-diff3-conflict-ranges="${escapeHtml(rangeData)}">
-    <div class="wh-diff3-head">
-      <strong>${escapeHtml(copy(locale, "文本合并检查", "Text merge check"))}</strong>
-      <span class="wh-pill">${escapeHtml(autoMerge ? copy(locale, "已自动合并", "Auto-merged") : copy(locale, "需逐项确认", "Needs line review"))}</span>
-    </div>
-    ${rangeLabels ? `<p class="wh-diff3-ranges">${escapeHtml(copy(locale, "影响行", "Affected lines"))}: ${escapeHtml(rangeLabels)}</p>` : ""}
-  </section>`;
+  return renderOverlapHunkReview({
+    locale,
+    diff3,
+    optionKey: candidate.option_key,
+    rootAttributes: {
+      "data-replay-text-diff3": "true",
+      "data-text-diff3-option-key": candidate.option_key
+    }
+  });
 }
 
 function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {

@@ -21,6 +21,11 @@ import {
   uiT,
   type UiRenderOptions
 } from "../i18n.js";
+import {
+  overlapHunkReviewCss,
+  renderOverlapHunkReview,
+  type OverlapHunkChoiceAction
+} from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import { renderStructuredFieldOperationDetails } from "../structured-field-details.js";
 
@@ -63,7 +68,7 @@ export const proposalCss = [
   ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:8px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
   richPatchViewerCss,
-  ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
+  overlapHunkReviewCss,
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-field-editor{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px}.wh-field-editor>summary{cursor:pointer;font-weight:800}.wh-field-editor-body{margin:8px 0;color:var(--muted);font-size:13px}.wh-field-editor-list{display:grid;gap:8px}.wh-field-editor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e1e8f5;padding-top:8px}.wh-field-editor-row:first-child{border-top:0}.wh-field-editor-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.wh-field-editor-custom{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}.wh-field-editor-custom textarea{min-height:42px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;color:var(--ink);background:#fff}",
@@ -272,54 +277,33 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   </section>`;
 }
 
-function textDiff3RangeValues(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    const record = objectRecord(item);
-    const start = numberField(record, "start_line");
-    const end = numberField(record, "end_line");
-    return start > 0 && end >= start ? [{ start, end }] : [];
-  });
+function overlapActionForOption(option: ProposalConflictOption): OverlapHunkChoiceAction {
+  return {
+    decision: option.id,
+    ...(option.action?.id ? { actionId: option.action.id } : {}),
+    ...(option.action?.href ? { href: option.action.href } : {}),
+    ...(option.action?.method ? { method: option.action.method } : {}),
+    ...(option.recommended !== undefined ? { recommended: option.recommended } : {})
+  };
 }
 
-function textDiff3RangeLabel(locale: ReturnType<typeof uiLocale>, start: number, end: number) {
-  if (start === end) {
-    return locale === "zh-CN" ? `第 ${start} 行` : `line ${start}`;
-  }
-  return locale === "zh-CN" ? `第 ${start}-${end} 行` : `lines ${start}-${end}`;
-}
-
-function renderTextDiff3QualityGate(option: ProposalConflictOption, options?: UiRenderOptions) {
+function renderTextDiff3QualityGate(
+  option: ProposalConflictOption,
+  conflictOptions: ProposalConflictOption[],
+  options?: UiRenderOptions
+) {
   const locale = uiLocale(options);
   const diff3 = objectRecord(option.quality_gate?.["text_diff3"]);
-  if (diff3?.["type"] !== "line_text_diff3") {
-    return "";
-  }
-  const autoMerge = diff3["auto_merge"] === true;
-  const currentHunks = numberField(diff3, "current_hunks");
-  const incomingHunks = numberField(diff3, "incoming_hunks");
-  const conflictHunks = numberField(diff3, "conflict_hunks");
-  const ranges = textDiff3RangeValues(diff3["conflict_ranges"]);
-  const rangeData = ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start}-${range.end}`).join(",");
-  const rangeLabels = ranges.map((range) => textDiff3RangeLabel(locale, range.start, range.end)).join(", ");
-  const modeLabel = autoMerge ? uiT(locale, "proposal.diff3Auto") : uiT(locale, "proposal.diff3Review");
-  const rangeLine = rangeLabels
-    ? `<p class="wh-diff3-ranges">${escapeHtml(uiT(locale, "proposal.diff3Ranges"))}: ${escapeHtml(rangeLabels)}</p>`
-    : "";
-  return `<section class="wh-diff3" data-text-diff3="true" data-text-diff3-option-id="${escapeHtml(option.id)}" data-text-diff3-auto-merge="${escapeHtml(String(autoMerge))}" data-text-diff3-conflict-hunks="${escapeHtml(String(conflictHunks))}" data-text-diff3-conflict-ranges="${escapeHtml(rangeData)}">
-    <div class="wh-diff3-head">
-      <strong>${escapeHtml(uiT(locale, "proposal.diff3Title"))}</strong>
-      <span class="wh-pill">${escapeHtml(modeLabel)}</span>
-    </div>
-    <div class="wh-diff3-meta">
-      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Current"))}: ${escapeHtml(String(currentHunks))}</span>
-      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Incoming"))}: ${escapeHtml(String(incomingHunks))}</span>
-      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Conflict"))}: ${escapeHtml(String(conflictHunks))}</span>
-    </div>
-    ${rangeLine}
-  </section>`;
+  return renderOverlapHunkReview({
+    locale,
+    diff3,
+    optionKey: option.id,
+    actions: conflictOptions.map(overlapActionForOption),
+    rootAttributes: {
+      "data-text-diff3": "true",
+      "data-text-diff3-option-id": option.id
+    }
+  });
 }
 
 function renderTextPatchPreview(option: ProposalConflictOption, options?: UiRenderOptions) {
@@ -386,7 +370,7 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
   const previews = conflict.options
     .flatMap((option) => [
       renderTextPatchPreview(option, { locale }),
-      renderTextDiff3QualityGate(option, { locale }),
+      renderTextDiff3QualityGate(option, conflict.options, { locale }),
       renderStructuredRecordPatch(option, { locale })
     ])
     .filter(Boolean)
