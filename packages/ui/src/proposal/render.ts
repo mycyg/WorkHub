@@ -65,6 +65,7 @@ export const proposalCss = [
   ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
+  ".wh-field-editor{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px}.wh-field-editor>summary{cursor:pointer;font-weight:800}.wh-field-editor-body{margin:8px 0;color:var(--muted);font-size:13px}.wh-field-editor-list{display:grid;gap:8px}.wh-field-editor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e1e8f5;padding-top:8px}.wh-field-editor-row:first-child{border-top:0}.wh-field-editor-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.wh-field-editor-custom{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}.wh-field-editor-custom textarea{min-height:42px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;color:var(--ink);background:#fff}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -141,6 +142,83 @@ function dryRunStatusLabel(locale: WorkHubLocale, status: string) {
   return labels[locale][status] ?? status;
 }
 
+function structuredOperationRecords(operations: unknown) {
+  return Array.isArray(operations)
+    ? operations
+        .map(objectRecord)
+        .filter((operation): operation is Record<string, unknown> =>
+          typeof operation?.["field"] === "string" && operation["field"].trim().length > 0
+        )
+    : [];
+}
+
+function structuredFieldOverridePayload(input: {
+  operations: Array<Record<string, unknown>>;
+  field: string;
+  mode: "accept_only" | "keep_current" | "custom";
+  customValue?: unknown;
+}) {
+  const overrides = input.mode === "accept_only"
+    ? input.operations.map((operation) => ({
+      field: String(operation["field"]),
+      decision: operation["field"] === input.field ? "accept_incoming" : "keep_current"
+    }))
+    : [{
+      field: input.field,
+      decision: input.mode === "keep_current" ? "keep_current" : "custom",
+      ...(input.mode === "custom" ? { value: input.customValue } : {})
+    }];
+  return {
+    confirm: true,
+    structured_field_overrides: {
+      operations: overrides
+    }
+  };
+}
+
+function renderStructuredFieldEditor(input: {
+  option: ProposalConflictOption;
+  operations: unknown;
+  locale: WorkHubLocale;
+}) {
+  if (input.option.id !== "ai_fusion" || !input.option.action?.href) {
+    return "";
+  }
+  const operations = structuredOperationRecords(input.operations);
+  if (operations.length === 0) {
+    return "";
+  }
+  const method = input.option.action.method;
+  const href = input.option.action.href;
+  const rows = operations.map((operation) => {
+    const field = String(operation["field"]);
+    const acceptOnly = structuredFieldOverridePayload({ operations, field, mode: "accept_only" });
+    const keepCurrent = structuredFieldOverridePayload({ operations, field, mode: "keep_current" });
+    const customTemplate = structuredFieldOverridePayload({
+      operations,
+      field,
+      mode: "custom",
+      customValue: "__WORKHUB_CUSTOM_FIELD_VALUE__"
+    });
+    return `<div class="wh-field-editor-row" data-proposal-structured-field-editor-row="${escapeHtml(field)}">
+      <strong>${escapeHtml(uiT(input.locale, "proposal.fieldEditorField"))}: ${escapeHtml(field)}</strong>
+      <div class="wh-field-editor-actions">
+        <a class="wh-btn" href="${escapeHtml(href)}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="accept_only" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(acceptOnly))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorAcceptOnly"))}</a>
+        <a class="wh-btn" href="${escapeHtml(href)}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="keep_current" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(keepCurrent))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorKeep"))}</a>
+      </div>
+      <div class="wh-field-editor-custom">
+        <textarea data-structured-field-custom-input="${escapeHtml(field)}" aria-label="${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustomPlaceholder"))}"></textarea>
+        <button type="button" class="wh-btn" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="custom" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-href="${escapeHtml(href)}" data-request-json-template="${escapeHtml(JSON.stringify(customTemplate))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustom"))}</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<details class="wh-field-editor" data-proposal-structured-field-editor="true" data-proposal-structured-field-editor-count="${escapeHtml(String(operations.length))}">
+    <summary>${escapeHtml(uiT(input.locale, "proposal.fieldEditorTitle"))}</summary>
+    <p class="wh-field-editor-body">${escapeHtml(uiT(input.locale, "proposal.fieldEditorBody"))}</p>
+    <div class="wh-field-editor-list">${rows}</div>
+  </details>`;
+}
+
 function renderStructuredRecordPatch(option: ProposalConflictOption, options?: UiRenderOptions) {
   const locale = uiLocale(options);
   const patch = objectRecord(option.quality_gate?.["structured_record_patch"]);
@@ -172,6 +250,13 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
     locale,
     surface: "proposal"
   });
+  const fieldEditor = dryRunStatus === "ready" && dryRun?.["executable"] === true
+    ? renderStructuredFieldEditor({
+      option,
+      operations: objectRecord(dryRun?.["patch"])?.["operations"],
+      locale
+    })
+    : "";
   return `<section class="wh-structured" data-structured-record-patch="true" data-structured-patch-option-id="${escapeHtml(option.id)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}" data-structured-patch-dry-run-status="${escapeHtml(dryRunStatus)}" data-structured-patch-dry-run-issues="${escapeHtml(String(dryRunIssueCount))}">
     <div class="wh-structured-head">
       <strong>${escapeHtml(uiT(locale, "proposal.structuredPatchTitle"))}</strong>
@@ -182,7 +267,7 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
     </div>
-    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}${operationDetails}
+    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}${operationDetails}${fieldEditor}
   </section>`;
 }
 

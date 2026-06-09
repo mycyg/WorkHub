@@ -18,6 +18,7 @@ import {
   type ProposalConflictListResult,
   type Proposal,
   type Review,
+  type StructuredFieldApplyOverrides,
   type StructuredFieldPatchDryRun
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
@@ -104,6 +105,7 @@ export type ProposalService = {
   applyMergeCandidate: (input: {
     mergeProposalId: string;
     actor: ProposalActor;
+    structuredFieldOverrides?: StructuredFieldApplyOverrides;
   }) => Promise<StoredProposal>;
 };
 
@@ -525,6 +527,80 @@ function structuredFieldPatchDryRunForApply(context: MergeProposalCandidateAppli
   });
 }
 
+function applyStructuredFieldOverridesToDryRun(
+  dryRun: StructuredFieldPatchDryRun,
+  overrides: StructuredFieldApplyOverrides | undefined
+) {
+  if (!overrides) {
+    return dryRun;
+  }
+  const originalFields = new Set(dryRun.patch.operations.map((operation) => operation.field));
+  const overridesByField = new Map<string, StructuredFieldApplyOverrides["operations"][number]>();
+  for (const override of overrides.operations) {
+    if (overridesByField.has(override.field)) {
+      throw new ProposalServiceError(
+        409,
+        "structured_field_patch_override_duplicate",
+        `字段 ${override.field} 的编辑出现了重复选择。`
+      );
+    }
+    if (!originalFields.has(override.field)) {
+      throw new ProposalServiceError(
+        409,
+        "structured_field_patch_override_unknown",
+        `字段 ${override.field} 不在这次结构化字段建议中。`
+      );
+    }
+    overridesByField.set(override.field, override);
+  }
+  let hasManualValue = false;
+  const operations = dryRun.patch.operations.flatMap((operation) => {
+    const override = overridesByField.get(operation.field);
+    if (!override || override.decision === "accept_incoming") {
+      return [operation];
+    }
+    if (override.decision === "keep_current") {
+      return [];
+    }
+    hasManualValue = true;
+    return [{
+      ...operation,
+      value: override.value,
+      source: "manual" as const
+    }];
+  });
+  if (operations.length === 0) {
+    throw new ProposalServiceError(
+      409,
+      "structured_field_patch_empty",
+      "字段级编辑后没有需要写回的字段。"
+    );
+  }
+  const source = hasManualValue ? "manual" : dryRun.patch.source;
+  const parsed = structuredFieldPatchDryRunSchema.safeParse({
+    ...dryRun,
+    patch: {
+      ...dryRun.patch,
+      operations,
+      source
+    },
+    audit_payload: {
+      ...dryRun.audit_payload,
+      field_count: operations.length,
+      operation_fields: operations.map((operation) => operation.field),
+      source
+    }
+  });
+  if (!parsed.success) {
+    throw new ProposalServiceError(
+      409,
+      "structured_field_patch_override_invalid",
+      "字段级编辑后的值没有通过结构化字段校验。"
+    );
+  }
+  return parsed.data;
+}
+
 function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidateApplicationContext) {
   const dryRun = structuredFieldPatchDryRunForApply(context);
   if (!dryRun || dryRun.status !== "blocked") {
@@ -537,16 +613,20 @@ function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidat
   );
 }
 
-function structuredFieldPatchWritebackForApply(context: MergeProposalCandidateApplicationContext): {
+function structuredFieldPatchWritebackForApply(
+  context: MergeProposalCandidateApplicationContext,
+  overrides?: StructuredFieldApplyOverrides
+): {
   dryRun: StructuredFieldPatchDryRun;
 } | undefined {
   if (effectiveAiFusionTargetKind(context) !== "structured_record") {
     return undefined;
   }
-  const dryRun = assertStructuredFieldPatchDryRunForApply(context);
-  if (!dryRun) {
+  const baseDryRun = assertStructuredFieldPatchDryRunForApply(context);
+  if (!baseDryRun) {
     return undefined;
   }
+  const dryRun = applyStructuredFieldOverridesToDryRun(baseDryRun, overrides);
   if (dryRun.status !== "ready" || !dryRun.executable) {
     throw new ProposalServiceError(
       409,
@@ -1266,7 +1346,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
       }
       assertAiFusionApplyContext(context);
-      const resolvedStructuredFieldPatch = structuredFieldPatchWritebackForApply(context);
+      const resolvedStructuredFieldPatch = structuredFieldPatchWritebackForApply(
+        context,
+        input.structuredFieldOverrides
+      );
       const resolvedDriveFile = resolvedStructuredFieldPatch
         ? undefined
         : await materializeAiFusionCandidate({

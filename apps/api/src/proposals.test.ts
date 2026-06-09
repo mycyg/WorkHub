@@ -1453,6 +1453,106 @@ test("proposal service applies executable structured field patches to WorkItem s
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
+test("proposal service applies structured field overrides through the same merge gate", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["title", "summary_md", "priority", "due_at"]
+  };
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000681";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000682";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000683",
+    existing_change_id: "91000000-0000-4000-8000-000000000684",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "更新事项字段，但允许负责人微调。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            title: "AI 给出的标题",
+            summary_md: "AI 给出的摘要。",
+            priority: "urgent",
+            due_at: "2026-07-31T00:00:00.000Z"
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    structuredFieldOverrides: {
+      operations: [
+        { field: "title", decision: "custom", value: "负责人确认后的标题" },
+        { field: "priority", decision: "keep_current" },
+        { field: "due_at", decision: "keep_current" }
+      ]
+    }
+  });
+
+  const workItem = repository.workItemRows.get(itemManifest.work_item_id);
+  assert.equal(merged.status, "merged");
+  assert.equal(workItem?.title, "负责人确认后的标题");
+  assert.equal(workItem?.summaryMd, "AI 给出的摘要。");
+  assert.equal(workItem?.priority, "normal");
+  assert.equal(workItem?.dueAt, null);
+  assert.equal(workItem?.version, 1);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
 test("proposal service applies executable acceptance item subrecord patches", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });

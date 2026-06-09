@@ -270,3 +270,119 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Extra fields: extra_field"), true);
   assert.equal(english.html.includes("Review required"), true);
 });
+
+test("proposal renderer exposes a folded field editor for ready structured patches", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const applyHref = "/api/merge-proposals/10000000-0000-4000-8000-000000000409/apply";
+  const conflict: ProposalConflict = {
+    id: "conflict-work-item-fields",
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000409",
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: `work_item:${vm.work_item_id}`,
+    target_kind: "structured_record",
+    change_type: "updated",
+    headline: "事项字段需要确认",
+    summary_text: "AI 更新了标题和优先级，可以直接采用或展开高级字段编辑。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000410",
+      change_id: "10000000-0000-4000-8000-000000000411",
+      ref: "main"
+    },
+    incoming: { ref: "proposal" },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成字段级补丁。",
+        recommended: true,
+        quality_gate: {
+          structured_record_patch: {
+            type: "structured_record_field_patch",
+            changed_fields: ["title", "priority"],
+            merged_value_fields: ["title", "priority"],
+            missing_fields: [],
+            unknown_fields: [],
+            field_count: 2,
+            has_structured_result: true,
+            structured_field_patch_dry_run: {
+              type: "structured_field_patch_dry_run",
+              status: "ready",
+              executable: true,
+              patch: {
+                type: "structured_field_patch",
+                target_entity_type: "work_item",
+                target_entity_id: vm.work_item_id,
+                source: "ai_fusion",
+                operations: [
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: vm.work_item_id,
+                    field: "title",
+                    value_type: "string",
+                    before_value: "旧标题",
+                    current_value: "旧标题",
+                    value: "新标题",
+                    source: "ai_fusion"
+                  },
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: vm.work_item_id,
+                    field: "priority",
+                    value_type: "enum",
+                    before_value: "normal",
+                    current_value: "normal",
+                    value: "high",
+                    source: "ai_fusion"
+                  }
+                ]
+              },
+              issues: [],
+              audit_payload: {
+                target_entity_type: "work_item",
+                target_entity_id: vm.work_item_id,
+                field_count: 2,
+                operation_fields: ["title", "priority"],
+                source: "ai_fusion"
+              }
+            }
+          }
+        },
+        action: {
+          id: "apply_ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: applyHref,
+          request_json: { confirm: true }
+        }
+      }
+    ]
+  };
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts: [conflict] });
+  const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts: [conflict] });
+
+  assert.equal(rendered.html.includes("data-proposal-structured-field-editor=\"true\""), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-editor-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-editor-row=\"title\""), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-editor-row=\"priority\""), true);
+  assert.equal(rendered.html.includes("高级字段编辑"), true);
+  assert.equal(rendered.html.includes("只采用此字段"), true);
+  assert.equal(rendered.html.includes("保留当前字段"), true);
+  assert.equal(rendered.html.includes("使用自定义值"), true);
+  assert.equal(rendered.html.includes("data-field-editor-action=\"accept_only\""), true);
+  assert.equal(rendered.html.includes("data-field-editor-action=\"keep_current\""), true);
+  assert.equal(rendered.html.includes("data-field-editor-action=\"custom\""), true);
+  assert.equal(rendered.html.includes("structured_field_overrides"), true);
+  assert.equal(rendered.html.includes("keep_current"), true);
+  assert.equal(rendered.html.includes("__WORKHUB_CUSTOM_FIELD_VALUE__"), true);
+  assert.equal(rendered.html.includes(applyHref), true);
+  assert.equal(english.html.includes("Advanced field editor"), true);
+  assert.equal(english.html.includes("Use this field only"), true);
+  assert.equal(english.html.includes("Keep current field"), true);
+  assert.equal(english.html.includes("Use custom value"), true);
+});

@@ -133,8 +133,32 @@ export const chooseMergeProposalCandidateRequestSchema = z.object({
 });
 export type ChooseMergeProposalCandidateRequest = z.input<typeof chooseMergeProposalCandidateRequestSchema>;
 
+export const structuredFieldOverrideDecisionSchema = z.enum(["accept_incoming", "keep_current", "custom"]);
+export type StructuredFieldOverrideDecision = z.infer<typeof structuredFieldOverrideDecisionSchema>;
+
+export const structuredFieldOverrideSchema = z.object({
+  field: z.string().min(1).max(64),
+  decision: structuredFieldOverrideDecisionSchema,
+  value: z.unknown().optional()
+}).superRefine((override, ctx) => {
+  if (override.decision === "custom" && !Object.prototype.hasOwnProperty.call(override, "value")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["value"],
+      message: "自定义字段值不能为空。"
+    });
+  }
+});
+export type StructuredFieldOverride = z.infer<typeof structuredFieldOverrideSchema>;
+
+export const structuredFieldApplyOverridesSchema = z.object({
+  operations: z.array(structuredFieldOverrideSchema).min(1).max(64)
+});
+export type StructuredFieldApplyOverrides = z.infer<typeof structuredFieldApplyOverridesSchema>;
+
 export const applyMergeProposalCandidateRequestSchema = z.object({
-  confirm: z.boolean().default(true)
+  confirm: z.boolean().default(true),
+  structured_field_overrides: structuredFieldApplyOverridesSchema.optional()
 });
 export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;
 

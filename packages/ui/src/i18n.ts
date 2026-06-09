@@ -110,6 +110,16 @@ const copy = {
   "proposal.structuredPatchUnknown": { "zh-CN": "额外字段", "en-US": "Extra fields" },
   "proposal.structuredPatchDryRun": { "zh-CN": "Dry-run", "en-US": "Dry-run" },
   "proposal.structuredPatchIssues": { "zh-CN": "问题", "en-US": "Issues" },
+  "proposal.fieldEditorTitle": { "zh-CN": "高级字段编辑", "en-US": "Advanced field editor" },
+  "proposal.fieldEditorBody": {
+    "zh-CN": "默认采用 AI 融合稿；需要微调时再展开这里。",
+    "en-US": "The default path uses the AI fusion draft; expand only when a field needs a precise adjustment."
+  },
+  "proposal.fieldEditorAcceptOnly": { "zh-CN": "只采用此字段", "en-US": "Use this field only" },
+  "proposal.fieldEditorKeep": { "zh-CN": "保留当前字段", "en-US": "Keep current field" },
+  "proposal.fieldEditorCustom": { "zh-CN": "使用自定义值", "en-US": "Use custom value" },
+  "proposal.fieldEditorCustomPlaceholder": { "zh-CN": "输入自定义字段值", "en-US": "Enter a custom field value" },
+  "proposal.fieldEditorField": { "zh-CN": "字段", "en-US": "Field" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

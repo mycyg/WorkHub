@@ -486,11 +486,14 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   });
 
   routes.post("/merge-proposals/:id/apply", createCurrentUserMiddleware(authSource), async (c) => {
-    applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
     try {
       const proposal = await proposals.applyMergeCandidate({
         mergeProposalId: c.req.param("id"),
-        actor: proposalActorFor(c.var.actor)
+        actor: proposalActorFor(c.var.actor),
+        ...(payload.structured_field_overrides
+          ? { structuredFieldOverrides: payload.structured_field_overrides }
+          : {})
       });
       return c.json({
         ok: true,

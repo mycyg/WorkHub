@@ -433,6 +433,21 @@ test("merge proposal candidate choices are explicit and replayable", () => {
     option_key: "ai_fusion"
   });
   const applyRequest = applyMergeProposalCandidateRequestSchema.parse({});
+  const fieldOverrideRequest = applyMergeProposalCandidateRequestSchema.parse({
+    confirm: true,
+    structured_field_overrides: {
+      operations: [
+        { field: "title", decision: "custom", value: "更稳妥的标题" },
+        { field: "priority", decision: "keep_current" },
+        { field: "due_at", decision: "accept_incoming" }
+      ]
+    }
+  });
+  const invalidFieldOverrideRequest = applyMergeProposalCandidateRequestSchema.safeParse({
+    structured_field_overrides: {
+      operations: [{ field: "title", decision: "custom" }]
+    }
+  });
   const result = mergeProposalCandidateChoiceResultSchema.parse({
     merge_proposal_id: "72000000-0000-4000-8000-000000000009",
     conflict_key: "delivery:/outputs/result.md",
@@ -453,6 +468,9 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(result.candidate.source, "llm");
   assert.equal(result.candidate.quality_gate?.status, "passed");
   assert.equal(applyRequest.confirm, true);
+  assert.equal(fieldOverrideRequest.structured_field_overrides?.operations[0]?.decision, "custom");
+  assert.equal(fieldOverrideRequest.structured_field_overrides?.operations[1]?.decision, "keep_current");
+  assert.equal(invalidFieldOverrideRequest.success, false);
 });
 
 test("structured field patch dry-run validates executable work item fields", () => {
