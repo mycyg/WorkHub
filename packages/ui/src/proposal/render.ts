@@ -28,6 +28,7 @@ import {
 } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import { renderStructuredFieldOperationDetails } from "../structured-field-details.js";
+import { renderSubrecordItemDiff, subrecordItemDiffCss } from "../subrecord-item-diff.js";
 
 export type ProposalRenderSurface = "web" | "desktop";
 
@@ -72,6 +73,7 @@ export const proposalCss = [
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-field-editor{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px}.wh-field-editor>summary{cursor:pointer;font-weight:800}.wh-field-editor-body{margin:8px 0;color:var(--muted);font-size:13px}.wh-field-editor-list{display:grid;gap:8px}.wh-field-editor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e1e8f5;padding-top:8px}.wh-field-editor-row:first-child{border-top:0}.wh-field-editor-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.wh-field-editor-custom{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}.wh-field-editor-custom textarea{min-height:42px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;color:var(--ink);background:#fff}",
+  subrecordItemDiffCss,
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -251,15 +253,30 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   const dryRunLine = dryRunStatus
     ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchDryRun"))}: ${escapeHtml(dryRunStatusLabel(locale, dryRunStatus))} · ${escapeHtml(uiT(locale, "proposal.structuredPatchIssues"))}: ${escapeHtml(String(dryRunIssueCount))}</p>`
     : "";
+  const operations = objectRecord(dryRun?.["patch"])?.["operations"];
   const operationDetails = renderStructuredFieldOperationDetails({
-    operations: objectRecord(dryRun?.["patch"])?.["operations"],
+    operations,
     locale,
     surface: "proposal"
+  });
+  const subrecordDiff = renderSubrecordItemDiff({
+    operations,
+    locale,
+    surface: "proposal",
+    ...(dryRunStatus === "ready" && dryRun?.["executable"] === true && option.action?.href
+      ? {
+        action: {
+          href: option.action.href,
+          method: option.action.method,
+          actionId: option.action.id
+        }
+      }
+      : {})
   });
   const fieldEditor = dryRunStatus === "ready" && dryRun?.["executable"] === true
     ? renderStructuredFieldEditor({
       option,
-      operations: objectRecord(dryRun?.["patch"])?.["operations"],
+      operations,
       locale
     })
     : "";
@@ -273,7 +290,7 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
     </div>
-    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}${operationDetails}${fieldEditor}
+    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}${operationDetails}${subrecordDiff}${fieldEditor}
   </section>`;
 }
 

@@ -448,6 +448,34 @@ test("merge proposal candidate choices are explicit and replayable", () => {
       operations: [{ field: "title", decision: "custom" }]
     }
   });
+  const itemOverrideRequest = applyMergeProposalCandidateRequestSchema.parse({
+    confirm: true,
+    structured_item_overrides: {
+      items: [
+        {
+          field: "acceptance_items",
+          item_id: "72000000-0000-4000-8000-000000000901",
+          decision: "keep_current"
+        },
+        {
+          field: "task_items",
+          item_id: "72000000-0000-4000-8000-000000000902",
+          decision: "accept_incoming"
+        }
+      ]
+    }
+  });
+  const invalidItemOverrideRequest = applyMergeProposalCandidateRequestSchema.safeParse({
+    structured_item_overrides: {
+      items: [
+        {
+          field: "title",
+          item_id: "72000000-0000-4000-8000-000000000903",
+          decision: "keep_current"
+        }
+      ]
+    }
+  });
   const result = mergeProposalCandidateChoiceResultSchema.parse({
     merge_proposal_id: "72000000-0000-4000-8000-000000000009",
     conflict_key: "delivery:/outputs/result.md",
@@ -470,7 +498,10 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(applyRequest.confirm, true);
   assert.equal(fieldOverrideRequest.structured_field_overrides?.operations[0]?.decision, "custom");
   assert.equal(fieldOverrideRequest.structured_field_overrides?.operations[1]?.decision, "keep_current");
+  assert.equal(itemOverrideRequest.structured_item_overrides?.items[0]?.decision, "keep_current");
+  assert.equal(itemOverrideRequest.structured_item_overrides?.items[1]?.field, "task_items");
   assert.equal(invalidFieldOverrideRequest.success, false);
+  assert.equal(invalidItemOverrideRequest.success, false);
 });
 
 test("structured field patch dry-run validates executable work item fields", () => {

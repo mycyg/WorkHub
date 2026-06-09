@@ -156,9 +156,25 @@ export const structuredFieldApplyOverridesSchema = z.object({
 });
 export type StructuredFieldApplyOverrides = z.infer<typeof structuredFieldApplyOverridesSchema>;
 
+export const structuredItemOverrideDecisionSchema = z.enum(["accept_incoming", "keep_current"]);
+export type StructuredItemOverrideDecision = z.infer<typeof structuredItemOverrideDecisionSchema>;
+
+export const structuredItemOverrideSchema = z.object({
+  field: z.enum(["acceptance_items", "task_items"]),
+  item_id: idSchema,
+  decision: structuredItemOverrideDecisionSchema
+});
+export type StructuredItemOverride = z.infer<typeof structuredItemOverrideSchema>;
+
+export const structuredItemApplyOverridesSchema = z.object({
+  items: z.array(structuredItemOverrideSchema).min(1).max(256)
+});
+export type StructuredItemApplyOverrides = z.infer<typeof structuredItemApplyOverridesSchema>;
+
 export const applyMergeProposalCandidateRequestSchema = z.object({
   confirm: z.boolean().default(true),
-  structured_field_overrides: structuredFieldApplyOverridesSchema.optional()
+  structured_field_overrides: structuredFieldApplyOverridesSchema.optional(),
+  structured_item_overrides: structuredItemApplyOverridesSchema.optional()
 });
 export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;
 

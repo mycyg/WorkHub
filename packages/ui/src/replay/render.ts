@@ -12,6 +12,7 @@ import {
   renderStructuredFieldAuditDetails,
   renderStructuredFieldOperationDetails
 } from "../structured-field-details.js";
+import { renderSubrecordItemDiff, subrecordItemDiffCss } from "../subrecord-item-diff.js";
 
 export type ReplayRenderSurface = "web" | "desktop";
 
@@ -45,6 +46,7 @@ export const replayCss = [
   ".wh-row .wh-diff3{margin-top:10px}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
+  subrecordItemDiffCss,
   ".wh-desktop .wh-replay-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-replay{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-replay-frame{grid-template-columns:1fr}.wh-replay-rail{position:static}.wh-title{font-size:24px}.wh-field-row{grid-template-columns:1fr}}"
 ].join("");
 
@@ -127,7 +129,7 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
       <strong>${escapeHtml(copy(locale, "结构化字段检查", "Structured field check"))}</strong>
       <span class="wh-pill">${escapeHtml(dryRunStatus || copy(locale, "已记录", "Recorded"))}</span>
     </div>
-    ${renderStructuredFieldOperationDetails({ operations, locale, surface: "replay" })}
+    ${renderStructuredFieldOperationDetails({ operations, locale, surface: "replay" })}${renderSubrecordItemDiff({ operations, locale, surface: "replay" })}
   </section>`;
 }
 

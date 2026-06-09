@@ -493,6 +493,9 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
         actor: proposalActorFor(c.var.actor),
         ...(payload.structured_field_overrides
           ? { structuredFieldOverrides: payload.structured_field_overrides }
+          : {}),
+        ...(payload.structured_item_overrides
+          ? { structuredItemOverrides: payload.structured_item_overrides }
           : {})
       });
       return c.json({

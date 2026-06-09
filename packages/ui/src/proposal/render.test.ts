@@ -380,11 +380,11 @@ test("proposal renderer exposes a folded field editor for ready structured patch
         quality_gate: {
           structured_record_patch: {
             type: "structured_record_field_patch",
-            changed_fields: ["title", "priority"],
-            merged_value_fields: ["title", "priority"],
+            changed_fields: ["title", "priority", "task_items"],
+            merged_value_fields: ["title", "priority", "task_items"],
             missing_fields: [],
             unknown_fields: [],
-            field_count: 2,
+            field_count: 3,
             has_structured_result: true,
             structured_field_patch_dry_run: {
               type: "structured_field_patch_dry_run",
@@ -417,6 +417,24 @@ test("proposal renderer exposes a folded field editor for ready structured patch
                     current_value: "normal",
                     value: "high",
                     source: "ai_fusion"
+                  },
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: vm.work_item_id,
+                    field: "task_items",
+                    value_type: "json_array",
+                    before_value: [
+                      { id: "10000000-0000-4000-8000-000000000412", title: "原始任务项", item_type: "task", sort_order: 0 }
+                    ],
+                    current_value: [
+                      { id: "10000000-0000-4000-8000-000000000412", title: "原始任务项", item_type: "task", sort_order: 0 }
+                    ],
+                    value: [
+                      { id: "10000000-0000-4000-8000-000000000412", title: "原始任务项", item_type: "task", sort_order: 0 },
+                      { id: "10000000-0000-4000-8000-000000000413", title: "新增风险项", item_type: "risk", sort_order: 1 }
+                    ],
+                    source: "ai_fusion"
                   }
                 ]
               },
@@ -424,8 +442,8 @@ test("proposal renderer exposes a folded field editor for ready structured patch
               audit_payload: {
                 target_entity_type: "work_item",
                 target_entity_id: vm.work_item_id,
-                field_count: 2,
-                operation_fields: ["title", "priority"],
+                field_count: 3,
+                operation_fields: ["title", "priority", "task_items"],
                 source: "ai_fusion"
               }
             }
@@ -446,9 +464,21 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts: [conflict] });
 
   assert.equal(rendered.html.includes("data-proposal-structured-field-editor=\"true\""), true);
-  assert.equal(rendered.html.includes("data-proposal-structured-field-editor-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-proposal-structured-field-editor-count=\"3\""), true);
   assert.equal(rendered.html.includes("data-proposal-structured-field-editor-row=\"title\""), true);
   assert.equal(rendered.html.includes("data-proposal-structured-field-editor-row=\"priority\""), true);
+  assert.equal(rendered.html.includes("data-proposal-subrecord-item-diff=\"true\""), true);
+  assert.equal(rendered.html.includes("data-proposal-subrecord-field=\"task_items\""), true);
+  assert.equal(rendered.html.includes("data-proposal-subrecord-item=\"10000000-0000-4000-8000-000000000413\""), true);
+  assert.equal(rendered.html.includes("data-subrecord-diff-kind=\"added\""), true);
+  assert.equal(rendered.html.includes("data-subrecord-item-choice=\"true\""), true);
+  assert.equal(rendered.html.includes("data-subrecord-decision=\"accept_incoming\""), true);
+  assert.equal(rendered.html.includes("data-subrecord-decision=\"keep_current\""), true);
+  assert.equal(rendered.html.includes("structured_item_overrides"), true);
+  assert.equal(rendered.html.includes("高级子记录编辑"), true);
+  assert.equal(rendered.html.includes("新增"), true);
+  assert.equal(rendered.html.includes("采纳此项"), true);
+  assert.equal(rendered.html.includes("保留当前项"), true);
   assert.equal(rendered.html.includes("高级字段编辑"), true);
   assert.equal(rendered.html.includes("只采用此字段"), true);
   assert.equal(rendered.html.includes("保留当前字段"), true);
@@ -460,6 +490,10 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(rendered.html.includes("keep_current"), true);
   assert.equal(rendered.html.includes("__WORKHUB_CUSTOM_FIELD_VALUE__"), true);
   assert.equal(rendered.html.includes(applyHref), true);
+  assert.equal(english.html.includes("Advanced item editor"), true);
+  assert.equal(english.html.includes("Added"), true);
+  assert.equal(english.html.includes("Use this item"), true);
+  assert.equal(english.html.includes("Keep current item"), true);
   assert.equal(english.html.includes("Advanced field editor"), true);
   assert.equal(english.html.includes("Use this field only"), true);
   assert.equal(english.html.includes("Keep current field"), true);

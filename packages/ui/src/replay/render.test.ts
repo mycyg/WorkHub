@@ -213,6 +213,12 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("字段写回审计"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
+  assert.equal(zh.html.includes("data-replay-subrecord-item-diff=\"true\""), true);
+  assert.equal(zh.html.includes("data-replay-subrecord-field=\"task_items\""), true);
+  assert.equal(zh.html.includes(`data-replay-subrecord-item="${newTaskId}"`), true);
+  assert.equal(zh.html.includes("data-subrecord-diff-kind=\"added\""), true);
+  assert.equal(zh.html.includes("子记录逐项变化"), true);
+  assert.equal(zh.html.includes("新增风险项"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-audit=\"true\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-audit=\"task_items\""), true);
   assert.equal(zh.html.includes("基线: 旧标题"), true);
@@ -220,6 +226,8 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(zh.html.includes("策略: fast_path"), true);
   assert.equal(en.html.includes("Field-level targets"), true);
+  assert.equal(en.html.includes("Subrecord item changes"), true);
+  assert.equal(en.html.includes("Added"), true);
   assert.equal(en.html.includes("Change preview"), true);
   assert.equal(en.html.includes("Hunks: 1"), true);
   assert.equal(en.html.includes("Lines: 2"), true);

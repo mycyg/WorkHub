@@ -127,6 +127,22 @@ const copy = {
   "proposal.fieldEditorCustom": { "zh-CN": "使用自定义值", "en-US": "Use custom value" },
   "proposal.fieldEditorCustomPlaceholder": { "zh-CN": "输入自定义字段值", "en-US": "Enter a custom field value" },
   "proposal.fieldEditorField": { "zh-CN": "字段", "en-US": "Field" },
+  "proposal.subrecordEditorTitle": { "zh-CN": "高级子记录编辑", "en-US": "Advanced item editor" },
+  "proposal.subrecordEditorBody": {
+    "zh-CN": "默认采用 AI 的整组建议；需要微调验收项或任务项时再逐项选择。",
+    "en-US": "The default path uses the full AI suggestion; expand only when an acceptance or task item needs a precise choice."
+  },
+  "proposal.subrecordReplayTitle": { "zh-CN": "子记录逐项变化", "en-US": "Subrecord item changes" },
+  "proposal.subrecordAcceptance": { "zh-CN": "验收项", "en-US": "Acceptance items" },
+  "proposal.subrecordTask": { "zh-CN": "任务项", "en-US": "Task items" },
+  "proposal.subrecordAdded": { "zh-CN": "新增", "en-US": "Added" },
+  "proposal.subrecordRemoved": { "zh-CN": "删除", "en-US": "Removed" },
+  "proposal.subrecordModified": { "zh-CN": "修改", "en-US": "Modified" },
+  "proposal.subrecordUnchanged": { "zh-CN": "未变", "en-US": "Unchanged" },
+  "proposal.subrecordCurrent": { "zh-CN": "当前", "en-US": "Current" },
+  "proposal.subrecordIncoming": { "zh-CN": "AI 建议", "en-US": "AI suggestion" },
+  "proposal.subrecordAcceptIncoming": { "zh-CN": "采纳此项", "en-US": "Use this item" },
+  "proposal.subrecordKeepCurrent": { "zh-CN": "保留当前项", "en-US": "Keep current item" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

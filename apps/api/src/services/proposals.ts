@@ -19,7 +19,8 @@ import {
   type Proposal,
   type Review,
   type StructuredFieldApplyOverrides,
-  type StructuredFieldPatchDryRun
+  type StructuredFieldPatchDryRun,
+  type StructuredItemApplyOverrides
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
 import {
@@ -106,6 +107,7 @@ export type ProposalService = {
     mergeProposalId: string;
     actor: ProposalActor;
     structuredFieldOverrides?: StructuredFieldApplyOverrides;
+    structuredItemOverrides?: StructuredItemApplyOverrides;
   }) => Promise<StoredProposal>;
 };
 
@@ -601,6 +603,177 @@ function applyStructuredFieldOverridesToDryRun(
   return parsed.data;
 }
 
+type StructuredArrayItem = Record<string, unknown> & { id: string };
+type StructuredPatchOperation = StructuredFieldPatchDryRun["patch"]["operations"][number];
+
+function structuredArrayItemRecord(value: unknown): StructuredArrayItem | undefined {
+  const record = objectRecord(value);
+  const id = typeof record?.["id"] === "string" ? record["id"] : undefined;
+  return id && id.trim().length > 0 ? { ...record, id } : undefined;
+}
+
+function structuredArrayItems(value: unknown): StructuredArrayItem[] {
+  return Array.isArray(value)
+    ? value.map(structuredArrayItemRecord).filter((item): item is StructuredArrayItem => Boolean(item))
+    : [];
+}
+
+function structuredArrayItemsById(items: StructuredArrayItem[]) {
+  return new Map(items.map((item) => [item.id, item] as const));
+}
+
+function structuredArrayItemsEqual(left: StructuredArrayItem | undefined, right: StructuredArrayItem | undefined) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function itemOverrideSourceItems(operation: StructuredPatchOperation) {
+  const incoming = structuredArrayItems(operation.value);
+  const current = structuredArrayItems(
+    Object.prototype.hasOwnProperty.call(operation, "current_value")
+      ? operation.current_value
+      : operation.before_value
+  );
+  return {
+    incoming,
+    current,
+    incomingById: structuredArrayItemsById(incoming),
+    currentById: structuredArrayItemsById(current)
+  };
+}
+
+function itemOverridesForField(input: {
+  dryRun: StructuredFieldPatchDryRun;
+  overrides: StructuredItemApplyOverrides;
+}) {
+  const operationsByField = new Map(input.dryRun.patch.operations.map((operation) => [operation.field, operation] as const));
+  const byField = new Map<string, StructuredItemApplyOverrides["items"]>();
+  const seen = new Set<string>();
+  for (const override of input.overrides.items) {
+    const key = `${override.field}:${override.item_id}`;
+    if (seen.has(key)) {
+      throw new ProposalServiceError(
+        409,
+        "structured_item_override_duplicate",
+        `子记录 ${override.field}/${override.item_id} 的编辑出现了重复选择。`
+      );
+    }
+    seen.add(key);
+    const operation = operationsByField.get(override.field);
+    if (!operation) {
+      throw new ProposalServiceError(
+        409,
+        "structured_item_override_unknown_field",
+        `字段 ${override.field} 不在这次结构化字段建议中。`
+      );
+    }
+    if (!Array.isArray(operation.value)) {
+      throw new ProposalServiceError(
+        409,
+        "structured_item_override_not_array",
+        `字段 ${override.field} 不是可逐项编辑的子记录数组。`
+      );
+    }
+    const source = itemOverrideSourceItems(operation);
+    if (!source.incomingById.has(override.item_id) && !source.currentById.has(override.item_id)) {
+      throw new ProposalServiceError(
+        409,
+        "structured_item_override_unknown_item",
+        `子记录 ${override.field}/${override.item_id} 不在这次结构化字段建议中。`
+      );
+    }
+    byField.set(override.field, [...(byField.get(override.field) ?? []), override]);
+  }
+  return byField;
+}
+
+function applyItemOverridesToOperation(
+  operation: StructuredPatchOperation,
+  overrides: StructuredItemApplyOverrides["items"]
+): StructuredPatchOperation {
+  if (!Array.isArray(operation.value)) {
+    return operation;
+  }
+  const source = itemOverrideSourceItems(operation);
+  const nextById = new Map(source.incoming.map((item) => [item.id, item] as const));
+  for (const override of overrides) {
+    const incomingItem = source.incomingById.get(override.item_id);
+    const currentItem = source.currentById.get(override.item_id);
+    if (override.decision === "accept_incoming") {
+      if (incomingItem) {
+        nextById.set(override.item_id, incomingItem);
+      } else {
+        nextById.delete(override.item_id);
+      }
+      continue;
+    }
+    if (currentItem) {
+      nextById.set(override.item_id, currentItem);
+    } else {
+      nextById.delete(override.item_id);
+    }
+  }
+  const orderedIds = [
+    ...source.incoming.map((item) => item.id),
+    ...source.current.map((item) => item.id)
+  ].filter((item, index, all) => all.indexOf(item) === index);
+  const value = orderedIds
+    .map((id) => nextById.get(id))
+    .filter((item): item is StructuredArrayItem => Boolean(item));
+  const changed = value.length !== source.incoming.length
+    || value.some((item, index) => !structuredArrayItemsEqual(item, source.incoming[index]));
+  return changed
+    ? {
+      ...operation,
+      value,
+      source: "manual"
+    }
+    : operation;
+}
+
+function applyStructuredItemOverridesToDryRun(
+  dryRun: StructuredFieldPatchDryRun,
+  overrides: StructuredItemApplyOverrides | undefined
+) {
+  if (!overrides) {
+    return dryRun;
+  }
+  const byField = itemOverridesForField({ dryRun, overrides });
+  let changed = false;
+  const operations = dryRun.patch.operations.map((operation) => {
+    const fieldOverrides = byField.get(operation.field);
+    if (!fieldOverrides?.length) {
+      return operation;
+    }
+    const next = applyItemOverridesToOperation(operation, fieldOverrides);
+    if (next !== operation) {
+      changed = true;
+    }
+    return next;
+  });
+  const source = changed ? "manual" : dryRun.patch.source;
+  const parsed = structuredFieldPatchDryRunSchema.safeParse({
+    ...dryRun,
+    patch: {
+      ...dryRun.patch,
+      operations,
+      source
+    },
+    audit_payload: {
+      ...dryRun.audit_payload,
+      operation_fields: operations.map((operation) => operation.field),
+      source
+    }
+  });
+  if (!parsed.success) {
+    throw new ProposalServiceError(
+      409,
+      "structured_item_override_invalid",
+      "子记录逐项编辑后的结构化字段没有通过校验。"
+    );
+  }
+  return parsed.data;
+}
+
 function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidateApplicationContext) {
   const dryRun = structuredFieldPatchDryRunForApply(context);
   if (!dryRun || dryRun.status !== "blocked") {
@@ -615,7 +788,8 @@ function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidat
 
 function structuredFieldPatchWritebackForApply(
   context: MergeProposalCandidateApplicationContext,
-  overrides?: StructuredFieldApplyOverrides
+  overrides?: StructuredFieldApplyOverrides,
+  itemOverrides?: StructuredItemApplyOverrides
 ): {
   dryRun: StructuredFieldPatchDryRun;
 } | undefined {
@@ -626,7 +800,8 @@ function structuredFieldPatchWritebackForApply(
   if (!baseDryRun) {
     return undefined;
   }
-  const dryRun = applyStructuredFieldOverridesToDryRun(baseDryRun, overrides);
+  const fieldDryRun = applyStructuredFieldOverridesToDryRun(baseDryRun, overrides);
+  const dryRun = applyStructuredItemOverridesToDryRun(fieldDryRun, itemOverrides);
   if (dryRun.status !== "ready" || !dryRun.executable) {
     throw new ProposalServiceError(
       409,
@@ -1348,7 +1523,8 @@ export function createDbProposalService(repository: ProposalRepository, options:
       assertAiFusionApplyContext(context);
       const resolvedStructuredFieldPatch = structuredFieldPatchWritebackForApply(
         context,
-        input.structuredFieldOverrides
+        input.structuredFieldOverrides,
+        input.structuredItemOverrides
       );
       const resolvedDriveFile = resolvedStructuredFieldPatch
         ? undefined

@@ -1660,6 +1660,147 @@ test("proposal service applies executable acceptance item subrecord patches", as
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
+test("proposal service applies per-item acceptance overrides through the structured merge gate", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const editedItem: MemoryAcceptanceItemRow = {
+    id: "91000000-0000-4000-8000-000000000641",
+    title: "输出可追溯结论清单",
+    description: "原始描述。",
+    status: "open",
+    sort_order: 0,
+    source_plan_id: null
+  };
+  const removedItem: MemoryAcceptanceItemRow = {
+    id: "91000000-0000-4000-8000-000000000642",
+    title: "保留人工验收项",
+    description: null,
+    status: "open",
+    sort_order: 1,
+    source_plan_id: null
+  };
+  const addedItem: MemoryAcceptanceItemRow = {
+    id: "91000000-0000-4000-8000-000000000643",
+    title: "新增证据映射表",
+    description: "AI 建议补充的验收项。",
+    status: "open",
+    sort_order: 1,
+    source_plan_id: null
+  };
+  const currentItems = [editedItem, removedItem];
+  const incomingItems: MemoryAcceptanceItemRow[] = [
+    { ...editedItem, description: "AI 改写后的描述。", status: "met" },
+    addedItem
+  ];
+  repository.acceptanceItems.set(itemManifest.work_item_id, currentItems);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["acceptance_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000644";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000645";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000646",
+    existing_change_id: "91000000-0000-4000-8000-000000000647",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并验收项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            acceptance_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId },
+      structuredItemOverrides: {
+        items: [
+          { field: "acceptance_items", item_id: editedItem.id, decision: "keep_current" },
+          { field: "acceptance_items", item_id: editedItem.id, decision: "accept_incoming" }
+        ]
+      }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "structured_item_override_duplicate"
+  );
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    structuredItemOverrides: {
+      items: [
+        { field: "acceptance_items", item_id: editedItem.id, decision: "keep_current" },
+        { field: "acceptance_items", item_id: addedItem.id, decision: "keep_current" },
+        { field: "acceptance_items", item_id: removedItem.id, decision: "keep_current" }
+      ]
+    }
+  });
+
+  assert.equal(merged.status, "merged");
+  assert.deepEqual(repository.acceptanceItems.get(itemManifest.work_item_id), currentItems);
+  assert.equal(repository.acceptedTargetCount, 0);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
 test("proposal service applies executable task item subrecord patches", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });
