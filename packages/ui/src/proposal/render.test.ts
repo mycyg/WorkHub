@@ -215,6 +215,14 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
   assert.equal(rendered.html.includes("采用 AI 融合稿"), true);
   assert.equal(rendered.html.includes("data-proposal-text-patch-preview=\"true\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-viewer=\"true\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-hunk-count=\"1\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-line-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-visible-line-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-folded-line-count=\"0\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-hunk-index=\"0\""), true);
+  assert.equal(rendered.html.includes("data-patch-old-line=\"1\""), true);
+  assert.equal(rendered.html.includes("data-patch-new-line=\"1\""), true);
   assert.equal(rendered.html.includes("data-text-diff3=\"true\""), true);
   assert.equal(rendered.html.includes("data-text-diff3-option-id=\"ai_fusion\""), true);
   assert.equal(rendered.html.includes("data-text-diff3-auto-merge=\"false\""), true);
@@ -256,6 +264,8 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Use this version"), true);
   assert.equal(english.html.includes("Use AI fusion draft"), true);
   assert.equal(english.html.includes("Preview before apply"), true);
+  assert.equal(english.html.includes("Hunks: 1"), true);
+  assert.equal(english.html.includes("Lines: 2"), true);
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);
   assert.equal(english.html.includes("Affected lines: line 2"), true);
@@ -269,6 +279,61 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Missing fields: acceptance_items"), true);
   assert.equal(english.html.includes("Extra fields: extra_field"), true);
   assert.equal(english.html.includes("Review required"), true);
+});
+
+test("proposal renderer folds large rich patch previews instead of turning conflict cards into a workbench", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const lines = Array.from({ length: 90 }, (_, index) => index % 2 === 0 ? `-旧段落 ${index}` : `+新段落 ${index}`);
+  const conflict: ProposalConflict = {
+    id: "conflict-large-doc",
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000509",
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: "drive_item:docs/large.md",
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: "docs/large.md",
+    headline: "large.md 改动较多",
+    summary_text: "只展示前 80 行，其余折叠，避免默认界面过重。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000510",
+      change_id: "10000000-0000-4000-8000-000000000511",
+      ref: "main"
+    },
+    incoming: { ref: "proposal" },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成融合稿。",
+        quality_gate: {
+          text_patch_preview: {
+            type: "unified_text_patch_preview",
+            base_available: true,
+            stats: {
+              changed: true,
+              added_lines: 45,
+              removed_lines: 45,
+              overlap_risk: "low"
+            },
+            hunks: [{ header: "@@ -1,90 +1,90 @@", lines }]
+          }
+        }
+      }
+    ]
+  };
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts: [conflict] });
+
+  assert.equal(rendered.html.includes("data-rich-patch-line-count=\"90\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-visible-line-count=\"80\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-folded-line-count=\"10\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-truncated=\"true\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-overflow=\"true\""), true);
+  assert.equal(rendered.html.includes("已折叠行: 10"), true);
+  assert.equal(rendered.html.includes("新段落 89"), false);
 });
 
 test("proposal renderer exposes a folded field editor for ready structured patches", () => {

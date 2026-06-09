@@ -6,6 +6,7 @@ import type {
 } from "@workhub/contracts";
 
 import { uiLocale, type UiRenderOptions } from "../i18n.js";
+import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
   renderStructuredFieldAuditDetails,
   renderStructuredFieldOperationDetails
@@ -37,7 +38,8 @@ export const replayCss = [
   ".wh-title{font-size:30px;line-height:1.12;margin:8px 0}.wh-subtle{color:var(--muted);line-height:1.55}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:18px}",
   ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}",
   ".wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
-  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
+  richPatchViewerCss,
+  ".wh-row .wh-patch{margin-top:10px}",
   ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
@@ -90,51 +92,16 @@ function mergeAttemptLabel(locale: WorkHubLocale, result: string) {
   return copy(locale, "已记录", "Recorded");
 }
 
-function patchLineKind(line: string) {
-  if (line.startsWith("+")) return "add";
-  if (line.startsWith("-")) return "remove";
-  if (line.startsWith("@@")) return "meta";
-  return "context";
-}
-
-function patchRiskLabel(locale: WorkHubLocale, risk: string) {
-  if (risk === "low") return copy(locale, "低风险", "Low risk");
-  if (risk === "requires_review") return copy(locale, "需要复核", "Review required");
-  return copy(locale, "风险未知", "Risk unknown");
-}
-
 function renderTextPatchPreview(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
-  const preview = objectRecord(candidate.quality_gate?.["text_patch_preview"]);
-  if (preview?.["type"] !== "unified_text_patch_preview") {
-    return "";
-  }
-  const stats = objectRecord(preview["stats"]);
-  const hunks = Array.isArray(preview["hunks"]) ? preview["hunks"] : [];
-  const risk = typeof stats?.["overlap_risk"] === "string" ? stats["overlap_risk"] : "unknown";
-  const added = typeof stats?.["added_lines"] === "number" ? stats["added_lines"] : 0;
-  const removed = typeof stats?.["removed_lines"] === "number" ? stats["removed_lines"] : 0;
-  const hunkLines = hunks.flatMap((hunk) => {
-    const record = objectRecord(hunk);
-    const header = typeof record?.["header"] === "string" ? [record["header"]] : [];
-    const lines = Array.isArray(record?.["lines"])
-      ? record["lines"].filter((line): line is string => typeof line === "string")
-      : [];
-    return [...header, ...lines];
+  return renderRichPatchViewer({
+    locale,
+    preview: candidate.quality_gate?.["text_patch_preview"],
+    title: copy(locale, "改动预览", "Change preview"),
+    rootAttributes: {
+      "data-replay-text-patch-preview": "true",
+      "data-replay-text-patch-option-key": candidate.option_key
+    }
   });
-  if (hunkLines.length === 0) {
-    return "";
-  }
-  return `<section class="wh-patch" data-replay-text-patch-preview="true" data-overlap-risk="${escapeHtml(risk)}">
-    <div class="wh-patch-head">
-      <strong>${escapeHtml(copy(locale, "改动预览", "Change preview"))}</strong>
-      <div class="wh-patch-meta">
-        <span class="wh-pill">${escapeHtml(preview["base_available"] === true ? copy(locale, "有基线", "Base available") : copy(locale, "无基线", "No base"))}</span>
-        <span class="wh-pill">+${escapeHtml(String(added))} / -${escapeHtml(String(removed))}</span>
-        <span class="wh-pill">${escapeHtml(patchRiskLabel(locale, risk))}</span>
-      </div>
-    </div>
-    <pre class="wh-diff">${hunkLines.map((line) => `<span class="wh-diff-line" data-patch-line-kind="${escapeHtml(patchLineKind(line))}">${escapeHtml(line)}</span>`).join("")}</pre>
-  </section>`;
 }
 
 function textDiff3RangeValues(value: unknown) {

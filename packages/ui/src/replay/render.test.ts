@@ -43,6 +43,22 @@ function replayWithStructuredFields(): ReplayTraceVM {
                 target_kind: "structured_record",
                 rationale_md: "把 AI 拆解的任务项写回最新 dispatch plan。",
                 quality_gate: {
+                  text_patch_preview: {
+                    type: "unified_text_patch_preview",
+                    base_available: true,
+                    stats: {
+                      changed: true,
+                      added_lines: 1,
+                      removed_lines: 1,
+                      overlap_risk: "low"
+                    },
+                    hunks: [
+                      {
+                        header: "@@ -3 +3 @@",
+                        lines: ["-旧标题", "+新标题"]
+                      }
+                    ]
+                  },
                   structured_record_patch: {
                     type: "structured_record_field_patch",
                     changed_fields: ["title", "task_items"],
@@ -162,6 +178,21 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.mergeAttemptCount, 1);
   assert.equal(zh.structuredAuditCount, 1);
   assert.equal(zh.html.includes("字段级落点"), true);
+  assert.equal(zh.html.includes("data-replay-text-patch-preview=\"true\""), true);
+  assert.equal(zh.html.includes("data-replay-text-patch-option-key=\"ai_fusion\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-viewer=\"true\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-hunk-count=\"1\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-line-count=\"2\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-visible-line-count=\"2\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-folded-line-count=\"0\""), true);
+  assert.equal(zh.html.includes("data-rich-patch-hunk-index=\"0\""), true);
+  assert.equal(zh.html.includes("data-patch-old-line=\"3\""), true);
+  assert.equal(zh.html.includes("data-patch-new-line=\"3\""), true);
+  assert.equal(zh.html.includes("data-patch-line-kind=\"remove\""), true);
+  assert.equal(zh.html.includes("data-patch-line-kind=\"add\""), true);
+  assert.equal(zh.html.includes("改动预览"), true);
+  assert.equal(zh.html.includes("段落: 1"), true);
+  assert.equal(zh.html.includes("行数: 2"), true);
   assert.equal(zh.html.includes("字段写回审计"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
@@ -172,6 +203,9 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(zh.html.includes("策略: fast_path"), true);
   assert.equal(en.html.includes("Field-level targets"), true);
+  assert.equal(en.html.includes("Change preview"), true);
+  assert.equal(en.html.includes("Hunks: 1"), true);
+  assert.equal(en.html.includes("Lines: 2"), true);
   assert.equal(en.html.includes("Field writeback audit"), true);
   assert.equal(en.html.includes("Base: 旧标题"), true);
   assert.equal(en.html.includes("After: 新标题"), true);
