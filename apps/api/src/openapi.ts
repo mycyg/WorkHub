@@ -52,6 +52,12 @@ export function getOpenApiDocument() {
           summary: "List proposals for a work item"
         }
       },
+      "/api/workitems/{id}/conflicts": {
+        get: {
+          tags: ["proposals"],
+          summary: "List current proposal conflicts and clickable resolution options for a work item"
+        }
+      },
       "/api/proposals/{id}": {
         get: {
           tags: ["proposals"],

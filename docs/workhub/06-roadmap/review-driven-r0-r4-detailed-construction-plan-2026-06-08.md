@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口 | 仍未接完整 Drive 富预览/历史/redo UI，也未做 AI 调解 UI |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload | 仍未接完整 Drive 富预览/历史/redo UI，也未做 LLM 融合候选、`MergeAttempt/MergeProposal` 表和前端冲突选择 UI |
 
 ### R1 必做顺序
 
@@ -155,7 +155,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、AI 冲突调解候选仍未完成。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、LLM 冲突调解候选与冲突选择 UI 仍未完成；R1.9 已先落 deterministic 两选一 API。
 
 ### R1 验收
 
@@ -179,7 +179,7 @@ R0 退出门：
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
 - 后续已补：正式交付物读取面最小切片；WorkItem page 与 AgentRun replay 返回 `accepted_deliverables`，并提供下载与文本预览 API。
 - 后续已补：正式交付物最小还原入口；同一路径第二版采纳后可 `POST .../restore` 回到上一版 Drive version，并写 `ProjectDriveOperation` 与审计。
-- 未完成：BudgetPolicy 持久化与审计、AI 冲突调解候选、完整 approval policy routing 仍未完成。
+- 未完成：BudgetPolicy 持久化与审计、LLM 冲突调解候选/表/UI、完整 approval policy routing 仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -303,7 +303,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
 - `MergeAttempt` / `MergeProposal` 表与 AI 候选生成。
-- 冲突选择 UI 与 `/workitems/{id}/conflicts` API。
+- LLM 融合候选与前端冲突选择 UI。`/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
 ### R1.5 ProjectDrive adoption 与正式文件落盘（2026-06-09）
@@ -329,7 +329,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有合并冲突选择 UI。
+R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有 LLM 融合候选和前端冲突选择 UI。
 
 ### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
 
@@ -408,6 +408,44 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 | 还原动作 | 当前 accepted row 置 `superseded_at`；上一版 accepted row 清空 `superseded_at`；Drive item 指回上一版 version |
 | 审计 | `project_drive_operations.op_type=restore_version` + `audit_logs.action=accepted_deliverable.reverted` |
 | 非目标 | 不做 redo，不做多文件 snapshot rollback，不做 Drive 历史浏览器 |
+
+### R1.9 Conflict cards and explicit incoming resolution（2026-06-09）
+
+本切片关闭“同 target 撞车后只能看到裸 409，用户无法用点击方式处理”的缺口。范围限定为 file-only accepted deliverable ledger 的 deterministic 调解，不冒充完整 AI 融合合并。
+
+已落代码：
+
+- `packages/contracts/src/domain/collaboration.ts`：新增 `ProposalConflict`、`ProposalConflictOption`、`ProposalConflictListResult`；`MergeProposalRequest` 新增 `conflict_resolution.accept_incoming_target_keys[]`。
+- `packages/db/src/repositories/proposals.ts`：新增 `listConflictsByWorkItem(workItemId)`；`merge()` 支持 `acceptIncomingTargetKeys`，仅对显式列入的 target 允许覆盖 current accepted row。
+- `apps/api/src/services/proposals.ts`：把 repository conflict 映射为人话冲突卡；默认推荐 `keep_current`，另给 `accept_incoming` action，action body 固定带 `conflict_resolution.accept_incoming_target_keys:[target_key]`。
+- `apps/api/src/routes/proposals.ts`：`POST /api/proposals/:id/merge` 的 409 `merge_conflict` 返回 `details.conflicts[]` 与 `recoverable:true`；新增 `GET /api/workitems/:id/conflicts`。
+- `packages/api-client`：新增 `listWorkItemConflicts(workItemId)` typed client。
+- `apps/api/src/openapi.ts`：新增 `/api/workitems/{id}/conflicts` contract seed。
+
+当前契约：
+
+| 项 | R1.9 行为 |
+|---|---|
+| 默认 merge | 未带 resolution 时仍返回 409 `merge_conflict`，不静默覆盖正式版 |
+| 冲突读取 | `GET /api/workitems/:id/conflicts` 仅列 `reviewed` proposal 与 current accepted row 的冲突 |
+| 保留正式版 | `keep_current` 是推荐项，只打开变更申请，不写 main |
+| 采纳这次版本 | `accept_incoming` 必须回传 target key；repository 只跳过该 key 的 conflict gate，其它冲突仍会阻断 |
+| 前端/Cuu | 可直接渲染两个按钮；无需用户打字 |
+| 审计 | merge 成功仍走现有 accepted ledger、merge snapshot、proposal.merged audit 与 restore 入口 |
+
+验证：
+
+- `@workhub/contracts` typecheck 与 15/15 tests 通过；新增 contract test 验证 conflict option payload 可被 `mergeProposalRequestSchema` 接受。
+- `@workhub/api-client` typecheck 与 8/8 tests 通过；新增 client 路径断言。
+- `@workhub/api` typecheck 与 67/67 tests 通过；新增 service/route test 覆盖“无 resolution 409 -> 读取 conflicts -> 带 target key 二次 merge 成功”。
+- `@workhub/db`、`apps/web`、`apps/desktop-webview` typecheck 通过。
+
+仍未完成：
+
+- `MergeAttempt` / `MergeProposal` 持久表、chosen option 审计与多冲突逐项选择。
+- LLM 融合候选：STRUCT/DOC_TEXT 的 base/ours/theirs prompt、候选 rationale、推荐项与降级枚举。
+- Web / Cuu 冲突卡真实 UI 接入：当前 API 可用，但主界面尚未把 `details.conflicts` 渲染为按钮卡。
+- 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

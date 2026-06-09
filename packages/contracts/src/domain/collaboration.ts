@@ -114,10 +114,61 @@ export const proposalReviewResultSchema = z.object({
 });
 export type ProposalReviewResult = z.infer<typeof proposalReviewResultSchema>;
 
+const proposalConflictActionSchema = actionSpecSchema.extend({
+  request_json: z.record(z.string(), z.unknown()).optional()
+});
+
 export const mergeProposalRequestSchema = z.object({
-  confirm: z.boolean().default(true)
+  confirm: z.boolean().default(true),
+  conflict_resolution: z
+    .object({
+      accept_incoming_target_keys: z.array(z.string().min(1)).default([])
+    })
+    .optional()
 });
 export type MergeProposalRequest = z.input<typeof mergeProposalRequestSchema>;
+
+export const proposalConflictOptionSchema = z.object({
+  id: z.enum(["keep_current", "accept_incoming"]),
+  label: z.string().min(1),
+  summary_text: z.string().min(1),
+  recommended: z.boolean().optional(),
+  action: proposalConflictActionSchema.optional()
+});
+export type ProposalConflictOption = z.infer<typeof proposalConflictOptionSchema>;
+
+export const proposalConflictSchema = z.object({
+  id: z.string().min(1),
+  work_item_id: idSchema,
+  proposal_id: idSchema,
+  change_id: idSchema,
+  target_key: z.string().min(1),
+  target_kind: z.string().min(1),
+  change_type: z.string().min(1),
+  target_path: z.string().optional(),
+  headline: z.string().min(1),
+  summary_text: z.string().min(1),
+  existing: z.object({
+    proposal_id: idSchema,
+    change_id: idSchema,
+    ref: z.string().optional(),
+    sha256: z.string().length(64).optional()
+  }),
+  incoming: z.object({
+    ref: z.string().optional(),
+    sha256_before: z.string().length(64).optional(),
+    sha256_after: z.string().length(64).optional()
+  }),
+  recommended_option_id: z.enum(["keep_current", "accept_incoming"]),
+  options: z.array(proposalConflictOptionSchema).min(2)
+});
+export type ProposalConflict = z.infer<typeof proposalConflictSchema>;
+
+export const proposalConflictListResultSchema = z.object({
+  conflicts: z.array(proposalConflictSchema),
+  empty_state: z.enum(["no_conflicts"]).optional()
+});
+export type ProposalConflictListResult = z.infer<typeof proposalConflictListResultSchema>;
 
 export const proposalMergeResultSchema = z.object({
   proposal_id: idSchema,

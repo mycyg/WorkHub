@@ -7,6 +7,7 @@ import {
   createProposalFromManifestRequestSchema,
   eventTypes,
   mergeProposalRequestSchema,
+  proposalConflictListResultSchema,
   proposalMergeResultSchema,
   proposalReviewResultSchema,
   reviewProposalRequestSchema,
@@ -26,6 +27,7 @@ import {
 import {
   getDefaultProposalService,
   ProposalServiceError,
+  ProposalServiceMergeConflictError,
   type ProposalActor,
   type ProposalService,
   type StoredProposal
@@ -314,14 +316,34 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   });
 
   routes.post("/:id/merge", authMiddleware, async (c) => {
-    mergeProposalRequestSchema.parse(await readJsonBody(c));
+    const payload = mergeProposalRequestSchema.parse(await readJsonBody(c));
     let proposal: StoredProposal;
     try {
       proposal = await proposals.merge({
         proposalId: c.req.param("id"),
-        actor: proposalActorFor(c.var.actor)
+        actor: proposalActorFor(c.var.actor),
+        ...(payload.conflict_resolution
+          ? {
+              conflictResolution: {
+                acceptIncomingTargetKeys: payload.conflict_resolution.accept_incoming_target_keys
+              }
+            }
+          : {})
       });
     } catch (error) {
+      if (error instanceof ProposalServiceMergeConflictError) {
+        return c.json({
+          ok: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            details: {
+              conflicts: error.conflicts
+            },
+            recoverable: true
+          }
+        }, 409);
+      }
       handleProposalServiceError(error);
     }
     const createdAt = nowIso();
@@ -423,6 +445,14 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     return c.json({
       ok: true,
       data: rows.map(({ reviews: _reviews, ...proposal }) => proposal)
+    });
+  });
+
+  routes.get("/workitems/:id/conflicts", createCurrentUserMiddleware(authSource), async (c) => {
+    const result = await proposals.listConflicts(c.req.param("id"));
+    return c.json({
+      ok: true,
+      data: proposalConflictListResultSchema.parse(result)
     });
   });
 

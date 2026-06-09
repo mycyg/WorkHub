@@ -15,6 +15,7 @@ import type {
   GoldPathSurfaceVM,
   NotificationList,
   Proposal,
+  ProposalConflictListResult,
   ProposalDetailVM,
   ProposalMergeResult,
   ProposalReviewResult,
@@ -130,6 +131,7 @@ export type WorkHubApiClient = {
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
+  listWorkItemConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;

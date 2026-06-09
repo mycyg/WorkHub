@@ -76,6 +76,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.abortAgentRun("run-1");
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
+  await client.listWorkItemConflicts("work-1");
   await client.getProposal("proposal-1");
   await client.nextQuestion("session-1", { selected_option_ids: ["risk-first"] });
   await client.searchKnowledge({ q: "weekly" });
@@ -112,6 +113,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/agent-runs/run-1/abort",
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
+    "GET /api/workitems/work-1/conflicts",
     "GET /api/proposals/proposal-1",
     'POST /api/sessions/session-1/next-question {"selected_option_ids":["risk-first"]}',
     "POST /api/knowledge/search",

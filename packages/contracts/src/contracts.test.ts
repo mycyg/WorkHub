@@ -16,7 +16,9 @@ import {
   confidenceGrades,
   identifyRequestSchema,
   normalizeWorkHubLocale,
+  mergeProposalRequestSchema,
   nextQuestionRequestSchema,
+  proposalConflictListResultSchema,
   replayTracePageVmSchema,
   respondApprovalRequestSchema,
   updateUserPreferencesRequestSchema,
@@ -264,6 +266,70 @@ test("deliverable manifest fixtures cover non-code payload families", () => {
     [...targetKinds].sort(),
     ["binary_doc", "folder", "image", "slide_deck", "spreadsheet", "structured_record"].sort()
   );
+});
+
+test("proposal conflict cards carry option-first merge resolution payloads", () => {
+  const parsed = proposalConflictListResultSchema.parse({
+    conflicts: [
+      {
+        id: "proposal-1:change-1:delivery:/outputs/result.md",
+        work_item_id: "72000000-0000-4000-8000-000000000001",
+        proposal_id: "72000000-0000-4000-8000-000000000002",
+        change_id: "72000000-0000-4000-8000-000000000003",
+        target_key: "delivery:/outputs/result.md",
+        target_kind: "delivery",
+        change_type: "generated",
+        target_path: "/outputs/result.md",
+        headline: "「/outputs/result.md」和正式版撞车了",
+        summary_text: "Cuu 先给两个安全选项。",
+        existing: {
+          proposal_id: "72000000-0000-4000-8000-000000000004",
+          change_id: "72000000-0000-4000-8000-000000000005",
+          sha256: "a".repeat(64)
+        },
+        incoming: {
+          sha256_after: "b".repeat(64)
+        },
+        recommended_option_id: "keep_current",
+        options: [
+          {
+            id: "keep_current",
+            label: "保留正式版",
+            summary_text: "不覆盖当前正式交付物。",
+            recommended: true,
+            action: {
+              id: "open_proposal",
+              label: "查看变更申请",
+              method: "GET",
+              href: "/proposals/72000000-0000-4000-8000-000000000002"
+            }
+          },
+          {
+            id: "accept_incoming",
+            label: "采纳这次版本",
+            summary_text: "明确覆盖当前正式版。",
+            action: {
+              id: "accept_incoming",
+              label: "采纳这次版本",
+              method: "POST",
+              href: "/api/proposals/72000000-0000-4000-8000-000000000002/merge",
+              request_json: {
+                conflict_resolution: {
+                  accept_incoming_target_keys: ["delivery:/outputs/result.md"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  });
+  const request = mergeProposalRequestSchema.parse(
+    parsed.conflicts[0]?.options.find((option) => option.id === "accept_incoming")?.action?.request_json
+  );
+
+  assert.equal(parsed.conflicts[0]?.recommended_option_id, "keep_current");
+  assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
 });
 
 test("question cards prefer clickable choices but retain a collapsed fallback", () => {

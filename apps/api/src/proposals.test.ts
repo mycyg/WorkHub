@@ -269,49 +269,58 @@ class MemoryProposalRepository implements ProposalRepository {
     return `${change.target_ref.entity_type}:${change.id}`;
   }
 
+  private conflictsForStored(stored: StoredProposalRows, acceptedTargetKeys = new Set<string>()) {
+    return stored.proposal.diffManifest.changes
+      .map((change) => {
+        const key = this.targetKey(change);
+        if (acceptedTargetKeys.has(key)) {
+          return null;
+        }
+        const current = this.acceptedByTargetKey.get(key);
+        if (!current || current.proposalId === stored.proposal.id) {
+          return null;
+        }
+        const base = {
+          proposal_id: stored.proposal.id,
+          work_item_id: stored.proposal.workItemId,
+          proposal_title: stored.proposal.title,
+          target_key: key,
+          change_id: change.id,
+          target_kind: change.target_kind,
+          change_type: change.change_type,
+          existing_proposal_id: current.proposalId,
+          existing_change_id: current.changeId,
+          ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
+          ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
+          ...(change.target_ref.sha256_after ? { incoming_sha256_after: change.target_ref.sha256_after } : {})
+        };
+        if (change.target_ref.sha256_before) {
+          return current.sha256After === change.target_ref.sha256_before ? null : {
+            ...base,
+            incoming_sha256_before: change.target_ref.sha256_before
+          };
+        }
+        if (change.change_type === "created" || change.change_type === "generated") {
+          return current.sha256After === change.target_ref.sha256_after ? null : base;
+        }
+        return null;
+      })
+      .filter((conflict): conflict is NonNullable<typeof conflict> => conflict !== null);
+  }
+
+  async listConflictsByWorkItem(workItemId: string) {
+    return [...this.rows.values()]
+      .filter((row) => row.proposal.workItemId === workItemId && row.proposal.status === "reviewed")
+      .flatMap((row) => this.conflictsForStored(row));
+  }
+
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
     const stored = this.rows.get(input.proposalId);
     if (!stored) {
       return null;
     }
     const at = input.at ?? now;
-    const conflicts = stored.proposal.diffManifest.changes
-      .map((change) => {
-        const key = this.targetKey(change);
-        const current = this.acceptedByTargetKey.get(key);
-        if (!current || current.proposalId === stored.proposal.id) {
-          return null;
-        }
-        if (change.target_ref.sha256_before) {
-          return current.sha256After === change.target_ref.sha256_before ? null : {
-            target_key: key,
-            change_id: change.id,
-            target_kind: change.target_kind,
-            change_type: change.change_type,
-            existing_proposal_id: current.proposalId,
-            existing_change_id: current.changeId,
-            ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
-            ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
-            incoming_sha256_before: change.target_ref.sha256_before,
-            ...(change.target_ref.sha256_after ? { incoming_sha256_after: change.target_ref.sha256_after } : {})
-          };
-        }
-        if (change.change_type === "created" || change.change_type === "generated") {
-          return current.sha256After === change.target_ref.sha256_after ? null : {
-            target_key: key,
-            change_id: change.id,
-            target_kind: change.target_kind,
-            change_type: change.change_type,
-            existing_proposal_id: current.proposalId,
-            existing_change_id: current.changeId,
-            ...(change.target_ref.path ? { target_path: change.target_ref.path } : {}),
-            ...(current.sha256After ? { existing_sha256_after: current.sha256After } : {}),
-            ...(change.target_ref.sha256_after ? { incoming_sha256_after: change.target_ref.sha256_after } : {})
-          };
-        }
-        return null;
-      })
-      .filter((conflict): conflict is NonNullable<typeof conflict> => conflict !== null);
+    const conflicts = this.conflictsForStored(stored, new Set(input.acceptIncomingTargetKeys ?? []));
     if (conflicts.length > 0) {
       throw new ProposalRepositoryMergeConflictError(conflicts);
     }
@@ -351,6 +360,16 @@ function appWithProposalRoutes() {
   app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
   app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
   app.route("/api/pages", createPageRoutes({ auth, proposals, allowUnauthenticatedGoldPath: false }));
+  return { app, runtimeSettings };
+}
+
+function appWithDbProposalRoutes() {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const proposals = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids() });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
   return { app, runtimeSettings };
 }
 
@@ -487,6 +506,25 @@ test("proposal service blocks merge when the same target was already accepted wi
     () => service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } }),
     /撞车/
   );
+  const conflicts = await service.listConflicts(firstManifest.work_item_id);
+  const conflict = conflicts.conflicts[0];
+
+  assert.equal(conflicts.empty_state, undefined);
+  assert.equal(conflict?.proposal_id, second.id);
+  assert.equal(conflict?.recommended_option_id, "keep_current");
+  assert.equal(conflict?.options.some((option) => option.id === "accept_incoming"), true);
+  assert.deepEqual(
+    conflict?.options.find((option) => option.id === "accept_incoming")?.action?.request_json,
+    { conflict_resolution: { accept_incoming_target_keys: [conflict.target_key] } }
+  );
+
+  const merged = await service.merge({
+    proposalId: second.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    conflictResolution: { acceptIncomingTargetKeys: [conflict?.target_key ?? ""] }
+  });
+
+  assert.equal(merged.status, "merged");
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {
@@ -618,4 +656,87 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
   assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id), true);
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
+});
+
+test("proposal routes expose conflict cards and accept an explicit incoming resolution", async () => {
+  const { app, runtimeSettings } = appWithDbProposalRoutes();
+  const firstManifest = manifest(3);
+  const secondManifest = manifest(3);
+  const secondChange = secondManifest.changes[0];
+  if (!secondChange) {
+    throw new Error("missing fixture change");
+  }
+  secondManifest.changes = [
+    {
+      ...secondChange,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      target_ref: {
+        ...secondChange.target_ref,
+        sha256_after: "b".repeat(64)
+      },
+      human_summary: "生成了另一张同路径图片。"
+    }
+  ];
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const first = await createProposal(app, runtimeSettings, firstManifest);
+  await app.request(`/api/proposals/${first.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  const firstMerge = await app.request(`/api/proposals/${first.data.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(firstMerge.status, 200);
+
+  const second = await createProposal(app, runtimeSettings, secondManifest);
+  await app.request(`/api/proposals/${second.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  const blocked = await app.request(`/api/proposals/${second.data.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(blocked.status, 409);
+  const blockedBody = await blocked.json() as {
+    ok: false;
+    error: { code: string; details?: { conflicts?: Array<{ target_key: string; options: Array<{ id: string }> }> } };
+  };
+  const targetKey = blockedBody.error.details?.conflicts?.[0]?.target_key;
+  assert.equal(blockedBody.error.code, "merge_conflict");
+  assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "accept_incoming"), true);
+  assert.equal(typeof targetKey, "string");
+
+  const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(conflicts.status, 200);
+  const conflictBody = await conflicts.json() as {
+    ok: true;
+    data: { conflicts: Array<{ target_key: string; recommended_option_id: string }> };
+  };
+  assert.equal(conflictBody.data.conflicts[0]?.target_key, targetKey);
+  assert.equal(conflictBody.data.conflicts[0]?.recommended_option_id, "keep_current");
+
+  const resolved = await app.request(`/api/proposals/${second.data.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      conflict_resolution: {
+        accept_incoming_target_keys: [targetKey]
+      }
+    })
+  });
+  assert.equal(resolved.status, 200);
+  const resolvedBody = await resolved.json() as { ok: true; data: { status: string } };
+  assert.equal(resolvedBody.data.status, "merged");
 });

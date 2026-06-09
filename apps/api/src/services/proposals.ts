@@ -5,10 +5,13 @@ import path from "node:path";
 
 import {
   deliverableChangeManifestSchema,
+  proposalConflictListResultSchema,
   proposalSchema,
   reviewSchema,
   type DeliverableChange,
   type DeliverableChangeManifest,
+  type ProposalConflict,
+  type ProposalConflictListResult,
   type Proposal,
   type Review
 } from "@workhub/contracts";
@@ -43,6 +46,16 @@ export class ProposalServiceError extends Error {
   }
 }
 
+export class ProposalServiceMergeConflictError extends ProposalServiceError {
+  constructor(public readonly conflicts: ProposalConflict[]) {
+    super(409, "merge_conflict", "这份变更和正式版撞车，需要先选择处理方案。");
+  }
+}
+
+export type ProposalConflictResolution = {
+  acceptIncomingTargetKeys?: string[];
+};
+
 export type ProposalService = {
   createFromManifest: (input: {
     workItemId: string;
@@ -54,6 +67,7 @@ export type ProposalService = {
   }) => Promise<StoredProposal>;
   get: (proposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
+  listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
     proposalId: string;
     actor: ProposalActor;
@@ -63,6 +77,7 @@ export type ProposalService = {
   merge: (input: {
     proposalId: string;
     actor: ProposalActor;
+    conflictResolution?: ProposalConflictResolution;
   }) => Promise<StoredProposal>;
 };
 
@@ -277,6 +292,87 @@ function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
   };
 }
 
+function conflictToVm(conflict: {
+  proposal_id: string;
+  work_item_id: string;
+  proposal_title: string;
+  target_key: string;
+  change_id: string;
+  target_kind: string;
+  change_type: string;
+  existing_proposal_id: string;
+  existing_change_id: string;
+  target_path?: string;
+  existing_sha256_after?: string;
+  incoming_sha256_before?: string;
+  incoming_sha256_after?: string;
+  existing_ref?: string;
+  incoming_version_before?: string;
+}): ProposalConflict {
+  const targetLabel = conflict.target_path ? `「${conflict.target_path}」` : "这处改动";
+  return {
+    id: `${conflict.proposal_id}:${conflict.change_id}:${conflict.target_key}`,
+    work_item_id: conflict.work_item_id,
+    proposal_id: conflict.proposal_id,
+    change_id: conflict.change_id,
+    target_key: conflict.target_key,
+    target_kind: conflict.target_kind,
+    change_type: conflict.change_type,
+    ...(conflict.target_path ? { target_path: conflict.target_path } : {}),
+    headline: `${targetLabel}和正式版撞车了`,
+    summary_text: "Cuu 先给两个安全选项：保留正式版，或明确采纳这次版本。AI 融合方案会在后续调解表落地后加入。",
+    existing: {
+      proposal_id: conflict.existing_proposal_id,
+      change_id: conflict.existing_change_id,
+      ...(conflict.existing_ref ? { ref: conflict.existing_ref } : {}),
+      ...(conflict.existing_sha256_after ? { sha256: conflict.existing_sha256_after } : {})
+    },
+    incoming: {
+      ...(conflict.incoming_version_before ? { ref: conflict.incoming_version_before } : {}),
+      ...(conflict.incoming_sha256_before ? { sha256_before: conflict.incoming_sha256_before } : {}),
+      ...(conflict.incoming_sha256_after ? { sha256_after: conflict.incoming_sha256_after } : {})
+    },
+    recommended_option_id: "keep_current",
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "不覆盖当前正式交付物，先回到变更申请看差异。",
+        recommended: true,
+        action: {
+          id: "open_proposal",
+          label: "查看变更申请",
+          method: "GET",
+          href: `/proposals/${conflict.proposal_id}`
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "明确用这次变更覆盖当前正式版，并保留审计与还原入口。",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: `/api/proposals/${conflict.proposal_id}/merge`,
+          request_json: {
+            conflict_resolution: {
+              accept_incoming_target_keys: [conflict.target_key]
+            }
+          }
+        }
+      }
+    ]
+  };
+}
+
+function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictListResult {
+  return proposalConflictListResultSchema.parse({
+    conflicts,
+    ...(conflicts.length === 0 ? { empty_state: "no_conflicts" } : {})
+  });
+}
+
 export function createInMemoryProposalService(options: {
   now?: () => Date;
   id?: () => string;
@@ -345,6 +441,10 @@ export function createInMemoryProposalService(options: {
 
     async listByWorkItem(workItemId) {
       return [...proposals.values()].filter((proposal) => proposal.work_item_id === workItemId);
+    },
+
+    async listConflicts() {
+      return conflictListResult([]);
     },
 
     async review(input) {
@@ -465,6 +565,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
       return rows.map(storedRowsToProposal);
     },
 
+    async listConflicts(workItemId) {
+      return conflictListResult((await repository.listConflictsByWorkItem(workItemId)).map(conflictToVm));
+    },
+
     async review(input) {
       const proposal = await requireProposal(input.proposalId);
       if (proposal.status === "merged") {
@@ -510,11 +614,14 @@ export function createDbProposalService(repository: ProposalRepository, options:
           mergeSnapshotId: nextId(),
           actor: actorToRepository(input.actor),
           ...(adoptedDriveFiles.length > 0 ? { adoptedDriveFiles } : {}),
+          ...(input.conflictResolution?.acceptIncomingTargetKeys
+            ? { acceptIncomingTargetKeys: input.conflictResolution.acceptIncomingTargetKeys }
+            : {}),
           at: mergedAt
         });
       } catch (error) {
         if (error instanceof ProposalRepositoryMergeConflictError) {
-          throw new ProposalServiceError(409, "merge_conflict", "这份变更和正式版撞车，需要先选择处理方案。");
+          throw new ProposalServiceMergeConflictError(error.conflicts.map(conflictToVm));
         }
         throw error;
       }

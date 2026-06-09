@@ -141,6 +141,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async listWorkItemProposals() {
       throw new Error("not needed");
     },
+    async listWorkItemConflicts() {
+      throw new Error("not needed");
+    },
     async getProposal() {
       throw new Error("not needed");
     },

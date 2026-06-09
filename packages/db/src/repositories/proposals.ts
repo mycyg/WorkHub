@@ -60,6 +60,7 @@ export type MergeProposalInput = {
   mergeSnapshotId?: string;
   actor?: ProposalRepositoryActor;
   adoptedDriveFiles?: ProposalAdoptedDriveFileInput[];
+  acceptIncomingTargetKeys?: string[];
   at?: Date;
 };
 
@@ -84,6 +85,9 @@ export type ProposalMergeContext = {
 };
 
 export type ProposalMergeConflict = {
+  proposal_id: string;
+  work_item_id: string;
+  proposal_title: string;
   target_key: string;
   change_id: string;
   target_kind: DeliverableChange["target_kind"];
@@ -111,6 +115,7 @@ export type ProposalRepository = {
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
+  listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
 };
@@ -167,6 +172,8 @@ function acceptedRef(change: DeliverableChange) {
 
 function conflictsWithCurrentAccepted(input: {
   proposalId: string;
+  workItemId: string;
+  proposalTitle: string;
   change: DeliverableChange;
   targetKey: string;
   current: AcceptedDeliverableChangeRow;
@@ -196,6 +203,9 @@ function conflictsWithCurrentAccepted(input: {
   }
 
   return {
+    proposal_id: input.proposalId,
+    work_item_id: input.workItemId,
+    proposal_title: input.proposalTitle,
     target_key: input.targetKey,
     change_id: change.id,
     target_kind: change.target_kind,
@@ -478,6 +488,49 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       );
     },
 
+    async listConflictsByWorkItem(workItemId) {
+      const conflicts: ProposalMergeConflict[] = [];
+      await db.transaction(async (tx) => {
+        const proposalRows = await tx
+          .select({
+            proposalId: proposals.id,
+            workItemId: proposals.workItemId,
+            title: proposals.title,
+            diffManifest: proposals.diffManifest
+          })
+          .from(proposals)
+          .where(and(
+            eq(proposals.workItemId, workItemId),
+            eq(proposals.status, "reviewed")
+          ))
+          .orderBy(desc(proposals.createdAt));
+        for (const proposal of proposalRows) {
+          for (const change of proposal.diffManifest.changes) {
+            const key = targetKey(change);
+            const current = await readCurrentAccepted(tx, {
+              workItemId: proposal.workItemId,
+              targetKey: key
+            });
+            if (!current) {
+              continue;
+            }
+            const conflict = conflictsWithCurrentAccepted({
+              proposalId: proposal.proposalId,
+              workItemId: proposal.workItemId,
+              proposalTitle: proposal.title,
+              change,
+              targetKey: key,
+              current
+            });
+            if (conflict) {
+              conflicts.push(conflict);
+            }
+          }
+        }
+      });
+      return conflicts;
+    },
+
     async review(input) {
       const at = input.at ?? new Date();
       let found = false;
@@ -537,6 +590,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const proposalRows = await tx
           .select({
             workItemId: proposals.workItemId,
+            title: proposals.title,
             workItemCode: workItems.code,
             projectId: workItems.projectId,
             submitterUserId: workItems.submitterUserId,
@@ -552,6 +606,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           return;
         }
         found = true;
+        const acceptIncomingTargetKeys = new Set(input.acceptIncomingTargetKeys ?? []);
         const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow | null>();
         const conflicts: ProposalMergeConflict[] = [];
         for (const change of proposal.diffManifest.changes) {
@@ -561,11 +616,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           if (current) {
             const conflict = conflictsWithCurrentAccepted({
               proposalId: input.proposalId,
+              workItemId: proposal.workItemId,
+              proposalTitle: proposal.title,
               change,
               targetKey: key,
               current
             });
-            if (conflict) {
+            if (conflict && !acceptIncomingTargetKeys.has(conflict.target_key)) {
               conflicts.push(conflict);
             }
           }

@@ -189,6 +189,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     listWorkItemProposals: (workItemId) => request(`/api/workitems/${workItemId}/proposals`),
+    listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getProposal: (id) => request(`/api/proposals/${id}`),
     reviewProposal: (id, payload) =>
       request(`/api/proposals/${id}/review`, {
