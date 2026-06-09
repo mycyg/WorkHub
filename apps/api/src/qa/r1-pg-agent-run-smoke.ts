@@ -917,6 +917,27 @@ async function main() {
     ) {
       throw new Error("Expected one-click apply to write chosen_* onto the original merge_proposals row.");
     }
+    const originalAiFusionCandidate = (Array.isArray(originalOneClickMergeProposal.candidatesJson)
+      ? originalOneClickMergeProposal.candidatesJson
+      : [])
+      .find((candidate) =>
+        candidate
+        && typeof candidate === "object"
+        && (candidate as Record<string, unknown>)["option_key"] === "ai_fusion"
+      ) as { quality_gate?: Record<string, unknown> } | undefined;
+    const textPatchPreview = originalAiFusionCandidate?.quality_gate?.["text_patch_preview"] as {
+      type?: string;
+      stats?: { changed?: boolean; overlap_risk?: string };
+      hunks?: unknown[];
+    } | undefined;
+    if (
+      textPatchPreview?.type !== "unified_text_patch_preview"
+      || textPatchPreview.stats?.changed !== true
+      || !Array.isArray(textPatchPreview.hunks)
+      || textPatchPreview.hunks.length === 0
+    ) {
+      throw new Error("Expected original AI fusion candidate to persist an R1.21 text patch preview.");
+    }
     if (!oneClickAttemptRows.some((row) => row.result === "conflict") || !oneClickAttemptRows.some((row) => row.result === "merged")) {
       throw new Error("Expected one-click proposal to retain both conflict and merged attempts.");
     }
@@ -1048,6 +1069,7 @@ async function main() {
         conflict_status: oneClickMergeConflict.status,
         apply_status: oneClickApply.status,
         original_row_chosen_option: originalOneClickMergeProposal.chosenOptionKey,
+        text_patch_preview: textPatchPreview.type,
         accepted_drive_version_id: oneClickAccepted.driveVersionId,
         replay_timeline_count: oneClickTimelines.length
       },

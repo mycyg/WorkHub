@@ -173,7 +173,7 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 R1 真实纵切通过前，不再把 Cuu 外观矩阵作为当前施工任务。以下事项按优先级重排：
 
 1. 当前立即项：主窗无 Cuu 截图复核、透明 pet smoke、文档资产对账、真实回归修复。
-2. 当前工程主线：继续 R1/R2 后端缺口；真实 `sessions/workitems/knowledge/page workitem` service、CostLedger/BudgetPolicy 默认 store、merge accepted deliverable ledger、persistent merge audit、AgentRun-backed delivery 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables、下载/文本预览与最小 restore 已接入，下一批优先 `ai_fusion` v2 字段级/text diff3、多冲突工作台、PG queue claim 与多 worker。
+2. 当前工程主线：继续 R1/R2 后端缺口；真实 `sessions/workitems/knowledge/page workitem` service、CostLedger/BudgetPolicy 默认 store、merge accepted deliverable ledger、persistent merge audit、AgentRun-backed delivery 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables、下载/文本预览、最小 restore、AI fusion text/spec 正文直写、真实 current/incoming/base 文本上下文与数据层 patch preview 已接入，下一批优先 `ai_fusion` v2 自动 text diff3、富 patch viewer、字段级结构化 patch、多冲突工作台、PG queue claim 与多 worker。
 3. R3 后恢复：把 P1.9 的 8 帧 smoke 升级为 32 帧正式矩阵，覆盖黑猫 `clarify/search/sync/done/offline/approval` 与白猫同等场景。
 4. R3 后恢复：录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 5. R3 后恢复：输出 contact sheet、GIF/MP4、DOM dump、diff report 到 `docs/workhub/05-clients/assets/audit/2026-06-08-cuu-live2d-cat-runtime/`，并回写当前审计文档。

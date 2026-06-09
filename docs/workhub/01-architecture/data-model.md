@@ -348,7 +348,7 @@ R1.11 审计规则：
 
 ### 6.2.3 新增:`MergeProposal`(冲突候选方案,R1.12)
 
-> **R1.12/R1.20 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。R1.12 先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 已允许 API service 传入 `ai_fusion` 候选补充，写入同一 `candidates_json`，并可带 `source="llm"`、`quality_gate` 与 `merged_value`；R1.15 已提供 `POST /api/merge-proposals/{id}/choose` 把任一候选选择写入 `chosen_*` 字段。R1.16 已提供 `POST /api/merge-proposals/{id}/apply`，把 `merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger。R1.17 把端侧路径收敛为一键采用：若原 row 仍未选择且 candidate 是 `ai_fusion`，apply 会先写原 row 的 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`，再物化；若原 row 已选择其它候选则 409。R1.19 起 `text_doc/spec_doc` apply 直接写候选正文；R1.20 起生成候选前，service 会把 current accepted Drive 文本、incoming workdir 文本、可匹配的 base accepted 文本作为 `content_context` 传给 LLM generator。Cuu/Web 仍保持 option-first 点击模型，AI 不替用户做裁决。
+> **R1.12/R1.21 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。R1.12 先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 已允许 API service 传入 `ai_fusion` 候选补充，写入同一 `candidates_json`，并可带 `source="llm"`、`quality_gate` 与 `merged_value`；R1.15 已提供 `POST /api/merge-proposals/{id}/choose` 把任一候选选择写入 `chosen_*` 字段。R1.16 已提供 `POST /api/merge-proposals/{id}/apply`，把 `merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger。R1.17 把端侧路径收敛为一键采用：若原 row 仍未选择且 candidate 是 `ai_fusion`，apply 会先写原 row 的 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`，再物化；若原 row 已选择其它候选则 409。R1.19 起 `text_doc/spec_doc` apply 直接写候选正文；R1.20 起生成候选前，service 会把 current accepted Drive 文本、incoming workdir 文本、可匹配的 base accepted 文本作为 `content_context` 传给 LLM generator；R1.21 起 `quality_gate.text_patch_preview` 保存 current -> merged patch preview 与 overlap risk。Cuu/Web 仍保持 option-first 点击模型，AI 不替用户做裁决。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -370,7 +370,7 @@ R1.12 审计规则：
 - R1.14 起，`ai_fusion` 候选由 API service 的 `MergeFusionCandidateGenerator` 生成并传给 repository；repository 只负责与 deterministic 候选合并、去重和持久化，不直接调用 LLM。
 - R1.15 起，候选选择由 repository 的 `chooseMergeProposalCandidate()` 原子写入 `chosen_option_key/chosen_by_user_id/chosen_at`；已选择其他候选后禁止覆盖。
 - R1.17 起，`applyMergeProposalCandidate()` 会重新校验 proposal 仍为 `reviewed`、候选为 `ai_fusion`、candidate 带 `merged_value`。若原 row 尚未选择，apply 将本次点击视为人工选择并回写 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`；若原 row 已选择其它候选则返回 409。随后写 `snapshots(kind=merge)`、`merge_attempts(result="merged")`、新的 `merge_proposals(chosen_option_key="ai_fusion")`、`accepted_deliverable_changes`、`ProjectDriveVersion` 与 `AuditLog(action="proposal.merged", merge_strategy="ai_resolved")`。
-- 当前 `ai_fusion` 写回对 `text_doc/spec_doc` 已是候选正文直写，对其它目标仍是保守 Markdown artifact。R1.20 已把真实 current/incoming/base 文本摘录喂给 LLM 候选生成，但它仍不是字段级原位 patch 或完整 text/spec doc diff3。真正把融合内容写回结构化记录字段、生成 patch preview、自动处理无重叠 hunk，需要后续 `ai_resolved` v2 切片。
+- 当前 `ai_fusion` 写回对 `text_doc/spec_doc` 已是候选正文直写，对其它目标仍是保守 Markdown artifact。R1.20 已把真实 current/incoming/base 文本摘录喂给 LLM 候选生成，R1.21 已在 candidate `quality_gate` 中持久化 text patch preview，但它仍不是字段级原位 patch、自动 text/spec doc diff3 或富 patch viewer。真正把融合内容写回结构化记录字段、自动处理无重叠 hunk，需要后续 `ai_resolved` v2 切片。
 - 现有 `ProposalConflict.options[]` 仍是用户面入口；`merge_proposals` 是 replay、后续调解页与 LLM 候选的持久真相源。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)

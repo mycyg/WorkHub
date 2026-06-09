@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 import type { DeliverableChangeManifest } from "@workhub/contracts";
@@ -12,6 +14,8 @@ import { getDefaultProviderRegistry } from "./provider-registry.js";
 import type { ProposalActor } from "./proposals.js";
 
 const supportedFusionTargetKinds = new Set(["structured_record", "text_doc", "spec_doc"]);
+const textPatchContextLines = 3;
+const maxPatchLineChars = 500;
 
 const llmFusionCandidateSchema = z.object({
   conflict_key: z.string().min(1),
@@ -55,6 +59,31 @@ export type MergeFusionContentContext = {
   base?: MergeFusionTextExcerpt;
 };
 
+export type MergeFusionTextPatchPreview = {
+  type: "unified_text_patch_preview";
+  base_available: boolean;
+  current_ref?: string;
+  incoming_ref?: string;
+  base_ref?: string;
+  merged_sha256: string;
+  stats: {
+    current_lines: number;
+    merged_lines: number;
+    added_lines: number;
+    removed_lines: number;
+    changed: boolean;
+    truncated: boolean;
+    current_changed_from_base?: number;
+    incoming_changed_from_base?: number;
+    overlapping_changed_lines?: number;
+    overlap_risk: "unknown" | "low" | "requires_review";
+  };
+  hunks: Array<{
+    header: string;
+    lines: string[];
+  }>;
+};
+
 function textFromContent(content: unknown[]) {
   return content
     .map((block) => {
@@ -82,6 +111,208 @@ function hasConflictMarkers(value: unknown) {
   return text.includes("<<<<<<<")
     || text.includes("=======")
     || text.includes(">>>>>>>");
+}
+
+function sha256Text(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function textFromMergedValue(mergedValue: Record<string, unknown> | undefined) {
+  const textKeys = [
+    "merged_text",
+    "content_md",
+    "content",
+    "text",
+    "proposed_resolution_md",
+    "proposed_resolution",
+    "markdown"
+  ];
+  for (const key of textKeys) {
+    const value = mergedValue?.[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function splitTextLines(value: string) {
+  return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n").split("\n");
+}
+
+function patchLine(prefix: " " | "+" | "-", value: string) {
+  const safe = value.length > maxPatchLineChars ? `${value.slice(0, maxPatchLineChars)}...` : value;
+  return `${prefix}${safe}`;
+}
+
+function changedLineIndexesFromBase(baseText: string, changedText: string) {
+  const base = splitTextLines(baseText);
+  const changed = splitTextLines(changedText);
+  const indexes = new Set<number>();
+  const max = Math.max(base.length, changed.length);
+  for (let index = 0; index < max; index += 1) {
+    if ((base[index] ?? "") !== (changed[index] ?? "")) {
+      indexes.add(index);
+    }
+  }
+  return indexes;
+}
+
+function intersectionSize(left: Set<number>, right: Set<number>) {
+  let count = 0;
+  for (const value of left) {
+    if (right.has(value)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function singleUnifiedPatchHunk(currentText: string, mergedText: string) {
+  const current = splitTextLines(currentText);
+  const merged = splitTextLines(mergedText);
+  if (currentText === mergedText) {
+    return {
+      addedLines: 0,
+      removedLines: 0,
+      hunks: [] as MergeFusionTextPatchPreview["hunks"],
+      currentLines: current.length,
+      mergedLines: merged.length
+    };
+  }
+
+  let prefix = 0;
+  while (prefix < current.length && prefix < merged.length && current[prefix] === merged[prefix]) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (
+    suffix < current.length - prefix
+    && suffix < merged.length - prefix
+    && current[current.length - 1 - suffix] === merged[merged.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+
+  const currentChangeEnd = current.length - suffix;
+  const mergedChangeEnd = merged.length - suffix;
+  const contextStart = Math.max(0, prefix - textPatchContextLines);
+  const currentContextEnd = Math.min(current.length, currentChangeEnd + textPatchContextLines);
+  const mergedContextEnd = Math.min(merged.length, mergedChangeEnd + textPatchContextLines);
+  const beforeContext = current.slice(contextStart, prefix).map((line) => patchLine(" ", line));
+  const removed = current.slice(prefix, currentChangeEnd).map((line) => patchLine("-", line));
+  const added = merged.slice(prefix, mergedChangeEnd).map((line) => patchLine("+", line));
+  const afterContext = current.slice(currentChangeEnd, currentContextEnd).map((line) => patchLine(" ", line));
+
+  return {
+    addedLines: added.length,
+    removedLines: removed.length,
+    currentLines: current.length,
+    mergedLines: merged.length,
+    hunks: [
+      {
+        header: `@@ -${contextStart + 1},${currentContextEnd - contextStart} +${contextStart + 1},${mergedContextEnd - contextStart} @@`,
+        lines: [...beforeContext, ...removed, ...added, ...afterContext]
+      }
+    ]
+  };
+}
+
+function textPatchPreviewFor(input: {
+  context: MergeFusionContentContext;
+  mergedText: string;
+}): MergeFusionTextPatchPreview | undefined {
+  const current = input.context.current;
+  const incoming = input.context.incoming;
+  if (!current?.text || !incoming?.text) {
+    return undefined;
+  }
+  const patch = singleUnifiedPatchHunk(current.text, input.mergedText);
+  const base = input.context.base;
+  const currentChanged = base?.text ? changedLineIndexesFromBase(base.text, current.text) : undefined;
+  const incomingChanged = base?.text ? changedLineIndexesFromBase(base.text, incoming.text) : undefined;
+  const overlapping = currentChanged && incomingChanged ? intersectionSize(currentChanged, incomingChanged) : undefined;
+  const overlapRisk = overlapping === undefined
+    ? "unknown"
+    : overlapping > 0 ? "requires_review" : "low";
+  return {
+    type: "unified_text_patch_preview",
+    base_available: Boolean(base?.text),
+    ...(current.ref ? { current_ref: current.ref } : {}),
+    ...(incoming.ref ? { incoming_ref: incoming.ref } : {}),
+    ...(base?.ref ? { base_ref: base.ref } : {}),
+    merged_sha256: sha256Text(input.mergedText),
+    stats: {
+      current_lines: patch.currentLines,
+      merged_lines: patch.mergedLines,
+      added_lines: patch.addedLines,
+      removed_lines: patch.removedLines,
+      changed: current.text !== input.mergedText,
+      truncated: Boolean(current.truncated || incoming.truncated || base?.truncated),
+      ...(currentChanged ? { current_changed_from_base: currentChanged.size } : {}),
+      ...(incomingChanged ? { incoming_changed_from_base: incomingChanged.size } : {}),
+      ...(overlapping !== undefined ? { overlapping_changed_lines: overlapping } : {}),
+      overlap_risk: overlapRisk
+    },
+    hunks: patch.hunks
+  };
+}
+
+function appendUnique(values: unknown, extra: string[]) {
+  const existing = Array.isArray(values)
+    ? values.filter((value): value is string => typeof value === "string")
+    : [];
+  return [...new Set([...existing, ...extra])];
+}
+
+function candidateWithTextPatchPreview(input: {
+  candidate: MergeProposalCandidate;
+  context: MergeFusionContentContext | undefined;
+}) {
+  const targetKind = input.candidate.target_kind;
+  if ((targetKind !== "text_doc" && targetKind !== "spec_doc") || !input.context) {
+    return input.candidate;
+  }
+  const mergedText = textFromMergedValue(input.candidate.merged_value);
+  if (!mergedText) {
+    return input.candidate;
+  }
+  const preview = textPatchPreviewFor({
+    context: input.context,
+    mergedText
+  });
+  if (!preview) {
+    return input.candidate;
+  }
+  const existingGate = input.candidate.quality_gate ?? {};
+  return {
+    ...input.candidate,
+    quality_gate: {
+      ...existingGate,
+      checks: appendUnique(existingGate["checks"], [
+        "current_text_context",
+        "incoming_text_context",
+        ...(input.context.base?.text ? ["base_text_context"] : []),
+        "text_patch_preview"
+      ]),
+      text_patch_preview: preview
+    }
+  };
+}
+
+function supplementsWithTextPatchPreviews(
+  input: MergeFusionCandidateGeneratorInput,
+  supplements: MergeProposalCandidateSupplement[]
+) {
+  return supplements.map((supplement) => ({
+    ...supplement,
+    candidates: supplement.candidates.map((candidate) =>
+      candidateWithTextPatchPreview({
+        candidate,
+        context: input.contentContexts?.[supplement.conflictKey]
+      })
+    )
+  }));
 }
 
 function changeSummary(manifest: DeliverableChangeManifest, conflict: ProposalMergeConflict) {
@@ -233,7 +464,7 @@ export function createLlmMergeFusionCandidateGenerator(options: {
           ...(raw.recommend ? { recommendedOptionKey: "ai_fusion" } : {})
         });
       }
-      return supplements;
+      return supplementsWithTextPatchPreviews(input, supplements);
     }
   };
 }
@@ -243,7 +474,7 @@ export async function safelyGenerateMergeFusionCandidates(
   input: MergeFusionCandidateGeneratorInput
 ) {
   try {
-    return await generator.generate(input);
+    return supplementsWithTextPatchPreviews(input, await generator.generate(input));
   } catch {
     return [];
   }

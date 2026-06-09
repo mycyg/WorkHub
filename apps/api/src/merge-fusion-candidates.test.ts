@@ -169,7 +169,7 @@ test("LLM merge mediator prompt includes real text content contexts", async () =
     })
   });
 
-  await generator.generate({
+  const result = await generator.generate({
     proposalId: "92000000-0000-4000-8000-000000000001",
     workItemId: "92000000-0000-4000-8000-000000000002",
     proposalTitle: "客户周报草稿",
@@ -215,4 +215,21 @@ test("LLM merge mediator prompt includes real text content contexts", async () =
   assert.equal(parsed.conflicts[0]?.content_context?.current?.text, "正式版已有结论。");
   assert.equal(parsed.conflicts[0]?.content_context?.incoming?.text, "这次新增证据。");
   assert.equal(parsed.conflicts[0]?.content_context?.base?.text, "分叉时的旧结论。");
+  const preview = result[0]?.candidates[0]?.quality_gate?.["text_patch_preview"] as {
+    base_available?: boolean;
+    stats?: {
+      changed?: boolean;
+      added_lines?: number;
+      removed_lines?: number;
+      overlap_risk?: string;
+    };
+    hunks?: Array<{ lines?: string[] }>;
+  } | undefined;
+  assert.equal(preview?.base_available, true);
+  assert.equal(preview?.stats?.changed, true);
+  assert.equal(preview?.stats?.added_lines, 1);
+  assert.equal(preview?.stats?.removed_lines, 1);
+  assert.equal(preview?.stats?.overlap_risk, "requires_review");
+  assert.equal(preview?.hunks?.[0]?.lines?.some((line) => line === "-正式版已有结论。"), true);
+  assert.equal(preview?.hunks?.[0]?.lines?.some((line) => line === "+融合后的正文"), true);
 });
