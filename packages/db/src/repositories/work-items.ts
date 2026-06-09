@@ -6,10 +6,13 @@ import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contrac
 
 import type { WorkHubDb } from "../client.js";
 import {
+  acceptedDeliverableChanges,
   agentRuns,
   agentSteps,
   chatMessages,
   knowledgeDocuments,
+  projectDriveItems,
+  projectDriveVersions,
   projects,
   proposals,
   workItemAcceptanceItems,
@@ -68,6 +71,11 @@ export type WorkItemAgentStepRow = typeof agentSteps.$inferSelect;
 export type WorkItemProposalRow = typeof proposals.$inferSelect;
 export type WorkItemChatMessageRow = typeof chatMessages.$inferSelect;
 export type WorkItemKnowledgeDocumentRow = typeof knowledgeDocuments.$inferSelect;
+export type WorkItemAcceptedDeliverableRow = {
+  accepted: typeof acceptedDeliverableChanges.$inferSelect;
+  driveItem: typeof projectDriveItems.$inferSelect | null;
+  driveVersion: typeof projectDriveVersions.$inferSelect | null;
+};
 
 export type CreateStoredWorkItemInput = {
   id?: string;
@@ -111,6 +119,7 @@ export type StoredWorkItemDetailRows = {
   acceptance: WorkItemAcceptanceRow[];
   agentSteps: WorkItemAgentStepRow[];
   latestProposal: WorkItemProposalRow | null;
+  acceptedDeliverables: WorkItemAcceptedDeliverableRow[];
   evidenceBindings: WorkItemChatMessageRow[];
 };
 
@@ -143,6 +152,10 @@ export type WorkItemDataRepository = WorkItemRepository & {
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
   findWorkItemById: (workItemId: string) => Promise<WorkItemRow | null>;
   readWorkItemDetail: (workItemId: string) => Promise<StoredWorkItemDetailRows | null>;
+  findAcceptedDeliverableFile: (
+    workItemId: string,
+    acceptedChangeId: string
+  ) => Promise<WorkItemAcceptedDeliverableRow | null>;
   searchKnowledge: (input: WorkItemKnowledgeSearchInput) => Promise<WorkItemKnowledgeSearchRows>;
 };
 
@@ -150,6 +163,30 @@ const trueCondition = sql`true`;
 
 function whereAll(conditions: SQL[]) {
   return conditions.length > 0 ? and(...conditions) : trueCondition;
+}
+
+function acceptedDeliverableColumns() {
+  return {
+    accepted: acceptedDeliverableChanges,
+    driveItem: projectDriveItems,
+    driveVersion: projectDriveVersions
+  };
+}
+
+function acceptedDeliverableQuery(db: WorkHubDb, input: { workItemId: string; acceptedChangeId?: string }) {
+  const conditions: SQL[] = [
+    eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+    isNull(acceptedDeliverableChanges.supersededAt)
+  ];
+  if (input.acceptedChangeId) {
+    conditions.push(eq(acceptedDeliverableChanges.id, input.acceptedChangeId));
+  }
+  return db
+    .select(acceptedDeliverableColumns())
+    .from(acceptedDeliverableChanges)
+    .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+    .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+    .where(and(...conditions));
 }
 
 export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository {
@@ -325,7 +362,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [acceptance, latestProposals, evidenceBindings] = await Promise.all([
+      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings] = await Promise.all([
         db
           .select()
           .from(workItemAcceptanceItems)
@@ -337,6 +374,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .where(eq(proposals.workItemId, workItemId))
           .orderBy(desc(proposals.createdAt))
           .limit(1),
+        acceptedDeliverableQuery(db, { workItemId })
+          .orderBy(desc(acceptedDeliverableChanges.createdAt)),
         db
           .select()
           .from(chatMessages)
@@ -351,8 +390,15 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         acceptance,
         agentSteps: agentStepRows,
         latestProposal: latestProposals[0] ?? null,
+        acceptedDeliverables,
         evidenceBindings
       };
+    },
+
+    async findAcceptedDeliverableFile(workItemId, acceptedChangeId) {
+      const rows = await acceptedDeliverableQuery(db, { workItemId, acceptedChangeId })
+        .limit(1);
+      return rows[0] ?? null;
     },
 
     async searchKnowledge(input) {

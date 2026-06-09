@@ -441,6 +441,41 @@ async function main() {
         throw new Error("Expected adopted drive file content to match AgentRun output.");
       }
     }
+    const mergedWorkItemPage = await app.request(`/api/pages/workitems/${workItemId}`, { headers });
+    if (mergedWorkItemPage.status !== 200) {
+      throw new Error(`Expected merged work item page 200, got ${mergedWorkItemPage.status}: ${await mergedWorkItemPage.text()}`);
+    }
+    const mergedWorkItemPageBody = await mergedWorkItemPage.json() as {
+      data: {
+        accepted_deliverables: {
+          id: string;
+          filename?: string;
+          download_href?: string;
+          preview_href?: string;
+          drive_version_id?: string;
+        }[];
+      };
+    };
+    const acceptedDeliverable = mergedWorkItemPageBody.data.accepted_deliverables[0];
+    if (!acceptedDeliverable?.download_href || !acceptedDeliverable.preview_href || !acceptedDeliverable.drive_version_id) {
+      throw new Error("Expected work item page to expose accepted deliverable download and preview refs.");
+    }
+    const previewResponse = await app.request(acceptedDeliverable.preview_href, { headers });
+    if (previewResponse.status !== 200) {
+      throw new Error(`Expected accepted deliverable preview 200, got ${previewResponse.status}: ${await previewResponse.text()}`);
+    }
+    const previewBody = await previewResponse.json() as { data: { text: string; preview_type: string } };
+    if (previewBody.data.preview_type !== "text" || !previewBody.data.text.includes("R1 PG smoke deliverable")) {
+      throw new Error("Expected accepted deliverable preview to include AgentRun output text.");
+    }
+    const downloadResponse = await app.request(acceptedDeliverable.download_href, { headers });
+    if (downloadResponse.status !== 200) {
+      throw new Error(`Expected accepted deliverable download 200, got ${downloadResponse.status}: ${await downloadResponse.text()}`);
+    }
+    const downloadedText = await downloadResponse.text();
+    if (!downloadedText.includes("R1 PG smoke deliverable")) {
+      throw new Error("Expected accepted deliverable download to include AgentRun output text.");
+    }
     if (!proposalAuditRows.some((row) => row.action === "proposal.merged" && row.snapshotId === proposalAfterMerge.mergeSnapshotId)) {
       throw new Error("Expected persistent proposal.merged audit log linked to the merge snapshot.");
     }
@@ -492,7 +527,10 @@ async function main() {
         main_branch_id: workItemAfterMerge.mainBranchId,
         merge_snapshot_id: proposalAfterMerge.mergeSnapshotId,
         accepted_targets: acceptedChangeRows.map((row) => row.targetKey),
-        accepted_drive_version_ids: [...acceptedDriveVersionIds]
+        accepted_drive_version_ids: [...acceptedDriveVersionIds],
+        accepted_deliverables_on_page: mergedWorkItemPageBody.data.accepted_deliverables.length,
+        preview_status: previewResponse.status,
+        download_status: downloadResponse.status
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

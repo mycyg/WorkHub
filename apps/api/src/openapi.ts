@@ -171,6 +171,18 @@ export function getOpenApiDocument() {
           summary: "Attach selected evidence refs to the current work item context"
         }
       },
+      "/api/workitems/{id}/deliverables/{acceptedChangeId}/download": {
+        get: {
+          tags: ["workitems"],
+          summary: "Download an accepted formal deliverable file"
+        }
+      },
+      "/api/workitems/{id}/deliverables/{acceptedChangeId}/preview": {
+        get: {
+          tags: ["workitems"],
+          summary: "Preview an accepted formal deliverable when it is text-like"
+        }
+      },
       "/api/knowledge/search": {
         post: {
           tags: ["knowledge"],

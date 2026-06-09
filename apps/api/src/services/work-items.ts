@@ -19,6 +19,7 @@ import {
   sessionVmSchema,
   workItemDetailVmSchema,
   type AgentStep,
+  type AcceptedDeliverableVM,
   type CreateSessionRequest,
   type CreateWorkItemRequest,
   type EvidenceBubble,
@@ -81,6 +82,17 @@ export type WorkItemService = {
     workItemId: string;
     actor: AuthActor;
   }) => Promise<WorkItemDetailVM>;
+  acceptedDeliverableFile: (input: {
+    workItemId: string;
+    acceptedChangeId: string;
+    actor: AuthActor;
+  }) => Promise<{
+    id: string;
+    filename: string;
+    mime?: string;
+    sizeBytes: number;
+    storagePath: string;
+  }>;
 };
 
 type ServiceOptions = {
@@ -255,6 +267,59 @@ function evidenceRefsFromBindings(rows: StoredWorkItemDetailRows["evidenceBindin
   return refs;
 }
 
+function isPreviewableText(mime?: string | null, filename?: string | null) {
+  const lower = (filename ?? "").toLowerCase();
+  return !!mime?.startsWith("text/")
+    || mime === "application/json"
+    || lower.endsWith(".md")
+    || lower.endsWith(".json")
+    || lower.endsWith(".csv")
+    || lower.endsWith(".txt");
+}
+
+function acceptedDeliverableToVm(
+  row: StoredWorkItemDetailRows["acceptedDeliverables"][number]
+): AcceptedDeliverableVM {
+  const accepted = row.accepted;
+  const driveVersion = row.driveVersion;
+  const filename = driveVersion?.filename ?? (accepted.targetPath ? accepted.targetPath.split(/[\\/]/u).pop() : undefined);
+  const vm: AcceptedDeliverableVM = {
+    id: accepted.id,
+    work_item_id: accepted.workItemId,
+    proposal_id: accepted.proposalId,
+    change_id: accepted.changeId,
+    target_kind: accepted.targetKind,
+    target_key: accepted.targetKey,
+    change_type: accepted.changeType,
+    accepted_version: accepted.acceptedVersion,
+    accepted_at: accepted.createdAt.toISOString()
+  };
+  if (accepted.targetPath) {
+    vm.target_path = accepted.targetPath;
+  }
+  if (accepted.sha256After) {
+    vm.sha256 = accepted.sha256After;
+  }
+  if (row.driveItem?.id) {
+    vm.drive_item_id = row.driveItem.id;
+  }
+  if (driveVersion) {
+    vm.drive_version_id = driveVersion.id;
+    vm.filename = filename ?? driveVersion.filename;
+    if (driveVersion.mime) {
+      vm.mime = driveVersion.mime;
+    }
+    vm.size_bytes = driveVersion.sizeBytes;
+    vm.download_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/download`;
+    if (isPreviewableText(driveVersion.mime, driveVersion.filename)) {
+      vm.preview_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/preview`;
+    }
+  } else if (filename) {
+    vm.filename = filename;
+  }
+  return vm;
+}
+
 function buildWorkItemDetail(rows: StoredWorkItemDetailRows): WorkItemDetailVM {
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
@@ -274,6 +339,7 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows): WorkItemDetailVM {
     })),
     agent_trace_preview: rows.agentSteps.map(toAgentStepVm),
     ...(latestProposal?.success ? { latest_proposal: latestProposal.data } : {}),
+    accepted_deliverables: rows.acceptedDeliverables.map(acceptedDeliverableToVm),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings)
   });
 }
@@ -594,6 +660,21 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
 
     async detailPage(input) {
       return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor));
+    },
+
+    async acceptedDeliverableFile(input) {
+      await requireDetail(input.workItemId, input.actor);
+      const row = await repository.findAcceptedDeliverableFile(input.workItemId, input.acceptedChangeId);
+      if (!row?.driveVersion?.storagePath) {
+        throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
+      }
+      return {
+        id: row.accepted.id,
+        filename: row.driveVersion.filename,
+        ...(row.driveVersion.mime ? { mime: row.driveVersion.mime } : {}),
+        sizeBytes: row.driveVersion.sizeBytes,
+        storagePath: row.driveVersion.storagePath
+      };
     }
   };
 }
@@ -668,6 +749,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
         { id: "evidence-bound", title: "证据已绑定", status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
       ],
       agent_trace_preview: [],
+      accepted_deliverables: [],
       evidence_refs: evidence.get(workItem.id) ?? []
     });
   }
@@ -756,6 +838,11 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     async detailPage(input) {
       return detail(requireWorkItem(input.workItemId));
+    },
+
+    async acceptedDeliverableFile(input) {
+      requireWorkItem(input.workItemId);
+      throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
     }
   };
 }

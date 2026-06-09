@@ -154,7 +154,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、正式交付物下载/预览/revert 入口、AI 冲突调解候选仍未完成。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、正式交付物 replay/revert 入口、AI 冲突调解候选仍未完成。
 
 ### R1 验收
 
@@ -176,7 +176,8 @@ R0 退出门：
 - 后续已补：CostLedger 默认 store 已接 `usage_records/cost_ledger_entries` 与 DB-backed repository，并纳入 PG smoke 的 cost usage/page 断言。
 - 后续已补：merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同路径不同 sha 冲突 gate；API test 覆盖冲突阻断。
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
-- 未完成：BudgetPolicy 持久化与审计、正式交付物下载/预览/revert 入口、AI 冲突调解候选、完整 approval policy routing 仍未完成。
+- 后续已补：正式交付物读取面最小切片；WorkItem page 返回 `accepted_deliverables`，并提供下载与文本预览 API。
+- 未完成：BudgetPolicy 持久化与审计、正式交付物 replay/revert 入口、AI 冲突调解候选、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -202,7 +203,8 @@ pnpm qa:r1-pg-smoke
 12. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
 13. 断言 merge 产生 `accepted_deliverable_changes`、`ProjectDriveItem/Version`、`snapshots(kind=merge)`、`audit_logs(action=proposal.merged)`，且 proposal merge audit 绑定 `merge_snapshot_id`。
 14. 断言 accepted row 指向 `drive_version_id`，Drive item 的 `current_version_id` 指向该版本，正式 storage path 文件存在且内容匹配 AgentRun output。
-15. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page delta、`agent_runs`、`agent_steps`、`proposals`、`branches`、`accepted_deliverable_changes`、`adopted_drive_items`、`adopted_drive_versions`、`snapshots`、`audit_logs` 行数、merge 状态、accepted targets/drive versions 与 replay 计数。
+15. 断言 `GET /api/pages/workitems/:id` 返回 `accepted_deliverables[]`，且 download/text-preview href 可读取同一正式文件内容。
+16. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page delta、`agent_runs`、`agent_steps`、`proposals`、`branches`、`accepted_deliverable_changes`、`adopted_drive_items`、`adopted_drive_versions`、`snapshots`、`audit_logs` 行数、merge 状态、accepted targets/drive versions、download/preview 状态与 replay 计数。
 
 当前本机实测：
 
@@ -323,7 +325,38 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-仍不是完整 Drive 产品化：当前没有 Drive 下载/预览 API、没有正式交付物 replay VM、没有 revert 执行入口、没有云对象存储 adapter，也没有合并冲突选择 UI。
+R1.6 已补最小下载/文本预览读取面。仍不是完整 Drive 产品化：当前没有 AgentRun replay VM 展示正式交付物、没有二进制/Office 预览渲染、没有 revert 执行入口、没有云对象存储 adapter，也没有合并冲突选择 UI。
+
+### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
+
+本切片把 R1.5 写入的正式 Drive version 暴露给用户可见页面与 API，避免“文件已落盘但页面看不到”。
+
+已落代码：
+
+- `packages/contracts/src/pages.ts`：`WorkItemDetailVM` 新增 `accepted_deliverables[]`，字段包含 `drive_item_id`、`drive_version_id`、`filename`、`mime`、`size_bytes`、`download_href`、`preview_href`。
+- `packages/db/src/repositories/work-items.ts`：`readWorkItemDetail()` 读取 current `accepted_deliverable_changes`，左连 `ProjectDriveItem/Version`；新增 `findAcceptedDeliverableFile()` 供下载/预览。
+- `apps/api/src/services/work-items.ts`：将 accepted rows 映射为 `AcceptedDeliverableVM`；storage path 只在 service 内部使用，不进 page VM。
+- `apps/api/src/routes/workitems.ts`：
+  - `GET /api/workitems/:id/deliverables/:acceptedChangeId/download` 返回正式文件二进制。
+  - `GET /api/workitems/:id/deliverables/:acceptedChangeId/preview` 对 `text/*`、`.md`、`.json`、`.csv`、`.txt` 返回文本预览；其它类型返回 415，提示下载查看。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts`：merge 后重新读取 WorkItem page，验证 `accepted_deliverables`、download、preview 都能读到 AgentRun output。
+
+当前契约：
+
+| 项 | R1.6 行为 |
+|---|---|
+| Page VM | `GET /api/pages/workitems/:id` 返回 `accepted_deliverables[]` |
+| 下载 | `download_href` 读取正式 storage path 文件，不暴露本地路径 |
+| 文本预览 | `preview_href` 只对文本类文件返回 JSON `{preview_type:"text", text, truncated}` |
+| 二进制预览 | 暂不在线渲染，走下载 |
+| 权限 | 当前复用 WorkItem page 的登录态与存在性校验；完整 `can_view_workitem/project` 仍属后续权限闭环 |
+
+仍未完成：
+
+- AgentRun replay page 把 accepted deliverables 展成 replay artifact 列表。
+- 正式交付物 revert 执行入口。
+- PDF/Office/image 等富预览和 Range/streaming 下载。
+- 云对象存储 adapter 与短签名 URL。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -346,7 +379,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 - `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 10/10；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、正式交付物下载/预览/revert、AI 冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、正式交付物 replay/revert、AI 冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 

@@ -909,6 +909,7 @@ const workItemDetail: WorkItemDetailVM = {
   ],
   agent_trace_preview: steps.slice(0, 5),
   latest_proposal: manifest,
+  accepted_deliverables: [],
   evidence_refs: evidenceRefs
 };
 

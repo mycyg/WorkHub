@@ -66,14 +66,15 @@ R1 当前代码切片已落：
 - Proposal merge/main 最小真实切片已落：DB repository 在 review/merge 时更新 `reviews/proposals/branches/work_items`；打回解锁 branch，采纳写 `work_items.status=merged/main_branch_id/accepted_at` 与 branch head/version；AgentRun 通知可通过 DB WorkItem context resolver 路由到 submitter/project owner/assignee 上下文。
 - Proposal merge accepted ledger 已落：采纳时写 `accepted_deliverable_changes`、`snapshots(kind=merge)`、`audit_logs(action=proposal.merged)`，并对同一 target 的 current accepted row 做 sha/version 冲突 gate，避免静默覆盖正式版。
 - AgentRun-backed delivery 正式文件落盘已落：Proposal merge 会从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找到 `/outputs/...` 源文件，校验 sha 后复制到正式 storage root，并在同一 merge transaction 内写 `ProjectDriveItem/Version` 与 accepted row 的 `drive_item_id/drive_version_id`。
+- Accepted deliverable 读取面已落：WorkItem detail page 返回 `accepted_deliverables[]`，正式文件支持 download 与文本 preview，storage path 不外泄。
 
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace；merge accepted ledger、ProjectDriveVersion adoption 与 audit 持久化已做实，但正式交付物 replay VM、下载/预览、AI 冲突调解与 revert 执行入口仍需后续切片。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace；merge accepted ledger、ProjectDriveVersion adoption、download/text-preview 与 audit 持久化已做实，但正式交付物 replay VM、AI 冲突调解与 revert 执行入口仍需后续切片。
 - BudgetPolicy 更新仍是内存 override，尚未持久化为 `budget_policies` 与审计日志；完整 P-COST 策略治理仍需后续切片。
 
-后续施工必须先完成正式交付物下载/预览/replay/revert、AI 冲突调解、BudgetPolicy 持久化与完整审批中心，再回到 Web/Cuu 产品化。
+后续施工必须先完成正式交付物 replay/revert、AI 冲突调解、BudgetPolicy 持久化与完整审批中心，再回到 Web/Cuu 产品化。
 
 ---
 

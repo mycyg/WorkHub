@@ -83,6 +83,7 @@ R1 退出门：
 - R1 PG smoke 入口已新增并在 Linux 测试机通过：`pnpm qa:r1-pg-smoke` 会跑 migrations、最小 seed、真实 intake/work item/knowledge/page route、DB-backed CostLedger/AgentRun/Proposal/Snapshot/Audit，并用新 queue 模拟 daemon restart 后读取 run/replay；最新通过证据为 `session_status=200`、`work_item_status=spec_ready`、`evidence_refs=1`、`page_evidence_refs=1`、`usage_records=1`、`cost_ledger_entries=3`、cost delta `1500 tokens / 0.007 CNY`、`agent_runs=1`、`agent_steps=4`、`proposals=1`、`branches=1`、`accepted_deliverable_changes=1`、`adopted_drive_items=1`、`adopted_drive_versions=1`、`snapshots=2`、`audit_logs=1`、`proposal_merge_audit_logs=1`、`proposal/branch/work_item=merged`、`replay_steps=4`。
 - Proposal merge accepted ledger 已落：采纳时写 `accepted_deliverable_changes`、merge snapshot、persistent `proposal.merged` audit，并用 sha/version gate 阻断同 target 静默覆盖。
 - AgentRun-backed delivery 正式文件落盘已落：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内写 `ProjectDriveItem/Version` 并把 `drive_item_id/drive_version_id` 写回 accepted row。
+- 正式交付物读取面已落最小切片：`GET /api/pages/workitems/:id` 返回 `accepted_deliverables[]`，并提供正式文件 download 与文本 preview API；R1 PG smoke 已覆盖页面字段、预览与下载内容。
 - 验证：`pnpm --filter @workhub/api typecheck`、`pnpm --filter @workhub/api test`、生产 route grep 审计已通过；API test 当前 60/60 通过。
 
 仍不能宣称 R1 完成：
@@ -90,11 +91,11 @@ R1 退出门：
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 Linux 测试机已给出真实 PG 通过证据。
 - BudgetPolicy 更新仍是内存 override，尚未落 `budget_policies` 与 `AuditLog(action="budget_policy.updated")`；预算策略持久化仍不能宣称完成。
-- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、merge snapshot、persistent audit 与同 target 冲突 gate 已落。正式交付物下载/预览/revert、AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
+- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page accepted deliverables、download/text-preview、merge snapshot、persistent audit 与同 target 冲突 gate 已落。正式交付物 replay/revert、AI 冲突调解与完整 Drive 产品化仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 补正式交付物下载/预览/replay VM/revert 入口，以及 AI 冲突调解候选与冲突选择 UI。
+1. 补正式交付物 replay VM/revert 入口，以及 AI 冲突调解候选与冲突选择 UI。
 2. 补 BudgetPolicy 持久化与 `budget_policy.updated` 审计。
 3. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
