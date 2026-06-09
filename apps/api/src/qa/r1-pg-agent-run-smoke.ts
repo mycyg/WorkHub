@@ -196,7 +196,8 @@ async function main() {
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const formalStorageRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-drive-"));
-    const proposalService = createDbProposalService(createProposalRepository(db), {
+    const proposalRepository = createProposalRepository(db);
+    const proposalService = createDbProposalService(proposalRepository, {
       storageRoot: formalStorageRoot,
       fusionCandidateGenerator: deterministicFusionGenerator()
     });
@@ -242,6 +243,7 @@ async function main() {
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
       workItems: workItemService,
+      proposalAudit: proposalRepository,
       autoRun: false
     }));
     const seedUser = defaultSeedFixture.users[0];
@@ -499,6 +501,7 @@ async function main() {
       snapshots: snapshotsRepo,
       auditLogs: auditRepo,
       workItems: workItemService,
+      proposalAudit: proposalRepository,
       autoRun: false
     }));
     const runAfterRestart = await restartedApp.request(`/api/agent-runs/${runId}`, { headers });
