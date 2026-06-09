@@ -241,6 +241,18 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-overlap-hunk-decision=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-overlap-hunk-decision=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("data-overlap-hunk-decision=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("data-route-line-editor=\"true\""), true);
+  assert.equal(rendered.html.includes("data-route-line-editor-file-count=\"1\""), true);
+  assert.equal(rendered.html.includes("data-route-line-editor-hunk-count=\"1\""), true);
+  assert.equal(rendered.html.includes("data-route-line-editor-row-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-tab=\"drive_item:docs/weekly-report.md\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-search=\"true\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-row-kind=\"remove\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-row-kind=\"add\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-hunk-index=\"0\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-decision=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-decision-selected=\"true\""), true);
+  assert.equal(rendered.html.includes("data-line-editor-apply=\"true\""), true);
   assert.equal(rendered.html.includes("data-action-href=\"/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply\""), true);
   assert.equal(rendered.html.includes("text_hunk_overrides"), true);
   assert.equal(rendered.html.includes("data-conflict-option-preview-for=\"ai_fusion\""), true);
@@ -249,6 +261,8 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("文本合并检查"), true);
   assert.equal(rendered.html.includes("需逐项确认"), true);
   assert.equal(rendered.html.includes("重叠段 1"), true);
+  assert.equal(rendered.html.includes("逐行选择器"), true);
+  assert.equal(rendered.html.includes("应用逐段选择"), true);
   assert.equal(rendered.html.includes("影响行: 第 2 行"), true);
   assert.equal(rendered.html.includes("data-structured-record-patch=\"true\""), true);
   assert.equal(rendered.html.includes("data-structured-patch-option-id=\"ai_fusion\""), true);
@@ -285,6 +299,9 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);
   assert.equal(english.html.includes("Overlap hunk 1"), true);
+  assert.equal(english.html.includes("Line editor"), true);
+  assert.equal(english.html.includes("Search lines"), true);
+  assert.equal(english.html.includes("Apply line choices"), true);
   assert.equal(english.html.includes("Affected lines: line 2"), true);
   assert.equal(english.html.includes("Structured field check"), true);
   assert.equal(english.html.includes("Dry-run: Blocked"), true);

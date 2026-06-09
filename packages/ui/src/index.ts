@@ -2,6 +2,7 @@ export * from "./gold-path/index.js";
 export * from "./i18n.js";
 export * from "./overlap-hunk-review.js";
 export * from "./rich-patch-viewer.js";
+export * from "./route-line-editor.js";
 export * from "./subrecord-item-diff.js";
 export * from "./intake/index.js";
 export * from "./proposal/index.js";

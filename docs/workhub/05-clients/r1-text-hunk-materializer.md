@@ -148,5 +148,5 @@ R1.41 关闭的缺口：R1.36 已让 Proposal / Replay 能显示重叠文本 hun
 |---|---|
 | R1.42 | Multi-conflict execution audit 已落：见 [`r1-multi-conflict-execution-audit.md`](./r1-multi-conflict-execution-audit.md)，批量 keep/accept payload 会写 `bulk_action` 审计 |
 | R1.43 | Replay hunk / bulk audit 已落：见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)，`text_hunk_decisions` 与 `bulk_action` 会渲染为可读回放 |
-| R1.44 | React route 级逐行选择/编辑产品化：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
+| R1.44 | Route line editor 已落：见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)，文件 tabs、长文搜索、逐段选择、完整 `text_hunk_overrides` payload、键盘焦点 |
 | R4 | 把 text hunk materializer 场景纳入真实 loading/error/forbidden 截图矩阵 |

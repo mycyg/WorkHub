@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-10):**52 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
+> 状态(2026-06-10):**53 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
 
 ---
 
@@ -129,6 +129,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r1-text-hunk-materializer.md` | **C-WEB/C-DESKTOP/API/DB**:R1.41 `text_hunk_overrides` 从 UI 点选意图升级为后端逐段 materialize、Drive version 写回与审计 | current |
 | `r1-multi-conflict-execution-audit.md` | **C-WEB/C-DESKTOP/API/DB**:R1.42 批量 keep/accept payload 显式 `bulk_action`、冲突/成功路径审计与后续 Replay 回放边界 | current |
 | `r1-replay-hunk-bulk-audit.md` | **C-WEB/C-DESKTOP/API/Contracts**:R1.43 Replay 将 `text_hunk_decisions` 与 `bulk_action` 渲染为用户可读回放，保留 Cuu 独立边界 | current |
+| `r1-route-line-editor.md` | **C-WEB/C-DESKTOP/C-UIKIT**:R1.44 Proposal route line editor，文件 tabs、搜索、逐段点选、完整 `text_hunk_overrides` payload 与键盘可达性 | current |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |
 
 ### 06-roadmap/

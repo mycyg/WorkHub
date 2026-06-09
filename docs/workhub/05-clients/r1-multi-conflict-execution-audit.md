@@ -133,6 +133,6 @@ R1.42 关闭的缺口是：批量按钮此前只复用 `accept_incoming_target_k
 | 阶段 | 工作 |
 |---|---|
 | R1.43 | Replay hunk / bulk audit 已落：见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)，`text_hunk_decisions[]` 与 `bulk_action` 已进入用户可读回放 |
-| R1.44 | React route 级逐行选择/编辑产品化：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
+| R1.44 | Route line editor 已落：见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)，Proposal 文本冲突可按文件 tab 搜索长 patch、逐段点选并提交完整 hunk payload |
 | R2 | PG claim / 多 worker / 事件 broker；确保批量审计在多实例下仍不丢、不重 |
 | R4 | 全页面真实 route loading/error/forbidden 截图矩阵与 Drive 历史/redo UI |

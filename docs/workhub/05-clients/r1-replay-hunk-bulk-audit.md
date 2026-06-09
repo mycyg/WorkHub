@@ -132,7 +132,7 @@ type ReplayBulkActionVM = {
 
 | 阶段 | 工作 |
 |---|---|
-| R1.44 | React route line editor：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
+| R1.44 | Route line editor 已落：见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)，Proposal 文本冲突可按文件 tab 搜索长 patch、逐段点选并提交完整 hunk payload |
 | R2 | 在 PG claim / 多 worker 下验证 hunk / bulk audit 不丢、不重 |
 | R4 | 把 Replay hunk / bulk audit 纳入真实 loading / error / forbidden 截图矩阵 |
 | Drive | 完整文件历史、redo、富预览和多文件 restore 不属于 R1.43 |

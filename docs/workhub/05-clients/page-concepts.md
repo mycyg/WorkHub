@@ -254,6 +254,10 @@ R1.39 已把 Proposal / Replay 的富 patch viewer、重叠 hunk review、子记
 
 R1.43 已把 `proposal.merged.detail_json.text_hunk_decisions[]` 与 `proposal.bulk_action` 渲染成 Replay 严肃页中的用户可读审计区。该能力不新增概念图，不改变 R1.39 截图基准；它的当前边界是“解释当时每段/每批选了什么”，不是重型编辑器，也不是 Cuu 主窗卡片。详细说明见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)。
 
+### 6.6 R1.44 Proposal route line editor
+
+R1.44 已把 Proposal 文本冲突的逐段选择产品化为严肃主窗中的 route line editor：文件 tab、长 patch 搜索、逐段 current / incoming / AI fusion 点选、完整 `text_hunk_overrides` payload 和键盘焦点。它继承 `web-deliverable-change-request.png` 的 GitHub-like 变更申请方向，但不变成代码编辑器，不让用户手打正文，也不进入 Cuu 气泡。详细说明见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

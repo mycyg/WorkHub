@@ -49,6 +49,9 @@ DOM gates 来自真实浏览器 dump：
 - `data-rich-patch-viewer="true"`
 - `data-rich-patch-truncated="true"`
 - `data-overlap-hunk-review="true"`
+- `data-route-line-editor="true"`
+- `data-line-editor-search="true"`
+- `data-line-editor-apply="true"` + `text_hunk_overrides`
 - `data-proposal-subrecord-item-diff="true"`
 - `data-replay-subrecord-item-diff="true"`
 - `data-task-plan-scope="required"`
@@ -81,6 +84,7 @@ R1.39 不是 Web 产品化终点，只是把 R1 已落的高风险页面组件�
 | Cuu | 主窗口截图无 Cuu 本体；桌宠仍独立 pet window |
 | 看板 | 未引入重型看板；多冲突入口仍折叠 |
 | 多语言 | 覆盖 zh-CN desktop 与 en-US mobile-narrow |
+| R1.44 line editor | 同一脚本已追加文件 tab、搜索、逐段 apply payload 的 DOM gate |
 | 四态 | 已有 route-state evidence page，后续 R4 需要接真实 route loading/error/forbidden VM |
 | 截图方式 | 当前用本机 Chrome headless；CI 只跑代码测试，截图证据手动执行后入库 |
 
@@ -92,7 +96,7 @@ R1.39 不是 Web 产品化终点，只是把 R1 已落的高风险页面组件�
 | R1.41 | Text hunk materializer 已落最小切片：见 [`r1-text-hunk-materializer.md`](./r1-text-hunk-materializer.md)，`text_hunk_overrides` 可逐段 materialize 最终文本并审计 |
 | R1.42 | Multi-conflict execution audit 已落最小切片：见 [`r1-multi-conflict-execution-audit.md`](./r1-multi-conflict-execution-audit.md)，批量 keep / accept payload 写 `bulk_action` 审计 |
 | R1.43 | Replay hunk / bulk audit 已落最小切片：见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)，`proposal.merged.detail_json.text_hunk_decisions[]` 与 `bulk_action` 已回放为每段/每批来源说明 |
-| R1.44 | React route line editor：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
+| R1.44 | Route line editor 已落最小切片：见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)，文件 tabs、长文搜索、逐段选择、完整 `text_hunk_overrides` payload、键盘焦点 |
 | R4-1 | 把 route-state evidence page 替换为真实 home/intake/workitem/proposal/replay/cost/approvals 四态截图 |
 | R4-2 | 将截图命令接入 CI 或 nightly artifact，不要求每次 PR 都提交 PNG |
 

@@ -27,6 +27,7 @@ import {
   type OverlapHunkChoiceAction
 } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
+import { renderRouteLineEditor, routeLineEditorCss } from "../route-line-editor.js";
 import { renderStructuredFieldOperationDetails } from "../structured-field-details.js";
 import { renderSubrecordItemDiff, subrecordItemDiffCss } from "../subrecord-item-diff.js";
 
@@ -90,6 +91,7 @@ export const proposalCss = [
   ".wh-conflict-workbench{border:1px solid #d9e2f3;background:#f8fbff;border-radius:8px;padding:12px}.wh-conflict-workbench>summary{cursor:pointer;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-conflict-workbench-body{margin:8px 0;color:var(--muted);font-size:13px;line-height:1.5}.wh-conflict-workbench-list{display:grid;gap:6px}.wh-conflict-workbench-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-top:1px solid #e2e8f5;padding-top:8px}.wh-conflict-workbench-row:first-child{border-top:0;padding-top:0}.wh-conflict-workbench-target{font-weight:700;overflow-wrap:anywhere}.wh-conflict-workbench-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}",
   richPatchViewerCss,
   overlapHunkReviewCss,
+  routeLineEditorCss,
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-field-editor{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px}.wh-field-editor>summary{cursor:pointer;font-weight:800}.wh-field-editor-body{margin:8px 0;color:var(--muted);font-size:13px}.wh-field-editor-list{display:grid;gap:8px}.wh-field-editor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e1e8f5;padding-top:8px}.wh-field-editor-row:first-child{border-top:0}.wh-field-editor-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.wh-field-editor-custom{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}.wh-field-editor-custom textarea{min-height:42px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;color:var(--ink);background:#fff}",
@@ -515,6 +517,7 @@ export function renderProposalConflictCards(
 ): ProposalConflictRenderedCards {
   const locale = uiLocale(options);
   const workbench = renderConflictWorkbench(conflicts, { locale });
+  const lineEditor = renderRouteLineEditor(conflicts, { locale });
   const actionHrefs = conflicts.flatMap((conflict) =>
     conflict.options.map((option) => option.action?.href).filter((href): href is string => Boolean(href))
   );
@@ -529,7 +532,7 @@ export function renderProposalConflictCards(
         <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.conflictTitle"))}</span>
         <p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.conflictBody"))}</p>
       </div>
-      ${workbench.html}
+      ${lineEditor}${workbench.html}
       ${conflicts.map((conflict) => renderConflict(conflict, { locale })).join("")}
     </section>`
   };

@@ -41,6 +41,12 @@ type DomMarkers = {
   richPatchViewer: number;
   richPatchTruncated: number;
   overlapHunkReview: number;
+  routeLineEditor: number;
+  lineEditorTabs: number;
+  lineEditorSearch: number;
+  lineEditorRows: number;
+  lineEditorApply: number;
+  lineEditorPayload: number;
   proposalSubrecordDiff: number;
   replaySubrecordDiff: number;
   taskPlanScope: number;
@@ -766,6 +772,12 @@ function markers(html: string): DomMarkers {
     richPatchViewer: countNeedle(html, 'data-rich-patch-viewer="true"'),
     richPatchTruncated: countNeedle(html, 'data-rich-patch-truncated="true"'),
     overlapHunkReview: countNeedle(html, 'data-overlap-hunk-review="true"'),
+    routeLineEditor: countNeedle(html, 'data-route-line-editor="true"'),
+    lineEditorTabs: countNeedle(html, 'data-line-editor-tab='),
+    lineEditorSearch: countNeedle(html, 'data-line-editor-search="true"'),
+    lineEditorRows: countNeedle(html, 'data-line-editor-row="true"'),
+    lineEditorApply: countNeedle(html, 'data-line-editor-apply="true"'),
+    lineEditorPayload: countNeedle(html, "text_hunk_overrides"),
     proposalSubrecordDiff: countNeedle(html, 'data-proposal-subrecord-item-diff="true"'),
     replaySubrecordDiff: countNeedle(html, 'data-replay-subrecord-item-diff="true"'),
     taskPlanScope: countNeedle(html, 'data-task-plan-scope="required"'),
@@ -1056,6 +1068,12 @@ async function main() {
       rich_patch_viewer: reportCases.some((caseItem) => caseItem.markers.richPatchViewer > 0),
       long_patch_folded: reportCases.some((caseItem) => caseItem.markers.richPatchTruncated > 0),
       overlap_hunk_review: reportCases.some((caseItem) => caseItem.markers.overlapHunkReview > 0),
+      route_line_editor: reportCases.some((caseItem) => caseItem.markers.routeLineEditor > 0),
+      line_editor_tabs: reportCases.some((caseItem) => caseItem.markers.lineEditorTabs > 0),
+      line_editor_search: reportCases.some((caseItem) => caseItem.markers.lineEditorSearch > 0),
+      line_editor_apply_payload: reportCases.some((caseItem) =>
+        caseItem.markers.lineEditorApply > 0 && caseItem.markers.lineEditorPayload > 0
+      ),
       proposal_subrecord_diff: reportCases.some((caseItem) => caseItem.markers.proposalSubrecordDiff > 0),
       replay_subrecord_diff: reportCases.some((caseItem) => caseItem.markers.replaySubrecordDiff > 0),
       task_plan_scope: reportCases.some((caseItem) => caseItem.markers.taskPlanScope > 0),
