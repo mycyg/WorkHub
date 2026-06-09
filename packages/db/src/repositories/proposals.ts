@@ -76,8 +76,15 @@ export type MergeProposalInput = {
   actor?: ProposalRepositoryActor;
   adoptedDriveFiles?: ProposalAdoptedDriveFileInput[];
   acceptIncomingTargetKeys?: string[];
+  bulkAction?: ProposalMergeBulkActionInput;
   candidateSupplements?: MergeProposalCandidateSupplement[];
   at?: Date;
+};
+
+export type ProposalMergeBulkActionInput = {
+  action: "keep_current" | "accept_incoming";
+  targetKeys: string[];
+  conflictCount?: number;
 };
 
 export type ProposalAdoptedDriveFileInput = {
@@ -445,6 +452,66 @@ async function recordMergeAttempt(
     createdAt: input.at
   });
   return id;
+}
+
+async function recordBulkActionAudit(
+  tx: WorkHubTx,
+  input: {
+    proposalId: string;
+    workItemId: string;
+    branchId: string;
+    actor?: ProposalRepositoryActor;
+    bulkAction: ProposalMergeBulkActionInput;
+    result: "conflict" | "merged";
+    mergeAttemptId: string;
+    acceptedIncomingTargetKeys: string[];
+    resolvedConflictTargetKeys: string[];
+    blockedTargetKeys: string[];
+    targetKeys: string[];
+    mergeSnapshotId?: string;
+    at: Date;
+  }
+) {
+  await tx.insert(auditLogs).values({
+    id: randomUUID(),
+    actorKind: input.actor?.actorKind ?? "system",
+    ...(input.actor?.actorUserId ? { actorUserId: input.actor.actorUserId } : {}),
+    entityType: "proposal",
+    entityId: input.proposalId,
+    action: "proposal.bulk_action",
+    detailJson: {
+      work_item_id: input.workItemId,
+      branch_id: input.branchId,
+      bulk_action: {
+        action: input.bulkAction.action,
+        target_keys: input.bulkAction.targetKeys,
+        conflict_count: input.bulkAction.conflictCount ?? input.bulkAction.targetKeys.length
+      },
+      result: input.result,
+      merge_attempt_id: input.mergeAttemptId,
+      ...(input.mergeSnapshotId ? { merge_snapshot_id: input.mergeSnapshotId } : {}),
+      accepted_incoming_target_keys: input.acceptedIncomingTargetKeys,
+      resolved_conflict_target_keys: input.resolvedConflictTargetKeys,
+      blocked_target_keys: input.blockedTargetKeys,
+      target_keys: input.targetKeys
+    },
+    ...(input.mergeSnapshotId ? { snapshotId: input.mergeSnapshotId } : {}),
+    createdAt: input.at
+  });
+}
+
+function bulkActionAuditPayload(input: {
+  bulkAction?: ProposalMergeBulkActionInput;
+}) {
+  return input.bulkAction
+    ? {
+        bulk_action: {
+          action: input.bulkAction.action,
+          target_keys: input.bulkAction.targetKeys,
+          conflict_count: input.bulkAction.conflictCount ?? input.bulkAction.targetKeys.length
+        }
+      }
+    : {};
 }
 
 function mergeProposalCandidates(conflict: ProposalMergeConflict) {
@@ -2241,6 +2308,22 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             ...(input.actor ? { actor: input.actor } : {}),
             at
           });
+          if (input.bulkAction) {
+            await recordBulkActionAudit(tx, {
+              proposalId: input.proposalId,
+              workItemId: proposal.workItemId,
+              branchId: proposal.branchId,
+              ...(input.actor ? { actor: input.actor } : {}),
+              bulkAction: input.bulkAction,
+              result: "conflict",
+              mergeAttemptId,
+              acceptedIncomingTargetKeys: acceptedIncomingTargetKeyList,
+              resolvedConflictTargetKeys: resolvedConflicts.map((conflict) => conflict.target_key),
+              blockedTargetKeys: conflicts.map((conflict) => conflict.target_key),
+              targetKeys,
+              at
+            });
+          }
           return;
         }
         const adoptedFilesByChangeId = new Map(
@@ -2294,6 +2377,23 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           ...(input.actor ? { actor: input.actor } : {}),
           at
         });
+        if (input.bulkAction) {
+          await recordBulkActionAudit(tx, {
+            proposalId: input.proposalId,
+            workItemId: proposal.workItemId,
+            branchId: proposal.branchId,
+            ...(input.actor ? { actor: input.actor } : {}),
+            bulkAction: input.bulkAction,
+            result: "merged",
+            mergeAttemptId,
+            acceptedIncomingTargetKeys: acceptedIncomingTargetKeyList,
+            resolvedConflictTargetKeys: resolvedConflicts.map((conflict) => conflict.target_key),
+            blockedTargetKeys: [],
+            targetKeys,
+            mergeSnapshotId,
+            at
+          });
+        }
         await tx
           .update(proposals)
           .set({
@@ -2384,7 +2484,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             conflict_count: resolvedConflicts.length,
             accepted_incoming_target_keys: acceptedIncomingTargetKeyList,
             resolved_conflict_target_keys: resolvedConflicts.map((conflict) => conflict.target_key),
-            target_keys: targetKeys
+            target_keys: targetKeys,
+            ...bulkActionAuditPayload(input)
           },
           snapshotId: mergeSnapshotId,
           createdAt: at

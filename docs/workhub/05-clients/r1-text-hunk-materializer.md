@@ -123,7 +123,7 @@ R1.41 关闭的缺口：R1.36 已让 Proposal / Replay 能显示重叠文本 hun
 |---|---|
 | Web Proposal | R1.36 已生成 `text_hunk_overrides` request template；R1.41 后这些按钮可真实写回 |
 | Desktop main webview | 与 Web Proposal 共享 renderer；主窗仍严肃、无 Cuu 本体 |
-| Replay | 当前能展示 hunk review 与 candidate quality gate；R1.42/R1.43 后应把 audit 中实际 `text_hunk_decisions` 显式回放成“当时每段选了什么” |
+| Replay | 当前能展示 hunk review 与 candidate quality gate；R1.42 已补批量动作审计，R1.43 应把 audit 中实际 `text_hunk_decisions` 与批量动作显式回放成“当时每段/每批选了什么” |
 | Cuu pet window | 只给轻量摘要和 deep-link，不展示完整 diff，不承担逐行编辑器 |
 
 ## 7. 验收
@@ -146,7 +146,7 @@ R1.41 关闭的缺口：R1.36 已让 Proposal / Replay 能显示重叠文本 hun
 
 | 阶段 | 工作 |
 |---|---|
-| R1.42 | Multi-conflict execution audit：批量 keep/accept route 执行器、`bulk_action` audit、局部失败说明 |
-| R1.43 | Replay hunk decision audit：把 `text_hunk_decisions` 渲染为可读回放，说明每段最终来源 |
+| R1.42 | Multi-conflict execution audit 已落：见 [`r1-multi-conflict-execution-audit.md`](./r1-multi-conflict-execution-audit.md)，批量 keep/accept payload 会写 `bulk_action` 审计 |
+| R1.43 | Replay hunk decision audit：把 `text_hunk_decisions` 与 `bulk_action` 渲染为可读回放，说明每段/每批最终来源 |
 | R1.44 | React route 级逐行选择/编辑产品化：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
 | R4 | 把 text hunk materializer 场景纳入真实 loading/error/forbidden 截图矩阵 |

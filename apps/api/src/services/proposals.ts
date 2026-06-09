@@ -80,6 +80,11 @@ export class ProposalServiceMergeConflictError extends ProposalServiceError {
 
 export type ProposalConflictResolution = {
   acceptIncomingTargetKeys?: string[];
+  bulkAction?: {
+    action: "keep_current" | "accept_incoming";
+    targetKeys: string[];
+    conflictCount?: number;
+  };
 };
 
 export type ProposalService = {
@@ -1692,6 +1697,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
           ...(adoptedDriveFiles.length > 0 ? { adoptedDriveFiles } : {}),
           ...(input.conflictResolution?.acceptIncomingTargetKeys
             ? { acceptIncomingTargetKeys: input.conflictResolution.acceptIncomingTargetKeys }
+            : {}),
+          ...(input.conflictResolution?.bulkAction
+            ? { bulkAction: input.conflictResolution.bulkAction }
             : {}),
           ...(candidateSupplements.length > 0 ? { candidateSupplements } : {}),
           at: mergedAt

@@ -118,11 +118,19 @@ const proposalConflictActionSchema = actionSpecSchema.extend({
   request_json: z.record(z.string(), z.unknown()).optional()
 });
 
+export const mergeProposalBulkActionSchema = z.object({
+  action: z.enum(["keep_current", "accept_incoming"]),
+  target_keys: z.array(z.string().min(1)).default([]),
+  conflict_count: z.number().int().nonnegative().optional()
+});
+export type MergeProposalBulkAction = z.infer<typeof mergeProposalBulkActionSchema>;
+
 export const mergeProposalRequestSchema = z.object({
   confirm: z.boolean().default(true),
   conflict_resolution: z
     .object({
-      accept_incoming_target_keys: z.array(z.string().min(1)).default([])
+      accept_incoming_target_keys: z.array(z.string().min(1)).default([]),
+      bulk_action: mergeProposalBulkActionSchema.optional()
     })
     .optional()
 });

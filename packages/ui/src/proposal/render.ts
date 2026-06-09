@@ -66,6 +66,11 @@ type BulkConflictAction = {
     confirm: true;
     conflict_resolution: {
       accept_incoming_target_keys: string[];
+      bulk_action: {
+        action: BulkConflictDecision;
+        target_keys: string[];
+        conflict_count: number;
+      };
     };
   };
 };
@@ -414,6 +419,7 @@ function buildBulkConflictAction(
   const targetKeys = decision === "accept_incoming"
     ? Array.from(new Set(conflicts.map((conflict) => conflict.target_key)))
     : [];
+  const bulkTargetKeys = Array.from(new Set(conflicts.map((conflict) => conflict.target_key)));
   return {
     id: decision,
     href,
@@ -421,7 +427,12 @@ function buildBulkConflictAction(
     requestJson: {
       confirm: true,
       conflict_resolution: {
-        accept_incoming_target_keys: targetKeys
+        accept_incoming_target_keys: targetKeys,
+        bulk_action: {
+          action: decision,
+          target_keys: bulkTargetKeys,
+          conflict_count: conflicts.length
+        }
       }
     }
   };

@@ -90,8 +90,8 @@ R1.39 不是 Web 产品化终点，只是把 R1 已落的高风险页面组件�
 |---|---|
 | R1.40 | Task plan scope UI 已落最小切片：见 [`r1-task-plan-scope-ui.md`](./r1-task-plan-scope-ui.md)，多 plan 下 `task_items` 写回必须携带目标 plan |
 | R1.41 | Text hunk materializer 已落最小切片：见 [`r1-text-hunk-materializer.md`](./r1-text-hunk-materializer.md)，`text_hunk_overrides` 可逐段 materialize 最终文本并审计 |
-| R1.42 | Multi-conflict execution audit：批量 keep / accept 前端执行器、`bulk_action` audit、局部失败说明 |
-| R1.43 | Replay hunk decision audit：把 `proposal.merged.detail_json.text_hunk_decisions[]` 回放为每段来源说明 |
+| R1.42 | Multi-conflict execution audit 已落最小切片：见 [`r1-multi-conflict-execution-audit.md`](./r1-multi-conflict-execution-audit.md)，批量 keep / accept payload 写 `bulk_action` 审计 |
+| R1.43 | Replay hunk decision audit：把 `proposal.merged.detail_json.text_hunk_decisions[]` 与 `bulk_action` 回放为每段/每批来源说明 |
 | R4-1 | 把 route-state evidence page 替换为真实 home/intake/workitem/proposal/replay/cost/approvals 四态截图 |
 | R4-2 | 将截图命令接入 CI 或 nightly artifact，不要求每次 PR 都提交 PNG |
 

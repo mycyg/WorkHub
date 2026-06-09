@@ -368,6 +368,7 @@ class MemoryProposalRepository implements ProposalRepository {
   private acceptedByTargetKey = new Map<string, { proposalId: string; changeId: string; sha256After?: string }>();
   public readonly mergeAttempts: MergeAttemptRow[] = [];
   public readonly mergeProposals: MergeProposalRow[] = [];
+  public readonly mergeInputs: Parameters<ProposalRepository["merge"]>[0][] = [];
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
   public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
@@ -1004,6 +1005,7 @@ class MemoryProposalRepository implements ProposalRepository {
   }
 
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
+    this.mergeInputs.push(input);
     const stored = this.rows.get(input.proposalId);
     if (!stored) {
       return null;
@@ -1252,10 +1254,22 @@ test("proposal service blocks merge when the same target was already accepted wi
   const merged = await service.merge({
     proposalId: second.id,
     actor: { actor_kind: "human", actor_user_id: userId },
-    conflictResolution: { acceptIncomingTargetKeys: [conflict?.target_key ?? ""] }
+    conflictResolution: {
+      acceptIncomingTargetKeys: [conflict?.target_key ?? ""],
+      bulkAction: {
+        action: "accept_incoming",
+        targetKeys: [conflict?.target_key ?? ""],
+        conflictCount: 1
+      }
+    }
   });
 
   assert.equal(merged.status, "merged");
+  assert.deepEqual(repository.mergeInputs.at(-1)?.bulkAction, {
+    action: "accept_incoming",
+    targetKeys: [conflict?.target_key ?? ""],
+    conflictCount: 1
+  });
   const attempts = repository.mergeAttempts.filter((attempt) => attempt.proposalId === second.id);
   assert.equal(attempts.length, 2);
   assert.equal(attempts[1]?.result, "merged");

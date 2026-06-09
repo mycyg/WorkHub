@@ -395,7 +395,18 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         ...(payload.conflict_resolution
           ? {
               conflictResolution: {
-                acceptIncomingTargetKeys: payload.conflict_resolution.accept_incoming_target_keys
+                acceptIncomingTargetKeys: payload.conflict_resolution.accept_incoming_target_keys,
+                ...(payload.conflict_resolution.bulk_action
+                  ? {
+                      bulkAction: {
+                        action: payload.conflict_resolution.bulk_action.action,
+                        targetKeys: payload.conflict_resolution.bulk_action.target_keys,
+                        ...(payload.conflict_resolution.bulk_action.conflict_count !== undefined
+                          ? { conflictCount: payload.conflict_resolution.bulk_action.conflict_count }
+                          : {})
+                      }
+                    }
+                  : {})
               }
             }
           : {})

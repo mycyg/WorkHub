@@ -401,6 +401,10 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(rendered.html.includes("drive_item:docs/summary.md"), true);
   assert.equal(rendered.html.includes(`work_item:${vm.work_item_id}:task_items`), true);
   assert.equal(rendered.html.includes("accept_incoming_target_keys"), true);
+  assert.equal(rendered.html.includes("bulk_action"), true);
+  assert.equal(rendered.html.includes("&quot;action&quot;:&quot;keep_current&quot;"), true);
+  assert.equal(rendered.html.includes("&quot;action&quot;:&quot;accept_incoming&quot;"), true);
+  assert.equal(rendered.html.includes("&quot;conflict_count&quot;:2"), true);
   assert.equal(rendered.actionHrefs.includes(mergeHref), true);
   assert.equal(rendered.html.includes("kanban"), false);
   assert.equal(rendered.html.includes("git"), false);

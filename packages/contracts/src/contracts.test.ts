@@ -426,6 +426,23 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
   assert.equal(preview?.stats?.overlap_risk, "requires_review");
   assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
   assert.equal(aiFusionRequest.confirm, true);
+
+  const bulkRequest = mergeProposalRequestSchema.parse({
+    confirm: true,
+    conflict_resolution: {
+      accept_incoming_target_keys: ["delivery:/outputs/result.md", "drive_item:docs/brief.md"],
+      bulk_action: {
+        action: "accept_incoming",
+        target_keys: ["delivery:/outputs/result.md", "drive_item:docs/brief.md"],
+        conflict_count: 2
+      }
+    }
+  });
+  assert.equal(bulkRequest.conflict_resolution?.bulk_action?.action, "accept_incoming");
+  assert.deepEqual(bulkRequest.conflict_resolution?.bulk_action?.target_keys, [
+    "delivery:/outputs/result.md",
+    "drive_item:docs/brief.md"
+  ]);
 });
 
 test("merge proposal candidate choices are explicit and replayable", () => {
