@@ -254,6 +254,8 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   const unknownFields = stringArrayField(patch, "unknown_fields");
   const fieldCount = numberField(patch, "field_count");
   const dryRun = objectRecord(patch["structured_field_patch_dry_run"]);
+  const dryRunAuditPayload = objectRecord(dryRun?.["audit_payload"]);
+  const taskPlanScope = patch["task_plan_scope"] ?? dryRun?.["task_plan_scope"] ?? dryRunAuditPayload?.["task_plan_scope"];
   const dryRunStatus = typeof dryRun?.["status"] === "string" ? dryRun["status"] : "";
   const dryRunIssueCount = Array.isArray(dryRun?.["issues"]) ? dryRun["issues"].length : 0;
   const mergedLine = mergedFields.length > 0
@@ -276,6 +278,7 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   });
   const subrecordDiff = renderSubrecordItemDiff({
     operations,
+    taskPlanScope,
     locale,
     surface: "proposal",
     ...(dryRunStatus === "ready" && dryRun?.["executable"] === true && option.action?.href

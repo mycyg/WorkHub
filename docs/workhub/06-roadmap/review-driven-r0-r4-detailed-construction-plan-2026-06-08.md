@@ -1271,7 +1271,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 2. **R1.34 Field-level editor（已落）**：在不加重默认页面的前提下，为高阶用户提供折叠的标量字段编辑器；默认仍是一键采用 AI 融合稿。
 3. **R1.37 Subrecord item editor（已落）**：把 `acceptance_items` / `task_items` 从整组 operation 展开为逐项 diff，支持新增、删除、修改的逐项保留/采纳。
 4. **R1.38 Multi-conflict workbench**：只给高阶用户批量处理入口和多计划选择；默认用户继续由 AI 以少量 option-first 卡片引导。
-5. **R1.40 Task plan scope UI**：当一个 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，由 Cuu/主窗让用户点选目标 plan，避免后台猜测。
+5. **R1.40 Task plan scope UI（已落）**：当一个 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，由 Proposal/后续 Cuu 让用户点选目标 plan，避免后台猜测。
 
 验证：
 
@@ -1378,7 +1378,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 2. **R1.37 Subrecord item editor（已落）**：把 `acceptance_items` / `task_items` 从整组 operation 展开为逐项 diff，支持新增、删除、修改的逐项保留/采纳。
 3. **R1.38 Multi-conflict workbench**：只给高阶用户批量入口；普通用户仍由 AI 按“最需要处理的一件事”递卡。
 4. **R1.39 Route visual QA（已落）**：用 Web/desktop 真实 route + 浏览器截图检查长 patch、移动端、en-US、空/错态和不重叠。
-5. **R1.40 Task plan scope UI**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
+5. **R1.40 Task plan scope UI（已落）**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
 6. **R1.41 Text hunk materializer**：后端正式支持 `text_hunk_overrides`，把逐段 current / incoming / AI fusion 决策写入最终文本并审计；没有该能力前，UI 的 hunk 按钮只作为 route JS 组合请求的稳定数据模型。
 
 验证：
@@ -1416,7 +1416,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 1. **R1.37 Subrecord item editor（已落）**：把 `acceptance_items` / `task_items` 从整组 operation 展开为逐项 diff，支持新增、删除、修改的逐项保留/采纳。
 2. **R1.38 Multi-conflict workbench**：只给高阶用户批量入口；普通用户仍由 AI 按“最需要处理的一件事”递卡。
 3. **R1.39 Route visual QA（已落）**：把 shared rich patch viewer、overlap hunk review 和 subrecord item diff 接入真实 Web/Desktop route 截图检查，覆盖长 patch、移动端、en-US、空/错态和不重叠。
-4. **R1.40 Task plan scope UI**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
+4. **R1.40 Task plan scope UI（已落）**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
 5. **R1.41 Text hunk materializer**：在 contracts/API/service/db 层正式接 `text_hunk_overrides`，逐段生成最终文本、写 Drive version、记录 audit，并拒绝缺失 range、越界 range 或 stale base。
 
 验证：
@@ -1456,7 +1456,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 1. **R1.38 Multi-conflict workbench foundation（已落）**：为高阶用户补折叠批量冲突处理入口，但默认仍由 AI/Cuu 递一件最需要处理的事。
 2. **R1.39 Route visual QA（已落）**：把 rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
-3. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，Proposal/Cuu 先让用户点选目标 plan，再允许写入 `task_items`。
+3. **R1.40 Task plan scope UI（已落）**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，Proposal 先让用户点选目标 plan，再允许写入 `task_items`。
 4. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为真正后端写回能力。
 
 验证：
@@ -1497,7 +1497,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 后续施工切片：
 
 1. **R1.39 Route visual QA（已落）**：把 Proposal 多冲突、rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
-2. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，先显式选择目标 plan，再允许写入 `task_items`。
+2. **R1.40 Task plan scope UI（已落）**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，先显式选择目标 plan，再允许写入 `task_items`。
 3. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为后端正式写回能力。
 4. **R1.42 Multi-conflict execution audit**：如果 route JS 批量执行落地，需要为批量 keep/accept 增加明确 `bulk_action` audit 与失败局部回滚说明。
 
@@ -1558,6 +1558,57 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 - `corepack pnpm --filter @workhub/ui test` 通过。
 - `pnpm qa:r1-route-visual` 通过并生成截图/报告。
+- 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
+
+### R1.40 Task plan scope UI（2026-06-10）
+
+本切片关闭“`task_items` 写回默认猜最新 dispatch plan，多个 plan 或多阶段 plan 时可能误写目标”的缺口。实现策略不引入重型看板：Proposal 高级子记录编辑区只在 `task_items` 场景显示一组目标 plan 选项；用户点击 plan 后，请求体携带 `task_plan_scope.target_plan_id`；DB repository 在多 plan 无 scope 时 fail closed。
+
+已落代码与文档：
+
+- `packages/contracts/src/domain/collaboration.ts`：`ApplyMergeProposalCandidateRequest` 新增 `task_plan_scope.target_plan_id`。
+- `apps/api/src/routes/proposals.ts`、`apps/api/src/services/proposals.ts`：`POST /api/merge-proposals/:id/apply` 解析并透传 plan scope。
+- `packages/db/src/repositories/proposals.ts`：`task_items` patch 写回前读取 WorkItem 下所有 task plans；多 plan 无 scope 返回 `task_plan_scope_required`，scope 非法返回 `task_plan_scope_invalid`，scope 合法时只重写目标 plan。
+- `packages/ui/src/subrecord-item-diff.ts`、`packages/ui/src/proposal/render.ts`：Proposal 子记录 diff 可读取 `task_plan_scope.options[]` 并渲染“先选目标计划”按钮，按钮 payload 直接携带 `target_plan_id`。
+- `packages/ui/src/i18n.ts`：新增 zh-CN/en-US plan scope 文案。
+- `apps/api/src/proposals.test.ts`：in-memory repository 模拟多 plan，覆盖未选 plan 拒绝、选中后只写目标 plan。
+- `docs/workhub/05-clients/r1-task-plan-scope-ui.md`：记录 PRD 对齐、数据契约、后端写回规则、页面/Cuu 边界和后续切片。
+
+已验收 gates：
+
+| Gate | 证据 |
+|---|---|
+| Contract payload | `applyMergeProposalCandidateRequestSchema` 接受 `task_plan_scope.target_plan_id` |
+| UI option-first | Proposal 渲染 `data-task-plan-scope="required"`、`data-task-plan-choice="true"` 与 `task_plan_scope` request template |
+| API/service 透传 | `applyMergeCandidate` 将 scope 绑定到 `resolvedStructuredFieldPatch.taskPlanScope` |
+| DB fail closed | 多 task plans 且无 scope 时拒绝 `task_plan_scope_required` |
+| DB 定向写回 | scope 合法时只替换选中 plan 的 `work_item_task_items`，其他 plan 不变 |
+
+当前边界：
+
+| 项 | R1.40 行为 |
+|---|---|
+| Cuu | 只定义后续 bubble/deep-link 边界，本切片不把 Cuu 本体放入主窗 |
+| Replay | 暂不展示 target plan；R1.43 需要把 targetPlanId 写入 `field_merge` audit 后回放 |
+| Quality gate options | UI 已支持从 quality gate/dry-run hint 读取 `task_plan_scope.options[]`；后续 merge mediator 需要自动补真实 plan 列表 |
+| Route visual | 本切片先补字符串/服务门；R4 再把 plan scope 场景纳入截图矩阵 |
+
+后续施工切片：
+
+1. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为 API/service/DB 正式逐段写回。
+2. **R1.42 Multi-conflict execution audit**：批量 keep/accept route 执行器、`bulk_action` audit、局部失败说明。
+3. **R1.43 Task plan scope audit replay**：把 `targetPlanId`、plan label、stage/status 写入 `field_merge` audit 并在 Replay 展示。
+4. **R4 Route visual matrix**：把 plan scope 场景纳入真实 loading/empty/error/forbidden 截图矩阵。
+
+验证：
+
+- `corepack pnpm --filter @workhub/contracts test` 通过，18/18。
+- `corepack pnpm --filter @workhub/ui test` 通过，30/30。
+- `corepack pnpm --filter @workhub/api test` 通过，85/85。
+- `corepack pnpm --filter @workhub/db typecheck` 通过。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/ui typecheck` 通过。
+- `corepack pnpm qa:r1-route-visual` 通过，`route-visual-report.json:gates.task_plan_scope=true`。
 - 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）

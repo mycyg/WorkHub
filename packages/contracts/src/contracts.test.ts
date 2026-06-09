@@ -465,6 +465,12 @@ test("merge proposal candidate choices are explicit and replayable", () => {
       ]
     }
   });
+  const taskPlanScopedRequest = applyMergeProposalCandidateRequestSchema.parse({
+    confirm: true,
+    task_plan_scope: {
+      target_plan_id: "72000000-0000-4000-8000-000000000904"
+    }
+  });
   const invalidItemOverrideRequest = applyMergeProposalCandidateRequestSchema.safeParse({
     structured_item_overrides: {
       items: [
@@ -500,6 +506,7 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(fieldOverrideRequest.structured_field_overrides?.operations[1]?.decision, "keep_current");
   assert.equal(itemOverrideRequest.structured_item_overrides?.items[0]?.decision, "keep_current");
   assert.equal(itemOverrideRequest.structured_item_overrides?.items[1]?.field, "task_items");
+  assert.equal(taskPlanScopedRequest.task_plan_scope?.target_plan_id, "72000000-0000-4000-8000-000000000904");
   assert.equal(invalidFieldOverrideRequest.success, false);
   assert.equal(invalidItemOverrideRequest.success, false);
 });

@@ -51,6 +51,7 @@ DOM gates 来自真实浏览器 dump：
 - `data-overlap-hunk-review="true"`
 - `data-proposal-subrecord-item-diff="true"`
 - `data-replay-subrecord-item-diff="true"`
+- `data-task-plan-scope="required"`
 - `data-proposal-conflict-workbench="true"`
 - `no_horizontal_overflow=true`
 - `cuuLeak=0`
@@ -87,7 +88,7 @@ R1.39 不是 Web 产品化终点，只是把 R1 已落的高风险页面组件�
 
 | 阶段 | 工作 |
 |---|---|
-| R1.40 | Task plan scope UI：多 `dispatch` / 多阶段 plan 下，Proposal / Cuu 必须先让用户点选目标 plan，再允许写入 `task_items` |
+| R1.40 | Task plan scope UI 已落最小切片：见 [`r1-task-plan-scope-ui.md`](./r1-task-plan-scope-ui.md)，多 plan 下 `task_items` 写回必须携带目标 plan |
 | R1.41 | Text hunk materializer：`text_hunk_overrides` 进入 API / service / DB，逐段 materialize 最终文本 |
 | R1.42 | Multi-conflict execution audit：批量 keep / accept 前端执行器、`bulk_action` audit、局部失败说明 |
 | R4-1 | 把 route-state evidence page 替换为真实 home/intake/workitem/proposal/replay/cost/approvals 四态截图 |

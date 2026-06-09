@@ -218,6 +218,15 @@ type MemoryTaskItemRow = {
   sort_order: number;
 };
 
+type MemoryTaskPlanRow = {
+  id: string;
+  work_item_id: string;
+  stage: string;
+  status: string;
+  summary: string | null;
+  items: MemoryTaskItemRow[];
+};
+
 function memoryWorkItemFieldValue(row: MemoryWorkItemRow, field: string) {
   if (field === "title") return row.title;
   if (field === "summary_md") return row.summaryMd;
@@ -357,6 +366,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
   public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
   public readonly taskItems = new Map<string, MemoryTaskItemRow[]>();
+  public readonly taskPlans = new Map<string, MemoryTaskPlanRow[]>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -456,6 +466,50 @@ class MemoryProposalRepository implements ProposalRepository {
 
   async findAcceptedDriveFileForTarget() {
     return null;
+  }
+
+  private resolveTaskItemsForPatch(workItemId: string, scope?: { targetPlanId: string }) {
+    const plans = this.taskPlans.get(workItemId) ?? [];
+    if (scope?.targetPlanId) {
+      const matched = plans.find((plan) => plan.id === scope.targetPlanId);
+      if (!matched) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          "memory",
+          "task_plan_scope_invalid",
+          "Selected task plan does not belong to this WorkItem"
+        );
+      }
+      return matched.items;
+    }
+    if (plans.length > 1) {
+      throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+        "memory",
+        "task_plan_scope_required",
+        "Multiple task plans exist; choose a target task plan before writing task_items"
+      );
+    }
+    return plans[0]?.items ?? this.taskItems.get(workItemId) ?? [];
+  }
+
+  private writeTaskItemsForPatch(workItemId: string, items: MemoryTaskItemRow[], scope?: { targetPlanId: string }) {
+    const plans = this.taskPlans.get(workItemId) ?? [];
+    if (scope?.targetPlanId) {
+      const matched = plans.find((plan) => plan.id === scope.targetPlanId);
+      if (!matched) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          "memory",
+          "task_plan_scope_invalid",
+          "Selected task plan does not belong to this WorkItem"
+        );
+      }
+      matched.items = items;
+      return;
+    }
+    if (plans.length === 1) {
+      plans[0]!.items = items;
+      return;
+    }
+    this.taskItems.set(workItemId, items);
   }
 
   async findById(proposalId: string) {
@@ -712,7 +766,10 @@ class MemoryProposalRepository implements ProposalRepository {
               "Structured field patch is missing a base value for task_items"
             );
           }
-          const currentItems = this.taskItems.get(stored.proposal.workItemId) ?? [];
+          const currentItems = this.resolveTaskItemsForPatch(
+            stored.proposal.workItemId,
+            input.resolvedStructuredFieldPatch.taskPlanScope
+          );
           const currentMatchesBase = memoryTaskItemsEqual(currentItems, operation.before_value);
           const currentMatchesIncoming = memoryTaskItemsEqual(currentItems, incomingItems);
           if (!currentMatchesBase && !currentMatchesIncoming) {
@@ -800,7 +857,11 @@ class MemoryProposalRepository implements ProposalRepository {
         if (operation.field === "task_items") {
           const incomingItems = normalizeMemoryTaskItems(operation.value);
           if (incomingItems) {
-            this.taskItems.set(stored.proposal.workItemId, incomingItems);
+            this.writeTaskItemsForPatch(
+              stored.proposal.workItemId,
+              incomingItems,
+              input.resolvedStructuredFieldPatch?.taskPlanScope
+            );
           }
           continue;
         }
@@ -1908,6 +1969,145 @@ test("proposal service applies executable task item subrecord patches", async ()
   assert.equal(repository.acceptedTargetCount, 0);
   assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
+test("proposal service requires an explicit task plan scope before task item writeback when plans are ambiguous", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const targetPlanId = "91000000-0000-4000-8000-000000000671";
+  const workerPlanId = "91000000-0000-4000-8000-000000000672";
+  const existingItem: MemoryTaskItemRow = {
+    id: "91000000-0000-4000-8000-000000000673",
+    title: "整理原始计划",
+    description: null,
+    item_type: "task",
+    suggested_user_id: null,
+    estimate_hours: 1,
+    sort_order: 0
+  };
+  const workerItem: MemoryTaskItemRow = {
+    id: "91000000-0000-4000-8000-000000000674",
+    title: "执行侧保留事项",
+    description: null,
+    item_type: "task",
+    suggested_user_id: null,
+    estimate_hours: 3,
+    sort_order: 0
+  };
+  const incomingItems: MemoryTaskItemRow[] = [
+    { ...existingItem, title: "整理可复核计划", estimate_hours: 2 }
+  ];
+  repository.taskItems.set(itemManifest.work_item_id, [existingItem]);
+  repository.taskPlans.set(itemManifest.work_item_id, [
+    {
+      id: targetPlanId,
+      work_item_id: itemManifest.work_item_id,
+      stage: "dispatch",
+      status: "draft",
+      summary: "方案拆解计划",
+      items: [existingItem]
+    },
+    {
+      id: workerPlanId,
+      work_item_id: itemManifest.work_item_id,
+      stage: "worker",
+      status: "draft",
+      summary: "执行计划",
+      items: [workerItem]
+    }
+  ]);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["task_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000675";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000676";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000677",
+    existing_change_id: "91000000-0000-4000-8000-000000000678",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并任务项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            task_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "task_plan_scope_required"
+  );
+
+  const scoped = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    taskPlanScope: { target_plan_id: targetPlanId }
+  });
+
+  assert.equal(scoped.status, "merged");
+  assert.deepEqual(repository.taskPlans.get(itemManifest.work_item_id)?.find((plan) => plan.id === targetPlanId)?.items, incomingItems);
+  assert.deepEqual(repository.taskPlans.get(itemManifest.work_item_id)?.find((plan) => plan.id === workerPlanId)?.items, [workerItem]);
 });
 
 test("proposal service blocks structured field patches when current WorkItem diverges from base", async () => {

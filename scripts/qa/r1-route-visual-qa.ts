@@ -43,6 +43,7 @@ type DomMarkers = {
   overlapHunkReview: number;
   proposalSubrecordDiff: number;
   replaySubrecordDiff: number;
+  taskPlanScope: number;
   conflictWorkbench: number;
   routeStateCards: number;
   forbiddenState: number;
@@ -226,6 +227,26 @@ function structuredRecordPatch() {
     unknown_fields: [],
     field_count: 3,
     has_structured_result: true,
+    task_plan_scope: {
+      selected_plan_id: "81000000-0000-4000-8000-000000000471",
+      options: [
+        {
+          id: "81000000-0000-4000-8000-000000000471",
+          label: "方案拆解计划",
+          stage: "dispatch",
+          status: "draft",
+          item_count: currentTasks().length,
+          recommended: true
+        },
+        {
+          id: "81000000-0000-4000-8000-000000000472",
+          label: "执行计划",
+          stage: "worker",
+          status: "draft",
+          item_count: 3
+        }
+      ]
+    },
     structured_field_patch_dry_run: {
       type: "structured_field_patch_dry_run",
       status: "ready",
@@ -747,6 +768,7 @@ function markers(html: string): DomMarkers {
     overlapHunkReview: countNeedle(html, 'data-overlap-hunk-review="true"'),
     proposalSubrecordDiff: countNeedle(html, 'data-proposal-subrecord-item-diff="true"'),
     replaySubrecordDiff: countNeedle(html, 'data-replay-subrecord-item-diff="true"'),
+    taskPlanScope: countNeedle(html, 'data-task-plan-scope="required"'),
     conflictWorkbench: countNeedle(html, 'data-proposal-conflict-workbench="true"'),
     routeStateCards: countNeedle(html, 'data-route-state='),
     forbiddenState: countNeedle(html, 'data-route-state="forbidden"'),
@@ -1036,6 +1058,7 @@ async function main() {
       overlap_hunk_review: reportCases.some((caseItem) => caseItem.markers.overlapHunkReview > 0),
       proposal_subrecord_diff: reportCases.some((caseItem) => caseItem.markers.proposalSubrecordDiff > 0),
       replay_subrecord_diff: reportCases.some((caseItem) => caseItem.markers.replaySubrecordDiff > 0),
+      task_plan_scope: reportCases.some((caseItem) => caseItem.markers.taskPlanScope > 0),
       conflict_workbench: reportCases.some((caseItem) => caseItem.markers.conflictWorkbench > 0),
       no_horizontal_overflow: reportCases.every((caseItem) => !caseItem.markers.horizontalOverflow),
       route_states:

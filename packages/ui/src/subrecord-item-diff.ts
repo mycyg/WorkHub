@@ -11,6 +11,12 @@ export const subrecordItemDiffCss = [
   ".wh-subrecord-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-subrecord-choice{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:7px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}",
   ".wh-subrecord-choice[data-subrecord-decision=accept_incoming]{background:#eef3ff;border-color:#b9c7ff;color:#2447c8}",
+  ".wh-task-plan-scope{border:1px solid #cdd9f4;border-radius:8px;background:#f5f8ff;padding:10px;display:grid;gap:8px}",
+  ".wh-task-plan-scope p{margin:4px 0 0;color:var(--muted);font-size:13px}",
+  ".wh-task-plan-options{display:flex;gap:8px;flex-wrap:wrap}",
+  ".wh-task-plan-choice{border:1px solid #b9c7ff;border-radius:8px;background:#fff;color:#1f2f57;padding:7px 10px;display:grid;gap:2px;text-align:left;font:inherit;font-size:12px;font-weight:800;cursor:pointer}",
+  ".wh-task-plan-choice small{color:var(--muted);font-weight:600}",
+  ".wh-task-plan-choice[data-task-plan-selected=true]{background:#eef3ff;color:#2447c8}",
   ".wh-subrecord-row[data-subrecord-diff-kind=added]{border-color:#bde7cd}",
   ".wh-subrecord-row[data-subrecord-diff-kind=removed]{border-color:#f1c4b8}",
   ".wh-subrecord-row[data-subrecord-diff-kind=modified]{border-color:#d8e1f2}"
@@ -26,6 +32,7 @@ export type SubrecordItemDiffAction = {
 
 export type SubrecordItemDiffOptions = {
   operations: unknown;
+  taskPlanScope?: unknown;
   locale: WorkHubLocale;
   surface: SubrecordItemDiffSurface;
   action?: SubrecordItemDiffAction;
@@ -34,6 +41,14 @@ export type SubrecordItemDiffOptions = {
 type SubrecordField = "acceptance_items" | "task_items";
 type SubrecordDiffKind = "added" | "modified" | "removed" | "unchanged";
 type SubrecordItem = Record<string, unknown> & { id: string };
+type TaskPlanScopeOption = {
+  id: string;
+  label: string;
+  stage?: string;
+  status?: string;
+  itemCount?: number;
+  recommended?: boolean;
+};
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -138,17 +153,128 @@ function itemOverridePayload(field: SubrecordField, itemId: string, decision: "a
   };
 }
 
+function taskPlanScopePayload(targetPlanId: string) {
+  return {
+    confirm: true,
+    task_plan_scope: {
+      target_plan_id: targetPlanId
+    }
+  };
+}
+
+function itemOverrideWithTaskPlanPayload(
+  field: SubrecordField,
+  itemId: string,
+  decision: "accept_incoming" | "keep_current",
+  targetPlanId?: string
+) {
+  return {
+    ...itemOverridePayload(field, itemId, decision),
+    ...(targetPlanId ? { task_plan_scope: { target_plan_id: targetPlanId } } : {})
+  };
+}
+
+function parseTaskPlanScopeOption(value: unknown, index: number): TaskPlanScopeOption | undefined {
+  const record = objectRecord(value);
+  const id = typeof record?.["id"] === "string"
+    ? record["id"]
+    : typeof record?.["plan_id"] === "string"
+      ? record["plan_id"]
+      : undefined;
+  if (!id) {
+    return undefined;
+  }
+  const label = shortString(record?.["label"])
+    || shortString(record?.["summary"])
+    || shortString(record?.["name"])
+    || `Plan ${index + 1}`;
+  return {
+    id,
+    label,
+    ...(typeof record?.["stage"] === "string" ? { stage: record["stage"] } : {}),
+    ...(typeof record?.["status"] === "string" ? { status: record["status"] } : {}),
+    ...(typeof record?.["item_count"] === "number" && Number.isFinite(record["item_count"])
+      ? { itemCount: record["item_count"] }
+      : {}),
+    ...(record?.["recommended"] === true ? { recommended: true } : {})
+  };
+}
+
+function parseTaskPlanScope(value: unknown): { options: TaskPlanScopeOption[]; selectedPlanId?: string } | undefined {
+  const record = objectRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const rawOptions = Array.isArray(record["options"])
+    ? record["options"]
+    : Array.isArray(record["plans"])
+      ? record["plans"]
+      : [];
+  const options = rawOptions
+    .map(parseTaskPlanScopeOption)
+    .filter((option): option is TaskPlanScopeOption => Boolean(option));
+  const selectedPlanId = typeof record["selected_plan_id"] === "string"
+    ? record["selected_plan_id"]
+    : typeof record["target_plan_id"] === "string"
+      ? record["target_plan_id"]
+      : undefined;
+  if (options.length === 0 && !selectedPlanId) {
+    return undefined;
+  }
+  return {
+    options,
+    ...(selectedPlanId ? { selectedPlanId } : {})
+  };
+}
+
+function renderTaskPlanScope(input: {
+  action: SubrecordItemDiffAction | undefined;
+  locale: WorkHubLocale;
+  scope?: { options: TaskPlanScopeOption[]; selectedPlanId?: string };
+}) {
+  if (!input.scope || input.scope.options.length === 0) {
+    return "";
+  }
+  const buttons = input.scope.options.map((option) => {
+    const selected = option.id === input.scope?.selectedPlanId;
+    const meta = [
+      option.stage,
+      option.status,
+      typeof option.itemCount === "number"
+        ? text(input.locale, `${option.itemCount} 项`, `${option.itemCount} items`)
+        : undefined,
+      option.recommended ? uiT(input.locale, "proposal.taskPlanScopeRecommended") : undefined
+    ].filter(Boolean).join(" / ");
+    const payload = taskPlanScopePayload(option.id);
+    const actionAttrs = input.action
+      ? ` data-action-id="${escapeHtml(input.action.actionId)}" data-action-href="${escapeHtml(input.action.href)}" data-method="${escapeHtml(input.action.method)}" data-request-json-template="${escapeHtml(JSON.stringify(payload))}"`
+      : "";
+    return `<button type="button" class="wh-task-plan-choice" data-task-plan-choice="true" data-task-plan-id="${escapeHtml(option.id)}" data-task-plan-selected="${escapeHtml(String(selected))}"${actionAttrs}>
+      <span>${escapeHtml(option.label)}</span>
+      ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+    </button>`;
+  }).join("");
+  return `<div class="wh-task-plan-scope" data-task-plan-scope="required" data-task-plan-option-count="${escapeHtml(String(input.scope.options.length))}">
+    <div>
+      <strong>${escapeHtml(uiT(input.locale, "proposal.taskPlanScopeTitle"))}</strong>
+      <p>${escapeHtml(uiT(input.locale, "proposal.taskPlanScopeBody"))}</p>
+    </div>
+    <div class="wh-task-plan-options">${buttons}</div>
+  </div>`;
+}
+
 function renderChoice(input: {
   action: SubrecordItemDiffAction;
   field: SubrecordField;
   itemId: string;
   locale: WorkHubLocale;
   decision: "accept_incoming" | "keep_current";
+  targetPlanId?: string;
 }) {
   const label = input.decision === "accept_incoming"
     ? uiT(input.locale, "proposal.subrecordAcceptIncoming")
     : uiT(input.locale, "proposal.subrecordKeepCurrent");
-  return `<button type="button" class="wh-subrecord-choice" data-action-id="${escapeHtml(input.action.actionId)}" data-action-href="${escapeHtml(input.action.href)}" data-method="${escapeHtml(input.action.method)}" data-subrecord-item-choice="true" data-subrecord-field="${escapeHtml(input.field)}" data-subrecord-item-id="${escapeHtml(input.itemId)}" data-subrecord-decision="${escapeHtml(input.decision)}" data-request-json-template="${escapeHtml(JSON.stringify(itemOverridePayload(input.field, input.itemId, input.decision)))}">${escapeHtml(label)}</button>`;
+  return `<button type="button" class="wh-subrecord-choice" data-action-id="${escapeHtml(input.action.actionId)}" data-action-href="${escapeHtml(input.action.href)}" data-method="${escapeHtml(input.action.method)}" data-subrecord-item-choice="true" data-subrecord-field="${escapeHtml(input.field)}" data-subrecord-item-id="${escapeHtml(input.itemId)}" data-subrecord-decision="${escapeHtml(input.decision)}" data-request-json-template="${escapeHtml(JSON.stringify(itemOverrideWithTaskPlanPayload(input.field, input.itemId, input.decision, input.targetPlanId)))}">${escapeHtml(label)}</button>`;
 }
 
 function renderRow(input: {
@@ -160,6 +286,7 @@ function renderRow(input: {
   locale: WorkHubLocale;
   surface: SubrecordItemDiffSurface;
   action?: SubrecordItemDiffAction;
+  targetPlanId?: string;
 }) {
   const item = input.incoming ?? input.current;
   const actions = input.action
@@ -168,13 +295,15 @@ function renderRow(input: {
       field: input.field,
       itemId: input.itemId,
       locale: input.locale,
-      decision: "accept_incoming"
+      decision: "accept_incoming",
+      ...(input.targetPlanId ? { targetPlanId: input.targetPlanId } : {})
     })}${renderChoice({
       action: input.action,
       field: input.field,
       itemId: input.itemId,
       locale: input.locale,
-      decision: "keep_current"
+      decision: "keep_current",
+      ...(input.targetPlanId ? { targetPlanId: input.targetPlanId } : {})
     })}</div>`
     : `<div class="wh-subrecord-actions"><span class="wh-pill">${escapeHtml(diffKindLabel(input.locale, input.kind))}</span></div>`;
   const dataPrefix = input.surface === "proposal" ? "proposal" : "replay";
@@ -198,6 +327,7 @@ function renderField(input: {
   locale: WorkHubLocale;
   surface: SubrecordItemDiffSurface;
   action?: SubrecordItemDiffAction;
+  taskPlanScope?: { options: TaskPlanScopeOption[]; selectedPlanId?: string };
 }) {
   const currentById = byId(input.current);
   const incomingById = byId(input.incoming);
@@ -218,7 +348,8 @@ function renderField(input: {
           incoming,
           locale: input.locale,
           surface: input.surface,
-          ...(input.action ? { action: input.action } : {})
+          ...(input.action ? { action: input.action } : {}),
+          ...(input.taskPlanScope?.selectedPlanId ? { targetPlanId: input.taskPlanScope.selectedPlanId } : {})
         });
     })
     .filter(Boolean);
@@ -228,17 +359,26 @@ function renderField(input: {
   }
   const dataPrefix = input.surface === "proposal" ? "proposal" : "replay";
   const changedCount = changedRows.length;
+  const scope = input.field === "task_items" && input.taskPlanScope
+    ? renderTaskPlanScope({
+      action: input.action,
+      locale: input.locale,
+      scope: input.taskPlanScope
+    })
+    : "";
   return `<section class="wh-subrecord-list" data-${dataPrefix}-subrecord-field="${escapeHtml(input.field)}" data-subrecord-field="${escapeHtml(input.field)}" data-subrecord-item-count="${escapeHtml(String(changedCount))}">
     <div class="wh-structured-head">
       <strong>${escapeHtml(fieldLabel(input.locale, input.field))}</strong>
       <span class="wh-pill">${escapeHtml(String(changedCount))}</span>
     </div>
+    ${scope}
     ${rows}
   </section>`;
 }
 
 export function renderSubrecordItemDiff(options: SubrecordItemDiffOptions) {
   const operations = Array.isArray(options.operations) ? options.operations : [];
+  const taskPlanScope = parseTaskPlanScope(options.taskPlanScope);
   const sections = operations
     .map((operation) => {
       const record = objectRecord(operation);
@@ -261,6 +401,7 @@ export function renderSubrecordItemDiff(options: SubrecordItemDiffOptions) {
         incoming,
         locale: options.locale,
         surface: options.surface,
+        ...(taskPlanScope ? { taskPlanScope } : {}),
         ...(options.action ? { action: options.action } : {})
       });
     })

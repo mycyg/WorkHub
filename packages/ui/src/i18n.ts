@@ -152,6 +152,12 @@ const copy = {
   "proposal.subrecordIncoming": { "zh-CN": "AI 建议", "en-US": "AI suggestion" },
   "proposal.subrecordAcceptIncoming": { "zh-CN": "采纳此项", "en-US": "Use this item" },
   "proposal.subrecordKeepCurrent": { "zh-CN": "保留当前项", "en-US": "Keep current item" },
+  "proposal.taskPlanScopeTitle": { "zh-CN": "先选目标计划", "en-US": "Choose target plan first" },
+  "proposal.taskPlanScopeBody": {
+    "zh-CN": "这个事项有多个计划，写入任务项前必须点选目标计划。",
+    "en-US": "This work item has multiple plans; choose the target before writing task items."
+  },
+  "proposal.taskPlanScopeRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

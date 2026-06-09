@@ -177,6 +177,9 @@ export type ApplyMergeProposalCandidateInput = {
 
 export type ProposalStructuredFieldPatchInput = {
   dryRun: StructuredFieldPatchDryRun;
+  taskPlanScope?: {
+    targetPlanId: string;
+  };
 };
 
 export class ProposalRepositoryMergeConflictError extends Error {
@@ -582,6 +585,7 @@ type StructuredWorkItemFieldChange = {
   afterValue: unknown;
   mergeDecision: "fast_path" | "same_value";
   itemCount?: number;
+  targetPlanId?: string;
 };
 
 function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: StructuredWorkItemScalarField) {
@@ -840,6 +844,58 @@ async function readLatestDispatchTaskPlanWithItems(tx: WorkHubTx, workItemId: st
   return { plan, items };
 }
 
+async function readTaskPlansWithItems(tx: WorkHubTx, workItemId: string) {
+  const planRows = await tx
+    .select()
+    .from(workItemTaskPlans)
+    .where(eq(workItemTaskPlans.workItemId, workItemId))
+    .orderBy(desc(workItemTaskPlans.createdAt), desc(workItemTaskPlans.id));
+  const plans: Array<{
+    plan: typeof workItemTaskPlans.$inferSelect;
+    items: (typeof workItemTaskItems.$inferSelect)[];
+  }> = [];
+  for (const plan of planRows) {
+    const items = await tx
+      .select()
+      .from(workItemTaskItems)
+      .where(eq(workItemTaskItems.planId, plan.id))
+      .orderBy(asc(workItemTaskItems.sortOrder), asc(workItemTaskItems.createdAt), asc(workItemTaskItems.id));
+    plans.push({ plan, items });
+  }
+  return plans;
+}
+
+async function resolveTaskPlanForTaskItemsPatch(
+  tx: WorkHubTx,
+  input: {
+    mergeProposalId: string;
+    workItemId: string;
+    scope?: ProposalStructuredFieldPatchInput["taskPlanScope"];
+  }
+) {
+  const plans = await readTaskPlansWithItems(tx, input.workItemId);
+  const targetPlanId = input.scope?.targetPlanId;
+  if (targetPlanId) {
+    const matched = plans.find((plan) => plan.plan.id === targetPlanId);
+    if (!matched) {
+      throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+        input.mergeProposalId,
+        "task_plan_scope_invalid",
+        "Selected task plan does not belong to this WorkItem"
+      );
+    }
+    return matched;
+  }
+  if (plans.length > 1) {
+    throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+      input.mergeProposalId,
+      "task_plan_scope_required",
+      "Multiple task plans exist; choose a target task plan before writing task_items"
+    );
+  }
+  return plans[0] ?? { plan: null, items: [] };
+}
+
 function withStructuredWorkItemBaseFields(input: {
   manifest: DeliverableChangeManifest;
   workItem: typeof workItems.$inferSelect;
@@ -934,7 +990,11 @@ async function applyStructuredWorkItemFieldPatch(
       .orderBy(asc(workItemAcceptanceItems.sortOrder), asc(workItemAcceptanceItems.createdAt), asc(workItemAcceptanceItems.id))
     : [];
   const currentTaskPlan = needsTaskItemsPatch
-    ? await readLatestDispatchTaskPlanWithItems(tx, input.workItemId)
+    ? await resolveTaskPlanForTaskItemsPatch(tx, {
+      mergeProposalId: input.mergeProposalId,
+      workItemId: input.workItemId,
+      scope: input.patch.taskPlanScope
+    })
     : { plan: null, items: [] };
 
   const update: {
@@ -989,7 +1049,8 @@ async function applyStructuredWorkItemFieldPatch(
         beforeValue: currentItems,
         afterValue: incomingItems,
         mergeDecision: currentMatchesBase ? "fast_path" : "same_value",
-        itemCount: incomingItems.length
+        itemCount: incomingItems.length,
+        ...(currentTaskPlan.plan?.id ? { targetPlanId: currentTaskPlan.plan.id } : {})
       });
       continue;
     }

@@ -171,10 +171,16 @@ export const structuredItemApplyOverridesSchema = z.object({
 });
 export type StructuredItemApplyOverrides = z.infer<typeof structuredItemApplyOverridesSchema>;
 
+export const taskPlanScopeSelectionSchema = z.object({
+  target_plan_id: idSchema
+});
+export type TaskPlanScopeSelection = z.infer<typeof taskPlanScopeSelectionSchema>;
+
 export const applyMergeProposalCandidateRequestSchema = z.object({
   confirm: z.boolean().default(true),
   structured_field_overrides: structuredFieldApplyOverridesSchema.optional(),
-  structured_item_overrides: structuredItemApplyOverridesSchema.optional()
+  structured_item_overrides: structuredItemApplyOverridesSchema.optional(),
+  task_plan_scope: taskPlanScopeSelectionSchema.optional()
 });
 export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;
 

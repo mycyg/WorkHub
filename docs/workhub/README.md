@@ -125,6 +125,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `prd-concept-reproduction-gap-audit.md` | **C-WEB/C-PET/Cuu/Rust shell**:当前实现距离 PRD 与概念图完全复现的差距、概念图补充、后续施工路线 | draft |
 | `current-state-visual-audit-and-construction-plan-2026-06-07.md` | **C-WEB/C-PET/Cuu/Rust shell**:真实页面截图、Cuu 黑/白 Live2D 概念源帧、Tauri 多帧动作抓取与下一轮施工验收门 | audit |
 | `r1-route-visual-qa.md` | **C-WEB/C-DESKTOP/QA**:R1.39 Proposal/Replay 真实 route 浏览器截图门、mobile overflow gate、无 Cuu/无重看板默认词证据 | current |
+| `r1-task-plan-scope-ui.md` | **C-WEB/C-DESKTOP/API/DB**:R1.40 多 task plan 场景下 `task_items` 写回前的 option-first 目标 plan 选择、API 契约与 fail-closed 后端门 | current |
 | `shared-ui-kit.md` | **C-UIKIT**:设计 tokens、组件库、API client、共享 hooks/types | ✅ |
 
 ### 06-roadmap/

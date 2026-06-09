@@ -501,6 +501,26 @@ test("proposal renderer exposes a folded field editor for ready structured patch
             unknown_fields: [],
             field_count: 3,
             has_structured_result: true,
+            task_plan_scope: {
+              selected_plan_id: "10000000-0000-4000-8000-000000000418",
+              options: [
+                {
+                  id: "10000000-0000-4000-8000-000000000418",
+                  label: "方案拆解计划",
+                  stage: "dispatch",
+                  status: "draft",
+                  item_count: 1,
+                  recommended: true
+                },
+                {
+                  id: "10000000-0000-4000-8000-000000000419",
+                  label: "执行计划",
+                  stage: "worker",
+                  status: "draft",
+                  item_count: 3
+                }
+              ]
+            },
             structured_field_patch_dry_run: {
               type: "structured_field_patch_dry_run",
               status: "ready",
@@ -585,6 +605,13 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(rendered.html.includes("data-proposal-subrecord-item-diff=\"true\""), true);
   assert.equal(rendered.html.includes("data-proposal-subrecord-field=\"task_items\""), true);
   assert.equal(rendered.html.includes("data-proposal-subrecord-item=\"10000000-0000-4000-8000-000000000413\""), true);
+  assert.equal(rendered.html.includes("data-task-plan-scope=\"required\""), true);
+  assert.equal(rendered.html.includes("data-task-plan-option-count=\"2\""), true);
+  assert.equal(rendered.html.includes("先选目标计划"), true);
+  assert.equal(rendered.html.includes("data-task-plan-id=\"10000000-0000-4000-8000-000000000418\""), true);
+  assert.equal(rendered.html.includes("data-task-plan-id=\"10000000-0000-4000-8000-000000000419\""), true);
+  assert.equal(rendered.html.includes("task_plan_scope"), true);
+  assert.equal(rendered.html.includes("target_plan_id"), true);
   assert.equal(rendered.html.includes("data-subrecord-diff-kind=\"added\""), true);
   assert.equal(rendered.html.includes("data-subrecord-item-choice=\"true\""), true);
   assert.equal(rendered.html.includes("data-subrecord-decision=\"accept_incoming\""), true);
@@ -606,6 +633,7 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(rendered.html.includes("__WORKHUB_CUSTOM_FIELD_VALUE__"), true);
   assert.equal(rendered.html.includes(applyHref), true);
   assert.equal(english.html.includes("Advanced item editor"), true);
+  assert.equal(english.html.includes("Choose target plan first"), true);
   assert.equal(english.html.includes("Added"), true);
   assert.equal(english.html.includes("Use this item"), true);
   assert.equal(english.html.includes("Keep current item"), true);

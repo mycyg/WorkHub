@@ -20,7 +20,8 @@ import {
   type Review,
   type StructuredFieldApplyOverrides,
   type StructuredFieldPatchDryRun,
-  type StructuredItemApplyOverrides
+  type StructuredItemApplyOverrides,
+  type TaskPlanScopeSelection
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
 import {
@@ -108,6 +109,7 @@ export type ProposalService = {
     actor: ProposalActor;
     structuredFieldOverrides?: StructuredFieldApplyOverrides;
     structuredItemOverrides?: StructuredItemApplyOverrides;
+    taskPlanScope?: TaskPlanScopeSelection;
   }) => Promise<StoredProposal>;
 };
 
@@ -789,9 +791,11 @@ function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidat
 function structuredFieldPatchWritebackForApply(
   context: MergeProposalCandidateApplicationContext,
   overrides?: StructuredFieldApplyOverrides,
-  itemOverrides?: StructuredItemApplyOverrides
+  itemOverrides?: StructuredItemApplyOverrides,
+  taskPlanScope?: TaskPlanScopeSelection
 ): {
   dryRun: StructuredFieldPatchDryRun;
+  taskPlanScope?: { targetPlanId: string };
 } | undefined {
   if (effectiveAiFusionTargetKind(context) !== "structured_record") {
     return undefined;
@@ -816,7 +820,10 @@ function structuredFieldPatchWritebackForApply(
       "这个结构化字段建议的目标事项和当前变更申请不一致。"
     );
   }
-  return { dryRun };
+  return {
+    dryRun,
+    ...(taskPlanScope ? { taskPlanScope: { targetPlanId: taskPlanScope.target_plan_id } } : {})
+  };
 }
 
 function mimeForAiFusionTextWriteback(input: { filename: string; targetKind: string }) {
@@ -1524,7 +1531,8 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const resolvedStructuredFieldPatch = structuredFieldPatchWritebackForApply(
         context,
         input.structuredFieldOverrides,
-        input.structuredItemOverrides
+        input.structuredItemOverrides,
+        input.taskPlanScope
       );
       const resolvedDriveFile = resolvedStructuredFieldPatch
         ? undefined
