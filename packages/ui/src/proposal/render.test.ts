@@ -210,6 +210,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
 
   assert.equal(rendered.conflictCount, 1);
   assert.equal(rendered.html.includes("data-proposal-conflicts=\"1\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-workbench=\"true\""), false);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
@@ -293,6 +294,118 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Missing fields: acceptance_items"), true);
   assert.equal(english.html.includes("Extra fields: extra_field"), true);
   assert.equal(english.html.includes("Review required"), true);
+});
+
+test("proposal renderer exposes a folded bulk conflict review only for multiple conflicts", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const mergeHref = `/api/proposals/${vm.proposal_id}/merge`;
+  const createConflict = (input: {
+    id: string;
+    targetKey: string;
+    targetPath: string;
+    targetKind: string;
+    recommended: "keep_current" | "accept_incoming";
+  }): ProposalConflict => ({
+    id: input.id,
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000609",
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: input.targetKey,
+    target_kind: input.targetKind,
+    change_type: "updated",
+    target_path: input.targetPath,
+    headline: `${input.targetPath} 需要确认`,
+    summary_text: "这项和正式版发生冲突，默认仍先处理最重要的一项。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000610",
+      change_id: "10000000-0000-4000-8000-000000000611",
+      ref: "main"
+    },
+    incoming: { ref: "proposal" },
+    recommended_option_id: input.recommended,
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "不覆盖当前正式版本。",
+        recommended: input.recommended === "keep_current",
+        action: {
+          id: "keep_current",
+          label: "保留正式版",
+          method: "POST",
+          href: mergeHref,
+          request_json: { confirm: true, conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "使用这次版本覆盖正式版本。",
+        recommended: input.recommended === "accept_incoming",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: mergeHref,
+          request_json: {
+            confirm: true,
+            conflict_resolution: { accept_incoming_target_keys: [input.targetKey] }
+          }
+        }
+      }
+    ]
+  });
+  const conflicts = [
+    createConflict({
+      id: "conflict-summary",
+      targetKey: "drive_item:docs/summary.md",
+      targetPath: "docs/summary.md",
+      targetKind: "text_doc",
+      recommended: "keep_current"
+    }),
+    createConflict({
+      id: "conflict-plan",
+      targetKey: `work_item:${vm.work_item_id}:task_items`,
+      targetPath: "task_items",
+      targetKind: "structured_record",
+      recommended: "accept_incoming"
+    })
+  ];
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts });
+  const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts });
+
+  assert.equal(rendered.conflictCount, 2);
+  assert.equal(rendered.html.includes("data-proposal-conflicts=\"2\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-workbench=\"true\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-workbench-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-workbench-default=\"one_thing_first\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-workbench-high-signal=\"true\""), true);
+  assert.equal(rendered.html.includes("data-workbench-conflict-id=\"conflict-summary\""), true);
+  assert.equal(rendered.html.includes("data-workbench-target-key=\"drive_item:docs/summary.md\""), true);
+  assert.equal(rendered.html.includes(`data-workbench-target-key=\"work_item:${vm.work_item_id}:task_items\"`), true);
+  assert.equal(rendered.html.includes("data-workbench-target-kind=\"structured_record\""), true);
+  assert.equal(rendered.html.includes("data-workbench-recommended-option=\"keep_current\""), true);
+  assert.equal(rendered.html.includes("data-workbench-recommended-option=\"accept_incoming\""), true);
+  assert.equal(rendered.html.includes("批量冲突检查"), true);
+  assert.equal(rendered.html.includes("默认仍是一件事优先"), true);
+  assert.equal(rendered.html.includes("全部保留正式版"), true);
+  assert.equal(rendered.html.includes("全部采纳这次版本"), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-bulk-action=\"keep_current\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-bulk-action=\"accept_incoming\""), true);
+  assert.equal(rendered.html.includes("data-action-id=\"bulk_keep_current\""), true);
+  assert.equal(rendered.html.includes("data-action-id=\"bulk_accept_incoming\""), true);
+  assert.equal(rendered.html.includes("drive_item:docs/summary.md"), true);
+  assert.equal(rendered.html.includes(`work_item:${vm.work_item_id}:task_items`), true);
+  assert.equal(rendered.html.includes("accept_incoming_target_keys"), true);
+  assert.equal(rendered.actionHrefs.includes(mergeHref), true);
+  assert.equal(rendered.html.includes("kanban"), false);
+  assert.equal(rendered.html.includes("git"), false);
+  assert.equal(english.html.includes("Bulk conflict review"), true);
+  assert.equal(english.html.includes("One thing first by default"), true);
+  assert.equal(english.html.includes("Keep all current"), true);
+  assert.equal(english.html.includes("Use all incoming"), true);
 });
 
 test("proposal renderer folds large rich patch previews instead of turning conflict cards into a workbench", () => {

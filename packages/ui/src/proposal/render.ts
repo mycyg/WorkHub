@@ -56,6 +56,20 @@ export type ProposalConflictRenderedCards = {
   conflictCount: number;
 };
 
+type BulkConflictDecision = "keep_current" | "accept_incoming";
+
+type BulkConflictAction = {
+  id: BulkConflictDecision;
+  href: string;
+  method: "POST";
+  requestJson: {
+    confirm: true;
+    conflict_resolution: {
+      accept_incoming_target_keys: string[];
+    };
+  };
+};
+
 export const proposalCss = [
   ":root{color-scheme:light;--ink:#182033;--muted:#5e6a86;--line:#dfe5f1;--paper:#fff;--soft:#f5f8fc;--blue:#355cff;--green:#24a66a;--coral:#ee6b5f;--amber:#d98b16;--danger:#d94a3a}",
   ".wh-proposal{font-family:\"Aptos\",\"Segoe UI\",sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fbff 0%,#eef4fb 100%);padding:24px;box-sizing:border-box}",
@@ -68,6 +82,7 @@ export const proposalCss = [
   ".wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-check[data-status=warning],.wh-check[data-status=skipped]{border-left-color:var(--amber)}.wh-check[data-status=failed]{border-left-color:var(--danger)}",
   ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:8px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
+  ".wh-conflict-workbench{border:1px solid #d9e2f3;background:#f8fbff;border-radius:8px;padding:12px}.wh-conflict-workbench>summary{cursor:pointer;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-conflict-workbench-body{margin:8px 0;color:var(--muted);font-size:13px;line-height:1.5}.wh-conflict-workbench-list{display:grid;gap:6px}.wh-conflict-workbench-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-top:1px solid #e2e8f5;padding-top:8px}.wh-conflict-workbench-row:first-child{border-top:0;padding-top:0}.wh-conflict-workbench-target{font-weight:700;overflow-wrap:anywhere}.wh-conflict-workbench-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}",
   richPatchViewerCss,
   overlapHunkReviewCss,
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
@@ -374,6 +389,84 @@ function renderConflictOption(option: ProposalConflictOption, options?: UiRender
   return `<a class="${conflictOptionClass(option)}" href="${escapeHtml(option.action.href)}" data-action-id="${escapeHtml(option.action.id)}" data-conflict-option-id="${escapeHtml(option.id)}" data-method="${escapeHtml(option.action.method)}"${requestJson}>${escapeHtml(conflictOptionLabel(option, { locale }))}${recommended}</a>`;
 }
 
+function actionForConflictDecision(conflict: ProposalConflict, decision: BulkConflictDecision) {
+  return conflict.options.find((option) => option.id === decision)?.action;
+}
+
+function buildBulkConflictAction(
+  conflicts: ProposalConflict[],
+  decision: BulkConflictDecision
+): BulkConflictAction | undefined {
+  if (conflicts.length <= 1) {
+    return undefined;
+  }
+  const actions = conflicts.map((conflict) => actionForConflictDecision(conflict, decision));
+  if (actions.some((action) => !action || action.method !== "POST" || !action.href)) {
+    return undefined;
+  }
+  const href = actions[0]?.href;
+  if (!href || actions.some((action) => action?.href !== href)) {
+    return undefined;
+  }
+  const targetKeys = decision === "accept_incoming"
+    ? Array.from(new Set(conflicts.map((conflict) => conflict.target_key)))
+    : [];
+  return {
+    id: decision,
+    href,
+    method: "POST",
+    requestJson: {
+      confirm: true,
+      conflict_resolution: {
+        accept_incoming_target_keys: targetKeys
+      }
+    }
+  };
+}
+
+function renderBulkConflictAction(action: BulkConflictAction, locale: WorkHubLocale) {
+  const labelKey = action.id === "keep_current"
+    ? "proposal.conflictWorkbenchBulkKeep"
+    : "proposal.conflictWorkbenchBulkIncoming";
+  const className = action.id === "accept_incoming" ? "wh-btn wh-btn-danger" : "wh-btn";
+  return `<a class="${className}" href="${escapeHtml(action.href)}" data-action-id="bulk_${escapeHtml(action.id)}" data-proposal-conflict-bulk-action="${escapeHtml(action.id)}" data-action-href="${escapeHtml(action.href)}" data-method="${escapeHtml(action.method)}" data-request-json="${escapeHtml(JSON.stringify(action.requestJson))}">${escapeHtml(uiT(locale, labelKey))}</a>`;
+}
+
+function renderConflictWorkbench(conflicts: ProposalConflict[], options?: UiRenderOptions) {
+  if (conflicts.length <= 1) {
+    return { html: "", actionHrefs: [] };
+  }
+  const locale = uiLocale(options);
+  const bulkActions = [
+    buildBulkConflictAction(conflicts, "keep_current"),
+    buildBulkConflictAction(conflicts, "accept_incoming")
+  ].filter((action): action is BulkConflictAction => Boolean(action));
+  const rows = conflicts.map((conflict) => {
+    const target = conflict.target_path ?? conflict.target_key;
+    const recommendedOption = conflict.options.find((option) => option.id === conflict.recommended_option_id);
+    const recommended = recommendedOption
+      ? conflictOptionLabel(recommendedOption, { locale })
+      : conflict.recommended_option_id;
+    return `<div class="wh-conflict-workbench-row" data-workbench-conflict-id="${escapeHtml(conflict.id)}" data-workbench-target-key="${escapeHtml(conflict.target_key)}" data-workbench-target-kind="${escapeHtml(conflict.target_kind)}" data-workbench-recommended-option="${escapeHtml(conflict.recommended_option_id)}">
+      <span class="wh-conflict-workbench-target">${escapeHtml(target)}</span>
+      <span class="wh-pill">${escapeHtml(conflict.target_kind)}</span>
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictWorkbenchRecommended"))}: ${escapeHtml(recommended)}</span>
+    </div>`;
+  }).join("");
+  const actions = bulkActions.length > 0
+    ? `<div class="wh-conflict-workbench-actions">${bulkActions.map((action) => renderBulkConflictAction(action, locale)).join("")}</div>`
+    : "";
+  return {
+    actionHrefs: bulkActions.map((action) => action.href),
+    html: `<details class="wh-conflict-workbench" data-proposal-conflict-workbench="true" data-proposal-conflict-workbench-count="${escapeHtml(String(conflicts.length))}" data-proposal-conflict-workbench-default="one_thing_first" data-proposal-conflict-workbench-high-signal="true">
+      <summary><span>${escapeHtml(uiT(locale, "proposal.conflictWorkbenchTitle"))}</span><span class="wh-recommended">${escapeHtml(uiT(locale, "proposal.conflictWorkbenchDefault"))}</span></summary>
+      <p class="wh-conflict-workbench-body">${escapeHtml(uiT(locale, "proposal.conflictWorkbenchBody"))}</p>
+      <div class="wh-conflict-workbench-list">${rows}</div>
+      ${actions}
+    </details>`
+  };
+}
+
 function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
   const locale = uiLocale(options);
   const target = conflict.target_path ?? conflict.target_key;
@@ -407,6 +500,7 @@ export function renderProposalConflictCards(
   options?: UiRenderOptions
 ): ProposalConflictRenderedCards {
   const locale = uiLocale(options);
+  const workbench = renderConflictWorkbench(conflicts, { locale });
   const actionHrefs = conflicts.flatMap((conflict) =>
     conflict.options.map((option) => option.action?.href).filter((href): href is string => Boolean(href))
   );
@@ -415,12 +509,13 @@ export function renderProposalConflictCards(
   }
   return {
     conflictCount: conflicts.length,
-    actionHrefs,
+    actionHrefs: [...actionHrefs, ...workbench.actionHrefs],
     html: `<section class="wh-conflict-list" data-proposal-conflicts="${conflicts.length}">
       <div class="wh-conflict-head">
         <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.conflictTitle"))}</span>
         <p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.conflictBody"))}</p>
       </div>
+      ${workbench.html}
       ${conflicts.map((conflict) => renderConflict(conflict, { locale })).join("")}
     </section>`
   };

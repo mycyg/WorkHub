@@ -88,6 +88,15 @@ const copy = {
   "proposal.conflictExisting": { "zh-CN": "正式版", "en-US": "Current" },
   "proposal.conflictIncoming": { "zh-CN": "这次版本", "en-US": "This version" },
   "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },
+  "proposal.conflictWorkbenchTitle": { "zh-CN": "批量冲突检查", "en-US": "Bulk conflict review" },
+  "proposal.conflictWorkbenchBody": {
+    "zh-CN": "默认先处理最需要判断的一项；展开后可核对所有冲突和可批量执行的相同决策。",
+    "en-US": "Start with the highest-signal decision; expand to review every conflict and the safe bulk choices."
+  },
+  "proposal.conflictWorkbenchDefault": { "zh-CN": "默认仍是一件事优先", "en-US": "One thing first by default" },
+  "proposal.conflictWorkbenchRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
+  "proposal.conflictWorkbenchBulkKeep": { "zh-CN": "全部保留正式版", "en-US": "Keep all current" },
+  "proposal.conflictWorkbenchBulkIncoming": { "zh-CN": "全部采纳这次版本", "en-US": "Use all incoming" },
   "proposal.patchTitle": { "zh-CN": "采用前预览", "en-US": "Preview before apply" },
   "proposal.patchChanged": { "zh-CN": "有改动", "en-US": "Changed" },
   "proposal.patchUnchanged": { "zh-CN": "无改动", "en-US": "Unchanged" },

@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI；R1.19 已补 text/spec 正文直写；R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 text patch preview；R1.22 已补 Replay 严肃页 patch preview 渲染；R1.23 已补 Proposal 采用前最小 patch preview；R1.24 已补无重叠文本 hunk deterministic diff3 candidate；R1.25 已补重叠 hunk metadata/prompt/quality gate；R1.26 已补 Proposal / Replay 的 `text_diff3` 可见化；R1.27 已补 `structured_record_patch` 元数据和可见化；R1.28 已补 `StructuredFieldPatchDryRun` 契约、apply 阻断和 dry-run 可见化；R1.29 已补 ready + executable WorkItem `title/summary_md/priority/due_at` 标量字段 transaction 写回和 `field_merge` audit；R1.30 已补 WorkItem 标量字段 base/current/incoming 冲突检测；R1.31 已补 `acceptance_items` 子记录 base/current/incoming 替换写回；R1.32 已补最新 `dispatch` plan 的 `task_items` 子记录 base/current/incoming 替换写回；R1.33 已补 Proposal/Replay 字段级落点和写回审计渲染入口；R1.34 已补 ready + executable 结构化候选的折叠高级字段编辑器和 `structured_field_overrides` apply 契约；R1.35 已补 Proposal / Replay 共享逐行富 patch viewer 基础；R1.36 已补 Proposal / Replay 重叠 hunk review 和逐段点选意图模板；R1.37 已补 `acceptance_items/task_items` 子记录逐项 diff、逐项保留/采纳 apply 覆盖与 Replay 回放 | 仍未接完整 Drive 富预览/历史/redo UI、重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI 和多冲突逐项选择工作台 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI；R1.19 已补 text/spec 正文直写；R1.20 已补 text/spec 的真实 current/incoming/base prompt context；R1.21 已补数据层 text patch preview；R1.22 已补 Replay 严肃页 patch preview 渲染；R1.23 已补 Proposal 采用前最小 patch preview；R1.24 已补无重叠文本 hunk deterministic diff3 candidate；R1.25 已补重叠 hunk metadata/prompt/quality gate；R1.26 已补 Proposal / Replay 的 `text_diff3` 可见化；R1.27 已补 `structured_record_patch` 元数据和可见化；R1.28 已补 `StructuredFieldPatchDryRun` 契约、apply 阻断和 dry-run 可见化；R1.29 已补 ready + executable WorkItem `title/summary_md/priority/due_at` 标量字段 transaction 写回和 `field_merge` audit；R1.30 已补 WorkItem 标量字段 base/current/incoming 冲突检测；R1.31 已补 `acceptance_items` 子记录 base/current/incoming 替换写回；R1.32 已补最新 `dispatch` plan 的 `task_items` 子记录 base/current/incoming 替换写回；R1.33 已补 Proposal/Replay 字段级落点和写回审计渲染入口；R1.34 已补 ready + executable 结构化候选的折叠高级字段编辑器和 `structured_field_overrides` apply 契约；R1.35 已补 Proposal / Replay 共享逐行富 patch viewer 基础；R1.36 已补 Proposal / Replay 重叠 hunk review 和逐段点选意图模板；R1.37 已补 `acceptance_items/task_items` 子记录逐项 diff、逐项保留/采纳 apply 覆盖与 Replay 回放；R1.38 已补 Proposal 折叠多冲突批量检查 foundation | 仍未接完整 Drive 富预览/历史/redo UI、重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI 和多冲突批量执行/审计产品化 |
 | P-COST DB-backed | `CostLedgerStore` 与 `BudgetPolicyStore` 已默认 DB-backed；`budget_policies` 保存 policy override；`PUT /api/cost/policies/:scope/:id` 写 `budget_policy.updated` 审计；R1.18 已把真实 PG policy override 纳入 smoke | 仍未发出 `usage.recorded`、`budget.warning`、`budget.exhausted` 事件；Cuu budget bubble 仍属后续 |
 
 ### R1 必做顺序
@@ -159,7 +159,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-- 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI 与多冲突工作台；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口，R1.17 已接 Web/Desktop/Cuu 一键采用 AI 融合稿入口，R1.19 已接 text/spec 正文直写，R1.20 已接真实内容三方读取，R1.21 已接数据层 patch preview，R1.22 已接 Replay 可见 patch preview，R1.23 已接 Proposal 采用前最小 patch preview，R1.24 已接无重叠文本 hunk deterministic diff3，R1.25 已接重叠 hunk metadata/prompt/quality gate，R1.26 已接 Proposal / Replay 的 text_diff3 状态、hunk 数和影响行可见化，R1.27 已接 structured_record_patch 元数据和可见化，R1.28 已接 dry-run gate，R1.29 已接 WorkItem 标量字段写回，R1.30 已接字段冲突检测，R1.31 已接 `acceptance_items` 子记录写回，R1.32 已接 `task_items` 首发子记录写回，R1.33 已接 Proposal/Replay 字段级落点和写回审计渲染，R1.34 已接折叠高级字段编辑器与 `structured_field_overrides` apply 覆盖，R1.35 已接 Proposal/Replay 共享逐行富 patch viewer 基础，R1.36 已接 Proposal/Replay 重叠 hunk review 和逐段点选意图模板，R1.37 已接子记录逐项 diff/editor 与 `structured_item_overrides` apply 覆盖。
+- 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI 与多冲突批量执行/审计产品化；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口，R1.17 已接 Web/Desktop/Cuu 一键采用 AI 融合稿入口，R1.19 已接 text/spec 正文直写，R1.20 已接真实内容三方读取，R1.21 已接数据层 patch preview，R1.22 已接 Replay 可见 patch preview，R1.23 已接 Proposal 采用前最小 patch preview，R1.24 已接无重叠文本 hunk deterministic diff3，R1.25 已接重叠 hunk metadata/prompt/quality gate，R1.26 已接 Proposal / Replay 的 text_diff3 状态、hunk 数和影响行可见化，R1.27 已接 structured_record_patch 元数据和可见化，R1.28 已接 dry-run gate，R1.29 已接 WorkItem 标量字段写回，R1.30 已接字段冲突检测，R1.31 已接 `acceptance_items` 子记录写回，R1.32 已接 `task_items` 首发子记录写回，R1.33 已接 Proposal/Replay 字段级落点和写回审计渲染，R1.34 已接折叠高级字段编辑器与 `structured_field_overrides` apply 覆盖，R1.35 已接 Proposal/Replay 共享逐行富 patch viewer 基础，R1.36 已接 Proposal/Replay 重叠 hunk review 和逐段点选意图模板，R1.37 已接子记录逐项 diff/editor 与 `structured_item_overrides` apply 覆盖，R1.38 已接折叠多冲突批量检查 foundation。
 
 ### R1 验收
 
@@ -183,7 +183,7 @@ R0 退出门：
 - 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
 - 后续已补：正式交付物读取面最小切片；WorkItem page 与 AgentRun replay 返回 `accepted_deliverables`，并提供下载与文本预览 API。
 - 后续已补：正式交付物最小还原入口；同一路径第二版采纳后可 `POST .../restore` 回到上一版 Drive version，并写 `ProjectDriveOperation` 与审计。
-- 未完成：完整 approval policy routing、`ai_fusion` v2 重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI、多冲突工作台仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口，R1.18 已关闭“BudgetPolicy 只在内存 override、无审计”的缺口，R1.19/R1.20/R1.21/R1.22/R1.23/R1.24/R1.25/R1.26/R1.27/R1.28/R1.29/R1.30/R1.31/R1.32/R1.33/R1.34/R1.35/R1.36/R1.37 已关闭 text/spec 正文直写、真实三方文本上下文、数据层 patch preview、Replay 可见 patch preview、Proposal 采用前最小 patch preview、无重叠文本 diff3、重叠 hunk metadata、text_diff3 可见化、structured_record_patch 元数据可见化、StructuredFieldPatchDryRun 契约、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、`task_items` 首发子记录写回、字段级落点/写回审计渲染、标量字段高级覆盖、共享逐行富 patch viewer 基础、重叠 hunk review 基础和子记录逐项 diff/editor 缺口。
+- 未完成：完整 approval policy routing、`ai_fusion` v2 重叠 hunk 后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI、多冲突批量执行/审计产品化仍未完成。R1.9 已关闭“冲突只能裸 409、用户无法点选处理”的最小缺口，R1.11/R1.12 已关闭“冲突选择没有持久尝试和候选审计”的缺口，R1.13 已关闭“replay 看不到当时候选和选择”的缺口，R1.18 已关闭“BudgetPolicy 只在内存 override、无审计”的缺口，R1.19/R1.20/R1.21/R1.22/R1.23/R1.24/R1.25/R1.26/R1.27/R1.28/R1.29/R1.30/R1.31/R1.32/R1.33/R1.34/R1.35/R1.36/R1.37/R1.38 已关闭 text/spec 正文直写、真实三方文本上下文、数据层 patch preview、Replay 可见 patch preview、Proposal 采用前最小 patch preview、无重叠文本 diff3、重叠 hunk metadata、text_diff3 可见化、structured_record_patch 元数据可见化、StructuredFieldPatchDryRun 契约、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、`task_items` 首发子记录写回、字段级落点/写回审计渲染、标量字段高级覆盖、共享逐行富 patch viewer 基础、重叠 hunk review 基础、子记录逐项 diff/editor 和折叠多冲突批量检查缺口。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -1450,11 +1450,11 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 | API | `structured_item_overrides` 会被 materialize 成最终 operation value，然后复用既有 dry-run 与 DB 写回 gate |
 | Replay | 记录采用后的子记录逐项变化；不再只显示“2 项”这种粗粒度摘要 |
 | Cuu | 不展示表格；只做轻提醒和 deep-link，符合“桌宠不进主窗、不变成工作台”的概念边界 |
-| 仍缺 | 多 dispatch / 多阶段 task plan 选择 UI、跨多个 conflict 的批量工作台、React route 截图门、真实浏览器长列表交互验证 |
+| 仍缺 | 多 dispatch / 多阶段 task plan 选择 UI、跨多个 conflict 的批量工作台后端审计产品化、React route 截图门、真实浏览器长列表交互验证 |
 
 后续施工切片：
 
-1. **R1.38 Multi-conflict workbench**：为高阶用户补批量冲突处理入口，但默认仍由 AI/Cuu 递一件最需要处理的事。
+1. **R1.38 Multi-conflict workbench foundation（已落）**：为高阶用户补折叠批量冲突处理入口，但默认仍由 AI/Cuu 递一件最需要处理的事。
 2. **R1.39 Route visual QA**：把 rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
 3. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，Proposal/Cuu 先让用户点选目标 plan，再允许写入 `task_items`。
 4. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为真正后端写回能力。
@@ -1467,6 +1467,44 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `corepack pnpm --filter @workhub/api test` 通过，84/84。
 - `corepack pnpm --filter @workhub/ui typecheck` 通过。
 - `corepack pnpm --filter @workhub/ui test` 通过，29/29。
+- 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
+
+### R1.38 Multi-conflict workbench foundation（2026-06-10）
+
+本切片关闭“多个冲突同时出现时，高阶用户只能逐张卡片重复点击，无法快速核对全部冲突和执行相同安全决策”的最小缺口。范围刻意收窄：只做 Proposal 共享 renderer 的折叠批量检查区，不改 Cuu 外观、不新增复杂看板、不新增后端批量 API；普通用户默认仍先处理 AI 递出的一件最重要事项。
+
+已落代码：
+
+- `packages/ui/src/proposal/render.ts`：`conflicts.length > 1` 时在冲突卡顶部渲染 `<details data-proposal-conflict-workbench="true">`。单冲突不渲染批量区，避免普通路径变重。
+- `packages/ui/src/proposal/render.ts`：批量区逐行列出 `conflict_id`、`target_key`、`target_kind`、推荐选项和目标路径，作为 route JS / QA 可稳定读取的数据模型。
+- `packages/ui/src/proposal/render.ts`：仅在每个冲突都有同一 `POST /api/proposals/:id/merge` 动作时生成批量按钮；支持 `keep_current` 和 `accept_incoming`，不批量执行 `ai_fusion`。
+- `packages/ui/src/proposal/render.ts`：批量 `keep_current` payload 为 `{ confirm: true, conflict_resolution: { accept_incoming_target_keys: [] } }`；批量 `accept_incoming` payload 聚合所有冲突 `target_key`。
+- `packages/ui/src/i18n.ts`：新增批量冲突检查区 zh-CN / en-US 文案，保持双语切换。
+- `packages/ui/src/proposal/render.test.ts`：覆盖单冲突不显示批量区、多冲突显示折叠区、两个批量动作、payload 聚合、多语言文案以及不出现 `kanban` / `git` 字符串。
+
+当前边界：
+
+| 项 | R1.38 行为 |
+|---|---|
+| 默认心智 | AI 仍先递一件最需要判断的事；批量入口默认折叠 |
+| 批量范围 | 只处理同一 proposal merge endpoint 下的 `keep_current` / `accept_incoming` |
+| AI fusion | 不做批量 AI 融合稿，因为每个候选质量门、hunk 和结构化字段可能不同 |
+| Cuu | Cuu 不承载批量列表；只继续显示轻提醒和 deep-link |
+| API | 复用现有 `/api/proposals/:id/merge` 的 `accept_incoming_target_keys[]`，本切片不新增 API |
+| 审计 | 依赖现有 merge/audit；后续可补显式 bulk action audit 与 route JS 执行日志 |
+| 仍缺 | 真实 Web/Desktop route 截图门、批量动作前端执行器、显式 bulk_action audit、任务子记录多 plan scope、text hunk 后端 materializer |
+
+后续施工切片：
+
+1. **R1.39 Route visual QA**：把 Proposal 多冲突、rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
+2. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，先显式选择目标 plan，再允许写入 `task_items`。
+3. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为后端正式写回能力。
+4. **R1.42 Multi-conflict execution audit**：如果 route JS 批量执行落地，需要为批量 keep/accept 增加明确 `bulk_action` audit 与失败局部回滚说明。
+
+验证：
+
+- `corepack pnpm --filter @workhub/ui typecheck` 通过。
+- `corepack pnpm --filter @workhub/ui test` 通过，30/30。
 - 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
@@ -1490,7 +1528,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `pnpm --filter @workhub/api test` 通过，当前 71/71；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route 与 BudgetPolicy audit。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 14/14；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1/R2 全部完成，因为 `ai_fusion` v2 的逐项确认/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/逐项 UI、多冲突工作台、完整 approval policy routing、PG claim/多 worker 仍未落地。
+仍不能宣称 R1/R2 全部完成，因为 `ai_fusion` v2 的后端逐段 materialize/编辑、React route 级逐行选择/编辑产品化、任务子记录多计划/目标 plan 选择 UI、多冲突批量执行/审计产品化、完整 approval policy routing、PG claim/多 worker 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 
