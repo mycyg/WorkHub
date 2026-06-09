@@ -167,12 +167,12 @@ R2.3 退出门：
 |---|---|---|
 | fake Redis 不能覆盖真实网络、认证、重连、容器启动顺序 | R2.3 先固定 adapter 语义，避免无 Redis 的 CI 阻塞 | R2.5 加真实 Redis service matrix |
 | Redis pub/sub 不持久化事件 | REST/DB 是真相源，SSE 只是增量提示；客户端收到事件后重拉 | R4 前端需保持 reconcile 策略 |
-| `all` topic 仍可能过宽 | 本切片不改订阅面 | R2.4 删除或 admin-only，并覆盖非 owner 403 |
+| `all` topic 仍可能过宽 | R2.4 已改为 admin-only；资源 topic 默认 fail-closed | R2.5 接真实 Redis/PG matrix 与更多 repository resolver |
 | 长 LLM call 中途 lease 可能过期 | R2.1 只在 step record 后 heartbeat | R2.5 增加 interval heartbeat |
 | `pg_listen` 被配置枚举暴露但实现未落 | `createPushBus()` 明确 throw | 后续如果需要 PG-only 部署再实现 |
 
 后续顺序：
 
-1. **R2.4 订阅边界**：资源 topic 强制 `can_view`，`all` 删除或 admin-only，非 owner 订阅他人 run/workitem/proposal 返回 403。
-2. **R2.5 集成矩阵**：PG + Redis 真服务，覆盖 SSE、stuck-job、长 LLM heartbeat、CORS/cookie、revert、escalation。
+1. **R2.5 集成矩阵**：PG + Redis 真服务，覆盖 SSE、stuck-job、长 LLM heartbeat、CORS/cookie、revert、escalation。
+2. **真实 resource resolvers**：workitem/proposal/session 默认 route 接 repository，不靠显式测试注入。
 3. **R3 Cuu Agent 入口**：在 R2 地基稳定后，让 Cuu 走同一 session/intake/workitem/agent-run/proposal API。

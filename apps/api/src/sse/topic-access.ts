@@ -26,7 +26,10 @@ export async function resolveAuthorizedTopic(
 ) {
   switch (request.kind) {
     case "all":
-      return topics.all().topic;
+      if (user.isAdmin) {
+        return topics.all().topic;
+      }
+      throw new HTTPException(403, { message: "cannot stream global events" });
     case "me":
       return topics.user(user.id).topic;
     case "workitem":

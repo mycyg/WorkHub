@@ -26,10 +26,49 @@ const now = new Date("2026-06-05T00:00:00.000Z");
 
 test("topic authorization derives user streams from identity and rejects unregistered private topics", async () => {
   const user = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice", isAdmin: false };
+  const admin = { ...user, id: "10000000-0000-4000-8000-000000000002", nickname: "admin", isAdmin: true };
 
-  assert.equal(await resolveAuthorizedTopic(user, { kind: "all" }), "all");
+  await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "all" }));
+  assert.equal(await resolveAuthorizedTopic(admin, { kind: "all" }), "all");
   assert.equal(await resolveAuthorizedTopic(user, { kind: "me" }), `user:${user.id}`);
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "run", id: "r1" }));
+  await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "session", id: "s1" }));
+  await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "proposal", id: "p1" }));
+});
+
+test("push route limits the global all stream to admins", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const admin = user({
+    id: "10000000-0000-4000-8000-000000000003",
+    nickname: "admin",
+    cookieToken: "cookie-admin",
+    isAdmin: true
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice, admin], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const regularResponse = await app.request("/api/push/stream", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+  assert.equal(regularResponse.status, 403);
+
+  const adminController = new AbortController();
+  const adminResponse = await app.request("/api/push/stream", {
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) },
+    signal: adminController.signal
+  });
+  assert.equal(adminResponse.status, 200);
+  assert.equal(adminResponse.headers.get("content-type")?.includes("text/event-stream"), true);
+  adminController.abort();
 });
 
 test("push route authorizes run streams through the AgentRun owner/admin gate", async () => {

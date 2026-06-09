@@ -331,7 +331,7 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 ### 5.1 传输与帧格式(沿用 `routers/push.py` + `push_bus.py`)
 
-- **端点**:`GET /api/push/stream`(全局)、`/stream/req/{id}`(单工作项)、`/stream/me`(本人私有)。WorkHub 演进新增 `/stream/session/{id}`(会话流)。
+- **端点**:`GET /api/push/stream`(admin-only 全局)、`/stream/req/{id}`(单工作项)、`/stream/me`(本人私有)。WorkHub 演进新增 `/stream/session/{id}`(会话流)。
 - **媒体类型**:`text/event-stream`,响应头 `Cache-Control: no-cache` + `X-Accel-Buffering: no`(`push.py:59`,禁 nginx 缓冲)。
 - **帧**:`event: <type>\n` + 每行 `data: <line>\n`(多行 payload 按 `splitlines()` 逐行加 `data:` 前缀,避免内嵌 `\n`/CRLF 破帧——`push.py:31`)。
 - **连接确认**:连上先发 `event: connected\ndata: {"topic": "..."}`(`push.py:42`)。
@@ -386,7 +386,7 @@ topic 命名空间与可订阅性如下——**隔离是安全约束,不是性�
 
 | topic | 谁可订阅 | 强制点 |
 |---|---|---|
-| `all` | 任意已认证用户 | 只承载**公共**事件(工作项就绪/状态);**绝不**放私有数据 |
+| `all` | **admin-only** | R2.4 起普通用户不可订;仅保留运维/聚合事件,避免全局 topic 成为泄漏口 |
 | `req:{id}` / `workitem:{id}` | 通过 `can_view_requirement_record` 的人 | `/stream/req/{id}` 在订阅前做可见性检查(`push.py:84`),私有(draft/clarifying/summary_ready)他人不可订 |
 | `run:{id}` **[新]** | run owner、可见 WorkItem 的 reviewer/owner | AgentRun 细节、成本、工具 trace 均可能含私有内容;订阅前必须经 run→workitem 可见性门 |
 | `proposal:{id}` **[新]** | 可见该 Proposal 的 reviewer/branch owner/WorkItem viewer | 只承载该提议的 reviewed/merged/comment 增量;完整 manifest 仍 REST 拉取 |

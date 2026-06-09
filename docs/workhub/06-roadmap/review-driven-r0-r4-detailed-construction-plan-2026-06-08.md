@@ -1802,7 +1802,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 2. **R2.1 已落首版**：`running` run 增加 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at`；已提供 `requeueExpiredClaims()` stuck-job recovery primitive。
 3. **R2.2 已落**：`startingWorkItems` 不再是 DB 场景最终裁决；`agent_runs_work_item_active_uq` partial unique index + `createRunIfWorkItemIdle()` 负责同 work item active run 唯一；route auto-run 改为 `runNext()` drain。详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 4. **R2.3 已落**：PushBus / presence 默认支持 Redis v0 跨 worker；修同 topic unsubscribe / resubscribe 竞态；`pg_listen` 保持预留。详见 [`../02-ai-engine/r2-redis-broker-presence.md`](../02-ai-engine/r2-redis-broker-presence.md)。
-5. `/api/push/stream` 的 `all` topic 删除或 admin-only；资源 topic 订阅前强制 `can_view`。
+5. **R2.4 已落**：`/api/push/stream` 的 `all` topic admin-only；资源 topic 默认 fail-closed，显式 resolver 才放行。详见 [`../02-ai-engine/r2-topic-boundary.md`](../02-ai-engine/r2-topic-boundary.md)。
 6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、长 LLM call heartbeat、CORS+cookie、revert、escalation approver、非 owner 403。
 
 R2 验收：
@@ -1810,7 +1810,7 @@ R2 验收：
 - `WORKHUB_WORKERS=2` 下 R1 纵切仍通过。
 - 同一 work item 并发 enqueue 只有一个 run 执行。
 - A 实例发布事件，B 实例订阅者收到。R2.3 已由 fake Redis adapter test 固定语义；R2.5 仍需真实 Redis service matrix。
-- 非 owner 订阅他人 run/workitem/proposal 被拒。
+- 非 owner 订阅他人 run/workitem/proposal 被拒。R2.4 已固定 topic-access 默认 fail-closed；R2.5 仍需真实 repository resolver 与 Redis matrix。
 
 ### R2.1 AgentRun claim / lease（2026-06-10）
 
@@ -1910,6 +1910,32 @@ R2 验收：
 - `corepack pnpm --filter @workhub/api test` 通过，93/93。
 - `corepack pnpm --filter @workhub/api typecheck` 通过。
 - `corepack pnpm --filter @workhub/config test` 通过，9/9。
+
+### R2.4 Topic boundary（2026-06-10）
+
+本切片关闭 R2 的第四处硬缺口：事件已经能跨 worker 送达后，必须保证订阅者确实有权看该 topic。R2.4 不改变 SSE payload 和客户端协议，只收紧授权边界。
+
+已落代码：
+
+- `apps/api/src/sse/topic-access.ts`：`all` topic 从任意认证用户改为 admin-only；`me` 继续由鉴权身份派生；workitem/run/session/proposal 继续 resolver fail-closed。
+- `apps/api/src/push.test.ts`：新增 `/api/push/stream` admin-only route test；补普通用户不能解析 `all`、session/proposal 默认拒绝断言。
+- `docs/workhub/02-ai-engine/r2-topic-boundary.md`：记录 R2.4 runtime contract、测试证据与后续真实 resolver 接线。
+
+当前边界：
+
+| 项 | R2.4 行为 |
+|---|---|
+| `all` topic | admin-only；普通用户 403 |
+| `me` topic | `user:{auth_user_id}`，不接受 path 参数 |
+| WorkItem topic | 必须显式 `canViewWorkItem` 放行；无 resolver 默认 403 |
+| Run topic | 默认允许 actor/admin；stranger 403 |
+| Session / Proposal topic | 必须显式 resolver 放行；默认 403 |
+| 仍缺 | R2.5 真实 Redis/PG matrix、长 LLM heartbeat、真实 workitem/proposal/session repository resolver |
+
+验证：
+
+- `corepack pnpm --filter @workhub/api test` 通过，94/94。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
 
 ## 6. R3 Cuu Agent 入口
 

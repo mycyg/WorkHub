@@ -33,7 +33,7 @@ related:
 | 长 LLM call interval heartbeat | R2.5 或下一 R2.x：当前仍是 step 后 heartbeat；长时间无 step 的 provider call 仍依赖 lease timeout |
 | Dedicated worker daemon | 当前 route 触发 drain；后续可加独立 worker loop / process manager |
 | Redis / PG event broker | R2.3 已落 Redis PushBus / Presence v0；PG `LISTEN/NOTIFY` 仍预留 |
-| SSE topic hardening | R2.4 删除或 admin-only `all` topic，并对资源 topic 强制 `can_view` |
+| SSE topic hardening | R2.4 已落：`all` admin-only，资源 topic 默认 fail-closed，显式 resolver 才放行 |
 | CI `WORKHUB_WORKERS=2` full matrix | R2.5 将 smoke 扩展成正式多 worker job |
 
 ## 3. Data Contract
