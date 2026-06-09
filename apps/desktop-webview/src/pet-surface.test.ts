@@ -183,11 +183,12 @@ test("pet first-paint scheduler waits for two animation frames before showing th
 });
 
 test("pet surface renders only the Live2D cat runtime without main shell or fallback sprites", () => {
-  const idle = renderDesktopPetSurface({ idle_action: "idle_tail_sway" });
+  const idle = renderDesktopPetSurface({ idle_action: "idle_tail_sway", locale: "zh-CN" });
   const card = renderDesktopPetSurface({
     card: approvalCard(),
     status_text: "先点一个原因，Cuu 会带着它继续改。",
-    include_reject_reasons: true
+    include_reject_reasons: true,
+    locale: "zh-CN"
   });
 
   assert.equal(idle.visual_mode, "live2d_cat");
@@ -337,7 +338,7 @@ test("pet pointer helpers normalize Rust look percent and hover avoidance", () =
 });
 
 test("pet surface renders clarification cards as option-first light cards", () => {
-  const card = renderDesktopPetSurface({ card: questionCard() });
+  const card = renderDesktopPetSurface({ card: questionCard(), locale: "zh-CN" });
   const english = renderDesktopPetSurface({ card: questionCard(), locale: "en-US" });
 
   assert.match(card.html, /data-pet-card-kind="question"/u);
