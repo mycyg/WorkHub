@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿” | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回、多冲突逐项选择工作台和真实 PG one-click smoke |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿”，并把真实 PG one-click smoke 纳入 CI | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回和多冲突逐项选择工作台 |
 
 ### R1 必做顺序
 
@@ -136,6 +136,7 @@ R0 退出门：
    - **2026-06-09 追加切片**：merge 会创建真实 `snapshots(kind=merge)`、`audit_logs(action=proposal.merged)` 与 `accepted_deliverable_changes`，R1 smoke 会校验这些 DB 行。
    - **2026-06-09 追加切片**：ReplayTraceVM 已返回 `accepted_deliverables[]`，`/api/agent-runs/:id/replay` 可在 restart 后展示正式交付物、下载与文本预览入口。
    - **2026-06-09 R1.13 追加切片**：ReplayTraceVM 已返回 `merge_timeline[]`，由 `merge_attempts + merge_proposals` 组装，展示当时的冲突目标、候选方案、推荐项与最终选择。
+   - **2026-06-09 R1.17 追加验收**：`qa:r1-pg-smoke` 已覆盖 one-click `ai_fusion`：生成 conflict、返回 `merge_proposal_id`、直接 `POST /api/merge-proposals/{id}/apply`、断言原 row `chosen_*`、accepted ledger、ProjectDriveVersion、audit 与 replay timeline；GitHub Actions 新增 `r1-pg-smoke` job 用 Postgres service 执行。
    - 后续已补：R1.8 已接 Drive 指针恢复入口，可把正式交付物还原到上一版并审计。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
@@ -215,6 +216,7 @@ pnpm qa:r1-pg-smoke
 
 - `pnpm qa:r1-pg-smoke` 可加载脚本，但因 `127.0.0.1:5432` 无 PostgreSQL 返回 `ECONNREFUSED`。
 - 本机 `docker` 与 `psql` 不在 PATH，无法在 Windows 本机直接拉起或检查 PG。
+- 2026-06-09 起 GitHub Actions 新增 `r1-pg-smoke` job，使用 Postgres 16 service 执行同一命令，避免真实 PG 验收依赖 Windows 本机或人工 SSH 密码。
 
 Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数据库历史 usage 已存在，所以 cost 以 delta 验收）：
 
@@ -303,7 +305,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 仍未完成：
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
-- 已由 R1.14/R1.15/R1.16/R1.17 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计、Markdown 融合稿正式采纳与冲突卡一键采用已接入；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回、多冲突工作台和真实 PG one-click smoke。
+- 已由 R1.14/R1.15/R1.16/R1.17 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计、Markdown 融合稿正式采纳、冲突卡一键采用与真实 PG one-click smoke 已接入；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回和多冲突工作台。
 - `/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本，Web/Desktop/Cuu option-first UI 已由 R1.10 接入，`merge_attempts` 与 chosen incoming target 审计已由 R1.11 接入，`merge_proposals` deterministic candidates 与 chosen option 已由 R1.12 接入。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
@@ -693,9 +695,9 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 仍未完成：
 
 - `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
-- R1.17 已补 Web/Desktop/Cuu “采用 AI 融合稿”一键入口；仍需真实 PG smoke、React route 产品化和视觉截图验收。
+- R1.17 已补 Web/Desktop/Cuu “采用 AI 融合稿”一键入口，并已纳入真实 PG smoke；仍需 React route 产品化和视觉截图验收。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 choose/apply。
-- 真实 PG smoke 尚未新增 R1.16 apply 路径；目前覆盖在 API fake repository 测试中，后续应加 Linux PG smoke：生成 conflict、choose ai_fusion、apply、断言 `accepted_deliverable_changes`/`ProjectDriveVersion`/audit/replay。
+- R1.17 one-click PG smoke 已覆盖 apply 物化链路；R1.16 的 choose-first 路径仍由 API fake repository 测试覆盖，后续若保留 choose-first 产品入口，再补真实 PG choose->apply 专项。
 
 ### R1.17 AI fusion one-click conflict card apply（2026-06-09）
 
@@ -735,7 +737,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 - `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要真实 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 apply。
-- 真实 PG smoke 尚未新增 R1.17 one-click 路径；后续应在 Linux 测试环境生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay。
+- 真实 PG smoke 已新增 R1.17 one-click 路径：生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay；CI 通过 `.github/workflows/verify.yml` 的 `r1-pg-smoke` job 持续执行。
 - React route 产品化与 Playwright 截图尚未补；当前主窗路径仍由 TS renderer/browser shell 覆盖。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）

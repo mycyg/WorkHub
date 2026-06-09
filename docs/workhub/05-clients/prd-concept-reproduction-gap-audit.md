@@ -32,13 +32,13 @@ visuals:
 
 | 领域 | 已落地 | 未复现 |
 |---|---|---|
-| AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM；2026-06-08 已补 `AgentLoopResult.manifest -> ProposalService` 自动开 proposal，且 Proposal 默认 DB-backed；AgentRun/AgentStep 已 write-through DB 并通过 Linux PG smoke 验证 restart/replay；`sessions/workitems/knowledge/page workitem` 已接 R1 最小真实 service 并纳入 PG smoke；CostLedger 默认 store 已 DB-backed 并接真实 cost usage/page 读取；2026-06-09 已补 merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同 target 冲突 gate、AgentRun-backed delivery 的 `ProjectDriveItem/Version` 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables + 下载/文本预览，以及正式交付物最小 restore | BudgetPolicy 持久化与审计、R2 PG claim/multi-worker、完整权限闭环、完整 eval/replay 数据、AI 冲突调解仍缺 |
+| AI-native 主路径 | Gold Path、intake、approval、proposal、replay、cost Page VM；2026-06-08 已补 `AgentLoopResult.manifest -> ProposalService` 自动开 proposal，且 Proposal 默认 DB-backed；AgentRun/AgentStep 已 write-through DB 并通过 Linux/CI PG smoke 验证 restart/replay；`sessions/workitems/knowledge/page workitem` 已接 R1 最小真实 service 并纳入 PG smoke；CostLedger 默认 store 已 DB-backed 并接真实 cost usage/page 读取；2026-06-09 已补 merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同 target 冲突 gate、AgentRun-backed delivery 的 `ProjectDriveItem/Version` 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables + 下载/文本预览、正式交付物最小 restore、AI fusion candidate、one-click apply 与真实 PG smoke | BudgetPolicy 持久化与审计、R2 PG claim/multi-worker、完整权限闭环、完整 eval/replay 数据、`ai_fusion` v2 字段级/text diff3、多冲突工作台仍缺 |
 | Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换 | 完整 SPA 信息架构、真实数据流、空/错/载入/权限四态、视觉 polish |
 | Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge、`/settings` pet 恢复面板 | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
 | Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample、托盘 `restore-pet-interaction` 源码门 | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略、恢复录屏 |
 | Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧、pass-through 源码恢复门、P1.6 behavior manifest 源码合同、P1.7 业务录屏入口与黑猫 approval smoke | 黑/白真实 Tauri 全量业务录屏、settings matrix、长期性能、授权或原创替换 |
 | 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
-| 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向；DB-backed `branches/proposals/reviews` repository 已落；approve/reject/merge 会更新 proposal/branch/work_item 状态并经 PG smoke 验证；merge 会写 accepted deliverable ledger、merge snapshot、persistent `proposal.merged` audit，并阻断同 target 不同 sha 的静默覆盖；AgentRun-backed delivery 会落 `ProjectDriveItem/Version` 并把 accepted row 指到正式版本；WorkItem page 与 AgentRun replay 已可展示 accepted deliverables，并提供下载/文本预览；`POST .../restore` 已能把当前正式交付物还原到上一版并审计 | 文档/PPT/表格/图片/文件夹高级 diff 预览、证据引用、完整审批中心、AI 冲突调解、冲突选择 UI、完整 Drive 历史/redo UI |
+| 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向；DB-backed `branches/proposals/reviews` repository 已落；approve/reject/merge 会更新 proposal/branch/work_item 状态并经 PG smoke 验证；merge 会写 accepted deliverable ledger、merge snapshot、persistent `proposal.merged` audit，并阻断同 target 不同 sha 的静默覆盖；AgentRun-backed delivery 会落 `ProjectDriveItem/Version` 并把 accepted row 指到正式版本；WorkItem page 与 AgentRun replay 已可展示 accepted deliverables，并提供下载/文本预览；`POST .../restore` 已能把当前正式交付物还原到上一版并审计；R1.17 已支持冲突卡一键采用 AI 融合稿，并由 CI PG smoke 验证 `merge_proposal_id/chosen_*/accepted/replay` | 文档/PPT/表格/图片/文件夹高级 diff 预览、证据引用、完整审批中心、字段级/text diff3 原位写回、多冲突工作台、完整 Drive 历史/redo UI |
 
 ## 2. 概念图对齐
 
@@ -107,7 +107,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 |---|---|---|
 | AI 是主力，看板只显示必要信息 | 文档和部分页面已转向 Gold Path / attention | 真实首页重构、减少 dashboard 首屏重量 |
 | 澄清让用户点击选项 | 概念图和 payload 合同已写 | 所有澄清路径接入 single/multi/rank/confirm controls |
-| 变更申请像 GitHub PR，但对象多样 | Manifest fixture、proposal page、accepted deliverable ledger 与冲突 gate 有基础 | 文档/PPT/表格/图片/文件夹预览、证据引用与冲突选择 UI |
+| 变更申请像 GitHub PR，但对象多样 | Manifest fixture、proposal page、accepted deliverable ledger、冲突 gate、AI fusion candidate 与一键 apply 有基础 | 文档/PPT/表格/图片/文件夹预览、证据引用、字段级/text diff3 与多冲突工作台 |
 | 知识库/项目检索由 Cuu 气泡承接 | 概念图已写 | Cuu search card + API endpoint + result bubble |
 | Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落，概念图已同步真实模型帧，P1.6 behavior manifest 源码合同已落，P1.7 可录真实业务场景且已有黑猫 approval smoke | 黑/白全矩阵录屏、业务动作视觉验收、长期性能 |
 | Cuu 不在 Web/主窗里 | 当前文档和代码收束中 | 截图审查确认无主窗 Cuu 本体 |

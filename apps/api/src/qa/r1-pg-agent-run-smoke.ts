@@ -22,6 +22,8 @@ import {
   createUserRepository,
   defaultSeedFixture,
   defaultSeedIds,
+  mergeAttempts,
+  mergeProposals,
   orgs,
   proposals,
   projects,
@@ -46,8 +48,10 @@ import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createCostRoutes } from "../routes/cost.js";
 import { createKnowledgeRoutes } from "../routes/knowledge.js";
 import { createPageRoutes } from "../routes/pages.js";
+import { createProposalRoutes, createWorkItemProposalRoutes } from "../routes/proposals.js";
 import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
+import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createDbProposalService } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
@@ -117,6 +121,40 @@ function executableAgentClient(): AgentLoopClient {
   };
 }
 
+function deterministicFusionGenerator(): MergeFusionCandidateGenerator {
+  return {
+    async generate(input) {
+      return input.conflicts
+        .filter((conflict) => conflict.target_kind === "text_doc" || conflict.target_kind === "spec_doc")
+        .map((conflict) => ({
+          conflictKey: conflict.target_key,
+          recommendedOptionKey: "ai_fusion",
+          candidates: [
+            {
+              option_key: "ai_fusion",
+              target_kind: conflict.target_kind,
+              rationale_md: "PG smoke AI 融合稿同时保留正式版与这次版本的关键信息。",
+              source: "llm",
+              quality_gate: {
+                status: "passed",
+                checks: ["pg_smoke_deterministic_generator", "no_git_conflict_markers"]
+              },
+              merged_value: {
+                proposed_resolution_md: [
+                  "# R1.17 one-click AI fusion",
+                  "",
+                  "PG smoke fused current accepted content with the incoming proposal.",
+                  "",
+                  `Conflict key: ${conflict.target_key}`
+                ].join("\n")
+              }
+            }
+          ]
+        }));
+    }
+  };
+}
+
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
     if (error instanceof ZodError) {
@@ -158,7 +196,10 @@ async function main() {
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const formalStorageRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-drive-"));
-    const proposalService = createDbProposalService(createProposalRepository(db), { storageRoot: formalStorageRoot });
+    const proposalService = createDbProposalService(createProposalRepository(db), {
+      storageRoot: formalStorageRoot,
+      fusionCandidateGenerator: deterministicFusionGenerator()
+    });
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
@@ -183,6 +224,8 @@ async function main() {
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
     app.route("/api", createWorkItemRoutes({ auth, workItems: workItemService }));
+    app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService }));
+    app.route("/api", createWorkItemProposalRoutes({ auth, proposals: proposalService }));
     app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
     app.route("/api/pages", createPageRoutes({
       auth,
@@ -623,6 +666,207 @@ async function main() {
     ) {
       throw new Error("Expected restart replay to expose restored accepted deliverables.");
     }
+
+    const oneClickContent = "R1.17 incoming proposal should be fused by one-click AI apply";
+    await writeFile(path.join(runWorkdir, "outputs", "result.md"), oneClickContent, "utf8");
+    const oneClickSha = sha256Text(oneClickContent);
+    const oneClickManifest: typeof proposalBeforeMerge.diffManifest = {
+      ...proposalBeforeMerge.diffManifest,
+      proposal_id: undefined,
+      branch_id: undefined,
+      title: "R1.17 PG smoke AI fusion one-click",
+      summary_md: "验证冲突卡可以直接采用 AI 融合稿，不需要先选择候选。",
+      changes: [
+        {
+          ...firstChange,
+          id: "92000000-0000-4000-8000-000000000301",
+          target_kind: "text_doc",
+          change_type: "generated",
+          target_ref: {
+            ...firstChange.target_ref,
+            sha256_after: oneClickSha
+          },
+          human_summary: "同路径生成新版本，触发 R1.17 AI 融合一键采用。"
+        }
+      ]
+    };
+    const oneClickProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: oneClickManifest,
+      actor: { actor_kind: "ai", label: "R1.17 PG smoke AI" },
+      agentRunId: runId
+    });
+    await proposalService.review({
+      proposalId: oneClickProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const oneClickMergeConflict = await app.request(`/api/proposals/${oneClickProposal.id}/merge`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (oneClickMergeConflict.status !== 409) {
+      throw new Error(`Expected one-click AI fusion merge conflict 409, got ${oneClickMergeConflict.status}: ${await oneClickMergeConflict.text()}`);
+    }
+    const oneClickConflictBody = await oneClickMergeConflict.json() as {
+      error: {
+        code: string;
+        details?: {
+          conflicts?: Array<{
+            target_key: string;
+            merge_proposal_id?: string;
+            recommended_option_id?: string;
+            options: Array<{
+              id: string;
+              label?: string;
+              action?: {
+                id?: string;
+                href?: string;
+                method?: string;
+                request_json?: Record<string, unknown>;
+              };
+            }>;
+          }>;
+        };
+      };
+    };
+    const oneClickConflict = oneClickConflictBody.error.details?.conflicts?.[0];
+    const oneClickAiOption = oneClickConflict?.options.find((option) => option.id === "ai_fusion");
+    const oneClickMergeProposalId = oneClickConflict?.merge_proposal_id;
+    if (
+      oneClickConflictBody.error.code !== "merge_conflict"
+      || !oneClickMergeProposalId
+      || oneClickConflict?.recommended_option_id !== "ai_fusion"
+      || oneClickAiOption?.label !== "采用 AI 融合稿"
+      || oneClickAiOption.action?.id !== "apply_ai_fusion"
+      || oneClickAiOption.action.href !== `/api/merge-proposals/${oneClickMergeProposalId}/apply`
+      || oneClickAiOption.action.method !== "POST"
+      || oneClickAiOption.action.request_json?.confirm !== true
+    ) {
+      throw new Error(`Expected one-click conflict card to expose apply_ai_fusion action, got ${JSON.stringify(oneClickConflict)}`);
+    }
+    const listedConflicts = await app.request(`/api/workitems/${workItemId}/conflicts`, { headers });
+    if (listedConflicts.status !== 200) {
+      throw new Error(`Expected work item conflicts 200, got ${listedConflicts.status}: ${await listedConflicts.text()}`);
+    }
+    const listedConflictsBody = await listedConflicts.json() as {
+      data: {
+        conflicts: Array<{
+          target_key: string;
+          merge_proposal_id?: string;
+          recommended_option_id?: string;
+          options: Array<{ id: string; action?: { href?: string } }>;
+        }>;
+      };
+    };
+    const listedOneClickConflict = listedConflictsBody.data.conflicts.find((conflict) =>
+      conflict.merge_proposal_id === oneClickMergeProposalId
+    );
+    if (
+      !listedOneClickConflict
+      || listedOneClickConflict.recommended_option_id !== "ai_fusion"
+      || listedOneClickConflict.options.find((option) => option.id === "ai_fusion")?.action?.href !== `/api/merge-proposals/${oneClickMergeProposalId}/apply`
+    ) {
+      throw new Error("Expected GET /workitems/:id/conflicts to mirror the R1.17 one-click apply action.");
+    }
+    const oneClickApply = await app.request(`/api/merge-proposals/${oneClickMergeProposalId}/apply`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ confirm: true })
+    });
+    if (oneClickApply.status !== 200) {
+      throw new Error(`Expected one-click AI fusion apply 200, got ${oneClickApply.status}: ${await oneClickApply.text()}`);
+    }
+    const oneClickApplyBody = await oneClickApply.json() as {
+      data: { status: string; merge_snapshot_id?: string };
+    };
+    if (oneClickApplyBody.data.status !== "merged" || !oneClickApplyBody.data.merge_snapshot_id) {
+      throw new Error("Expected one-click AI fusion apply to merge the proposal with a snapshot.");
+    }
+    const [
+      oneClickMergeProposalRows,
+      oneClickAttemptRows,
+      oneClickAcceptedRows,
+      oneClickDriveVersionRows,
+      oneClickAuditRows
+    ] = await Promise.all([
+      db.select().from(mergeProposals).then((rows) =>
+        rows.filter((row) => row.id === oneClickMergeProposalId || row.conflictKey === oneClickConflict.target_key)
+      ),
+      db.select().from(mergeAttempts).then((rows) => rows.filter((row) => row.proposalId === oneClickProposal.id)),
+      db.select().from(acceptedDeliverableChanges).then((rows) =>
+        rows.filter((row) => row.proposalId === oneClickProposal.id)
+      ),
+      db.select().from(projectDriveVersions),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) => row.entityId === oneClickProposal.id || row.entityId === workItemId)
+      )
+    ]);
+    const originalOneClickMergeProposal = oneClickMergeProposalRows.find((row) => row.id === oneClickMergeProposalId);
+    if (
+      originalOneClickMergeProposal?.chosenOptionKey !== "ai_fusion"
+      || originalOneClickMergeProposal.chosenByUserId !== defaultSeedIds.adminUserId
+      || !originalOneClickMergeProposal.chosenAt
+    ) {
+      throw new Error("Expected one-click apply to write chosen_* onto the original merge_proposals row.");
+    }
+    if (!oneClickAttemptRows.some((row) => row.result === "conflict") || !oneClickAttemptRows.some((row) => row.result === "merged")) {
+      throw new Error("Expected one-click proposal to retain both conflict and merged attempts.");
+    }
+    const oneClickAccepted = oneClickAcceptedRows.find((row) => row.driveVersionId);
+    if (!oneClickAccepted?.driveVersionId || oneClickAccepted.changeType !== "updated") {
+      throw new Error("Expected one-click AI fusion apply to create an accepted updated deliverable row.");
+    }
+    const oneClickDriveVersion = oneClickDriveVersionRows.find((row) => row.id === oneClickAccepted.driveVersionId);
+    if (!oneClickDriveVersion) {
+      throw new Error("Expected one-click accepted row to point at a ProjectDriveVersion.");
+    }
+    const oneClickDriveText = await readFile(oneClickDriveVersion.storagePath, "utf8");
+    if (!oneClickDriveText.includes("R1.17 one-click AI fusion")) {
+      throw new Error("Expected one-click Drive version to contain the deterministic AI fusion artifact.");
+    }
+    if (
+      !oneClickAuditRows.some((row) =>
+        row.action === "proposal.merged"
+        && row.detailJson["merge_proposal_id"] === oneClickMergeProposalId
+        && row.detailJson["chosen_option_key"] === "ai_fusion"
+        && row.detailJson["merge_strategy"] === "ai_resolved"
+      )
+    ) {
+      throw new Error("Expected proposal.merged audit log to carry the R1.17 AI fusion merge proposal id.");
+    }
+    const replayAfterOneClick = await app.request(`/api/agent-runs/${runId}/replay`, { headers });
+    if (replayAfterOneClick.status !== 200) {
+      throw new Error(`Expected replay after one-click apply 200, got ${replayAfterOneClick.status}: ${await replayAfterOneClick.text()}`);
+    }
+    const replayAfterOneClickBody = await replayAfterOneClick.json() as {
+      data: {
+        accepted_deliverables: { drive_version_id?: string }[];
+        merge_timeline?: Array<{
+          proposal_id: string;
+          decisions: Array<{
+            chosen_option_key?: string;
+            candidates: Array<{ option_key: string; chosen?: boolean }>;
+          }>;
+        }>;
+      };
+    };
+    const oneClickTimeline = replayAfterOneClickBody.data.merge_timeline?.find((attempt) =>
+      attempt.proposal_id === oneClickProposal.id
+    );
+    if (
+      !oneClickTimeline?.decisions.some((decision) =>
+        decision.chosen_option_key === "ai_fusion"
+        && decision.candidates.some((candidate) => candidate.option_key === "ai_fusion" && candidate.chosen)
+      )
+    ) {
+      throw new Error("Expected replay timeline to show the chosen AI fusion candidate after one-click apply.");
+    }
+    if (!replayAfterOneClickBody.data.accepted_deliverables.some((item) => item.drive_version_id === oneClickAccepted.driveVersionId)) {
+      throw new Error("Expected replay accepted deliverables to include the one-click AI fusion Drive version.");
+    }
+
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -678,10 +922,19 @@ async function main() {
         restore_status: restoreResponse.status,
         restored_drive_version_id: restoreBody.data.accepted_deliverable.drive_version_id
       },
+      one_click_ai_fusion: {
+        proposal_id: oneClickProposal.id,
+        merge_proposal_id: oneClickMergeProposalId,
+        conflict_status: oneClickMergeConflict.status,
+        apply_status: oneClickApply.status,
+        original_row_chosen_option: originalOneClickMergeProposal.chosenOptionKey,
+        accepted_drive_version_id: oneClickAccepted.driveVersionId,
+        replay_timeline_found: !!oneClickTimeline
+      },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,
       replay_audit_logs: replay.data.audit_logs.length,
-      replay_accepted_deliverables: replay.data.accepted_deliverables.length,
+      replay_accepted_deliverables: replayAfterOneClickBody.data.accepted_deliverables.length,
       workdir_ref: await restartedQueue.workdir(runId)
     };
     console.log(JSON.stringify(summary, null, 2));
