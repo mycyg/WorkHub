@@ -204,6 +204,23 @@ class MemoryProposalRepository implements ProposalRepository {
     return stored;
   }
 
+  async findMergeContext(proposalId: string) {
+    const stored = this.rows.get(proposalId);
+    if (!stored) {
+      return null;
+    }
+    return {
+      proposalId: stored.proposal.id,
+      workItemId: stored.proposal.workItemId,
+      workItemCode: "WH-TEST",
+      projectId: "91000000-0000-4000-8000-000000000901",
+      branchId: stored.proposal.branchId,
+      agentRunId: null,
+      workdirRef: null,
+      diffManifest: stored.proposal.diffManifest
+    };
+  }
+
   async findById(proposalId: string) {
     return this.rows.get(proposalId) ?? null;
   }

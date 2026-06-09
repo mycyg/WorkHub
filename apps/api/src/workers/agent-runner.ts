@@ -424,6 +424,7 @@ export function createInMemoryAgentRunQueue(options: {
       manifest: result.manifest,
       actor: { actor_kind: "ai", label: "WorkHub AI" },
       title: result.manifest.title,
+      agentRunId: run.run_id,
       ...(result.manifest.branch_id ? { branchId: result.manifest.branch_id } : {})
     });
     await emitProposalOpenedEvent(run, proposal);

@@ -784,6 +784,8 @@ export const acceptedDeliverableChanges = pgTable(
     acceptedVersion: integer("accepted_version").notNull().default(1),
     baseVersionRef: varchar("base_version_ref", { length: 128 }),
     acceptedRef: varchar("accepted_ref", { length: 512 }),
+    driveItemId: uuid("drive_item_id").references(() => projectDriveItems.id, { onDelete: "set null" }),
+    driveVersionId: uuid("drive_version_id").references(() => projectDriveVersions.id, { onDelete: "set null" }),
     sha256Before: varchar("sha256_before", { length: 64 }),
     sha256After: varchar("sha256_after", { length: 64 }),
     previewRefJson: jsonb("preview_ref_json").$type<DeliverableChange["preview_ref"]>(),
@@ -795,6 +797,8 @@ export const acceptedDeliverableChanges = pgTable(
     index("accepted_deliverable_changes_work_item_id_idx").on(table.workItemId),
     index("accepted_deliverable_changes_proposal_id_idx").on(table.proposalId),
     index("accepted_deliverable_changes_branch_id_idx").on(table.branchId),
+    index("accepted_deliverable_changes_drive_item_id_idx").on(table.driveItemId),
+    index("accepted_deliverable_changes_drive_version_id_idx").on(table.driveVersionId),
     index("accepted_deliverable_changes_target_idx").on(table.workItemId, table.targetKey),
     index("accepted_deliverable_changes_current_idx").on(table.workItemId, table.targetKey, table.supersededAt),
     index("accepted_deliverable_changes_created_at_idx").on(table.createdAt)

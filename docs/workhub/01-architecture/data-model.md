@@ -271,7 +271,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 
 ### 6.2.1 新增:`AcceptedDeliverableChange`(正式采纳账本,R1 最小物理语义)
 
-> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 与未来 ProjectDrive/object storage 之间的过渡账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。终局仍会把文件类 change 接到 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`。
+> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`。非 delivery change、非 AgentRun 来源、完整下载/预览/revert 仍按后续 Drive 产品化推进。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -289,6 +289,8 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 | `accepted_version` | int, default 1 | 同 target 的正式版递增序号 |
 | `base_version_ref` | str(128)? | `version_before` 或 `sha256_before` |
 | `accepted_ref` | str(512)? | `version_after` / `sha256_after` / preview href / change id |
+| `drive_item_id` | FK→project_drive_items.id?, SET NULL, index | AgentRun-backed delivery 采纳后的正式 Drive 文件节点 |
+| `drive_version_id` | FK→project_drive_versions.id?, SET NULL, index | AgentRun-backed delivery 采纳后的正式 Drive 文件版本 |
 | `sha256_before` / `sha256_after` | str(64)? | 文件类冲突 gate |
 | `preview_ref_json` | JSONB? | manifest preview ref |
 | `manifest_change_json` | JSONB | 原始 `DeliverableChange` 快照 |
@@ -301,6 +303,12 @@ R1 冲突 gate：
 - incoming 带 `version_before` 时，必须等于 current accepted row 的 `accepted_ref`。
 - `created/generated` 同 target 已存在且 sha 不同，返回 409 `merge_conflict`。
 - `updated/replaced/deleted` 缺 before ref 时保守 409，避免静默覆盖正式版。
+
+R1 delivery adoption：
+
+- `apps/api/src/workers/agent-runner.ts` 在自动打开 Proposal 时传入 `agentRunId`，写入 `branches.agent_run_id`。
+- `apps/api/src/services/proposals.ts` merge 前读取 `AgentRun.workdir_ref`，从 `target_ref.path` 定位源文件，校验路径边界、文件存在与 sha256。
+- `packages/db/src/repositories/proposals.ts` 在 merge transaction 内创建/复用 Drive 文件夹树 `AI Deliverables/{workItemCode}/outputs/...`，追加 `ProjectDriveVersion`，前移 `ProjectDriveItem.current_version_id`，并把 Drive 指针写回 accepted row。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 

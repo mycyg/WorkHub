@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -24,6 +24,8 @@ import {
   orgs,
   proposals,
   projects,
+  projectDriveItems,
+  projectDriveVersions,
   runMigrations,
   snapshots,
   usageRecords,
@@ -149,7 +151,8 @@ async function main() {
     const auditRepo = createAuditLogRepository(db);
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
-    const proposalService = createDbProposalService(createProposalRepository(db));
+    const formalStorageRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-drive-"));
+    const proposalService = createDbProposalService(createProposalRepository(db), { storageRoot: formalStorageRoot });
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
@@ -277,6 +280,18 @@ async function main() {
     if (executed.status !== "succeeded") {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
     }
+    const costUsageBefore = await app.request("/api/cost/usage", { headers });
+    const costPageBefore = await app.request("/api/pages/cost", { headers });
+    if (costUsageBefore.status !== 200) {
+      throw new Error(`Expected pre-record cost usage 200, got ${costUsageBefore.status}: ${await costUsageBefore.text()}`);
+    }
+    if (costPageBefore.status !== 200) {
+      throw new Error(`Expected pre-record cost page 200, got ${costPageBefore.status}: ${await costPageBefore.text()}`);
+    }
+    const costUsageBeforeBody = await costUsageBefore.json() as {
+      data: { me: { token_in: number }; team?: { token_in: number } };
+    };
+    const costPageBeforeBody = await costPageBefore.json() as { data: { total_cost_cny: string; token_in: number } };
     await ledgerStore.recordUsage(buildUsageRecord({
       provider: "deepseek",
       model: "deepseek-v4-flash",
@@ -299,10 +314,14 @@ async function main() {
     }
     const costUsageBody = await costUsage.json() as { data: { me: { token_in: number }; team?: { token_in: number } } };
     const costPageBody = await costPage.json() as { data: { total_cost_cny: string; token_in: number } };
-    if (costUsageBody.data.me.token_in !== 1500 || costUsageBody.data.team?.token_in !== 1500) {
-      throw new Error("Expected DB cost usage to include user and team ledger scopes.");
+    const userTokenDelta = costUsageBody.data.me.token_in - costUsageBeforeBody.data.me.token_in;
+    const teamTokenDelta = (costUsageBody.data.team?.token_in ?? 0) - (costUsageBeforeBody.data.team?.token_in ?? 0);
+    if (userTokenDelta !== 1500 || teamTokenDelta !== 1500) {
+      throw new Error("Expected DB cost usage delta to include user and team ledger scopes.");
     }
-    if (costPageBody.data.total_cost_cny !== "0.007" || costPageBody.data.token_in !== 1500) {
+    const pageCostDelta = Number(costPageBody.data.total_cost_cny) - Number(costPageBeforeBody.data.total_cost_cny);
+    const pageTokenDelta = costPageBody.data.token_in - costPageBeforeBody.data.token_in;
+    if (Math.abs(pageCostDelta - 0.007) > 0.000001 || pageTokenDelta !== 1500) {
       throw new Error(`Expected DB cost page totals, got ${JSON.stringify(costPageBody.data)}`);
     }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
@@ -358,6 +377,8 @@ async function main() {
       branchRows,
       workItemRows,
       acceptedChangeRows,
+      driveItemRows,
+      driveVersionRows,
       snapshotRows,
       auditRows,
       usageRecordRows,
@@ -369,6 +390,8 @@ async function main() {
       db.select().from(branches).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
       db.select().from(acceptedDeliverableChanges).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
+      db.select().from(projectDriveItems),
+      db.select().from(projectDriveVersions),
       db.select().from(snapshots).then((rows) => rows.filter((row) => row.workItemId === workItemId)),
       db.select().from(auditLogs).then((rows) => rows.filter((row) => row.entityId === workItemId)),
       db.select().from(usageRecords).then((rows) => rows.filter((row) => row.runId === runId)),
@@ -394,6 +417,30 @@ async function main() {
     if (acceptedChangeRows.length < proposalAfterMerge.diffManifest.changes.length) {
       throw new Error(`Expected accepted deliverable changes, got ${acceptedChangeRows.length}`);
     }
+    const acceptedDriveVersionIds = new Set(
+      acceptedChangeRows.map((row) => row.driveVersionId).filter((id): id is string => !!id)
+    );
+    if (acceptedDriveVersionIds.size < 1) {
+      throw new Error("Expected accepted deliverable changes to point at ProjectDriveVersion rows.");
+    }
+    const adoptedDriveVersions = driveVersionRows.filter((row) => acceptedDriveVersionIds.has(row.id));
+    if (adoptedDriveVersions.length !== acceptedDriveVersionIds.size) {
+      throw new Error(`Expected adopted drive versions, got ${adoptedDriveVersions.length}`);
+    }
+    for (const version of adoptedDriveVersions) {
+      const item = driveItemRows.find((row) => row.id === version.itemId);
+      if (!item || item.currentVersionId !== version.id) {
+        throw new Error(`Expected drive item current_version_id to point at adopted version ${version.id}`);
+      }
+      const storageStat = await stat(version.storagePath);
+      if (!storageStat.isFile() || storageStat.size !== version.sizeBytes) {
+        throw new Error(`Expected adopted file at ${version.storagePath}`);
+      }
+      const content = await readFile(version.storagePath, "utf8");
+      if (!content.includes("R1 PG smoke deliverable")) {
+        throw new Error("Expected adopted drive file content to match AgentRun output.");
+      }
+    }
     if (!proposalAuditRows.some((row) => row.action === "proposal.merged" && row.snapshotId === proposalAfterMerge.mergeSnapshotId)) {
       throw new Error("Expected persistent proposal.merged audit log linked to the merge snapshot.");
     }
@@ -418,6 +465,10 @@ async function main() {
         proposals: proposalRows.length,
         branches: branchRows.length,
         accepted_deliverable_changes: acceptedChangeRows.length,
+        adopted_drive_items: driveItemRows.filter((row) =>
+          adoptedDriveVersions.some((version) => version.itemId === row.id)
+        ).length,
+        adopted_drive_versions: adoptedDriveVersions.length,
         snapshots: snapshotRows.length,
         audit_logs: auditRows.length,
         proposal_merge_audit_logs: proposalAuditRows.length,
@@ -428,7 +479,11 @@ async function main() {
         usage_me_token_in: costUsageBody.data.me.token_in,
         usage_team_token_in: costUsageBody.data.team?.token_in,
         page_total_cost_cny: costPageBody.data.total_cost_cny,
-        page_token_in: costPageBody.data.token_in
+        page_token_in: costPageBody.data.token_in,
+        usage_me_token_delta: userTokenDelta,
+        usage_team_token_delta: teamTokenDelta,
+        page_cost_cny_delta: pageCostDelta.toFixed(3),
+        page_token_delta: pageTokenDelta
       },
       merge: {
         proposal_status: proposalAfterMerge.status,
@@ -436,7 +491,8 @@ async function main() {
         work_item_status: workItemAfterMerge.status,
         main_branch_id: workItemAfterMerge.mainBranchId,
         merge_snapshot_id: proposalAfterMerge.mergeSnapshotId,
-        accepted_targets: acceptedChangeRows.map((row) => row.targetKey)
+        accepted_targets: acceptedChangeRows.map((row) => row.targetKey),
+        accepted_drive_version_ids: [...acceptedDriveVersionIds]
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

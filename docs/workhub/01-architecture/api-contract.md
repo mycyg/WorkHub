@@ -140,7 +140,7 @@ owner: workflow
 
 **打回回灌(命门,沿用 + 强化)**:现有 `request_revision`(`deliveries.py:267`)已要求 `reason_md` 必填、写 `RevisionRequest` 行、CAS `delivered→revision_requested`、发 `revision.requested` 事件(`deliveries.py:321`)。WorkHub 强化为 **PRD FR-ESC-003**:`reject` 的 `reason_md` 作为上下文**回灌**给 AI,在**同分支续做**而非重来(对齐 opencode CorrectedError)。**`reject` 必须带理由**——空理由 `400`。
 
-**R1 merge 返回语义(2026-06-09)**:`POST /api/proposals/{id}/merge` 成功时，DB transaction 已写 `proposals/branches/work_items` 状态、`snapshots(kind=merge)`、`accepted_deliverable_changes`、`audit_logs(action=proposal.merged)`。若同一 target 当前正式版与 incoming `sha256_before/version_before` 不一致，或 generated 同路径 sha 不同，返回 409 `merge_conflict`；用户面说“和正式版撞车”，不显示 merge/conflict 黑话。
+**R1 merge 返回语义(2026-06-09)**:`POST /api/proposals/{id}/merge` 成功时，DB transaction 已写 `proposals/branches/work_items` 状态、`snapshots(kind=merge)`、`accepted_deliverable_changes`、`audit_logs(action=proposal.merged)`。AgentRun-backed delivery 还会把源文件从 `AgentRun.workdir_ref` 复制到正式 storage root，追加 `ProjectDriveVersion`，前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写入 accepted row。若同一 target 当前正式版与 incoming `sha256_before/version_before` 不一致，generated 同路径 sha 不同，源文件缺失/越界，或源文件 sha 与 manifest 不一致，返回 409；用户面说“和正式版撞车”或“交付文件已变化”，不显示 merge/conflict 黑话。公开 merge 返回体暂不展开正式交付物下载/预览 VM，后续由 Drive/replay page endpoint 补。
 
 ### 2.6 agent-run — AI 工人执行 + trace **[演]**
 

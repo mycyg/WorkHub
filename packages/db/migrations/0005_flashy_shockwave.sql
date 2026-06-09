@@ -1,0 +1,6 @@
+ALTER TABLE "accepted_deliverable_changes" ADD COLUMN "drive_item_id" uuid;--> statement-breakpoint
+ALTER TABLE "accepted_deliverable_changes" ADD COLUMN "drive_version_id" uuid;--> statement-breakpoint
+ALTER TABLE "accepted_deliverable_changes" ADD CONSTRAINT "accepted_deliverable_changes_drive_item_id_project_drive_items_id_fk" FOREIGN KEY ("drive_item_id") REFERENCES "public"."project_drive_items"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "accepted_deliverable_changes" ADD CONSTRAINT "accepted_deliverable_changes_drive_version_id_project_drive_versions_id_fk" FOREIGN KEY ("drive_version_id") REFERENCES "public"."project_drive_versions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "accepted_deliverable_changes_drive_item_id_idx" ON "accepted_deliverable_changes" USING btree ("drive_item_id");--> statement-breakpoint
+CREATE INDEX "accepted_deliverable_changes_drive_version_id_idx" ON "accepted_deliverable_changes" USING btree ("drive_version_id");

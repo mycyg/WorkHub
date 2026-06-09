@@ -55,6 +55,8 @@ test("accepted deliverable changes capture merged proposal targets for replay an
   assert.equal(acceptedDeliverableChanges.workItemId.name, "work_item_id");
   assert.equal(acceptedDeliverableChanges.proposalId.name, "proposal_id");
   assert.equal(acceptedDeliverableChanges.targetKey.name, "target_key");
+  assert.equal(acceptedDeliverableChanges.driveItemId.name, "drive_item_id");
+  assert.equal(acceptedDeliverableChanges.driveVersionId.name, "drive_version_id");
   assert.equal(acceptedDeliverableChanges.sha256Before.name, "sha256_before");
   assert.equal(acceptedDeliverableChanges.sha256After.name, "sha256_after");
   assert.equal(acceptedDeliverableChanges.supersededAt.name, "superseded_at");

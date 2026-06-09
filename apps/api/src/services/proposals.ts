@@ -1,17 +1,23 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { copyFile, mkdir, stat } from "node:fs/promises";
+import path from "node:path";
 
 import {
   deliverableChangeManifestSchema,
   proposalSchema,
   reviewSchema,
+  type DeliverableChange,
   type DeliverableChangeManifest,
   type Proposal,
   type Review
 } from "@workhub/contracts";
+import { settings as defaultSettings } from "@workhub/config";
 import {
   createDatabaseClient,
   createProposalRepository,
   ProposalRepositoryMergeConflictError,
+  type ProposalAdoptedDriveFileInput,
   type ProposalRepository,
   type StoredProposalRows,
   type WorkHubDatabaseClient
@@ -44,6 +50,7 @@ export type ProposalService = {
     actor: ProposalActor;
     title?: string;
     branchId?: string;
+    agentRunId?: string;
   }) => Promise<StoredProposal>;
   get: (proposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
@@ -94,6 +101,146 @@ function actorToRepository(actor: ProposalActor) {
     actorKind: actor.actor_kind,
     ...(actor.actor_user_id ? { actorUserId: actor.actor_user_id } : {})
   };
+}
+
+function normalizeManifestPath(value: string) {
+  return value.replace(/\\/gu, "/").replace(/\/{2,}/gu, "/").replace(/^\/+/u, "");
+}
+
+function assertInside(parent: string, child: string) {
+  const relative = path.relative(parent, child);
+  return relative.length === 0 || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function sourcePathForChange(workdirRef: string, change: DeliverableChange) {
+  const relativePath = change.target_ref.path ? normalizeManifestPath(change.target_ref.path) : "";
+  if (!relativePath) {
+    throw new ProposalServiceError(409, "delivery_artifact_missing", "找不到这份交付文件，不能采纳到正式版。");
+  }
+  const root = path.resolve(workdirRef);
+  const absolute = path.resolve(root, relativePath);
+  if (!assertInside(root, absolute)) {
+    throw new ProposalServiceError(409, "delivery_artifact_unsafe_path", "交付文件路径越界，不能采纳到正式版。");
+  }
+  return absolute;
+}
+
+function storagePathForChange(input: {
+  storageRoot: string;
+  projectId: string;
+  workItemId: string;
+  proposalId: string;
+  change: DeliverableChange;
+  filename: string;
+}) {
+  return path.join(
+    input.storageRoot,
+    input.projectId,
+    input.workItemId,
+    input.proposalId,
+    input.change.id,
+    input.filename
+  );
+}
+
+function filenameForChange(change: DeliverableChange) {
+  const normalized = change.target_ref.path ? normalizeManifestPath(change.target_ref.path) : change.id;
+  const parsed = path.posix.basename(normalized);
+  return parsed.length > 0 ? parsed : change.id;
+}
+
+function mimeForFilename(filename: string) {
+  const ext = path.extname(filename).toLowerCase();
+  const byExt: Record<string, string> = {
+    ".csv": "text/csv",
+    ".gif": "image/gif",
+    ".html": "text/html",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".json": "application/json",
+    ".md": "text/markdown",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".txt": "text/plain",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".zip": "application/zip"
+  };
+  return byExt[ext];
+}
+
+async function sha256File(filePath: string) {
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", resolve);
+  });
+  return hash.digest("hex");
+}
+
+function shouldAdoptDriveFile(change: DeliverableChange) {
+  return change.target_ref.entity_type === "delivery"
+    && change.target_kind !== "folder"
+    && change.change_type !== "deleted"
+    && !!change.target_ref.path;
+}
+
+async function adoptDriveFilesForMerge(input: {
+  repository: ProposalRepository;
+  proposalId: string;
+  storageRoot: string;
+}) {
+  const context = await input.repository.findMergeContext(input.proposalId);
+  if (!context?.workdirRef) {
+    return [];
+  }
+
+  const adopted: ProposalAdoptedDriveFileInput[] = [];
+  for (const change of context.diffManifest.changes) {
+    if (!shouldAdoptDriveFile(change)) {
+      continue;
+    }
+    const sourcePath = sourcePathForChange(context.workdirRef, change);
+    let sourceStat: Awaited<ReturnType<typeof stat>>;
+    try {
+      sourceStat = await stat(sourcePath);
+    } catch {
+      throw new ProposalServiceError(409, "delivery_artifact_missing", "找不到这份交付文件，不能采纳到正式版。");
+    }
+    if (!sourceStat.isFile()) {
+      continue;
+    }
+
+    const sha256 = await sha256File(sourcePath);
+    if (change.target_ref.sha256_after && change.target_ref.sha256_after !== sha256) {
+      throw new ProposalServiceError(409, "delivery_artifact_changed", "交付文件内容和审查版本不一致，需要重新生成变更申请。");
+    }
+
+    const filename = filenameForChange(change);
+    const storagePath = storagePathForChange({
+      storageRoot: input.storageRoot,
+      projectId: context.projectId,
+      workItemId: context.workItemId,
+      proposalId: context.proposalId,
+      change,
+      filename
+    });
+    const storageDir = path.dirname(storagePath);
+    await mkdir(storageDir, { recursive: true });
+    await copyFile(sourcePath, storagePath);
+    const mime = mimeForFilename(filename);
+    adopted.push({
+      changeId: change.id,
+      filename,
+      storagePath,
+      sizeBytes: sourceStat.size,
+      sha256,
+      ...(mime ? { mime } : {})
+    });
+  }
+  return adopted;
 }
 
 function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
@@ -261,9 +408,11 @@ export function createInMemoryProposalService(options: {
 export function createDbProposalService(repository: ProposalRepository, options: {
   now?: () => Date;
   id?: () => string;
+  storageRoot?: string;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
+  const storageRoot = options.storageRoot ?? path.join(defaultSettings.dataDir, "project-drive");
 
   async function requireProposal(proposalId: string) {
     const rows = await repository.findById(proposalId);
@@ -300,6 +449,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         manifest,
         actor: actorToRepository(input.actor),
         title: input.title ?? manifest.title,
+        ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
         at
       });
       return storedRowsToProposal(rows);
@@ -348,12 +498,19 @@ export function createDbProposalService(repository: ProposalRepository, options:
       }
 
       let rows: StoredProposalRows | null;
+      const mergedAt = now();
+      const adoptedDriveFiles = await adoptDriveFilesForMerge({
+        repository,
+        proposalId: input.proposalId,
+        storageRoot
+      });
       try {
         rows = await repository.merge({
           proposalId: input.proposalId,
           mergeSnapshotId: nextId(),
           actor: actorToRepository(input.actor),
-          at: now()
+          ...(adoptedDriveFiles.length > 0 ? { adoptedDriveFiles } : {}),
+          at: mergedAt
         });
       } catch (error) {
         if (error instanceof ProposalRepositoryMergeConflictError) {

@@ -7,8 +7,11 @@ import type { ActorKind, DeliverableChange, DeliverableChangeManifest } from "@w
 import type { WorkHubDb } from "../client.js";
 import {
   acceptedDeliverableChanges,
+  agentRuns,
   auditLogs,
   branches,
+  projectDriveItems,
+  projectDriveVersions,
   proposals,
   reviews,
   snapshots,
@@ -24,6 +27,8 @@ export type StoredProposalRows = {
   proposal: ProposalRow;
   reviews: ReviewRow[];
 };
+
+type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
 
 export type ProposalRepositoryActor = {
   actorKind: ActorKind;
@@ -54,7 +59,28 @@ export type MergeProposalInput = {
   proposalId: string;
   mergeSnapshotId?: string;
   actor?: ProposalRepositoryActor;
+  adoptedDriveFiles?: ProposalAdoptedDriveFileInput[];
   at?: Date;
+};
+
+export type ProposalAdoptedDriveFileInput = {
+  changeId: string;
+  filename: string;
+  storagePath: string;
+  sizeBytes: number;
+  sha256?: string;
+  mime?: string;
+};
+
+export type ProposalMergeContext = {
+  proposalId: string;
+  workItemId: string;
+  workItemCode: string;
+  projectId: string;
+  branchId: string;
+  agentRunId: string | null;
+  workdirRef: string | null;
+  diffManifest: DeliverableChangeManifest;
 };
 
 export type ProposalMergeConflict = {
@@ -82,6 +108,7 @@ export class ProposalRepositoryMergeConflictError extends Error {
 
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
+  findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
@@ -185,7 +212,7 @@ function conflictsWithCurrentAccepted(input: {
 }
 
 async function readCurrentAccepted(
-  tx: Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0],
+  tx: WorkHubTx,
   input: { workItemId: string; targetKey: string }
 ) {
   const rows = await tx
@@ -199,6 +226,148 @@ async function readCurrentAccepted(
     .orderBy(desc(acceptedDeliverableChanges.createdAt))
     .limit(1);
   return rows[0] ?? null;
+}
+
+function drivePathSegments(input: { workItemCode: string; change: DeliverableChange }) {
+  const targetPath = normalizeTargetPath(input.change.target_ref.path ?? input.change.id).replace(/^\/+/u, "");
+  const targetSegments = targetPath.split("/").filter((segment) => segment.length > 0);
+  return ["AI Deliverables", input.workItemCode, ...targetSegments];
+}
+
+async function readDriveItem(
+  tx: WorkHubTx,
+  input: { projectId: string; parentId: string | null; name: string; kind: "file" | "folder" }
+) {
+  const conditions = [
+    eq(projectDriveItems.projectId, input.projectId),
+    eq(projectDriveItems.name, input.name),
+    eq(projectDriveItems.kind, input.kind),
+    isNull(projectDriveItems.deletedAt)
+  ];
+  if (input.parentId) {
+    conditions.push(eq(projectDriveItems.parentId, input.parentId));
+  } else {
+    conditions.push(isNull(projectDriveItems.parentId));
+  }
+
+  const rows = await tx
+    .select()
+    .from(projectDriveItems)
+    .where(and(...conditions))
+    .orderBy(desc(projectDriveItems.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function ensureDriveFolder(
+  tx: WorkHubTx,
+  input: { projectId: string; parentId: string | null; name: string; actorUserId: string; at: Date }
+) {
+  const existing = await readDriveItem(tx, {
+    projectId: input.projectId,
+    parentId: input.parentId,
+    name: input.name,
+    kind: "folder"
+  });
+  if (existing) {
+    return existing.id;
+  }
+
+  const folderId = randomUUID();
+  await tx.insert(projectDriveItems).values({
+    id: folderId,
+    projectId: input.projectId,
+    ...(input.parentId ? { parentId: input.parentId } : {}),
+    name: input.name,
+    kind: "folder",
+    createdByUserId: input.actorUserId,
+    updatedByUserId: input.actorUserId,
+    createdAt: input.at,
+    updatedAt: input.at
+  });
+  return folderId;
+}
+
+async function nextDriveVersionNo(tx: WorkHubTx, itemId: string) {
+  const rows = await tx
+    .select({ versionNo: projectDriveVersions.versionNo })
+    .from(projectDriveVersions)
+    .where(eq(projectDriveVersions.itemId, itemId))
+    .orderBy(desc(projectDriveVersions.versionNo))
+    .limit(1);
+  return (rows[0]?.versionNo ?? 0) + 1;
+}
+
+async function adoptDriveFileVersion(
+  tx: WorkHubTx,
+  input: {
+    projectId: string;
+    actorUserId: string;
+    workItemCode: string;
+    change: DeliverableChange;
+    file: ProposalAdoptedDriveFileInput;
+    at: Date;
+  }
+) {
+  const segments = drivePathSegments({ workItemCode: input.workItemCode, change: input.change });
+  const filename = input.file.filename || segments.at(-1) || input.change.id;
+  const folderSegments = segments.slice(0, -1);
+  let parentId: string | null = null;
+  for (const segment of folderSegments) {
+    parentId = await ensureDriveFolder(tx, {
+      projectId: input.projectId,
+      parentId,
+      name: segment,
+      actorUserId: input.actorUserId,
+      at: input.at
+    });
+  }
+
+  const existingFile = await readDriveItem(tx, {
+    projectId: input.projectId,
+    parentId,
+    name: filename,
+    kind: "file"
+  });
+  const driveItemId = existingFile?.id ?? randomUUID();
+  if (!existingFile) {
+    await tx.insert(projectDriveItems).values({
+      id: driveItemId,
+      projectId: input.projectId,
+      ...(parentId ? { parentId } : {}),
+      name: filename,
+      kind: "file",
+      createdByUserId: input.actorUserId,
+      updatedByUserId: input.actorUserId,
+      createdAt: input.at,
+      updatedAt: input.at
+    });
+  }
+
+  const driveVersionId = randomUUID();
+  await tx.insert(projectDriveVersions).values({
+    id: driveVersionId,
+    itemId: driveItemId,
+    versionNo: await nextDriveVersionNo(tx, driveItemId),
+    filename,
+    ...(input.file.mime ? { mime: input.file.mime } : {}),
+    sizeBytes: input.file.sizeBytes,
+    storagePath: input.file.storagePath,
+    ...(input.file.sha256 ? { sha256: input.file.sha256 } : {}),
+    createdByUserId: input.actorUserId,
+    createdAt: input.at,
+    updatedAt: input.at
+  });
+  await tx
+    .update(projectDriveItems)
+    .set({
+      currentVersionId: driveVersionId,
+      updatedByUserId: input.actorUserId,
+      updatedAt: input.at
+    })
+    .where(eq(projectDriveItems.id, driveItemId));
+
+  return { driveItemId, driveVersionId };
 }
 
 export function createProposalRepository(db: WorkHubDb): ProposalRepository {
@@ -268,6 +437,27 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         throw new Error("Failed to create proposal");
       }
       return stored;
+    },
+
+    async findMergeContext(proposalId) {
+      const rows = await db
+        .select({
+          proposalId: proposals.id,
+          workItemId: proposals.workItemId,
+          workItemCode: workItems.code,
+          projectId: workItems.projectId,
+          branchId: proposals.branchId,
+          agentRunId: branches.agentRunId,
+          workdirRef: agentRuns.workdirRef,
+          diffManifest: proposals.diffManifest
+        })
+        .from(proposals)
+        .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .innerJoin(branches, eq(proposals.branchId, branches.id))
+        .leftJoin(agentRuns, eq(branches.agentRunId, agentRuns.id))
+        .where(eq(proposals.id, proposalId))
+        .limit(1);
+      return rows[0] ?? null;
     },
 
     findById(proposalId) {
@@ -347,10 +537,14 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const proposalRows = await tx
           .select({
             workItemId: proposals.workItemId,
+            workItemCode: workItems.code,
+            projectId: workItems.projectId,
+            submitterUserId: workItems.submitterUserId,
             branchId: proposals.branchId,
             diffManifest: proposals.diffManifest
           })
           .from(proposals)
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
           .where(eq(proposals.id, input.proposalId))
           .limit(1);
         const proposal = proposalRows[0];
@@ -378,6 +572,25 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         }
         if (conflicts.length > 0) {
           throw new ProposalRepositoryMergeConflictError(conflicts);
+        }
+        const adoptedFilesByChangeId = new Map(
+          (input.adoptedDriveFiles ?? []).map((file) => [file.changeId, file] as const)
+        );
+        const driveAdoptionsByChangeId = new Map<string, { driveItemId: string; driveVersionId: string }>();
+        const driveActorUserId = input.actor?.actorUserId ?? proposal.submitterUserId;
+        for (const change of proposal.diffManifest.changes) {
+          const file = adoptedFilesByChangeId.get(change.id);
+          if (!file) {
+            continue;
+          }
+          driveAdoptionsByChangeId.set(change.id, await adoptDriveFileVersion(tx, {
+            projectId: proposal.projectId,
+            actorUserId: driveActorUserId,
+            workItemCode: proposal.workItemCode,
+            change,
+            file,
+            at
+          }));
         }
         const mergeContentSha = proposal.diffManifest.changes.find((change) => change.target_ref.sha256_after)
           ?.target_ref.sha256_after;
@@ -435,6 +648,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           }
           const acceptedChangeId = randomUUID();
           acceptedRows.push(acceptedChangeId);
+          const driveAdoption = driveAdoptionsByChangeId.get(change.id);
           await tx.insert(acceptedDeliverableChanges).values({
             id: acceptedChangeId,
             workItemId: proposal.workItemId,
@@ -450,6 +664,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             acceptedVersion: (current?.acceptedVersion ?? 0) + 1,
             ...(baseVersionRef(change) ? { baseVersionRef: baseVersionRef(change) } : {}),
             acceptedRef: acceptedRef(change),
+            ...(driveAdoption ? { driveItemId: driveAdoption.driveItemId } : {}),
+            ...(driveAdoption ? { driveVersionId: driveAdoption.driveVersionId } : {}),
             ...(change.target_ref.sha256_before ? { sha256Before: change.target_ref.sha256_before } : {}),
             ...(change.target_ref.sha256_after ? { sha256After: change.target_ref.sha256_after } : {}),
             ...(change.preview_ref ? { previewRefJson: change.preview_ref } : {}),
@@ -471,6 +687,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             merge_snapshot_id: mergeSnapshotId,
             accepted_change_ids: acceptedRows,
             accepted_change_count: acceptedRows.length,
+            adopted_drive_version_ids: [...driveAdoptionsByChangeId.values()].map((adoption) => adoption.driveVersionId),
+            adopted_drive_version_count: driveAdoptionsByChangeId.size,
             conflict_checked: true,
             target_keys: proposal.diffManifest.changes.map(targetKey)
           },

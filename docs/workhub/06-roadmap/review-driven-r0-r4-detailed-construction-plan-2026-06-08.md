@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit 与 accepted deliverable ledger | 仍未接完整 ProjectDrive/object storage 指针，也未做 AI 调解 UI |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本 | 仍未接完整 Drive 预览/下载/回滚 UI，也未做 AI 调解 UI |
 
 ### R1 必做顺序
 
@@ -134,7 +134,7 @@ R0 退出门：
    - **2026-06-08 追加切片**：AgentRun replay 的 P0.5 fixture fallback 已完全移出生产 route；`/agent-runs/:id/replay` 只读真实 run/trace/snapshot/audit。
    - **2026-06-08 追加验收**：Linux 测试机真实 PG smoke 已通过，daemon restart 后 `/agent-runs/:id` 与 `/replay` 可读回。
    - **2026-06-09 追加切片**：merge 会创建真实 `snapshots(kind=merge)`、`audit_logs(action=proposal.merged)` 与 `accepted_deliverable_changes`，R1 smoke 会校验这些 DB 行。
-   - 剩余：replay 还需要把 accepted deliverable ledger 展成可回放的正式交付物视图；完整 rollback 仍要接 ProjectDrive/object storage。
+   - 剩余：replay 还需要把 accepted deliverable ledger 与 `drive_version_id` 展成可回放的正式交付物视图；完整 rollback 仍要接 Drive 指针恢复入口。
    - 当前进程 Map 只作执行期缓存，不作长期回放真相源。
 
 4. **隔离 fixture**
@@ -150,15 +150,16 @@ R0 退出门：
    - **2026-06-09 追加完成**：新增 `accepted_deliverable_changes` append-only 账本。merge 时按 manifest `target_ref` 生成 `target_key`，把每个被采纳的 change 写为正式版本记录，并 supersede 同一 `work_item_id + target_key` 的旧 current 记录。
    - **2026-06-09 追加完成**：merge 在同一 PG transaction 内创建 `snapshots(kind=merge)` 与 `audit_logs(action=proposal.merged)`；audit detail 记录 `accepted_change_ids`、`accepted_change_count`、`target_keys`、`conflict_checked=true`。
    - **2026-06-09 追加完成**：merge 前读取同一 target 的 current accepted row。若 incoming manifest 没有对齐 `sha256_before/version_before`，或 `created/generated` 同路径 sha 与正式版不同，返回 `merge_conflict`，用户面文案为「这份变更和正式版撞车，需要先选择处理方案。」
+   - **2026-06-09 追加完成**：AgentRun-backed delivery 会在 merge 前通过 `Branch.agent_run_id -> AgentRun.workdir_ref` 找到源文件，从 run workdir 复制到正式 storage root，并在 merge transaction 内写 `ProjectDriveItem` / `ProjectDriveVersion`、前移 `current_version_id`，再把 `drive_item_id` / `drive_version_id` 写入 `accepted_deliverable_changes`。
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、ProjectDrive/object storage 真实文件搬运、AI 冲突调解候选、revert 执行入口仍未完成。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、正式交付物下载/预览/revert 入口、AI 冲突调解候选仍未完成。
 
 ### R1 验收
 
 - 一条 file-only work item 经真实 route 跑完，产生 DB `agent_run`、`agent_steps`、`proposal`、`review`、`audit`、`snapshot`。
-- merge 后至少产生 1 条 `accepted_deliverable_changes`、1 条 `snapshots(kind=merge)`、1 条 `audit_logs(action=proposal.merged)`；同路径不同 sha 的二次采纳必须 409。
+- merge 后至少产生 1 条 `accepted_deliverable_changes`、1 条 `ProjectDriveVersion`、1 条 `snapshots(kind=merge)`、1 条 `audit_logs(action=proposal.merged)`；accepted row 必须指向 `drive_version_id`；同路径不同 sha 的二次采纳必须 409。
 - daemon 重启后，`GET /api/agent-runs/:id` 与 `/replay` 仍返回同一 run。
 - 生产 route 中不能用 hardcoded manifest/replay 证明通过。
 - 快照红线、provider 单出口、预算计量不回退。
@@ -174,7 +175,8 @@ R0 退出门：
 - 后续已补：R1 最小真实 `sessions/workitems/knowledge/page workitem` service 已接入，并纳入 API test 与 PG smoke。
 - 后续已补：CostLedger 默认 store 已接 `usage_records/cost_ledger_entries` 与 DB-backed repository，并纳入 PG smoke 的 cost usage/page 断言。
 - 后续已补：merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同路径不同 sha 冲突 gate；API test 覆盖冲突阻断。
-- 未完成：BudgetPolicy 持久化与审计、ProjectDrive/object storage 真实文件搬运、AI 冲突调解候选、完整 approval policy routing 仍未完成。
+- 后续已补：AgentRun-backed delivery 的正式文件落盘与 `ProjectDriveItem/Version` 最小采纳；Linux PG smoke 覆盖 `adopted_drive_items=1`、`adopted_drive_versions=1`、正式 storage path 文件存在且内容匹配。
+- 未完成：BudgetPolicy 持久化与审计、正式交付物下载/预览/revert 入口、AI 冲突调解候选、完整 approval policy routing 仍未完成。
 
 ### R1.2 真实 PG smoke 入口（2026-06-08）
 
@@ -198,21 +200,22 @@ pnpm qa:r1-pg-smoke
 10. 使用 fake Agent client 写入 `outputs/result.md`，但走真实 `AgentRunQueue`、tool、snapshot、audit、proposal service、AgentRun persistence。
 11. 新建一个 queue 模拟 daemon restart，再通过 route 读取 `/api/agent-runs/:id` 与 `/api/agent-runs/:id/replay`。
 12. Approve + merge 真实 DB proposal，断言 `proposal.status=merged`、`branch.status=merged`、`work_items.status=merged/main_branch_id`。
-13. 断言 merge 产生 `accepted_deliverable_changes`、`snapshots(kind=merge)`、`audit_logs(action=proposal.merged)`，且 proposal merge audit 绑定 `merge_snapshot_id`。
-14. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page 汇总、`agent_runs`、`agent_steps`、`proposals`、`branches`、`accepted_deliverable_changes`、`snapshots`、`audit_logs` 行数、merge 状态、accepted targets 与 replay 计数。
+13. 断言 merge 产生 `accepted_deliverable_changes`、`ProjectDriveItem/Version`、`snapshots(kind=merge)`、`audit_logs(action=proposal.merged)`，且 proposal merge audit 绑定 `merge_snapshot_id`。
+14. 断言 accepted row 指向 `drive_version_id`，Drive item 的 `current_version_id` 指向该版本，正式 storage path 文件存在且内容匹配 AgentRun output。
+15. 输出 JSON 证据：intake/evidence/page evidence、`usage_records`、`cost_ledger_entries`、cost page delta、`agent_runs`、`agent_steps`、`proposals`、`branches`、`accepted_deliverable_changes`、`adopted_drive_items`、`adopted_drive_versions`、`snapshots`、`audit_logs` 行数、merge 状态、accepted targets/drive versions 与 replay 计数。
 
 当前本机实测：
 
 - `pnpm qa:r1-pg-smoke` 可加载脚本，但因 `127.0.0.1:5432` 无 PostgreSQL 返回 `ECONNREFUSED`。
 - 本机 `docker` 与 `psql` 不在 PATH，无法在 Windows 本机直接拉起或检查 PG。
 
-Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前工作树 patch）：
+Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数据库历史 usage 已存在，所以 cost 以 delta 验收）：
 
 ```json
 {
   "ok": true,
-  "work_item_id": "17b2b227-7282-4bac-939c-023e389dccaf",
-  "run_id": "69f541b3-3876-4e93-91ae-c27c107c1af6",
+  "work_item_id": "89befbf0-72f2-4070-a106-7216b3bafbe1",
+  "run_id": "bfb729ca-d503-490b-abbf-749c007073e7",
   "intake": {
     "session_status": 200,
     "work_item_status": "spec_ready",
@@ -226,6 +229,8 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "proposals": 1,
     "branches": 1,
     "accepted_deliverable_changes": 1,
+    "adopted_drive_items": 1,
+    "adopted_drive_versions": 1,
     "snapshots": 2,
     "audit_logs": 1,
     "proposal_merge_audit_logs": 1,
@@ -233,18 +238,19 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
     "cost_ledger_entries": 3
   },
   "cost": {
-    "usage_me_token_in": 1500,
-    "usage_team_token_in": 1500,
-    "page_total_cost_cny": "0.007",
-    "page_token_in": 1500
+    "usage_me_token_delta": 1500,
+    "usage_team_token_delta": 1500,
+    "page_cost_cny_delta": "0.007",
+    "page_token_delta": 1500
   },
   "merge": {
     "proposal_status": "merged",
     "branch_status": "merged",
     "work_item_status": "merged",
-    "main_branch_id": "26b6e22e-a505-4b0d-bb2f-dcc823de7566",
-    "merge_snapshot_id": "09bc2886-028f-4feb-8de3-65e37d073905",
-    "accepted_targets": ["delivery:/outputs/result.md"]
+    "main_branch_id": "dd26e7bb-6c7e-4869-b0f5-c6092b2ae545",
+    "merge_snapshot_id": "7a4286da-5371-4c15-8853-0c7dcd0ac9c5",
+    "accepted_targets": ["delivery:/outputs/result.md"],
+    "accepted_drive_version_ids": ["d4e0f2c3-b440-491c-98ce-92556c67dda6"]
   },
   "replay_steps": 4,
   "replay_snapshots": 1,
@@ -252,7 +258,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 }
 ```
 
-结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> DB CostLedger -> AgentRun -> proposal -> accepted deliverable ledger -> merge audit -> replay 纵切已由 Linux PG smoke 验证通过。
+结论：R1 的“真实 PostgreSQL restart 后 run/replay 可读回”和“AgentRun-backed delivery 采纳后正式文件落盘”缺口已关闭；最小 intake -> work item -> knowledge evidence -> page VM -> DB CostLedger -> AgentRun -> proposal -> accepted deliverable ledger -> ProjectDriveVersion -> merge audit -> replay 纵切已由 Linux PG smoke 验证通过。
 
 ### R1.4 Merge accepted ledger 与冲突 gate（2026-06-09）
 
@@ -282,13 +288,42 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 | `created/generated` 且同 target 已存在 | sha 相同视为幂等，不同则 409 |
 | `updated/replaced/deleted` 但未带 before ref | 保守 409，避免静默覆盖正式版 |
 
+已由 R1.5 补齐：
+
+- AgentRun-backed delivery 的真实 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion` 指针前移。
+- 文件 blob 从 run workdir 到正式 storage root 的本地对象存储搬运。
+
 仍未完成：
 
-- 真实 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion` 指针前移。
-- object storage blob 从 run workdir 到正式 bucket/path 的搬运。
+- 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
 - `MergeAttempt` / `MergeProposal` 表与 AI 候选生成。
 - 冲突选择 UI 与 `/workitems/{id}/conflicts` API。
 - revert 执行入口：当前有 merge snapshot 和 rollback payload，但还没有把 accepted ledger 或 Drive 指针恢复到旧版本的操作。
+
+### R1.5 ProjectDrive adoption 与正式文件落盘（2026-06-09）
+
+本切片把 R1 的 file-only Proposal 从“只记账”推进到“可定位正式文件版本”。范围仍限 AgentRun-backed delivery：即 manifest change 的 `target_ref.entity_type="delivery"`、有 `target_ref.path`、来源 branch 带 `agent_run_id` 且 `AgentRun.workdir_ref` 可读。
+
+已落代码：
+
+- `apps/api/src/workers/agent-runner.ts`：成功 run 自动打开 proposal 时传入 `agentRunId`，写入 `branches.agent_run_id`。
+- `apps/api/src/services/proposals.ts`：merge 前读取 `repository.findMergeContext()`，解析 `workdir_ref + target_ref.path`，校验路径不越界、源文件存在、sha256 与 manifest 一致，再复制到正式 storage root。
+- `packages/db/src/repositories/proposals.ts`：merge transaction 内按 `AI Deliverables/{workItemCode}/outputs/...` 创建/复用 `ProjectDriveItem` 文件夹树和 file item，追加 `ProjectDriveVersion`，前移 `project_drive_items.current_version_id`。
+- `packages/db/src/schema/core.ts` 与 `0005_flashy_shockwave.sql`：`accepted_deliverable_changes` 新增 `drive_item_id`、`drive_version_id` 外键与索引。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts`：真实 PG smoke 断言 Drive item/version、accepted row 指针、正式 storage path 文件存在且内容匹配。
+
+当前契约：
+
+| 项 | R1.5 行为 |
+|---|---|
+| 正式 Drive 路径 | `AI Deliverables/{workItemCode}/outputs/...` |
+| 本地正式 storage | 默认 `DATA_DIR/project-drive/...`；测试可注入 `storageRoot` |
+| sha 校验 | manifest `sha256_after` 必须等于源文件实际 sha，否则 409 `delivery_artifact_changed` |
+| 源路径安全 | 源文件必须位于 `workdir_ref` 内，否则 409 `delivery_artifact_unsafe_path` |
+| 缺源文件 | 409 `delivery_artifact_missing` |
+| DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
+
+仍不是完整 Drive 产品化：当前没有 Drive 下载/预览 API、没有正式交付物 replay VM、没有 revert 执行入口、没有云对象存储 adapter，也没有合并冲突选择 UI。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 
@@ -311,7 +346,7 @@ Linux 测试机通过证据（`192.168.5.53`，Ubuntu，PostgreSQL 18.4，当前
 - `pnpm --filter @workhub/api test` 通过，当前 60/60；新增测试确认生产 route 对 P0.5 fixture route set fail-closed。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 10/10；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、ProjectDrive/object storage 真实文件搬运、AI 冲突调解、完整 approval policy routing 仍未落地。
+仍不能宣称 R1 全部完成，因为 BudgetPolicy 持久化与审计、正式交付物下载/预览/revert、AI 冲突调解、完整 approval policy routing 仍未落地。
 
 ## 5. R2 多 worker 与订阅边界
 
