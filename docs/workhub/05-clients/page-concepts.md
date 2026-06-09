@@ -244,6 +244,12 @@ Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / �
 
 这组源帧证明概念图使用的是当前真实模型外观；它不能替代 Tauri `pet` window motion capture。后续验收仍要补黑猫/白猫独立窗口多场景录屏和 settings matrix。
 
+### 6.4 R1.39 Route visual QA
+
+![R1.39 Route visual QA](./assets/audit/2026-06-10-r1-route-visual-qa/contact-sheet.png)
+
+R1.39 已把 Proposal / Replay 的富 patch viewer、重叠 hunk review、子记录逐项 diff 与多冲突折叠工作台放进 Web / desktop webview route wrapper 截图验收。证据目录：`./assets/audit/2026-06-10-r1-route-visual-qa/`；详细说明见 [`r1-route-visual-qa.md`](./r1-route-visual-qa.md)。当前 gates 包含 zh-CN/en-US、desktop/mobile-narrow、四态示意、`no_horizontal_overflow`、主窗无 Cuu 与无重看板默认词。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |
@@ -254,7 +260,7 @@ Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / �
 | IMG-CUU-04 | settings matrix 截图 | R1 前冻结；后续证明 scale/opacity/pass-through/hide-on-hover，以及 `/settings` / 托盘恢复门 |
 | IMG-WEB-01 | Web 主窗无 Cuu 本体截图 | 验证主窗边界 |
 | IMG-DESK-01 | desktop 主窗无 Cuu 本体截图 | 验证桌面主窗边界 |
-| IMG-I18N-01 | zh-CN/en-US 页面组图 | 验证双语 |
+| IMG-I18N-01 | zh-CN/en-US 页面组图 | R1.39 已覆盖 Proposal / Replay route；R4 扩到全页面 |
 
 ## 7. 施工对齐
 

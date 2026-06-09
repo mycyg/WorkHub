@@ -1346,7 +1346,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `corepack pnpm --filter @workhub/api typecheck` 通过。
 - `corepack pnpm --filter @workhub/api test` 通过，83/83。
 - `corepack pnpm --filter @workhub/ui typecheck` 通过。
-- `corepack pnpm --filter @workhub/ui test` 通过，28/28。
+- `corepack pnpm --filter @workhub/ui test` 通过（该切片测试通过；后续新增测试已提升总数）。
 - 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
 
 ### R1.35 Rich patch viewer foundation（2026-06-10）
@@ -1377,7 +1377,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 1. **R1.36 Overlap hunk review foundation（已落）**：把 `text_diff3.conflict_ranges[]` 映射到可点选 hunk，用户可逐段选择 current / incoming / AI fusion；默认仍只推荐一条处理方式。
 2. **R1.37 Subrecord item editor（已落）**：把 `acceptance_items` / `task_items` 从整组 operation 展开为逐项 diff，支持新增、删除、修改的逐项保留/采纳。
 3. **R1.38 Multi-conflict workbench**：只给高阶用户批量入口；普通用户仍由 AI 按“最需要处理的一件事”递卡。
-4. **R1.39 Route visual QA**：用 Web/desktop 真实 route + Playwright 截图检查长 patch、移动端、en-US、空/错态和不重叠。
+4. **R1.39 Route visual QA（已落）**：用 Web/desktop 真实 route + 浏览器截图检查长 patch、移动端、en-US、空/错态和不重叠。
 5. **R1.40 Task plan scope UI**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
 6. **R1.41 Text hunk materializer**：后端正式支持 `text_hunk_overrides`，把逐段 current / incoming / AI fusion 决策写入最终文本并审计；没有该能力前，UI 的 hunk 按钮只作为 route JS 组合请求的稳定数据模型。
 
@@ -1415,7 +1415,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 1. **R1.37 Subrecord item editor（已落）**：把 `acceptance_items` / `task_items` 从整组 operation 展开为逐项 diff，支持新增、删除、修改的逐项保留/采纳。
 2. **R1.38 Multi-conflict workbench**：只给高阶用户批量入口；普通用户仍由 AI 按“最需要处理的一件事”递卡。
-3. **R1.39 Route visual QA**：把 shared rich patch viewer、overlap hunk review 和 subrecord item diff 接入真实 Web/Desktop route 截图检查，覆盖长 patch、移动端、en-US、空/错态和不重叠。
+3. **R1.39 Route visual QA（已落）**：把 shared rich patch viewer、overlap hunk review 和 subrecord item diff 接入真实 Web/Desktop route 截图检查，覆盖长 patch、移动端、en-US、空/错态和不重叠。
 4. **R1.40 Task plan scope UI**：多 `dispatch` / 多阶段 plan 场景必须显式点选目标 plan，禁止后台猜测写入落点。
 5. **R1.41 Text hunk materializer**：在 contracts/API/service/db 层正式接 `text_hunk_overrides`，逐段生成最终文本、写 Drive version、记录 audit，并拒绝缺失 range、越界 range 或 stale base。
 
@@ -1455,7 +1455,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 后续施工切片：
 
 1. **R1.38 Multi-conflict workbench foundation（已落）**：为高阶用户补折叠批量冲突处理入口，但默认仍由 AI/Cuu 递一件最需要处理的事。
-2. **R1.39 Route visual QA**：把 rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
+2. **R1.39 Route visual QA（已落）**：把 rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
 3. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，Proposal/Cuu 先让用户点选目标 plan，再允许写入 `task_items`。
 4. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为真正后端写回能力。
 
@@ -1496,7 +1496,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 后续施工切片：
 
-1. **R1.39 Route visual QA**：把 Proposal 多冲突、rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
+1. **R1.39 Route visual QA（已落）**：把 Proposal 多冲突、rich patch viewer、overlap hunk review、subrecord item diff 通过真实 Web/Desktop route 渲染并截图检查，覆盖移动端、en-US、长 patch、长子记录列表、空/错/载入/权限四态。
 2. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，先显式选择目标 plan，再允许写入 `task_items`。
 3. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为后端正式写回能力。
 4. **R1.42 Multi-conflict execution audit**：如果 route JS 批量执行落地，需要为批量 keep/accept 增加明确 `bulk_action` audit 与失败局部回滚说明。
@@ -1505,6 +1505,59 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 - `corepack pnpm --filter @workhub/ui typecheck` 通过。
 - `corepack pnpm --filter @workhub/ui test` 通过，30/30。
+- 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
+
+### R1.39 Route visual QA（2026-06-10）
+
+本切片关闭“Proposal / Replay 共享 renderer 已有字符串测试，但缺真实 Web/Desktop route 截图证据”的缺口。范围只覆盖 R1 高风险页面组件的浏览器视觉门，不把 Web 产品化提前扩大成完整 SPA，不把 Cuu 放回主窗口，也不引入重型看板。
+
+已落代码与资产：
+
+- `scripts/qa/r1-route-visual-qa.ts`：新增 route 视觉 QA 脚本，通过 `apps/web/src/main.ts` 与 `apps/desktop-webview/src/main.ts` surface 函数渲染，不绕过真实 route wrapper 直接测 renderer。
+- `package.json`：新增 `pnpm qa:r1-route-visual`，用于生成 HTML、PNG、contact sheet 与 `route-visual-report.json`。
+- `docs/workhub/05-clients/assets/audit/2026-06-10-r1-route-visual-qa/`：落盘 Web Proposal zh-CN desktop、Web Proposal en-US mobile-narrow、Desktop Proposal zh-CN、Web Replay en-US desktop、Desktop Replay zh-CN、route states zh-CN 六组截图与总览图。
+- `docs/workhub/05-clients/r1-route-visual-qa.md`：记录截图目录、DOM gates、当前边界、复跑命令和后续 R1.40-R1.42 计划。
+- `packages/ui/src/proposal/render.ts`、`packages/ui/src/replay/render.ts`：修复 mobile route 的横向撑宽风险，给主列/侧栏/card/grid/row 增加 `min-width:0`、长文本断行、窄屏单列布局。
+- `packages/ui/src/rich-patch-viewer.ts`：限制 rich patch 与 diff code 在容器内滚动/截断，不再把页面整体撑宽。
+- `packages/ui/src/proposal/render.test.ts`、`packages/ui/src/replay/render.test.ts`：补移动端布局 CSS contract，防止后续误删断行/单列规则。
+
+已验收 gates：
+
+| Gate | 证据 |
+|---|---|
+| Web Proposal zh-CN desktop | `web-proposal-zh-desktop.png` |
+| Web Proposal en-US mobile-narrow | `web-proposal-en-mobile.png` |
+| Desktop Proposal zh-CN | `desktop-proposal-zh.png` |
+| Web Replay en-US desktop | `web-replay-en-desktop.png` |
+| Desktop Replay zh-CN | `desktop-replay-zh.png` |
+| loading / empty / error / forbidden 四态示意 | `web-route-states-zh.png` |
+| 主窗口无 Cuu | `route-visual-report.json:gates.no_main_window_cuu=true` |
+| 默认无重看板词 | `route-visual-report.json:gates.no_kanban_default=true` |
+| 富 patch viewer / 长 patch 折叠 / hunk review / 子记录 diff / 多冲突折叠区 | `route-visual-report.json:gates.rich_patch_viewer...conflict_workbench=true` |
+| 移动端无横向 overflow | `route-visual-report.json:gates.no_horizontal_overflow=true` |
+
+当前边界：
+
+| 项 | R1.39 行为 |
+|---|---|
+| Web 产品化 | 仍是 route visual QA，不等同完整 SPA 信息架构 |
+| 四态 | 先有 route-state evidence page；R4 需要接真实页面 VM 的 loading/error/forbidden |
+| 多语言 | 固定 UI 文案覆盖 zh-CN/en-US；fixture 业务正文仍按测试数据原文显示 |
+| Cuu | 只验证主窗口无 Cuu；桌宠独立窗口动作 QA 不在本切片 |
+| CI | 本地/人工执行截图脚本并提交证据；后续可接 nightly artifact |
+| Chrome 行为 | Windows headless 下 mobile viewport 采用 `467px` 的实测 narrow width，避免浏览器最小窗口造成假裁切 |
+
+后续施工切片：
+
+1. **R1.40 Task plan scope UI**：当 WorkItem 存在多个 `dispatch` 或多阶段 task plan 时，Proposal/Cuu 先让用户点选目标 plan，再允许写入 `task_items`；不能后台猜测写入落点。
+2. **R1.41 Text hunk materializer**：把 `text_hunk_overrides` 从前端意图模板升级为 API/service/DB 正式能力，逐段 materialize 最终文本并写审计。
+3. **R1.42 Multi-conflict execution audit**：把批量 keep/accept 从稳定数据模型升级为 route JS 执行器，补 `bulk_action` audit 与局部失败说明。
+4. **R4 Route visual matrix**：把 home/intake/workitem/proposal/replay/cost/approvals 全页面接入真实 loading/empty/error/forbidden 截图矩阵。
+
+验证：
+
+- `corepack pnpm --filter @workhub/ui test` 通过。
+- `pnpm qa:r1-route-visual` 通过并生成截图/报告。
 - 提交前仍需跑全量 `corepack pnpm verify`、`git diff --check`、`reference_paths=0`、`secret_like_matches=0`。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）

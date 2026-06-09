@@ -18,6 +18,8 @@ test("proposal renderer keeps the change package shape visible", () => {
   assert.equal(rendered.cuuState, "carrying_document");
   assert.equal(rendered.html.includes("交付物变更申请"), true);
   assert.equal(rendered.css.includes(".wh-proposal"), true);
+  assert.equal(rendered.css.includes("overflow-wrap:anywhere"), true);
+  assert.equal(rendered.css.includes(".wh-row{flex-direction:column"), true);
   assert.equal(rendered.html.includes("这次改了什么"), true);
   assert.equal(rendered.html.includes("检查结果"), true);
   assert.equal(rendered.html.includes("回滚"), true);

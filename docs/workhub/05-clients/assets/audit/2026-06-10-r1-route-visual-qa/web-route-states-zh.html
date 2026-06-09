@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>R1 路由四态</title>
+  <style>
+    :root{color-scheme:light;--ink:#182033;--muted:#5e6a86;--line:#dfe5f1;--paper:#fff;--soft:#f5f8fc;--blue:#355cff;--danger:#d94a3a;--amber:#d98b16}
+    body{margin:0;font-family:"Aptos","Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fbff 0%,#eef4fb 100%);padding:24px}
+    main{max-width:1120px;margin:0 auto;display:grid;gap:16px}
+    h1{font-size:30px;margin:0 0 4px}
+    .states{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+    .state{border:1px solid var(--line);background:rgba(255,255,255,.94);border-radius:8px;padding:18px;min-height:140px;box-shadow:0 18px 50px rgba(37,51,79,.08)}
+    .state strong{display:block;font-size:18px;margin-bottom:8px}.state p{color:var(--muted);line-height:1.55}.pill{display:inline-flex;border-radius:999px;padding:5px 9px;background:var(--soft);font-size:12px;color:var(--muted)}
+    .state[data-route-state=error]{border-color:#f0c5bd}.state[data-route-state=forbidden]{border-color:#d8dff2}.state[data-route-state=loading]{border-color:#b8c7ff}.state[data-route-state=empty]{border-color:#dfe8d7}
+  </style>
+</head>
+<body data-r1-route-visual-case="web-route-states-zh" data-r1-route="/api/pages/proposals/:id" data-r1-surface="web" data-r1-locale="zh-CN">
+  <main>
+    <h1>R1 路由四态</h1>
+    <section class="states" data-r1-route-states="true">
+      <article class="state" data-route-state="loading"><span class="pill">/api/pages/proposals/:id</span><strong>载入中</strong><p>页面等待真实 API 返回，不能显示假成功。</p></article>
+      <article class="state" data-route-state="empty"><span class="pill">/api/workitems/:id/conflicts</span><strong>暂无需要处理的变更</strong><p>空态要给下一步，而不是给空白页面。</p></article>
+      <article class="state" data-route-state="error"><span class="pill">trace_id=r1-route-visual</span><strong>加载失败</strong><p>错误态显示可恢复动作和追踪编号。</p></article>
+      <article class="state" data-route-state="forbidden"><span class="pill">403</span><strong>无权查看</strong><p>权限态说明需要谁授权。</p></article>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      document.body.dataset.r1ClientWidth = String(root.clientWidth);
+      document.body.dataset.r1ScrollWidth = String(root.scrollWidth);
+    })();
+  </script>
+</body>
+</html>

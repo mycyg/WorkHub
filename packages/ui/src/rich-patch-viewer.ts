@@ -3,15 +3,15 @@ import type { WorkHubLocale } from "@workhub/contracts";
 import { uiT } from "./i18n.js";
 
 export const richPatchViewerCss = [
-  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden}",
+  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;max-width:100%;min-width:0}",
   ".wh-patch-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}",
   ".wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}",
-  ".wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}",
+  ".wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto;max-width:100%;min-width:0}",
   ".wh-diff-hunk{border-top:1px solid #e8eef8}.wh-diff-hunk:first-child{border-top:0}",
   ".wh-diff-hunk-head{display:grid;grid-template-columns:54px 54px minmax(0,1fr);gap:0;background:#f1f5fb;color:var(--muted);font-weight:650}",
   ".wh-diff-line{display:grid;grid-template-columns:54px 54px minmax(0,1fr);gap:0;min-width:0;white-space:pre}",
   ".wh-diff-line-no{color:#7b87a2;text-align:right;padding:2px 10px;border-right:1px solid #e4ebf6;user-select:none}",
-  ".wh-diff-code{min-width:0;padding:2px 12px;overflow:visible}",
+  ".wh-diff-code{min-width:0;padding:2px 12px;overflow:hidden;text-overflow:clip}",
   ".wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}",
   ".wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}",
   ".wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",

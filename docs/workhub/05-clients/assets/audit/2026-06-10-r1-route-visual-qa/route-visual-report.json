@@ -1,0 +1,206 @@
+{
+  "generated_at": "2026-06-09T18:46:04.004Z",
+  "module": "R1.39 route visual QA",
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-10-r1-route-visual-qa",
+  "gates": {
+    "no_main_window_cuu": true,
+    "no_kanban_default": true,
+    "rich_patch_viewer": true,
+    "long_patch_folded": true,
+    "overlap_hunk_review": true,
+    "proposal_subrecord_diff": true,
+    "replay_subrecord_diff": true,
+    "conflict_workbench": true,
+    "no_horizontal_overflow": true,
+    "route_states": true
+  },
+  "cases": [
+    {
+      "id": "web-proposal-zh-desktop",
+      "label": "Web Proposal zh-CN desktop",
+      "route": "/api/pages/proposals/:id",
+      "surface": "web",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 1600
+      },
+      "html": "web-proposal-zh-desktop.html",
+      "screenshot": "web-proposal-zh-desktop.png",
+      "markers": {
+        "richPatchViewer": 1,
+        "richPatchTruncated": 1,
+        "overlapHunkReview": 1,
+        "proposalSubrecordDiff": 1,
+        "replaySubrecordDiff": 0,
+        "conflictWorkbench": 1,
+        "routeStateCards": 0,
+        "forbiddenState": 0,
+        "loadingState": 0,
+        "emptyState": 0,
+        "errorState": 0,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1332,
+        "scrollWidth": 1332,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "web-proposal-en-mobile",
+      "label": "Web Proposal en-US mobile",
+      "route": "/api/pages/proposals/:id",
+      "surface": "web",
+      "locale": "en-US",
+      "viewport": {
+        "width": 467,
+        "height": 1600
+      },
+      "html": "web-proposal-en-mobile.html",
+      "screenshot": "web-proposal-en-mobile.png",
+      "markers": {
+        "richPatchViewer": 1,
+        "richPatchTruncated": 1,
+        "overlapHunkReview": 1,
+        "proposalSubrecordDiff": 1,
+        "replaySubrecordDiff": 0,
+        "conflictWorkbench": 1,
+        "routeStateCards": 0,
+        "forbiddenState": 0,
+        "loadingState": 0,
+        "emptyState": 0,
+        "errorState": 0,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "desktop-proposal-zh",
+      "label": "Desktop Proposal zh-CN",
+      "route": "/api/pages/proposals/:id",
+      "surface": "desktop",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1180,
+        "height": 1500
+      },
+      "html": "desktop-proposal-zh.html",
+      "screenshot": "desktop-proposal-zh.png",
+      "markers": {
+        "richPatchViewer": 1,
+        "richPatchTruncated": 1,
+        "overlapHunkReview": 1,
+        "proposalSubrecordDiff": 1,
+        "replaySubrecordDiff": 0,
+        "conflictWorkbench": 1,
+        "routeStateCards": 0,
+        "forbiddenState": 0,
+        "loadingState": 0,
+        "emptyState": 0,
+        "errorState": 0,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1147,
+        "scrollWidth": 1147,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "web-replay-en-desktop",
+      "label": "Web Replay en-US desktop",
+      "route": "/api/agent-runs/:id/replay",
+      "surface": "web",
+      "locale": "en-US",
+      "viewport": {
+        "width": 1365,
+        "height": 1600
+      },
+      "html": "web-replay-en-desktop.html",
+      "screenshot": "web-replay-en-desktop.png",
+      "markers": {
+        "richPatchViewer": 1,
+        "richPatchTruncated": 1,
+        "overlapHunkReview": 1,
+        "proposalSubrecordDiff": 0,
+        "replaySubrecordDiff": 1,
+        "conflictWorkbench": 0,
+        "routeStateCards": 0,
+        "forbiddenState": 0,
+        "loadingState": 0,
+        "emptyState": 0,
+        "errorState": 0,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1332,
+        "scrollWidth": 1332,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "desktop-replay-zh",
+      "label": "Desktop Replay zh-CN",
+      "route": "/api/agent-runs/:id/replay",
+      "surface": "desktop",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1180,
+        "height": 1500
+      },
+      "html": "desktop-replay-zh.html",
+      "screenshot": "desktop-replay-zh.png",
+      "markers": {
+        "richPatchViewer": 1,
+        "richPatchTruncated": 1,
+        "overlapHunkReview": 1,
+        "proposalSubrecordDiff": 0,
+        "replaySubrecordDiff": 1,
+        "conflictWorkbench": 0,
+        "routeStateCards": 0,
+        "forbiddenState": 0,
+        "loadingState": 0,
+        "emptyState": 0,
+        "errorState": 0,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1147,
+        "scrollWidth": 1147,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "web-route-states-zh",
+      "label": "Web route states zh-CN",
+      "route": "/api/pages/proposals/:id",
+      "surface": "web",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "html": "web-route-states-zh.html",
+      "screenshot": "web-route-states-zh.png",
+      "markers": {
+        "richPatchViewer": 0,
+        "richPatchTruncated": 0,
+        "overlapHunkReview": 0,
+        "proposalSubrecordDiff": 0,
+        "replaySubrecordDiff": 0,
+        "conflictWorkbench": 0,
+        "routeStateCards": 8,
+        "forbiddenState": 1,
+        "loadingState": 1,
+        "emptyState": 1,
+        "errorState": 1,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    }
+  ]
+}

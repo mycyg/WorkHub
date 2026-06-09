@@ -188,6 +188,8 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("字段级落点"), true);
   assert.equal(zh.html.includes("data-replay-text-patch-preview=\"true\""), true);
   assert.equal(zh.html.includes("data-replay-text-patch-option-key=\"ai_fusion\""), true);
+  assert.equal(zh.css.includes("overflow-wrap:anywhere"), true);
+  assert.equal(zh.css.includes(".wh-row{flex-direction:column"), true);
   assert.equal(zh.html.includes("data-rich-patch-viewer=\"true\""), true);
   assert.equal(zh.html.includes("data-rich-patch-hunk-count=\"1\""), true);
   assert.equal(zh.html.includes("data-rich-patch-line-count=\"2\""), true);
