@@ -4,8 +4,10 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
+  chooseMergeProposalCandidateRequestSchema,
   createProposalFromManifestRequestSchema,
   eventTypes,
+  mergeProposalCandidateChoiceResultSchema,
   mergeProposalRequestSchema,
   proposalConflictListResultSchema,
   proposalMergeResultSchema,
@@ -454,6 +456,23 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
       ok: true,
       data: proposalConflictListResultSchema.parse(result)
     });
+  });
+
+  routes.post("/merge-proposals/:id/choose", createCurrentUserMiddleware(authSource), async (c) => {
+    const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    try {
+      const result = await proposals.chooseMergeCandidate({
+        mergeProposalId: c.req.param("id"),
+        optionKey: payload.option_key,
+        actor: proposalActorFor(c.var.actor)
+      });
+      return c.json({
+        ok: true,
+        data: mergeProposalCandidateChoiceResultSchema.parse(result)
+      });
+    } catch (error) {
+      handleProposalServiceError(error);
+    }
   });
 
   return routes;

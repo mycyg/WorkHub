@@ -11,12 +11,14 @@ import type {
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
+  ChooseMergeProposalCandidateRequest,
   EvidenceBubble,
   GoldPathSurfaceVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
   ProposalDetailVM,
+  MergeProposalCandidateChoiceResult,
   ProposalMergeResult,
   ProposalReviewResult,
   QuestionCard,
@@ -135,6 +137,10 @@ export type WorkHubApiClient = {
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
+  chooseMergeProposalCandidate: (
+    id: string,
+    payload: ChooseMergeProposalCandidateRequest
+  ) => Promise<MergeProposalCandidateChoiceResult>;
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<QuestionCard>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;

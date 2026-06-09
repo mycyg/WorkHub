@@ -5,11 +5,13 @@ import path from "node:path";
 
 import {
   deliverableChangeManifestSchema,
+  mergeProposalCandidateChoiceResultSchema,
   proposalConflictListResultSchema,
   proposalSchema,
   reviewSchema,
   type DeliverableChange,
   type DeliverableChangeManifest,
+  type MergeProposalCandidateChoiceResult,
   type ProposalConflict,
   type ProposalConflictListResult,
   type Proposal,
@@ -19,8 +21,11 @@ import { settings as defaultSettings } from "@workhub/config";
 import {
   createDatabaseClient,
   createProposalRepository,
+  ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
+  ProposalRepositoryMergeProposalAlreadyChosenError,
   type ProposalAdoptedDriveFileInput,
+  type MergeProposalRow,
   type ProposalRepository,
   type StoredProposalRows,
   type WorkHubDatabaseClient
@@ -84,6 +89,11 @@ export type ProposalService = {
     actor: ProposalActor;
     conflictResolution?: ProposalConflictResolution;
   }) => Promise<StoredProposal>;
+  chooseMergeCandidate: (input: {
+    mergeProposalId: string;
+    optionKey: string;
+    actor: ProposalActor;
+  }) => Promise<MergeProposalCandidateChoiceResult>;
 };
 
 function cloneManifestWithIds(input: {
@@ -400,6 +410,36 @@ function aiFusionRationaleByConflictKey(
   return byKey;
 }
 
+function mergeProposalCandidate(row: MergeProposalRow, optionKey: string) {
+  const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
+  return candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== "object") {
+      return false;
+    }
+    return (candidate as Record<string, unknown>).option_key === optionKey;
+  }) as Record<string, unknown> | undefined;
+}
+
+function mergeCandidateChoiceResult(row: MergeProposalRow): MergeProposalCandidateChoiceResult {
+  const optionKey = row.chosenOptionKey;
+  const chosenAt = iso(row.chosenAt);
+  if (!optionKey || !chosenAt) {
+    throw new ProposalServiceError(409, "merge_proposal_not_chosen", "这个合并建议还没有被选择。");
+  }
+  const candidate = mergeProposalCandidate(row, optionKey);
+  if (!candidate) {
+    throw new ProposalServiceError(409, "merge_proposal_candidate_missing", "被选择的建议内容已经不可用。");
+  }
+  return mergeProposalCandidateChoiceResultSchema.parse({
+    merge_proposal_id: row.id,
+    conflict_key: row.conflictKey,
+    chosen_option_key: optionKey,
+    ...(row.chosenByUserId ? { chosen_by_user_id: row.chosenByUserId } : {}),
+    chosen_at: chosenAt,
+    candidate
+  });
+}
+
 function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictListResult {
   return proposalConflictListResultSchema.parse({
     conflicts,
@@ -535,6 +575,14 @@ export function createInMemoryProposalService(options: {
         ...updated,
         reviews: proposal.reviews
       });
+    },
+
+    async chooseMergeCandidate(input) {
+      throw new ProposalServiceError(
+        404,
+        "not_found",
+        `没有找到这个合并建议：${input.mergeProposalId}`
+      );
     }
   };
 }
@@ -682,6 +730,38 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
       return storedRowsToProposal(rows);
+    },
+
+    async chooseMergeCandidate(input) {
+      let row: MergeProposalRow | null;
+      try {
+        row = await repository.chooseMergeProposalCandidate({
+          mergeProposalId: input.mergeProposalId,
+          optionKey: input.optionKey,
+          actor: actorToRepository(input.actor),
+          at: now()
+        });
+      } catch (error) {
+        if (error instanceof ProposalRepositoryInvalidMergeProposalCandidateError) {
+          throw new ProposalServiceError(
+            422,
+            error.code,
+            "这个合并建议里没有这个可选方案。"
+          );
+        }
+        if (error instanceof ProposalRepositoryMergeProposalAlreadyChosenError) {
+          throw new ProposalServiceError(
+            409,
+            error.code,
+            "这个合并建议已经选择过其它方案，不能直接覆盖。"
+          );
+        }
+        throw error;
+      }
+      if (!row) {
+        throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
+      }
+      return mergeCandidateChoiceResult(row);
     }
   };
 }

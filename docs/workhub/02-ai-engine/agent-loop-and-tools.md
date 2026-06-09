@@ -72,10 +72,10 @@ R1 当前代码切片已落：
 R1 仍未完成：
 
 - `AgentRunQueue` 执行协调仍有进程内 Map/Set；R2 前还不能宣称多 worker 安全，也不能依赖它做 claim/lease。
-- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，并已把 WorkItem page 的 `accepted_deliverables[]` 带入 ReplayTraceVM；R1.13 起还会读取 `merge_attempts + merge_proposals` 返回 `merge_timeline[]`，展示冲突目标、候选、推荐项和最终选择。merge accepted ledger、ProjectDriveVersion adoption、download/text-preview、正式交付物最小还原与 audit 持久化已做实。R1.9 已补 file-only 冲突调解最小纵切：`GET /api/workitems/{id}/conflicts` 返回 `keep_current/accept_incoming` 两个可点击方案，merge 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计，`proposal.merged` audit detail 会带 `merge_attempt_id` 与 accepted incoming target keys；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option 持久化；R1.14 已补 `ai_fusion` LLM 候选生成/质量门/持久化/回放展示。剩余是 `ai_fusion` 选择入口、真实合并写回和产品化 React UI。
+- Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，并已把 WorkItem page 的 `accepted_deliverables[]` 带入 ReplayTraceVM；R1.13 起还会读取 `merge_attempts + merge_proposals` 返回 `merge_timeline[]`，展示冲突目标、候选、推荐项和最终选择。merge accepted ledger、ProjectDriveVersion adoption、download/text-preview、正式交付物最小还原与 audit 持久化已做实。R1.9 已补 file-only 冲突调解最小纵切：`GET /api/workitems/{id}/conflicts` 返回 `keep_current/accept_incoming` 两个可点击方案，merge 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计，`proposal.merged` audit detail 会带 `merge_attempt_id` 与 accepted incoming target keys；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option 持久化；R1.14 已补 `ai_fusion` LLM 候选生成/质量门/持久化/回放展示；R1.15 已补 `POST /api/merge-proposals/{id}/choose` 选择审计。剩余是 `ai_fusion` 真实合并写回和产品化 React UI。
 - BudgetPolicy 更新仍是内存 override，尚未持久化为 `budget_policies` 与审计日志；完整 P-COST 策略治理仍需后续切片。
 
-后续施工必须先完成 `ai_fusion` 选择写回、BudgetPolicy 持久化、完整审批中心与真实 React route 产品化，再回到 Cuu 出站 Agent 入口。
+后续施工必须先完成 `ai_fusion` 正式写回、BudgetPolicy 持久化、完整审批中心与真实 React route 产品化，再回到 Cuu 出站 Agent 入口。
 
 ---
 

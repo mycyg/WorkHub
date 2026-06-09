@@ -122,11 +122,40 @@ export type MergeProposalCandidateSupplement = {
   recommendedOptionKey?: string;
 };
 
+export type ChooseMergeProposalCandidateInput = {
+  mergeProposalId: string;
+  optionKey: string;
+  actor?: ProposalRepositoryActor;
+  at?: Date;
+};
+
 export class ProposalRepositoryMergeConflictError extends Error {
   public readonly code = "merge_conflict";
 
   constructor(public readonly conflicts: ProposalMergeConflict[]) {
     super("Proposal merge conflicts with accepted deliverables");
+  }
+}
+
+export class ProposalRepositoryInvalidMergeProposalCandidateError extends Error {
+  public readonly code = "invalid_merge_proposal_candidate";
+
+  constructor(
+    public readonly mergeProposalId: string,
+    public readonly optionKey: string
+  ) {
+    super("Merge proposal candidate does not exist");
+  }
+}
+
+export class ProposalRepositoryMergeProposalAlreadyChosenError extends Error {
+  public readonly code = "merge_proposal_already_chosen";
+
+  constructor(
+    public readonly mergeProposalId: string,
+    public readonly chosenOptionKey: string
+  ) {
+    super("Merge proposal already has a different chosen option");
   }
 }
 
@@ -138,6 +167,7 @@ export type ProposalRepository = {
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
+  chooseMergeProposalCandidate: (input: ChooseMergeProposalCandidateInput) => Promise<MergeProposalRow | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
 };
@@ -351,6 +381,17 @@ function candidatesWithSupplement(conflict: ProposalMergeConflict, supplement?: 
     });
   }
   return [...byOption.values()];
+}
+
+function mergeProposalCandidateOptionKeys(row: MergeProposalRow) {
+  const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
+  return new Set(candidates.map((candidate) => {
+    if (!candidate || typeof candidate !== "object") {
+      return undefined;
+    }
+    const optionKey = (candidate as Record<string, unknown>).option_key;
+    return typeof optionKey === "string" ? optionKey : undefined;
+  }).filter((optionKey): optionKey is string => Boolean(optionKey)));
 }
 
 async function recordMergeProposals(
@@ -691,6 +732,48 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         .from(mergeProposals)
         .where(eq(mergeProposals.mergeAttemptId, mergeAttemptId))
         .orderBy(asc(mergeProposals.createdAt));
+    },
+
+    async chooseMergeProposalCandidate(input) {
+      const at = input.at ?? new Date();
+      let result: MergeProposalRow | null = null;
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .select()
+          .from(mergeProposals)
+          .where(eq(mergeProposals.id, input.mergeProposalId))
+          .limit(1);
+        const row = rows[0];
+        if (!row) {
+          return;
+        }
+        if (!mergeProposalCandidateOptionKeys(row).has(input.optionKey)) {
+          throw new ProposalRepositoryInvalidMergeProposalCandidateError(input.mergeProposalId, input.optionKey);
+        }
+        if (row.chosenOptionKey) {
+          if (row.chosenOptionKey !== input.optionKey) {
+            throw new ProposalRepositoryMergeProposalAlreadyChosenError(input.mergeProposalId, row.chosenOptionKey);
+          }
+          result = row;
+          return;
+        }
+        await tx
+          .update(mergeProposals)
+          .set({
+            chosenOptionKey: input.optionKey,
+            ...(input.actor?.actorUserId ? { chosenByUserId: input.actor.actorUserId } : {}),
+            chosenAt: at,
+            updatedAt: at
+          })
+          .where(eq(mergeProposals.id, input.mergeProposalId));
+        const updatedRows = await tx
+          .select()
+          .from(mergeProposals)
+          .where(eq(mergeProposals.id, input.mergeProposalId))
+          .limit(1);
+        result = updatedRows[0] ?? null;
+      });
+      return result;
     },
 
     async review(input) {

@@ -81,6 +81,8 @@ export const replayMergeCandidateVmSchema = z.object({
   target_kind: z.string().min(1).optional(),
   rationale_md: z.string().optional(),
   merged_value: z.record(z.string(), z.unknown()).optional(),
+  source: z.string().optional(),
+  quality_gate: z.record(z.string(), z.unknown()).optional(),
   recommended: z.boolean().default(false),
   chosen: z.boolean().default(false)
 });

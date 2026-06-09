@@ -128,6 +128,31 @@ export const mergeProposalRequestSchema = z.object({
 });
 export type MergeProposalRequest = z.input<typeof mergeProposalRequestSchema>;
 
+export const chooseMergeProposalCandidateRequestSchema = z.object({
+  option_key: z.string().min(1).max(64)
+});
+export type ChooseMergeProposalCandidateRequest = z.input<typeof chooseMergeProposalCandidateRequestSchema>;
+
+export const chosenMergeProposalCandidateSchema = z.object({
+  option_key: z.string().min(1),
+  target_kind: z.string().min(1).optional(),
+  rationale_md: z.string().optional(),
+  merged_value: z.record(z.string(), z.unknown()).optional(),
+  source: z.string().optional(),
+  quality_gate: z.record(z.string(), z.unknown()).optional()
+});
+export type ChosenMergeProposalCandidate = z.infer<typeof chosenMergeProposalCandidateSchema>;
+
+export const mergeProposalCandidateChoiceResultSchema = z.object({
+  merge_proposal_id: idSchema,
+  conflict_key: z.string().min(1),
+  chosen_option_key: z.string().min(1),
+  chosen_by_user_id: idSchema.optional(),
+  chosen_at: isoDateTimeSchema,
+  candidate: chosenMergeProposalCandidateSchema
+});
+export type MergeProposalCandidateChoiceResult = z.infer<typeof mergeProposalCandidateChoiceResultSchema>;
+
 export const proposalConflictOptionSchema = z.object({
   id: z.enum(["keep_current", "accept_incoming", "ai_fusion"]),
   label: z.string().min(1),

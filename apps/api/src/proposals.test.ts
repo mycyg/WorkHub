@@ -12,7 +12,9 @@ import {
   type DeliverableChangeManifest
 } from "@workhub/contracts";
 import {
+  ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
+  ProposalRepositoryMergeProposalAlreadyChosenError,
   type MergeAttemptRow,
   type MergeProposalRow,
   type StoredProposalRows,
@@ -328,6 +330,30 @@ class MemoryProposalRepository implements ProposalRepository {
     return this.mergeProposals.filter((proposal) => proposal.mergeAttemptId === mergeAttemptId);
   }
 
+  async chooseMergeProposalCandidate(input: Parameters<ProposalRepository["chooseMergeProposalCandidate"]>[0]) {
+    const row = this.mergeProposals.find((proposal) => proposal.id === input.mergeProposalId);
+    if (!row) {
+      return null;
+    }
+    const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
+    const hasCandidate = candidates.some((candidate) =>
+      candidate && typeof candidate === "object" && (candidate as Record<string, unknown>).option_key === input.optionKey
+    );
+    if (!hasCandidate) {
+      throw new ProposalRepositoryInvalidMergeProposalCandidateError(input.mergeProposalId, input.optionKey);
+    }
+    if (row.chosenOptionKey && row.chosenOptionKey !== input.optionKey) {
+      throw new ProposalRepositoryMergeProposalAlreadyChosenError(input.mergeProposalId, row.chosenOptionKey);
+    }
+    if (!row.chosenOptionKey) {
+      row.chosenOptionKey = input.optionKey;
+      row.chosenByUserId = input.actor?.actorUserId ?? null;
+      row.chosenAt = input.at ?? now;
+      row.updatedAt = input.at ?? now;
+    }
+    return row;
+  }
+
   private candidatesForConflict(conflict: ReturnType<MemoryProposalRepository["conflictsForStored"]>[number]) {
     return [
       {
@@ -499,11 +525,12 @@ function appWithProposalRoutes() {
 function appWithDbProposalRoutes(options: Parameters<typeof createDbProposalService>[1] = {}) {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
-  const proposals = createDbProposalService(new MemoryProposalRepository(), { now: () => now, id: ids(), ...options });
+  const repository = new MemoryProposalRepository();
+  const proposals = createDbProposalService(repository, { now: () => now, id: ids(), ...options });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
   app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
-  return { app, runtimeSettings };
+  return { app, runtimeSettings, repository };
 }
 
 async function createProposal(app: Hono<AuthEnv>, runtimeSettings: Settings, itemManifest = manifest()) {
@@ -904,8 +931,8 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
 });
 
-test("proposal routes expose conflict cards and accept an explicit incoming resolution", async () => {
-  const { app, runtimeSettings } = appWithDbProposalRoutes({
+test("proposal routes expose conflict cards, choose AI candidates, and accept an explicit incoming resolution", async () => {
+  const { app, runtimeSettings, repository } = appWithDbProposalRoutes({
     fusionCandidateGenerator: {
       async generate(input) {
         const conflict = input.conflicts[0];
@@ -986,6 +1013,36 @@ test("proposal routes expose conflict cards and accept an explicit incoming reso
   assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "accept_incoming"), true);
   assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "ai_fusion"), true);
   assert.equal(typeof targetKey, "string");
+  const mergeProposalId = repository.mergeProposals[0]?.id;
+  assert.equal(typeof mergeProposalId, "string");
+
+  const chosenAi = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ option_key: "ai_fusion" })
+  });
+  assert.equal(chosenAi.status, 200);
+  const chosenAiBody = await chosenAi.json() as {
+    ok: true;
+    data: {
+      merge_proposal_id: string;
+      chosen_option_key: string;
+      chosen_by_user_id: string;
+      candidate: { option_key: string; source?: string };
+    };
+  };
+  assert.equal(chosenAiBody.data.merge_proposal_id, mergeProposalId);
+  assert.equal(chosenAiBody.data.chosen_option_key, "ai_fusion");
+  assert.equal(chosenAiBody.data.chosen_by_user_id, userId);
+  assert.equal(chosenAiBody.data.candidate.option_key, "ai_fusion");
+  assert.equal(chosenAiBody.data.candidate.source, "llm");
+
+  const overwriteChoice = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ option_key: "keep_current" })
+  });
+  assert.equal(overwriteChoice.status, 409);
 
   const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {
     headers: { Cookie: await cookie(runtimeSettings) }

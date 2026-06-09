@@ -252,11 +252,14 @@ function mergeCandidateVms(row: MergeProposalRow): ReplayMergeCandidateVM[] {
       continue;
     }
     const mergedValue = optionalRecord(record.merged_value);
+    const qualityGate = optionalRecord(record.quality_gate);
     result.push({
       option_key: optionKey,
       ...(typeof record.target_kind === "string" ? { target_kind: record.target_kind } : {}),
       ...(typeof record.rationale_md === "string" ? { rationale_md: record.rationale_md } : {}),
       ...(mergedValue ? { merged_value: mergedValue } : {}),
+      ...(typeof record.source === "string" ? { source: record.source } : {}),
+      ...(qualityGate ? { quality_gate: qualityGate } : {}),
       recommended: row.recommendedOptionKey === optionKey,
       chosen: row.chosenOptionKey === optionKey
     });

@@ -12,11 +12,13 @@ import {
   budgetPolicySchema,
   budgetPolicyUpdateSchema,
   budgetUsageSchema,
+  chooseMergeProposalCandidateRequestSchema,
   createApprovalRequestSchema,
   confidenceGrades,
   identifyRequestSchema,
   normalizeWorkHubLocale,
   mergeProposalRequestSchema,
+  mergeProposalCandidateChoiceResultSchema,
   nextQuestionRequestSchema,
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
@@ -391,6 +393,31 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
   assert.equal(parsed.conflicts[0]?.recommended_option_id, "keep_current");
   assert.equal(parsed.conflicts[0]?.options.some((option) => option.id === "ai_fusion"), true);
   assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
+});
+
+test("merge proposal candidate choices are explicit and replayable", () => {
+  const request = chooseMergeProposalCandidateRequestSchema.parse({
+    option_key: "ai_fusion"
+  });
+  const result = mergeProposalCandidateChoiceResultSchema.parse({
+    merge_proposal_id: "72000000-0000-4000-8000-000000000009",
+    conflict_key: "delivery:/outputs/result.md",
+    chosen_option_key: request.option_key,
+    chosen_by_user_id: "72000000-0000-4000-8000-000000000010",
+    chosen_at: "2026-06-09T00:00:00.000Z",
+    candidate: {
+      option_key: "ai_fusion",
+      target_kind: "text_doc",
+      rationale_md: "融合正式版结论和新增证据。",
+      source: "llm",
+      quality_gate: { status: "passed" },
+      merged_value: { proposed_resolution_md: "融合稿" }
+    }
+  });
+
+  assert.equal(result.chosen_option_key, "ai_fusion");
+  assert.equal(result.candidate.source, "llm");
+  assert.equal(result.candidate.quality_gate?.status, "passed");
 });
 
 test("question cards prefer clickable choices but retain a collapsed fallback", () => {
