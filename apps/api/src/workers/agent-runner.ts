@@ -224,6 +224,7 @@ export function createInMemoryAgentRunQueue(options: {
   persistence?: AgentRunPersistence | false;
   workerId?: string;
   leaseMs?: number;
+  heartbeatIntervalMs?: number;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord) => string;
   requireDeliverable?: boolean;
@@ -245,6 +246,7 @@ export function createInMemoryAgentRunQueue(options: {
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -391,30 +393,45 @@ export function createInMemoryAgentRunQueue(options: {
     });
   }
 
-  function refreshClaimInBackground(run: AgentRunQueueRecord) {
+  async function refreshClaim(run: AgentRunQueueRecord) {
     if (!persistence?.heartbeatClaim || !run.claim) {
       return;
     }
     const heartbeatAt = now();
     const leaseExpiresAt = new Date(heartbeatAt.getTime() + leaseMs);
-    void persistence.heartbeatClaim({
+    const updated = await persistence.heartbeatClaim({
       runId: run.run_id,
       workerId,
       heartbeatAt,
       leaseExpiresAt
-    }).then((updated) => {
-      const live = runs.get(run.run_id);
-      if (!updated || !live || live.status !== "running") {
-        return;
-      }
-      runs.set(run.run_id, {
-        ...live,
-        ...(updated.claim ? { claim: updated.claim } : {}),
-        updated_at: updated.updated_at
-      });
-    }).catch((error) => {
+    });
+    const live = runs.get(run.run_id);
+    if (!updated || !live || live.status !== "running") {
+      return;
+    }
+    runs.set(run.run_id, {
+      ...live,
+      ...(updated.claim ? { claim: updated.claim } : {}),
+      updated_at: updated.updated_at
+    });
+  }
+
+  function refreshClaimInBackground(runId: string) {
+    const live = runs.get(runId);
+    if (!live || live.status !== "running") {
+      return;
+    }
+    void refreshClaim(live).catch((error) => {
       console.warn("WorkHub AgentRun claim heartbeat failed", error);
     });
+  }
+
+  function startClaimHeartbeat(runId: string) {
+    if (!persistence?.heartbeatClaim || heartbeatIntervalMs <= 0) {
+      return () => undefined;
+    }
+    const timer = setInterval(() => refreshClaimInBackground(runId), heartbeatIntervalMs);
+    return () => clearInterval(timer);
   }
 
   function abortActorId(actor: AbortAgentRunActor) {
@@ -586,6 +603,8 @@ export function createInMemoryAgentRunQueue(options: {
     });
     const loop = createAgentLoop();
 
+    const stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
+
     try {
       const result = await loop.run({
         runId: current.run_id,
@@ -611,7 +630,7 @@ export function createInMemoryAgentRunQueue(options: {
               updated_at: now().toISOString()
             });
             persistTraceInBackground(current);
-            refreshClaimInBackground(current);
+            refreshClaimInBackground(current.run_id);
           }
         },
         emit: (event) => emitRunEvent(event, current),
@@ -693,6 +712,8 @@ export function createInMemoryAgentRunQueue(options: {
       });
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
       return current;
+    } finally {
+      stopClaimHeartbeat();
     }
   }
 

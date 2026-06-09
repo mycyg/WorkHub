@@ -422,7 +422,7 @@ L1 项目列表 (/)                          ← 一切的入口
 
 - **组件**：`BucketCard`（5 桶：ready / ai_processing / claimed+doing / revision_requested / delivery_doc_pending+delivered）；`Card`（需求卡：编号/优先级点/状态徽标/标题/接单人/年龄/进度条）；按 `byUrgency` 排序。
 - **绑定**：`listRequirements({status})` **7 个状态并行扇出**（`DASHBOARD_STATUSES`），合并去重。
-- **SSE**：内联订 **`/api/push/stream`（`all` topic）**——**任意非 heartbeat 事件 → `refresh()`**（`Dashboard.tsx:124`）；指数退避重连，`connected` 外显。另有 **6s `setInterval` 兜底轮询** + **tab 隐藏暂停**（`visibilitychange`，省 7 路扇出）。
+- **SSE**：R2.4 后 **`/api/push/stream`（`all` topic）仅 admin 可订**；普通 Web 页面订 `stream/me` 或 `stream/workitem/:id` / 后续 `project:{id}` scoped stream。任意非 heartbeat 事件 → `refresh()`（`Dashboard.tsx:124`）；指数退避重连，`connected` 外显。另有 **6s `setInterval` 兜底轮询** + **tab 隐藏暂停**（`visibilitychange`，省 7 路扇出）。
 - **四态**：空=每桶独立空文案；加载=首拉前桶为空；错误=顶部红框；无权限=N/A（看公共池）。
 - **交互流**：点卡 → `/r/:id`。
 - **web↔桌宠**：**同组件双标题**——`desktopRuntime` 时标题/eyebrow=「本地工作台」，Web=「派活看板」（`Dashboard.tsx:149`、`BucketCard` `webTitles`）。路由 `/dashboard` 与 `/local-workbench` 都指向本组件（`App.tsx:155-156`）。桌宠端这是「我的工单」聚焦视图的雏形。

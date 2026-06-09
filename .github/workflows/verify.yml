@@ -56,6 +56,53 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm qa:r1-pg-smoke
 
+  r2-pg-redis-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: workhub
+          POSTGRES_USER: workhub
+          POSTGRES_PASSWORD: workhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workhub -d workhub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub
+      COOKIE_SECRET: ci-r2-pg-redis-smoke-cookie-secret
+      COOKIE_SECURE: "false"
+      CORS_ALLOW_ORIGINS: "*"
+      BROKER_BACKEND: redis
+      BROKER_URL: redis://127.0.0.1:6379
+      WORKER_COUNT: "2"
+      DATA_DIR: ./data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm qa:r2-pg-redis-smoke
+
   migration-placeholder:
     runs-on: ubuntu-latest
     steps:

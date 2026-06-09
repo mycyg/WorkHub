@@ -1790,7 +1790,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `pnpm --filter @workhub/api test` 通过，当前 71/71；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route 与 BudgetPolicy audit。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 14/14；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R2 全部完成，因为订阅边界、长 LLM call heartbeat、真实 PG + Redis 集成矩阵仍未完成；完整 approval policy routing、完整 Drive 产品化和完整 React SPA route 迁移也仍是后续工作。
+仍不能宣称 R2 全部完成，因为 stuck-job 后台调度、Proposal/审批 REST 权限全面收口仍未完成；完整 approval policy routing、完整 Drive 产品化和完整 React SPA route 迁移也仍是后续工作。
 
 ## 5. R2 多 worker 与订阅边界
 
@@ -1802,15 +1802,16 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 2. **R2.1 已落首版**：`running` run 增加 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at`；已提供 `requeueExpiredClaims()` stuck-job recovery primitive。
 3. **R2.2 已落**：`startingWorkItems` 不再是 DB 场景最终裁决；`agent_runs_work_item_active_uq` partial unique index + `createRunIfWorkItemIdle()` 负责同 work item active run 唯一；route auto-run 改为 `runNext()` drain。详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 4. **R2.3 已落**：PushBus / presence 默认支持 Redis v0 跨 worker；修同 topic unsubscribe / resubscribe 竞态；`pg_listen` 保持预留。详见 [`../02-ai-engine/r2-redis-broker-presence.md`](../02-ai-engine/r2-redis-broker-presence.md)。
-5. **R2.4 已落**：`/api/push/stream` 的 `all` topic admin-only；资源 topic 默认 fail-closed，显式 resolver 才放行。详见 [`../02-ai-engine/r2-topic-boundary.md`](../02-ai-engine/r2-topic-boundary.md)。
-6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、长 LLM call heartbeat、CORS+cookie、revert、escalation approver、非 owner 403。
+5. **R2.4 已落**：`/api/push/stream` 的 `all` topic admin-only；资源 topic 默认 fail-closed。详见 [`../02-ai-engine/r2-topic-boundary.md`](../02-ai-engine/r2-topic-boundary.md)。
+6. **R2.5 已落首版**：建 PG + Redis smoke，覆盖 Redis SSE/presence、WorkItem resource auth、长 provider call heartbeat。详见 [`../02-ai-engine/r2-pg-redis-heartbeat-matrix.md`](../02-ai-engine/r2-pg-redis-heartbeat-matrix.md)。
+7. **R2.6 待落**：stuck run 后台 requeue、Proposal/审批 REST read/list/review/merge 权限全面收口、release gate 汇总。
 
 R2 验收：
 
 - `WORKHUB_WORKERS=2` 下 R1 纵切仍通过。
 - 同一 work item 并发 enqueue 只有一个 run 执行。
-- A 实例发布事件，B 实例订阅者收到。R2.3 已由 fake Redis adapter test 固定语义；R2.5 仍需真实 Redis service matrix。
-- 非 owner 订阅他人 run/workitem/proposal 被拒。R2.4 已固定 topic-access 默认 fail-closed；R2.5 仍需真实 repository resolver 与 Redis matrix。
+- A 实例发布事件，B 实例订阅者收到。R2.3 已由 fake Redis adapter test 固定语义；R2.5 已由真实 Redis service smoke 覆盖。
+- 非 owner 订阅他人 run/workitem/proposal 被拒。R2.4 已固定 topic-access 默认 fail-closed；R2.5 已接 WorkItem/Proposal 默认 resolver 并在 PG+Redis smoke 覆盖 WorkItem owner/stranger。
 
 ### R2.1 AgentRun claim / lease（2026-06-10）
 
@@ -1832,11 +1833,11 @@ R2 验收：
 |---|---|
 | Claim | transaction + `FOR UPDATE SKIP LOCKED` |
 | Lease | 默认 5 分钟；测试可注入 `workerId` / `leaseMs` |
-| Heartbeat | 每次 AgentLoop step record 后续租 |
+| Heartbeat | 每次 AgentLoop step record 后续租；R2.5 起 running 期间 interval 续租 |
 | Stuck recovery | repository primitive 已有，尚未接后台调度 |
 | Queue cache | 进程内 Map/Set 仍保留为本地缓存与测试 fallback |
 | R2.2 追加 | active work item partial unique index、DB 原子 enqueue、route `runNext()` drain 已落 |
-| 仍缺 | R2.4 订阅边界、R2.5 长 LLM call heartbeat 与真实 `WORKHUB_WORKERS=2` full matrix |
+| 仍缺 | R2.6 stuck-job 后台调度、Proposal/审批 REST 权限全面收口 |
 
 验证：
 
@@ -1869,8 +1870,8 @@ R2 验收：
 | route pump | fire-and-forget drain，循环 `runNext()` 到无 queued run |
 | 多实例执行权 | 仍由 R2.1 `FOR UPDATE SKIP LOCKED` claim 决定 |
 | 无 DB fallback | `startingWorkItems` 与内存 Map/Set 继续保护单进程测试 |
-| long provider call heartbeat | 未落；仍需后续 interval heartbeat |
-| cross-instance event | R2.3 已落 Redis broker/presence v0；真实 Redis service matrix 属 R2.5 |
+| long provider call heartbeat | R2.5 已落 interval heartbeat |
+| cross-instance event | R2.3 已落 Redis broker/presence v0；R2.5 已补真实 Redis service matrix |
 
 验证：
 
@@ -1917,7 +1918,7 @@ R2 验收：
 
 已落代码：
 
-- `apps/api/src/sse/topic-access.ts`：`all` topic 从任意认证用户改为 admin-only；`me` 继续由鉴权身份派生；workitem/run/session/proposal 继续 resolver fail-closed。
+- `apps/api/src/sse/topic-access.ts`：`all` topic 从任意认证用户改为 admin-only；`me` 继续由鉴权身份派生；workitem/run/session/proposal 保持 fail-closed resolver 模型。
 - `apps/api/src/push.test.ts`：新增 `/api/push/stream` admin-only route test；补普通用户不能解析 `all`、session/proposal 默认拒绝断言。
 - `docs/workhub/02-ai-engine/r2-topic-boundary.md`：记录 R2.4 runtime contract、测试证据与后续真实 resolver 接线。
 
@@ -1930,12 +1931,44 @@ R2 验收：
 | WorkItem topic | 必须显式 `canViewWorkItem` 放行；无 resolver 默认 403 |
 | Run topic | 默认允许 actor/admin；stranger 403 |
 | Session / Proposal topic | 必须显式 resolver 放行；默认 403 |
-| 仍缺 | R2.5 真实 Redis/PG matrix、长 LLM heartbeat、真实 workitem/proposal/session repository resolver |
+| 仍缺 | R2.6 stuck-job 后台调度、Proposal/审批 REST 权限全面收口 |
 
 验证：
 
 - `corepack pnpm --filter @workhub/api test` 通过，94/94。
 - `corepack pnpm --filter @workhub/api typecheck` 通过。
+
+### R2.5 PG + Redis heartbeat matrix（2026-06-10）
+
+本切片把 R2 的真实运行门往前推进一步：长 provider call 不再因为没有 step 而丢 lease；默认 push route 不再只靠测试注入 resolver；CI 开始跑真实 Postgres + Redis 组合。
+
+已落代码：
+
+- `apps/api/src/workers/agent-runner.ts`：新增 `heartbeatIntervalMs`，`executeRun()` 进入 running 后启动 interval heartbeat，`finally` 清理 timer；step 后 heartbeat 保留。
+- `apps/api/src/agent-runs.test.ts`：新增长 provider call 阻塞期间 `heartbeatClaim()` 被调用且 `heartbeat_at != claimed_at` 的单测。
+- `apps/api/src/routes/push.ts`：默认 `WorkItemService.detailPage()` 判 workitem/session topic；proposal topic 先 `ProposalService.get()` 取 `work_item_id` 再走 WorkItem gate；测试/嵌入可传 `workItems:false` / `proposals:false` 保持 fail-closed。
+- `apps/api/src/push.test.ts`：新增默认 resolver owner 200 / stranger 403 测试，覆盖 workitem/session/proposal。
+- `apps/api/src/qa/r2-pg-redis-smoke.ts`：新增真实 Postgres + Redis smoke。
+- `.github/workflows/verify.yml`：新增 `r2-pg-redis-smoke` job，服务包含 `postgres:16` 与 `redis:7`。
+- `package.json`、`apps/api/package.json`：新增 `qa:r2-pg-redis-smoke` script。
+- `docs/workhub/02-ai-engine/r2-pg-redis-heartbeat-matrix.md`：记录 R2.5 runtime contract、CI smoke、剩余风险。
+
+当前边界：
+
+| 项 | R2.5 行为 |
+|---|---|
+| interval heartbeat | 默认 `min(30s, leaseMs/3)` 且不低于 1s；测试可注入更短 interval |
+| provider/tool 长调用 | running 期间持续续租，避免 lease 到期被 recovery 误回收 |
+| resource topic | WorkItem/Session/Proposal 默认接真实 service 权限门 |
+| Redis matrix | CI 真实 Redis publish/subscribe + presence |
+| PG matrix | CI 真实 PostgreSQL claim + heartbeat row 检查 |
+| 仍缺 | stuck-job 后台 requeue 调度；Proposal/审批 REST endpoint 权限全面收口；release gate 汇总 |
+
+验证：
+
+- `corepack pnpm --filter @workhub/api test` 通过，96/96。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- 提交前需跑 `corepack pnpm verify`、`git diff --check`、文档数量/secret/reference gate。
 
 ## 6. R3 Cuu Agent 入口
 

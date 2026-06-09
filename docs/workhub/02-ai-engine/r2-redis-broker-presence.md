@@ -52,7 +52,7 @@ visuals:
 | 非目标 | 原因 / 后续归属 |
 |---|---|
 | 启用 `pg_listen` | 当前只保留配置枚举，真正 adapter 另开 R2.x 或 P5 云部署切片。 |
-| 真实 Redis 容器集成矩阵 | R2.3 用 fake Redis adapter 单测钉语义；真实 PG + Redis 五场景归 R2.5。 |
+| 真实 Redis 容器集成矩阵 | R2.3 用 fake Redis adapter 单测钉语义；R2.5 已新增真实 Postgres + Redis smoke。 |
 | 订阅鉴权改造 | `/api/push/stream` all topic、资源 topic 非 owner 403 等归 R2.4。 |
 | Exactly-once SSE | SSE 仍是增量提示，会丢慢订阅者；REST/DB 才是真相源。 |
 | Cuu / Web UI 改动 | 本切片是 runtime 地基，不改变任何页面或桌宠表现。 |
@@ -165,14 +165,14 @@ R2.3 退出门：
 
 | 风险 | 当前处理 | 后续 |
 |---|---|---|
-| fake Redis 不能覆盖真实网络、认证、重连、容器启动顺序 | R2.3 先固定 adapter 语义，避免无 Redis 的 CI 阻塞 | R2.5 加真实 Redis service matrix |
+| fake Redis 不能覆盖真实网络、认证、重连、容器启动顺序 | R2.3 先固定 adapter 语义，避免无 Redis 的 CI 阻塞 | R2.5 已加真实 Redis service matrix |
 | Redis pub/sub 不持久化事件 | REST/DB 是真相源，SSE 只是增量提示；客户端收到事件后重拉 | R4 前端需保持 reconcile 策略 |
-| `all` topic 仍可能过宽 | R2.4 已改为 admin-only；资源 topic 默认 fail-closed | R2.5 接真实 Redis/PG matrix 与更多 repository resolver |
-| 长 LLM call 中途 lease 可能过期 | R2.1 只在 step record 后 heartbeat | R2.5 增加 interval heartbeat |
+| `all` topic 仍可能过宽 | R2.4 已改为 admin-only；资源 topic 默认 fail-closed | R2.5 已接 WorkItem/Proposal resolver；R2.6 收口 Proposal REST read/list |
+| 长 LLM call 中途 lease 可能过期 | R2.1 只在 step record 后 heartbeat | R2.5 已增加 interval heartbeat |
 | `pg_listen` 被配置枚举暴露但实现未落 | `createPushBus()` 明确 throw | 后续如果需要 PG-only 部署再实现 |
 
 后续顺序：
 
-1. **R2.5 集成矩阵**：PG + Redis 真服务，覆盖 SSE、stuck-job、长 LLM heartbeat、CORS/cookie、revert、escalation。
-2. **真实 resource resolvers**：workitem/proposal/session 默认 route 接 repository，不靠显式测试注入。
+1. **R2.6 recovery / REST auth**：stuck-job 后台调度、Proposal/审批 REST 权限全面收口。
+2. **Release gate 汇总**：把 R0/R1/R2 smoke 归并为可读的 release checklist。
 3. **R3 Cuu Agent 入口**：在 R2 地基稳定后，让 Cuu 走同一 session/intake/workitem/agent-run/proposal API。

@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-10):**57 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
+> 状态(2026-06-10):**58 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R1 真实纵切通过前,除治理修正外冻结 Cuu 外观、动效、设置矩阵与新增截图矩阵工作。
 
 ---
 
@@ -85,6 +85,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r2-multi-worker-pump.md` | **R2.2**:同 work item active run 唯一、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook | current |
 | `r2-redis-broker-presence.md` | **R2.3**:Redis PushBus / Presence 跨 worker 后端、unsubscribe 竞态门、生产多 worker broker 配置与验收证据 | current |
 | `r2-topic-boundary.md` | **R2.4**:SSE topic 授权边界，`all` admin-only，资源 topic fail-closed，Cuu/Web 共用同一订阅门 | current |
+| `r2-pg-redis-heartbeat-matrix.md` | **R2.5**:长 provider call interval heartbeat、真实 WorkItem/Proposal topic resolver、Postgres + Redis CI smoke | current |
 | `cost-governance.md` | **P-COST**:三级预算、模型路由、成本计量、超额动作、成本 Page VM / 事件契约 | ✅ |
 | `confidence-risk-escalation.md` | **命门**:置信度来源与算法、风险维度与评分、分级阈值、三触发器、打回回灌 | ✅ |
 | `pm-mode-orchestration.md` | 项目经理模式:激活、简报、排期、催办、再审 | ✅ |

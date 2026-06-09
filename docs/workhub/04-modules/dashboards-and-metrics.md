@@ -152,7 +152,7 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 | D7 | `GET /api/agent-runs/{id}` + `/trace` | `AgentRunOut` / `TraceStep[]` | **[新]** | 任意指标**钻取**到单次 AI 执行 | api-contract §2.6 |
 | D8 | `GET /api/workitems/{id}/escalations` | `EscalationEvent[]` | **[新]** | 升级精准度钻取 | api-contract §2.7 |
 
-**SSE 订阅（增量提示，非数据源）**：看板走 `GET /api/push/stream`（全局公共流），监听**任一非 `heartbeat` 事件**即触发**节流 reconcile**（重拉 D1/D3/D4），复刻 `Dashboard.tsx:94-143` 的「SSE→refresh + 6s 兜底轮询」双通道模式。相关事件：`requirement.ready` / `requirement.updated`（影响健康），新增 `agent_run.step` / `confidence.assessed` / `escalation.created` / `proposal.merged`（影响 AI/成本，topic `workitem:{id}`+`all`，见 api-contract §5.2）。**私有成本细节不广播**——按人/项目的成本明细只在 REST 拉取时按 `current_user` 可见域返回（§12）。
+**SSE 订阅（增量提示，非数据源）**：R2.4 后 `GET /api/push/stream` / `all` 为 **admin-only**，只用于运维/聚合刷新；普通看板不得再把它当公共刷新通道。项目/事项看板应订阅 `workitem:{id}`、后续 `project:{id}` 或 `stream/me`，监听**任一非 `heartbeat` 事件**即触发**节流 reconcile**（重拉 D1/D3/D4），复刻 `Dashboard.tsx:94-143` 的「SSE→refresh + 6s 兜底轮询」双通道模式。相关事件：`requirement.ready` / `requirement.updated`（影响健康），新增 `agent_run.step` / `confidence.assessed` / `escalation.created` / `proposal.merged`（影响 AI/成本，topic `workitem:{id}` 或 `user:{id}`，见 api-contract §5.2）。**私有成本细节不广播**——按人/项目的成本明细只在 REST 拉取时按 `current_user` 可见域返回（§12）。
 
 ---
 
@@ -460,11 +460,11 @@ WorkHub 的产品宪法是「**AI 是默认劳动力**」。一旦 AI 真在产�
 
 **双通道（REST 为真相 + SSE 为增量提示）**，复刻 `Dashboard.tsx` 已验证的健壮模式：
 
-1. **订阅**：`GET /api/push/stream`（全局公共流，`push.py`）。监听非 `heartbeat` 事件 → 触发**节流 reconcile**（重拉本页 D1/D3/D4）。指数退避重连（`Dashboard.tsx:98-135`，**必须保留**：单次 SSE 断连曾让看板永久显示「已断开」）。
+1. **订阅**：管理员看板可订 `GET /api/push/stream`（`all` admin-only）；普通页面订 `stream/me` 或资源 topic。监听非 `heartbeat` 事件 → 触发**节流 reconcile**（重拉本页 D1/D3/D4）。指数退避重连（`Dashboard.tsx:98-135`，**必须保留**：单次 SSE 断连曾让看板永久显示「已断开」）。
 2. **兜底轮询**：无事件时 6s 轮询一次（`Dashboard.tsx:38` `TICK_MS`），并在 **tab 隐藏时暂停、返回时立刻刷新**（`Dashboard.tsx:82-87`，省服务器扇出）。
 3. **单调 token 防乱序**：并发刷新只让最新一次写状态（`Dashboard.tsx:46-56` `refreshTokenRef`，看板多指标并发拉取，乱序会闪烁旧快照）。
 4. **相关事件**：健康受 `requirement.ready`/`requirement.updated` 影响；AI/成本受新增 `agent_run.step`/`confidence.assessed`/`escalation.created`/`proposal.merged` 影响（api-contract §5.2）。
-5. **隐私隔离（NFR-08，沿用真实修复）**：看板只订阅全局公共流 `GET /api/push/stream`（topic `all`，`push.py:53-60`，仅承载 `requirement.*` 公共事件），**绝不订阅** `user:{id}` 私有 topic 来拼别人的数据；**成本/自治的按人明细只在 REST 拉取时按 `current_user` 可见域服务端过滤**。现成的真实隔离范式有二：① 私有投递走 `stream/me`（`push.py:95-104`），topic 是服务端从 cookie 推出的 `user:{user.id}` 而**非路径参数**（注释明说「a client can't request another user's stream」）；② 单需求流 `stream/req/{id}`（`push.py:63-92`）由 `can_view_requirement_record` 把门，看不到的需求订阅不了。看板沿用①的「服务端定可见域」思路。SSE 只承载「有变化了，去重拉」的信号，不承载明细。
+5. **隐私隔离（NFR-08，沿用真实修复）**：看板不再把 `all` 当公共流；`GET /api/push/stream` 只给 admin 聚合刷新。普通用户走 `stream/me` 或资源 topic，**绝不订阅**他人的 `user:{id}` 私有 topic 来拼数据；**成本/自治的按人明细只在 REST 拉取时按 `current_user` 可见域服务端过滤**。现成的真实隔离范式有二：① 私有投递走 `stream/me`，topic 是服务端从 cookie 推出的 `user:{user.id}` 而**非路径参数**；② 单事项流 `stream/workitem/{id}` / `stream/req/{id}` 由 WorkItem 可见性门把关，看不到的事项订阅不了。SSE 只承载「有变化了，去重拉」的信号，不承载明细。
 
 ---
 

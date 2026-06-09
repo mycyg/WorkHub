@@ -10,7 +10,8 @@
     "test": "node --import tsx --test src/*.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node --import tsx src/server.ts",
-    "qa:r1-pg-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-agent-run-smoke.ts"
+    "qa:r1-pg-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-agent-run-smoke.ts",
+    "qa:r2-pg-redis-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r2-pg-redis-smoke.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.4",

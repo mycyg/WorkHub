@@ -331,7 +331,7 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 
 ### 5.1 传输与帧格式(沿用 `routers/push.py` + `push_bus.py`)
 
-- **端点**:`GET /api/push/stream`(admin-only 全局)、`/stream/req/{id}`(单工作项)、`/stream/me`(本人私有)。WorkHub 演进新增 `/stream/session/{id}`(会话流)。
+- **端点**:`GET /api/push/stream`(admin-only 全局)、`/stream/req/{id}`/`/stream/workitem/{id}`(单工作项)、`/stream/me`(本人私有)、`/stream/run/{id}`、`/stream/session/{id}`、`/stream/proposal/{id}`。
 - **媒体类型**:`text/event-stream`,响应头 `Cache-Control: no-cache` + `X-Accel-Buffering: no`(`push.py:59`,禁 nginx 缓冲)。
 - **帧**:`event: <type>\n` + 每行 `data: <line>\n`(多行 payload 按 `splitlines()` 逐行加 `data:` 前缀,避免内嵌 `\n`/CRLF 破帧——`push.py:31`)。
 - **连接确认**:连上先发 `event: connected\ndata: {"topic": "..."}`(`push.py:42`)。
@@ -387,12 +387,12 @@ topic 命名空间与可订阅性如下——**隔离是安全约束,不是性�
 | topic | 谁可订阅 | 强制点 |
 |---|---|---|
 | `all` | **admin-only** | R2.4 起普通用户不可订;仅保留运维/聚合事件,避免全局 topic 成为泄漏口 |
-| `req:{id}` / `workitem:{id}` | 通过 `can_view_requirement_record` 的人 | `/stream/req/{id}` 在订阅前做可见性检查(`push.py:84`),私有(draft/clarifying/summary_ready)他人不可订 |
-| `run:{id}` **[新]** | run owner、可见 WorkItem 的 reviewer/owner | AgentRun 细节、成本、工具 trace 均可能含私有内容;订阅前必须经 run→workitem 可见性门 |
-| `proposal:{id}` **[新]** | 可见该 Proposal 的 reviewer/branch owner/WorkItem viewer | 只承载该提议的 reviewed/merged/comment 增量;完整 manifest 仍 REST 拉取 |
+| `req:{id}` / `workitem:{id}` | 通过 WorkItem 可见性门的人 | R2.5 默认 route 接 `WorkItemService.detailPage({ actor })`;私有(draft/clarifying/summary_ready)他人不可订 |
+| `run:{id}` **[新]** | run owner 或 admin | AgentRun 细节、成本、工具 trace 均可能含私有内容;R2.5 仍由 run actor/admin gate 处理,后续可升级 run→workitem reviewer gate |
+| `proposal:{id}` **[新]** | 可见该 Proposal 所属 WorkItem 的人 | R2.5 默认 route `ProposalService.get(id)` 后取 `work_item_id`,再走 WorkItem gate;完整 manifest 仍 REST 拉取 |
 | `user:{id}` | **仅 cookie/令牌解析出的本人** | topic 由 `user.id` 派生而非路径参数(`push.py:99` 注释:客户端无法请求他人流) |
 | `job:{id}` | 该 job 的查询者 | `job.updated` **只**发 `job:{id}` + owner `user:{id}`,**绝不发 `all`**——否则泄漏 `result_ref`(=requirement_id)/进度给所有人(`jobs.py:71` 注释,与通知泄漏同类) |
-| `session:{id}` **[新]** | session owner(+ 被路由的审批人) | 桌宠/web 会话事件;`permission.ask` 额外发给被路由审批人的 `user:{id}` |
+| `session:{id}` **[新]** | session owner(+ 被路由的审批人) | v0 session id 等同澄清 work item id,R2.5 默认 route 复用 WorkItem gate;`permission.ask` 额外发给被路由审批人的 `user:{id}` |
 
 **约定**:任何新增事件**先判私有性**——含 `result_ref`/正文/置信细节的一律走 `user:{id}` 或 `workitem:{id}`(经可见性门),不走 `all`。
 

@@ -30,11 +30,11 @@ related:
 
 | 项 | 后续 |
 |---|---|
-| 长 LLM call interval heartbeat | R2.5 或下一 R2.x：当前仍是 step 后 heartbeat；长时间无 step 的 provider call 仍依赖 lease timeout |
+| 长 LLM call interval heartbeat | R2.5 已落：running 期间按 interval 续租，长时间无 step 的 provider call 不再只依赖 lease timeout |
 | Dedicated worker daemon | 当前 route 触发 drain；后续可加独立 worker loop / process manager |
 | Redis / PG event broker | R2.3 已落 Redis PushBus / Presence v0；PG `LISTEN/NOTIFY` 仍预留 |
 | SSE topic hardening | R2.4 已落：`all` admin-only，资源 topic 默认 fail-closed，显式 resolver 才放行 |
-| CI `WORKHUB_WORKERS=2` full matrix | R2.5 将 smoke 扩展成正式多 worker job |
+| CI `WORKHUB_WORKERS=2` full matrix | R2.5 已新增 `r2-pg-redis-smoke`，覆盖真实 Postgres + Redis + long provider heartbeat |
 
 ## 3. Data Contract
 

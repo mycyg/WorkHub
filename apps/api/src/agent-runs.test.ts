@@ -66,6 +66,7 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   public readonly rows = new Map<string, AgentRunQueueRecord>();
   public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
   public readonly claims: { runId: string; workerId: string }[] = [];
+  public readonly heartbeats: AgentRunHeartbeatLease[] = [];
 
   async createRun(run: AgentRunQueueRecord) {
     this.rows.set(run.run_id, structuredClone(run));
@@ -158,6 +159,7 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   }
 
   async heartbeatClaim(input: AgentRunHeartbeatLease) {
+    this.heartbeats.push({ ...input });
     const run = this.rows.get(input.runId);
     if (!run || run.status !== "running" || run.claim?.claimed_by !== input.workerId) {
       return null;
@@ -1784,6 +1786,80 @@ test("agent run queue claims by id before direct run execution", async () => {
   assert.deepEqual(persistence.claims, [{ runId: run.run_id, workerId: "worker-b" }]);
   assert.equal(persistence.rows.get(run.run_id)?.claim?.claimed_by, "worker-b");
   assert.equal(persistence.rows.get(run.run_id)?.claim?.lease_expires_at, "2026-06-05T00:02:00.000Z");
+});
+
+test("agent run queue keeps the lease alive during a long provider call", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const heartbeatSeen = deferred<void>();
+  const releaseProvider = deferred<void>();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-long-provider-test-"));
+  let tick = 0;
+  const longProviderClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        await releaseProvider.promise;
+        return {
+          id: "msg-long-provider",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 1,
+            outputTokens: 1,
+            estimatedCostCny: "0.001",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:00.000Z"
+          },
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  const originalHeartbeatClaim = persistence.heartbeatClaim.bind(persistence);
+  persistence.heartbeatClaim = async (input) => {
+    const row = await originalHeartbeatClaim(input);
+    if (persistence.heartbeats.length >= 1) {
+      heartbeatSeen.resolve();
+    }
+    return row;
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => new Date(now.getTime() + tick++ * 100),
+    id: () => "40000000-0000-4000-8000-000000000029",
+    workerId: "worker-long-provider",
+    leaseMs: 300,
+    heartbeatIntervalMs: 10,
+    workdir: () => workdir,
+    client: () => longProviderClient,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Long provider heartbeat run"
+  });
+
+  const running = queue.runNext();
+  await heartbeatSeen.promise;
+  const duringProvider = await persistence.get(run.run_id);
+  releaseProvider.resolve();
+  const executed = await running;
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(persistence.claims.length, 1);
+  assert.equal(persistence.heartbeats.length >= 1, true);
+  assert.equal(duringProvider?.claim?.claimed_by, "worker-long-provider");
+  assert.notEqual(duringProvider?.claim?.heartbeat_at, duringProvider?.claim?.claimed_at);
 });
 
 test("agent run route auto-pumps queued work after enqueue", async () => {

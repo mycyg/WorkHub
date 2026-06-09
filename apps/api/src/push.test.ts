@@ -19,6 +19,8 @@ import { InMemoryPresenceStore } from "./broker/presence.js";
 import type { AuthDependencies, AuthEnv } from "./middleware/auth.js";
 import { COOKIE_NAME } from "./middleware/auth.js";
 import { createPushRoutes } from "./routes/push.js";
+import type { ProposalService } from "./services/proposals.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import { resolveAuthorizedTopic } from "./sse/topic-access.js";
 import { createInMemoryAgentRunQueue } from "./workers/agent-runner.js";
 
@@ -141,6 +143,8 @@ test("push route fails closed on workitem stream when can_view is not registered
       auth: deps([alice], [], runtimeSettings),
       bus: new InProcessPushBus(),
       presence: new InMemoryPresenceStore(),
+      workItems: false,
+      proposals: false,
       stream: { heartbeatMs: 20 }
     })
   );
@@ -183,6 +187,80 @@ test("push route allows authorized workitem topic before handing off to the SSE 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type")?.includes("text/event-stream"), true);
   controller.abort();
+});
+
+test("push route default resolvers authorize workitem session and proposal streams through work item ownership", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const stranger = user({
+    id: "10000000-0000-4000-8000-000000000004",
+    nickname: "stranger",
+    cookieToken: "cookie-stranger"
+  });
+  const resourceWorkItemId = "50000000-0000-4000-8000-000000000051";
+  const proposalId = "60000000-0000-4000-8000-000000000051";
+  const workItemReads: Array<{ workItemId: string; actorId: string }> = [];
+  const workItems = {
+    async detailPage(input: Parameters<WorkItemService["detailPage"]>[0]) {
+      workItemReads.push({ workItemId: input.workItemId, actorId: input.actor.id });
+      if (input.workItemId !== resourceWorkItemId) {
+        throw new WorkItemServiceError(404, "not_found", "missing");
+      }
+      if (input.actor.id !== alice.id && !input.actor.isAdmin) {
+        throw new WorkItemServiceError(403, "forbidden", "forbidden");
+      }
+      return {} as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    }
+  } as unknown as WorkItemService;
+  const proposals = {
+    async get(id: string) {
+      if (id !== proposalId) {
+        return null;
+      }
+      return {
+        id: proposalId,
+        work_item_id: resourceWorkItemId
+      } as Awaited<ReturnType<ProposalService["get"]>>;
+    }
+  } as unknown as ProposalService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice, stranger], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      workItems,
+      proposals,
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  for (const path of [
+    `/api/push/stream/workitem/${resourceWorkItemId}`,
+    `/api/push/stream/session/${resourceWorkItemId}`,
+    `/api/push/stream/proposal/${proposalId}`
+  ]) {
+    const controller = new AbortController();
+    const response = await app.request(path, {
+      headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type")?.includes("text/event-stream"), true);
+    controller.abort();
+  }
+
+  const forbidden = await app.request(`/api/push/stream/proposal/${proposalId}`, {
+    headers: { Cookie: await signedCookie(stranger.cookieToken, runtimeSettings) }
+  });
+  assert.equal(forbidden.status, 403);
+  assert.deepEqual(workItemReads.map((read) => read.workItemId), [
+    resourceWorkItemId,
+    resourceWorkItemId,
+    resourceWorkItemId,
+    resourceWorkItemId
+  ]);
 });
 
 class MemoryUsers implements UserRepository {
