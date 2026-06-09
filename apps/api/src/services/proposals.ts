@@ -21,7 +21,8 @@ import {
   type StructuredFieldApplyOverrides,
   type StructuredFieldPatchDryRun,
   type StructuredItemApplyOverrides,
-  type TaskPlanScopeSelection
+  type TaskPlanScopeSelection,
+  type TextHunkApplyOverrides
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
 import {
@@ -45,6 +46,11 @@ import {
   type MergeFusionContentContext,
   type MergeFusionCandidateGenerator
 } from "./merge-fusion-candidates.js";
+import {
+  materializeTextHunkOverrides,
+  TextHunkMaterializationError,
+  type TextHunkMaterializationResult
+} from "./text-hunk-materializer.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -109,6 +115,7 @@ export type ProposalService = {
     actor: ProposalActor;
     structuredFieldOverrides?: StructuredFieldApplyOverrides;
     structuredItemOverrides?: StructuredItemApplyOverrides;
+    textHunkOverrides?: TextHunkApplyOverrides;
     taskPlanScope?: TaskPlanScopeSelection;
   }) => Promise<StoredProposal>;
 };
@@ -257,6 +264,27 @@ async function readFusionTextExcerpt(input: {
   } catch {
     return undefined;
   }
+}
+
+async function readFullUtf8TextFile(filePath: string) {
+  try {
+    const fileStat = await stat(filePath);
+    if (!fileStat.isFile()) {
+      return undefined;
+    }
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(filePath));
+    return {
+      text,
+      bytes: fileStat.size,
+      sha256: sha256Text(text)
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeShaRef(value: string | undefined) {
+  return value?.replace(/^sha256:/iu, "");
 }
 
 function changeForMergeConflict(
@@ -865,6 +893,209 @@ function aiFusionCandidateMaterialization(input: {
   return {
     content: aiFusionCandidateMarkdown(input.context),
     mime: "text/markdown"
+  };
+}
+
+async function fullTextContextForHunkMaterialization(input: {
+  repository: ProposalRepository;
+  context: MergeProposalCandidateApplicationContext;
+}) {
+  const targetKind = effectiveAiFusionTargetKind(input.context);
+  if (targetKind !== "text_doc" && targetKind !== "spec_doc") {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_target_unsupported",
+      "只有文本类融合建议支持逐段写回。"
+    );
+  }
+  const mergeContext = await input.repository.findMergeContext(input.context.proposalId);
+  if (!mergeContext) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_context_missing",
+      "缺少这次变更申请的文本合并上下文。"
+    );
+  }
+  const change = changeForMergeConflict(mergeContext.diffManifest, input.context.conflict);
+  if (!change) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_change_missing",
+      "缺少这次文本冲突对应的变更记录。"
+    );
+  }
+  const currentFile = await input.repository.findAcceptedDriveFileForTarget({
+    workItemId: input.context.workItemId,
+    targetKey: input.context.conflictKey
+  });
+  if (!currentFile?.storagePath) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_current_missing",
+      "找不到当前正式文本，不能逐段写回。"
+    );
+  }
+  const current = await readFullUtf8TextFile(currentFile.storagePath);
+  if (!current) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_current_missing",
+      "当前正式文本不可读取或不是 UTF-8 文本。"
+    );
+  }
+  const expectedCurrentSha = normalizeShaRef(input.context.conflict.existing_sha256_after);
+  if (expectedCurrentSha && expectedCurrentSha !== (currentFile.sha256After ?? current.sha256)) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_stale_current",
+      "正式文本已经变化，需要重新生成合并建议。"
+    );
+  }
+
+  const baseFile = (input.context.conflict.incoming_version_before || input.context.conflict.incoming_sha256_before)
+    ? await input.repository.findAcceptedDriveFileForTarget({
+        workItemId: input.context.workItemId,
+        targetKey: input.context.conflictKey,
+        ...(input.context.conflict.incoming_version_before ? { ref: input.context.conflict.incoming_version_before } : {}),
+        ...(input.context.conflict.incoming_sha256_before ? { sha256: input.context.conflict.incoming_sha256_before } : {})
+      })
+    : null;
+  if (!baseFile?.storagePath) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_base_missing",
+      "缺少文本三方合并的 base 版本，不能逐段写回。"
+    );
+  }
+  const base = await readFullUtf8TextFile(baseFile.storagePath);
+  if (!base) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_base_missing",
+      "文本 base 版本不可读取或不是 UTF-8 文本。"
+    );
+  }
+  const expectedBaseSha = normalizeShaRef(input.context.conflict.incoming_sha256_before);
+  if (expectedBaseSha && expectedBaseSha !== base.sha256) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_stale_base",
+      "文本 base 版本和合并建议不一致，需要重新生成。"
+    );
+  }
+
+  if (!mergeContext.workdirRef || !change.target_ref.path) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_incoming_missing",
+      "找不到这次版本的文本文件，不能逐段写回。"
+    );
+  }
+  const incomingPath = sourcePathForChange(mergeContext.workdirRef, change);
+  const incoming = await readFullUtf8TextFile(incomingPath);
+  if (!incoming) {
+    throw new ProposalServiceError(
+      409,
+      "text_hunk_incoming_missing",
+      "这次版本的文本不可读取或不是 UTF-8 文本。"
+    );
+  }
+  const expectedIncomingSha = normalizeShaRef(change.target_ref.sha256_after);
+  if (expectedIncomingSha && expectedIncomingSha !== incoming.sha256) {
+    throw new ProposalServiceError(
+      409,
+      "delivery_artifact_changed",
+      "交付文件内容和审查版本不一致，需要重新生成变更申请。"
+    );
+  }
+
+  return {
+    base,
+    current,
+    incoming
+  };
+}
+
+async function materializeTextHunkCandidate(input: {
+  repository: ProposalRepository;
+  context: MergeProposalCandidateApplicationContext;
+  storageRoot: string;
+  changeId: string;
+  overrides: TextHunkApplyOverrides;
+}) {
+  const targetKind = effectiveAiFusionTargetKind(input.context);
+  const filename = filenameForAiFusionCandidate(input.context);
+  const aiFusionText = textFromAiFusionMergedValue(input.context.candidate?.merged_value);
+  if (!aiFusionText) {
+    throw new ProposalServiceError(
+      409,
+      "merge_candidate_missing_text_result",
+      "这个 AI 融合建议没有可用于逐段写回的正文。"
+    );
+  }
+  const context = await fullTextContextForHunkMaterialization({
+    repository: input.repository,
+    context: input.context
+  });
+  let materialized: TextHunkMaterializationResult;
+  try {
+    const qualityGate = input.context.candidate?.quality_gate;
+    materialized = materializeTextHunkOverrides({
+      baseText: context.base.text,
+      currentText: context.current.text,
+      incomingText: context.incoming.text,
+      aiFusionText,
+      ...(qualityGate ? { qualityGate } : {}),
+      overrides: input.overrides
+    });
+  } catch (error) {
+    if (error instanceof TextHunkMaterializationError) {
+      throw new ProposalServiceError(409, error.code, error.message);
+    }
+    throw error;
+  }
+  if (containsGitConflictMarkers(materialized.content)) {
+    throw new ProposalServiceError(
+      409,
+      "merge_candidate_contains_conflict_markers",
+      "逐段生成后的文本仍有冲突标记，不能直接写回。"
+    );
+  }
+  const root = path.resolve(input.storageRoot);
+  const storagePath = path.resolve(
+    root,
+    safeStorageSegment(input.context.projectId),
+    safeStorageSegment(input.context.workItemId),
+    safeStorageSegment(input.context.proposalId),
+    "text-hunk-overrides",
+    safeStorageSegment(input.context.mergeProposalId),
+    safeStorageSegment(input.changeId),
+    filename
+  );
+  if (!assertInside(root, storagePath)) {
+    throw new ProposalServiceError(409, "delivery_artifact_unsafe_path", "逐段融合稿文件路径越界，不能采纳到正式版。");
+  }
+  await mkdir(path.dirname(storagePath), { recursive: true });
+  await writeFile(storagePath, materialized.content, "utf8");
+  return {
+    file: {
+      changeId: input.changeId,
+      filename,
+      storagePath,
+      sizeBytes: Buffer.byteLength(materialized.content, "utf8"),
+      sha256: materialized.sha256,
+      mime: mimeForAiFusionTextWriteback({ filename, targetKind })
+    },
+    patch: {
+      source: "text_hunk_overrides" as const,
+      overrides: input.overrides,
+      decisions: materialized.decisions,
+      conflictRanges: materialized.conflictRanges,
+      baseSha256: context.base.sha256,
+      currentSha256: context.current.sha256,
+      incomingSha256: context.incoming.sha256,
+      outputSha256: materialized.sha256
+    }
   };
 }
 
@@ -1534,22 +1765,49 @@ export function createDbProposalService(repository: ProposalRepository, options:
         input.structuredItemOverrides,
         input.taskPlanScope
       );
+      if (input.textHunkOverrides && resolvedStructuredFieldPatch) {
+        throw new ProposalServiceError(
+          409,
+          "text_hunk_target_unsupported",
+          "逐段文本选择不能用于结构化字段写回。"
+        );
+      }
       const resolvedDriveFile = resolvedStructuredFieldPatch
         ? undefined
-        : await materializeAiFusionCandidate({
-            context,
-            storageRoot,
-            changeId: nextId()
-          });
+        : input.textHunkOverrides
+          ? await materializeTextHunkCandidate({
+              repository,
+              context,
+              storageRoot,
+              changeId: nextId(),
+              overrides: input.textHunkOverrides
+            })
+          : {
+              file: await materializeAiFusionCandidate({
+                context,
+                storageRoot,
+                changeId: nextId()
+              })
+            };
+      const resolvedApplyPayload = resolvedStructuredFieldPatch
+        ? { resolvedStructuredFieldPatch }
+        : (() => {
+            if (!resolvedDriveFile) {
+              throw new ProposalServiceError(409, "merge_candidate_artifact_missing", "AI 融合建议没有可写回的正式文件。");
+            }
+            const textHunkPatch = "patch" in resolvedDriveFile ? resolvedDriveFile.patch : undefined;
+            return {
+              resolvedDriveFile: resolvedDriveFile.file,
+              ...(textHunkPatch ? { resolvedTextHunkPatch: textHunkPatch } : {})
+            };
+          })();
       let rows: StoredProposalRows | null;
       try {
         rows = await repository.applyMergeProposalCandidate({
           mergeProposalId: input.mergeProposalId,
           mergeSnapshotId: nextId(),
           actor: actorToRepository(input.actor),
-          ...(resolvedStructuredFieldPatch
-            ? { resolvedStructuredFieldPatch }
-            : { resolvedDriveFile: resolvedDriveFile as NonNullable<typeof resolvedDriveFile> }),
+          ...resolvedApplyPayload,
           at: now()
         });
       } catch (error) {

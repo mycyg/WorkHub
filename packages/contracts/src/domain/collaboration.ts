@@ -176,10 +176,35 @@ export const taskPlanScopeSelectionSchema = z.object({
 });
 export type TaskPlanScopeSelection = z.infer<typeof taskPlanScopeSelectionSchema>;
 
+export const textHunkOverrideDecisionSchema = z.enum(["keep_current", "accept_incoming", "ai_fusion"]);
+export type TextHunkOverrideDecision = z.infer<typeof textHunkOverrideDecisionSchema>;
+
+export const textHunkOverrideSchema = z.object({
+  hunk_index: z.number().int().nonnegative(),
+  start_line: z.number().int().positive(),
+  end_line: z.number().int().positive(),
+  decision: textHunkOverrideDecisionSchema
+}).superRefine((override, ctx) => {
+  if (override.end_line < override.start_line) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["end_line"],
+      message: "文本段结束行不能早于开始行。"
+    });
+  }
+});
+export type TextHunkOverride = z.infer<typeof textHunkOverrideSchema>;
+
+export const textHunkApplyOverridesSchema = z.object({
+  hunks: z.array(textHunkOverrideSchema).min(1).max(64)
+});
+export type TextHunkApplyOverrides = z.infer<typeof textHunkApplyOverridesSchema>;
+
 export const applyMergeProposalCandidateRequestSchema = z.object({
   confirm: z.boolean().default(true),
   structured_field_overrides: structuredFieldApplyOverridesSchema.optional(),
   structured_item_overrides: structuredItemApplyOverridesSchema.optional(),
+  text_hunk_overrides: textHunkApplyOverridesSchema.optional(),
   task_plan_scope: taskPlanScopeSelectionSchema.optional()
 });
 export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;

@@ -497,6 +497,9 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
         ...(payload.structured_item_overrides
           ? { structuredItemOverrides: payload.structured_item_overrides }
           : {}),
+        ...(payload.text_hunk_overrides
+          ? { textHunkOverrides: payload.text_hunk_overrides }
+          : {}),
         ...(payload.task_plan_scope
           ? { taskPlanScope: payload.task_plan_scope }
           : {})

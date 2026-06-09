@@ -7,7 +7,9 @@ import type {
   DeliverableChange,
   DeliverableChangeManifest,
   StructuredFieldPatchDryRun,
-  StructuredFieldPatchOperation
+  StructuredFieldPatchOperation,
+  TextHunkApplyOverrides,
+  TextHunkOverrideDecision
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
@@ -172,6 +174,7 @@ export type ApplyMergeProposalCandidateInput = {
   actor?: ProposalRepositoryActor;
   resolvedDriveFile?: ProposalAdoptedDriveFileInput;
   resolvedStructuredFieldPatch?: ProposalStructuredFieldPatchInput;
+  resolvedTextHunkPatch?: ProposalTextHunkPatchInput;
   at?: Date;
 };
 
@@ -180,6 +183,26 @@ export type ProposalStructuredFieldPatchInput = {
   taskPlanScope?: {
     targetPlanId: string;
   };
+};
+
+export type ProposalTextHunkPatchInput = {
+  source: "text_hunk_overrides";
+  overrides: TextHunkApplyOverrides;
+  decisions: Array<{
+    hunkIndex: number;
+    startLine: number;
+    endLine: number;
+    decision: TextHunkOverrideDecision;
+  }>;
+  conflictRanges: Array<{
+    hunkIndex: number;
+    startLine: number;
+    endLine: number;
+  }>;
+  baseSha256: string;
+  currentSha256: string;
+  incomingSha256: string;
+  outputSha256: string;
 };
 
 export class ProposalRepositoryMergeConflictError extends Error {
@@ -1783,6 +1806,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         }
         const resolvedStructuredPatch = input.resolvedStructuredFieldPatch;
         const resolvedFile = input.resolvedDriveFile;
+        const resolvedTextHunkPatch = input.resolvedTextHunkPatch;
         if (candidate.target_kind === "structured_record") {
           if (!resolvedStructuredPatch) {
             throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
@@ -1951,7 +1975,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           workItemId: row.workItemId,
           branchId: row.branchId,
           kind: "merge",
-          ref: `merge-proposal:${input.mergeProposalId}:ai_fusion`,
+          ref: resolvedTextHunkPatch
+            ? `merge-proposal:${input.mergeProposalId}:text_hunk_overrides`
+            : `merge-proposal:${input.mergeProposalId}:ai_fusion`,
           ...(resolvedFile.sha256 ? { contentSha256: resolvedFile.sha256 } : {}),
           createdByKind: input.actor?.actorKind ?? "system",
           createdAt: at
@@ -2066,7 +2092,19 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             conflict_count: 1,
             accepted_incoming_target_keys: [],
             resolved_conflict_target_keys: [row.mergeProposal.conflictKey],
-            target_keys: [row.mergeProposal.conflictKey]
+            target_keys: [row.mergeProposal.conflictKey],
+            ...(resolvedTextHunkPatch
+              ? {
+                  text_hunk_overrides: resolvedTextHunkPatch.overrides,
+                  text_hunk_decisions: resolvedTextHunkPatch.decisions,
+                  text_hunk_conflict_ranges: resolvedTextHunkPatch.conflictRanges,
+                  text_hunk_count: resolvedTextHunkPatch.decisions.length,
+                  text_hunk_base_sha256: resolvedTextHunkPatch.baseSha256,
+                  text_hunk_current_sha256: resolvedTextHunkPatch.currentSha256,
+                  text_hunk_incoming_sha256: resolvedTextHunkPatch.incomingSha256,
+                  text_hunk_output_sha256: resolvedTextHunkPatch.outputSha256
+                }
+              : {})
           },
           snapshotId: mergeSnapshotId,
           createdAt: at

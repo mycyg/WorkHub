@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,6 +23,7 @@ import {
   type MergeAttemptRow,
   type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
+  type ProposalAcceptedDriveFile,
   type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
@@ -186,6 +188,10 @@ async function filesUnder(root: string): Promise<string[]> {
     }
   }
   return files;
+}
+
+function sha256Text(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 type MemoryWorkItemRow = {
@@ -367,6 +373,8 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
   public readonly taskItems = new Map<string, MemoryTaskItemRow[]>();
   public readonly taskPlans = new Map<string, MemoryTaskPlanRow[]>();
+  public readonly acceptedDriveFiles = new Map<string, ProposalAcceptedDriveFile[]>();
+  public readonly workdirRefs = new Map<string, string>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -459,13 +467,23 @@ class MemoryProposalRepository implements ProposalRepository {
       projectId: "91000000-0000-4000-8000-000000000901",
       branchId: stored.proposal.branchId,
       agentRunId: null,
-      workdirRef: null,
+      workdirRef: this.workdirRefs.get(proposalId) ?? null,
       diffManifest: stored.proposal.diffManifest
     };
   }
 
-  async findAcceptedDriveFileForTarget() {
-    return null;
+  async findAcceptedDriveFileForTarget(input: Parameters<ProposalRepository["findAcceptedDriveFileForTarget"]>[0]) {
+    const rows = this.acceptedDriveFiles.get(input.targetKey) ?? [];
+    const refSha = input.ref?.replace(/^sha256:/iu, "");
+    const sha = input.sha256?.replace(/^sha256:/iu, "");
+    if (input.ref || input.sha256) {
+      return rows.find((row) =>
+        (input.ref && row.acceptedRef === input.ref)
+        || (refSha && row.sha256After === refSha)
+        || (sha && row.sha256After === sha)
+      ) ?? null;
+    }
+    return rows.find((row) => row.acceptedRef === "current") ?? rows[0] ?? null;
   }
 
   private resolveTaskItemsForPatch(workItemId: string, scope?: { targetPlanId: string }) {
@@ -2108,6 +2126,191 @@ test("proposal service requires an explicit task plan scope before task item wri
   assert.equal(scoped.status, "merged");
   assert.deepEqual(repository.taskPlans.get(itemManifest.work_item_id)?.find((plan) => plan.id === targetPlanId)?.items, incomingItems);
   assert.deepEqual(repository.taskPlans.get(itemManifest.work_item_id)?.find((plan) => plan.id === workerPlanId)?.items, [workerItem]);
+});
+
+test("proposal service materializes text hunk overrides into the final text artifact", async (t) => {
+  const storageRoot = await mkdtemp(path.join(tmpdir(), "workhub-text-hunk-apply-"));
+  const workdirRoot = await mkdtemp(path.join(tmpdir(), "workhub-text-hunk-workdir-"));
+  t.after(async () => {
+    await rm(storageRoot, { recursive: true, force: true });
+    await rm(workdirRoot, { recursive: true, force: true });
+  });
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids(), storageRoot });
+  const itemManifest = manifest(3);
+  const sourceChange = itemManifest.changes[0];
+  if (!sourceChange) {
+    throw new Error("missing fixture change");
+  }
+  const baseText = "Intro\nBase decision\nTail";
+  const currentText = "Intro\nCurrent decision\nTail";
+  const incomingText = "Intro\nIncoming decision\nTail";
+  const aiFusionText = "Intro\nAI fusion decision\nTail";
+  const baseSha = sha256Text(baseText);
+  const currentSha = sha256Text(currentText);
+  const incomingSha = sha256Text(incomingText);
+  const targetPath = "outputs/result.md";
+  const textChange = {
+    ...sourceChange,
+    id: "91000000-0000-4000-8000-000000000691",
+    target_kind: "text_doc" as const,
+    target_ref: {
+      ...sourceChange.target_ref,
+      path: targetPath,
+      version_before: `sha256:${baseSha}`,
+      sha256_before: baseSha,
+      sha256_after: incomingSha
+    },
+    human_summary: "生成了另一版同路径文本说明。"
+  };
+  itemManifest.changes = [textChange];
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  repository.workdirRefs.set(created.id, workdirRoot);
+  const incomingPath = path.join(workdirRoot, "outputs", "result.md");
+  const basePath = path.join(workdirRoot, "base-result.md");
+  const currentPath = path.join(workdirRoot, "current-result.md");
+  await mkdir(path.dirname(incomingPath), { recursive: true });
+  await writeFile(incomingPath, incomingText, "utf8");
+  await writeFile(basePath, baseText, "utf8");
+  await writeFile(currentPath, currentText, "utf8");
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const targetKey = `${textChange.target_ref.entity_type}:${targetPath}`;
+  repository.acceptedDriveFiles.set(targetKey, [
+    {
+      acceptedChangeId: "91000000-0000-4000-8000-000000000692",
+      targetKey,
+      acceptedRef: `sha256:${baseSha}`,
+      sha256After: baseSha,
+      storagePath: basePath,
+      mime: "text/markdown"
+    },
+    {
+      acceptedChangeId: "91000000-0000-4000-8000-000000000693",
+      targetKey,
+      acceptedRef: "current",
+      sha256After: currentSha,
+      storagePath: currentPath,
+      mime: "text/markdown"
+    }
+  ]);
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000694";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000695";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: targetKey,
+    change_id: textChange.id,
+    target_kind: "text_doc" as const,
+    change_type: textChange.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000696",
+    existing_change_id: "91000000-0000-4000-8000-000000000697",
+    target_path: targetPath,
+    existing_sha256_after: currentSha,
+    incoming_sha256_before: baseSha,
+    incoming_sha256_after: incomingSha,
+    existing_ref: "current",
+    incoming_version_before: `sha256:${baseSha}`
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [targetKey],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: targetKey,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "text_doc",
+        rationale_md: "AI 给出融合稿，但用户逐段选择采用这次版本。",
+        source: "llm",
+        quality_gate: {
+          status: "passed",
+          text_diff3: {
+            type: "line_text_diff3",
+            auto_merge: false,
+            current_hunks: 1,
+            incoming_hunks: 1,
+            conflict_hunks: 1,
+            conflict_ranges: [{ start_line: 2, end_line: 2 }]
+          }
+        },
+        merged_value: {
+          merged_text: aiFusionText
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId },
+      textHunkOverrides: {
+        hunks: [
+          {
+            hunk_index: 0,
+            start_line: 1,
+            end_line: 1,
+            decision: "accept_incoming"
+          }
+        ]
+      }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "text_hunk_range_mismatch"
+  );
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    textHunkOverrides: {
+      hunks: [
+        {
+          hunk_index: 0,
+          start_line: 2,
+          end_line: 2,
+          decision: "accept_incoming"
+        }
+      ]
+    }
+  });
+
+  const materializedFiles = await filesUnder(storageRoot);
+  const materializedText = await readFile(materializedFiles[0]!, "utf8");
+  assert.equal(merged.status, "merged");
+  assert.equal(materializedText, incomingText);
+  assert.notEqual(materializedText, aiFusionText);
+  assert.equal(repository.acceptedTargetCount, 1);
+  assert.equal(repository.mergeAttempts.at(-1)?.acceptedTargetKeys[0], targetKey);
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
 test("proposal service blocks structured field patches when current WorkItem diverges from base", async () => {

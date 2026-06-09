@@ -471,6 +471,37 @@ test("merge proposal candidate choices are explicit and replayable", () => {
       target_plan_id: "72000000-0000-4000-8000-000000000904"
     }
   });
+  const textHunkOverrideRequest = applyMergeProposalCandidateRequestSchema.parse({
+    confirm: true,
+    text_hunk_overrides: {
+      hunks: [
+        {
+          hunk_index: 0,
+          start_line: 8,
+          end_line: 11,
+          decision: "accept_incoming"
+        },
+        {
+          hunk_index: 1,
+          start_line: 20,
+          end_line: 20,
+          decision: "ai_fusion"
+        }
+      ]
+    }
+  });
+  const invalidTextHunkOverrideRequest = applyMergeProposalCandidateRequestSchema.safeParse({
+    text_hunk_overrides: {
+      hunks: [
+        {
+          hunk_index: 0,
+          start_line: 8,
+          end_line: 7,
+          decision: "keep_current"
+        }
+      ]
+    }
+  });
   const invalidItemOverrideRequest = applyMergeProposalCandidateRequestSchema.safeParse({
     structured_item_overrides: {
       items: [
@@ -507,8 +538,11 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(itemOverrideRequest.structured_item_overrides?.items[0]?.decision, "keep_current");
   assert.equal(itemOverrideRequest.structured_item_overrides?.items[1]?.field, "task_items");
   assert.equal(taskPlanScopedRequest.task_plan_scope?.target_plan_id, "72000000-0000-4000-8000-000000000904");
+  assert.equal(textHunkOverrideRequest.text_hunk_overrides?.hunks[0]?.decision, "accept_incoming");
+  assert.equal(textHunkOverrideRequest.text_hunk_overrides?.hunks[1]?.start_line, 20);
   assert.equal(invalidFieldOverrideRequest.success, false);
   assert.equal(invalidItemOverrideRequest.success, false);
+  assert.equal(invalidTextHunkOverrideRequest.success, false);
 });
 
 test("structured field patch dry-run validates executable work item fields", () => {

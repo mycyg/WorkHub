@@ -128,7 +128,7 @@ Proposal renderer 从 `structured_record_patch.task_plan_scope`、`structured_fi
 
 | 阶段 | 工作 |
 |---|---|
-| R1.41 | Text hunk materializer：把 `text_hunk_overrides` 从 UI intent 模板升级为 API/service/DB 正式逐段写回 |
+| R1.41 | Text hunk materializer 已落：见 [`r1-text-hunk-materializer.md`](./r1-text-hunk-materializer.md)，`text_hunk_overrides` 已升级为 API/service/DB 正式逐段写回 |
 | R1.42 | Multi-conflict execution audit：批量 keep/accept route 执行器、`bulk_action` audit、局部失败说明 |
-| R1.43 | Task plan scope audit replay：把 `targetPlanId`、plan label、plan stage/status 写入 `field_merge` audit 并在 Replay 展示 |
+| R1.43 | Replay audit polish：把 `targetPlanId`、plan label、plan stage/status 与 `text_hunk_decisions` 写入/渲染为可读回放 |
 | R4 | 把 plan scope 场景纳入 route visual QA 和真实 loading/error/forbidden 状态矩阵 |
