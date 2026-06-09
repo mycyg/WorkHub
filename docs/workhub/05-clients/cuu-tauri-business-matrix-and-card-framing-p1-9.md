@@ -6,6 +6,7 @@ owner: workflow
 date: 2026-06-08
 visuals:
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png
+  - ./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/done-actual-dom-smoke/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/approval-anchor-smoke/cuu-motion-contact-sheet.png
 ---
@@ -15,6 +16,8 @@ visuals:
 > 本篇记录 P1.9：把 P1.8 的单个 approval anchor smoke 扩展为业务动作 smoke matrix，并修复用户截图指出的“框在红色位置、理想应靠近 Cuu 蓝色位置”的真实问题。P1.9 仍是 smoke，不是最终 32 帧正式验收；但它已经能证明真实 Tauri pet window 中气泡围绕 Cuu、黑猫/白猫模型包不会混用、业务 DOM 合同能落到实际 WebView。
 >
 > **2026-06-08 纠偏更新**：P1.10 已补 motion liveness 硬门和两组 32 帧 evidence；但根据 `D:/workhub审查报告`，R1 真实纵切通过前冻结后续 Cuu 外观/动效/设置矩阵施工。本篇后续计划不再作为立即施工队列，只保留为回归门。
+>
+> **2026-06-08 anchor regression update**：用户复核后仍认为审批框偏向红色左侧。当前源码把 full card 气泡进一步收窄并右移到 `right:24px; bottom:348px; width:288px`，让气泡与 `right:72px; bottom:72px` 的猫体同侧锚定。旧 contact sheet 仍保留为历史 evidence，但不能再单独证明“蓝色位置”已通过；后续真实截图必须以新坐标复核。
 
 ## 1. User-Facing Problem
 
@@ -22,7 +25,7 @@ visuals:
 
 | 问题 | P1.9 处理 |
 |---|---|
-| 气泡框漂在窗口左上或脱离 Cuu | `card` 模式气泡改为右下锚定，并重新校准到 `right:112px; bottom:332px` |
+| 气泡框漂在窗口左上或脱离 Cuu | `card` 模式气泡改为 Cuu 右侧同锚，并重新校准到 `right:24px; bottom:348px; width:288px` |
 | Cuu 在 card 模式被裁切 | `card` 模式猫体改为 `right:72px; bottom:72px`，真实截图保留右侧与底部余量 |
 | `done` 为了 body-only 被裁成一条文字边 | `celebrating` / `thinking` 等业务提示态使用透明 `card` canvas，`done` 仍保留 `bubble_mode=tip` |
 
@@ -36,7 +39,7 @@ visuals:
 | `apps/desktop-webview/src/pet-window-bridge.ts` | `desktopPetWindowModeForCard` 改为读取 `CuuBehaviorManifest`，并按请求模型包校验 |
 | `apps/desktop-webview/src/pet-surface.ts` | card 气泡和猫体向内校准，避免真实 Tauri 截图裁切 |
 | `apps/desktop-webview/src/pet-surface.test.ts` | 新增 completion anchored tip 回归测试，更新 card 锚点 CSS 契约 |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | actual DOM gate 加强：校验 Live2D runtime、framing、model pack、bubble、主操作；`done` 期望为 `card + tip` |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | actual DOM gate 加强：校验 Live2D runtime、framing、model pack、bubble、主操作、bubble/live2d/surface rect；`done` 期望为 `card + tip` |
 
 ## 3. Framing Contract
 
@@ -45,18 +48,47 @@ visuals:
 | Element | Current anchor | Why |
 |---|---|---|
 | Cuu body in `card` | `right:72px; bottom:72px` | 真实截图中黑/白猫全身不贴边，不裁脚、不裁须 |
-| Bubble in `card/full` | `right:112px; bottom:332px; width:304px` | 气泡在 Cuu 上方/身边，右圆角完整 |
+| Bubble in `card/full` | `right:24px; bottom:348px; width:288px` | 气泡右缘靠近 pet window 右侧，整体贴近 Cuu 头顶/右侧，不再铺到透明窗口左半区 |
 | Bubble in `compact failed` | `right:8px; bottom:224px; width:150px` | 仅窗口扩展失败时保留救援小框 |
 | Bubble in `compact syncing` | 不渲染 | 避免只出现框、没有猫的过渡首帧 |
 
-Pixel sanity on `hijiki/approval-anchor-smoke/frame-000.png` after calibration:
+Historical pixel sanity on `hijiki/approval-anchor-smoke/frame-000.png` before the anchor regression update:
 
 | BBox | x1 | y1 | x2 | y2 | right margin | bottom margin |
 |---|---:|---:|---:|---:|---:|---:|
 | light card | 130 | 221 | 509 | 384 | 10 | 255 |
 | visible nonblack content | 120 | 221 | 519 | 624 | 0* | 15 |
 
-`*` nonblack right edge includes shadow/whisker pixels; card body and visible cat silhouette are not cropped in the inspected frame.
+`*` nonblack right edge includes shadow/whisker pixels; card body and visible cat silhouette were not cropped, but this historical frame still shows the bubble starting too far left for the user's latest blue-position requirement.
+
+Current source-level anchor gate:
+
+| Gate | Expected |
+|---|---|
+| Cuu body | `right:72px; bottom:72px; width:240px; height:320px` |
+| Full bubble | `right:24px; bottom:348px; width:288px; max-height:268px` |
+| Rejected regression | `right:112px; bottom:332px` no longer accepted by `pet-surface.test.ts` |
+
+Current Tauri rect evidence after the anchor regression update:
+
+| Artifact | Path |
+|---|---|
+| contact sheet | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png` |
+| frame 000 | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/frames/frame-000.png` |
+| DOM report | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-tauri-dom-report.json` |
+| diff report | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/motion-diff-report.json` |
+
+| Rect | x | y | width | height | right | bottom |
+|---|---:|---:|---:|---:|---:|---:|
+| surface | 0 | 0 | 520 | 640 | 520 | 640 |
+| live2d | 213 | 248 | 230 | 320 | 443 | 568 |
+| bubble | 208 | 160.5 | 288 | 131.5 | 496 | 292 |
+
+Automated rect sanity now rejects a business bubble if:
+
+- `bubble.x < live2d.x - 48` (detached toward the left/red area).
+- `bubble.right > surface.right - 8` (right-side clipping).
+- `bubble.bottom > live2d.y + 96` (card covers too much of Cuu body).
 
 ## 4. Actual DOM Gate
 
@@ -68,6 +100,7 @@ P1.9 的 `actual_dom_matches_expected=true` 不再只意味着 surface data attr
 | `live2d` | present、`data_cuu_live2d_runtime=live2d_cubism2_cat`、`data_cuu_live2d_framing=transparent_full_body`、`data_cuu_model_pack=<requested>` |
 | `live2d behavior` | `data_cuu_behavior_state/phase/window/bubble` 与 expected contract 一致 |
 | `bubble` | 非 idle 场景必须 present，且有 `data_pet_bubble=true`、`data_pet_bubble_kind`、`data_cuu_card_id` |
+| `bubble rect` | 非 idle 场景必须有 `bubble.rect`、`live2d.rect`、`surface.rect`，且通过 Cuu 邻近锚点 sanity |
 | primary action | `approval=approve`、`clarify=submit_option`、`search=use_for_current_task`、`sync=open_sync`、`done=view_replay` |
 
 这解决了 P1.8 的隐患：白猫 capture 不能再悄悄用黑猫模型包通过。
@@ -87,6 +120,8 @@ P1.9 的 `actual_dom_matches_expected=true` 不再只意味着 surface data attr
 | approval | Tororo white | true | true | true | 83619 | card / card | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/tororo/approval-anchor-smoke/` |
 
 Representative frames:
+
+![Hijiki approval blue-anchor regression](./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png)
 
 ![Hijiki approval anchor smoke](./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png)
 

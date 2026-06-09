@@ -6,7 +6,7 @@ import {
   writeDesktopPetQaDomSnapshot
 } from "./cuu-qa-dom-report.js";
 
-function fakeElement(attrs: Record<string, string>, textContent = "") {
+function fakeElement(attrs: Record<string, string>, textContent = "", rect?: Partial<DOMRect>) {
   return {
     textContent,
     getAttributeNames() {
@@ -14,7 +14,21 @@ function fakeElement(attrs: Record<string, string>, textContent = "") {
     },
     getAttribute(name: string) {
       return attrs[name] ?? null;
-    }
+    },
+    ...(rect
+      ? {
+          getBoundingClientRect() {
+            return {
+              x: rect.x ?? 0,
+              y: rect.y ?? 0,
+              width: rect.width ?? 0,
+              height: rect.height ?? 0,
+              right: rect.right ?? (rect.x ?? 0) + (rect.width ?? 0),
+              bottom: rect.bottom ?? (rect.y ?? 0) + (rect.height ?? 0)
+            } as DOMRect;
+          }
+        }
+      : {})
   };
 }
 
@@ -41,7 +55,7 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
     "[data-pet-bubble]": fakeElement({
       "data-pet-bubble": "true",
       "data-cuu-card-id": "approval-card"
-    }, "Cuu Approval needed Approve"),
+    }, "Cuu Approval needed Approve", { x: 208.456, y: 142.123, width: 288, height: 164 }),
     "[data-chip-id],[data-pet-option-id]": fakeElement({
       "data-chip-id": "file-only",
       "data-recommended": "true"
@@ -66,6 +80,14 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
   });
   assert.equal(report.live2d.data.data_cuu_live2d_model, "hijiki");
   assert.equal(report.bubble.data.data_cuu_card_id, "approval-card");
+  assert.deepEqual(report.bubble.rect, {
+    x: 208.46,
+    y: 142.12,
+    width: 288,
+    height: 164,
+    right: 496.46,
+    bottom: 306.12
+  });
   assert.equal(report.primary_chip.data.data_recommended, "true");
   assert.equal(report.primary_action.data.data_cuu_action_id, "approve");
 });

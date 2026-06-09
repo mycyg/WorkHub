@@ -228,7 +228,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(112px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(332px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(24px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(288px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
   assert.match(card.html, /data-cuu-behavior-phase="loop"/u);
   assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
@@ -445,6 +445,16 @@ test("pet surface keeps completion cards as anchored celebration tips", () => {
   assert.match(card.html, /data-cuu-behavior-expected-bubble-mode="tip"/u);
   assert.match(card.html, /data-cuu-action-id="view_replay"/u);
   assert.equal(desktopPetWindowModeForCard(completionCard()), "card");
+});
+
+test("pet surface anchors full card bubbles near the Cuu body instead of the left window edge", () => {
+  const card = renderDesktopPetSurface({ card: approvalCard() });
+
+  assert.match(card.html, /data-pet-window-mode="card"/u);
+  assert.match(card.html, /data-pet-card-layout="full"/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(72px \* var\(--wh-pet-scale,1\)\);width:calc\(240px \* var\(--wh-pet-scale,1\)\);height:calc\(320px \* var\(--wh-pet-scale,1\)\)\}/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(24px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(288px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.doesNotMatch(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(112px \* var/u);
 });
 
 test("pet surface keeps offline Cuu fully visible in card mode", () => {

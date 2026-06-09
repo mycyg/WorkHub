@@ -4,7 +4,17 @@ export type DesktopPetQaDomElementSnapshot = {
   selector: string;
   present: boolean;
   data: Record<string, string>;
+  rect?: DesktopPetQaDomRect | undefined;
   text?: string | undefined;
+};
+
+export type DesktopPetQaDomRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
 };
 
 export type DesktopPetQaDomSnapshot = {
@@ -34,6 +44,7 @@ type DomElementLike = Element & {
   dataset?: DOMStringMap;
   getAttributeNames?: () => string[];
   getAttribute?: (name: string) => string | null;
+  getBoundingClientRect?: () => DOMRect;
 };
 
 export function collectDesktopPetQaDomSnapshot(
@@ -80,11 +91,28 @@ function collectDesktopPetQaDomElement(root: ParentNode, selector: string): Desk
     };
   }
   const text = normalizeTextContent(element.textContent);
+  const rect = collectDesktopPetQaRect(element);
   return {
     selector,
     present: true,
     data: collectDesktopPetQaDataAttributes(element),
+    ...(rect ? { rect } : {}),
     ...(text ? { text } : {})
+  };
+}
+
+function collectDesktopPetQaRect(element: DomElementLike): DesktopPetQaDomRect | undefined {
+  if (typeof element.getBoundingClientRect !== "function") {
+    return undefined;
+  }
+  const rect = element.getBoundingClientRect();
+  return {
+    x: roundRectNumber(rect.x),
+    y: roundRectNumber(rect.y),
+    width: roundRectNumber(rect.width),
+    height: roundRectNumber(rect.height),
+    right: roundRectNumber(rect.right),
+    bottom: roundRectNumber(rect.bottom)
   };
 }
 
@@ -103,6 +131,13 @@ function collectDesktopPetQaDataAttributes(element: DomElementLike): Record<stri
     data[datasetReportKey(key)] = String(value);
   }
   return data;
+}
+
+function roundRectNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.round(value * 100) / 100;
 }
 
 function dataAttributeReportKey(name: string) {

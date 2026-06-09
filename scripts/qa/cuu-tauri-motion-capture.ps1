@@ -235,6 +235,9 @@ function Test-CuuActualDomMatchesExpected {
     if ([string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_cuu_card_id) -or [string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_pet_bubble_kind)) {
       return $false
     }
+    if (-not (Test-CuuBubbleRectNearLive2D -Actual $Actual)) {
+      return $false
+    }
   }
   $expectedActionByScenario = @{
     approval = "approve"
@@ -252,6 +255,56 @@ function Test-CuuActualDomMatchesExpected {
     }
   }
   return $true
+}
+
+function Read-CuuDomRectNumber {
+  param([object]$Rect, [string]$Name)
+  if (-not $Rect) {
+    return $null
+  }
+  $property = $Rect.PSObject.Properties[$Name]
+  if (-not $property) {
+    return $null
+  }
+  $value = $property.Value
+  if ($value -is [int] -or $value -is [double] -or $value -is [decimal]) {
+    return [double]$value
+  }
+  $parsed = 0.0
+  if ([double]::TryParse([string]$value, [ref]$parsed)) {
+    return $parsed
+  }
+  return $null
+}
+
+function Test-CuuBubbleRectNearLive2D {
+  param([object]$Actual)
+
+  $surface = $Actual.surface.rect
+  $live2d = $Actual.live2d.rect
+  $bubble = $Actual.bubble.rect
+  foreach ($rect in @($surface, $live2d, $bubble)) {
+    if (-not $rect) {
+      return $false
+    }
+  }
+
+  $surfaceRight = Read-CuuDomRectNumber $surface "right"
+  $live2dX = Read-CuuDomRectNumber $live2d "x"
+  $live2dY = Read-CuuDomRectNumber $live2d "y"
+  $bubbleX = Read-CuuDomRectNumber $bubble "x"
+  $bubbleRight = Read-CuuDomRectNumber $bubble "right"
+  $bubbleBottom = Read-CuuDomRectNumber $bubble "bottom"
+  foreach ($value in @($surfaceRight, $live2dX, $live2dY, $bubbleX, $bubbleRight, $bubbleBottom)) {
+    if ($null -eq $value) {
+      return $false
+    }
+  }
+
+  $notLeftDetached = $bubbleX -ge ($live2dX - 48)
+  $notRightClipped = $bubbleRight -le ($surfaceRight - 8)
+  $notCoveringCatBody = $bubbleBottom -le ($live2dY + 96)
+  return $notLeftDetached -and $notRightClipped -and $notCoveringCatBody
 }
 
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuMotionWin32").Type) {

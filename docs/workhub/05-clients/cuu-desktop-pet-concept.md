@@ -141,6 +141,8 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 | 点击气泡选项 | 发送 typed action，不要求输入文本 |
 | 长时间无事 | 进入睡眠或低频 idle |
 
+气泡位置验收补充：业务 card 可以使用 `520x640` 透明 pet canvas，但气泡必须围绕 Cuu 本体出现。当前 full card 锚点为 `right:24px; bottom:348px; width:288px`，猫体为 `right:72px; bottom:72px; width:240px; height:320px`。如果气泡回到透明窗口左上或明显远离 Cuu，视为概念图复现失败。
+
 ### 6.3 与主窗边界
 
 主窗可以显示同一事件的完整页面，但不显示 Cuu 本体。允许的入口是：

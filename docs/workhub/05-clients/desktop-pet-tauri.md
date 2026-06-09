@@ -66,7 +66,7 @@ visuals:
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
 | card 尺寸 | `520x640` logical px，从 body anchor 向左上展开轻气泡 |
-| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡 |
+| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须贴近 Cuu 右侧同锚，当前 CSS gate 为 `right:24px; bottom:348px; width:288px` |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
 | 不允许 | 白框/卡片底、主窗 UI、完整看板、旧实验 renderer、静态图片 fallback |

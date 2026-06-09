@@ -118,10 +118,15 @@ export function createDesktopPetVisualQaReport(input: {
     ),
     qaCheck(
       "card_mode_light_bubble",
-      hasAll(input.card.css, [".wh-pet-bubble", "right:calc(254px * var(--wh-pet-scale,1))", "bottom:calc(36px * var(--wh-pet-scale,1))", "width:min(286px,calc(100vw - 254px))"]) &&
+      hasAll(input.card.css, [
+        ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1))",
+        ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:auto;right:calc(24px * var(--wh-pet-scale,1))",
+        "bottom:calc(348px * var(--wh-pet-scale,1))",
+        "width:calc(288px * var(--wh-pet-scale,1))"
+      ]) &&
         input.card.html.includes('data-pet-window-mode="card"') &&
         input.card.html.includes('data-pet-bubble="true"'),
-      "expanded mode must remain a small option bubble beside Cuu, not a full application panel."
+      "expanded mode must keep the option bubble anchored near Cuu's right-side body, not at the transparent window's left edge."
     ),
     qaCheck(
       "heavy_card_context",

@@ -6,12 +6,15 @@ owner: workflow
 date: 2026-06-08
 visuals:
   - ./assets/cuu/cuu-desktop-approval-search.png
+  - ./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png
   - ./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png
 ---
 
 # Cuu Tauri Actual DOM + Bubble Anchor QA P1.8
 
 > 本篇记录 P1.8：把 P1.7 的“期望行为合同”推进为真实 Tauri WebView DOM attrs 落盘，并修正审批 / 检索 / 澄清轻框的锚点。核心验收口径：气泡必须围绕 Cuu 出现，不能漂在窗口左上角；录屏首帧必须同时有 Cuu 与轻框，不能只出现框。
+>
+> **2026-06-08 anchor regression update**：用户复核指出 full card 气泡仍偏左。当前源码回归门已改为 full card `right:24px; bottom:348px; width:288px`，并拒绝旧 `right:112px; bottom:332px` 坐标。旧截图可作历史证据，不再作为最新合格截图。
 
 ## 1. PRD / Concept Alignment
 
@@ -29,10 +32,10 @@ visuals:
 |---|---|
 | `apps/desktop-webview/src/pet-surface.ts` | card 气泡改为 `right/bottom` 锚点；syncing compact 阶段隐藏 transient bubble；failed compact fallback 仍保留可恢复轻框 |
 | `apps/desktop-webview/src/pet-surface.test.ts` | 新增 full card / compact fallback 锚点回归测试，以及 syncing 阶段不显示 transient bubble 的测试 |
-| `apps/desktop-webview/src/cuu-qa-dom-report.ts` | 新增真实 DOM 快照采集：surface / live2d / bubble / primary chip / primary action |
+| `apps/desktop-webview/src/cuu-qa-dom-report.ts` | 新增真实 DOM 快照采集：surface / live2d / bubble / primary chip / primary action，并写入 `getBoundingClientRect()` |
 | `apps/desktop-webview/src/cuu-qa-dom-report.test.ts` | 验证 data attrs 收集和 Tauri command 调用 |
 | `client-tauri/src-tauri/src/main.rs` | 新增 env-gated `write_cuu_qa_dom_report(report_json)` command，只写 `WORKHUB_CUU_QA_DOM_REPORT_PATH` |
-| `scripts/qa/cuu-tauri-motion-capture.ps1` | `OutDir` 规范成绝对路径；读取 `cuu-tauri-dom-report.json`；校验 actual DOM 与 expected 合同；business card 首帧 gate 加严 |
+| `scripts/qa/cuu-tauri-motion-capture.ps1` | `OutDir` 规范成绝对路径；读取 `cuu-tauri-dom-report.json`；校验 actual DOM、expected 合同、bubble/live2d/surface rect；business card 首帧 gate 加严 |
 
 ## 3. Bubble Anchor Contract
 
@@ -40,11 +43,11 @@ Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但�
 
 | Mode | Bubble anchor | Intent |
 |---|---|---|
-| `card/full` | P1.9 校准为 `right: 112px; bottom: 332px; width: 304px` | 气泡贴近 Cuu 头顶 / 身边，右圆角不贴边 |
+| `card/full` | P1.9 回归更新后为 `right: 24px; bottom: 348px; width: 288px` | 气泡贴近 Cuu 头顶 / 右侧，不再铺到透明窗口左半区 |
 | `card/compact failed` | `right: 8px; bottom: 224px; width: 150px` | 只有扩展失败时显示小型救援卡 |
 | `card/compact syncing` | 不渲染 bubble | 避免窗口扩展中先出现“只有框没有猫”的过渡画面 |
 
-这条是视觉验收门：如果后续截图里审批框又回到窗口左上角，P1.8 视为回归失败。
+这条是视觉验收门：如果后续截图里审批框又回到窗口左上角，或源码/DOM 回到 `right:112px; bottom:332px` 这类偏左坐标，P1.8 视为回归失败。
 
 ## 4. Actual DOM Report Contract
 
@@ -78,15 +81,32 @@ Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但�
 
 黑猫 approval anchor smoke 已通过：
 
+最新蓝色锚点回归截图：
+
+![Hijiki approval blue-anchor regression](./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png)
+
+历史 anchor smoke：
+
 ![Hijiki approval anchor smoke](./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png)
 
 | Artifact | Path |
 |---|---|
+| latest contact sheet | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-motion-contact-sheet.png` |
+| latest DOM report | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/cuu-tauri-dom-report.json` |
+| latest diff report | `./assets/audit/2026-06-08-cuu-card-anchor-regression/hijiki/approval-rect-gated/motion-diff-report.json` |
 | contact sheet | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-contact-sheet.png` |
 | DOM report | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-tauri-dom-report.json` |
 | diff report | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/motion-diff-report.json` |
 | GIF | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-printwindow.gif` |
 | MP4 | `./assets/audit/2026-06-08-cuu-live2d-cat-runtime/hijiki/approval-anchor-smoke/cuu-motion-printwindow.mp4` |
+
+最新 rect 证据：
+
+| Rect | x | y | width | height | right | bottom |
+|---|---:|---:|---:|---:|---:|---:|
+| surface | 0 | 0 | 520 | 640 | 520 | 640 |
+| live2d | 213 | 248 | 230 | 320 | 443 | 568 |
+| bubble | 208 | 160.5 | 288 | 131.5 | 496 | 292 |
 
 报告结论：
 
