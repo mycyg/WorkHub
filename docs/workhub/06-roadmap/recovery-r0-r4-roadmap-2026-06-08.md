@@ -103,7 +103,7 @@ R1 退出门：
 
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
-3. 继续 R2.3/R2.4/R2.5：跨实例 broker、订阅权限边界、长 LLM call heartbeat 与 PG/Redis full matrix。
+3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；继续 R2.4/R2.5：订阅权限边界、长 LLM call heartbeat 与 PG/Redis full matrix。
 
 ## 3. R2 真正解除单 worker
 
@@ -113,7 +113,7 @@ R1 退出门：
 |---|---|---|
 | R2-1 PG 队列 claim | **已落 R2.1**：`claimQueued()` / `claimNextQueued()` 使用 `FOR UPDATE SKIP LOCKED`，`queue.run(id)` 与 `runNext()` 都先 claim；进程内 Map/Set 降为本地缓存与测试 fallback。 | `@workhub/api` claim tests、`@workhub/db` schema test |
 | R2-2 多实例 pump / active enqueue | **已落 R2.2**：`agent_runs_work_item_active_uq` 保证同 work item 只有一个 queued/running run；route auto-run 改为 `runNext()` drain，靠 PG claim 协同。 | `@workhub/api` duplicate enqueue + route pump tests；`qa:r1-pg-smoke` R2 hook |
-| R2-3 Redis bus/presence | PushBus / presence 默认跨 worker，修 unsubscribe 竞态。 | A 实例发布，B 实例订阅者收到 |
+| R2-3 Redis bus/presence | **已落 R2.3**：Redis PushBus / Presence v0 跨 worker，修 unsubscribe 竞态；memory 仅单进程，`pg_listen` 预留。 | `@workhub/api` fake Redis adapter tests：A 实例发布，B 实例订阅者收到；presence 跨实例可见 |
 | R2-4 订阅边界 | `/api/push/stream` 全局 all 删除或 admin-only，资源 topic 强制 `can_view`。 | 非 owner 订阅他人 run/workitem/proposal 得 403 |
 | R2-5 集成测试/CI | PG + Redis 五场景：SSE、stuck-job、CORS、revert、escalation。 | CI 或本地脚本全绿 |
 

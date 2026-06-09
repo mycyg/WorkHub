@@ -1790,7 +1790,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 - `pnpm --filter @workhub/api test` 通过，当前 71/71；新增测试确认生产 route 对 P0.5 fixture route set fail-closed，并覆盖正式交付物 restore route 与 BudgetPolicy audit。
 - `pnpm --filter @workhub/cost test` 通过，当前 8/8；`pnpm --filter @workhub/db test` 通过，当前 14/14；`pnpm db:check` 与 `pnpm audit:migrations` 通过。
 
-仍不能宣称 R2 全部完成，因为 PG claim/多 worker 仍未落地；完整 approval policy routing、完整 Drive 产品化和完整 React SPA route 迁移也仍是后续工作。
+仍不能宣称 R2 全部完成，因为订阅边界、长 LLM call heartbeat、真实 PG + Redis 集成矩阵仍未完成；完整 approval policy routing、完整 Drive 产品化和完整 React SPA route 迁移也仍是后续工作。
 
 ## 5. R2 多 worker 与订阅边界
 
@@ -1801,7 +1801,7 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 1. **R2.1 已落**：`claimNextQueued()` / `claimQueued(run_id)` 使用 `FOR UPDATE SKIP LOCKED`，多个实例可以同时尝试 claim queued run；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. **R2.1 已落首版**：`running` run 增加 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at`；已提供 `requeueExpiredClaims()` stuck-job recovery primitive。
 3. **R2.2 已落**：`startingWorkItems` 不再是 DB 场景最终裁决；`agent_runs_work_item_active_uq` partial unique index + `createRunIfWorkItemIdle()` 负责同 work item active run 唯一；route auto-run 改为 `runNext()` drain。详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
-4. PushBus / presence 默认切 Redis 或 PG broker；补 unsubscribe 引用计数。
+4. **R2.3 已落**：PushBus / presence 默认支持 Redis v0 跨 worker；修同 topic unsubscribe / resubscribe 竞态；`pg_listen` 保持预留。详见 [`../02-ai-engine/r2-redis-broker-presence.md`](../02-ai-engine/r2-redis-broker-presence.md)。
 5. `/api/push/stream` 的 `all` topic 删除或 admin-only；资源 topic 订阅前强制 `can_view`。
 6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、长 LLM call heartbeat、CORS+cookie、revert、escalation approver、非 owner 403。
 
@@ -1809,7 +1809,7 @@ R2 验收：
 
 - `WORKHUB_WORKERS=2` 下 R1 纵切仍通过。
 - 同一 work item 并发 enqueue 只有一个 run 执行。
-- A 实例发布事件，B 实例订阅者收到。
+- A 实例发布事件，B 实例订阅者收到。R2.3 已由 fake Redis adapter test 固定语义；R2.5 仍需真实 Redis service matrix。
 - 非 owner 订阅他人 run/workitem/proposal 被拒。
 
 ### R2.1 AgentRun claim / lease（2026-06-10）
@@ -1836,7 +1836,7 @@ R2 验收：
 | Stuck recovery | repository primitive 已有，尚未接后台调度 |
 | Queue cache | 进程内 Map/Set 仍保留为本地缓存与测试 fallback |
 | R2.2 追加 | active work item partial unique index、DB 原子 enqueue、route `runNext()` drain 已落 |
-| 仍缺 | R2.3 跨实例 broker、R2.4 订阅边界、R2.5 长 LLM call heartbeat 与真实 `WORKHUB_WORKERS=2` full matrix |
+| 仍缺 | R2.4 订阅边界、R2.5 长 LLM call heartbeat 与真实 `WORKHUB_WORKERS=2` full matrix |
 
 验证：
 
@@ -1870,7 +1870,7 @@ R2 验收：
 | 多实例执行权 | 仍由 R2.1 `FOR UPDATE SKIP LOCKED` claim 决定 |
 | 无 DB fallback | `startingWorkItems` 与内存 Map/Set 继续保护单进程测试 |
 | long provider call heartbeat | 未落；仍需后续 interval heartbeat |
-| cross-instance event | 未落；R2.3 处理 Redis/PG broker |
+| cross-instance event | R2.3 已落 Redis broker/presence v0；真实 Redis service matrix 属 R2.5 |
 
 验证：
 
@@ -1881,6 +1881,35 @@ R2 验收：
 - `corepack pnpm db:check` 通过。
 - `corepack pnpm audit:migrations` 通过。
 - 本地 `corepack pnpm qa:r1-pg-smoke` 因本机 `127.0.0.1:5432 ECONNREFUSED` 未执行到业务断言；等待 GitHub Actions `r1-pg-smoke` 容器 job 做最终远端验收。
+
+### R2.3 Redis broker / presence（2026-06-10）
+
+本切片关闭 R2 的第三处硬缺口：事件流和在线状态不再只能活在单进程内存里。R2.3 选择 Redis 作为 v0 跨 worker 后端；`memory` 保留给开发/测试/单 worker，生产多 worker 继续 fail-closed；`pg_listen` 仅保留预留枚举，不宣称完成。
+
+已落代码：
+
+- `apps/api/src/broker/redis.ts`：`RedisPushBus` 支持 client factory 注入；publisher/subscriber 继续分离；新增 topic 级串行化锁，防止最后一个订阅者退订与新订阅交错时误退 Redis channel；`close()` 清理本地队列、handler 和连接。
+- `apps/api/src/broker/presence.ts`：`RedisPresenceStore` 支持 client factory 与 `now()` 注入；使用 `presence:lastseen:{user}` 与 `presence:streams:{user}` 两类 TTL key；补 `close()`。
+- `apps/api/src/broker.test.ts`：新增 fake Redis hub，覆盖跨实例 publish/subscribe、unsubscribe/resubscribe 竞态、跨实例 presence。
+- `packages/config/src/env.test.ts`：新增 production 多 worker + Redis URL 允许、非 memory broker 缺 URL 拒绝测试。
+- `docs/workhub/02-ai-engine/r2-redis-broker-presence.md`：记录配置、runtime contract、验收证据、剩余风险。
+
+当前边界：
+
+| 项 | R2.3 行为 |
+|---|---|
+| Broker backend | `memory` 与 `redis` 两种真实实现；`pg_listen` 仍 throw |
+| Redis push | A `RedisPushBus` publish，B `RedisPushBus` subscription 可收到 |
+| Redis presence | A `markStreamOpen`，B `getPresence` 可读 online |
+| unsubscribe 竞态 | 同 topic subscribe/unsubscribe 串行化，新订阅不会被旧 unsubscribe 误退 |
+| public API | `/api/push/stream*`、topic、frame、payload 不变 |
+| 仍缺 | R2.4 订阅边界、R2.5 真实 Redis/PG matrix、长 LLM call interval heartbeat |
+
+验证：
+
+- `corepack pnpm --filter @workhub/api test` 通过，93/93。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/config test` 通过，9/9。
 
 ## 6. R3 Cuu Agent 入口
 

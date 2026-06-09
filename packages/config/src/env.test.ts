@@ -75,6 +75,33 @@ test("fails closed for memory broker with multiple production workers", () => {
   );
 });
 
+test("allows redis broker for multiple production workers when url is configured", () => {
+  const value = loadSettings({
+    APP_ENV: "production",
+    COOKIE_SECRET: "strong-secret",
+    COOKIE_SECURE: "true",
+    CORS_ALLOW_ORIGINS: "http://localhost:5173",
+    WORKER_COUNT: "2",
+    BROKER_BACKEND: "redis",
+    BROKER_URL: "redis://127.0.0.1:6379"
+  });
+
+  assert.equal(value.broker.backend, "redis");
+  assert.equal(value.broker.url, "redis://127.0.0.1:6379");
+});
+
+test("requires broker url for non-memory production broker", () => {
+  assert.throws(() =>
+    loadSettings({
+      APP_ENV: "production",
+      COOKIE_SECRET: "strong-secret",
+      COOKIE_SECURE: "true",
+      CORS_ALLOW_ORIGINS: "http://localhost:5173",
+      BROKER_BACKEND: "redis"
+    })
+  );
+});
+
 test("fails closed for insecure production cookies", () => {
   assert.throws(() =>
     loadSettings({

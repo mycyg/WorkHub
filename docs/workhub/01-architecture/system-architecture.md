@@ -165,7 +165,7 @@ WorkHub 把今天的单体拆成**一个核心进程 + 三类外围**,边界以�
 
 同一套二进制、同一组 API,只换**部署形态与后端**:
 - Daemon 多副本(无状态,真相在 PG)置于负载均衡之后;Runner 池水平扩展。
-- PostgreSQL 托管化(主从/连接池),对象存储换云 blob,事件总线在多副本下需从「进程内 pub/sub」升级为**外部 broker**(§5.3)。
+- PostgreSQL 托管化(主从/连接池),对象存储换云 blob,事件总线在多副本下从「进程内 pub/sub」升级为**外部 broker**。R2.3 已落 Redis pub/sub + Redis presence v0,`pg_listen` 仍为预留适配器(§5.3)。
 - **威胁模型从「可信局域网」重审**(PRD NFR-02):公网下设备令牌门、CORS(`app/main.py:232` 已禁止生产用 `*`)、cookie secret(`_validate_runtime_config` 已强制非默认)等全部收紧。详见 [`security-and-permissions.md`](./security-and-permissions.md)。
 
 ---
@@ -199,7 +199,7 @@ WorkHub 在此基础上扩展(具体清单归 [`api-contract.md`](./api-contract
 
 - **SSE 为主**:现有全链路(daemon `text/event-stream` ↔ Tauri `sse.rs` 字节级 SSE 解析 ↔ web `EventSource`)已验证,**MVP 不引入 WS**。SSE 单向够用:服务端推、客户端发动作走普通 HTTP API。审批询问也是「事件(ask)下行 + HTTP(答复)上行」。
 - **WS 预留**:仅当出现真正双向低延迟需求(如桌宠的实时语音/打字回显)时局部引入,不替换 SSE 主干。
-- **多副本(P5)的总线**:进程内 `push_bus` 在 daemon 多副本下会「事件只到达产生它的那台」。云就绪时把 publish/subscribe 后端换成**外部 broker**(如 Redis pub/sub / PG `LISTEN/NOTIFY`),`stream()` 与 topic 契约不变 —— 这正是「核心架构与部署形态解耦」的价值。
+- **多副本(P5)的总线**:进程内 `push_bus` 在 daemon 多副本下会「事件只到达产生它的那台」。R2.3 已把 v0 外部后端落到 Redis pub/sub + Redis TTL presence:`BROKER_BACKEND=redis` 时,A 实例 publish,B 实例本地 SSE subscription 能收到;A 实例打开 stream,B 实例能读到 online presence。`stream()` 与 topic 契约不变。PG `LISTEN/NOTIFY` 继续预留,未实现前不得作为完成证据。
 
 ---
 
@@ -257,7 +257,7 @@ Runner 触到高风险工具 ──► 编排域查分层策略(org→workspace�
 | M2 | AI 在请求进程内跑(asyncio task) | `services/auto_agent.py`(顶部注释) | 抽出 **Agent Runner 执行域** | MVP 仍在 daemon 内但由 `AgentRun` 表显式拥有;契约与 API 解耦,云就绪可平移进程池 |
 | M3 | 崩溃恢复靠启动扫孤儿 | `app/main.py:102 _resume_stuck_jobs` + `:176` 无主 finalize 注释 | **每个 AgentRun 必有持久行**,生命周期显式 | 收编「无主后台 task」;恢复从「猜哪些卡住」变为「按 AgentRun 状态精确恢复」 |
 | M4 | SQLite 单 writer + WAL/busy_timeout 补丁 | `app/db.py:8-39` | **PostgreSQL** | 删 `check_same_thread`/SQLite PRAGMA 分支;`pool_pre_ping` 注释(`db.py:14`)早已为换库埋点;启用多 worker;行级锁/乐观锁支撑对象合并 |
-| M5 | 进程内 SSE pub/sub(每订阅一队列,满则丢) | `services/push_bus.py` | **事件网关内核**(同形状) | 形状不变;多副本(P5)换外部 broker,topic 契约稳定 |
+| M5 | 进程内 SSE pub/sub(每订阅一队列,满则丢) | `services/push_bus.py` | **事件网关内核**(同形状) | 形状不变;R2.3 已落 Redis broker/presence,多副本 topic 契约稳定 |
 | M6 | SSE 路由 + topic(all / req / user) | `app/routers/push.py` | 事件网关路由,扩 topic 体系(workitem/agentrun/proposal/permission/org) | **保留**「订阅前鉴权 + 私有事件按身份隔离」;清退 `all` 滥用(见 sse.rs 事故注释) |
 | M7 | cookie + worker-token 双通道鉴权 | `app/auth.py:104/172/202` | 身份门 + 设备令牌门(延续) | **保留**双通道与 `require_stream_user` 轻身份模式;叠加 RBAC + Org/Workspace 上下文 |
 | M8 | 设备令牌门(接活/干活需桌面端) | `auth.py:183` + `routers/client_devices.py` | **延续**(D-3 LAN-first 核心) | 不变;云就绪时在威胁模型下收紧 |

@@ -338,6 +338,7 @@ ASR/纪要异步,经 `BackgroundJob` 报进度;完成发 `meeting.ready`,洞察�
 - **心跳**:无事件时每 30s 发注释行 `: ping`(`push_bus.py:50` `heartbeat_secs=30.0`,SSE 注释不触发客户端 handler)。
 - **背压**:每订阅者一个 `asyncio.Queue(maxsize=256)`,满则**丢弃**慢订阅者的事件(`push_bus.py:43` `QueueFull → pass`)——SSE 是尽力推送,客户端关键状态以 REST 拉取为准(reconcile)。
 - **断连**:`request.is_disconnected()` 检测,清理订阅(`push.py:46`、`push_bus.py:61`)。
+- **broker 后端**:R2.3 已落 Redis 后端作为多 worker v0。`BROKER_BACKEND=redis` 时,publish/subscribe 跨实例;本地订阅队列、topic、frame 格式保持不变。`BROKER_BACKEND=memory` 只适合单进程开发/测试;生产 `WORKER_COUNT>1` 禁止 memory。
 
 ### 5.2 事件类型清单(全量,均为真实代码所发)
 

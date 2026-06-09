@@ -34,7 +34,7 @@ related:
 |---|---|
 | 后台 drainer / active enqueue gate | R2.2 已由 [`r2-multi-worker-pump.md`](./r2-multi-worker-pump.md) 承接：route 触发 `runNext()` drain，同 work item active run 用 partial unique index 裁决 |
 | 定时 heartbeat | R2.5 或下一 R2.x 增加 interval heartbeat，覆盖长 LLM call 无 step 的窗口 |
-| Redis/PG event broker | R2.3 处理跨实例 SSE / presence |
+| Redis/PG event broker | R2.3 已落 Redis PushBus / Presence v0；PG `LISTEN/NOTIFY` 仍预留 |
 | Topic authorization 收口 | R2.4 收敛 `/api/push/stream` 全局 topic |
 | 真实双 worker smoke | R2.5 在 PG service 上跑 `WORKHUB_WORKERS=2` full matrix；R2.2 已在 `qa:r1-pg-smoke` 增加 duplicate enqueue hook |
 
@@ -151,4 +151,4 @@ ${os.hostname()}:${process.pid}
 | `pnpm db:check` | Drizzle schema 与 migration meta 对齐 |
 | `pnpm audit:migrations` | 无 runtime schema mutation |
 
-R2.1 已完成 claim/lease；R2.2 已补 active enqueue gate 与 route `runNext()` drain。R2 仍不能宣称完成，直到 R2.3-R2.5 补齐跨实例 broker、订阅权限、长 LLM call heartbeat 与真实 PG/Redis 集成测试。
+R2.1 已完成 claim/lease；R2.2 已补 active enqueue gate 与 route `runNext()` drain；R2.3 已补 Redis broker/presence。R2 仍不能宣称完成，直到 R2.4-R2.5 补齐订阅权限、长 LLM call heartbeat 与真实 PG/Redis 集成测试。

@@ -42,7 +42,7 @@ owner: workflow
 | **数据库** | **PostgreSQL**(替换 SQLite) | `db.py:8` 的 `startswith("sqlite")` 分支、`config.py:9` 默认 `sqlite:////...` | **替换(D-2)**。理由见 §6:多 Agent + 多人并发、业务对象合并需**行级锁 / `SELECT … FOR UPDATE` / 乐观锁**,SQLite 单写者做不到。 |
 | **数据库迁移** | **Drizzle Kit**(替换运行时 `create_all`+ALTER) | `main.py:251` `Base.metadata.create_all`、`services/schema_migrations.py`(idempotent ALTER 补丁) | **新建**。现状仍靠运行期 `create_all` 与补丁式 ALTER；新仓用 Drizzle schema + migrations 版本化,多 Agent 并发写 PG 上 schema 不得运行时漂移。详见 §6.3。 |
 | **LLM 接入** | provider 注册表;**DeepSeek-via-Anthropic** 作为首个 provider | `config.py:22` `llm_base_url=https://api.deepseek.com/anthropic`;**7 个模块**各自 `_client = AsyncAnthropic(...)`(`auto_agent.py:34`、`llm_agent.py:24`、`drive_comment_agent.py:12`、`meeting_agent.py:12`、`delivery_doc.py:23`、`task_decomposition.py:29`、`routers/assistant.py:29`) | **抽象化(D-5)**。现在 7 处硬编码同一个 client;收进统一注册表,低风险任务可路由更便宜模型(成本治理 NFR-05)。详见 §4。 |
-| **实时事件** | SSE(MVP)/ 预留 WS;**外部 broker** | `services/push_bus.py`(进程内 pub/sub)、`routers/push.py`(`/api/push/stream{,/me,/req/{id}}`) | **复用语义 + 换实现**。事件契约(topic + event type)保留;进程内 `PushBus` 在多 worker 下必须换 Redis pub/sub(§6.2)。 |
+| **实时事件** | SSE(MVP)/ 预留 WS;**Redis broker v0** | `services/push_bus.py`(进程内 pub/sub)、`routers/push.py`(`/api/push/stream{,/me,/req/{id}}`) | **复用语义 + 换实现**。事件契约(topic + event type)保留;R2.3 已落 Redis pub/sub + Redis presence 作为多 worker v0,真实 Redis 服务矩阵归 R2.5(§6.2)。 |
 | **桌面客户端** | **Tauri v2 + Rust + React webview** | `client-tauri/src-tauri/src/*`(`lib.rs` 14 个 mod、`sse.rs`/`sync.rs`/`spec_watch.rs`/`tray.rs`/`upload.rs`/`reminders.rs`/`deep_link.rs`) | **复用**。Rust 侧已具备 SSE 长连+退避、托盘、通知、deep-link、本地文件监听、分块上传——桌宠(C-PET)直接在此长出。 |
 | **Web 客户端** | React + Vite + TS | `web/`(Vite + Playwright)、`app/main.py` SPA fallback(`/srv/yqgl/web/dist`) | **复用**。C-WEB 继续是 Vite SPA;daemon 化后改为纯 API 消费者(§5)。 |
 | **共享层** | `@yqgl/shared`(API client + types + hooks + tokens + UI) | `shared/src/api/{client,types}.ts`、`hooks/use*Stream.ts`、`design/*` | **复用 + 升级为 C-UIKIT**。已是 web/tauri 共用的类型化 client;WorkHub 让它成为「OpenAPI 生成类型 + SSE hooks」的单一来源(§5.3)。 |
@@ -160,7 +160,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 ### 5.1 步骤(建议顺序)
 
 1. **搭 TS daemon 骨架并剥离前端托管**。新建 `apps/api`(Hono/Node);现有 `app/main.py` 的 `WEB_ROOT` 挂载与 `spa_fallback`(`main.py:469-498`)只作为迁移反例。daemon 只暴露 `/api`、`/downloads`、`/client`。web 独立部署。→ daemon 收敛为「纯核心」。
-2. **统一事件契约 + 抽 broker 接口**。保留 `push_bus.py` 的 topic/event 语义(`all` / `req:<id>` / `user:<id>`),把 `PushBus` 抽象成接口,后端实现先内存、后 Redis(§6.2)。客户端侧 `sse.rs` / `useReqStream` 不变。
+2. **统一事件契约 + 抽 broker 接口**。保留 `push_bus.py` 的 topic/event 语义(`all` / `req:<id>` / `user:<id>`),把 `PushBus` 抽象成接口;当前代码已支持内存与 Redis 后端,R2.3 固定 Redis 跨实例语义(§6.2)。客户端侧 `sse.rs` / `useReqStream` 不变。
 3. **DB 切 PostgreSQL + Drizzle migrations**(§6)。这是解除单 worker 的前置。
 4. **provider 注册表落地**(§4),把 `auto_agent`/`llm_agent` 行为迁成 TS provider adapters。
 5. **AgentRun 出请求进程,进 Redis queue**。现状 AI 任务是 FastAPI 进程内的 `asyncio.create_task`(`auto.py` 后台任务、`main.py:_resume_stuck_jobs` 的崩溃恢复扫描)。TS daemon 化后改为「daemon 收请求 → 投递 AgentRun 到 Redis queue → TS worker 执行」,使 web/API 与长跑 Agent 解耦,worker 可水平扩展。崩溃恢复语义复用 `_resume_stuck_jobs` 的行为,但下沉到 worker heartbeat。
@@ -198,8 +198,8 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 
 | 进程内单例 | 现状文件 | 迁移目标 |
 |---|---|---|
-| SSE pub/sub | `push_bus.py`(`dict[str, list[Queue]]`) | **Redis pub/sub**(DEPLOY.md:97 点名的方案)。topic 语义不变,publish 进 Redis,各 worker 订阅 → 转发给本地 SSE 连接 |
-| 在线状态 | `presence.py` | Redis(key + TTL) |
+| SSE pub/sub | `push_bus.py`(`dict[str, list[Queue]]`) | **Redis pub/sub**(DEPLOY.md:97 点名的方案)。R2.3 已落 v0:topic 语义不变,publish 进 Redis,各 worker 订阅 → 转发给本地 SSE 连接 |
+| 在线状态 | `presence.py` | Redis(key + TTL)。R2.3 已落 v0:`presence:lastseen:*` 与 `presence:streams:*` 跨实例可见 |
 | 任务去重 / 并发槽 | `auto.py` / 后台任务状态 | Redis(分布式锁 / 计数);AgentRun 入队列(§5.1 步骤 5) |
 
 完成后 daemon 可 `--workers N`,AgentRun worker 可独立水平扩展。
@@ -236,7 +236,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 | 状态机 | `models.Requirement`(status 字段 + `routers/requirements.py` PATCH /status) | 🔧 | 演进为 WorkItem 状态机(intake→ai_working→escalated→in_review→merged,PRD §7.1),新增分级/升级转移(详见 [data-model](./data-model.md))。 |
 | 权限检查 | `services/permissions.py`(`can_view/claim/work_requirement`、admin 短路) | 🔧 | 关系级检查复用;升级为分层 allow/deny/**ask** 策略(`org→workspace→role→session`,PRD §8.6,详见 [security-and-permissions](./security-and-permissions.md))。 |
 | 鉴权 + 设备令牌门 | `app/auth.py`(`issue_cookie`、`require_stream_user`、`require_local_client`、`hash_client_token`)、`models.ClientDevice` | ♻️ | LAN 昵称身份 + 设备令牌门原样保留;Org/RBAC 为 P5 叠加。 |
-| SSE 总线 + 路由 | `services/push_bus.py`、`routers/push.py`(`/stream{,/me,/req/{id}}`) | 🔧 | 事件契约复用;实现换 Redis pub/sub(§6.2)。按身份隔离(`user:{id}` topic + `can_view` 门)必须带过去。 |
+| SSE 总线 + 路由 | `services/push_bus.py`、`routers/push.py`(`/stream{,/me,/req/{id}}`) | 🔧 | 事件契约复用;R2.3 已落 Redis pub/sub/presence v0(§6.2)。按身份隔离(`user:{id}` topic + `can_view` 门)必须带过去,R2.4 继续订阅边界。 |
 | 交付 / 验收 | `models.Delivery`(按 round 版本化)、`routers/deliveries.py`、`delivery_upload.py`、`services/delivery_doc.py` | ♻️🔧 | Delivery 演进为 Proposal 的产物载体;打回循环对接 Review/Approval。 |
 | 任务分解 / 排期 | `services/task_decomposition.py`、`schedule.py`、`routers/decompositions.py`、`planning.py`、`calendar.py` | ♻️🔧 | 喂 PM 模式(派活→拆解→排期→提醒,PRD §8.3)。 |
 | 通知 / 提醒 | `services/notifications.py`、`routers/notifications.py`、`reminders.py`、`models.Notification/Reminder/Task` | ♻️ | M-NOTIFY 复用;桌宠呈现替代右下角弹窗。 |
@@ -283,7 +283,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 
 1. 新仓搭骨架(pnpm workspace + Hono API + Drizzle + Tauri + shared contracts),移植实体与认证行为;
 2. **DB 切 PG + Drizzle migrations**(§6.3)——解除单 worker 的前置;
-3. **抽 broker(Redis)**(§6.2)——搬走进程内单例,daemon 可多 worker;
+3. **抽 broker(Redis)**(§6.2)——R2.3 已完成 Redis PushBus / Presence v0,daemon 多 worker 的事件/在线状态不再只依赖进程内单例;
 4. **TS provider 注册表**(§4)——接入 DeepSeek/Anthropic-compatible endpoint;
 5. **剥离前端托管 + AgentRun 入队**(§5.1)——daemon 收敛为纯核心;
 6. 在复用件之上叠 P1 命门(置信度/风险/升级/回灌/快照,§7.2)。
