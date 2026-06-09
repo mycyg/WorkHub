@@ -6,7 +6,8 @@ import type {
   EvidenceRef,
   ProposalConflict,
   ProposalConflictOption,
-  ProposalDetailVM
+  ProposalDetailVM,
+  WorkHubLocale
 } from "@workhub/contracts";
 
 import {
@@ -122,6 +123,22 @@ function compactFieldList(fields: string[]) {
   return `${fields.slice(0, 8).join(", ")} +${fields.length - 8}`;
 }
 
+function dryRunStatusLabel(locale: WorkHubLocale, status: string) {
+  const labels: Record<WorkHubLocale, Record<string, string>> = {
+    "zh-CN": {
+      ready: "可执行",
+      needs_review: "需复核",
+      blocked: "已阻断"
+    },
+    "en-US": {
+      ready: "Ready",
+      needs_review: "Needs review",
+      blocked: "Blocked"
+    }
+  };
+  return labels[locale][status] ?? status;
+}
+
 function renderStructuredRecordPatch(option: ProposalConflictOption, options?: UiRenderOptions) {
   const locale = uiLocale(options);
   const patch = objectRecord(option.quality_gate?.["structured_record_patch"]);
@@ -133,6 +150,9 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   const missingFields = stringArrayField(patch, "missing_fields");
   const unknownFields = stringArrayField(patch, "unknown_fields");
   const fieldCount = numberField(patch, "field_count");
+  const dryRun = objectRecord(patch["structured_field_patch_dry_run"]);
+  const dryRunStatus = typeof dryRun?.["status"] === "string" ? dryRun["status"] : "";
+  const dryRunIssueCount = Array.isArray(dryRun?.["issues"]) ? dryRun["issues"].length : 0;
   const mergedLine = mergedFields.length > 0
     ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchFields"))}: ${escapeHtml(compactFieldList(mergedFields))}</p>`
     : "";
@@ -142,7 +162,10 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   const unknownLine = unknownFields.length > 0
     ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(compactFieldList(unknownFields))}</p>`
     : "";
-  return `<section class="wh-structured" data-structured-record-patch="true" data-structured-patch-option-id="${escapeHtml(option.id)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}">
+  const dryRunLine = dryRunStatus
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchDryRun"))}: ${escapeHtml(dryRunStatusLabel(locale, dryRunStatus))} · ${escapeHtml(uiT(locale, "proposal.structuredPatchIssues"))}: ${escapeHtml(String(dryRunIssueCount))}</p>`
+    : "";
+  return `<section class="wh-structured" data-structured-record-patch="true" data-structured-patch-option-id="${escapeHtml(option.id)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}" data-structured-patch-dry-run-status="${escapeHtml(dryRunStatus)}" data-structured-patch-dry-run-issues="${escapeHtml(String(dryRunIssueCount))}">
     <div class="wh-structured-head">
       <strong>${escapeHtml(uiT(locale, "proposal.structuredPatchTitle"))}</strong>
       <span class="wh-pill">${escapeHtml(String(fieldCount))}</span>
@@ -152,7 +175,7 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
     </div>
-    ${mergedLine}${missingLine}${unknownLine}
+    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}
   </section>`;
 }
 

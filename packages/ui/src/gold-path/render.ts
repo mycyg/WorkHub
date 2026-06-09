@@ -149,6 +149,22 @@ function compactFieldList(fields: string[]) {
   return `${fields.slice(0, 8).join(", ")} +${fields.length - 8}`;
 }
 
+function dryRunStatusLabel(locale: WorkHubLocale, status: string) {
+  const labels: Record<WorkHubLocale, Record<string, string>> = {
+    "zh-CN": {
+      ready: "可执行",
+      needs_review: "需复核",
+      blocked: "已阻断"
+    },
+    "en-US": {
+      ready: "Ready",
+      needs_review: "Needs review",
+      blocked: "Blocked"
+    }
+  };
+  return labels[locale][status] ?? status;
+}
+
 function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
   const patch = objectRecord(candidate.quality_gate?.["structured_record_patch"]);
   if (patch?.["type"] !== "structured_record_field_patch") {
@@ -159,6 +175,9 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
   const missingFields = stringArrayField(patch, "missing_fields");
   const unknownFields = stringArrayField(patch, "unknown_fields");
   const fieldCount = numberField(patch, "field_count");
+  const dryRun = objectRecord(patch["structured_field_patch_dry_run"]);
+  const dryRunStatus = typeof dryRun?.["status"] === "string" ? dryRun["status"] : "";
+  const dryRunIssueCount = Array.isArray(dryRun?.["issues"]) ? dryRun["issues"].length : 0;
   const mergedLine = mergedFields.length > 0
     ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchFields"))}: ${escapeHtml(compactFieldList(mergedFields))}</p>`
     : "";
@@ -168,7 +187,10 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
   const unknownLine = unknownFields.length > 0
     ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchUnknown"))}: ${escapeHtml(compactFieldList(unknownFields))}</p>`
     : "";
-  return `<section class="wh-structured" data-replay-structured-record-patch="true" data-structured-patch-option-key="${escapeHtml(candidate.option_key)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}">
+  const dryRunLine = dryRunStatus
+    ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchDryRun"))}: ${escapeHtml(dryRunStatusLabel(locale, dryRunStatus))} · ${escapeHtml(t(locale, "replay.structuredPatchIssues"))}: ${escapeHtml(String(dryRunIssueCount))}</p>`
+    : "";
+  return `<section class="wh-structured" data-replay-structured-record-patch="true" data-structured-patch-option-key="${escapeHtml(candidate.option_key)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}" data-structured-patch-dry-run-status="${escapeHtml(dryRunStatus)}" data-structured-patch-dry-run-issues="${escapeHtml(String(dryRunIssueCount))}">
     <div class="wh-structured-head">
       <strong>${escapeHtml(t(locale, "replay.structuredPatchTitle"))}</strong>
       <span class="wh-pill">${escapeHtml(String(fieldCount))}</span>
@@ -178,7 +200,7 @@ function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: 
       <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
       <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
     </div>
-    ${mergedLine}${missingLine}${unknownLine}
+    ${dryRunLine}${mergedLine}${missingLine}${unknownLine}
   </section>`;
 }
 

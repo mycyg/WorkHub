@@ -34,7 +34,7 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
-import { createDbProposalService, createInMemoryProposalService } from "./services/proposals.js";
+import { createDbProposalService, createInMemoryProposalService, ProposalServiceError } from "./services/proposals.js";
 
 const now = new Date("2026-06-06T00:00:00.000Z");
 const userId = "91000000-0000-4000-8000-000000000001";
@@ -148,6 +148,16 @@ function manifest(index = 0): DeliverableChangeManifest {
   const fixture = deliverableManifestFixtures[index] ?? deliverableManifestFixtures[0];
   if (!fixture) {
     throw new Error("missing deliverable manifest fixture");
+  }
+  return structuredClone(fixture);
+}
+
+function structuredManifest(): DeliverableChangeManifest {
+  const fixture = deliverableManifestFixtures.find((item) =>
+    item.changes.some((change) => change.target_kind === "structured_record")
+  );
+  if (!fixture) {
+    throw new Error("missing structured manifest fixture");
   }
   return structuredClone(fixture);
 }
@@ -958,6 +968,90 @@ test("proposal service persists AI fusion candidates when the mediator supplies 
       (candidate) => candidate.option_key === "ai_fusion"
     ),
     true
+  );
+});
+
+test("proposal service dry-runs structured field patches before applying AI fusion", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000601";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000602";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000603",
+    existing_change_id: "91000000-0000-4000-8000-000000000604",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "更新标题和截止时间。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            title: "客户周报草稿",
+            due_at: "2026-06-30",
+            extra_field: "should be rejected"
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "structured_field_patch_dry_run_failed"
   );
 });
 

@@ -175,6 +175,13 @@ test("LLM merge mediator adds structured field patch quality metadata", async ()
     unknown_fields?: string[];
     field_count?: number;
     has_structured_result?: boolean;
+    structured_field_patch?: { operations?: Array<{ field?: string; value_type?: string }> };
+    structured_field_patch_dry_run?: {
+      status?: string;
+      executable?: boolean;
+      issues?: Array<{ code?: string; field?: string }>;
+      audit_payload?: { operation_fields?: string[] };
+    };
   } | undefined;
   const parsedPrompt = JSON.parse(prompt) as {
     conflicts: Array<{
@@ -196,6 +203,17 @@ test("LLM merge mediator adds structured field patch quality metadata", async ()
   assert.deepEqual(structuredPatch?.unknown_fields, ["extra_field"]);
   assert.equal(structuredPatch?.field_count, 3);
   assert.equal(structuredPatch?.has_structured_result, true);
+  assert.equal(structuredPatch?.structured_field_patch_dry_run?.status, "blocked");
+  assert.equal(structuredPatch?.structured_field_patch_dry_run?.executable, false);
+  assert.deepEqual(
+    structuredPatch?.structured_field_patch_dry_run?.issues?.map((issue) => issue.code).sort(),
+    ["invalid_value_type", "missing_declared_field", "unknown_field"].sort()
+  );
+  assert.deepEqual(structuredPatch?.structured_field_patch_dry_run?.audit_payload?.operation_fields, ["title"]);
+  assert.deepEqual(
+    structuredPatch?.structured_field_patch?.operations?.map((operation) => [operation.field, operation.value_type]),
+    [["title", "string"]]
+  );
   assert.deepEqual(
     parsedPrompt.conflicts[0]?.change?.machine_summary?.changed_fields,
     ["title", "due_at", "acceptance_items"]

@@ -138,6 +138,293 @@ export const applyMergeProposalCandidateRequestSchema = z.object({
 });
 export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;
 
+export const structuredFieldPatchValueTypeSchema = z.enum([
+  "string",
+  "markdown",
+  "enum",
+  "datetime",
+  "number",
+  "boolean",
+  "json_array",
+  "json_object",
+  "null"
+]);
+export type StructuredFieldPatchValueType = z.infer<typeof structuredFieldPatchValueTypeSchema>;
+
+export const structuredFieldPatchSourceSchema = z.enum(["ai_fusion", "incoming", "manual"]);
+export type StructuredFieldPatchSource = z.infer<typeof structuredFieldPatchSourceSchema>;
+
+export const structuredFieldPatchTargetEntityTypeSchema = z.enum(["work_item"]);
+export type StructuredFieldPatchTargetEntityType = z.infer<typeof structuredFieldPatchTargetEntityTypeSchema>;
+
+const structuredWorkItemFieldTypes = {
+  title: ["string"],
+  summary_md: ["markdown"],
+  priority: ["enum"],
+  due_at: ["datetime", "null"],
+  acceptance_items: ["json_array"]
+} as const satisfies Record<string, readonly StructuredFieldPatchValueType[]>;
+
+const structuredWorkItemPriorityValues = new Set(["low", "normal", "high", "urgent"]);
+const structuredFieldPatchDeferredFields = new Set(["acceptance_items"]);
+
+function structuredFieldAllowedTypes(input: {
+  target_entity_type: string;
+  field: string;
+}): readonly StructuredFieldPatchValueType[] | undefined {
+  if (input.target_entity_type !== "work_item") {
+    return undefined;
+  }
+  return structuredWorkItemFieldTypes[input.field as keyof typeof structuredWorkItemFieldTypes];
+}
+
+function inferStructuredFieldPatchValueType(input: {
+  target_entity_type: StructuredFieldPatchTargetEntityType;
+  field: string;
+  value: unknown;
+}): StructuredFieldPatchValueType | undefined {
+  const allowedTypes = structuredFieldAllowedTypes(input);
+  if (!allowedTypes) {
+    return undefined;
+  }
+  if (input.value === null && allowedTypes.includes("null")) {
+    return "null";
+  }
+  const first = allowedTypes.find((type) => type !== "null");
+  return first;
+}
+
+function structuredFieldPatchValueMatchesType(input: {
+  value_type: StructuredFieldPatchValueType;
+  value: unknown;
+}) {
+  switch (input.value_type) {
+    case "string":
+    case "markdown":
+      return typeof input.value === "string" && input.value.trim().length > 0;
+    case "enum":
+      return typeof input.value === "string" && structuredWorkItemPriorityValues.has(input.value);
+    case "datetime":
+      return typeof input.value === "string" && z.string().datetime({ offset: true }).safeParse(input.value).success;
+    case "number":
+      return typeof input.value === "number" && Number.isFinite(input.value);
+    case "boolean":
+      return typeof input.value === "boolean";
+    case "json_array":
+      return Array.isArray(input.value);
+    case "json_object":
+      return input.value !== null && typeof input.value === "object" && !Array.isArray(input.value);
+    case "null":
+      return input.value === null;
+  }
+}
+
+export const structuredFieldPatchOperationSchema = z.object({
+  op: z.literal("set"),
+  target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
+  target_entity_id: idSchema,
+  field: z.string().min(1).max(64),
+  value_type: structuredFieldPatchValueTypeSchema,
+  value: z.unknown(),
+  source: structuredFieldPatchSourceSchema.default("ai_fusion"),
+  before_value: z.unknown().optional(),
+  current_value: z.unknown().optional()
+}).superRefine((operation, ctx) => {
+  const allowedTypes = structuredFieldAllowedTypes(operation);
+  if (!allowedTypes) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["field"],
+      message: `Unsupported structured field: ${operation.target_entity_type}.${operation.field}`
+    });
+    return;
+  }
+  if (!allowedTypes.includes(operation.value_type)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["value_type"],
+      message: `Invalid value_type for ${operation.target_entity_type}.${operation.field}`
+    });
+  }
+  if (!structuredFieldPatchValueMatchesType(operation)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["value"],
+      message: `Invalid value for ${operation.value_type}`
+    });
+  }
+});
+export type StructuredFieldPatchOperation = z.infer<typeof structuredFieldPatchOperationSchema>;
+
+export const structuredFieldPatchSchema = z.object({
+  type: z.literal("structured_field_patch"),
+  target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
+  target_entity_id: idSchema,
+  operations: z.array(structuredFieldPatchOperationSchema),
+  source: structuredFieldPatchSourceSchema.default("ai_fusion")
+});
+export type StructuredFieldPatch = z.infer<typeof structuredFieldPatchSchema>;
+
+export const structuredFieldPatchDryRunIssueSchema = z.object({
+  severity: z.enum(["error", "warning"]),
+  code: z.enum([
+    "missing_target",
+    "unsupported_entity_type",
+    "unknown_field",
+    "missing_declared_field",
+    "invalid_value_type",
+    "empty_patch",
+    "subrecord_merge_deferred"
+  ]),
+  field: z.string().min(1).max(64).optional(),
+  message: z.string().min(1)
+});
+export type StructuredFieldPatchDryRunIssue = z.infer<typeof structuredFieldPatchDryRunIssueSchema>;
+
+export const structuredFieldPatchDryRunSchema = z.object({
+  type: z.literal("structured_field_patch_dry_run"),
+  status: z.enum(["ready", "needs_review", "blocked"]),
+  executable: z.boolean(),
+  patch: structuredFieldPatchSchema,
+  issues: z.array(structuredFieldPatchDryRunIssueSchema),
+  audit_payload: z.object({
+    target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
+    target_entity_id: idSchema,
+    field_count: z.number().int().nonnegative(),
+    operation_fields: z.array(z.string().min(1)),
+    source: structuredFieldPatchSourceSchema
+  })
+});
+export type StructuredFieldPatchDryRun = z.infer<typeof structuredFieldPatchDryRunSchema>;
+
+export function buildStructuredFieldPatchDryRun(input: {
+  target_entity_type: string | undefined;
+  target_entity_id: string | undefined;
+  changed_fields?: string[];
+  merged_fields?: Record<string, unknown>;
+  source?: StructuredFieldPatchSource;
+}): StructuredFieldPatchDryRun {
+  const source = input.source ?? "ai_fusion";
+  const issues: StructuredFieldPatchDryRunIssue[] = [];
+  const operations: StructuredFieldPatchOperation[] = [];
+  const targetEntityType = structuredFieldPatchTargetEntityTypeSchema.safeParse(input.target_entity_type);
+  const targetEntityId = idSchema.safeParse(input.target_entity_id);
+
+  if (!targetEntityType.success) {
+    issues.push({
+      severity: "error",
+      code: input.target_entity_type ? "unsupported_entity_type" : "missing_target",
+      message: "结构化字段补丁缺少受支持的目标对象类型。"
+    });
+  }
+  if (!targetEntityId.success) {
+    issues.push({
+      severity: "error",
+      code: "missing_target",
+      message: "结构化字段补丁缺少目标对象 ID。"
+    });
+  }
+
+  const normalizedTargetEntityType = targetEntityType.success ? targetEntityType.data : "work_item";
+  const normalizedTargetEntityId = targetEntityId.success
+    ? targetEntityId.data
+    : "00000000-0000-4000-8000-000000000000";
+  const mergedFields = input.merged_fields ?? {};
+  const mergedFieldNames = Object.keys(mergedFields).filter((field) => field.trim().length > 0);
+  const changedFields = (input.changed_fields ?? []).filter((field) => field.trim().length > 0);
+  const mergedFieldSet = new Set(mergedFieldNames);
+
+  for (const field of changedFields) {
+    if (!mergedFieldSet.has(field)) {
+      issues.push({
+        severity: "error",
+        code: "missing_declared_field",
+        field,
+        message: `结构化字段补丁缺少声明要修改的字段 ${field}。`
+      });
+    }
+  }
+
+  for (const field of mergedFieldNames) {
+    const value = mergedFields[field];
+    const valueType = inferStructuredFieldPatchValueType({
+      target_entity_type: normalizedTargetEntityType,
+      field,
+      value
+    });
+    if (!valueType) {
+      issues.push({
+        severity: "error",
+        code: "unknown_field",
+        field,
+        message: `结构化字段补丁包含未知字段 ${field}。`
+      });
+      continue;
+    }
+    const operationCandidate = {
+      op: "set" as const,
+      target_entity_type: normalizedTargetEntityType,
+      target_entity_id: normalizedTargetEntityId,
+      field,
+      value_type: valueType,
+      value,
+      source
+    };
+    const operation = structuredFieldPatchOperationSchema.safeParse(operationCandidate);
+    if (!operation.success) {
+      issues.push({
+        severity: "error",
+        code: "invalid_value_type",
+        field,
+        message: `结构化字段 ${field} 的值类型不符合 ${valueType}。`
+      });
+      continue;
+    }
+    operations.push(operation.data);
+    if (structuredFieldPatchDeferredFields.has(field)) {
+      issues.push({
+        severity: "warning",
+        code: "subrecord_merge_deferred",
+        field,
+        message: `字段 ${field} 属于子记录集合，需要后续字段级工作台确认。`
+      });
+    }
+  }
+
+  if (operations.length === 0) {
+    issues.push({
+      severity: "error",
+      code: "empty_patch",
+      message: "结构化字段补丁没有可执行字段。"
+    });
+  }
+
+  const hasErrors = issues.some((issue) => issue.severity === "error");
+  const hasWarnings = issues.some((issue) => issue.severity === "warning");
+  const status = hasErrors ? "blocked" : hasWarnings ? "needs_review" : "ready";
+
+  return structuredFieldPatchDryRunSchema.parse({
+    type: "structured_field_patch_dry_run",
+    status,
+    executable: status === "ready",
+    patch: {
+      type: "structured_field_patch",
+      target_entity_type: normalizedTargetEntityType,
+      target_entity_id: normalizedTargetEntityId,
+      operations,
+      source
+    },
+    issues,
+    audit_payload: {
+      target_entity_type: normalizedTargetEntityType,
+      target_entity_id: normalizedTargetEntityId,
+      field_count: operations.length,
+      operation_fields: operations.map((operation) => operation.field),
+      source
+    }
+  });
+}
+
 export const chosenMergeProposalCandidateSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),

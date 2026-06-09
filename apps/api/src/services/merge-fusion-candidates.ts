@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
-import type { DeliverableChangeManifest } from "@workhub/contracts";
+import {
+  buildStructuredFieldPatchDryRun,
+  type DeliverableChangeManifest
+} from "@workhub/contracts";
 import type { ProviderRegistry } from "@workhub/agent/providers";
 import type {
   MergeProposalCandidate,
@@ -657,15 +660,17 @@ function structuredChangedFields(change: ReturnType<typeof changeSummary>) {
   return change?.machine_summary?.changed_fields?.filter((field) => field.trim().length > 0) ?? [];
 }
 
-function structuredMergedValueFields(mergedValue: Record<string, unknown> | undefined) {
+function structuredMergedValueFieldRecord(mergedValue: Record<string, unknown> | undefined) {
   if (!mergedValue) {
-    return [];
+    return {};
   }
   const explicitFields = objectRecord(mergedValue.fields)
     ?? objectRecord(mergedValue.field_updates)
     ?? objectRecord(mergedValue.patch);
   if (explicitFields) {
-    return Object.keys(explicitFields).filter((field) => field.trim().length > 0);
+    return Object.fromEntries(
+      Object.entries(explicitFields).filter(([field]) => field.trim().length > 0)
+    );
   }
   const nonFieldKeys = new Set([
     "proposed_resolution_md",
@@ -676,7 +681,9 @@ function structuredMergedValueFields(mergedValue: Record<string, unknown> | unde
     "notes",
     "comment"
   ]);
-  return Object.keys(mergedValue).filter((field) => !nonFieldKeys.has(field));
+  return Object.fromEntries(
+    Object.entries(mergedValue).filter(([field]) => !nonFieldKeys.has(field))
+  );
 }
 
 function structuredRecordPatchQualityGate(input: {
@@ -688,13 +695,21 @@ function structuredRecordPatchQualityGate(input: {
     return undefined;
   }
   const changedFields = structuredChangedFields(input.change);
-  const mergedFields = structuredMergedValueFields(input.mergedValue);
+  const mergedFieldRecord = structuredMergedValueFieldRecord(input.mergedValue);
+  const mergedFields = Object.keys(mergedFieldRecord);
   const changedSet = new Set(changedFields);
   const mergedSet = new Set(mergedFields);
   const missingFields = changedFields.filter((field) => !mergedSet.has(field));
   const unknownFields = changedFields.length > 0
     ? mergedFields.filter((field) => !changedSet.has(field))
     : [];
+  const dryRun = buildStructuredFieldPatchDryRun({
+    target_entity_type: input.change?.target_ref.entity_type,
+    target_entity_id: input.change?.target_ref.entity_id,
+    changed_fields: changedFields,
+    merged_fields: mergedFieldRecord,
+    source: "ai_fusion"
+  });
   return {
     type: "structured_record_field_patch",
     target_kind: input.conflict.target_kind,
@@ -705,7 +720,9 @@ function structuredRecordPatchQualityGate(input: {
     missing_fields: missingFields,
     unknown_fields: unknownFields,
     field_count: mergedFields.length,
-    has_structured_result: mergedFields.length > 0
+    has_structured_result: mergedFields.length > 0,
+    structured_field_patch: dryRun.patch,
+    structured_field_patch_dry_run: dryRun
   };
 }
 

@@ -123,6 +123,8 @@ export type GoldPathCopyKey =
   | "replay.structuredPatchChanged"
   | "replay.structuredPatchMissing"
   | "replay.structuredPatchUnknown"
+  | "replay.structuredPatchDryRun"
+  | "replay.structuredPatchIssues"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -262,6 +264,8 @@ const goldPathCopy = {
     "replay.structuredPatchChanged": "声明改动字段",
     "replay.structuredPatchMissing": "缺少字段",
     "replay.structuredPatchUnknown": "额外字段",
+    "replay.structuredPatchDryRun": "Dry-run",
+    "replay.structuredPatchIssues": "问题",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -400,6 +404,8 @@ const goldPathCopy = {
     "replay.structuredPatchChanged": "Declared fields",
     "replay.structuredPatchMissing": "Missing fields",
     "replay.structuredPatchUnknown": "Extra fields",
+    "replay.structuredPatchDryRun": "Dry-run",
+    "replay.structuredPatchIssues": "Issues",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

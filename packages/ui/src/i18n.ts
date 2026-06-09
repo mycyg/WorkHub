@@ -108,6 +108,8 @@ const copy = {
   "proposal.structuredPatchChanged": { "zh-CN": "声明改动字段", "en-US": "Declared fields" },
   "proposal.structuredPatchMissing": { "zh-CN": "缺少字段", "en-US": "Missing fields" },
   "proposal.structuredPatchUnknown": { "zh-CN": "额外字段", "en-US": "Extra fields" },
+  "proposal.structuredPatchDryRun": { "zh-CN": "Dry-run", "en-US": "Dry-run" },
+  "proposal.structuredPatchIssues": { "zh-CN": "问题", "en-US": "Issues" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

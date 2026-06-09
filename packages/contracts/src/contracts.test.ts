@@ -13,6 +13,7 @@ import {
   budgetPolicyUpdateSchema,
   budgetUsageSchema,
   applyMergeProposalCandidateRequestSchema,
+  buildStructuredFieldPatchDryRun,
   chooseMergeProposalCandidateRequestSchema,
   createApprovalRequestSchema,
   confidenceGrades,
@@ -33,6 +34,7 @@ import {
   eventTypes,
   questionCardSchema,
   sessionVmSchema,
+  structuredFieldPatchDryRunSchema,
   useEvidenceForTaskRequestSchema,
   workItemStatuses
 } from "./index.js";
@@ -451,6 +453,49 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(result.candidate.source, "llm");
   assert.equal(result.candidate.quality_gate?.status, "passed");
   assert.equal(applyRequest.confirm, true);
+});
+
+test("structured field patch dry-run validates executable work item fields", () => {
+  const dryRun = buildStructuredFieldPatchDryRun({
+    target_entity_type: "work_item",
+    target_entity_id: "72000000-0000-4000-8000-000000000101",
+    changed_fields: ["title", "priority", "due_at"],
+    merged_fields: {
+      title: "客户周报草稿",
+      priority: "high",
+      due_at: "2026-06-30T00:00:00.000Z"
+    },
+    source: "ai_fusion"
+  });
+  const parsed = structuredFieldPatchDryRunSchema.parse(dryRun);
+
+  assert.equal(parsed.status, "ready");
+  assert.equal(parsed.executable, true);
+  assert.deepEqual(parsed.audit_payload.operation_fields, ["title", "priority", "due_at"]);
+  assert.equal(parsed.patch.operations[0]?.value_type, "string");
+  assert.equal(parsed.patch.operations[1]?.value_type, "enum");
+  assert.equal(parsed.patch.operations[2]?.value_type, "datetime");
+});
+
+test("structured field patch dry-run blocks unknown, missing, and mistyped fields", () => {
+  const dryRun = buildStructuredFieldPatchDryRun({
+    target_entity_type: "work_item",
+    target_entity_id: "72000000-0000-4000-8000-000000000101",
+    changed_fields: ["title", "due_at", "acceptance_items"],
+    merged_fields: {
+      title: "客户周报草稿",
+      due_at: "2026-06-30",
+      extra_field: "should be rejected"
+    }
+  });
+
+  assert.equal(dryRun.status, "blocked");
+  assert.equal(dryRun.executable, false);
+  assert.deepEqual(
+    dryRun.issues.map((issue) => issue.code).sort(),
+    ["invalid_value_type", "missing_declared_field", "unknown_field"].sort()
+  );
+  assert.deepEqual(dryRun.audit_payload.operation_fields, ["title"]);
 });
 
 test("question cards prefer clickable choices but retain a collapsed fallback", () => {

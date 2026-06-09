@@ -4,11 +4,13 @@ import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  buildStructuredFieldPatchDryRun,
   deliverableChangeManifestSchema,
   mergeProposalCandidateChoiceResultSchema,
   proposalConflictListResultSchema,
   proposalSchema,
   reviewSchema,
+  structuredFieldPatchDryRunSchema,
   type DeliverableChange,
   type DeliverableChangeManifest,
   type MergeProposalCandidateChoiceResult,
@@ -469,6 +471,70 @@ function containsGitConflictMarkers(value: string) {
   return /(^|\n)(<<<<<<<[ \t].*|=======$|>>>>>>>[ \t].*)/u.test(value);
 }
 
+function structuredMergedValueFieldRecord(mergedValue: Record<string, unknown> | undefined) {
+  if (!mergedValue) {
+    return {};
+  }
+  const explicitFields = objectRecord(mergedValue.fields)
+    ?? objectRecord(mergedValue.field_updates)
+    ?? objectRecord(mergedValue.patch);
+  if (explicitFields) {
+    return Object.fromEntries(
+      Object.entries(explicitFields).filter(([field]) => field.trim().length > 0)
+    );
+  }
+  const nonFieldKeys = new Set([
+    "proposed_resolution_md",
+    "proposed_resolution",
+    "rationale_md",
+    "reason",
+    "summary",
+    "notes",
+    "comment"
+  ]);
+  return Object.fromEntries(
+    Object.entries(mergedValue).filter(([field]) => !nonFieldKeys.has(field))
+  );
+}
+
+function structuredChangeForApplyContext(context: MergeProposalCandidateApplicationContext): DeliverableChange | undefined {
+  return context.diffManifest.changes.find((change) => change.id === context.conflict.change_id);
+}
+
+function structuredFieldPatchDryRunForApply(context: MergeProposalCandidateApplicationContext) {
+  if (effectiveAiFusionTargetKind(context) !== "structured_record") {
+    return undefined;
+  }
+  const qualityGate = objectRecord(context.candidate?.quality_gate);
+  const existingDryRun = structuredFieldPatchDryRunSchema.safeParse(
+    qualityGate?.["structured_field_patch_dry_run"]
+      ?? objectRecord(qualityGate?.["structured_record_patch"])?.["structured_field_patch_dry_run"]
+  );
+  if (existingDryRun.success) {
+    return existingDryRun.data;
+  }
+  const change = structuredChangeForApplyContext(context);
+  return buildStructuredFieldPatchDryRun({
+    target_entity_type: change?.target_ref.entity_type,
+    target_entity_id: change?.target_ref.entity_id,
+    ...(change?.machine_summary?.changed_fields ? { changed_fields: change.machine_summary.changed_fields } : {}),
+    merged_fields: structuredMergedValueFieldRecord(context.candidate?.merged_value),
+    source: "ai_fusion"
+  });
+}
+
+function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidateApplicationContext) {
+  const dryRun = structuredFieldPatchDryRunForApply(context);
+  if (!dryRun || dryRun.status !== "blocked") {
+    return;
+  }
+  throw new ProposalServiceError(
+    409,
+    "structured_field_patch_dry_run_failed",
+    "这个结构化字段建议没有通过字段补丁 dry-run，不能直接写回。"
+  );
+}
+
 function mimeForAiFusionTextWriteback(input: { filename: string; targetKind: string }) {
   if (input.targetKind === "spec_doc") {
     return "text/markdown";
@@ -527,6 +593,7 @@ function assertAiFusionApplyContext(context: MergeProposalCandidateApplicationCo
   if (context.candidate.target_kind === "folder") {
     throw new ProposalServiceError(409, "merge_candidate_target_unsupported", "文件夹类建议不能作为 AI 融合稿写回。");
   }
+  assertStructuredFieldPatchDryRunForApply(context);
 }
 
 async function materializeAiFusionCandidate(input: {
