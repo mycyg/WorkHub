@@ -1,6 +1,6 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest } from "@workhub/contracts";
+import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest } from "@workhub/contracts";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
@@ -23,6 +23,7 @@ export const webSurface = {
     "/api/pages/gold-path",
     "/intake/:sessionId",
     "/api/pages/workitems/:id",
+    "/api/workitems/:id/conflicts",
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
     "/api/pages/cost",
@@ -102,6 +103,15 @@ export function loadWebProposalDetail(client: WorkHubApiClient, proposalId: stri
   return client.pages.proposal(proposalId, locale ? { locale } : undefined);
 }
 
+export async function loadWebProposalConflicts(client: WorkHubApiClient, proposal: ProposalDetailVM): Promise<ProposalConflict[]> {
+  const result = await client.listWorkItemConflicts(proposal.work_item_id);
+  return result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
+}
+
 export async function renderWebProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
-  return renderProposalDetail(await loadWebProposalDetail(client, proposalId, locale), "web", locale ? { locale } : undefined);
+  const proposal = await loadWebProposalDetail(client, proposalId, locale);
+  return renderProposalDetail(proposal, "web", {
+    ...(locale ? { locale } : {}),
+    conflicts: await loadWebProposalConflicts(client, proposal)
+  });
 }

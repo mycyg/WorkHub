@@ -7,6 +7,7 @@ import {
   type AgentRunLiveVM,
   type BudgetNotice,
   type EvidenceBubble,
+  type ProposalConflict,
   type ProposalDetailVM,
   type QuestionCard,
   type SessionVM,
@@ -21,6 +22,8 @@ import {
   cardFromEvent,
   cardFromEvidenceBubble,
   cardFromProposalDetail,
+  cardFromProposalConflict,
+  cardsFromProposalConflicts,
   cardFromQuestionCard,
   cardFromSessionVm,
   cardFromAgentRunLive,
@@ -199,6 +202,76 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
   const english = cardFromProposalDetail(proposal, { locale: "en-US" });
   assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
   assert.equal(english.sections?.some((section) => section.lines.includes("Rollback available")), true);
+});
+
+test("proposal conflicts become option-first Cuu cards with merge payloads", () => {
+  const conflict: ProposalConflict = {
+    id: "conflict-weekly-report",
+    work_item_id: workItemId,
+    proposal_id: "10000000-0000-4000-8000-000000000301",
+    change_id: "10000000-0000-4000-8000-000000000302",
+    target_key: "drive_item:docs/weekly-report.md",
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: "docs/weekly-report.md",
+    headline: "weekly-report.md 已经被另一份变更更新",
+    summary_text: "正式版和这次版本都改了同一个文档，先选保留正式版还是采纳这次版本。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000311",
+      change_id: "10000000-0000-4000-8000-000000000312",
+      sha256: "a".repeat(64)
+    },
+    incoming: {
+      sha256_before: "b".repeat(64),
+      sha256_after: "c".repeat(64)
+    },
+    recommended_option_id: "keep_current",
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "保留已正式采纳的版本。",
+        recommended: true,
+        action: {
+          id: "keep_current",
+          label: "保留正式版",
+          method: "POST",
+          href: "/api/proposals/10000000-0000-4000-8000-000000000301/merge",
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "用这次版本覆盖正式版。",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: "/api/proposals/10000000-0000-4000-8000-000000000301/merge",
+          request_json: {
+            conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
+          }
+        }
+      }
+    ]
+  };
+
+  const card = cardFromProposalConflict(conflict);
+  const english = cardFromProposalConflict(conflict, { locale: "en-US" });
+
+  assert.equal(card.kind, "proposal");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.payload_ref?.entity_type, "proposal_conflict");
+  assert.equal(card.actions.find((action) => action.id === "keep_current")?.tone, "primary");
+  assert.equal(card.actions.find((action) => action.id === "accept_incoming")?.tone, "danger");
+  assert.deepEqual(card.actions.find((action) => action.id === "accept_incoming")?.payload, {
+    conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
+  });
+  assert.equal(card.actions.some((action) => action.id === "open_proposal"), true);
+  assert.equal(cardsFromProposalConflicts([conflict]).length, 1);
+  assert.equal(english.title, "Change conflict");
+  assert.equal(english.actions.find((action) => action.id === "keep_current")?.label, "Keep current");
 });
 
 test("work item detail becomes a lightweight Cuu task card", () => {

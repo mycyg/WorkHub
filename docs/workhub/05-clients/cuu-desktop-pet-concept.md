@@ -26,7 +26,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 | 澄清 | 弹出一问一答的选项气泡，默认让用户点击 | 需要完整上下文时打开澄清页 |
 | 审批 | 用动作和小卡提醒，展开为证据、风险、推荐动作 | 承载完整审批中心 |
 | 项目检索 | 用气泡 chips 发起检索、总结、找文件 | 展示完整搜索结果和引用 |
-| 交付物变更 | 摘要“改了什么”，给同意/打回/查看详情 | 展示 GitHub-like 变更说明、diff、证据 |
+| 交付物变更 | 摘要“改了什么”，给同意/打回/查看详情；撞车时给“保留正式版 / 采纳这次版本”两选项 | 展示 GitHub-like 变更说明、diff、证据与完整冲突卡 |
 | 离线/异常 | 睡觉、担心、重连提示 | 展示诊断和设置 |
 
 设计目标是“像一个活着的小助手”，不是“一个带猫图标的通知系统”。每次出现都要有动作原因：正在想、正在找、需要确认、完成了、出错了。
@@ -150,6 +150,21 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - 系统托盘菜单：显示/隐藏 Cuu、打开主窗、打开收件箱。
 - Cuu 气泡按钮：查看详情、打开审批、打开检索结果。
 - 主窗设置页：只显示严肃的桌面客户端设置，不放 Cuu 形象。
+
+### 6.4 变更撞车轻卡（R1.10 已落）
+
+R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，但不改变 Cuu 外观冻结规则。
+
+| 项 | 当前行为 |
+|---|---|
+| 输入 contract | `ProposalConflict` / `ProposalConflictOption`，来源为 `GET /api/workitems/:id/conflicts` 或 merge 409 的 `details.conflicts[]` |
+| Cuu card | `cardFromProposalConflict()` 生成 `kind="proposal"`、`state="asking_approval"`、`payload_ref.entity_type="proposal_conflict"` |
+| 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；另有「打开变更」深链 |
+| payload | option action 的 `request_json` 原样保存在 Cuu action `payload`，桌宠点击后由 `proposal-merge` typed action 传给 `client.mergeProposal()` |
+| 边界 | 这是独立 pet window 的轻卡；Web/Desktop 主窗只显示严肃页面，不显示 Cuu 本体 |
+| 非目标 | 不做 LLM 融合候选、不做多冲突逐项历史、不新增猫模型或外观动作 |
+
+验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；不能要求用户复制 target key 或手写说明。
 
 ## 7. 验收门
 

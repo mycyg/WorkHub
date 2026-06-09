@@ -12,7 +12,7 @@ import {
   type CuuLocaleOptions
 } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM } from "@workhub/contracts";
+import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM, type MergeProposalRequest } from "@workhub/contracts";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
 import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
@@ -74,6 +74,11 @@ export type DesktopCuuActionRequest =
       workItemId: string;
       evidenceRefs: EvidenceRef[];
       evidenceBubbleId?: string;
+    }
+  | {
+      kind: "proposal-merge";
+      proposalId: string;
+      payload?: MergeProposalRequest;
     };
 
 export type DesktopCuuActionResult = {
@@ -92,6 +97,19 @@ type DesktopShellGlobal = {
 
 type TimerId = ReturnType<typeof globalThis.setTimeout>;
 type GoldPathEvent = GoldPathSurfaceVM["events"][number];
+type DesktopCuuActionClient = Pick<
+  WorkHubApiClient,
+  "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
+> & {
+  mergeProposal: (
+    proposalId: string,
+    payload?: MergeProposalRequest
+  ) => Promise<{
+    attention: {
+      summary_text: string;
+    };
+  }>;
+};
 
 export const desktopCuuNoticeCss = [
   ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;font-weight:650}",
@@ -356,11 +374,21 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  const proposalMergeMatch = /^\/api\/proposals\/([^/]+)\/merge$/u.exec(path);
+  if (proposalMergeMatch?.[1]) {
+    const payload = actionPayloadFromCard(input.card, input.actionId, href);
+    return {
+      kind: "proposal-merge",
+      proposalId: decodeURIComponent(proposalMergeMatch[1]),
+      ...(payload ? { payload: payload as MergeProposalRequest } : {})
+    };
+  }
+
   return undefined;
 }
 
 export async function submitDesktopCuuAction(input: {
-  client: Pick<WorkHubApiClient, "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem">;
+  client: DesktopCuuActionClient;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
   locale?: CuuLocaleOptions["locale"];
@@ -406,6 +434,13 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  if (input.action.kind === "proposal-merge") {
+    const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {});
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
   const question = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
   });
@@ -416,6 +451,10 @@ export async function submitDesktopCuuAction(input: {
 
 function selectedOptionIdsFromCard(card: CuuCard | undefined) {
   return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
+}
+
+function actionPayloadFromCard(card: CuuCard | undefined, actionId: string | undefined, href: string) {
+  return card?.actions.find((action) => (actionId ? action.id === actionId : false) || action.href === href)?.payload;
 }
 
 function renderChip(chip: CuuCardChip) {

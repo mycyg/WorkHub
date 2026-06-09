@@ -297,7 +297,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
   - **conflict**:main 的该文件也产生了新版本(两个 `version_no` 都基于同一 `base`)→ **二进制不合并**,生成 `MergeProposal`,候选 = `{保留 main 版 / 采纳提议版 / 两个都留(改名)}`,人择一(去黑话:「两份文件撞了,要哪个,还是都留下?」)。
 - **回滚/还原**:合并后回退 = 把 `current_version_id` 指回旧版本指针(沿用 `project_drive.py:1525` 的 restore 路径)。R1.8 最小实现已先按 accepted ledger 找上一版同 target / 同 drive item 的 `drive_version_id`，恢复 `ProjectDriveItem.current_version_id`，并写 Drive operation + audit；完整 `Proposal.merged_snapshot_id` 多文件回滚与 redo UI 后续补齐。
 
-> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览；R1.8 已补 `POST .../restore`，可把当前正式交付物还原到上一版并审计。R1.9 已补最小冲突调解纵切：`GET /api/workitems/{id}/conflicts` 返回 deterministic 两选一冲突卡，`POST /api/proposals/{id}/merge` 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming。仍未完成的是富预览、云对象存储 adapter、非 delivery change 的结构化合并、完整 `MergeAttempt/MergeProposal` 表、LLM 融合候选与前端冲突选择 UI。
+> **2026-06-09 R1 TS 切片**：`accepted_deliverable_changes` 已作为正式采纳账本落地；AgentRun-backed delivery 也已接入最小 `ProjectDriveItem/Version`：merge 前从 `Branch.agent_run_id -> AgentRun.workdir_ref` 找源文件，校验 sha 后复制到正式 storage root，merge transaction 内追加 `ProjectDriveVersion`、前移 `ProjectDriveItem.current_version_id`，并把 `drive_item_id/drive_version_id` 写回 accepted row。WorkItem page 与 AgentRun replay page 已能展示 accepted deliverables，并提供下载/文本预览；R1.8 已补 `POST .../restore`，可把当前正式交付物还原到上一版并审计。R1.9 已补最小冲突调解 API：`GET /api/workitems/{id}/conflicts` 返回 deterministic 两选一冲突卡，`POST /api/proposals/{id}/merge` 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming。R1.10 已把这份 conflict contract 接到 Web/Desktop/Cuu：页面渲染 option-first 冲突卡，merge 409 notice 可点击重试，独立桌宠可提交同一 payload。仍未完成的是富预览、云对象存储 adapter、非 delivery change 的结构化合并、完整 `MergeAttempt/MergeProposal` 表、LLM 融合候选与完整 chosen option 审计。
 
 ### 5.4 DOC 文本三方合并
 
@@ -326,7 +326,7 @@ Drive 已有的并发模型就是答案的雏形,WorkHub 在其上加"分支指�
   - 相等 → main 自分叉未变 → 可能 `fast_forward`。
   - 不等 → main 已前进 → 必须三方合并,按 `target_kind` 路由(§5)。
 - **R1 当前 gate**:在完整 `MergeAttempt` 表落地前，`ProposalRepository.merge` 先读取同一 `work_item_id + target_key` 的 current accepted row。若 incoming 带 `sha256_before/version_before`，必须与 current 对齐；若 `created/generated` 同路径 sha 不同，或 `updated/replaced/deleted` 缺 before ref，则直接返回 `merge_conflict`，避免静默覆盖正式版。AgentRun-backed delivery 还会额外校验 workdir 源文件实际 sha，采纳后 accepted row 必须能指到正式 `ProjectDriveVersion`。
-- **R1.9 当前调解入口**:冲突 gate 不再只返回裸 409。`ProposalRepository.listConflictsByWorkItem(work_item_id)` 会列出已确认 proposal 与 current accepted row 的冲突；`ProposalService` 映射为 `ProposalConflictListResult`，每个冲突至少有 `keep_current` 与 `accept_incoming` 两个 option。默认推荐 `keep_current`；只有用户通过 option action 发回 `conflict_resolution.accept_incoming_target_keys`，repository 才允许该 target 覆盖正式版。没有显式选择时仍 409。
+- **R1.9/R1.10 当前调解入口**:冲突 gate 不再只返回裸 409。`ProposalRepository.listConflictsByWorkItem(work_item_id)` 会列出已确认 proposal 与 current accepted row 的冲突；`ProposalService` 映射为 `ProposalConflictListResult`，每个冲突至少有 `keep_current` 与 `accept_incoming` 两个 option。默认推荐 `keep_current`；只有用户通过 option action 发回 `conflict_resolution.accept_incoming_target_keys`，repository 才允许该 target 覆盖正式版。没有显式选择时仍 409。R1.10 已把这些 option 接到 `packages/ui`、`apps/web`、`apps/desktop-webview` 与 `packages/cuu`：主窗显示严肃冲突卡，独立 Cuu pet window 显示轻卡并透传 action payload。
 
 ### 6.2 `ConflictItem` 结构(冲突清单)
 
@@ -353,7 +353,7 @@ ConflictItem = {
 
 > AI 调解只**建议**,人**裁决**——与 PRD §5 一致;调解失败/AI 不可用 → 降级为纯"二选一"枚举,绝不阻塞(失败处理见 §8)。
 >
-> **当前 R1.9 降级态**：已先落“二选一枚举”作为可用纵切：`keep_current`=保留正式版并回到变更申请；`accept_incoming`=用户明确采纳这次版本，POST body 固定为 `{conflict_resolution:{accept_incoming_target_keys:[target_key]}}`。这保证小白可以点选，不需要输入文字；后续 `MergeAttempt/MergeProposal` 表落地后，再把 LLM 融合候选作为第三类 option 加入同一 contract。
+> **当前 R1.9/R1.10 降级态**：已先落“二选一枚举”作为可用纵切：`keep_current`=保留正式版并回到变更申请；`accept_incoming`=用户明确采纳这次版本，POST body 固定为 `{conflict_resolution:{accept_incoming_target_keys:[target_key]}}`。Web/Desktop/Cuu 都已用 option-first 卡片承载这两个动作，保证小白可以点选，不需要输入文字；后续 `MergeAttempt/MergeProposal` 表落地后，再把 LLM 融合候选作为第三类 option 加入同一 contract。
 
 ### 6.4 合并策略枚举(写回 `Proposal.merge_strategy`)
 

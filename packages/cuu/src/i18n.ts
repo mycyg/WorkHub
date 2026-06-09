@@ -27,6 +27,12 @@ export type CuuCopyKey =
   | "proposal.rollbackAvailable"
   | "proposal.rollbackUnavailable"
   | "proposal.checksSection"
+  | "proposal.conflictTitle"
+  | "proposal.conflictOpenProposal"
+  | "proposal.conflictKeepCurrent"
+  | "proposal.conflictAcceptIncoming"
+  | "proposal.conflictTargetSection"
+  | "proposal.conflictVersionSection"
   | "workItem.open"
   | "workItem.openProposal"
   | "workItem.viewReplay"
@@ -140,6 +146,12 @@ const cuuCopy = {
     "proposal.rollbackAvailable": "可回滚",
     "proposal.rollbackUnavailable": "不可完整回滚",
     "proposal.checksSection": "检查结果",
+    "proposal.conflictTitle": "变更撞车了",
+    "proposal.conflictOpenProposal": "打开变更",
+    "proposal.conflictKeepCurrent": "保留正式版",
+    "proposal.conflictAcceptIncoming": "采纳这次版本",
+    "proposal.conflictTargetSection": "撞车对象",
+    "proposal.conflictVersionSection": "版本选择",
     "workItem.open": "查看任务",
     "workItem.openProposal": "查看变更",
     "workItem.viewReplay": "查看回放",
@@ -252,6 +264,12 @@ const cuuCopy = {
     "proposal.rollbackAvailable": "Rollback available",
     "proposal.rollbackUnavailable": "Not fully rollbackable",
     "proposal.checksSection": "Check results",
+    "proposal.conflictTitle": "Change conflict",
+    "proposal.conflictOpenProposal": "Open change",
+    "proposal.conflictKeepCurrent": "Keep current",
+    "proposal.conflictAcceptIncoming": "Use this version",
+    "proposal.conflictTargetSection": "Conflicting item",
+    "proposal.conflictVersionSection": "Version choice",
     "workItem.open": "Open task",
     "workItem.openProposal": "Open change",
     "workItem.viewReplay": "View replay",

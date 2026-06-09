@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload | 仍未接完整 Drive 富预览/历史/redo UI，也未做 LLM 融合候选、`MergeAttempt/MergeProposal` 表和前端冲突选择 UI |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge | 仍未接完整 Drive 富预览/历史/redo UI，也未做 LLM 融合候选、`MergeAttempt/MergeProposal` 表和完整冲突选择审计 |
 
 ### R1 必做顺序
 
@@ -303,7 +303,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
 - `MergeAttempt` / `MergeProposal` 表与 AI 候选生成。
-- LLM 融合候选与前端冲突选择 UI。`/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本。
+- LLM 融合候选、`MergeAttempt/MergeProposal` 持久表与完整 chosen option 审计。`/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本，Web/Desktop/Cuu option-first UI 已由 R1.10 接入。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
 ### R1.5 ProjectDrive adoption 与正式文件落盘（2026-06-09）
@@ -329,7 +329,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有 LLM 融合候选和前端冲突选择 UI。
+R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有 LLM 融合候选、`MergeAttempt/MergeProposal` 表和完整 chosen option 审计。
 
 ### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
 
@@ -444,8 +444,45 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 - `MergeAttempt` / `MergeProposal` 持久表、chosen option 审计与多冲突逐项选择。
 - LLM 融合候选：STRUCT/DOC_TEXT 的 base/ours/theirs prompt、候选 rationale、推荐项与降级枚举。
-- Web / Cuu 冲突卡真实 UI 接入：当前 API 可用，但主界面尚未把 `details.conflicts` 渲染为按钮卡。
+- Web / Desktop / Cuu 冲突卡真实 UI 接入已由 R1.10 补齐：主界面可把 `details.conflicts` 渲染为按钮卡，Cuu card action 可携带同一 `request_json` 走 proposal merge。
 - 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
+
+### R1.10 Web/Desktop/Cuu conflict card wiring（2026-06-09）
+
+本切片把 R1.9 的 deterministic 冲突 API 接到真实端侧渲染与点击链路，关闭“API 已有两选一，但用户仍看不到按钮”的缺口。范围仍限定为 file-only accepted deliverable ledger 的保守二选一，不引入 LLM 融合候选。
+
+已落代码：
+
+- `packages/ui/src/proposal/render.ts`：新增 `renderProposalConflictCards()`，`renderProposalDetail()` 支持 `options.conflicts`，页面内显示「和别人的改动撞车了」冲突区，按钮带 `data-conflict-option-id` 与 `data-request-json`。
+- `apps/web/src/main.ts` / `apps/desktop-webview/src/main.ts`：Proposal detail render helper 读取 `GET /api/workitems/:id/conflicts` 并过滤当前 proposal；surface pages 清单加入 `/api/workitems/:id/conflicts`。
+- `apps/web/src/browser.ts` / `apps/desktop-webview/src/browser.ts`：`merge_conflict` 409 会展开 option-first notice；点击冲突卡按钮时解析 `data-request-json`，调用 `client.mergeProposal(proposalId, payload)`。
+- `packages/cuu/src/cards.ts`：新增 `cardFromProposalConflict()` / `cardsFromProposalConflicts()`，把 `ProposalConflict` 转为 Cuu `asking_approval` 卡；`accept_incoming` action 保留 `payload`。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu pet action runtime 新增 `proposal-merge` typed action，独立 pet window 可直接提交冲突选择 payload。
+
+当前契约：
+
+| 项 | R1.10 行为 |
+|---|---|
+| 页面已有冲突 | `renderWebProposalDetail()` / `renderDesktopProposalDetail()` 会读取 conflicts endpoint，并在 Proposal 页显示两个选项 |
+| merge 时才发现冲突 | Web/Desktop browser 捕获 `ApiErr.code="merge_conflict"`，从 `error.details.conflicts[]` 渲染同一冲突卡，并保持 notice 不自动消失 |
+| 保留正式版 | 按 R1.9 `keep_current` action body 提交，默认不接受 incoming target |
+| 采纳这次版本 | `accept_incoming` action body 必须包含 `conflict_resolution.accept_incoming_target_keys[]`；浏览器和 Cuu runtime 都透传 payload |
+| Cuu | 只作为独立 pet window 的轻卡，不进入 Web/Desktop 主窗；card state 为 `asking_approval` |
+| 去黑话 | 用户面使用“撞车 / 保留正式版 / 采纳这次版本”，不显示 branch/merge/conflict 等术语 |
+
+验证：
+
+- `@workhub/ui` typecheck 与 25/25 tests 通过；新增 proposal renderer test 覆盖 conflict card、双按钮、payload 和英文文案。
+- `@workhub/cuu` typecheck 与 30/30 tests 通过；新增 Cuu card test 覆盖 `proposal_conflict` payload_ref 与 action payload。
+- `apps/web` typecheck 与 4/4 tests 通过；新增 Web render helper test 覆盖 conflicts endpoint 与 proposal page card。
+- `apps/desktop-webview` typecheck 与 58/58 tests 通过；新增 Desktop render helper / Cuu runtime test 覆盖 conflict Cuu cards 与 `proposal-merge` action payload。
+
+仍未完成：
+
+- `MergeAttempt` / `MergeProposal` 持久表、chosen option 审计与多冲突逐项选择历史。
+- LLM 融合候选：STRUCT/DOC_TEXT 的 base/ours/theirs prompt、候选 rationale、推荐项与降级枚举。
+- 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
+- 真实 React route 产品化与 Playwright 截图门禁；当前仍是 TS-first shared renderer / shell 纵切。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

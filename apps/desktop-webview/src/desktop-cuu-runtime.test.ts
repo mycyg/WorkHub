@@ -420,6 +420,9 @@ test("desktop Cuu actions submit approval choices through the typed API client",
     },
     async useEvidenceForWorkItem() {
       throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
     }
   };
   const allow = resolveDesktopCuuAction("/api/approvals/approval-1/respond", { actionId: "approve" });
@@ -478,6 +481,9 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
     },
     async useEvidenceForWorkItem() {
       throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
     }
   };
   const card: CuuCard = {
@@ -522,6 +528,85 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
 });
 
+test("desktop Cuu actions submit proposal merge conflict choices with payloads", async () => {
+  const calls: unknown[] = [];
+  const card: CuuCard = {
+    id: "conflict-card",
+    kind: "proposal",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你选择冲突处理方式。"
+    },
+    title: "变更撞车了",
+    message: "点一个选项继续。",
+    priority: "high",
+    actions: [
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        tone: "danger",
+        method: "POST",
+        href: "/api/proposals/proposal-1/merge",
+        payload: {
+          conflict_resolution: {
+            accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"]
+          }
+        }
+      }
+    ]
+  };
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return {
+        attention: {
+          summary_text: "已按你的选择采纳这次版本。"
+        }
+      };
+    }
+  };
+
+  const action = resolveDesktopCuuAction("/api/proposals/proposal-1/merge", { actionId: "accept_incoming", card });
+  const result = await submitDesktopCuuAction({ client, action: action! });
+
+  assert.deepEqual(action, {
+    kind: "proposal-merge",
+    proposalId: "proposal-1",
+    payload: {
+      conflict_resolution: {
+        accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"]
+      }
+    }
+  });
+  assert.equal(result.message, "已按你的选择采纳这次版本。");
+  assert.deepEqual(calls, [
+    {
+      id: "proposal-1",
+      payload: {
+        conflict_resolution: {
+          accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"]
+        }
+      }
+    }
+  ]);
+});
+
 test("desktop Cuu actions search project knowledge and return an evidence card", async () => {
   const calls: unknown[] = [];
   const bubble: EvidenceBubble = {
@@ -555,6 +640,9 @@ test("desktop Cuu actions search project knowledge and return an evidence card",
       return bubble;
     },
     async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
       throw new Error("not needed");
     }
   };
@@ -643,6 +731,9 @@ test("desktop Cuu actions bind evidence refs back to the current work item", asy
         agent_trace_preview: [],
         evidence_refs: evidenceRefs
       } as unknown as WorkItemDetailVM;
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
     }
   };
 

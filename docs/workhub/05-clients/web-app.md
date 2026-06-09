@@ -81,6 +81,18 @@ P1.2 把中英双语从 Gold Path shell 延伸到未来真实 routes 会复用�
 | AgentRun | `renderAgentRunLive(...,{ locale })` 支持 `Cancel run` / `View replay` / `Tool result` / `Running` 等固定标签 | replay/trace 真实页面接同一词表 |
 | Web facade | `apps/web/src/main.ts` 的 `renderWeb*` / `loadWeb*` 可传 locale | browser route 层从 `workhub.locale` 贯穿所有真实页面 |
 
+### 0.4 R1.10 Proposal conflict cards（2026-06-09 已落）
+
+本轮把 R1.9 的冲突 API 接到 Web/Desktop 主界面，但保持 Web 严肃无 Cuu：
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| 页面预读冲突 | `renderWebProposalDetail()` 先读 `GET /api/workitems/:id/conflicts`，过滤当前 proposal 后传入 `renderProposalDetail(...,{ conflicts })` | React route 产品化后复用同一 typed loader |
+| merge 时冲突 | `apps/web/src/browser.ts` 捕获 `ApiErr.code="merge_conflict"`，从 `error.details.conflicts[]` 渲染 `renderProposalConflictCards()` | Toast/notice 升级为正式 inline panel，不依赖 P0.5 shell |
+| 选项 payload | 冲突按钮携带 `data-request-json`，点击后调用 `client.mergeProposal(proposalId, payload)` | 多冲突逐项选择、chosen option 审计 |
+| 用户用语 | 「和别人的改动撞车了」「保留正式版」「采纳这次版本」 | LLM 融合候选加入后仍保持 option-first |
+| 边界 | Web/Desktop 主窗只显示严肃冲突卡；Cuu 本体仍只在独立 pet window | Playwright 截图验证主窗无 Cuu |
+
 ---
 
 ## 0. 一句话与三条 Web 端地基
@@ -667,7 +679,7 @@ L1 项目列表 (/)                          ← 一切的入口
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **绑定**：`GET /proposals/{id}`（含 diff 摘要 + ConfidenceRecord 引用）、`POST /proposals/{id}/review {decision, reason_md?}`、`POST /proposals/{id}/merge`、`GET /workitems/{id}/conflicts`。**打回必带理由**（空理由 400），理由**回灌**给 AI 同分支续做（FR-ESC-003）。
+- **绑定**：`GET /proposals/{id}`（含 diff 摘要 + ConfidenceRecord 引用）、`POST /proposals/{id}/review {decision, reason_md?}`、`POST /proposals/{id}/merge`、`GET /workitems/{id}/conflicts`。**当前 R1.10 TS-first 纵切**：`GET /workitems/{id}/conflicts` 返回的 deterministic `keep_current / accept_incoming` 两选一会在 Proposal 页面与 merge 409 notice 中渲染为可点击卡片；按钮的 `request_json` 会原样传给 `mergeProposal()`。**打回必带理由**（空理由 400），理由**回灌**给 AI 同分支续做（FR-ESC-003）。
 - **SSE**：订 **`workitem:{id}`** 收 `proposal.opened/reviewed/merged`、`conflict.detected`；高置信低风险可策略自动合并（用户视角=「AI 做完了，已采纳」）。
 - **四态**：空/加载/错误=同详情页范式；无权限=仅 reviewer（负责人）可通过/打回。
 - **web↔桌宠**：**Web 主场**（审批/采纳是派活方动作）。本页可作为 `RequirementDetail` 的「提议」tab 内嵌，亦可独立深链。

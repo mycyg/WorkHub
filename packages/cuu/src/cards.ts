@@ -12,6 +12,8 @@ import {
   type EvidenceBubble,
   type EvidenceRef,
   type GoldPathSurfaceVM,
+  type ProposalConflict,
+  type ProposalConflictOption,
   type ProposalDetailVM,
   type QuestionCard,
   type ReplayTraceVM,
@@ -95,7 +97,8 @@ export type CuuPayloadRef = {
     | "session"
     | "workitem"
     | "agent_run"
-    | "event";
+    | "event"
+    | "proposal_conflict";
   entity_id: string;
   href?: string;
 };
@@ -531,6 +534,93 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
       work_item_id: vm.work_item_id
     })
   });
+}
+
+function proposalConflictOptionLabel(option: ProposalConflictOption, options: CuuLocaleOptions = {}) {
+  if (option.id === "keep_current") {
+    return cuuT(options.locale, "proposal.conflictKeepCurrent");
+  }
+  if (option.id === "accept_incoming") {
+    return cuuT(options.locale, "proposal.conflictAcceptIncoming");
+  }
+  return option.label;
+}
+
+function proposalConflictOptionTone(option: ProposalConflictOption): CuuCardActionTone {
+  if (option.id === "accept_incoming") {
+    return "danger";
+  }
+  return option.recommended ? "primary" : "secondary";
+}
+
+function mapProposalConflictAction(option: ProposalConflictOption, options: CuuLocaleOptions = {}): CuuCardAction {
+  return {
+    id: option.id,
+    label: proposalConflictOptionLabel(option, options),
+    tone: proposalConflictOptionTone(option),
+    ...(option.action?.method ? { method: option.action.method } : {}),
+    ...(option.action?.href ? { href: option.action.href } : {}),
+    ...(option.action?.request_json ? { payload: option.action.request_json } : {})
+  };
+}
+
+export function cardFromProposalConflict(conflict: ProposalConflict, options: CuuLocaleOptions = {}): CuuCard {
+  const target = conflict.target_path ?? conflict.target_key;
+  const sections: CuuCardSection[] = [
+    {
+      id: "target",
+      title: cuuT(options.locale, "proposal.conflictTargetSection"),
+      lines: [target, conflict.headline]
+    },
+    {
+      id: "versions",
+      title: cuuT(options.locale, "proposal.conflictVersionSection"),
+      lines: conflict.options.map((option) => option.summary_text)
+    }
+  ];
+  const actions = [
+    ...conflict.options.map((option) => mapProposalConflictAction(option, options)),
+    {
+      id: "open_proposal",
+      label: cuuT(options.locale, "proposal.conflictOpenProposal"),
+      tone: "secondary" as const,
+      method: "GET" as const,
+      href: `/proposals/${conflict.proposal_id}`
+    }
+  ];
+
+  return withMotion({
+    id: conflict.id,
+    kind: "proposal",
+    state: "asking_approval",
+    title: cuuT(options.locale, "proposal.conflictTitle"),
+    message: truncate(conflict.summary_text),
+    priority: "high",
+    actions,
+    chips: [
+      {
+        id: "target",
+        label: target,
+        tone: "warning",
+        description: conflict.target_kind
+      }
+    ],
+    sections,
+    payload_ref: {
+      entity_type: "proposal_conflict",
+      entity_id: conflict.id,
+      href: `/proposals/${conflict.proposal_id}`
+    },
+    source: optionalSource({
+      entity_type: "proposal",
+      entity_id: conflict.proposal_id,
+      work_item_id: conflict.work_item_id
+    })
+  });
+}
+
+export function cardsFromProposalConflicts(conflicts: ProposalConflict[], options: CuuLocaleOptions = {}): CuuCard[] {
+  return conflicts.map((conflict) => cardFromProposalConflict(conflict, options));
 }
 
 function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuState {

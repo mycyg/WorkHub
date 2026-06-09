@@ -1,5 +1,6 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
+import type { MergeProposalRequest, ProposalConflict } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -12,6 +13,7 @@ import {
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
+import { renderProposalConflictCards } from "@workhub/ui/proposal";
 
 import {
   resolveDesktopShellListen,
@@ -152,6 +154,58 @@ function proposalActionFromHref(href: string) {
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
 }
 
+function anchorMergePayload(anchor: HTMLAnchorElement): MergeProposalRequest | undefined {
+  const raw = anchor.dataset.requestJson;
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as MergeProposalRequest;
+  } catch {
+    return undefined;
+  }
+}
+
+function conflictsFromMergeError(error: unknown): ProposalConflict[] {
+  if (!(error instanceof WorkHubApiError) || error.code !== "merge_conflict") {
+    return [];
+  }
+  const candidates = [error.details];
+  if (error.details && typeof error.details === "object" && !Array.isArray(error.details)) {
+    const record = error.details as Record<string, unknown>;
+    candidates.push(record.details);
+    const nested = record.error;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      candidates.push((nested as Record<string, unknown>).details);
+    }
+  }
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const conflicts = (candidate as Record<string, unknown>).conflicts;
+      if (Array.isArray(conflicts)) {
+        return conflicts as ProposalConflict[];
+      }
+    }
+  }
+  return [];
+}
+
+function mergeConflictMessage(locale: WorkHubLocale) {
+  return locale === "zh-CN"
+    ? "这次变更和正式版本撞车了，先选一个处理方式。"
+    : "This change conflicts with the current version. Choose how to continue.";
+}
+
+function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale: WorkHubLocale) {
+  const conflicts = conflictsFromMergeError(error);
+  if (conflicts.length === 0) {
+    return false;
+  }
+  const rendered = renderProposalConflictCards(conflicts, { locale });
+  showNotice(shellRoot, mergeConflictMessage(locale), rendered.html, 0);
+  return true;
+}
+
 function reviewReasonButtons(locale: WorkHubLocale) {
   const reasons = [
     goldPathT(locale, "runtime.reason.evidence"),
@@ -244,16 +298,20 @@ function bindGoldPathNavigation(
           const merge = await client.mergeProposal(proposalAction.proposalId);
           showNotice(shellRoot, `${review.attention.summary_text} ${merge.attention.summary_text}`);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error, locale));
+          if (!showMergeConflictNotice(shellRoot, error, locale)) {
+            showNotice(shellRoot, actionMessage(error, locale));
+          }
         }
         return;
       }
       if (proposalAction?.action === "merge") {
         try {
-          const merge = await client.mergeProposal(proposalAction.proposalId);
+          const merge = await client.mergeProposal(proposalAction.proposalId, anchorMergePayload(anchor));
           showNotice(shellRoot, merge.attention.summary_text);
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error, locale));
+          if (!showMergeConflictNotice(shellRoot, error, locale)) {
+            showNotice(shellRoot, actionMessage(error, locale));
+          }
         }
         return;
       }

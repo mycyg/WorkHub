@@ -75,6 +75,17 @@ const copy = {
   "proposal.changeSummary": { "zh-CN": "这次改了什么", "en-US": "What changed" },
   "proposal.checkResults": { "zh-CN": "检查结果", "en-US": "Check results" },
   "proposal.comments": { "zh-CN": "负责人意见", "en-US": "Owner comments" },
+  "proposal.conflictTitle": { "zh-CN": "和别人的改动撞车了", "en-US": "Conflicting change detected" },
+  "proposal.conflictBody": {
+    "zh-CN": "不用看技术细节，直接选一个处理方式。",
+    "en-US": "No technical review needed. Choose how to continue."
+  },
+  "proposal.conflictRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
+  "proposal.conflictKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Keep current" },
+  "proposal.conflictAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Use this version" },
+  "proposal.conflictExisting": { "zh-CN": "正式版", "en-US": "Current" },
+  "proposal.conflictIncoming": { "zh-CN": "这次版本", "en-US": "This version" },
+  "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {

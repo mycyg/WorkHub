@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import type { AgentRunLiveVM, GoldPathSurfaceVM, SessionVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, GoldPathSurfaceVM, ProposalConflict, SessionVM } from "@workhub/contracts";
 
 import {
   loadWebAgentRunTrace,
@@ -141,8 +141,11 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async listWorkItemProposals() {
       throw new Error("not needed");
     },
-    async listWorkItemConflicts() {
-      throw new Error("not needed");
+    async listWorkItemConflicts(workItemId: string) {
+      const conflicts = ((surface as unknown as { conflicts?: ProposalConflict[] }).conflicts ?? []).filter(
+        (conflict) => conflict.work_item_id === workItemId
+      );
+      return conflicts.length > 0 ? { conflicts } : { conflicts, empty_state: "no_conflicts" as const };
     },
     async getProposal() {
       throw new Error("not needed");
@@ -209,6 +212,60 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async request() {
       throw new Error("not needed");
     }
+  };
+}
+
+function proposalConflict(workItemId: string, proposalId: string): ProposalConflict {
+  return {
+    id: "conflict-weekly-report",
+    work_item_id: workItemId,
+    proposal_id: proposalId,
+    change_id: "10000000-0000-4000-8000-000000000402",
+    target_key: "drive_item:docs/weekly-report.md",
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: "docs/weekly-report.md",
+    headline: "weekly-report.md 已经被另一份变更更新",
+    summary_text: "正式版和这次版本都改了同一个文档，先选保留正式版还是采纳这次版本。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000411",
+      change_id: "10000000-0000-4000-8000-000000000412",
+      sha256: "a".repeat(64)
+    },
+    incoming: {
+      sha256_before: "b".repeat(64),
+      sha256_after: "c".repeat(64)
+    },
+    recommended_option_id: "keep_current",
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "保留已正式采纳的版本。",
+        recommended: true,
+        action: {
+          id: "keep_current",
+          label: "保留正式版",
+          method: "POST",
+          href: `/api/proposals/${proposalId}/merge`,
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "用这次版本覆盖正式版。",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: `/api/proposals/${proposalId}/merge`,
+          request_json: {
+            conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
+          }
+        }
+      }
+    ]
   };
 }
 
@@ -405,6 +462,16 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
   assert.equal((await loadWebAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "AI 完成了草稿生成。");
+
+  const conflictSurface = {
+    ...(surface as unknown as object),
+    conflicts: [proposalConflict("work", "proposal")]
+  } as GoldPathSurfaceVM & { conflicts: ProposalConflict[] };
+  const renderedConflict = await renderWebProposalDetail(fakeClient(conflictSurface), "proposal");
+  assert.equal(webSurface.pages.includes("/api/workitems/:id/conflicts"), true);
+  assert.equal(renderedConflict.conflictCount, 1);
+  assert.equal(renderedConflict.html.includes("data-proposal-conflicts=\"1\""), true);
+  assert.equal(renderedConflict.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
 });
 
 test("web surface starts option-first intake sessions through the typed client", async () => {

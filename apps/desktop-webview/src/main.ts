@@ -1,7 +1,7 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config";
-import type { CreateSessionRequest, CreateWorkItemRequest, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
+import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardsFromProposalConflicts, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
@@ -23,6 +23,7 @@ export const desktopWebviewSurface = {
     "/api/pages/gold-path",
     "/intake/:sessionId",
     "/api/pages/workitems/:id",
+    "/api/workitems/:id/conflicts",
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
     "/api/pages/cost",
@@ -101,8 +102,17 @@ export function loadDesktopProposalDetail(client: WorkHubApiClient, proposalId: 
   return client.pages.proposal(proposalId, locale ? { locale } : undefined);
 }
 
+export async function loadDesktopProposalConflicts(client: WorkHubApiClient, proposal: ProposalDetailVM): Promise<ProposalConflict[]> {
+  const result = await client.listWorkItemConflicts(proposal.work_item_id);
+  return result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
+}
+
 export async function renderDesktopProposalDetail(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale) {
-  return renderProposalDetail(await loadDesktopProposalDetail(client, proposalId, locale), "desktop", locale ? { locale } : undefined);
+  const proposal = await loadDesktopProposalDetail(client, proposalId, locale);
+  return renderProposalDetail(proposal, "desktop", {
+    ...(locale ? { locale } : {}),
+    conflicts: await loadDesktopProposalConflicts(client, proposal)
+  });
 }
 
 export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: WorkHubLocale): CuuCard {
@@ -111,6 +121,15 @@ export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: W
 
 export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale): Promise<CuuCard> {
   return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId, locale), locale ? { locale } : undefined);
+}
+
+export async function loadDesktopProposalConflictCuuCards(
+  client: WorkHubApiClient,
+  proposalId: string,
+  locale?: WorkHubLocale
+): Promise<CuuCard[]> {
+  const proposal = await loadDesktopProposalDetail(client, proposalId, locale);
+  return cardsFromProposalConflicts(await loadDesktopProposalConflicts(client, proposal), locale ? { locale } : undefined);
 }
 
 export async function loadDesktopIntakeCuuCard(

@@ -4,6 +4,8 @@ import type {
   DeliverableChange,
   DeliverableCheck,
   EvidenceRef,
+  ProposalConflict,
+  ProposalConflictOption,
   ProposalDetailVM
 } from "@workhub/contracts";
 
@@ -31,7 +33,18 @@ export type ProposalRenderedPage = {
   actionHrefs: string[];
   changeCount: number;
   evidenceCount: number;
+  conflictCount: number;
   cuuState: CuuState;
+};
+
+export type ProposalRenderOptions = UiRenderOptions & {
+  conflicts?: ProposalConflict[];
+};
+
+export type ProposalConflictRenderedCards = {
+  html: string;
+  actionHrefs: string[];
+  conflictCount: number;
 };
 
 export const proposalCss = [
@@ -44,6 +57,8 @@ export const proposalCss = [
   ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px}.wh-row{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}",
   ".wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-pill-danger{background:#fff1ef;color:var(--danger)}",
   ".wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-check[data-status=warning],.wh-check[data-status=skipped]{border-left-color:var(--amber)}.wh-check[data-status=failed]{border-left-color:var(--danger)}",
+  ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:8px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
+  ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -75,6 +90,85 @@ function renderActions(actions: ActionSpec[]) {
       return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}" data-method="${escapeHtml(action.method)}"${reason}${desktop}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
+}
+
+function shortFingerprint(value: string | undefined) {
+  return value ? value.slice(0, 10) : undefined;
+}
+
+function conflictOptionLabel(option: ProposalConflictOption, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  if (option.id === "keep_current") {
+    return uiT(locale, "proposal.conflictKeepCurrent");
+  }
+  if (option.id === "accept_incoming") {
+    return uiT(locale, "proposal.conflictAcceptIncoming");
+  }
+  return option.label;
+}
+
+function conflictOptionClass(option: ProposalConflictOption) {
+  if (option.id === "accept_incoming") {
+    return "wh-btn wh-btn-danger";
+  }
+  return option.recommended ? "wh-btn wh-btn-primary" : "wh-btn";
+}
+
+function renderConflictOption(option: ProposalConflictOption, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const recommended = option.recommended
+    ? `<span class="wh-recommended">${escapeHtml(uiT(locale, "proposal.conflictRecommended"))}</span>`
+    : "";
+  if (!option.action?.href) {
+    return `<span class="${conflictOptionClass(option)}" data-conflict-option-id="${escapeHtml(option.id)}">${escapeHtml(conflictOptionLabel(option, { locale }))}${recommended}</span>`;
+  }
+  const requestJson = option.action.request_json
+    ? ` data-request-json="${escapeHtml(JSON.stringify(option.action.request_json))}"`
+    : "";
+  return `<a class="${conflictOptionClass(option)}" href="${escapeHtml(option.action.href)}" data-action-id="${escapeHtml(option.action.id)}" data-conflict-option-id="${escapeHtml(option.id)}" data-method="${escapeHtml(option.action.method)}"${requestJson}>${escapeHtml(conflictOptionLabel(option, { locale }))}${recommended}</a>`;
+}
+
+function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const target = conflict.target_path ?? conflict.target_key;
+  const existing = shortFingerprint(conflict.existing.sha256 ?? conflict.existing.ref);
+  const incoming = shortFingerprint(conflict.incoming.sha256_after ?? conflict.incoming.ref);
+  const meta = [
+    `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictTarget"))}: ${escapeHtml(target)}</span>`,
+    existing ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictExisting"))}: ${escapeHtml(existing)}</span>` : "",
+    incoming ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictIncoming"))}: ${escapeHtml(incoming)}</span>` : ""
+  ].filter(Boolean).join("");
+
+  return `<article class="wh-conflict-card" data-conflict-id="${escapeHtml(conflict.id)}" data-target-key="${escapeHtml(conflict.target_key)}">
+    <strong>${escapeHtml(conflict.headline)}</strong>
+    <p class="wh-conflict-summary">${escapeHtml(conflict.summary_text)}</p>
+    <div class="wh-conflict-meta">${meta}</div>
+    <div class="wh-conflict-options">${conflict.options.map((option) => renderConflictOption(option, { locale })).join("")}</div>
+  </article>`;
+}
+
+export function renderProposalConflictCards(
+  conflicts: ProposalConflict[] = [],
+  options?: UiRenderOptions
+): ProposalConflictRenderedCards {
+  const locale = uiLocale(options);
+  const actionHrefs = conflicts.flatMap((conflict) =>
+    conflict.options.map((option) => option.action?.href).filter((href): href is string => Boolean(href))
+  );
+  if (conflicts.length === 0) {
+    return { html: "", actionHrefs, conflictCount: 0 };
+  }
+  return {
+    conflictCount: conflicts.length,
+    actionHrefs,
+    html: `<section class="wh-conflict-list" data-proposal-conflicts="${conflicts.length}">
+      <div class="wh-conflict-head">
+        <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.conflictTitle"))}</span>
+        <p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.conflictBody"))}</p>
+      </div>
+      ${conflicts.map((conflict) => renderConflict(conflict, { locale })).join("")}
+    </section>`
+  };
 }
 
 function renderChange(change: DeliverableChange, options?: UiRenderOptions) {
@@ -139,9 +233,10 @@ function renderRail(vm: ProposalDetailVM, options?: UiRenderOptions) {
 export function renderProposalDetail(
   vm: ProposalDetailVM,
   surface: ProposalRenderSurface,
-  options?: UiRenderOptions
+  options?: ProposalRenderOptions
 ): ProposalRenderedPage {
   const locale = uiLocale(options);
+  const conflictCards = renderProposalConflictCards(options?.conflicts ?? [], { locale });
   const actionList = [
     vm.review_actions.approve,
     vm.review_actions.request_changes,
@@ -165,6 +260,7 @@ export function renderProposalDetail(
     <h2>${escapeHtml(uiT(locale, "generic.evidence"))}</h2>
     <div class="wh-grid">${renderEvidence(vm.evidence_refs, { locale })}</div>
     ${vm.comments.length > 0 ? `<h2>${escapeHtml(uiT(locale, "proposal.comments"))}</h2><div class="wh-card">${vm.comments.map((comment) => `<div class="wh-row"><strong>${escapeHtml(comment.author_label)}</strong><p class="wh-subtle">${escapeHtml(comment.body)}</p></div>`).join("")}</div>` : ""}
+    ${conflictCards.html}
     ${renderActions(actionList)}
   </section>`;
 
@@ -175,9 +271,10 @@ export function renderProposalDetail(
     title: vm.title,
     css: proposalCss,
     html: `<div class="${rootClass}"><main class="wh-proposal"><div class="wh-proposal-frame">${main}${renderRail(vm, { locale })}</div></main></div>`,
-    actionHrefs: actionList.map((action) => action.href),
+    actionHrefs: [...actionList.map((action) => action.href), ...conflictCards.actionHrefs],
     changeCount: vm.manifest.changes.length,
     evidenceCount: vm.evidence_refs.length,
+    conflictCount: conflictCards.conflictCount,
     cuuState: vm.status === "merged" ? "celebrating" : "carrying_document"
   };
 }
