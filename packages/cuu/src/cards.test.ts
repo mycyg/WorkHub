@@ -209,6 +209,7 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
     id: "conflict-weekly-report",
     work_item_id: workItemId,
     proposal_id: "10000000-0000-4000-8000-000000000301",
+    merge_proposal_id: "10000000-0000-4000-8000-000000000309",
     change_id: "10000000-0000-4000-8000-000000000302",
     target_key: "drive_item:docs/weekly-report.md",
     target_kind: "text_doc",
@@ -253,6 +254,18 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
             conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
           }
         }
+      },
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成融合稿，点击后写入正式交付物。",
+        action: {
+          id: "apply_ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: "/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply",
+          request_json: { confirm: true }
+        }
       }
     ]
   };
@@ -268,10 +281,17 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
   assert.deepEqual(card.actions.find((action) => action.id === "accept_incoming")?.payload, {
     conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
   });
+  assert.equal(card.actions.find((action) => action.id === "ai_fusion")?.label, "采用 AI 融合稿");
+  assert.equal(
+    card.actions.find((action) => action.id === "ai_fusion")?.href,
+    "/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"
+  );
+  assert.deepEqual(card.actions.find((action) => action.id === "ai_fusion")?.payload, { confirm: true });
   assert.equal(card.actions.some((action) => action.id === "open_proposal"), true);
   assert.equal(cardsFromProposalConflicts([conflict]).length, 1);
   assert.equal(english.title, "Change conflict");
   assert.equal(english.actions.find((action) => action.id === "keep_current")?.label, "Keep current");
+  assert.equal(english.actions.find((action) => action.id === "ai_fusion")?.label, "Use AI fusion draft");
 });
 
 test("work item detail becomes a lightweight Cuu task card", () => {

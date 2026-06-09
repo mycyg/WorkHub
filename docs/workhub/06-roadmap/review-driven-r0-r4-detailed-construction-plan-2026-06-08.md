@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补已选 `ai_fusion` apply 为正式 Markdown 融合稿 | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回和多冲突逐项选择工作台 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补 `ai_fusion` apply 为正式 Markdown 融合稿；R1.17 已补 Web/Desktop/Cuu 冲突卡一键“采用 AI 融合稿” | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回、多冲突逐项选择工作台和真实 PG one-click smoke |
 
 ### R1 必做顺序
 
@@ -156,7 +156,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 字段级/text diff3 写回与真实内容三方读取；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 字段级/text diff3 写回与真实内容三方读取；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口，R1.17 已接 Web/Desktop/Cuu 一键采用 AI 融合稿入口。
 
 ### R1 验收
 
@@ -303,7 +303,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 仍未完成：
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
-- 已由 R1.14/R1.15/R1.16 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计与 Markdown 融合稿正式采纳已接入；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回和多冲突工作台。
+- 已由 R1.14/R1.15/R1.16/R1.17 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计、Markdown 融合稿正式采纳与冲突卡一键采用已接入；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回、多冲突工作台和真实 PG one-click smoke。
 - `/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本，Web/Desktop/Cuu option-first UI 已由 R1.10 接入，`merge_attempts` 与 chosen incoming target 审计已由 R1.11 接入，`merge_proposals` deterministic candidates 与 chosen option 已由 R1.12 接入。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
@@ -618,7 +618,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.15 补齐：`POST /api/merge-proposals/{id}/choose` 可把 `ai_fusion` 等候选选择写入 `chosen_option_key/chosen_by_user_id/chosen_at`。
-- 已由 R1.16 部分补齐：已选择的 `ai_fusion` 可物化为 Markdown 融合稿并走 Drive version / accepted ledger / rollback/audit 链路；仍缺 `structured_record` 字段合并器、`text_doc/spec_doc` diff3/patch 原位写回。
+- 已由 R1.16/R1.17 部分补齐：`ai_fusion` 可物化为 Markdown 融合稿并走 Drive version / accepted ledger / rollback/audit 链路，且冲突卡可一键采用；仍缺 `structured_record` 字段合并器、`text_doc/spec_doc` diff3/patch 原位写回。
 - 多冲突逐项选择工作台：当前仍是每张 conflict card 独立提交，不支持一页批量选择/自定义候选编辑。
 - LLM prompt 上下文仍受 R1 file-only 数据限制：当前 prompt 主要有 manifest/change/ref/hash 元数据；后续需要从 accepted Drive text preview、incoming workdir 文件和 base snapshot 读取真实 base/ours/theirs 内容。
 
@@ -673,7 +673,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 - `packages/api-client`：新增 `applyMergeProposalCandidate(id, payload?)`；Web/Desktop 测试 fake client 同步补齐方法。
 - `apps/api/src/proposals.test.ts`：route 测试覆盖 `merge_conflict -> choose ai_fusion -> apply -> merged`，断言 latest attempt 为 `merged`、`acceptedTargetKeys` 为冲突 target、latest merge proposal `chosenOptionKey="ai_fusion"`，重复 apply 返回 409。
 
-当前契约：
+R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键选择 + 物化，见下一节）：
 
 | 场景 | R1.16 行为 |
 |---|---|
@@ -693,9 +693,50 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
-- Cuu 轻卡尚未新增“采用 AI 融合稿”按钮；当前 API/client 已具备，下一切片需接 `applyMergeProposalCandidate()` typed action，同时保持桌宠只在独立 pet window 出现。
+- R1.17 已补 Web/Desktop/Cuu “采用 AI 融合稿”一键入口；仍需真实 PG smoke、React route 产品化和视觉截图验收。
 - 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 choose/apply。
 - 真实 PG smoke 尚未新增 R1.16 apply 路径；目前覆盖在 API fake repository 测试中，后续应加 Linux PG smoke：生成 conflict、choose ai_fusion、apply、断言 `accepted_deliverable_changes`/`ProjectDriveVersion`/audit/replay。
+
+### R1.17 AI fusion one-click conflict card apply（2026-06-09）
+
+本切片关闭“API 已能 apply，但用户仍要先 choose 再 apply，Cuu 轻卡也没有真正采用按钮”的缺口。目标是符合 AI Native 的 option-first 设计：当系统已有合格 `ai_fusion.merged_value`，用户在严肃主窗或独立 Cuu 桌宠里只需要点击一次“采用 AI 融合稿”。
+
+已落代码：
+
+- `packages/contracts/src/domain/collaboration.ts`：`ProposalConflict` 新增可选 `merge_proposal_id`，让 409 和 `GET /api/workitems/:id/conflicts` 能把冲突卡与可 apply 的候选行对齐。
+- `apps/api/src/services/proposals.ts`：`listConflicts()` 与 merge 409 会读取最近一次 `merge_proposals`，把 `merge_proposal_id`、`recommended_option_id` 与 `ai_fusion` rationale 映射进 `ProposalConflict`；可 apply 时 `ai_fusion` option 的 action 为 `apply_ai_fusion`，`href=/api/merge-proposals/{id}/apply`，`request_json={confirm:true}`。
+- `packages/db/src/repositories/proposals.ts`：`findMergeProposalCandidateForApply()` 允许未选择但存在 `ai_fusion` candidate 的 row 返回 apply context；`applyMergeProposalCandidate()` 若发现原 row 未选择，会先写 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`，再创建 merged attempt、accepted row、Drive version、merge snapshot 和 audit。已选择其它候选仍返回 409。
+- `apps/web/src/browser.ts` 与 `apps/desktop-webview/src/browser.ts`：主窗 action dispatcher 识别 `/api/merge-proposals/{id}/apply`，调用 `client.applyMergeProposalCandidate(id,{confirm:true})`。主窗仍只显示严肃冲突卡，不显示 Cuu 本体。
+- `packages/ui/src/proposal/render.ts`：当 `ai_fusion` option 的 action id 为 `apply_ai_fusion` 时，按钮文案显示“采用 AI 融合稿 / Use AI fusion draft”。
+- `packages/cuu/src/cards.ts` 与 `apps/desktop-webview/src/desktop-cuu-runtime.ts`：Cuu 轻卡同样显示“采用 AI 融合稿”，点击后解析为 `proposal-merge-candidate-apply` typed action 并调用 `client.applyMergeProposalCandidate()`。Cuu 仍只存在于独立 pet window。
+
+当前契约：
+
+| 场景 | R1.17 行为 |
+|---|---|
+| 409 conflict 有合格 `ai_fusion` candidate | conflict 带 `merge_proposal_id`，`ai_fusion` option 显示「采用 AI 融合稿」，action 指向 `/api/merge-proposals/{id}/apply` |
+| `GET /api/workitems/{id}/conflicts` | 与 409 一致返回 `merge_proposal_id` 与 apply action，页面预读和错误恢复路径一致 |
+| 未选择候选直接 apply | 服务端把本次点击写入原 `merge_proposals.chosen_*`，再物化 Markdown 融合稿 |
+| 已选择 `ai_fusion` 后 apply | 幂等走同一物化路径；若 proposal 已 merged，返回既有 409，避免重复 accepted row |
+| 已选择非 `ai_fusion` 后 apply | 409 `merge_proposal_apply_requires_ai_fusion`，不覆盖人的既有选择 |
+| `ai_fusion` 无 `merged_value` | 409 `merge_candidate_missing_result` |
+| Cuu 点击 | 走 `proposal-merge-candidate-apply` typed action，不要求输入文字或二次选择 |
+
+验证：
+
+- `corepack pnpm --filter @workhub/contracts test` 通过，16/16。
+- `corepack pnpm --filter @workhub/ui test` 通过，26/26。
+- `corepack pnpm --filter @workhub/cuu test` 通过，30/30。
+- `corepack pnpm --filter @workhub/desktop-webview test` 通过，59/59。
+- `corepack pnpm --filter @workhub/api test` 通过，71/71。
+- `corepack pnpm --filter @workhub/api typecheck`、`@workhub/web typecheck`、`@workhub/desktop-webview typecheck`、`@workhub/db typecheck` 通过。
+
+仍未完成：
+
+- `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要真实 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
+- 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 apply。
+- 真实 PG smoke 尚未新增 R1.17 one-click 路径；后续应在 Linux 测试环境生成 conflict、返回 `merge_proposal_id`、直接 apply、断言原 row `chosen_*`、`accepted_deliverable_changes`、`ProjectDriveVersion`、audit 与 replay。
+- React route 产品化与 Playwright 截图尚未补；当前主窗路径仍由 TS renderer/browser shell 覆盖。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

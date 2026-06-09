@@ -791,9 +791,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       if (!conflict) {
         return null;
       }
-      const candidate = row.mergeProposal.chosenOptionKey
-        ? mergeProposalCandidateByOption(row.mergeProposal, row.mergeProposal.chosenOptionKey)
-        : null;
+      const applyOptionKey = row.mergeProposal.chosenOptionKey ?? "ai_fusion";
+      const candidate = mergeProposalCandidateByOption(row.mergeProposal, applyOptionKey);
       return {
         mergeProposalId: row.mergeProposal.id,
         proposalId: row.proposalId,
@@ -978,17 +977,14 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             "Proposal must be reviewed before applying a merge candidate"
           );
         }
-        if (!row.mergeProposal.chosenOptionKey) {
-          throw new ProposalRepositoryMergeProposalNotChosenError(input.mergeProposalId);
-        }
-        if (row.mergeProposal.chosenOptionKey !== "ai_fusion") {
+        if (row.mergeProposal.chosenOptionKey && row.mergeProposal.chosenOptionKey !== "ai_fusion") {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
             input.mergeProposalId,
             "merge_proposal_apply_requires_ai_fusion",
             "Only ai_fusion candidates can be applied through this route"
           );
         }
-        const candidate = mergeProposalCandidateByOption(row.mergeProposal, row.mergeProposal.chosenOptionKey);
+        const candidate = mergeProposalCandidateByOption(row.mergeProposal, "ai_fusion");
         if (!candidate?.merged_value) {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
             input.mergeProposalId,
@@ -1018,6 +1014,17 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             "merge_conflict_context_missing",
             "Merge proposal conflict context is missing"
           );
+        }
+        if (!row.mergeProposal.chosenOptionKey) {
+          await tx
+            .update(mergeProposals)
+            .set({
+              chosenOptionKey: "ai_fusion",
+              ...(input.actor?.actorUserId ? { chosenByUserId: input.actor.actorUserId } : {}),
+              chosenAt: at,
+              updatedAt: at
+            })
+            .where(eq(mergeProposals.id, input.mergeProposalId));
         }
         const sourceChange = changeForConflict(row.diffManifest, conflict);
         if (!sourceChange) {

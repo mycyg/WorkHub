@@ -544,6 +544,9 @@ function proposalConflictOptionLabel(option: ProposalConflictOption, options: Cu
     return cuuT(options.locale, "proposal.conflictAcceptIncoming");
   }
   if (option.id === "ai_fusion") {
+    if (option.action?.id === "apply_ai_fusion") {
+      return cuuT(options.locale, "proposal.conflictApplyAiFusion");
+    }
     return cuuT(options.locale, "proposal.conflictAiFusion");
   }
   return option.label;

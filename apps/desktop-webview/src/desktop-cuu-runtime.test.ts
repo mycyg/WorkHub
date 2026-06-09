@@ -607,6 +607,74 @@ test("desktop Cuu actions submit proposal merge conflict choices with payloads",
   ]);
 });
 
+test("desktop Cuu actions apply AI fusion merge candidates with payloads", async () => {
+  const calls: unknown[] = [];
+  const card: CuuCard = {
+    id: "conflict-card",
+    kind: "proposal",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你选择冲突处理方式。"
+    },
+    title: "变更撞车了",
+    message: "点一个选项继续。",
+    priority: "high",
+    actions: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        tone: "primary",
+        method: "POST",
+        href: "/api/merge-proposals/merge-proposal-1/apply",
+        payload: { confirm: true }
+      }
+    ]
+  };
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    },
+    async applyMergeProposalCandidate(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return {
+        attention: {
+          summary_text: "已采用 AI 融合稿。"
+        }
+      };
+    }
+  };
+
+  const action = resolveDesktopCuuAction("/api/merge-proposals/merge-proposal-1/apply", {
+    actionId: "ai_fusion",
+    card
+  });
+  const result = await submitDesktopCuuAction({ client, action: action! });
+
+  assert.deepEqual(action, {
+    kind: "proposal-merge-candidate-apply",
+    mergeProposalId: "merge-proposal-1",
+    payload: { confirm: true }
+  });
+  assert.equal(result.message, "已采用 AI 融合稿。");
+  assert.deepEqual(calls, [{ id: "merge-proposal-1", payload: { confirm: true } }]);
+});
+
 test("desktop Cuu actions search project knowledge and return an evidence card", async () => {
   const calls: unknown[] = [];
   const bubble: EvidenceBubble = {

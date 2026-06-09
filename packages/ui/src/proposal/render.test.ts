@@ -55,6 +55,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
     id: "conflict-weekly-report",
     work_item_id: vm.work_item_id,
     proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000309",
     change_id: vm.manifest.changes[0]?.id ?? "change-1",
     target_key: "drive_item:docs/weekly-report.md",
     target_kind: "text_doc",
@@ -99,6 +100,18 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
             conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
           }
         }
+      },
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成融合稿，点击后写入正式交付物。",
+        action: {
+          id: "apply_ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: "/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply",
+          request_json: { confirm: true }
+        }
       }
     ]
   };
@@ -110,9 +123,14 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-proposal-conflicts=\"1\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
+  assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("采用 AI 融合稿"), true);
+  assert.equal(rendered.html.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"), true);
   assert.equal(rendered.html.includes("accept_incoming_target_keys"), true);
   assert.equal(rendered.actionHrefs.includes(`/api/proposals/${vm.proposal_id}/merge`), true);
+  assert.equal(rendered.actionHrefs.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"), true);
   assert.equal(english.html.includes("Conflicting change detected"), true);
   assert.equal(english.html.includes("Keep current"), true);
   assert.equal(english.html.includes("Use this version"), true);
+  assert.equal(english.html.includes("Use AI fusion draft"), true);
 });

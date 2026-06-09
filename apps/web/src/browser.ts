@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import type { MergeProposalRequest, ProposalConflict } from "@workhub/contracts";
+import type { ApplyMergeProposalCandidateRequest, MergeProposalRequest, ProposalConflict } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -126,16 +126,30 @@ function proposalActionFromHref(href: string) {
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
 }
 
-function anchorMergePayload(anchor: HTMLAnchorElement): MergeProposalRequest | undefined {
+function mergeProposalCandidateApplyIdFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/merge-proposals\/([^/]+)\/apply$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
+function anchorJsonPayload<T>(anchor: HTMLAnchorElement): T | undefined {
   const raw = anchor.dataset.requestJson;
   if (!raw) {
     return undefined;
   }
   try {
-    return JSON.parse(raw) as MergeProposalRequest;
+    return JSON.parse(raw) as T;
   } catch {
     return undefined;
   }
+}
+
+function anchorMergePayload(anchor: HTMLAnchorElement): MergeProposalRequest | undefined {
+  return anchorJsonPayload<MergeProposalRequest>(anchor);
+}
+
+function anchorApplyPayload(anchor: HTMLAnchorElement): ApplyMergeProposalCandidateRequest | undefined {
+  return anchorJsonPayload<ApplyMergeProposalCandidateRequest>(anchor);
 }
 
 function conflictsFromMergeError(error: unknown): ProposalConflict[] {
@@ -245,6 +259,16 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
+      if (mergeProposalCandidateApplyId) {
+        try {
+          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, anchorApplyPayload(anchor));
+          showNotice(shellRoot, merge.attention.summary_text);
+        } catch (error) {
+          showNotice(shellRoot, actionMessage(error, locale));
+        }
+        return;
+      }
       const proposalAction = proposalActionFromHref(href);
       if (proposalAction?.action === "review") {
         if (action.requiresReason) {

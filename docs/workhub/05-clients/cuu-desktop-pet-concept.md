@@ -26,7 +26,7 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 | 澄清 | 弹出一问一答的选项气泡，默认让用户点击 | 需要完整上下文时打开澄清页 |
 | 审批 | 用动作和小卡提醒，展开为证据、风险、推荐动作 | 承载完整审批中心 |
 | 项目检索 | 用气泡 chips 发起检索、总结、找文件 | 展示完整搜索结果和引用 |
-| 交付物变更 | 摘要“改了什么”，给同意/打回/查看详情；撞车时给“保留正式版 / 采纳这次版本”两选项，AI 融合建议先以查看入口出现 | 展示 GitHub-like 变更说明、diff、证据与完整冲突卡；下一步把 R1.16 apply 接成“采用 AI 融合稿”轻按钮 |
+| 交付物变更 | 摘要“改了什么”，给同意/打回/查看详情；撞车时给“保留正式版 / 采纳这次版本 / 采用 AI 融合稿”等可点击选项 | 展示 GitHub-like 变更说明、diff、证据与完整冲突卡；主窗仍严肃无 Cuu 本体 |
 | 离线/异常 | 睡觉、担心、重连提示 | 展示诊断和设置 |
 
 设计目标是“像一个活着的小助手”，不是“一个带猫图标的通知系统”。每次出现都要有动作原因：正在想、正在找、需要确认、完成了、出错了。
@@ -151,21 +151,21 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - Cuu 气泡按钮：查看详情、打开审批、打开检索结果。
 - 主窗设置页：只显示严肃的桌面客户端设置，不放 Cuu 形象。
 
-### 6.4 变更撞车轻卡（R1.10-R1.16 已落）
+### 6.4 变更撞车轻卡（R1.10-R1.17 已落）
 
-R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1.11/R1.12 把点击背后的 attempt、candidate 与 chosen option 落入 `merge_attempts` / `merge_proposals`，R1.13 把这些记录接入 AgentRun replay 的只读决策记录，R1.14 允许 `ai_fusion` 候选以查看型轻按钮出现，R1.15 允许通过 API 写入候选选择记录，R1.16 允许后端把已选 `ai_fusion` apply 成正式 Markdown 融合稿。当前 Cuu 卡片仍保持轻量：不改变 Cuu 外观冻结规则，也不把 Cuu 放进 Web / desktop 主窗；“采用 AI 融合稿”按钮作为下一步 Cuu action 接入。
+R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1.11/R1.12 把点击背后的 attempt、candidate 与 chosen option 落入 `merge_attempts` / `merge_proposals`，R1.13 把这些记录接入 AgentRun replay 的只读决策记录，R1.14 允许 `ai_fusion` 候选进入同一候选通道，R1.15 允许通过 API 写入候选选择记录，R1.16 允许后端把 `ai_fusion` apply 成正式 Markdown 融合稿。R1.17 已把 Cuu 轻卡里的 `ai_fusion` 接成“采用 AI 融合稿” typed action：点击后调用 `applyMergeProposalCandidate()`，服务端在未选择时自动记录 `chosen_*` 后再物化。当前 Cuu 卡片仍保持轻量：不改变 Cuu 外观冻结规则，也不把 Cuu 放进 Web / desktop 主窗。
 
 | 项 | 当前行为 |
 |---|---|
-| 输入 contract | `ProposalConflict` / `ProposalConflictOption`，来源为 `GET /api/workitems/:id/conflicts` 或 merge 409 的 `details.conflicts[]` |
+| 输入 contract | `ProposalConflict` / `ProposalConflictOption`，来源为 `GET /api/workitems/:id/conflicts` 或 merge 409 的 `details.conflicts[]`；若已有持久候选行，可带 `merge_proposal_id`，其中 `ai_fusion` 可执行时 action 指向 apply |
 | Cuu card | `cardFromProposalConflict()` 生成 `kind="proposal"`、`state="asking_approval"`、`payload_ref.entity_type="proposal_conflict"` |
-| 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；`ai_fusion` 显示「AI 融合建议」并打开变更查看；另有「打开变更」深链；下一步增加 `apply_ai_fusion` 显示「采用 AI 融合稿」 |
-| payload | option action 的 `request_json` 原样保存在 Cuu action `payload`，桌宠点击后由 `proposal-merge` typed action 传给 `client.mergeProposal()` |
+| 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；有可用 apply action 的 `ai_fusion` 显示「采用 AI 融合稿」；没有可执行 apply 时退回「AI 融合建议」/查看入口；另有「打开变更」深链 |
+| payload | `accept_incoming` 的 `request_json` 原样保存在 Cuu action `payload`，桌宠点击后由 `proposal-merge` typed action 传给 `client.mergeProposal()`；`ai_fusion` apply 由 `proposal-merge-candidate-apply` typed action 传给 `client.applyMergeProposalCandidate()`，payload 固定为 `{confirm:true}` |
 | replay | 主窗 `/agent-runs/:id/replay` 会展示 `merge_timeline[]`，解释当时有哪些候选、推荐哪个、最终选了什么 |
 | 边界 | 这是独立 pet window 的轻卡；Web/Desktop 主窗只显示严肃页面，不显示 Cuu 本体 |
 | 非目标 | 当前不做字段级 `ai_fusion` patch、不做多冲突逐项工作台、不新增猫模型或外观动作 |
 
-验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；不能要求用户复制 target key 或手写说明。
+验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；点击“采用 AI 融合稿”时，必须提交 `POST /api/merge-proposals/{id}/apply {confirm:true}`，不能要求用户先手动选择候选、复制 target key 或手写说明。
 
 ## 7. 验收门
 

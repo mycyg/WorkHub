@@ -327,6 +327,7 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
         id: "proposal-1:change-1:delivery:/outputs/result.md",
         work_item_id: "72000000-0000-4000-8000-000000000001",
         proposal_id: "72000000-0000-4000-8000-000000000002",
+        merge_proposal_id: "72000000-0000-4000-8000-000000000009",
         change_id: "72000000-0000-4000-8000-000000000003",
         target_key: "delivery:/outputs/result.md",
         target_kind: "delivery",
@@ -374,13 +375,14 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
             },
             {
               id: "ai_fusion",
-              label: "AI 融合建议",
-              summary_text: "查看 AI 生成的融合建议。",
+              label: "采用 AI 融合稿",
+              summary_text: "采用 AI 生成的融合稿。",
               action: {
-                id: "open_ai_fusion_candidate",
-                label: "查看建议",
-                method: "GET",
-                href: "/proposals/72000000-0000-4000-8000-000000000002"
+                id: "apply_ai_fusion",
+                label: "采用 AI 融合稿",
+                method: "POST",
+                href: "/api/merge-proposals/72000000-0000-4000-8000-000000000009/apply",
+                request_json: { confirm: true }
               }
             }
           ]
@@ -390,10 +392,15 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
   const request = mergeProposalRequestSchema.parse(
     parsed.conflicts[0]?.options.find((option) => option.id === "accept_incoming")?.action?.request_json
   );
+  const aiFusionRequest = applyMergeProposalCandidateRequestSchema.parse(
+    parsed.conflicts[0]?.options.find((option) => option.id === "ai_fusion")?.action?.request_json
+  );
 
   assert.equal(parsed.conflicts[0]?.recommended_option_id, "keep_current");
+  assert.equal(parsed.conflicts[0]?.merge_proposal_id, "72000000-0000-4000-8000-000000000009");
   assert.equal(parsed.conflicts[0]?.options.some((option) => option.id === "ai_fusion"), true);
   assert.deepEqual(request.conflict_resolution?.accept_incoming_target_keys, ["delivery:/outputs/result.md"]);
+  assert.equal(aiFusionRequest.confirm, true);
 });
 
 test("merge proposal candidate choices are explicit and replayable", () => {

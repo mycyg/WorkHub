@@ -17,7 +17,6 @@ import {
 import {
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
-  ProposalRepositoryMergeProposalNotChosenError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type MergeAttemptRow,
@@ -381,11 +380,10 @@ class MemoryProposalRepository implements ProposalRepository {
       return null;
     }
     const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
-    const candidate = row.chosenOptionKey
-      ? candidates.find((item) =>
-          item && typeof item === "object" && (item as { option_key?: string }).option_key === row.chosenOptionKey
-        )
-      : null;
+    const applyOptionKey = row.chosenOptionKey ?? "ai_fusion";
+    const candidate = candidates.find((item) =>
+      item && typeof item === "object" && (item as { option_key?: string }).option_key === applyOptionKey
+    );
     return {
       mergeProposalId: row.id,
       proposalId: stored.proposal.id,
@@ -424,10 +422,7 @@ class MemoryProposalRepository implements ProposalRepository {
         "Proposal must be reviewed before applying a merge candidate"
       );
     }
-    if (!context.chosenOptionKey) {
-      throw new ProposalRepositoryMergeProposalNotChosenError(input.mergeProposalId);
-    }
-    if (context.chosenOptionKey !== "ai_fusion") {
+    if (context.chosenOptionKey && context.chosenOptionKey !== "ai_fusion") {
       throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
         input.mergeProposalId,
         "merge_proposal_apply_requires_ai_fusion",
@@ -446,6 +441,13 @@ class MemoryProposalRepository implements ProposalRepository {
       return null;
     }
     const at = input.at ?? now;
+    const mergeProposal = this.mergeProposals.find((proposal) => proposal.id === input.mergeProposalId);
+    if (mergeProposal && !mergeProposal.chosenOptionKey) {
+      mergeProposal.chosenOptionKey = "ai_fusion";
+      mergeProposal.chosenByUserId = input.actor?.actorUserId ?? null;
+      mergeProposal.chosenAt = at;
+      mergeProposal.updatedAt = at;
+    }
     const mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
     stored.proposal.status = "merged";
     stored.proposal.mergeSnapshotId = mergeSnapshotId;
@@ -1088,11 +1090,12 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
         return [
           {
             conflictKey: conflict.target_key,
+            recommendedOptionKey: "ai_fusion",
             candidates: [
               {
                 option_key: "ai_fusion",
                 target_kind: conflict.target_kind,
-                rationale_md: "AI 已生成一个融合建议；当前版本先展示建议，真正写回仍走安全按钮。",
+                rationale_md: "AI 已生成一个融合稿；用户点击后会写回正式交付物。",
                 source: "llm",
                 quality_gate: { status: "passed" },
                 merged_value: { proposed_resolution_md: "融合正式版和这次版本的说明。" }
@@ -1152,15 +1155,75 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   assert.equal(blocked.status, 409);
   const blockedBody = await blocked.json() as {
     ok: false;
-    error: { code: string; details?: { conflicts?: Array<{ target_key: string; options: Array<{ id: string }> }> } };
+    error: {
+      code: string;
+      details?: {
+        conflicts?: Array<{
+          target_key: string;
+          merge_proposal_id?: string;
+          recommended_option_id: string;
+          options: Array<{
+            id: string;
+            label?: string;
+            action?: { id: string; href: string; request_json?: Record<string, unknown> };
+          }>;
+        }>;
+      };
+    };
   };
-  const targetKey = blockedBody.error.details?.conflicts?.[0]?.target_key;
+  const conflict = blockedBody.error.details?.conflicts?.[0];
+  const targetKey = conflict?.target_key;
+  const aiFusionOption = conflict?.options.find((option) => option.id === "ai_fusion");
   assert.equal(blockedBody.error.code, "merge_conflict");
-  assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "accept_incoming"), true);
-  assert.equal(blockedBody.error.details?.conflicts?.[0]?.options.some((option) => option.id === "ai_fusion"), true);
+  assert.equal(conflict?.recommended_option_id, "ai_fusion");
+  assert.equal(conflict?.options.some((option) => option.id === "accept_incoming"), true);
+  assert.equal(aiFusionOption?.label, "采用 AI 融合稿");
+  assert.equal(aiFusionOption?.action?.id, "apply_ai_fusion");
   assert.equal(typeof targetKey, "string");
-  const mergeProposalId = repository.mergeProposals[0]?.id;
+  const mergeProposalId = conflict?.merge_proposal_id;
   assert.equal(typeof mergeProposalId, "string");
+  assert.equal(mergeProposalId, repository.mergeProposals[0]?.id);
+  assert.equal(aiFusionOption?.action?.href, `/api/merge-proposals/${mergeProposalId}/apply`);
+  assert.deepEqual(aiFusionOption?.action?.request_json, { confirm: true });
+
+  const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(conflicts.status, 200);
+  const conflictBody = await conflicts.json() as {
+    ok: true;
+    data: {
+      conflicts: Array<{
+        target_key: string;
+        merge_proposal_id?: string;
+        recommended_option_id: string;
+        options: Array<{ id: string; action?: { id: string; href: string } }>;
+      }>;
+    };
+  };
+  assert.equal(conflictBody.data.conflicts[0]?.target_key, targetKey);
+  assert.equal(conflictBody.data.conflicts[0]?.merge_proposal_id, mergeProposalId);
+  assert.equal(conflictBody.data.conflicts[0]?.recommended_option_id, "ai_fusion");
+  assert.equal(
+    conflictBody.data.conflicts[0]?.options.find((option) => option.id === "ai_fusion")?.action?.href,
+    `/api/merge-proposals/${mergeProposalId}/apply`
+  );
+
+  const resolved = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(resolved.status, 200);
+  const resolvedBody = await resolved.json() as { ok: true; data: { status: string; merge_snapshot_id: string } };
+  assert.equal(resolvedBody.data.status, "merged");
+  assert.equal(typeof resolvedBody.data.merge_snapshot_id, "string");
+  assert.equal(repository.mergeProposals.find((proposal) => proposal.id === mergeProposalId)?.chosenOptionKey, "ai_fusion");
+  assert.equal(repository.mergeProposals.find((proposal) => proposal.id === mergeProposalId)?.chosenByUserId, userId);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.deepEqual(repository.mergeAttempts.at(-1)?.acceptedTargetKeys, [targetKey]);
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+  assert.equal(repository.workItemRows.get(secondManifest.work_item_id)?.status, "merged");
 
   const chosenAi = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
     method: "POST",
@@ -1189,31 +1252,6 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
     body: JSON.stringify({ option_key: "keep_current" })
   });
   assert.equal(overwriteChoice.status, 409);
-
-  const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {
-    headers: { Cookie: await cookie(runtimeSettings) }
-  });
-  assert.equal(conflicts.status, 200);
-  const conflictBody = await conflicts.json() as {
-    ok: true;
-    data: { conflicts: Array<{ target_key: string; recommended_option_id: string }> };
-  };
-  assert.equal(conflictBody.data.conflicts[0]?.target_key, targetKey);
-  assert.equal(conflictBody.data.conflicts[0]?.recommended_option_id, "keep_current");
-
-  const resolved = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({})
-  });
-  assert.equal(resolved.status, 200);
-  const resolvedBody = await resolved.json() as { ok: true; data: { status: string; merge_snapshot_id: string } };
-  assert.equal(resolvedBody.data.status, "merged");
-  assert.equal(typeof resolvedBody.data.merge_snapshot_id, "string");
-  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
-  assert.deepEqual(repository.mergeAttempts.at(-1)?.acceptedTargetKeys, [targetKey]);
-  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
-  assert.equal(repository.workItemRows.get(secondManifest.work_item_id)?.status, "merged");
 
   const reapply = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
     method: "POST",

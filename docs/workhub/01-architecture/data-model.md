@@ -273,7 +273,7 @@ WorkHub 演进为 AI-native 状态域(下表给出**新状态 ← 旧状态**的
 
 ### 6.2.1 新增:`AcceptedDeliverableChange`(正式采纳账本,R1 最小物理语义)
 
-> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 与 AgentRun replay 可展示 accepted deliverables，并提供下载/文本预览；R1.8 已补最小还原入口，把当前 Drive 指针恢复到上一版 accepted row 并写审计。R1.16 起，已选择的 `ai_fusion` 可先物化为 Markdown 融合稿，走同一 accepted ledger / Drive version / merge snapshot / audit 链路。字段级结构化写回、文本 diff3、富预览与完整 Drive 历史 UI 仍按后续切片推进。
+> **R1 当前实现表**：`accepted_deliverable_changes`。它是 Proposal merge 的正式采纳账本，用来证明“哪些 manifest change 已经进入正式版”，并为同 target 并发覆盖提供冲突 gate。2026-06-09 后，AgentRun-backed delivery 已接最小 `ProjectDriveItem.current_version_id` / `ProjectDriveVersion`：accepted row 会保存 `drive_item_id` 与 `drive_version_id`；WorkItem page 与 AgentRun replay 可展示 accepted deliverables，并提供下载/文本预览；R1.8 已补最小还原入口，把当前 Drive 指针恢复到上一版 accepted row 并写审计。R1.16 起，`ai_fusion` 可先物化为 Markdown 融合稿，走同一 accepted ledger / Drive version / merge snapshot / audit 链路；R1.17 起，冲突卡里的“采用 AI 融合稿”点击本身即可作为人工选择写入 `merge_proposals.chosen_*`，不再要求用户先点 choose 再点 apply。字段级结构化写回、文本 diff3、富预览与完整 Drive 历史 UI 仍按后续切片推进。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -348,7 +348,7 @@ R1.11 审计规则：
 
 ### 6.2.3 新增:`MergeProposal`(冲突候选方案,R1.12)
 
-> **R1.12/R1.16 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。R1.12 先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 已允许 API service 传入 `ai_fusion` 候选补充，写入同一 `candidates_json`，并可带 `source="llm"`、`quality_gate` 与 `merged_value`；R1.15 已提供 `POST /api/merge-proposals/{id}/choose` 把任一候选选择写入 `chosen_*` 字段。R1.16 已提供 `POST /api/merge-proposals/{id}/apply`，只允许已选择的 `ai_fusion` 候选，把 `merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger。Cuu/Web 仍保持 option-first 点击模型，AI 不替用户做裁决。
+> **R1.12/R1.17 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。R1.12 先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。R1.14 已允许 API service 传入 `ai_fusion` 候选补充，写入同一 `candidates_json`，并可带 `source="llm"`、`quality_gate` 与 `merged_value`；R1.15 已提供 `POST /api/merge-proposals/{id}/choose` 把任一候选选择写入 `chosen_*` 字段。R1.16 已提供 `POST /api/merge-proposals/{id}/apply`，把 `merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger。R1.17 把端侧路径收敛为一键采用：若原 row 仍未选择且 candidate 是 `ai_fusion`，apply 会先写原 row 的 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`，再物化；若原 row 已选择其它候选则 409。Cuu/Web 仍保持 option-first 点击模型，AI 不替用户做裁决。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -357,7 +357,7 @@ R1.11 审计规则：
 | `conflict_key` | str(768), index | 对应 `ProposalConflict.target_key` / `ConflictItem.key` |
 | `candidates_json` | JSONB `[]` | `[{option_key,target_kind,merged_value?,rationale_md,source?,quality_gate?}]`；R1.12 写保留正式版/采纳这次版本，R1.14 可追加 `ai_fusion` |
 | `recommended_option_key` | str(64)? | deterministic 默认 `keep_current`；R1.14 起 LLM 方案通过质量门时可推荐 `ai_fusion`，但不自动选择 |
-| `chosen_option_key` | str(64)? | 人最终选择；未选择时为 null；R1.15 起可由 choose endpoint 写入 `ai_fusion` 等候选；R1.16 apply 会在新的 merged attempt row 里保留 `chosen_option_key="ai_fusion"` |
+| `chosen_option_key` | str(64)? | 人最终选择；未选择时为 null；R1.15 起可由 choose endpoint 写入 `ai_fusion` 等候选；R1.17 起 apply 未选择的 `ai_fusion` 会先回写原 row，再在新的 merged attempt row 里保留 `chosen_option_key="ai_fusion"` |
 | `chosen_by_user_id` | FK→users.id?, SET NULL, index | 谁做了选择 |
 | `chosen_at` | DateTime?, index | 何时选择 |
 | `created_at`/`updated_at` | DateTime | |
@@ -369,7 +369,7 @@ R1.12 审计规则：
 - R1.13 起，`GET /api/agent-runs/{id}/replay` 已读取 `merge_attempts + merge_proposals` 并返回 `merge_timeline[]`，用于展示“当时有哪些候选、推荐哪个、最终谁选了什么”。
 - R1.14 起，`ai_fusion` 候选由 API service 的 `MergeFusionCandidateGenerator` 生成并传给 repository；repository 只负责与 deterministic 候选合并、去重和持久化，不直接调用 LLM。
 - R1.15 起，候选选择由 repository 的 `chooseMergeProposalCandidate()` 原子写入 `chosen_option_key/chosen_by_user_id/chosen_at`；已选择其他候选后禁止覆盖。
-- R1.16 起，`applyMergeProposalCandidate()` 会重新校验 proposal 仍为 `reviewed`、候选已选择且为 `ai_fusion`、candidate 带 `merged_value`，然后写 `snapshots(kind=merge)`、`merge_attempts(result="merged")`、新的 `merge_proposals(chosen_option_key="ai_fusion")`、`accepted_deliverable_changes`、`ProjectDriveVersion` 与 `AuditLog(action="proposal.merged", merge_strategy="ai_resolved")`。
+- R1.17 起，`applyMergeProposalCandidate()` 会重新校验 proposal 仍为 `reviewed`、候选为 `ai_fusion`、candidate 带 `merged_value`。若原 row 尚未选择，apply 将本次点击视为人工选择并回写 `chosen_option_key="ai_fusion"`、`chosen_by_user_id`、`chosen_at`；若原 row 已选择其它候选则返回 409。随后写 `snapshots(kind=merge)`、`merge_attempts(result="merged")`、新的 `merge_proposals(chosen_option_key="ai_fusion")`、`accepted_deliverable_changes`、`ProjectDriveVersion` 与 `AuditLog(action="proposal.merged", merge_strategy="ai_resolved")`。
 - 当前 `ai_fusion` 写回是“Markdown 融合稿物化进入正式交付物”，不是字段级原位 patch。真正把融合内容写回结构化记录字段或 text/spec doc diff3，需要后续 `ai_resolved` v2 切片。
 - 现有 `ProposalConflict.options[]` 仍是用户面入口；`merge_proposals` 是 replay、后续调解页与 LLM 候选的持久真相源。
 

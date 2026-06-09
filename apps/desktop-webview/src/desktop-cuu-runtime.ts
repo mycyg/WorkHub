@@ -12,7 +12,13 @@ import {
   type CuuLocaleOptions
 } from "@workhub/cuu";
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type EvidenceRef, type GoldPathSurfaceVM, type MergeProposalRequest } from "@workhub/contracts";
+import {
+  eventTypes,
+  type ApplyMergeProposalCandidateRequest,
+  type EvidenceRef,
+  type GoldPathSurfaceVM,
+  type MergeProposalRequest
+} from "@workhub/contracts";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
 import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
@@ -79,6 +85,11 @@ export type DesktopCuuActionRequest =
       kind: "proposal-merge";
       proposalId: string;
       payload?: MergeProposalRequest;
+    }
+  | {
+      kind: "proposal-merge-candidate-apply";
+      mergeProposalId: string;
+      payload?: ApplyMergeProposalCandidateRequest;
     };
 
 export type DesktopCuuActionResult = {
@@ -104,6 +115,14 @@ type DesktopCuuActionClient = Pick<
   mergeProposal: (
     proposalId: string,
     payload?: MergeProposalRequest
+  ) => Promise<{
+    attention: {
+      summary_text: string;
+    };
+  }>;
+  applyMergeProposalCandidate?: (
+    mergeProposalId: string,
+    payload?: ApplyMergeProposalCandidateRequest
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -384,6 +403,16 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  const mergeProposalApplyMatch = /^\/api\/merge-proposals\/([^/]+)\/apply$/u.exec(path);
+  if (mergeProposalApplyMatch?.[1]) {
+    const payload = actionPayloadFromCard(input.card, input.actionId, href);
+    return {
+      kind: "proposal-merge-candidate-apply",
+      mergeProposalId: decodeURIComponent(mergeProposalApplyMatch[1]),
+      ...(payload ? { payload: payload as ApplyMergeProposalCandidateRequest } : {})
+    };
+  }
+
   return undefined;
 }
 
@@ -436,6 +465,16 @@ export async function submitDesktopCuuAction(input: {
 
   if (input.action.kind === "proposal-merge") {
     const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {});
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
+  if (input.action.kind === "proposal-merge-candidate-apply") {
+    if (!input.client.applyMergeProposalCandidate) {
+      throw new Error("AI fusion apply action is unavailable.");
+    }
+    const result = await input.client.applyMergeProposalCandidate(input.action.mergeProposalId, input.action.payload ?? {});
     return {
       message: result.attention.summary_text
     };

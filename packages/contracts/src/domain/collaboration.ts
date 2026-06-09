@@ -171,6 +171,7 @@ export const proposalConflictSchema = z.object({
   id: z.string().min(1),
   work_item_id: idSchema,
   proposal_id: idSchema,
+  merge_proposal_id: idSchema.optional(),
   change_id: idSchema,
   target_key: z.string().min(1),
   target_kind: z.string().min(1),

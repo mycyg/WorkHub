@@ -105,6 +105,9 @@ function conflictOptionLabel(option: ProposalConflictOption, options?: UiRenderO
     return uiT(locale, "proposal.conflictAcceptIncoming");
   }
   if (option.id === "ai_fusion") {
+    if (option.action?.id === "apply_ai_fusion") {
+      return uiT(locale, "proposal.conflictApplyAiFusion");
+    }
     return uiT(locale, "proposal.conflictAiFusion");
   }
   return option.label;
