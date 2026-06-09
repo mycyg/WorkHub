@@ -92,13 +92,12 @@ R2.4 退出门：
 
 | 风险 | 当前处理 | 后续 |
 |---|---|---|
-| WorkItem/Proposal/Session 的真实 DB resolver 仍未全部接入默认 route | R2.5 已接默认 resolver，测试/嵌入场景可显式 `false` fail-closed | R2.6 收口 Proposal REST read/list/review/merge 权限 |
+| WorkItem/Proposal/Session 的真实 DB resolver 仍未全部接入默认 route | R2.5 已接默认 resolver，测试/嵌入场景可显式 `false` fail-closed；R2.6 已收口 Proposal/Approval REST 与 Page endpoint WorkItem gate | R4 接完整角色/策略化 review/merge 权限 |
 | `all` 上历史事件仍在代码中发布 | 订阅 admin-only 后不再泄漏给普通用户；发布面后续可清理 | R4 逐步迁移公共事件到 workspace/org 或资源 topic |
 | 真实多 worker + Redis + resource authorization 未做端到端矩阵 | R2.5 已新增 Postgres + Redis smoke，覆盖 owner 200 / stranger 403 | 后续补 release gate 汇总 |
 | Cuu 订阅策略 | Cuu 只能走 `me` / resource topic，不订 `all` | R3 Cuu Agent 入口接同一 typed client 与权限边界 |
 
 后续顺序：
 
-1. **R2.6 recovery / REST auth**：stuck-job 后台调度、Proposal/审批 REST 权限全面收口。
-2. **Release gate 汇总**：把 R0/R1/R2 smoke 归并为可读的 release checklist。
-3. **R3 Cuu Agent 入口**：在 R2 授权边界稳定后恢复 Cuu 出站能力。
+1. **Release gate 汇总**：把 R0/R1/R2 smoke 归并为可读的 release checklist。
+2. **R3 Cuu Agent 入口**：在 R2 授权边界稳定后恢复 Cuu 出站能力。

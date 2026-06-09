@@ -55,6 +55,7 @@ import {
 } from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
+import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -195,6 +196,7 @@ export type AgentRunQueue = {
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
   abort: (runId: string, actor: AbortAgentRunActor) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
+  recoverExpiredClaims: () => Promise<AgentRunQueueRecord[]>;
   run: (runId: string) => Promise<AgentRunQueueRecord>;
   runNext: () => Promise<AgentRunQueueRecord | null>;
 };
@@ -214,7 +216,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshotRoot?: string;
   snapshotId?: () => string;
   snapshots?: SnapshotRepository;
-  auditLogs?: AuditLogRepository;
+  auditLogs?: AuditLogRepository | false;
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
   proposals?: AgentRunProposalSink | false;
@@ -414,6 +416,27 @@ export function createInMemoryAgentRunQueue(options: {
       ...(updated.claim ? { claim: updated.claim } : {}),
       updated_at: updated.updated_at
     });
+  }
+
+  async function auditRecoveredClaims(recovered: AgentRunQueueRecord[], recoveredAt: Date) {
+    if (recovered.length === 0 || options.auditLogs === false) {
+      return;
+    }
+    const auditLogs = options.auditLogs ?? getDefaultAuditStores().auditLogs;
+    for (const run of recovered) {
+      await auditLogs.createAuditLog({
+        actorKind: "system",
+        actorNickname: "agent-run-recovery",
+        entityType: "agent_run",
+        entityId: run.run_id,
+        action: "agent_run.requeued_stale_claim",
+        detailJson: {
+          run_id: run.run_id,
+          work_item_id: run.work_item_id,
+          requeued_at: recoveredAt.toISOString()
+        }
+      });
+    }
   }
 
   function refreshClaimInBackground(runId: string) {
@@ -896,6 +919,22 @@ export function createInMemoryAgentRunQueue(options: {
       return [...byId.values()];
     },
 
+    async recoverExpiredClaims() {
+      if (!persistence?.requeueExpiredClaims) {
+        return [];
+      }
+      const recoveredAt = now();
+      const recovered = await persistence.requeueExpiredClaims({
+        expiredBefore: recoveredAt,
+        requeuedAt: recoveredAt
+      });
+      for (const run of recovered) {
+        runs.set(run.run_id, run);
+      }
+      await auditRecoveredClaims(recovered, recoveredAt);
+      return recovered;
+    },
+
     run: executeRun,
 
     async runNext() {
@@ -1114,6 +1153,10 @@ export function getDefaultAgentRunQueue() {
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
+    leaseMs: runtimeSettings.agentRun.leaseMs,
+    ...(runtimeSettings.agentRun.heartbeatIntervalMs
+      ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }
+      : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver()
   });
   return defaultQueue;

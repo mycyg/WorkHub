@@ -79,7 +79,11 @@ export const envSchema = z.object({
   BUDGET_DEFAULT_RUN_COST_CNY: cnyString.default("5"),
   BUDGET_DEFAULT_USER_DAILY_COST_CNY: cnyString.default("20"),
   BUDGET_DEFAULT_TEAM_DAILY_COST_CNY: cnyString.default("200"),
-  BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY: cnyString.default("2000")
+  BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY: cnyString.default("2000"),
+
+  AGENT_RUN_LEASE_MS: z.coerce.number().int().positive().default(300000),
+  AGENT_RUN_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
+  AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -134,6 +138,11 @@ export type Settings = {
     userDailyCostCny: string;
     teamDailyCostCny: string;
     teamMonthlyCostCny: string;
+  };
+  agentRun: {
+    leaseMs: number;
+    heartbeatIntervalMs?: number;
+    recoveryIntervalMs: number;
   };
 };
 
@@ -194,6 +203,13 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       userDailyCostCny: parsed.BUDGET_DEFAULT_USER_DAILY_COST_CNY,
       teamDailyCostCny: parsed.BUDGET_DEFAULT_TEAM_DAILY_COST_CNY,
       teamMonthlyCostCny: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY
+    },
+    agentRun: {
+      leaseMs: parsed.AGENT_RUN_LEASE_MS,
+      ...(parsed.AGENT_RUN_HEARTBEAT_INTERVAL_MS > 0
+        ? { heartbeatIntervalMs: parsed.AGENT_RUN_HEARTBEAT_INTERVAL_MS }
+        : {}),
+      recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS
     }
   };
 

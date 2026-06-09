@@ -103,7 +103,7 @@ R1 退出门：
 
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
-3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；继续 R2.6：stuck-job 后台调度与 Proposal/审批 REST 权限收口。
+3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口。下一步先做 release gate 汇总，再进入 R3 Cuu Agent 入口。
 
 ## 3. R2 真正解除单 worker
 
@@ -116,7 +116,7 @@ R1 退出门：
 | R2-3 Redis bus/presence | **已落 R2.3**：Redis PushBus / Presence v0 跨 worker，修 unsubscribe 竞态；memory 仅单进程，`pg_listen` 预留。 | `@workhub/api` fake Redis adapter tests：A 实例发布，B 实例订阅者收到；presence 跨实例可见 |
 | R2-4 订阅边界 | **已落 R2.4**：`/api/push/stream` 的 `all` admin-only；资源 topic 默认 fail-closed，显式 resolver 才放行。 | `@workhub/api` push tests：普通用户订 all 得 403，admin 可订；run/workitem/session/proposal 默认边界覆盖 |
 | R2-5 集成测试/CI | **已落首版**：真实 PG + Redis smoke 覆盖 Redis SSE/presence、WorkItem owner 200 / stranger 403、长 provider heartbeat。 | `qa:r2-pg-redis-smoke` 与 CI job |
-| R2-6 Recovery / REST auth | stuck-job 后台 requeue 调度、Proposal/审批 REST read/list/review/merge 权限全面收口。 | 后台调度测试 + REST 403 矩阵 |
+| R2-6 Recovery / REST auth | **已落 R2.6**：stuck-job 后台 requeue 调度、Proposal/审批 REST/Page read/list/review/merge 权限全面收口。 | `@workhub/api` 后台调度测试 + REST 403 矩阵；[`r2-recovery-rest-auth.md`](../02-ai-engine/r2-recovery-rest-auth.md) |
 
 ## 4. R3 Cuu Agent 入口
 

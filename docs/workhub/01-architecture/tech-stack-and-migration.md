@@ -163,7 +163,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 2. **统一事件契约 + 抽 broker 接口**。保留 `push_bus.py` 的 topic/event 语义(`all` / `req:<id>` / `user:<id>`),把 `PushBus` 抽象成接口;当前代码已支持内存与 Redis 后端,R2.3 固定 Redis 跨实例语义(§6.2)。客户端侧 `sse.rs` / `useReqStream` 不变。
 3. **DB 切 PostgreSQL + Drizzle migrations**(§6)。这是解除单 worker 的前置。
 4. **provider 注册表落地**(§4),把 `auto_agent`/`llm_agent` 行为迁成 TS provider adapters。
-5. **AgentRun 出请求进程,进 Redis queue**。现状 AI 任务是 FastAPI 进程内的 `asyncio.create_task`(`auto.py` 后台任务、`main.py:_resume_stuck_jobs` 的崩溃恢复扫描)。TS daemon 化后改为「daemon 收请求 → 投递 AgentRun 到 Redis queue → TS worker 执行」,使 web/API 与长跑 Agent 解耦,worker 可水平扩展。崩溃恢复语义复用 `_resume_stuck_jobs` 的行为,但下沉到 worker heartbeat。
+5. **AgentRun 出请求进程,进可 claim 的队列**。现状 AI 任务是 FastAPI 进程内的 `asyncio.create_task`(`auto.py` 后台任务、`main.py:_resume_stuck_jobs` 的崩溃恢复扫描)。TS daemon 化后改为「daemon 收请求 → 投递 AgentRun 到 DB-backed queue → worker 通过 claim/lease 执行」,使 web/API 与长跑 Agent 解耦,worker 可水平扩展。R2.1-R2.6 已把崩溃恢复语义落为 PostgreSQL claim/lease、interval heartbeat、`requeueExpiredClaims()` 与 daemon recovery scheduler；后续若引入 Redis/BullMQ 等 durable queue，也必须保留 DB 作为 run 状态真相源。
 6. **OpenAPI 契约固化 + 类型化客户端生成**。Hono route + Zod schema 生成 OpenAPI;`packages/api-client` 由 OpenAPI 生成,web + 桌宠共用(详见 [api-contract](./api-contract.md))。
 
 ### 5.2 不变量(重构期间必须守住)
@@ -200,7 +200,7 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 |---|---|---|
 | SSE pub/sub | `push_bus.py`(`dict[str, list[Queue]]`) | **Redis pub/sub**(DEPLOY.md:97 点名的方案)。R2.3 已落 v0:topic 语义不变,publish 进 Redis,各 worker 订阅 → 转发给本地 SSE 连接 |
 | 在线状态 | `presence.py` | Redis(key + TTL)。R2.3 已落 v0:`presence:lastseen:*` 与 `presence:streams:*` 跨实例可见 |
-| 任务去重 / 并发槽 | `auto.py` / 后台任务状态 | Redis(分布式锁 / 计数);AgentRun 入队列(§5.1 步骤 5) |
+| 任务去重 / 并发槽 | `auto.py` / 后台任务状态 | R2 当前用 PostgreSQL partial unique index + `FOR UPDATE SKIP LOCKED` claim/lease 做真相；Redis 可作为后续分布式锁 / 计数 / durable queue 加速层，但不能替代 DB run ledger |
 
 完成后 daemon 可 `--workers N`,AgentRun worker 可独立水平扩展。
 
@@ -243,10 +243,10 @@ routers/assistant.py:29   _client = AsyncAnthropic(...)
 | 知识库 | `services/knowledge.py`(grep 语料 `rebuild_knowledge_index`)、`routers/knowledge.py` | ♻️ | D-4:延续 grep + 强制引用,无向量库。 |
 | 项目网盘 | `routers/project_drive.py`(74KB)、`comments.py`、`drive_comment_agent.py`、`services/sync_manifest.py` | ♻️🔧 | M-DRIVE 复用;文件树合并语义对接 Branch/Proposal(对象合并护城河)。 |
 | 会议→洞察 | `routers/meetings.py`、`services/meeting_agent.py` | ♻️ | M-MEETING 复用(ASR→纪要→洞察→需求草稿)。 |
-| 崩溃恢复 | `main.py:_resume_stuck_jobs`、`models.BackgroundJob`、`services/jobs.py` | 🔧 | 复用「running 超时→failed + 解冻」语义,下沉到 AgentRun worker 心跳(§5.1 步骤 5)。 |
+| 崩溃恢复 | `main.py:_resume_stuck_jobs`、`models.BackgroundJob`、`services/jobs.py` | 🔧 | R2.6 已落最小 TS 形态：running claim 超过 lease 后由 daemon recovery scheduler 调 `requeueExpiredClaims()` 回 `queued`，写 `agent_run.requeued_stale_claim` audit，并触发 `runNext()` drain；不是直接标 failed。 |
 | Schema 迁移 | `services/schema_migrations.py`、`main.py:create_all` | 🔧→替换 | 翻译成 Drizzle schema + Drizzle Kit migration,弃用运行时 ALTER(§6.3)。 |
 | 上传 / 分块 / 清理 | `services/partial_uploads.py`、`main.py:_periodic_partial_cleanup` | ♻️ | blob 上传 + 孤儿清理(近期 commit 修过的路径)复用。 |
-| 配置 | `app/config.py`(pydantic-settings) | 🔧 | 翻译成 TS env schema,加 PG `pool_*`、provider 注册表配置、broker URL、预算配额默认值。 |
+| 配置 | `app/config.py`(pydantic-settings) | 🔧 | 翻译成 TS env schema,加 PG `pool_*`、provider 注册表配置、broker URL、预算配额默认值；R2.6 已新增 `AGENT_RUN_LEASE_MS`、`AGENT_RUN_HEARTBEAT_INTERVAL_MS`、`AGENT_RUN_RECOVERY_INTERVAL_MS`，默认值只在配置层定义，业务逻辑按 `settings.agentRun` 消费。 |
 
 ### 7.2 新建(WorkHub 命门,无现成代码)
 

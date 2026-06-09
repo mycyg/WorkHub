@@ -25,7 +25,9 @@ import {
   ApprovalServiceError,
   createApprovalService
 } from "./services/approvals.js";
+import { createApprovalRoutes } from "./routes/approvals.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000001";
@@ -586,6 +588,86 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   });
   return app;
 }
+
+function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      return {
+        workitem: {},
+        acceptance: [],
+        agent_trace_preview: [],
+        accepted_deliverables: [],
+        evidence_refs: []
+      } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    }
+  };
+}
+
+function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
+  };
+}
+
+test("approval routes filter and block requests whose work item is not visible", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const visibleWithoutWorkItem = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.inspect",
+    routedToUserId: approverId
+  });
+  const hiddenWorkItemApproval = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-000000000777",
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000777",
+    routedToUserId: approverId
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: denyingWorkItems()
+  }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+  };
+
+  const list = await app.request("/api/approvals", { headers });
+  const listBody = await list.json() as { data: { requests: Array<{ id: string }>; counts: { pending: number } } };
+  const respond = await app.request(`/api/approvals/${hiddenWorkItemApproval.id}/respond`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "allow", remember: "once" })
+  });
+  const delegate = await app.request(`/api/approvals/${hiddenWorkItemApproval.id}/delegate`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ to_user_id: "10000000-0000-4000-8000-000000000003" })
+  });
+
+  assert.equal(list.status, 200);
+  assert.deepEqual(listBody.data.requests.map((request) => request.id), [visibleWithoutWorkItem.id]);
+  assert.equal(listBody.data.counts.pending, 1);
+  assert.equal(respond.status, 403);
+  assert.equal(delegate.status, 403);
+
+  const allowedApp = withErrors(new Hono<AuthEnv>());
+  allowedApp.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: allowingWorkItems()
+  }));
+  const allowed = await allowedApp.request(`/api/approvals/${hiddenWorkItemApproval.id}/respond`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "allow", remember: "once" })
+  });
+
+  assert.equal(allowed.status, 200);
+});
 
 test("permission policy writes keep the local-client device gate", async () => {
   const runtimeSettings = settings();

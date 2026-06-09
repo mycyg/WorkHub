@@ -221,6 +221,9 @@ test("push route default resolvers authorize workitem session and proposal strea
         id: proposalId,
         work_item_id: resourceWorkItemId
       } as Awaited<ReturnType<ProposalService["get"]>>;
+    },
+    async getByMergeProposal() {
+      return null;
     }
   } as unknown as ProposalService;
   const app = withErrors(new Hono<AuthEnv>());

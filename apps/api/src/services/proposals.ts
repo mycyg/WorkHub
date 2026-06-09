@@ -97,6 +97,7 @@ export type ProposalService = {
     agentRunId?: string;
   }) => Promise<StoredProposal>;
   get: (proposalId: string) => Promise<StoredProposal | null>;
+  getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
   listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
@@ -1469,6 +1470,10 @@ export function createInMemoryProposalService(options: {
       return proposals.get(proposalId) ?? null;
     },
 
+    async getByMergeProposal() {
+      return null;
+    },
+
     async listByWorkItem(workItemId) {
       return [...proposals.values()].filter((proposal) => proposal.work_item_id === workItemId);
     },
@@ -1605,6 +1610,11 @@ export function createDbProposalService(repository: ProposalRepository, options:
 
     async get(proposalId) {
       const rows = await repository.findById(proposalId);
+      return rows ? storedRowsToProposal(rows) : null;
+    },
+
+    async getByMergeProposal(mergeProposalId) {
+      const rows = await repository.findProposalByMergeProposalId(mergeProposalId);
       return rows ? storedRowsToProposal(rows) : null;
     },
 

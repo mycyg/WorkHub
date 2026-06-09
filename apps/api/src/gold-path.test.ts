@@ -140,6 +140,9 @@ function emptyQueue(): AgentRunQueue {
     async listActive() {
       return [];
     },
+    async recoverExpiredClaims() {
+      return [];
+    },
     async run(): Promise<AgentRunQueueRecord> {
       throw new Error("not needed");
     },

@@ -116,7 +116,7 @@ void drainAutoRunQueue(queue)
 | 两个实例同时 drain queue | 每个实例通过 `FOR UPDATE SKIP LOCKED` claim 不同 run；没有 run 时返回 null |
 | route enqueue 后别的实例先 claim | 当前 route drain 得到 null 或下一条 run；不影响已创建 run 的执行 |
 | run 已 terminal | active unique slot 释放；可创建后续 run |
-| stuck running | slot 不释放；必须先 recovery，不允许叠加第二个 run |
+| stuck running | slot 不释放；R2.6 起 periodic recovery 会把过期 claim 回收到 `queued`，再由 `runNext()` 重新 claim |
 
 ## 8. Code Map
 
@@ -128,6 +128,7 @@ void drainAutoRunQueue(queue)
 | `apps/api/src/services/agent-run-persistence.ts` | persistence boolean wrapper |
 | `apps/api/src/workers/agent-runner.ts` | DB create gate and fallback `startingWorkItems` behavior |
 | `apps/api/src/routes/agent-runs.ts` | route auto-pump drains through `runNext()` |
+| `apps/api/src/workers/agent-run-recovery.ts` | R2.6 periodic stale-claim recovery scheduler |
 | `apps/api/src/agent-runs.test.ts` | cross-queue duplicate enqueue test and route pump contract test |
 | `apps/api/src/qa/r1-pg-agent-run-smoke.ts` | real PG duplicate enqueue smoke hook |
 

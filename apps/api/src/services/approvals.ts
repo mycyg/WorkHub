@@ -267,6 +267,11 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
   }
 
   return {
+    async get(id: string) {
+      const approval = await deps.approvals.findById(id);
+      return approval ? toApprovalRequestResponse(approval) : null;
+    },
+
     async createApproval(input: CreateApprovalInput): Promise<ApprovalCreationResult> {
       const policies = await deps.policies.listActivePolicies();
       const decision = resolvePermissionDecision(

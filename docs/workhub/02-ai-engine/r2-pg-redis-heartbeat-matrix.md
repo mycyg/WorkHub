@@ -161,10 +161,10 @@ CI 必须通过：
 
 | 风险 | 当前处理 | 后续 |
 |---|---|---|
-| Stuck-job recovery 仍是 primitive | `requeueExpiredClaims()` 已有，但未接后台调度 | R2.6 加 periodic requeue + metric + admin audit。 |
-| Proposal route 自身仍缺 actor-based read gate | R2.5 只把 proposal topic resolver 接到 WorkItem gate | R2.6/R4 把 Proposal REST read/list/review/merge 全部接 WorkItem 权限。 |
+| Stuck-job recovery 仍是 primitive | R2.6 已加 periodic requeue、进程内 stats 与 `agent_run.requeued_stale_claim` audit | R2.7 汇总到 release gate，并在 R4/R5 接 dashboard metrics store。 |
+| R2.5 前 Proposal route 尚未统一 actor-based read gate | R2.6 已把 Proposal REST/Page 与 Approval REST/Page 全部接 WorkItem gate | R4 接完整角色/策略化 review/merge 权限。 |
 | CORS/cookie、revert、escalation 仍在 R1/R0 其它 smoke 分散覆盖 | R2.5 新增核心 PG+Redis+heartbeat matrix | 后续把 R0/R1/R2 smoke 汇总成一份 release gate。 |
 | Org/Workspace 多租户未上线 | `streamActor()` 使用最小权限字段 | 多租户切片必须从 auth deps 传真实 org/workspace。 |
 | Redis pub/sub 非持久 | REST/DB 仍是真相源，SSE 只触发 reconcile | R4 页面保持 reconcile，云部署再评估 durable queue。 |
 
-R2.5 后，R2 还剩两类地基工作：stuck-job 后台调度与 Proposal/审批 REST 权限全面收口。完成后再进入 R3 Cuu 出站 Agent 入口。
+R2.5 后的 R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限全面收口，详见 [`r2-recovery-rest-auth.md`](./r2-recovery-rest-auth.md)。R2 剩余地基工作主要是 release gate 汇总；完成后进入 R3 Cuu 出站 Agent 入口。

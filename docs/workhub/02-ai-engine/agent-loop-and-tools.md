@@ -73,11 +73,11 @@ R1 当前代码切片已落：
 
 R1 仍未完成：
 
-- R2.1/R2.2 已关闭 AgentRun claim/lease 与同 work item active run 真空；R2.3 已补 Redis PushBus / Presence 跨实例后端与 unsubscribe 竞态门；R2.4 已把 `all` topic 收为 admin-only 并固定资源 topic fail-closed；R2.5 已补长 provider call interval heartbeat、默认 WorkItem/Proposal topic resolver 与真实 PG+Redis CI smoke。`AgentRunQueue` 仍保留进程内 Map/Set 作为无 DB fallback。
+- R2.1/R2.2 已关闭 AgentRun claim/lease 与同 work item active run 真空；R2.3 已补 Redis PushBus / Presence 跨实例后端与 unsubscribe 竞态门；R2.4 已把 `all` topic 收为 admin-only 并固定资源 topic fail-closed；R2.5 已补长 provider call interval heartbeat、默认 WorkItem/Proposal topic resolver 与真实 PG+Redis CI smoke；R2.6 已补 stuck AgentRun 后台恢复调度、Proposal/Approval REST 与 Page endpoint 的 WorkItem 资源权限收口。`AgentRunQueue` 仍保留进程内 Map/Set 作为无 DB fallback。
 - Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，并已把 WorkItem page 的 `accepted_deliverables[]` 带入 ReplayTraceVM；R1.13 起还会读取 `merge_attempts + merge_proposals` 返回 `merge_timeline[]`，展示冲突目标、候选、推荐项和最终选择。merge accepted ledger、ProjectDriveVersion adoption、download/text-preview、正式交付物最小还原与 audit 持久化已做实。R1.9 已补 file-only 冲突调解最小纵切：`GET /api/workitems/{id}/conflicts` 返回 `keep_current/accept_incoming` 两个可点击方案，merge 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计，`proposal.merged` audit detail 会带 `merge_attempt_id` 与 accepted incoming target keys；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option 持久化；R1.14 已补 `ai_fusion` LLM 候选生成/质量门/持久化/回放展示；R1.15 已补 `POST /api/merge-proposals/{id}/choose` 选择审计；R1.16 已补 `POST /api/merge-proposals/{id}/apply`，把 `ai_fusion.merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger / Drive version / merge audit；R1.17 已把 409 / `GET /conflicts` 的 `ai_fusion` option 收敛成“采用 AI 融合稿”一键动作，Web/Desktop 主窗与独立 Cuu pet window 都会调用 `applyMergeProposalCandidate()`，服务端在未选择时自动写入 `chosen_*` 后再物化；R1.18 已补 BudgetPolicy PG persistence 与 `budget_policy.updated` audit；R1.19-R1.25 已补 text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 `text_patch_preview`、Replay 可见 patch preview、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3 和重叠 hunk metadata/prompt/quality gate。剩余是重叠 hunk 逐项确认/编辑、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台和产品化 React UI。
 - BudgetPolicy 更新已持久化为 `budget_policies` override 并写审计；完整 P-COST 策略治理剩余预算事件发出与 Cuu budget bubble。
 
-后续施工必须继续完成 stuck-job 后台调度、Proposal/审批 REST 权限全面收口、完整审批中心和真实 React route 产品化，再回到 Cuu 出站 Agent 入口。
+后续施工必须继续完成 release gate 汇总、完整审批中心和真实 React route 产品化，再回到 Cuu 出站 Agent 入口。R2.6 细节见 [`r2-recovery-rest-auth.md`](./r2-recovery-rest-auth.md)。
 
 ---
 

@@ -3,7 +3,12 @@ import { HTTPException } from "hono/http-exception";
 
 import { settings } from "@workhub/config";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
-import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
+import {
+  normalizeWorkHubLocale,
+  type ApprovalCenterVM,
+  type ApprovalRequest,
+  type WorkHubLocale
+} from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -62,6 +67,52 @@ function pageEnvelope<T>(data: T, locale: WorkHubLocale) {
   } as const;
 }
 
+async function canReadWorkItem(
+  workItems: Pick<WorkItemService, "detailPage">,
+  workItemId: string | undefined,
+  actor: AuthEnv["Variables"]["actor"]
+) {
+  if (!workItemId) {
+    return true;
+  }
+  try {
+    await workItems.detailPage({ workItemId, actor });
+    return true;
+  } catch (error) {
+    if (error instanceof WorkItemServiceError && (error.status === 403 || error.status === 404)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function visibleApprovalCenter(
+  data: ApprovalCenterVM,
+  workItems: Pick<WorkItemService, "detailPage">,
+  actor: AuthEnv["Variables"]["actor"]
+) {
+  const visibleRequests: ApprovalRequest[] = [];
+  const visibleRequestIds = new Set<string>();
+  for (const request of data.requests) {
+    if (await canReadWorkItem(workItems, request.work_item_id, actor)) {
+      visibleRequests.push(request);
+      visibleRequestIds.add(request.id);
+    }
+  }
+  return {
+    ...data,
+    items: data.items.filter((item) => {
+      const id = item.source_ref.entity_type === "approval_request" ? item.source_ref.entity_id : item.id;
+      return visibleRequestIds.has(id);
+    }),
+    requests: visibleRequests,
+    counts: {
+      ...data.counts,
+      pending: visibleRequests.length
+    }
+  };
+}
+
 export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -91,7 +142,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
     const data = await approvals.listPendingForUser(c.var.currentUser);
-    return c.json(pageEnvelope(data, requestLocale(c)));
+    return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor), requestLocale(c)));
   });
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), async (c) => {
@@ -113,6 +164,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const proposal = await proposals.get(c.req.param("id"));
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+    }
+    if (!await canReadWorkItem(workItems, proposal.work_item_id, c.var.actor)) {
+      throw new HTTPException(403, { message: "你没有权限查看这个变更申请。" });
     }
     return c.json(pageEnvelope(buildProposalDetailPage(proposal), requestLocale(c)));
   });

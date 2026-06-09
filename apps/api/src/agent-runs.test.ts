@@ -51,6 +51,7 @@ import {
   type AgentRunTraceStepRecord,
   type BudgetDecisionProvider
 } from "./workers/agent-runner.js";
+import { createAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "10000000-0000-4000-8000-000000000021";
@@ -1126,6 +1127,9 @@ test("agent run route auto-pump drains through runNext instead of direct run id"
     async listActive() {
       return [queuedRun];
     },
+    async recoverExpiredClaims() {
+      return [];
+    },
     async run() {
       runCalls += 1;
       throw new Error("direct run should not be used by route auto-pump");
@@ -1786,6 +1790,116 @@ test("agent run queue claims by id before direct run execution", async () => {
   assert.deepEqual(persistence.claims, [{ runId: run.run_id, workerId: "worker-b" }]);
   assert.equal(persistence.rows.get(run.run_id)?.claim?.claimed_by, "worker-b");
   assert.equal(persistence.rows.get(run.run_id)?.claim?.lease_expires_at, "2026-06-05T00:02:00.000Z");
+});
+
+test("agent run queue requeues expired persistent claims and audits the recovery", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-000000000040",
+    workerId: "worker-recovery",
+    leaseMs: 60_000,
+    persistence,
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Stale run"
+  });
+  const claimed = await persistence.claimQueued(queued.run_id, {
+    workerId: "dead-worker",
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  });
+
+  assert.equal(claimed?.status, "running");
+  const recovered = await queue.recoverExpiredClaims();
+  const live = await queue.get(queued.run_id);
+
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0]?.status, "queued");
+  assert.equal(recovered[0]?.claim, undefined);
+  assert.equal(live?.status, "queued");
+  assert.equal(live?.claim, undefined);
+  assert.equal(auditLogs.rows.length, 1);
+  assert.equal(auditLogs.rows[0]?.action, "agent_run.requeued_stale_claim");
+  assert.equal(auditLogs.rows[0]?.entityType, "agent_run");
+  assert.equal(auditLogs.rows[0]?.entityId, queued.run_id);
+});
+
+test("agent run recovery scheduler ticks once, recovers stale claims, and drains recovered work", async () => {
+  const recoveredRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000041",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Recovered run",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let drained = false;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        return [recoveredRun];
+      },
+      async runNext() {
+        if (drained) {
+          return null;
+        }
+        drained = true;
+        return recoveredRun;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.recovered, 1);
+  assert.equal(result.drained, 1);
+  assert.deepEqual(scheduler.stats(), {
+    running: false,
+    tick_count: 1,
+    recovered_count: 1,
+    drained_count: 1,
+    error_count: 0,
+    last_tick_at: now.toISOString()
+  });
 });
 
 test("agent run queue keeps the lease alive during a long provider call", async () => {

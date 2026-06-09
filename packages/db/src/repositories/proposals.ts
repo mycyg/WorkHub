@@ -272,6 +272,7 @@ export type ProposalRepository = {
   findMergeProposalCandidateForApply: (
     mergeProposalId: string
   ) => Promise<MergeProposalCandidateApplicationContext | null>;
+  findProposalByMergeProposalId: (mergeProposalId: string) => Promise<StoredProposalRows | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
@@ -1682,6 +1683,18 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         candidate,
         diffManifest: row.diffManifest
       };
+    },
+
+    async findProposalByMergeProposalId(mergeProposalId) {
+      const rows = await db
+        .select({ proposalId: proposals.id })
+        .from(mergeProposals)
+        .innerJoin(mergeAttempts, eq(mergeProposals.mergeAttemptId, mergeAttempts.id))
+        .innerJoin(proposals, eq(mergeAttempts.proposalId, proposals.id))
+        .where(eq(mergeProposals.id, mergeProposalId))
+        .limit(1);
+      const row = rows[0];
+      return row ? readStoredProposal(db, row.proposalId) : null;
     },
 
     findById(proposalId) {

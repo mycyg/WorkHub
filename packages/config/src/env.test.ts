@@ -23,6 +23,21 @@ test("keeps provider and budget defaults available", () => {
   assert.equal(value.providers.deepseek.model, "deepseek-v4-flash");
   assert.equal(value.budgets.runTokens, 120000);
   assert.equal(value.budgets.teamMonthlyCostCny, "2000");
+  assert.equal(value.agentRun.leaseMs, 300000);
+  assert.equal(value.agentRun.heartbeatIntervalMs, undefined);
+  assert.equal(value.agentRun.recoveryIntervalMs, 30000);
+});
+
+test("agent run runtime intervals are configurable without serializing secrets", () => {
+  const value = loadSettings({
+    AGENT_RUN_LEASE_MS: "600000",
+    AGENT_RUN_HEARTBEAT_INTERVAL_MS: "15000",
+    AGENT_RUN_RECOVERY_INTERVAL_MS: "45000"
+  });
+
+  assert.equal(value.agentRun.leaseMs, 600000);
+  assert.equal(value.agentRun.heartbeatIntervalMs, 15000);
+  assert.equal(value.agentRun.recoveryIntervalMs, 45000);
 });
 
 test("provider registry config keeps API keys out of public metadata", () => {

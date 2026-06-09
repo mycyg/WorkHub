@@ -25,7 +25,7 @@ related:
 | Claim | `claimQueued(run_id)` 与 `claimNextQueued()` 使用 transaction + `FOR UPDATE SKIP LOCKED` |
 | Queue | `queue.run(id)` 和 `queue.runNext()` 在 DB persistence 支持 claim 时都必须先 claim |
 | Heartbeat | 每次 AgentLoop step record 后用 `heartbeatClaim()` 续租；R2.5 起 running 期间也有 interval heartbeat |
-| Recovery primitive | `requeueExpiredClaims()` 可把过期 `running` run 放回 `queued` |
+| Recovery primitive | `requeueExpiredClaims()` 可把过期 `running` run 放回 `queued`；R2.6 起 API daemon 有 periodic scheduler 自动触发 |
 | Tests | DB schema test 固定字段；API queue test 固定 by-id claim 与 next claim |
 
 不在本切片：
@@ -37,6 +37,7 @@ related:
 | Redis/PG event broker | R2.3 已落 Redis PushBus / Presence v0；PG `LISTEN/NOTIFY` 仍预留 |
 | Topic authorization 收口 | R2.4 收敛 `/api/push/stream` 全局 topic |
 | 真实双 worker smoke | R2.5 在 PG service 上跑 `WORKHUB_WORKERS=2` full matrix；R2.2 已在 `qa:r1-pg-smoke` 增加 duplicate enqueue hook |
+| 后台 recovery 调度 | R2.6 已由 [`r2-recovery-rest-auth.md`](./r2-recovery-rest-auth.md) 承接 |
 
 ## 2. 数据契约
 
@@ -151,4 +152,4 @@ ${os.hostname()}:${process.pid}
 | `pnpm db:check` | Drizzle schema 与 migration meta 对齐 |
 | `pnpm audit:migrations` | 无 runtime schema mutation |
 
-R2.1 已完成 claim/lease；R2.2 已补 active enqueue gate 与 route `runNext()` drain；R2.3 已补 Redis broker/presence；R2.4 已补订阅权限；R2.5 已补长 provider call interval heartbeat 与真实 PG/Redis smoke。R2 剩余地基工作集中在 stuck-job 后台调度与 Proposal/审批 REST 权限全面收口。
+R2.1 已完成 claim/lease；R2.2 已补 active enqueue gate 与 route `runNext()` drain；R2.3 已补 Redis broker/presence；R2.4 已补订阅权限；R2.5 已补长 provider call interval heartbeat 与真实 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限全面收口。R2 剩余地基工作集中在 release gate 汇总。

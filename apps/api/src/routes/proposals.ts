@@ -35,10 +35,16 @@ import {
   type ProposalService,
   type StoredProposal
 } from "../services/proposals.js";
+import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
   proposals?: ProposalService;
+  workItems?: Pick<WorkItemService, "detailPage"> | false;
 };
 
 async function readJsonBody(c: Context) {
@@ -287,23 +293,49 @@ function handleProposalServiceError(error: unknown): never {
   throw error;
 }
 
+function handleWorkItemAccessError(error: unknown): never {
+  if (error instanceof WorkItemServiceError) {
+    throw new HTTPException(error.status as 400, { message: error.message });
+  }
+  throw error;
+}
+
 export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const authMiddleware = createCurrentUserMiddleware(authSource);
   const proposals = deps.proposals ?? getDefaultProposalService();
+  const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
 
-  routes.get("/:id", authMiddleware, async (c) => {
-    const proposal = await proposals.get(c.req.param("id"));
+  async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "没有权限查看这个事项。" });
+    }
+    try {
+      await workItems.detailPage({ workItemId, actor });
+    } catch (error) {
+      handleWorkItemAccessError(error);
+    }
+  }
+
+  async function readProposalForActor(proposalId: string, actor: AuthActor) {
+    const proposal = await proposals.get(proposalId);
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个变更申请。" });
     }
+    await assertCanReadWorkItem(proposal.work_item_id, actor);
+    return proposal;
+  }
+
+  routes.get("/:id", authMiddleware, async (c) => {
+    const proposal = await readProposalForActor(c.req.param("id"), c.var.actor);
     const { reviews: _reviews, ...data } = proposal;
     return c.json({ ok: true, data });
   });
 
   routes.post("/:id/review", authMiddleware, async (c) => {
     const payload = reviewProposalRequestSchema.parse(await readJsonBody(c));
+    await readProposalForActor(c.req.param("id"), c.var.actor);
     let proposal: StoredProposal;
     try {
       proposal = await proposals.review({
@@ -387,6 +419,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
   routes.post("/:id/merge", authMiddleware, async (c) => {
     const payload = mergeProposalRequestSchema.parse(await readJsonBody(c));
+    await readProposalForActor(c.req.param("id"), c.var.actor);
     let proposal: StoredProposal;
     try {
       proposal = await proposals.merge({
@@ -445,9 +478,31 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const proposals = deps.proposals ?? getDefaultProposalService();
+  const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+
+  async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "没有权限查看这个事项。" });
+    }
+    try {
+      await workItems.detailPage({ workItemId, actor });
+    } catch (error) {
+      handleWorkItemAccessError(error);
+    }
+  }
+
+  async function readProposalByMergeProposalForActor(mergeProposalId: string, actor: AuthActor) {
+    const proposal = await proposals.getByMergeProposal(mergeProposalId);
+    if (!proposal) {
+      throw new HTTPException(404, { message: "没有找到这个合并建议。" });
+    }
+    await assertCanReadWorkItem(proposal.work_item_id, actor);
+    return proposal;
+  }
 
   routes.post("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createProposalFromManifestRequestSchema.parse(await readJsonBody(c));
+    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
     try {
       const proposal = await proposals.createFromManifest({
         workItemId: c.req.param("id"),
@@ -464,6 +519,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   });
 
   routes.get("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
+    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
     const rows = await proposals.listByWorkItem(c.req.param("id"));
     return c.json({
       ok: true,
@@ -472,6 +528,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   });
 
   routes.get("/workitems/:id/conflicts", createCurrentUserMiddleware(authSource), async (c) => {
+    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
     const result = await proposals.listConflicts(c.req.param("id"));
     return c.json({
       ok: true,
@@ -481,6 +538,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
 
   routes.post("/merge-proposals/:id/choose", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
     try {
       const result = await proposals.chooseMergeCandidate({
         mergeProposalId: c.req.param("id"),
@@ -498,6 +556,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
 
   routes.post("/merge-proposals/:id/apply", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
     try {
       const proposal = await proposals.applyMergeCandidate({
         mergeProposalId: c.req.param("id"),

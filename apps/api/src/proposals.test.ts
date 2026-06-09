@@ -37,6 +37,7 @@ import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createDbProposalService, createInMemoryProposalService, ProposalServiceError } from "./services/proposals.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-06T00:00:00.000Z");
 const userId = "91000000-0000-4000-8000-000000000001";
@@ -126,6 +127,29 @@ function authDeps(runtimeSettings: Settings): AuthDependencies {
     devices: new MemoryDevices(),
     settings: runtimeSettings,
     now: () => now
+  };
+}
+
+function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      return {
+        workitem: {},
+        acceptance: [],
+        agent_trace_preview: [],
+        latest_proposal: undefined,
+        accepted_deliverables: [],
+        evidence_refs: []
+      } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    }
+  };
+}
+
+function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
   };
 }
 
@@ -533,6 +557,15 @@ class MemoryProposalRepository implements ProposalRepository {
 
   async findById(proposalId: string) {
     return this.rows.get(proposalId) ?? null;
+  }
+
+  async findProposalByMergeProposalId(mergeProposalId: string) {
+    const mergeProposal = this.mergeProposals.find((proposal) => proposal.id === mergeProposalId);
+    if (!mergeProposal) {
+      return null;
+    }
+    const attempt = this.mergeAttempts.find((item) => item.id === mergeProposal.mergeAttemptId);
+    return attempt ? this.rows.get(attempt.proposalId) ?? null : null;
   }
 
   async listByWorkItem(workItemId: string) {
@@ -1070,10 +1103,11 @@ function appWithProposalRoutes() {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
   const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const workItems = allowingWorkItems();
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
-  app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
-  app.route("/api/pages", createPageRoutes({ auth, proposals, allowUnauthenticatedGoldPath: false }));
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api/pages", createPageRoutes({ auth, proposals, workItems: workItems as WorkItemService, allowUnauthenticatedGoldPath: false }));
   return { app, runtimeSettings };
 }
 
@@ -1082,9 +1116,10 @@ function appWithDbProposalRoutes(options: Parameters<typeof createDbProposalServ
   const auth = authDeps(runtimeSettings);
   const repository = new MemoryProposalRepository();
   const proposals = createDbProposalService(repository, { now: () => now, id: ids(), ...options });
+  const workItems = allowingWorkItems();
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createWorkItemProposalRoutes({ auth, proposals }));
-  app.route("/api/proposals", createProposalRoutes({ auth, proposals }));
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems }));
   return { app, runtimeSettings, repository };
 }
 
@@ -1100,6 +1135,50 @@ async function createProposal(app: Hono<AuthEnv>, runtimeSettings: Settings, ite
   assert.equal(response.status, 201);
   return response.json() as Promise<{ ok: true; data: { id: string; diff_manifest: DeliverableChangeManifest } }>;
 }
+
+test("proposal routes require work item access before read and write operations", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const workItems = denyingWorkItems();
+  const itemManifest = manifest();
+  const created = await proposals.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const list = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, { headers });
+  const create = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ manifest: itemManifest })
+  });
+  const read = await app.request(`/api/proposals/${created.id}`, { headers });
+  const review = await app.request(`/api/proposals/${created.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  const merge = await app.request(`/api/proposals/${created.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(list.status, 403);
+  assert.equal(create.status, 403);
+  assert.equal(read.status, 403);
+  assert.equal(review.status, 403);
+  assert.equal(merge.status, 403);
+});
 
 test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {
   const repository = new MemoryProposalRepository();
