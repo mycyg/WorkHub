@@ -5,6 +5,7 @@ status: current
 owner: workflow
 related:
   - ./agent-loop-and-tools.md
+  - ./r2-multi-worker-pump.md
   - ../06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md
   - ../06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md
   - ../01-architecture/data-model.md
@@ -31,11 +32,11 @@ related:
 
 | 项 | 后续 |
 |---|---|
-| 后台 drainer | R2.2 增加可配置 pump loop / worker count |
-| 定时 heartbeat | R2.2 增加 interval heartbeat，覆盖长 LLM call 无 step 的窗口 |
+| 后台 drainer / active enqueue gate | R2.2 已由 [`r2-multi-worker-pump.md`](./r2-multi-worker-pump.md) 承接：route 触发 `runNext()` drain，同 work item active run 用 partial unique index 裁决 |
+| 定时 heartbeat | R2.5 或下一 R2.x 增加 interval heartbeat，覆盖长 LLM call 无 step 的窗口 |
 | Redis/PG event broker | R2.3 处理跨实例 SSE / presence |
 | Topic authorization 收口 | R2.4 收敛 `/api/push/stream` 全局 topic |
-| 真实双 worker smoke | R2.5 在 PG service 上跑 `WORKHUB_WORKERS=2` |
+| 真实双 worker smoke | R2.5 在 PG service 上跑 `WORKHUB_WORKERS=2` full matrix；R2.2 已在 `qa:r1-pg-smoke` 增加 duplicate enqueue hook |
 
 ## 2. 数据契约
 
@@ -87,7 +88,7 @@ requeueExpiredClaims(input): Promise<AgentRunRow[]>
    - `started_at=claimed_at`
 4. 返回 run + steps。
 
-`claimQueued(runId)` 用同样语义处理指定 run。这个约束很重要：route auto-pump 走 `queue.run(run_id)`，不能因为本进程内刚 enqueue 过就绕过 DB claim。
+`claimQueued(runId)` 用同样语义处理指定 run。R2.2 后 route auto-pump 默认走 `queue.runNext()` drain；若其它调用方仍指定 `queue.run(run_id)`，也不能因为本进程内刚 enqueue 过就绕过 DB claim。
 
 ## 4. Worker Contract
 
@@ -95,7 +96,7 @@ requeueExpiredClaims(input): Promise<AgentRunRow[]>
 
 | Queue method | R2.1 行为 |
 |---|---|
-| `enqueue()` | 创建 `queued` run；仍用 existing active guard，后续 R2.2 改 DB 条件插入 |
+| `enqueue()` | R2.2 起在 DB persistence 下走 `createRunIfWorkItemIdle()`，由 `agent_runs_work_item_active_uq` 裁决同 work item active run；无 DB 时保留内存 fallback |
 | `run(run_id)` | 先 `claimQueued(run_id)`；claim 失败返回 `agent_run_not_queued` |
 | `runNext()` | 先 `claimNextQueued()`；没有可 claim run 返回 `null` |
 | `recordStep()` | trace 写入后触发 `heartbeatClaim()` |
@@ -150,4 +151,4 @@ ${os.hostname()}:${process.pid}
 | `pnpm db:check` | Drizzle schema 与 migration meta 对齐 |
 | `pnpm audit:migrations` | 无 runtime schema mutation |
 
-R2 仍不能宣称完成，直到 R2.2-R2.5 补齐多实例 pump、跨实例 broker、订阅权限与真实 PG/Redis 集成测试。
+R2.1 已完成 claim/lease；R2.2 已补 active enqueue gate 与 route `runNext()` drain。R2 仍不能宣称完成，直到 R2.3-R2.5 补齐跨实例 broker、订阅权限、长 LLM call heartbeat 与真实 PG/Redis 集成测试。

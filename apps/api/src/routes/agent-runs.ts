@@ -110,6 +110,15 @@ export type AgentRunRoutesDependencies = {
   onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
 };
 
+async function drainAutoRunQueue(queue: AgentRunQueue) {
+  for (;;) {
+    const run = await queue.runNext();
+    if (!run) {
+      return;
+    }
+  }
+}
+
 export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -133,7 +142,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       ...(payload.mode ? { mode: payload.mode } : {})
     });
     if (deps.autoRun !== false) {
-      void queue.run(run.run_id).catch((error) => {
+      void drainAutoRunQueue(queue).catch((error) => {
         if (deps.onAutoRunError) {
           deps.onAutoRunError(error, run);
           return;

@@ -55,7 +55,7 @@ R0 退出门：
 
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
-| R1-0 Queue pump | `POST /workitems/:id/agent-runs` 后 daemon 自动 drain queue，不靠测试手动 `runNext()`。 | **2026-06-08 已落代码切片**：默认 route 会调用 `queue.run(run_id)` 自动 pump，测试覆盖 POST 后无需 `runNext()` 也能 `queued -> succeeded`。 |
+| R1-0 Queue pump | `POST /workitems/:id/agent-runs` 后 daemon 自动 drain queue，不靠测试手动 `runNext()`。 | **2026-06-08 已落代码切片；2026-06-10 R2.2 已升级**：默认 route 现在触发 `runNext()` drain，由 PG claim 分配执行权；测试覆盖 POST 后无需手动 `runNext()` 也能 `queued -> succeeded`。 |
 | R1-1 接缝 | `AgentLoopResult.manifest` 传给 `ProposalService.createFromManifest`，真实 run 成功后自动 opened proposal。 | **2026-06-08 已落代码切片**：`apps/api/src/workers/agent-runner.ts` 成功 run 会打开 proposal 并发布 `proposal.opened`；`apps/api/src/agent-runs.test.ts` 覆盖真实 AgentLoop manifest。下一步仍需用真实 route/DB 端到端验收。 |
 | R1-2 PG 持久化 | AgentRun、AgentStep、Proposal、CostLedger、BudgetPolicy 从内存 Map 切到 PostgreSQL repo。 | **2026-06-09 已落最小真实切片**：`packages/db/src/repositories/proposals.ts` + DB-backed `ProposalService` 已接 `branches/proposals/reviews`；`packages/db/src/repositories/agent-runs.ts` + `apps/api/src/services/agent-run-persistence.ts` 已支持 AgentRun/AgentStep write-through 与 DB fallback；`packages/db/src/repositories/cost-ledger.ts` + `usage_records/cost_ledger_entries` 已支持默认 DB-backed CostLedger；`packages/db/src/repositories/budget-policies.ts` + `budget_policies` 已支持 BudgetPolicy override 持久化与 `budget_policy.updated` 审计；真实 PG restart/replay/cost smoke 已覆盖。 |
 | R1-3 删除 fixture 生产分支 | `isP05*` 不出现在生产路由判断；没有真实 service 的 route 失败关闭。 | **2026-06-08 已落代码切片**：生产 routes grep 清零，仅 `/api/pages/gold-path` 保留 demo bundle。 |
@@ -75,7 +75,7 @@ R1 退出门：
 
 - `AgentLoopResult.manifest -> ProposalService.createFromManifest` 已由 queue 注入的 proposal sink 承接；成功 run 后发布 `workitem:{id}` 上的 `proposal.opened`，Cuu 状态为 `carrying_document`。
 - 默认 `ProposalService` 已从内存实现切到 DB-backed lazy service，写入 `branches`、`proposals`、`reviews`；内存 service 只保留为测试/显式注入隔离用。
-- `POST /workitems/:id/agent-runs` 默认自动 pump：route enqueue 后后台执行 `queue.run(run_id)`；测试用 `autoRun:false` 保留手动 queue 单元边界。
+- `POST /workitems/:id/agent-runs` 默认自动 pump：route enqueue 后后台触发 `runNext()` drain；测试用 `autoRun:false` 保留手动 queue 单元边界。
 - AgentRun persistence 已落代码切片：`agent_runs` 补 `title/actor_user_id/budget_decision_json/workdir_ref/handoff_json` 等恢复字段，`agent_steps` 补 `seq` 并取消错误唯一约束；默认 queue 写穿透 DB，内存 miss 时可从 DB 读回 run/trace/workdir/listActive。
 - AgentRun replay fixture fallback 已完全移出生产 route：`/api/agent-runs/:id/replay` 只读真实 queue/persistence/audit/snapshot，不再接受 `allowP05ReplayFixture`。
 - P0.5 route set 已从生产业务 route 迁出：`sessions/workitems/knowledge/pages/workitems` 已改为 R1 最小真实 service；`pages/proposals` 与 `proposals/*` 只读真实 `ProposalService`；仅 `/api/pages/gold-path` 保留 demo bundle。
@@ -102,7 +102,8 @@ R1 退出门：
 下一施工顺序：
 
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
-2. 继续 R2.2：多实例 pump、定时 heartbeat、`WORKHUB_WORKERS=2` 真实 smoke。
+2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
+3. 继续 R2.3/R2.4/R2.5：跨实例 broker、订阅权限边界、长 LLM call heartbeat 与 PG/Redis full matrix。
 
 ## 3. R2 真正解除单 worker
 
@@ -111,7 +112,7 @@ R1 退出门：
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
 | R2-1 PG 队列 claim | **已落 R2.1**：`claimQueued()` / `claimNextQueued()` 使用 `FOR UPDATE SKIP LOCKED`，`queue.run(id)` 与 `runNext()` 都先 claim；进程内 Map/Set 降为本地缓存与测试 fallback。 | `@workhub/api` claim tests、`@workhub/db` schema test |
-| R2-2 多实例 pump | 每个实例可跑 pump，靠 PG claim 协同；leader 任务用 Redis/PG lock。 | `WORKHUB_WORKERS=2` 跑 R1 链路 |
+| R2-2 多实例 pump / active enqueue | **已落 R2.2**：`agent_runs_work_item_active_uq` 保证同 work item 只有一个 queued/running run；route auto-run 改为 `runNext()` drain，靠 PG claim 协同。 | `@workhub/api` duplicate enqueue + route pump tests；`qa:r1-pg-smoke` R2 hook |
 | R2-3 Redis bus/presence | PushBus / presence 默认跨 worker，修 unsubscribe 竞态。 | A 实例发布，B 实例订阅者收到 |
 | R2-4 订阅边界 | `/api/push/stream` 全局 all 删除或 admin-only，资源 topic 强制 `can_view`。 | 非 owner 订阅他人 run/workitem/proposal 得 403 |
 | R2-5 集成测试/CI | PG + Redis 五场景：SSE、stuck-job、CORS、revert、escalation。 | CI 或本地脚本全绿 |

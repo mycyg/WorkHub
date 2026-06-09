@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, asc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import type { WorkItemMode } from "@workhub/contracts";
 
@@ -87,6 +87,7 @@ export type AgentRunRequeueStaleInput = {
 
 export type AgentRunRepository = {
   createRun: (run: AgentRunForPersistence) => Promise<AgentRunRow>;
+  createRunIfWorkItemIdle: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
   updateRun: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
   replaceTrace: (runId: string, trace: AgentRunTraceForPersistence[]) => Promise<AgentStepRow[]>;
   setWorkdir: (runId: string, workdirRef: string, at: Date) => Promise<AgentRunRow | null>;
@@ -100,6 +101,7 @@ export type AgentRunRepository = {
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
 const activeStatuses: AgentRunStatusForPersistence[] = ["queued", "running"];
+const activeWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running')`;
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -255,6 +257,18 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         throw new Error("Failed to create agent run");
       }
       return row;
+    },
+
+    async createRunIfWorkItemIdle(run) {
+      const rows = await db
+        .insert(agentRuns)
+        .values(runInsertValues(run))
+        .onConflictDoNothing({
+          target: agentRuns.workItemId,
+          where: activeWorkItemRunWhere
+        })
+        .returning();
+      return rows[0] ?? null;
     },
 
     async updateRun(run) {

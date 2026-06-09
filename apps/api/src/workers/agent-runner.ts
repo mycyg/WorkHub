@@ -156,6 +156,7 @@ export type AgentRunEventBus = Pick<PushBus, "publish">;
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
 export type AgentRunPersistence = {
   createRun: (run: AgentRunQueueRecord) => Promise<void>;
+  createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
   updateRun: (run: AgentRunQueueRecord) => Promise<void>;
   replaceTrace: (runId: string, trace: AgentRunTraceStepRecord[]) => Promise<void>;
   setWorkdir: (runId: string, workdir: string, at: Date) => Promise<void>;
@@ -336,6 +337,20 @@ export function createInMemoryAgentRunQueue(options: {
 
   async function persistCreatedRun(run: AgentRunQueueRecord) {
     await persistence?.createRun(run);
+    if (run.trace.length > 0) {
+      await queueTracePersistence(run);
+    }
+  }
+
+  async function persistCreatedRunIfWorkItemIdle(run: AgentRunQueueRecord) {
+    if (!persistence?.createRunIfWorkItemIdle) {
+      await persistCreatedRun(run);
+      return;
+    }
+    const created = await persistence.createRunIfWorkItemIdle(run);
+    if (!created) {
+      throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
+    }
     if (run.trace.length > 0) {
       await queueTracePersistence(run);
     }
@@ -736,6 +751,7 @@ export function createInMemoryAgentRunQueue(options: {
 
   return {
     async enqueue(input) {
+      const hasPersistentIdleCreate = Boolean(persistence?.createRunIfWorkItemIdle);
       let existing = activeForWorkItem(input.workItemId);
       if (!existing && persistence) {
         existing = await persistedActiveForWorkItem(input.workItemId) ?? undefined;
@@ -743,7 +759,9 @@ export function createInMemoryAgentRunQueue(options: {
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
       }
-      startingWorkItems.add(input.workItemId);
+      if (!hasPersistentIdleCreate) {
+        startingWorkItems.add(input.workItemId);
+      }
       try {
         const humanReserved = await humanReservedGuard?.({
           ...input,
@@ -792,11 +810,13 @@ export function createInMemoryAgentRunQueue(options: {
           created_at: at,
           updated_at: at
         };
-        await persistCreatedRun(run);
+        await persistCreatedRunIfWorkItemIdle(run);
         runs.set(run.run_id, run);
         return run;
       } finally {
-        startingWorkItems.delete(input.workItemId);
+        if (!hasPersistentIdleCreate) {
+          startingWorkItems.delete(input.workItemId);
+        }
       }
     },
 

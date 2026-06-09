@@ -45,9 +45,11 @@ import {
   type AgentRunClaimLease,
   type AgentRunHeartbeatLease,
   type AgentRunPersistence,
+  type AgentRunQueue,
   type AgentRunQueueRecord,
   type AgentRunRequeueExpiredLeases,
-  type AgentRunTraceStepRecord
+  type AgentRunTraceStepRecord,
+  type BudgetDecisionProvider
 } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -67,6 +69,19 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
 
   async createRun(run: AgentRunQueueRecord) {
     this.rows.set(run.run_id, structuredClone(run));
+  }
+
+  async createRunIfWorkItemIdle(run: AgentRunQueueRecord) {
+    const existing = [...this.rows.values()].find(
+      (candidate) =>
+        candidate.work_item_id === run.work_item_id &&
+        (candidate.status === "queued" || candidate.status === "running")
+    );
+    if (existing) {
+      return false;
+    }
+    await this.createRun(run);
+    return true;
   }
 
   async updateRun(run: AgentRunQueueRecord) {
@@ -992,6 +1007,150 @@ test("concurrent agent run starts keep one active run per work item", async () =
   assert.equal((rejected.reason as AgentRunnerError).code, "agent_run_already_active");
   assert.equal(budgetCalls, 1);
   assert.equal((await queue.listActive()).length, 1);
+});
+
+test("persistent agent run enqueue rejects duplicate active work item across queue instances", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const budgetBarrier = deferred<void>();
+  let budgetCalls = 0;
+  const decideBudgetForTest: BudgetDecisionProvider = async (input) => {
+    const callNo = ++budgetCalls;
+    await budgetBarrier.promise;
+    return decideRunBudget({
+      settings: input.settings,
+      scopeIds: {
+        workItemId: input.workItemId,
+        userId: input.actorId,
+        teamId: input.settings.auth.defaultWorkspaceId
+      },
+      usage: [],
+      modelRoute: {
+        provider: input.settings.llm.defaultProvider,
+        model: input.settings.llm.model,
+        reason: "default"
+      },
+      now,
+      decisionId: `persistent-budget-decision-${callNo}`
+    });
+  };
+  const queueA = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000031",
+    persistence,
+    decideBudget: decideBudgetForTest,
+    eventBus: false
+  });
+  const queueB = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000032",
+    persistence,
+    decideBudget: decideBudgetForTest,
+    eventBus: false
+  });
+
+  const starts = [
+    queueA.enqueue({ workItemId, actorId: userId, title: "Persistent concurrent run A" }),
+    queueB.enqueue({ workItemId, actorId: userId, title: "Persistent concurrent run B" })
+  ];
+  budgetBarrier.resolve();
+  const results = await Promise.allSettled(starts);
+
+  const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.ok(rejected);
+  assert.equal(rejected.reason instanceof AgentRunnerError, true);
+  assert.equal((rejected.reason as AgentRunnerError).status, 409);
+  assert.equal((rejected.reason as AgentRunnerError).code, "agent_run_already_active");
+  assert.equal(budgetCalls, 2);
+  assert.equal((await persistence.listActive()).length, 1);
+});
+
+test("agent run route auto-pump drains through runNext instead of direct run id", async () => {
+  const runtimeSettings = settings();
+  const queuedRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000033",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Route queued worker run",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "route-auto-pump-budget",
+      allowed: true,
+      model_route: {
+        provider: runtimeSettings.llm.defaultProvider,
+        model: runtimeSettings.llm.model,
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let runCalls = 0;
+  let runNextCalls = 0;
+  const errors: unknown[] = [];
+  const queue: AgentRunQueue = {
+    async enqueue() {
+      return queuedRun;
+    },
+    async get(runId) {
+      return runId === queuedRun.run_id ? queuedRun : null;
+    },
+    async workdir() {
+      return null;
+    },
+    async trace() {
+      return [];
+    },
+    async abort() {
+      return queuedRun;
+    },
+    async listActive() {
+      return [queuedRun];
+    },
+    async run() {
+      runCalls += 1;
+      throw new Error("direct run should not be used by route auto-pump");
+    },
+    async runNext() {
+      runNextCalls += 1;
+      return null;
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({
+    auth: authDeps(runtimeSettings),
+    queue,
+    onAutoRunError: (error) => errors.push(error)
+  }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Route worker" })
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(response.status, 202);
+  assert.equal(runCalls, 0);
+  assert.equal(runNextCalls, 1);
+  assert.deepEqual(errors, []);
 });
 
 test("agent run abort is limited to the run owner or an admin actor", async () => {

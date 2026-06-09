@@ -451,6 +451,11 @@ PRD §8.8 / FR-SPEC-001:每个 WorkItem/项目有自动维护的 README 规格�
 | `started_at`/`finished_at` | DateTime? | |
 | `created_at`/`updated_at` | DateTime | |
 
+R2 并发约束：
+
+- `agent_runs_work_item_active_uq`: `UNIQUE(work_item_id) WHERE status IN ('queued','running')`。同一 work item 可保留历史 run，但任一时刻只能有一个 queued/running run；DB persistence 的 enqueue 必须通过 `createRunIfWorkItemIdle()` 原子写入。
+- `agent_runs_claim_idx(status, lease_expires_at, created_at)` 支撑 `claimNextQueued()` 的 `FOR UPDATE SKIP LOCKED`。
+
 > 沙箱/预算参数(`MAX_SANDBOX_FILES=800`、`MAX_SANDBOX_BYTES=200MB`、`COMMAND_TIMEOUT`、`ALLOWED_COMMANDS` 白名单,[`auto_agent.py:38-46`](../../../app/services/auto_agent.py))是 daemon 运行时常量,不入库;但**每个 AgentRun 必有硬预算上限**(`max_turns`)落库。
 
 ### 7.2 新增:`AgentStep`(trace 逐步)
@@ -702,8 +707,9 @@ PermissionPolicy(scope: org|workspace|role|session) ——(effect=ask)→ Approv
 | 合并冲突(同对象并发改) | AI 调解给合并建议,人择一(FR-COLLAB-003);语义按内容类型分派,见 `03-collaboration/branch-proposal-merge.md` |
 | 打回但缺理由 | 应用层拒绝(`Review.reason_md` 必填);保证 §5 回灌闭环有上下文 |
 | AgentRun 超预算 / doom-loop | 强制产出 `handoff_md` 结构化交接(FR-WORKER-003),状态→ `escalated`,不静默截断 |
+| 同一 work item 被两个实例同时 enqueue | R2.2 起由 `agent_runs_work_item_active_uq` partial unique index 裁决，只有一个 queued/running run，另一路返回 `409 agent_run_already_active` |
 | 两个 worker 同时抢同一 AgentRun | R2.1 起用 `FOR UPDATE SKIP LOCKED` claim queued row；只有 claim 成功者可执行，失败者返回空或 `agent_run_not_queued` |
-| worker 崩溃留下 running run | R2.1 已有 `lease_expires_at` 与 `requeueExpiredClaims()` primitive；R2.2 接后台调度 |
+| worker 崩溃留下 running run | R2.1 已有 `lease_expires_at` 与 `requeueExpiredClaims()` primitive；R2.5 接后台调度 / full matrix |
 | 工具入参 schema 校验失败 | 回灌"请改输入"可恢复错误(`AgentStep.phase=tool_result`),不崩(沿用 `auto_agent` 现行为) |
 | 非法状态转移 | `422 invalid_transition` + `AuditLog` |
 | 软删用户仍被历史行引用 | 保留行(`deleted_at`),列表/选人器过滤;授权用 `*_user_id` 防昵称重用继承(§1.4) |

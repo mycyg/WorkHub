@@ -56,9 +56,10 @@ R1 当前代码切片已落：
 - `packages/agent/src/loop/loop.ts` 在自然停止且 `outputs/` 有交付物时生成 `AgentLoopResult.manifest`。
 - `apps/api/src/workers/agent-runner.ts` 成功执行后把 manifest 注入 `ProposalService.createFromManifest`，并发布 `proposal.opened` 事件；这替代旧 `submit` 唯一完成信号，符合“AI 不再请求动作即完成”的 PRD 口径。
 - 默认 proposal 服务已由 `apps/api/src/services/proposals.ts` 接到 `packages/db/src/repositories/proposals.ts`，落 `branches/proposals/reviews`；测试可显式注入内存 service。
-- `apps/api/src/routes/agent-runs.ts` 默认在 enqueue 后自动 pump `queue.run(run_id)`，不再要求客户端或测试调用 `runNext()` 才开始执行；测试可用 `autoRun:false` 隔离 queue 单元行为。
+- `apps/api/src/routes/agent-runs.ts` 默认在 enqueue 后触发 `runNext()` drain，由 PG claim 决定实际执行权；测试可用 `autoRun:false` 隔离 queue 单元行为。
 - `packages/db/src/repositories/agent-runs.ts` 与 `apps/api/src/services/agent-run-persistence.ts` 已接入 AgentRun/AgentStep write-through persistence；默认 queue 会把 run 状态、预算、usage、workdir、handoff、trace 写入 DB，且 `get/trace/workdir/listActive` 在内存 miss 时从 persistence 读回。
 - R2.1 已补 AgentRun PG claim/lease：`agent_runs` 记录 `claimed_by/claimed_at/heartbeat_at/lease_expires_at`，repository 提供 `claimQueued()`、`claimNextQueued()`、`heartbeatClaim()` 与 `requeueExpiredClaims()`；queue 的 `run(id)` 与 `runNext()` 在 DB persistence 支持 claim 时都必须先 claim。
+- R2.2 已补同一 work item active run DB gate：`agent_runs_work_item_active_uq` 保证 `queued/running` 只允许一条；`createRunIfWorkItemIdle()` 把并发 enqueue 收敛为 `409 agent_run_already_active`；详见 [`r2-multi-worker-pump.md`](./r2-multi-worker-pump.md)。
 - `agent_steps` 已用 `seq` 做 trace 排序，取消错误的 `(agent_run_id, step_no)` 唯一约束；同一 step 内可同时保存 `tool_call/tool_result/think/final` 多条记录。
 - 真实 PostgreSQL restart/replay smoke 已通过：一条 file-only run 在 Linux 测试机落 `agent_runs/agent_steps/proposals/snapshots/audit_logs` 后，新 queue 可读回 `/agent-runs/:id` 与 `/replay`。
 - P0.5 fixture 已从生产业务 route 迁出：`/agent-runs/:id/replay` 不再有 fixture fallback；`sessions/workitems/knowledge/page workitem` 已接 R1 最小真实 service，只有 `/api/pages/gold-path` 保留 demo bundle。
@@ -72,11 +73,11 @@ R1 当前代码切片已落：
 
 R1 仍未完成：
 
-- R2.1 已关闭 claim/lease 真空，但 `AgentRunQueue` 仍保留进程内 Map/Set 作为本地缓存和测试 fallback；R2.2 前还不能宣称完整多 worker pump 安全。
+- R2.1/R2.2 已关闭 AgentRun claim/lease 与同 work item active run 真空；`AgentRunQueue` 仍保留进程内 Map/Set 作为无 DB fallback。完整 R2 仍需补跨实例 broker、订阅边界和长 LLM call interval heartbeat。
 - Replay route 已可通过 queue 的 persistence fallback 读回 DB-backed run/trace，并已把 WorkItem page 的 `accepted_deliverables[]` 带入 ReplayTraceVM；R1.13 起还会读取 `merge_attempts + merge_proposals` 返回 `merge_timeline[]`，展示冲突目标、候选、推荐项和最终选择。merge accepted ledger、ProjectDriveVersion adoption、download/text-preview、正式交付物最小还原与 audit 持久化已做实。R1.9 已补 file-only 冲突调解最小纵切：`GET /api/workitems/{id}/conflicts` 返回 `keep_current/accept_incoming` 两个可点击方案，merge 可带 `conflict_resolution.accept_incoming_target_keys` 显式采纳 incoming；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计，`proposal.merged` audit detail 会带 `merge_attempt_id` 与 accepted incoming target keys；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option 持久化；R1.14 已补 `ai_fusion` LLM 候选生成/质量门/持久化/回放展示；R1.15 已补 `POST /api/merge-proposals/{id}/choose` 选择审计；R1.16 已补 `POST /api/merge-proposals/{id}/apply`，把 `ai_fusion.merged_value` 物化为正式 Markdown 融合稿并写入 accepted ledger / Drive version / merge audit；R1.17 已把 409 / `GET /conflicts` 的 `ai_fusion` option 收敛成“采用 AI 融合稿”一键动作，Web/Desktop 主窗与独立 Cuu pet window 都会调用 `applyMergeProposalCandidate()`，服务端在未选择时自动写入 `chosen_*` 后再物化；R1.18 已补 BudgetPolicy PG persistence 与 `budget_policy.updated` audit；R1.19-R1.25 已补 text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 `text_patch_preview`、Replay 可见 patch preview、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3 和重叠 hunk metadata/prompt/quality gate。剩余是重叠 hunk 逐项确认/编辑、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台和产品化 React UI。
 - BudgetPolicy 更新已持久化为 `budget_policies` override 并写审计；完整 P-COST 策略治理剩余预算事件发出与 Cuu budget bubble。
 
-后续施工必须继续完成 R2.2 多实例 pump / 定时 heartbeat、R2.3 跨实例 broker、R2.4 订阅权限边界、完整审批中心和真实 React route 产品化，再回到 Cuu 出站 Agent 入口。
+后续施工必须继续完成 R2.3 跨实例 broker、R2.4 订阅权限边界、R2.5 PG/Redis 集成测试与长 LLM call heartbeat、完整审批中心和真实 React route 产品化，再回到 Cuu 出站 Agent 入口。
 
 ---
 

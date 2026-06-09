@@ -6,6 +6,7 @@ import type {
   WorkItemMode,
   WorkItemStatus
 } from "@workhub/contracts";
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -918,6 +919,9 @@ export const agentRuns = pgTable(
     index("agent_runs_branch_id_idx").on(table.branchId),
     index("agent_runs_actor_user_id_idx").on(table.actorUserId),
     index("agent_runs_status_idx").on(table.status),
+    uniqueIndex("agent_runs_work_item_active_uq")
+      .on(table.workItemId)
+      .where(sql`${table.status} in ('queued', 'running')`),
     index("agent_runs_claim_idx").on(table.status, table.leaseExpiresAt, table.createdAt),
     index("agent_runs_claimed_by_idx").on(table.claimedBy)
   ]

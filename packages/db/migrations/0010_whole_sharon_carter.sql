@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "agent_runs_work_item_active_uq" ON "agent_runs" USING btree ("work_item_id") WHERE "agent_runs"."status" in ('queued', 'running');

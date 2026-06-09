@@ -109,7 +109,7 @@ R0 退出门：
 
 | 切片 | 当前状态 | 剩余限制 |
 |---|---|---|
-| Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
+| Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台触发 `runNext()` drain | R2.2 已改为 PG claim 分配执行权；跨实例事件 broker 仍属 R2.3 |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
 | Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8-R1.44 已连续补齐正式交付物还原、冲突卡、merge attempts/proposals、replay timeline、AI fusion、text/spec 正文直写、真实三方文本上下文、patch preview、无重叠 diff3、重叠 hunk metadata、字段/子记录写回、字段级审计、富 patch viewer、重叠 hunk review、子记录逐项编辑、多冲突折叠区、真实 route 视觉 QA、任务子记录目标 plan 选择、`text_hunk_overrides` 后端逐段 materialize、text hunk merge audit 与批量 keep/accept `bulk_action` 审计、Replay hunk/bulk decision 用户可读回放、Proposal route line editor | 仍未接完整 Drive 富预览/历史/redo UI |
 | P-COST DB-backed | `CostLedgerStore` 与 `BudgetPolicyStore` 已默认 DB-backed；`budget_policies` 保存 policy override；`PUT /api/cost/policies/:scope/:id` 写 `budget_policy.updated` 审计；R1.18 已把真实 PG policy override 纳入 smoke | 仍未发出 `usage.recorded`、`budget.warning`、`budget.exhausted` 事件；Cuu budget bubble 仍属后续 |
@@ -1800,10 +1800,10 @@ R1.16 基线契约（R1.17 已把未选择 `ai_fusion` 的 apply 升级为一键
 
 1. **R2.1 已落**：`claimNextQueued()` / `claimQueued(run_id)` 使用 `FOR UPDATE SKIP LOCKED`，多个实例可以同时尝试 claim queued run；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. **R2.1 已落首版**：`running` run 增加 `claimed_by`、`claimed_at`、`heartbeat_at`、`lease_expires_at`；已提供 `requeueExpiredClaims()` stuck-job recovery primitive。
-3. R2.2 继续：`startingWorkItems` 等进程内抢占状态仍需降级为 DB 条件插入/唯一约束，当前只作为本地缓存与测试 fallback。
+3. **R2.2 已落**：`startingWorkItems` 不再是 DB 场景最终裁决；`agent_runs_work_item_active_uq` partial unique index + `createRunIfWorkItemIdle()` 负责同 work item active run 唯一；route auto-run 改为 `runNext()` drain。详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 4. PushBus / presence 默认切 Redis 或 PG broker；补 unsubscribe 引用计数。
 5. `/api/push/stream` 的 `all` topic 删除或 admin-only；资源 topic 订阅前强制 `can_view`。
-6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、CORS+cookie、revert、escalation approver、非 owner 403。
+6. 建 PG + Redis 集成测试：2 worker SSE、stuck run 回收、长 LLM call heartbeat、CORS+cookie、revert、escalation approver、非 owner 403。
 
 R2 验收：
 
@@ -1835,7 +1835,8 @@ R2 验收：
 | Heartbeat | 每次 AgentLoop step record 后续租 |
 | Stuck recovery | repository primitive 已有，尚未接后台调度 |
 | Queue cache | 进程内 Map/Set 仍保留为本地缓存与测试 fallback |
-| 仍缺 | R2.2 多实例 pump、定时 heartbeat、DB 条件插入、真实 `WORKHUB_WORKERS=2` smoke |
+| R2.2 追加 | active work item partial unique index、DB 原子 enqueue、route `runNext()` drain 已落 |
+| 仍缺 | R2.3 跨实例 broker、R2.4 订阅边界、R2.5 长 LLM call heartbeat 与真实 `WORKHUB_WORKERS=2` full matrix |
 
 验证：
 
@@ -1844,6 +1845,42 @@ R2 验收：
 - `corepack pnpm --filter @workhub/api typecheck` 通过。
 - `corepack pnpm --filter @workhub/api test` 通过，88/88。
 - 提交前仍需跑 `corepack pnpm db:check`、`corepack pnpm audit:migrations`、全量 `corepack pnpm verify`、`reference_paths=0`、`secret_like_matches=0`。
+
+### R2.2 Multi-worker pump / active enqueue（2026-06-10）
+
+本切片关闭 R2 的第二处硬缺口：多实例可以同时 enqueue / drain，但同一 work item 不会产生两个 active run。
+
+已落代码：
+
+- `packages/db/src/schema/core.ts`：`agent_runs_work_item_active_uq` partial unique index，`UNIQUE(work_item_id) WHERE status IN ('queued','running')`。
+- `packages/db/migrations/0010_whole_sharon_carter.sql`：Drizzle migration 与 `0010_snapshot.json`。
+- `packages/db/src/repositories/agent-runs.ts`：新增 `createRunIfWorkItemIdle()`，用 `ON CONFLICT (work_item_id) WHERE status in ('queued','running') DO NOTHING` 做原子 enqueue gate。
+- `apps/api/src/services/agent-run-persistence.ts`：新增 boolean wrapper `createRunIfWorkItemIdle()`。
+- `apps/api/src/workers/agent-runner.ts`：DB persistence 存在时，`enqueue()` 最终通过 `createRunIfWorkItemIdle()`；无 DB 时保留 `startingWorkItems` fallback。
+- `apps/api/src/routes/agent-runs.ts`：route auto-run 从 `queue.run(run_id)` 改为 `runNext()` drain，由 PG claim 分配执行权。
+- `apps/api/src/agent-runs.test.ts`：新增两个队列共享 persistence 的并发 enqueue 测试；新增 route auto-pump 只调用 `runNext()` 的 contract test。
+- `apps/api/src/qa/r1-pg-agent-run-smoke.ts`：真实 PG smoke 增加 `r2_multi_worker_enqueue` summary，验证一个 fulfilled、一个 409、DB 只有一个 active run。
+
+当前边界：
+
+| 项 | R2.2 行为 |
+|---|---|
+| 同 work item active run | DB partial unique index 强制唯一 |
+| route pump | fire-and-forget drain，循环 `runNext()` 到无 queued run |
+| 多实例执行权 | 仍由 R2.1 `FOR UPDATE SKIP LOCKED` claim 决定 |
+| 无 DB fallback | `startingWorkItems` 与内存 Map/Set 继续保护单进程测试 |
+| long provider call heartbeat | 未落；仍需后续 interval heartbeat |
+| cross-instance event | 未落；R2.3 处理 Redis/PG broker |
+
+验证：
+
+- `corepack pnpm --filter @workhub/db typecheck` 通过。
+- `corepack pnpm --filter @workhub/db test` 通过，14/14。
+- `corepack pnpm --filter @workhub/api typecheck` 通过。
+- `corepack pnpm --filter @workhub/api test` 通过，90/90。
+- `corepack pnpm db:check` 通过。
+- `corepack pnpm audit:migrations` 通过。
+- 本地 `corepack pnpm qa:r1-pg-smoke` 因本机 `127.0.0.1:5432 ECONNREFUSED` 未执行到业务断言；等待 GitHub Actions `r1-pg-smoke` 容器 job 做最终远端验收。
 
 ## 6. R3 Cuu Agent 入口
 

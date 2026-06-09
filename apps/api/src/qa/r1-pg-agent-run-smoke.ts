@@ -61,7 +61,7 @@ import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-can
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
-import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
+import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -353,6 +353,67 @@ async function main() {
     const executed = await queue.run(runId);
     if (executed.status !== "succeeded") {
       throw new Error(`Expected succeeded AgentRun, got ${executed.status}`);
+    }
+
+    const r2ConcurrentWorkItemId = randomUUID();
+    await db.insert(workItems).values({
+      id: r2ConcurrentWorkItemId,
+      code: `R2-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
+      projectId: defaultSeedIds.projectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      submitterUserId: seedUser.id,
+      title: "R2 multi-worker duplicate enqueue smoke",
+      rawDescription: "Verifies DB-backed active AgentRun uniqueness for one work item.",
+      summaryMd: "R2 duplicate enqueue smoke.",
+      status: "spec_ready",
+      mode: "worker"
+    });
+    const r2QueueOptions = {
+      settings,
+      persistence,
+      confidence: false,
+      humanReserved: false,
+      proposals: false,
+      notifications: false,
+      eventBus: false
+    } satisfies Parameters<typeof createInMemoryAgentRunQueue>[0];
+    const r2QueueA: AgentRunQueue = createInMemoryAgentRunQueue(r2QueueOptions);
+    const r2QueueB: AgentRunQueue = createInMemoryAgentRunQueue(r2QueueOptions);
+    const r2ConcurrentResults = await Promise.allSettled([
+      r2QueueA.enqueue({
+        workItemId: r2ConcurrentWorkItemId,
+        actorId: seedUser.id,
+        title: "R2 duplicate enqueue A"
+      }),
+      r2QueueB.enqueue({
+        workItemId: r2ConcurrentWorkItemId,
+        actorId: seedUser.id,
+        title: "R2 duplicate enqueue B"
+      })
+    ]);
+    const r2Fulfilled = r2ConcurrentResults.filter((result) => result.status === "fulfilled");
+    const r2Rejected = r2ConcurrentResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    const r2RejectedReason = r2Rejected?.reason as { status?: unknown; code?: unknown } | undefined;
+    const r2AgentRunRows = await db.select().from(agentRuns).then((rows) =>
+      rows.filter((row) => row.workItemId === r2ConcurrentWorkItemId)
+    );
+    const r2ActiveAgentRunRows = r2AgentRunRows.filter((row) => row.status === "queued" || row.status === "running");
+    if (
+      r2Fulfilled.length !== 1
+      || !r2Rejected
+      || r2RejectedReason?.status !== 409
+      || r2RejectedReason.code !== "agent_run_already_active"
+      || r2AgentRunRows.length !== 1
+      || r2ActiveAgentRunRows.length !== 1
+    ) {
+      throw new Error(`Expected R2 duplicate enqueue to create exactly one active run, got ${JSON.stringify({
+        fulfilled: r2Fulfilled.length,
+        rejected: Boolean(r2Rejected),
+        rejectedStatus: r2RejectedReason?.status,
+        rejectedCode: r2RejectedReason?.code,
+        agentRuns: r2AgentRunRows.length,
+        activeAgentRuns: r2ActiveAgentRunRows.length
+      })}`);
     }
     const policyListBefore = await app.request("/api/cost/policies", { headers });
     if (policyListBefore.status !== 200) {
@@ -1762,6 +1823,15 @@ async function main() {
         page_evidence_refs: workItemPageBody.data.evidence_refs.length
       },
       run_status: (await runAfterRestart.json() as { data: { status: string } }).data.status,
+      r2_multi_worker_enqueue: {
+        work_item_id: r2ConcurrentWorkItemId,
+        fulfilled: r2Fulfilled.length,
+        rejected: r2Rejected ? 1 : 0,
+        rejected_status: r2RejectedReason?.status,
+        rejected_code: r2RejectedReason?.code,
+        agent_runs: r2AgentRunRows.length,
+        active_agent_runs: r2ActiveAgentRunRows.length
+      },
       db_rows: {
         agent_runs: agentRunRows.length,
         agent_steps: stepRows.length,

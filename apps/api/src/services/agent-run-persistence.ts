@@ -250,6 +250,11 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
       await repository.createRun(toPersistenceRun(run));
     },
 
+    async createRunIfWorkItemIdle(run) {
+      const row = await repository.createRunIfWorkItemIdle(toPersistenceRun(run));
+      return Boolean(row);
+    },
+
     async updateRun(run) {
       await repository.updateRun(toPersistenceRun(run));
     },
