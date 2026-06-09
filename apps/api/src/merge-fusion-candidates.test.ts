@@ -350,8 +350,39 @@ test("LLM merge mediator keeps overlapping text changes on the LLM path", async 
     }
   });
 
-  assert.match(prompt, /content_context/u);
+  const parsed = JSON.parse(prompt) as {
+    conflicts: Array<{
+      text_diff3_conflicts?: Array<{
+        base_range?: { start_line?: number; end_line?: number };
+        base_lines?: string[];
+        current_lines?: string[];
+        incoming_lines?: string[];
+      }>;
+    }>;
+  };
+  const diff3Conflict = parsed.conflicts[0]?.text_diff3_conflicts?.[0];
+  assert.equal(diff3Conflict?.base_range?.start_line, 2);
+  assert.equal(diff3Conflict?.base_range?.end_line, 2);
+  assert.deepEqual(diff3Conflict?.base_lines, ["B"]);
+  assert.deepEqual(diff3Conflict?.current_lines, ["B owner"]);
+  assert.deepEqual(diff3Conflict?.incoming_lines, ["B incoming"]);
   assert.equal(result[0]?.recommendedOptionKey, "ai_fusion");
   assert.equal(result[0]?.candidates[0]?.source, "llm");
   assert.equal(result[0]?.candidates[0]?.quality_gate?.["status"], "passed");
+  assert.equal(
+    (result[0]?.candidates[0]?.quality_gate?.["checks"] as string[]).includes("overlapping_hunks_for_ai_mediation"),
+    true
+  );
+  const diff3Gate = result[0]?.candidates[0]?.quality_gate?.["text_diff3"] as {
+    auto_merge?: boolean;
+    conflict_hunks?: number;
+    current_hunks?: number;
+    incoming_hunks?: number;
+    conflict_ranges?: Array<{ start_line?: number; end_line?: number }>;
+  } | undefined;
+  assert.equal(diff3Gate?.auto_merge, false);
+  assert.equal(diff3Gate?.conflict_hunks, 1);
+  assert.equal(diff3Gate?.current_hunks, 1);
+  assert.equal(diff3Gate?.incoming_hunks, 1);
+  assert.equal(diff3Gate?.conflict_ranges?.[0]?.start_line, 2);
 });

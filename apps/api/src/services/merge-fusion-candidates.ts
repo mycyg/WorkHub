@@ -16,6 +16,8 @@ import type { ProposalActor } from "./proposals.js";
 const supportedFusionTargetKinds = new Set(["structured_record", "text_doc", "spec_doc"]);
 const textPatchContextLines = 3;
 const maxPatchLineChars = 500;
+const maxTextDiff3ConflictPairs = 8;
+const maxTextDiff3ConflictLines = 12;
 
 const llmFusionCandidateSchema = z.object({
   conflict_key: z.string().min(1),
@@ -270,6 +272,18 @@ function hasOverlappingDiffHunks(left: TextDiffHunk[], right: TextDiffHunk[]) {
   return left.some((leftHunk) => right.some((rightHunk) => hunkOverlaps(leftHunk, rightHunk)));
 }
 
+function overlappingDiffHunkPairs(left: TextDiffHunk[], right: TextDiffHunk[]) {
+  const pairs: Array<{ current: TextDiffHunk; incoming: TextDiffHunk }> = [];
+  for (const current of left) {
+    for (const incoming of right) {
+      if (hunkOverlaps(current, incoming)) {
+        pairs.push({ current, incoming });
+      }
+    }
+  }
+  return pairs;
+}
+
 function mergeUniqueHunks(currentHunks: TextDiffHunk[], incomingHunks: TextDiffHunk[]) {
   const merged = [...currentHunks];
   for (const incoming of incomingHunks) {
@@ -291,9 +305,9 @@ function applyDiffHunks(baseText: string, hunks: TextDiffHunk[]) {
   return merged.join("\n");
 }
 
-function textDiff3Merge(input: MergeFusionContentContext) {
+function textDiff3Analysis(input: MergeFusionContentContext | undefined) {
   if (
-    !input.base?.text
+    !input?.base?.text
     || !input.current?.text
     || !input.incoming?.text
     || input.base.truncated
@@ -302,22 +316,97 @@ function textDiff3Merge(input: MergeFusionContentContext) {
   ) {
     return undefined;
   }
-  if (input.current.text === input.incoming.text) {
-    return undefined;
-  }
   const currentHunks = diffHunksFromBase(input.base.text, input.current.text);
   const incomingHunks = diffHunksFromBase(input.base.text, input.incoming.text);
-  if (incomingHunks.length === 0 || hasOverlappingDiffHunks(currentHunks, incomingHunks)) {
+  const conflictPairs = overlappingDiffHunkPairs(currentHunks, incomingHunks);
+  return {
+    currentHunks,
+    incomingHunks,
+    conflictPairs
+  };
+}
+
+function textDiff3Merge(input: MergeFusionContentContext) {
+  if (input.current?.text === input.incoming?.text) {
     return undefined;
   }
-  const mergedText = applyDiffHunks(input.base.text, mergeUniqueHunks(currentHunks, incomingHunks));
-  if (mergedText === input.current.text || hasConflictMarkers(mergedText)) {
+  const analysis = textDiff3Analysis(input);
+  if (!analysis) {
+    return undefined;
+  }
+  const { currentHunks, incomingHunks, conflictPairs } = analysis;
+  if (incomingHunks.length === 0 || conflictPairs.length > 0) {
+    return undefined;
+  }
+  const baseText = input.base?.text;
+  const currentText = input.current?.text;
+  if (!baseText || !currentText) {
+    return undefined;
+  }
+  const mergedText = applyDiffHunks(baseText, mergeUniqueHunks(currentHunks, incomingHunks));
+  if (mergedText === currentText || hasConflictMarkers(mergedText)) {
     return undefined;
   }
   return {
     mergedText,
     currentHunks,
     incomingHunks
+  };
+}
+
+function trimPromptLine(value: string) {
+  return value.length > maxPatchLineChars ? `${value.slice(0, maxPatchLineChars)}...` : value;
+}
+
+function hunkBaseRange(current: TextDiffHunk, incoming: TextDiffHunk) {
+  const start = Math.min(current.baseStart, incoming.baseStart);
+  const end = Math.max(current.baseEnd, incoming.baseEnd);
+  return {
+    start_line: start + 1,
+    end_line: Math.max(start + 1, end)
+  };
+}
+
+function limitedPromptLines(lines: string[]) {
+  return lines.slice(0, maxTextDiff3ConflictLines).map(trimPromptLine);
+}
+
+function textDiff3ConflictHints(context: MergeFusionContentContext | undefined) {
+  const analysis = textDiff3Analysis(context);
+  if (!analysis || analysis.conflictPairs.length === 0) {
+    return undefined;
+  }
+  return analysis.conflictPairs.slice(0, maxTextDiff3ConflictPairs).map((pair) => ({
+    type: "overlapping_hunk",
+    base_range: hunkBaseRange(pair.current, pair.incoming),
+    base_lines: limitedPromptLines(pair.current.original.length > 0
+      ? pair.current.original
+      : pair.incoming.original),
+    current_lines: limitedPromptLines(pair.current.replacement),
+    incoming_lines: limitedPromptLines(pair.incoming.replacement),
+    truncated: (
+      pair.current.original.length > maxTextDiff3ConflictLines
+      || pair.incoming.original.length > maxTextDiff3ConflictLines
+      || pair.current.replacement.length > maxTextDiff3ConflictLines
+      || pair.incoming.replacement.length > maxTextDiff3ConflictLines
+    )
+  }));
+}
+
+function textDiff3QualityGate(context: MergeFusionContentContext | undefined) {
+  const analysis = textDiff3Analysis(context);
+  if (!analysis || analysis.conflictPairs.length === 0) {
+    return undefined;
+  }
+  return {
+    type: "line_text_diff3",
+    auto_merge: false,
+    conflict_hunks: analysis.conflictPairs.length,
+    current_hunks: analysis.currentHunks.length,
+    incoming_hunks: analysis.incomingHunks.length,
+    conflict_ranges: analysis.conflictPairs
+      .slice(0, maxTextDiff3ConflictPairs)
+      .map((pair) => hunkBaseRange(pair.current, pair.incoming))
   };
 }
 
@@ -495,18 +584,21 @@ function candidateWithTextPatchPreview(input: {
   if ((targetKind !== "text_doc" && targetKind !== "spec_doc") || !input.context) {
     return input.candidate;
   }
-  const mergedText = textFromMergedValue(input.candidate.merged_value);
-  if (!mergedText) {
-    return input.candidate;
-  }
-  const preview = textPatchPreviewFor({
-    context: input.context,
-    mergedText
-  });
-  if (!preview) {
-    return input.candidate;
-  }
   const existingGate = input.candidate.quality_gate ?? {};
+  const diff3Gate = textDiff3QualityGate(input.context);
+  const mergedText = textFromMergedValue(input.candidate.merged_value);
+  if (!mergedText && !diff3Gate) {
+    return input.candidate;
+  }
+  const preview = mergedText
+    ? textPatchPreviewFor({
+      context: input.context,
+      mergedText
+    })
+    : undefined;
+  if (!preview && !diff3Gate) {
+    return input.candidate;
+  }
   return {
     ...input.candidate,
     quality_gate: {
@@ -515,9 +607,11 @@ function candidateWithTextPatchPreview(input: {
         "current_text_context",
         "incoming_text_context",
         ...(input.context.base?.text ? ["base_text_context"] : []),
-        "text_patch_preview"
+        ...(diff3Gate ? ["line_text_diff3", "overlapping_hunks_for_ai_mediation"] : []),
+        ...(preview ? ["text_patch_preview"] : [])
       ]),
-      text_patch_preview: preview
+      ...(diff3Gate && !existingGate["text_diff3"] ? { text_diff3: diff3Gate } : {}),
+      ...(preview ? { text_patch_preview: preview } : {})
     }
   };
 }
@@ -553,28 +647,32 @@ function changeSummary(manifest: DeliverableChangeManifest, conflict: ProposalMe
 }
 
 function promptFor(input: MergeFusionCandidateGeneratorInput) {
-  const conflicts = input.conflicts.map((conflict) => ({
-    conflict_key: conflict.target_key,
-    proposal_id: conflict.proposal_id,
-    proposal_title: conflict.proposal_title,
-    target_kind: conflict.target_kind,
-    change_type: conflict.change_type,
-    target_path: conflict.target_path,
-    existing: {
-      proposal_id: conflict.existing_proposal_id,
-      change_id: conflict.existing_change_id,
-      ref: conflict.existing_ref,
-      sha256_after: conflict.existing_sha256_after
-    },
-    incoming: {
-      change_id: conflict.change_id,
-      version_before: conflict.incoming_version_before,
-      sha256_before: conflict.incoming_sha256_before,
-      sha256_after: conflict.incoming_sha256_after
-    },
-    change: changeSummary(input.manifest, conflict),
-    content_context: input.contentContexts?.[conflict.target_key]
-  }));
+  const conflicts = input.conflicts.map((conflict) => {
+    const context = input.contentContexts?.[conflict.target_key];
+    return {
+      conflict_key: conflict.target_key,
+      proposal_id: conflict.proposal_id,
+      proposal_title: conflict.proposal_title,
+      target_kind: conflict.target_kind,
+      change_type: conflict.change_type,
+      target_path: conflict.target_path,
+      existing: {
+        proposal_id: conflict.existing_proposal_id,
+        change_id: conflict.existing_change_id,
+        ref: conflict.existing_ref,
+        sha256_after: conflict.existing_sha256_after
+      },
+      incoming: {
+        change_id: conflict.change_id,
+        version_before: conflict.incoming_version_before,
+        sha256_before: conflict.incoming_sha256_before,
+        sha256_after: conflict.incoming_sha256_after
+      },
+      change: changeSummary(input.manifest, conflict),
+      content_context: context,
+      text_diff3_conflicts: textDiff3ConflictHints(context)
+    };
+  });
 
   return JSON.stringify({
     task: "Create optional AI fusion candidates for WorkHub merge conflicts.",
@@ -584,6 +682,7 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
       "Do not include git conflict markers.",
       "Do not decide for the user; provide rationale and a candidate value only.",
       "Use content_context.current, content_context.incoming, and content_context.base when present.",
+      "When text_diff3_conflicts is present, resolve only those overlapping hunks and preserve non-overlapping content.",
       "If content is insufficient, return no candidate for that conflict."
     ],
     output_schema: {
