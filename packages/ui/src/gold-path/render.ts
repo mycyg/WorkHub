@@ -10,6 +10,7 @@ import type {
   EvidenceRef,
   GoldPathSurfaceVM,
   QuestionCard,
+  ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
 import { goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
@@ -46,6 +47,7 @@ export const goldPathCss = [
   ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}",
   ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
+  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
@@ -120,6 +122,77 @@ function mergeAttemptLabel(locale: WorkHubLocale, result: string) {
     return t(locale, "replay.decisionMerged");
   }
   return t(locale, "replay.decisionFallback");
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function patchRiskLabel(locale: WorkHubLocale, risk: string) {
+  if (risk === "low") {
+    return t(locale, "replay.patchRiskLow");
+  }
+  if (risk === "requires_review") {
+    return t(locale, "replay.patchRiskReview");
+  }
+  return t(locale, "replay.patchRiskUnknown");
+}
+
+function patchLineKind(line: string) {
+  if (line.startsWith("+")) {
+    return "add";
+  }
+  if (line.startsWith("-")) {
+    return "remove";
+  }
+  if (line.startsWith("@@")) {
+    return "meta";
+  }
+  return "context";
+}
+
+function renderTextPatchPreview(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
+  const preview = objectRecord(candidate.quality_gate?.["text_patch_preview"]);
+  if (preview?.["type"] !== "unified_text_patch_preview") {
+    return "";
+  }
+  const stats = objectRecord(preview["stats"]);
+  const hunks = Array.isArray(preview["hunks"]) ? preview["hunks"] : [];
+  const risk = typeof stats?.["overlap_risk"] === "string" ? stats["overlap_risk"] : "unknown";
+  const changed = stats?.["changed"] === false ? t(locale, "replay.patchUnchanged") : t(locale, "replay.patchChanged");
+  const added = typeof stats?.["added_lines"] === "number" ? stats["added_lines"] : 0;
+  const removed = typeof stats?.["removed_lines"] === "number" ? stats["removed_lines"] : 0;
+  const base = preview["base_available"] === true
+    ? t(locale, "replay.patchBaseAvailable")
+    : t(locale, "replay.patchBaseMissing");
+  const hunkLines = hunks.flatMap((hunk) => {
+    const record = objectRecord(hunk);
+    const header = typeof record?.["header"] === "string" ? [record["header"]] : [];
+    const lines = Array.isArray(record?.["lines"])
+      ? record["lines"].filter((line): line is string => typeof line === "string")
+      : [];
+    return [...header, ...lines];
+  });
+  if (hunkLines.length === 0) {
+    return "";
+  }
+  const diffLines = hunkLines
+    .map((line) => `<span class="wh-diff-line" data-patch-line-kind="${escapeHtml(patchLineKind(line))}">${escapeHtml(line)}</span>`)
+    .join("");
+  return `<section class="wh-patch" data-replay-text-patch-preview="true" data-overlap-risk="${escapeHtml(risk)}">
+    <div class="wh-patch-head">
+      <strong>${escapeHtml(t(locale, "replay.patchTitle"))}</strong>
+      <div class="wh-patch-meta">
+        <span class="wh-pill">${escapeHtml(changed)}</span>
+        <span class="wh-pill">+${escapeHtml(String(added))} / -${escapeHtml(String(removed))}</span>
+        <span class="wh-pill">${escapeHtml(patchRiskLabel(locale, risk))}</span>
+        <span class="wh-pill">${escapeHtml(base)}</span>
+      </div>
+    </div>
+    <pre class="wh-diff">${diffLines}</pre>
+  </section>`;
 }
 
 function pageShell(surface: GoldPathRenderSurface, title: string, main: string) {
@@ -320,7 +393,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
                     candidate.recommended ? t(locale, "replay.recommended") : "",
                     candidate.chosen ? t(locale, "replay.chosen") : ""
                   ].filter(Boolean).join(" · ");
-                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p></div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
+                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
                 })
                 .join("")
               : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;

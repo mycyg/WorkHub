@@ -103,6 +103,14 @@ export type GoldPathCopyKey =
   | "replay.recommended"
   | "replay.chosen"
   | "replay.noChoice"
+  | "replay.patchTitle"
+  | "replay.patchChanged"
+  | "replay.patchUnchanged"
+  | "replay.patchBaseAvailable"
+  | "replay.patchBaseMissing"
+  | "replay.patchRiskUnknown"
+  | "replay.patchRiskLow"
+  | "replay.patchRiskReview"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -222,6 +230,14 @@ const goldPathCopy = {
     "replay.recommended": "推荐",
     "replay.chosen": "已选择",
     "replay.noChoice": "未选择",
+    "replay.patchTitle": "改动预览",
+    "replay.patchChanged": "有改动",
+    "replay.patchUnchanged": "无改动",
+    "replay.patchBaseAvailable": "有基线",
+    "replay.patchBaseMissing": "无基线",
+    "replay.patchRiskUnknown": "风险未知",
+    "replay.patchRiskLow": "低风险",
+    "replay.patchRiskReview": "需要复核",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -340,6 +356,14 @@ const goldPathCopy = {
     "replay.recommended": "Recommended",
     "replay.chosen": "Chosen",
     "replay.noChoice": "Not chosen",
+    "replay.patchTitle": "Change preview",
+    "replay.patchChanged": "Changed",
+    "replay.patchUnchanged": "Unchanged",
+    "replay.patchBaseAvailable": "Base available",
+    "replay.patchBaseMissing": "No base",
+    "replay.patchRiskUnknown": "Risk unknown",
+    "replay.patchRiskLow": "Low risk",
+    "replay.patchRiskReview": "Review required",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

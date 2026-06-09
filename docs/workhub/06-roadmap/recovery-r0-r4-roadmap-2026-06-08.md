@@ -92,11 +92,11 @@ R1 退出门：
 
 - AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
 - Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 GitHub Actions `r1-pg-smoke` job 和 Linux/CI PostgreSQL 给出真实 PG 通过证据。
-- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit、同 target 冲突 gate、AI fusion candidate、one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、text patch preview 与 replay 选择记录已落。完整 Drive 产品化、结构化字段级 patch、自动 diff3 合并、富 patch viewer 和多冲突工作台仍待后续 R1/R2。
+- proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit、同 target 冲突 gate、AI fusion candidate、one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、text patch preview、Replay patch preview 渲染与 replay 选择记录已落。完整 Drive 产品化、结构化字段级 patch、自动 diff3 合并、Proposal 采用前富 patch viewer 和多冲突工作台仍待后续 R1/R2。
 
 下一施工顺序：
 
-1. 补 `ai_fusion` v2 自动 text diff3、结构化字段级 patch、富 patch viewer 与多冲突工作台；R1.20 已先补 text/spec 的真实 current/incoming/base prompt context，R1.21 已补数据层 text patch preview。
+1. 补 `ai_fusion` v2 自动 text diff3、结构化字段级 patch、Proposal 采用前富 patch viewer 与多冲突工作台；R1.20 已先补 text/spec 的真实 current/incoming/base prompt context，R1.21 已补数据层 text patch preview，R1.22 已补 Replay patch preview 渲染。
 2. 进入 R2：PG claim/lease、SKIP LOCKED、多 worker pump、跨实例事件。
 
 ## 3. R2 真正解除单 worker

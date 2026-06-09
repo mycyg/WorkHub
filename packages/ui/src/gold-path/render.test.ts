@@ -203,6 +203,24 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
               option_key: "ai_fusion",
               target_kind: "text_doc",
               rationale_md: "AI 建议吸收双方说明，但不替用户裁决。",
+              quality_gate: {
+                text_patch_preview: {
+                  type: "unified_text_patch_preview",
+                  base_available: true,
+                  stats: {
+                    changed: true,
+                    added_lines: 1,
+                    removed_lines: 1,
+                    overlap_risk: "requires_review"
+                  },
+                  hunks: [
+                    {
+                      header: "@@ -1,1 +1,1 @@",
+                      lines: ["-正式版已有结论。", "+融合后的正文"]
+                    }
+                  ]
+                }
+              },
               recommended: false,
               chosen: false
             }
@@ -231,8 +249,18 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("采纳这次版本"), true);
   assert.equal(zhReplay?.html.includes("AI 融合建议"), true);
   assert.equal(zhReplay?.html.includes("已选择"), true);
+  assert.equal(zhReplay?.html.includes("data-replay-text-patch-preview=\"true\""), true);
+  assert.equal(zhReplay?.html.includes("data-overlap-risk=\"requires_review\""), true);
+  assert.equal(zhReplay?.html.includes("改动预览"), true);
+  assert.equal(zhReplay?.html.includes("需要复核"), true);
+  assert.equal(zhReplay?.html.includes("-正式版已有结论。"), true);
+  assert.equal(zhReplay?.html.includes("+融合后的正文"), true);
+  assert.equal(zhReplay?.html.includes("data-patch-line-kind=\"remove\""), true);
+  assert.equal(zhReplay?.html.includes("data-patch-line-kind=\"add\""), true);
   assert.equal(enReplay?.html.includes("Decision record"), true);
   assert.equal(enReplay?.html.includes("Accept this version"), true);
   assert.equal(enReplay?.html.includes("AI fusion draft"), true);
   assert.equal(enReplay?.html.includes("Chosen"), true);
+  assert.equal(enReplay?.html.includes("Change preview"), true);
+  assert.equal(enReplay?.html.includes("Review required"), true);
 });
