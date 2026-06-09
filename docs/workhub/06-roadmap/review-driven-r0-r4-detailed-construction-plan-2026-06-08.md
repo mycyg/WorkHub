@@ -111,7 +111,7 @@ R0 退出门：
 |---|---|---|
 | Queue auto-pump | `POST /workitems/:id/agent-runs` 默认后台执行 `queue.run(run_id)` | 仍是进程内 queue，不是多 worker drainer |
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
-| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计 | 仍未接完整 Drive 富预览/历史/redo UI、`ai_fusion` 正式写回、真实 base/ours/theirs 内容读取和多冲突逐项选择工作台 |
+| Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8 已补最小正式交付物还原入口；R1.9 已补 deterministic 冲突卡片 API 与显式采纳 incoming payload；R1.10 已补 Web/Desktop/Cuu option-first 冲突卡渲染与 payload merge；R1.11 已补 `merge_attempts` 持久表与 blocked/merged 尝试审计；R1.12 已补 `merge_proposals` deterministic candidates 与 chosen option；R1.13 已把 merge timeline 接入 AgentRun replay 页面 VM 与严肃主窗渲染；R1.14 已补 `ai_fusion` 候选生成、质量门、持久化和展示；R1.15 已补候选选择 API 与 `chosen_*` 审计；R1.16 已补已选 `ai_fusion` apply 为正式 Markdown 融合稿 | 仍未接完整 Drive 富预览/历史/redo UI、真实 base/ours/theirs 内容读取、字段级结构化/text diff3 写回和多冲突逐项选择工作台 |
 
 ### R1 必做顺序
 
@@ -156,7 +156,7 @@ R0 退出门：
    - `apps/api/src/services/proposals.ts` 禁止未确认 proposal 直接采纳，未 `reviewed` 会返回 `proposal_not_reviewed`。
    - `apps/api/src/workers/agent-runner.ts` 不再硬编码 `approverUserId=run.actor_id`；新增 `notificationWorkItem` resolver，默认通过 DB WorkItem context 读取 submitter/project owner/assignee，再交给 lifecycle approver fallback。
    - `packages/contracts/src/enums.ts` 已补齐 `branch.status=proposed/superseded`，与文档和现有 repository 写入值对齐。
-   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` 正式写回与真实内容三方读取；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口。
+   - 剩余：完整 permission policy routing、审批中心持久 `ApprovalRequest`、`ai_fusion` v2 字段级/text diff3 写回与真实内容三方读取；R1.9 已先落 deterministic 两选一 API，R1.10 已接端侧按钮，R1.11/R1.12 已接尝试、候选与选择审计，R1.13 已接 replay 展示，R1.14 已接 LLM 融合候选入口，R1.15 已接候选选择审计入口，R1.16 已接 AI 融合稿物化采纳入口。
 
 ### R1 验收
 
@@ -303,7 +303,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 仍未完成：
 
 - 非本地 storage adapter（S3/R2/MinIO）与孤儿文件 GC。
-- 已由 R1.14/R1.15 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化与选择审计已接入；仍缺真实 base/ours/theirs 内容读取、`ai_fusion` 正式写回和多冲突工作台。
+- 已由 R1.14/R1.15/R1.16 部分补齐：LLM `ai_fusion` 候选生成、质量门、持久化、选择审计与 Markdown 融合稿正式采纳已接入；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回和多冲突工作台。
 - `/api/workitems/{id}/conflicts` API 已由 R1.9 落最小 deterministic 两选一版本，Web/Desktop/Cuu option-first UI 已由 R1.10 接入，`merge_attempts` 与 chosen incoming target 审计已由 R1.11 接入，`merge_proposals` deterministic candidates 与 chosen option 已由 R1.12 接入。
 - 完整 Drive 历史/redo UI：R1.8 已有最小 accepted deliverable restore，但还没有多文件 rollback、redo、富预览时间线与用户可选择的版本浏览器。
 
@@ -330,7 +330,7 @@ Linux 测试机最新通过证据（`192.168.5.53`，当前工作树 patch；数
 | 缺源文件 | 409 `delivery_artifact_missing` |
 | DB 指针 | accepted row 保存 `drive_item_id`、`drive_version_id`，audit detail 保存 adopted drive version ids |
 
-R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有真实内容三方读取、`ai_fusion` 写回和多冲突逐项选择历史。
+R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入 AgentRun replay，R1.8 已补最小 restore 执行入口，R1.9 已补最小冲突卡片 API 与显式采纳 incoming，R1.10 已补 Web/Desktop/Cuu option-first 冲突卡，R1.11/R1.12 已补 `merge_attempts` / `merge_proposals` 与选择审计，R1.14 已补 LLM `ai_fusion` 候选入口，R1.15 已补候选选择 API，R1.16 已补 AI 融合稿物化采纳。仍不是完整 Drive 产品化：当前没有二进制/Office 预览渲染、没有 redo/多文件历史 UI、没有云对象存储 adapter，也没有真实内容三方读取、字段级/text diff3 原位写回和多冲突逐项选择历史。
 
 ### R1.6 AcceptedDeliverableVM、下载与文本预览（2026-06-09）
 
@@ -444,7 +444,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.14 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、推荐项和失败降级已接入。
-- 仍缺真实 base/ours/theirs 内容读取、`ai_fusion` 正式写回与多冲突逐项选择历史。
+- R1.16 已补 AI 融合稿物化采纳；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回与多冲突逐项选择历史。
 - Web / Desktop / Cuu 冲突卡真实 UI 接入已由 R1.10 补齐：主界面可把 `details.conflicts` 渲染为按钮卡，Cuu card action 可携带同一 `request_json` 走 proposal merge。
 - 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
 
@@ -481,7 +481,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.14 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、推荐项和失败降级已接入。
-- 仍缺真实 base/ours/theirs 内容读取、`ai_fusion` 正式写回与多冲突逐项选择历史。
+- R1.16 已补 AI 融合稿物化采纳；仍缺真实 base/ours/theirs 内容读取、字段级/text diff3 原位写回与多冲突逐项选择历史。
 - 非 delivery change 的结构化字段级合并、文本 diff3、二进制“两份都留”自动改名。
 - 真实 React route 产品化与 Playwright 截图门禁；当前仍是 TS-first shared renderer / shell 纵切。
 
@@ -514,7 +514,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、recommended option 与失败降级已接入；仍缺真实 base/ours/theirs 内容读取和 `ai_fusion` 写回。
+- 已由 R1.14/R1.16 部分补齐：LLM `ai_fusion` 候选生成、candidate rationale、recommended option、失败降级与 Markdown 融合稿物化采纳已接入；仍缺真实 base/ours/theirs 内容读取和字段级/text diff3 原位写回。
 - 多冲突逐项选择历史：当前 `accepted_target_keys` 可记录多个 key，但 UI 仍是每个 conflict card 自带单 key payload，不是完整冲突工作台。
 - 非 delivery change 的字段级三方合并、文本 diff3、二进制“两份都留”自动改名。
 - Replay 页面展示已由 R1.13 接入；当前仍不是完整多冲突工作台。
@@ -546,7 +546,7 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14 部分补齐：LLM 融合候选生成、candidate rationale、推荐项与失败降级已接入；仍缺真实 base/ours/theirs 内容读取与 `ai_fusion` 写回。
+- 已由 R1.14/R1.16 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级与 Markdown 融合稿物化采纳已接入；仍缺真实 base/ours/theirs 内容读取与字段级/text diff3 原位写回。
 - 多冲突逐项选择工作台：当前表能记录多 key，但 UI 仍是每张 conflict card 独立提交。
 - 完整多冲突逐项选择工作台：R1.13 只展示历史，不提供批量选择/自定义候选编辑。
 
@@ -580,13 +580,13 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- 已由 R1.14 部分补齐：LLM 融合候选生成、candidate rationale、推荐项与失败降级已接入；仍缺真实 base/ours/theirs 内容读取与 `ai_fusion` 写回。
+- 已由 R1.14/R1.16 部分补齐：LLM 融合候选生成、candidate rationale、推荐项、失败降级与 Markdown 融合稿物化采纳已接入；仍缺真实 base/ours/theirs 内容读取与字段级/text diff3 原位写回。
 - 多冲突逐项选择工作台：当前 replay 能解释历史，但用户选择仍分散在每张 conflict card 的单 key payload。
 - 真实 React route 产品化：当前 P0.5 renderer 已能展示 timeline，长期页面仍需迁到 `apps/web/src/routes/*` 组件体系。
 
 ### R1.14 LLM fusion candidate wiring（2026-06-09）
 
-本切片关闭“`merge_proposals` 只能存 deterministic 两选一，LLM 融合候选没有代码入口”的缺口。范围限定为候选生成、质量门、持久化和展示；不在本切片里把 `ai_fusion` 内容正式写回，避免做出不可执行的伪自动合并。
+本切片关闭“`merge_proposals` 只能存 deterministic 两选一，LLM 融合候选没有代码入口”的缺口。R1.14 当时的范围限定为候选生成、质量门、持久化和展示；正式写回已在 R1.16 以 Markdown 融合稿物化采纳的方式补上，字段级/text diff3 仍归后续 v2。
 
 已落代码：
 
@@ -618,13 +618,13 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 仍未完成：
 
 - 已由 R1.15 补齐：`POST /api/merge-proposals/{id}/choose` 可把 `ai_fusion` 等候选选择写入 `chosen_option_key/chosen_by_user_id/chosen_at`。
-- `ai_resolved` 真正写回：需要 `structured_record` 字段合并器、`text_doc/spec_doc` diff3/patch 写回、Drive version adoption 与 rollback/audit 串联。
+- 已由 R1.16 部分补齐：已选择的 `ai_fusion` 可物化为 Markdown 融合稿并走 Drive version / accepted ledger / rollback/audit 链路；仍缺 `structured_record` 字段合并器、`text_doc/spec_doc` diff3/patch 原位写回。
 - 多冲突逐项选择工作台：当前仍是每张 conflict card 独立提交，不支持一页批量选择/自定义候选编辑。
 - LLM prompt 上下文仍受 R1 file-only 数据限制：当前 prompt 主要有 manifest/change/ref/hash 元数据；后续需要从 accepted Drive text preview、incoming workdir 文件和 base snapshot 读取真实 base/ours/theirs 内容。
 
 ### R1.15 MergeProposal candidate choose API（2026-06-09）
 
-本切片关闭“`ai_fusion` 候选只能展示，不能形成审计选择”的缺口。范围限定为候选选择与回显，不把 `ai_fusion` 内容写入正式版，避免把不可执行的融合稿伪装成已合并结果。
+本切片关闭“`ai_fusion` 候选只能展示，不能形成审计选择”的缺口。R1.15 当时的范围限定为候选选择与回显；正式写回已在 R1.16 以 Markdown 融合稿物化采纳的方式补上，字段级/text diff3 仍归后续 v2。
 
 已落代码：
 
@@ -654,9 +654,48 @@ R1.6 已补最小下载/文本预览读取面，R1.7 已把正式交付物接入
 
 仍未完成：
 
-- `ai_resolved` 正式写回：需要把已选择的 `ai_fusion.merged_value` 转成结构化字段更新或文本/规格文档 patch。
+- 已由 R1.16 部分补齐：已选择的 `ai_fusion.merged_value` 可写成正式 Markdown 融合稿；仍需把它进一步转成结构化字段更新或文本/规格文档 patch。
 - 真实 base/ours/theirs 内容读取：当前 LLM prompt 仍主要是 manifest/ref/hash 元数据。
 - 多冲突逐项选择工作台：当前可逐 row 选择，但还不是一个严肃批量处理页面。
+
+### R1.16 AI fusion apply artifact（2026-06-09）
+
+本切片关闭“用户已经选择 `ai_fusion`，但系统仍无法形成正式交付物”的最小缺口。范围刻意收窄：把已选择的 `ai_fusion.merged_value` 物化成 Markdown 融合稿，接入既有 accepted deliverable / Drive version / merge snapshot / audit / replay 链路；不在本切片里做字段级结构化 patch、text/spec doc diff3，也不做多冲突批量工作台。
+
+已落代码：
+
+- `packages/contracts/src/domain/collaboration.ts`：新增 `ApplyMergeProposalCandidateRequest`，payload 为 `{confirm?: true}`；返回沿用 `ProposalMergeResult`，避免出现第二套“已合并”返回模型。
+- `packages/db/src/repositories/proposals.ts`：新增 `findMergeProposalCandidateForApply()` 与 `applyMergeProposalCandidate()`。apply 会重新校验 proposal 仍为 `reviewed`、候选已选择且为 `ai_fusion`、candidate 带 `merged_value`、目标不是 folder，并要求 service 传入已物化的 artifact。
+- DB apply transaction 会写 `snapshots(kind=merge, ref="merge-proposal:{id}:ai_fusion")`、`merge_attempts(result="merged")`、新的 `merge_proposals(chosen_option_key="ai_fusion")`、`accepted_deliverable_changes`、`ProjectDriveVersion`，并更新 `proposals/branches/work_items` 到 merged。
+- `AuditLog(action="proposal.merged").detail_json` 新增 `merge_strategy="ai_resolved"`、`merge_proposal_id`、`chosen_option_key="ai_fusion"`、`accepted_change_ids`、`adopted_drive_version_ids` 与 resolved target keys。
+- `apps/api/src/services/proposals.ts`：新增 `applyMergeCandidate()`。service 先读 apply context，把 `merged_value`、rationale、source、conflict key 写成 Markdown 融合稿，保存到 storage root，再把 sha/size/mime/path 交给 repository。
+- `apps/api/src/routes/proposals.ts`：新增 `POST /api/merge-proposals/{id}/apply`，返回标准 `ProposalMergeResult`；普通 `POST /api/proposals/{id}/merge` 与 apply 共用同一 merge result builder。
+- `packages/api-client`：新增 `applyMergeProposalCandidate(id, payload?)`；Web/Desktop 测试 fake client 同步补齐方法。
+- `apps/api/src/proposals.test.ts`：route 测试覆盖 `merge_conflict -> choose ai_fusion -> apply -> merged`，断言 latest attempt 为 `merged`、`acceptedTargetKeys` 为冲突 target、latest merge proposal `chosenOptionKey="ai_fusion"`，重复 apply 返回 409。
+
+当前契约：
+
+| 场景 | R1.16 行为 |
+|---|---|
+| 未选择候选即 apply | 409 `merge_proposal_not_chosen` |
+| 已选择非 `ai_fusion` | 409 `merge_proposal_apply_requires_ai_fusion` |
+| `ai_fusion` 无 `merged_value` | 409 `merge_candidate_missing_result` |
+| proposal 已 merged | 409 `proposal_already_merged`，避免重复写 accepted row |
+| apply 成功 | 生成 Markdown 融合稿，写 Drive version、accepted row、merge snapshot、merged attempt、`proposal.merged` audit，返回 `ProposalMergeResult` |
+| replay/work item | 通过既有 `accepted_deliverables[]` 与 `merge_timeline[]` 看到融合稿和 `chosen_option_key="ai_fusion"` |
+
+验证：
+
+- `corepack pnpm --filter @workhub/contracts test` 通过，16/16。
+- `corepack pnpm --filter @workhub/api test -- proposals` 通过；实际脚本运行 `apps/api/src/*.test.ts`，71/71。
+- `corepack pnpm --filter @workhub/api-client test` 通过，8/8。
+
+仍未完成：
+
+- `ai_fusion` v2 原位写回：`structured_record` 需要字段级 merge policy 与 schema-aware patch；`text_doc/spec_doc` 需要 base/ours/theirs 内容读取、diff3、冲突 marker 禁止、patch preview 与 rollback proof。
+- Cuu 轻卡尚未新增“采用 AI 融合稿”按钮；当前 API/client 已具备，下一切片需接 `applyMergeProposalCandidate()` typed action，同时保持桌宠只在独立 pet window 出现。
+- 多冲突逐项选择工作台尚未完成；当前仍是每个 merge proposal row 单独 choose/apply。
+- 真实 PG smoke 尚未新增 R1.16 apply 路径；目前覆盖在 API fake repository 测试中，后续应加 Linux PG smoke：生成 conflict、choose ai_fusion、apply、断言 `accepted_deliverable_changes`/`ProjectDriveVersion`/audit/replay。
 
 ### R1.3 P0.5 fixture 生产分支迁出（2026-06-08）
 

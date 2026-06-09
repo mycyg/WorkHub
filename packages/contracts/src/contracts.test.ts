@@ -12,6 +12,7 @@ import {
   budgetPolicySchema,
   budgetPolicyUpdateSchema,
   budgetUsageSchema,
+  applyMergeProposalCandidateRequestSchema,
   chooseMergeProposalCandidateRequestSchema,
   createApprovalRequestSchema,
   confidenceGrades,
@@ -399,6 +400,7 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   const request = chooseMergeProposalCandidateRequestSchema.parse({
     option_key: "ai_fusion"
   });
+  const applyRequest = applyMergeProposalCandidateRequestSchema.parse({});
   const result = mergeProposalCandidateChoiceResultSchema.parse({
     merge_proposal_id: "72000000-0000-4000-8000-000000000009",
     conflict_key: "delivery:/outputs/result.md",
@@ -418,6 +420,7 @@ test("merge proposal candidate choices are explicit and replayable", () => {
   assert.equal(result.chosen_option_key, "ai_fusion");
   assert.equal(result.candidate.source, "llm");
   assert.equal(result.candidate.quality_gate?.status, "passed");
+  assert.equal(applyRequest.confirm, true);
 });
 
 test("question cards prefer clickable choices but retain a collapsed fallback", () => {

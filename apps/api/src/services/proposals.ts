@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -23,8 +23,11 @@ import {
   createProposalRepository,
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
+  ProposalRepositoryMergeProposalNotChosenError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
+  ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
+  type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
   type ProposalRepository,
   type StoredProposalRows,
@@ -94,6 +97,10 @@ export type ProposalService = {
     optionKey: string;
     actor: ProposalActor;
   }) => Promise<MergeProposalCandidateChoiceResult>;
+  applyMergeCandidate: (input: {
+    mergeProposalId: string;
+    actor: ProposalActor;
+  }) => Promise<StoredProposal>;
 };
 
 function cloneManifestWithIds(input: {
@@ -271,6 +278,105 @@ async function adoptDriveFilesForMerge(input: {
     });
   }
   return adopted;
+}
+
+function sha256Text(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function safeStorageSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/gu, "_").slice(0, 128) || "unknown";
+}
+
+function filenameForAiFusionCandidate(context: MergeProposalCandidateApplicationContext) {
+  const targetPath = context.conflict.target_path ? normalizeManifestPath(context.conflict.target_path) : "";
+  if (targetPath) {
+    const basename = path.posix.basename(targetPath);
+    if (basename.length > 0) {
+      return basename;
+    }
+  }
+  return `${safeStorageSegment(context.conflict.change_id)}.ai-fusion.md`;
+}
+
+function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationContext) {
+  const candidate = context.candidate;
+  const mergedValue = JSON.stringify(candidate?.merged_value ?? {}, null, 2);
+  return [
+    "# AI 融合正式稿",
+    "",
+    `- 变更申请：${context.proposalTitle}`,
+    `- Proposal ID：${context.proposalId}`,
+    `- Merge Proposal ID：${context.mergeProposalId}`,
+    `- 冲突目标：${context.conflictKey}`,
+    `- 选择方案：${context.chosenOptionKey}`,
+    `- 候选来源：${candidate?.source ?? "unknown"}`,
+    "",
+    "## 融合理由",
+    "",
+    candidate?.rationale_md ?? "未提供融合理由。",
+    "",
+    "## 融合内容",
+    "",
+    "```json",
+    mergedValue,
+    "```",
+    ""
+  ].join("\n");
+}
+
+function assertAiFusionApplyContext(context: MergeProposalCandidateApplicationContext) {
+  if (context.proposalStatus === "merged") {
+    throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
+  }
+  if (context.proposalStatus !== "reviewed") {
+    throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
+  }
+  if (!context.chosenOptionKey) {
+    throw new ProposalServiceError(409, "merge_proposal_not_chosen", "这个合并建议还没有被选择。");
+  }
+  if (context.chosenOptionKey !== "ai_fusion") {
+    throw new ProposalServiceError(409, "merge_proposal_apply_requires_ai_fusion", "只有 AI 融合建议可以通过这个入口正式写回。");
+  }
+  if (!context.candidate?.merged_value) {
+    throw new ProposalServiceError(409, "merge_candidate_missing_result", "这个 AI 融合建议没有可写回的融合内容。");
+  }
+  if (context.candidate.target_kind === "folder") {
+    throw new ProposalServiceError(409, "merge_candidate_target_unsupported", "文件夹类建议不能作为 AI 融合稿写回。");
+  }
+}
+
+async function materializeAiFusionCandidate(input: {
+  context: MergeProposalCandidateApplicationContext;
+  storageRoot: string;
+  changeId: string;
+}) {
+  const root = path.resolve(input.storageRoot);
+  const content = aiFusionCandidateMarkdown(input.context);
+  const filename = filenameForAiFusionCandidate(input.context);
+  const storagePath = path.resolve(
+    root,
+    safeStorageSegment(input.context.projectId),
+    safeStorageSegment(input.context.workItemId),
+    safeStorageSegment(input.context.proposalId),
+    "ai-fusion",
+    safeStorageSegment(input.context.mergeProposalId),
+    safeStorageSegment(input.changeId),
+    filename
+  );
+  if (!assertInside(root, storagePath)) {
+    throw new ProposalServiceError(409, "delivery_artifact_unsafe_path", "融合稿文件路径越界，不能采纳到正式版。");
+  }
+  await mkdir(path.dirname(storagePath), { recursive: true });
+  await writeFile(storagePath, content, "utf8");
+  return {
+    changeId: input.changeId,
+    filename,
+    storagePath,
+    sizeBytes: Buffer.byteLength(content, "utf8"),
+    sha256: sha256Text(content),
+    mime: "text/markdown"
+  };
 }
 
 function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
@@ -583,6 +689,14 @@ export function createInMemoryProposalService(options: {
         "not_found",
         `没有找到这个合并建议：${input.mergeProposalId}`
       );
+    },
+
+    async applyMergeCandidate(input) {
+      throw new ProposalServiceError(
+        404,
+        "not_found",
+        `没有找到这个合并建议：${input.mergeProposalId}`
+      );
     }
   };
 }
@@ -762,6 +876,41 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
       }
       return mergeCandidateChoiceResult(row);
+    },
+
+    async applyMergeCandidate(input) {
+      const context = await repository.findMergeProposalCandidateForApply(input.mergeProposalId);
+      if (!context) {
+        throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
+      }
+      assertAiFusionApplyContext(context);
+      const resolvedDriveFile = await materializeAiFusionCandidate({
+        context,
+        storageRoot,
+        changeId: nextId()
+      });
+      let rows: StoredProposalRows | null;
+      try {
+        rows = await repository.applyMergeProposalCandidate({
+          mergeProposalId: input.mergeProposalId,
+          mergeSnapshotId: nextId(),
+          actor: actorToRepository(input.actor),
+          resolvedDriveFile,
+          at: now()
+        });
+      } catch (error) {
+        if (error instanceof ProposalRepositoryMergeProposalNotChosenError) {
+          throw new ProposalServiceError(409, error.code, "这个合并建议还没有被选择。");
+        }
+        if (error instanceof ProposalRepositoryUnsupportedMergeProposalApplyError) {
+          throw new ProposalServiceError(409, error.code, error.message);
+        }
+        throw error;
+      }
+      if (!rows) {
+        throw new ProposalServiceError(404, "not_found", "没有找到这个合并建议。");
+      }
+      return storedRowsToProposal(rows);
     }
   };
 }

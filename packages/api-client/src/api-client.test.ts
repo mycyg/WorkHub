@@ -97,6 +97,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.reviewProposal("proposal-1", { decision: "approve", remember: "once" });
   await client.mergeProposal("proposal-1");
   await client.chooseMergeProposalCandidate("merge-proposal/1", { option_key: "ai_fusion" });
+  await client.applyMergeProposalCandidate("merge-proposal/1");
   await client.replayAgentRun("run-1");
 
   assert.deepEqual(calls, [
@@ -126,6 +127,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/proposals/proposal-1/review",
     "POST /api/proposals/proposal-1/merge",
     "POST /api/merge-proposals/merge-proposal%2F1/choose",
+    "POST /api/merge-proposals/merge-proposal%2F1/apply",
     "GET /api/agent-runs/run-1/replay"
   ]);
 });

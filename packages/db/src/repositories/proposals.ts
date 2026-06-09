@@ -129,6 +129,32 @@ export type ChooseMergeProposalCandidateInput = {
   at?: Date;
 };
 
+export type MergeProposalCandidateApplicationContext = {
+  mergeProposalId: string;
+  proposalId: string;
+  proposalStatus: ProposalRow["status"];
+  proposalTitle: string;
+  workItemId: string;
+  workItemCode: string;
+  projectId: string;
+  branchId: string;
+  conflictKey: string;
+  conflict: ProposalMergeConflict;
+  chosenOptionKey: string | null;
+  chosenByUserId: string | null;
+  chosenAt: Date | null;
+  candidate: MergeProposalCandidate | null;
+  diffManifest: DeliverableChangeManifest;
+};
+
+export type ApplyMergeProposalCandidateInput = {
+  mergeProposalId: string;
+  mergeSnapshotId?: string;
+  actor?: ProposalRepositoryActor;
+  resolvedDriveFile?: ProposalAdoptedDriveFileInput;
+  at?: Date;
+};
+
 export class ProposalRepositoryMergeConflictError extends Error {
   public readonly code = "merge_conflict";
 
@@ -159,15 +185,37 @@ export class ProposalRepositoryMergeProposalAlreadyChosenError extends Error {
   }
 }
 
+export class ProposalRepositoryMergeProposalNotChosenError extends Error {
+  public readonly code = "merge_proposal_not_chosen";
+
+  constructor(public readonly mergeProposalId: string) {
+    super("Merge proposal candidate has not been chosen");
+  }
+}
+
+export class ProposalRepositoryUnsupportedMergeProposalApplyError extends Error {
+  constructor(
+    public readonly mergeProposalId: string,
+    public readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
+  findMergeProposalCandidateForApply: (
+    mergeProposalId: string
+  ) => Promise<MergeProposalCandidateApplicationContext | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
   chooseMergeProposalCandidate: (input: ChooseMergeProposalCandidateInput) => Promise<MergeProposalRow | null>;
+  applyMergeProposalCandidate: (input: ApplyMergeProposalCandidateInput) => Promise<StoredProposalRows | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
 };
@@ -392,6 +440,64 @@ function mergeProposalCandidateOptionKeys(row: MergeProposalRow) {
     const optionKey = (candidate as Record<string, unknown>).option_key;
     return typeof optionKey === "string" ? optionKey : undefined;
   }).filter((optionKey): optionKey is string => Boolean(optionKey)));
+}
+
+function mergeProposalCandidateByOption(row: MergeProposalRow, optionKey: string) {
+  const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
+  const found = candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== "object") {
+      return false;
+    }
+    return (candidate as Record<string, unknown>).option_key === optionKey;
+  });
+  return found && typeof found === "object" ? found as MergeProposalCandidate : null;
+}
+
+function conflictByKey(attempt: MergeAttemptRow, conflictKey: string) {
+  const conflicts = Array.isArray(attempt.conflictsJson) ? attempt.conflictsJson : [];
+  return conflicts.find((conflict) => {
+    if (!conflict || typeof conflict !== "object") {
+      return false;
+    }
+    return (conflict as Partial<ProposalMergeConflict>).target_key === conflictKey;
+  }) as ProposalMergeConflict | undefined;
+}
+
+function changeForConflict(manifest: DeliverableChangeManifest, conflict: ProposalMergeConflict) {
+  return manifest.changes.find((change) =>
+    change.id === conflict.change_id || targetKey(change) === conflict.target_key
+  );
+}
+
+function aiFusionResolvedChange(input: {
+  sourceChange: DeliverableChange;
+  conflict: ProposalMergeConflict;
+  candidate: MergeProposalCandidate;
+  changeId: string;
+  sha256After?: string;
+  mergeProposalId: string;
+}): DeliverableChange {
+  const changedFields = Object.keys(input.candidate.merged_value ?? {});
+  return {
+    ...input.sourceChange,
+    id: input.changeId,
+    target_kind: input.candidate.target_kind ?? input.sourceChange.target_kind,
+    change_type: "updated",
+    target_ref: {
+      ...input.sourceChange.target_ref,
+      ...(input.conflict.existing_ref ? { version_before: input.conflict.existing_ref } : {}),
+      version_after: input.sha256After ? `sha256:${input.sha256After}` : `ai_fusion:${input.mergeProposalId}`,
+      ...(input.conflict.existing_sha256_after ? { sha256_before: input.conflict.existing_sha256_after } : {}),
+      ...(input.sha256After ? { sha256_after: input.sha256After } : {})
+    },
+    human_summary: "采纳 AI 融合建议，生成正式融合稿。",
+    machine_summary: {
+      ...(input.sourceChange.machine_summary ?? {}),
+      after_excerpt: input.candidate.rationale_md,
+      changed_fields: changedFields.length > 0 ? changedFields : ["ai_fusion"]
+    },
+    preview_ref: { kind: "text", href: `merge-proposal:${input.mergeProposalId}:ai_fusion` }
+  };
 }
 
 async function recordMergeProposals(
@@ -657,6 +763,56 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       return rows[0] ?? null;
     },
 
+    async findMergeProposalCandidateForApply(mergeProposalId) {
+      const rows = await db
+        .select({
+          mergeProposal: mergeProposals,
+          mergeAttempt: mergeAttempts,
+          proposalId: proposals.id,
+          proposalStatus: proposals.status,
+          proposalTitle: proposals.title,
+          workItemId: proposals.workItemId,
+          branchId: proposals.branchId,
+          diffManifest: proposals.diffManifest,
+          workItemCode: workItems.code,
+          projectId: workItems.projectId
+        })
+        .from(mergeProposals)
+        .innerJoin(mergeAttempts, eq(mergeProposals.mergeAttemptId, mergeAttempts.id))
+        .innerJoin(proposals, eq(mergeAttempts.proposalId, proposals.id))
+        .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .where(eq(mergeProposals.id, mergeProposalId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+      const conflict = conflictByKey(row.mergeAttempt, row.mergeProposal.conflictKey);
+      if (!conflict) {
+        return null;
+      }
+      const candidate = row.mergeProposal.chosenOptionKey
+        ? mergeProposalCandidateByOption(row.mergeProposal, row.mergeProposal.chosenOptionKey)
+        : null;
+      return {
+        mergeProposalId: row.mergeProposal.id,
+        proposalId: row.proposalId,
+        proposalStatus: row.proposalStatus,
+        proposalTitle: row.proposalTitle,
+        workItemId: row.workItemId,
+        workItemCode: row.workItemCode,
+        projectId: row.projectId,
+        branchId: row.branchId,
+        conflictKey: row.mergeProposal.conflictKey,
+        conflict,
+        chosenOptionKey: row.mergeProposal.chosenOptionKey,
+        chosenByUserId: row.mergeProposal.chosenByUserId,
+        chosenAt: row.mergeProposal.chosenAt,
+        candidate,
+        diffManifest: row.diffManifest
+      };
+    },
+
     findById(proposalId) {
       return readStoredProposal(db, proposalId);
     },
@@ -774,6 +930,253 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         result = updatedRows[0] ?? null;
       });
       return result;
+    },
+
+    async applyMergeProposalCandidate(input) {
+      const at = input.at ?? new Date();
+      const mergeSnapshotId = input.mergeSnapshotId ?? randomUUID();
+      let found = false;
+      let proposalId: string | null = null;
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .select({
+            mergeProposal: mergeProposals,
+            mergeAttempt: mergeAttempts,
+            proposalId: proposals.id,
+            proposalStatus: proposals.status,
+            proposalTitle: proposals.title,
+            workItemId: proposals.workItemId,
+            branchId: proposals.branchId,
+            diffManifest: proposals.diffManifest,
+            workItemCode: workItems.code,
+            projectId: workItems.projectId,
+            submitterUserId: workItems.submitterUserId
+          })
+          .from(mergeProposals)
+          .innerJoin(mergeAttempts, eq(mergeProposals.mergeAttemptId, mergeAttempts.id))
+          .innerJoin(proposals, eq(mergeAttempts.proposalId, proposals.id))
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+          .where(eq(mergeProposals.id, input.mergeProposalId))
+          .limit(1);
+        const row = rows[0];
+        if (!row) {
+          return;
+        }
+        found = true;
+        proposalId = row.proposalId;
+        if (row.proposalStatus === "merged") {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "proposal_already_merged",
+            "Proposal is already merged"
+          );
+        }
+        if (row.proposalStatus !== "reviewed") {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "proposal_not_reviewed",
+            "Proposal must be reviewed before applying a merge candidate"
+          );
+        }
+        if (!row.mergeProposal.chosenOptionKey) {
+          throw new ProposalRepositoryMergeProposalNotChosenError(input.mergeProposalId);
+        }
+        if (row.mergeProposal.chosenOptionKey !== "ai_fusion") {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_proposal_apply_requires_ai_fusion",
+            "Only ai_fusion candidates can be applied through this route"
+          );
+        }
+        const candidate = mergeProposalCandidateByOption(row.mergeProposal, row.mergeProposal.chosenOptionKey);
+        if (!candidate?.merged_value) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_candidate_missing_result",
+            "Chosen merge candidate does not contain a merged value"
+          );
+        }
+        if (candidate.target_kind === "folder") {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_candidate_target_unsupported",
+            "Folder merge candidates cannot be applied as AI fusion artifacts"
+          );
+        }
+        const resolvedFile = input.resolvedDriveFile;
+        if (!resolvedFile) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_candidate_artifact_missing",
+            "AI fusion apply requires a materialized artifact"
+          );
+        }
+        const conflict = conflictByKey(row.mergeAttempt, row.mergeProposal.conflictKey);
+        if (!conflict) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_conflict_context_missing",
+            "Merge proposal conflict context is missing"
+          );
+        }
+        const sourceChange = changeForConflict(row.diffManifest, conflict);
+        if (!sourceChange) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "merge_conflict_change_missing",
+            "Merge proposal source change is missing"
+          );
+        }
+        const resolvedChange = aiFusionResolvedChange({
+          sourceChange,
+          conflict,
+          candidate,
+          changeId: resolvedFile.changeId,
+          ...(resolvedFile.sha256 ? { sha256After: resolvedFile.sha256 } : {}),
+          mergeProposalId: input.mergeProposalId
+        });
+        const current = await readCurrentAccepted(tx, {
+          workItemId: row.workItemId,
+          targetKey: row.mergeProposal.conflictKey
+        });
+        const driveAdoption = await adoptDriveFileVersion(tx, {
+          projectId: row.projectId,
+          actorUserId: input.actor?.actorUserId ?? row.submitterUserId,
+          workItemCode: row.workItemCode,
+          change: resolvedChange,
+          file: resolvedFile,
+          at
+        });
+        await tx.insert(snapshots).values({
+          id: mergeSnapshotId,
+          workItemId: row.workItemId,
+          branchId: row.branchId,
+          kind: "merge",
+          ref: `merge-proposal:${input.mergeProposalId}:ai_fusion`,
+          ...(resolvedFile.sha256 ? { contentSha256: resolvedFile.sha256 } : {}),
+          createdByKind: input.actor?.actorKind ?? "system",
+          createdAt: at
+        });
+        const mergeAttemptId = await recordMergeAttempt(tx, {
+          proposalId: row.proposalId,
+          workItemId: row.workItemId,
+          branchId: row.branchId,
+          ...(input.actor ? { actor: input.actor } : {}),
+          result: "merged",
+          mergeSnapshotId,
+          conflicts: [conflict],
+          acceptedTargetKeys: [row.mergeProposal.conflictKey],
+          targetKeys: [row.mergeProposal.conflictKey],
+          at
+        });
+        await tx.insert(mergeProposals).values({
+          id: randomUUID(),
+          mergeAttemptId,
+          conflictKey: row.mergeProposal.conflictKey,
+          candidatesJson: row.mergeProposal.candidatesJson,
+          recommendedOptionKey: row.mergeProposal.recommendedOptionKey ?? "ai_fusion",
+          chosenOptionKey: "ai_fusion",
+          chosenByUserId: input.actor?.actorUserId ?? row.mergeProposal.chosenByUserId,
+          chosenAt: at,
+          createdAt: at,
+          updatedAt: at
+        });
+        await tx
+          .update(proposals)
+          .set({
+            status: "merged",
+            mergeSnapshotId,
+            mergedAt: at,
+            updatedAt: at
+          })
+          .where(eq(proposals.id, row.proposalId));
+        await tx
+          .update(branches)
+          .set({
+            status: "merged",
+            headRef: mergeSnapshotId,
+            version: sql`${branches.version} + 1`,
+            updatedAt: at
+          })
+          .where(eq(branches.id, row.branchId));
+        await tx
+          .update(workItems)
+          .set({
+            status: "merged",
+            mainBranchId: row.branchId,
+            acceptedAt: at,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: at
+          })
+          .where(eq(workItems.id, row.workItemId));
+        if (current) {
+          await tx
+            .update(acceptedDeliverableChanges)
+            .set({ supersededAt: at, updatedAt: at })
+            .where(and(
+              eq(acceptedDeliverableChanges.workItemId, row.workItemId),
+              eq(acceptedDeliverableChanges.targetKey, row.mergeProposal.conflictKey),
+              isNull(acceptedDeliverableChanges.supersededAt)
+            ));
+        }
+        const acceptedChangeId = randomUUID();
+        await tx.insert(acceptedDeliverableChanges).values({
+          id: acceptedChangeId,
+          workItemId: row.workItemId,
+          proposalId: row.proposalId,
+          branchId: row.branchId,
+          changeId: resolvedChange.id,
+          targetKind: resolvedChange.target_kind,
+          targetEntityType: resolvedChange.target_ref.entity_type,
+          ...(resolvedChange.target_ref.entity_id ? { targetEntityId: resolvedChange.target_ref.entity_id } : {}),
+          ...(resolvedChange.target_ref.path ? { targetPath: resolvedChange.target_ref.path } : {}),
+          targetKey: row.mergeProposal.conflictKey,
+          changeType: resolvedChange.change_type,
+          acceptedVersion: (current?.acceptedVersion ?? 0) + 1,
+          ...(baseVersionRef(resolvedChange) ? { baseVersionRef: baseVersionRef(resolvedChange) } : {}),
+          acceptedRef: acceptedRef(resolvedChange),
+          driveItemId: driveAdoption.driveItemId,
+          driveVersionId: driveAdoption.driveVersionId,
+          ...(resolvedChange.target_ref.sha256_before ? { sha256Before: resolvedChange.target_ref.sha256_before } : {}),
+          ...(resolvedChange.target_ref.sha256_after ? { sha256After: resolvedChange.target_ref.sha256_after } : {}),
+          ...(resolvedChange.preview_ref ? { previewRefJson: resolvedChange.preview_ref } : {}),
+          manifestChangeJson: resolvedChange,
+          createdAt: at,
+          updatedAt: at
+        });
+        await tx.insert(auditLogs).values({
+          id: randomUUID(),
+          actorKind: input.actor?.actorKind ?? "system",
+          ...(input.actor?.actorUserId ? { actorUserId: input.actor.actorUserId } : {}),
+          entityType: "proposal",
+          entityId: row.proposalId,
+          action: "proposal.merged",
+          detailJson: {
+            work_item_id: row.workItemId,
+            branch_id: row.branchId,
+            merge_strategy: "ai_resolved",
+            merge_proposal_id: input.mergeProposalId,
+            chosen_option_key: "ai_fusion",
+            merge_snapshot_id: mergeSnapshotId,
+            merge_attempt_id: mergeAttemptId,
+            accepted_change_ids: [acceptedChangeId],
+            accepted_change_count: 1,
+            adopted_drive_version_ids: [driveAdoption.driveVersionId],
+            adopted_drive_version_count: 1,
+            conflict_checked: true,
+            conflict_count: 1,
+            accepted_incoming_target_keys: [],
+            resolved_conflict_target_keys: [row.mergeProposal.conflictKey],
+            target_keys: [row.mergeProposal.conflictKey]
+          },
+          snapshotId: mergeSnapshotId,
+          createdAt: at
+        });
+      });
+      if (!found || !proposalId) {
+        return null;
+      }
+      return readStoredProposal(db, proposalId);
     },
 
     async review(input) {

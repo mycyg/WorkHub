@@ -133,6 +133,11 @@ export const chooseMergeProposalCandidateRequestSchema = z.object({
 });
 export type ChooseMergeProposalCandidateRequest = z.input<typeof chooseMergeProposalCandidateRequestSchema>;
 
+export const applyMergeProposalCandidateRequestSchema = z.object({
+  confirm: z.boolean().default(true)
+});
+export type ApplyMergeProposalCandidateRequest = z.input<typeof applyMergeProposalCandidateRequestSchema>;
+
 export const chosenMergeProposalCandidateSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),

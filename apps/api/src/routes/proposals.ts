@@ -4,6 +4,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
+  applyMergeProposalCandidateRequestSchema,
   chooseMergeProposalCandidateRequestSchema,
   createProposalFromManifestRequestSchema,
   eventTypes,
@@ -212,6 +213,73 @@ function genericMergeAttention(proposal: StoredProposal, createdAt: string): Att
   };
 }
 
+function mergeResultFor(input: {
+  proposal: StoredProposal;
+  actor: ReturnType<typeof actorFor>;
+  userId: string;
+  createdAt: string;
+}) {
+  const attention = genericMergeAttention(input.proposal, input.createdAt);
+  const mergeSnapshotId = input.proposal.merge_snapshot_id;
+  if (!mergeSnapshotId) {
+    throw new HTTPException(500, { message: "变更申请缺少合并快照。" });
+  }
+  const proposalMerged = makeWorkHubEvent({
+    event_id: randomUUID(),
+    type: eventTypes.proposalMerged,
+    topic: topics.workitem(input.proposal.work_item_id).topic,
+    ts: new Date(input.createdAt),
+    actor: input.actor,
+    work_item_id: input.proposal.work_item_id,
+    proposal_id: input.proposal.id,
+    preview_text: `${input.proposal.title} 已采纳。`,
+    attention,
+    data: {
+      proposal_id: input.proposal.id,
+      merge_snapshot_id: mergeSnapshotId,
+      rollback_available: input.proposal.diff_manifest.rollback.available
+    }
+  });
+  const notification = makeWorkHubEvent({
+    event_id: randomUUID(),
+    type: eventTypes.notificationCreated,
+    topic: topics.user(input.userId).topic,
+    ts: new Date(input.createdAt),
+    actor: { actor_kind: "system", label: "notification-service" },
+    work_item_id: input.proposal.work_item_id,
+    proposal_id: input.proposal.id,
+    preview_text: `${input.proposal.title} 已采纳。`,
+    attention,
+    data: attention
+  });
+  const auditLogs = [
+    {
+      id: randomUUID(),
+      actor: auditActorFor(input.actor),
+      entity: { entity_type: "proposal", entity_id: input.proposal.id },
+      action: "proposal.merged",
+      detail_json: {
+        rollback_available: input.proposal.diff_manifest.rollback.available,
+        changes: input.proposal.diff_manifest.changes.length
+      },
+      snapshot_id: mergeSnapshotId,
+      created_at: input.createdAt
+    }
+  ];
+
+  return proposalMergeResultSchema.parse({
+    proposal_id: input.proposal.id,
+    work_item_id: input.proposal.work_item_id,
+    status: "merged",
+    merge_snapshot_id: mergeSnapshotId,
+    rollback_available: input.proposal.diff_manifest.rollback.available,
+    rollback: input.proposal.diff_manifest.rollback,
+    attention,
+    events: [proposalMerged, notification],
+    audit_logs: auditLogs
+  });
+}
+
 function handleProposalServiceError(error: unknown): never {
   if (error instanceof ProposalServiceError) {
     throw new HTTPException(error.status as 400, { message: error.message });
@@ -348,73 +416,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       }
       handleProposalServiceError(error);
     }
-    const createdAt = nowIso();
-    const actor = actorFor(c.var.actor);
-    const attention = genericMergeAttention(proposal, createdAt);
-    const mergeSnapshotId = proposal.merge_snapshot_id;
-    if (!mergeSnapshotId) {
-      throw new HTTPException(500, { message: "变更申请缺少合并快照。" });
-    }
-    const proposalMerged = makeWorkHubEvent({
-      event_id: randomUUID(),
-      type: eventTypes.proposalMerged,
-      topic: topics.workitem(proposal.work_item_id).topic,
-      ts: new Date(createdAt),
-      actor,
-      work_item_id: proposal.work_item_id,
-      proposal_id: proposal.id,
-      preview_text: `${proposal.title} 已采纳。`,
-      attention,
-      data: {
-        proposal_id: proposal.id,
-        merge_snapshot_id: mergeSnapshotId,
-        rollback_available: proposal.diff_manifest.rollback.available
-      }
+    return c.json({
+      ok: true,
+      data: mergeResultFor({
+        proposal,
+        actor: actorFor(c.var.actor),
+        userId: c.var.currentUser.id,
+        createdAt: nowIso()
+      })
     });
-    const notification = makeWorkHubEvent({
-      event_id: randomUUID(),
-      type: eventTypes.notificationCreated,
-      topic: topics.user(c.var.currentUser.id).topic,
-      ts: new Date(createdAt),
-      actor: { actor_kind: "system", label: "notification-service" },
-      work_item_id: proposal.work_item_id,
-      proposal_id: proposal.id,
-      preview_text: `${proposal.title} 已采纳。`,
-      attention,
-      data: attention
-    });
-    const auditLogs = [
-      {
-        id: randomUUID(),
-        actor: {
-          actor_kind: actor.actor_kind,
-          ...(actor.actor_user_id ? { actor_user_id: actor.actor_user_id } : {}),
-          ...(actor.label ? { actor_nickname: actor.label } : {})
-        },
-        entity: { entity_type: "proposal", entity_id: proposal.id },
-        action: "proposal.merged",
-        detail_json: {
-          rollback_available: proposal.diff_manifest.rollback.available,
-          changes: proposal.diff_manifest.changes.length
-        },
-        snapshot_id: mergeSnapshotId,
-        created_at: createdAt
-      }
-    ];
-
-    const data = proposalMergeResultSchema.parse({
-      proposal_id: proposal.id,
-      work_item_id: proposal.work_item_id,
-      status: "merged",
-      merge_snapshot_id: mergeSnapshotId,
-      rollback_available: proposal.diff_manifest.rollback.available,
-      rollback: proposal.diff_manifest.rollback,
-      attention,
-      events: [proposalMerged, notification],
-      audit_logs: auditLogs
-    });
-
-    return c.json({ ok: true, data });
   });
 
   return routes;
@@ -469,6 +479,27 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
       return c.json({
         ok: true,
         data: mergeProposalCandidateChoiceResultSchema.parse(result)
+      });
+    } catch (error) {
+      handleProposalServiceError(error);
+    }
+  });
+
+  routes.post("/merge-proposals/:id/apply", createCurrentUserMiddleware(authSource), async (c) => {
+    applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    try {
+      const proposal = await proposals.applyMergeCandidate({
+        mergeProposalId: c.req.param("id"),
+        actor: proposalActorFor(c.var.actor)
+      });
+      return c.json({
+        ok: true,
+        data: mergeResultFor({
+          proposal,
+          actor: actorFor(c.var.actor),
+          userId: c.var.currentUser.id,
+          createdAt: nowIso()
+        })
       });
     } catch (error) {
       handleProposalServiceError(error);
