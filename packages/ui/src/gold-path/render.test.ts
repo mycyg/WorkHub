@@ -176,6 +176,7 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
       target_keys: ["delivery:/outputs/result.md"],
       accepted_target_keys: ["delivery:/outputs/result.md"],
       conflicts: [{ target_key: "delivery:/outputs/result.md" }],
+      text_hunk_decisions: [],
       decisions: [
         {
           id: "76000000-0000-4000-8000-000000000016",

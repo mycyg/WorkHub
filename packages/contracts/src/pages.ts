@@ -99,6 +99,26 @@ export const replayMergeDecisionVmSchema = z.object({
 });
 export type ReplayMergeDecisionVM = z.infer<typeof replayMergeDecisionVmSchema>;
 
+export const replayTextHunkDecisionVmSchema = z.object({
+  hunk_index: z.number().int().nonnegative(),
+  start_line: z.number().int().positive(),
+  end_line: z.number().int().positive(),
+  decision: z.enum(["keep_current", "accept_incoming", "ai_fusion"])
+});
+export type ReplayTextHunkDecisionVM = z.infer<typeof replayTextHunkDecisionVmSchema>;
+
+export const replayBulkActionVmSchema = z.object({
+  action: z.enum(["keep_current", "accept_incoming"]),
+  target_keys: z.array(z.string().min(1)).default([]),
+  conflict_count: z.number().int().nonnegative().optional(),
+  result: z.string().min(1).optional(),
+  accepted_incoming_target_keys: z.array(z.string().min(1)).default([]),
+  resolved_conflict_target_keys: z.array(z.string().min(1)).default([]),
+  blocked_target_keys: z.array(z.string().min(1)).default([]),
+  audit_id: idSchema.optional()
+});
+export type ReplayBulkActionVM = z.infer<typeof replayBulkActionVmSchema>;
+
 export const replayMergeAttemptVmSchema = z.object({
   id: idSchema,
   proposal_id: idSchema,
@@ -113,6 +133,10 @@ export const replayMergeAttemptVmSchema = z.object({
   accepted_target_keys: z.array(z.string().min(1)).default([]),
   conflicts: z.array(z.unknown()).default([]),
   decisions: z.array(replayMergeDecisionVmSchema).default([]),
+  text_hunk_decisions: z.array(replayTextHunkDecisionVmSchema).default([]),
+  text_hunk_count: z.number().int().nonnegative().optional(),
+  text_hunk_output_sha256: z.string().length(64).optional(),
+  bulk_action: replayBulkActionVmSchema.optional(),
   created_at: isoDateTimeSchema
 });
 export type ReplayMergeAttemptVM = z.infer<typeof replayMergeAttemptVmSchema>;

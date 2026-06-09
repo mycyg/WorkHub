@@ -47,6 +47,14 @@ function auditLogRunId(detailJson: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
+function auditLogMergeAttemptId(detailJson: unknown) {
+  if (!detailJson || typeof detailJson !== "object") {
+    return undefined;
+  }
+  const value = (detailJson as Record<string, unknown>).merge_attempt_id;
+  return typeof value === "string" ? value : undefined;
+}
+
 function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
   if (run.actor_id === actor.id || actor.isAdmin) {
     return;
@@ -69,6 +77,7 @@ function getDefaultProposalReplayAudit(): ProposalReplayAuditReader {
 
 async function buildMergeTimelineForWorkItem(
   proposalAudit: ProposalReplayAuditReader | undefined,
+  auditLogs: AuditLogRepository | undefined,
   workItemId: string
 ) {
   if (!proposalAudit) {
@@ -77,10 +86,14 @@ async function buildMergeTimelineForWorkItem(
   const proposals = await proposalAudit.listByWorkItem(workItemId);
   const timeline: ReturnType<typeof toReplayMergeAttemptVm>[] = [];
   for (const proposal of proposals) {
+    const proposalAuditRows = auditLogs
+      ? await auditLogs.listAuditLogsForEntity("proposal", proposal.proposal.id)
+      : [];
     const attempts = await proposalAudit.listMergeAttemptsByProposal(proposal.proposal.id);
     for (const attempt of attempts) {
       const mergeProposals = await proposalAudit.listMergeProposalsByAttempt(attempt.id);
-      timeline.push(toReplayMergeAttemptVm({ attempt, mergeProposals }));
+      const attemptAuditRows = proposalAuditRows.filter((row) => auditLogMergeAttemptId(row.detailJson) === attempt.id);
+      timeline.push(toReplayMergeAttemptVm({ attempt, mergeProposals, auditLogs: attemptAuditRows }));
     }
   }
   return timeline.sort((left, right) => left.created_at.localeCompare(right.created_at));
@@ -187,7 +200,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       const acceptedDeliverables = replayWorkItems
         ? (await replayWorkItems.detailPage({ workItemId: run.work_item_id, actor: c.var.actor })).accepted_deliverables
         : [];
-      const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, run.work_item_id);
+      const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, stores.auditLogs, run.work_item_id);
       return c.json({
         ok: true,
         data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables, mergeTimeline })

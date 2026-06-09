@@ -1,6 +1,7 @@
 import type {
   CuuState,
   ReplayMergeCandidateVM,
+  ReplayMergeAttemptVM,
   ReplayTraceVM,
   WorkHubLocale
 } from "@workhub/contracts";
@@ -44,10 +45,11 @@ export const replayCss = [
   ".wh-row .wh-patch{margin-top:10px}",
   overlapHunkReviewCss,
   ".wh-row .wh-diff3{margin-top:10px}",
+  ".wh-replay-audit{border:1px solid #dbe5ff;border-radius:8px;background:#f7f9ff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-replay-audit-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-replay-audit-list{display:grid;gap:6px}.wh-replay-audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e5eaff;padding-top:6px}.wh-replay-audit-row:first-child{border-top:0;padding-top:0}.wh-replay-audit-code{font-family:\"Cascadia Mono\",\"SFMono-Regular\",monospace;font-size:12px;color:#45506b;overflow-wrap:anywhere}",
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   subrecordItemDiffCss,
-  ".wh-desktop .wh-replay-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-replay{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-replay{padding:18px}.wh-replay-frame{grid-template-columns:1fr}.wh-replay-main{padding:18px}.wh-replay-rail{position:static}.wh-title{font-size:24px}.wh-title,.wh-subtle,.wh-card strong{word-break:break-all}.wh-grid{grid-template-columns:1fr}.wh-row{flex-direction:column;align-items:flex-start}.wh-field-row,.wh-subrecord-row{grid-template-columns:1fr}.wh-actions{align-items:flex-start}.wh-diff{font-size:11px}.wh-diff-line,.wh-diff-hunk-head{grid-template-columns:38px 38px minmax(0,1fr)}.wh-diff-line-no{padding:2px 6px}.wh-diff-code{padding:2px 8px}}"
+  ".wh-desktop .wh-replay-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-replay{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-replay{padding:18px}.wh-replay-frame{grid-template-columns:1fr}.wh-replay-main{padding:18px}.wh-replay-rail{position:static}.wh-title{font-size:24px}.wh-title,.wh-subtle,.wh-card strong{word-break:break-all}.wh-grid{grid-template-columns:1fr}.wh-row{flex-direction:column;align-items:flex-start}.wh-field-row,.wh-subrecord-row,.wh-replay-audit-row{grid-template-columns:1fr}.wh-actions{align-items:flex-start}.wh-diff{font-size:11px}.wh-diff-line,.wh-diff-hunk-head{grid-template-columns:38px 38px minmax(0,1fr)}.wh-diff-line-no{padding:2px 6px}.wh-diff-code{padding:2px 8px}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -89,6 +91,84 @@ function mergeAttemptLabel(locale: WorkHubLocale, result: string) {
     return copy(locale, "已采纳", "Accepted");
   }
   return copy(locale, "已记录", "Recorded");
+}
+
+function decisionLabel(locale: WorkHubLocale, decision: string) {
+  if (decision === "keep_current") {
+    return copy(locale, "保留正式版", "Kept accepted version");
+  }
+  if (decision === "accept_incoming") {
+    return copy(locale, "采纳这次版本", "Accepted this version");
+  }
+  if (decision === "ai_fusion") {
+    return copy(locale, "采用 AI 融合稿", "Used AI fusion draft");
+  }
+  return decision;
+}
+
+function lineRangeLabel(locale: WorkHubLocale, startLine: number, endLine: number) {
+  return startLine === endLine
+    ? copy(locale, `第 ${startLine} 行`, `Line ${startLine}`)
+    : copy(locale, `第 ${startLine}-${endLine} 行`, `Lines ${startLine}-${endLine}`);
+}
+
+function renderTextHunkDecisionAudit(attempt: ReplayMergeAttemptVM, locale: WorkHubLocale) {
+  const decisions = attempt.text_hunk_decisions ?? [];
+  if (decisions.length === 0) {
+    return "";
+  }
+  const rows = decisions
+    .map((decision) => `<div class="wh-replay-audit-row" data-replay-text-hunk-decision="${escapeHtml(String(decision.hunk_index))}" data-replay-text-hunk-source="${escapeHtml(decision.decision)}">
+      <div>
+        <strong>${escapeHtml(copy(locale, `重叠段 ${decision.hunk_index + 1}`, `Overlap hunk ${decision.hunk_index + 1}`))}</strong>
+        <p class="wh-subtle">${escapeHtml(lineRangeLabel(locale, decision.start_line, decision.end_line))}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(decisionLabel(locale, decision.decision))}</span>
+    </div>`)
+    .join("");
+  const sha = attempt.text_hunk_output_sha256
+    ? `<p class="wh-replay-audit-code">${escapeHtml(attempt.text_hunk_output_sha256)}</p>`
+    : "";
+  return `<section class="wh-replay-audit" data-replay-text-hunk-decision-audit="true" data-replay-text-hunk-decision-count="${escapeHtml(String(decisions.length))}">
+    <div class="wh-replay-audit-head">
+      <strong>${escapeHtml(copy(locale, "逐段选择回放", "Hunk decision replay"))}</strong>
+      <span class="wh-pill">${escapeHtml(copy(locale, `${attempt.text_hunk_count ?? decisions.length} 段`, `${attempt.text_hunk_count ?? decisions.length} hunks`))}</span>
+    </div>
+    <div class="wh-replay-audit-list">${rows}</div>
+    ${sha}
+  </section>`;
+}
+
+function renderBulkActionAudit(attempt: ReplayMergeAttemptVM, locale: WorkHubLocale) {
+  const bulk = attempt.bulk_action;
+  if (!bulk) {
+    return "";
+  }
+  const blocked = bulk.blocked_target_keys ?? [];
+  const resolved = bulk.resolved_conflict_target_keys ?? [];
+  const accepted = bulk.accepted_incoming_target_keys ?? [];
+  const rows = [
+    bulk.target_keys.length
+      ? `<div class="wh-replay-audit-row"><span>${escapeHtml(copy(locale, "点击范围", "Clicked scope"))}</span><span class="wh-replay-audit-code">${escapeHtml(bulk.target_keys.join(", "))}</span></div>`
+      : "",
+    accepted.length
+      ? `<div class="wh-replay-audit-row"><span>${escapeHtml(copy(locale, "采纳范围", "Accepted scope"))}</span><span class="wh-replay-audit-code">${escapeHtml(accepted.join(", "))}</span></div>`
+      : "",
+    resolved.length
+      ? `<div class="wh-replay-audit-row"><span>${escapeHtml(copy(locale, "已处理", "Resolved"))}</span><span class="wh-replay-audit-code">${escapeHtml(resolved.join(", "))}</span></div>`
+      : "",
+    blocked.length
+      ? `<div class="wh-replay-audit-row"><span>${escapeHtml(copy(locale, "被阻断", "Blocked"))}</span><span class="wh-replay-audit-code">${escapeHtml(blocked.join(", "))}</span></div>`
+      : ""
+  ].filter(Boolean).join("");
+  return `<section class="wh-replay-audit" data-replay-bulk-action-audit="true" data-replay-bulk-action="${escapeHtml(bulk.action)}" data-replay-bulk-result="${escapeHtml(bulk.result ?? attempt.result)}">
+    <div class="wh-replay-audit-head">
+      <strong>${escapeHtml(copy(locale, "批量动作回放", "Bulk action replay"))}</strong>
+      <span class="wh-pill">${escapeHtml(decisionLabel(locale, bulk.action))}</span>
+    </div>
+    <p class="wh-subtle">${escapeHtml(copy(locale, `结果：${bulk.result ?? attempt.result}`, `Result: ${bulk.result ?? attempt.result}`))}</p>
+    ${rows ? `<div class="wh-replay-audit-list">${rows}</div>` : ""}
+  </section>`;
 }
 
 function renderTextPatchPreview(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
@@ -169,7 +249,7 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
         }).join("")
         : `<p class="wh-subtle">${escapeHtml(copy(locale, "未选择", "Not chosen"))}</p>`;
       const targetSummary = attempt.target_keys.length > 0 ? attempt.target_keys.join(", ") : attempt.id;
-      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${decisions}</article>`;
+      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${renderBulkActionAudit(attempt, locale)}${renderTextHunkDecisionAudit(attempt, locale)}${decisions}</article>`;
     })
     .join("");
 }

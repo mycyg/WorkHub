@@ -2,7 +2,7 @@
 
 module: C-WEB / C-DESKTOP / API / DB  
 layer: Proposal / Replay / Audit  
-status: current  
+status: r1-42-landed
 owner: WorkHub
 
 ## 1. Why This Slice Exists
@@ -32,7 +32,7 @@ R1.42 关闭的缺口是：批量按钮此前只复用 `accept_incoming_target_k
 | Web Proposal | 多冲突时继续显示折叠批量检查区；按钮 request JSON 会带 `conflict_resolution.bulk_action` |
 | Desktop main webview | 与 Web Proposal 共用 renderer；仍是严肃主窗，不出现 Cuu 本体 |
 | Cuu pet window | 不承载批量列表；最多提示“有多项需要处理”并 deep-link 到 Proposal |
-| Replay | 本切片先把成功 merge 的 `bulk_action` 写入 `proposal.merged.detail_json`，失败/成功都写 `audit_logs(action="proposal.bulk_action")`；用户可读 Replay 渲染顺延 |
+| Replay | 本切片把成功 merge 的 `bulk_action` 写入 `proposal.merged.detail_json`，失败/成功都写 `audit_logs(action="proposal.bulk_action")`；R1.43 已把它渲染为用户可读 Replay 回放 |
 
 ### Option-first Rule
 
@@ -132,7 +132,7 @@ R1.42 关闭的缺口是：批量按钮此前只复用 `accept_incoming_target_k
 
 | 阶段 | 工作 |
 |---|---|
-| R1.43 | Replay hunk decision audit：把 `text_hunk_decisions[]` 与 `bulk_action` 渲染为用户可读回放 |
+| R1.43 | Replay hunk / bulk audit 已落：见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)，`text_hunk_decisions[]` 与 `bulk_action` 已进入用户可读回放 |
 | R1.44 | React route 级逐行选择/编辑产品化：文件 tabs、逐行编辑、长文搜索、键盘可达性 |
 | R2 | PG claim / 多 worker / 事件 broker；确保批量审计在多实例下仍不丢、不重 |
 | R4 | 全页面真实 route loading/error/forbidden 截图矩阵与 Drive 历史/redo UI |

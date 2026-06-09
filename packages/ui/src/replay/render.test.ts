@@ -29,6 +29,31 @@ function replayWithStructuredFields(): ReplayTraceVM {
         target_keys: ["work_item:task_items"],
         accepted_target_keys: ["work_item:task_items"],
         conflicts: [{ target_key: "work_item:task_items" }],
+        text_hunk_decisions: [
+          {
+            hunk_index: 0,
+            start_line: 3,
+            end_line: 3,
+            decision: "ai_fusion"
+          },
+          {
+            hunk_index: 1,
+            start_line: 8,
+            end_line: 11,
+            decision: "accept_incoming"
+          }
+        ],
+        text_hunk_count: 2,
+        text_hunk_output_sha256: "c".repeat(64),
+        bulk_action: {
+          action: "accept_incoming",
+          target_keys: ["work_item:task_items", "delivery:/outputs/brief.md"],
+          conflict_count: 2,
+          result: "merged",
+          accepted_incoming_target_keys: ["work_item:task_items"],
+          resolved_conflict_target_keys: ["work_item:task_items"],
+          blocked_target_keys: []
+        },
         decisions: [
           {
             id: "76000000-0000-4000-8000-000000000115",
@@ -212,6 +237,18 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("data-overlap-hunk-decision=\"ai_fusion\""), true);
   assert.equal(zh.html.includes("text_hunk_overrides"), true);
   assert.equal(zh.html.includes("重叠段 1"), true);
+  assert.equal(zh.html.includes("data-replay-text-hunk-decision-audit=\"true\""), true);
+  assert.equal(zh.html.includes("data-replay-text-hunk-decision-count=\"2\""), true);
+  assert.equal(zh.html.includes("data-replay-text-hunk-decision=\"1\""), true);
+  assert.equal(zh.html.includes("data-replay-text-hunk-source=\"accept_incoming\""), true);
+  assert.equal(zh.html.includes("逐段选择回放"), true);
+  assert.equal(zh.html.includes("第 8-11 行"), true);
+  assert.equal(zh.html.includes("采纳这次版本"), true);
+  assert.equal(zh.html.includes("data-replay-bulk-action-audit=\"true\""), true);
+  assert.equal(zh.html.includes("data-replay-bulk-action=\"accept_incoming\""), true);
+  assert.equal(zh.html.includes("data-replay-bulk-result=\"merged\""), true);
+  assert.equal(zh.html.includes("批量动作回放"), true);
+  assert.equal(zh.html.includes("点击范围"), true);
   assert.equal(zh.html.includes("字段写回审计"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
@@ -236,6 +273,11 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Text merge check"), true);
   assert.equal(en.html.includes("Overlap hunk 1"), true);
   assert.equal(en.html.includes("Affected lines: line 3"), true);
+  assert.equal(en.html.includes("Hunk decision replay"), true);
+  assert.equal(en.html.includes("Lines 8-11"), true);
+  assert.equal(en.html.includes("Accepted this version"), true);
+  assert.equal(en.html.includes("Bulk action replay"), true);
+  assert.equal(en.html.includes("Clicked scope"), true);
   assert.equal(en.html.includes("Field writeback audit"), true);
   assert.equal(en.html.includes("Base: 旧标题"), true);
   assert.equal(en.html.includes("After: 新标题"), true);

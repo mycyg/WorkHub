@@ -1258,6 +1258,55 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(snapshots.rows[0]?.contentSha256?.length, 64);
   assert.equal(auditLogs.rows.some((row) => row.action === "tool.write_file.snapshot"), true);
   assert.equal(auditLogs.rows.some((row) => row.action === "confidence.scored"), true);
+  await auditLogs.createAuditLog({
+    id: "71000000-0000-4000-8000-000000000091",
+    actorKind: "human",
+    actorUserId: userId,
+    entityType: "proposal",
+    entityId: "75000000-0000-4000-8000-000000000001",
+    action: "proposal.merged",
+    snapshotId,
+    detailJson: {
+      merge_attempt_id: "75000000-0000-4000-8000-000000000002",
+      text_hunk_decisions: [
+        {
+          hunkIndex: 0,
+          startLine: 4,
+          endLine: 6,
+          decision: "accept_incoming"
+        }
+      ],
+      text_hunk_count: 1,
+      text_hunk_output_sha256: "d".repeat(64),
+      bulk_action: {
+        action: "accept_incoming",
+        target_keys: ["delivery:/outputs/result.md"],
+        conflict_count: 1
+      }
+    }
+  });
+  await auditLogs.createAuditLog({
+    id: "71000000-0000-4000-8000-000000000092",
+    actorKind: "human",
+    actorUserId: userId,
+    entityType: "proposal",
+    entityId: "75000000-0000-4000-8000-000000000001",
+    action: "proposal.bulk_action",
+    snapshotId,
+    detailJson: {
+      merge_attempt_id: "75000000-0000-4000-8000-000000000002",
+      bulk_action: {
+        action: "accept_incoming",
+        target_keys: ["delivery:/outputs/result.md"],
+        conflict_count: 1
+      },
+      result: "merged",
+      accepted_incoming_target_keys: ["delivery:/outputs/result.md"],
+      resolved_conflict_target_keys: ["delivery:/outputs/result.md"],
+      blocked_target_keys: [],
+      target_keys: ["delivery:/outputs/result.md"]
+    }
+  });
   assert.equal(decisions.confidenceRows.length, 1);
   assert.equal(decisions.confidenceRows[0]?.agentRunId, startBody.data.run_id);
   assert.equal(decisions.confidenceRows[0]?.verdict, "human_spotcheck");
@@ -1297,6 +1346,14 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
       accepted_deliverables: { id: string; download_href?: string; preview_href?: string }[];
       merge_timeline: {
         result: string;
+        text_hunk_decisions?: { hunk_index: number; start_line: number; end_line: number; decision: string }[];
+        bulk_action?: {
+          action: string;
+          result?: string;
+          accepted_incoming_target_keys: string[];
+          resolved_conflict_target_keys: string[];
+          blocked_target_keys: string[];
+        };
         decisions: {
           chosen_option_key?: string;
           candidates: { option_key: string; chosen: boolean; recommended: boolean }[];
@@ -1317,6 +1374,13 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(replayBody.data.accepted_deliverables[0]?.download_href, replayDeliverable.download_href);
   assert.equal(replayBody.data.accepted_deliverables[0]?.preview_href, replayDeliverable.preview_href);
   assert.equal(replayBody.data.merge_timeline[0]?.result, "merged");
+  assert.equal(replayBody.data.merge_timeline[0]?.text_hunk_decisions?.[0]?.decision, "accept_incoming");
+  assert.equal(replayBody.data.merge_timeline[0]?.text_hunk_decisions?.[0]?.start_line, 4);
+  assert.equal(replayBody.data.merge_timeline[0]?.bulk_action?.action, "accept_incoming");
+  assert.equal(replayBody.data.merge_timeline[0]?.bulk_action?.result, "merged");
+  assert.deepEqual(replayBody.data.merge_timeline[0]?.bulk_action?.accepted_incoming_target_keys, [
+    "delivery:/outputs/result.md"
+  ]);
   assert.equal(replayBody.data.merge_timeline[0]?.decisions[0]?.chosen_option_key, "accept_incoming");
   assert.equal(
     replayBody.data.merge_timeline[0]?.decisions[0]?.candidates.some((candidate) =>

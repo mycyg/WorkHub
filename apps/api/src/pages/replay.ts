@@ -239,6 +239,101 @@ function optionalRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function textHunkDecisionVm(value: unknown) {
+  const record = optionalRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const hunkIndex = numberValue(record["hunkIndex"]);
+  const startLine = numberValue(record["startLine"]);
+  const endLine = numberValue(record["endLine"]);
+  const decision = record["decision"];
+  if (
+    hunkIndex === undefined ||
+    startLine === undefined ||
+    endLine === undefined ||
+    (decision !== "keep_current" && decision !== "accept_incoming" && decision !== "ai_fusion")
+  ) {
+    return undefined;
+  }
+  const normalizedDecision: "keep_current" | "accept_incoming" | "ai_fusion" = decision;
+  return {
+    hunk_index: hunkIndex,
+    start_line: startLine,
+    end_line: endLine,
+    decision: normalizedDecision
+  };
+}
+
+function replayTextHunkAudit(auditLogs: AuditLogRow[]) {
+  for (const row of auditLogs) {
+    if (row.action !== "proposal.merged") {
+      continue;
+    }
+    const detail = optionalRecord(row.detailJson);
+    const rawDecisions = detail?.["text_hunk_decisions"];
+    if (!Array.isArray(rawDecisions)) {
+      continue;
+    }
+    const decisions = rawDecisions
+      .map(textHunkDecisionVm)
+      .filter((decision): decision is NonNullable<ReturnType<typeof textHunkDecisionVm>> => Boolean(decision));
+    if (decisions.length === 0) {
+      continue;
+    }
+    return {
+      decisions,
+      ...(numberValue(detail?.["text_hunk_count"]) !== undefined
+        ? { text_hunk_count: numberValue(detail?.["text_hunk_count"]) }
+        : {}),
+      ...(typeof detail?.["text_hunk_output_sha256"] === "string" && detail["text_hunk_output_sha256"].length === 64
+        ? { text_hunk_output_sha256: detail["text_hunk_output_sha256"] }
+        : {})
+    };
+  }
+  return undefined;
+}
+
+function replayBulkActionAudit(auditLogs: AuditLogRow[]) {
+  const orderedRows = [
+    ...auditLogs.filter((row) => row.action === "proposal.bulk_action"),
+    ...auditLogs.filter((row) => row.action !== "proposal.bulk_action")
+  ];
+  for (const row of orderedRows) {
+    const detail = optionalRecord(row.detailJson);
+    const rawBulk = optionalRecord(detail?.["bulk_action"]);
+    if (!rawBulk) {
+      continue;
+    }
+    const action = rawBulk?.["action"];
+    if (action !== "keep_current" && action !== "accept_incoming") {
+      continue;
+    }
+    const normalizedAction: "keep_current" | "accept_incoming" = action;
+    return {
+      action: normalizedAction,
+      target_keys: stringArray(rawBulk["target_keys"]),
+      ...(numberValue(rawBulk["conflict_count"]) !== undefined
+        ? { conflict_count: numberValue(rawBulk["conflict_count"]) }
+        : {}),
+      ...(typeof detail?.["result"] === "string" ? { result: detail["result"] } : {}),
+      accepted_incoming_target_keys: stringArray(detail?.["accepted_incoming_target_keys"]),
+      resolved_conflict_target_keys: stringArray(detail?.["resolved_conflict_target_keys"]),
+      blocked_target_keys: stringArray(detail?.["blocked_target_keys"]),
+      audit_id: row.id
+    };
+  }
+  return undefined;
+}
+
 function mergeCandidateVms(row: MergeProposalRow): ReplayMergeCandidateVM[] {
   const candidates = Array.isArray(row.candidatesJson) ? row.candidatesJson : [];
   const result: ReplayMergeCandidateVM[] = [];
@@ -270,8 +365,12 @@ function mergeCandidateVms(row: MergeProposalRow): ReplayMergeCandidateVM[] {
 export function toReplayMergeAttemptVm(input: {
   attempt: MergeAttemptRow;
   mergeProposals: MergeProposalRow[];
+  auditLogs?: AuditLogRow[];
 }): ReplayMergeAttemptVM {
   const attempt = input.attempt;
+  const auditLogs = input.auditLogs ?? [];
+  const textHunkAudit = replayTextHunkAudit(auditLogs);
+  const bulkAction = replayBulkActionAudit(auditLogs);
   return {
     id: attempt.id,
     proposal_id: attempt.proposalId,
@@ -294,6 +393,12 @@ export function toReplayMergeAttemptVm(input: {
       ...(proposal.chosenAt ? { chosen_at: proposal.chosenAt.toISOString() } : {}),
       candidates: mergeCandidateVms(proposal)
     })),
+    text_hunk_decisions: textHunkAudit?.decisions ?? [],
+    ...(textHunkAudit?.text_hunk_count !== undefined ? { text_hunk_count: textHunkAudit.text_hunk_count } : {}),
+    ...(textHunkAudit?.text_hunk_output_sha256
+      ? { text_hunk_output_sha256: textHunkAudit.text_hunk_output_sha256 }
+      : {}),
+    ...(bulkAction ? { bulk_action: bulkAction } : {}),
     created_at: attempt.createdAt.toISOString()
   };
 }

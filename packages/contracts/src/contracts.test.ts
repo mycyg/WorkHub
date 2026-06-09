@@ -213,6 +213,25 @@ test("replay pages carry F10 audit facts and rollback state", () => {
         target_keys: ["delivery:/outputs/result.md"],
         accepted_target_keys: ["delivery:/outputs/result.md"],
         conflicts: [{ target_key: "delivery:/outputs/result.md" }],
+        text_hunk_decisions: [
+          {
+            hunk_index: 0,
+            start_line: 8,
+            end_line: 12,
+            decision: "accept_incoming"
+          }
+        ],
+        text_hunk_count: 1,
+        text_hunk_output_sha256: "b".repeat(64),
+        bulk_action: {
+          action: "accept_incoming",
+          target_keys: ["delivery:/outputs/result.md"],
+          conflict_count: 1,
+          result: "merged",
+          accepted_incoming_target_keys: ["delivery:/outputs/result.md"],
+          resolved_conflict_target_keys: ["delivery:/outputs/result.md"],
+          blocked_target_keys: []
+        },
         decisions: [
           {
             id: "71000000-0000-4000-8000-000000000013",
@@ -263,6 +282,9 @@ test("replay pages carry F10 audit facts and rollback state", () => {
   assert.equal(parsed.accepted_deliverables[0]?.restore_href?.includes("/restore"), true);
   assert.equal(parsed.merge_timeline[0]?.decisions[0]?.chosen_option_key, "accept_incoming");
   assert.equal(parsed.merge_timeline[0]?.decisions[0]?.candidates[0]?.recommended, true);
+  assert.equal(parsed.merge_timeline[0]?.text_hunk_decisions[0]?.decision, "accept_incoming");
+  assert.equal(parsed.merge_timeline[0]?.bulk_action?.action, "accept_incoming");
+  assert.deepEqual(parsed.merge_timeline[0]?.bulk_action?.accepted_incoming_target_keys, ["delivery:/outputs/result.md"]);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

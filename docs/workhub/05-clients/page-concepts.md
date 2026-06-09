@@ -250,6 +250,10 @@ Cuu 气泡和 Web 澄清页都默认点选项。输入框只作为“其他 / �
 
 R1.39 已把 Proposal / Replay 的富 patch viewer、重叠 hunk review、子记录逐项 diff 与多冲突折叠工作台放进 Web / desktop webview route wrapper 截图验收。证据目录：`./assets/audit/2026-06-10-r1-route-visual-qa/`；详细说明见 [`r1-route-visual-qa.md`](./r1-route-visual-qa.md)。当前 gates 包含 zh-CN/en-US、desktop/mobile-narrow、四态示意、`no_horizontal_overflow`、主窗无 Cuu 与无重看板默认词。
 
+### 6.5 R1.43 Replay hunk / bulk audit
+
+R1.43 已把 `proposal.merged.detail_json.text_hunk_decisions[]` 与 `proposal.bulk_action` 渲染成 Replay 严肃页中的用户可读审计区。该能力不新增概念图，不改变 R1.39 截图基准；它的当前边界是“解释当时每段/每批选了什么”，不是重型编辑器，也不是 Cuu 主窗卡片。详细说明见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |
