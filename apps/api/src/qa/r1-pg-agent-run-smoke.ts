@@ -36,6 +36,7 @@ import {
   snapshots,
   usageRecords,
   users,
+  workItemAcceptanceItems,
   workItems,
   workspaces
 } from "@workhub/db";
@@ -1329,6 +1330,208 @@ async function main() {
       throw new Error("Expected conflicting structured field patch transaction to roll back chosen option.");
     }
 
+    const structuredAcceptanceBaseId = randomUUID();
+    const structuredAcceptanceNewId = randomUUID();
+    const structuredAcceptanceNow = new Date();
+    await db.insert(workItemAcceptanceItems).values({
+      id: structuredAcceptanceBaseId,
+      workItemId,
+      title: "R1.31 原始验收项",
+      description: null,
+      status: "open",
+      sortOrder: 0,
+      sourcePlanId: null,
+      createdAt: structuredAcceptanceNow,
+      updatedAt: structuredAcceptanceNow
+    });
+    const structuredAcceptanceChangeId = randomUUID();
+    const structuredAcceptanceBranchId = randomUUID();
+    const structuredAcceptanceManifest: DeliverableChangeManifest = {
+      version: 0,
+      work_item_id: workItemId,
+      branch_id: structuredAcceptanceBranchId,
+      title: "R1.31 PG smoke acceptance item patch",
+      summary_md: "验证 acceptance_items 子记录可执行合并。",
+      author: {
+        actor_kind: "ai",
+        label: "R1.31 PG smoke AI"
+      },
+      base: {
+        snapshot_id: structuredApply.merge_snapshot_id,
+        branch_head_ref: structuredApply.merge_snapshot_id,
+        created_at: new Date().toISOString()
+      },
+      changes: [
+        {
+          id: structuredAcceptanceChangeId,
+          target_kind: "structured_record",
+          target_ref: {
+            entity_type: "work_item",
+            entity_id: workItemId
+          },
+          change_type: "updated",
+          human_summary: "更新事项验收项子记录。",
+          machine_summary: {
+            changed_fields: ["acceptance_items"]
+          }
+        }
+      ],
+      checks: [
+        {
+          id: "structured-acceptance-items-ready",
+          label: "验收项子记录补丁可执行",
+          status: "passed"
+        }
+      ],
+      evidence_refs: [],
+      risk: {
+        level: "medium",
+        human_label: "中风险",
+        reversible: true
+      },
+      rollback: {
+        available: true,
+        description: "可通过审计中的 base/current/incoming 验证恢复。"
+      },
+      review: {
+        suggested_decision: "approve",
+        reason_required_on_reject: true
+      }
+    };
+    const structuredAcceptanceProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: structuredAcceptanceManifest,
+      actor: { actor_kind: "ai", label: "R1.31 PG smoke AI" }
+    });
+    await proposalService.review({
+      proposalId: structuredAcceptanceProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const structuredAcceptanceMergeAttemptId = randomUUID();
+    const structuredAcceptanceMergeProposalId = randomUUID();
+    const structuredAcceptanceConflictKey = `work_item:${workItemId}`;
+    const structuredAcceptanceContext = {
+      proposal_id: structuredAcceptanceProposal.id,
+      work_item_id: workItemId,
+      proposal_title: structuredAcceptanceProposal.title,
+      target_key: structuredAcceptanceConflictKey,
+      change_id: structuredAcceptanceChangeId,
+      target_kind: "structured_record" as const,
+      change_type: "updated" as const,
+      existing_proposal_id: structuredProposal.id,
+      existing_change_id: structuredChangeId,
+      existing_ref: structuredApply.merge_snapshot_id
+    };
+    await db.insert(mergeAttempts).values({
+      id: structuredAcceptanceMergeAttemptId,
+      proposalId: structuredAcceptanceProposal.id,
+      workItemId,
+      branchId: structuredAcceptanceProposal.branch_id,
+      actorKind: "human",
+      actorUserId: defaultSeedIds.adminUserId,
+      result: "conflict",
+      conflictsJson: [structuredAcceptanceContext],
+      acceptedTargetKeys: [],
+      targetKeys: [structuredAcceptanceConflictKey],
+      conflictCount: 1,
+      createdAt: structuredAcceptanceNow
+    });
+    await db.insert(mergeProposals).values({
+      id: structuredAcceptanceMergeProposalId,
+      mergeAttemptId: structuredAcceptanceMergeAttemptId,
+      conflictKey: structuredAcceptanceConflictKey,
+      candidatesJson: [
+        {
+          option_key: "ai_fusion",
+          target_kind: "structured_record",
+          rationale_md: "PG smoke 直接写回 WorkItem 验收项子记录。",
+          source: "llm",
+          quality_gate: { status: "passed" },
+          merged_value: {
+            fields: {
+              acceptance_items: [
+                {
+                  id: structuredAcceptanceBaseId,
+                  title: "R1.31 原始验收项",
+                  description: null,
+                  status: "met",
+                  sort_order: 0,
+                  source_plan_id: null
+                },
+                {
+                  id: structuredAcceptanceNewId,
+                  title: "R1.31 新增验收项",
+                  description: "子记录合并需要保留稳定 id。",
+                  status: "open",
+                  sort_order: 1,
+                  source_plan_id: null
+                }
+              ]
+            }
+          }
+        }
+      ],
+      recommendedOptionKey: "ai_fusion",
+      createdAt: structuredAcceptanceNow,
+      updatedAt: structuredAcceptanceNow
+    });
+    const structuredAcceptanceApply = await proposalService.applyMergeCandidate({
+      mergeProposalId: structuredAcceptanceMergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+    });
+    if (structuredAcceptanceApply.status !== "merged" || !structuredAcceptanceApply.merge_snapshot_id) {
+      throw new Error("Expected acceptance item patch apply to merge the proposal.");
+    }
+    const [
+      structuredAcceptanceRows,
+      structuredAcceptanceAcceptedRows,
+      structuredAcceptanceAuditRows,
+      structuredAcceptanceOriginalMergeProposalRows
+    ] = await Promise.all([
+      db.select().from(workItemAcceptanceItems).then((rows) =>
+        rows
+          .filter((row) => row.workItemId === workItemId)
+          .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+      ),
+      db.select().from(acceptedDeliverableChanges).then((rows) =>
+        rows.filter((row) => row.proposalId === structuredAcceptanceProposal.id)
+      ),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) => row.entityId === structuredAcceptanceProposal.id && row.action === "proposal.merged")
+      ),
+      db.select().from(mergeProposals).then((rows) => rows.filter((row) => row.id === structuredAcceptanceMergeProposalId))
+    ]);
+    if (
+      structuredAcceptanceRows.length !== 2
+      || structuredAcceptanceRows[0]?.id !== structuredAcceptanceBaseId
+      || structuredAcceptanceRows[0].status !== "met"
+      || structuredAcceptanceRows[1]?.id !== structuredAcceptanceNewId
+      || structuredAcceptanceRows[1].title !== "R1.31 新增验收项"
+    ) {
+      throw new Error(`Expected acceptance item patch to replace subrecords, got ${JSON.stringify(structuredAcceptanceRows)}`);
+    }
+    if (structuredAcceptanceAcceptedRows.length !== 0) {
+      throw new Error("Expected acceptance item patch apply to avoid creating accepted deliverable rows.");
+    }
+    if (structuredAcceptanceOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
+      throw new Error("Expected acceptance item patch apply to mark the original merge proposal chosen.");
+    }
+    const structuredAcceptanceAudit = structuredAcceptanceAuditRows[0];
+    const structuredAcceptanceChanges = structuredAcceptanceAudit?.detailJson["structured_field_changes"];
+    if (
+      structuredAcceptanceAudit?.detailJson["merge_strategy"] !== "field_merge"
+      || structuredAcceptanceAudit.detailJson["structured_field_count"] !== 1
+      || structuredAcceptanceAudit.detailJson["accepted_change_count"] !== 0
+      || !Array.isArray(structuredAcceptanceChanges)
+      || structuredAcceptanceChanges[0]?.field !== "acceptance_items"
+      || structuredAcceptanceChanges[0]?.itemCount !== 2
+    ) {
+      throw new Error(
+        `Expected acceptance item patch audit payload, got ${JSON.stringify(structuredAcceptanceAudit?.detailJson)}`
+      );
+    }
+
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -1416,6 +1619,16 @@ async function main() {
         title_after_reject: structuredConflictWorkItem.title,
         proposal_status: structuredConflictProposalRows[0]?.status,
         chosen_option_key: structuredConflictMergeProposalRows[0]?.chosenOptionKey ?? null
+      },
+      structured_acceptance_items_patch: {
+        proposal_id: structuredAcceptanceProposal.id,
+        merge_proposal_id: structuredAcceptanceMergeProposalId,
+        apply_status: structuredAcceptanceApply.status,
+        merge_strategy: structuredAcceptanceAudit.detailJson["merge_strategy"],
+        field_count: structuredAcceptanceAudit.detailJson["structured_field_count"],
+        item_count: structuredAcceptanceRows.length,
+        first_status: structuredAcceptanceRows[0]?.status,
+        second_title: structuredAcceptanceRows[1]?.title
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

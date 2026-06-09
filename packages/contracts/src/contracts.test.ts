@@ -459,16 +459,26 @@ test("structured field patch dry-run validates executable work item fields", () 
   const dryRun = buildStructuredFieldPatchDryRun({
     target_entity_type: "work_item",
     target_entity_id: "72000000-0000-4000-8000-000000000101",
-    changed_fields: ["title", "priority", "due_at"],
+    changed_fields: ["title", "priority", "due_at", "acceptance_items"],
     merged_fields: {
       title: "客户周报草稿",
       priority: "high",
-      due_at: "2026-06-30T00:00:00.000Z"
+      due_at: "2026-06-30T00:00:00.000Z",
+      acceptance_items: [
+        {
+          id: "72000000-0000-4000-8000-000000000301",
+          title: "输出可追溯证据清单",
+          description: "每条结论都有来源。",
+          status: "open",
+          sort_order: 0
+        }
+      ]
     },
     base_fields: {
       title: "旧标题",
       priority: "normal",
-      due_at: null
+      due_at: null,
+      acceptance_items: []
     },
     source: "ai_fusion"
   });
@@ -476,13 +486,15 @@ test("structured field patch dry-run validates executable work item fields", () 
 
   assert.equal(parsed.status, "ready");
   assert.equal(parsed.executable, true);
-  assert.deepEqual(parsed.audit_payload.operation_fields, ["title", "priority", "due_at"]);
+  assert.deepEqual(parsed.audit_payload.operation_fields, ["title", "priority", "due_at", "acceptance_items"]);
   assert.equal(parsed.patch.operations[0]?.value_type, "string");
   assert.equal(parsed.patch.operations[1]?.value_type, "enum");
   assert.equal(parsed.patch.operations[2]?.value_type, "datetime");
+  assert.equal(parsed.patch.operations[3]?.value_type, "json_array");
   assert.equal(parsed.patch.operations[0]?.before_value, "旧标题");
   assert.equal(parsed.patch.operations[1]?.before_value, "normal");
   assert.equal(parsed.patch.operations[2]?.before_value, null);
+  assert.deepEqual(parsed.patch.operations[3]?.before_value, []);
 });
 
 test("structured field patch dry-run blocks unknown, missing, and mistyped fields", () => {

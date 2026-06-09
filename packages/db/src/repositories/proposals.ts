@@ -23,6 +23,7 @@ import {
   proposals,
   reviews,
   snapshots,
+  workItemAcceptanceItems,
   workItems
 } from "../schema/index.js";
 
@@ -548,18 +549,28 @@ function aiFusionResolvedChange(input: {
 
 const structuredWorkItemScalarFields = ["title", "summary_md", "priority", "due_at"] as const;
 type StructuredWorkItemScalarField = typeof structuredWorkItemScalarFields[number];
+type StructuredWorkItemPatchField = StructuredWorkItemScalarField | "acceptance_items";
+type StructuredAcceptanceItemPatchValue = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  sort_order: number;
+  source_plan_id: string | null;
+};
 
 function isStructuredWorkItemScalarField(field: string): field is StructuredWorkItemScalarField {
   return (structuredWorkItemScalarFields as readonly string[]).includes(field);
 }
 
 type StructuredWorkItemFieldChange = {
-  field: StructuredWorkItemScalarField;
+  field: StructuredWorkItemPatchField;
   valueType: StructuredFieldPatchOperation["value_type"];
   baseValue: unknown;
   beforeValue: unknown;
   afterValue: unknown;
   mergeDecision: "fast_path" | "same_value";
+  itemCount?: number;
 };
 
 function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: StructuredWorkItemScalarField) {
@@ -623,9 +634,93 @@ function structuredWorkItemFieldValue(operation: StructuredFieldPatchOperation) 
   }
 }
 
+function normalizeAcceptanceItemPatchValue(
+  value: unknown,
+  index: number
+): StructuredAcceptanceItemPatchValue | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const item = value as Record<string, unknown>;
+  if (typeof item["id"] !== "string" || typeof item["title"] !== "string" || item["title"].trim().length === 0) {
+    return undefined;
+  }
+  const description = typeof item["description"] === "string"
+    ? item["description"]
+    : item["description"] === null
+      ? null
+      : null;
+  const status = typeof item["status"] === "string" ? item["status"] : "open";
+  if (!["open", "met", "unmet", "waived"].includes(status)) {
+    return undefined;
+  }
+  const sortOrder = typeof item["sort_order"] === "number" && Number.isInteger(item["sort_order"])
+    ? item["sort_order"]
+    : index;
+  const sourcePlanId = typeof item["source_plan_id"] === "string"
+    ? item["source_plan_id"]
+    : item["source_plan_id"] === null
+      ? null
+      : null;
+  return {
+    id: item["id"],
+    title: item["title"].trim(),
+    description,
+    status,
+    sort_order: sortOrder,
+    source_plan_id: sourcePlanId
+  };
+}
+
+function normalizeAcceptanceItemsPatchValue(value: unknown): StructuredAcceptanceItemPatchValue[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized: StructuredAcceptanceItemPatchValue[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    const normalizedItem = normalizeAcceptanceItemPatchValue(item, index);
+    if (!normalizedItem || seen.has(normalizedItem.id)) {
+      return undefined;
+    }
+    seen.add(normalizedItem.id);
+    normalized.push(normalizedItem);
+  }
+  return normalized.sort((left, right) =>
+    left.sort_order - right.sort_order || left.id.localeCompare(right.id)
+  );
+}
+
+function acceptanceItemsPatchValueFromRows(
+  rows: (typeof workItemAcceptanceItems.$inferSelect)[]
+): StructuredAcceptanceItemPatchValue[] {
+  return rows
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description ?? null,
+      status: row.status,
+      sort_order: row.sortOrder,
+      source_plan_id: row.sourcePlanId ?? null
+    }))
+    .sort((left, right) =>
+      left.sort_order - right.sort_order || left.id.localeCompare(right.id)
+    );
+}
+
+function acceptanceItemsPatchValuesEqual(left: unknown, right: unknown) {
+  const normalizedLeft = normalizeAcceptanceItemsPatchValue(left);
+  const normalizedRight = normalizeAcceptanceItemsPatchValue(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
 function withStructuredWorkItemBaseFields(input: {
   manifest: DeliverableChangeManifest;
   workItem: typeof workItems.$inferSelect;
+  acceptanceItems?: (typeof workItemAcceptanceItems.$inferSelect)[];
 }) {
   const changes = input.manifest.changes.map((change) => {
     if (
@@ -640,6 +735,9 @@ function withStructuredWorkItemBaseFields(input: {
     for (const field of changedFields) {
       if (isStructuredWorkItemScalarField(field)) {
         fieldValuesBefore[field] = workItemFieldBeforeValue(input.workItem, field);
+      }
+      if (field === "acceptance_items") {
+        fieldValuesBefore[field] = acceptanceItemsPatchValueFromRows(input.acceptanceItems ?? []);
       }
     }
     if (Object.keys(fieldValuesBefore).length === 0) {
@@ -698,6 +796,14 @@ async function applyStructuredWorkItemFieldPatch(
       "Structured field patch target WorkItem is missing"
     );
   }
+  const needsAcceptanceItemsPatch = dryRun.patch.operations.some((operation) => operation.field === "acceptance_items");
+  const currentAcceptanceRows = needsAcceptanceItemsPatch
+    ? await tx
+      .select()
+      .from(workItemAcceptanceItems)
+      .where(eq(workItemAcceptanceItems.workItemId, input.workItemId))
+      .orderBy(asc(workItemAcceptanceItems.sortOrder), asc(workItemAcceptanceItems.createdAt), asc(workItemAcceptanceItems.id))
+    : [];
 
   const update: {
     title?: string;
@@ -706,7 +812,54 @@ async function applyStructuredWorkItemFieldPatch(
     dueAt?: Date | null;
   } = {};
   const fieldChanges: StructuredWorkItemFieldChange[] = [];
+  let acceptanceItemsReplacement: StructuredAcceptanceItemPatchValue[] | undefined;
   for (const operation of dryRun.patch.operations) {
+    if (operation.field === "acceptance_items") {
+      const incomingItems = normalizeAcceptanceItemsPatchValue(operation.value);
+      if (!incomingItems) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_field_unsupported",
+          "Structured acceptance_items patch is invalid"
+        );
+      }
+      if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_base_missing",
+          "Structured field patch is missing a base value for acceptance_items"
+        );
+      }
+      const baseItems = normalizeAcceptanceItemsPatchValue(operation.before_value);
+      if (!baseItems) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_base_missing",
+          "Structured field patch base value for acceptance_items is invalid"
+        );
+      }
+      const currentItems = acceptanceItemsPatchValueFromRows(currentAcceptanceRows);
+      const currentMatchesBase = acceptanceItemsPatchValuesEqual(currentItems, baseItems);
+      const currentMatchesIncoming = acceptanceItemsPatchValuesEqual(currentItems, incomingItems);
+      if (!currentMatchesBase && !currentMatchesIncoming) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_conflict",
+          "Structured acceptance_items patch conflicts with the current WorkItem acceptance items"
+        );
+      }
+      acceptanceItemsReplacement = incomingItems;
+      fieldChanges.push({
+        field: "acceptance_items",
+        valueType: operation.value_type,
+        baseValue: baseItems,
+        beforeValue: currentItems,
+        afterValue: incomingItems,
+        mergeDecision: currentMatchesBase ? "fast_path" : "same_value",
+        itemCount: incomingItems.length
+      });
+      continue;
+    }
     const value = structuredWorkItemFieldValue(operation);
     if (value === undefined || !isStructuredWorkItemScalarField(operation.field)) {
       throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
@@ -763,6 +916,27 @@ async function applyStructuredWorkItemFieldPatch(
       "structured_field_patch_empty",
       "Structured field patch has no supported WorkItem field operations"
     );
+  }
+
+  if (acceptanceItemsReplacement) {
+    await tx
+      .delete(workItemAcceptanceItems)
+      .where(eq(workItemAcceptanceItems.workItemId, input.workItemId));
+    if (acceptanceItemsReplacement.length > 0) {
+      await tx.insert(workItemAcceptanceItems).values(
+        acceptanceItemsReplacement.map((item) => ({
+          id: item.id,
+          workItemId: input.workItemId,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          sortOrder: item.sort_order,
+          sourcePlanId: item.source_plan_id,
+          createdAt: input.at,
+          updatedAt: input.at
+        }))
+      );
+    }
   }
 
   await tx
@@ -977,9 +1151,19 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           .where(eq(workItems.id, input.workItemId))
           .limit(1);
         if (workItemRows[0]) {
+          const acceptanceRows = await tx
+            .select()
+            .from(workItemAcceptanceItems)
+            .where(eq(workItemAcceptanceItems.workItemId, input.workItemId))
+            .orderBy(
+              asc(workItemAcceptanceItems.sortOrder),
+              asc(workItemAcceptanceItems.createdAt),
+              asc(workItemAcceptanceItems.id)
+            );
           manifest = withStructuredWorkItemBaseFields({
             manifest,
-            workItem: workItemRows[0]
+            workItem: workItemRows[0],
+            acceptanceItems: acceptanceRows
           });
         }
         const branchRows = await tx

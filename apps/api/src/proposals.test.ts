@@ -199,12 +199,65 @@ type MemoryWorkItemRow = {
   dueAt: Date | null;
 };
 
+type MemoryAcceptanceItemRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  sort_order: number;
+  source_plan_id: string | null;
+};
+
 function memoryWorkItemFieldValue(row: MemoryWorkItemRow, field: string) {
   if (field === "title") return row.title;
   if (field === "summary_md") return row.summaryMd;
   if (field === "priority") return row.priority;
   if (field === "due_at") return row.dueAt ? row.dueAt.toISOString() : null;
   return undefined;
+}
+
+function normalizeMemoryAcceptanceItems(value: unknown): MemoryAcceptanceItemRow[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: MemoryAcceptanceItemRow[] = [];
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return undefined;
+    }
+    const item = raw as Record<string, unknown>;
+    if (typeof item["id"] !== "string" || typeof item["title"] !== "string" || item["title"].trim().length === 0) {
+      return undefined;
+    }
+    const status = typeof item["status"] === "string" ? item["status"] : "open";
+    if (!["open", "met", "unmet", "waived"].includes(status)) {
+      return undefined;
+    }
+    const id = item["id"];
+    if (seen.has(id)) {
+      return undefined;
+    }
+    seen.add(id);
+    normalized.push({
+      id,
+      title: item["title"].trim(),
+      description: typeof item["description"] === "string" ? item["description"] : null,
+      status,
+      sort_order: typeof item["sort_order"] === "number" && Number.isInteger(item["sort_order"]) ? item["sort_order"] : index,
+      source_plan_id: typeof item["source_plan_id"] === "string" ? item["source_plan_id"] : null
+    });
+  }
+  return normalized.sort((left, right) => left.sort_order - right.sort_order || left.id.localeCompare(right.id));
+}
+
+function memoryAcceptanceItemsEqual(left: unknown, right: unknown) {
+  const normalizedLeft = normalizeMemoryAcceptanceItems(left);
+  const normalizedRight = normalizeMemoryAcceptanceItems(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
 }
 
 function memoryComparableFieldValue(field: string, value: unknown) {
@@ -238,6 +291,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly mergeProposals: MergeProposalRow[] = [];
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
+  public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -266,7 +320,12 @@ class MemoryProposalRepository implements ProposalRepository {
       }
       const fieldValuesBefore = Object.fromEntries(
         (change.machine_summary?.changed_fields ?? [])
-          .map((field) => [field, memoryWorkItemFieldValue(workItem, field)] as const)
+          .map((field) => {
+            if (field === "acceptance_items") {
+              return [field, this.acceptanceItems.get(input.workItemId) ?? []] as const;
+            }
+            return [field, memoryWorkItemFieldValue(workItem, field)] as const;
+          })
           .filter(([, value]) => value !== undefined)
       );
       return {
@@ -541,6 +600,34 @@ class MemoryProposalRepository implements ProposalRepository {
     const workItem = this.workItemRows.get(stored.proposal.workItemId);
     if (workItem && input.resolvedStructuredFieldPatch) {
       for (const operation of input.resolvedStructuredFieldPatch.dryRun.patch.operations) {
+        if (operation.field === "acceptance_items") {
+          const incomingItems = normalizeMemoryAcceptanceItems(operation.value);
+          if (!incomingItems) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_field_unsupported",
+              "Structured acceptance_items patch is invalid"
+            );
+          }
+          if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_base_missing",
+              "Structured field patch is missing a base value for acceptance_items"
+            );
+          }
+          const currentItems = this.acceptanceItems.get(stored.proposal.workItemId) ?? [];
+          const currentMatchesBase = memoryAcceptanceItemsEqual(currentItems, operation.before_value);
+          const currentMatchesIncoming = memoryAcceptanceItemsEqual(currentItems, incomingItems);
+          if (!currentMatchesBase && !currentMatchesIncoming) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_conflict",
+              "Structured acceptance_items patch conflicts with the current WorkItem acceptance items"
+            );
+          }
+          continue;
+        }
         const currentValue = memoryWorkItemFieldValue(workItem, operation.field);
         if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
@@ -607,6 +694,13 @@ class MemoryProposalRepository implements ProposalRepository {
       workItem.acceptedAt = at;
       workItem.version += 1;
       for (const operation of input.resolvedStructuredFieldPatch?.dryRun.patch.operations ?? []) {
+        if (operation.field === "acceptance_items") {
+          const incomingItems = normalizeMemoryAcceptanceItems(operation.value);
+          if (incomingItems) {
+            this.acceptanceItems.set(stored.proposal.workItemId, incomingItems);
+          }
+          continue;
+        }
         if (operation.field === "title" && typeof operation.value === "string") {
           workItem.title = operation.value;
         }
@@ -1256,6 +1350,113 @@ test("proposal service applies executable structured field patches to WorkItem s
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
+test("proposal service applies executable acceptance item subrecord patches", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const existingItem: MemoryAcceptanceItemRow = {
+    id: "91000000-0000-4000-8000-000000000631",
+    title: "保留原始证据",
+    description: null,
+    status: "open",
+    sort_order: 0,
+    source_plan_id: null
+  };
+  const incomingItems: MemoryAcceptanceItemRow[] = [
+    { ...existingItem, status: "met" },
+    {
+      id: "91000000-0000-4000-8000-000000000632",
+      title: "输出可追溯结论清单",
+      description: "每条结论都带证据来源。",
+      status: "open",
+      sort_order: 1,
+      source_plan_id: null
+    }
+  ];
+  repository.acceptanceItems.set(itemManifest.work_item_id, [existingItem]);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["acceptance_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000633";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000634";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000635",
+    existing_change_id: "91000000-0000-4000-8000-000000000636",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并验收项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            acceptance_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  assert.equal(merged.status, "merged");
+  assert.deepEqual(repository.acceptanceItems.get(itemManifest.work_item_id), incomingItems);
+  assert.equal(repository.acceptedTargetCount, 0);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
 test("proposal service blocks structured field patches when current WorkItem diverges from base", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });
@@ -1345,6 +1546,114 @@ test("proposal service blocks structured field patches when current WorkItem div
       && error.code === "structured_field_patch_conflict"
   );
   assert.equal(repository.workItemRows.get(itemManifest.work_item_id)?.title, "人工已经改过的标题");
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "conflict");
+  assert.equal(repository.acceptedTargetCount, 0);
+});
+
+test("proposal service blocks acceptance item patches when current subrecords diverge from base", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const baseItems: MemoryAcceptanceItemRow[] = [
+    {
+      id: "91000000-0000-4000-8000-000000000641",
+      title: "保留证据清单",
+      description: null,
+      status: "open",
+      sort_order: 0,
+      source_plan_id: null
+    }
+  ];
+  const incomingItems: MemoryAcceptanceItemRow[] = [
+    { ...baseItems[0]!, status: "met" }
+  ];
+  repository.acceptanceItems.set(itemManifest.work_item_id, baseItems);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["acceptance_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000642";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000643";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000644",
+    existing_change_id: "91000000-0000-4000-8000-000000000645",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并验收项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            acceptance_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+  const manualItems: MemoryAcceptanceItemRow[] = [
+    { ...baseItems[0]!, title: "人工已经改过的验收项" }
+  ];
+  repository.acceptanceItems.set(itemManifest.work_item_id, manualItems);
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "structured_field_patch_conflict"
+  );
+  assert.deepEqual(repository.acceptanceItems.get(itemManifest.work_item_id), manualItems);
   assert.equal(repository.mergeAttempts.at(-1)?.result, "conflict");
   assert.equal(repository.acceptedTargetCount, 0);
 });

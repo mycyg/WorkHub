@@ -166,7 +166,17 @@ const structuredWorkItemFieldTypes = {
 } as const satisfies Record<string, readonly StructuredFieldPatchValueType[]>;
 
 const structuredWorkItemPriorityValues = new Set(["low", "normal", "high", "urgent"]);
-const structuredFieldPatchDeferredFields = new Set(["acceptance_items"]);
+const structuredAcceptanceItemStatusSchema = z.enum(["open", "met", "unmet", "waived"]);
+export const structuredAcceptanceItemPatchSchema = z.object({
+  id: idSchema,
+  title: z.string().trim().min(1).max(256),
+  description: z.string().max(4000).nullable().optional(),
+  status: structuredAcceptanceItemStatusSchema.optional(),
+  sort_order: z.number().int().optional(),
+  source_plan_id: idSchema.nullable().optional()
+});
+export type StructuredAcceptanceItemPatch = z.infer<typeof structuredAcceptanceItemPatchSchema>;
+const structuredAcceptanceItemPatchListSchema = z.array(structuredAcceptanceItemPatchSchema);
 
 function structuredFieldAllowedTypes(input: {
   target_entity_type: string;
@@ -195,6 +205,7 @@ function inferStructuredFieldPatchValueType(input: {
 }
 
 function structuredFieldPatchValueMatchesType(input: {
+  field?: string;
   value_type: StructuredFieldPatchValueType;
   value: unknown;
 }) {
@@ -211,6 +222,9 @@ function structuredFieldPatchValueMatchesType(input: {
     case "boolean":
       return typeof input.value === "boolean";
     case "json_array":
+      if (input.field === "acceptance_items") {
+        return structuredAcceptanceItemPatchListSchema.safeParse(input.value).success;
+      }
       return Array.isArray(input.value);
     case "json_object":
       return input.value !== null && typeof input.value === "object" && !Array.isArray(input.value);
@@ -384,14 +398,6 @@ export function buildStructuredFieldPatchDryRun(input: {
       continue;
     }
     operations.push(operation.data);
-    if (structuredFieldPatchDeferredFields.has(field)) {
-      issues.push({
-        severity: "warning",
-        code: "subrecord_merge_deferred",
-        field,
-        message: `字段 ${field} 属于子记录集合，需要后续字段级工作台确认。`
-      });
-    }
   }
 
   if (operations.length === 0) {
