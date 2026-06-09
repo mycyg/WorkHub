@@ -302,6 +302,7 @@ export function buildStructuredFieldPatchDryRun(input: {
   target_entity_id: string | undefined;
   changed_fields?: string[];
   merged_fields?: Record<string, unknown>;
+  base_fields?: Record<string, unknown>;
   source?: StructuredFieldPatchSource;
 }): StructuredFieldPatchDryRun {
   const source = input.source ?? "ai_fusion";
@@ -330,6 +331,7 @@ export function buildStructuredFieldPatchDryRun(input: {
     ? targetEntityId.data
     : "00000000-0000-4000-8000-000000000000";
   const mergedFields = input.merged_fields ?? {};
+  const baseFields = input.base_fields ?? {};
   const mergedFieldNames = Object.keys(mergedFields).filter((field) => field.trim().length > 0);
   const changedFields = (input.changed_fields ?? []).filter((field) => field.trim().length > 0);
   const mergedFieldSet = new Set(mergedFieldNames);
@@ -368,7 +370,8 @@ export function buildStructuredFieldPatchDryRun(input: {
       field,
       value_type: valueType,
       value,
-      source
+      source,
+      ...(Object.prototype.hasOwnProperty.call(baseFields, field) ? { before_value: baseFields[field] } : {})
     };
     const operation = structuredFieldPatchOperationSchema.safeParse(operationCandidate);
     if (!operation.success) {

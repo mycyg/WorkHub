@@ -465,6 +465,11 @@ test("structured field patch dry-run validates executable work item fields", () 
       priority: "high",
       due_at: "2026-06-30T00:00:00.000Z"
     },
+    base_fields: {
+      title: "旧标题",
+      priority: "normal",
+      due_at: null
+    },
     source: "ai_fusion"
   });
   const parsed = structuredFieldPatchDryRunSchema.parse(dryRun);
@@ -475,6 +480,9 @@ test("structured field patch dry-run validates executable work item fields", () 
   assert.equal(parsed.patch.operations[0]?.value_type, "string");
   assert.equal(parsed.patch.operations[1]?.value_type, "enum");
   assert.equal(parsed.patch.operations[2]?.value_type, "datetime");
+  assert.equal(parsed.patch.operations[0]?.before_value, "旧标题");
+  assert.equal(parsed.patch.operations[1]?.before_value, "normal");
+  assert.equal(parsed.patch.operations[2]?.before_value, null);
 });
 
 test("structured field patch dry-run blocks unknown, missing, and mistyped fields", () => {

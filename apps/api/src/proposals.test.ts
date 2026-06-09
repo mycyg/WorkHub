@@ -188,6 +188,46 @@ async function filesUnder(root: string): Promise<string[]> {
   return files;
 }
 
+type MemoryWorkItemRow = {
+  status: string;
+  mainBranchId: string | null;
+  acceptedAt: Date | null;
+  version: number;
+  title: string | null;
+  summaryMd: string | null;
+  priority: string;
+  dueAt: Date | null;
+};
+
+function memoryWorkItemFieldValue(row: MemoryWorkItemRow, field: string) {
+  if (field === "title") return row.title;
+  if (field === "summary_md") return row.summaryMd;
+  if (field === "priority") return row.priority;
+  if (field === "due_at") return row.dueAt ? row.dueAt.toISOString() : null;
+  return undefined;
+}
+
+function memoryComparableFieldValue(field: string, value: unknown) {
+  if (field !== "due_at") {
+    return value;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? value : value.toISOString();
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
+  }
+  return value;
+}
+
+function memoryFieldValuesEqual(field: string, left: unknown, right: unknown) {
+  return memoryComparableFieldValue(field, left) === memoryComparableFieldValue(field, right);
+}
+
 class MemoryProposalRepository implements ProposalRepository {
   private rows = new Map<string, StoredProposalRows>();
   private reviewCount = 0;
@@ -197,16 +237,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly mergeAttempts: MergeAttemptRow[] = [];
   public readonly mergeProposals: MergeProposalRow[] = [];
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
-  public readonly workItemRows = new Map<string, {
-    status: string;
-    mainBranchId: string | null;
-    acceptedAt: Date | null;
-    version: number;
-    title: string | null;
-    summaryMd: string | null;
-    priority: string;
-    dueAt: Date | null;
-  }>();
+  public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -214,15 +245,50 @@ class MemoryProposalRepository implements ProposalRepository {
 
   async createFromManifest(input: Parameters<ProposalRepository["createFromManifest"]>[0]) {
     const at = input.at ?? now;
+    const workItem: MemoryWorkItemRow = this.workItemRows.get(input.workItemId) ?? {
+      status: "in_review",
+      mainBranchId: null,
+      acceptedAt: null,
+      version: 0,
+      title: null,
+      summaryMd: null,
+      priority: "normal",
+      dueAt: null
+    };
+    const manifest = structuredClone(input.manifest);
+    manifest.changes = manifest.changes.map((change) => {
+      if (
+        change.target_kind !== "structured_record"
+        || change.target_ref.entity_type !== "work_item"
+        || change.target_ref.entity_id !== input.workItemId
+      ) {
+        return change;
+      }
+      const fieldValuesBefore = Object.fromEntries(
+        (change.machine_summary?.changed_fields ?? [])
+          .map((field) => [field, memoryWorkItemFieldValue(workItem, field)] as const)
+          .filter(([, value]) => value !== undefined)
+      );
+      return {
+        ...change,
+        machine_summary: {
+          ...change.machine_summary,
+          field_values_before: {
+            ...(change.machine_summary?.field_values_before ?? {}),
+            ...fieldValuesBefore
+          }
+        }
+      };
+    });
     const stored: StoredProposalRows = {
       proposal: {
-        id: input.proposalId ?? input.manifest.proposal_id ?? "91000000-0000-4000-8000-000000000151",
+        id: input.proposalId ?? manifest.proposal_id ?? "91000000-0000-4000-8000-000000000151",
         workItemId: input.workItemId,
-        branchId: input.branchId ?? input.manifest.branch_id ?? "91000000-0000-4000-8000-000000000152",
+        branchId: input.branchId ?? manifest.branch_id ?? "91000000-0000-4000-8000-000000000152",
         round: 1,
-        title: input.title ?? input.manifest.title,
+        title: input.title ?? manifest.title,
         status: "opened",
-        diffManifest: input.manifest,
+        diffManifest: manifest,
         confidenceId: null,
         mergeSnapshotId: null,
         openedByKind: input.actor.actorKind,
@@ -237,19 +303,10 @@ class MemoryProposalRepository implements ProposalRepository {
     this.rows.set(stored.proposal.id, stored);
     this.branchRows.set(stored.proposal.branchId, {
       status: "proposed",
-      headRef: input.manifest.base.branch_head_ref ?? null,
+      headRef: manifest.base.branch_head_ref ?? null,
       version: 0
     });
-    this.workItemRows.set(stored.proposal.workItemId, {
-      status: "in_review",
-      mainBranchId: null,
-      acceptedAt: null,
-      version: 0,
-      title: null,
-      summaryMd: null,
-      priority: "normal",
-      dueAt: null
-    });
+    this.workItemRows.set(stored.proposal.workItemId, workItem);
     return stored;
   }
 
@@ -481,6 +538,28 @@ class MemoryProposalRepository implements ProposalRepository {
       return null;
     }
     const at = input.at ?? now;
+    const workItem = this.workItemRows.get(stored.proposal.workItemId);
+    if (workItem && input.resolvedStructuredFieldPatch) {
+      for (const operation of input.resolvedStructuredFieldPatch.dryRun.patch.operations) {
+        const currentValue = memoryWorkItemFieldValue(workItem, operation.field);
+        if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "structured_field_patch_base_missing",
+            `Structured field patch is missing a base value for ${operation.field}`
+          );
+        }
+        const currentMatchesBase = memoryFieldValuesEqual(operation.field, currentValue, operation.before_value);
+        const currentMatchesIncoming = memoryFieldValuesEqual(operation.field, currentValue, operation.value);
+        if (!currentMatchesBase && !currentMatchesIncoming) {
+          throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+            input.mergeProposalId,
+            "structured_field_patch_conflict",
+            `Structured field patch conflicts with the current WorkItem value for ${operation.field}`
+          );
+        }
+      }
+    }
     const mergeProposal = this.mergeProposals.find((proposal) => proposal.id === input.mergeProposalId);
     if (mergeProposal && !mergeProposal.chosenOptionKey) {
       mergeProposal.chosenOptionKey = "ai_fusion";
@@ -522,7 +601,6 @@ class MemoryProposalRepository implements ProposalRepository {
       branch.headRef = stored.proposal.mergeSnapshotId;
       branch.version += 1;
     }
-    const workItem = this.workItemRows.get(stored.proposal.workItemId);
     if (workItem) {
       workItem.status = "merged";
       workItem.mainBranchId = stored.proposal.branchId;
@@ -1176,6 +1254,99 @@ test("proposal service applies executable structured field patches to WorkItem s
   assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
   assert.equal(repository.mergeAttempts.at(-1)?.acceptedTargetKeys[0], conflict.target_key);
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
+test("proposal service blocks structured field patches when current WorkItem diverges from base", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["title"]
+  };
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000621";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000622";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000623",
+    existing_change_id: "91000000-0000-4000-8000-000000000624",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "更新事项标题。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            title: "客户周报草稿"
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+  const workItem = repository.workItemRows.get(itemManifest.work_item_id);
+  if (workItem) {
+    workItem.title = "人工已经改过的标题";
+  }
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "structured_field_patch_conflict"
+  );
+  assert.equal(repository.workItemRows.get(itemManifest.work_item_id)?.title, "人工已经改过的标题");
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "conflict");
+  assert.equal(repository.acceptedTargetCount, 0);
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {

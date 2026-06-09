@@ -56,7 +56,7 @@ import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
-import { createDbProposalService } from "../services/proposals.js";
+import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
 
@@ -215,7 +215,8 @@ async function main() {
       storageRoot: formalStorageRoot,
       fusionCandidateGenerator: deterministicFusionGenerator()
     });
-    const workItemService = createDbWorkItemService(createWorkItemRepository(db));
+    const workItemRepository = createWorkItemRepository(db);
+    const workItemService = createDbWorkItemService(workItemRepository);
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"
@@ -1171,6 +1172,163 @@ async function main() {
       throw new Error(`Expected structured field patch audit payload, got ${JSON.stringify(structuredAudit?.detailJson)}`);
     }
 
+    const structuredConflictChangeId = randomUUID();
+    const structuredConflictBranchId = randomUUID();
+    const structuredConflictManifest: DeliverableChangeManifest = {
+      version: 0,
+      work_item_id: workItemId,
+      branch_id: structuredConflictBranchId,
+      title: "R1.30 PG smoke structured field conflict",
+      summary_md: "验证结构化字段补丁遇到人工并发修改时拒绝静默覆盖。",
+      author: {
+        actor_kind: "ai",
+        label: "R1.30 PG smoke AI"
+      },
+      base: {
+        snapshot_id: structuredApply.merge_snapshot_id,
+        branch_head_ref: structuredApply.merge_snapshot_id
+      },
+      changes: [
+        {
+          id: structuredConflictChangeId,
+          target_kind: "structured_record",
+          target_ref: {
+            entity_type: "work_item",
+            entity_id: workItemId
+          },
+          change_type: "updated",
+          human_summary: "更新事项标题，用于验证字段级三方冲突。",
+          machine_summary: {
+            changed_fields: ["title"]
+          }
+        }
+      ],
+      checks: [
+        {
+          id: "structured-field-conflict-candidate",
+          label: "结构化字段冲突检测候选",
+          status: "passed"
+        }
+      ],
+      evidence_refs: [],
+      risk: {
+        level: "medium",
+        human_label: "中风险",
+        reversible: true
+      },
+      rollback: {
+        available: true,
+        description: "冲突时不写回，当前人工标题保持不变。"
+      },
+      review: {
+        suggested_decision: "approve",
+        reason_required_on_reject: true
+      }
+    };
+    const structuredConflictProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: structuredConflictManifest,
+      actor: { actor_kind: "ai", label: "R1.30 PG smoke AI" }
+    });
+    await proposalService.review({
+      proposalId: structuredConflictProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const manualConcurrentTitle = "R1.30 人工并发标题";
+    const manuallyUpdatedWorkItem = await workItemRepository.updateWorkItemFromSession({
+      workItemId,
+      title: manualConcurrentTitle,
+      status: structuredWorkItem.status,
+      at: new Date()
+    });
+    if (!manuallyUpdatedWorkItem) {
+      throw new Error("Expected manual WorkItem update before structured conflict apply.");
+    }
+    const structuredConflictMergeAttemptId = randomUUID();
+    const structuredConflictMergeProposalId = randomUUID();
+    const structuredFieldConflictKey = `work_item:${workItemId}`;
+    const structuredConflictContext = {
+      proposal_id: structuredConflictProposal.id,
+      work_item_id: workItemId,
+      proposal_title: structuredConflictProposal.title,
+      target_key: structuredFieldConflictKey,
+      change_id: structuredConflictChangeId,
+      target_kind: "structured_record" as const,
+      change_type: "updated" as const,
+      existing_proposal_id: structuredProposal.id,
+      existing_change_id: structuredChangeId,
+      existing_ref: structuredApply.merge_snapshot_id
+    };
+    const structuredConflictNow = new Date();
+    await db.insert(mergeAttempts).values({
+      id: structuredConflictMergeAttemptId,
+      proposalId: structuredConflictProposal.id,
+      workItemId,
+      branchId: structuredConflictProposal.branch_id,
+      actorKind: "human",
+      actorUserId: defaultSeedIds.adminUserId,
+      result: "conflict",
+      conflictsJson: [structuredConflictContext],
+      acceptedTargetKeys: [],
+      targetKeys: [structuredFieldConflictKey],
+      conflictCount: 1,
+      createdAt: structuredConflictNow
+    });
+    await db.insert(mergeProposals).values({
+      id: structuredConflictMergeProposalId,
+      mergeAttemptId: structuredConflictMergeAttemptId,
+      conflictKey: structuredFieldConflictKey,
+      candidatesJson: [
+        {
+          option_key: "ai_fusion",
+          target_kind: "structured_record",
+          rationale_md: "PG smoke 应拒绝覆盖人工并发标题。",
+          source: "llm",
+          quality_gate: { status: "passed" },
+          merged_value: {
+            fields: {
+              title: "R1.30 AI 候选标题"
+            }
+          }
+        }
+      ],
+      recommendedOptionKey: "ai_fusion",
+      createdAt: structuredConflictNow,
+      updatedAt: structuredConflictNow
+    });
+    let structuredConflictErrorCode: string | null = null;
+    try {
+      await proposalService.applyMergeCandidate({
+        mergeProposalId: structuredConflictMergeProposalId,
+        actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+      });
+    } catch (error) {
+      if (error instanceof ProposalServiceError) {
+        structuredConflictErrorCode = error.code;
+      } else {
+        throw error;
+      }
+    }
+    if (structuredConflictErrorCode !== "structured_field_patch_conflict") {
+      throw new Error(`Expected structured_field_patch_conflict, got ${structuredConflictErrorCode ?? "no error"}`);
+    }
+    const [structuredConflictWorkItemRows, structuredConflictProposalRows, structuredConflictMergeProposalRows] = await Promise.all([
+      db.select().from(workItems).then((rows) => rows.filter((row) => row.id === workItemId)),
+      db.select().from(proposals).then((rows) => rows.filter((row) => row.id === structuredConflictProposal.id)),
+      db.select().from(mergeProposals).then((rows) => rows.filter((row) => row.id === structuredConflictMergeProposalId))
+    ]);
+    const structuredConflictWorkItem = structuredConflictWorkItemRows[0];
+    if (structuredConflictWorkItem?.title !== manualConcurrentTitle) {
+      throw new Error(`Expected conflicting field patch to leave manual title intact, got ${structuredConflictWorkItem?.title}`);
+    }
+    if (structuredConflictProposalRows[0]?.status === "merged") {
+      throw new Error("Expected conflicting structured field patch proposal to remain unmerged.");
+    }
+    if (structuredConflictMergeProposalRows[0]?.chosenOptionKey) {
+      throw new Error("Expected conflicting structured field patch transaction to roll back chosen option.");
+    }
+
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -1250,6 +1408,14 @@ async function main() {
         title: structuredWorkItem.title,
         priority: structuredWorkItem.priority,
         due_at: structuredWorkItem.dueAt?.toISOString()
+      },
+      structured_field_conflict: {
+        proposal_id: structuredConflictProposal.id,
+        merge_proposal_id: structuredConflictMergeProposalId,
+        error_code: structuredConflictErrorCode,
+        title_after_reject: structuredConflictWorkItem.title,
+        proposal_status: structuredConflictProposalRows[0]?.status,
+        chosen_option_key: structuredConflictMergeProposalRows[0]?.chosenOptionKey ?? null
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

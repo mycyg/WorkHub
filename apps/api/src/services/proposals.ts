@@ -520,6 +520,7 @@ function structuredFieldPatchDryRunForApply(context: MergeProposalCandidateAppli
     target_entity_id: change?.target_ref.entity_id,
     ...(change?.machine_summary?.changed_fields ? { changed_fields: change.machine_summary.changed_fields } : {}),
     merged_fields: structuredMergedValueFieldRecord(context.candidate?.merged_value),
+    base_fields: objectRecord(change?.machine_summary?.field_values_before) ?? {},
     source: "ai_fusion"
   });
 }

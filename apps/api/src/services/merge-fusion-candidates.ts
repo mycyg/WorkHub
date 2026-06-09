@@ -686,6 +686,13 @@ function structuredMergedValueFieldRecord(mergedValue: Record<string, unknown> |
   );
 }
 
+function structuredBaseFieldRecord(change: ReturnType<typeof changeSummary>) {
+  const fields = objectRecord(change?.machine_summary?.field_values_before);
+  return fields
+    ? Object.fromEntries(Object.entries(fields).filter(([field]) => field.trim().length > 0))
+    : {};
+}
+
 function structuredRecordPatchQualityGate(input: {
   conflict: ProposalMergeConflict;
   change: ReturnType<typeof changeSummary>;
@@ -708,6 +715,7 @@ function structuredRecordPatchQualityGate(input: {
     target_entity_id: input.change?.target_ref.entity_id,
     changed_fields: changedFields,
     merged_fields: mergedFieldRecord,
+    base_fields: structuredBaseFieldRecord(input.change),
     source: "ai_fusion"
   });
   return {

@@ -546,14 +546,23 @@ function aiFusionResolvedChange(input: {
   };
 }
 
+const structuredWorkItemScalarFields = ["title", "summary_md", "priority", "due_at"] as const;
+type StructuredWorkItemScalarField = typeof structuredWorkItemScalarFields[number];
+
+function isStructuredWorkItemScalarField(field: string): field is StructuredWorkItemScalarField {
+  return (structuredWorkItemScalarFields as readonly string[]).includes(field);
+}
+
 type StructuredWorkItemFieldChange = {
-  field: "title" | "summary_md" | "priority" | "due_at";
+  field: StructuredWorkItemScalarField;
   valueType: StructuredFieldPatchOperation["value_type"];
+  baseValue: unknown;
   beforeValue: unknown;
   afterValue: unknown;
+  mergeDecision: "fast_path" | "same_value";
 };
 
-function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: StructuredWorkItemFieldChange["field"]) {
+function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: StructuredWorkItemScalarField) {
   switch (field) {
     case "title":
       return row.title;
@@ -564,6 +573,32 @@ function workItemFieldBeforeValue(row: typeof workItems.$inferSelect, field: Str
     case "due_at":
       return row.dueAt ? row.dueAt.toISOString() : null;
   }
+}
+
+function structuredWorkItemComparableValue(field: StructuredWorkItemScalarField, value: unknown) {
+  if (field !== "due_at") {
+    return value;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? value : value.toISOString();
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
+  }
+  return value;
+}
+
+function structuredWorkItemFieldValuesEqual(input: {
+  field: StructuredWorkItemScalarField;
+  left: unknown;
+  right: unknown;
+}) {
+  return structuredWorkItemComparableValue(input.field, input.left)
+    === structuredWorkItemComparableValue(input.field, input.right);
 }
 
 function structuredWorkItemFieldValue(operation: StructuredFieldPatchOperation) {
@@ -586,6 +621,42 @@ function structuredWorkItemFieldValue(operation: StructuredFieldPatchOperation) 
     default:
       return undefined;
   }
+}
+
+function withStructuredWorkItemBaseFields(input: {
+  manifest: DeliverableChangeManifest;
+  workItem: typeof workItems.$inferSelect;
+}) {
+  const changes = input.manifest.changes.map((change) => {
+    if (
+      change.target_kind !== "structured_record"
+      || change.target_ref.entity_type !== "work_item"
+      || change.target_ref.entity_id !== input.workItem.id
+    ) {
+      return change;
+    }
+    const changedFields = change.machine_summary?.changed_fields ?? [];
+    const fieldValuesBefore: Record<string, unknown> = {};
+    for (const field of changedFields) {
+      if (isStructuredWorkItemScalarField(field)) {
+        fieldValuesBefore[field] = workItemFieldBeforeValue(input.workItem, field);
+      }
+    }
+    if (Object.keys(fieldValuesBefore).length === 0) {
+      return change;
+    }
+    return {
+      ...change,
+      machine_summary: {
+        ...change.machine_summary,
+        field_values_before: {
+          ...(change.machine_summary?.field_values_before ?? {}),
+          ...fieldValuesBefore
+        }
+      }
+    };
+  });
+  return { ...input.manifest, changes };
 }
 
 async function applyStructuredWorkItemFieldPatch(
@@ -637,14 +708,42 @@ async function applyStructuredWorkItemFieldPatch(
   const fieldChanges: StructuredWorkItemFieldChange[] = [];
   for (const operation of dryRun.patch.operations) {
     const value = structuredWorkItemFieldValue(operation);
-    if (value === undefined || !["title", "summary_md", "priority", "due_at"].includes(operation.field)) {
+    if (value === undefined || !isStructuredWorkItemScalarField(operation.field)) {
       throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
         input.mergeProposalId,
         "structured_field_patch_field_unsupported",
         `Structured field patch field is not supported in this slice: ${operation.field}`
       );
     }
-    const field = operation.field as StructuredWorkItemFieldChange["field"];
+    const field = operation.field;
+    const currentValue = workItemFieldBeforeValue(row, field);
+    const incomingValue = value instanceof Date ? value.toISOString() : value;
+    const hasBaseValue = Object.prototype.hasOwnProperty.call(operation, "before_value");
+    if (!hasBaseValue) {
+      throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+        input.mergeProposalId,
+        "structured_field_patch_base_missing",
+        `Structured field patch is missing a base value for ${field}`
+      );
+    }
+    const baseValue = structuredWorkItemComparableValue(field, operation.before_value);
+    const currentMatchesBase = structuredWorkItemFieldValuesEqual({
+      field,
+      left: currentValue,
+      right: baseValue
+    });
+    const currentMatchesIncoming = structuredWorkItemFieldValuesEqual({
+      field,
+      left: currentValue,
+      right: incomingValue
+    });
+    if (!currentMatchesBase && !currentMatchesIncoming) {
+      throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+        input.mergeProposalId,
+        "structured_field_patch_conflict",
+        `Structured field patch conflicts with the current WorkItem value for ${field}`
+      );
+    }
     if (field === "title") update.title = value as string;
     if (field === "summary_md") update.summaryMd = value as string;
     if (field === "priority") update.priority = value as string;
@@ -652,8 +751,10 @@ async function applyStructuredWorkItemFieldPatch(
     fieldChanges.push({
       field,
       valueType: operation.value_type,
-      beforeValue: workItemFieldBeforeValue(row, field),
-      afterValue: value instanceof Date ? value.toISOString() : value
+      baseValue,
+      beforeValue: currentValue,
+      afterValue: incomingValue,
+      mergeDecision: currentMatchesBase ? "fast_path" : "same_value"
     });
   }
   if (fieldChanges.length === 0) {
@@ -858,7 +959,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       const at = input.at ?? new Date();
       const proposalId = input.proposalId ?? input.manifest.proposal_id ?? randomUUID();
       const branchId = input.branchId ?? input.manifest.branch_id ?? randomUUID();
-      const manifest: DeliverableChangeManifest = {
+      let manifest: DeliverableChangeManifest = {
         ...input.manifest,
         proposal_id: proposalId,
         work_item_id: input.workItemId,
@@ -870,6 +971,17 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       };
 
       await db.transaction(async (tx) => {
+        const workItemRows = await tx
+          .select()
+          .from(workItems)
+          .where(eq(workItems.id, input.workItemId))
+          .limit(1);
+        if (workItemRows[0]) {
+          manifest = withStructuredWorkItemBaseFields({
+            manifest,
+            workItem: workItemRows[0]
+          });
+        }
         const branchRows = await tx
           .select()
           .from(branches)
