@@ -37,6 +37,8 @@ import {
   usageRecords,
   users,
   workItemAcceptanceItems,
+  workItemTaskItems,
+  workItemTaskPlans,
   workItems,
   workspaces
 } from "@workhub/db";
@@ -1532,6 +1534,222 @@ async function main() {
       );
     }
 
+    const structuredTaskPlanId = randomUUID();
+    const structuredTaskBaseId = randomUUID();
+    const structuredTaskNewId = randomUUID();
+    const structuredTaskNow = new Date();
+    await db.insert(workItemTaskPlans).values({
+      id: structuredTaskPlanId,
+      workItemId,
+      stage: "dispatch",
+      status: "draft",
+      summary: "R1.32 task base",
+      createdByUserId: defaultSeedIds.adminUserId,
+      createdAt: structuredTaskNow,
+      updatedAt: structuredTaskNow
+    });
+    await db.insert(workItemTaskItems).values({
+      id: structuredTaskBaseId,
+      planId: structuredTaskPlanId,
+      title: "R1.32 原始任务项",
+      description: null,
+      itemType: "task",
+      suggestedUserId: null,
+      estimateHours: 1,
+      sortOrder: 0,
+      createdAt: structuredTaskNow,
+      updatedAt: structuredTaskNow
+    });
+    const structuredTaskChangeId = randomUUID();
+    const structuredTaskBranchId = randomUUID();
+    const structuredTaskManifest: DeliverableChangeManifest = {
+      version: 0,
+      work_item_id: workItemId,
+      branch_id: structuredTaskBranchId,
+      title: "R1.32 PG smoke task item patch",
+      summary_md: "验证 task_items 子记录可执行合并到 dispatch plan。",
+      author: {
+        actor_kind: "ai",
+        label: "R1.32 PG smoke AI"
+      },
+      base: {
+        snapshot_id: structuredAcceptanceApply.merge_snapshot_id,
+        branch_head_ref: structuredAcceptanceApply.merge_snapshot_id,
+        created_at: new Date().toISOString()
+      },
+      changes: [
+        {
+          id: structuredTaskChangeId,
+          target_kind: "structured_record",
+          target_ref: {
+            entity_type: "work_item",
+            entity_id: workItemId
+          },
+          change_type: "updated",
+          human_summary: "更新事项任务项子记录。",
+          machine_summary: {
+            changed_fields: ["task_items"]
+          }
+        }
+      ],
+      checks: [
+        {
+          id: "structured-task-items-ready",
+          label: "任务项子记录补丁可执行",
+          status: "passed"
+        }
+      ],
+      evidence_refs: [],
+      risk: {
+        level: "medium",
+        human_label: "中风险",
+        reversible: true
+      },
+      rollback: {
+        available: true,
+        description: "可通过审计中的 base/current/incoming 验证恢复。"
+      },
+      review: {
+        suggested_decision: "approve",
+        reason_required_on_reject: true
+      }
+    };
+    const structuredTaskProposal = await proposalService.createFromManifest({
+      workItemId,
+      manifest: structuredTaskManifest,
+      actor: { actor_kind: "ai", label: "R1.32 PG smoke AI" }
+    });
+    await proposalService.review({
+      proposalId: structuredTaskProposal.id,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId },
+      decision: "approve"
+    });
+    const structuredTaskMergeAttemptId = randomUUID();
+    const structuredTaskMergeProposalId = randomUUID();
+    const structuredTaskConflictKey = `work_item:${workItemId}`;
+    const structuredTaskContext = {
+      proposal_id: structuredTaskProposal.id,
+      work_item_id: workItemId,
+      proposal_title: structuredTaskProposal.title,
+      target_key: structuredTaskConflictKey,
+      change_id: structuredTaskChangeId,
+      target_kind: "structured_record" as const,
+      change_type: "updated" as const,
+      existing_proposal_id: structuredAcceptanceProposal.id,
+      existing_change_id: structuredAcceptanceChangeId,
+      existing_ref: structuredAcceptanceApply.merge_snapshot_id
+    };
+    await db.insert(mergeAttempts).values({
+      id: structuredTaskMergeAttemptId,
+      proposalId: structuredTaskProposal.id,
+      workItemId,
+      branchId: structuredTaskProposal.branch_id,
+      actorKind: "human",
+      actorUserId: defaultSeedIds.adminUserId,
+      result: "conflict",
+      conflictsJson: [structuredTaskContext],
+      acceptedTargetKeys: [],
+      targetKeys: [structuredTaskConflictKey],
+      conflictCount: 1,
+      createdAt: structuredTaskNow
+    });
+    await db.insert(mergeProposals).values({
+      id: structuredTaskMergeProposalId,
+      mergeAttemptId: structuredTaskMergeAttemptId,
+      conflictKey: structuredTaskConflictKey,
+      candidatesJson: [
+        {
+          option_key: "ai_fusion",
+          target_kind: "structured_record",
+          rationale_md: "PG smoke 直接写回 dispatch plan 任务项子记录。",
+          source: "llm",
+          quality_gate: { status: "passed" },
+          merged_value: {
+            fields: {
+              task_items: [
+                {
+                  id: structuredTaskBaseId,
+                  title: "R1.32 原始任务项",
+                  description: null,
+                  item_type: "task",
+                  suggested_user_id: null,
+                  estimate_hours: 2,
+                  sort_order: 0
+                },
+                {
+                  id: structuredTaskNewId,
+                  title: "R1.32 新增风险核对",
+                  description: "任务项合并需要保留稳定 id 并支持风险项。",
+                  item_type: "risk",
+                  suggested_user_id: null,
+                  estimate_hours: null,
+                  sort_order: 1
+                }
+              ]
+            }
+          }
+        }
+      ],
+      recommendedOptionKey: "ai_fusion",
+      createdAt: structuredTaskNow,
+      updatedAt: structuredTaskNow
+    });
+    const structuredTaskApply = await proposalService.applyMergeCandidate({
+      mergeProposalId: structuredTaskMergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: defaultSeedIds.adminUserId }
+    });
+    if (structuredTaskApply.status !== "merged" || !structuredTaskApply.merge_snapshot_id) {
+      throw new Error("Expected task item patch apply to merge the proposal.");
+    }
+    const [
+      structuredTaskRows,
+      structuredTaskAcceptedRows,
+      structuredTaskAuditRows,
+      structuredTaskOriginalMergeProposalRows
+    ] = await Promise.all([
+      db.select().from(workItemTaskItems).then((rows) =>
+        rows
+          .filter((row) => row.planId === structuredTaskPlanId)
+          .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+      ),
+      db.select().from(acceptedDeliverableChanges).then((rows) =>
+        rows.filter((row) => row.proposalId === structuredTaskProposal.id)
+      ),
+      db.select().from(auditLogs).then((rows) =>
+        rows.filter((row) => row.entityId === structuredTaskProposal.id && row.action === "proposal.merged")
+      ),
+      db.select().from(mergeProposals).then((rows) => rows.filter((row) => row.id === structuredTaskMergeProposalId))
+    ]);
+    if (
+      structuredTaskRows.length !== 2
+      || structuredTaskRows[0]?.id !== structuredTaskBaseId
+      || structuredTaskRows[0].estimateHours !== 2
+      || structuredTaskRows[1]?.id !== structuredTaskNewId
+      || structuredTaskRows[1].itemType !== "risk"
+    ) {
+      throw new Error(`Expected task item patch to replace dispatch plan subrecords, got ${JSON.stringify(structuredTaskRows)}`);
+    }
+    if (structuredTaskAcceptedRows.length !== 0) {
+      throw new Error("Expected task item patch apply to avoid creating accepted deliverable rows.");
+    }
+    if (structuredTaskOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
+      throw new Error("Expected task item patch apply to mark the original merge proposal chosen.");
+    }
+    const structuredTaskAudit = structuredTaskAuditRows[0];
+    const structuredTaskChanges = structuredTaskAudit?.detailJson["structured_field_changes"];
+    if (
+      structuredTaskAudit?.detailJson["merge_strategy"] !== "field_merge"
+      || structuredTaskAudit.detailJson["structured_field_count"] !== 1
+      || structuredTaskAudit.detailJson["accepted_change_count"] !== 0
+      || !Array.isArray(structuredTaskChanges)
+      || structuredTaskChanges[0]?.field !== "task_items"
+      || structuredTaskChanges[0]?.itemCount !== 2
+    ) {
+      throw new Error(
+        `Expected task item patch audit payload, got ${JSON.stringify(structuredTaskAudit?.detailJson)}`
+      );
+    }
+
     const summary = {
       ok: true,
       database_url: settings.databaseUrl.replace(/:\/\/([^:]+):([^@]+)@/u, "://$1:***@"),
@@ -1629,6 +1847,16 @@ async function main() {
         item_count: structuredAcceptanceRows.length,
         first_status: structuredAcceptanceRows[0]?.status,
         second_title: structuredAcceptanceRows[1]?.title
+      },
+      structured_task_items_patch: {
+        proposal_id: structuredTaskProposal.id,
+        merge_proposal_id: structuredTaskMergeProposalId,
+        apply_status: structuredTaskApply.status,
+        merge_strategy: structuredTaskAudit.detailJson["merge_strategy"],
+        field_count: structuredTaskAudit.detailJson["structured_field_count"],
+        item_count: structuredTaskRows.length,
+        first_estimate_hours: structuredTaskRows[0]?.estimateHours,
+        second_type: structuredTaskRows[1]?.itemType
       },
       replay_steps: replay.data.steps.length,
       replay_snapshots: replay.data.snapshots.length,

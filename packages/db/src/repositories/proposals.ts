@@ -24,6 +24,8 @@ import {
   reviews,
   snapshots,
   workItemAcceptanceItems,
+  workItemTaskItems,
+  workItemTaskPlans,
   workItems
 } from "../schema/index.js";
 
@@ -549,7 +551,7 @@ function aiFusionResolvedChange(input: {
 
 const structuredWorkItemScalarFields = ["title", "summary_md", "priority", "due_at"] as const;
 type StructuredWorkItemScalarField = typeof structuredWorkItemScalarFields[number];
-type StructuredWorkItemPatchField = StructuredWorkItemScalarField | "acceptance_items";
+type StructuredWorkItemPatchField = StructuredWorkItemScalarField | "acceptance_items" | "task_items";
 type StructuredAcceptanceItemPatchValue = {
   id: string;
   title: string;
@@ -557,6 +559,15 @@ type StructuredAcceptanceItemPatchValue = {
   status: string;
   sort_order: number;
   source_plan_id: string | null;
+};
+type StructuredTaskItemPatchValue = {
+  id: string;
+  title: string;
+  description: string | null;
+  item_type: string;
+  suggested_user_id: string | null;
+  estimate_hours: number | null;
+  sort_order: number;
 };
 
 function isStructuredWorkItemScalarField(field: string): field is StructuredWorkItemScalarField {
@@ -717,10 +728,123 @@ function acceptanceItemsPatchValuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
 }
 
+function normalizeTaskItemPatchValue(
+  value: unknown,
+  index: number
+): StructuredTaskItemPatchValue | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const item = value as Record<string, unknown>;
+  if (typeof item["id"] !== "string" || typeof item["title"] !== "string" || item["title"].trim().length === 0) {
+    return undefined;
+  }
+  const description = typeof item["description"] === "string"
+    ? item["description"]
+    : item["description"] === null
+      ? null
+      : null;
+  const itemType = typeof item["item_type"] === "string" ? item["item_type"] : "task";
+  if (!["task", "risk", "acceptance"].includes(itemType)) {
+    return undefined;
+  }
+  const suggestedUserId = typeof item["suggested_user_id"] === "string"
+    ? item["suggested_user_id"]
+    : item["suggested_user_id"] === null
+      ? null
+      : null;
+  let estimateHours: number | null = null;
+  if (typeof item["estimate_hours"] === "number") {
+    if (!Number.isFinite(item["estimate_hours"]) || item["estimate_hours"] < 0) {
+      return undefined;
+    }
+    estimateHours = item["estimate_hours"];
+  } else if (item["estimate_hours"] !== undefined && item["estimate_hours"] !== null) {
+    return undefined;
+  }
+  const sortOrder = typeof item["sort_order"] === "number" && Number.isInteger(item["sort_order"])
+    ? item["sort_order"]
+    : index;
+  return {
+    id: item["id"],
+    title: item["title"].trim(),
+    description,
+    item_type: itemType,
+    suggested_user_id: suggestedUserId,
+    estimate_hours: estimateHours,
+    sort_order: sortOrder
+  };
+}
+
+function normalizeTaskItemsPatchValue(value: unknown): StructuredTaskItemPatchValue[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized: StructuredTaskItemPatchValue[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    const normalizedItem = normalizeTaskItemPatchValue(item, index);
+    if (!normalizedItem || seen.has(normalizedItem.id)) {
+      return undefined;
+    }
+    seen.add(normalizedItem.id);
+    normalized.push(normalizedItem);
+  }
+  return normalized.sort((left, right) =>
+    left.sort_order - right.sort_order || left.id.localeCompare(right.id)
+  );
+}
+
+function taskItemsPatchValueFromRows(
+  rows: (typeof workItemTaskItems.$inferSelect)[]
+): StructuredTaskItemPatchValue[] {
+  return rows
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description ?? null,
+      item_type: row.itemType,
+      suggested_user_id: row.suggestedUserId ?? null,
+      estimate_hours: row.estimateHours ?? null,
+      sort_order: row.sortOrder
+    }))
+    .sort((left, right) =>
+      left.sort_order - right.sort_order || left.id.localeCompare(right.id)
+    );
+}
+
+function taskItemsPatchValuesEqual(left: unknown, right: unknown) {
+  const normalizedLeft = normalizeTaskItemsPatchValue(left);
+  const normalizedRight = normalizeTaskItemsPatchValue(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
+async function readLatestDispatchTaskPlanWithItems(tx: WorkHubTx, workItemId: string) {
+  const planRows = await tx
+    .select()
+    .from(workItemTaskPlans)
+    .where(and(eq(workItemTaskPlans.workItemId, workItemId), eq(workItemTaskPlans.stage, "dispatch")))
+    .orderBy(desc(workItemTaskPlans.createdAt), desc(workItemTaskPlans.id))
+    .limit(1);
+  const plan = planRows[0] ?? null;
+  const items = plan
+    ? await tx
+      .select()
+      .from(workItemTaskItems)
+      .where(eq(workItemTaskItems.planId, plan.id))
+      .orderBy(asc(workItemTaskItems.sortOrder), asc(workItemTaskItems.createdAt), asc(workItemTaskItems.id))
+    : [];
+  return { plan, items };
+}
+
 function withStructuredWorkItemBaseFields(input: {
   manifest: DeliverableChangeManifest;
   workItem: typeof workItems.$inferSelect;
   acceptanceItems?: (typeof workItemAcceptanceItems.$inferSelect)[];
+  taskItems?: (typeof workItemTaskItems.$inferSelect)[];
 }) {
   const changes = input.manifest.changes.map((change) => {
     if (
@@ -738,6 +862,9 @@ function withStructuredWorkItemBaseFields(input: {
       }
       if (field === "acceptance_items") {
         fieldValuesBefore[field] = acceptanceItemsPatchValueFromRows(input.acceptanceItems ?? []);
+      }
+      if (field === "task_items") {
+        fieldValuesBefore[field] = taskItemsPatchValueFromRows(input.taskItems ?? []);
       }
     }
     if (Object.keys(fieldValuesBefore).length === 0) {
@@ -764,6 +891,7 @@ async function applyStructuredWorkItemFieldPatch(
     workItemId: string;
     branchId: string;
     patch: ProposalStructuredFieldPatchInput;
+    actorUserId: string;
     at: Date;
   }
 ) {
@@ -797,6 +925,7 @@ async function applyStructuredWorkItemFieldPatch(
     );
   }
   const needsAcceptanceItemsPatch = dryRun.patch.operations.some((operation) => operation.field === "acceptance_items");
+  const needsTaskItemsPatch = dryRun.patch.operations.some((operation) => operation.field === "task_items");
   const currentAcceptanceRows = needsAcceptanceItemsPatch
     ? await tx
       .select()
@@ -804,6 +933,9 @@ async function applyStructuredWorkItemFieldPatch(
       .where(eq(workItemAcceptanceItems.workItemId, input.workItemId))
       .orderBy(asc(workItemAcceptanceItems.sortOrder), asc(workItemAcceptanceItems.createdAt), asc(workItemAcceptanceItems.id))
     : [];
+  const currentTaskPlan = needsTaskItemsPatch
+    ? await readLatestDispatchTaskPlanWithItems(tx, input.workItemId)
+    : { plan: null, items: [] };
 
   const update: {
     title?: string;
@@ -813,6 +945,7 @@ async function applyStructuredWorkItemFieldPatch(
   } = {};
   const fieldChanges: StructuredWorkItemFieldChange[] = [];
   let acceptanceItemsReplacement: StructuredAcceptanceItemPatchValue[] | undefined;
+  let taskItemsReplacement: StructuredTaskItemPatchValue[] | undefined;
   for (const operation of dryRun.patch.operations) {
     if (operation.field === "acceptance_items") {
       const incomingItems = normalizeAcceptanceItemsPatchValue(operation.value);
@@ -851,6 +984,52 @@ async function applyStructuredWorkItemFieldPatch(
       acceptanceItemsReplacement = incomingItems;
       fieldChanges.push({
         field: "acceptance_items",
+        valueType: operation.value_type,
+        baseValue: baseItems,
+        beforeValue: currentItems,
+        afterValue: incomingItems,
+        mergeDecision: currentMatchesBase ? "fast_path" : "same_value",
+        itemCount: incomingItems.length
+      });
+      continue;
+    }
+    if (operation.field === "task_items") {
+      const incomingItems = normalizeTaskItemsPatchValue(operation.value);
+      if (!incomingItems) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_field_unsupported",
+          "Structured task_items patch is invalid"
+        );
+      }
+      if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_base_missing",
+          "Structured field patch is missing a base value for task_items"
+        );
+      }
+      const baseItems = normalizeTaskItemsPatchValue(operation.before_value);
+      if (!baseItems) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_base_missing",
+          "Structured field patch base value for task_items is invalid"
+        );
+      }
+      const currentItems = taskItemsPatchValueFromRows(currentTaskPlan.items);
+      const currentMatchesBase = taskItemsPatchValuesEqual(currentItems, baseItems);
+      const currentMatchesIncoming = taskItemsPatchValuesEqual(currentItems, incomingItems);
+      if (!currentMatchesBase && !currentMatchesIncoming) {
+        throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+          input.mergeProposalId,
+          "structured_field_patch_conflict",
+          "Structured task_items patch conflicts with the current WorkItem task items"
+        );
+      }
+      taskItemsReplacement = incomingItems;
+      fieldChanges.push({
+        field: "task_items",
         valueType: operation.value_type,
         baseValue: baseItems,
         beforeValue: currentItems,
@@ -936,6 +1115,44 @@ async function applyStructuredWorkItemFieldPatch(
           updatedAt: input.at
         }))
       );
+    }
+  }
+  if (taskItemsReplacement) {
+    let taskPlanId = currentTaskPlan.plan?.id ?? null;
+    if (!taskPlanId && taskItemsReplacement.length > 0) {
+      taskPlanId = randomUUID();
+      await tx.insert(workItemTaskPlans).values({
+        id: taskPlanId,
+        workItemId: input.workItemId,
+        stage: "dispatch",
+        status: "draft",
+        summary: "AI fusion task item patch",
+        createdByUserId: input.actorUserId,
+        createdAt: input.at,
+        updatedAt: input.at
+      });
+    }
+    if (taskPlanId) {
+      const replacementPlanId = taskPlanId;
+      await tx
+        .delete(workItemTaskItems)
+        .where(eq(workItemTaskItems.planId, replacementPlanId));
+      if (taskItemsReplacement.length > 0) {
+        await tx.insert(workItemTaskItems).values(
+          taskItemsReplacement.map((item) => ({
+            id: item.id,
+            planId: replacementPlanId,
+            title: item.title,
+            description: item.description,
+            itemType: item.item_type,
+            suggestedUserId: item.suggested_user_id,
+            estimateHours: item.estimate_hours,
+            sortOrder: item.sort_order,
+            createdAt: input.at,
+            updatedAt: input.at
+          }))
+        );
+      }
     }
   }
 
@@ -1160,10 +1377,12 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               asc(workItemAcceptanceItems.createdAt),
               asc(workItemAcceptanceItems.id)
             );
+          const taskPlan = await readLatestDispatchTaskPlanWithItems(tx, input.workItemId);
           manifest = withStructuredWorkItemBaseFields({
             manifest,
             workItem: workItemRows[0],
-            acceptanceItems: acceptanceRows
+            acceptanceItems: acceptanceRows,
+            taskItems: taskPlan.items
           });
         }
         const branchRows = await tx
@@ -1551,6 +1770,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             workItemId: row.workItemId,
             branchId: row.branchId,
             patch: resolvedStructuredPatch,
+            actorUserId: input.actor?.actorUserId ?? row.submitterUserId,
             at
           });
           await tx.insert(snapshots).values({

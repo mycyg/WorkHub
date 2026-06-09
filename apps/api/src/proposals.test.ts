@@ -208,6 +208,16 @@ type MemoryAcceptanceItemRow = {
   source_plan_id: string | null;
 };
 
+type MemoryTaskItemRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  item_type: string;
+  suggested_user_id: string | null;
+  estimate_hours: number | null;
+  sort_order: number;
+};
+
 function memoryWorkItemFieldValue(row: MemoryWorkItemRow, field: string) {
   if (field === "title") return row.title;
   if (field === "summary_md") return row.summaryMd;
@@ -260,6 +270,60 @@ function memoryAcceptanceItemsEqual(left: unknown, right: unknown) {
   return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
 }
 
+function normalizeMemoryTaskItems(value: unknown): MemoryTaskItemRow[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: MemoryTaskItemRow[] = [];
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return undefined;
+    }
+    const item = raw as Record<string, unknown>;
+    if (typeof item["id"] !== "string" || typeof item["title"] !== "string" || item["title"].trim().length === 0) {
+      return undefined;
+    }
+    const itemType = typeof item["item_type"] === "string" ? item["item_type"] : "task";
+    if (!["task", "risk", "acceptance"].includes(itemType)) {
+      return undefined;
+    }
+    let estimateHours: number | null = null;
+    if (typeof item["estimate_hours"] === "number") {
+      if (!Number.isFinite(item["estimate_hours"]) || item["estimate_hours"] < 0) {
+        return undefined;
+      }
+      estimateHours = item["estimate_hours"];
+    } else if (item["estimate_hours"] !== undefined && item["estimate_hours"] !== null) {
+      return undefined;
+    }
+    const id = item["id"];
+    if (seen.has(id)) {
+      return undefined;
+    }
+    seen.add(id);
+    normalized.push({
+      id,
+      title: item["title"].trim(),
+      description: typeof item["description"] === "string" ? item["description"] : null,
+      item_type: itemType,
+      suggested_user_id: typeof item["suggested_user_id"] === "string" ? item["suggested_user_id"] : null,
+      estimate_hours: estimateHours,
+      sort_order: typeof item["sort_order"] === "number" && Number.isInteger(item["sort_order"]) ? item["sort_order"] : index
+    });
+  }
+  return normalized.sort((left, right) => left.sort_order - right.sort_order || left.id.localeCompare(right.id));
+}
+
+function memoryTaskItemsEqual(left: unknown, right: unknown) {
+  const normalizedLeft = normalizeMemoryTaskItems(left);
+  const normalizedRight = normalizeMemoryTaskItems(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
 function memoryComparableFieldValue(field: string, value: unknown) {
   if (field !== "due_at") {
     return value;
@@ -292,6 +356,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
   public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
+  public readonly taskItems = new Map<string, MemoryTaskItemRow[]>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -323,6 +388,9 @@ class MemoryProposalRepository implements ProposalRepository {
           .map((field) => {
             if (field === "acceptance_items") {
               return [field, this.acceptanceItems.get(input.workItemId) ?? []] as const;
+            }
+            if (field === "task_items") {
+              return [field, this.taskItems.get(input.workItemId) ?? []] as const;
             }
             return [field, memoryWorkItemFieldValue(workItem, field)] as const;
           })
@@ -628,6 +696,34 @@ class MemoryProposalRepository implements ProposalRepository {
           }
           continue;
         }
+        if (operation.field === "task_items") {
+          const incomingItems = normalizeMemoryTaskItems(operation.value);
+          if (!incomingItems) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_field_unsupported",
+              "Structured task_items patch is invalid"
+            );
+          }
+          if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_base_missing",
+              "Structured field patch is missing a base value for task_items"
+            );
+          }
+          const currentItems = this.taskItems.get(stored.proposal.workItemId) ?? [];
+          const currentMatchesBase = memoryTaskItemsEqual(currentItems, operation.before_value);
+          const currentMatchesIncoming = memoryTaskItemsEqual(currentItems, incomingItems);
+          if (!currentMatchesBase && !currentMatchesIncoming) {
+            throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
+              input.mergeProposalId,
+              "structured_field_patch_conflict",
+              "Structured task_items patch conflicts with the current WorkItem task items"
+            );
+          }
+          continue;
+        }
         const currentValue = memoryWorkItemFieldValue(workItem, operation.field);
         if (!Object.prototype.hasOwnProperty.call(operation, "before_value")) {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
@@ -698,6 +794,13 @@ class MemoryProposalRepository implements ProposalRepository {
           const incomingItems = normalizeMemoryAcceptanceItems(operation.value);
           if (incomingItems) {
             this.acceptanceItems.set(stored.proposal.workItemId, incomingItems);
+          }
+          continue;
+        }
+        if (operation.field === "task_items") {
+          const incomingItems = normalizeMemoryTaskItems(operation.value);
+          if (incomingItems) {
+            this.taskItems.set(stored.proposal.workItemId, incomingItems);
           }
           continue;
         }
@@ -1457,6 +1560,115 @@ test("proposal service applies executable acceptance item subrecord patches", as
   assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
 });
 
+test("proposal service applies executable task item subrecord patches", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const existingItem: MemoryTaskItemRow = {
+    id: "91000000-0000-4000-8000-000000000651",
+    title: "整理原始访谈记录",
+    description: null,
+    item_type: "task",
+    suggested_user_id: null,
+    estimate_hours: 1,
+    sort_order: 0
+  };
+  const incomingItems: MemoryTaskItemRow[] = [
+    { ...existingItem, title: "整理可复核访谈证据表", estimate_hours: 2 },
+    {
+      id: "91000000-0000-4000-8000-000000000652",
+      title: "标记证据缺口",
+      description: "列出需要用户补充确认的风险点。",
+      item_type: "risk",
+      suggested_user_id: null,
+      estimate_hours: null,
+      sort_order: 1
+    }
+  ];
+  repository.taskItems.set(itemManifest.work_item_id, [existingItem]);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["task_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000653";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000654";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000655",
+    existing_change_id: "91000000-0000-4000-8000-000000000656",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并任务项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            task_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+
+  const merged = await service.applyMergeCandidate({
+    mergeProposalId,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  assert.equal(merged.status, "merged");
+  assert.deepEqual(repository.taskItems.get(itemManifest.work_item_id), incomingItems);
+  assert.equal(repository.acceptedTargetCount, 0);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "merged");
+  assert.equal(repository.mergeProposals.at(-1)?.chosenOptionKey, "ai_fusion");
+});
+
 test("proposal service blocks structured field patches when current WorkItem diverges from base", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });
@@ -1654,6 +1866,115 @@ test("proposal service blocks acceptance item patches when current subrecords di
       && error.code === "structured_field_patch_conflict"
   );
   assert.deepEqual(repository.acceptanceItems.get(itemManifest.work_item_id), manualItems);
+  assert.equal(repository.mergeAttempts.at(-1)?.result, "conflict");
+  assert.equal(repository.acceptedTargetCount, 0);
+});
+
+test("proposal service blocks task item patches when current subrecords diverge from base", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  const baseItems: MemoryTaskItemRow[] = [
+    {
+      id: "91000000-0000-4000-8000-000000000661",
+      title: "整理任务清单",
+      description: null,
+      item_type: "task",
+      suggested_user_id: null,
+      estimate_hours: 1,
+      sort_order: 0
+    }
+  ];
+  const incomingItems: MemoryTaskItemRow[] = [
+    { ...baseItems[0]!, estimate_hours: 2 }
+  ];
+  repository.taskItems.set(itemManifest.work_item_id, baseItems);
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["task_items"]
+  };
+
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-000000000662";
+  const mergeProposalId = "91000000-0000-4000-8000-000000000663";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-000000000664",
+    existing_change_id: "91000000-0000-4000-8000-000000000665",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "合并任务项子记录。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            task_items: incomingItems
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+  const manualItems: MemoryTaskItemRow[] = [
+    { ...baseItems[0]!, title: "人工已经改过的任务项" }
+  ];
+  repository.taskItems.set(itemManifest.work_item_id, manualItems);
+
+  await assert.rejects(
+    () => service.applyMergeCandidate({
+      mergeProposalId,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "structured_field_patch_conflict"
+  );
+  assert.deepEqual(repository.taskItems.get(itemManifest.work_item_id), manualItems);
   assert.equal(repository.mergeAttempts.at(-1)?.result, "conflict");
   assert.equal(repository.acceptedTargetCount, 0);
 });

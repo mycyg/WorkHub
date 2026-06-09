@@ -162,7 +162,8 @@ const structuredWorkItemFieldTypes = {
   summary_md: ["markdown"],
   priority: ["enum"],
   due_at: ["datetime", "null"],
-  acceptance_items: ["json_array"]
+  acceptance_items: ["json_array"],
+  task_items: ["json_array"]
 } as const satisfies Record<string, readonly StructuredFieldPatchValueType[]>;
 
 const structuredWorkItemPriorityValues = new Set(["low", "normal", "high", "urgent"]);
@@ -177,6 +178,18 @@ export const structuredAcceptanceItemPatchSchema = z.object({
 });
 export type StructuredAcceptanceItemPatch = z.infer<typeof structuredAcceptanceItemPatchSchema>;
 const structuredAcceptanceItemPatchListSchema = z.array(structuredAcceptanceItemPatchSchema);
+const structuredTaskItemTypeSchema = z.enum(["task", "risk", "acceptance"]);
+export const structuredTaskItemPatchSchema = z.object({
+  id: idSchema,
+  title: z.string().trim().min(1).max(256),
+  description: z.string().max(4000).nullable().optional(),
+  item_type: structuredTaskItemTypeSchema.optional(),
+  suggested_user_id: idSchema.nullable().optional(),
+  estimate_hours: z.number().nonnegative().nullable().optional(),
+  sort_order: z.number().int().optional()
+});
+export type StructuredTaskItemPatch = z.infer<typeof structuredTaskItemPatchSchema>;
+const structuredTaskItemPatchListSchema = z.array(structuredTaskItemPatchSchema);
 
 function structuredFieldAllowedTypes(input: {
   target_entity_type: string;
@@ -224,6 +237,9 @@ function structuredFieldPatchValueMatchesType(input: {
     case "json_array":
       if (input.field === "acceptance_items") {
         return structuredAcceptanceItemPatchListSchema.safeParse(input.value).success;
+      }
+      if (input.field === "task_items") {
+        return structuredTaskItemPatchListSchema.safeParse(input.value).success;
       }
       return Array.isArray(input.value);
     case "json_object":
