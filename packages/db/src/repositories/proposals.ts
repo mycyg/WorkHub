@@ -11,6 +11,7 @@ import {
   auditLogs,
   branches,
   mergeAttempts,
+  mergeProposals,
   projectDriveItems,
   projectDriveVersions,
   proposals,
@@ -24,6 +25,7 @@ export type ProposalRow = typeof proposals.$inferSelect;
 export type ReviewRow = typeof reviews.$inferSelect;
 export type AcceptedDeliverableChangeRow = typeof acceptedDeliverableChanges.$inferSelect;
 export type MergeAttemptRow = typeof mergeAttempts.$inferSelect;
+export type MergeProposalRow = typeof mergeProposals.$inferSelect;
 
 export type StoredProposalRows = {
   proposal: ProposalRow;
@@ -119,6 +121,7 @@ export type ProposalRepository = {
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
+  listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
 };
@@ -273,6 +276,64 @@ async function recordMergeAttempt(
     createdAt: input.at
   });
   return id;
+}
+
+function mergeProposalCandidates(conflict: ProposalMergeConflict) {
+  return [
+    {
+      option_key: "keep_current",
+      target_kind: conflict.target_kind,
+      rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。",
+      merged_value: {
+        source: "current",
+        proposal_id: conflict.existing_proposal_id,
+        change_id: conflict.existing_change_id,
+        ...(conflict.existing_ref ? { ref: conflict.existing_ref } : {}),
+        ...(conflict.existing_sha256_after ? { sha256: conflict.existing_sha256_after } : {})
+      }
+    },
+    {
+      option_key: "accept_incoming",
+      target_kind: conflict.target_kind,
+      rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。",
+      merged_value: {
+        source: "incoming",
+        proposal_id: conflict.proposal_id,
+        change_id: conflict.change_id,
+        ...(conflict.incoming_version_before ? { base_ref: conflict.incoming_version_before } : {}),
+        ...(conflict.incoming_sha256_before ? { sha256_before: conflict.incoming_sha256_before } : {}),
+        ...(conflict.incoming_sha256_after ? { sha256_after: conflict.incoming_sha256_after } : {})
+      }
+    }
+  ];
+}
+
+async function recordMergeProposals(
+  tx: WorkHubTx,
+  input: {
+    mergeAttemptId: string;
+    conflicts: ProposalMergeConflict[];
+    acceptedTargetKeys: string[];
+    actor?: ProposalRepositoryActor;
+    at: Date;
+  }
+) {
+  const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
+  for (const conflict of input.conflicts) {
+    const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : undefined;
+    await tx.insert(mergeProposals).values({
+      id: randomUUID(),
+      mergeAttemptId: input.mergeAttemptId,
+      conflictKey: conflict.target_key,
+      candidatesJson: mergeProposalCandidates(conflict),
+      recommendedOptionKey: "keep_current",
+      ...(chosen ? { chosenOptionKey: chosen } : {}),
+      ...(chosen && input.actor?.actorUserId ? { chosenByUserId: input.actor.actorUserId } : {}),
+      ...(chosen ? { chosenAt: input.at } : {}),
+      createdAt: input.at,
+      updatedAt: input.at
+    });
+  }
 }
 
 function drivePathSegments(input: { workItemCode: string; change: DeliverableChange }) {
@@ -576,6 +637,14 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         .orderBy(asc(mergeAttempts.createdAt));
     },
 
+    async listMergeProposalsByAttempt(mergeAttemptId) {
+      return db
+        .select()
+        .from(mergeProposals)
+        .where(eq(mergeProposals.mergeAttemptId, mergeAttemptId))
+        .orderBy(asc(mergeProposals.createdAt));
+    },
+
     async review(input) {
       const at = input.at ?? new Date();
       let found = false;
@@ -682,7 +751,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         }
         if (conflicts.length > 0) {
           blockedConflicts = conflicts;
-          await recordMergeAttempt(tx, {
+          const mergeAttemptId = await recordMergeAttempt(tx, {
             proposalId: input.proposalId,
             workItemId: proposal.workItemId,
             branchId: proposal.branchId,
@@ -691,6 +760,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             conflicts,
             acceptedTargetKeys: acceptedIncomingTargetKeyList,
             targetKeys,
+            at
+          });
+          await recordMergeProposals(tx, {
+            mergeAttemptId,
+            conflicts,
+            acceptedTargetKeys: acceptedIncomingTargetKeyList,
+            ...(input.actor ? { actor: input.actor } : {}),
             at
           });
           return;
@@ -736,6 +812,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           conflicts: resolvedConflicts,
           acceptedTargetKeys: acceptedIncomingTargetKeyList,
           targetKeys,
+          at
+        });
+        await recordMergeProposals(tx, {
+          mergeAttemptId,
+          conflicts: resolvedConflicts,
+          acceptedTargetKeys: acceptedIncomingTargetKeyList,
+          ...(input.actor ? { actor: input.actor } : {}),
           at
         });
         await tx

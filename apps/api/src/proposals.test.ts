@@ -14,6 +14,7 @@ import {
 import {
   ProposalRepositoryMergeConflictError,
   type MergeAttemptRow,
+  type MergeProposalRow,
   type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
@@ -160,8 +161,10 @@ class MemoryProposalRepository implements ProposalRepository {
   private rows = new Map<string, StoredProposalRows>();
   private reviewCount = 0;
   private attemptCount = 0;
+  private mergeProposalCount = 0;
   private acceptedByTargetKey = new Map<string, { proposalId: string; changeId: string; sha256After?: string }>();
   public readonly mergeAttempts: MergeAttemptRow[] = [];
+  public readonly mergeProposals: MergeProposalRow[] = [];
   public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, {
     status: string;
@@ -321,6 +324,51 @@ class MemoryProposalRepository implements ProposalRepository {
     return this.mergeAttempts.filter((attempt) => attempt.proposalId === proposalId);
   }
 
+  async listMergeProposalsByAttempt(mergeAttemptId: string) {
+    return this.mergeProposals.filter((proposal) => proposal.mergeAttemptId === mergeAttemptId);
+  }
+
+  private candidatesForConflict(conflict: ReturnType<MemoryProposalRepository["conflictsForStored"]>[number]) {
+    return [
+      {
+        option_key: "keep_current",
+        target_kind: conflict.target_kind,
+        rationale_md: "保留当前正式版，不覆盖已经采纳的交付物。"
+      },
+      {
+        option_key: "accept_incoming",
+        target_kind: conflict.target_kind,
+        rationale_md: "明确采纳这次版本，覆盖当前正式版，并保留还原入口。"
+      }
+    ];
+  }
+
+  private recordMergeProposals(input: {
+    mergeAttemptId: string;
+    actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
+    conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
+    acceptedTargetKeys: string[];
+    at: Date;
+  }) {
+    const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
+    for (const conflict of input.conflicts) {
+      this.mergeProposalCount += 1;
+      const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : null;
+      this.mergeProposals.push({
+        id: `91000000-0000-4000-8000-${String(360 + this.mergeProposalCount).padStart(12, "0")}`,
+        mergeAttemptId: input.mergeAttemptId,
+        conflictKey: conflict.target_key,
+        candidatesJson: this.candidatesForConflict(conflict),
+        recommendedOptionKey: "keep_current",
+        chosenOptionKey: chosen,
+        chosenByUserId: chosen ? input.actor?.actorUserId ?? null : null,
+        chosenAt: chosen ? input.at : null,
+        createdAt: input.at,
+        updatedAt: input.at
+      });
+    }
+  }
+
   private recordMergeAttempt(input: {
     stored: StoredProposalRows;
     actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
@@ -332,8 +380,9 @@ class MemoryProposalRepository implements ProposalRepository {
   }) {
     this.attemptCount += 1;
     const targetKeys = input.stored.proposal.diffManifest.changes.map((change) => this.targetKey(change));
+    const mergeAttemptId = `91000000-0000-4000-8000-${String(260 + this.attemptCount).padStart(12, "0")}`;
     this.mergeAttempts.push({
-      id: `91000000-0000-4000-8000-${String(260 + this.attemptCount).padStart(12, "0")}`,
+      id: mergeAttemptId,
       proposalId: input.stored.proposal.id,
       workItemId: input.stored.proposal.workItemId,
       branchId: input.stored.proposal.branchId,
@@ -347,6 +396,14 @@ class MemoryProposalRepository implements ProposalRepository {
       conflictCount: input.conflicts.length,
       createdAt: input.at
     });
+    this.recordMergeProposals({
+      mergeAttemptId,
+      actor: input.actor,
+      conflicts: input.conflicts,
+      acceptedTargetKeys: input.acceptedTargetKeys,
+      at: input.at
+    });
+    return mergeAttemptId;
   }
 
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
@@ -481,6 +538,7 @@ test("DB-backed proposal service maps repository rows into the public proposal c
   assert.equal(repository.mergeAttempts[0]?.result, "merged");
   assert.equal(repository.mergeAttempts[0]?.mergeSnapshotId, merged.merge_snapshot_id);
   assert.deepEqual(repository.mergeAttempts[0]?.acceptedTargetKeys, []);
+  assert.equal(repository.mergeProposals.length, 0);
   assert.equal(listed.length, 1);
   assert.equal(listed[0]?.id, created.id);
 });
@@ -568,6 +626,17 @@ test("proposal service blocks merge when the same target was already accepted wi
   );
   assert.equal(repository.mergeAttempts.filter((attempt) => attempt.proposalId === second.id).length, 1);
   assert.equal(repository.mergeAttempts.find((attempt) => attempt.proposalId === second.id)?.result, "conflict");
+  const blockedAttemptId = repository.mergeAttempts.find((attempt) => attempt.proposalId === second.id)?.id;
+  const blockedCandidates = repository.mergeProposals.filter((proposal) => proposal.mergeAttemptId === blockedAttemptId);
+  assert.equal(blockedCandidates.length, 1);
+  assert.equal(blockedCandidates[0]?.recommendedOptionKey, "keep_current");
+  assert.equal(blockedCandidates[0]?.chosenOptionKey, null);
+  assert.equal(
+    (blockedCandidates[0]?.candidatesJson as Array<{ option_key: string }>).some(
+      (candidate) => candidate.option_key === "accept_incoming"
+    ),
+    true
+  );
   const conflicts = await service.listConflicts(firstManifest.work_item_id);
   const conflict = conflicts.conflicts[0];
 
@@ -592,6 +661,10 @@ test("proposal service blocks merge when the same target was already accepted wi
   assert.equal(attempts[1]?.result, "merged");
   assert.deepEqual(attempts[1]?.acceptedTargetKeys, [conflict?.target_key]);
   assert.equal(attempts[1]?.conflictCount, 1);
+  const resolvedCandidates = repository.mergeProposals.filter((proposal) => proposal.mergeAttemptId === attempts[1]?.id);
+  assert.equal(resolvedCandidates.length, 1);
+  assert.equal(resolvedCandidates[0]?.chosenOptionKey, "accept_incoming");
+  assert.equal(resolvedCandidates[0]?.chosenByUserId, userId);
 });
 
 test("proposal routes create, read, and render a page VM from a DeliverableChangeManifest", async () => {

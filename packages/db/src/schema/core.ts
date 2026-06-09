@@ -833,6 +833,27 @@ export const mergeAttempts = pgTable(
   ]
 );
 
+export const mergeProposals = pgTable(
+  "merge_proposals",
+  {
+    id: id(),
+    mergeAttemptId: uuid("merge_attempt_id").notNull().references(() => mergeAttempts.id, { onDelete: "cascade" }),
+    conflictKey: varchar("conflict_key", { length: 768 }).notNull(),
+    candidatesJson: jsonb("candidates_json").$type<JsonArray>().notNull().default([]),
+    recommendedOptionKey: varchar("recommended_option_key", { length: 64 }),
+    chosenOptionKey: varchar("chosen_option_key", { length: 64 }),
+    chosenByUserId: uuid("chosen_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    chosenAt: timestampTz("chosen_at"),
+    ...timestamps()
+  },
+  (table) => [
+    index("merge_proposals_attempt_id_idx").on(table.mergeAttemptId),
+    index("merge_proposals_conflict_key_idx").on(table.conflictKey),
+    index("merge_proposals_chosen_by_user_id_idx").on(table.chosenByUserId),
+    index("merge_proposals_chosen_at_idx").on(table.chosenAt)
+  ]
+);
+
 export const specDocs = pgTable(
   "spec_docs",
   {
@@ -1166,6 +1187,7 @@ export const workHubTables = {
   reviews,
   acceptedDeliverableChanges,
   mergeAttempts,
+  mergeProposals,
   specDocs,
   agentRuns,
   agentSteps,

@@ -50,6 +50,13 @@
       "when": 1780980170511,
       "tag": "0006_fantastic_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780980969911,
+      "tag": "0007_fast_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

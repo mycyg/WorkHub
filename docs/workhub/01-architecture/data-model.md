@@ -47,6 +47,7 @@ owner: workflow
 | `Branch` | **新增·核心** | — | §6.1 |
 | `Proposal` | **新增·核心** | 演进自 deliver→验收循环 | §6.2 |
 | `MergeAttempt` | **新增·审计** | Proposal merge 冲突检测/选择留痕 | §6.2.2 |
+| `MergeProposal` | **新增·调解候选** | MergeAttempt 下的一处冲突候选方案 | §6.2.3 |
 | `Review` | **演进**(自 `RevisionRequest`) | [`models.py:535`](../../../app/models.py) | §6.3 |
 | `Delivery` | 现有 | [`models.py:515`](../../../app/models.py) | §6.4 |
 | `AgentRun` | **演进**(自 `auto_agent` + `BackgroundJob`) | [`models.py:93`](../../../app/models.py) / `auto_agent.py` | §7.1 |
@@ -344,6 +345,28 @@ R1.11 审计规则：
 - 成功 merge 也必须留下 `merge_attempts.result="merged"`；若是带 `accept_incoming_target_keys` 的二次 merge，`conflicts_json` 记录这些已解决冲突。
 - `proposal.merged` audit detail 必须带 `merge_attempt_id`，把正式采纳账本、merge snapshot 与用户选择串起来。
 - `MergeAttempt` 不替代 `accepted_deliverable_changes`：前者证明“当时怎么决策”，后者证明“最终哪些版本进了正式版”。
+
+### 6.2.3 新增:`MergeProposal`(冲突候选方案,R1.12)
+
+> **R1.12 当前实现表**：`merge_proposals`。它挂在 `merge_attempts` 下，一行对应一个 `conflict_key` 的候选方案集合。当前先持久化 deterministic `keep_current` / `accept_incoming` 两个候选；默认推荐 `keep_current`，用户显式采纳 incoming 后写 `chosen_option_key="accept_incoming"`、`chosen_by_user_id`、`chosen_at`。后续 LLM 融合方案作为第三类 candidate 加入同一 `candidates_json`，无需改变 Cuu/Web 的 option-first 点击模型。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | |
+| `merge_attempt_id` | FK→merge_attempts.id, CASCADE, index | 属于哪次合并尝试 |
+| `conflict_key` | str(768), index | 对应 `ProposalConflict.target_key` / `ConflictItem.key` |
+| `candidates_json` | JSONB `[]` | `[{option_key,target_kind,merged_value?,rationale_md}]`；R1.12 先写保留正式版/采纳这次版本 |
+| `recommended_option_key` | str(64)? | 当前 deterministic 默认 `keep_current`；LLM 方案落地后可由 AI 推荐 |
+| `chosen_option_key` | str(64)? | 人最终选择；未选择时为 null |
+| `chosen_by_user_id` | FK→users.id?, SET NULL, index | 谁做了选择 |
+| `chosen_at` | DateTime?, index | 何时选择 |
+| `created_at`/`updated_at` | DateTime | |
+
+R1.12 审计规则：
+
+- 默认 409 时，`merge_proposals.chosen_option_key` 为空，证明系统只给出候选，没有替用户做决定。
+- 带 `accept_incoming_target_keys` 成功 merge 时，相关 `conflict_key` 的 row 写 `chosen_option_key="accept_incoming"` 与决策人。
+- 当前表不直接改变 public API；现有 `ProposalConflict.options[]` 仍是用户面入口，表是后续 replay、调解页与 LLM 候选的持久真相源。
 
 ### 6.3 演进:`Review`(对 Proposal 的通过/打回,自 `RevisionRequest`)
 

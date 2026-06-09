@@ -151,9 +151,9 @@ Cuu 是 WorkHub 的桌面陪伴入口，不是页面装饰。它负责把后台 
 - Cuu 气泡按钮：查看详情、打开审批、打开检索结果。
 - 主窗设置页：只显示严肃的桌面客户端设置，不放 Cuu 形象。
 
-### 6.4 变更撞车轻卡（R1.10 已落）
+### 6.4 变更撞车轻卡（R1.10-R1.12 已落）
 
-R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，但不改变 Cuu 外观冻结规则。
+R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1.11/R1.12 把点击背后的 attempt、candidate 与 chosen option 落入 `merge_attempts` / `merge_proposals`，但不改变 Cuu 外观冻结规则。
 
 | 项 | 当前行为 |
 |---|---|
@@ -162,7 +162,7 @@ R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，�
 | 选项 | `keep_current` 显示「保留正式版」；`accept_incoming` 显示「采纳这次版本」；另有「打开变更」深链 |
 | payload | option action 的 `request_json` 原样保存在 Cuu action `payload`，桌宠点击后由 `proposal-merge` typed action 传给 `client.mergeProposal()` |
 | 边界 | 这是独立 pet window 的轻卡；Web/Desktop 主窗只显示严肃页面，不显示 Cuu 本体 |
-| 非目标 | 不做 LLM 融合候选、不做多冲突逐项历史、不新增猫模型或外观动作 |
+| 非目标 | 当前不生成 LLM 融合候选、不做多冲突逐项历史、不新增猫模型或外观动作 |
 
 验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；不能要求用户复制 target key 或手写说明。
 

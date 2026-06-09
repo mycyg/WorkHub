@@ -13,13 +13,14 @@ import {
   auditLogs,
   costLedgerEntries,
   mergeAttempts,
+  mergeProposals,
   proposals,
   usageRecords,
   workHubTables,
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 45;
+const F02_TABLE_COUNT = 46;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -44,6 +45,7 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("snapshots"), true);
   assert.equal(tableNames.includes("accepted_deliverable_changes"), true);
   assert.equal(tableNames.includes("merge_attempts"), true);
+  assert.equal(tableNames.includes("merge_proposals"), true);
   assert.equal(tableNames.includes("approval_requests"), true);
   assert.equal(tableNames.includes("usage_records"), true);
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
@@ -64,6 +66,17 @@ test("merge attempts persist conflict decisions for replayable proposal audit", 
   assert.equal(mergeAttempts.acceptedTargetKeys.name, "accepted_target_keys");
   assert.equal(mergeAttempts.targetKeys.name, "target_keys");
   assert.equal(mergeAttempts.conflictCount.name, "conflict_count");
+});
+
+test("merge proposals persist deterministic and future AI conflict candidates", () => {
+  assert.equal(getTableName(mergeProposals), "merge_proposals");
+  assert.equal(mergeProposals.mergeAttemptId.name, "merge_attempt_id");
+  assert.equal(mergeProposals.conflictKey.name, "conflict_key");
+  assert.equal(mergeProposals.candidatesJson.name, "candidates_json");
+  assert.equal(mergeProposals.recommendedOptionKey.name, "recommended_option_key");
+  assert.equal(mergeProposals.chosenOptionKey.name, "chosen_option_key");
+  assert.equal(mergeProposals.chosenByUserId.name, "chosen_by_user_id");
+  assert.equal(mergeProposals.chosenAt.name, "chosen_at");
 });
 
 test("accepted deliverable changes capture merged proposal targets for replay and conflict gates", () => {
