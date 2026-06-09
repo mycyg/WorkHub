@@ -61,6 +61,7 @@ export const proposalCss = [
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
   ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
+  ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -107,6 +108,52 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 function numberField(record: Record<string, unknown> | undefined, key: string) {
   const value = record?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringArrayField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function compactFieldList(fields: string[]) {
+  if (fields.length <= 8) {
+    return fields.join(", ");
+  }
+  return `${fields.slice(0, 8).join(", ")} +${fields.length - 8}`;
+}
+
+function renderStructuredRecordPatch(option: ProposalConflictOption, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const patch = objectRecord(option.quality_gate?.["structured_record_patch"]);
+  if (patch?.["type"] !== "structured_record_field_patch") {
+    return "";
+  }
+  const changedFields = stringArrayField(patch, "changed_fields");
+  const mergedFields = stringArrayField(patch, "merged_value_fields");
+  const missingFields = stringArrayField(patch, "missing_fields");
+  const unknownFields = stringArrayField(patch, "unknown_fields");
+  const fieldCount = numberField(patch, "field_count");
+  const mergedLine = mergedFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchFields"))}: ${escapeHtml(compactFieldList(mergedFields))}</p>`
+    : "";
+  const missingLine = missingFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(compactFieldList(missingFields))}</p>`
+    : "";
+  const unknownLine = unknownFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(compactFieldList(unknownFields))}</p>`
+    : "";
+  return `<section class="wh-structured" data-structured-record-patch="true" data-structured-patch-option-id="${escapeHtml(option.id)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}">
+    <div class="wh-structured-head">
+      <strong>${escapeHtml(uiT(locale, "proposal.structuredPatchTitle"))}</strong>
+      <span class="wh-pill">${escapeHtml(String(fieldCount))}</span>
+    </div>
+    <div class="wh-structured-meta">
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchChanged"))}: ${escapeHtml(String(changedFields.length))}</span>
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
+    </div>
+    ${mergedLine}${missingLine}${unknownLine}
+  </section>`;
 }
 
 function textDiff3RangeValues(value: unknown) {
@@ -276,7 +323,8 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
   const previews = conflict.options
     .flatMap((option) => [
       renderTextPatchPreview(option, { locale }),
-      renderTextDiff3QualityGate(option, { locale })
+      renderTextDiff3QualityGate(option, { locale }),
+      renderStructuredRecordPatch(option, { locale })
     ])
     .filter(Boolean)
     .join("");

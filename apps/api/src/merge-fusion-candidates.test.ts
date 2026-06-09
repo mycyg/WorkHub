@@ -23,6 +23,16 @@ function manifest(): DeliverableChangeManifest {
   };
 }
 
+function structuredManifest(): DeliverableChangeManifest {
+  const fixture = deliverableManifestFixtures.find((item) =>
+    item.changes.some((change) => change.target_kind === "structured_record")
+  );
+  if (!fixture) {
+    throw new Error("missing structured fixture");
+  }
+  return structuredClone(fixture);
+}
+
 function conflict(targetKind: ProposalMergeConflict["target_kind"] = "text_doc"): ProposalMergeConflict {
   return {
     proposal_id: "92000000-0000-4000-8000-000000000001",
@@ -35,6 +45,26 @@ function conflict(targetKind: ProposalMergeConflict["target_kind"] = "text_doc")
     existing_proposal_id: "92000000-0000-4000-8000-000000000003",
     existing_change_id: "92000000-0000-4000-8000-000000000004",
     target_path: "/outputs/report.md",
+    existing_ref: "v1",
+    incoming_version_before: "v0"
+  };
+}
+
+function structuredConflict(input: DeliverableChangeManifest = structuredManifest()): ProposalMergeConflict {
+  const change = input.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  return {
+    proposal_id: "92000000-0000-4000-8000-000000000001",
+    work_item_id: input.work_item_id,
+    proposal_title: "更新工作项字段",
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record",
+    change_type: "updated",
+    existing_proposal_id: "92000000-0000-4000-8000-000000000003",
+    existing_change_id: "92000000-0000-4000-8000-000000000004",
     existing_ref: "v1",
     incoming_version_before: "v0"
   };
@@ -101,6 +131,75 @@ test("LLM merge mediator turns strict JSON into an ai_fusion candidate", async (
   assert.equal(result[0]?.candidates[0]?.option_key, "ai_fusion");
   assert.equal(result[0]?.candidates[0]?.source, "llm");
   assert.equal(result[0]?.candidates[0]?.quality_gate?.status, "passed");
+});
+
+test("LLM merge mediator adds structured field patch quality metadata", async () => {
+  let prompt = "";
+  const inputManifest = structuredManifest();
+  const inputConflict = structuredConflict(inputManifest);
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({
+      candidates: [
+        {
+          conflict_key: inputConflict.target_key,
+          rationale_md: "保留正式标题，同时更新截止时间和验收项。",
+          merged_value: {
+            fields: {
+              title: "客户周报草稿",
+              due_at: "2026-06-30",
+              extra_field: "should be reviewed"
+            }
+          },
+          recommend: true
+        }
+      ]
+    }), (content) => {
+      prompt = content;
+    })
+  });
+
+  const result = await generator.generate({
+    proposalId: inputConflict.proposal_id,
+    workItemId: inputConflict.work_item_id,
+    proposalTitle: inputConflict.proposal_title,
+    manifest: inputManifest,
+    conflicts: [inputConflict]
+  });
+
+  const candidate = result[0]?.candidates[0];
+  const structuredPatch = candidate?.quality_gate?.["structured_record_patch"] as {
+    type?: string;
+    changed_fields?: string[];
+    merged_value_fields?: string[];
+    missing_fields?: string[];
+    unknown_fields?: string[];
+    field_count?: number;
+    has_structured_result?: boolean;
+  } | undefined;
+  const parsedPrompt = JSON.parse(prompt) as {
+    conflicts: Array<{
+      change?: { machine_summary?: { changed_fields?: string[] } };
+    }>;
+  };
+
+  assert.equal(result[0]?.recommendedOptionKey, "ai_fusion");
+  assert.equal(candidate?.target_kind, "structured_record");
+  assert.equal(candidate?.quality_gate?.status, "passed");
+  assert.deepEqual(
+    candidate?.quality_gate?.checks,
+    ["supported_target_kind", "json_schema", "no_git_conflict_markers", "structured_field_patch"]
+  );
+  assert.equal(structuredPatch?.type, "structured_record_field_patch");
+  assert.deepEqual(structuredPatch?.changed_fields, ["title", "due_at", "acceptance_items"]);
+  assert.deepEqual(structuredPatch?.merged_value_fields, ["title", "due_at", "extra_field"]);
+  assert.deepEqual(structuredPatch?.missing_fields, ["acceptance_items"]);
+  assert.deepEqual(structuredPatch?.unknown_fields, ["extra_field"]);
+  assert.equal(structuredPatch?.field_count, 3);
+  assert.equal(structuredPatch?.has_structured_result, true);
+  assert.deepEqual(
+    parsedPrompt.conflicts[0]?.change?.machine_summary?.changed_fields,
+    ["title", "due_at", "acceptance_items"]
+  );
 });
 
 test("LLM merge mediator accepts rationale-only candidates", async () => {

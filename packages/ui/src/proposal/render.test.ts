@@ -129,6 +129,15 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
             incoming_hunks: 1,
             conflict_hunks: 1,
             conflict_ranges: [{ start_line: 2, end_line: 2 }]
+          },
+          structured_record_patch: {
+            type: "structured_record_field_patch",
+            changed_fields: ["title", "due_at", "acceptance_items"],
+            merged_value_fields: ["title", "due_at", "extra_field"],
+            missing_fields: ["acceptance_items"],
+            unknown_fields: ["extra_field"],
+            field_count: 3,
+            has_structured_result: true
           }
         },
         action: {
@@ -163,6 +172,13 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("文本合并检查"), true);
   assert.equal(rendered.html.includes("需逐项确认"), true);
   assert.equal(rendered.html.includes("影响行: 第 2 行"), true);
+  assert.equal(rendered.html.includes("data-structured-record-patch=\"true\""), true);
+  assert.equal(rendered.html.includes("data-structured-patch-option-id=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("data-structured-patch-field-count=\"3\""), true);
+  assert.equal(rendered.html.includes("结构化字段检查"), true);
+  assert.equal(rendered.html.includes("将写入字段: title, due_at, extra_field"), true);
+  assert.equal(rendered.html.includes("缺少字段: acceptance_items"), true);
+  assert.equal(rendered.html.includes("额外字段: extra_field"), true);
   assert.equal(rendered.html.includes("需要复核"), true);
   assert.equal(rendered.html.includes("-正式版已有结论。"), true);
   assert.equal(rendered.html.includes("+融合后的正文"), true);
@@ -180,5 +196,9 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);
   assert.equal(english.html.includes("Affected lines: line 2"), true);
+  assert.equal(english.html.includes("Structured field check"), true);
+  assert.equal(english.html.includes("Fields to write: title, due_at, extra_field"), true);
+  assert.equal(english.html.includes("Missing fields: acceptance_items"), true);
+  assert.equal(english.html.includes("Extra fields: extra_field"), true);
   assert.equal(english.html.includes("Review required"), true);
 });

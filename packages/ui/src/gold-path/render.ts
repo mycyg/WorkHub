@@ -49,6 +49,7 @@ export const goldPathCss = [
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
   ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
+  ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
@@ -134,6 +135,51 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 function numberField(record: Record<string, unknown> | undefined, key: string) {
   const value = record?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringArrayField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function compactFieldList(fields: string[]) {
+  if (fields.length <= 8) {
+    return fields.join(", ");
+  }
+  return `${fields.slice(0, 8).join(", ")} +${fields.length - 8}`;
+}
+
+function renderStructuredRecordPatch(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
+  const patch = objectRecord(candidate.quality_gate?.["structured_record_patch"]);
+  if (patch?.["type"] !== "structured_record_field_patch") {
+    return "";
+  }
+  const changedFields = stringArrayField(patch, "changed_fields");
+  const mergedFields = stringArrayField(patch, "merged_value_fields");
+  const missingFields = stringArrayField(patch, "missing_fields");
+  const unknownFields = stringArrayField(patch, "unknown_fields");
+  const fieldCount = numberField(patch, "field_count");
+  const mergedLine = mergedFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchFields"))}: ${escapeHtml(compactFieldList(mergedFields))}</p>`
+    : "";
+  const missingLine = missingFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchMissing"))}: ${escapeHtml(compactFieldList(missingFields))}</p>`
+    : "";
+  const unknownLine = unknownFields.length > 0
+    ? `<p class="wh-structured-fields">${escapeHtml(t(locale, "replay.structuredPatchUnknown"))}: ${escapeHtml(compactFieldList(unknownFields))}</p>`
+    : "";
+  return `<section class="wh-structured" data-replay-structured-record-patch="true" data-structured-patch-option-key="${escapeHtml(candidate.option_key)}" data-structured-patch-field-count="${escapeHtml(String(fieldCount))}" data-structured-patch-has-result="${escapeHtml(String(patch["has_structured_result"] === true))}">
+    <div class="wh-structured-head">
+      <strong>${escapeHtml(t(locale, "replay.structuredPatchTitle"))}</strong>
+      <span class="wh-pill">${escapeHtml(String(fieldCount))}</span>
+    </div>
+    <div class="wh-structured-meta">
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchChanged"))}: ${escapeHtml(String(changedFields.length))}</span>
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchMissing"))}: ${escapeHtml(String(missingFields.length))}</span>
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.structuredPatchUnknown"))}: ${escapeHtml(String(unknownFields.length))}</span>
+    </div>
+    ${mergedLine}${missingLine}${unknownLine}
+  </section>`;
 }
 
 function textDiff3RangeValues(value: unknown) {
@@ -448,7 +494,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
                     candidate.recommended ? t(locale, "replay.recommended") : "",
                     candidate.chosen ? t(locale, "replay.chosen") : ""
                   ].filter(Boolean).join(" · ");
-                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}${renderTextDiff3QualityGate(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
+                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}${renderTextDiff3QualityGate(candidate, locale)}${renderStructuredRecordPatch(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
                 })
                 .join("")
               : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;

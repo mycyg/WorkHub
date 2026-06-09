@@ -227,6 +227,15 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
                   incoming_hunks: 1,
                   conflict_hunks: 1,
                   conflict_ranges: [{ start_line: 2, end_line: 2 }]
+                },
+                structured_record_patch: {
+                  type: "structured_record_field_patch",
+                  changed_fields: ["title", "due_at", "acceptance_items"],
+                  merged_value_fields: ["title", "due_at", "extra_field"],
+                  missing_fields: ["acceptance_items"],
+                  unknown_fields: ["extra_field"],
+                  field_count: 3,
+                  has_structured_result: true
                 }
               },
               recommended: false,
@@ -268,6 +277,13 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("文本合并检查"), true);
   assert.equal(zhReplay?.html.includes("需逐项确认"), true);
   assert.equal(zhReplay?.html.includes("影响行: 第 2 行"), true);
+  assert.equal(zhReplay?.html.includes("data-replay-structured-record-patch=\"true\""), true);
+  assert.equal(zhReplay?.html.includes("data-structured-patch-option-key=\"ai_fusion\""), true);
+  assert.equal(zhReplay?.html.includes("data-structured-patch-field-count=\"3\""), true);
+  assert.equal(zhReplay?.html.includes("结构化字段检查"), true);
+  assert.equal(zhReplay?.html.includes("将写入字段: title, due_at, extra_field"), true);
+  assert.equal(zhReplay?.html.includes("缺少字段: acceptance_items"), true);
+  assert.equal(zhReplay?.html.includes("额外字段: extra_field"), true);
   assert.equal(zhReplay?.html.includes("需要复核"), true);
   assert.equal(zhReplay?.html.includes("-正式版已有结论。"), true);
   assert.equal(zhReplay?.html.includes("+融合后的正文"), true);
@@ -281,5 +297,9 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(enReplay?.html.includes("Text merge check"), true);
   assert.equal(enReplay?.html.includes("Needs line review"), true);
   assert.equal(enReplay?.html.includes("Affected lines: line 2"), true);
+  assert.equal(enReplay?.html.includes("Structured field check"), true);
+  assert.equal(enReplay?.html.includes("Fields to write: title, due_at, extra_field"), true);
+  assert.equal(enReplay?.html.includes("Missing fields: acceptance_items"), true);
+  assert.equal(enReplay?.html.includes("Extra fields: extra_field"), true);
   assert.equal(enReplay?.html.includes("Review required"), true);
 });

@@ -115,6 +115,12 @@ function hasConflictMarkers(value: unknown) {
     || text.includes(">>>>>>>");
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -642,7 +648,64 @@ function changeSummary(manifest: DeliverableChangeManifest, conflict: ProposalMe
     change_type: change.change_type,
     target_ref: change.target_ref,
     human_summary: change.human_summary,
+    machine_summary: change.machine_summary,
     preview_ref: change.preview_ref
+  };
+}
+
+function structuredChangedFields(change: ReturnType<typeof changeSummary>) {
+  return change?.machine_summary?.changed_fields?.filter((field) => field.trim().length > 0) ?? [];
+}
+
+function structuredMergedValueFields(mergedValue: Record<string, unknown> | undefined) {
+  if (!mergedValue) {
+    return [];
+  }
+  const explicitFields = objectRecord(mergedValue.fields)
+    ?? objectRecord(mergedValue.field_updates)
+    ?? objectRecord(mergedValue.patch);
+  if (explicitFields) {
+    return Object.keys(explicitFields).filter((field) => field.trim().length > 0);
+  }
+  const nonFieldKeys = new Set([
+    "proposed_resolution_md",
+    "proposed_resolution",
+    "rationale_md",
+    "reason",
+    "summary",
+    "notes",
+    "comment"
+  ]);
+  return Object.keys(mergedValue).filter((field) => !nonFieldKeys.has(field));
+}
+
+function structuredRecordPatchQualityGate(input: {
+  conflict: ProposalMergeConflict;
+  change: ReturnType<typeof changeSummary>;
+  mergedValue?: Record<string, unknown>;
+}) {
+  if (input.conflict.target_kind !== "structured_record") {
+    return undefined;
+  }
+  const changedFields = structuredChangedFields(input.change);
+  const mergedFields = structuredMergedValueFields(input.mergedValue);
+  const changedSet = new Set(changedFields);
+  const mergedSet = new Set(mergedFields);
+  const missingFields = changedFields.filter((field) => !mergedSet.has(field));
+  const unknownFields = changedFields.length > 0
+    ? mergedFields.filter((field) => !changedSet.has(field))
+    : [];
+  return {
+    type: "structured_record_field_patch",
+    target_kind: input.conflict.target_kind,
+    ...(input.change?.target_ref.entity_type ? { target_entity_type: input.change.target_ref.entity_type } : {}),
+    ...(input.change?.target_ref.entity_id ? { target_entity_id: input.change.target_ref.entity_id } : {}),
+    changed_fields: changedFields,
+    merged_value_fields: mergedFields,
+    missing_fields: missingFields,
+    unknown_fields: unknownFields,
+    field_count: mergedFields.length,
+    has_structured_result: mergedFields.length > 0
   };
 }
 
@@ -683,6 +746,7 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
       "Do not decide for the user; provide rationale and a candidate value only.",
       "Use content_context.current, content_context.incoming, and content_context.base when present.",
       "When text_diff3_conflicts is present, resolve only those overlapping hunks and preserve non-overlapping content.",
+      "For structured_record conflicts, put proposed field updates under merged_value.fields and prefer fields listed in change.machine_summary.changed_fields.",
       "If content is insufficient, return no candidate for that conflict."
     ],
     output_schema: {
@@ -690,7 +754,7 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
         {
           conflict_key: "same as input conflict_key",
           rationale_md: "short human-readable reason",
-          merged_value: { proposed_resolution_md: "or structured object" },
+          merged_value: { fields: { title: "structured value" }, proposed_resolution_md: "optional explanation" },
           recommend: true
         }
       ]
@@ -707,9 +771,15 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
 
 function candidateFor(input: {
   conflict: ProposalMergeConflict;
+  change?: ReturnType<typeof changeSummary>;
   rationaleMd: string;
   mergedValue?: Record<string, unknown>;
 }): MergeProposalCandidate {
+  const structuredPatch = structuredRecordPatchQualityGate({
+    conflict: input.conflict,
+    change: input.change,
+    ...(input.mergedValue ? { mergedValue: input.mergedValue } : {})
+  });
   return {
     option_key: "ai_fusion",
     target_kind: input.conflict.target_kind,
@@ -717,7 +787,13 @@ function candidateFor(input: {
     source: "llm",
     quality_gate: {
       status: "passed",
-      checks: ["supported_target_kind", "json_schema", "no_git_conflict_markers"]
+      checks: [
+        "supported_target_kind",
+        "json_schema",
+        "no_git_conflict_markers",
+        ...(structuredPatch ? ["structured_field_patch"] : [])
+      ],
+      ...(structuredPatch ? { structured_record_patch: structuredPatch } : {})
     },
     merged_value: input.mergedValue ?? {
       proposed_resolution_md: input.rationaleMd
@@ -781,6 +857,7 @@ export function createLlmMergeFusionCandidateGenerator(options: {
             conflictKey: raw.conflict_key,
             candidates: [candidateFor({
               conflict,
+              change: changeSummary(input.manifest, conflict),
               rationaleMd: raw.rationale_md,
               ...(raw.merged_value ? { mergedValue: raw.merged_value } : {})
             })],

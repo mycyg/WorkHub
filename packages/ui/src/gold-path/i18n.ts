@@ -118,6 +118,11 @@ export type GoldPathCopyKey =
   | "replay.diff3Incoming"
   | "replay.diff3Conflict"
   | "replay.diff3Ranges"
+  | "replay.structuredPatchTitle"
+  | "replay.structuredPatchFields"
+  | "replay.structuredPatchChanged"
+  | "replay.structuredPatchMissing"
+  | "replay.structuredPatchUnknown"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -252,6 +257,11 @@ const goldPathCopy = {
     "replay.diff3Incoming": "这次版本改动段",
     "replay.diff3Conflict": "重叠段",
     "replay.diff3Ranges": "影响行",
+    "replay.structuredPatchTitle": "结构化字段检查",
+    "replay.structuredPatchFields": "将写入字段",
+    "replay.structuredPatchChanged": "声明改动字段",
+    "replay.structuredPatchMissing": "缺少字段",
+    "replay.structuredPatchUnknown": "额外字段",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -385,6 +395,11 @@ const goldPathCopy = {
     "replay.diff3Incoming": "Incoming hunks",
     "replay.diff3Conflict": "Overlaps",
     "replay.diff3Ranges": "Affected lines",
+    "replay.structuredPatchTitle": "Structured field check",
+    "replay.structuredPatchFields": "Fields to write",
+    "replay.structuredPatchChanged": "Declared fields",
+    "replay.structuredPatchMissing": "Missing fields",
+    "replay.structuredPatchUnknown": "Extra fields",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

@@ -103,6 +103,11 @@ const copy = {
   "proposal.diff3Incoming": { "zh-CN": "这次版本改动段", "en-US": "Incoming hunks" },
   "proposal.diff3Conflict": { "zh-CN": "重叠段", "en-US": "Overlaps" },
   "proposal.diff3Ranges": { "zh-CN": "影响行", "en-US": "Affected lines" },
+  "proposal.structuredPatchTitle": { "zh-CN": "结构化字段检查", "en-US": "Structured field check" },
+  "proposal.structuredPatchFields": { "zh-CN": "将写入字段", "en-US": "Fields to write" },
+  "proposal.structuredPatchChanged": { "zh-CN": "声明改动字段", "en-US": "Declared fields" },
+  "proposal.structuredPatchMissing": { "zh-CN": "缺少字段", "en-US": "Missing fields" },
+  "proposal.structuredPatchUnknown": { "zh-CN": "额外字段", "en-US": "Extra fields" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {
