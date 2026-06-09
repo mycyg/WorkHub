@@ -219,6 +219,14 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
                       lines: ["-正式版已有结论。", "+融合后的正文"]
                     }
                   ]
+                },
+                text_diff3: {
+                  type: "line_text_diff3",
+                  auto_merge: false,
+                  current_hunks: 1,
+                  incoming_hunks: 1,
+                  conflict_hunks: 1,
+                  conflict_ranges: [{ start_line: 2, end_line: 2 }]
                 }
               },
               recommended: false,
@@ -250,8 +258,16 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("AI 融合建议"), true);
   assert.equal(zhReplay?.html.includes("已选择"), true);
   assert.equal(zhReplay?.html.includes("data-replay-text-patch-preview=\"true\""), true);
+  assert.equal(zhReplay?.html.includes("data-replay-text-diff3=\"true\""), true);
+  assert.equal(zhReplay?.html.includes("data-text-diff3-option-key=\"ai_fusion\""), true);
+  assert.equal(zhReplay?.html.includes("data-text-diff3-auto-merge=\"false\""), true);
+  assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-hunks=\"1\""), true);
+  assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-ranges=\"2\""), true);
   assert.equal(zhReplay?.html.includes("data-overlap-risk=\"requires_review\""), true);
   assert.equal(zhReplay?.html.includes("改动预览"), true);
+  assert.equal(zhReplay?.html.includes("文本合并检查"), true);
+  assert.equal(zhReplay?.html.includes("需逐项确认"), true);
+  assert.equal(zhReplay?.html.includes("影响行: 第 2 行"), true);
   assert.equal(zhReplay?.html.includes("需要复核"), true);
   assert.equal(zhReplay?.html.includes("-正式版已有结论。"), true);
   assert.equal(zhReplay?.html.includes("+融合后的正文"), true);
@@ -262,5 +278,8 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(enReplay?.html.includes("AI fusion draft"), true);
   assert.equal(enReplay?.html.includes("Chosen"), true);
   assert.equal(enReplay?.html.includes("Change preview"), true);
+  assert.equal(enReplay?.html.includes("Text merge check"), true);
+  assert.equal(enReplay?.html.includes("Needs line review"), true);
+  assert.equal(enReplay?.html.includes("Affected lines: line 2"), true);
   assert.equal(enReplay?.html.includes("Review required"), true);
 });

@@ -121,6 +121,14 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
                 lines: ["-正式版已有结论。", "+融合后的正文"]
               }
             ]
+          },
+          text_diff3: {
+            type: "line_text_diff3",
+            auto_merge: false,
+            current_hunks: 1,
+            incoming_hunks: 1,
+            conflict_hunks: 1,
+            conflict_ranges: [{ start_line: 2, end_line: 2 }]
           }
         },
         action: {
@@ -144,9 +152,17 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
   assert.equal(rendered.html.includes("采用 AI 融合稿"), true);
   assert.equal(rendered.html.includes("data-proposal-text-patch-preview=\"true\""), true);
+  assert.equal(rendered.html.includes("data-text-diff3=\"true\""), true);
+  assert.equal(rendered.html.includes("data-text-diff3-option-id=\"ai_fusion\""), true);
+  assert.equal(rendered.html.includes("data-text-diff3-auto-merge=\"false\""), true);
+  assert.equal(rendered.html.includes("data-text-diff3-conflict-hunks=\"1\""), true);
+  assert.equal(rendered.html.includes("data-text-diff3-conflict-ranges=\"2\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-preview-for=\"ai_fusion\""), true);
   assert.equal(rendered.html.includes("data-overlap-risk=\"requires_review\""), true);
   assert.equal(rendered.html.includes("采用前预览"), true);
+  assert.equal(rendered.html.includes("文本合并检查"), true);
+  assert.equal(rendered.html.includes("需逐项确认"), true);
+  assert.equal(rendered.html.includes("影响行: 第 2 行"), true);
   assert.equal(rendered.html.includes("需要复核"), true);
   assert.equal(rendered.html.includes("-正式版已有结论。"), true);
   assert.equal(rendered.html.includes("+融合后的正文"), true);
@@ -161,5 +177,8 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Use this version"), true);
   assert.equal(english.html.includes("Use AI fusion draft"), true);
   assert.equal(english.html.includes("Preview before apply"), true);
+  assert.equal(english.html.includes("Text merge check"), true);
+  assert.equal(english.html.includes("Needs line review"), true);
+  assert.equal(english.html.includes("Affected lines: line 2"), true);
   assert.equal(english.html.includes("Review required"), true);
 });

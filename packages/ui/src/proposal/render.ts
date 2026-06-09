@@ -60,6 +60,7 @@ export const proposalCss = [
   ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:8px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:8px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
+  ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -101,6 +102,61 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function textDiff3RangeValues(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const record = objectRecord(item);
+    const start = numberField(record, "start_line");
+    const end = numberField(record, "end_line");
+    return start > 0 && end >= start ? [{ start, end }] : [];
+  });
+}
+
+function textDiff3RangeLabel(locale: ReturnType<typeof uiLocale>, start: number, end: number) {
+  if (start === end) {
+    return locale === "zh-CN" ? `第 ${start} 行` : `line ${start}`;
+  }
+  return locale === "zh-CN" ? `第 ${start}-${end} 行` : `lines ${start}-${end}`;
+}
+
+function renderTextDiff3QualityGate(option: ProposalConflictOption, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const diff3 = objectRecord(option.quality_gate?.["text_diff3"]);
+  if (diff3?.["type"] !== "line_text_diff3") {
+    return "";
+  }
+  const autoMerge = diff3["auto_merge"] === true;
+  const currentHunks = numberField(diff3, "current_hunks");
+  const incomingHunks = numberField(diff3, "incoming_hunks");
+  const conflictHunks = numberField(diff3, "conflict_hunks");
+  const ranges = textDiff3RangeValues(diff3["conflict_ranges"]);
+  const rangeData = ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start}-${range.end}`).join(",");
+  const rangeLabels = ranges.map((range) => textDiff3RangeLabel(locale, range.start, range.end)).join(", ");
+  const modeLabel = autoMerge ? uiT(locale, "proposal.diff3Auto") : uiT(locale, "proposal.diff3Review");
+  const rangeLine = rangeLabels
+    ? `<p class="wh-diff3-ranges">${escapeHtml(uiT(locale, "proposal.diff3Ranges"))}: ${escapeHtml(rangeLabels)}</p>`
+    : "";
+  return `<section class="wh-diff3" data-text-diff3="true" data-text-diff3-option-id="${escapeHtml(option.id)}" data-text-diff3-auto-merge="${escapeHtml(String(autoMerge))}" data-text-diff3-conflict-hunks="${escapeHtml(String(conflictHunks))}" data-text-diff3-conflict-ranges="${escapeHtml(rangeData)}">
+    <div class="wh-diff3-head">
+      <strong>${escapeHtml(uiT(locale, "proposal.diff3Title"))}</strong>
+      <span class="wh-pill">${escapeHtml(modeLabel)}</span>
+    </div>
+    <div class="wh-diff3-meta">
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Current"))}: ${escapeHtml(String(currentHunks))}</span>
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Incoming"))}: ${escapeHtml(String(incomingHunks))}</span>
+      <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.diff3Conflict"))}: ${escapeHtml(String(conflictHunks))}</span>
+    </div>
+    ${rangeLine}
+  </section>`;
 }
 
 function patchRiskLabel(locale: ReturnType<typeof uiLocale>, risk: string) {
@@ -218,7 +274,10 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
     incoming ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictIncoming"))}: ${escapeHtml(incoming)}</span>` : ""
   ].filter(Boolean).join("");
   const previews = conflict.options
-    .map((option) => renderTextPatchPreview(option, { locale }))
+    .flatMap((option) => [
+      renderTextPatchPreview(option, { locale }),
+      renderTextDiff3QualityGate(option, { locale })
+    ])
     .filter(Boolean)
     .join("");
 

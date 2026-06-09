@@ -111,6 +111,13 @@ export type GoldPathCopyKey =
   | "replay.patchRiskUnknown"
   | "replay.patchRiskLow"
   | "replay.patchRiskReview"
+  | "replay.diff3Title"
+  | "replay.diff3Auto"
+  | "replay.diff3Review"
+  | "replay.diff3Current"
+  | "replay.diff3Incoming"
+  | "replay.diff3Conflict"
+  | "replay.diff3Ranges"
   | "cost.kicker"
   | "cost.title"
   | "cost.summary"
@@ -238,6 +245,13 @@ const goldPathCopy = {
     "replay.patchRiskUnknown": "风险未知",
     "replay.patchRiskLow": "低风险",
     "replay.patchRiskReview": "需要复核",
+    "replay.diff3Title": "文本合并检查",
+    "replay.diff3Auto": "已自动合并",
+    "replay.diff3Review": "需逐项确认",
+    "replay.diff3Current": "正式版改动段",
+    "replay.diff3Incoming": "这次版本改动段",
+    "replay.diff3Conflict": "重叠段",
+    "replay.diff3Ranges": "影响行",
     "cost.kicker": "Cost governance",
     "cost.title": "预算与成本",
     "cost.summary": "普通用户只看个人切片；管理者再看团队视图。",
@@ -364,6 +378,13 @@ const goldPathCopy = {
     "replay.patchRiskUnknown": "Risk unknown",
     "replay.patchRiskLow": "Low risk",
     "replay.patchRiskReview": "Review required",
+    "replay.diff3Title": "Text merge check",
+    "replay.diff3Auto": "Auto-merged",
+    "replay.diff3Review": "Needs line review",
+    "replay.diff3Current": "Current hunks",
+    "replay.diff3Incoming": "Incoming hunks",
+    "replay.diff3Conflict": "Overlaps",
+    "replay.diff3Ranges": "Affected lines",
     "cost.kicker": "Cost governance",
     "cost.title": "Budget and cost",
     "cost.summary": "Regular users see their own slice; managers can open the team view.",

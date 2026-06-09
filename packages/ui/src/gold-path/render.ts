@@ -48,6 +48,7 @@ export const goldPathCss = [
   ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
+  ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
@@ -128,6 +129,60 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function textDiff3RangeValues(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const record = objectRecord(item);
+    const start = numberField(record, "start_line");
+    const end = numberField(record, "end_line");
+    return start > 0 && end >= start ? [{ start, end }] : [];
+  });
+}
+
+function textDiff3RangeLabel(locale: WorkHubLocale, start: number, end: number) {
+  if (start === end) {
+    return locale === "zh-CN" ? `第 ${start} 行` : `line ${start}`;
+  }
+  return locale === "zh-CN" ? `第 ${start}-${end} 行` : `lines ${start}-${end}`;
+}
+
+function renderTextDiff3QualityGate(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
+  const diff3 = objectRecord(candidate.quality_gate?.["text_diff3"]);
+  if (diff3?.["type"] !== "line_text_diff3") {
+    return "";
+  }
+  const autoMerge = diff3["auto_merge"] === true;
+  const currentHunks = numberField(diff3, "current_hunks");
+  const incomingHunks = numberField(diff3, "incoming_hunks");
+  const conflictHunks = numberField(diff3, "conflict_hunks");
+  const ranges = textDiff3RangeValues(diff3["conflict_ranges"]);
+  const rangeData = ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start}-${range.end}`).join(",");
+  const rangeLabels = ranges.map((range) => textDiff3RangeLabel(locale, range.start, range.end)).join(", ");
+  const modeLabel = autoMerge ? t(locale, "replay.diff3Auto") : t(locale, "replay.diff3Review");
+  const rangeLine = rangeLabels
+    ? `<p class="wh-diff3-ranges">${escapeHtml(t(locale, "replay.diff3Ranges"))}: ${escapeHtml(rangeLabels)}</p>`
+    : "";
+  return `<section class="wh-diff3" data-replay-text-diff3="true" data-text-diff3-option-key="${escapeHtml(candidate.option_key)}" data-text-diff3-auto-merge="${escapeHtml(String(autoMerge))}" data-text-diff3-conflict-hunks="${escapeHtml(String(conflictHunks))}" data-text-diff3-conflict-ranges="${escapeHtml(rangeData)}">
+    <div class="wh-diff3-head">
+      <strong>${escapeHtml(t(locale, "replay.diff3Title"))}</strong>
+      <span class="wh-pill">${escapeHtml(modeLabel)}</span>
+    </div>
+    <div class="wh-diff3-meta">
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.diff3Current"))}: ${escapeHtml(String(currentHunks))}</span>
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.diff3Incoming"))}: ${escapeHtml(String(incomingHunks))}</span>
+      <span class="wh-pill">${escapeHtml(t(locale, "replay.diff3Conflict"))}: ${escapeHtml(String(conflictHunks))}</span>
+    </div>
+    ${rangeLine}
+  </section>`;
 }
 
 function patchRiskLabel(locale: WorkHubLocale, risk: string) {
@@ -393,7 +448,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
                     candidate.recommended ? t(locale, "replay.recommended") : "",
                     candidate.chosen ? t(locale, "replay.chosen") : ""
                   ].filter(Boolean).join(" · ");
-                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
+                  return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}${renderTextDiff3QualityGate(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
                 })
                 .join("")
               : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;

@@ -96,6 +96,13 @@ const copy = {
   "proposal.patchRiskUnknown": { "zh-CN": "风险未知", "en-US": "Risk unknown" },
   "proposal.patchRiskLow": { "zh-CN": "低重叠风险", "en-US": "Low overlap risk" },
   "proposal.patchRiskReview": { "zh-CN": "需要复核", "en-US": "Review required" },
+  "proposal.diff3Title": { "zh-CN": "文本合并检查", "en-US": "Text merge check" },
+  "proposal.diff3Auto": { "zh-CN": "已自动合并", "en-US": "Auto-merged" },
+  "proposal.diff3Review": { "zh-CN": "需逐项确认", "en-US": "Needs line review" },
+  "proposal.diff3Current": { "zh-CN": "正式版改动段", "en-US": "Current hunks" },
+  "proposal.diff3Incoming": { "zh-CN": "这次版本改动段", "en-US": "Incoming hunks" },
+  "proposal.diff3Conflict": { "zh-CN": "重叠段", "en-US": "Overlaps" },
+  "proposal.diff3Ranges": { "zh-CN": "影响行", "en-US": "Affected lines" },
 
   "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
   "agent.emptyTrace": {
