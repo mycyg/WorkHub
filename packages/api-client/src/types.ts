@@ -22,7 +22,6 @@ import type {
   MergeProposalCandidateChoiceResult,
   ProposalMergeResult,
   ProposalReviewResult,
-  QuestionCard,
   ReplayTraceVM,
   ReviewProposalRequest,
   RespondApprovalRequest,
@@ -146,7 +145,7 @@ export type WorkHubApiClient = {
     id: string,
     payload?: ApplyMergeProposalCandidateRequest
   ) => Promise<ProposalMergeResult>;
-  nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<QuestionCard>;
+  nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (

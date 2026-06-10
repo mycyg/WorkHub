@@ -1,6 +1,5 @@
 import {
   cardFromAgentRunLive,
-  cardFromQuestionCard,
   cardFromSessionVm,
   createCuuController,
   cardFromEvidenceBubble,
@@ -880,7 +879,7 @@ export async function submitDesktopCuuAction(input: {
   if (shouldStartRun && (!input.client.createWorkItem || !input.client.startAgentRun)) {
     throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
   }
-  const question = await input.client.nextQuestion(input.action.sessionId, {
+  const session = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
   });
   if (shouldStartRun) {
@@ -899,8 +898,8 @@ export async function submitDesktopCuuAction(input: {
     };
   }
   return {
-    message: cuuFormat(input.locale, "action.nextQuestion", { title: question.title }),
-    card: cardFromQuestionCard(question, input)
+    message: cuuFormat(input.locale, "action.nextQuestion", { title: session.question.title }),
+    card: cardFromSessionVm(session, input)
   };
 }
 

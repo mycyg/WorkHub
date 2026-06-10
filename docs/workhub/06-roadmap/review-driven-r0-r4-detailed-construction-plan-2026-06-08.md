@@ -2070,7 +2070,7 @@ R2 验收：
 | 权限 | 仍走 API client；没有后端 `/api/cuu/start-agent` 路由，也没有 Cuu 权限旁路 |
 | 返回 | 需要澄清时转 session/question Cuu card；启动成功时 `AgentRunLiveVM` 转 `agent_run` Cuu card |
 | 主窗 | 未显示 Cuu 本体 |
-| 未覆盖 | 真实 Tauri 点击截图、真实 daemon SSE 回流、刷新恢复、launcher-to-run smoke |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon SSE 回流、刷新恢复 |
 
 验证：
 
@@ -2098,31 +2098,36 @@ R2 验收：
 
 当前边界：
 
-| 项 | R3.4 行为 |
+| 项 | R3.5 行为 |
 |---|---|
 | run event 过滤 | 接受 `topic=run:{id}`、`event.run_id` 或 `event.data.run_id` |
 | Cuu 刷新 | 不直接信任 SSE payload；每次匹配事件重新拉 `GET /api/agent-runs/:id` |
 | 终态 | 非 `queued/running` 后自动关闭订阅 |
 | 错误态 | budget / permission / offline / generic 四类 Cuu card |
 | 澄清回退 | `createSession()` 返回 `SessionVM.question.options[]` 时显示 `cardFromSessionVm()`，不绕过澄清直接启动 run |
-| 下一题 | `nextQuestion()` 返回 `cardFromQuestionCard()`，保持 option-first 桌宠链路 |
+| 下一题 | `nextQuestion()` 返回真实 `SessionVM`，desktop runtime 用 `cardFromSessionVm()` 保持 option-first 桌宠链路 |
 | 确认后启动 | 选择 `create-workitem` 时先记录 `nextQuestion()`，再 `createWorkItem({kickoff_agent:true})`，最后 `startAgentRun()` |
+| route-stack smoke | `qa:cuu-r3-launcher-smoke` 用真实 Hono routes + typed API client + desktop runtime 跑通 launcher -> clarification -> confirmation -> AgentRun |
 | Rust | 仍只做窗口、托盘、通知、SSE 转发；不拥有业务状态机 |
-| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、API dev server launcher-to-run smoke |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、双语边界、session 选择历史合并 |
 
 验证：
 
 - `corepack pnpm --filter @workhub/desktop-webview test`：66/66 通过。
 - `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/api typecheck`：通过。
+- `corepack pnpm qa:cuu-r3-launcher-smoke`：通过，返回 `clarification=session`、`confirmation=session`、`run=agent_run`。
+- `corepack pnpm lint`：通过，R2 release gate 为 PASS，且新增 R3 smoke 已接入 root lint。
 
-### R3.3 下一刀
+### R3.6 下一刀
 
-1. 用轻 DOM harness 覆盖真实 click body -> launcher card -> selected chip -> submit，而不仅是 render/output test。
-2. 用 API dev server 做 launcher-to-run smoke，证明不是单元测试里的 mock client。
-3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、queued/running card、completion card、failure/offline card。
-4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 run card。
-5. 如果后端返回 clarification/session pending，则 Cuu 展示 `SessionVM.question`，不强行 start run。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+1. 用轻 DOM harness 覆盖真实 click body -> launcher card -> selected chip -> submit -> clarification -> confirm -> run，而不仅是 render/output test。
+2. 修 Cuu 双语边界：`cardFromEvent(en-US)` 未知事件 fallback、runtime error message、Replay cost label、`budget_exhausted` AgentRun card。
+3. 合并 session 选择历史：最终 `createWorkItem()` 的 planning note 不能只留下 `create-workitem`。
+4. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack。
+5. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card。
+6. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+7. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client";
-import { eventTypes, type AgentRunLiveVM, type AttentionItem, type EvidenceBubble, type QuestionCard, type SessionVM, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
+import { eventTypes, type AgentRunLiveVM, type AttentionItem, type EvidenceBubble, type SessionVM, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
 import { createCuuController, type CuuCard, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
@@ -975,16 +975,25 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
     },
     async nextQuestion(sessionId: string, payload: unknown) {
       calls.push({ sessionId, payload });
-      const question: QuestionCard = {
-        id: "question-next",
-        title: "下一步要谁审批？",
-        input_mode: "single_choice",
-        options: [],
-        free_text: { enabled: true, collapsed_by_default: true },
-        progress: [],
-        submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+      const session: SessionVM = {
+        session_id: sessionId,
+        work_item_id: sessionId,
+        topic: `session:${sessionId}`,
+        stream_href: `/api/push/stream/session/${sessionId}`,
+        next_question_href: `/api/sessions/${sessionId}/next-question`,
+        question: {
+          id: "question-next",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "下一步要谁审批？",
+          input_mode: "single_choice",
+          options: [],
+          free_text: { enabled: true, collapsed_by_default: true },
+          progress: [],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
       };
-      return question;
+      return session;
     },
     async searchKnowledge() {
       throw new Error("not needed");
@@ -1038,7 +1047,7 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.equal(result.message, "下一题：下一步要谁审批？");
   assert.equal(result.card?.kind, "question");
   assert.equal(result.card?.title, "下一步要谁审批？");
-  assert.equal(result.card?.payload_ref?.entity_type, "question");
+  assert.equal(result.card?.payload_ref?.entity_type, "session");
   assert.equal(result.card?.input?.option_first, true);
   assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
@@ -1053,16 +1062,25 @@ test("desktop Cuu actions finalize confirmed sessions and start the agent run", 
     },
     async nextQuestion(sessionId: string, payload: unknown) {
       calls.push({ step: "nextQuestion", sessionId, payload });
-      const question: QuestionCard = {
-        id: "question-confirmed",
-        title: "是否按这个方向创建事项？",
-        input_mode: "confirm",
-        options: [],
-        free_text: { enabled: true, collapsed_by_default: true },
-        progress: [],
-        submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+      const session: SessionVM = {
+        session_id: sessionId,
+        work_item_id: sessionId,
+        topic: `session:${sessionId}`,
+        stream_href: `/api/push/stream/session/${sessionId}`,
+        next_question_href: `/api/sessions/${sessionId}/next-question`,
+        question: {
+          id: "question-confirmed",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "是否按这个方向创建事项？",
+          input_mode: "confirm",
+          options: [],
+          free_text: { enabled: true, collapsed_by_default: true },
+          progress: [],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
       };
-      return question;
+      return session;
     },
     async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
       calls.push({ step: "createWorkItem", payload });
