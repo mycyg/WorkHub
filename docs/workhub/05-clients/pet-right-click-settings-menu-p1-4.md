@@ -30,7 +30,7 @@ date: 2026-06-10
 
 - 主窗严肃 settings 页能关闭 `pet_pass_through`。P1.5 已落源码恢复门。
 - 托盘有明确“恢复 Cuu 交互”动作。P1.5 已落 `restore-pet-interaction`。
-- R3.18 已用主窗 `/settings` 真实截图证明开启后可恢复，并确认恢复后右键菜单重新可用；R3.19 已证明同一 Rust tray handler 可恢复；R3.20a 已证明右键菜单切 hover 后主窗 settings 同步。物理 OS 托盘点击证据仍留给 R3.20b。
+- R3.18 已用主窗 `/settings` 真实截图证明开启后可恢复，并确认恢复后右键菜单重新可用；R3.19 已证明同一 Rust tray handler 可恢复；R3.20a 已证明右键菜单切 hover 后主窗 settings 同步；R3.20b 已证明 Windows 物理 OS 托盘菜单可恢复，且不走 command fallback。
 
 ## 3. Runtime Contract
 
@@ -99,7 +99,7 @@ R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单�
 | tray handler 恢复后菜单可用 | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-en-official/` 与 `tray-restore-zh-official/`，两组 `settings_menu_layout_gate.passed=true` |
 | 菜单遮挡回归 | 恢复提示缩短为 `Interaction restored.` / `已恢复交互。`；右键菜单打开时清掉 transient status，official DOM report `bubble=null`，contact sheet 中菜单不遮挡提示文字 |
 | menu -> settings 事件桥 | 右键菜单切 hover 会 emit `pet-settings` 到 main；`pet right-click menu broadcasts hover setting changes to the main settings panel` 单测覆盖 `source="pet-menu"` payload |
-| pass-through 菜单项 | 仍不放进右键菜单；pass-through 恢复入口继续保留在主窗 `/settings`、系统托盘 handler 和后续物理 tray menu 证据 |
+| pass-through 菜单项 | 仍不放进右键菜单；pass-through 恢复入口继续保留在主窗 `/settings`、系统托盘 handler 和 R3.20b 已验证的物理 tray menu |
 
 ### 5.4 R3.20a settings hover sync 已完成
 
@@ -111,10 +111,19 @@ R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单�
 | 文本边界 | 菜单按钮、短提示、主窗 settings 状态徽标均通过 overflow gate；两个 locale 的 `overflow.offenders=[]` |
 | pass-through 菜单项 | 继续不放进右键菜单；R3.20a 只验证 `hide_on_hover`，不扩大菜单恢复入口 |
 
-### 5.5 后续验收
+### 5.5 R3.20b physical tray recovery 已完成
+
+| 项 | 证据 / 结论 |
+|---|---|
+| 物理 OS 托盘恢复 | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-physical-tray-recovery/hijiki/physical-tray-restore-en-official/` 与 `physical-tray-restore-zh-official/`，两组 `physical_tray_recovery_gate.passed=true` |
+| command fallback | 两组 capture 均 `command_fallback_used=false`；恢复动作来自 Windows UI Automation 定位系统 tray 图标、打开原生菜单、点击 `Restore Cuu interaction` |
+| 恢复后状态 | 恢复后 `pass=false/hide=false/opacity=100`，pet 右键菜单可用，主窗 `/settings` 同步为可交互状态 |
+| 文本边界 | 同轮把 run-failure/run-stream 卡片接入 `pet_card_text_overflow_gate`，中英证据均 `overflow_offender_count=0` |
+
+### 5.6 后续验收
 
 | 下一步 | 验收 |
 |---|---|
-| 物理 OS 托盘点击 | 从 pass-through 初始态点击系统 tray menu item，恢复后右键菜单重新可用 |
-| settings 双向状态同步回归 | R3.20a 已补右键菜单切 hover 后主窗 settings 状态同步截图；后续保留主窗恢复/托盘 handler 后 pet/main 状态同步回归 |
+| Linux/macOS tray/menu smoke | Linux 测试机先验证透明 pet window、tray/menu 恢复和截图权限；macOS 形成 menu bar / screenshot permission 策略 |
+| settings 双向状态同步回归 | R3.20a 已补右键菜单切 hover 后主窗 settings 状态同步截图；R3.20b 已补物理托盘恢复后 pet/main 同步；后续保留跨平台回归 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

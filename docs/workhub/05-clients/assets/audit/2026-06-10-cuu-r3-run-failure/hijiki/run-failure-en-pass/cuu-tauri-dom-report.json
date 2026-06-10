@@ -1,10 +1,20 @@
 {
   "bubble": {
     "data": {
-      "data_cuu_card_id": "40000000-0000-4000-8000-000000000009",
+      "data_cuu_card_id": "40000000-0000-4000-8000-000000000001",
       "data_pet_bubble": "true",
       "data_pet_bubble_kind": "trace",
-      "data_pet_bubble_priority": "high"
+      "data_pet_bubble_priority": "high",
+      "data_pet_payload_ref_entity_id": "40000000-0000-4000-8000-000000000001",
+      "data_pet_payload_ref_entity_type": "agent_run",
+      "data_pet_payload_ref_href": "/agent-runs/40000000-0000-4000-8000-000000000001/replay"
+    },
+    "layout": {
+      "client_height": 281,
+      "client_width": 298,
+      "horizontal_overflow": false,
+      "scroll_height": 281,
+      "scroll_width": 298
     },
     "present": true,
     "rect": {
@@ -18,7 +28,7 @@
     "selector": "[data-pet-bubble]",
     "text": "CuuProgressHigh This run needs attention Cuu R3 run-failure QA forced provider failure. Cuu updated progress: Cuu desktop entry task View replayBack to task Run progress#1 final..."
   },
-  "captured_at_iso": "2026-06-10T08:05:49.609Z",
+  "captured_at_iso": "2026-06-10T16:20:30.635Z",
   "contract": "workhub.cuu.tauri.actual-dom-report",
   "live2d": {
     "data": {
@@ -45,14 +55,21 @@
       "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
       "data_cuu_model_pack_selection_reason": "requested_default_ready"
     },
+    "layout": {
+      "client_height": 320,
+      "client_width": 230,
+      "horizontal_overflow": false,
+      "scroll_height": 320,
+      "scroll_width": 230
+    },
     "present": true,
     "rect": {
-      "bottom": 569.84,
-      "height": 323.34,
-      "right": 443.55,
-      "width": 234.67,
-      "x": 208.88,
-      "y": 246.5
+      "bottom": 570,
+      "height": 323.97,
+      "right": 443.65,
+      "width": 235.55,
+      "x": 208.1,
+      "y": 246.04
     },
     "selector": ".wh-cuu-cat-live2d",
     "text": "Cuu"
@@ -63,6 +80,13 @@
       "data_method": "GET",
       "data_requires_reason": "false",
       "data_tone": "secondary"
+    },
+    "layout": {
+      "client_height": 26,
+      "client_width": 85,
+      "horizontal_overflow": false,
+      "scroll_height": 26,
+      "scroll_width": 85
     },
     "present": true,
     "rect": {
@@ -82,6 +106,29 @@
     "selector": "[data-chip-id],[data-pet-option-id]"
   },
   "reason": "patch",
+  "settings_menu": {
+    "data": {
+      "data_pet_settings_menu": "true"
+    },
+    "layout": {
+      "client_height": 0,
+      "client_width": 0,
+      "horizontal_overflow": false,
+      "scroll_height": 0,
+      "scroll_width": 0
+    },
+    "present": true,
+    "rect": {
+      "bottom": 0,
+      "height": 0,
+      "right": 0,
+      "width": 0,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-pet-settings-menu]",
+    "text": "Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu"
+  },
   "surface": {
     "data": {
       "data_cuu_behavior_coverage": "partial",
@@ -107,7 +154,7 @@
       "data_cuu_run_stream_event_type": "",
       "data_cuu_run_stream_message": "",
       "data_cuu_run_stream_refreshed_status": "",
-      "data_cuu_run_stream_run_id": "40000000-0000-4000-8000-000000000009",
+      "data_cuu_run_stream_run_id": "40000000-0000-4000-8000-000000000001",
       "data_cuu_run_stream_state": "closed",
       "data_cuu_state": "worried",
       "data_cuu_visual_mode": "live2d_cat",
@@ -115,15 +162,16 @@
       "data_pet_card_kind": "trace",
       "data_pet_card_layout": "full",
       "data_pet_card_priority": "high",
-      "data_pet_cursor_near": "false",
+      "data_pet_cursor_near": "true",
       "data_pet_dragging": "false",
       "data_pet_hide_on_hover": "false",
-      "data_pet_hover_avoidance": "none",
+      "data_pet_hover_avoidance": "soft",
       "data_pet_hover_hidden": "false",
       "data_pet_hover_hide_mode": "off",
-      "data_pet_hovered": "false",
-      "data_pet_look_x": "0",
-      "data_pet_look_y": "0",
+      "data_pet_hovered": "true",
+      "data_pet_last_pointer_ms": "1781108426511",
+      "data_pet_look_x": "0.649",
+      "data_pet_look_y": "0.445",
       "data_pet_opacity_percent": "100",
       "data_pet_pass_through": "false",
       "data_pet_pointer_smoothing_alpha": "0.58",
@@ -132,6 +180,13 @@
       "data_pet_window_mode": "card",
       "data_pet_window_width": "520",
       "data_wh_surface": "pet"
+    },
+    "layout": {
+      "client_height": 640,
+      "client_width": 520,
+      "horizontal_overflow": false,
+      "scroll_height": 640,
+      "scroll_width": 520
     },
     "present": true,
     "rect": {

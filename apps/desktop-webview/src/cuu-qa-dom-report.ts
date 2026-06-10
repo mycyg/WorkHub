@@ -5,7 +5,26 @@ export type DesktopPetQaDomElementSnapshot = {
   present: boolean;
   data: Record<string, string>;
   rect?: DesktopPetQaDomRect | undefined;
+  layout?: DesktopPetQaDomLayout | undefined;
+  overflow_offenders?: DesktopPetQaDomOverflowOffender[] | undefined;
   text?: string | undefined;
+};
+
+export type DesktopPetQaDomLayout = {
+  client_width: number;
+  scroll_width: number;
+  client_height: number;
+  scroll_height: number;
+  horizontal_overflow: boolean;
+};
+
+export type DesktopPetQaDomOverflowOffender = {
+  tag: string;
+  class_name: string;
+  text: string;
+  client_width: number;
+  scroll_width: number;
+  rect_width: number;
 };
 
 export type DesktopPetQaDomRect = {
@@ -43,9 +62,14 @@ type DesktopPetQaDomReportTarget = typeof globalThis & {
 
 type DomElementLike = Element & {
   dataset?: DOMStringMap;
+  clientWidth?: number;
+  scrollWidth?: number;
+  clientHeight?: number;
+  scrollHeight?: number;
   getAttributeNames?: () => string[];
   getAttribute?: (name: string) => string | null;
   getBoundingClientRect?: () => DOMRect;
+  querySelectorAll?: (selector: string) => NodeListOf<Element>;
 };
 
 export function collectDesktopPetQaDomSnapshot(
@@ -94,11 +118,15 @@ function collectDesktopPetQaDomElement(root: ParentNode, selector: string): Desk
   }
   const text = normalizeTextContent(element.textContent);
   const rect = collectDesktopPetQaRect(element);
+  const layout = collectDesktopPetQaLayout(element);
+  const overflowOffenders = collectDesktopPetQaOverflowOffenders(element);
   return {
     selector,
     present: true,
     data: collectDesktopPetQaDataAttributes(element),
     ...(rect ? { rect } : {}),
+    ...(layout ? { layout } : {}),
+    ...(overflowOffenders.length ? { overflow_offenders: overflowOffenders } : {}),
     ...(text ? { text } : {})
   };
 }
@@ -116,6 +144,44 @@ function collectDesktopPetQaRect(element: DomElementLike): DesktopPetQaDomRect |
     right: roundRectNumber(rect.right),
     bottom: roundRectNumber(rect.bottom)
   };
+}
+
+function collectDesktopPetQaLayout(element: DomElementLike): DesktopPetQaDomLayout | undefined {
+  if (typeof element.clientWidth !== "number" || typeof element.scrollWidth !== "number") {
+    return undefined;
+  }
+  const clientWidth = Math.max(0, Math.round(element.clientWidth));
+  const scrollWidth = Math.max(0, Math.round(element.scrollWidth));
+  const clientHeight = typeof element.clientHeight === "number" ? Math.max(0, Math.round(element.clientHeight)) : 0;
+  const scrollHeight = typeof element.scrollHeight === "number" ? Math.max(0, Math.round(element.scrollHeight)) : 0;
+  return {
+    client_width: clientWidth,
+    scroll_width: scrollWidth,
+    client_height: clientHeight,
+    scroll_height: scrollHeight,
+    horizontal_overflow: clientWidth > 0 && scrollWidth > clientWidth + 2
+  };
+}
+
+function collectDesktopPetQaOverflowOffenders(element: DomElementLike): DesktopPetQaDomOverflowOffender[] {
+  if (typeof element.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(element.querySelectorAll("*") as NodeListOf<DomElementLike>)
+    .map((candidate) => {
+      const text = normalizeTextContent(candidate.textContent) ?? "";
+      const rect = typeof candidate.getBoundingClientRect === "function" ? candidate.getBoundingClientRect() : undefined;
+      return {
+        tag: candidate.tagName.toLowerCase(),
+        class_name: String(candidate.className || ""),
+        text,
+        client_width: typeof candidate.clientWidth === "number" ? Math.max(0, Math.round(candidate.clientWidth)) : 0,
+        scroll_width: typeof candidate.scrollWidth === "number" ? Math.max(0, Math.round(candidate.scrollWidth)) : 0,
+        rect_width: rect ? roundRectNumber(rect.width) : 0
+      };
+    })
+    .filter((entry) => entry.text && entry.client_width > 0 && entry.scroll_width > entry.client_width + 2)
+    .slice(0, 12);
 }
 
 function collectDesktopPetQaDataAttributes(element: DomElementLike): Record<string, string> {

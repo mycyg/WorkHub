@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -81,7 +81,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
@@ -771,7 +771,7 @@ function New-CuuPassThroughRecoveryGate {
     [object]$MainAfter,
     [object]$FinalPetDomReport
   )
-  $enabled = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
+  $enabled = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray" -or $Scenario -eq "pass-through-recovery-tray-physical"
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -1466,7 +1466,7 @@ function New-CuuSettingsMenuLayoutGate {
     [string]$ExpectedLocale = "zh-CN"
   )
 
-  $enabled = @("settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray") -contains $Scenario
+  $enabled = @("settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical") -contains $Scenario
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -1493,7 +1493,7 @@ function New-CuuSettingsMenuLayoutGate {
     }
   }
 
-  if ($Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-hover-sync" -or $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray") {
+  if ($Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-hover-sync" -or $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray" -or $Scenario -eq "pass-through-recovery-tray-physical") {
     if (-not $Actual.settings_menu -or -not $Actual.settings_menu.present -or -not $Actual.settings_menu.rect) {
       return [pscustomobject]@{
         enabled = $true
@@ -1642,6 +1642,9 @@ public static class WorkHubCuuMotionWin32
 }
 
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuInputWin32").Type) {
   Add-Type -TypeDefinition @"
@@ -1658,6 +1661,8 @@ public static class WorkHubCuuInputWin32
 
     public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
 }
 "@
 }
@@ -1945,11 +1950,11 @@ function New-CuuMotionLivenessReport {
     [bool]$IsBusinessScenario
   )
 
-  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "pass-through-recovery-settings", "pass-through-recovery-tray")
+  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical")
   $enabled = $IsBusinessScenario -or ($interactionScenarios -contains $ScenarioName)
   $quality = if ($FrameCount -ge $FormalFrameCount) { "formal_32" } else { "smoke" }
   $minChangedFrames = if ($quality -eq "formal_32") { $MinChangedFramesFormal } else { $MinChangedFramesSmoke }
-  if ($ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray") {
+  if ($ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray" -or $ScenarioName -eq "pass-through-recovery-tray-physical") {
     $minChangedFrames = 1
   }
   [object[]]$changedFrames = @($Diffs | Where-Object {
@@ -2033,6 +2038,386 @@ function Invoke-CuuMouse {
   }
 }
 
+function Invoke-CuuMouseClick {
+  param([ValidateSet("left", "right")][string]$Button = "left")
+  if ($Button -eq "right") {
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero)
+  } else {
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [WorkHubCuuInputWin32]::mouse_event([WorkHubCuuInputWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+  }
+}
+
+function New-CuuDesktopScreenshot {
+  param([string]$Path)
+
+  $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  try {
+    $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size)
+    $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally {
+    $graphics.Dispose()
+    $bitmap.Dispose()
+  }
+
+  [pscustomobject]@{
+    path = $Path
+    virtual_screen = [pscustomobject]@{
+      x = $bounds.Left
+      y = $bounds.Top
+      width = $bounds.Width
+      height = $bounds.Height
+      right = $bounds.Right
+      bottom = $bounds.Bottom
+    }
+  }
+}
+
+function Get-CuuUiaRect {
+  param([System.Windows.Automation.AutomationElement]$Element)
+
+  $rect = $Element.Current.BoundingRectangle
+  try {
+    $x = [double]$rect.X
+  } catch {
+    try { $x = [double]$rect.Left } catch { $x = 0.0 }
+  }
+  try {
+    $y = [double]$rect.Y
+  } catch {
+    try { $y = [double]$rect.Top } catch { $y = 0.0 }
+  }
+  try { $width = [double]$rect.Width } catch { $width = 0.0 }
+  try { $height = [double]$rect.Height } catch { $height = 0.0 }
+  try { $right = [double]$rect.Right } catch { $right = $x + $width }
+  try { $bottom = [double]$rect.Bottom } catch { $bottom = $y + $height }
+  try { $empty = [bool]$rect.IsEmpty } catch { $empty = $width -le 0 -or $height -le 0 }
+  [pscustomobject]@{
+    x = [Math]::Round($x, 2)
+    y = [Math]::Round($y, 2)
+    width = [Math]::Round($width, 2)
+    height = [Math]::Round($height, 2)
+    right = [Math]::Round($right, 2)
+    bottom = [Math]::Round($bottom, 2)
+    empty = $empty
+  }
+}
+
+function New-CuuUiaElementSummary {
+  param([System.Windows.Automation.AutomationElement]$Element)
+
+  if (-not $Element) {
+    return $null
+  }
+  $current = $Element.Current
+  [pscustomobject]@{
+    name = $current.Name
+    automation_id = $current.AutomationId
+    class_name = $current.ClassName
+    framework_id = $current.FrameworkId
+    process_id = $current.ProcessId
+    control_type = if ($current.ControlType) { $current.ControlType.ProgrammaticName } else { $null }
+    bounding_rect = Get-CuuUiaRect -Element $Element
+  }
+}
+
+function Test-CuuUiaRectInTrayRegion {
+  param([object]$Rect)
+
+  if (-not $Rect -or [bool]$Rect.empty) {
+    return $false
+  }
+  $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $minX = $bounds.Right - [Math]::Min(760, [int][Math]::Floor($bounds.Width * 0.55))
+  $minY = $bounds.Bottom - [Math]::Min(640, [int][Math]::Floor($bounds.Height * 0.65))
+  return [double]$Rect.x -ge $minX -and
+    [double]$Rect.y -ge $minY -and
+    [double]$Rect.right -le ($bounds.Right + 16) -and
+    [double]$Rect.bottom -le ($bounds.Bottom + 16)
+}
+
+function Find-CuuUiaElementByName {
+  param(
+    [string[]]$Names,
+    [System.Windows.Automation.ControlType]$ControlType,
+    [int]$TimeoutSeconds = 8,
+    [switch]$RequireNonEmptyRect,
+    [switch]$RequireTrayRegion
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    foreach ($name in $Names) {
+      $nameCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        $name
+      )
+      $typeCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        $ControlType
+      )
+      $condition = [System.Windows.Automation.AndCondition]::new($nameCondition, $typeCondition)
+      $element = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        $condition
+      )
+      if ($element) {
+        $rect = Get-CuuUiaRect -Element $element
+        $rectOk = (-not $RequireNonEmptyRect -or (-not $rect.empty -and $rect.width -gt 0 -and $rect.height -gt 0))
+        $regionOk = (-not $RequireTrayRegion -or (Test-CuuUiaRectInTrayRegion -Rect $rect))
+        if ($rectOk -and $regionOk) {
+          return $element
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+
+  return $null
+}
+
+function Find-CuuUiaElementByNamePattern {
+  param(
+    [string]$Pattern,
+    [System.Windows.Automation.ControlType]$ControlType,
+    [int]$TimeoutSeconds = 8,
+    [switch]$RequireNonEmptyRect,
+    [switch]$RequireTrayRegion
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $typeCondition = [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+      $ControlType
+    )
+    $elements = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      $typeCondition
+    )
+    foreach ($element in $elements) {
+      $name = [string]$element.Current.Name
+      if ($name -match $Pattern) {
+        $rect = Get-CuuUiaRect -Element $element
+        $rectOk = (-not $RequireNonEmptyRect -or (-not $rect.empty -and $rect.width -gt 0 -and $rect.height -gt 0))
+        $regionOk = (-not $RequireTrayRegion -or (Test-CuuUiaRectInTrayRegion -Rect $rect))
+        if ($rectOk -and $regionOk) {
+          return $element
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 350
+  } while ((Get-Date) -lt $deadline)
+
+  return $null
+}
+
+function Invoke-CuuUiaElementMouseClick {
+  param(
+    [System.Windows.Automation.AutomationElement]$Element,
+    [ValidateSet("left", "right")][string]$Button = "left"
+  )
+
+  $rect = Get-CuuUiaRect -Element $Element
+  if ($rect.empty -or $rect.width -le 0 -or $rect.height -le 0) {
+    throw "Cannot click UIAutomation element with empty bounding rectangle."
+  }
+  $x = [int][Math]::Round($rect.x + ($rect.width / 2))
+  $y = [int][Math]::Round($rect.y + ($rect.height / 2))
+  Set-CuuCursorPosition -X $x -Y $y
+  Start-Sleep -Milliseconds 90
+  Invoke-CuuMouseClick -Button $Button
+  [pscustomobject]@{
+    button = $Button
+    x = $x
+    y = $y
+    rect = $rect
+  }
+}
+
+function Invoke-CuuOpenTrayOverflow {
+  $overflow = Find-CuuUiaElementByNamePattern `
+    -Pattern "Show hidden icons|Hidden icons|Notification Chevron|System tray overflow|显示隐藏|隐藏的图标" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -TimeoutSeconds 2 `
+    -RequireNonEmptyRect `
+    -RequireTrayRegion
+  if (-not $overflow) {
+    return $null
+  }
+  $click = Invoke-CuuUiaElementMouseClick -Element $overflow -Button "left"
+  Start-Sleep -Milliseconds 450
+  [pscustomobject]@{
+    button = New-CuuUiaElementSummary -Element $overflow
+    click = $click
+  }
+}
+
+function Invoke-CuuWindowsTrayRestoreInteraction {
+  param(
+    [string]$OutDir,
+    [int]$TimeoutSeconds = 8
+  )
+
+  $beforePath = Join-Path $OutDir "windows-tray-before-menu.png"
+  $overflowPath = Join-Path $OutDir "windows-tray-overflow-opened.png"
+  $menuPath = Join-Path $OutDir "windows-tray-menu-before-restore.png"
+  $afterPath = Join-Path $OutDir "windows-tray-after-restore.png"
+  $beforeScreenshot = New-CuuDesktopScreenshot -Path $beforePath
+
+  $trayIcon = Find-CuuUiaElementByName `
+    -Names @("WorkHub - Cuu is ready") `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -TimeoutSeconds ([Math]::Max(2, [int][Math]::Floor($TimeoutSeconds / 2))) `
+    -RequireNonEmptyRect `
+    -RequireTrayRegion
+  $overflow = $null
+  $overflowScreenshot = $null
+  if (-not $trayIcon) {
+    $overflow = Invoke-CuuOpenTrayOverflow
+    if ($overflow) {
+      $overflowScreenshot = New-CuuDesktopScreenshot -Path $overflowPath
+      $trayIcon = Find-CuuUiaElementByNamePattern `
+        -Pattern "WorkHub - Cuu is ready|Cuu is ready|WorkHub|Cuu" `
+        -ControlType ([System.Windows.Automation.ControlType]::Button) `
+        -TimeoutSeconds $TimeoutSeconds `
+        -RequireNonEmptyRect `
+        -RequireTrayRegion
+    }
+  }
+  if (-not $trayIcon) {
+    throw "Unable to find WorkHub tray icon through Windows UIAutomation."
+  }
+
+  $trayIconSummary = New-CuuUiaElementSummary -Element $trayIcon
+  $trayClick = Invoke-CuuUiaElementMouseClick -Element $trayIcon -Button "right"
+  Start-Sleep -Milliseconds 650
+  $menuScreenshot = New-CuuDesktopScreenshot -Path $menuPath
+  $restoreItem = Find-CuuUiaElementByName `
+    -Names @("Restore Cuu interaction") `
+    -ControlType ([System.Windows.Automation.ControlType]::MenuItem) `
+    -TimeoutSeconds $TimeoutSeconds `
+    -RequireNonEmptyRect
+  if (-not $restoreItem) {
+    throw "Unable to find Restore Cuu interaction in the native tray menu."
+  }
+
+  $restoreItemSummary = New-CuuUiaElementSummary -Element $restoreItem
+  $restoreClick = Invoke-CuuUiaElementMouseClick -Element $restoreItem -Button "left"
+  Start-Sleep -Milliseconds 900
+  $afterScreenshot = New-CuuDesktopScreenshot -Path $afterPath
+
+  [pscustomobject]@{
+    ok = $true
+    source = "windows_tray_ui_automation_mouse"
+    command_fallback_used = $false
+    before_screenshot = $beforeScreenshot
+    overflow = $overflow
+    overflow_screenshot = $overflowScreenshot
+    tray_icon = $trayIconSummary
+    tray_click = $trayClick
+    menu_screenshot = $menuScreenshot
+    restore_menu_item = $restoreItemSummary
+    restore_click = $restoreClick
+    after_screenshot = $afterScreenshot
+  }
+}
+
+function New-CuuPhysicalTrayRecoveryGate {
+  param(
+    [string]$Scenario,
+    [object]$RestorePoint
+  )
+
+  $enabled = $Scenario -eq "pass-through-recovery-tray-physical"
+  if (-not $enabled) {
+    return [pscustomobject]@{
+      enabled = $false
+      passed = $true
+      reason = "not_physical_tray_recovery_scenario"
+    }
+  }
+
+  $trayClicked = $RestorePoint -and $RestorePoint.tray_click -and
+    [string]$RestorePoint.tray_click.button -eq "right"
+  $restoreClicked = $RestorePoint -and $RestorePoint.restore_click -and
+    [string]$RestorePoint.restore_click.button -eq "left"
+  $hasScreenshots = $RestorePoint -and
+    $RestorePoint.before_screenshot -and
+    $RestorePoint.menu_screenshot -and
+    $RestorePoint.after_screenshot -and
+    (Test-Path -LiteralPath $RestorePoint.before_screenshot.path) -and
+    (Test-Path -LiteralPath $RestorePoint.menu_screenshot.path) -and
+    (Test-Path -LiteralPath $RestorePoint.after_screenshot.path)
+  $passed = [bool]$RestorePoint.ok -and
+    [string]$RestorePoint.source -eq "windows_tray_ui_automation_mouse" -and
+    [bool]$RestorePoint.command_fallback_used -eq $false -and
+    $trayClicked -and
+    $restoreClicked -and
+    $hasScreenshots
+
+  [pscustomobject]@{
+    enabled = $true
+    passed = $passed
+    reason = if ($passed) { "physical_tray_menu_item_clicked" } else { "physical_tray_menu_item_click_failed" }
+    tray_icon_right_clicked = $trayClicked
+    restore_menu_item_left_clicked = $restoreClicked
+    command_fallback_used = if ($RestorePoint) { [bool]$RestorePoint.command_fallback_used } else { $null }
+    has_desktop_screenshots = $hasScreenshots
+    source = if ($RestorePoint) { $RestorePoint.source } else { $null }
+  }
+}
+
+function New-CuuPetCardTextOverflowGate {
+  param(
+    [string]$Scenario,
+    [object]$Actual
+  )
+
+  $enabled = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
+  if (-not $enabled) {
+    return [pscustomobject]@{
+      enabled = $false
+      passed = $true
+      reason = "not_pet_card_text_overflow_scenario"
+    }
+  }
+
+  $bubble = if ($Actual) { Get-CuuObjectPropertyValue -InputObject $Actual -Name "bubble" } else { $null }
+  $bubbleLayout = if ($bubble) { Get-CuuObjectPropertyValue -InputObject $bubble -Name "layout" } else { $null }
+  $bubbleOffenderValue = if ($bubble) { Get-CuuObjectPropertyValue -InputObject $bubble -Name "overflow_offenders" } else { $null }
+  [object[]]$bubbleOffenders = if ($bubbleOffenderValue) { @($bubbleOffenderValue) } else { @() }
+  $primaryAction = if ($Actual) { Get-CuuObjectPropertyValue -InputObject $Actual -Name "primary_action" } else { $null }
+  $primaryActionLayout = if ($primaryAction) { Get-CuuObjectPropertyValue -InputObject $primaryAction -Name "layout" } else { $null }
+  $bubblePresent = $bubble -and [bool](Get-CuuObjectPropertyValue -InputObject $bubble -Name "present")
+  $bubbleHasLayout = $null -ne $bubbleLayout
+  $bubbleNoHorizontalOverflow = $bubbleHasLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $bubbleLayout -Name "horizontal_overflow")
+  $primaryActionPresent = $primaryAction -and [bool](Get-CuuObjectPropertyValue -InputObject $primaryAction -Name "present")
+  $primaryActionNoHorizontalOverflow = -not $primaryActionPresent -or (
+    $primaryActionLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $primaryActionLayout -Name "horizontal_overflow")
+  )
+  $bubbleOffenderCount = ($bubbleOffenders | Where-Object { $null -ne $_ } | Measure-Object).Count
+  $passed = $bubblePresent -and $bubbleNoHorizontalOverflow -and $bubbleOffenderCount -eq 0 -and $primaryActionNoHorizontalOverflow
+
+  [pscustomobject]@{
+    enabled = $true
+    passed = $passed
+    reason = if ($passed) { "pet_card_text_in_bounds" } else { "pet_card_text_overflow_detected" }
+    bubble_present = $bubblePresent
+    bubble_has_layout = $bubbleHasLayout
+    bubble_layout = $bubbleLayout
+    primary_action_layout = $primaryActionLayout
+    primary_action_no_horizontal_overflow = $primaryActionNoHorizontalOverflow
+    overflow_offender_count = $bubbleOffenderCount
+    overflow_offenders = $bubbleOffenders
+  }
+}
+
 function Invoke-CuuInteractionScenarioFrame {
   param(
     [string]$ScenarioName,
@@ -2040,7 +2425,7 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "settings-menu-hover-sync" -and $ScenarioName -ne "pass-through-recovery-settings" -and $ScenarioName -ne "pass-through-recovery-tray") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "settings-menu-hover-sync" -and $ScenarioName -ne "pass-through-recovery-settings" -and $ScenarioName -ne "pass-through-recovery-tray" -and $ScenarioName -ne "pass-through-recovery-tray-physical") {
     return $null
   }
 
@@ -2049,7 +2434,7 @@ function Invoke-CuuInteractionScenarioFrame {
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $isLauncher = $ScenarioName -eq "launcher"
-  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "settings-menu-hover-sync" -or $ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray"
+  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "settings-menu-hover-sync" -or $ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray" -or $ScenarioName -eq "pass-through-recovery-tray-physical"
   $isSettingsMenuModelSwitch = $ScenarioName -eq "settings-menu-model-switch"
   $isSettingsMenuHoverSync = $ScenarioName -eq "settings-menu-hover-sync"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
@@ -2429,6 +2814,7 @@ $mainSettingsBeforeRestore = $null
 $mainSettingsAfterRestore = $null
 $mainSettingsBeforeHoverSync = $null
 $mainSettingsAfterHoverSync = $null
+$physicalTrayRestorePoint = $null
 
 try {
   if (-not $UseRealAppData) {
@@ -2443,10 +2829,11 @@ try {
   $sseDisabledForScenario = $false
   $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
   $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
-  $usesPassThroughRecoveryCapture = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
+  $usesCommandTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray"
+  $usesPhysicalTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray-physical"
+  $usesPassThroughRecoveryCapture = $Scenario -eq "pass-through-recovery-settings" -or $usesCommandTrayRecoveryCapture -or $usesPhysicalTrayRecoveryCapture
   $usesHoverSyncCapture = $Scenario -eq "settings-menu-hover-sync"
   $usesMainSettingsCapture = $usesPassThroughRecoveryCapture -or $usesHoverSyncCapture
-  $usesTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray"
   $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario -or $usesMainSettingsCapture
   if (($Scenario -ne "idle" -and -not $usesCuuR3ApiServer) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
@@ -2626,12 +3013,15 @@ try {
       layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $beforeSnapshot -ExpectedLocale $Locale -AfterRestore $false
     }
 
-    if ($usesTrayRecoveryCapture) {
+    if ($usesCommandTrayRecoveryCapture) {
       $restorePoint = Invoke-CuuCdpRestorePetInteractionCommand -WebSocketUrl $script:cuuCdpWebSocketUrl
       if (-not $restorePoint -or -not $restorePoint.ok) {
         $restoreError = if ($restorePoint) { $restorePoint.error } else { "no_restore_result" }
         throw "Tray restore command failed: $restoreError"
       }
+    } elseif ($usesPhysicalTrayRecoveryCapture) {
+      $restorePoint = Invoke-CuuWindowsTrayRestoreInteraction -OutDir $OutDir -TimeoutSeconds $WaitSeconds
+      $physicalTrayRestorePoint = $restorePoint
     } else {
       $restorePoint = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuMainCdpWebSocketUrl -Selector "[data-cuu-pet-restore-interaction]"
     }
@@ -2868,6 +3258,8 @@ try {
   $settingsMenuLayoutGate = New-CuuSettingsMenuLayoutGate -Scenario $Scenario -Actual $actualDomReport -ExpectedLocale $Locale
   $passThroughRecoveryGate = New-CuuPassThroughRecoveryGate -Scenario $Scenario -InitialPetSnapshot $initialPetSettingsSnapshot -MainBefore $mainSettingsBeforeRestore -MainAfter $mainSettingsAfterRestore -FinalPetDomReport $actualDomReport
   $settingsMenuHoverSyncGate = New-CuuSettingsMenuHoverSyncGate -Scenario $Scenario -MainBefore $mainSettingsBeforeHoverSync -MainAfter $mainSettingsAfterHoverSync -FinalPetDomReport $actualDomReport
+  $physicalTrayRecoveryGate = New-CuuPhysicalTrayRecoveryGate -Scenario $Scenario -RestorePoint $physicalTrayRestorePoint
+  $petCardTextOverflowGate = New-CuuPetCardTextOverflowGate -Scenario $Scenario -Actual $actualDomReport
 
   $motionLivenessReport = New-CuuMotionLivenessReport `
     -ScenarioName $Scenario `
@@ -2881,7 +3273,7 @@ try {
     -MaxRectDriftPx $MaxStableRectDriftPx `
     -IsBusinessScenario $isBusinessScenario
   $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
-  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed -and $passThroughRecoveryGate.passed -and $settingsMenuHoverSyncGate.passed
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed -and $passThroughRecoveryGate.passed -and $settingsMenuHoverSyncGate.passed -and $physicalTrayRecoveryGate.passed -and $petCardTextOverflowGate.passed
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -2912,6 +3304,9 @@ try {
     settings_menu_layout_gate = $settingsMenuLayoutGate
     pass_through_recovery_gate = $passThroughRecoveryGate
     settings_menu_hover_sync_gate = $settingsMenuHoverSyncGate
+    physical_tray_recovery_gate = $physicalTrayRecoveryGate
+    pet_card_text_overflow_gate = $petCardTextOverflowGate
+    physical_tray_restore = $physicalTrayRestorePoint
     main_settings_before_restore = $mainSettingsBeforeRestore
     main_settings_after_restore = $mainSettingsAfterRestore
     main_settings_before_hover_sync = $mainSettingsBeforeHoverSync
@@ -2993,6 +3388,20 @@ try {
     settings_menu_layout_gate = $settingsMenuLayoutGate
     pass_through_recovery_gate = $passThroughRecoveryGate
     settings_menu_hover_sync_gate = $settingsMenuHoverSyncGate
+    physical_tray_recovery_gate = $physicalTrayRecoveryGate
+    pet_card_text_overflow_gate = $petCardTextOverflowGate
+    physical_tray_restore = if ($physicalTrayRestorePoint) {
+      [pscustomobject]@{
+        source = $physicalTrayRestorePoint.source
+        command_fallback_used = $physicalTrayRestorePoint.command_fallback_used
+        before_screenshot = if ($physicalTrayRestorePoint.before_screenshot) { $physicalTrayRestorePoint.before_screenshot.path } else { $null }
+        overflow_screenshot = if ($physicalTrayRestorePoint.overflow_screenshot) { $physicalTrayRestorePoint.overflow_screenshot.path } else { $null }
+        menu_screenshot = if ($physicalTrayRestorePoint.menu_screenshot) { $physicalTrayRestorePoint.menu_screenshot.path } else { $null }
+        after_screenshot = if ($physicalTrayRestorePoint.after_screenshot) { $physicalTrayRestorePoint.after_screenshot.path } else { $null }
+        tray_icon = $physicalTrayRestorePoint.tray_icon
+        restore_menu_item = $physicalTrayRestorePoint.restore_menu_item
+      }
+    } else { $null }
     main_settings_before_restore = if ($mainSettingsBeforeRestore) {
       [pscustomobject]@{
         screenshot = $mainSettingsBeforeRestore.screenshot

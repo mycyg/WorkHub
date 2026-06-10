@@ -125,6 +125,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 4. R3.17 已补 settings matrix 与右键菜单边界：scale 75/150、opacity 60、pass-through、hide-on-hover、语言切换、黑/白模型切换均有真实窗口证据，详见 `./assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/`。
 5. R3.17 新增 `settings_menu_layout_gate`：右键菜单必须在 260px `pet` surface 内，模型切换后的短提示也必须完整留在窗口内；用户截图中的文本超框风险继续作为后续硬门。
 6. R3.18/R3.19 已为 pass-through recovery 单独留证：开启后右键入口不可依赖，可通过主窗 `/settings` 或托盘 `restore-pet-interaction` handler 恢复；证据目录分别为 `./assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/`。
-7. R3.19 已把用户截图对应的文本超框风险纳入托盘恢复门：短提示收敛为一行，打开右键菜单时收起 transient status bubble，主窗 settings capture 继续要求 `overflow.offenders=[]`。
+7. R3.19 已把用户截图对应的 transient 提示遮挡风险纳入托盘恢复门：短提示收敛为一行，打开右键菜单时收起 transient status bubble，主窗 settings capture 继续要求 `overflow.offenders=[]`。
 8. R3.20a 已补右键菜单 hover -> 主窗 settings 同步截图：`./assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-en-official/` 与 `hover-sync-zh-official/` 均满足 `settings_menu_hover_sync_gate.passed=true`、`settings_menu_layout_gate.passed=true` 和 `overflow.offenders=[]`。
-9. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限；物理 OS 托盘点击仍需 R3.20b 录屏或 UI automation 证据。
+9. R3.20b 已补 Windows 物理 OS 托盘菜单点击：`./assets/audit/2026-06-10-cuu-r3-physical-tray-recovery/hijiki/physical-tray-restore-en-official/` 与 `physical-tray-restore-zh-official/` 均满足 `physical_tray_recovery_gate.passed=true`、`command_fallback_used=false`、主窗 settings `overflow.offenders=[]`。
+10. R3.20b 已把用户截图中的 run card 文本超框风险做成自动门：`run-failure-en-pass/`、`run-failure-zh-pass/`、`run-stream-en-pass/`、`run-stream-zh-pass/` 均满足 `pet_card_text_overflow_gate.passed=true`、`overflow_offender_count=0`。
+11. 下一步完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow` + UIA tray driver；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限。

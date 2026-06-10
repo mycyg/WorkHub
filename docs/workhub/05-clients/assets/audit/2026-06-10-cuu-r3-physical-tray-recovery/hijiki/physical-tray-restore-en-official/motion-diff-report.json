@@ -1,0 +1,1344 @@
+﻿{
+    "passed":  true,
+    "scenario":  "pass-through-recovery-tray-physical",
+    "business_scenario":  false,
+    "sse_disabled_for_scenario":  false,
+    "cuu_qa_hide_on_hover":  false,
+    "expected_behavior_contract":  {
+                                       "data_cuu_behavior_state":  "idle",
+                                       "data_cuu_behavior_phase":  "idle_random",
+                                       "data_cuu_live2d_motion":  null,
+                                       "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                       "data_cuu_behavior_expected_window_mode":  "body_only",
+                                       "data_cuu_behavior_expected_bubble_mode":  "none",
+                                       "data_pet_window_mode":  "body_only"
+                                   },
+    "motion_gate_passed":  true,
+    "actual_dom_report_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\cuu-tauri-dom-report.json",
+    "actual_dom_matches_expected":  true,
+    "actual_dom_report":  {
+                              "bubble":  {
+                                             "data":  {
+
+                                                      },
+                                             "present":  false,
+                                             "selector":  "[data-pet-bubble]"
+                                         },
+                              "captured_at_iso":  "2026-06-10T16:17:18.383Z",
+                              "contract":  "workhub.cuu.tauri.actual-dom-report",
+                              "live2d":  {
+                                             "data":  {
+                                                          "data_cuu_behavior_coverage":  "partial",
+                                                          "data_cuu_behavior_expected_bubble_mode":  "none",
+                                                          "data_cuu_behavior_expected_window_mode":  "body_only",
+                                                          "data_cuu_behavior_manifest_version":  "1",
+                                                          "data_cuu_behavior_phase":  "idle_random",
+                                                          "data_cuu_behavior_priority":  "0",
+                                                          "data_cuu_behavior_state":  "idle",
+                                                          "data_cuu_live2d_appearance":  "black_cat",
+                                                          "data_cuu_live2d_frame_url":  "./cuu/live2d/hijiki/cuu-hijiki.html",
+                                                          "data_cuu_live2d_framing":  "transparent_full_body",
+                                                          "data_cuu_live2d_interruptible":  "true",
+                                                          "data_cuu_live2d_layer_count":  "native_moc",
+                                                          "data_cuu_live2d_loop":  "false",
+                                                          "data_cuu_live2d_model":  "hijiki",
+                                                          "data_cuu_live2d_model_url":  "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+                                                          "data_cuu_live2d_motion":  "idle_blink",
+                                                          "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                                          "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                          "data_cuu_live2d_state":  "idle_blink",
+                                                          "data_cuu_live2d_status":  "approved_cat_option",
+                                                          "data_cuu_model_pack":  "cuu-hijiki-live2d-cubism2",
+                                                          "data_cuu_model_pack_selection_reason":  "requested_default_ready"
+                                                      },
+                                             "layout":  {
+                                                            "client_height":  320,
+                                                            "client_width":  230,
+                                                            "horizontal_overflow":  false,
+                                                            "scroll_height":  320,
+                                                            "scroll_width":  230
+                                                        },
+                                             "present":  true,
+                                             "rect":  {
+                                                          "bottom":  336,
+                                                          "height":  320,
+                                                          "right":  251,
+                                                          "width":  230,
+                                                          "x":  21,
+                                                          "y":  16
+                                                      },
+                                             "selector":  ".wh-cuu-cat-live2d",
+                                             "text":  "Cuu"
+                                         },
+                              "primary_action":  {
+                                                     "data":  {
+
+                                                              },
+                                                     "present":  false,
+                                                     "selector":  "[data-cuu-action-id]"
+                                                 },
+                              "primary_chip":  {
+                                                   "data":  {
+
+                                                            },
+                                                   "present":  false,
+                                                   "selector":  "[data-chip-id],[data-pet-option-id]"
+                                               },
+                              "reason":  "patch",
+                              "settings_menu":  {
+                                                    "data":  {
+                                                                 "data_pet_settings_menu":  "true"
+                                                             },
+                                                    "layout":  {
+                                                                   "client_height":  240,
+                                                                   "client_width":  162,
+                                                                   "horizontal_overflow":  false,
+                                                                   "scroll_height":  240,
+                                                                   "scroll_width":  162
+                                                               },
+                                                    "present":  true,
+                                                    "rect":  {
+                                                                 "bottom":  268,
+                                                                 "height":  242,
+                                                                 "right":  172,
+                                                                 "width":  164,
+                                                                 "x":  8,
+                                                                 "y":  26
+                                                             },
+                                                    "selector":  "[data-pet-settings-menu]",
+                                                    "text":  "Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu"
+                                                },
+                              "surface":  {
+                                              "data":  {
+                                                           "data_cuu_behavior_coverage":  "partial",
+                                                           "data_cuu_behavior_expected_bubble_mode":  "none",
+                                                           "data_cuu_behavior_expected_window_mode":  "body_only",
+                                                           "data_cuu_behavior_manifest_version":  "1",
+                                                           "data_cuu_behavior_phase":  "idle_random",
+                                                           "data_cuu_behavior_priority":  "0",
+                                                           "data_cuu_behavior_state":  "idle",
+                                                           "data_cuu_idle_action":  "idle_blink",
+                                                           "data_cuu_live2d_appearance":  "black_cat",
+                                                           "data_cuu_live2d_frame_url":  "./cuu/live2d/hijiki/cuu-hijiki.html",
+                                                           "data_cuu_live2d_layer_count":  "native_moc",
+                                                           "data_cuu_live2d_model":  "hijiki",
+                                                           "data_cuu_live2d_model_url":  "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+                                                           "data_cuu_live2d_motion":  "idle_blink",
+                                                           "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                                           "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                           "data_cuu_live2d_status":  "approved_cat_option",
+                                                           "data_cuu_model_pack":  "cuu-hijiki-live2d-cubism2",
+                                                           "data_cuu_model_pack_selection_reason":  "requested_default_ready",
+                                                           "data_cuu_state":  "idle",
+                                                           "data_cuu_visual_mode":  "live2d_cat",
+                                                           "data_pet_card_layout":  "body",
+                                                           "data_pet_cursor_near":  "true",
+                                                           "data_pet_dragging":  "false",
+                                                           "data_pet_hide_on_hover":  "false",
+                                                           "data_pet_hover_avoidance":  "soft",
+                                                           "data_pet_hover_hidden":  "false",
+                                                           "data_pet_hover_hide_mode":  "off",
+                                                           "data_pet_hovered":  "true",
+                                                           "data_pet_last_pointer_ms":  "1781108226896",
+                                                           "data_pet_look_x":  "0.246",
+                                                           "data_pet_look_y":  "0.247",
+                                                           "data_pet_menu_open":  "true",
+                                                           "data_pet_opacity_percent":  "100",
+                                                           "data_pet_pass_through":  "false",
+                                                           "data_pet_pointer_smoothing_alpha":  "0.58",
+                                                           "data_pet_scale_percent":  "100",
+                                                           "data_pet_window_height":  "340",
+                                                           "data_pet_window_mode":  "body_only",
+                                                           "data_pet_window_width":  "260",
+                                                           "data_wh_surface":  "pet"
+                                                       },
+                                              "layout":  {
+                                                             "client_height":  340,
+                                                             "client_width":  260,
+                                                             "horizontal_overflow":  false,
+                                                             "scroll_height":  340,
+                                                             "scroll_width":  260
+                                                         },
+                                              "present":  true,
+                                              "rect":  {
+                                                           "bottom":  340,
+                                                           "height":  340,
+                                                           "right":  260,
+                                                           "width":  260,
+                                                           "x":  0,
+                                                           "y":  0
+                                                       },
+                                              "selector":  "[data-wh-surface=pet]",
+                                              "text":  "Cuu Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu"
+                                          },
+                              "version":  1
+                          },
+    "reload_restore_seed":  null,
+    "right_edge_clip_gate":  {
+                                 "enabled":  false,
+                                 "passed":  true,
+                                 "max_right_edge_light_pixels":  0,
+                                 "max_allowed_right_edge_light_pixels":  2,
+                                 "clipped_frames":  [
+
+                                                    ]
+                             },
+    "settings_menu_layout_gate":  {
+                                      "enabled":  true,
+                                      "passed":  true,
+                                      "reason":  "settings_menu_rect_in_surface",
+                                      "surface":  {
+                                                      "width":  260,
+                                                      "height":  340
+                                                  },
+                                      "settings_menu":  {
+                                                            "x":  8,
+                                                            "y":  26,
+                                                            "width":  164,
+                                                            "height":  242,
+                                                            "right":  172,
+                                                            "bottom":  268,
+                                                            "text":  "Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu"
+                                                        }
+                                  },
+    "pass_through_recovery_gate":  {
+                                       "enabled":  true,
+                                       "passed":  true,
+                                       "reason":  "pass_through_restored_and_menu_usable",
+                                       "initial_pet_pass_through":  true,
+                                       "main_before_passed":  true,
+                                       "main_after_passed":  true,
+                                       "final_pet_pass_through_off":  true,
+                                       "final_pet_hide_off":  true,
+                                       "final_pet_opacity_restored":  true,
+                                       "final_menu_usable":  true
+                                   },
+    "settings_menu_hover_sync_gate":  {
+                                          "enabled":  false,
+                                          "passed":  true,
+                                          "reason":  "not_settings_menu_hover_sync_scenario"
+                                      },
+    "physical_tray_recovery_gate":  {
+                                        "enabled":  true,
+                                        "passed":  true,
+                                        "reason":  "physical_tray_menu_item_clicked",
+                                        "tray_icon_right_clicked":  true,
+                                        "restore_menu_item_left_clicked":  true,
+                                        "command_fallback_used":  false,
+                                        "has_desktop_screenshots":  true,
+                                        "source":  "windows_tray_ui_automation_mouse"
+                                    },
+    "pet_card_text_overflow_gate":  {
+                                        "enabled":  false,
+                                        "passed":  true,
+                                        "reason":  "not_pet_card_text_overflow_scenario"
+                                    },
+    "physical_tray_restore":  {
+                                  "ok":  true,
+                                  "source":  "windows_tray_ui_automation_mouse",
+                                  "command_fallback_used":  false,
+                                  "before_screenshot":  {
+                                                            "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-before-menu.png",
+                                                            "virtual_screen":  {
+                                                                                   "x":  0,
+                                                                                   "y":  0,
+                                                                                   "width":  2048,
+                                                                                   "height":  1152,
+                                                                                   "right":  2048,
+                                                                                   "bottom":  1152
+                                                                               }
+                                                        },
+                                  "overflow":  {
+                                                   "button":  {
+                                                                  "name":  "显示隐藏的图标",
+                                                                  "automation_id":  "SystemTrayIcon",
+                                                                  "class_name":  "SystemTray.NormalButton",
+                                                                  "framework_id":  "XAML",
+                                                                  "process_id":  12584,
+                                                                  "control_type":  "ControlType.Button",
+                                                                  "bounding_rect":  {
+                                                                                        "x":  2271,
+                                                                                        "y":  1380,
+                                                                                        "width":  40,
+                                                                                        "height":  60,
+                                                                                        "right":  2311,
+                                                                                        "bottom":  1440,
+                                                                                        "empty":  false
+                                                                                    }
+                                                              },
+                                                   "click":  {
+                                                                 "button":  "left",
+                                                                 "x":  2291,
+                                                                 "y":  1410,
+                                                                 "rect":  {
+                                                                              "x":  2271,
+                                                                              "y":  1380,
+                                                                              "width":  40,
+                                                                              "height":  60,
+                                                                              "right":  2311,
+                                                                              "bottom":  1440,
+                                                                              "empty":  false
+                                                                          }
+                                                             }
+                                               },
+                                  "overflow_screenshot":  {
+                                                              "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-overflow-opened.png",
+                                                              "virtual_screen":  {
+                                                                                     "x":  0,
+                                                                                     "y":  0,
+                                                                                     "width":  2560,
+                                                                                     "height":  1440,
+                                                                                     "right":  2560,
+                                                                                     "bottom":  1440
+                                                                                 }
+                                                          },
+                                  "tray_icon":  {
+                                                    "name":  "WorkHub - Cuu is ready",
+                                                    "automation_id":  "NotifyItemIcon",
+                                                    "class_name":  "SystemTray.NormalButton",
+                                                    "framework_id":  "XAML",
+                                                    "process_id":  12584,
+                                                    "control_type":  "ControlType.Button",
+                                                    "bounding_rect":  {
+                                                                          "x":  2316,
+                                                                          "y":  1208,
+                                                                          "width":  50,
+                                                                          "height":  50,
+                                                                          "right":  2366,
+                                                                          "bottom":  1258,
+                                                                          "empty":  false
+                                                                      }
+                                                },
+                                  "tray_click":  {
+                                                     "button":  "right",
+                                                     "x":  2341,
+                                                     "y":  1233,
+                                                     "rect":  {
+                                                                  "x":  2316,
+                                                                  "y":  1208,
+                                                                  "width":  50,
+                                                                  "height":  50,
+                                                                  "right":  2366,
+                                                                  "bottom":  1258,
+                                                                  "empty":  false
+                                                              }
+                                                 },
+                                  "menu_screenshot":  {
+                                                          "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-menu-before-restore.png",
+                                                          "virtual_screen":  {
+                                                                                 "x":  0,
+                                                                                 "y":  0,
+                                                                                 "width":  2560,
+                                                                                 "height":  1440,
+                                                                                 "right":  2560,
+                                                                                 "bottom":  1440
+                                                                             }
+                                                      },
+                                  "restore_menu_item":  {
+                                                            "name":  "Restore Cuu interaction",
+                                                            "automation_id":  "Item 1003",
+                                                            "class_name":  "",
+                                                            "framework_id":  "Win32",
+                                                            "process_id":  37084,
+                                                            "control_type":  "ControlType.MenuItem",
+                                                            "bounding_rect":  {
+                                                                                  "x":  2276,
+                                                                                  "y":  1115,
+                                                                                  "width":  281,
+                                                                                  "height":  26,
+                                                                                  "right":  2557,
+                                                                                  "bottom":  1141,
+                                                                                  "empty":  false
+                                                                              }
+                                                        },
+                                  "restore_click":  {
+                                                        "button":  "left",
+                                                        "x":  2416,
+                                                        "y":  1128,
+                                                        "rect":  {
+                                                                     "x":  2276,
+                                                                     "y":  1115,
+                                                                     "width":  281,
+                                                                     "height":  26,
+                                                                     "right":  2557,
+                                                                     "bottom":  1141,
+                                                                     "empty":  false
+                                                                 }
+                                                    },
+                                  "after_screenshot":  {
+                                                           "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-after-restore.png",
+                                                           "virtual_screen":  {
+                                                                                  "x":  0,
+                                                                                  "y":  0,
+                                                                                  "width":  2560,
+                                                                                  "height":  1440,
+                                                                                  "right":  2560,
+                                                                                  "bottom":  1440
+                                                                              }
+                                                       }
+                              },
+    "main_settings_before_restore":  {
+                                         "screenshot":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\main-settings-before-restore.png",
+                                         "snapshot":  {
+                                                          "url":  "http://127.0.0.1:1420/#/settings",
+                                                          "hash":  "#/settings",
+                                                          "lang":  "en-US",
+                                                          "title":  "WorkHub Desktop P0.5",
+                                                          "body_text":  "WorkHub Desktop\nTauri Webview P0.5\ndevice-token aware client\n中\nEN\nGOLD PATH\nAI-first Home\nOption Intake\nApproval Center\nWorkItem Detail\nProposal Detail\nReplay Work\nCost Dashboard\nSettings\nSETTINGS\nApp settings\n\nManage app runtime, language, budgets, and desktop connectivity here; the pet look is configured and validated only in the independent pet window.\n\nAI runtime\n\nModel routing, tool permissions, and execution logs use shared contracts while pages show only decision-ready information.\n\nDesktop client\n\nLocal execution, sync folders, tray behavior, and the independent pet window stay in the client layer, not inside Web pages.\n\nBudget\n\nBudget and cost use their own page and warning events instead of being mixed into the board.\n\nLanguage\n\nThe top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.\n\nDesktop client\n\nManage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n\n100% · 100% · click-through · always on\nWindow size\n75%\n100%\n125%\n150%\nWindow opacity\n60%\n80%\n100%\nClick through\n\nWhen enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n\nDodge hover\n\nUses soft hiding and opacity only; the pet anchor must not move.\n\nRestore interaction\nShow pet\nHide pet",
+                                                          "viewport":  {
+                                                                           "client_width":  1165,
+                                                                           "scroll_width":  1165,
+                                                                           "global_horizontal_overflow":  false
+                                                                       },
+                                                          "settings_panel":  {
+                                                                                 "present":  true,
+                                                                                 "hidden":  false,
+                                                                                 "rect":  {
+                                                                                              "x":  230,
+                                                                                              "y":  62,
+                                                                                              "width":  935,
+                                                                                              "height":  1370,
+                                                                                              "right":  1165,
+                                                                                              "bottom":  1432
+                                                                                          },
+                                                                                 "text":  "Settings\n    App settings\n    Manage app runtime, language, budgets, and desktop connectivity here; the pet look is configured and validated only in the independent pet window.\n    \n      AI runtimeModel routing, tool permissions, and execution logs use shared contracts while pages show only decision-ready information.\n      Desktop clientLocal execution, sync folders, tray behavior, and the independent pet window stay in the client layer, not inside Web pages.\n      BudgetBudget and cost use their own page and warning events instead of being mixed into the board.\n      LanguageThe top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.\n    \n      \n        Desktop client\n        Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n      \n      100% · 100% · click-through · always on\n    \n    \n      \n        Window size\n        \n          75%100%125%150%\n        \n      \n      \n        Window opacity\n        \n          60%80%100%\n        \n      \n    \n    \n      \n        Click through\n        When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n      \n    \n    \n      \n        Dodge hover\n        Uses soft hiding and opacity only; the pet anchor must not move.\n      \n    \n    \n      Restore interaction\n      Show pet\n      Hide pet\n    "
+                                                                             },
+                                                          "desktop_pet_settings":  {
+                                                                                       "present":  true,
+                                                                                       "rect":  {
+                                                                                                    "x":  279,
+                                                                                                    "y":  865,
+                                                                                                    "width":  610,
+                                                                                                    "height":  518,
+                                                                                                    "right":  889,
+                                                                                                    "bottom":  1383
+                                                                                                },
+                                                                                       "text":  "\n      \n        Desktop client\n        Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n      \n      100% · 100% · click-through · always on\n    \n    \n      \n        Window size\n        \n          75%100%125%150%\n        \n      \n      \n        Window opacity\n        \n          60%80%100%\n        \n      \n    \n    \n      \n        Click through\n        When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n      \n    \n    \n      \n        Dodge hover\n        Uses soft hiding and opacity only; the pet anchor must not move.\n      \n    \n    \n      Restore interaction\n      Show pet\n      Hide pet\n    "
+                                                                                   },
+                                                          "pet_settings":  {
+                                                                               "state":  "pass_through",
+                                                                               "state_text":  "100% · 100% · click-through · always on",
+                                                                               "restore_present":  true,
+                                                                               "pass_checked":  true,
+                                                                               "hide_checked":  false,
+                                                                               "selected_scale":  "100",
+                                                                               "selected_opacity":  "100"
+                                                                           },
+                                                          "forbidden":  {
+                                                                            "visual_selector_present":  false,
+                                                                            "model_choice_text_present":  false
+                                                                        },
+                                                          "overflow":  {
+                                                                           "offenders":  [
+
+                                                                                         ]
+                                                                       }
+                                                      },
+                                         "layout_gate":  {
+                                                             "enabled":  true,
+                                                             "passed":  true,
+                                                             "reason":  "main_settings_panel_in_bounds",
+                                                             "expected_locale":  "en-US",
+                                                             "locale_ok":  true,
+                                                             "panel_ready":  true,
+                                                             "copy_ok":  true,
+                                                             "no_global_horizontal_overflow":  true,
+                                                             "no_forbidden_visual":  true,
+                                                             "no_forbidden_model_text":  true,
+                                                             "restore_state_ok":  true,
+                                                             "viewport":  {
+                                                                              "client_width":  1165,
+                                                                              "scroll_width":  1165,
+                                                                              "global_horizontal_overflow":  false
+                                                                          },
+                                                             "pet_settings":  {
+                                                                                  "state":  "pass_through",
+                                                                                  "state_text":  "100% · 100% · click-through · always on",
+                                                                                  "restore_present":  true,
+                                                                                  "pass_checked":  true,
+                                                                                  "hide_checked":  false,
+                                                                                  "selected_scale":  "100",
+                                                                                  "selected_opacity":  "100"
+                                                                              },
+                                                             "overflow":  {
+                                                                              "offenders":  [
+
+                                                                                            ]
+                                                                          }
+                                                         }
+                                     },
+    "main_settings_after_restore":  {
+                                        "screenshot":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\main-settings-after-restore.png",
+                                        "restore_click":  {
+                                                              "ok":  true,
+                                                              "source":  "windows_tray_ui_automation_mouse",
+                                                              "command_fallback_used":  false,
+                                                              "before_screenshot":  {
+                                                                                        "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-before-menu.png",
+                                                                                        "virtual_screen":  {
+                                                                                                               "x":  0,
+                                                                                                               "y":  0,
+                                                                                                               "width":  2048,
+                                                                                                               "height":  1152,
+                                                                                                               "right":  2048,
+                                                                                                               "bottom":  1152
+                                                                                                           }
+                                                                                    },
+                                                              "overflow":  {
+                                                                               "button":  {
+                                                                                              "name":  "显示隐藏的图标",
+                                                                                              "automation_id":  "SystemTrayIcon",
+                                                                                              "class_name":  "SystemTray.NormalButton",
+                                                                                              "framework_id":  "XAML",
+                                                                                              "process_id":  12584,
+                                                                                              "control_type":  "ControlType.Button",
+                                                                                              "bounding_rect":  {
+                                                                                                                    "x":  2271,
+                                                                                                                    "y":  1380,
+                                                                                                                    "width":  40,
+                                                                                                                    "height":  60,
+                                                                                                                    "right":  2311,
+                                                                                                                    "bottom":  1440,
+                                                                                                                    "empty":  false
+                                                                                                                }
+                                                                                          },
+                                                                               "click":  {
+                                                                                             "button":  "left",
+                                                                                             "x":  2291,
+                                                                                             "y":  1410,
+                                                                                             "rect":  {
+                                                                                                          "x":  2271,
+                                                                                                          "y":  1380,
+                                                                                                          "width":  40,
+                                                                                                          "height":  60,
+                                                                                                          "right":  2311,
+                                                                                                          "bottom":  1440,
+                                                                                                          "empty":  false
+                                                                                                      }
+                                                                                         }
+                                                                           },
+                                                              "overflow_screenshot":  {
+                                                                                          "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-overflow-opened.png",
+                                                                                          "virtual_screen":  {
+                                                                                                                 "x":  0,
+                                                                                                                 "y":  0,
+                                                                                                                 "width":  2560,
+                                                                                                                 "height":  1440,
+                                                                                                                 "right":  2560,
+                                                                                                                 "bottom":  1440
+                                                                                                             }
+                                                                                      },
+                                                              "tray_icon":  {
+                                                                                "name":  "WorkHub - Cuu is ready",
+                                                                                "automation_id":  "NotifyItemIcon",
+                                                                                "class_name":  "SystemTray.NormalButton",
+                                                                                "framework_id":  "XAML",
+                                                                                "process_id":  12584,
+                                                                                "control_type":  "ControlType.Button",
+                                                                                "bounding_rect":  {
+                                                                                                      "x":  2316,
+                                                                                                      "y":  1208,
+                                                                                                      "width":  50,
+                                                                                                      "height":  50,
+                                                                                                      "right":  2366,
+                                                                                                      "bottom":  1258,
+                                                                                                      "empty":  false
+                                                                                                  }
+                                                                            },
+                                                              "tray_click":  {
+                                                                                 "button":  "right",
+                                                                                 "x":  2341,
+                                                                                 "y":  1233,
+                                                                                 "rect":  {
+                                                                                              "x":  2316,
+                                                                                              "y":  1208,
+                                                                                              "width":  50,
+                                                                                              "height":  50,
+                                                                                              "right":  2366,
+                                                                                              "bottom":  1258,
+                                                                                              "empty":  false
+                                                                                          }
+                                                                             },
+                                                              "menu_screenshot":  {
+                                                                                      "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-menu-before-restore.png",
+                                                                                      "virtual_screen":  {
+                                                                                                             "x":  0,
+                                                                                                             "y":  0,
+                                                                                                             "width":  2560,
+                                                                                                             "height":  1440,
+                                                                                                             "right":  2560,
+                                                                                                             "bottom":  1440
+                                                                                                         }
+                                                                                  },
+                                                              "restore_menu_item":  {
+                                                                                        "name":  "Restore Cuu interaction",
+                                                                                        "automation_id":  "Item 1003",
+                                                                                        "class_name":  "",
+                                                                                        "framework_id":  "Win32",
+                                                                                        "process_id":  37084,
+                                                                                        "control_type":  "ControlType.MenuItem",
+                                                                                        "bounding_rect":  {
+                                                                                                              "x":  2276,
+                                                                                                              "y":  1115,
+                                                                                                              "width":  281,
+                                                                                                              "height":  26,
+                                                                                                              "right":  2557,
+                                                                                                              "bottom":  1141,
+                                                                                                              "empty":  false
+                                                                                                          }
+                                                                                    },
+                                                              "restore_click":  {
+                                                                                    "button":  "left",
+                                                                                    "x":  2416,
+                                                                                    "y":  1128,
+                                                                                    "rect":  {
+                                                                                                 "x":  2276,
+                                                                                                 "y":  1115,
+                                                                                                 "width":  281,
+                                                                                                 "height":  26,
+                                                                                                 "right":  2557,
+                                                                                                 "bottom":  1141,
+                                                                                                 "empty":  false
+                                                                                             }
+                                                                                },
+                                                              "after_screenshot":  {
+                                                                                       "path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\windows-tray-after-restore.png",
+                                                                                       "virtual_screen":  {
+                                                                                                              "x":  0,
+                                                                                                              "y":  0,
+                                                                                                              "width":  2560,
+                                                                                                              "height":  1440,
+                                                                                                              "right":  2560,
+                                                                                                              "bottom":  1440
+                                                                                                          }
+                                                                                   }
+                                                          },
+                                        "snapshot":  {
+                                                         "url":  "http://127.0.0.1:1420/#/settings",
+                                                         "hash":  "#/settings",
+                                                         "lang":  "en-US",
+                                                         "title":  "WorkHub Desktop P0.5",
+                                                         "body_text":  "WorkHub Desktop\nTauri Webview P0.5\ndevice-token aware client\n中\nEN\nGOLD PATH\nAI-first Home\nOption Intake\nApproval Center\nWorkItem Detail\nProposal Detail\nReplay Work\nCost Dashboard\nSettings\nSETTINGS\nApp settings\n\nManage app runtime, language, budgets, and desktop connectivity here; the pet look is configured and validated only in the independent pet window.\n\nAI runtime\n\nModel routing, tool permissions, and execution logs use shared contracts while pages show only decision-ready information.\n\nDesktop client\n\nLocal execution, sync folders, tray behavior, and the independent pet window stay in the client layer, not inside Web pages.\n\nBudget\n\nBudget and cost use their own page and warning events instead of being mixed into the board.\n\nLanguage\n\nThe top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.\n\nDesktop client\n\nManage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n\n100% · 100% · interactive · always on\nWindow size\n75%\n100%\n125%\n150%\nWindow opacity\n60%\n80%\n100%\nClick through\n\nWhen enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n\nDodge hover\n\nUses soft hiding and opacity only; the pet anchor must not move.\n\nRestore interaction\nShow pet\nHide pet",
+                                                         "viewport":  {
+                                                                          "client_width":  1165,
+                                                                          "scroll_width":  1165,
+                                                                          "global_horizontal_overflow":  false
+                                                                      },
+                                                         "settings_panel":  {
+                                                                                "present":  true,
+                                                                                "hidden":  false,
+                                                                                "rect":  {
+                                                                                             "x":  230,
+                                                                                             "y":  62,
+                                                                                             "width":  935,
+                                                                                             "height":  1370,
+                                                                                             "right":  1165,
+                                                                                             "bottom":  1432
+                                                                                         },
+                                                                                "text":  "Settings\n    App settings\n    Manage app runtime, language, budgets, and desktop connectivity here; the pet look is configured and validated only in the independent pet window.\n    \n      AI runtimeModel routing, tool permissions, and execution logs use shared contracts while pages show only decision-ready information.\n      Desktop clientLocal execution, sync folders, tray behavior, and the independent pet window stay in the client layer, not inside Web pages.\n      BudgetBudget and cost use their own page and warning events instead of being mixed into the board.\n      LanguageThe top language switch updates fixed page copy; dynamic content will keep moving onto locale-aware payloads.\n    \n      \n        Desktop client\n        Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n      \n      100% · 100% · interactive · always on\n    \n    \n      \n        Window size\n        \n          75%100%125%150%\n        \n      \n      \n        Window opacity\n        \n          60%80%100%\n        \n      \n    \n    \n      \n        Click through\n        When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n      \n    \n    \n      \n        Dodge hover\n        Uses soft hiding and opacity only; the pet anchor must not move.\n      \n    \n    \n      Restore interaction\n      Show pet\n      Hide pet\n    "
+                                                                            },
+                                                         "desktop_pet_settings":  {
+                                                                                      "present":  true,
+                                                                                      "rect":  {
+                                                                                                   "x":  279,
+                                                                                                   "y":  865,
+                                                                                                   "width":  610,
+                                                                                                   "height":  518,
+                                                                                                   "right":  889,
+                                                                                                   "bottom":  1383
+                                                                                               },
+                                                                                      "text":  "\n      \n        Desktop client\n        Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.\n      \n      100% · 100% · interactive · always on\n    \n    \n      \n        Window size\n        \n          75%100%125%150%\n        \n      \n      \n        Window opacity\n        \n          60%80%100%\n        \n      \n    \n    \n      \n        Click through\n        When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.\n      \n    \n    \n      \n        Dodge hover\n        Uses soft hiding and opacity only; the pet anchor must not move.\n      \n    \n    \n      Restore interaction\n      Show pet\n      Hide pet\n    "
+                                                                                  },
+                                                         "pet_settings":  {
+                                                                              "state":  "interactive",
+                                                                              "state_text":  "100% · 100% · interactive · always on",
+                                                                              "restore_present":  true,
+                                                                              "pass_checked":  false,
+                                                                              "hide_checked":  false,
+                                                                              "selected_scale":  "100",
+                                                                              "selected_opacity":  "100"
+                                                                          },
+                                                         "forbidden":  {
+                                                                           "visual_selector_present":  false,
+                                                                           "model_choice_text_present":  false
+                                                                       },
+                                                         "overflow":  {
+                                                                          "offenders":  [
+
+                                                                                        ]
+                                                                      }
+                                                     },
+                                        "layout_gate":  {
+                                                            "enabled":  true,
+                                                            "passed":  true,
+                                                            "reason":  "main_settings_panel_in_bounds",
+                                                            "expected_locale":  "en-US",
+                                                            "locale_ok":  true,
+                                                            "panel_ready":  true,
+                                                            "copy_ok":  true,
+                                                            "no_global_horizontal_overflow":  true,
+                                                            "no_forbidden_visual":  true,
+                                                            "no_forbidden_model_text":  true,
+                                                            "restore_state_ok":  true,
+                                                            "viewport":  {
+                                                                             "client_width":  1165,
+                                                                             "scroll_width":  1165,
+                                                                             "global_horizontal_overflow":  false
+                                                                         },
+                                                            "pet_settings":  {
+                                                                                 "state":  "interactive",
+                                                                                 "state_text":  "100% · 100% · interactive · always on",
+                                                                                 "restore_present":  true,
+                                                                                 "pass_checked":  false,
+                                                                                 "hide_checked":  false,
+                                                                                 "selected_scale":  "100",
+                                                                                 "selected_opacity":  "100"
+                                                                             },
+                                                            "overflow":  {
+                                                                             "offenders":  [
+
+                                                                                           ]
+                                                                         }
+                                                        }
+                                    },
+    "main_settings_before_hover_sync":  null,
+    "main_settings_after_hover_sync":  null,
+    "initial_pet_settings_snapshot":  {
+                                          "url":  "http://127.0.0.1:1420/pet.html",
+                                          "surface":  {
+                                                          "present":  true,
+                                                          "data_pet_pass_through":  "true",
+                                                          "data_pet_hide_on_hover":  "false",
+                                                          "data_pet_opacity_percent":  "100",
+                                                          "data_pet_scale_percent":  "100",
+                                                          "data_pet_menu_open":  ""
+                                                      },
+                                          "settings_menu":  {
+                                                                "present":  true,
+                                                                "hidden":  true,
+                                                                "text":  "\n    Cuu settings\n    \n      Look\n      \n        Black cat\n        White cat\n      \n    \n    \n      Language\n      \n        中文\n        EN\n      \n    \n    \n      Dodge hover\n      Open settings\n      Hide Cuu\n    \n  "
+                                                            }
+                                      },
+    "cuu_qa_preferences":  {
+                               "pet_scale_percent":  100,
+                               "pet_opacity_percent":  100,
+                               "pet_pass_through":  true,
+                               "pet_hide_on_hover":  false,
+                               "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2",
+                               "expected_dom_model_pack_id":  "cuu-hijiki-live2d-cubism2",
+                               "pet_locale":  "en-US",
+                               "pet_qa_scenario":  "pass-through-recovery-tray-physical",
+                               "webview2_cdp_enabled":  true,
+                               "main_webview2_cdp_enabled":  true
+                           },
+    "scenario_events":  [
+                            {
+                                "frame":  1,
+                                "action":  "right_click_open_settings_menu",
+                                "input_driver":  "webview2_cdp",
+                                "webview_point":  {
+                                                      "x":  162,
+                                                      "y":  212
+                                                  },
+                                "window_rect":  {
+                                                    "Left":  2205,
+                                                    "Top":  925,
+                                                    "Right":  2530,
+                                                    "Bottom":  1350,
+                                                    "Width":  325,
+                                                    "Height":  425
+                                                }
+                            }
+                        ],
+    "process_id":  37084,
+    "frame_count":  16,
+    "interval_ms":  500,
+    "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\frames",
+    "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\cuu-motion-contact-sheet.png",
+    "first_frame_gate":  {
+                             "passed":  true,
+                             "attempts":  7,
+                             "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-physical-tray-recovery\\hijiki\\physical-tray-restore-en-official\\first-frame-probe.png",
+                             "min_visual_pixels":  12000,
+                             "business_card_gate":  false,
+                             "pixel_report":  {
+                                                  "samples":  88400,
+                                                  "foreground_pixels":  20803,
+                                                  "light_pixels":  1,
+                                                  "dark_pixels":  87780,
+                                                  "visual_pixels":  20803,
+                                                  "sample_step":  1,
+                                                  "width":  260,
+                                                  "height":  340
+                                              }
+                         },
+    "max_vs_first_mean_abs_delta":  109.678,
+    "max_vs_previous_mean_abs_delta":  109.678,
+    "max_vs_first_changed_pixels_gt8":  18013,
+    "max_vs_previous_changed_pixels_gt8":  18007,
+    "frame_pixel_reports":  [
+                                {
+                                    "frame":  0,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  19311,
+                                                         "light_pixels":  9739,
+                                                         "dark_pixels":  127598,
+                                                         "visual_pixels":  19311,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  1,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62393,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62393,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  2,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62600,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62600,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  3,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62616,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62616,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  4,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62567,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62567,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  5,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62608,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62608,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  6,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62627,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62627,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  7,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62662,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62662,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  8,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62685,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62685,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  9,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62660,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62660,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  10,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62621,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62621,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  11,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62599,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62599,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  12,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62627,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62627,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  13,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62672,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62672,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  14,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62692,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62692,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  15,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  62680,
+                                                         "light_pixels":  57615,
+                                                         "dark_pixels":  77755,
+                                                         "visual_pixels":  62680,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                }
+                            ],
+    "motion_liveness":  {
+                            "enabled":  true,
+                            "passed":  true,
+                            "quality":  "smoke",
+                            "min_formal_frame_count":  32,
+                            "changed_pixels_gt8_threshold":  60,
+                            "changed_frames_gt8_count":  2,
+                            "changed_frames":  [
+                                                   1,
+                                                   2
+                                               ],
+                            "min_changed_frames":  1,
+                            "requires_stable_rect":  true,
+                            "max_rect_drift_px":  2,
+                            "rect_drift_frames":  null
+                        },
+    "long_run":  null,
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.678,
+                                        "changed_pixels_gt8":  18007,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  109.678,
+                                           "changed_pixels_gt8":  18007,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.624,
+                                        "changed_pixels_gt8":  17989,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.113,
+                                           "changed_pixels_gt8":  72,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.62,
+                                        "changed_pixels_gt8":  17993,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.026,
+                                           "changed_pixels_gt8":  13,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  4,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.634,
+                                        "changed_pixels_gt8":  18000,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.027,
+                                           "changed_pixels_gt8":  21,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  5,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.643,
+                                        "changed_pixels_gt8":  18013,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.022,
+                                           "changed_pixels_gt8":  7,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  6,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.635,
+                                        "changed_pixels_gt8":  18006,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.013,
+                                           "changed_pixels_gt8":  11,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  7,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.619,
+                                        "changed_pixels_gt8":  17993,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.022,
+                                           "changed_pixels_gt8":  21,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  8,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.611,
+                                        "changed_pixels_gt8":  17986,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.015,
+                                           "changed_pixels_gt8":  12,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  9,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.614,
+                                        "changed_pixels_gt8":  17991,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.013,
+                                           "changed_pixels_gt8":  6,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  10,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.627,
+                                        "changed_pixels_gt8":  18003,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.02,
+                                           "changed_pixels_gt8":  20,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  11,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.634,
+                                        "changed_pixels_gt8":  18008,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.009,
+                                           "changed_pixels_gt8":  4,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  12,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.628,
+                                        "changed_pixels_gt8":  18004,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.016,
+                                           "changed_pixels_gt8":  5,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  13,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.615,
+                                        "changed_pixels_gt8":  17991,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.029,
+                                           "changed_pixels_gt8":  24,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  14,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.61,
+                                        "changed_pixels_gt8":  17987,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.013,
+                                           "changed_pixels_gt8":  7,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  15,
+                       "rect":  {
+                                    "Left":  2205,
+                                    "Top":  925,
+                                    "Right":  2530,
+                                    "Bottom":  1350,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  109.617,
+                                        "changed_pixels_gt8":  17994,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.015,
+                                           "changed_pixels_gt8":  16,
+                                           "samples":  34719
+                                       }
+                   }
+               ]
+}

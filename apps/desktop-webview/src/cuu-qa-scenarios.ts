@@ -13,6 +13,7 @@ export type DesktopPetQaScenario =
   | "settings-menu-hover-sync"
   | "pass-through-recovery-settings"
   | "pass-through-recovery-tray"
+  | "pass-through-recovery-tray-physical"
   | "clarify"
   | "approval"
   | "search"
@@ -39,6 +40,7 @@ const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "settings-menu-hover-sync",
   "pass-through-recovery-settings",
   "pass-through-recovery-tray",
+  "pass-through-recovery-tray-physical",
   "clarify",
   "approval",
   "search",
@@ -181,7 +183,8 @@ function desktopPetQaScenarioUsesManualCdp(scenario: DesktopPetQaScenario) {
     scenario === "settings-menu-model-switch" ||
     scenario === "settings-menu-hover-sync" ||
     scenario === "pass-through-recovery-settings" ||
-    scenario === "pass-through-recovery-tray";
+    scenario === "pass-through-recovery-tray" ||
+    scenario === "pass-through-recovery-tray-physical";
 }
 
 function eventForScenario(
@@ -193,6 +196,7 @@ function eventForScenario(
     | "settings-menu-hover-sync"
     | "pass-through-recovery-settings"
     | "pass-through-recovery-tray"
+    | "pass-through-recovery-tray-physical"
     | "run-stream"
     | "run-failure"
     | "reload-session"

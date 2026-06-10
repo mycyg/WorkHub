@@ -37,6 +37,7 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   const launcher = desktopPetQaScriptForScenario("launcher");
   const runStream = desktopPetQaScriptForScenario("run-stream");
   const runFailure = desktopPetQaScriptForScenario("run-failure");
+  const physicalTray = desktopPetQaScriptForScenario("pass-through-recovery-tray-physical");
   const reloadSession = desktopPetQaScriptForScenario("reload-session");
   const reloadActiveRun = desktopPetQaScriptForScenario("reload-active-run");
   const reloadTerminalRun = desktopPetQaScriptForScenario("reload-terminal-run");
@@ -58,6 +59,7 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(launcher.length, 0);
   assert.equal(runStream.length, 0);
   assert.equal(runFailure.length, 0);
+  assert.equal(physicalTray.length, 0);
   assert.equal(reloadSession.length, 0);
   assert.equal(reloadActiveRun.length, 0);
   assert.equal(reloadTerminalRun.length, 0);
@@ -69,10 +71,12 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(desktopPetQaScriptForScenario("settings-menu-hover-sync").length, 0);
   assert.equal(desktopPetQaScriptForScenario("pass-through-recovery-settings").length, 0);
   assert.equal(desktopPetQaScriptForScenario("pass-through-recovery-tray").length, 0);
+  assert.equal(desktopPetQaScriptForScenario("pass-through-recovery-tray-physical").length, 0);
   assert.equal(createDesktopPetQaShellListen("launcher"), undefined);
   assert.equal(createDesktopPetQaShellListen("settings-menu"), undefined);
   assert.equal(createDesktopPetQaShellListen("settings-menu-hover-sync"), undefined);
   assert.equal(createDesktopPetQaShellListen("pass-through-recovery-tray"), undefined);
+  assert.equal(createDesktopPetQaShellListen("pass-through-recovery-tray-physical"), undefined);
   assert.equal(createDesktopPetQaShellListen("run-stream"), undefined);
   assert.equal(createDesktopPetQaShellListen("run-failure"), undefined);
   assert.equal(createDesktopPetQaShellListen("reload-session"), undefined);
@@ -103,6 +107,7 @@ test("desktop pet QA scenario normalization only accepts explicit capture scenar
   assert.equal(normalizeDesktopPetQaScenario("settings-menu-hover-sync"), "settings-menu-hover-sync");
   assert.equal(normalizeDesktopPetQaScenario("pass-through-recovery-settings"), "pass-through-recovery-settings");
   assert.equal(normalizeDesktopPetQaScenario("pass-through-recovery-tray"), "pass-through-recovery-tray");
+  assert.equal(normalizeDesktopPetQaScenario("pass-through-recovery-tray-physical"), "pass-through-recovery-tray-physical");
   assert.equal(normalizeDesktopPetQaScenario("approval"), "approval");
   assert.equal(normalizeDesktopPetQaScenario("run-stream"), "run-stream");
   assert.equal(normalizeDesktopPetQaScenario("run-failure"), "run-failure");

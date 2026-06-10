@@ -1,0 +1,151 @@
+{
+  "bubble": {
+    "data": {},
+    "present": false,
+    "selector": "[data-pet-bubble]"
+  },
+  "captured_at_iso": "2026-06-10T16:18:30.131Z",
+  "contract": "workhub.cuu.tauri.actual-dom-report",
+  "live2d": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "none",
+      "data_cuu_behavior_expected_window_mode": "body_only",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "idle_random",
+      "data_cuu_behavior_priority": "0",
+      "data_cuu_behavior_state": "idle",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_framing": "transparent_full_body",
+      "data_cuu_live2d_interruptible": "true",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_loop": "true",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "idle_breathe",
+      "data_cuu_live2d_renderer_state": "mtn/00_idle.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_state": "idle_breathe",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready"
+    },
+    "layout": {
+      "client_height": 320,
+      "client_width": 230,
+      "horizontal_overflow": false,
+      "scroll_height": 320,
+      "scroll_width": 230
+    },
+    "present": true,
+    "rect": {
+      "bottom": 336,
+      "height": 320,
+      "right": 251,
+      "width": 230,
+      "x": 21,
+      "y": 16
+    },
+    "selector": ".wh-cuu-cat-live2d",
+    "text": "Cuu"
+  },
+  "primary_action": {
+    "data": {},
+    "present": false,
+    "selector": "[data-cuu-action-id]"
+  },
+  "primary_chip": {
+    "data": {},
+    "present": false,
+    "selector": "[data-chip-id],[data-pet-option-id]"
+  },
+  "reason": "patch",
+  "settings_menu": {
+    "data": {
+      "data_pet_settings_menu": "true"
+    },
+    "layout": {
+      "client_height": 240,
+      "client_width": 162,
+      "horizontal_overflow": false,
+      "scroll_height": 240,
+      "scroll_width": 162
+    },
+    "present": true,
+    "rect": {
+      "bottom": 268,
+      "height": 242,
+      "right": 172,
+      "width": 164,
+      "x": 8,
+      "y": 26
+    },
+    "selector": "[data-pet-settings-menu]",
+    "text": "Cuu 设置 形象 黑猫 白猫 语言 中文 EN 悬停避让 打开设置 隐藏 Cuu"
+  },
+  "surface": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "none",
+      "data_cuu_behavior_expected_window_mode": "body_only",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "idle_random",
+      "data_cuu_behavior_priority": "0",
+      "data_cuu_behavior_state": "idle",
+      "data_cuu_idle_action": "idle_breathe",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "idle_breathe",
+      "data_cuu_live2d_renderer_state": "mtn/00_idle.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready",
+      "data_cuu_state": "idle",
+      "data_cuu_visual_mode": "live2d_cat",
+      "data_pet_card_layout": "body",
+      "data_pet_cursor_near": "true",
+      "data_pet_dragging": "false",
+      "data_pet_hide_on_hover": "false",
+      "data_pet_hover_avoidance": "soft",
+      "data_pet_hover_hidden": "false",
+      "data_pet_hover_hide_mode": "off",
+      "data_pet_hovered": "true",
+      "data_pet_last_pointer_ms": "1781108295866",
+      "data_pet_look_x": "0.246",
+      "data_pet_look_y": "0.247",
+      "data_pet_menu_open": "true",
+      "data_pet_opacity_percent": "100",
+      "data_pet_pass_through": "false",
+      "data_pet_pointer_smoothing_alpha": "0.58",
+      "data_pet_scale_percent": "100",
+      "data_pet_window_height": "340",
+      "data_pet_window_mode": "body_only",
+      "data_pet_window_width": "260",
+      "data_wh_surface": "pet"
+    },
+    "layout": {
+      "client_height": 340,
+      "client_width": 260,
+      "horizontal_overflow": false,
+      "scroll_height": 340,
+      "scroll_width": 260
+    },
+    "present": true,
+    "rect": {
+      "bottom": 340,
+      "height": 340,
+      "right": 260,
+      "width": 260,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-wh-surface=pet]",
+    "text": "Cuu Cuu 设置 形象 黑猫 白猫 语言 中文 EN 悬停避让 打开设置 隐藏 Cuu"
+  },
+  "version": 1
+}

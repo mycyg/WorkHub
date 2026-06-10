@@ -6,9 +6,25 @@ import {
   writeDesktopPetQaDomSnapshot
 } from "./cuu-qa-dom-report.js";
 
-function fakeElement(attrs: Record<string, string>, textContent = "", rect?: Partial<DOMRect>) {
+function fakeElement(
+  attrs: Record<string, string>,
+  textContent = "",
+  rect?: Partial<DOMRect>,
+  layout?: Partial<Pick<HTMLElement, "clientWidth" | "scrollWidth" | "clientHeight" | "scrollHeight">>,
+  children: unknown[] = []
+) {
   return {
     textContent,
+    tagName: "DIV",
+    className: attrs.class ?? attrs.className ?? "",
+    ...(layout
+      ? {
+          clientWidth: layout.clientWidth ?? 0,
+          scrollWidth: layout.scrollWidth ?? 0,
+          clientHeight: layout.clientHeight ?? 0,
+          scrollHeight: layout.scrollHeight ?? 0
+        }
+      : {}),
     getAttributeNames() {
       return Object.keys(attrs);
     },
@@ -26,6 +42,13 @@ function fakeElement(attrs: Record<string, string>, textContent = "", rect?: Par
               right: rect.right ?? (rect.x ?? 0) + (rect.width ?? 0),
               bottom: rect.bottom ?? (rect.y ?? 0) + (rect.height ?? 0)
             } as DOMRect;
+          }
+        }
+      : {}),
+    ...(children.length
+      ? {
+          querySelectorAll() {
+            return children as unknown as NodeListOf<Element>;
           }
         }
       : {})
@@ -66,7 +89,17 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
       "data-pet-payload-ref-entity-type": "agent_run",
       "data-pet-payload-ref-entity-id": "run-1",
       "data-pet-payload-ref-href": "/agent-runs/run-1/replay"
-    }, "Cuu Approval needed Approve", { x: 208.456, y: 142.123, width: 288, height: 164 }),
+    }, "Cuu Approval needed Approve", { x: 208.456, y: 142.123, width: 288, height: 164 }, {
+      clientWidth: 288,
+      scrollWidth: 288,
+      clientHeight: 164,
+      scrollHeight: 184
+    }, [
+      fakeElement({ class: "wh-pet-title" }, "Long unwrapped title", { width: 132 }, {
+        clientWidth: 120,
+        scrollWidth: 168
+      })
+    ]),
     "[data-chip-id],[data-pet-option-id]": fakeElement({
       "data-chip-id": "file-only",
       "data-recommended": "true"
@@ -103,6 +136,15 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
   assert.equal(report.bubble.data.data_cuu_card_id, "approval-card");
   assert.equal(report.bubble.data.data_pet_payload_ref_entity_type, "agent_run");
   assert.equal(report.bubble.data.data_pet_payload_ref_entity_id, "run-1");
+  assert.deepEqual(report.bubble.layout, {
+    client_width: 288,
+    scroll_width: 288,
+    client_height: 164,
+    scroll_height: 184,
+    horizontal_overflow: false
+  });
+  assert.equal(report.bubble.overflow_offenders?.[0]?.class_name, "wh-pet-title");
+  assert.equal(report.bubble.overflow_offenders?.[0]?.scroll_width, 168);
   assert.deepEqual(report.bubble.rect, {
     x: 208.46,
     y: 142.12,

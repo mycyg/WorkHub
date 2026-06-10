@@ -115,7 +115,7 @@ R3.18 已补主窗 settings 恢复截图和 pass-through 端到端恢复证据�
 
 ## 7. R3.19 tray handler recovery 视觉验收进展
 
-R3.19 补上 `restore-pet-interaction` 同一 Rust tray handler 的真实恢复证据。当前验收通过的是 command-backed handler 触发，不是物理 OS 托盘图标点击；物理点击录像继续列为 R3.20。
+R3.19 补上 `restore-pet-interaction` 同一 Rust tray handler 的真实恢复证据。该轮验收通过的是 command-backed handler 触发，不是物理 OS 托盘图标点击；物理点击证据已由 R3.20b 补齐。
 
 | 项 | 证据 / 结论 |
 |---|---|
@@ -138,17 +138,28 @@ R3.20a 补上 R3.19 留下的“右键菜单切 hover 后，主窗 `/settings` �
 | pet/menu 同步 | 最终 pet DOM 为 `data_pet_pass_through=false`、`data_pet_hide_on_hover=true`；右键菜单重新打开后仍可用且 hover 项保持选中 |
 | 文本边界 | 两个 locale 的 `main_settings_before_hover_sync.layout_gate.overflow.offenders=[]` 与 `main_settings_after_hover_sync.layout_gate.overflow.offenders=[]`；菜单按钮、短提示和主窗状态徽标均未超出容器 |
 
+## 9. R3.20b physical OS tray recovery 视觉验收进展
+
+R3.20b 补上真实 Windows OS 托盘图标/菜单项点击证据：从 `pass_through=true` 初始状态开始，通过 Windows UI Automation 定位系统托盘 `WorkHub - Cuu is ready` 图标，右键打开原生菜单，再左键点击 `Restore Cuu interaction`。该场景不调用 `restore_pet_window_interaction` command fallback，恢复后仍要求 main `/settings` 和 pet 右键菜单同步为可交互。
+
+| 项 | 证据 / 结论 |
+|---|---|
+| physical tray recovery en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-physical-tray-recovery/hijiki/physical-tray-restore-en-official/`，`physical_tray_recovery_gate.passed=true`、`command_fallback_used=false` |
+| physical tray recovery zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-physical-tray-recovery/hijiki/physical-tray-restore-zh-official/`，同上 |
+| 恢复状态 | 两个 locale 均从 `pass_checked=true` 恢复为 `pass_checked=false`，`hide_checked=false`，`selected_opacity=100` |
+| 系统菜单截图 | `windows-tray-menu-before-restore.png` 显示真实 tray overflow panel 与原生 WorkHub menu，包含 `Restore Cuu interaction` |
+| 文本边界 | 主窗 settings 恢复前/后 `overflow.offenders=[]`；状态徽标可换行但不出框 |
+
 仍未通过的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| 物理 OS 托盘点击 | 当前 R3.19 已证明同一 Rust tray handler；R3.20a 已证明 pet menu -> main settings 同步；下一步补系统 tray icon/menu item 的物理点击或 UI automation 证据 |
-| Linux/macOS | 透明窗口 + tray 恢复 smoke；Wayland/X11 需要单独记录 |
+| Linux/macOS | 透明窗口 + tray/menu bar 恢复 smoke；Wayland/X11、macOS 截图权限需要单独记录 |
+| 更广文本门 | R3.20b 已覆盖 run-failure/run-stream；下一步把 permission/offline 的最新证据也纳入 `pet_card_text_overflow_gate` |
 
-## 9. 后续施工
+## 10. 后续施工
 
-1. 补物理 OS 托盘图标/菜单点击截图证据：开启 pass-through、从系统 tray menu 恢复、右键菜单重新可用。
-2. 保留右键菜单和主窗 settings 双向状态同步回归：R3.20a 已证明菜单改 hover 后主窗可见；主窗恢复后 pet 已由 R3.18/R3.19 证明。
-3. 建立 Linux/macOS 透明窗口、tray/menu bar 与截图权限策略。
-4. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
-5. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。
+1. 建立 Linux/macOS 透明窗口、tray/menu bar 与截图权限策略。
+2. 保留右键菜单和主窗 settings 双向状态同步回归：R3.20a 已证明菜单改 hover 后主窗可见；主窗/物理托盘恢复后 pet 已由 R3.18/R3.19/R3.20b 证明。
+3. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
+4. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。
