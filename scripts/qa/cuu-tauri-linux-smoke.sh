@@ -45,6 +45,59 @@ record_env() {
   } > "$out_dir/linux-env-report.txt"
 }
 
+collect_desktop_environment_probe() {
+  {
+    echo "captured_at=$(date -Is)"
+    echo "require_real_de=$require_real_de"
+    echo "session_type=${XDG_SESSION_TYPE:-}"
+    echo "desktop=${XDG_CURRENT_DESKTOP:-}"
+    echo "display=${DISPLAY:-}"
+    echo "wayland_display=${WAYLAND_DISPLAY:-}"
+    echo "dbus_session_bus_address=${DBUS_SESSION_BUS_ADDRESS:-}"
+    if command -v loginctl >/dev/null 2>&1; then
+      echo "loginctl_available=true"
+      loginctl show-session "${XDG_SESSION_ID:-self}" -p Type -p Desktop -p Name -p State -p Remote -p Class 2>/dev/null || true
+    else
+      echo "loginctl_available=false"
+    fi
+  } > "$out_dir/linux-desktop-probe.txt"
+
+  if command -v ps >/dev/null 2>&1; then
+    if ps -eo pid,comm,args >/dev/null 2>&1; then
+      ps -eo pid,comm,args | grep -Ei 'gnome-shell|plasmashell|xfce4-panel|mate-panel|lxqt-panel|cinnamon|budgie-panel|waybar|kstatus|appindicator|ayatana|xembedsniproxy|snixembed|openbox' > "$out_dir/linux-panel-processes.txt" 2>&1 || true
+    else
+      ps aux | grep -Ei 'gnome-shell|plasmashell|xfce4-panel|mate-panel|lxqt-panel|cinnamon|budgie-panel|waybar|kstatus|appindicator|ayatana|xembedsniproxy|snixembed|openbox' > "$out_dir/linux-panel-processes.txt" 2>&1 || true
+    fi
+  else
+    echo "ps unavailable" > "$out_dir/linux-panel-processes.txt"
+  fi
+
+  if command -v xprop >/dev/null 2>&1; then
+    xprop -root _NET_SYSTEM_TRAY_S0 _NET_CLIENT_LIST > "$out_dir/linux-x11-tray-owner.txt" 2>&1 || true
+  else
+    echo "xprop unavailable" > "$out_dir/linux-x11-tray-owner.txt"
+  fi
+
+  if command -v busctl >/dev/null 2>&1; then
+    busctl --user list > "$out_dir/linux-dbus-services.txt" 2>&1 || true
+  elif command -v qdbus >/dev/null 2>&1; then
+    qdbus > "$out_dir/linux-dbus-services.txt" 2>&1 || true
+  else
+    echo "busctl/qdbus unavailable" > "$out_dir/linux-dbus-services.txt"
+  fi
+}
+
+has_real_panel_process() {
+  if ! command -v ps >/dev/null 2>&1; then
+    return 1
+  fi
+  if ps -eo comm= >/dev/null 2>&1; then
+    ps -eo comm= | grep -Eiq 'gnome-shell|plasmashell|xfce4-panel|mate-panel|lxqt-panel|cinnamon|budgie-panel|waybar|kstatus|appindicator|ayatana'
+  else
+    ps aux | grep -Eiq 'gnome-shell|plasmashell|xfce4-panel|mate-panel|lxqt-panel|cinnamon|budgie-panel|waybar|kstatus|appindicator|ayatana'
+  fi
+}
+
 require_real_desktop_session() {
   case "$require_real_de" in
     1|true|TRUE|yes|YES)
@@ -63,13 +116,17 @@ require_real_desktop_session() {
   fi
   case "${XDG_SESSION_TYPE:-}" in
     x11|wayland)
-      return 0
       ;;
     *)
       echo "WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 requires XDG_SESSION_TYPE=x11 or wayland, got '${XDG_SESSION_TYPE:-}'." >&2
       return 1
       ;;
   esac
+  if ! has_real_panel_process; then
+    echo "WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 requires a detected desktop panel/appindicator process. See $out_dir/linux-panel-processes.txt." >&2
+    return 1
+  fi
+  return 0
 }
 
 wait_for_vite() {
@@ -411,6 +468,7 @@ PY
 }
 
 record_env
+collect_desktop_environment_probe
 require_real_desktop_session
 
 cd "$repo_root"

@@ -84,3 +84,37 @@ bash scripts/qa/cuu-tauri-macos-menu-smoke.sh
 - R3.22 text/frame hardgate 在平台菜单恢复后仍通过。
 - 文档完成“已落结果 + 证据 + 下一刀计划”闭环。
 - 完成后提交并推送 main。
+
+## 8. 2026-06-11 第一刀落点
+
+R3.23 第一刀先补“不假阳性”的平台探测与 macOS smoke 脚本骨架，不声明真实 DE/macOS 已通过：
+
+| 落点 | 结果 |
+|---|---|
+| Linux real DE gate | `scripts/qa/cuu-tauri-linux-smoke.sh` 增加 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1` 强门；除 `DISPLAY` / `WAYLAND_DISPLAY`、`XDG_CURRENT_DESKTOP`、`XDG_SESSION_TYPE=x11/wayland` 外，还要求能探测到 GNOME/KDE/Xfce/Waybar/appindicator 等 panel 进程 |
+| Linux probe files | 每轮 Linux smoke 额外写 `linux-desktop-probe.txt`、`linux-panel-processes.txt`、`linux-x11-tray-owner.txt`、`linux-dbus-services.txt`，用于判断 DBus、X11 tray owner、panel/appindicator 是否真实存在 |
+| API port guard | Linux mock API 继续锁定 `8787`，与 `apps/desktop-webview/vite.config.ts` 的 `/api` proxy 一致，避免“健康检查连 A 端口、WebView 实际连 B 端口”的假通过 |
+| macOS smoke script | 新增 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`；非 Darwin 直接退出 2，有 macOS 时才执行 desktop-webview test/build、Tauri cargo test/build、启动 devUrl、采集 menu bar inventory、尝试点击 WorkHub/Cuu menu bar item 并截图 |
+| macOS 权限边界 | AppleScript / System Events 找不到 menu bar item 时脚本失败，不 fallback 到 Tauri command；这保证后续截图权限或 Accessibility 未开时不会伪造通过 |
+
+本地验证：
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/qa/cuu-tauri-linux-smoke.sh
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/qa/cuu-tauri-macos-menu-smoke.sh
+WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 bash scripts/qa/cuu-tauri-linux-smoke.sh
+WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-non-darwin bash scripts/qa/cuu-tauri-macos-menu-smoke.sh
+```
+
+结果：
+
+- 两个脚本 Bash 语法通过。
+- 当前 Windows/Git Bash 环境无真实 DE，`WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1` 按预期失败，不落入 Xvfb/openbox。
+- 当前非 Darwin 环境运行 macOS smoke 按预期退出 2，不声明 macOS 通过。
+
+## 9. 下一步
+
+1. 把 `pass-through-recovery-tray-physical` 拆成 Linux/macOS 可观测动作矩阵：show/hide Cuu、restore interaction、open settings、open inbox；quit 只做 dry-run guard，不在 smoke 中直接退出。
+2. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、tray owner、menu 点击前后截图。
+3. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
+4. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。
