@@ -1048,6 +1048,9 @@ function desktopCuuErrorChipKey(kind: ReturnType<typeof desktopCuuErrorKind>) {
 }
 
 function desktopCuuErrorMessage(error: unknown, locale: CuuLocaleOptions["locale"], fallbackKey?: Parameters<typeof cuuT>[1]) {
+  if (fallbackKey) {
+    return cuuT(locale, fallbackKey);
+  }
   if (error instanceof WorkHubApiError && error.message.trim()) {
     return error.message.trim();
   }

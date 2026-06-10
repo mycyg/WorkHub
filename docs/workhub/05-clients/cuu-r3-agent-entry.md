@@ -109,6 +109,22 @@ launcher card -> createSession -> clarification SessionVM -> nextQuestion -> con
 
 本切片仍不宣称真实 Tauri 视觉完成：当前 smoke 是 API route-stack + desktop runtime 的进程内验证，不是实际桌面窗口点击、daemon SSE、截图或 motion capture。
 
+## 3.8 R3.6 已落切片：双语边界 + session 选择历史
+
+R3.6 先补两个会影响真实用户判断的低层缺口：Cuu 英文环境不能继续露出中文 fallback，且 option-first 的前一轮交付方向不能在最终创建事项时丢失。当前切片不新增 Cuu 外观，不把 Cuu 放回主窗，也不宣称真实 Tauri 点击/截图完成。
+
+| 层 | R3.6 行为 |
+|---|---|
+| Cuu event fallback | `cardFromEvent(en-US)` 对未知、无 preview 的默认事件返回 `WorkHub update` / `Cuu received a new status update.`，不再透出中文默认 attention |
+| AgentRun budget state | `AgentRunLiveVM.status="budget_exhausted"` 转 `kind="budget"`、`state="asking_approval"`，标题和 message 走 `cuuStart` / `budget` 双语文案 |
+| Replay cost | `cardFromReplayTrace()` 的 remaining budget 行改走 `cuuFormat(locale, "cost.remaining")`，不再硬编码“剩余” |
+| runtime error | `cardFromDesktopCuuRuntimeError()` 对 budget / permission / offline / generic 固定错误使用本地化 fallback；不把中文服务端 message 直接塞进英文 Cuu 卡 |
+| DB session history | `WorkItemDataRepository.listSessionSelectedOptionIds()` 从 `clarification_answer` chat history 读取 `selected_option_ids` 与 `selectedOptionKey` 并去重 |
+| createWorkItem finalization | `createWorkItem({session_id})` 合并历史选择与当前确认选择，`workitem_finalized` 和 planning note 保留完整 option path |
+| route-stack smoke | `qa:cuu-r3-launcher-smoke` 现在回读 work item，断言 `planning_note="selected_options: document-draft,create-workitem"` |
+
+R3.6 关闭的是数据流与双语边界，不覆盖真实桌面窗口视觉。下一步必须把同一链路升级到 dev server / Tauri pet window 级别，并补刷新恢复。
+
 ## 4. 字段级契约
 
 ### 4.1 Cuu launcher card
@@ -253,6 +269,9 @@ Rust 只负责：
 - `corepack pnpm --filter @workhub/desktop-webview test`
 - `corepack pnpm --filter @workhub/desktop-webview typecheck`
 - `corepack pnpm --filter @workhub/api typecheck`
+- `corepack pnpm --filter @workhub/db typecheck`
+- `corepack pnpm --filter @workhub/cuu typecheck`
+- `corepack pnpm --filter @workhub/cuu test`
 - `corepack pnpm qa:cuu-r3-launcher-smoke`
 - `corepack pnpm lint`
 
@@ -269,8 +288,12 @@ Rust 只负责：
 | `desktop Cuu actions advance option-first clarification sessions` | `nextQuestion()` -> `SessionVM` -> `cardFromSessionVm()`，澄清链路不断流 |
 | `desktop Cuu actions finalize confirmed sessions and start the agent run` | `create-workitem` -> `nextQuestion()` -> `createWorkItem()` -> `startAgentRun()` -> AgentRun Cuu card |
 | `qa:cuu-r3-launcher-smoke` | 真实 Hono route stack + typed API client + desktop runtime 跑通 launcher -> clarification -> confirmation -> AgentRun |
+| `budget-exhausted live agent runs use budget Cuu cards` | `budget_exhausted` AgentRun -> budget Cuu card、英文固定文案、primary replay action |
+| `replay cost cards localize remaining budget labels` | Replay cost section 不再出现硬编码中文 `剩余` |
+| `generic English events use localized fallback instead of Chinese attention defaults` | en-US 未知事件 fallback 不含 CJK |
+| `desktop Cuu runtime maps API and stream failures to Cuu cards` | budget / permission / offline / generic 错误卡英文环境不透出中文服务端 message |
 
-本轮 desktop-webview test 当前为 66/66 通过；R2 release gate 在 root `pnpm lint` 中为 PASS。
+本轮 Cuu test 当前为 33/33 通过，desktop-webview test 当前为 66/66 通过；R2 release gate 在 root `pnpm lint` 中为 PASS。
 
 ## 7. 与概念图对齐
 
@@ -280,12 +303,13 @@ Rust 只负责：
 | 选项优先澄清 | launcher 与后端 `SessionVM.question` 都走 option-first Cuu 气泡 |
 | 主力是 AI，不是看板 | Cuu 能从澄清确认直接进入 AgentRun；需要澄清时只展示用户必须看到的问题 |
 | 桌宠要像入口而不是装饰 | 点击 body 可展开真实启动卡，后续返回 question 或 run 进度卡 |
-| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline |
+| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline；R3.6 已补 budget exhausted 预算态 |
+| 中英双语边界 | R3.6 已补未知事件 fallback、runtime error、Replay cost、budget exhausted AgentRun 的 en-US 测试 |
 | 黑猫/白猫 Live2D 二选项 | 未改变模型白名单与外观 |
 
 ## 8. 尚未完成
 
-R3.5 已补 API route-stack smoke，但仍不能宣称 R3 完成；真实桌面窗口点击、SSE 回流截图、刷新恢复和双语边界仍未验收。
+R3.6 已补 API route-stack smoke 的选择历史回读、Cuu 双语边界与预算态；仍不能宣称 R3 完成。真实桌面窗口点击、SSE 回流截图、刷新恢复和 dev server 级 smoke 仍未验收。
 
 | 缺口 | 计划 |
 |---|---|
@@ -296,16 +320,16 @@ R3.5 已补 API route-stack smoke，但仍不能宣称 R3 完成；真实桌面�
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；下一步升级到 API dev server + Tauri pet window |
 | 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
-| 双语边界 | `en-US` 未知事件 fallback、runtime error message、replay cost label、budget exhausted run card 还需补测试与修复 |
-| 选择历史 | 最终 `createWorkItem()` 的 `selected_option_ids` 仍只带确认动作；需要把前一轮交付方向合并进 planning note 或 session finalization |
+| 真实双语截图 | R3.6 已补 TS 级 en-US 边界；仍需真实 pet window 英文截图 |
+| 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
-## 9. 下一刀 R3.6
+## 9. 下一刀 R3.7
 
-R3.6 建议顺序：
+R3.7 建议顺序：
 
 1. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖 click body -> launcher card -> selected chip -> submit -> clarification card -> confirm -> run card。
-2. 修双语边界并补测试：`cardFromEvent(en-US)` 未知事件无 CJK；runtime error 固定文案可本地化；Replay cost line 不出现硬编码中文；`budget_exhausted` AgentRun card 用预算态标题/动作。
-3. 合并 session 选择历史：确认创建事项时，最终 planning note 保留前一轮交付方向，不只记录 `create-workitem`。
-4. 升级 smoke 到真实 API dev server + desktop webview runtime；再补 Tauri screenshot/motion capture：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组。
-5. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+2. 升级 smoke 到真实 API dev server + desktop webview runtime，证明不只是进程内 Hono route stack。
+3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组；其中至少一组 en-US。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
 6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。

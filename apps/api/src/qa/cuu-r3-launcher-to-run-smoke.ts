@@ -136,7 +136,7 @@ function createSmokeApp() {
   app.route("/api", createSessionRoutes({ auth, workItems }));
   app.route("/api", createWorkItemRoutes({ auth, workItems }));
   app.route("/api", createAgentRunRoutes({ auth, queue, workItems, autoRun: false }));
-  return app;
+  return { app, workItems };
 }
 
 let runSequence = 0;
@@ -171,7 +171,7 @@ function assertRunCard(card: CuuCard, run: AgentRunLiveVM) {
 }
 
 async function main() {
-  const app = createSmokeApp();
+  const { app, workItems } = createSmokeApp();
   const fetchFn: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     return app.request(`${url.pathname}${url.search}`, init);
@@ -238,6 +238,19 @@ async function main() {
   assert.equal(apiReadback.run_id, started.agentRun.run_id);
   assert.equal(apiReadback.status, "queued");
   assert.ok(apiReadback.stream_href.includes(started.agentRun.run_id));
+  const workItemReadback = await workItems.detailPage({
+    workItemId: started.agentRun.work_item_id,
+    actor: {
+      kind: "human",
+      id: owner.id,
+      label: owner.nickname,
+      userId: owner.id,
+      isAdmin: true,
+      orgId: defaultSeedIds.orgId,
+      workspaceId: defaultSeedIds.workspaceId
+    }
+  });
+  assert.equal(workItemReadback.workitem.planning_note, "selected_options: document-draft,create-workitem");
 
   console.log(JSON.stringify({
     ok: true,
@@ -251,7 +264,8 @@ async function main() {
       run: started.card?.payload_ref?.entity_type
     },
     run_id: started.agentRun.run_id,
-    status: apiReadback.status
+    status: apiReadback.status,
+    planning_note: workItemReadback.workitem.planning_note
   }, null, 2));
 }
 

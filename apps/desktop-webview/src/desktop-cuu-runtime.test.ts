@@ -952,15 +952,26 @@ test("desktop Cuu run stream refreshes agent cards and closes on terminal status
 test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
   const budget = cardFromDesktopCuuRuntimeError(new WorkHubApiError(402, "budget_exhausted", "预算用完了。"));
   const permission = cardFromDesktopCuuRuntimeError(new WorkHubApiError(403, "forbidden", "没有权限。"), { locale: "en-US" });
+  const budgetEnglish = cardFromDesktopCuuRuntimeError(new WorkHubApiError(402, "budget_exhausted", "预算用完了。"), {
+    locale: "en-US"
+  });
+  const genericEnglish = cardFromDesktopCuuRuntimeError(new Error("内部错误"), { locale: "en-US" });
   const offline = cardFromDesktopCuuRuntimeError(new TypeError("Failed to fetch"), {
     run: agentRunLive({ status: "running" })
   });
 
   assert.equal(budget.kind, "budget");
   assert.equal(budget.state, "asking_approval");
-  assert.equal(budget.message, "预算用完了。");
+  assert.equal(budget.message, "这次任务已到预算线，需要你确认下一步。");
   assert.equal(permission.state, "worried");
   assert.equal(permission.title, "This step needs permission");
+  assert.equal(permission.message, "Cuu cannot continue directly. Open the detail view to handle it.");
+  assert.equal(budgetEnglish.message, "This task reached its budget limit and needs your decision.");
+  assert.equal(genericEnglish.message, "Cuu could not complete this step. Open the detail view to inspect the reason.");
+  assert.doesNotMatch(
+    `${permission.title} ${permission.message} ${budgetEnglish.message} ${genericEnglish.message}`,
+    /[\u3400-\u9fff]/u
+  );
   assert.equal(offline.kind, "offline");
   assert.equal(offline.state, "offline");
   assert.equal(offline.payload_ref?.entity_type, "agent_run");

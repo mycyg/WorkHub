@@ -139,6 +139,21 @@ function compactText(value: string | null | undefined, max = 300) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
+function mergeSelectedOptionIds(...groups: (readonly string[] | undefined)[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const group of groups) {
+    for (const id of group ?? []) {
+      const trimmed = id.trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        result.push(trimmed);
+      }
+    }
+  }
+  return result;
+}
+
 function titleFromIntent(intentText: string | undefined) {
   const compact = compactText(intentText, 64);
   return compact ?? "待澄清事项";
@@ -554,6 +569,10 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async createWorkItem(input) {
       if (input.payload.session_id) {
         const rows = await requireDetail(input.payload.session_id, input.actor);
+        const selectedOptionIds = mergeSelectedOptionIds(
+          await repository.listSessionSelectedOptionIds(rows.workItem.id),
+          input.payload.selected_option_ids
+        );
         const updateInput: Parameters<WorkItemDataRepository["updateWorkItemFromSession"]>[0] = {
           workItemId: rows.workItem.id,
           title: input.payload.title ?? rows.workItem.title ?? titleFromIntent(rows.workItem.rawDescription ?? undefined),
@@ -568,8 +587,8 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         if (summaryMd) {
           updateInput.summaryMd = summaryMd;
         }
-        if (input.payload.selected_option_ids) {
-          updateInput.selectedOptionIds = input.payload.selected_option_ids;
+        if (selectedOptionIds.length) {
+          updateInput.selectedOptionIds = selectedOptionIds;
         }
         const updated = await repository.updateWorkItemFromSession(updateInput);
         if (!updated) {
@@ -580,7 +599,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           role: "system",
           kind: "workitem_finalized",
           contentJson: {
-            selected_option_ids: input.payload.selected_option_ids ?? [],
+            selected_option_ids: selectedOptionIds,
             kickoff_agent: input.payload.kickoff_agent ?? false
           },
           at: now()
@@ -788,6 +807,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     });
   }
 
+  function selectedOptionIdsForSession(sessionId: string, current: readonly string[] | undefined) {
+    return mergeSelectedOptionIds(
+      ...(answers.get(sessionId) ?? []).map((answer) => answer.selected_option_ids),
+      current
+    );
+  }
+
   return {
     async createSession(input) {
       const workItem = input.payload.work_item_id
@@ -816,10 +842,16 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             actor: input.actor,
             status: input.payload.kickoff_agent ? "ai_working" : "spec_ready"
           });
+      const selectedOptionIds = input.payload.session_id
+        ? selectedOptionIdsForSession(workItem.id, input.payload.selected_option_ids)
+        : mergeSelectedOptionIds(input.payload.selected_option_ids);
       workItem.status = input.payload.kickoff_agent ? "ai_working" : "spec_ready";
       workItem.title = input.payload.title ?? workItem.title;
       workItem.raw_description = input.payload.raw_description ?? workItem.raw_description;
       workItem.summary_md = input.payload.raw_description ?? workItem.summary_md;
+      if (selectedOptionIds.length) {
+        workItem.planning_note = `selected_options: ${selectedOptionIds.join(",")}`;
+      }
       workItem.updated_at = at();
       workItem.version += 1;
       return detail(workItem);

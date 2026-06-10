@@ -166,6 +166,7 @@ export type WorkItemDataRepository = WorkItemRepository & {
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
+  listSessionSelectedOptionIds: (workItemId: string) => Promise<string[]>;
   findWorkItemById: (workItemId: string) => Promise<WorkItemRow | null>;
   readWorkItemDetail: (workItemId: string) => Promise<StoredWorkItemDetailRows | null>;
   findAcceptedDeliverableFile: (
@@ -186,6 +187,32 @@ const trueCondition = sql`true`;
 
 function whereAll(conditions: SQL[]) {
   return conditions.length > 0 ? and(...conditions) : trueCondition;
+}
+
+function uniqueSelectedOptionIds(ids: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of ids) {
+    const trimmed = id.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      result.push(trimmed);
+    }
+  }
+  return result;
+}
+
+function selectedOptionIdsFromChatContent(contentJson: unknown, selectedOptionKey?: string | null) {
+  const rawIds = contentJson && typeof contentJson === "object" && !Array.isArray(contentJson)
+    ? (contentJson as Record<string, unknown>)["selected_option_ids"]
+    : undefined;
+  const ids = Array.isArray(rawIds)
+    ? rawIds.filter((id): id is string => typeof id === "string")
+    : [];
+  if (selectedOptionKey) {
+    ids.push(selectedOptionKey);
+  }
+  return uniqueSelectedOptionIds(ids);
 }
 
 function acceptedDeliverableColumns() {
@@ -366,6 +393,20 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         throw new Error("Failed to create chat message");
       }
       return row;
+    },
+
+    async listSessionSelectedOptionIds(workItemId) {
+      const rows = await db
+        .select({
+          contentJson: chatMessages.contentJson,
+          selectedOptionKey: chatMessages.selectedOptionKey
+        })
+        .from(chatMessages)
+        .where(and(eq(chatMessages.workItemId, workItemId), eq(chatMessages.kind, "clarification_answer")))
+        .orderBy(asc(chatMessages.createdAt));
+      return uniqueSelectedOptionIds(
+        rows.flatMap((row) => selectedOptionIdsFromChatContent(row.contentJson, row.selectedOptionKey))
+      );
     },
 
     async findWorkItemById(workItemId) {

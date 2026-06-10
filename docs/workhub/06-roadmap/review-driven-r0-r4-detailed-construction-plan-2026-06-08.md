@@ -2109,7 +2109,7 @@ R2 验收：
 | 确认后启动 | 选择 `create-workitem` 时先记录 `nextQuestion()`，再 `createWorkItem({kickoff_agent:true})`，最后 `startAgentRun()` |
 | route-stack smoke | `qa:cuu-r3-launcher-smoke` 用真实 Hono routes + typed API client + desktop runtime 跑通 launcher -> clarification -> confirmation -> AgentRun |
 | Rust | 仍只做窗口、托盘、通知、SSE 转发；不拥有业务状态机 |
-| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、双语边界、session 选择历史合并 |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复 |
 
 验证：
 
@@ -2119,15 +2119,50 @@ R2 验收：
 - `corepack pnpm qa:cuu-r3-launcher-smoke`：通过，返回 `clarification=session`、`confirmation=session`、`run=agent_run`。
 - `corepack pnpm lint`：通过，R2 release gate 为 PASS，且新增 R3 smoke 已接入 root lint。
 
-### R3.6 下一刀
+### R3.6 已落：Cuu 双语边界与 session 选择历史
+
+本切片关闭 R3.5 后留下的两个真实产品缺口：英文环境不应透出中文 fallback，Cuu option-first 前一轮交付方向不应在最终创建事项时丢失。范围仍是数据流与卡片合同，不新增 Cuu 外观、不把 Cuu 放回主窗、不宣称真实 Tauri 视觉完成。
+
+改动：
+
+- `packages/cuu/src/cards.ts`
+  - `cardFromEvent(en-US)` 对未知、无 preview 的默认事件返回本地化 bubble。
+  - `cardFromAgentRunLive()` 将 `budget_exhausted` 映射为 `kind="budget"`、`state="asking_approval"`。
+  - `cardFromReplayTrace()` 的 remaining cost 行走 `cuuFormat(locale, "cost.remaining")`。
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`
+  - runtime error card 对 budget / permission / offline / generic 使用本地化 fallback message，不把中文 API message 直接塞进 en-US Cuu 卡。
+- `packages/db/src/repositories/work-items.ts`
+  - 新增 `listSessionSelectedOptionIds()`，从 `clarification_answer` chat history 合并 `selected_option_ids` 与 `selectedOptionKey`。
+- `apps/api/src/services/work-items.ts`
+  - `createWorkItem({session_id})` 合并历史选择与当前确认选择，最终 `workitem_finalized` / planning note 保留完整 option path。
+- `apps/api/src/qa/cuu-r3-launcher-to-run-smoke.ts`
+  - route-stack smoke 回读 work item，断言 `planning_note="selected_options: document-draft,create-workitem"`。
+
+验证：
+
+- `corepack pnpm --filter @workhub/db typecheck`：通过。
+- `corepack pnpm --filter @workhub/api typecheck`：通过。
+- `corepack pnpm --filter @workhub/cuu typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/cuu test`：33/33 通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：66/66 通过。
+- `corepack pnpm qa:cuu-r3-launcher-smoke`：通过，返回 `planning_note=selected_options: document-draft,create-workitem`。
+
+仍未覆盖：
+
+- 真实 Tauri `pet` window 点击截图/录屏。
+- 真实 API dev server + desktop webview runtime smoke。
+- pet window 刷新后的当前 session/run card 恢复。
+- launcher chip metadata 结构化进入 WorkItem spec。
+
+### R3.7 下一刀
 
 1. 用轻 DOM harness 覆盖真实 click body -> launcher card -> selected chip -> submit -> clarification -> confirm -> run，而不仅是 render/output test。
-2. 修 Cuu 双语边界：`cardFromEvent(en-US)` 未知事件 fallback、runtime error message、Replay cost label、`budget_exhausted` AgentRun card。
-3. 合并 session 选择历史：最终 `createWorkItem()` 的 planning note 不能只留下 `create-workitem`。
-4. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack。
-5. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card。
-6. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-7. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+2. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack。
+3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 

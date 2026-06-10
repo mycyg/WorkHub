@@ -142,6 +142,8 @@ const stateByAttentionKind: Record<AttentionItem["kind"], CuuState> = {
   system_health: "idle"
 };
 
+const defaultAttentionSummary = "WorkHub 有新的状态更新。";
+
 function withMotion(input: Omit<CuuCard, "motion">): CuuCard {
   return {
     ...input,
@@ -236,6 +238,10 @@ function isAgentRunEvent(event: WorkHubEvent<unknown>) {
     event.type === eventTypes.agentRunFailed ||
     event.type === eventTypes.agentRunEscalated
   );
+}
+
+function isDefaultAttentionFallback(attention: AttentionItem) {
+  return attention.title === defaultAttentionSummary && attention.summary_text === defaultAttentionSummary;
 }
 
 function agentRunHref(runId: string | undefined) {
@@ -759,11 +765,12 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
   const state = stateForAgentRun(vm.status);
   const latestStep = vm.trace.at(-1);
   const active = vm.status === "queued" || vm.status === "running";
+  const budgetExhausted = vm.status === "budget_exhausted";
   const actions: CuuCardAction[] = [
     {
       id: "view_replay",
       label: cuuT(options.locale, "agentRun.viewReplay"),
-      tone: state === "celebrating" ? "primary" : "secondary",
+      tone: state === "celebrating" || budgetExhausted ? "primary" : "secondary",
       method: "GET",
       href: `/agent-runs/${vm.run_id}/replay`
     },
@@ -814,14 +821,20 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
 
   return withMotion({
     id: vm.run_id,
-    kind: state === "celebrating" ? "completion" : "trace",
+    kind: budgetExhausted ? "budget" : state === "celebrating" ? "completion" : "trace",
     state,
-    title: state === "celebrating"
-      ? cuuT(options.locale, "agentRun.doneTitle")
-      : state === "worried"
-        ? cuuT(options.locale, "agentRun.attentionTitle")
-        : cuuT(options.locale, "agentRun.startedTitle"),
-    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? cuuT(options.locale, "agentRun.progressFallback")),
+    title: budgetExhausted
+      ? cuuT(options.locale, "budget.exhaustedTitle")
+      : state === "celebrating"
+        ? cuuT(options.locale, "agentRun.doneTitle")
+        : state === "worried"
+          ? cuuT(options.locale, "agentRun.attentionTitle")
+          : cuuT(options.locale, "agentRun.startedTitle"),
+    message: truncate(
+      latestStep?.output_excerpt ??
+        vm.run.handoff_md ??
+        cuuT(options.locale, budgetExhausted ? "cuuStart.errorBudgetMessage" : "agentRun.progressFallback")
+    ),
     priority: state === "worried" || state === "asking_approval" ? "high" : "normal",
     actions,
     sections,
@@ -946,7 +959,10 @@ export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions
     sections.push({
       id: "cost",
       title: cuuT(options.locale, "replay.costSection"),
-      lines: [`${vm.cost.me.scope_label}: ¥${vm.cost.me.estimated_cost_cny}`, `剩余 ¥${vm.cost.me.remaining_cost_cny}`]
+      lines: [
+        `${vm.cost.me.scope_label}: ¥${vm.cost.me.estimated_cost_cny}`,
+        cuuFormat(options.locale, "cost.remaining", { cost: vm.cost.me.remaining_cost_cny })
+      ]
     });
   }
 
@@ -983,8 +999,30 @@ export function cardFromEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOp
     return cardFromAgentRunEvent(event, options);
   }
 
-  const attention = toAttentionItem(event);
+  const attention = event.attention ? event.attention : toAttentionItem(event);
   if (attention) {
+    if (options.locale === "en-US" && isDefaultAttentionFallback(attention)) {
+      return withMotion({
+        id: event.event_id,
+        kind: "bubble",
+        state: toCuuState(event),
+        title: event.preview_text ?? cuuT(options.locale, "event.defaultTitle"),
+        message: truncate(event.preview_text ?? cuuT(options.locale, "event.defaultMessage")),
+        priority: "normal",
+        actions: [],
+        payload_ref: {
+          entity_type: "event",
+          entity_id: event.event_id
+        },
+        source: optionalSource({
+          entity_type: "event",
+          entity_id: event.event_id,
+          ...(event.work_item_id ? { work_item_id: event.work_item_id } : {}),
+          ...(event.project_id ? { project_id: event.project_id } : {})
+        }),
+        created_at: event.ts
+      });
+    }
     return cardFromAttentionItem(attention);
   }
 

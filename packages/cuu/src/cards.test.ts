@@ -10,6 +10,7 @@ import {
   type ProposalConflict,
   type ProposalDetailVM,
   type QuestionCard,
+  type ReplayTraceVM,
   type SessionVM,
   type WorkItemDetailVM,
   type WorkHubEvent
@@ -25,6 +26,7 @@ import {
   cardFromProposalConflict,
   cardsFromProposalConflicts,
   cardFromQuestionCard,
+  cardFromReplayTrace,
   cardFromSessionVm,
   cardFromAgentRunLive,
   cardFromWorkItemDetail
@@ -46,6 +48,40 @@ const budgetNotice: BudgetNotice = {
   ],
   action_href: `/dashboard/cost?workItemId=${workItemId}`
 };
+
+function agentRunLive(status: AgentRunLiveVM["status"] = "running"): AgentRunLiveVM {
+  const runId = "40000000-0000-4000-8000-000000000025";
+  return {
+    run: {
+      id: runId,
+      work_item_id: workItemId,
+      mode: "worker",
+      actor: "human",
+      status,
+      model: "deepseek-v4-flash",
+      turns_used: 1,
+      max_turns: 15,
+      token_in: 10,
+      token_out: 20,
+      created_at: ts,
+      updated_at: ts
+    },
+    run_id: runId,
+    work_item_id: workItemId,
+    title: "生成客户周报模板",
+    status,
+    budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
+    budget_decision: {
+      decision_id: "decision-run",
+      allowed: status !== "budget_exhausted",
+      model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
+    },
+    usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
+    trace: [],
+    stream_href: `/api/push/stream/run/${runId}`,
+    replay_href: `/api/agent-runs/${runId}/replay`
+  };
+}
 
 test("Cuu motion hints cover every contract state", () => {
   const hints = allCuuMotionHints();
@@ -423,6 +459,59 @@ test("live agent runs become immediate Cuu trace cards before SSE catches up", (
   assert.equal(doneCard.actions.some((action) => action.id === "abort_agent_run"), false);
 });
 
+test("budget-exhausted live agent runs use budget Cuu cards", () => {
+  const card = cardFromAgentRunLive(agentRunLive("budget_exhausted"), { locale: "en-US" });
+
+  assert.equal(card.kind, "budget");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.title, "Budget exhausted");
+  assert.equal(card.message, "This task reached its budget limit and needs your decision.");
+  assert.equal(card.actions.find((action) => action.id === "view_replay")?.tone, "primary");
+  assert.equal(card.actions.some((action) => action.id === "abort_agent_run"), false);
+});
+
+test("replay cost cards localize remaining budget labels", () => {
+  const usage = {
+    scope: { kind: "user" as const, user_id: "10000000-0000-4000-8000-000000000101" },
+    scope_label: "Personal budget",
+    policy_id: "policy-user-day",
+    period: "day" as const,
+    period_start: ts,
+    period_end: ts,
+    token_in: 10,
+    token_out: 20,
+    total_tokens: 30,
+    max_tokens: 1000,
+    remaining_tokens: 970,
+    estimated_cost_cny: "0.003",
+    max_cost_cny: "5",
+    remaining_cost_cny: "4.997",
+    warning_ratio: 0.8,
+    status: "ok" as const
+  };
+  const replay: ReplayTraceVM = {
+    run: agentRunLive("succeeded").run,
+    steps: [],
+    evidence_refs: [],
+    snapshots: [],
+    audit_logs: [],
+    accepted_deliverables: [],
+    merge_timeline: [],
+    cost: {
+      me: usage,
+      scopes: [usage],
+      active_notices: [],
+      generated_at: ts
+    }
+  };
+
+  const card = cardFromReplayTrace(replay, { locale: "en-US" });
+  const costLines = card.sections?.find((section) => section.id === "cost")?.lines.join(" ") ?? "";
+
+  assert.match(costLines, /¥4\.997 remaining/u);
+  assert.doesNotMatch(costLines, /剩余/u);
+});
+
 test("budget notices and budget events become actionable Cuu cards", () => {
   const card = cardFromBudgetNotice(budgetNotice, "budget-card");
   const attentionCard = cardFromAttentionItem({
@@ -486,6 +575,21 @@ test("generic permission events still map through attention into Cuu approval ca
   assert.equal(card.kind, "approval");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.title, "Cuu 需要你批准这次 file-only 变更。");
+});
+
+test("generic English events use localized fallback instead of Chinese attention defaults", () => {
+  const card = cardFromEvent({
+    event_id: "event-generic-en",
+    type: eventTypes.notificationCreated,
+    topic: "user:user-1",
+    ts,
+    data: {}
+  }, { locale: "en-US" });
+
+  assert.equal(card.kind, "bubble");
+  assert.equal(card.title, "WorkHub update");
+  assert.equal(card.message, "Cuu received a new status update.");
+  assert.doesNotMatch(`${card.title} ${card.message}`, /[\u3400-\u9fff]/u);
 });
 
 test("agent run events become trace and completion cards for live Cuu updates", () => {
