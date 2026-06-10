@@ -22,6 +22,73 @@ fi
 
 mkdir -p "$out_dir"
 
+write_tray_menu_action_matrix() {
+  cat > "$out_dir/tray-menu-action-matrix.json" <<'JSON'
+{
+  "contract": "workhub.cuu.tray-menu-action-matrix",
+  "version": 1,
+  "actions": [
+    {
+      "id": "show-main",
+      "label": "Open WorkHub",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_root",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "hide-main",
+      "label": "Hide main window",
+      "target": "main",
+      "expected_effect": "hide_main_window",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "toggle-pet",
+      "label": "Show / hide Cuu",
+      "target": "pet",
+      "expected_effect": "toggle_pet_window",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "restore-pet-interaction",
+      "label": "Restore Cuu interaction",
+      "target": "pet",
+      "expected_effect": "pass_false_hide_false_opacity_100",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "open-inbox",
+      "label": "Open inbox",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_inbox",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "open-settings",
+      "label": "Settings",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_settings",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "quit",
+      "label": "Quit WorkHub",
+      "target": "app",
+      "expected_effect": "exit_app",
+      "destructive": true,
+      "dry_run_only": true
+    }
+  ]
+}
+JSON
+}
+
 record_env() {
   {
     echo "captured_at=$(date -Is)"
@@ -300,6 +367,7 @@ run_desktop_smoke() {
   export WORKHUB_CUU_QA_SCENARIO="$scenario"
   export WORKHUB_CUU_QA_LOCALE="$locale"
   export WORKHUB_CUU_QA_DOM_REPORT_PATH="$out_dir/cuu-tauri-dom-report.json"
+  export WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN=1
   if [ "$uses_api" = "true" ]; then
     export WORKHUB_CUU_QA_CLIENT_TOKEN="cuu-r3-local-client-token"
     export WORKHUB_CLIENT_TOKEN="cuu-r3-local-client-token"
@@ -469,6 +537,7 @@ PY
 
 record_env
 collect_desktop_environment_probe
+write_tray_menu_action_matrix
 require_real_desktop_session
 
 cd "$repo_root"

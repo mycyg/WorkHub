@@ -112,9 +112,37 @@ WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-non-darwin bash script
 - 当前 Windows/Git Bash 环境无真实 DE，`WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1` 按预期失败，不落入 Xvfb/openbox。
 - 当前非 Darwin 环境运行 macOS smoke 按预期退出 2，不声明 macOS 通过。
 
-## 9. 下一步
+## 9. 2026-06-11 第二刀落点
 
-1. 把 `pass-through-recovery-tray-physical` 拆成 Linux/macOS 可观测动作矩阵：show/hide Cuu、restore interaction、open settings、open inbox；quit 只做 dry-run guard，不在 smoke 中直接退出。
-2. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、tray owner、menu 点击前后截图。
+R3.23 第二刀把菜单动作矩阵从文档要求推进到脚本合同：
+
+| 落点 | 结果 |
+|---|---|
+| Rust quit dry-run | `client-tauri/src-tauri/src/main.rs` 新增 `WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN`，且必须同时存在非空 `WORKHUB_CUU_QA_SCENARIO` 才生效。默认行为不变；仅 QA smoke 显式设置时，点击 `Quit WorkHub` 只 emit `tray-action`，不退出进程 |
+| Linux action matrix | `scripts/qa/cuu-tauri-linux-smoke.sh` 每轮输出 `tray-menu-action-matrix.json`，列出 `show-main`、`hide-main`、`toggle-pet`、`restore-pet-interaction`、`open-inbox`、`open-settings`、`quit` 的 label、target、expected effect、destructive/dry-run 属性 |
+| Linux quit safety | Linux smoke 启动 Tauri 时设置 `WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN=1`，后续真实 DE 菜单点击可以覆盖 quit guard 而不杀掉 smoke |
+| macOS action matrix | `scripts/qa/cuu-tauri-macos-menu-smoke.sh` 使用同一 action matrix，默认 `WORKHUB_MACOS_MENU_ACTIONS=restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit` |
+| macOS menu automation | macOS smoke 使用 `AXShowMenu` 打开 WorkHub/Cuu menu bar item，再按 action label 点击原生菜单项，逐项保存 `menu-click-<action>.txt` 与 `screen-after-<action>.png`；找不到 menu item 或 action 后进程退出时失败，不 fallback 到 Tauri command |
+
+本地验证：
+
+```powershell
+node_modules\.bin\tsc.CMD -p apps\desktop-webview\tsconfig.json --noEmit
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/qa/cuu-tauri-linux-smoke.sh
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/qa/cuu-tauri-macos-menu-smoke.sh
+WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-non-darwin bash scripts/qa/cuu-tauri-macos-menu-smoke.sh
+```
+
+结果：
+
+- Rust tests 覆盖 `WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN` truthy/falsey 解析。
+- 两个 shell 脚本 Bash 语法通过。
+- 当前非 Darwin 环境运行 macOS smoke 仍按预期退出 2，不声明 macOS 通过。
+
+## 10. 下一步
+
+1. 为 Linux 真实 DE 增加原生菜单项点击实现：基于 appindicator/panel 能力选择 `xdotool`、DBus/AppIndicator 或 DE 专属自动化，逐项消化 `tray-menu-action-matrix.json`。
+2. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、tray owner、每个菜单动作前后截图。
 3. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
 4. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。

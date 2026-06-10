@@ -16,9 +16,9 @@ use workhub_client_tauri::pet_window::{
 use workhub_client_tauri::single_instance::single_instance_plan_from_args;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
-    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
-    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
+    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
+    TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID,
+    WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -54,6 +54,7 @@ const WORKHUB_CUU_QA_LOCALE_ENV: &str = "WORKHUB_CUU_QA_LOCALE";
 const WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV: &str = "WORKHUB_CUU_QA_DOM_REPORT_PATH";
 const WORKHUB_CUU_QA_CLIENT_TOKEN_ENV: &str = "WORKHUB_CUU_QA_CLIENT_TOKEN";
 const WORKHUB_CUU_QA_RESTORE_STATE_ENV: &str = "WORKHUB_CUU_QA_RESTORE_STATE";
+const WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV: &str = "WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN";
 const WORKHUB_CUU_RESTORE_STORAGE_KEY: &str = "workhub.cuu.currentRun.v1";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -72,6 +73,11 @@ struct CuuQaPreferenceOverrides {
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
     workhub_env_flag_enabled(WORKHUB_DISABLE_SSE_ENV, get_env)
+}
+
+fn workhub_tray_quit_dry_run_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
+    workhub_env_flag_enabled(WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV, &get_env)
+        && workhub_env_string_nonempty(WORKHUB_CUU_QA_SCENARIO_ENV, &get_env)
 }
 
 fn workhub_cuu_qa_preferences_from_env<F>(get_env: F) -> CuuQaPreferenceOverrides
@@ -129,7 +135,10 @@ where
             &get_env,
             &["zh-CN", "en-US"],
         ),
-        pet_qa_dom_report: workhub_env_string_nonempty(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV, &get_env),
+        pet_qa_dom_report: workhub_env_string_nonempty(
+            WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
+            &get_env,
+        ),
         pet_qa_client_token: workhub_env_string_value_nonempty(
             WORKHUB_CUU_QA_CLIENT_TOKEN_ENV,
             &get_env,
@@ -487,10 +496,7 @@ fn write_cuu_qa_dom_report(report_json: String) -> Result<(), String> {
     write_cuu_qa_dom_report_to_path(&path, &report)
 }
 
-fn write_cuu_qa_dom_report_to_path(
-    path: &Path,
-    report: &serde_json::Value,
-) -> Result<(), String> {
+fn write_cuu_qa_dom_report_to_path(path: &Path, report: &serde_json::Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -700,22 +706,22 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
         pet_config.label.clone(),
         WebviewUrl::App("pet.html".into()),
     )
-        .title(pet_config.title.clone())
-        .inner_size(pet_config.width, pet_config.height)
-        .resizable(pet_config.resizable)
-        .maximizable(pet_config.maximizable)
-        .minimizable(pet_config.minimizable)
-        .closable(pet_config.closable)
-        .fullscreen(pet_config.fullscreen)
-        .focused(pet_config.focus)
-        .decorations(pet_config.decorations)
-        .always_on_top(pet_config.always_on_top)
-        .skip_taskbar(true)
-        .visible(pet_config.visible)
-        .transparent(true)
-        .background_color(Color(0, 0, 0, 0))
-        .shadow(false)
-        .initialization_script(initialization_script);
+    .title(pet_config.title.clone())
+    .inner_size(pet_config.width, pet_config.height)
+    .resizable(pet_config.resizable)
+    .maximizable(pet_config.maximizable)
+    .minimizable(pet_config.minimizable)
+    .closable(pet_config.closable)
+    .fullscreen(pet_config.fullscreen)
+    .focused(pet_config.focus)
+    .decorations(pet_config.decorations)
+    .always_on_top(pet_config.always_on_top)
+    .skip_taskbar(true)
+    .visible(pet_config.visible)
+    .transparent(true)
+    .background_color(Color(0, 0, 0, 0))
+    .shadow(false)
+    .initialization_script(initialization_script);
     if let (Some(min_width), Some(min_height)) = (pet_config.min_width, pet_config.min_height) {
         builder = builder.min_inner_size(min_width, min_height);
     }
@@ -954,6 +960,11 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     };
 
     if plan.exits_app {
+        if workhub_tray_quit_dry_run_from_env(|name| std::env::var(name).ok()) {
+            app.emit("tray-action", plan)
+                .map_err(|error| format!("failed to emit tray-action event: {error}"))?;
+            return Ok(());
+        }
         app.exit(0);
         return Ok(());
     }
@@ -1187,6 +1198,33 @@ mod tests {
     }
 
     #[test]
+    fn tray_quit_dry_run_env_accepts_truthy_values_only() {
+        for value in ["1", "true", "TRUE", "yes", "on", " on "] {
+            assert!(workhub_tray_quit_dry_run_from_env(named_env(&[
+                (WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV, value),
+                (
+                    WORKHUB_CUU_QA_SCENARIO_ENV,
+                    "pass-through-recovery-tray-physical"
+                ),
+            ])));
+        }
+        for value in ["", "0", "false", "off", "no", "disabled"] {
+            assert!(!workhub_tray_quit_dry_run_from_env(named_env(&[
+                (WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV, value),
+                (
+                    WORKHUB_CUU_QA_SCENARIO_ENV,
+                    "pass-through-recovery-tray-physical"
+                ),
+            ])));
+        }
+        assert!(!workhub_tray_quit_dry_run_from_env(env_value(None)));
+        assert!(!workhub_tray_quit_dry_run_from_env(named_env(&[(
+            WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV,
+            "1",
+        )])));
+    }
+
+    #[test]
     fn cuu_qa_preferences_env_accepts_hide_on_hover_truthy_values() {
         assert_eq!(
             workhub_cuu_qa_preferences_from_env(named_env(&[(
@@ -1322,7 +1360,10 @@ mod tests {
             pet_qa_locale: Some("en-US".to_string()),
             pet_qa_dom_report: true,
             pet_qa_client_token: Some("qa-token-1".to_string()),
-            pet_qa_restore_state: Some(r#"{"version":1,"entity_type":"agent_run","entity_id":"run-1","updated_at_ms":1}"#.to_string()),
+            pet_qa_restore_state: Some(
+                r#"{"version":1,"entity_type":"agent_run","entity_id":"run-1","updated_at_ms":1}"#
+                    .to_string(),
+            ),
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
@@ -1334,7 +1375,8 @@ mod tests {
         assert!(script.contains(r#"__WORKHUB_CUU_QA_LOCALE__ = "en-US""#));
         assert!(script.contains("__WORKHUB_CUU_QA_DOM_REPORT__ = true"));
         assert!(script.contains(r#"localStorage.setItem("workhub_client_token", "qa-token-1")"#));
-        assert!(script.contains(r#"localStorage.setItem("workhub.cuu.currentRun.v1", "{\"version\":1,"#));
+        assert!(script
+            .contains(r#"localStorage.setItem("workhub.cuu.currentRun.v1", "{\"version\":1,"#));
     }
 
     #[test]
