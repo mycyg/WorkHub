@@ -4,15 +4,20 @@ import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
-  renderGoldPathAppShell,
-  renderGoldPathBootDocument,
-  renderGoldPathSurface,
   resolveGoldPathPageKey,
   workHubLocaleStorageKey,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
+import {
+  createUnknownWebRouteMatch,
+  loadWebRoute,
+  renderWebRouteState,
+  resolveWebRoute,
+  webRouteHref,
+  type WebRouteReadyResult
+} from "./routes.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -328,7 +333,13 @@ function bindRouteLineEditor(shellRoot: HTMLElement) {
   });
 }
 
-function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell, client: BrowserApiClient, locale: WorkHubLocale) {
+function bindGoldPathNavigation(
+  shellRoot: HTMLElement,
+  shell: GoldPathAppShell,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  onNavigate?: (href: string, pageKey: string) => void | Promise<void>
+) {
   let pendingReviewHref: string | undefined;
 
   const activateFromHash = () => {
@@ -375,6 +386,10 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
     });
     if (action.kind === "navigate") {
       event.preventDefault();
+      if (onNavigate) {
+        void Promise.resolve(onNavigate(href, action.pageKey)).catch((error) => renderFatalRouteError(locale, error));
+        return;
+      }
       setActivePage(shellRoot, shell, action.pageKey);
       return;
     }
@@ -423,8 +438,67 @@ function bindGoldPathNavigation(shellRoot: HTMLElement, shell: GoldPathAppShell,
     }
   });
 
-  window.addEventListener("hashchange", activateFromHash);
-  activateFromHash();
+  if (!onNavigate) {
+    window.addEventListener("hashchange", activateFromHash);
+    activateFromHash();
+  }
+}
+
+let activeRouteRenderId = 0;
+
+function currentRouteMatch() {
+  return resolveWebRoute(window.location.pathname) ?? createUnknownWebRouteMatch(window.location.pathname);
+}
+
+function routeErrorTrace(error: unknown) {
+  if (error instanceof WorkHubApiError) {
+    return `status=${error.status} code=${error.code}`;
+  }
+  return error instanceof Error ? error.message.slice(0, 140) : "web_route_boot_error";
+}
+
+function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
+  if (!root) {
+    return;
+  }
+  root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
+    traceId: routeErrorTrace(error)
+  }).html;
+}
+
+async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
+  const nextHref = webRouteHref(href);
+  const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextHref !== currentHref) {
+    window.history.pushState(null, "", nextHref);
+  }
+  await renderCurrentRoute(client, locale);
+}
+
+function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  bindLocaleSwitch(root, locale, client);
+  bindRouteLineEditor(root);
+  bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale));
+}
+
+async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const renderId = ++activeRouteRenderId;
+  const match = currentRouteMatch();
+  root.innerHTML = renderWebRouteState(match, "loading", locale).html;
+  const result = await loadWebRoute(client, match, locale);
+  if (renderId !== activeRouteRenderId) {
+    return;
+  }
+  root.innerHTML = result.html;
+  if (result.status === "ready") {
+    bindReadyRoute(result, client, locale);
+  }
 }
 
 async function boot() {
@@ -433,41 +507,25 @@ async function boot() {
   }
   let locale = browserLocale();
   setDocumentLocale(locale);
-  root.innerHTML = renderGoldPathBootDocument({
-    title: goldPathT(locale, "boot.web.title"),
-    message: goldPathT(locale, "boot.web.message")
-  });
+  root.innerHTML = renderWebRouteState(currentRouteMatch(), "idle", locale).html;
 
   try {
     const client = createApiClient({ baseUrl: "" });
     locale = await resolveBootLocale(client, locale);
-    let surfaceVm;
     try {
-      surfaceVm = await client.pages.goldPath({ locale });
+      await renderCurrentRoute(client, locale);
     } catch (error) {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
       locale = applyIdentityLocale(await client.identify({ nickname: "P0.5 Reviewer" }), locale);
-      surfaceVm = await client.pages.goldPath({ locale });
+      await renderCurrentRoute(client, locale);
     }
-    const rendered = renderGoldPathSurface(surfaceVm, "web", { locale });
-    const shell = renderGoldPathAppShell(rendered, {
-      appName: "WorkHub",
-      surfaceLabel: "Web P0.5",
-      apiBaseLabel: "/api/pages/gold-path",
-      locale
+    window.addEventListener("popstate", () => {
+      void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
     });
-    root.innerHTML = `<style>${shell.css}</style>${shell.html}`;
-    bindLocaleSwitch(root, locale, client);
-    bindRouteLineEditor(root);
-    bindGoldPathNavigation(root, shell, client, locale);
   } catch (error) {
-    root.innerHTML = renderGoldPathBootDocument({
-      title: goldPathT(locale, "boot.web.errorTitle"),
-      message: error instanceof Error ? error.message : goldPathT(locale, "boot.web.errorMessage"),
-      tone: "error"
-    });
+    renderFatalRouteError(locale, error);
   }
 }
 

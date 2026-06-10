@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**65 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action，用户截图暴露的 failed run card 文本越框已补 Chrome 直渲染回归门，macOS menu bar 仍待实机；R4.1 已补 Web 高频页四态/双语/无溢出 route-state matrix foundation，下一步 R4.2 接真实 route registry 与 loader。
+> 状态(2026-06-11):**74 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action，用户截图暴露的 failed run card 文本越框已补 Chrome 直渲染回归门，macOS menu bar 仍待实机；R4.1 已补 Web 高频页四态/双语/无溢出 route-state matrix foundation，R4.2 已补真实 URL route registry、loader 状态机与 `/`/`/approvals`/`/dashboard/cost` typed Page VM endpoint proof，下一步 R4.3 接多记录 Page VM 视觉 QA。
 
 ---
 
@@ -150,6 +150,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r3-22-text-overflow-permission-offline-qa-plan-2026-06-11.md` | **R3.22**:用户截图所示文本越框问题的后续详细计划，覆盖 failed/permission/offline/generic/main notice 的横向与纵向边界门；2026-06-11 已落 text/frame hardgate 与 Linux mock API 证据 | current |
 | `r3-23-real-linux-tray-macos-menu-plan-2026-06-11.md` | **R3.23**:真实 Linux DE tray/appindicator 菜单点击、macOS menu bar、截图权限和 Accessibility 自动化策略 | active |
 | `r4-01-web-route-state-matrix-plan-2026-06-11.md` | **R4.1**:Web 高频页 loading/empty/error/forbidden 四态、双语状态卡、desktop/mobile Chrome 截图、无 Cuu 主窗标记与无横向溢出 gate | current |
+| `r4-02-web-route-registry-loader-plan-2026-06-11.md` | **R4.2**:Web URL route registry、`idle/loading/ready/empty/error/forbidden` loader、真实 path 导航、typed Page VM endpoint proof 与 Chrome 截图 gate | current |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

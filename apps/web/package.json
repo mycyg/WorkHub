@@ -19,6 +19,7 @@
     "@workhub/ui": "workspace:*"
   },
   "devDependencies": {
+    "@workhub/agent": "workspace:*",
     "vite": "^8.0.16"
   }
 }

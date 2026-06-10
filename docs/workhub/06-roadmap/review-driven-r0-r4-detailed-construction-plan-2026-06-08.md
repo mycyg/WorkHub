@@ -2709,11 +2709,23 @@ R4 验收：
 5. 验证通过：`@workhub/ui test` 36/36、`@workhub/ui typecheck`、`@workhub/web test` 4/4、`@workhub/web typecheck`、`pnpm qa:r4-web-route-state-matrix`。
 6. 边界：R4.1 只是 QA foundation。不能宣称真实 React SPA 已完成，不能宣称每个 route 已接真实多条后端数据，也不能把 `weekly_report_manifest_doc` 当作 R4 完成证据。
 
+### R4.2 已落：Web route registry + loader
+
+1. 已阅读 `web-app.md`、`page-concepts.md`、本篇 R4、[`r4-01-web-route-state-matrix-plan-2026-06-11.md`](./r4-01-web-route-state-matrix-plan-2026-06-11.md) 与 Web 概念图：`web-ai-first-home.png`、`web-workitem-detail.png`、`web-approval-center.png`、`web-deliverable-change-request.png`、`r0-governance-boundary-concept.svg`。
+2. 已新增 `apps/web/src/routes.ts`：注册 `/`、`/intake/:sessionId`、`/approvals`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay`、`/dashboard/cost`、`/settings`，统一 `idle/loading/ready/empty/error/forbidden` loader 状态。
+3. 已改 `apps/web/src/browser.ts`：启动时按 `window.location.pathname` 进入 route loader；`not_identified` 仍由 boot identity flow 处理；ready route 用 `history.pushState/popstate` 跳转，不再只靠 hash panel。
+4. 已改 `packages/ui/src/gold-path/app-shell.ts`：新增 `linkMode="path"`，默认 hash 兼容不破坏旧测试。
+5. 已接真实 Page VM proof：`/` 先读 `client.pages.attention()`，`/approvals` 先读 `client.pages.approvals()`，`/dashboard/cost` 先读 `client.pages.cost()`，再用 shared shell 渲染 ready 页面。
+6. 已新增 `scripts/qa/r4-web-route-registry-loader.ts` 与 root `pnpm qa:r4-web-route-registry-loader`，通过 Chrome 截图和 DOM dump gate 验证 typed endpoint 调用顺序、真实 path 导航、五状态覆盖、双语状态 copy、无 Cuu 主窗标记、无 default Kanban、无横向溢出。
+7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-route-registry-loader/`；report gates 全部为 true：`screenshots_captured`、`registry_has_expected_routes`、`ready_routes_use_page_vm_endpoints`、`route_status_coverage`、`bilingual_state_copy`、`path_navigation_without_hash`、`no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`。
+8. 验证通过：`@workhub/web test` 10/10、`@workhub/web typecheck`、`pnpm qa:r4-web-route-registry-loader`。
+9. 边界：R4.2 仍不是完整 React SPA；ready surface 仍复用 shared HTML render helpers 和 gold-path template。不能宣称动态 VM 内容全量服务端本地化，也不能宣称多记录真实数据视觉验收已完成。
+
 下一施工顺序：
 
-1. **R4.2 real route registry + loader**：在 `apps/web/src` 建立 route registry，将 `renderRouteStateCard()` 接进真实 loading/empty/error/forbidden，不再只由 QA matrix 独立渲染。
-2. **R4.3 multi-record Page VM visual QA**：使用 R1/R2 seed 或 PG smoke 生成多 work item / proposal / approval / cost usage，ready screenshot 不再只有“客户周报”单场景。
-3. **R4.4 product shell polish**：按概念图收紧 AI-first home、approval center、workitem detail、proposal detail 的信息密度和响应式截图 baseline。
+1. **R4.3 multi-record Page VM visual QA**：使用 R1/R2 seed 或 PG smoke 生成多 work item / proposal / approval / cost usage，ready screenshot 不再只有“客户周报”单场景。
+2. **R4.4 product shell polish**：按概念图收紧 AI-first home、approval center、workitem detail、proposal detail 的信息密度和响应式截图 baseline。
+3. **R4.5 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
 
 ## 8. 模块开工前阅读清单
 

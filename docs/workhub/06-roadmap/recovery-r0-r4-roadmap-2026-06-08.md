@@ -49,7 +49,7 @@ R0 退出门：
 - OQ-2/OQ-3 有 v1 owner 和可执行默认值。
 - 文档树明确后续施工顺序为 R0 -> R1 -> R2 -> R3 -> R4。
 
-2026-06-11 复核口径：R0 文档治理和概念资产基本完成，但不能宣称完全完成。R3.18 已补 desktop 主窗 `/settings` zh-CN/en-US 无 Cuu 本体、无模型预览、文本不超框截图证据；R3.20a 已补右键 hover 同步主窗 settings 的中英截图与 `overflow.offenders=[]`；R3.20b 已补 Windows 物理 OS 托盘恢复与 run card 文本 overflow 自动门；R3.21 已补 Linux Xvfb/openbox/devUrl 首轮 smoke、`icon.png` Linux 编译缺口和 `520x720` card frame safety；R3.22 已补 failed AgentRun / generic runtime error 文本与 frame hardgate、Linux mock API 精确截图和 DOM `spatial_safety`；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action；R4.1 已补 Web 高频页四态/双语/无溢出 QA foundation。但 Web/desktop 主工作台、审批、Proposal、Replay、Cost 等完整主窗真实 route 与多记录截图复核仍未闭环，后续 R4 必须继续补。
+2026-06-11 复核口径：R0 文档治理和概念资产基本完成，但不能宣称完全完成。R3.18 已补 desktop 主窗 `/settings` zh-CN/en-US 无 Cuu 本体、无模型预览、文本不超框截图证据；R3.20a 已补右键 hover 同步主窗 settings 的中英截图与 `overflow.offenders=[]`；R3.20b 已补 Windows 物理 OS 托盘恢复与 run card 文本 overflow 自动门；R3.21 已补 Linux Xvfb/openbox/devUrl 首轮 smoke、`icon.png` Linux 编译缺口和 `520x720` card frame safety；R3.22 已补 failed AgentRun / generic runtime error 文本与 frame hardgate、Linux mock API 精确截图和 DOM `spatial_safety`；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action；R4.1 已补 Web 高频页四态/双语/无溢出 QA foundation；R4.2 已补 URL route registry、真实 path loader 与 `/`、`/approvals`、`/dashboard/cost` typed Page VM endpoint proof。但 Web/desktop 主工作台、审批、Proposal、Replay、Cost 等完整主窗真实多记录截图复核仍未闭环，后续 R4 必须继续补。
 
 ## 2. R1 真实纵切
 
@@ -163,10 +163,11 @@ R3 禁止项：不新增模型、改色、动效；settings matrix 只验证现�
 
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
-| R4-1 四态 | **已落 R4.1 QA foundation**：home/intake/workitem/proposal/replay/cost/approvals/settings 都有中英 loading/empty/error/forbidden 状态卡与 desktop/mobile Chrome 截图 gate；后续还需接进真实 route loader。 | `pnpm qa:r4-web-route-state-matrix`；[`r4-01-web-route-state-matrix-plan-2026-06-11.md`](./r4-01-web-route-state-matrix-plan-2026-06-11.md) |
-| R4-2 真实数据 | 去除单硬编码“客户周报”假场景，接 R1 后端多 work_item/proposal。 | 多条真实数据渲染 |
-| R4-3 设计语言 | **已落首个门禁**：route-state matrix 与 ready shell 均 gate `no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`；完整 React SPA 视觉仍待 R4.2+。 | R4.1 report + contact sheet |
-| R4-4 Rust 系统串 i18n | Tauri tray、通知、错误、settings 系统串进入 locale contract。 | Windows/Linux/macOS smoke 文案一致 |
+| R4-1 四态 | **已落 R4.1 QA foundation**：home/intake/workitem/proposal/replay/cost/approvals/settings 都有中英 loading/empty/error/forbidden 状态卡与 desktop/mobile Chrome 截图 gate。 | `pnpm qa:r4-web-route-state-matrix`；[`r4-01-web-route-state-matrix-plan-2026-06-11.md`](./r4-01-web-route-state-matrix-plan-2026-06-11.md) |
+| R4-2 route registry / loader | **已落 R4.2**：`apps/web/src/routes.ts` 注册真实 URL route，browser boot 用 pathname loader，`/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint，ready 导航使用真实 path 而非 hash。 | `pnpm qa:r4-web-route-registry-loader`；[`r4-02-web-route-registry-loader-plan-2026-06-11.md`](./r4-02-web-route-registry-loader-plan-2026-06-11.md) |
+| R4-3 多记录真实数据 | 去除单硬编码“客户周报”假场景，接 R1/R2 seed 或 PG smoke 生成多 work_item/proposal/approval/cost usage 的 ready 截图。 | 多条真实数据渲染 + route visual report |
+| R4-4 设计语言 | **已落前置门禁**：route-state matrix、route registry loader 与 ready shell 均 gate `no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`；完整产品 shell 视觉仍待 R4.4。 | R4.1/R4.2 report + contact sheet |
+| R4-5 Rust 系统串 i18n | Tauri tray、通知、错误、settings 系统串进入 locale contract。 | Windows/Linux/macOS smoke 文案一致 |
 
 ## 6. 已完成但降级为“冻结前证据”的 Cuu QA
 

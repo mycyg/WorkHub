@@ -100,6 +100,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
     devDependencies:
+      '@workhub/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       vite:
         specifier: ^8.0.16
         version: 8.0.16(@types/node@22.19.19)(esbuild@0.28.0)(tsx@4.22.4)

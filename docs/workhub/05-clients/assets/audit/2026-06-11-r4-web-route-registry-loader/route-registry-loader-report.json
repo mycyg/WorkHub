@@ -1,0 +1,335 @@
+{
+  "generated_at": "2026-06-10T22:35:10.028Z",
+  "module": "R4.2 Web route registry loader",
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-route-registry-loader",
+  "registry": [
+    {
+      "key": "home",
+      "pattern": "/",
+      "apiBaseLabel": "/api/pages/attention"
+    },
+    {
+      "key": "intake",
+      "pattern": "/intake/:sessionId",
+      "apiBaseLabel": "/api/sessions"
+    },
+    {
+      "key": "approvals",
+      "pattern": "/approvals",
+      "apiBaseLabel": "/api/pages/approvals"
+    },
+    {
+      "key": "workitem",
+      "pattern": "/workitems/:id",
+      "apiBaseLabel": "/api/pages/workitems/:id"
+    },
+    {
+      "key": "proposal",
+      "pattern": "/proposals/:id",
+      "apiBaseLabel": "/api/pages/proposals/:id"
+    },
+    {
+      "key": "replay",
+      "pattern": "/agent-runs/:id/replay",
+      "apiBaseLabel": "/api/agent-runs/:id/replay"
+    },
+    {
+      "key": "cost",
+      "pattern": "/dashboard/cost",
+      "apiBaseLabel": "/api/pages/cost"
+    },
+    {
+      "key": "settings",
+      "pattern": "/settings",
+      "apiBaseLabel": "/settings"
+    }
+  ],
+  "gates": {
+    "screenshots_captured": true,
+    "registry_has_expected_routes": true,
+    "ready_routes_use_page_vm_endpoints": true,
+    "route_status_coverage": true,
+    "bilingual_state_copy": true,
+    "path_navigation_without_hash": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_horizontal_overflow": true
+  },
+  "cases": [
+    {
+      "id": "loading-home-zh-mobile",
+      "label": "Loading home zh-CN mobile",
+      "locale": "zh-CN",
+      "route": "/",
+      "status": "loading",
+      "viewport": {
+        "width": 467,
+        "height": 900
+      },
+      "endpoint_calls": [],
+      "html": "loading-home-zh-mobile.html",
+      "screenshot": "loading-home-zh-mobile.png",
+      "markers": {
+        "statuses": {
+          "loading": 1,
+          "ready": 0,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 2,
+          "approvals": 0,
+          "cost": 0
+        },
+        "zhCopy": true,
+        "enCopy": false,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-home-zh-desktop",
+      "label": "Ready home zh-CN desktop",
+      "locale": "zh-CN",
+      "route": "/",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1200
+      },
+      "endpoint_calls": [
+        "attention:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "ready-home-zh-desktop.html",
+      "screenshot": "ready-home-zh-desktop.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 1,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 1,
+          "approvals": 0,
+          "cost": 0
+        },
+        "zhCopy": false,
+        "enCopy": false,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-approvals-en-mobile",
+      "label": "Ready approvals en-US mobile",
+      "locale": "en-US",
+      "route": "/approvals",
+      "status": "ready",
+      "viewport": {
+        "width": 467,
+        "height": 1600
+      },
+      "endpoint_calls": [
+        "approvals:en-US",
+        "goldPath:en-US"
+      ],
+      "html": "ready-approvals-en-mobile.html",
+      "screenshot": "ready-approvals-en-mobile.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 1,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 0,
+          "approvals": 1,
+          "cost": 0
+        },
+        "zhCopy": false,
+        "enCopy": false,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-cost-zh-desktop",
+      "label": "Ready cost zh-CN desktop",
+      "locale": "zh-CN",
+      "route": "/dashboard/cost",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1200
+      },
+      "endpoint_calls": [
+        "cost:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "ready-cost-zh-desktop.html",
+      "screenshot": "ready-cost-zh-desktop.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 1,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 0,
+          "approvals": 0,
+          "cost": 1
+        },
+        "zhCopy": false,
+        "enCopy": false,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "empty-approvals-zh-mobile",
+      "label": "Empty approvals zh-CN mobile",
+      "locale": "zh-CN",
+      "route": "/approvals",
+      "status": "empty",
+      "viewport": {
+        "width": 467,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "approvals:zh-CN"
+      ],
+      "html": "empty-approvals-zh-mobile.html",
+      "screenshot": "empty-approvals-zh-mobile.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 0,
+          "empty": 1,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 0,
+          "approvals": 2,
+          "cost": 0
+        },
+        "zhCopy": true,
+        "enCopy": false,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "error-home-en-mobile",
+      "label": "Error home en-US mobile",
+      "locale": "en-US",
+      "route": "/",
+      "status": "error",
+      "viewport": {
+        "width": 467,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "attention:en-US"
+      ],
+      "html": "error-home-en-mobile.html",
+      "screenshot": "error-home-en-mobile.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 0,
+          "empty": 0,
+          "error": 1,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 2,
+          "approvals": 0,
+          "cost": 0
+        },
+        "zhCopy": false,
+        "enCopy": true,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "forbidden-cost-en-desktop",
+      "label": "Forbidden cost en-US desktop",
+      "locale": "en-US",
+      "route": "/dashboard/cost",
+      "status": "forbidden",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "cost:en-US"
+      ],
+      "html": "forbidden-cost-en-desktop.html",
+      "screenshot": "forbidden-cost-en-desktop.png",
+      "markers": {
+        "statuses": {
+          "loading": 0,
+          "ready": 0,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 1
+        },
+        "routeKeys": {
+          "home": 0,
+          "approvals": 0,
+          "cost": 2
+        },
+        "zhCopy": false,
+        "enCopy": true,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    }
+  ]
+}

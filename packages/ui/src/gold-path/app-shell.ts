@@ -10,6 +10,7 @@ export type GoldPathAppShellOptions = {
   apiBaseLabel?: string;
   notice?: string;
   locale?: WorkHubLocale | undefined;
+  linkMode?: "hash" | "path";
 };
 
 export type GoldPathHrefAction =
@@ -167,7 +168,8 @@ export function renderGoldPathAppShell(
   const nav = rendered.pages
     .map((page) => {
       const active = page.key === activeKey;
-      return `<a href="#${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(page.title)}</span></a>`;
+      const navHref = options.linkMode === "path" ? page.route : `#${page.route}`;
+      return `<a href="${escapeHtml(navHref)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(page.title)}</span></a>`;
     })
     .join("");
   const panels = rendered.pages

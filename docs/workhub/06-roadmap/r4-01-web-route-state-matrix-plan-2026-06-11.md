@@ -96,7 +96,7 @@ evidence:
 
 ## 6. 后续详细计划
 
-下一刀 R4.2：真实 route registry + loader 边界。
+后续状态：R4.2 真实 route registry + loader 已落，详见 [`r4-02-web-route-registry-loader-plan-2026-06-11.md`](./r4-02-web-route-registry-loader-plan-2026-06-11.md)。以下是 R4.1 交给 R4.2 的原始计划，已由 R4.2 完成并继续交给 R4.3 多记录视觉 QA。
 
 1. 在 `apps/web/src` 建立真实 route registry，而不是只靠 hash 切换 Gold Path shell。
 2. 将每个 route 的 loader 状态抽为同一状态机：`idle/loading/ready/empty/error/forbidden`。
