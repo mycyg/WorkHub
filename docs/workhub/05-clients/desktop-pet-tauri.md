@@ -38,7 +38,7 @@ visuals:
 | `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
 | `apps/desktop-webview/src/browser.ts` | 根据 Rust 注入 surface 分流主窗或 pet surface |
-| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate |
+| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate；2026-06-11 追加用户截图回归，失败 trace/budget 重卡会压缩密度并隐藏瞬时 status 行，确保 `Run progress` / `Budget` 完整留在气泡内 |
 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu 卡片 action runtime；R3.1 已新增 `cuu-agent-launcher` 与 `cuu-start-agent` 三段真实 API 组合；R3.2 已补启动 helper、run stream 订阅和错误卡；R3.12 已补 WebView fetch SSE + active-run fallback refresh；R3.14 已补 launcher chip metadata -> WorkItem spec；R3.22 已补主窗 notice 长文案 overflow clamp |
 | `apps/desktop-webview/src/pet-window-bridge.ts` | TS 调用 Rust window commands，整合 pointer/drag/cursor sample |
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 黑猫/白猫 Live2D iframe/runtime 适配 |
@@ -246,7 +246,7 @@ R3.1-R3.23 已落 TS webview 层、route-stack、boot click harness、第一份�
 - R3.2 新增 `startDesktopCuuAgentFromLauncher()`、`subscribeDesktopCuuAgentRunStream()` 与 `cardFromDesktopCuuRuntimeError()`。
 - pet surface 在启动成功后订阅 `AgentRunLiveVM.stream_href`，匹配 run 事件后重新拉 `GET /api/agent-runs/:id` 并刷新 Cuu 卡；终态会关闭订阅。
 - R3.20b 的 `pass-through-recovery-tray-physical` 通过真实 Windows tray overflow panel 点击 `Restore Cuu interaction`，并要求 `command_fallback_used=false`。
-- R3.20b 的 `pet_card_text_overflow_gate` 已覆盖 run failure / run stream 中英证据，防止标题、按钮、Run progress、Budget 超出轻卡容器；R3.22 进一步加入 DOM `spatial_safety`、Linux mock API smoke、generic-runtime-error 和主窗 notice clamp；R3.23 按用户截图把 bubble 与 Live2D 的最小间距收紧到 `bubble_gap_to_live2d_px >= 8`。
+- R3.20b 的 `pet_card_text_overflow_gate` 已覆盖 run failure / run stream 中英证据，防止标题、按钮、Run progress、Budget 超出轻卡容器；R3.22 进一步加入 DOM `spatial_safety`、Linux mock API smoke、generic-runtime-error 和主窗 notice clamp；2026-06-11 用户截图回归新增 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`，要求失败 trace 卡无纵向 overflow、Budget 底部留白 `>=8px`、bubble 与 Live2D 间距 `>=8px`。
 - budget exhausted、403/401、offline/network 和 generic error 已能映射为 Cuu 轻卡。
 - R3.10 已证明真实 Tauri `pet` window 从 body-only 黑猫点击展开英文 launcher card：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，包含 contact sheet、GIF/MP4、DOM report 与 motion diff report。
 - R3.11 已证明 desktop Cuu runtime 通过 `createApiClient({ baseUrl:"http://127.0.0.1:<port>", getClientToken })` 访问真实 Hono HTTP server 后，仍能完成 launcher -> clarification -> confirmation -> WorkItem -> AgentRun。
@@ -273,6 +273,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 - `cuu-qa-dom-report.ts` 新增 `vertical_overflow` 与 `spatial_safety`，同时记录 surface、bubble、Live2D 和 primary action rect。
 - `scripts/qa/cuu-tauri-motion-capture.ps1` 的 `pet_card_text_overflow_gate` 不再只看横向文本；现在也检查 bubble / primary action 的 `vertical_overflow`、bubble 是否在 `520x720` surface 内、是否遮住 Live2D、是否仍保留 failed AgentRun 的 `Run progress` / `Budget` 文案。
 - `scripts/qa/cuu-tauri-linux-smoke.sh` 新增 mock API server，可在 Linux Xvfb/openbox 中稳定复现 `run-failure` 和 `generic-runtime-error`，其中 generic 通过受控 `generic-502` fault 进入 fallback 卡；Linux gate 还会校验 run API 场景的 state、bubble kind、payload ref、primary action 与场景文案。
+- `scripts/qa/cuu-pet-run-card-overflow-qa.ts` 新增 Chrome 直渲染回归门，专门复现用户截图中的英文 failed AgentRun 卡：失败 trace/budget 卡不再渲染瞬时 `Cuu updated progress` 行，上下文卡使用更紧密的 2 行标题/正文与 1 行 section line，当前报告为 `bubble.verticalOverflow=false`、`budgetBottomClearance=11px`、`bubbleGapToLive2d=22.04px`。
 - 证据留存：`docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/run-failure-linux-smoke/` 与 `generic-runtime-error-linux-smoke/`，两组 `screen.png` 和 `cuu-tauri-dom-report.json` 均证明文本、按钮、frame 和 Cuu 本体不重叠越界。
 
 R3.22 当时不声明真实 Linux panel appindicator 或 macOS menu bar 已通过；R3.23 已关闭 Linux GNOME StatusNotifier/AppIndicator 主路径，macOS menu bar 仍待真实机器验证。

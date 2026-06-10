@@ -126,7 +126,10 @@ export function createDesktopPetVisualQaReport(input: {
         "max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)))",
         ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto",
         "width:calc(300px * var(--wh-pet-scale,1))",
-        "max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden"
+        "max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden",
+        "gap:6px;padding:10px 12px",
+        ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2",
+        ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1"
       ]) &&
         input.card.html.includes('data-pet-window-mode="card"') &&
         input.card.html.includes('data-pet-bubble="true"'),

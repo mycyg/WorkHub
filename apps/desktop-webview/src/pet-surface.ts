@@ -118,10 +118,11 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;gap:6px;padding:10px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
-  ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:3}",
+  ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
+  ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:2;font-size:11px;line-height:1.35}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-actions{max-width:100%}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-body{right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(156px * var(--wh-pet-scale,1));height:calc(218px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:auto;right:calc(8px * var(--wh-pet-scale,1));top:auto;bottom:calc(224px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
@@ -146,6 +147,8 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-section{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-section-title,.wh-pet-evidence-title,.wh-pet-input-hint{min-width:0;max-width:100%;width:100%;color:#344054;font-size:11px;font-weight:900;line-height:1.2;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-section-line,.wh-pet-evidence-item{min-width:0;max-width:100%;width:100%;color:#667085;font-size:11px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
+  ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section{gap:2px;padding-top:5px}",
+  ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1}",
   ".wh-pet-evidence{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-input-hint{border-top:1px solid rgba(38,49,70,.1);padding-top:7px;color:#667085}",
   ".wh-pet-chips,.wh-pet-actions,.wh-pet-reasons{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;min-width:0;max-width:100%;width:100%}",
@@ -1351,6 +1354,12 @@ function renderDesktopPetBubble(input: {
   const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs, locale) : "";
   const inputHint = !compact && card?.input ? renderPetInputHint(card.input, locale) : "";
   const context = [progress, sections, evidence, inputHint].filter(Boolean).join("");
+  const suppressStatusForContext = Boolean(
+    card &&
+    !compact &&
+    context &&
+    (card.kind === "budget" || (card.kind === "trace" && card.state === "worried"))
+  );
   const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
   const payloadAttrs = card?.payload_ref
     ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
@@ -1360,7 +1369,7 @@ function renderDesktopPetBubble(input: {
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
-    ${input.status_text && (!compact || !card) ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
+    ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
     ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
     ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
     ${actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
