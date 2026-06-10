@@ -34,7 +34,11 @@ export function joinApiUrl(baseUrl: string | undefined, path: string) {
 }
 
 function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
-  return Boolean(value && typeof value === "object" && "ok" in value);
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (record.ok === true && "data" in record) || (record.ok === false && "error" in record);
 }
 
 function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id: string) {

@@ -129,7 +129,7 @@ P1.6 源码合同已经落地，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-b
 | `enter` / `loop` / `exit` | 已落源码合同，coverage 标记为 `partial` |
 | `idle_random` | 已落 breathe / blink / tail / look / wave 池 |
 | desktop runtime attrs | 已输出 `data-cuu-behavior-*` 与 `data-cuu-live2d-renderer-state` |
-| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；P1.9 已落黑猫业务 smoke 矩阵 + 白猫 approval；R3.10 已补真实 Tauri `launcher/en-US` 32 帧证据；其余业务状态正式矩阵待补 |
+| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；P1.9 已落黑猫业务 smoke 矩阵 + 白猫 approval；R3.10 已补真实 Tauri `launcher/en-US` 32 帧证据；R3.11 已补真实本机 HTTP dev-server launcher-to-run 数据流 smoke；其余业务状态正式矩阵待补 |
 
 最小字段：
 
@@ -164,7 +164,8 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 - Cuu 有持续动作，不只是缩放。
 - 鼠标靠近不移动整只 Cuu，不闪烁，不重建 iframe；黑猫/白猫 `look-only` capture 的窗口 rect 必须稳定。
 - 审批 / 检索 / 澄清 / 完成气泡必须围绕 Cuu 出现，不能回到窗口左上角；P1.9 business matrix 是当前回归门。
-- R3 launcher 真实验收必须从 Tauri `pet` window 的 `/pet.html` surface 截取，不允许用浏览器模型页或主窗截图替代；R3.10 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`。
+- R3 launcher 真实视觉验收必须从 Tauri `pet` window 的 `/pet.html` surface 截取，不允许用浏览器模型页或主窗截图替代；R3.10 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`。
+- R3.11 的 dev-server launcher-to-run smoke 只证明真实本机 HTTP API + desktop Cuu runtime 数据流，不替代 Tauri motion capture 或截图验收。
 - 黑猫/白猫切换后 iframe、model json、data attrs 一致。
 - Web / desktop 主窗没有 Cuu 形象 DOM。
 - 旧实验 class、runtime data attribute 或模型 ID 不出现在运行态 HTML。
@@ -175,7 +176,7 @@ R1 真实纵切通过前，不再把 Cuu 外观矩阵作为当前施工任务。
 
 1. 当前立即项：主窗无 Cuu 截图复核、透明 pet smoke、文档资产对账、真实回归修复。
 2. 当前工程主线：继续 R1/R2 后端缺口；真实 `sessions/workitems/knowledge/page workitem` service、CostLedger/BudgetPolicy 默认 store、merge accepted deliverable ledger、persistent merge audit、AgentRun-backed delivery 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables、下载/文本预览、最小 restore、AI fusion text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview 与无重叠文本 hunk deterministic diff3 与重叠 hunk metadata/prompt/quality gate 已接入，下一批优先 `ai_fusion` v2 重叠 hunk 逐项确认/编辑、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台、PG queue claim 与多 worker。
-3. R3 后恢复：`launcher/en-US` 已升级为真实 Tauri 32 帧 capture；下一步把 `clarify/search/sync/done/offline/approval` 与白猫同等场景补成正式矩阵。
+3. R3 后恢复：`launcher/en-US` 已升级为真实 Tauri 32 帧 capture，真实 API dev-server launcher-to-run smoke 已落；下一步把 `clarify/search/sync/done/offline/approval` 与白猫同等场景补成正式矩阵。
 4. R3 后恢复：录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
 5. R3 后恢复：持续输出 contact sheet、GIF/MP4、DOM dump、diff report 到本轮审计目录；R3.10 launcher 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，后续矩阵继续按日期分目录回写当前审计文档。
 6. 发布前必须完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。

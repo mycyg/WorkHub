@@ -2151,7 +2151,7 @@ R2 验收：
 仍未覆盖：
 
 - 真实 Tauri `pet` window 点击截图/录屏。
-- 真实 API dev server + desktop webview runtime smoke。
+- 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
@@ -2176,7 +2176,7 @@ R2 验收：
 仍未覆盖：
 
 - 真实 Tauri `pet` window 点击截图/录屏。
-- 真实 API dev server + desktop webview runtime smoke。
+- 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
@@ -2200,7 +2200,7 @@ R2 验收：
 
 仍未覆盖：
 
-- 真实 API dev server + desktop webview runtime smoke。
+- 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - 真实 Tauri `pet` window 点击截图/录屏。
 - pet window 刷新后的当前 session/run card 恢复。
 
@@ -2223,7 +2223,7 @@ R2 验收：
 
 仍未覆盖：
 
-- 真实 API dev server + desktop webview runtime smoke。
+- 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - 真实 Tauri `pet` window 更多状态截图/录屏。
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
@@ -2279,18 +2279,96 @@ R2 验收：
 
 仍未覆盖：
 
-- 真实 API dev server + desktop webview runtime launcher-to-run smoke。
 - 真实 Tauri clarification / queued / running / completion / failure / offline 状态截图。
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
-### R3.11 下一刀
+### R3.11 已落：真实 API dev-server launcher-to-run smoke
 
-1. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack、纯 TS runtime harness 或 fake DOM boot harness。
-2. 继续生成真实 Tauri `pet` window 截图/录屏：clarification card、queued/running card、completion card、failure/offline card；launcher/en-US 已由 R3.10 覆盖。
-3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+本切片关闭 R3.10 后最大的非视觉数据流缺口：Cuu launcher-to-run 不能只由进程内 Hono `app.request()`、纯 TS runtime helper 或 fake DOM click harness 证明。R3.11 启动真实本机 HTTP server，让 desktop Cuu runtime 通过 typed API client 和 client-token 走 Node 原生 `fetch` 完成完整链路。
+
+改动：
+
+- `apps/api/src/qa/cuu-r3-launcher-harness.ts`
+  - 抽出共享 harness，统一复用 client-token auth、`sessions/workitems/agent-runs` routes、内存 WorkItem service、内存 AgentRun queue 和 desktop Cuu runtime action 提交流程。
+  - 统一断言 launcher 为 option-first：`mode="single_choice"`、`option_first=true`、`free_text_enabled=false`。
+- `apps/api/src/qa/cuu-r3-launcher-to-run-smoke.ts`
+  - 保留 R3.5 的进程内 route-stack smoke，但改为复用共享 harness。
+- `apps/api/src/qa/cuu-r3-dev-server-launcher-smoke.ts`
+  - 用 `@hono/node-server` 在 `127.0.0.1:0` 启动真实 Hono HTTP server。
+  - `createApiClient({ baseUrl, getClientToken })` 不传 `fetchFn`，由 Node 原生 `fetch` 访问真实监听端口。
+  - 验证 `/api/health`、session 澄清、确认题、WorkItem 创建、AgentRun enqueue、`getAgentRun()` readback 和 `streamUrl()`。
+- `packages/api-client/src/client.ts`
+  - 收紧 `isEnvelope()`：只有 `{ ok:true, data }` 或 `{ ok:false, error }` 才按 WorkHub envelope 解包。
+  - 修复裸 `/api/health` payload `{ ok:true, service, runtime, port }` 被误读为 `undefined` 的 bug。
+- `packages/api-client/src/api-client.test.ts`
+  - 新增裸 health payload 回归测试。
+- `apps/api/package.json` / root `package.json`
+  - 新增 `qa:cuu-r3-dev-server-smoke`，并接入 `pnpm lint` / `pnpm verify`。
+
+验收：
+
+- `corepack pnpm --filter @workhub/api qa:cuu-r3-launcher-smoke`：通过。
+  - `transport="in-process-hono"`
+  - `launcher_input.option_first=true`
+  - `planning_note="selected_options: document-draft,create-workitem"`
+- `corepack pnpm --filter @workhub/api qa:cuu-r3-dev-server-smoke`：通过。
+  - `transport="http-dev-server"`
+  - `api_base_url="http://127.0.0.1:<ephemeral>"`
+  - `stream_url` 指向同一真实本机端口。
+- `corepack pnpm --filter @workhub/api-client typecheck`：通过。
+- `corepack pnpm --filter @workhub/api-client test`：9/9 通过。
+- `corepack pnpm --filter @workhub/api typecheck`：通过。
+- `corepack pnpm --filter @workhub/api test`：100/100 通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：69/69 通过。
+
+数据流审查：
+
+| 层 | R3.11 结论 |
+|---|---|
+| Cuu launcher | 仍是独立 pet surface 的 `cuu-agent-launcher`；无输入框默认展示 |
+| Desktop runtime | 使用真实 `resolveDesktopCuuAction()` / `submitDesktopCuuAction()`，不走测试专用业务分支 |
+| API client | 使用真实 `baseUrl` + client-token headers，不传 `fetchFn` |
+| API server | 真实 Hono HTTP listener，route stack 为 `health -> sessions -> workitems -> agent-runs` |
+| WorkItem | finalization 合并历史选项，planning note 保留 `document-draft,create-workitem` |
+| AgentRun | `startAgentRun()` 返回 queued run，readback 和 stream URL 都绑定同一 run id |
+
+Bug 审查：
+
+- 发现并修复 `WorkHubApiClient` 的 envelope 识别过宽问题。此前任意带 `ok` 字段的裸 JSON 都会进入 envelope 解包逻辑，`/api/health` 会返回 `undefined`。修复后只识别真实 envelope，并用测试锁定。
+- 新 smoke 没有使用固定端口，避免本地并发/CI 端口冲突。
+- `reference/` / `references/` 未被新增或修改。
+
+仍未覆盖：
+
+- 真实 Tauri clarification / queued / running / completion / failure / offline 状态截图。
+- Tauri pet window 中真实 daemon SSE 回流后的可视 DOM/capture 证据。
+- pet window 刷新后的当前 session/run card 恢复。
+- launcher chip metadata 结构化进入 WorkItem spec。
+
+### R3.12 下一刀：真实 Tauri 多状态 capture + SSE 回流证据
+
+1. 阅读并锁定文档/概念图：`cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md`、`cuu-option-first-clarify.png`、`cuu-desktop-approval-search.png`、`endpoint-page-cuu-alignment.png`。
+2. 扩展 Tauri QA scenario 或 capture 脚本，支持至少四类状态：
+   - clarification card：后端 `SessionVM.question.options[]` 回来后显示选项气泡。
+   - queued/running card：AgentRun 启动后显示 trace/progress card。
+   - completion card：run 终态刷新后显示完成提示。
+   - failure/offline card：API/stream 异常映射为 Cuu error/offline card。
+3. 每个状态必须输出：
+   - `cuu-tauri-dom-report.json`
+   - `motion-diff-report.json`
+   - contact sheet
+   - GIF/MP4 或等价帧序列
+   - 关键 DOM attrs：card id、bubble kind、Cuu state、primary action/chip、locale。
+4. 接入真实 daemon SSE 回流验证：run stream event 进入 desktop runtime 后触发 `getAgentRun()` refresh，capture 中能看到 card 从 running/queued 变化到终态。
+5. 做中英双语最小覆盖：R3.10 已覆盖 en-US launcher；R3.12 至少补 zh-CN clarification/run card，并补 en-US terminal/error 之一。
+6. 保持禁止项：
+   - 不新增模型、改色、动效、设置矩阵。
+   - 不把 Cuu 放回 Web/desktop 主窗。
+   - 不让 Rust/Tauri 拥有业务 API 或 Agent 状态。
+   - 不用浏览器模型页、静态 DOM 或 fake harness 冒充真实 Tauri capture。
+7. 验收命令：desktop-webview typecheck/test、Tauri Rust tests、目标 capture 脚本、R3 dev-server smoke、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 

@@ -224,7 +224,7 @@ visuals:
 
 ### 7.4 R3：Cuu Agent 出站入口
 
-R3.1-R3.10 已落 TS webview 层、route-stack、boot click harness 与第一份真实 Tauri launcher 证据，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
+R3.1-R3.11 已落 TS webview 层、route-stack、boot click harness、第一份真实 Tauri launcher 证据与真实本机 HTTP dev-server launcher-to-run smoke，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
 
 - `pet-surface.ts` 在用户点击 Cuu body 且当前无 card 时展示 launcher card。
 - launcher 仅给可点选交付方向，不显示输入框。
@@ -234,8 +234,9 @@ R3.1-R3.10 已落 TS webview 层、route-stack、boot click harness 与第一份
 - pet surface 在启动成功后订阅 `AgentRunLiveVM.stream_href`，匹配 run 事件后重新拉 `GET /api/agent-runs/:id` 并刷新 Cuu 卡；终态会关闭订阅。
 - budget exhausted、403/401、offline/network 和 generic error 已能映射为 Cuu 轻卡。
 - R3.10 已证明真实 Tauri `pet` window 从 body-only 黑猫点击展开英文 launcher card：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，包含 contact sheet、GIF/MP4、DOM report 与 motion diff report。
+- R3.11 已证明 desktop Cuu runtime 通过 `createApiClient({ baseUrl:"http://127.0.0.1:<port>", getClientToken })` 访问真实 Hono HTTP server 后，仍能完成 launcher -> clarification -> confirmation -> WorkItem -> AgentRun。
 
-Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补 queued/running/completion/failure/offline card、中文 launcher、dev-server launcher-to-run smoke 与跨平台 capture。
+Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补 clarification、queued/running、completion、failure/offline card、中文 launcher、SSE 回流可视证据与跨平台 capture。
 
 ### 7.5 P4：跨平台客户端
 
@@ -255,6 +256,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | Tauri smoke | `scripts/qa/cuu-tauri-smoke.ps1` |
 | Motion capture | `scripts/qa/cuu-tauri-motion-capture.ps1` |
 | R3 launcher capture | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario launcher -Locale en-US -FrameCount 32`，证据见 `assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/` |
+| R3 dev-server smoke | `corepack pnpm --filter @workhub/api qa:cuu-r3-dev-server-smoke`，验证真实本机 HTTP server + desktop Cuu runtime launcher-to-run |
 | Settings matrix | `scripts/qa/cuu-tauri-settings-capture.ps1` |
 | Path hygiene | `git diff --name-only` 不含 `reference/` / `references/` |
 
@@ -267,7 +269,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
-| R3 Agent launcher 真实 Tauri 点击截图 | 已补真实 `pet` window `launcher/en-US` capture；TS runtime、DOM render、run stream/error card tests 已落 | 下一步补中文 launcher、queued/running/completion/failure/offline card 捕获与 dev-server launcher-to-run smoke |
+| R3 Agent launcher 真实 Tauri 点击截图 | 已补真实 `pet` window `launcher/en-US` capture；TS runtime、DOM render、run stream/error card tests 与 dev-server launcher-to-run smoke 已落 | 下一步补中文 launcher、clarification、queued/running、completion、failure/offline card 捕获与 SSE 回流可视证据 |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
@@ -282,7 +284,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 |---|---|---|
 | R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
-| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；下一步补 dev-server launcher-to-run smoke 和更多 card 状态 |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；R3.11 已补 dev-server launcher-to-run smoke；下一步补更多 Tauri card 状态与 SSE 回流 |
 | Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |
 
 ## 10. 与其他文档的边界

@@ -32,6 +32,19 @@ test("api client unwraps WorkHub envelopes and injects the desktop token headers
   assert.equal(seenHeaders.legacy, "device-token");
 });
 
+test("api client preserves raw ok health payloads that are not WorkHub envelopes", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: true, service: "workhub-api", runtime: "node", port: 8787 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+  });
+
+  const health = await client.health();
+  assert.deepEqual(health, { ok: true, service: "workhub-api", runtime: "node", port: 8787 });
+});
+
 test("api client converts error envelopes to WorkHubApiError", async () => {
   const client = createApiClient({
     fetchFn: async () =>
