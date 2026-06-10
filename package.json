@@ -18,6 +18,7 @@
     "qa:r1-route-visual": "tsx scripts/qa/r1-route-visual-qa.ts",
     "qa:r4-web-route-state-matrix": "tsx scripts/qa/r4-web-route-state-matrix.ts",
     "qa:r4-web-route-registry-loader": "tsx --tsconfig apps/web/tsconfig.json scripts/qa/r4-web-route-registry-loader.ts",
+    "qa:r4-web-multi-record-page-vm": "tsx --tsconfig apps/web/tsconfig.json scripts/qa/r4-web-multi-record-page-vm.ts",
     "qa:cuu-pet-run-card-overflow": "tsx scripts/qa/cuu-pet-run-card-overflow-qa.ts",
     "qa:r2-release-gate": "tsx scripts/qa/r2-release-gate-report.ts",
     "qa:cuu-r3-launcher-smoke": "pnpm --filter @workhub/api qa:cuu-r3-launcher-smoke",

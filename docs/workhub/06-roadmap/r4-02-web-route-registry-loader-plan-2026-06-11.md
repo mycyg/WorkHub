@@ -105,7 +105,7 @@ R4.2 只解决真实 URL route registry 与 loader 边界，不宣称完整 Reac
 
 ## 5. 后续详细计划
 
-下一刀 R4.3：multi-record Page VM visual QA。
+后续状态：R4.3 multi-record Page VM visual QA 已落，详见 [`r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](./r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)。以下是 R4.2 交给 R4.3 的原始计划，已由 R4.3 完成并继续交给 R4.4 product shell polish。
 
 1. 建立 Web seed client 或复用 R1/R2 PG smoke，生成至少：
    - 2 条不同 work item。

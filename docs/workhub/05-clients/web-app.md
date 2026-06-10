@@ -132,6 +132,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 边界：R4.2 不是完整 React SPA；它证明的是 URL route registry、typed Page VM loader、真实 path navigation 与 route-state 边界已进入浏览器 boot。动态 VM 文案仍按 daemon 原文呈现，不在客户端假翻译。
 
+### 0.8 R4.3 Web multi-record Page VM visual QA（2026-06-11 已落）
+
+本轮把 R4.2 的 route loader 证据从单场景 preview 推进到多记录 Page VM visual QA。详细计划与验收见 [`../06-roadmap/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](../06-roadmap/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| 多记录 ready case | `pnpm qa:r4-web-multi-record-page-vm` 覆盖 `/`、`/approvals`、`/dashboard/cost`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay` | R4.4 迁到真实产品 shell 后保留同一 coverage |
+| 单 fixture 去除 | QA surface 替换 `客户周报/weekly` 文案，gate `no_weekly_fixture_copy_in_ready=true` | 后续改用真实 PG seed 或 live daemon 多记录 |
+| detail route proof | Web 单测已覆盖 workitem/proposal/replay endpoint-first；QA report 记录 endpoint call 顺序 | 加入 live browser dev-server smoke |
+| 状态 fallback | empty approvals、forbidden workitem、missing proposal 均通过 route-state screenshot | 后续每个产品页都补局部 skeleton / retry / request access |
+| 视觉边界 | 继续 gate `no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow` | R4.4 建 desktop/mobile/zh/en visual baseline |
+
+边界：R4.3 仍是 deterministic Page VM QA surface，不等同于真实 PostgreSQL 多记录 live daemon。产品 shell 组件化和完整交互仍由 R4.4 继续。
+
 ---
 
 ## 0. 一句话与三条 Web 端地基

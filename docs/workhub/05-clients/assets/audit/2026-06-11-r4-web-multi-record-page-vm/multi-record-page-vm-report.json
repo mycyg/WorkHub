@@ -1,0 +1,359 @@
+{
+  "generated_at": "2026-06-10T23:01:41.799Z",
+  "module": "R4.3 Web multi-record Page VM visual QA",
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-multi-record-page-vm",
+  "gates": {
+    "screenshots_captured": true,
+    "ready_routes_use_page_vm_endpoints": true,
+    "detail_ready_routes_covered": true,
+    "multi_record_copy_covered": true,
+    "no_weekly_fixture_copy_in_ready": true,
+    "empty_and_forbidden_states": true,
+    "path_navigation_without_hash": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_horizontal_overflow": true
+  },
+  "cases": [
+    {
+      "id": "ready-home-multi-zh-desktop",
+      "label": "Ready home multi-record zh-CN desktop",
+      "locale": "zh-CN",
+      "route": "/",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1200
+      },
+      "endpoint_calls": [
+        "attention:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "ready-home-multi-zh-desktop.html",
+      "screenshot": "ready-home-multi-zh-desktop.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-approvals-multi-en-mobile",
+      "label": "Ready approvals multi-record en-US mobile",
+      "locale": "en-US",
+      "route": "/approvals",
+      "status": "ready",
+      "viewport": {
+        "width": 467,
+        "height": 1700
+      },
+      "endpoint_calls": [
+        "approvals:en-US",
+        "goldPath:en-US"
+      ],
+      "html": "ready-approvals-multi-en-mobile.html",
+      "screenshot": "ready-approvals-multi-en-mobile.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-cost-multi-zh-desktop",
+      "label": "Ready cost multi-record zh-CN desktop",
+      "locale": "zh-CN",
+      "route": "/dashboard/cost",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1200
+      },
+      "endpoint_calls": [
+        "cost:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "ready-cost-multi-zh-desktop.html",
+      "screenshot": "ready-cost-multi-zh-desktop.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-workitem-multi-en-desktop",
+      "label": "Ready workitem multi-record en-US desktop",
+      "locale": "en-US",
+      "route": "/workitems/r4-multi-workitem",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1200
+      },
+      "endpoint_calls": [
+        "workItem:r4-multi-workitem:en-US",
+        "goldPath:en-US"
+      ],
+      "html": "ready-workitem-multi-en-desktop.html",
+      "screenshot": "ready-workitem-multi-en-desktop.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-proposal-multi-zh-mobile",
+      "label": "Ready proposal multi-record zh-CN mobile",
+      "locale": "zh-CN",
+      "route": "/proposals/r4-multi-proposal",
+      "status": "ready",
+      "viewport": {
+        "width": 467,
+        "height": 1800
+      },
+      "endpoint_calls": [
+        "proposal:r4-multi-proposal:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "ready-proposal-multi-zh-mobile.html",
+      "screenshot": "ready-proposal-multi-zh-mobile.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-replay-multi-en-desktop",
+      "label": "Ready replay multi-record en-US desktop",
+      "locale": "en-US",
+      "route": "/agent-runs/r4-multi-run/replay",
+      "status": "ready",
+      "viewport": {
+        "width": 1365,
+        "height": 1300
+      },
+      "endpoint_calls": [
+        "replayAgentRun:r4-multi-run",
+        "goldPath:en-US"
+      ],
+      "html": "ready-replay-multi-en-desktop.html",
+      "screenshot": "ready-replay-multi-en-desktop.png",
+      "markers": {
+        "statusReady": 1,
+        "statusEmpty": 0,
+        "statusForbidden": 0,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": true,
+          "legalReview": true,
+          "budgetReview": true,
+          "workitemDetail": true,
+          "proposalDetail": true,
+          "replayDetail": true
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "empty-approvals-multi-zh-mobile",
+      "label": "Empty approvals after multi-record zh-CN mobile",
+      "locale": "zh-CN",
+      "route": "/approvals",
+      "status": "empty",
+      "viewport": {
+        "width": 467,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "approvals:zh-CN"
+      ],
+      "html": "empty-approvals-multi-zh-mobile.html",
+      "screenshot": "empty-approvals-multi-zh-mobile.png",
+      "markers": {
+        "statusReady": 0,
+        "statusEmpty": 1,
+        "statusForbidden": 0,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": false,
+          "legalReview": false,
+          "budgetReview": false,
+          "workitemDetail": false,
+          "proposalDetail": false,
+          "replayDetail": false
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "forbidden-workitem-multi-en-mobile",
+      "label": "Forbidden workitem en-US mobile",
+      "locale": "en-US",
+      "route": "/workitems/r4-private-workitem",
+      "status": "forbidden",
+      "viewport": {
+        "width": 467,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "workItem:r4-private-workitem:en-US"
+      ],
+      "html": "forbidden-workitem-multi-en-mobile.html",
+      "screenshot": "forbidden-workitem-multi-en-mobile.png",
+      "markers": {
+        "statusReady": 0,
+        "statusEmpty": 0,
+        "statusForbidden": 1,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": false,
+          "legalReview": false,
+          "budgetReview": false,
+          "workitemDetail": false,
+          "proposalDetail": false,
+          "replayDetail": false
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 482,
+        "scrollWidth": 482,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "missing-proposal-multi-zh-desktop",
+      "label": "Missing proposal zh-CN desktop",
+      "locale": "zh-CN",
+      "route": "/proposals/r4-missing-proposal",
+      "status": "empty",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "endpoint_calls": [
+        "proposal:r4-missing-proposal:zh-CN"
+      ],
+      "html": "missing-proposal-multi-zh-desktop.html",
+      "screenshot": "missing-proposal-multi-zh-desktop.png",
+      "markers": {
+        "statusReady": 0,
+        "statusEmpty": 1,
+        "statusForbidden": 0,
+        "pathNavigation": false,
+        "hashNavigationLeak": false,
+        "weeklyFixtureLeak": 0,
+        "multiRecordCopy": {
+          "regionalLaunch": false,
+          "legalReview": false,
+          "budgetReview": false,
+          "workitemDetail": false,
+          "proposalDetail": false,
+          "replayDetail": false
+        },
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    }
+  ]
+}

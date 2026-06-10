@@ -87,17 +87,17 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         localeCall("goldPath", options);
         return surface;
       },
-      async workItem() {
-        calls.push("workItem");
+      async workItem(id: string, options?: { locale?: string }) {
+        localeCall(`workItem:${id}`, options);
         return surface.page_vms.workitem;
       },
-      async proposal() {
-        calls.push("proposal");
+      async proposal(id: string, options?: { locale?: string }) {
+        localeCall(`proposal:${id}`, options);
         return surface.page_vms.proposal;
       }
     },
-    async replayAgentRun() {
-      calls.push("replayAgentRun");
+    async replayAgentRun(id: string) {
+      calls.push(`replayAgentRun:${id}`);
       return surface.page_vms.replay;
     }
   } as unknown as WorkHubApiClient;
@@ -141,6 +141,26 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('href="#/approvals"'), false);
     assert.equal(result.html.includes('href="/approvals"'), true);
+    assert.equal(result.html.toLowerCase().includes("kanban"), false);
+  }
+});
+
+test("R4 web loader uses detail Page VM endpoints before rendering ready routes", async () => {
+  const surface = goldPathSurfaceVm();
+
+  for (const [path, endpointCall] of [
+    ["/workitems/work-42", "workItem:work-42:en-US"],
+    ["/proposals/proposal-42", "proposal:proposal-42:en-US"],
+    ["/agent-runs/run-42/replay", "replayAgentRun:run-42"]
+  ] as const) {
+    const { client, calls } = fakeRouteClient(surface);
+    const match = resolveWebRoute(path);
+    assert.ok(match);
+    const result = await loadWebRoute(client, match, "en-US");
+    assert.equal(result.status, "ready");
+    assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
+    assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
+    assert.equal(result.html.includes(`href="${path}"`) || result.html.includes('href="/approvals"'), true);
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
   }
 });
