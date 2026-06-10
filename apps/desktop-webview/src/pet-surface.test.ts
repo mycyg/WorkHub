@@ -336,18 +336,25 @@ function resolveHarnessAction(card: CuuCard, actionId: string) {
   return resolved;
 }
 
+function cloneHarnessPayload<T>(payload: T): T {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+  return JSON.parse(JSON.stringify(payload)) as T;
+}
+
 function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarnessRun()): DesktopPetSurfaceClient {
   return {
     async createSession(payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "createSession", payload });
+      calls.push({ step: "createSession", payload: cloneHarnessPayload(payload) });
       return petHarnessSession("scope");
     },
     async nextQuestion(sessionId: string, payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "nextQuestion", sessionId, payload });
+      calls.push({ step: "nextQuestion", sessionId, payload: cloneHarnessPayload(payload) });
       return petHarnessSession("confirm");
     },
     async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
-      calls.push({ step: "createWorkItem", payload });
+      calls.push({ step: "createWorkItem", payload: cloneHarnessPayload(payload) });
       return {
         workitem: {
           id: run.work_item_id,
@@ -371,7 +378,7 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
       } as WorkItemDetailVM;
     },
     async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
-      calls.push({ step: "startAgentRun", workItemId, payload });
+      calls.push({ step: "startAgentRun", workItemId, payload: cloneHarnessPayload(payload) });
       return run;
     },
     async getAgentRun(): Promise<AgentRunLiveVM> {
@@ -887,66 +894,75 @@ test("pet runtime harness advances launcher selections through clarification int
 test("pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card", async () => {
   const calls: unknown[] = [];
   const run = petHarnessRun();
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
 
-  await withFakePetDom(async (root) => {
-    const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
-      client: createPetHarnessClient(calls, run)
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(calls, run)
+      });
+
+      try {
+        assert.match(root.innerHTML, /data-wh-surface="pet"/u);
+        assert.match(root.innerHTML, /data-pet-window-mode="body_only"/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+        assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="start_agent_from_cuu"/u);
+        assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
+
+        const launcherSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+        assert.equal(launcherSelection.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+
+        const launcherSubmit = await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.equal(launcherSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
+        assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
+        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
+        assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
+
+        const clarificationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+        assert.equal(clarificationSelection.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+
+        const clarificationSubmit = await root.click(fakePetTarget({
+          href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+          "data-cuu-action-id": "submit_option"
+        }, "a"));
+        assert.equal(clarificationSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-pet-option-id="create-workitem"/u);
+        assert.match(root.innerHTML, /是否按这个方向创建事项/u);
+
+        const confirmationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "create-workitem" }));
+        assert.equal(confirmationSelection.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-chip-id="create-workitem"[^>]+data-selected="true"/u);
+
+        const confirmationSubmit = await root.click(fakePetTarget({
+          href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+          "data-cuu-action-id": "submit_option"
+        }, "a"));
+        assert.equal(confirmationSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-kind="trace"/u);
+        assert.match(root.innerHTML, /data-cuu-state="thinking"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="view_replay"/u);
+      } finally {
+        await runtime.dispose();
+      }
     });
-
-    try {
-      assert.match(root.innerHTML, /data-wh-surface="pet"/u);
-      assert.match(root.innerHTML, /data-pet-window-mode="body_only"/u);
-      assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
-
-      await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
-      assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
-      assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
-      assert.match(root.innerHTML, /data-cuu-action-id="start_agent_from_cuu"/u);
-      assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
-
-      const launcherSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
-      assert.equal(launcherSelection.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
-
-      const launcherSubmit = await root.click(fakePetTarget({
-        href: "/api/cuu/start-agent",
-        "data-cuu-action-id": "start_agent_from_cuu"
-      }, "a"));
-      assert.equal(launcherSubmit.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-      assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
-      assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
-      assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
-
-      const clarificationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
-      assert.equal(clarificationSelection.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
-
-      const clarificationSubmit = await root.click(fakePetTarget({
-        href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
-        "data-cuu-action-id": "submit_option"
-      }, "a"));
-      assert.equal(clarificationSubmit.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-pet-option-id="create-workitem"/u);
-      assert.match(root.innerHTML, /是否按这个方向创建事项/u);
-
-      const confirmationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "create-workitem" }));
-      assert.equal(confirmationSelection.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-chip-id="create-workitem"[^>]+data-selected="true"/u);
-
-      const confirmationSubmit = await root.click(fakePetTarget({
-        href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
-        "data-cuu-action-id": "submit_option"
-      }, "a"));
-      assert.equal(confirmationSubmit.defaultPrevented, true);
-      assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
-      assert.match(root.innerHTML, /data-pet-bubble-kind="trace"/u);
-      assert.match(root.innerHTML, /data-cuu-state="thinking"/u);
-      assert.match(root.innerHTML, /data-cuu-action-id="view_replay"/u);
-    } finally {
-      await runtime.dispose();
-    }
-  });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
 
   assert.deepEqual(calls, [
     {
