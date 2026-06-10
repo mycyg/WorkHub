@@ -105,6 +105,8 @@ export type CreateStoredWorkItemInput = {
   priority?: string;
   mode?: WorkItemMode;
   selectedOptionIds?: string[];
+  planningNote?: string | null;
+  acceptanceItems?: WorkItemAcceptanceSeedInput[];
   at?: Date;
 };
 
@@ -115,7 +117,16 @@ export type UpdateStoredWorkItemFromSessionInput = {
   summaryMd?: string;
   status: WorkItemStatus;
   selectedOptionIds?: string[];
+  planningNote?: string | null;
+  acceptanceItems?: WorkItemAcceptanceSeedInput[];
   at?: Date;
+};
+
+export type WorkItemAcceptanceSeedInput = {
+  title: string;
+  description?: string | null;
+  status?: "open" | "met" | "unmet" | "waived";
+  sortOrder?: number;
 };
 
 export type InsertStoredChatMessageInput = {
@@ -337,7 +348,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       if (input.title) values.title = input.title;
       if (input.rawDescription) values.rawDescription = input.rawDescription;
       if (input.summaryMd) values.summaryMd = input.summaryMd;
-      if (input.selectedOptionIds?.length) {
+      if (input.planningNote) {
+        values.planningNote = input.planningNote;
+      } else if (input.selectedOptionIds?.length) {
         values.planningNote = `selected_options: ${input.selectedOptionIds.join(",")}`;
       }
       const rows = await db
@@ -347,6 +360,20 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const row = rows[0];
       if (!row) {
         throw new Error("Failed to create work item");
+      }
+      if (input.acceptanceItems?.length) {
+        await db.insert(workItemAcceptanceItems).values(
+          input.acceptanceItems.map((item, index) => ({
+            id: randomUUID(),
+            workItemId: row.id,
+            title: item.title,
+            ...(item.description ? { description: item.description } : {}),
+            status: item.status ?? "open",
+            sortOrder: item.sortOrder ?? index,
+            createdAt: at,
+            updatedAt: at
+          }))
+        );
       }
       return row;
     },
@@ -360,7 +387,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           ...(input.rawDescription ? { rawDescription: input.rawDescription } : {}),
           ...(input.summaryMd ? { summaryMd: input.summaryMd } : {}),
           status: input.status,
-          planningNote: input.selectedOptionIds?.length
+          planningNote: input.planningNote
+            ? input.planningNote
+            : input.selectedOptionIds?.length
             ? `selected_options: ${input.selectedOptionIds.join(",")}`
             : undefined,
           version: sql`${workItems.version} + 1`,
@@ -368,7 +397,25 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         })
         .where(eq(workItems.id, input.workItemId))
         .returning();
-      return rows[0] ?? null;
+      const row = rows[0] ?? null;
+      if (row && input.acceptanceItems) {
+        await db.delete(workItemAcceptanceItems).where(eq(workItemAcceptanceItems.workItemId, input.workItemId));
+        if (input.acceptanceItems.length > 0) {
+          await db.insert(workItemAcceptanceItems).values(
+            input.acceptanceItems.map((item, index) => ({
+              id: randomUUID(),
+              workItemId: input.workItemId,
+              title: item.title,
+              ...(item.description ? { description: item.description } : {}),
+              status: item.status ?? "open",
+              sortOrder: item.sortOrder ?? index,
+              createdAt: at,
+              updatedAt: at
+            }))
+          );
+        }
+      }
+      return row;
     },
 
     async insertChatMessage(input) {

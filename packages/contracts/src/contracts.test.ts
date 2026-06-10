@@ -16,6 +16,8 @@ import {
   buildStructuredFieldPatchDryRun,
   chooseMergeProposalCandidateRequestSchema,
   createApprovalRequestSchema,
+  createWorkItemRequestSchema,
+  cuuLauncherSpecFromSelectedOptionIds,
   confidenceGrades,
   identifyRequestSchema,
   normalizeWorkHubLocale,
@@ -690,6 +692,22 @@ test("next question requests carry clicked option ids before text fallback", () 
 
   assert.deepEqual(parsed.selected_option_ids, ["risk-first", "summary-only"]);
   assert.equal(parsed.free_text, "只补一句");
+});
+
+test("create work item requests preserve Cuu launcher spec metadata", () => {
+  const spec = cuuLauncherSpecFromSelectedOptionIds(["document-draft", "create-workitem"]);
+  const parsed = createWorkItemRequestSchema.parse({
+    session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    selected_option_ids: ["document-draft", "create-workitem"],
+    cuu_launcher_spec: spec,
+    kickoff_agent: true
+  });
+
+  assert.equal(parsed.cuu_launcher_spec?.source, "cuu_desktop_launcher");
+  assert.deepEqual(parsed.cuu_launcher_spec?.selected_options.map((option) => option.id), ["document-draft"]);
+  assert.equal(parsed.cuu_launcher_spec?.selected_options[0]?.delivery_kind, "document_draft");
+  assert.equal(parsed.cuu_launcher_spec?.selected_options[0]?.risk_hint, "low");
+  assert.match(parsed.cuu_launcher_spec?.selected_options[0]?.default_acceptance[0] ?? "", /文档或方案草稿/u);
 });
 
 test("session VMs carry option-first intake and stream metadata", () => {

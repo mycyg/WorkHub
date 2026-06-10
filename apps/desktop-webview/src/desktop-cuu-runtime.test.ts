@@ -459,6 +459,11 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.match(html, /data-cuu-action-id="submit"/u);
   assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-legacy/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card\{[^}]*min-width:0;max-width:100%;[^}]*overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-head\{[^}]*min-width:0;max-width:100%;[^}]*flex-wrap:wrap/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-chip\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-action\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-queue-badge\{[^}]*max-width:calc\(100vw - 36px\);min-width:0/u);
   assert.doesNotMatch(desktopCuuNoticeCss, /wh-cuu-sprite/u);
 
   assert.equal(desktopCuuNoticeMessage({
@@ -674,6 +679,22 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
 
   assert.equal(action?.kind, "cuu-start-agent");
   assert.deepEqual(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, ["document-draft"]);
+  assert.deepEqual(action && action.kind === "cuu-start-agent" ? action.cuuLauncherSpec : undefined, {
+    source: "cuu_desktop_launcher",
+    selected_options: [
+      {
+        id: "document-draft",
+        label: "文档/方案草稿",
+        description: "周报、说明、PR 式变更说明",
+        delivery_kind: "document_draft",
+        risk_hint: "low",
+        default_acceptance: [
+          "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
+          "标明依据、假设和待确认内容，不把未确认内容写成事实。"
+        ]
+      }
+    ]
+  });
   assert.match(action && "intentText" in action ? action.intentText : "", /文档\/方案草稿/u);
   assert.equal(result.message, "Cuu 已启动：Cuu 桌面入口任务");
   assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
@@ -694,6 +715,22 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
         title: "Cuu 桌面入口任务",
         raw_description: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明",
         selected_option_ids: ["document-draft"],
+        cuu_launcher_spec: {
+          source: "cuu_desktop_launcher",
+          selected_options: [
+            {
+              id: "document-draft",
+              label: "文档/方案草稿",
+              description: "周报、说明、PR 式变更说明",
+              delivery_kind: "document_draft",
+              risk_hint: "low",
+              default_acceptance: [
+                "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
+                "标明依据、假设和待确认内容，不把未确认内容写成事实。"
+              ]
+            }
+          ]
+        },
         kickoff_agent: true
       }
     },
@@ -763,6 +800,8 @@ test("desktop Cuu launcher helper returns session, work item, run, and Cuu card"
   if (!action || action.kind !== "cuu-start-agent") {
     throw new Error("expected Cuu start action");
   }
+  assert.equal(action.cuuLauncherSpec?.selected_options[0]?.delivery_kind, "structured_data");
+  assert.match(action.cuuLauncherSpec?.selected_options[0]?.default_acceptance[0] ?? "", /structured file/u);
   const result = await startDesktopCuuAgentFromLauncher({ client, action, locale: "en-US" });
 
   assert.deepEqual(calls, ["session", "workitem", "run"]);

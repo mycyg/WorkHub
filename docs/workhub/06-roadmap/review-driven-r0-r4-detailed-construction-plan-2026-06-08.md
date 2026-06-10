@@ -2153,7 +2153,7 @@ R2 验收：
 - 真实 Tauri `pet` window 点击截图/录屏。
 - 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - pet window 刷新后的当前 session/run card 恢复。
-- launcher chip metadata 结构化进入 WorkItem spec。
+- launcher chip metadata 结构化进入 WorkItem spec 当时未覆盖，已由 R3.14 关闭。
 
 ### R3.7 已落：pet runtime flow harness
 
@@ -2178,7 +2178,7 @@ R2 验收：
 - 真实 Tauri `pet` window 点击截图/录屏。
 - 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - pet window 刷新后的当前 session/run card 恢复。
-- launcher chip metadata 结构化进入 WorkItem spec。
+- launcher chip metadata 结构化进入 WorkItem spec 当时未覆盖，已由 R3.14 关闭。
 
 ### R3.8 已落：boot client injection seam
 
@@ -2226,7 +2226,7 @@ R2 验收：
 - 真实 API dev server + desktop webview runtime smoke 当时未覆盖，已由 R3.11 关闭。
 - 真实 Tauri `pet` window 更多状态截图/录屏。
 - pet window 刷新后的当前 session/run card 恢复。
-- launcher chip metadata 结构化进入 WorkItem spec。
+- launcher chip metadata 结构化进入 WorkItem spec 当时未覆盖，已由 R3.14 关闭。
 
 ### R3.10 已落：真实 Tauri launcher/en-US capture
 
@@ -2281,7 +2281,7 @@ R2 验收：
 
 - 真实 Tauri clarification / queued / running / completion / failure / offline 状态截图。
 - pet window 刷新后的当前 session/run card 恢复。
-- launcher chip metadata 结构化进入 WorkItem spec。
+- launcher chip metadata 结构化进入 WorkItem spec 当时未覆盖，已由 R3.14 关闭。
 
 ### R3.11 已落：真实 API dev-server launcher-to-run smoke
 
@@ -2344,7 +2344,7 @@ Bug 审查：
 
 - 真实 Tauri failure / offline 状态截图。
 - pet window 刷新后的当前 session/run card 恢复。
-- launcher chip metadata 结构化进入 WorkItem spec。
+- launcher chip metadata 结构化进入 WorkItem spec 当时未覆盖，已由 R3.14 关闭。
 
 ### R3.12 已落：真实 Tauri run-stream capture + SSE/fallback 回流证据
 
@@ -2543,11 +2543,41 @@ Bug / 数据流审查：
 - bug 审查：localStorage 读取失败、JSON 损坏、异步恢复期间用户产生新 current card 均 fail closed；恢复错误卡不覆盖旧 restore ref，允许下次重试。
 - UI 审查：本轮不改 card 布局；R3.13.2 的 `right_edge_clip_gate` 仍作为真实 capture 的文本/边缘裁切回归门。
 
-### R3.14 下一刀：chip metadata + 真实 reload capture
+### R3.14 已落：chip metadata -> WorkItem spec + 文本边界
+
+本切片关闭 launcher chip 只落 `selected_options` 的缺口，并处理用户反馈的卡片文本超框风险。
+
+改动：
+
+1. `packages/contracts/src/domain/work-item.ts` 新增 `cuuLauncherWorkItemSpecSchema`、默认 option spec helper 与 `CreateWorkItemRequest.cuu_launcher_spec`。
+2. `apps/desktop-webview/src/desktop-cuu-runtime.ts` 为 launcher chip 写入 `delivery_kind` / `risk_hint` / `default_acceptance`，并在 `resolveDesktopCuuAction()` 中组装 `cuuLauncherSpec`。
+3. `apps/api/src/services/work-items.ts` 在 `createWorkItem()` 中优先使用 payload spec；真实 confirmation 链路只有 selected ids 时，从 session 历史推导同一 launcher spec。
+4. `packages/db/src/repositories/work-items.ts` 支持写入默认 `work_item_acceptance_items`，并把 `cuu_launcher_spec` JSON 放入 WorkItem `planning_note`。
+5. `apps/api/src/qa/cuu-r3-launcher-harness.ts` 同时断言 route-stack/dev-server readback 的 `launcher_spec_delivery_kind=document_draft` 与 `launcher_acceptance_count=2`。
+6. `apps/desktop-webview/src/pet-surface.ts` 与 `desktopCuuNoticeCss` 补 `min-width:0`、`max-width:100%`、长词换行和 chip/action/section 宽度约束，避免 title、progress、budget、按钮文本超出框。
+
+验证：
+
+- `corepack pnpm --filter @workhub/contracts test` 通过，19/19。
+- `corepack pnpm --filter @workhub/cuu test` 通过，33/33。
+- `corepack pnpm --filter @workhub/desktop-webview test` 通过，75/75。
+- `corepack pnpm --filter @workhub/api test` 通过，100/100。
+- `corepack pnpm --filter @workhub/contracts typecheck`、`@workhub/cuu typecheck`、`@workhub/db typecheck`、`@workhub/api typecheck`、`@workhub/desktop-webview typecheck` 通过。
+- `corepack pnpm qa:cuu-r3-launcher-smoke` 通过，输出 `cuu_launcher_spec` 与 2 条 acceptance。
+- `corepack pnpm qa:cuu-r3-dev-server-smoke` 通过，真实 HTTP route-stack 输出同样 spec 与 acceptance。
+
+复核：
+
+- 数据流：launcher chip metadata -> `CuuCardChip.metadata` -> `DesktopCuuStartAgentAction.cuuLauncherSpec` -> `CreateWorkItemRequest.cuu_launcher_spec` 或 API 端 selected id fallback -> `planning_note` JSON + acceptance items。
+- PRD/概念图一致：仍是 option-first；用户只点选，不被推回打字框；Rust 不拥有业务状态，主窗不渲染 Cuu 本体。
+- bug 审查：旧请求不带 `cuu_launcher_spec` 时仍兼容；`create-workitem` 等确认按钮不会被误写成 delivery spec；schema parse 覆盖 metadata。
+- UI 审查：文本超框风险已在项目 Cuu notice/pet bubble CSS contract 中加门；真实 reload capture 还需要继续用最终帧确认。
+
+### R3.15 下一刀：真实 reload capture
 
 1. 继续阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md` 与 Cuu/TS-first 概念图。
-2. 将 launcher chip metadata 结构化进入 WorkItem spec：`delivery_kind` / `risk_hint` / `default_acceptance`，并在 route-stack/dev-server smoke 中断言。
-3. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
+2. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
+3. 将 R3.14 文本边界纳入真实 capture gate：长英文 run title、`Run progress`、`Budget`、按钮和 chip 不得超出 bubble。
 4. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream、run-failure、401/403/offline 的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
 5. 验收命令：desktop-webview typecheck/test、API typecheck/test、R3 run-stream + run-failure + error-fault smoke、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 

@@ -96,10 +96,16 @@ export type CuuCopyKey =
   | "cuuStart.message"
   | "cuuStart.documentDraft"
   | "cuuStart.documentDraftDesc"
+  | "cuuStart.documentDraftAcceptancePrimary"
+  | "cuuStart.documentDraftAcceptanceEvidence"
   | "cuuStart.structuredData"
   | "cuuStart.structuredDataDesc"
+  | "cuuStart.structuredDataAcceptancePrimary"
+  | "cuuStart.structuredDataAcceptanceEvidence"
   | "cuuStart.codeTemplate"
   | "cuuStart.codeTemplateDesc"
+  | "cuuStart.codeTemplateAcceptancePrimary"
+  | "cuuStart.codeTemplateAcceptanceSafety"
   | "cuuStart.action"
   | "cuuStart.defaultTitle"
   | "cuuStart.defaultIntent"
@@ -251,10 +257,16 @@ const cuuCopy = {
     "cuuStart.message": "先点一个交付方向，Cuu 会创建事项并启动真实 AI 执行。",
     "cuuStart.documentDraft": "文档/方案草稿",
     "cuuStart.documentDraftDesc": "周报、说明、PR 式变更说明",
+    "cuuStart.documentDraftAcceptancePrimary": "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
+    "cuuStart.documentDraftAcceptanceEvidence": "标明依据、假设和待确认内容，不把未确认内容写成事实。",
     "cuuStart.structuredData": "结构化数据",
     "cuuStart.structuredDataDesc": "JSON、YAML、CSV、配置",
+    "cuuStart.structuredDataAcceptancePrimary": "输出结构化文件或表格，包含字段说明、样例和校验方式。",
+    "cuuStart.structuredDataAcceptanceEvidence": "保留数据来源、转换规则和异常项说明。",
     "cuuStart.codeTemplate": "小型代码/模板",
     "cuuStart.codeTemplateDesc": "低风险片段、模板、配置改动",
+    "cuuStart.codeTemplateAcceptancePrimary": "输出可运行的小型代码或模板，包含入口、使用说明和验证命令。",
+    "cuuStart.codeTemplateAcceptanceSafety": "列出改动范围、风险点和回滚方式。",
     "cuuStart.action": "开始处理",
     "cuuStart.defaultTitle": "Cuu 桌面入口任务",
     "cuuStart.defaultIntent": "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。",
@@ -405,10 +417,16 @@ const cuuCopy = {
     "cuuStart.message": "Pick one delivery direction. Cuu will create the task and start the real AI run.",
     "cuuStart.documentDraft": "Document draft",
     "cuuStart.documentDraftDesc": "Reports, briefs, PR-style change notes",
+    "cuuStart.documentDraftAcceptancePrimary": "Deliver a reviewable document or plan draft with structure, body copy, and next revision points.",
+    "cuuStart.documentDraftAcceptanceEvidence": "Mark evidence, assumptions, and open confirmations without presenting unknowns as facts.",
     "cuuStart.structuredData": "Structured data",
     "cuuStart.structuredDataDesc": "JSON, YAML, CSV, config",
+    "cuuStart.structuredDataAcceptancePrimary": "Deliver a structured file or table with field notes, examples, and validation steps.",
+    "cuuStart.structuredDataAcceptanceEvidence": "Preserve data sources, transformation rules, and exception notes.",
     "cuuStart.codeTemplate": "Small code/template",
     "cuuStart.codeTemplateDesc": "Low-risk snippets, templates, config changes",
+    "cuuStart.codeTemplateAcceptancePrimary": "Deliver runnable small code or a template with entry point, usage notes, and validation command.",
+    "cuuStart.codeTemplateAcceptanceSafety": "List change scope, risks, and rollback path.",
     "cuuStart.action": "Start work",
     "cuuStart.defaultTitle": "Cuu desktop entry task",
     "cuuStart.defaultIntent": "Create an AI-runnable task from the Cuu desktop pet entry and work according to the selected delivery direction.",

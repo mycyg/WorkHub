@@ -16,11 +16,13 @@ import {
 } from "@workhub/cuu";
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import {
+  cuuLauncherSpecOptionSchema,
   eventTypes,
   type ApplyMergeProposalCandidateRequest,
   type AgentRunLiveVM,
   type CreateSessionRequest,
   type CreateWorkItemRequest,
+  type CuuLauncherWorkItemSpec,
   type EvidenceRef,
   type GoldPathSurfaceVM,
   type MergeProposalRequest,
@@ -72,6 +74,7 @@ export type DesktopCuuActionRequest =
       title: string;
       intentText: string;
       selectedOptionIds?: string[];
+      cuuLauncherSpec?: CuuLauncherWorkItemSpec;
       projectId?: string;
       runTitle?: string;
       mode?: StartAgentRunRequest["mode"];
@@ -209,21 +212,21 @@ type DesktopCuuActionClient = Pick<
 };
 
 export const desktopCuuNoticeCss = [
-  ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;font-weight:650}",
+  ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;min-width:0;max-width:100%;font-weight:650;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0}",
-  ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}",
-  ".wh-cuu-card-kicker{display:flex;align-items:center;gap:8px;color:var(--wh-app-muted);font-size:12px}",
+  ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;max-width:100%;flex-wrap:wrap}",
+  ".wh-cuu-card-kicker{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;flex-wrap:wrap;color:var(--wh-app-muted);font-size:12px}",
   ".wh-cuu-card-mark{width:8px;height:8px;border-radius:999px;background:var(--wh-app-blue);box-shadow:0 0 0 3px rgba(53,92,255,.14)}",
-  ".wh-cuu-card-state{font-size:11px;color:var(--wh-app-muted);font-weight:800}",
-  ".wh-cuu-card-title{font-size:15px;line-height:1.35}",
-  ".wh-cuu-card-message{margin:0;color:var(--wh-app-muted);font-size:13px;line-height:1.45;font-weight:600}",
-  ".wh-cuu-card-chips,.wh-cuu-card-actions{display:flex;gap:8px;flex-wrap:wrap}",
-  ".wh-cuu-chip{border:1px solid var(--wh-app-line);border-radius:999px;background:#fff;padding:5px 8px;font-size:12px;color:var(--wh-app-ink)}",
-  ".wh-cuu-action{border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-app-ink);font-size:13px;text-decoration:none;font-weight:800}",
+  ".wh-cuu-card-state{min-width:0;max-width:100%;font-size:11px;color:var(--wh-app-muted);font-weight:800;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-title{min-width:0;max-width:100%;font-size:15px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-message{min-width:0;max-width:100%;margin:0;color:var(--wh-app-muted);font-size:13px;line-height:1.45;font-weight:600;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-chips,.wh-cuu-card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;min-width:0;max-width:100%;width:100%}",
+  ".wh-cuu-chip{box-sizing:border-box;min-width:0;max-width:100%;border:1px solid var(--wh-app-line);border-radius:999px;background:#fff;padding:5px 8px;font-size:12px;color:var(--wh-app-ink);white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-action{box-sizing:border-box;min-width:0;max-width:100%;border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-app-ink);font-size:13px;text-align:left;text-decoration:none;font-weight:800;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-cuu-action[data-tone=primary]{background:var(--wh-app-blue);border-color:var(--wh-app-blue);color:#fff}",
   ".wh-cuu-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
-  ".wh-cuu-queue-badge{position:fixed;right:18px;bottom:124px;z-index:39;display:flex;align-items:center;gap:8px;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.92);box-shadow:0 12px 34px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-ink);font:750 12px/1.2 \"Aptos\",\"Segoe UI\",sans-serif}",
-  ".wh-cuu-queue-badge[hidden]{display:none}.wh-cuu-queue-count{min-width:20px;height:20px;border-radius:999px;display:grid;place-items:center;background:var(--wh-app-blue);color:#fff;font-size:11px}.wh-cuu-queue-text{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wh-app-muted)}"
+  ".wh-cuu-queue-badge{position:fixed;right:18px;bottom:124px;z-index:39;box-sizing:border-box;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 36px);min-width:0;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.92);box-shadow:0 12px 34px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-ink);font:750 12px/1.2 \"Aptos\",\"Segoe UI\",sans-serif}",
+  ".wh-cuu-queue-badge[hidden]{display:none}.wh-cuu-queue-count{flex:0 0 auto;min-width:20px;height:20px;border-radius:999px;display:grid;place-items:center;background:var(--wh-app-blue);color:#fff;font-size:11px}.wh-cuu-queue-text{min-width:0;max-width:min(180px,calc(100vw - 96px));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wh-app-muted)}"
 ].join("");
 
 export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}): CuuCard {
@@ -246,6 +249,14 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
         id: "document-draft",
         label: cuuT(options.locale, "cuuStart.documentDraft"),
         description: cuuT(options.locale, "cuuStart.documentDraftDesc"),
+        metadata: {
+          delivery_kind: "document_draft",
+          risk_hint: "low",
+          default_acceptance: [
+            cuuT(options.locale, "cuuStart.documentDraftAcceptancePrimary"),
+            cuuT(options.locale, "cuuStart.documentDraftAcceptanceEvidence")
+          ]
+        },
         tone: "success",
         recommended: true
       },
@@ -253,12 +264,28 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
         id: "structured-data",
         label: cuuT(options.locale, "cuuStart.structuredData"),
         description: cuuT(options.locale, "cuuStart.structuredDataDesc"),
+        metadata: {
+          delivery_kind: "structured_data",
+          risk_hint: "low",
+          default_acceptance: [
+            cuuT(options.locale, "cuuStart.structuredDataAcceptancePrimary"),
+            cuuT(options.locale, "cuuStart.structuredDataAcceptanceEvidence")
+          ]
+        },
         tone: "success"
       },
       {
         id: "code-template",
         label: cuuT(options.locale, "cuuStart.codeTemplate"),
         description: cuuT(options.locale, "cuuStart.codeTemplateDesc"),
+        metadata: {
+          delivery_kind: "code_template",
+          risk_hint: "medium",
+          default_acceptance: [
+            cuuT(options.locale, "cuuStart.codeTemplateAcceptancePrimary"),
+            cuuT(options.locale, "cuuStart.codeTemplateAcceptanceSafety")
+          ]
+        },
         tone: "warning"
       }
     ],
@@ -324,6 +351,7 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     title: input.action.title,
     raw_description: input.action.intentText,
     selected_option_ids: input.action.selectedOptionIds,
+    ...(input.action.cuuLauncherSpec ? { cuu_launcher_spec: input.action.cuuLauncherSpec } : {}),
     kickoff_agent: true,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
   });
@@ -727,6 +755,7 @@ export function resolveDesktopCuuAction(
     const payload = actionPayloadFromCard(input.card, input.actionId, href);
     const selectedChips = selectedChipsFromCard(input.card);
     const selectedOptionIds = selectedChips.map((chip) => chip.id);
+    const cuuLauncherSpec = cuuLauncherSpecFromSelectedChips(selectedChips);
     const title = stringFromUnknown(payload?.title) ?? url.searchParams.get("title") ?? titleFromSelectedChips(selectedChips);
     const selectedIntent = intentFromSelectedChips(selectedChips);
     const payloadIntent = stringFromUnknown(payload?.intent_text) ?? url.searchParams.get("intent_text");
@@ -739,6 +768,7 @@ export function resolveDesktopCuuAction(
       title: compactTitle(title ?? intentText),
       intentText: compactIntent(intentText ?? title),
       ...(selectedOptionIds.length ? { selectedOptionIds } : {}),
+      ...(cuuLauncherSpec ? { cuuLauncherSpec } : {}),
       ...(projectId ? { projectId } : {}),
       ...(runTitle ? { runTitle } : {}),
       ...(mode ? { mode } : {})
@@ -929,6 +959,28 @@ function selectedOptionIdsFromCard(card: CuuCard | undefined) {
 
 function selectedChipsFromCard(card: CuuCard | undefined) {
   return (card?.chips ?? []).filter((chip) => chip.selected);
+}
+
+function cuuLauncherSpecFromSelectedChips(chips: CuuCardChip[]): CuuLauncherWorkItemSpec | undefined {
+  const selectedOptions = chips.flatMap((chip) => {
+    const metadata = chip.metadata;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return [];
+    }
+    const parsed = cuuLauncherSpecOptionSchema.safeParse({
+      id: chip.id,
+      label: chip.label,
+      ...(chip.description ? { description: chip.description } : {}),
+      ...metadata
+    });
+    return parsed.success ? [parsed.data] : [];
+  });
+  return selectedOptions.length
+    ? {
+        source: "cuu_desktop_launcher",
+        selected_options: selectedOptions
+      }
+    : undefined;
 }
 
 function actionPayloadFromCard(card: CuuCard | undefined, actionId: string | undefined, href: string) {

@@ -59,6 +59,101 @@ export const workItemSchema = timestampFieldsSchema.extend({
 });
 export type WorkItem = z.infer<typeof workItemSchema>;
 
+export const cuuLauncherDeliveryKindSchema = z.enum([
+  "document_draft",
+  "structured_data",
+  "code_template",
+  "ai_decide"
+]);
+export type CuuLauncherDeliveryKind = z.infer<typeof cuuLauncherDeliveryKindSchema>;
+
+export const cuuLauncherRiskHintSchema = z.enum(["low", "medium", "high"]);
+export type CuuLauncherRiskHint = z.infer<typeof cuuLauncherRiskHintSchema>;
+
+export const cuuLauncherSpecOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(128).optional(),
+  description: z.string().min(1).max(300).optional(),
+  delivery_kind: cuuLauncherDeliveryKindSchema,
+  risk_hint: cuuLauncherRiskHintSchema,
+  default_acceptance: z.array(z.string().min(1).max(256)).max(8)
+});
+export type CuuLauncherSpecOption = z.infer<typeof cuuLauncherSpecOptionSchema>;
+
+export const cuuLauncherWorkItemSpecSchema = z.object({
+  source: z.literal("cuu_desktop_launcher"),
+  selected_options: z.array(cuuLauncherSpecOptionSchema).max(10)
+});
+export type CuuLauncherWorkItemSpec = z.infer<typeof cuuLauncherWorkItemSpecSchema>;
+
+export const defaultCuuLauncherSpecOptions = {
+  "document-draft": {
+    id: "document-draft",
+    label: "文档/方案草稿",
+    description: "适合周报、方案、说明书、PR 式变更说明。",
+    delivery_kind: "document_draft",
+    risk_hint: "low",
+    default_acceptance: [
+      "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
+      "标明依据、假设和待确认内容，不把未确认内容写成事实。"
+    ]
+  },
+  "structured-data": {
+    id: "structured-data",
+    label: "结构化数据",
+    description: "适合 JSON、YAML、CSV、配置或表格分析。",
+    delivery_kind: "structured_data",
+    risk_hint: "low",
+    default_acceptance: [
+      "输出结构化文件或表格，包含字段说明、样例和校验方式。",
+      "保留数据来源、转换规则和异常项说明。"
+    ]
+  },
+  "code-template": {
+    id: "code-template",
+    label: "小型代码/模板",
+    description: "适合低风险代码片段、模板或配置改动。",
+    delivery_kind: "code_template",
+    risk_hint: "medium",
+    default_acceptance: [
+      "输出可运行的小型代码或模板，包含入口、使用说明和验证命令。",
+      "列出改动范围、风险点和回滚方式。"
+    ]
+  },
+  "let-ai-decide": {
+    id: "let-ai-decide",
+    label: "让 AI 判断",
+    description: "按证据和风险选择最稳的交付路径。",
+    delivery_kind: "ai_decide",
+    risk_hint: "low",
+    default_acceptance: [
+      "根据上下文选择最稳交付形态，并说明选择理由。",
+      "输出可审阅结果和后续验收步骤。"
+    ]
+  }
+} satisfies Record<string, CuuLauncherSpecOption>;
+
+export function cuuLauncherSpecFromSelectedOptionIds(
+  optionIds: readonly string[] | undefined
+): CuuLauncherWorkItemSpec | undefined {
+  const selectedOptions: CuuLauncherSpecOption[] = [];
+  const seen = new Set<string>();
+  for (const optionId of optionIds ?? []) {
+    const spec = defaultCuuLauncherSpecOptions[optionId as keyof typeof defaultCuuLauncherSpecOptions];
+    if (!spec || seen.has(spec.id)) {
+      continue;
+    }
+    selectedOptions.push({ ...spec, default_acceptance: [...spec.default_acceptance] });
+    seen.add(spec.id);
+  }
+  return selectedOptions.length
+    ? {
+        source: "cuu_desktop_launcher",
+        selected_options: selectedOptions
+      }
+    : undefined;
+}
+
 export const createWorkItemRequestSchema = z
   .object({
     session_id: idSchema.optional(),
@@ -66,6 +161,7 @@ export const createWorkItemRequestSchema = z
     title: z.string().min(1).max(256).optional(),
     raw_description: z.string().min(1).optional(),
     selected_option_ids: z.array(z.string().min(1)).optional(),
+    cuu_launcher_spec: cuuLauncherWorkItemSpecSchema.optional(),
     kickoff_agent: z.boolean().optional()
   })
   .superRefine((payload, ctx) => {

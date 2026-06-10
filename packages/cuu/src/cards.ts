@@ -58,6 +58,7 @@ export type CuuCardChip = {
   label: string;
   tone?: "neutral" | "success" | "warning" | "danger";
   description?: string;
+  metadata?: Record<string, unknown>;
   recommended?: boolean;
   selected?: boolean;
   href?: string;
@@ -360,6 +361,15 @@ export function cardFromQuestionCard(question: QuestionCard, options: CuuLocaleO
           ? { tone: "warning" }
           : { tone: "neutral" }),
       ...(description ? { description } : {}),
+      ...(option.delivery_kind || option.default_acceptance
+        ? {
+            metadata: {
+              ...(option.risk_hint ? { risk_hint: option.risk_hint } : {}),
+              ...(option.delivery_kind ? { delivery_kind: option.delivery_kind } : {}),
+              ...(option.default_acceptance ? { default_acceptance: option.default_acceptance } : {})
+            }
+          }
+        : {}),
       ...(recommended.has(option.id) ? { recommended: true } : {})
     };
   });

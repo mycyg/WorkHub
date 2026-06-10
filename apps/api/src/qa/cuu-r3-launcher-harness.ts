@@ -10,7 +10,7 @@ import { ZodError } from "zod";
 import type { AgentLoopClient } from "@workhub/agent/loop";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { settings, type Settings } from "@workhub/config";
-import type { AgentRunLiveVM } from "@workhub/contracts";
+import { cuuLauncherWorkItemSpecSchema, type AgentRunLiveVM } from "@workhub/contracts";
 import type { CuuCard, CuuLocaleOptions } from "@workhub/cuu";
 import { defaultSeedIds, type ClientDeviceAuthRow, type UserAuthRow } from "@workhub/db";
 import { InMemoryPresenceStore, InProcessPushBus } from "../broker/index.js";
@@ -83,6 +83,8 @@ export type CuuR3LauncherSmokeResult = {
   stream_href: string;
   stream_url: string;
   planning_note: string | null;
+  launcher_spec_delivery_kind: string;
+  launcher_acceptance_count: number;
   api_base_url?: string;
 };
 
@@ -465,7 +467,23 @@ export async function runCuuR3LauncherToRunSmoke(input: {
       workspaceId: defaultSeedIds.workspaceId
     }
   });
-  assert.equal(workItemReadback.workitem.planning_note, "selected_options: document-draft,create-workitem");
+  const planningNote = workItemReadback.workitem.planning_note ?? "";
+  assert.match(planningNote, /^selected_options: document-draft,create-workitem$/mu);
+  const launcherSpecLine = planningNote.split("\n").find((line) => line.startsWith("cuu_launcher_spec: "));
+  assert.ok(launcherSpecLine, "Expected Cuu launcher spec JSON in planning_note.");
+  const launcherSpec = cuuLauncherWorkItemSpecSchema.parse(
+    JSON.parse(launcherSpecLine.slice("cuu_launcher_spec: ".length))
+  );
+  assert.equal(launcherSpec.selected_options[0]?.id, "document-draft");
+  assert.equal(launcherSpec.selected_options[0]?.delivery_kind, "document_draft");
+  const launcherAcceptanceCount = workItemReadback.acceptance.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+    const description = (item as { description?: unknown }).description;
+    return typeof description === "string" && description.includes("delivery_kind=document_draft");
+  }).length;
+  assert.equal(launcherAcceptanceCount, 2);
 
   return {
     ok: true,
@@ -488,7 +506,9 @@ export async function runCuuR3LauncherToRunSmoke(input: {
     status: apiReadback.status,
     stream_href: apiReadback.stream_href,
     stream_url: streamUrl,
-    planning_note: workItemReadback.workitem.planning_note,
+    planning_note: workItemReadback.workitem.planning_note ?? null,
+    launcher_spec_delivery_kind: launcherSpec.selected_options[0]?.delivery_kind ?? "",
+    launcher_acceptance_count: launcherAcceptanceCount,
     ...(input.apiBaseUrl ? { api_base_url: input.apiBaseUrl } : {})
   };
 }

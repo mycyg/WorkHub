@@ -15,6 +15,8 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
+  cuuLauncherSpecFromSelectedOptionIds,
+  defaultCuuLauncherSpecOptions,
   deliverableChangeManifestSchema,
   evidenceRefSchema,
   sessionVmSchema,
@@ -24,6 +26,7 @@ import {
   type AcceptedDeliverableVM,
   type CreateSessionRequest,
   type CreateWorkItemRequest,
+  type CuuLauncherWorkItemSpec,
   type EvidenceBubble,
   type EvidenceRef,
   type NextQuestionRequest,
@@ -152,6 +155,47 @@ function mergeSelectedOptionIds(...groups: (readonly string[] | undefined)[]) {
     }
   }
   return result;
+}
+
+function selectedOptionIdsFromLauncherSpec(spec: CuuLauncherWorkItemSpec | undefined) {
+  return spec?.selected_options.map((option) => option.id) ?? [];
+}
+
+function launcherSpecForSelectedOptions(
+  selectedOptionIds: readonly string[],
+  payloadSpec: CuuLauncherWorkItemSpec | undefined
+) {
+  return payloadSpec?.selected_options.length ? payloadSpec : cuuLauncherSpecFromSelectedOptionIds(selectedOptionIds);
+}
+
+function planningNoteForSelectedOptions(input: {
+  selectedOptionIds: readonly string[];
+  launcherSpec?: CuuLauncherWorkItemSpec | undefined;
+}) {
+  const lines: string[] = [];
+  if (input.selectedOptionIds.length) {
+    lines.push(`selected_options: ${input.selectedOptionIds.join(",")}`);
+  }
+  if (input.launcherSpec?.selected_options.length) {
+    lines.push(`cuu_launcher_spec: ${JSON.stringify(input.launcherSpec)}`);
+  }
+  return lines.length ? lines.join("\n") : undefined;
+}
+
+function acceptanceItemsFromLauncherSpec(spec: CuuLauncherWorkItemSpec | undefined) {
+  let sortOrder = 0;
+  return (spec?.selected_options ?? []).flatMap((option) => {
+    const description = [
+      `Cuu launcher option: ${option.label ?? option.id}`,
+      `delivery_kind=${option.delivery_kind}`,
+      `risk_hint=${option.risk_hint}`
+    ].join("; ");
+    return option.default_acceptance.map((title) => ({
+      title,
+      description,
+      sortOrder: sortOrder++
+    }));
+  });
 }
 
 function titleFromIntent(intentText: string | undefined) {
@@ -403,6 +447,10 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
     };
   }
 
+  const documentDraftSpec = defaultCuuLauncherSpecOptions["document-draft"];
+  const structuredDataSpec = defaultCuuLauncherSpecOptions["structured-data"];
+  const codeTemplateSpec = defaultCuuLauncherSpecOptions["code-template"];
+  const aiDecideSpec = defaultCuuLauncherSpecOptions["let-ai-decide"];
   const question: QuestionCard = {
     id: stableUuid(`${workItem.id}:question:scope`),
     session_id: workItem.id,
@@ -416,6 +464,8 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
         description: "适合周报、方案、说明书、PR 式变更说明。",
         impact: "首发 L2 file-only 白名单内，风险最低。",
         risk_hint: "low",
+        delivery_kind: documentDraftSpec.delivery_kind,
+        default_acceptance: [...documentDraftSpec.default_acceptance],
         icon: "file-text"
       },
       {
@@ -424,6 +474,8 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
         description: "适合 JSON、YAML、CSV、配置或表格分析。",
         impact: "会保留字段级证据和回滚点。",
         risk_hint: "low",
+        delivery_kind: structuredDataSpec.delivery_kind,
+        default_acceptance: [...structuredDataSpec.default_acceptance],
         icon: "table"
       },
       {
@@ -432,6 +484,8 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
         description: "适合低风险代码片段、模板或配置改动。",
         impact: "需要通过快照、测试和审批。",
         risk_hint: "medium",
+        delivery_kind: codeTemplateSpec.delivery_kind,
+        default_acceptance: [...codeTemplateSpec.default_acceptance],
         icon: "code"
       },
       {
@@ -440,6 +494,8 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
         description: "我会按证据和风险选择最稳的交付路径。",
         impact: "不用打字，保持 option-first。",
         risk_hint: "low",
+        delivery_kind: aiDecideSpec.delivery_kind,
+        default_acceptance: [...aiDecideSpec.default_acceptance],
         icon: "sparkles"
       }
     ],
@@ -571,8 +627,12 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         const rows = await requireDetail(input.payload.session_id, input.actor);
         const selectedOptionIds = mergeSelectedOptionIds(
           await repository.listSessionSelectedOptionIds(rows.workItem.id),
-          input.payload.selected_option_ids
+          input.payload.selected_option_ids,
+          selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
         );
+        const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
+        const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
+        const acceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
         const updateInput: Parameters<WorkItemDataRepository["updateWorkItemFromSession"]>[0] = {
           workItemId: rows.workItem.id,
           title: input.payload.title ?? rows.workItem.title ?? titleFromIntent(rows.workItem.rawDescription ?? undefined),
@@ -590,6 +650,12 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         if (selectedOptionIds.length) {
           updateInput.selectedOptionIds = selectedOptionIds;
         }
+        if (planningNote) {
+          updateInput.planningNote = planningNote;
+        }
+        if (acceptanceItems.length) {
+          updateInput.acceptanceItems = acceptanceItems;
+        }
         const updated = await repository.updateWorkItemFromSession(updateInput);
         if (!updated) {
           handleMissingWorkItem();
@@ -600,6 +666,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           kind: "workitem_finalized",
           contentJson: {
             selected_option_ids: selectedOptionIds,
+            ...(launcherSpec ? { cuu_launcher_spec: launcherSpec } : {}),
             kickoff_agent: input.payload.kickoff_agent ?? false
           },
           at: now()
@@ -609,6 +676,13 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
 
       const project = await resolveProject(input.payload.project_id);
       const title = input.payload.title ?? titleFromIntent(input.payload.raw_description);
+      const selectedOptionIds = mergeSelectedOptionIds(
+        input.payload.selected_option_ids,
+        selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
+      );
+      const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
+      const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
+      const acceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
       const createInput: Parameters<WorkItemDataRepository["createWorkItem"]>[0] = {
         projectId: project.id,
         workspaceId: project.workspaceId,
@@ -619,8 +693,14 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         status: input.payload.kickoff_agent ? "ai_working" : "spec_ready",
         at: now()
       };
-      if (input.payload.selected_option_ids) {
-        createInput.selectedOptionIds = input.payload.selected_option_ids;
+      if (selectedOptionIds.length) {
+        createInput.selectedOptionIds = selectedOptionIds;
+      }
+      if (planningNote) {
+        createInput.planningNote = planningNote;
+      }
+      if (acceptanceItems.length) {
+        createInput.acceptanceItems = acceptanceItems;
       }
       const created = await repository.createWorkItem(createInput);
       return buildWorkItemDetail(await requireDetail(created.id, input.actor));
@@ -743,6 +823,16 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   const workItems = new Map<string, MemoryStoredWorkItem>();
   const answers = new Map<string, NextQuestionRequest[]>();
   const evidence = new Map<string, EvidenceRef[]>();
+  const acceptanceItems = new Map<string, Array<{
+    id: string;
+    work_item_id: string;
+    title: string;
+    description?: string;
+    status: "open" | "met" | "unmet" | "waived";
+    sort_order: number;
+    created_at: string;
+    updated_at: string;
+  }>>();
 
   function at() {
     return now().toISOString();
@@ -795,12 +885,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   }
 
   function detail(workItem: MemoryStoredWorkItem): WorkItemDetailVM {
+    const defaultAcceptance = [
+      { id: "option-first", title: "点选澄清完成", status: answers.has(workItem.id) ? "met" : "open" },
+      { id: "evidence-bound", title: "证据已绑定", status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
+    ];
     return workItemDetailVmSchema.parse({
       workitem: workItem,
-      acceptance: [
-        { id: "option-first", title: "点选澄清完成", status: answers.has(workItem.id) ? "met" : "open" },
-        { id: "evidence-bound", title: "证据已绑定", status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
-      ],
+      acceptance: [...(acceptanceItems.get(workItem.id) ?? []), ...defaultAcceptance],
       agent_trace_preview: [],
       accepted_deliverables: [],
       evidence_refs: evidence.get(workItem.id) ?? []
@@ -843,14 +934,36 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             status: input.payload.kickoff_agent ? "ai_working" : "spec_ready"
           });
       const selectedOptionIds = input.payload.session_id
-        ? selectedOptionIdsForSession(workItem.id, input.payload.selected_option_ids)
-        : mergeSelectedOptionIds(input.payload.selected_option_ids);
+        ? mergeSelectedOptionIds(
+            selectedOptionIdsForSession(workItem.id, input.payload.selected_option_ids),
+            selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
+          )
+        : mergeSelectedOptionIds(
+            input.payload.selected_option_ids,
+            selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
+          );
+      const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
+      const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
+      const launcherAcceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
       workItem.status = input.payload.kickoff_agent ? "ai_working" : "spec_ready";
       workItem.title = input.payload.title ?? workItem.title;
       workItem.raw_description = input.payload.raw_description ?? workItem.raw_description;
       workItem.summary_md = input.payload.raw_description ?? workItem.summary_md;
-      if (selectedOptionIds.length) {
-        workItem.planning_note = `selected_options: ${selectedOptionIds.join(",")}`;
+      if (planningNote) {
+        workItem.planning_note = planningNote;
+      }
+      if (launcherAcceptanceItems.length) {
+        const timestamp = at();
+        acceptanceItems.set(workItem.id, launcherAcceptanceItems.map((item, index) => ({
+          id: stableUuid(`${workItem.id}:launcher-acceptance:${index}:${item.title}`),
+          work_item_id: workItem.id,
+          title: item.title,
+          ...(item.description ? { description: item.description } : {}),
+          status: "open",
+          sort_order: item.sortOrder,
+          created_at: timestamp,
+          updated_at: timestamp
+        })));
       }
       workItem.updated_at = at();
       workItem.version += 1;

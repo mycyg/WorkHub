@@ -7,6 +7,7 @@ import {
   riskLevelSchema
 } from "./enums.js";
 import { actorSchema, idSchema, isoDateTimeSchema } from "./domain/common.js";
+import { cuuLauncherDeliveryKindSchema } from "./domain/work-item.js";
 
 export const cuuStates = [
   "idle",
@@ -101,6 +102,8 @@ export const questionOptionSchema = z.object({
   description: z.string().optional(),
   impact: z.string().optional(),
   risk_hint: riskLevelSchema.optional(),
+  delivery_kind: cuuLauncherDeliveryKindSchema.optional(),
+  default_acceptance: z.array(z.string().min(1).max(256)).max(8).optional(),
   icon: z.string().optional()
 });
 export type QuestionOption = z.infer<typeof questionOptionSchema>;

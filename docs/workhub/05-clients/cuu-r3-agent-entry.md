@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复。仍不能宣称 R3 完成：launcher chip metadata 产品化和真实 reload capture 回归仍未验收。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门。仍不能宣称 R3 完成：真实 reload capture 回归仍未验收。
 
 | 缺口 | 计划 |
 |---|---|
@@ -467,11 +467,11 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；R3.11 已补本机 HTTP server launcher-to-run；R3.12 已补 Tauri pet window 内 stream 订阅 + fallback refresh 的 DOM/capture 证据 |
 | 失败态 | R3.2 已落 budget/403/offline/generic card mapping；R3.13.1 已落真实 run failure smoke + Tauri capture；R3.13.2 已落 401/403/offline route-stack fault smoke + 真实 Tauri capture |
 | 真实确认后启动 | R3.5 已落 API route-stack smoke，R3.9 已落 boot click harness，R3.11 已落真实 dev-server smoke，R3.12 已落 Tauri run-stream 终态 capture |
-| option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
+| option payload 更细 | R3.14 已让 launcher chip 带 `delivery_kind` / `risk_hint` / `default_acceptance`，并写入 WorkItem `planning_note` JSON spec 与默认 acceptance items |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；后续补真实 Tauri reload capture |
 | 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图 |
-| 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
+| 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
 
@@ -643,11 +643,59 @@ R3.13.3 关闭 `pet` webview 刷新或重启后丢失当前 Cuu 上下文的缺�
 | UI/文本边界 | 本轮不改 bubble 布局；R3.13.2 的安全左锚与 `right_edge_clip_gate` 继续作为后续真实 capture 回归门 |
 | 中英双语 | 恢复状态文案已补 zh-CN/en-US；现有英文固定卡测试继续通过 |
 
-## 15. 下一刀 R3.14
+## 15. R3.14 已落切片：launcher spec metadata + 文本超框防线
+
+R3.14 关闭 launcher chip 只留下 `selected_options` 文本痕迹的缺口。范围限定在 option-first launcher 的交付方向 spec：不新增 Cuu 外观、不新增 Rust 业务状态机、不改变 R3.13.3 的恢复机制。
+
+改动：
+
+| 层 | R3.14 行为 |
+|---|---|
+| contracts | `CreateWorkItemRequest` 新增 `cuu_launcher_spec`，包含 `source="cuu_desktop_launcher"`、`selected_options[]`、`delivery_kind`、`risk_hint`、`default_acceptance[]` |
+| launcher chip | `createDesktopCuuAgentLauncherCard()` 为 `document-draft` / `structured-data` / `code-template` 写入中英双语默认验收 metadata |
+| action resolver | `resolveDesktopCuuAction()` 从已选 chip 组装 `action.cuuLauncherSpec`，并在直接启动路径传给 `createWorkItem({ cuu_launcher_spec })` |
+| API service | `createWorkItem()` 若收到 spec 则使用 payload spec；若真实确认链路只带 selected ids，则从 `document-draft` 等 option id 推导同一 spec |
+| DB / memory repository | WorkItem `planning_note` 继续保留 `selected_options: ...`，并追加 `cuu_launcher_spec: {...}` JSON；同时写入默认 `work_item_acceptance_items` |
+| QA smoke | `qa:cuu-r3-launcher-smoke` 与 `qa:cuu-r3-dev-server-smoke` 断言 `launcher_spec_delivery_kind="document_draft"` 和 `launcher_acceptance_count=2` |
+| 文本边界 | `pet-surface` 与 `desktopCuuNoticeCss` 补 `min-width:0`、`max-width:100%`、长词换行、chip/action/section 宽度约束，防止标题、进度和按钮在窄卡片中超框 |
+
+数据流：
+
+```text
+launcher chip metadata
+  -> CuuCardChip.metadata
+  -> resolveDesktopCuuAction().cuuLauncherSpec
+  -> CreateWorkItemRequest.cuu_launcher_spec
+  -> WorkItem planning_note JSON + acceptance items
+```
+
+真实 clarification/confirmation 链路中，最终确认卡只会提交 `create-workitem`；因此 API service 会合并 session 历史里的 `document-draft`，再用 `cuuLauncherSpecFromSelectedOptionIds()` 推导 spec，保证真实 route-stack smoke 不依赖前端私有状态。
+
+验收：
+
+- `corepack pnpm --filter @workhub/contracts test`：19/19 通过。
+- `corepack pnpm --filter @workhub/cuu test`：33/33 通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：75/75 通过。
+- `corepack pnpm --filter @workhub/api test`：100/100 通过。
+- `corepack pnpm --filter @workhub/contracts typecheck`、`@workhub/cuu typecheck`、`@workhub/db typecheck`、`@workhub/api typecheck`、`@workhub/desktop-webview typecheck` 均通过。
+- `corepack pnpm qa:cuu-r3-launcher-smoke` 通过，readback 包含 `cuu_launcher_spec` 与 2 条 acceptance。
+- `corepack pnpm qa:cuu-r3-dev-server-smoke` 通过，真实 HTTP route-stack 输出同样 spec 与 acceptance。
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 没有发现 schema strip、payload 丢失或长文本样式回退；旧请求不带 `cuu_launcher_spec` 时仍可用 selected ids 推导 |
+| 数据流 | option metadata 贯穿 `contracts -> desktop runtime -> API service -> DB/memory detail -> QA readback` |
+| PRD/概念图 | 符合 option-first 与 TS-first runtime：用户仍只点选，主窗不出现 Cuu，Rust 不拥有业务状态 |
+| UI/文本边界 | 修复用户反馈的同类风险：Cuu 卡片内 title/message/chip/action/progress/section 均有宽度与换行约束 |
+| 中英双语 | launcher 默认 acceptance 文案已补 zh-CN/en-US；英文 action spec 测试覆盖 `structured-data` |
+
+## 16. 下一刀 R3.15
 
 R3 后续顺序：
 
-1. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
-2. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
-3. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream completion、run-failure、401/403/offline 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json`、DOM attrs gate 与 `right_edge_clip_gate`。
+1. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
+2. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream completion、run-failure、401/403/offline 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json`、DOM attrs gate 与 `right_edge_clip_gate`。
+3. 将 R3.14 文本超框规则纳入真实 capture 复核：长英文 run title、`Run progress`、`Budget`、按钮和 chip 不得超出 bubble。
 4. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并提交。
