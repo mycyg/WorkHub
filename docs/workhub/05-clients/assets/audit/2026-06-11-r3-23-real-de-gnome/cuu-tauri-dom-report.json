@@ -1,0 +1,218 @@
+{
+  "bubble": {
+    "data": {
+      "data_cuu_card_id": "40000000-0000-4000-8000-000000000001",
+      "data_pet_bubble": "true",
+      "data_pet_bubble_kind": "trace",
+      "data_pet_bubble_priority": "high",
+      "data_pet_payload_ref_entity_id": "40000000-0000-4000-8000-000000000001",
+      "data_pet_payload_ref_entity_type": "agent_run",
+      "data_pet_payload_ref_href": "/agent-runs/40000000-0000-4000-8000-000000000001/replay"
+    },
+    "layout": {
+      "client_height": 293,
+      "client_width": 298,
+      "horizontal_overflow": false,
+      "scroll_height": 293,
+      "scroll_width": 298,
+      "vertical_overflow": false
+    },
+    "present": true,
+    "rect": {
+      "bottom": 328,
+      "height": 295,
+      "right": 388,
+      "width": 300,
+      "x": 88,
+      "y": 33
+    },
+    "selector": "[data-pet-bubble]",
+    "text": "CuuProgressHigh This run needs attention Cuu R3 run-failure QA forced provider failure. Cuu updated progress: Cuu desktop entry task View replayBack to task Run progress#1 final: Cuu R3 run-failure QA forced provider failure.Budget0/120000 tokens¥0/5"
+  },
+  "captured_at_iso": "2026-06-10T20:23:42.113Z",
+  "contract": "workhub.cuu.tauri.actual-dom-report",
+  "live2d": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "70",
+      "data_cuu_behavior_state": "worried",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_framing": "transparent_full_body",
+      "data_cuu_live2d_interruptible": "true",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_loop": "true",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "worried_ears",
+      "data_cuu_live2d_renderer_state": "mtn/08.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_state": "worried_ears",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "registry_default"
+    },
+    "layout": {
+      "client_height": 320,
+      "client_width": 230,
+      "horizontal_overflow": false,
+      "scroll_height": 320,
+      "scroll_width": 230,
+      "vertical_overflow": false
+    },
+    "present": true,
+    "rect": {
+      "bottom": 650,
+      "height": 323.97,
+      "right": 443.65,
+      "width": 235.55,
+      "x": 208.1,
+      "y": 326.04
+    },
+    "selector": ".wh-cuu-cat-live2d",
+    "text": "Cuu"
+  },
+  "primary_action": {
+    "data": {
+      "data_cuu_action_id": "view_replay",
+      "data_method": "GET",
+      "data_requires_reason": "false",
+      "data_tone": "secondary"
+    },
+    "layout": {
+      "client_height": 26,
+      "client_width": 87,
+      "horizontal_overflow": false,
+      "scroll_height": 26,
+      "scroll_width": 87,
+      "vertical_overflow": false
+    },
+    "present": true,
+    "rect": {
+      "bottom": 193,
+      "height": 28,
+      "right": 192.11,
+      "width": 89.11,
+      "x": 103,
+      "y": 165
+    },
+    "selector": "[data-cuu-action-id]",
+    "text": "View replay"
+  },
+  "primary_chip": {
+    "data": {},
+    "present": false,
+    "selector": "[data-chip-id],[data-pet-option-id]"
+  },
+  "reason": "patch",
+  "settings_menu": {
+    "data": {
+      "data_pet_settings_menu": "true"
+    },
+    "layout": {
+      "client_height": 0,
+      "client_width": 0,
+      "horizontal_overflow": false,
+      "scroll_height": 0,
+      "scroll_width": 0,
+      "vertical_overflow": false
+    },
+    "present": true,
+    "rect": {
+      "bottom": 0,
+      "height": 0,
+      "right": 0,
+      "width": 0,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-pet-settings-menu]",
+    "text": "Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu"
+  },
+  "spatial_safety": {
+    "bubble_gap_to_live2d_px": -1.96,
+    "bubble_live2d_overlap_height": 1.96,
+    "bubble_live2d_overlap_width": 179.9,
+    "bubble_overlaps_live2d": false,
+    "bubble_within_surface_horizontal": true,
+    "bubble_within_surface_vertical": true,
+    "live2d_within_surface_horizontal": true,
+    "live2d_within_surface_vertical": true
+  },
+  "surface": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "70",
+      "data_cuu_behavior_state": "worried",
+      "data_cuu_idle_action": "idle_tail_sway",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "worried_ears",
+      "data_cuu_live2d_renderer_state": "mtn/08.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "registry_default",
+      "data_cuu_run_stream_close_reason": "terminal_status",
+      "data_cuu_run_stream_event_type": "",
+      "data_cuu_run_stream_message": "",
+      "data_cuu_run_stream_refreshed_status": "",
+      "data_cuu_run_stream_run_id": "40000000-0000-4000-8000-000000000001",
+      "data_cuu_run_stream_state": "closed",
+      "data_cuu_state": "worried",
+      "data_cuu_visual_mode": "live2d_cat",
+      "data_pet_card_has_context": "true",
+      "data_pet_card_kind": "trace",
+      "data_pet_card_layout": "full",
+      "data_pet_card_priority": "high",
+      "data_pet_cursor_near": "false",
+      "data_pet_dragging": "false",
+      "data_pet_hide_on_hover": "false",
+      "data_pet_hover_avoidance": "none",
+      "data_pet_hover_hidden": "false",
+      "data_pet_hover_hide_mode": "off",
+      "data_pet_hovered": "false",
+      "data_pet_look_x": "0",
+      "data_pet_look_y": "0",
+      "data_pet_opacity_percent": "100",
+      "data_pet_pass_through": "false",
+      "data_pet_pointer_smoothing_alpha": "0.58",
+      "data_pet_scale_percent": "100",
+      "data_pet_window_height": "720",
+      "data_pet_window_mode": "card",
+      "data_pet_window_width": "520",
+      "data_wh_surface": "pet"
+    },
+    "layout": {
+      "client_height": 720,
+      "client_width": 520,
+      "horizontal_overflow": false,
+      "scroll_height": 720,
+      "scroll_width": 520,
+      "vertical_overflow": false
+    },
+    "present": true,
+    "rect": {
+      "bottom": 720,
+      "height": 720,
+      "right": 520,
+      "width": 520,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-wh-surface=pet]",
+    "text": "Cuu Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu CuuProgressHigh This run needs attention Cuu R3 run-failure QA forced provider failure. Cuu updated progress: Cuu desktop entry task View replayBack to task Run progress#1 final: Cuu R3 run-failure QA forced provider failure.Budget0/120000 tokens¥0/5"
+  },
+  "version": 1
+}

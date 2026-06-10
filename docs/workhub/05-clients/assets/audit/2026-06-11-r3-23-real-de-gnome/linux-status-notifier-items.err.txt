@@ -1,0 +1,1 @@
+Failed to get property RegisteredStatusNotifierItems on interface org.kde.StatusNotifierWatcher: The name org.kde.StatusNotifierWatcher was not provided by any .service files

@@ -183,11 +183,19 @@ WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX
 - `cleanup()` 增加当前 `repo_root` 限定的 orphan 清理：`cuu-r3-tauri-run-stream-server` 与 `@workhub/desktop-webview dev`，避免失败后 8787/1420 stale 端口造成下一轮假阻塞。
 - `cleanup()` 后续再收紧为 RETURN + EXIT 双保险，并按当前 `repo_root/client-tauri/src-tauri/target/debug/workhub-client-tauri` 清理 orphan Tauri debug binary，避免下一轮 single-instance 假失败。
 
-当前状态：远端真实 GNOME 已证明 `DISPLAY/XAUTHORITY` 桥接、窗口列表、截图、DOM `spatial_safety` 与文本/frame hardgate 可跑；StatusNotifier menu action 仍阻塞在 `org.kde.StatusNotifierWatcher` 缺失/扩展未热加载，不能声明 tray menu action 通过。
+当前状态：远端真实 GNOME 已证明 `DISPLAY/XAUTHORITY` 桥接、窗口列表、DOM `spatial_safety` 与文本/frame hardgate 可跑；root screenshot 在该远程 GNOME session 下是黑图，不作为 UI 验收截图；StatusNotifier menu action 仍阻塞在 `org.kde.StatusNotifierWatcher` 缺失/扩展未热加载，不能声明 tray menu action 通过。
+
+本地证据已归档：
+
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/smoke-summary.md`
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/screen.png`
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/cuu-tauri-dom-report.json`
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/gnome-appindicator-status.txt`
 
 ## 12. 下一步
 
-1. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、StatusNotifier item、DBus menu layout/event、每个菜单动作前后截图。
-2. 若 `RegisteredStatusNotifierItems` 无法定位 WorkHub，先读取 `linux-status-notifier-items.txt` 与每个 `linux-status-notifier-item-*.txt`，再用 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` 显式指定，不改用 Tauri command fallback。
-3. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
-4. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。
+1. 重启或重建远端 GNOME session，使已启用的 `ubuntu-appindicators@ubuntu.com` 从 `INACTIVE` 变为 active，再跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 StatusNotifier item、DBus menu layout/event、每个菜单动作前后截图。
+2. 若重启后 `RegisteredStatusNotifierItems` 仍无 WorkHub，先读取 `linux-status-notifier-items.txt` 与每个 `linux-status-notifier-item-*.txt`，再用 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` 显式指定，不改用 Tauri command fallback。
+3. 若 GNOME 长期不提供 watcher，新增显式 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon` fallback：基于 `xwininfo` 中的 `tray-icon tray app workhub-main-tray` X window 做物理右键/键盘菜单验证，并在文档中标明这不是 AppIndicator panel proof。
+4. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
+5. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。

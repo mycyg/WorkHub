@@ -1,0 +1,5 @@
+  10230 gnome-shell     /usr/bin/gnome-shell --mode=ubuntu
+  10301 gnome-shell-cal /usr/libexec/gnome-shell-calendar-server
+  10318 gjs             /usr/bin/gjs -m /usr/share/gnome-shell/org.gnome.Shell.Notifications
+  10586 gjs             /usr/bin/gjs -m /usr/share/gnome-shell/org.gnome.ScreenSaver
+ 279421 grep            grep -Ei gnome-shell|plasmashell|xfce4-panel|mate-panel|lxqt-panel|cinnamon|budgie-panel|waybar|kstatus|appindicator|ayatana|xembedsniproxy|snixembed|openbox

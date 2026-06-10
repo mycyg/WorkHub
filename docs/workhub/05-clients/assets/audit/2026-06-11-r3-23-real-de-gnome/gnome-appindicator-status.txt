@@ -1,0 +1,17 @@
+captured_at=2026-06-11T04:25:12+08:00
+enabled_extensions:
+ding@rastersoft.com
+tiling-assistant@ubuntu.com
+ubuntu-appindicators@ubuntu.com
+ubuntu-dock@ubuntu.com
+appindicator_info:
+ubuntu-appindicators@ubuntu.com
+  名称: Ubuntu AppIndicators
+  描述: Support app indicators and legacy tray icons in top panel, as the default Ubuntu experience. System update of AppIndicator and KStatusNotifierItem Support extension.
+  路径: /usr/share/gnome-shell/extensions/ubuntu-appindicators@ubuntu.com
+  URL: https://github.com/ubuntu/gnome-shell-extension-appindicator
+  已启用: 是
+  状态: INACTIVE
+status_notifier_watcher:
+Failed to get property RegisteredStatusNotifierItems on interface org.kde.StatusNotifierWatcher: The name org.kde.StatusNotifierWatcher was not provided by any .service files
+dbus_indicator_services:
