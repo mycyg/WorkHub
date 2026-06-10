@@ -2200,19 +2200,41 @@ R2 验收：
 
 仍未覆盖：
 
-- 真实 `bootDesktopPetSurface()` DOM click harness。
 - 真实 API dev server + desktop webview runtime smoke。
 - 真实 Tauri `pet` window 点击截图/录屏。
 - pet window 刷新后的当前 session/run card 恢复。
 
-### R3.9 下一刀
+### R3.9 已落：boot click harness
 
-1. 用 R3.8 的 client 注入点补真实 `bootDesktopPetSurface()` click harness：body click -> launcher card -> option click -> submit -> clarification -> confirm -> run。
-2. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
-3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
-4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+本切片用 R3.8 的 client 注入点补真实 `bootDesktopPetSurface()` click harness，覆盖 body click -> launcher card -> option click -> submit -> clarification -> confirm -> run。它验证 production boot 和 click event delegation，不新增 UI、不改 Cuu 外观、不冒充真实 Tauri window 截图。
+
+改动：
+
+- `apps/desktop-webview/src/pet-surface.test.ts`
+  - 新增 `FakePetDomRoot` / `FakePetDomElement`，只模拟 boot 需要的 `Element` / `Node`、`root.innerHTML`、`closest()`、click listener 和无真实 interval 的 `window`。
+  - 抽出 `createPetHarnessClient()`，让 R3.7 runtime harness 与 R3.9 boot harness 复用同一条 fake typed client 数据流。
+  - 新增 `pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card`，从 `bootDesktopPetSurface(root, { client })` 开始，断言 launcher 展开、option-first 选择、澄清、确认、AgentRun trace card 和 API 调用顺序。
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：68/68 通过。
+- `corepack pnpm verify`：通过，R2 release gate、reference hygiene、secret-like diff gate 均为 PASS。
+
+仍未覆盖：
+
+- 真实 API dev server + desktop webview runtime smoke。
+- 真实 Tauri `pet` window 点击截图/录屏。
+- pet window 刷新后的当前 session/run card 恢复。
+- launcher chip metadata 结构化进入 WorkItem spec。
+
+### R3.10 下一刀
+
+1. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack、纯 TS runtime harness 或 fake DOM boot harness。
+2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
+3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 

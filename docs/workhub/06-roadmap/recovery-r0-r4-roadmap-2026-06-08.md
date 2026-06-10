@@ -104,7 +104,7 @@ R1 退出门：
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口；R2.7 已补 release gate report，并接入 `pnpm verify`。
-4. R3.1 已补 Cuu option-first Agent launcher：点击独立 pet window 的 Cuu body 可展开启动卡；R3.2 已补 TS run stream 回流、终态关闭和错误卡；R3.3/R3.4 已补 `SessionVM` 澄清回退与确认后启动 AgentRun；R3.5 已补 API route-stack launcher-to-run smoke，并把 `nextQuestion()` 合约统一为 `SessionVM`；R3.6 已补 Cuu 双语边界与 session 选择历史合并；R3.7 已补 pet runtime flow harness；R3.8 已补 `bootDesktopPetSurface()` client 注入点。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。下一步 R3.9 补真实 boot click harness、Tauri 点击截图/录屏、dev server smoke 与刷新恢复。
+4. R3.1 已补 Cuu option-first Agent launcher：点击独立 pet window 的 Cuu body 可展开启动卡；R3.2 已补 TS run stream 回流、终态关闭和错误卡；R3.3/R3.4 已补 `SessionVM` 澄清回退与确认后启动 AgentRun；R3.5 已补 API route-stack launcher-to-run smoke，并把 `nextQuestion()` 合约统一为 `SessionVM`；R3.6 已补 Cuu 双语边界与 session 选择历史合并；R3.7 已补 pet runtime flow harness；R3.8 已补 `bootDesktopPetSurface()` client 注入点；R3.9 已补真实 boot click harness。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。下一步 R3.10 补 dev server smoke、Tauri 点击截图/录屏与刷新恢复。
 
 ## 3. R2 真正解除单 worker
 
@@ -134,6 +134,7 @@ R1 退出门：
 | R3-6 双语与选择历史 | **已落 R3.6**：en-US 未知事件、runtime error、Replay cost、budget exhausted run card 均走本地化；`createWorkItem({session_id})` 合并前一轮交付方向与确认选择，smoke 回读 planning note。 | `@workhub/cuu` 33/33、`@workhub/desktop-webview` 66/66、`qa:cuu-r3-launcher-smoke` 返回 `selected_options: document-draft,create-workitem` |
 | R3-7 pet runtime harness | **已落 R3.7**：用 pet render + option selection + typed action chain 跑通 launcher -> clarification -> confirmation -> AgentRun，并断言每步 pet bubble DOM 属性和 API payload 顺序。 | `@workhub/desktop-webview` 67/67；`pet runtime harness advances launcher selections through clarification into a run card` |
 | R3-8 boot client seam | **已落 R3.8**：`bootDesktopPetSurface()` 支持注入 typed client，默认 `createApiClient()` 行为不变；`main.ts` 导出 `DesktopPetSurfaceClient`。 | `@workhub/desktop-webview` typecheck、67/67 tests |
+| R3-9 boot click harness | **已落 R3.9**：从 `bootDesktopPetSurface(root, { client })` 真实启动，经过 production click event delegation 跑通 body click -> launcher -> option -> clarification -> confirmation -> AgentRun。 | `@workhub/desktop-webview` typecheck、68/68 tests；`corepack pnpm verify` PASS；`pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card` |
 
 R3 禁止项：不新增模型、改色、动效、设置矩阵；黑猫/白猫 Live2D 仅作为现有运行时。
 

@@ -10,6 +10,7 @@ import {
   submitDesktopCuuAction
 } from "./desktop-cuu-runtime.js";
 import {
+  bootDesktopPetSurface,
   createDesktopPetIdleScheduler,
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
@@ -17,7 +18,8 @@ import {
   desktopPetPointerSmoothingAlpha,
   renderDesktopPetSurface,
   resolveDesktopSurface,
-  scheduleDesktopPetFirstPaint
+  scheduleDesktopPetFirstPaint,
+  type DesktopPetSurfaceClient
 } from "./pet-surface.js";
 import { assertDesktopPetVisualQaPass, createDesktopPetVisualQaReport } from "./pet-surface-qa.js";
 import {
@@ -297,6 +299,240 @@ function resolveHarnessAction(card: CuuCard, actionId: string) {
   return resolved;
 }
 
+function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarnessRun()): DesktopPetSurfaceClient {
+  return {
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload });
+      return petHarnessSession("scope");
+    },
+    async nextQuestion(sessionId: string, payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "nextQuestion", sessionId, payload });
+      return petHarnessSession("confirm");
+    },
+    async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
+      calls.push({ step: "createWorkItem", payload });
+      return {
+        workitem: {
+          id: run.work_item_id,
+          code: "WH-201",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          submitter_user_id: "10000000-0000-4000-8000-000000000101",
+          title: run.title,
+          status: "ai_working",
+          priority: "normal",
+          sync_state: "pending",
+          version: 1,
+          mode: "worker",
+          human_reserved: false,
+          created_at: "2026-06-10T01:00:00.000Z",
+          updated_at: "2026-06-10T01:00:00.000Z"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        accepted_deliverables: [],
+        evidence_refs: []
+      } as WorkItemDetailVM;
+    },
+    async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
+      calls.push({ step: "startAgentRun", workItemId, payload });
+      return run;
+    },
+    async getAgentRun(): Promise<AgentRunLiveVM> {
+      return run;
+    },
+    streamUrl(href: string) {
+      return href;
+    },
+    async updatePreferences() {
+      return {};
+    },
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  } as unknown as DesktopPetSurfaceClient;
+}
+
+class FakePetDomNode {}
+
+class FakePetDomElement extends FakePetDomNode {
+  readonly dataset: Record<string, string> = {};
+  readonly style = {
+    setProperty() {}
+  };
+  hidden = false;
+
+  constructor(
+    private readonly tagName: string,
+    private readonly attributes: Record<string, string> = {}
+  ) {
+    super();
+    for (const [key, value] of Object.entries(attributes)) {
+      if (key.startsWith("data-")) {
+        this.dataset[dataAttributeToDatasetKey(key)] = value;
+      }
+    }
+  }
+
+  closest<T extends Element = Element>(selector: string): T | null {
+    return this.matches(selector) ? this as unknown as T : null;
+  }
+
+  getAttribute(name: string) {
+    return this.attributes[name] ?? null;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes[name] = value;
+    if (name.startsWith("data-")) {
+      this.dataset[dataAttributeToDatasetKey(name)] = value;
+    }
+  }
+
+  getBoundingClientRect(): DOMRect {
+    return {
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 260,
+      bottom: 340,
+      width: 260,
+      height: 340,
+      toJSON() {
+        return {};
+      }
+    } as DOMRect;
+  }
+
+  private matches(selector: string) {
+    if (selector === "a[href]") {
+      return this.tagName.toLowerCase() === "a" && Boolean(this.attributes.href);
+    }
+    const attr = selector.match(/^\[([^=\]]+)(?:=(?:"([^"]*)"|([^\]]+)))?\]$/u);
+    if (!attr) {
+      return false;
+    }
+    const name = attr[1];
+    if (!name) {
+      return false;
+    }
+    const expected = attr[2] ?? attr[3];
+    if (!(name in this.attributes)) {
+      return false;
+    }
+    return expected === undefined || this.attributes[name] === expected;
+  }
+}
+
+type FakePetDomEvent = {
+  readonly target: FakePetDomElement;
+  defaultPrevented: boolean;
+  preventDefault: () => void;
+};
+
+type FakePetDomListener = (event: FakePetDomEvent) => void | Promise<void>;
+
+class FakePetDomRoot extends FakePetDomElement {
+  innerHTML = "";
+  private readonly listeners = new Map<string, Set<FakePetDomListener>>();
+
+  constructor() {
+    super("div", { "data-wh-surface": "pet" });
+  }
+
+  addEventListener(type: string, listener: FakePetDomListener) {
+    const listeners = this.listeners.get(type) ?? new Set<FakePetDomListener>();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: string, listener: FakePetDomListener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  querySelector<T extends Element = Element>(selector: string): T | null {
+    if (selector === "[data-wh-surface=pet]" && this.innerHTML.includes('data-wh-surface="pet"')) {
+      return new FakePetDomElement("section", { "data-wh-surface": "pet" }) as unknown as T;
+    }
+    if (selector === "[data-pet-settings-menu]" && this.innerHTML.includes('data-pet-settings-menu="true"')) {
+      return new FakePetDomElement("nav", { "data-pet-settings-menu": "true" }) as unknown as T;
+    }
+    return null;
+  }
+
+  contains(node: Node | null) {
+    return node instanceof FakePetDomNode;
+  }
+
+  async click(target: FakePetDomElement) {
+    const event: FakePetDomEvent = {
+      target,
+      defaultPrevented: false,
+      preventDefault() {
+        event.defaultPrevented = true;
+      }
+    };
+    for (const listener of this.listeners.get("click") ?? []) {
+      await listener(event);
+    }
+    return event;
+  }
+}
+
+function dataAttributeToDatasetKey(attributeName: string) {
+  return attributeName.slice("data-".length).replace(/-([a-z])/gu, (_, letter: string) => letter.toUpperCase());
+}
+
+function fakePetTarget(attributes: Record<string, string>, tagName = "button") {
+  return new FakePetDomElement(tagName, attributes);
+}
+
+async function withFakePetDom(callback: (root: FakePetDomRoot) => Promise<void>) {
+  const target = globalThis as Record<string, unknown>;
+  const previousNode = target["Node"];
+  const previousElement = target["Element"];
+  const previousWindow = target["window"];
+  const root = new FakePetDomRoot();
+  let nextTimerId = 1;
+  target["Node"] = FakePetDomNode;
+  target["Element"] = FakePetDomElement;
+  target["window"] = {
+    setInterval() {
+      nextTimerId += 1;
+      return nextTimerId;
+    },
+    clearInterval() {}
+  };
+  try {
+    await callback(root);
+  } finally {
+    if (previousNode === undefined) {
+      delete target["Node"];
+    } else {
+      target["Node"] = previousNode;
+    }
+    if (previousElement === undefined) {
+      delete target["Element"];
+    } else {
+      target["Element"] = previousElement;
+    }
+    if (previousWindow === undefined) {
+      delete target["window"];
+    } else {
+      target["window"] = previousWindow;
+    }
+  }
+}
+
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
   assert.equal(resolveDesktopSurface({ pathname: "/pet", search: "" }), "pet");
   assert.equal(resolveDesktopSurface({ pathname: "/", search: "?surface=pet" }), "pet");
@@ -523,56 +759,7 @@ test("pet surface renders the Cuu outbound agent launcher as option-first withou
 test("pet runtime harness advances launcher selections through clarification into a run card", async () => {
   const calls: unknown[] = [];
   const run = petHarnessRun();
-  const client = {
-    async createSession(payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "createSession", payload });
-      return petHarnessSession("scope");
-    },
-    async nextQuestion(sessionId: string, payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "nextQuestion", sessionId, payload });
-      return petHarnessSession("confirm");
-    },
-    async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
-      calls.push({ step: "createWorkItem", payload });
-      return {
-        workitem: {
-          id: run.work_item_id,
-          code: "WH-201",
-          project_id: "10000000-0000-4000-8000-000000000002",
-          submitter_user_id: "10000000-0000-4000-8000-000000000101",
-          title: run.title,
-          status: "ai_working",
-          priority: "normal",
-          sync_state: "pending",
-          version: 1,
-          mode: "worker",
-          human_reserved: false,
-          created_at: "2026-06-10T01:00:00.000Z",
-          updated_at: "2026-06-10T01:00:00.000Z"
-        },
-        acceptance: [],
-        agent_trace_preview: [],
-        accepted_deliverables: [],
-        evidence_refs: []
-      } as WorkItemDetailVM;
-    },
-    async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
-      calls.push({ step: "startAgentRun", workItemId, payload });
-      return run;
-    },
-    async respondApproval() {
-      throw new Error("not needed");
-    },
-    async searchKnowledge() {
-      throw new Error("not needed");
-    },
-    async useEvidenceForWorkItem() {
-      throw new Error("not needed");
-    },
-    async mergeProposal() {
-      throw new Error("not needed");
-    }
-  };
+  const client = createPetHarnessClient(calls, run);
 
   let card = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
   let surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
@@ -623,6 +810,104 @@ test("pet runtime harness advances launcher selections through clarification int
   assert.match(surface.html, /data-pet-bubble-kind="trace"/u);
   assert.match(surface.html, /data-cuu-state="thinking"/u);
   assert.match(surface.html, /data-cuu-action-id="view_replay"/u);
+
+  assert.deepEqual(calls, [
+    {
+      step: "createSession",
+      payload: {
+        title: "Cuu 桌面入口任务",
+        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+      }
+    },
+    {
+      step: "nextQuestion",
+      sessionId: "10000000-0000-4000-8000-000000000201",
+      payload: { selected_option_ids: ["document-draft"] }
+    },
+    {
+      step: "nextQuestion",
+      sessionId: "10000000-0000-4000-8000-000000000201",
+      payload: { selected_option_ids: ["create-workitem"] }
+    },
+    {
+      step: "createWorkItem",
+      payload: {
+        session_id: "10000000-0000-4000-8000-000000000201",
+        selected_option_ids: ["create-workitem"],
+        kickoff_agent: true
+      }
+    },
+    {
+      step: "startAgentRun",
+      workItemId: "10000000-0000-4000-8000-000000000201",
+      payload: { title: "Cuu 桌面入口任务" }
+    }
+  ]);
+});
+
+test("pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card", async () => {
+  const calls: unknown[] = [];
+  const run = petHarnessRun();
+
+  await withFakePetDom(async (root) => {
+    const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+      client: createPetHarnessClient(calls, run)
+    });
+
+    try {
+      assert.match(root.innerHTML, /data-wh-surface="pet"/u);
+      assert.match(root.innerHTML, /data-pet-window-mode="body_only"/u);
+      assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+
+      await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+      assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+      assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
+      assert.match(root.innerHTML, /data-cuu-action-id="start_agent_from_cuu"/u);
+      assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
+
+      const launcherSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+      assert.equal(launcherSelection.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+
+      const launcherSubmit = await root.click(fakePetTarget({
+        href: "/api/cuu/start-agent",
+        "data-cuu-action-id": "start_agent_from_cuu"
+      }, "a"));
+      assert.equal(launcherSubmit.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
+      assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
+      assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
+      assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
+
+      const clarificationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+      assert.equal(clarificationSelection.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+
+      const clarificationSubmit = await root.click(fakePetTarget({
+        href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+        "data-cuu-action-id": "submit_option"
+      }, "a"));
+      assert.equal(clarificationSubmit.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-pet-option-id="create-workitem"/u);
+      assert.match(root.innerHTML, /是否按这个方向创建事项/u);
+
+      const confirmationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "create-workitem" }));
+      assert.equal(confirmationSelection.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-chip-id="create-workitem"[^>]+data-selected="true"/u);
+
+      const confirmationSubmit = await root.click(fakePetTarget({
+        href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+        "data-cuu-action-id": "submit_option"
+      }, "a"));
+      assert.equal(confirmationSubmit.defaultPrevented, true);
+      assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+      assert.match(root.innerHTML, /data-pet-bubble-kind="trace"/u);
+      assert.match(root.innerHTML, /data-cuu-state="thinking"/u);
+      assert.match(root.innerHTML, /data-cuu-action-id="view_replay"/u);
+    } finally {
+      await runtime.dispose();
+    }
+  });
 
   assert.deepEqual(calls, [
     {
