@@ -2582,17 +2582,31 @@ Bug / 数据流审查：
 5. 已修 QA seed response UTF-8 解码 bug：PowerShell 不再用 `Invoke-RestMethod` 直接解码中文，而是读取 byte array 后显式 UTF-8 decode。
 6. 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/`。
 
-### R3.16 下一刀：业务矩阵 + 设置矩阵回归
+### R3.16 已落：业务状态矩阵 + 文本边界回归
 
-1. 保留 R3.12/R3.13.1/R3.13.2/R3.15 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal 的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
-2. 继续把文本边界作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、状态 section 不得超出框。
-3. 补 `clarify/search/sync/done/offline/approval` 正式业务矩阵，优先真实 Tauri Hijiki，再评估白猫必要矩阵。
-4. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix 与 Linux/macOS capture 策略。
-5. 验收命令：desktop-webview typecheck/test、API typecheck/test、R3 smoke 矩阵、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
+1. 已阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md`、`cuu-tauri-business-motion-capture-p1-7.md` 与 Cuu/TS-first 概念图，确认本轮只补真实窗口状态矩阵，不扩大为审批/检索/同步后端端到端链路。
+2. 已用真实 Tauri `pet` window 重录 `clarify/search/sync/done/offline/approval` 六场景：zh-CN 覆盖 clarify/search/done，en-US 覆盖 approval/sync/offline。
+3. 已把 R3.14/R3.15 文本边界纳入本轮硬门：六组 contact sheet/GIF/MP4、DOM report 与 motion diff 均通过，`right_edge_clip_gate.passed=true` 且右侧亮色像素计数均为 0。
+4. 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/`。
+5. 已清理中间 `frames/`、ffmpeg/Tauri log；每个场景只保留 contact sheet、GIF、MP4、DOM report、first-frame probe 与 motion diff report。
+
+复核：
+
+- 数据流：`WORKHUB_CUU_QA_SCENARIO -> scripted push-event/sse-status -> DesktopShellCuuRuntime -> CuuCard mapper -> renderDesktopPetSurface -> real Tauri PrintWindow capture`。
+- PRD/概念图一致：Cuu 仍只在独立 `pet` window；主窗无 Cuu 本体；Rust 只注入 QA preference，不拥有业务状态。
+- bug 审查：未发现按钮、chip、evidence refs、英文 offline 文案或完成卡超框；不把 fixture capture 夸大成真实服务闭环。
+
+### R3.17 下一刀：settings matrix + pass-through 恢复
+
+1. 保留 R3.12/R3.13.1/R3.13.2/R3.15/R3.16 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
+2. 补右键菜单真实截图 / DOM dump：zh-CN / en-US 各一份，确认黑/白模型、语言切换、hide-on-hover、打开设置、隐藏 Cuu 文本不溢出且不遮挡 Cuu 主体。
+3. 补 settings matrix：default / white-cat / scale 75 / scale 150 / opacity 60 / pass-through / hide-on-hover / combo。
+4. 补 pass-through recovery：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100` 与右键菜单可用。
+5. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 
-- 不新增模型、改色、动效、设置矩阵。
+- 不新增模型、改色、动效；settings matrix 只验证现有右键菜单、语言、scale、opacity、pass-through、hide-on-hover 与恢复能力。
 - 不把 Cuu 放回 Web/desktop 主窗。
 - 不让 Cuu 绕过 proposal/review/permission 规则。
 

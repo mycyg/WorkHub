@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补更多业务场景矩阵、设置矩阵与跨平台 capture。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补设置矩阵、右键菜单恢复与跨平台 capture。
 
 | 缺口 | 计划 |
 |---|---|
@@ -470,7 +470,7 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | option payload 更细 | R3.14 已让 launcher chip 带 `delivery_kind` / `risk_hint` / `default_acceptance`，并写入 WorkItem `planning_note` JSON spec 与默认 acceptance items |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；R3.15 已用真实 Tauri reload capture 证明 session/active run/terminal run 恢复且不裁切 |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -756,12 +756,64 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario reload-terminal-run -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 48 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-reload-restore\hijiki\reload-terminal-run-zh-pass
 ```
 
-## 17. 下一刀 R3.16
+## 17. R3.16 已落切片：真实 Tauri 业务状态矩阵 capture
+
+R3.16 关闭 P1.9/P1.10 旧证据不能替代当前 R3 文本边界门的问题：`clarify/search/sync/done/offline/approval` 六个业务状态已用当前 `scripts/qa/cuu-tauri-motion-capture.ps1` 在真实 Tauri `pet` window 中重录，且全部经过 DOM attrs、motion diff、contact sheet/GIF/MP4、`right_edge_clip_gate` 与人工视觉复核。范围仍限定为 scripted push-event / sse-status 的真实窗口状态矩阵；不把它宣称为真实审批、检索、同步后端端到端闭环。
+
+证据：
+
+| 场景 | Locale | 证据目录 |
+|---|---|---|
+| `clarify` | zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/clarify-zh-pass/` |
+| `approval` | en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/approval-en-pass/` |
+| `search` | zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/search-zh-pass/` |
+| `sync` | en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/sync-en-pass/` |
+| `done` | zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/done-zh-pass/` |
+| `offline` | en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/offline-en-pass/` |
+
+每个目录保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json`、`first-frame-probe.png` 与 `motion-diff-report.json`。六组 `motion-diff-report.json` 均满足 `passed=true`、`motion_gate_passed=true`、`actual_dom_matches_expected=true`、`right_edge_clip_gate.passed=true`，且右侧亮色像素计数均为 0。
+
+数据流：
+
+```text
+WORKHUB_CUU_QA_SCENARIO
+  -> Tauri pet init script
+  -> createDesktopPetQaShellListen()
+  -> scripted push-event or sse-status
+  -> bindDesktopShellCuuRuntime()
+  -> CuuCard mapper
+  -> renderDesktopPetSurface()
+  -> real Tauri PrintWindow capture + DOM report
+```
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 没有发现 R3.14/R3.15 文本边界样式回退；`approval` 多按钮、`search` evidence refs、`sync` 英文状态、`offline` 英文 reconnecting chip、`done` 完成按钮均留在 bubble/card 内 |
+| 数据流 | 六场景仍是 QA scripted events；它们验证真实 Tauri window、DOM render、motion mapping 与文本边界，不替代真实审批/检索/同步服务链路 |
+| PRD/概念图 | 符合 `cuu-desktop-approval-search.png` 的独立 pet window 和气泡承接；符合 `endpoint-page-cuu-alignment.png` 的 endpoint/page/CuuState 分离；主窗仍无 Cuu 本体 |
+| UI/文本边界 | 六张 contact sheet 已人工复核无文本超框；`right_edge_clip_gate` 全部通过，用户截图中卡片文字穿出框的问题未复现 |
+| 中英双语 | zh-CN 覆盖 clarify/search/done，en-US 覆盖 approval/sync/offline；DOM report 文案无乱码和错误 fallback |
+| 资产纪律 | 中间 `frames/`、ffmpeg/Tauri log 已清理；未提交 `reference/` |
+
+复跑命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario clarify -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\clarify-zh-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario approval -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\approval-en-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario search -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\search-zh-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario sync -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\sync-en-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario done -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\done-zh-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario offline -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\offline-en-pass
+```
+
+## 18. 下一刀 R3.17
 
 R3 后续顺序：
 
-1. 保留 R3.12/R3.13.1/R3.13.2/R3.15 回归：run-stream completion、run-failure、401/403/offline、reload session/active/terminal 的 capture 必须继续通过 `motion-diff-report.json`、DOM attrs gate、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
-2. 将 R3.14/R3.15 文本超框规则继续作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、状态 section 均不得超出 bubble/card。
-3. 开始正式业务矩阵补洞：`clarify/search/sync/done/offline/approval` 真实 Tauri capture，先覆盖当前黑猫 Hijiki，再评估白猫必要矩阵。
-4. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix，并把 Linux/macOS capture 策略排进跨平台验收。
-5. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并按模块提交。
+1. 保留 R3.12/R3.13.1/R3.13.2/R3.15/R3.16 回归：run-stream completion、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵 capture 必须继续通过 `motion-diff-report.json`、DOM attrs gate、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
+2. 将 R3.14/R3.15/R3.16 文本超框规则继续作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、evidence refs、状态 section 均不得超出 bubble/card。
+3. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix；先做 Windows Hijiki，再评估白猫和双语全矩阵。
+4. 给 pass-through recovery 单独留证：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认右键菜单可用。
+5. 将 Linux/macOS capture 策略排进跨平台验收；继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并按模块提交。

@@ -119,9 +119,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 
 ## 7. Next Construction Plan
 
-1. P1.9 已跑黑猫 8 帧 smoke 矩阵：`clarify`、`approval`、`search`、`sync`、`done`、`offline`；下一步升级为每场至少 32 帧。
-2. P1.9 已跑白猫 approval smoke；下一步跑白猫同等矩阵，证明二选项都真实可用。
-3. 为 `motion-diff-report.json` 增加 card-mode rect / bbox gate summary：业务 card 场景必须稳定在 `520x640` 级别，不能停留 compact fallback，也不能裁猫或裁气泡。
-4. P1.9 已加强 actual DOM attrs gate；下一步补 DOM snapshot history，证明 syncing 过渡没有“只有框没有猫”。
-5. 将 settings matrix 与业务场景合并：scale 75/150、opacity 60、pass-through、hide-on-hover 均要能恢复。
-6. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补对应截图方案。
+1. R3.16 已用当前脚本版本重录黑猫 `clarify`、`approval`、`search`、`sync`、`done`、`offline` 六场景，每场 40 帧，并保留 contact sheet/GIF/MP4/DOM report/motion diff：`./assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/`。
+2. R3.16 六场景均通过 `right_edge_clip_gate`，人工复核按钮、chip、evidence refs、英文 offline 文案未超出 bubble/card；后续业务矩阵仍要继续保留该文本边界门。
+3. P1.9 白猫 approval 仍只是冻结前回归证据；白猫同等矩阵放到 R3 后续必要性评估，不作为当前 settings matrix 的前置阻塞。
+4. 下一刀补 settings matrix 与右键菜单恢复：scale 75/150、opacity 60、pass-through、hide-on-hover、语言切换、黑/白模型切换均要有真实窗口证据。
+5. pass-through recovery 必须单独留证：开启后右键入口不可依赖，必须通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复。
+6. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限。
