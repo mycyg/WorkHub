@@ -36,6 +36,7 @@ test("desktop pet QA scenarios create business push events for motion capture", 
 test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   const launcher = desktopPetQaScriptForScenario("launcher");
   const runStream = desktopPetQaScriptForScenario("run-stream");
+  const runFailure = desktopPetQaScriptForScenario("run-failure");
   const clarify = desktopPetQaScriptForScenario("clarify");
   const clarifyPayload = clarify[0]?.payload as { data?: string; stream_path?: string };
   const clarifyEvent = JSON.parse(clarifyPayload.data ?? "{}");
@@ -50,7 +51,9 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
 
   assert.equal(launcher.length, 0);
   assert.equal(runStream.length, 0);
+  assert.equal(runFailure.length, 0);
   assert.equal(createDesktopPetQaShellListen("run-stream"), undefined);
+  assert.equal(createDesktopPetQaShellListen("run-failure"), undefined);
   assert.equal(clarifyPayload.stream_path, "/api/push/stream/session/10000000-0000-4000-8000-000000000104");
   assert.equal(clarifyEvent.attention.kind, "clarification");
   assert.equal(clarifyEvent.attention.cuu_state, "asking_approval");
@@ -71,6 +74,7 @@ test("desktop pet QA scenario normalization only accepts explicit capture scenar
   assert.equal(normalizeDesktopPetQaScenario("launcher"), "launcher");
   assert.equal(normalizeDesktopPetQaScenario("approval"), "approval");
   assert.equal(normalizeDesktopPetQaScenario("run-stream"), "run-stream");
+  assert.equal(normalizeDesktopPetQaScenario("run-failure"), "run-failure");
   assert.equal(normalizeDesktopPetQaScenario("idle"), undefined);
   assert.equal(normalizeDesktopPetQaScenario("legacy-cuu-pack"), undefined);
   assert.equal(desktopPetQaScenarioFromGlobal({ __WORKHUB_CUU_QA_SCENARIO__: "done" }), "done");

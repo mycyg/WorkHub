@@ -984,6 +984,61 @@ test("desktop Cuu run stream falls back to polling when no SSE event arrives", a
   assert.equal(cards.at(-1)?.state, "celebrating");
 });
 
+test("desktop Cuu run stream fallback maps failed runs to worried replay cards", async () => {
+  FakeEventSource.instances = [];
+  const cards: CuuCard[] = [];
+  const statuses: DesktopCuuRunStreamStatus[] = [];
+  const failedRun = agentRunLive({
+    status: "failed",
+    title: "Cuu 桌面入口任务",
+    trace: [
+      {
+        id: "trace-failed",
+        agent_run_id: "10000000-0000-4000-8000-000000000301",
+        step_no: 1,
+        phase: "final",
+        input_json: {},
+        output_excerpt: "Cuu R3 run-failure QA 模拟执行失败。",
+        control_signal: "escalate",
+        created_at: "2026-06-10T01:00:00.000Z"
+      }
+    ]
+  });
+  const closed = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("failed run fallback did not close")), 150);
+    subscribeDesktopCuuAgentRunStream({
+      client: {
+        streamUrl(path: string) {
+          return `/daemon${path}`;
+        },
+        async getAgentRun() {
+          return failedRun;
+        }
+      },
+      run: agentRunLive({ status: "running" }),
+      EventSourceCtor: FakeEventSource,
+      fallbackRefreshMs: 1,
+      onCard(card) {
+        cards.push(card);
+      },
+      onStatus(status) {
+        statuses.push(status);
+        if (status.state === "closed") {
+          clearTimeout(timeout);
+          resolve();
+        }
+      }
+    });
+  });
+
+  await closed;
+  assert.equal(FakeEventSource.instances[0]?.closed, true);
+  assert.equal(cards.at(-1)?.state, "worried");
+  assert.equal(cards.at(-1)?.kind, "trace");
+  assert.equal(cards.at(-1)?.actions.some((action) => action.id === "view_replay"), true);
+  assert.equal(statuses.some((status) => status.state === "refreshed" && status.status === "failed"), true);
+});
+
 test("desktop Cuu runtime uses fetch SSE with local client-token headers", async () => {
   const target = globalThis as typeof globalThis & {
     fetch?: typeof fetch;

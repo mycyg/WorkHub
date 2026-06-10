@@ -13,7 +13,7 @@ param(
   [int]$MinMotionChangedFramesFormal = 6,
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -41,8 +41,8 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "offline")
-$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "offline")
+$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")
 $script:cuuCdpWebSocketUrl = $null
 $script:cuuCdpCommandId = 1
 
@@ -242,23 +242,33 @@ function Start-DesktopWebviewDevServerIfNeeded {
 }
 
 function Test-CuuR3RunStreamApiServer {
+  param(
+    [int]$Port = 8787,
+    [ValidateSet("succeeded", "failed")]
+    [string]$RunOutcome = "succeeded"
+  )
   try {
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8787/api/health" -TimeoutSec 2
-    return $health.service -eq "workhub-cuu-r3-tauri-run-stream"
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
+    return $health.service -eq "workhub-cuu-r3-tauri-run-stream" -and $health.run_outcome -eq $RunOutcome
   } catch {
     return $false
   }
 }
 
 function Start-CuuR3RunStreamApiServerIfNeeded {
-  param([int]$Port = 8787)
+  param(
+    [int]$Port = 8787,
+    [ValidateSet("succeeded", "failed")]
+    [string]$RunOutcome = "succeeded"
+  )
   if (Test-LocalPort -Port $Port) {
-    if (Test-CuuR3RunStreamApiServer) {
+    if (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome) {
       return $null
     }
-    throw "Port $Port is already in use, but it is not the Cuu R3 Tauri run-stream QA server."
+    throw "Port $Port is already in use, but it is not the Cuu R3 Tauri run-stream QA server for outcome $RunOutcome."
   }
 
+  $env:WORKHUB_CUU_QA_RUN_OUTCOME = $RunOutcome
   $commandSpec = Get-PnpmCommandSpec
   $arguments = @()
   $arguments += $commandSpec.ArgumentPrefix
@@ -275,10 +285,10 @@ function Start-CuuR3RunStreamApiServerIfNeeded {
       throw "Cuu R3 run-stream API server exited before health check. Exit code: $($process.ExitCode). stderr: $stderrTail stdout: $stdoutTail"
     }
     Start-Sleep -Milliseconds 500
-  } while (-not (Test-CuuR3RunStreamApiServer) -and (Get-Date) -lt $deadline)
+  } while (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome) -and (Get-Date) -lt $deadline)
 
-  if (-not (Test-CuuR3RunStreamApiServer)) {
-    throw "Cuu R3 run-stream API server did not pass /api/health in time."
+  if (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome)) {
+    throw "Cuu R3 run-stream API server did not pass /api/health in time for outcome $RunOutcome."
   }
   return $process
 }
@@ -370,6 +380,17 @@ function Get-CuuExpectedBehaviorForScenario {
         data_cuu_live2d_renderer_state = "mtn/06.mtn"
         data_cuu_behavior_expected_window_mode = "card"
         data_cuu_behavior_expected_bubble_mode = "tip"
+        data_pet_window_mode = "card"
+      }
+    }
+    "run-failure" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "worried"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
         data_pet_window_mode = "card"
       }
     }
@@ -467,6 +488,7 @@ function Test-CuuActualDomMatchesExpected {
     sync = "open_sync"
     done = "view_replay"
     "run-stream" = "view_replay"
+    "run-failure" = "view_replay"
   }
   if ($expectedActionByScenario.ContainsKey($Scenario)) {
     if (-not $Actual.primary_action -or -not $Actual.primary_action.present -or -not $Actual.primary_action.data) {
@@ -542,19 +564,22 @@ function Test-CuuBubbleRectNearLive2D {
   $surfaceRight = Read-CuuDomRectNumber $surface "right"
   $live2dX = Read-CuuDomRectNumber $live2d "x"
   $live2dY = Read-CuuDomRectNumber $live2d "y"
+  $live2dRight = Read-CuuDomRectNumber $live2d "right"
   $bubbleX = Read-CuuDomRectNumber $bubble "x"
   $bubbleRight = Read-CuuDomRectNumber $bubble "right"
   $bubbleBottom = Read-CuuDomRectNumber $bubble "bottom"
-  foreach ($value in @($surfaceRight, $live2dX, $live2dY, $bubbleX, $bubbleRight, $bubbleBottom)) {
+  foreach ($value in @($surfaceRight, $live2dX, $live2dY, $live2dRight, $bubbleX, $bubbleRight, $bubbleBottom)) {
     if ($null -eq $value) {
       return $false
     }
   }
 
-  $notLeftDetached = $bubbleX -ge ($live2dX - 48)
+  $live2dCenterX = ($live2dX + $live2dRight) / 2
+  $bubbleCenterX = ($bubbleX + $bubbleRight) / 2
+  $horizontallyAnchored = [Math]::Abs($bubbleCenterX - $live2dCenterX) -le 96
   $notRightClipped = $bubbleRight -le ($surfaceRight - 8)
   $notCoveringCatBody = $bubbleBottom -le ($live2dY + 96)
-  return $notLeftDetached -and $notRightClipped -and $notCoveringCatBody
+  return $horizontallyAnchored -and $notRightClipped -and $notCoveringCatBody
 }
 
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuMotionWin32").Type) {
@@ -1263,6 +1288,7 @@ $originalCuuQaScenario = $env:WORKHUB_CUU_QA_SCENARIO
 $originalCuuQaLocale = $env:WORKHUB_CUU_QA_LOCALE
 $originalCuuQaDomReportPath = $env:WORKHUB_CUU_QA_DOM_REPORT_PATH
 $originalCuuQaClientToken = $env:WORKHUB_CUU_QA_CLIENT_TOKEN
+$originalCuuQaRunOutcome = $env:WORKHUB_CUU_QA_RUN_OUTCOME
 $originalWorkHubClientToken = $env:WORKHUB_CLIENT_TOKEN
 $originalWebView2AdditionalBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 $process = $null
@@ -1282,7 +1308,8 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  if (($Scenario -ne "idle" -and $Scenario -ne "run-stream") -or $DisableSse) {
+  $isRunStreamScenario = $Scenario -eq "run-stream" -or $Scenario -eq "run-failure"
+  if (($Scenario -ne "idle" -and -not $isRunStreamScenario) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
   }
@@ -1299,11 +1326,18 @@ try {
   $env:WORKHUB_CUU_QA_MODEL_PACK_ID = $ModelPackId
   $env:WORKHUB_CUU_QA_LOCALE = $Locale
   $env:WORKHUB_CUU_QA_DOM_REPORT_PATH = $domReportPath
-  if ($Scenario -eq "run-stream") {
+  if ($isRunStreamScenario) {
     $env:WORKHUB_CUU_QA_CLIENT_TOKEN = "cuu-r3-local-client-token"
     $env:WORKHUB_CLIENT_TOKEN = "cuu-r3-local-client-token"
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_CLIENT_TOKEN" -ErrorAction SilentlyContinue
+  }
+  if ($Scenario -eq "run-failure") {
+    $env:WORKHUB_CUU_QA_RUN_OUTCOME = "failed"
+  } elseif ($Scenario -eq "run-stream") {
+    $env:WORKHUB_CUU_QA_RUN_OUTCOME = "succeeded"
+  } else {
+    Remove-Item -Path "Env:WORKHUB_CUU_QA_RUN_OUTCOME" -ErrorAction SilentlyContinue
   }
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
@@ -1342,8 +1376,8 @@ try {
     )
   }
 
-  if ($Scenario -eq "run-stream") {
-    $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded
+  if ($isRunStreamScenario) {
+    $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded -RunOutcome $env:WORKHUB_CUU_QA_RUN_OUTCOME
   }
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $tauriStdoutPath = Join-Path $OutDir "tauri-stdout.log"
@@ -1591,6 +1625,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_LOCALE" -Value $originalCuuQaLocale
   Restore-EnvVar -Name "WORKHUB_CUU_QA_DOM_REPORT_PATH" -Value $originalCuuQaDomReportPath
   Restore-EnvVar -Name "WORKHUB_CUU_QA_CLIENT_TOKEN" -Value $originalCuuQaClientToken
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_RUN_OUTCOME" -Value $originalCuuQaRunOutcome
   Restore-EnvVar -Name "WORKHUB_CLIENT_TOKEN" -Value $originalWorkHubClientToken
   Restore-EnvVar -Name "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" -Value $originalWebView2AdditionalBrowserArguments
   if ($isolatedRoot) {

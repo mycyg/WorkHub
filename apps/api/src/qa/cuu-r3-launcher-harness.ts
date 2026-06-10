@@ -49,8 +49,11 @@ export type CuuR3SmokeApp = {
   queue: AgentRunQueue;
 };
 
+export type CuuR3RunOutcome = "succeeded" | "failed";
+
 export type CuuR3SmokeAppOptions = {
   runStream?: boolean;
+  runOutcome?: CuuR3RunOutcome;
   runDelayMs?: number;
   modelDelayMs?: number;
   logRunStream?: boolean;
@@ -166,6 +169,7 @@ function createAuth(settingsOverride: Settings = settings): AuthDependencies {
 
 export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3SmokeApp {
   let runSequence = 0;
+  const runOutcome = options.runOutcome ?? "succeeded";
   const nextRunSequence = () => {
     runSequence += 1;
     return runSequence;
@@ -178,7 +182,10 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
     ...(options.runStream
       ? {
           workdir: () => mkdtemp(path.join(os.tmpdir(), "workhub-cuu-r3-run-stream-")),
-          client: () => cuuR3RunStreamAgentClient(options.modelDelayMs ?? 650),
+          client: () => cuuR3RunStreamAgentClient({
+            delayMs: options.modelDelayMs ?? 650,
+            outcome: runOutcome
+          }),
           snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000312" }),
           eventBus: pushBus
         }
@@ -200,6 +207,7 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
     c.json({
       ok: true,
       service: options.runStream ? "workhub-cuu-r3-tauri-run-stream" : "workhub-cuu-r3-smoke",
+      run_outcome: options.runStream ? runOutcome : undefined,
       runtime: "node-hono",
       port: 0
     })
@@ -248,7 +256,7 @@ function withDelayedRunExecution(queue: AgentRunQueue, delayMs: number, logEvent
   };
 }
 
-function cuuR3RunStreamAgentClient(delayMs: number): AgentLoopClient {
+function cuuR3RunStreamAgentClient(input: { delayMs: number; outcome: CuuR3RunOutcome }): AgentLoopClient {
   const responses = [
     {
       id: "cuu-r3-run-stream-tool",
@@ -298,7 +306,14 @@ function cuuR3RunStreamAgentClient(delayMs: number): AgentLoopClient {
     model: "deepseek-v4-flash",
     messages: {
       async create(params) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => setTimeout(resolve, input.delayMs));
+        if (input.outcome === "failed") {
+          throw new Error(
+            cuuR3RunStreamPromptLooksEnglish(params)
+              ? "Cuu R3 run-failure QA forced provider failure."
+              : "Cuu R3 run-failure QA 模拟执行失败。"
+          );
+        }
         const response = responses.shift();
         if (!response) {
           throw new Error("Cuu R3 run-stream QA client exhausted.");

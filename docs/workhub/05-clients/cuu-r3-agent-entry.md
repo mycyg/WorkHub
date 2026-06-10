@@ -336,6 +336,7 @@ Rust 只负责：
 | `desktop Cuu launcher helper returns session, work item, run, and Cuu card` | helper 直接返回 session/workItem/run/card/message |
 | `desktop Cuu launcher stops at backend clarification instead of bypassing the question` | `SessionVM.question.options[]` -> `cardFromSessionVm()`，且不调用 `createWorkItem()` / `startAgentRun()` |
 | `desktop Cuu run stream refreshes agent cards and closes on terminal status` | EventSource run event -> `getAgentRun()` -> Cuu card refresh -> terminal close |
+| `desktop Cuu run stream fallback maps failed runs to worried replay cards` | active-run fallback refresh -> failed AgentRun -> `worried` trace card + replay action |
 | `desktop Cuu runtime maps API and stream failures to Cuu cards` | budget / permission / offline error card 分类 |
 | `desktop Cuu actions advance option-first clarification sessions` | `nextQuestion()` -> `SessionVM` -> `cardFromSessionVm()`，澄清链路不断流 |
 | `desktop Cuu actions finalize confirmed sessions and start the agent run` | `create-workitem` -> `nextQuestion()` -> `createWorkItem()` -> `startAgentRun()` -> AgentRun Cuu card |
@@ -349,7 +350,7 @@ Rust 只负责：
 | `WorkHubEvent envelope creates browser-safe UUID ids` | `packages/events` 不再把 `node:crypto` 静态带进浏览器/Tauri pet 入口 |
 | `pet surface renders only the Live2D cat runtime without main shell or fallback sprites` | 断言 Live2D iframe 不吃掉 body 点击，body overlay 负责打开 launcher |
 
-本轮 Cuu test 当前为 33/33 通过，events test 当前为 12/12 通过，desktop-webview test 当前为 69/69 通过；R2 release gate 在 root `pnpm lint` 中为 PASS；`corepack pnpm verify` 通过。
+本轮 Cuu test 当前为 33/33 通过，events test 当前为 12/12 通过，desktop-webview test 当前为 72/72 通过；R2 release gate 在 root `pnpm lint` 中为 PASS；`corepack pnpm verify` 通过。
 
 ## 7. 与概念图对齐
 
@@ -359,8 +360,8 @@ Rust 只负责：
 | 选项优先澄清 | launcher 与后端 `SessionVM.question` 都走 option-first Cuu 气泡 |
 | 主力是 AI，不是看板 | Cuu 能从澄清确认直接进入 AgentRun；需要澄清时只展示用户必须看到的问题 |
 | 桌宠要像入口而不是装饰 | R3.10 已用真实 Tauri `pet` window 证明 body-only -> launcher card 展开；R3.11 已用真实本机 HTTP dev server 证明同一 launcher-to-run 数据流不只是进程内 route stack |
-| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline；R3.6 已补 budget exhausted 预算态 |
-| 中英双语边界 | R3.10 已补真实 Tauri `pet` window en-US launcher capture；R3.6 已补未知事件 fallback、runtime error、Replay cost、budget exhausted AgentRun 的 en-US 测试 |
+| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline；R3.6 已补 budget exhausted 预算态；R3.13.1 已用真实 Tauri run-failure 证明 failed AgentRun 会进入 `worried` trace card |
+| 中英双语边界 | R3.10 已补真实 Tauri `pet` window en-US launcher capture；R3.6 已补未知事件 fallback、runtime error、Replay cost、budget exhausted AgentRun 的 en-US 测试；R3.13.1 已补 en-US run-failure capture |
 | 黑猫/白猫 Live2D 二选项 | 未改变模型白名单与外观 |
 
 ## 8. R3.10 已落：真实 Tauri launcher capture
@@ -458,18 +459,18 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream 终态截图/录屏与中英双语证据；仍不能宣称 R3 完成。failure/offline 可视验证、pet window 刷新恢复和 launcher chip metadata 产品化仍未验收。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据。仍不能宣称 R3 完成：401/403、offline/network、pet window 刷新恢复和 launcher chip metadata 产品化仍未验收。
 
 | 缺口 | 计划 |
 |---|---|
-| 真实 Tauri 点击截图 | R3.10 已补真实 `pet` window launcher/en-US capture；R3.12 已补 zh-CN/en-US run-stream completion capture；仍需补 failure/offline 状态截图 |
+| 真实 Tauri 点击截图 | R3.10 已补真实 `pet` window launcher/en-US capture；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure capture；仍需补 401/403 与 offline 状态截图 |
 | 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；R3.11 已补本机 HTTP server launcher-to-run；R3.12 已补 Tauri pet window 内 stream 订阅 + fallback refresh 的 DOM/capture 证据 |
-| 失败态 | R3.2 已落 budget/403/offline/generic card mapping；还需真实 API error smoke |
+| 失败态 | R3.2 已落 budget/403/offline/generic card mapping；R3.13.1 已落真实 run failure smoke + Tauri capture；仍需 401/403 与 offline/network 真机 capture |
 | 真实确认后启动 | R3.5 已落 API route-stack smoke，R3.9 已落 boot click harness，R3.11 已落真实 dev-server smoke，R3.12 已落 Tauri run-stream 终态 capture |
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
-| 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture |
+| 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture |
 | 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -521,12 +522,61 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario run-stream -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 72 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-run-stream\hijiki\run-stream-en-pass2
 ```
 
-## 12. 下一刀 R3.13
+## 12. R3.13.1 已落切片：真实 Tauri run-failure capture
 
-R3.13 建议顺序：
+R3.13.1 先关闭 failure/offline 计划里的第一条真实终态：AgentRun provider 失败后，Cuu 必须在真实 Tauri `pet` window 里进入 `worried` trace card，并保留 replay 入口。范围仍只覆盖 R3 数据流与 capture 可信度，不新增模型、改色、动效或设置矩阵。
 
-1. 补真实 failure/offline Tauri capture：API 401/403、network offline、run failure 至少各一条，DOM report 必须能映射到 `cardFromDesktopCuuRuntimeError()` 或 run error payload。
-2. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 `pet` window 后恢复当前 run card 或 terminal card。
-3. 继续保留 R3.12 run-stream 回归：zh-CN 与 en-US capture 目录必须继续通过 `motion-diff-report.json` 与 DOM attrs gate。
-4. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
-5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+改动：
+
+| 层 | R3.13.1 行为 |
+|---|---|
+| API QA harness | `createCuuR3SmokeApp({ runOutcome:"failed" })` 让同一 session/workitem/agent-run/push route stack 生成 failed AgentRun |
+| HTTP/SSE + fallback smoke | `apps/api/src/qa/cuu-r3-run-failure-smoke.ts` 建立真实 HTTP SSE 连接，并通过 `GET /api/agent-runs/:id` fallback 验证最终 `status="failed"` 与 failure trace |
+| desktop runtime | 新增测试覆盖 active-run fallback refresh：无 terminal SSE 事件时，failed AgentRun 必须刷新为 `state="worried"`、`kind="trace"`、primary action `view_replay` |
+| pet surface | `run-failure` QA scenario 复用真实 `client` 与 Cuu action runtime：launcher -> clarification -> confirmation -> WorkItem -> AgentRun -> failed terminal card；同时修复 context-heavy trace card 的高 DPI 截图溢出，把含进度/预算的业务卡收敛到安全左锚、`minmax(0,1fr)` grid 和可滚动上限内 |
+| Tauri shell | Rust QA allowlist 增加 `run-failure`；仍只注入 scenario/locale/client token，不调用业务 API |
+| capture script | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario run-failure` 自动启动 run-stream QA server，并通过 `WORKHUB_CUU_QA_RUN_OUTCOME=failed` 切换失败终态 |
+
+验收证据：
+
+| 证据 | 结果 |
+|---|---|
+| `corepack pnpm --filter @workhub/api qa:cuu-r3-run-failure-smoke` | 通过，SSE `connected`，REST fallback 最终 `final_status="failed"` |
+| `corepack pnpm --filter @workhub/desktop-webview typecheck` | 通过 |
+| `corepack pnpm --filter @workhub/desktop-webview test` | 72/72 通过 |
+| zh-CN Tauri capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-zh-pass/` |
+| en-US Tauri capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-en-pass/` |
+
+两个 capture 目录均保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。`motion-diff-report.json` 均满足 `passed=true`、`motion_gate_passed=true`、`actual_dom_matches_expected=true`、`sse_disabled_for_scenario=false`；DOM report 终态均显示 `data_cuu_state="worried"`、`data_pet_card_kind="trace"`、`data_cuu_live2d_motion="worried_ears"`、`data_cuu_run_stream_state="closed"`、`data_cuu_run_stream_close_reason="terminal_status"`、primary action 为 `view_replay`。人工复核最终帧：zh-CN 与 en-US 的 `Run progress/执行进度`、`Budget/预算`、replay/back actions 和长英文 failure 文案均完整留在卡片边界内，右边框没有被 PrintWindow 裁切。
+
+Bug / 数据流审查：
+
+| 项 | 结论 |
+|---|---|
+| 已识别时序 | 内存 PushBus 不回放历史 run events；failure 比 success 更快到终态时，API smoke 可能只看到 SSE `connected`。R3.12 的 active-run fallback refresh 是正确兜底，R3.13.1 用 smoke 与 Tauri DOM 证明 fallback 能把 failed run 刷成 `worried` card。 |
+| 已修 UI bug | 用户截图发现 failed trace card 底部 `Budget` 和英文长行会被旧的 288px/268px 固定卡片裁切。修复为 context-heavy 业务卡专用 300px 安全左锚布局、`grid-template-columns:minmax(0,1fr)`、长文本 `overflow-wrap:anywhere` 与 320px 垂直上限；重新生成 zh-CN/en-US 真实 Tauri frames 后确认无文本超框。 |
+| 数据流 | `pet` window QA click flow -> typed API client -> `/api/sessions` -> `/api/workitems` -> `/api/workitems/:id/agent-runs` -> delayed run with forced provider failure -> PushBus SSE connected + fallback refresh -> `GET /api/agent-runs/:id` -> worried trace card |
+| PRD/概念图 | 仍符合 option-first；Cuu 仍是独立 pet window；失败时给轻卡和 replay 入口，不把 Cuu 放回主窗 |
+| Rust 边界 | Rust/Tauri 只负责窗口、QA preference 与 token 注入；业务 API、Agent 状态机和 DOM card 更新仍在 TS-first runtime |
+| 禁止项 | 未新增模型、改色、动效、设置矩阵；未提交 `reference/` |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/api qa:cuu-r3-run-failure-smoke
+corepack pnpm --filter @workhub/desktop-webview typecheck
+corepack pnpm --filter @workhub/desktop-webview test
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario run-failure -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 72 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-run-failure\hijiki\run-failure-zh-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario run-failure -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 72 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-run-failure\hijiki\run-failure-en-pass
+```
+
+## 13. 下一刀 R3.13.2
+
+R3.13 后续顺序：
+
+1. 补真实 401/403 Tauri capture：API 权限错误必须映射到 `cardFromDesktopCuuRuntimeError()` 的 permission/worried 轻卡，DOM report 必须保留 action 与 payload_ref。
+2. 补真实 network/offline Tauri capture：断网或 stream error 必须映射 offline card，且 `data_cuu_live2d_motion="worried_ears"` / offline state 不互相误判。
+3. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 `pet` window 后恢复当前 run card 或 terminal completion/error card。
+4. 继续保留 R3.12/R3.13.1 回归：run-stream completion 与 run-failure 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json` 与 DOM attrs gate。
+5. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
+6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
