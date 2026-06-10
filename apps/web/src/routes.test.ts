@@ -139,6 +139,8 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     assert.equal(result.status, "ready");
     assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
+    assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
+    assert.equal(result.html.includes('data-r4-product-masthead="true"'), true);
     assert.equal(result.html.includes('href="#/approvals"'), false);
     assert.equal(result.html.includes('href="/approvals"'), true);
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
@@ -160,6 +162,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
     assert.equal(result.status, "ready");
     assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
+    assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
     assert.equal(result.html.includes(`href="${path}"`) || result.html.includes('href="/approvals"'), true);
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
   }

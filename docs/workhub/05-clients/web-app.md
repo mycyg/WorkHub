@@ -28,17 +28,18 @@ owner: workflow
 | Bilingual locale contract | `packages/contracts/src/locale.ts`、`packages/ui/src/gold-path/i18n.ts`、`apps/web/src/browser.ts` | 已支持 `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome 与运行时提示本地化 |
 | R4 route-state foundation | `packages/ui/src/route-state.ts`、`scripts/qa/r4-web-route-state-matrix.ts` | 已覆盖 home/intake/approvals/workitem/proposal/replay/cost/settings 的中英 loading/empty/error/forbidden 状态卡、desktop/mobile Chrome 截图与无横向溢出 gate |
 | R4 route registry + loader | `apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`scripts/qa/r4-web-route-registry-loader.ts` | 已把 URL route registry、`idle/loading/ready/empty/error/forbidden` 状态机、真实 path 导航和前三个 Page VM endpoint 接入浏览器 boot |
+| R4 product shell baseline | `packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`scripts/qa/r4-web-product-shell-baseline.ts` | Web ready route 已切到产品壳 baseline，覆盖 Home / Approvals / WorkItem / Proposal 的 desktop/mobile 截图、双语固定 chrome、path nav、无 Cuu/无 Kanban、无横向与文本盒溢出 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，但还不是完整 React component route tree。
-- 现有 shell 更像 P0.5 preview，不是长期使用的信息架构。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4.4 产品壳 baseline，但还不是完整 React component route tree。
+- 现有产品壳已脱离 P0.5 preview 外观；后续仍需把 shared HTML render helpers 迁到真实 Web component route tree。
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint。真实多记录截图和完整产品 shell 仍待 R4.3+。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁。真实 component route tree、live browser interaction 与完整服务端动态本地化仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -145,6 +146,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | 视觉边界 | 继续 gate `no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow` | R4.4 建 desktop/mobile/zh/en visual baseline |
 
 边界：R4.3 仍是 deterministic Page VM QA surface，不等同于真实 PostgreSQL 多记录 live daemon。产品 shell 组件化和完整交互仍由 R4.4 继续。
+
+### 0.9 R4.4 Web product shell baseline（2026-06-11 已落）
+
+本轮把 R4.3 的 ready route 从旧 preview shell 切到 Web 产品壳 baseline。详细计划与验收见 [`../06-roadmap/r4-04-web-product-shell-baseline-plan-2026-06-11.md`](../06-roadmap/r4-04-web-product-shell-baseline-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Product shell renderer | `packages/ui/src/gold-path/product-shell.ts` 渲染 topbar、path nav、masthead、metrics、route panels、right rail，并保留 `data-wh-*` browser hooks | 迁到真实 Web component route tree，减少 shared HTML helper 依赖 |
+| Web ready route | `apps/web/src/routes.ts` 的 ready path 改用 `renderWebProductShell()`；empty/error/forbidden 继续走 route-state helper | 接真实 dev-server interaction smoke 与 SSE refresh |
+| 视觉 QA | `pnpm qa:r4-web-product-shell-baseline` 覆盖 Home / Approvals / WorkItem / Proposal 四屏、desktop/mobile、zh/en、Chrome screenshot/contact sheet | 后续扩展到 Replay / Cost / Settings 与 live daemon seed |
+| 文本与导航边界 | report gate `no_horizontal_overflow=true`、`navHorizontalOverflow=false`、`no_text_box_overflow=true`、四个 case `textOverflowCount=0` | 所有新增页面继续把文本盒溢出作为阻塞门 |
+| 产品边界 | 主窗无 Cuu、无 Cuu settings、无 default Kanban；path 导航无 `#/` 泄漏 | Web 只保留派活/审批/管理，接活/干活继续留在桌宠端 |
+
+边界：R4.4 不是完整 React SPA，也不是 live PostgreSQL 多记录实机联调；英文 shell 下的动态任务内容仍来自 API VM 原文，不能当作服务端动态本地化完成。
 
 ---
 

@@ -9,8 +9,8 @@ import type {
   WorkItemDetailVM
 } from "@workhub/contracts";
 import {
-  renderGoldPathAppShell,
   renderGoldPathSurface,
+  renderWebProductShell,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
@@ -409,7 +409,7 @@ function renderReadyRoute(
   locale: WorkHubLocale
 ): WebRouteReadyResult {
   const rendered = renderGoldPathSurface(surface, "web", { locale });
-  const shell = renderGoldPathAppShell(rendered, {
+  const shell = renderWebProductShell(rendered, {
     appName: "WorkHub",
     surfaceLabel: "Web R4",
     apiBaseLabel: apiLabelFor(match),

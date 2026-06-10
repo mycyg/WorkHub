@@ -1,0 +1,175 @@
+{
+  "generated_at": "2026-06-10T23:31:25.237Z",
+  "module": "R4.4 Web product shell baseline",
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-product-shell-baseline",
+  "contact_sheet": "contact-sheet.png",
+  "gates": {
+    "screenshots_captured": true,
+    "product_shell_present": true,
+    "four_product_screens_covered": true,
+    "ready_routes_use_page_vm_endpoints": true,
+    "fixed_chrome_bilingual": true,
+    "path_navigation_without_hash": true,
+    "no_old_preview_shell": true,
+    "no_weekly_fixture_copy_in_ready": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_horizontal_overflow": true,
+    "no_text_box_overflow": true
+  },
+  "cases": [
+    {
+      "id": "product-home-zh-desktop",
+      "route": "/",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 1180
+      },
+      "endpoint_calls": [
+        "attention:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "product-home-zh-desktop.html",
+      "screenshot": "product-home-zh-desktop.png",
+      "markers": {
+        "productShell": true,
+        "masthead": true,
+        "routeKey": "home",
+        "statusReady": 1,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "weeklyFixtureLeak": false,
+        "zhChrome": true,
+        "enChrome": false,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "navClientWidth": 217,
+        "navScrollWidth": 217,
+        "navHorizontalOverflow": false,
+        "horizontalOverflow": false,
+        "textBoxOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": []
+      }
+    },
+    {
+      "id": "product-approvals-en-mobile",
+      "route": "/approvals",
+      "locale": "en-US",
+      "viewport": {
+        "width": 467,
+        "height": 1600
+      },
+      "endpoint_calls": [
+        "approvals:en-US",
+        "goldPath:en-US"
+      ],
+      "html": "product-approvals-en-mobile.html",
+      "screenshot": "product-approvals-en-mobile.png",
+      "markers": {
+        "productShell": true,
+        "masthead": true,
+        "routeKey": "approvals",
+        "statusReady": 1,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "weeklyFixtureLeak": false,
+        "zhChrome": false,
+        "enChrome": true,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "navClientWidth": 467,
+        "navScrollWidth": 467,
+        "navHorizontalOverflow": false,
+        "horizontalOverflow": false,
+        "textBoxOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": []
+      }
+    },
+    {
+      "id": "product-workitem-zh-desktop",
+      "route": "/workitems/r4-product-workitem",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 1220
+      },
+      "endpoint_calls": [
+        "workItem:r4-product-workitem:zh-CN",
+        "goldPath:zh-CN"
+      ],
+      "html": "product-workitem-zh-desktop.html",
+      "screenshot": "product-workitem-zh-desktop.png",
+      "markers": {
+        "productShell": true,
+        "masthead": true,
+        "routeKey": "workitem",
+        "statusReady": 1,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "weeklyFixtureLeak": false,
+        "zhChrome": true,
+        "enChrome": false,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "navClientWidth": 217,
+        "navScrollWidth": 217,
+        "navHorizontalOverflow": false,
+        "horizontalOverflow": false,
+        "textBoxOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": []
+      }
+    },
+    {
+      "id": "product-proposal-en-mobile",
+      "route": "/proposals/r4-product-proposal",
+      "locale": "en-US",
+      "viewport": {
+        "width": 467,
+        "height": 1700
+      },
+      "endpoint_calls": [
+        "proposal:r4-product-proposal:en-US",
+        "goldPath:en-US"
+      ],
+      "html": "product-proposal-en-mobile.html",
+      "screenshot": "product-proposal-en-mobile.png",
+      "markers": {
+        "productShell": true,
+        "masthead": true,
+        "routeKey": "proposal",
+        "statusReady": 1,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "weeklyFixtureLeak": false,
+        "zhChrome": false,
+        "enChrome": true,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "navClientWidth": 467,
+        "navScrollWidth": 467,
+        "navHorizontalOverflow": false,
+        "horizontalOverflow": false,
+        "textBoxOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": []
+      }
+    }
+  ]
+}

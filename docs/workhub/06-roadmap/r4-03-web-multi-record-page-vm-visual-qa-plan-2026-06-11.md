@@ -96,20 +96,17 @@ R4.3 是 route loader 的多记录视觉 QA，不是产品 shell 重写：
 
 ## 5. 后续详细计划
 
-下一刀 R4.4：product shell polish。
+后续状态：R4.4 product shell baseline 已落，详见 [`r4-04-web-product-shell-baseline-plan-2026-06-11.md`](./r4-04-web-product-shell-baseline-plan-2026-06-11.md)。
 
-1. 保留 `apps/web/src/routes.ts` 的 URL registry 与 loader 状态机，逐步把 ready shell 从 shared HTML preview 迁到真实 Web product shell。
-2. 先做四个高价值屏：
-   - AI-first Home：只递一件最需要判断的事，背景工作列表压低层级。
-   - Approval Center：两条以上审批、SLA、理由回灌、委派/记住规则入口。
-   - WorkItem Detail：验收项、trace、proposal timeline、accepted deliverables。
-   - Proposal Detail：多类型交付物、风险、回滚、证据、冲突/line editor。
-3. 建立 R4.4 visual baseline：
-   - 每屏 desktop + mobile。
-   - zh-CN + en-US。
+下一刀 R4.5：live browser / route interaction smoke。
+
+1. 启动真实 Web dev server，覆盖 path nav click、back/forward、locale toggle 后重进 loader。
+2. 保留 R4.4 四屏 baseline，并补 ready route 与 empty/error/forbidden 状态页之间的浏览器跳转。
+3. 继续 gate：
    - no Cuu main-window markers。
    - no default Kanban。
    - no horizontal overflow。
+   - no text box overflow。
 4. 数据流审查：
    - REST Page VM 仍是真相；SSE 只触发刷新。
    - forbidden / empty / error 继续走 R4 route-state helper。

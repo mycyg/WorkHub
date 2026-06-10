@@ -2731,10 +2731,21 @@ R4 验收：
 6. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-multi-record-page-vm/`；report gates 全部为 true：`screenshots_captured`、`ready_routes_use_page_vm_endpoints`、`detail_ready_routes_covered`、`multi_record_copy_covered`、`no_weekly_fixture_copy_in_ready`、`empty_and_forbidden_states`、`path_navigation_without_hash`、`no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`。
 7. 边界：R4.3 是 deterministic Page VM visual QA，不等同于真实 PostgreSQL live daemon，也不等同于产品 shell component migration。
 
+### R4.4 已落：Web product shell baseline
+
+1. 已阅读 [`r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](./r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`shared-ui-kit.md`、本篇 R4 与 Web 概念图。
+2. 已新增 `packages/ui/src/gold-path/product-shell.ts`，渲染 Web product shell baseline：topbar、path nav、masthead、metrics、route panels、right rail，并保留 `data-wh-*` browser hooks。
+3. 已改 `apps/web/src/routes.ts`：ready route 使用 `renderWebProductShell()`；empty/error/forbidden 继续走 R4 route-state helper。
+4. 已新增 `packages/ui/src/gold-path/product-shell.test.ts`，覆盖产品壳 marker、双语固定 chrome、path href、无旧 `.wh-app-root`、无 Cuu、无默认 Kanban、移动端 CSS。
+5. 已新增 `scripts/qa/r4-web-product-shell-baseline.ts` 与 root `pnpm qa:r4-web-product-shell-baseline`，覆盖 Home / Approvals / WorkItem / Proposal 四屏 Chrome 截图和 contact sheet。
+6. 用户截图暴露的“文字超出框”风险已纳入本轮 QA：R4.4 report 新增 `no_text_box_overflow`，曾抓到 masthead `h1` 竖向文本盒差 3px；修复 line-height 后四个 case `textOverflowCount=0`。
+7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-product-shell-baseline/`；report gates 全部为 true：`screenshots_captured`、`product_shell_present`、`four_product_screens_covered`、`ready_routes_use_page_vm_endpoints`、`fixed_chrome_bilingual`、`path_navigation_without_hash`、`no_old_preview_shell`、`no_weekly_fixture_copy_in_ready`、`no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`、`no_text_box_overflow`。
+8. 边界：R4.4 不是完整 React SPA component route tree，也不是真实 PostgreSQL live daemon 多记录实机联调；英文 shell 下动态任务内容仍可能来自 API VM 原文。
+
 下一施工顺序：
 
-1. **R4.4 product shell polish**：按概念图收紧 AI-first home、approval center、workitem detail、proposal detail 的信息密度和响应式截图 baseline。
-2. **R4.5 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
+1. **R4.5 live browser / route interaction smoke**：启动真实 Web dev server，覆盖 path nav click、back/forward、locale toggle、ready 与四态之间跳转，继续 gate 文本不越框。
+2. **R4.6 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
 
 ## 8. 模块开工前阅读清单
 

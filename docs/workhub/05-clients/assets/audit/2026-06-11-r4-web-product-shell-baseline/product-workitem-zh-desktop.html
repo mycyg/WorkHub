@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>product-workitem-zh-desktop</title>
+</head>
+<body>
+<style>:root{color-scheme:light;--wh-product-ink:#172033;--wh-product-muted:#66728c;--wh-product-faint:#8a96ad;--wh-product-line:#dce4f1;--wh-product-blue:#355cff;--wh-product-green:#24a66a;--wh-product-coral:#ee6b5f;--wh-product-amber:#d98b16;--wh-product-paper:#fff;--wh-product-soft:#f5f8fc}body{margin:0;background:#f6f9fd;color:var(--wh-product-ink);overflow-x:hidden}.wh-product-root{min-height:100vh;background:linear-gradient(180deg,#fbfdff 0%,#edf4fb 100%);font-family:"Aptos","Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;color:var(--wh-product-ink)}.wh-product-root,.wh-product-root *{box-sizing:border-box;min-width:0}.wh-product-topbar{position:sticky;top:0;z-index:30;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--wh-product-line);background:rgba(255,255,255,.9);backdrop-filter:blur(18px);padding:0 22px;overflow:hidden}.wh-product-brand{display:flex;align-items:center;gap:10px;color:var(--wh-product-ink);text-decoration:none;font-weight:900;min-width:0}.wh-product-brand-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--wh-product-blue),var(--wh-product-green) 54%,var(--wh-product-coral));box-shadow:0 10px 24px rgba(53,92,255,.18);flex:0 0 auto}.wh-product-brand span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;flex:1 1 auto}.wh-product-runtime{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;max-width:100%;overflow:hidden;color:var(--wh-product-muted);font-size:12px;font-weight:800}.wh-product-runtime span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wh-product-runtime-dot{width:8px;height:8px;border-radius:999px;background:var(--wh-product-green);box-shadow:0 0 0 4px rgba(36,166,106,.12);flex:0 0 auto}.wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:#eef3f9;padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}.wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{border-right:1px solid var(--wh-product-line);background:rgba(247,250,254,.78);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-title{margin:2px 10px 12px;color:var(--wh-product-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-nav-list{display:grid;gap:6px}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:8px;padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:#fff}.wh-product-nav a[aria-current=page]{background:#fff;color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(53,92,255,.18),0 10px 24px rgba(37,51,79,.06)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}.wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;max-width:1120px;margin:0 auto 18px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.18;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}.wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.05)}.wh-product-metric strong{font-size:17px;line-height:1.1}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.15}.wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}.wh-product-rail{border-left:1px solid var(--wh-product-line);background:rgba(247,250,254,.68);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.2}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-app-notice{position:fixed;right:18px;bottom:18px;z-index:40;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(53,92,255,.22);background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:8px;background:#fff;padding:9px 12px;font-weight:750;color:var(--wh-product-ink)}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}@media (max-width:1120px){.wh-product-layout{grid-template-columns:206px minmax(0,1fr)}.wh-product-rail{display:none}.wh-product-masthead{grid-template-columns:1fr}.wh-product-metrics{justify-content:flex-start;max-width:100%}}@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;overflow:hidden}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}:root{color-scheme:light;--ink:#182033;--muted:#5e6a86;--line:#dfe5f1;--paper:#fff;--soft:#f5f8fc;--blue:#355cff;--green:#24a66a;--coral:#ee6b5f;--amber:#d98b16;--violet:#7863e6}.wh-shell{font-family:"Aptos","Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fbff 0%,#eef4fb 100%);padding:24px;min-height:100%;width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden}.wh-shell,.wh-shell *{box-sizing:border-box}.wh-stage{width:100%;max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;min-width:0}.wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}.wh-main{padding:24px;min-width:0}.wh-side{padding:18px;position:sticky;top:16px;min-width:0}.wh-kicker{font-size:12px;color:var(--blue);font-weight:700;text-transform:uppercase;letter-spacing:0}.wh-title{font-size:30px;line-height:1.12;margin:8px 0 8px;overflow-wrap:anywhere}.wh-subtle{color:var(--muted);line-height:1.55;overflow-wrap:anywhere}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;margin-top:18px;min-width:0;max-width:100%}.wh-settings-grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}.wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}.wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}.wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}.wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}.wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}.wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}.wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}.wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}.wh-desktop .wh-stage{max-width:660px;margin:0;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="workitem" data-r4-web-route-pattern="/workitems/:id"><div class="wh-product-root" data-wh-surface="web" data-r4-product-shell="true" data-r4-product-route-key="workitem" data-r4-product-link-mode="path">
+      <header class="wh-product-topbar">
+        <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>WorkHub</span></a>
+        <div class="wh-product-top-actions">
+          <div class="wh-product-runtime" aria-label="Web 管理端"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>Web R4</span><span>/api/pages/workitems/:id</span></div>
+          <div class="wh-locale-toggle" role="group" aria-label="语言切换"><button type="button" data-wh-locale="zh-CN" aria-pressed="true" title="中文">中</button><button type="button" data-wh-locale="en-US" aria-pressed="false" title="English">EN</button></div>
+        </div>
+      </header>
+      <div class="wh-product-layout">
+        <nav class="wh-product-nav" aria-label="Gold Path">
+          <div class="wh-product-nav-title">工作入口</div>
+          <div class="wh-product-nav-list"><a href="/" data-wh-route="/" data-wh-page-key="home" aria-current="false"><span>总览</span><small>/</small></a><a href="/intake/r4-product-session" data-wh-route="/intake/r4-product-session" data-wh-page-key="intake" aria-current="false"><span>接入</span><small>/intake/r4-product-session</small></a><a href="/approvals" data-wh-route="/approvals" data-wh-page-key="approvals" aria-current="false"><span>审批</span><small>/approvals</small></a><a href="/workitems/r4-product-workitem" data-wh-route="/workitems/r4-product-workitem" data-wh-page-key="workitem" aria-current="page"><span>任务</span><small>/workitems/r4-product-workitem</small></a><a href="/proposals/r4-product-proposal" data-wh-route="/proposals/r4-product-proposal" data-wh-page-key="proposal" aria-current="false"><span>变更</span><small>/proposals/r4-product-proposal</small></a><a href="/agent-runs/r4-product-run/replay" data-wh-route="/agent-runs/r4-product-run/replay" data-wh-page-key="replay" aria-current="false"><span>回放</span><small>/agent-runs/r4-product-run/replay</small></a><a href="/dashboard/cost" data-wh-route="/dashboard/cost" data-wh-page-key="cost" aria-current="false"><span>成本</span><small>/dashboard/cost</small></a><a href="/settings" data-wh-route="/settings" data-wh-page-key="settings" aria-current="false"><span>设置</span><small>/settings</small></a></div>
+        </nav>
+        <main class="wh-product-main">
+          <section class="wh-product-masthead" data-r4-product-masthead="true">
+            <div>
+              <p class="wh-product-kicker">当前焦点</p>
+              <h1>WorkItem Detail</h1>
+              <p>任务详情把验收、证据、AI 轨迹与最近变更放在同一处。</p>
+            </div>
+            <div class="wh-product-metrics" data-r4-product-metrics="true"><div class="wh-product-metric" data-r4-product-metric="trace"><strong>0</strong><span>轨迹</span></div><div class="wh-product-metric" data-r4-product-metric="deliverables"><strong>0</strong><span>交付物</span></div><div class="wh-product-metric" data-r4-product-metric="evidence"><strong>0</strong><span>证据</span></div></div>
+          </section>
+          <div class="wh-product-route-panels"><section class="wh-route-panel" data-wh-panel="home" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">AI-first home</span>
+    <h1 class="wh-title">AI assistant 等你审批区域发布复盘包模板</h1>
+    <p class="wh-subtle">2 个交付物、3 条证据、可回滚；点同意后才会进入正式交付。</p>
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="/approvals" data-action-id="open_approval" data-method="GET">打开审批</a><a class="wh-btn" href="/api/approvals/00000000-0000-4000-8000-000000000802/respond" data-action-id="approve" data-method="POST">同意</a><a class="wh-btn wh-btn-danger" href="/api/approvals/00000000-0000-4000-8000-000000000802/respond" data-action-id="deny" data-requires-reason="true" data-method="POST">打回</a></div>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>需要你决定</strong><p class="wh-subtle">打回必须写原因，AI assistant 会把原因放进下一轮修改上下文。</p></article>
+      <article class="wh-card"><strong>AI 正在做</strong><p class="wh-subtle">交付物已生成，等待审批。</p></article>
+      <article class="wh-card"><strong>当前入口</strong><p class="wh-subtle">看板只是兜底，主路径从这一件事开始。</p></article>
+    </div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="intake" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Option intake</span>
+    <h1 class="wh-title">这份复盘包模板先按哪个口径做？</h1>
+    <p class="wh-subtle">我会用会议纪要和网盘数据起草，先选一个最接近的方向。</p>
+    <div class="wh-progress" aria-label="clarification progress"><span style="width:25%"></span></div>
+    <div class="wh-grid"><button class="wh-card" data-option-id="risk-first" data-recommended="true" type="button">
+        <strong>风险优先</strong>
+        <p class="wh-subtle">先列阻塞客户和需要你拍板的事项。</p>
+        <span class="wh-pill">AI 推荐</span>
+      </button><button class="wh-card" data-option-id="progress-first" data-recommended="false" type="button">
+        <strong>进展优先</strong>
+        <p class="wh-subtle">先列本周完成、下周计划，再补风险。</p>
+
+      </button><button class="wh-card" data-option-id="data-first" data-recommended="false" type="button">
+        <strong>数据优先</strong>
+        <p class="wh-subtle">先放核心指标和趋势，再补文字说明。</p>
+
+      </button></div>
+    <details class="wh-card" >
+      <summary>其他 / 补充</summary>
+      <p class="wh-subtle">有特殊格式再补一句，不填也可以。</p>
+    </details>
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="/api/sessions/00000000-0000-4000-8000-000000000105/next-question">继续</a></div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="approvals" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Approval center</span>
+    <h1 class="wh-title">AI assistant 等你审批区域发布复盘包模板</h1>
+    <p class="wh-subtle">打回必须写原因，AI assistant 会把原因放进下一轮修改上下文。</p>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>待处理</strong><p class="wh-subtle">1 件</p></article>
+      <article class="wh-card"><strong>SLA</strong><p class="wh-subtle">2026-06-05T02:30:00.000Z</p></article>
+      <article class="wh-card"><strong>规则</strong><p class="wh-subtle">打回必须说明原因，AI 会据此继续改。</p></article>
+    </div>
+    <div class="wh-list"><article class="wh-card"><span class="wh-pill">high</span><h3>AI assistant 等你审批区域发布复盘包模板</h3><p class="wh-subtle">2 个交付物、3 条证据、可回滚；点同意后才会进入正式交付。</p><div class="wh-actions"><a class="wh-btn wh-btn-primary" href="/approvals" data-action-id="open_approval" data-method="GET">打开审批</a><a class="wh-btn" href="/api/approvals/00000000-0000-4000-8000-000000000802/respond" data-action-id="approve" data-method="POST">同意</a><a class="wh-btn wh-btn-danger" href="/api/approvals/00000000-0000-4000-8000-000000000802/respond" data-action-id="deny" data-requires-reason="true" data-method="POST">打回</a></div></article></div>
+    <h2>审批事实</h2><div class="wh-card"><div class="wh-row"><div><strong>proposal.review.regional_report_template</strong><p class="wh-subtle">pending · SLA 2026-06-05T02:30:00.000Z</p></div><span class="wh-pill">00000000-0000-4000-8000-000000000102</span></div></div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="workitem" ><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Work item</span>
+    <h1 class="wh-title">生成区域发布复盘包模板</h1>
+    <p class="wh-subtle">生成一份可审批的区域发布复盘包 Markdown 模板，并附 HTML 预览。</p>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>状态</strong><p class="wh-subtle">in_review</p></article>
+      <article class="wh-card"><strong>交付物</strong><p class="wh-subtle">生成区域发布复盘包模板</p></article>
+    </div>
+    <h2>AI 轨迹预览</h2><div class="wh-card"><div class="wh-row"><span>用户选择风险优先口径，进入文档草稿路径。</span><span class="wh-pill">#1</span></div><div class="wh-row"><span>读取到会议纪要：先看阻塞和下周动作。</span><span class="wh-pill">#2</span></div><div class="wh-row"><span>读取到活跃客户、风险客户、续约推进等复盘包指标。</span><span class="wh-pill">#3</span></div><div class="wh-row"><span>证据已绑定到会议、网盘和评论三类来源，没有缺失证据。</span><span class="wh-pill">#4</span></div><div class="wh-row"><span>写入复盘包模板与 HTML 预览，并记录草稿快照。</span><span class="wh-pill">#5</span></div></div>
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="/proposals/r4-product-proposal">查看变更申请</a><a class="wh-btn" href="/agent-runs/r4-product-run/replay">看 AI 怎么做的</a></div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="proposal" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Deliverable change request</span>
+    <h1 class="wh-title">生成区域发布复盘包模板</h1>
+    <p class="wh-subtle">   变更摘要
+
+  新增  regional report template.md ，按风险优先口径组织复盘包。
+  新增  preview.html ，用于 Web/Tauri 预览同一份交付内容。
+  证据来自会议纪要、网盘数据和客户评论；没有使用未确认来源。
+
+   审核建议
+
+建议先采纳第一版；若要打回，请填写原因，下一轮 Agent 会把原因放入上下文。</p>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>风险</strong><p class="wh-subtle">只生成文档草稿和预览，不触发外部发送，可回滚。</p></article>
+      <article class="wh-card"><strong>回滚</strong><p class="wh-subtle">撤回本次 Proposal 后，恢复到生成前的 delivery snapshot。</p></article>
+      <article class="wh-card"><strong>证据</strong><p class="wh-subtle">3 条来源</p></article>
+    </div>
+    <h2>改了什么</h2><div class="wh-card"><div class="wh-row"><div><strong>生成 Markdown 复盘包模板，包含风险、进展、数据和下周动作四段。</strong><p class="wh-subtle">/outputs/regional-report-template.md</p></div><span class="wh-pill">text_doc</span></div><div class="wh-row"><div><strong>生成 HTML 预览，方便 Web 与桌面客户端展示同一交付物。</strong><p class="wh-subtle">/outputs/preview.html</p></div><span class="wh-pill">text_doc</span></div></div>
+    <h2>检查结果</h2><div class="wh-list"><div class="wh-check"><strong>执行前快照存在</strong><span class="wh-subtle">passed · 已记录 base snapshot，可用于回滚。</span></div><div class="wh-check"><strong>交付物已生成</strong><span class="wh-subtle">passed · Markdown 与 HTML 预览均已生成。</span></div><div class="wh-check"><strong>证据已绑定</strong><span class="wh-subtle">passed · 3 条证据均来自 fixture 白名单。</span></div><div class="wh-check"><strong>回滚可用</strong><span class="wh-subtle">passed · 可恢复到执行前快照。</span></div><div class="wh-check wh-warning"><strong>预算接近上限</strong><span class="wh-subtle">warning · 当前使用约 84% 单次预算，已发 budget.warning。</span></div></div>
+    <div class="wh-actions"><a class="wh-btn wh-btn-primary" href="/api/proposals/00000000-0000-4000-8000-000000000108/review" data-action-id="approve" data-method="POST">采纳</a><a class="wh-btn" href="/api/proposals/00000000-0000-4000-8000-000000000108/review" data-action-id="request_changes" data-requires-reason="true" data-method="POST">打回并说明原因</a><a class="wh-btn" href="/api/proposals/00000000-0000-4000-8000-000000000108/merge" data-action-id="merge" data-method="POST">合并交付物</a></div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="replay" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Replay Work</span>
+    <h1 class="wh-title">查看 AI 怎么做的</h1>
+    <p class="wh-subtle">已生成复盘包模板与 HTML 预览，等待用户审批。</p>
+    <div class="wh-card"><div class="wh-row"><div><strong>think</strong><p class="wh-subtle">用户选择风险优先口径，进入文档草稿路径。</p></div><span class="wh-pill">#1</span></div><div class="wh-row"><div><strong>tool_call</strong><p class="wh-subtle">读取到会议纪要：先看阻塞和下周动作。</p></div><span class="wh-pill">#2</span></div><div class="wh-row"><div><strong>tool_call</strong><p class="wh-subtle">读取到活跃客户、风险客户、续约推进等复盘包指标。</p></div><span class="wh-pill">#3</span></div><div class="wh-row"><div><strong>tool_result</strong><p class="wh-subtle">证据已绑定到会议、网盘和评论三类来源，没有缺失证据。</p></div><span class="wh-pill">#4</span></div><div class="wh-row"><div><strong>tool_call</strong><p class="wh-subtle">写入复盘包模板与 HTML 预览，并记录草稿快照。</p></div><span class="wh-pill">#5</span></div><div class="wh-row"><div><strong>final</strong><p class="wh-subtle">生成 DeliverableChangeManifest，打开待审批 Proposal。</p></div><span class="wh-pill">#6</span></div></div>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>Token</strong><p class="wh-subtle">104000</p></article>
+      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥4.2</p></article>
+      <article class="wh-card"><strong>快照</strong><p class="wh-subtle">3 个回滚点</p></article>
+      <article class="wh-card"><strong>正式交付物</strong><p class="wh-subtle">0 份</p></article>
+      <article class="wh-card"><strong>决策记录</strong><p class="wh-subtle">0 次</p></article>
+    </div>
+
+
+    </section></div></main></div></section><section class="wh-route-panel" data-wh-panel="cost" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Cost governance</span>
+    <h1 class="wh-title">预算与成本</h1>
+    <p class="wh-subtle">普通用户只看个人切片；管理者再看团队视图。</p>
+    <div class="wh-grid">
+      <article class="wh-card"><strong>本期 token</strong><p class="wh-subtle">104000</p></article>
+      <article class="wh-card"><strong>估算成本</strong><p class="wh-subtle">¥4.2</p></article>
+      <article class="wh-card"><strong>预算状态</strong><p class="wh-subtle">warning</p></article>
+    </div>
+    <div class="wh-list"><article class="wh-card"><strong>warning</strong><p class="wh-subtle">本次运行已接近单次预算上限，我会保留回放并优先使用便宜模型继续。</p></article></div></section></div></main></div></section><section class="wh-route-panel" data-wh-panel="settings" hidden><div class="wh-web"><main class="wh-shell"><div class="wh-stage"><section class="wh-panel wh-main"><span class="wh-kicker">Settings</span>
+    <h1 class="wh-title">应用设置</h1>
+    <p class="wh-subtle">这里管理应用运行、语言、预算和桌面客户端连接；桌宠形象只在独立桌宠窗口里配置和验收。</p>
+    <div class="wh-grid wh-settings-grid">
+      <article class="wh-card"><strong>AI 运行时</strong><p class="wh-subtle">模型路由、工具权限和执行日志走统一契约，页面只展示可判断的信息。</p></article>
+      <article class="wh-card"><strong>桌面客户端</strong><p class="wh-subtle">本地执行、同步目录、托盘和独立桌宠窗口属于客户端能力，不嵌入 Web 页面。</p></article>
+      <article class="wh-card"><strong>预算</strong><p class="wh-subtle">预算与成本使用独立页面和告警事件，不把成本状态混进看板。</p></article>
+      <article class="wh-card"><strong>语言</strong><p class="wh-subtle">顶部语言切换会同步页面固定文案；动态内容后续继续接入 locale。</p></article>
+    </div></section></div></main></div></section></div>
+        </main>
+        <aside class="wh-product-rail" aria-label="当前焦点">
+          <section class="wh-product-rail-block">
+            <span class="wh-product-rail-tag">数据源</span>
+            <h2>REST 真相源</h2>
+            <p>SSE 只触发刷新，页面以 REST Page VM 为准。</p>
+          </section>
+          <section class="wh-product-rail-block">
+            <span class="wh-product-rail-tag">下一步</span>
+            <h2>任务</h2>
+            <p>核对验收项、AI 轨迹和交付物。</p>
+          </section>
+          <section class="wh-product-rail-block">
+            <span class="wh-product-rail-tag">Web 管理端</span>
+            <p>主窗口保持严肃工作界面。</p>
+          </section>
+        </aside>
+      </div>
+      <div class="wh-app-notice" data-wh-app-notice hidden></div>
+    </div></div>
+<script>
+(() => {
+  const clone = document.body.cloneNode(true);
+  clone.querySelectorAll("script,style").forEach((node) => node.remove());
+  const text = clone.textContent || "";
+  const nav = document.querySelector(".wh-product-nav");
+  const navClientWidth = nav ? Math.round(nav.clientWidth) : 0;
+  const navScrollWidth = nav ? Math.round(nav.scrollWidth) : 0;
+  const root = document.querySelector("[data-r4-product-shell]");
+  const textContainerSelector = [
+    ".wh-product-topbar",
+    ".wh-product-brand",
+    ".wh-product-top-actions",
+    ".wh-product-nav",
+    ".wh-product-nav a",
+    ".wh-product-masthead",
+    ".wh-product-metric",
+    ".wh-route-panel",
+    ".wh-panel",
+    ".wh-card",
+    ".wh-section",
+    ".wh-product-rail-block",
+    ".wh-app-notice",
+    ".wh-app-action-row",
+    "button",
+    "a"
+  ].join(",");
+  const textOverflowSamples = Array.from(document.querySelectorAll("a,button,span,p,h1,h2,h3,h4,strong,small,li,dd,dt,label,time"))
+    .flatMap((element) => {
+      const htmlElement = element;
+      const style = window.getComputedStyle(htmlElement);
+      const rect = htmlElement.getBoundingClientRect();
+      const visible = style.display !== "none" && style.visibility !== "hidden" && rect.width > 1 && rect.height > 1;
+      const value = (htmlElement.textContent || "").replace(/\s+/g, " ").trim();
+      if (!visible || !value) return [];
+      const explicitTextClip =
+        style.textOverflow === "ellipsis" &&
+        (style.whiteSpace === "nowrap" || (style.webkitLineClamp && style.webkitLineClamp !== "none"));
+      const scrollArea = ["auto", "scroll"].includes(style.overflowX) || ["auto", "scroll"].includes(style.overflowY);
+      const horizontalLeak =
+        Math.ceil(htmlElement.scrollWidth) > Math.ceil(htmlElement.clientWidth) + 2 &&
+        !explicitTextClip &&
+        !scrollArea;
+      const verticalLeak =
+        Math.ceil(htmlElement.scrollHeight) > Math.ceil(htmlElement.clientHeight) + 2 &&
+        !explicitTextClip &&
+        !scrollArea;
+      const container = htmlElement.parentElement ? htmlElement.parentElement.closest(textContainerSelector) : null;
+      const containerRect = container ? container.getBoundingClientRect() : null;
+      const containmentLeak = Boolean(
+        containerRect &&
+          (rect.left < containerRect.left - 2 ||
+            rect.right > containerRect.right + 2 ||
+            rect.top < containerRect.top - 2 ||
+            rect.bottom > containerRect.bottom + 2)
+      );
+      if (!horizontalLeak && !verticalLeak && !containmentLeak) return [];
+      const className = typeof htmlElement.className === "string" && htmlElement.className ? "." + htmlElement.className.split(/\s+/).slice(0, 2).join(".") : "";
+      return [
+        htmlElement.tagName.toLowerCase() + className + " " + JSON.stringify(value.slice(0, 96)) +
+          " leak=" + [horizontalLeak ? "horizontal" : "", verticalLeak ? "vertical" : "", containmentLeak ? "container" : ""].filter(Boolean).join("+") +
+          " sw/cw=" + Math.ceil(htmlElement.scrollWidth) + "/" + Math.ceil(htmlElement.clientWidth) +
+          " sh/ch=" + Math.ceil(htmlElement.scrollHeight) + "/" + Math.ceil(htmlElement.clientHeight)
+      ];
+    });
+  const report = {
+    productShell: Boolean(root),
+    masthead: Boolean(document.querySelector("[data-r4-product-masthead]")),
+    routeKey: root ? root.getAttribute("data-r4-product-route-key") || "" : "",
+    statusReady: document.querySelectorAll('[data-r4-web-route-status="ready"]').length,
+    pathNavigation: Array.from(document.querySelectorAll("a[href]")).some((anchor) => (anchor.getAttribute("href") || "").startsWith("/")),
+    hashNavigationLeak: Array.from(document.querySelectorAll("a[href]")).some((anchor) => (anchor.getAttribute("href") || "").startsWith("#/")),
+    oldShellLeak: Boolean(document.querySelector(".wh-app-root")),
+    cuuLeak: /\bCuu\b/i.test(text) || Boolean(document.querySelector("[data-cuu]")),
+    kanbanLeak: /\bkanban\b/i.test(text),
+    weeklyFixtureLeak: /客户周报|weekly report/i.test(text),
+    zhChrome: text.includes("工作入口") && text.includes("当前焦点"),
+    enChrome: text.includes("Work entry") && text.includes("Focus"),
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+    navClientWidth,
+    navScrollWidth,
+    navHorizontalOverflow: nav ? navScrollWidth > navClientWidth + 2 : true,
+    horizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > document.documentElement.clientWidth + 2,
+    textBoxOverflow: textOverflowSamples.length > 0,
+    textOverflowCount: textOverflowSamples.length,
+    textOverflowSamples: textOverflowSamples.slice(0, 8)
+  };
+  document.body.setAttribute("data-r4-product-shell-report", JSON.stringify(report));
+})();
+</script>
+</body>
+</html>
