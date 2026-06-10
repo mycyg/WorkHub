@@ -126,4 +126,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 5. R3.17 新增 `settings_menu_layout_gate`：右键菜单必须在 260px `pet` surface 内，模型切换后的短提示也必须完整留在窗口内；用户截图中的文本超框风险继续作为后续硬门。
 6. R3.18/R3.19 已为 pass-through recovery 单独留证：开启后右键入口不可依赖，可通过主窗 `/settings` 或托盘 `restore-pet-interaction` handler 恢复；证据目录分别为 `./assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/`。
 7. R3.19 已把用户截图对应的文本超框风险纳入托盘恢复门：短提示收敛为一行，打开右键菜单时收起 transient status bubble，主窗 settings capture 继续要求 `overflow.offenders=[]`。
-8. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限；物理 OS 托盘点击仍需 R3.20 录屏。
+8. R3.20a 已补右键菜单 hover -> 主窗 settings 同步截图：`./assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-en-official/` 与 `hover-sync-zh-official/` 均满足 `settings_menu_hover_sync_gate.passed=true`、`settings_menu_layout_gate.passed=true` 和 `overflow.offenders=[]`。
+9. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限；物理 OS 托盘点击仍需 R3.20b 录屏或 UI automation 证据。

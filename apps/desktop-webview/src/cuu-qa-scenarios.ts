@@ -10,6 +10,7 @@ export type DesktopPetQaScenario =
   | "launcher"
   | "settings-menu"
   | "settings-menu-model-switch"
+  | "settings-menu-hover-sync"
   | "pass-through-recovery-settings"
   | "pass-through-recovery-tray"
   | "clarify"
@@ -35,6 +36,7 @@ const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "launcher",
   "settings-menu",
   "settings-menu-model-switch",
+  "settings-menu-hover-sync",
   "pass-through-recovery-settings",
   "pass-through-recovery-tray",
   "clarify",
@@ -177,6 +179,7 @@ function desktopPetQaScenarioUsesRunApi(scenario: DesktopPetQaScenario) {
 function desktopPetQaScenarioUsesManualCdp(scenario: DesktopPetQaScenario) {
   return scenario === "settings-menu" ||
     scenario === "settings-menu-model-switch" ||
+    scenario === "settings-menu-hover-sync" ||
     scenario === "pass-through-recovery-settings" ||
     scenario === "pass-through-recovery-tray";
 }
@@ -187,6 +190,7 @@ function eventForScenario(
     | "launcher"
     | "settings-menu"
     | "settings-menu-model-switch"
+    | "settings-menu-hover-sync"
     | "pass-through-recovery-settings"
     | "pass-through-recovery-tray"
     | "run-stream"

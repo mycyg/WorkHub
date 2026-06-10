@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补 pass-through 真恢复、主窗 settings 截图与跨平台 capture。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`；R3.18 已补 pass-through 主窗 settings 恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> main settings 同步截图。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补物理 OS 托盘点击与跨平台 capture。
 
 | 缺口 | 计划 |
 |---|---|
@@ -470,8 +470,8 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | option payload 更细 | R3.14 已让 launcher chip 带 `delivery_kind` / `risk_hint` / `default_acceptance`，并写入 WorkItem `planning_note` JSON spec 与默认 acceptance items |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；R3.15 已用真实 Tauri reload capture 证明 session/active run/terminal run 恢复且不裁切 |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图；R3.17 已补 zh-CN/en-US 右键菜单截图 |
-| settings / menu 真实证据 | R3.17 已补 settings 八组合、右键菜单 zh-CN/en-US 和黑猫切白猫模型切换 capture；下一步补 pass-through 真恢复和主窗 `/settings` 截图 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图；R3.17 已补 zh-CN/en-US 右键菜单截图；R3.18/R3.19/R3.20a 已补 zh-CN/en-US 主窗 settings 恢复/同步截图 |
+| settings / menu 真实证据 | R3.17 已补 settings 八组合、右键菜单 zh-CN/en-US 和黑猫切白猫模型切换 capture；R3.18 已补 pass-through 主窗恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> 主窗 settings 同步截图；下一步补物理 OS 托盘点击证据 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -985,11 +985,63 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-tray -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-tray-recovery\hijiki\tray-restore-zh-official
 ```
 
-## 21. 下一刀 R3.20
+## 21. R3.20a 已落切片：right-click hover sync -> main settings screenshot
+
+R3.20a 关闭 R3.19 留下的右键菜单到主窗 settings 真实截图缺口：在真实 Tauri `pet` window 中右键打开菜单、点击 `hide-on-hover`，再确认 desktop main `/settings` 面板同步为 `hide_checked=true`，并保存中英双语可见控件截图。范围仍限定现有黑猫/白猫 Live2D、右键菜单和主窗 settings；不新增模型、不改色、不扩动作路线。
+
+改动：
+
+| 层 | R3.20a 行为 |
+|---|---|
+| QA scenario | 新增 `settings-menu-hover-sync`，进入 TS/Rust/PowerShell 白名单；该场景不生成 scripted listener，仍走真实 WebView2 CDP 右键/点击 |
+| capture script | 同时连接 pet/main CDP：主窗 settings 初始截图滚动到 `Desktop client` 设置区，pet 右键菜单点击 hover，再抓取主窗同步后截图 |
+| layout gate | 新增 `settings_menu_hover_sync_gate`：要求 before `hide_checked=false`、after `hide_checked=true`、最终 pet DOM `data_pet_hide_on_hover=true`、菜单仍可用 |
+| screenshot gate | main settings 截图前滚动到 `data-desktop-pet-settings`，避免截图只停在 settings 顶部而看不到实际同步状态 |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| hover sync en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-en-official/`，`passed=true`、`settings_menu_hover_sync_gate.passed=true`、`settings_menu_layout_gate.passed=true` |
+| hover sync zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-zh-official/`，同上 |
+| main settings overflow gate | 两个 locale 的 `main_settings_before_hover_sync.layout_gate.overflow.offenders=[]` 与 `main_settings_after_hover_sync.layout_gate.overflow.offenders=[]` |
+| 可见截图复核 | after 截图直接显示 `dodge hover` / `悬停避让` 已勾选；菜单 contact sheet 中按钮、短提示、菜单项均未超出 260px pet surface |
+
+数据流：
+
+```text
+WebView2 CDP right-click pet body
+  -> pet right-click settings menu
+  -> click data-pet-menu-toggle-hover
+  -> pet-surface update preferences + localStorage
+  -> emit_to("main", "pet-settings", source="pet-menu")
+  -> desktop main /settings refreshes panel state
+  -> visible screenshot + DOM gate
+```
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 修复 capture 证据质量问题：主窗 settings 截图前滚动到 pet settings 区域，截图本身可直接看到同步后的状态 |
+| 数据流 | pet 菜单只发 settings event，不绕过主窗 controller；main settings 仍是严肃恢复面，不显示 Cuu 本体或模型预览 |
+| PRD/概念图 | Cuu 仍只在独立 transparent `pet` window；主窗只显示桌面客户端设置和恢复能力 |
+| 中英双语 | zh-CN/en-US 都有主窗前后截图、contact sheet、DOM report 和 motion diff；菜单和主窗文案无乱码、无超框 |
+| 限制 | R3.20a 不解决物理 OS 托盘图标点击；该项继续留给 R3.20b |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/desktop-webview test
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario settings-menu-hover-sync -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 12 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-hover-sync\hijiki\hover-sync-en-official
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario settings-menu-hover-sync -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 12 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-hover-sync\hijiki\hover-sync-zh-official
+```
+
+## 22. 下一刀 R3.20b
 
 1. 补物理 OS 托盘图标/菜单点击证据：在 Windows 上通过 UI automation 或明确可复跑步骤触发 tray menu item，而不是只调用同 handler command。
-2. 补右键菜单 -> main settings 的真实截图：右键菜单切 hover 后主窗 `/settings` 状态同步，继续验证 `overflow.offenders=[]`。
-3. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
-4. 继续保留 R3.12-R3.19 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix、菜单 gate、settings recovery、tray handler recovery。
-5. R4 接手主窗产品化截图：home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow 都必须继续证明主窗无 Cuu 本体和无文本超框。
-6. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主工作台无 Cuu 截图复核仍要闭环。
+2. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+3. 继续保留 R3.12-R3.20a 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix、菜单 gate、settings recovery、tray handler recovery、hover sync。
+4. R4 接手主窗产品化截图：home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow 都必须继续证明主窗无 Cuu 本体和无文本超框。
+5. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主工作台无 Cuu 截图复核仍要闭环。

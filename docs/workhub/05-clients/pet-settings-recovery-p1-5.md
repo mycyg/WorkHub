@@ -126,18 +126,29 @@ R3.19 补上 `restore-pet-interaction` 同一 Rust tray handler 的真实恢复�
 | 右键菜单 | 恢复后 WebView2 CDP 右键菜单可用，`settings_menu_layout_gate.passed=true`，菜单 rect 留在 260px surface 内 |
 | 文本边界 | 恢复提示缩短为 `Interaction restored.` / `已恢复交互。`；菜单打开前清掉 transient 提示，official DOM report `bubble=null`，避免文字被菜单遮挡 |
 
+## 8. R3.20a menu -> settings hover sync 视觉验收进展
+
+R3.20a 补上 R3.19 留下的“右键菜单切 hover 后，主窗 `/settings` 是否真实同步”的可见截图证据。该切片仍然不把 Cuu 本体放回主窗，也不在右键菜单里加入 pass-through；它只验证 `hide_on_hover` 从 pet menu 发起后，主窗严肃设置面板同步为已勾选，并且中英双语文本不超框。
+
+| 项 | 证据 / 结论 |
+|---|---|
+| hover sync en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-en-official/`，`settings_menu_hover_sync_gate.passed=true` |
+| hover sync zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-zh-official/`，同上 |
+| 主窗状态同步 | before 截图为 `pass_checked=false`、`hide_checked=false`；after 截图为 `pass_checked=false`、`hide_checked=true` |
+| pet/menu 同步 | 最终 pet DOM 为 `data_pet_pass_through=false`、`data_pet_hide_on_hover=true`；右键菜单重新打开后仍可用且 hover 项保持选中 |
+| 文本边界 | 两个 locale 的 `main_settings_before_hover_sync.layout_gate.overflow.offenders=[]` 与 `main_settings_after_hover_sync.layout_gate.overflow.offenders=[]`；菜单按钮、短提示和主窗状态徽标均未超出容器 |
+
 仍未通过的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| 物理 OS 托盘点击 | 当前 R3.19 已证明同一 Rust tray handler；下一步补系统 tray icon/menu item 的物理点击或 UI automation 证据 |
-| menu 与 settings 双向同步 | R3.19 已补事件桥和单测，tray -> pet -> main 已有截图；下一步补右键切 hover 后主窗 settings 状态同步截图 |
+| 物理 OS 托盘点击 | 当前 R3.19 已证明同一 Rust tray handler；R3.20a 已证明 pet menu -> main settings 同步；下一步补系统 tray icon/menu item 的物理点击或 UI automation 证据 |
 | Linux/macOS | 透明窗口 + tray 恢复 smoke；Wayland/X11 需要单独记录 |
 
-## 8. 后续施工
+## 9. 后续施工
 
 1. 补物理 OS 托盘图标/菜单点击截图证据：开启 pass-through、从系统 tray menu 恢复、右键菜单重新可用。
-2. 补右键菜单和主窗 settings 的双向状态同步截图：菜单改 hover 后主窗可见；主窗恢复后 pet 已由 R3.18/R3.19 证明，继续保留回归。
+2. 保留右键菜单和主窗 settings 双向状态同步回归：R3.20a 已证明菜单改 hover 后主窗可见；主窗恢复后 pet 已由 R3.18/R3.19 证明。
 3. 建立 Linux/macOS 透明窗口、tray/menu bar 与截图权限策略。
 4. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
 5. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。

@@ -30,7 +30,7 @@ date: 2026-06-10
 
 - 主窗严肃 settings 页能关闭 `pet_pass_through`。P1.5 已落源码恢复门。
 - 托盘有明确“恢复 Cuu 交互”动作。P1.5 已落 `restore-pet-interaction`。
-- R3.18 已用主窗 `/settings` 真实截图证明开启后可恢复，并确认恢复后右键菜单重新可用；托盘真实点击证据仍在 R3.19。
+- R3.18 已用主窗 `/settings` 真实截图证明开启后可恢复，并确认恢复后右键菜单重新可用；R3.19 已证明同一 Rust tray handler 可恢复；R3.20a 已证明右键菜单切 hover 后主窗 settings 同步。物理 OS 托盘点击证据仍留给 R3.20b。
 
 ## 3. Runtime Contract
 
@@ -101,10 +101,20 @@ R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单�
 | menu -> settings 事件桥 | 右键菜单切 hover 会 emit `pet-settings` 到 main；`pet right-click menu broadcasts hover setting changes to the main settings panel` 单测覆盖 `source="pet-menu"` payload |
 | pass-through 菜单项 | 仍不放进右键菜单；pass-through 恢复入口继续保留在主窗 `/settings`、系统托盘 handler 和后续物理 tray menu 证据 |
 
-### 5.4 后续验收
+### 5.4 R3.20a settings hover sync 已完成
+
+| 项 | 证据 / 结论 |
+|---|---|
+| 右键 hover -> 主窗 settings | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-en-official/` 与 `hover-sync-zh-official/`，两组 `settings_menu_hover_sync_gate.passed=true` |
+| 主窗可见截图 | `main-settings-before-hover-sync.png` 显示 `hide_checked=false`；`main-settings-after-hover-sync.png` 直接显示 `Dodge hover` / `悬停避让` 已勾选 |
+| 菜单可用性 | 点击 hover 后再次右键，菜单仍在 260px pet surface 内，hover 项保持 selected；`settings_menu_layout_gate.passed=true` |
+| 文本边界 | 菜单按钮、短提示、主窗 settings 状态徽标均通过 overflow gate；两个 locale 的 `overflow.offenders=[]` |
+| pass-through 菜单项 | 继续不放进右键菜单；R3.20a 只验证 `hide_on_hover`，不扩大菜单恢复入口 |
+
+### 5.5 后续验收
 
 | 下一步 | 验收 |
 |---|---|
 | 物理 OS 托盘点击 | 从 pass-through 初始态点击系统 tray menu item，恢复后右键菜单重新可用 |
-| settings 双向状态同步截图 | 右键菜单切 hover 后主窗 settings 状态同步；主窗恢复/托盘 handler 后 pet/main 状态同步继续回归 |
+| settings 双向状态同步回归 | R3.20a 已补右键菜单切 hover 后主窗 settings 状态同步截图；后续保留主窗恢复/托盘 handler 后 pet/main 状态同步回归 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

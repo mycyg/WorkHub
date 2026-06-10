@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -34,6 +34,45 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Normalize-ProcessEnvironmentKeys {
+  $groups = @{}
+  $variables = [System.Environment]::GetEnvironmentVariables("Process")
+  foreach ($keyObject in $variables.Keys) {
+    $key = [string]$keyObject
+    $normalKey = $key.ToUpperInvariant()
+    if (-not $groups.ContainsKey($normalKey)) {
+      $groups[$normalKey] = New-Object System.Collections.Generic.List[string]
+    }
+    $groups[$normalKey].Add($key)
+  }
+
+  foreach ($normalKey in $groups.Keys) {
+    $keys = @($groups[$normalKey].ToArray())
+    if ($keys.Count -le 1) {
+      continue
+    }
+    $canonicalKey = if ($normalKey -eq "PATH") { "Path" } else { $keys[0] }
+    $canonicalValue = [System.Environment]::GetEnvironmentVariable($canonicalKey, "Process")
+    if ($null -eq $canonicalValue) {
+      foreach ($key in $keys) {
+        $candidateValue = [System.Environment]::GetEnvironmentVariable($key, "Process")
+        if ($null -ne $candidateValue) {
+          $canonicalValue = $candidateValue
+          break
+        }
+      }
+    }
+    foreach ($key in $keys) {
+      [System.Environment]::SetEnvironmentVariable($key, $null, "Process")
+    }
+    if ($null -ne $canonicalValue) {
+      [System.Environment]::SetEnvironmentVariable($canonicalKey, $canonicalValue, "Process")
+    }
+  }
+}
+
+Normalize-ProcessEnvironmentKeys
+
 if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
   throw "Cuu motion capture QA is Windows-only because it validates Win32 transparent-window behavior."
 }
@@ -42,7 +81,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
@@ -58,9 +97,11 @@ function Invoke-Checked {
 }
 
 function Get-PnpmCommandSpec {
-  $pnpm = (Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue).Source
+  $pnpmCommand = Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue
+  $pnpm = if ($pnpmCommand) { $pnpmCommand.Source } else { $null }
   if (-not $pnpm) {
-    $pnpm = (Get-Command "pnpm" -ErrorAction SilentlyContinue).Source
+    $pnpmCommand = Get-Command "pnpm" -ErrorAction SilentlyContinue
+    $pnpm = if ($pnpmCommand) { $pnpmCommand.Source } else { $null }
   }
   if ($pnpm) {
     return [pscustomobject]@{
@@ -68,9 +109,11 @@ function Get-PnpmCommandSpec {
       ArgumentPrefix = @()
     }
   }
-  $corepack = (Get-Command "corepack.cmd" -ErrorAction SilentlyContinue).Source
+  $corepackCommand = Get-Command "corepack.cmd" -ErrorAction SilentlyContinue
+  $corepack = if ($corepackCommand) { $corepackCommand.Source } else { $null }
   if (-not $corepack) {
-    $corepack = (Get-Command "corepack" -ErrorAction SilentlyContinue).Source
+    $corepackCommand = Get-Command "corepack" -ErrorAction SilentlyContinue
+    $corepack = if ($corepackCommand) { $corepackCommand.Source } else { $null }
   }
   if ($corepack) {
     return [pscustomobject]@{
@@ -644,6 +687,33 @@ function Wait-CuuCdpMainSettingsState {
   throw "Main settings state did not reach pass_through=$ExpectedPassThrough hide_on_hover=$ExpectedHideOnHover opacity=$ExpectedOpacityPercent. Last snapshot: $lastSnapshotJson Last error: $lastErrorMessage"
 }
 
+function Invoke-CuuCdpScrollMainPetSettingsIntoView {
+  param([string]$WebSocketUrl)
+  Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(async () => {
+  const target = document.querySelector("[data-desktop-pet-settings]") || document.querySelector("[data-cuu-pet-settings-state]");
+  if (!target) {
+    return JSON.stringify({ scrolled: false, reason: "missing_desktop_pet_settings" });
+  }
+  target.scrollIntoView({ block: "center", inline: "nearest" });
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  const rect = target.getBoundingClientRect();
+  return JSON.stringify({
+    scrolled: true,
+    rect: {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      right: Math.round(rect.right),
+      bottom: Math.round(rect.bottom)
+    },
+    scroll_y: Math.round(window.scrollY || document.documentElement.scrollTop || 0)
+  });
+})()
+"@
+}
+
 function New-CuuMainSettingsLayoutGate {
   param(
     [object]$Snapshot,
@@ -744,6 +814,59 @@ function New-CuuPassThroughRecoveryGate {
     final_pet_pass_through_off = $finalPassThroughOff
     final_pet_hide_off = $finalHideOff
     final_pet_opacity_restored = $finalOpacityRestored
+    final_menu_usable = $finalMenuUsable
+  }
+}
+
+function New-CuuSettingsMenuHoverSyncGate {
+  param(
+    [string]$Scenario,
+    [object]$MainBefore,
+    [object]$MainAfter,
+    [object]$FinalPetDomReport
+  )
+  $enabled = $Scenario -eq "settings-menu-hover-sync"
+  if (-not $enabled) {
+    return [pscustomobject]@{
+      enabled = $false
+      passed = $true
+      reason = "not_settings_menu_hover_sync_scenario"
+    }
+  }
+  $mainBeforePassed = $MainBefore -and $MainBefore.layout_gate -and [bool]$MainBefore.layout_gate.passed
+  $mainAfterPassed = $MainAfter -and $MainAfter.layout_gate -and [bool]$MainAfter.layout_gate.passed
+  $mainBeforeHoverOff = $MainBefore -and
+    $MainBefore.snapshot -and
+    $MainBefore.snapshot.pet_settings -and
+    [bool]$MainBefore.snapshot.pet_settings.pass_checked -eq $false -and
+    [bool]$MainBefore.snapshot.pet_settings.hide_checked -eq $false
+  $mainAfterHoverOn = $MainAfter -and
+    $MainAfter.snapshot -and
+    $MainAfter.snapshot.pet_settings -and
+    [bool]$MainAfter.snapshot.pet_settings.pass_checked -eq $false -and
+    [bool]$MainAfter.snapshot.pet_settings.hide_checked -eq $true
+  $finalPetHoverOn = $FinalPetDomReport -and
+    $FinalPetDomReport.surface -and
+    $FinalPetDomReport.surface.data -and
+    [string]$FinalPetDomReport.surface.data.data_pet_pass_through -eq "false" -and
+    [string]$FinalPetDomReport.surface.data.data_pet_hide_on_hover -eq "true"
+  $finalMenuUsable = $FinalPetDomReport -and
+    $FinalPetDomReport.settings_menu -and
+    [bool]$FinalPetDomReport.settings_menu.present -and
+    $FinalPetDomReport.settings_menu.rect -and
+    [double]$FinalPetDomReport.settings_menu.rect.width -gt 0 -and
+    [double]$FinalPetDomReport.settings_menu.rect.height -gt 0 -and
+    ([string]$FinalPetDomReport.settings_menu.text).Length -gt 0
+  $passed = $mainBeforePassed -and $mainAfterPassed -and $mainBeforeHoverOff -and $mainAfterHoverOn -and $finalPetHoverOn -and $finalMenuUsable
+  [pscustomobject]@{
+    enabled = $true
+    passed = $passed
+    reason = if ($passed) { "pet_menu_hover_synced_to_main_settings" } else { "settings_menu_hover_sync_failed" }
+    main_before_passed = $mainBeforePassed
+    main_after_passed = $mainAfterPassed
+    main_before_hover_off = $mainBeforeHoverOff
+    main_after_hover_on = $mainAfterHoverOn
+    final_pet_hover_on = $finalPetHoverOn
     final_menu_usable = $finalMenuUsable
   }
 }
@@ -1343,7 +1466,7 @@ function New-CuuSettingsMenuLayoutGate {
     [string]$ExpectedLocale = "zh-CN"
   )
 
-  $enabled = @("settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray") -contains $Scenario
+  $enabled = @("settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray") -contains $Scenario
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -1370,7 +1493,7 @@ function New-CuuSettingsMenuLayoutGate {
     }
   }
 
-  if ($Scenario -eq "settings-menu" -or $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray") {
+  if ($Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-hover-sync" -or $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray") {
     if (-not $Actual.settings_menu -or -not $Actual.settings_menu.present -or -not $Actual.settings_menu.rect) {
       return [pscustomobject]@{
         enabled = $true
@@ -1917,7 +2040,7 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "pass-through-recovery-settings" -and $ScenarioName -ne "pass-through-recovery-tray") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "settings-menu-hover-sync" -and $ScenarioName -ne "pass-through-recovery-settings" -and $ScenarioName -ne "pass-through-recovery-tray") {
     return $null
   }
 
@@ -1926,8 +2049,9 @@ function Invoke-CuuInteractionScenarioFrame {
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $isLauncher = $ScenarioName -eq "launcher"
-  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray"
+  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "settings-menu-hover-sync" -or $ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray"
   $isSettingsMenuModelSwitch = $ScenarioName -eq "settings-menu-model-switch"
+  $isSettingsMenuHoverSync = $ScenarioName -eq "settings-menu-hover-sync"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
   $nearLeftX = [int]($Window.Rect.Left - 36)
@@ -2011,6 +2135,39 @@ function Invoke-CuuInteractionScenarioFrame {
         action = "click_white_cat_menu_item"
         input_driver = "webview2_cdp"
         webview_point = $point
+        window_rect = $Window.Rect
+      }
+    }
+    if ($isSettingsMenuHoverSync -and $FrameIndex -eq 2) {
+      if (-not $script:cuuCdpWebSocketUrl) {
+        throw "settings menu hover-sync capture requires WebView2 CDP."
+      }
+      $point = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuCdpWebSocketUrl -Selector "[data-pet-menu-toggle-hover]"
+      Start-Sleep -Milliseconds 820
+      return [pscustomobject]@{
+        frame = $FrameIndex
+        action = "click_hide_on_hover_menu_item"
+        input_driver = "webview2_cdp"
+        webview_point = $point
+        window_rect = $Window.Rect
+      }
+    }
+    if ($isSettingsMenuHoverSync -and $FrameIndex -eq 4) {
+      if (-not $script:cuuCdpWebSocketUrl) {
+        throw "settings menu hover-sync capture requires WebView2 CDP."
+      }
+      $localX = [int][Math]::Round($Window.Rect.Width / 2)
+      $localY = [int][Math]::Round($Window.Rect.Height / 2)
+      Invoke-CuuCdpMouseClick -WebSocketUrl $script:cuuCdpWebSocketUrl -X $localX -Y $localY -Button "right"
+      Start-Sleep -Milliseconds 420
+      return [pscustomobject]@{
+        frame = $FrameIndex
+        action = "right_click_reopen_settings_menu_after_hover_toggle"
+        input_driver = "webview2_cdp"
+        webview_point = [pscustomobject]@{
+          x = $localX
+          y = $localY
+        }
         window_rect = $Window.Rect
       }
     }
@@ -2270,6 +2427,8 @@ $reloadRestoreSeed = $null
 $initialPetSettingsSnapshot = $null
 $mainSettingsBeforeRestore = $null
 $mainSettingsAfterRestore = $null
+$mainSettingsBeforeHoverSync = $null
+$mainSettingsAfterHoverSync = $null
 
 try {
   if (-not $UseRealAppData) {
@@ -2284,7 +2443,9 @@ try {
   $sseDisabledForScenario = $false
   $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
   $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
-  $usesMainSettingsCapture = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
+  $usesPassThroughRecoveryCapture = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
+  $usesHoverSyncCapture = $Scenario -eq "settings-menu-hover-sync"
+  $usesMainSettingsCapture = $usesPassThroughRecoveryCapture -or $usesHoverSyncCapture
   $usesTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray"
   $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario -or $usesMainSettingsCapture
   if (($Scenario -ne "idle" -and -not $usesCuuR3ApiServer) -or $DisableSse) {
@@ -2325,7 +2486,7 @@ try {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_API_FAULT" -ErrorAction SilentlyContinue
   }
   Remove-Item -Path "Env:WORKHUB_CUU_QA_RESTORE_STATE" -ErrorAction SilentlyContinue
-  $initialPetPassThrough = [bool]$PetPassThrough -or $usesMainSettingsCapture
+  $initialPetPassThrough = [bool]$PetPassThrough -or $usesPassThroughRecoveryCapture
   if ($initialPetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
@@ -2399,12 +2560,12 @@ try {
     $script:cuuCdpWebSocketUrl = Wait-CuuCdpPetWebSocketUrl -Port $cuuCdpDebugPort -TimeoutSeconds $WaitSeconds
   }
   if ($usesMainSettingsCapture -and -not $script:cuuCdpWebSocketUrl) {
-    throw "pass-through recovery capture requires pet WebView2 CDP."
+    throw "main settings capture requires pet WebView2 CDP."
   }
   if ($usesMainSettingsCapture -and $cuuCdpDebugPort) {
     $script:cuuMainCdpWebSocketUrl = Wait-CuuCdpMainWebSocketUrl -Port $cuuCdpDebugPort -TimeoutSeconds $WaitSeconds
     if (-not $script:cuuMainCdpWebSocketUrl) {
-      throw "pass-through recovery capture requires main WebView2 CDP."
+      throw "main settings capture requires main WebView2 CDP."
     }
   }
   if ($Scenario -eq "look-only") {
@@ -2415,7 +2576,7 @@ try {
     }
   }
 
-  if ($usesMainSettingsCapture) {
+  if ($usesPassThroughRecoveryCapture) {
     if ($initialPetPassThrough) {
       Invoke-CuuCdpSeedCuuPreferenceStorage `
         -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
@@ -2454,6 +2615,9 @@ try {
     if (-not $mainBeforeWindow) {
       throw "WorkHub main window was not found for settings screenshot before restore."
     }
+    Invoke-CuuCdpScrollMainPetSettingsIntoView -WebSocketUrl $script:cuuMainCdpWebSocketUrl | Out-Null
+    Start-Sleep -Milliseconds 180
+    $mainBeforeWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     $mainBeforeScreenshot = Join-Path $OutDir "main-settings-before-restore.png"
     New-WindowFrame -Window $mainBeforeWindow -Path $mainBeforeScreenshot
     $mainSettingsBeforeRestore = [pscustomobject]@{
@@ -2483,6 +2647,9 @@ try {
     if (-not $mainAfterWindow) {
       throw "WorkHub main window was not found for settings screenshot after restore."
     }
+    Invoke-CuuCdpScrollMainPetSettingsIntoView -WebSocketUrl $script:cuuMainCdpWebSocketUrl | Out-Null
+    Start-Sleep -Milliseconds 180
+    $mainAfterWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     $mainAfterScreenshot = Join-Path $OutDir "main-settings-after-restore.png"
     New-WindowFrame -Window $mainAfterWindow -Path $mainAfterScreenshot
     $mainSettingsAfterRestore = [pscustomobject]@{
@@ -2502,6 +2669,57 @@ try {
       $beforeGate = $mainSettingsBeforeRestore.layout_gate | ConvertTo-Json -Compress -Depth 8
       $afterGate = $mainSettingsAfterRestore.layout_gate | ConvertTo-Json -Compress -Depth 8
       throw "Main settings layout gate failed before pet menu recovery capture. Debug: $layoutDebugPath Before: $beforeGate After: $afterGate"
+    }
+  } elseif ($usesHoverSyncCapture) {
+    Invoke-CuuCdpSeedCuuPreferenceStorage `
+      -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+      -ScalePercent $PetScalePercent `
+      -OpacityPercent $PetOpacityPercent `
+      -PassThrough $false `
+      -HideOnHover $false `
+      -ModelPackId $ModelPackId `
+      -Reload | Out-Null
+    Invoke-CuuCdpSeedCuuPreferenceStorage `
+      -WebSocketUrl $script:cuuCdpWebSocketUrl `
+      -ScalePercent $PetScalePercent `
+      -OpacityPercent $PetOpacityPercent `
+      -PassThrough $false `
+      -HideOnHover $false `
+      -ModelPackId $ModelPackId `
+      -Reload | Out-Null
+    Start-Sleep -Milliseconds 1600
+    $initialPetSettingsSnapshot = Wait-CuuCdpPetSettingsState `
+      -WebSocketUrl $script:cuuCdpWebSocketUrl `
+      -ExpectedPassThrough $false `
+      -ExpectedHideOnHover $false `
+      -ExpectedOpacityPercent $PetOpacityPercent `
+      -TimeoutSeconds $WaitSeconds
+    $beforeSnapshot = Wait-CuuCdpMainSettingsState `
+      -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+      -ExpectedLocale $Locale `
+      -ExpectedPassThrough $false `
+      -ExpectedHideOnHover $false `
+      -ExpectedOpacityPercent $PetOpacityPercent `
+      -TimeoutSeconds $WaitSeconds
+    $mainBeforeWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    if (-not $mainBeforeWindow) {
+      throw "WorkHub main window was not found for settings screenshot before hover sync."
+    }
+    Invoke-CuuCdpScrollMainPetSettingsIntoView -WebSocketUrl $script:cuuMainCdpWebSocketUrl | Out-Null
+    Start-Sleep -Milliseconds 180
+    $mainBeforeWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    $mainBeforeScreenshot = Join-Path $OutDir "main-settings-before-hover-sync.png"
+    New-WindowFrame -Window $mainBeforeWindow -Path $mainBeforeScreenshot
+    $mainSettingsBeforeHoverSync = [pscustomobject]@{
+      screenshot = $mainBeforeScreenshot
+      snapshot = $beforeSnapshot
+      layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $beforeSnapshot -ExpectedLocale $Locale -AfterRestore $false
+    }
+    if (-not $mainSettingsBeforeHoverSync.layout_gate.passed) {
+      $layoutDebugPath = Join-Path $OutDir "main-settings-hover-sync-before-gate-debug.json"
+      $mainSettingsBeforeHoverSync | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $layoutDebugPath -Encoding utf8
+      $beforeGate = $mainSettingsBeforeHoverSync.layout_gate | ConvertTo-Json -Compress -Depth 8
+      throw "Main settings layout gate failed before hover sync capture. Debug: $layoutDebugPath Gate: $beforeGate"
     }
   }
 
@@ -2523,6 +2741,43 @@ try {
     $frames.Add($path) | Out-Null
     $rects.Add($pet.Rect) | Out-Null
     Start-Sleep -Milliseconds $IntervalMs
+  }
+
+  if ($usesHoverSyncCapture) {
+    $afterPetSettingsSnapshot = Wait-CuuCdpPetSettingsState `
+      -WebSocketUrl $script:cuuCdpWebSocketUrl `
+      -ExpectedPassThrough $false `
+      -ExpectedHideOnHover $true `
+      -ExpectedOpacityPercent $PetOpacityPercent `
+      -TimeoutSeconds $WaitSeconds
+    $afterSnapshot = Wait-CuuCdpMainSettingsState `
+      -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+      -ExpectedLocale $Locale `
+      -ExpectedPassThrough $false `
+      -ExpectedHideOnHover $true `
+      -ExpectedOpacityPercent $PetOpacityPercent `
+      -TimeoutSeconds $WaitSeconds
+    $mainAfterWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    if (-not $mainAfterWindow) {
+      throw "WorkHub main window was not found for settings screenshot after hover sync."
+    }
+    Invoke-CuuCdpScrollMainPetSettingsIntoView -WebSocketUrl $script:cuuMainCdpWebSocketUrl | Out-Null
+    Start-Sleep -Milliseconds 180
+    $mainAfterWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    $mainAfterScreenshot = Join-Path $OutDir "main-settings-after-hover-sync.png"
+    New-WindowFrame -Window $mainAfterWindow -Path $mainAfterScreenshot
+    $mainSettingsAfterHoverSync = [pscustomobject]@{
+      screenshot = $mainAfterScreenshot
+      pet_snapshot = $afterPetSettingsSnapshot
+      snapshot = $afterSnapshot
+      layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $afterSnapshot -ExpectedLocale $Locale -AfterRestore $false
+    }
+    if (-not $mainSettingsAfterHoverSync.layout_gate.passed) {
+      $layoutDebugPath = Join-Path $OutDir "main-settings-hover-sync-after-gate-debug.json"
+      $mainSettingsAfterHoverSync | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $layoutDebugPath -Encoding utf8
+      $afterGate = $mainSettingsAfterHoverSync.layout_gate | ConvertTo-Json -Compress -Depth 8
+      throw "Main settings layout gate failed after hover sync capture. Debug: $layoutDebugPath Gate: $afterGate"
+    }
   }
 
   $contactSheet = Join-Path $OutDir "cuu-motion-contact-sheet.png"
@@ -2612,6 +2867,7 @@ try {
   $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $expectedModelPackIdForDom -Scenario $Scenario -ExpectedLocale $Locale
   $settingsMenuLayoutGate = New-CuuSettingsMenuLayoutGate -Scenario $Scenario -Actual $actualDomReport -ExpectedLocale $Locale
   $passThroughRecoveryGate = New-CuuPassThroughRecoveryGate -Scenario $Scenario -InitialPetSnapshot $initialPetSettingsSnapshot -MainBefore $mainSettingsBeforeRestore -MainAfter $mainSettingsAfterRestore -FinalPetDomReport $actualDomReport
+  $settingsMenuHoverSyncGate = New-CuuSettingsMenuHoverSyncGate -Scenario $Scenario -MainBefore $mainSettingsBeforeHoverSync -MainAfter $mainSettingsAfterHoverSync -FinalPetDomReport $actualDomReport
 
   $motionLivenessReport = New-CuuMotionLivenessReport `
     -ScenarioName $Scenario `
@@ -2625,7 +2881,7 @@ try {
     -MaxRectDriftPx $MaxStableRectDriftPx `
     -IsBusinessScenario $isBusinessScenario
   $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
-  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed -and $passThroughRecoveryGate.passed
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed -and $passThroughRecoveryGate.passed -and $settingsMenuHoverSyncGate.passed
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -2655,8 +2911,11 @@ try {
     right_edge_clip_gate = $rightEdgeClipGate
     settings_menu_layout_gate = $settingsMenuLayoutGate
     pass_through_recovery_gate = $passThroughRecoveryGate
+    settings_menu_hover_sync_gate = $settingsMenuHoverSyncGate
     main_settings_before_restore = $mainSettingsBeforeRestore
     main_settings_after_restore = $mainSettingsAfterRestore
+    main_settings_before_hover_sync = $mainSettingsBeforeHoverSync
+    main_settings_after_hover_sync = $mainSettingsAfterHoverSync
     initial_pet_settings_snapshot = $initialPetSettingsSnapshot
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
@@ -2733,6 +2992,7 @@ try {
     actual_dom_matches_expected = $actualDomMatchesExpected
     settings_menu_layout_gate = $settingsMenuLayoutGate
     pass_through_recovery_gate = $passThroughRecoveryGate
+    settings_menu_hover_sync_gate = $settingsMenuHoverSyncGate
     main_settings_before_restore = if ($mainSettingsBeforeRestore) {
       [pscustomobject]@{
         screenshot = $mainSettingsBeforeRestore.screenshot
@@ -2743,6 +3003,18 @@ try {
       [pscustomobject]@{
         screenshot = $mainSettingsAfterRestore.screenshot
         layout_gate = $mainSettingsAfterRestore.layout_gate
+      }
+    } else { $null }
+    main_settings_before_hover_sync = if ($mainSettingsBeforeHoverSync) {
+      [pscustomobject]@{
+        screenshot = $mainSettingsBeforeHoverSync.screenshot
+        layout_gate = $mainSettingsBeforeHoverSync.layout_gate
+      }
+    } else { $null }
+    main_settings_after_hover_sync = if ($mainSettingsAfterHoverSync) {
+      [pscustomobject]@{
+        screenshot = $mainSettingsAfterHoverSync.screenshot
+        layout_gate = $mainSettingsAfterHoverSync.layout_gate
       }
     } else { $null }
     reload_restore_seed = if ($reloadRestoreSeed) {

@@ -101,7 +101,7 @@ R0 退出门：
 - `functional-requirements.md` 与 `phasing-p0-p5.md` 不再用 `mid` 作为权威枚举。
 - 旧橘猫截图只在“失败样例 / stale”上下文出现；当前 shared PNG 不再含橘猫。
 
-2026-06-10 复核：R0 文档治理和概念资产基本完成，但不能宣称完美闭环。R3.18 已补 desktop 主窗 `/settings` zh-CN/en-US 无 Cuu 本体、无模型预览、文本不超框截图证据；但 Web/desktop 主工作台、审批、Proposal、Replay、Cost 等完整主窗截图复核仍未完成，后续 R4 必须继续补。
+2026-06-10 复核：R0 文档治理和概念资产基本完成，但不能宣称完美闭环。R3.18 已补 desktop 主窗 `/settings` zh-CN/en-US 无 Cuu 本体、无模型预览、文本不超框截图证据；R3.20a 已补右键 hover 同步主窗 settings 的中英截图与 `overflow.offenders=[]`。但 Web/desktop 主工作台、审批、Proposal、Replay、Cost 等完整主窗截图复核仍未完成，后续 R4 必须继续补。
 
 ## 4. R1 真实纵切
 
@@ -2629,15 +2629,24 @@ Bug / 数据流审查：
 4. 已修用户截图对应的文本超框风险：托盘恢复短提示收敛为 `已恢复交互。` / `Interaction restored.`；打开右键菜单时自动收起 transient status bubble，避免气泡和菜单重叠；右键菜单继续受 260px surface text boundary gate 约束。
 5. 已补双向数据流：`pet-surface` 菜单/托盘恢复通过 `pet-settings` event bridge 回写 desktop 主窗；desktop 主窗接收后刷新 `/settings` control 并保存 preferences；主窗恢复仍可同步回 pet，事件来源带 `source` 防止循环广播。
 6. 验收通过：`@workhub/desktop-webview test` 覆盖 settings payload、runtime emitter、pet menu broadcast 与 QA scenario 合同；Tauri Rust tests 覆盖新增 command 与 QA whitelist；官方 capture 两组均 `passed=true`。
-7. 限制：R3.19 证明的是同一 Rust tray handler 的 command-backed 恢复链路，不等同于物理 OS 托盘图标点击；右键菜单切 hover 后主窗 settings 的真实截图证据留给 R3.20。
+7. 限制：R3.19 证明的是同一 Rust tray handler 的 command-backed 恢复链路，不等同于物理 OS 托盘图标点击；右键菜单切 hover 后主窗 settings 的真实截图证据已由 R3.20a 补齐。
 
-### R3.20 下一刀：物理托盘点击 + hover sync 截图 + 跨平台 smoke
+### R3.20a 已落：right-click hover sync -> main settings screenshot
 
-1. 保留 R3.12-R3.19 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate、pass-through 主窗恢复、tray handler 恢复必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
+1. 已阅读 `pet-settings-recovery-p1-5.md`、`pet-right-click-settings-menu-p1-4.md`、`desktop-pet-tauri.md`、`cuu-r3-agent-entry.md` 与 Cuu/TS-first 概念图，确认本轮只补 menu -> main settings 同步截图和文本边界，不新增模型、改色或动效。
+2. 已补 `settings-menu-hover-sync` capture：真实 Tauri 同时连接 main/pet WebView2 CDP，右键 pet 打开设置菜单、点击 `hide-on-hover`，再滚动主窗 `/settings` 到桌面客户端设置区并截图。
+3. 已补 zh-CN / en-US 真实窗口证据：`../05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-zh-official/` 与 `hover-sync-en-official/`；两组 `settings_menu_hover_sync_gate.passed=true`、`settings_menu_layout_gate.passed=true`。
+4. 已修截图验收盲区：main settings 截图前会滚动到 `data-desktop-pet-settings`，after 截图直接显示 `Dodge hover` / `悬停避让` 已勾选，不再只停在 settings 顶部。
+5. 文本边界复核：两个 locale 的 `main_settings_before_hover_sync.layout_gate.overflow.offenders=[]` 与 `main_settings_after_hover_sync.layout_gate.overflow.offenders=[]`；菜单按钮、短提示和主窗状态徽标均未超出容器。
+6. 验收通过：`@workhub/desktop-webview test` 覆盖新 QA scenario 不生成 scripted listener，Tauri Rust tests 覆盖白名单；官方 capture 两组均 `passed=true`。
+7. 限制：R3.20a 不等同于物理 OS 托盘点击；该项进入 R3.20b。
+
+### R3.20b 下一刀：物理托盘点击 + 跨平台 smoke
+
+1. 保留 R3.12-R3.20a 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate、pass-through 主窗恢复、tray handler 恢复、hover sync 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
 2. 补物理 OS 托盘 `restore-pet-interaction` 点击证据：通过真实托盘图标/菜单触发恢复，再确认 `pass=false/hide=false/opacity=100`、pet 菜单可用、主窗 settings 同步。
-3. 补 settings/menu 双向截图证据：右键菜单切 `hide-on-hover` 后主窗 `/settings` 状态同步；主窗恢复后 pet 菜单状态同步。
-4. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
-5. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
+3. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+4. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 
