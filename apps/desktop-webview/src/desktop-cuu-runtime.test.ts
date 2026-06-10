@@ -1044,6 +1044,122 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
 });
 
+test("desktop Cuu actions finalize confirmed sessions and start the agent run", async () => {
+  const calls: unknown[] = [];
+  const run = agentRunLive({ title: "Confirmed Cuu run", status: "queued" });
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion(sessionId: string, payload: unknown) {
+      calls.push({ step: "nextQuestion", sessionId, payload });
+      const question: QuestionCard = {
+        id: "question-confirmed",
+        title: "是否按这个方向创建事项？",
+        input_mode: "confirm",
+        options: [],
+        free_text: { enabled: true, collapsed_by_default: true },
+        progress: [],
+        submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+      };
+      return question;
+    },
+    async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
+      calls.push({ step: "createWorkItem", payload });
+      return {
+        workitem: {
+          id: run.work_item_id,
+          code: "WH-301",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          title: "Confirmed Cuu task",
+          status: "ai_working"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        evidence_refs: []
+      } as unknown as WorkItemDetailVM;
+    },
+    async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
+      calls.push({ step: "startAgentRun", workItemId, payload });
+      return run;
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const card: CuuCard = {
+    id: "session-confirm",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "busy",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你确认创建事项。"
+    },
+    title: "是否按这个方向创建事项？",
+    message: "点确认后进入真实 AI 执行。",
+    priority: "high",
+    chips: [
+      { id: "create-workitem", label: "创建事项", selected: true },
+      { id: "search-evidence-first", label: "先找证据" }
+    ],
+    input: {
+      mode: "confirm",
+      option_first: true,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: true
+    },
+    actions: [
+      {
+        id: "submit_option",
+        label: "确认选项",
+        tone: "primary",
+        method: "POST",
+        href: "/api/sessions/session-1/next-question"
+      }
+    ]
+  };
+  const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option", card });
+
+  assert.deepEqual(action, { kind: "session-next-question", sessionId: "session-1", selectedOptionIds: ["create-workitem"] });
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "en-US" });
+
+  assert.equal(result.message, "Cuu started: Confirmed Cuu run");
+  assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
+  assert.equal(result.card?.state, "thinking");
+  assert.equal(result.agentRun?.run_id, run.run_id);
+  assert.deepEqual(calls, [
+    {
+      step: "nextQuestion",
+      sessionId: "session-1",
+      payload: { selected_option_ids: ["create-workitem"] }
+    },
+    {
+      step: "createWorkItem",
+      payload: {
+        session_id: "session-1",
+        selected_option_ids: ["create-workitem"],
+        kickoff_agent: true
+      }
+    },
+    {
+      step: "startAgentRun",
+      workItemId: run.work_item_id,
+      payload: {
+        title: "Confirmed Cuu task"
+      }
+    }
+  ]);
+});
+
 test("desktop Cuu actions submit proposal merge conflict choices with payloads", async () => {
   const calls: unknown[] = [];
   const card: CuuCard = {

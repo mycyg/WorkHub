@@ -876,13 +876,36 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  const shouldStartRun = desktopCuuSessionSelectionStartsRun(input.action);
+  if (shouldStartRun && (!input.client.createWorkItem || !input.client.startAgentRun)) {
+    throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
+  }
   const question = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
   });
+  if (shouldStartRun) {
+    const workItem = await input.client.createWorkItem!({
+      session_id: input.action.sessionId,
+      ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
+      kickoff_agent: true
+    });
+    const run = await input.client.startAgentRun!(workItem.workitem.id, {
+      title: workItem.workitem.title
+    });
+    return {
+      message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
+      card: cardFromAgentRunLive(run, input),
+      agentRun: run
+    };
+  }
   return {
     message: cuuFormat(input.locale, "action.nextQuestion", { title: question.title }),
     card: cardFromQuestionCard(question, input)
   };
+}
+
+function desktopCuuSessionSelectionStartsRun(action: Extract<DesktopCuuActionRequest, { kind: "session-next-question" }>) {
+  return action.selectedOptionIds?.includes("create-workitem") === true;
 }
 
 function desktopCuuSessionNeedsClarification(session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>) {

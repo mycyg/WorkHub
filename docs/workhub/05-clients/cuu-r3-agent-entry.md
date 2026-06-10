@@ -74,6 +74,21 @@ R3.3 补上“不能绕过澄清”的关键分支。真实 API 的 `POST /api/s
 
 该切片直接对应概念图 `cuu-option-first-clarify.png`：一次只问一个问题，默认点选，不把用户推回打字框，也不把 Cuu 放进主窗。
 
+## 3.6 R3.4 已落切片：确认后启动 AgentRun
+
+R3.4 把确认题里的 `create-workitem` 选项接成真实 typed action。Cuu 不再只能停在澄清卡：当用户在确认题里点选“创建事项”时，桌宠会沿用同一个 session，先记录澄清答案，再固化 WorkItem，最后启动 AgentRun。
+
+| 项 | R3.4 行为 |
+|---|---|
+| 触发条件 | `session-next-question.selectedOptionIds` 包含 `create-workitem` |
+| 记录选择 | 先调用 `nextQuestion(session_id, {selected_option_ids})`，保留用户确认事实 |
+| 固化事项 | 再调用 `createWorkItem({session_id, selected_option_ids, kickoff_agent:true})` |
+| 启动执行 | 用返回的 `workitem.id/title` 调用 `startAgentRun(workitem.id, {title})` |
+| Cuu 返回 | 返回 `cardFromAgentRunLive(run)` 与 `agentRun`，pet surface 继续订阅 run stream |
+| 权限边界 | 仍走 typed API client；缺少 `createWorkItem` 或 `startAgentRun` capability 时 fail closed |
+
+这一步完成了 Cuu 从“点选澄清”到“真实 AI 执行”的最小闭环。后续 R3.5 仍要证明该闭环在真实 API dev server 与 Tauri pet window 中跑通。
+
 ## 4. 字段级契约
 
 ### 4.1 Cuu launcher card
@@ -229,8 +244,9 @@ Rust 只负责：
 | `desktop Cuu run stream refreshes agent cards and closes on terminal status` | EventSource run event -> `getAgentRun()` -> Cuu card refresh -> terminal close |
 | `desktop Cuu runtime maps API and stream failures to Cuu cards` | budget / permission / offline error card 分类 |
 | `desktop Cuu actions advance option-first clarification sessions` | `nextQuestion()` -> `cardFromQuestionCard()`，澄清链路不断流 |
+| `desktop Cuu actions finalize confirmed sessions and start the agent run` | `create-workitem` -> `nextQuestion()` -> `createWorkItem()` -> `startAgentRun()` -> AgentRun Cuu card |
 
-本轮 desktop-webview test 当前为 65/65 通过。
+本轮 desktop-webview test 当前为 66/66 通过。
 
 ## 7. 与概念图对齐
 
@@ -238,32 +254,31 @@ Rust 只负责：
 |---|---|
 | Cuu 独立 pet window | 保持，未把 Cuu 放回主窗 |
 | 选项优先澄清 | launcher 与后端 `SessionVM.question` 都走 option-first Cuu 气泡 |
-| 主力是 AI，不是看板 | Cuu 能进入 AgentRun；需要澄清时只展示用户必须看到的问题 |
+| 主力是 AI，不是看板 | Cuu 能从澄清确认直接进入 AgentRun；需要澄清时只展示用户必须看到的问题 |
 | 桌宠要像入口而不是装饰 | 点击 body 可展开真实启动卡，后续返回 question 或 run 进度卡 |
 | 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline |
 | 黑猫/白猫 Live2D 二选项 | 未改变模型白名单与外观 |
 
 ## 8. 尚未完成
 
-R3.3 仍只是 TS 合同和单元验证，不能宣称 R3 完成。
+R3.4 仍只是 TS 合同和单元验证，不能宣称 R3 完成。
 
 | 缺口 | 计划 |
 |---|---|
 | 真实 Tauri 点击截图 | 用 `pet` window 跑 launcher card，截 body-only -> card 展开前后两张图 |
 | 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；还需真实 API dev server / Tauri pet window 端到端验证 |
 | 失败态 | R3.2 已落 budget/403/offline/generic card mapping；还需真实 API error smoke |
-| 确认后启动 | R3.3 已防止绕过澄清；下一刀要把 `create-workitem` 确认选项接到 `createWorkItem -> startAgentRun` |
+| 真实确认后启动 | R3.4 已落 TS typed action；还需 API dev server smoke 证明不是 mock client 内循环 |
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
 | 真实端到端 smoke | 用 API dev server + desktop webview runtime 做一条 launcher-to-run smoke |
 | 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
 
-## 9. 下一刀 R3.4
+## 9. 下一刀 R3.5
 
-R3.4 建议顺序：
+R3.5 建议顺序：
 
-1. 把 `SessionVM.question` 的 `create-workitem` 确认选项接成 typed Cuu action：调用 `createWorkItem({session_id, selected_option_ids, kickoff_agent:true})` 后再 `startAgentRun()`。
-2. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖真实 click body -> launcher card -> selected chip -> submit -> clarification card。
-3. 用 API dev server 做 launcher-to-run smoke，证明 R3.2/R3.3 不是 mock client 内循环。
-4. 补 Tauri screenshot/motion capture：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组。
-5. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+1. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖真实 click body -> launcher card -> selected chip -> submit -> clarification card -> confirm -> run card。
+2. 用 API dev server 做 launcher-to-run smoke，证明 R3.2/R3.3/R3.4 不是 mock client 内循环。
+3. 补 Tauri screenshot/motion capture：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
