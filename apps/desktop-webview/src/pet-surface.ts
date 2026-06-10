@@ -34,11 +34,12 @@ import {
   subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
+  type DesktopCuuRunStreamStatus,
   type DesktopCuuRunStreamSubscription,
   type DesktopShellListen,
   type DesktopShellUnlisten
 } from "./desktop-cuu-runtime.js";
-import { createDesktopPetQaShellListenFromGlobal } from "./cuu-qa-scenarios.js";
+import { createDesktopPetQaShellListenFromGlobal, desktopPetQaScenarioFromGlobal } from "./cuu-qa-scenarios.js";
 import {
   createDesktopPetPointerSensor,
   desktopPetPointerSnapshotFromSample,
@@ -593,6 +594,20 @@ function selectedOptionIdsFromCard(card: CuuCard | undefined) {
   return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
 }
 
+function primaryDesktopCuuAction(card: CuuCard, actionId: string): DesktopCuuActionRequest {
+  const action = card.actions.find((candidate) => candidate.id === actionId);
+  if (!action) {
+    throw new Error(`Unable to find Cuu action ${actionId} for ${card.id}.`);
+  }
+  const resolved = action?.href
+    ? resolveDesktopCuuAction(action.href, { actionId: action.id, card })
+    : undefined;
+  if (!resolved) {
+    throw new Error(`Unable to resolve Cuu action ${actionId} for ${card.id}.`);
+  }
+  return resolved;
+}
+
 export async function bootDesktopPetSurface(
   root: HTMLElement,
   input: {
@@ -607,6 +622,7 @@ export async function bootDesktopPetSurface(
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
+  const qaScenario = desktopPetQaScenarioFromGlobal();
   const shellListen = input.listen ?? createDesktopPetQaShellListenFromGlobal() ?? resolveDesktopShellListen();
   const client = input.client ?? createApiClient({
     baseUrl: "",
@@ -632,6 +648,32 @@ export async function bootDesktopPetSurface(
   let renderGeneration = 0;
   let cancelPendingFirstPaintSync: (() => void) | undefined;
   let lastStructuralRenderKey: string | undefined;
+  let lastRunStreamStatus: DesktopCuuRunStreamStatus | undefined;
+
+  const applyRunStreamStatusAttributes = () => {
+    const surface = root.querySelector<HTMLElement>("[data-wh-surface=pet]");
+    if (!surface || !lastRunStreamStatus) {
+      return;
+    }
+    surface.setAttribute("data-cuu-run-stream-state", lastRunStreamStatus.state);
+    surface.setAttribute("data-cuu-run-stream-run-id", lastRunStreamStatus.runId);
+    surface.setAttribute(
+      "data-cuu-run-stream-event-type",
+      lastRunStreamStatus.state === "event" ? lastRunStreamStatus.eventType : ""
+    );
+    surface.setAttribute(
+      "data-cuu-run-stream-refreshed-status",
+      lastRunStreamStatus.state === "refreshed" ? lastRunStreamStatus.status : ""
+    );
+    surface.setAttribute(
+      "data-cuu-run-stream-message",
+      lastRunStreamStatus.state === "error" ? lastRunStreamStatus.message : ""
+    );
+    surface.setAttribute(
+      "data-cuu-run-stream-close-reason",
+      lastRunStreamStatus.state === "closed" ? lastRunStreamStatus.reason : ""
+    );
+  };
 
   const render = () => {
     const petWindowSettings = desktopPetWindowSettingsFromPreferences(controller.snapshot().preferences);
@@ -661,6 +703,7 @@ export async function bootDesktopPetSurface(
         pointer_smoothing_alpha: desktopPetPointerSmoothingAlpha
       })
     ) {
+      applyRunStreamStatusAttributes();
       writeDesktopPetQaDomSnapshot(root, "patch");
       syncPetWindowSettings(petWindowSettings);
       return;
@@ -681,6 +724,7 @@ export async function bootDesktopPetSurface(
       locale
     });
     root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    applyRunStreamStatusAttributes();
     writeDesktopPetQaDomSnapshot(root, "render");
     lastStructuralRenderKey = structuralRenderKey;
     syncPetWindowSettings(petWindowSettings);
@@ -722,6 +766,9 @@ export async function bootDesktopPetSurface(
         setCard(card, message);
       },
       onStatus(status) {
+        lastRunStreamStatus = status;
+        applyRunStreamStatusAttributes();
+        writeDesktopPetQaDomSnapshot(root, "patch");
         if (status.state === "closed" && runStreamSubscription?.runId === status.runId) {
           runStreamSubscription = undefined;
         }
@@ -738,6 +785,33 @@ export async function bootDesktopPetSurface(
     }
     render();
   };
+
+  async function startRunStreamQaScenario() {
+    try {
+      const launcher = selectPetCardOption(createDesktopCuuAgentLauncherCard({ locale }), "document-draft").card;
+      setCard(launcher);
+      const launcherAction = primaryDesktopCuuAction(launcher, "start_agent_from_cuu");
+      const clarification = await submitDesktopCuuAction({ client, action: launcherAction, locale });
+      if (!clarification.card) {
+        throw new Error("run-stream QA expected a clarification card.");
+      }
+      const scopeCard = selectPetCardOption(clarification.card, "document-draft").card;
+      setCard(scopeCard, clarification.message);
+      const scopeAction = primaryDesktopCuuAction(scopeCard, "submit_option");
+      const confirmation = await submitDesktopCuuAction({ client, action: scopeAction, locale });
+      if (!confirmation.card) {
+        throw new Error("run-stream QA expected a confirmation card.");
+      }
+      const confirmCard = selectPetCardOption(confirmation.card, "create-workitem").card;
+      setCard(confirmCard, confirmation.message);
+      const confirmAction = primaryDesktopCuuAction(confirmCard, "submit_option");
+      const started = await submitDesktopCuuAction({ client, action: confirmAction, locale });
+      setCard(started.card ?? confirmCard, started.message);
+      subscribeToAgentRun(started);
+    } catch (error) {
+      setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
+    }
+  }
 
   const setLocalePreference = (nextLocale: WorkHubLocale) => {
     locale = nextLocale;
@@ -964,6 +1038,11 @@ export async function bootDesktopPetSurface(
     locale
   });
   let samplingCursor = false;
+  if (qaScenario === "run-stream") {
+    window.setTimeout(() => {
+      void startRunStreamQaScenario();
+    }, 160);
+  }
   const idleTimer = window.setInterval(() => {
     if (samplingCursor) {
       return;

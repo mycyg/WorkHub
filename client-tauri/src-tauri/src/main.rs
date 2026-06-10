@@ -52,6 +52,7 @@ const WORKHUB_CUU_QA_MODEL_PACK_ID_ENV: &str = "WORKHUB_CUU_QA_MODEL_PACK_ID";
 const WORKHUB_CUU_QA_SCENARIO_ENV: &str = "WORKHUB_CUU_QA_SCENARIO";
 const WORKHUB_CUU_QA_LOCALE_ENV: &str = "WORKHUB_CUU_QA_LOCALE";
 const WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV: &str = "WORKHUB_CUU_QA_DOM_REPORT_PATH";
+const WORKHUB_CUU_QA_CLIENT_TOKEN_ENV: &str = "WORKHUB_CUU_QA_CLIENT_TOKEN";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
@@ -63,6 +64,7 @@ struct CuuQaPreferenceOverrides {
     pet_qa_scenario: Option<String>,
     pet_qa_locale: Option<String>,
     pet_qa_dom_report: bool,
+    pet_qa_client_token: Option<String>,
 }
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -95,7 +97,8 @@ where
             WORKHUB_CUU_QA_SCENARIO_ENV,
             &get_env,
             &[
-                "launcher", "clarify", "approval", "search", "sync", "done", "offline",
+                "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
+                "offline",
             ],
         ),
         pet_qa_locale: workhub_env_string_allowed(
@@ -104,6 +107,10 @@ where
             &["zh-CN", "en-US"],
         ),
         pet_qa_dom_report: workhub_env_string_nonempty(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV, &get_env),
+        pet_qa_client_token: workhub_env_string_value_nonempty(
+            WORKHUB_CUU_QA_CLIENT_TOKEN_ENV,
+            &get_env,
+        ),
     }
 }
 
@@ -149,6 +156,14 @@ where
     get_env(name)
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false)
+}
+
+fn workhub_env_string_value_nonempty<F>(name: &str, get_env: &F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let value = get_env(name)?.trim().to_string();
+    (!value.is_empty()).then_some(value)
 }
 
 #[tauri::command]
@@ -726,17 +741,30 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
     } else {
         ""
     };
+    let client_token_script = preferences
+        .pet_qa_client_token
+        .map(|token| {
+            let token = js_string_literal(&token);
+            format!(
+                r#" try {{ window.localStorage.setItem("workhub_client_token", {token}); window.localStorage.setItem("yqgl_client_token", {token}); }} catch (_) {{}}"#
+            )
+        })
+        .unwrap_or_default();
 
     if fields.is_empty() {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{locale_script}{dom_report_script}"#
+            r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{locale_script}{dom_report_script}{client_token_script}"#
         )
     } else {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{locale_script}{dom_report_script}"#,
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{locale_script}{dom_report_script}{client_token_script}"#,
             fields.join(", "),
         )
     }
+}
+
+fn js_string_literal(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 fn apply_pet_window_placement(
@@ -1155,6 +1183,7 @@ mod tests {
                 pet_qa_scenario: None,
                 pet_qa_locale: Some("en-US".to_string()),
                 pet_qa_dom_report: false,
+                pet_qa_client_token: None,
             }
         );
     }
@@ -1179,6 +1208,7 @@ mod tests {
                 pet_qa_scenario: None,
                 pet_qa_locale: None,
                 pet_qa_dom_report: false,
+                pet_qa_client_token: None,
             }
         );
     }
@@ -1186,7 +1216,8 @@ mod tests {
     #[test]
     fn cuu_qa_preferences_env_accepts_qa_capture_scenarios() {
         for scenario in [
-            "launcher", "clarify", "approval", "search", "sync", "done", "offline",
+            "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
+            "offline",
         ] {
             assert_eq!(
                 workhub_cuu_qa_preferences_from_env(named_env(&[(
@@ -1214,6 +1245,7 @@ mod tests {
             pet_qa_scenario: Some("approval".to_string()),
             pet_qa_locale: Some("en-US".to_string()),
             pet_qa_dom_report: true,
+            pet_qa_client_token: Some("qa-token-1".to_string()),
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
@@ -1224,6 +1256,7 @@ mod tests {
         assert!(script.contains(r#"__WORKHUB_CUU_QA_SCENARIO__ = "approval""#));
         assert!(script.contains(r#"__WORKHUB_CUU_QA_LOCALE__ = "en-US""#));
         assert!(script.contains("__WORKHUB_CUU_QA_DOM_REPORT__ = true"));
+        assert!(script.contains(r#"localStorage.setItem("workhub_client_token", "qa-token-1")"#));
     }
 
     #[test]

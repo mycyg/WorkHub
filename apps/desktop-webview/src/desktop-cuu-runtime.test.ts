@@ -4,6 +4,7 @@ import test from "node:test";
 import { WorkHubApiError } from "@workhub/api-client";
 import { eventTypes, type AgentRunLiveVM, type AttentionItem, type EvidenceBubble, type SessionVM, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
 import { createCuuController, type CuuCard, type CuuControllerDecision } from "@workhub/cuu";
+import { formatSseEvent } from "@workhub/events";
 
 import {
   bindDesktopShellCuuRuntime,
@@ -947,6 +948,123 @@ test("desktop Cuu run stream refreshes agent cards and closes on terminal status
   assert.equal(cards.at(-1)?.state, "celebrating");
   assert.equal(source.closed, true);
   assert.deepEqual(statuses.map((status) => status.state), ["subscribed", "event", "refreshed", "event", "refreshed", "closed"]);
+});
+
+test("desktop Cuu run stream falls back to polling when no SSE event arrives", async () => {
+  FakeEventSource.instances = [];
+  const cards: CuuCard[] = [];
+  const closed = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("run stream fallback did not close")), 150);
+    subscribeDesktopCuuAgentRunStream({
+      client: {
+        streamUrl(path: string) {
+          return `/daemon${path}`;
+        },
+        async getAgentRun() {
+          return agentRunLive({ status: "succeeded", title: "Cuu 桌面入口任务" });
+        }
+      },
+      run: agentRunLive({ status: "running" }),
+      EventSourceCtor: FakeEventSource,
+      fallbackRefreshMs: 1,
+      onCard(card) {
+        cards.push(card);
+      },
+      onStatus(status) {
+        if (status.state === "closed") {
+          clearTimeout(timeout);
+          resolve();
+        }
+      }
+    });
+  });
+
+  await closed;
+  assert.equal(FakeEventSource.instances[0]?.closed, true);
+  assert.equal(cards.at(-1)?.state, "celebrating");
+});
+
+test("desktop Cuu runtime uses fetch SSE with local client-token headers", async () => {
+  const target = globalThis as typeof globalThis & {
+    fetch?: typeof fetch;
+    localStorage?: Storage;
+  };
+  const originalFetch = target.fetch;
+  const originalLocalStorage = target.localStorage;
+  const seen: { url?: string; workhub?: string | null; legacy?: string | null } = {};
+
+  try {
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: {
+        getItem(key: string) {
+          return key === "workhub_client_token" ? "desktop-token-1" : null;
+        }
+      }
+    });
+    Object.defineProperty(target, "fetch", {
+      configurable: true,
+      value: async (url: string | URL, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        seen.url = String(url);
+        seen.workhub = headers.get("X-WorkHub-Client-Token");
+        seen.legacy = headers.get("X-YQGL-Client-Token");
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const event = workHubEvent({
+                event_id: "10000000-0000-4000-8000-000000000503",
+                type: eventTypes.agentRunStep,
+                topic: "run:10000000-0000-4000-8000-000000000301",
+                data: { run_id: "10000000-0000-4000-8000-000000000301", kind: "done" }
+              });
+              controller.enqueue(new TextEncoder().encode(formatSseEvent(eventTypes.agentRunStep, event)));
+              controller.close();
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } }
+        );
+      }
+    });
+
+    const cards: CuuCard[] = [];
+    const closed = new Promise<void>((resolve) => {
+      subscribeDesktopCuuAgentRunStream({
+        client: {
+          streamUrl(path: string) {
+            return `/daemon${path}`;
+          },
+          async getAgentRun() {
+            return agentRunLive({ status: "succeeded" });
+          }
+        },
+        run: agentRunLive({ status: "running" }),
+        onCard(card) {
+          cards.push(card);
+        },
+        onStatus(status) {
+          if (status.state === "closed") {
+            resolve();
+          }
+        }
+      });
+    });
+
+    await closed;
+    assert.equal(seen.url, "/daemon/api/push/stream/run/10000000-0000-4000-8000-000000000301");
+    assert.equal(seen.workhub, "desktop-token-1");
+    assert.equal(seen.legacy, "desktop-token-1");
+    assert.equal(cards.at(-1)?.state, "celebrating");
+  } finally {
+    Object.defineProperty(target, "fetch", {
+      configurable: true,
+      value: originalFetch
+    });
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
 });
 
 test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {

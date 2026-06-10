@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
+import type { AgentLoopClient } from "@workhub/agent/loop";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { settings, type Settings } from "@workhub/config";
 import type { AgentRunLiveVM } from "@workhub/contracts";
 import type { CuuCard, CuuLocaleOptions } from "@workhub/cuu";
 import { defaultSeedIds, type ClientDeviceAuthRow, type UserAuthRow } from "@workhub/db";
+import { InMemoryPresenceStore, InProcessPushBus } from "../broker/index.js";
 import {
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
@@ -16,10 +21,11 @@ import {
 } from "../../../desktop-webview/src/desktop-cuu-runtime.js";
 import { hashClientToken, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
+import { createPushRoutes } from "../routes/push.js";
 import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import { createInMemoryWorkItemService } from "../services/work-items.js";
-import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
+import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 
 export const cuuR3SmokeNow = new Date("2026-06-10T00:00:00.000Z");
 export const cuuR3SmokeClientToken = "cuu-r3-local-client-token";
@@ -40,6 +46,14 @@ export const cuuR3SmokeOwner: UserAuthRow = {
 export type CuuR3SmokeApp = {
   app: Hono<AuthEnv>;
   workItems: ReturnType<typeof createInMemoryWorkItemService>;
+  queue: AgentRunQueue;
+};
+
+export type CuuR3SmokeAppOptions = {
+  runStream?: boolean;
+  runDelayMs?: number;
+  modelDelayMs?: number;
+  logRunStream?: boolean;
 };
 
 export type CuuR3LauncherSmokeResult = {
@@ -150,37 +164,161 @@ function createAuth(settingsOverride: Settings = settings): AuthDependencies {
   };
 }
 
-export function createCuuR3SmokeApp(): CuuR3SmokeApp {
+export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3SmokeApp {
   let runSequence = 0;
   const nextRunSequence = () => {
     runSequence += 1;
     return runSequence;
   };
   const workItems = createInMemoryWorkItemService({ now: () => cuuR3SmokeNow });
-  const queue = createInMemoryAgentRunQueue({
+  const pushBus = new InProcessPushBus();
+  const baseQueue = createInMemoryAgentRunQueue({
     now: () => cuuR3SmokeNow,
     id: () => `40000000-0000-4000-8000-${String(nextRunSequence()).padStart(12, "0")}`,
-    eventBus: false,
+    ...(options.runStream
+      ? {
+          workdir: () => mkdtemp(path.join(os.tmpdir(), "workhub-cuu-r3-run-stream-")),
+          client: () => cuuR3RunStreamAgentClient(options.modelDelayMs ?? 650),
+          snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000312" }),
+          eventBus: pushBus
+        }
+      : {
+          eventBus: false
+        }),
     proposals: false,
     notifications: false,
     confidence: false,
     humanReserved: false,
     persistence: false
   });
+  const queue = options.runStream
+    ? withDelayedRunExecution(baseQueue, options.runDelayMs ?? 900, options.logRunStream === true)
+    : baseQueue;
   const auth = createAuth();
   const app = withErrors(new Hono<AuthEnv>());
   app.get("/api/health", (c) =>
     c.json({
       ok: true,
-      service: "workhub-cuu-r3-smoke",
+      service: options.runStream ? "workhub-cuu-r3-tauri-run-stream" : "workhub-cuu-r3-smoke",
       runtime: "node-hono",
       port: 0
     })
   );
+  if (options.runStream) {
+    app.route("/api/push", createPushRoutes({
+      auth,
+      bus: pushBus,
+      presence: new InMemoryPresenceStore(),
+      agentRuns: queue,
+      workItems,
+      proposals: false,
+      stream: { heartbeatMs: 250 }
+    }));
+  }
   app.route("/api", createSessionRoutes({ auth, workItems }));
   app.route("/api", createWorkItemRoutes({ auth, workItems }));
   app.route("/api", createAgentRunRoutes({ auth, queue, workItems, autoRun: false }));
-  return { app, workItems };
+  return { app, workItems, queue };
+}
+
+function withDelayedRunExecution(queue: AgentRunQueue, delayMs: number, logEvents: boolean): AgentRunQueue {
+  const log = (event: string, data: Record<string, unknown>) => {
+    if (logEvents) {
+      console.log(JSON.stringify({ service: "workhub-cuu-r3-run-stream", event, ...data }));
+    }
+  };
+  return {
+    ...queue,
+    async enqueue(input) {
+      const run = await queue.enqueue(input);
+      log("queued", { run_id: run.run_id, delay_ms: delayMs });
+      setTimeout(() => {
+        log("run_start", { run_id: run.run_id });
+        void queue.run(run.run_id)
+          .then((executed) => {
+            log("run_done", { run_id: executed.run_id, status: executed.status });
+          })
+          .catch((error) => {
+            log("run_error", { run_id: run.run_id, message: error instanceof Error ? error.message : String(error) });
+            console.warn("Cuu R3 run-stream QA execution failed", error);
+          });
+      }, Math.max(0, delayMs));
+      return run;
+    }
+  };
+}
+
+function cuuR3RunStreamAgentClient(delayMs: number): AgentLoopClient {
+  const responses = [
+    {
+      id: "cuu-r3-run-stream-tool",
+      stopReason: "tool_use",
+      usage: { inputTokens: 8, outputTokens: 14 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 8,
+        outputTokens: 14,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: cuuR3SmokeNow.toISOString()
+      },
+      content: [
+        {
+          type: "tool_use",
+          id: "cuu-r3-tool-1",
+          name: "write_file",
+          input: {
+            path: "outputs/cuu-r3-run-stream.md",
+            content: "Cuu R3 run-stream QA completed."
+          }
+        }
+      ]
+    },
+    {
+      id: "cuu-r3-run-stream-final",
+      stopReason: "end_turn",
+      usage: { inputTokens: 6, outputTokens: 10 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 6,
+        outputTokens: 10,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: cuuR3SmokeNow.toISOString()
+      },
+      content: [{ type: "text", text: "Cuu 已完成桌面 run stream 验收。" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("Cuu R3 run-stream QA client exhausted.");
+        }
+        if (response.id === "cuu-r3-run-stream-final" && cuuR3RunStreamPromptLooksEnglish(params)) {
+          return {
+            ...response,
+            content: [{ type: "text", text: "Cuu completed the desktop run-stream QA." }]
+          };
+        }
+        return response;
+      }
+    }
+  };
+}
+
+function cuuR3RunStreamPromptLooksEnglish(params: Parameters<AgentLoopClient["messages"]["create"]>[0]) {
+  return params.messages.some((message) =>
+    typeof message.content === "string" && /desktop entry task|workhub item/iu.test(message.content)
+  );
 }
 
 export async function runCuuR3LauncherToRunSmoke(input: {

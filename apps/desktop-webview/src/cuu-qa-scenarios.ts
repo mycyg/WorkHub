@@ -13,6 +13,7 @@ export type DesktopPetQaScenario =
   | "search"
   | "sync"
   | "done"
+  | "run-stream"
   | "offline";
 
 export type DesktopPetQaScenarioGlobal = {
@@ -26,6 +27,7 @@ const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "search",
   "sync",
   "done",
+  "run-stream",
   "offline"
 ]);
 
@@ -56,6 +58,9 @@ export function createDesktopPetQaShellListen(
   if (!scenario) {
     return undefined;
   }
+  if (scenario === "run-stream") {
+    return undefined;
+  }
   const listener = createDesktopShellScriptedListener(desktopPetQaScriptForScenario(scenario, input));
   listener.start();
   return listener.listen;
@@ -73,6 +78,9 @@ export function desktopPetQaScriptForScenario(
 ): DesktopShellScriptedEvent[] {
   const initialDelayMs = input.initialDelayMs ?? 650;
   if (scenario === "launcher") {
+    return [];
+  }
+  if (scenario === "run-stream") {
     return [];
   }
   if (scenario === "offline") {
@@ -126,7 +134,7 @@ function streamForTopic(topic: string) {
   return { kind: "global", path: "/api/push/stream" };
 }
 
-function eventForScenario(scenario: Exclude<DesktopPetQaScenario, "launcher" | "offline">): WorkHubEvent<unknown> {
+function eventForScenario(scenario: Exclude<DesktopPetQaScenario, "launcher" | "run-stream" | "offline">): WorkHubEvent<unknown> {
   switch (scenario) {
     case "clarify":
       return {

@@ -13,7 +13,7 @@ param(
   [int]$MinMotionChangedFramesFormal = 6,
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -41,8 +41,8 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "offline")
-$businessScenarios = @("clarify", "approval", "search", "sync", "done", "offline")
+$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "offline")
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "offline")
 $script:cuuCdpWebSocketUrl = $null
 $script:cuuCdpCommandId = 1
 
@@ -241,6 +241,48 @@ function Start-DesktopWebviewDevServerIfNeeded {
   return $process
 }
 
+function Test-CuuR3RunStreamApiServer {
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8787/api/health" -TimeoutSec 2
+    return $health.service -eq "workhub-cuu-r3-tauri-run-stream"
+  } catch {
+    return $false
+  }
+}
+
+function Start-CuuR3RunStreamApiServerIfNeeded {
+  param([int]$Port = 8787)
+  if (Test-LocalPort -Port $Port) {
+    if (Test-CuuR3RunStreamApiServer) {
+      return $null
+    }
+    throw "Port $Port is already in use, but it is not the Cuu R3 Tauri run-stream QA server."
+  }
+
+  $commandSpec = Get-PnpmCommandSpec
+  $arguments = @()
+  $arguments += $commandSpec.ArgumentPrefix
+  $arguments += @("--filter", "@workhub/api", "qa:cuu-r3-tauri-run-stream-server")
+  $apiStdoutPath = Join-Path $OutDir "cuu-r3-api-stdout.log"
+  $apiStderrPath = Join-Path $OutDir "cuu-r3-api-stderr.log"
+  Remove-Item -LiteralPath $apiStdoutPath, $apiStderrPath -ErrorAction SilentlyContinue
+  $process = Start-Process -FilePath $commandSpec.FilePath -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput $apiStdoutPath -RedirectStandardError $apiStderrPath -PassThru
+  $deadline = (Get-Date).AddSeconds(25)
+  do {
+    if ($process.HasExited) {
+      $stderrTail = if (Test-Path -LiteralPath $apiStderrPath) { (Get-Content -LiteralPath $apiStderrPath -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "" }
+      $stdoutTail = if (Test-Path -LiteralPath $apiStdoutPath) { (Get-Content -LiteralPath $apiStdoutPath -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "" }
+      throw "Cuu R3 run-stream API server exited before health check. Exit code: $($process.ExitCode). stderr: $stderrTail stdout: $stdoutTail"
+    }
+    Start-Sleep -Milliseconds 500
+  } while (-not (Test-CuuR3RunStreamApiServer) -and (Get-Date) -lt $deadline)
+
+  if (-not (Test-CuuR3RunStreamApiServer)) {
+    throw "Cuu R3 run-stream API server did not pass /api/health in time."
+  }
+  return $process
+}
+
 function Test-CuuBusinessScenario {
   param([string]$ScenarioName)
   return $businessScenarios -contains $ScenarioName
@@ -310,6 +352,17 @@ function Get-CuuExpectedBehaviorForScenario {
       }
     }
     "done" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "celebrating"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "celebrating_jump"
+        data_cuu_live2d_renderer_state = "mtn/06.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "tip"
+        data_pet_window_mode = "card"
+      }
+    }
+    "run-stream" {
       return [pscustomobject]@{
         data_cuu_behavior_state = "celebrating"
         data_cuu_behavior_phase = "loop"
@@ -413,6 +466,7 @@ function Test-CuuActualDomMatchesExpected {
     search = "use_for_current_task"
     sync = "open_sync"
     done = "view_replay"
+    "run-stream" = "view_replay"
   }
   if ($expectedActionByScenario.ContainsKey($Scenario)) {
     if (-not $Actual.primary_action -or -not $Actual.primary_action.present -or -not $Actual.primary_action.data) {
@@ -1208,9 +1262,12 @@ $originalCuuQaModelPackId = $env:WORKHUB_CUU_QA_MODEL_PACK_ID
 $originalCuuQaScenario = $env:WORKHUB_CUU_QA_SCENARIO
 $originalCuuQaLocale = $env:WORKHUB_CUU_QA_LOCALE
 $originalCuuQaDomReportPath = $env:WORKHUB_CUU_QA_DOM_REPORT_PATH
+$originalCuuQaClientToken = $env:WORKHUB_CUU_QA_CLIENT_TOKEN
+$originalWorkHubClientToken = $env:WORKHUB_CLIENT_TOKEN
 $originalWebView2AdditionalBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 $process = $null
 $devServerProcess = $null
+$apiServerProcess = $null
 $isolatedRoot = $null
 $cuuCdpDebugPort = $null
 
@@ -1225,7 +1282,7 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  if ($Scenario -ne "idle" -or $DisableSse) {
+  if (($Scenario -ne "idle" -and $Scenario -ne "run-stream") -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
   }
@@ -1242,6 +1299,12 @@ try {
   $env:WORKHUB_CUU_QA_MODEL_PACK_ID = $ModelPackId
   $env:WORKHUB_CUU_QA_LOCALE = $Locale
   $env:WORKHUB_CUU_QA_DOM_REPORT_PATH = $domReportPath
+  if ($Scenario -eq "run-stream") {
+    $env:WORKHUB_CUU_QA_CLIENT_TOKEN = "cuu-r3-local-client-token"
+    $env:WORKHUB_CLIENT_TOKEN = "cuu-r3-local-client-token"
+  } else {
+    Remove-Item -Path "Env:WORKHUB_CUU_QA_CLIENT_TOKEN" -ErrorAction SilentlyContinue
+  }
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
@@ -1279,6 +1342,9 @@ try {
     )
   }
 
+  if ($Scenario -eq "run-stream") {
+    $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded
+  }
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $tauriStdoutPath = Join-Path $OutDir "tauri-stdout.log"
   $tauriStderrPath = Join-Path $OutDir "tauri-stderr.log"
@@ -1524,6 +1590,8 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_SCENARIO" -Value $originalCuuQaScenario
   Restore-EnvVar -Name "WORKHUB_CUU_QA_LOCALE" -Value $originalCuuQaLocale
   Restore-EnvVar -Name "WORKHUB_CUU_QA_DOM_REPORT_PATH" -Value $originalCuuQaDomReportPath
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_CLIENT_TOKEN" -Value $originalCuuQaClientToken
+  Restore-EnvVar -Name "WORKHUB_CLIENT_TOKEN" -Value $originalWorkHubClientToken
   Restore-EnvVar -Name "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" -Value $originalWebView2AdditionalBrowserArguments
   if ($isolatedRoot) {
     $resolvedIsolatedRoot = [System.IO.Path]::GetFullPath($isolatedRoot)
@@ -1535,5 +1603,9 @@ try {
   if ($devServerProcess -and -not $devServerProcess.HasExited) {
     Stop-Process -Id $devServerProcess.Id -Force
     $devServerProcess.WaitForExit()
+  }
+  if ($apiServerProcess -and -not $apiServerProcess.HasExited) {
+    Stop-Process -Id $apiServerProcess.Id -Force
+    $apiServerProcess.WaitForExit()
   }
 }

@@ -350,6 +350,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   onCard: (card: CuuCard, statusMessage?: string | undefined) => void;
   onStatus?: (status: DesktopCuuRunStreamStatus) => void;
   locale?: CuuLocaleOptions["locale"];
+  fallbackRefreshMs?: number;
 }): DesktopCuuRunStreamSubscription {
   const runId = input.run.run_id;
   const EventSourceCtor = input.EventSourceCtor ?? resolveDesktopCuuEventSource();
@@ -369,12 +370,17 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   let refreshing = false;
   let refreshAgain = false;
   let errorCardShown = false;
+  let fallbackRefreshTimer: TimerId | undefined;
 
   const close = (reason = "closed") => {
     if (closed) {
       return;
     }
     closed = true;
+    if (fallbackRefreshTimer !== undefined) {
+      globalThis.clearInterval(fallbackRefreshTimer);
+      fallbackRefreshTimer = undefined;
+    }
     source.close();
     input.onStatus?.({ state: "closed", runId, reason });
   };
@@ -430,6 +436,12 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     }
   });
   input.onStatus?.({ state: "subscribed", runId, streamUrl });
+  const fallbackRefreshMs = input.fallbackRefreshMs ?? 2000;
+  if (fallbackRefreshMs > 0) {
+    fallbackRefreshTimer = globalThis.setInterval(() => {
+      void refresh();
+    }, fallbackRefreshMs);
+  }
 
   return {
     runId,
@@ -970,7 +982,129 @@ const desktopCuuRunStreamEventNames = [
 ] as const;
 
 function resolveDesktopCuuEventSource(): DesktopCuuEventSourceConstructor | undefined {
+  if (desktopCuuBrowserClientToken() && desktopCuuFetchEventSourceAvailable()) {
+    return DesktopCuuFetchEventSource;
+  }
   return (globalThis as typeof globalThis & { EventSource?: DesktopCuuEventSourceConstructor }).EventSource;
+}
+
+class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
+  private readonly listeners = new Map<string, Set<(event: DesktopCuuEventSourceEvent) => void>>();
+  private readonly controller = new AbortController();
+  private closed = false;
+
+  constructor(
+    private readonly url: string,
+    private readonly init: { withCredentials?: boolean } = {}
+  ) {
+    void this.open();
+  }
+
+  addEventListener(eventName: string, handler: (event: DesktopCuuEventSourceEvent) => void) {
+    const bucket = this.listeners.get(eventName) ?? new Set<(event: DesktopCuuEventSourceEvent) => void>();
+    bucket.add(handler);
+    this.listeners.set(eventName, bucket);
+  }
+
+  close() {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.controller.abort();
+  }
+
+  private async open() {
+    try {
+      const token = desktopCuuBrowserClientToken();
+      const headers = new Headers({ Accept: "text/event-stream" });
+      if (token) {
+        headers.set("X-WorkHub-Client-Token", token);
+        headers.set("X-YQGL-Client-Token", token);
+      }
+      const response = await fetch(this.url, {
+        credentials: this.init.withCredentials ? "include" : "same-origin",
+        headers,
+        signal: this.controller.signal
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(`event_source_http_${response.status}`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const result = await reader.read();
+        if (result.done) {
+          break;
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        buffer = this.flushFrames(buffer);
+      }
+      buffer += decoder.decode();
+      this.flushFrames(`${buffer}\n\n`);
+    } catch (error) {
+      if (!this.closed) {
+        this.dispatch("error", { data: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  private flushFrames(input: string) {
+    let buffer = input.replace(/\r\n|\r/gu, "\n");
+    for (;;) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary < 0) {
+        return buffer;
+      }
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const event = parseDesktopCuuFetchSseFrame(frame);
+      if (event) {
+        this.dispatch(event.event, { data: event.data });
+      }
+    }
+  }
+
+  private dispatch(eventName: string, event: DesktopCuuEventSourceEvent) {
+    for (const handler of this.listeners.get(eventName) ?? []) {
+      handler(event);
+    }
+  }
+}
+
+function desktopCuuFetchEventSourceAvailable() {
+  return typeof fetch === "function" &&
+    typeof Headers === "function" &&
+    typeof TextDecoder === "function" &&
+    typeof ReadableStream !== "undefined";
+}
+
+function desktopCuuBrowserClientToken() {
+  try {
+    return globalThis.localStorage?.getItem("workhub_client_token") ??
+      globalThis.localStorage?.getItem("yqgl_client_token") ??
+      undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseDesktopCuuFetchSseFrame(frame: string): { event: string; data: string } | undefined {
+  const trimmed = frame.trim();
+  if (!trimmed || trimmed.startsWith(":")) {
+    return undefined;
+  }
+  let event = "message";
+  const data: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      data.push(line.slice("data:".length).trimStart());
+    }
+  }
+  return { event, data: data.join("\n") };
 }
 
 function desktopCuuRunStreamUrl(client: Pick<WorkHubApiClient, "streamUrl">, streamHref: string) {

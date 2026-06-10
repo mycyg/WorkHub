@@ -29,6 +29,8 @@ visuals:
 >
 > **2026-06-10 R1.41 修正**：重叠文本 hunk 后端逐段 materialize 已落最小切片。`text_hunk_overrides` 可进入 API / service / DB，按 current / incoming / AI fusion 逐段生成最终文本并写入 Drive version 与 merge audit。详见 [`r1-text-hunk-materializer.md`](./r1-text-hunk-materializer.md)。
 >
+> **2026-06-10 R3.12 修正**：Cuu 真实 Tauri `pet` window 已补 zh-CN / en-US run-stream completion capture。Git 跟踪证据包含 contact sheet、GIF/MP4、DOM report 与 motion diff report；详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)。
+>
 > **2026-06-10 R1.42 修正**：多冲突批量 keep/accept 已补显式执行审计。`conflict_resolution.bulk_action` 可进入 API / service / DB，冲突阻断和成功 merge 两条路径都会写 `proposal.bulk_action`，成功 merge 的 `proposal.merged.detail_json` 也带 `bulk_action` 摘要。详见 [`r1-multi-conflict-execution-audit.md`](./r1-multi-conflict-execution-audit.md)。
 >
 > **2026-06-10 R1.43 修正**：Replay 已把 `text_hunk_decisions[]` 与 `bulk_action` 从机器审计字段升级为用户可读回放。`GET /api/agent-runs/{id}/replay` 会按 `merge_attempt_id` 绑定 proposal audit rows，并在 Replay 严肃页显示逐段来源、批量点击范围、采纳范围、已处理与被阻断目标。详见 [`r1-replay-hunk-bulk-audit.md`](./r1-replay-hunk-bulk-audit.md)。
@@ -47,7 +49,7 @@ visuals:
 | Web 主界面 | React/Vite shell、页面渲染、部分中英语言切换；R1.39 已补 Proposal / Replay route visual QA，覆盖 zh-CN/en-US、desktop/mobile-narrow、富 patch viewer、重叠 hunk review、子记录逐项 diff、多冲突折叠工作台、四态示意与 no-horizontal-overflow gate；R1.44 已补 Proposal route line editor 的文件 tab、搜索、完整 hunk payload 和键盘焦点 | 完整 SPA 信息架构、真实数据流、全页面空/错/载入/权限四态、视觉 polish |
 | Desktop 主窗 | Tauri webview 加载、surface 分流、Rust bridge、`/settings` pet 恢复面板 | 安装包、设备令牌门、生产更新、系统托盘状态、跨平台 smoke |
 | Rust shell | 窗口、SSE、通知、deep-link、pet geometry、cursor sample、托盘 `restore-pet-interaction` 源码门 | 私有 SSE 重连、动态托盘状态、本地同步、跨平台截图/权限策略、恢复录屏 |
-| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧、pass-through 源码恢复门、P1.6 behavior manifest 源码合同、P1.7 业务录屏入口与黑猫 approval smoke | 黑/白真实 Tauri 全量业务录屏、settings matrix、长期性能、授权或原创替换 |
+| Cuu 桌宠 | 独立 pet window、黑猫/白猫 Live2D registry、偏好二选项、QA 合同、概念图已同步真实模型帧、pass-through 源码恢复门、P1.6 behavior manifest 源码合同、P1.7 业务录屏入口与黑猫 approval smoke、R3.10 真实 launcher/en-US capture、R3.12 真实 zh-CN/en-US run-stream completion capture | failure/offline capture、刷新恢复、settings matrix、长期性能、授权或原创替换 |
 | 多语言 | locale contract、Gold Path 和部分 Cuu 固定文案 | 非 Gold Path 页面全量中英、错误文案、Rust shell 系统文案 |
 | 交付物变更 | DeliverableChangeManifest、GitHub-like proposal 页面方向；DB-backed `branches/proposals/reviews` repository 已落；approve/reject/merge 会更新 proposal/branch/work_item 状态并经 PG smoke 验证；merge 会写 accepted deliverable ledger、merge snapshot、persistent `proposal.merged` audit，并阻断同 target 不同 sha 的静默覆盖；AgentRun-backed delivery 会落 `ProjectDriveItem/Version` 并把 accepted row 指到正式版本；WorkItem page 与 AgentRun replay 已可展示 accepted deliverables，并提供下载/文本预览；`POST .../restore` 已能把当前正式交付物还原到上一版并审计；R1.17 已支持冲突卡一键采用 AI 融合稿，并由 CI PG smoke 验证 `merge_proposal_id/chosen_*/accepted/replay`；R1.19 已让 `text_doc/spec_doc` 采用后正式文件为候选正文，不再是 Markdown/JSON 包装稿；R1.20 已让融合候选读取真实 current/incoming/base 文本上下文；R1.21 已在 candidate quality gate 中保存 text patch preview；R1.22 已在 Replay 决策记录里显示 patch preview；R1.23 已把同一 preview 下沉到 Proposal 冲突卡的 `ai_fusion` option，采用前可见最小 diff；R1.24 已为无重叠文本 hunk 生成 deterministic diff3 candidate；R1.25 已为重叠 hunk 追加 metadata/prompt/quality gate；R1.26 已把 `text_diff3` 状态和影响行显示到 Proposal / Replay；R1.27 已把 `structured_record_patch` 字段清单、缺失字段和额外字段显示到 Proposal / Replay；R1.28 已把结构化字段 dry-run 契约和 apply 阻断接入；R1.29 已把 ready + executable 的 WorkItem `title/summary_md/priority/due_at` 标量字段写回业务表；R1.30 已补 base/current/incoming 字段冲突检测，并以 `field_merge` audit 解释字段前后值与合并判定；R1.31 已补 `acceptance_items` 子记录写回与 `itemCount` 审计；R1.32 已补最新 dispatch plan `task_items` 子记录写回与 `itemCount` 审计；R1.33 已补 Proposal / Replay 字段级 base/current/after 落点和 field_merge 写回审计渲染；R1.34 已补 Proposal 高级折叠字段编辑器和 `structured_field_overrides`，允许标量字段逐字段接受、保留当前值或自定义值；R1.35 已补 Proposal / Replay 共享逐行富 patch viewer 基础，支持 hunk、old/new 行号、大 patch 折叠与中英双语；R1.36 已补 Proposal / Replay 重叠 hunk review，按 `text_diff3.conflict_ranges[]` 展示逐段 current / incoming / AI fusion 点选意图；R1.37 已补 `acceptance_items/task_items` 子记录逐项 diff/editor、`structured_item_overrides` apply 覆盖和 Replay 逐项回放；R1.38 已补 Proposal 折叠多冲突批量检查区、批量 keep/accept payload 和中英双语文案；R1.39 已补 Web/Desktop route visual QA 和移动端 no-horizontal-overflow gate；R1.40 已补任务子记录多计划/目标 plan 选择 UI 与后端 fail-closed 写回门；R1.41 已补 `text_hunk_overrides` 后端逐段 materialize、Drive version 写回和 text hunk merge audit；R1.42 已补批量 keep/accept `bulk_action` 审计；R1.43 已补 Replay hunk/bulk decision 用户可读回放 | 文档/PPT/表格/图片/文件夹高级 diff 预览、证据引用、完整审批中心、完整 Drive 历史/redo UI |
 
@@ -120,7 +122,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 澄清让用户点击选项 | 概念图和 payload 合同已写 | 所有澄清路径接入 single/multi/rank/confirm controls |
 | 变更申请像 GitHub PR，但对象多样 | Manifest fixture、proposal page、accepted deliverable ledger、冲突 gate、AI fusion candidate、一键 apply、text/spec 正文直写、真实三方文本上下文、数据层 patch preview、Replay patch preview、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3、重叠 hunk metadata、`text_diff3` 可见化、`structured_record_patch` 可见化、`StructuredFieldPatchDryRun`、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、最新 dispatch plan `task_items` 子记录写回、Proposal / Replay 字段级落点与写回审计、Proposal 高级字段编辑器与 `structured_field_overrides`、共享逐行富 patch viewer、重叠 hunk review、子记录逐项 diff/editor 与 `structured_item_overrides`、折叠多冲突批量检查 foundation、任务子记录多计划/目标 plan 选择 UI、`text_hunk_overrides` 后端逐段写回、批量 keep/accept `bulk_action` 审计、Replay hunk/bulk decision 用户可读回放、Proposal route line editor | 文档/PPT/表格/图片/文件夹预览、证据引用、完整 React SPA route 迁移 |
 | 知识库/项目检索由 Cuu 气泡承接 | 概念图已写 | Cuu search card + API endpoint + result bubble |
-| Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落，概念图已同步真实模型帧，P1.6 behavior manifest 源码合同已落，P1.7 可录真实业务场景且已有黑猫 approval smoke | 黑/白全矩阵录屏、业务动作视觉验收、长期性能 |
+| Cuu 是会动的小猫桌宠 | 黑/白 Live2D registry 已落，概念图已同步真实模型帧，P1.6 behavior manifest 源码合同已落，P1.7 可录真实业务场景且已有黑猫 approval smoke，R3.12 已有真实 Tauri run-stream completion 中英双语证据 | failure/offline、刷新恢复、长期性能 |
 | Cuu 不在 Web/主窗里 | 当前文档和代码收束中 | 截图审查确认无主窗 Cuu 本体 |
 | Rust 客户端哲学是轻、气泡、少打扰 | Tauri shell、托盘 settings、pass-through 恢复源码门已对齐 | 通知、deep-link、真实恢复录屏、安装包 |
 | 中英双语 | locale 地基已落 | 全页面、Cuu、Rust 系统文案补齐 |
@@ -170,7 +172,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | 无旧实验源码入口 | tracked source 搜索无旧 renderer 文件和 public 入口 |
 | Web 主窗无 Cuu | Playwright 截图 + DOM dump |
 | Desktop 主窗无 Cuu | Tauri/webview 截图 + DOM dump |
-| Cuu motion | P1.10 以前的黑/白 contact sheet、GIF/MP4、diff report只作为回归证据；R1 前不新增外观矩阵 |
+| Cuu motion | P1.10 以前的黑/白 contact sheet、GIF/MP4、diff report只作为回归证据；R3.10 launcher/en-US 与 R3.12 zh-CN/en-US run-stream completion 是当前业务功能证据；不新增外观矩阵 |
 | Rust window | Tauri smoke、settings matrix、多屏恢复报告 |
 | i18n | zh-CN/en-US screenshots + locale tests |
 | TypeScript 目标路径 | `_ts-target-path-audit.md` 和 `_ts-first-module-port-page-alignment.md` 对齐 |
@@ -195,7 +197,7 @@ Rust 客户端的设计哲学是“少打扰、一个窗口承接一件事、本
 | R0 | 主窗截图审查，确认无 Cuu 本体回流；补透明 pet smoke |
 | R0 | 命门 OQ-2/OQ-3 owner + v1 阈值落定；D-1 正名为 TS-first 重写 |
 | R1 | 已完成局部：真实 AgentLoop manifest 自动打开 DB-backed Proposal；AgentRun/AgentStep write-through DB + PG restart/replay smoke + approve/merge/main 最小切片已通过；真实 `sessions/workitems/knowledge/page workitem` service 已接入并通过 intake/evidence/page smoke；CostLedger/BudgetPolicy 默认 store 已 DB-backed；merge accepted deliverable ledger、merge snapshot、persistent proposal merge audit、同 target 冲突 gate、AgentRun-backed delivery 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables、下载/文本预览与最小 restore、AI fusion candidate/one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、数据层 text patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3、重叠 hunk metadata、Proposal / Replay 的 `text_diff3`、`structured_record_patch`、dry-run 状态、字段级落点与 field_merge 写回审计可见化、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、最新 dispatch plan `task_items` 子记录写回、Proposal 高级字段编辑器与 `structured_field_overrides`、共享逐行富 patch viewer、共享重叠 hunk review、子记录逐项 diff/editor 与 `structured_item_overrides`、折叠多冲突批量检查 foundation、Web/Desktop 真实 route 视觉 QA、任务子记录多计划/目标 plan 选择 UI、`text_hunk_overrides` 后端逐段写回、批量 keep/accept `bulk_action` 审计、Replay hunk/bulk decision 用户可读回放、Proposal route line editor 与 mobile no-horizontal-overflow gate 已落；下一步：进入 R2 PG claim / 多 worker |
-| R2 | 多 worker、PG queue claim、Redis bus/presence、订阅边界 |
-| R3 | Cuu 自然语言 / option-first 出站 Agent 入口，不新增外观 |
+| R2 | 多 worker、PG queue claim、Redis bus/presence、订阅边界已由 R2.1-R2.7 release gate 关闭；后续作为回归门 |
+| R3 | Cuu 自然语言 / option-first 出站 Agent 入口，不新增外观；R3.12 已补真实 Tauri run-stream completion，中英双语证据；下一步 failure/offline 与刷新恢复 |
 | R4 | Web attention workspace 真页面化、四态、中英双语全量补齐 |
 | P2 | 跨平台客户端 smoke 和安装包 |
