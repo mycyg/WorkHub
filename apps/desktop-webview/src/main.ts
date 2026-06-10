@@ -179,6 +179,7 @@ export {
   desktopPetSurfaceCss,
   renderDesktopPetSurface,
   resolveDesktopSurface,
+  type DesktopPetSurfaceClient,
   type DesktopPetSurfaceRender,
   type DesktopPetSurfaceRuntime,
   type DesktopSurface

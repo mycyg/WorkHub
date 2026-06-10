@@ -70,6 +70,8 @@ export type DesktopPetSurfaceRuntime = {
   dispose: () => Promise<void>;
 };
 
+export type DesktopPetSurfaceClient = ReturnType<typeof createApiClient>;
+
 export const desktopPetSurfaceCss = [
   "html,body,#root{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden}",
   "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38;background:rgba(0,0,0,0)!important}",
@@ -591,6 +593,7 @@ export async function bootDesktopPetSurface(
     controller?: CuuController | undefined;
     idleScheduler?: CuuIdleScheduler | undefined;
     petWindowBridge?: DesktopPetWindowBridge | undefined;
+    client?: DesktopPetSurfaceClient | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   let locale = desktopPetLocale();
@@ -598,7 +601,7 @@ export async function bootDesktopPetSurface(
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
   const shellListen = input.listen ?? createDesktopPetQaShellListenFromGlobal() ?? resolveDesktopShellListen();
-  const client = createApiClient({
+  const client = input.client ?? createApiClient({
     baseUrl: "",
     getClientToken: clientToken
   });

@@ -2180,13 +2180,39 @@ R2 验收：
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
-### R3.8 下一刀
+### R3.8 已落：boot client injection seam
 
-1. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
-2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
-3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+本切片关闭“`bootDesktopPetSurface()` 只能内部创建真实 API client，无法做可控 boot click/dev-server harness”的前置阻塞。范围只加注入点，不改变 UI、不改变 runtime action 逻辑、不新增 mock 后门。
+
+改动：
+
+- `apps/desktop-webview/src/pet-surface.ts`
+  - 新增 `DesktopPetSurfaceClient = ReturnType<typeof createApiClient>`。
+  - `bootDesktopPetSurface(root, { client })` 支持可选 typed client 注入。
+  - 未传 `client` 时仍走原来的 `createApiClient({ baseUrl:"", getClientToken })`。
+- `apps/desktop-webview/src/main.ts`
+  - 重新导出 `DesktopPetSurfaceClient`，供后续 QA/dev-server harness 使用。
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：67/67 通过。
+
+仍未覆盖：
+
+- 真实 `bootDesktopPetSurface()` DOM click harness。
+- 真实 API dev server + desktop webview runtime smoke。
+- 真实 Tauri `pet` window 点击截图/录屏。
+- pet window 刷新后的当前 session/run card 恢复。
+
+### R3.9 下一刀
+
+1. 用 R3.8 的 client 注入点补真实 `bootDesktopPetSurface()` click harness：body click -> launcher card -> option click -> submit -> clarification -> confirm -> run。
+2. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
+3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 

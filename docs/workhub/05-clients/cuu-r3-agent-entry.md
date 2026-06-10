@@ -144,6 +144,19 @@ launcher card -> select document-draft -> createSession -> clarification card ->
 | run card | `create-workitem` 后调用 `nextQuestion -> createWorkItem -> startAgentRun`，最终渲染 `data-pet-bubble-kind="trace"`、`data-cuu-state="thinking"` |
 | API order | 测试记录并断言 `createSession`、两次 `nextQuestion`、`createWorkItem`、`startAgentRun` 的 payload 顺序 |
 
+## 3.10 R3.8 已落切片：boot client injection seam
+
+R3.8 补一个很小的 boot 级接入缝隙：`bootDesktopPetSurface()` 支持可选 `client` 注入，默认仍创建原来的 `createApiClient({ baseUrl:"", getClientToken })`。这让后续真实 boot click harness、dev-server smoke 或 Tauri evidence 脚本可以复用同一个 pet runtime 入口，而不是只能绕到 helper 或静态 renderer。
+
+| 层 | R3.8 行为 |
+|---|---|
+| runtime boot | `bootDesktopPetSurface(root, { client })` 可注入 typed client |
+| 默认行为 | 未传 `client` 时仍走原有 `createApiClient()`，生产路径不变 |
+| stream / preference | 注入 client 同时供 `submitDesktopCuuAction()`、`subscribeDesktopCuuAgentRunStream()`、`updatePreferences()` 使用 |
+| public export | `main.ts` 导出 `DesktopPetSurfaceClient` 类型，供 QA/dev-server harness 使用 |
+
+本切片仍不宣称真实 Tauri 视觉完成；它只移除“boot click harness 不能注入可控 typed client”的阻塞。
+
 ## 4. 字段级契约
 
 ### 4.1 Cuu launcher card
@@ -291,6 +304,7 @@ Rust 只负责：
 - `corepack pnpm --filter @workhub/db typecheck`
 - `corepack pnpm --filter @workhub/cuu typecheck`
 - `corepack pnpm --filter @workhub/cuu test`
+- `corepack pnpm --filter @workhub/desktop-webview test`
 - `corepack pnpm qa:cuu-r3-launcher-smoke`
 - `corepack pnpm lint`
 
@@ -343,12 +357,13 @@ R3.6 已补 API route-stack smoke 的选择历史回读、Cuu 双语边界与预
 | 真实双语截图 | R3.6 已补 TS 级 en-US 边界；仍需真实 pet window 英文截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
-## 9. 下一刀 R3.8
+## 9. 下一刀 R3.9
 
-R3.8 建议顺序：
+R3.9 建议顺序：
 
-1. 升级 smoke 到真实 API dev server + desktop webview runtime，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
-2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组；其中至少一组 en-US。
-3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+1. 用 R3.8 的 client 注入点补真实 `bootDesktopPetSurface()` click harness：body click -> launcher card -> option click -> submit -> clarification -> confirm -> run。
+2. 升级 smoke 到真实 API dev server + desktop webview runtime，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
+3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组；其中至少一组 en-US。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
