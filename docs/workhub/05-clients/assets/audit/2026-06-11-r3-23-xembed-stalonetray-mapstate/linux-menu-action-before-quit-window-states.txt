@@ -1,0 +1,56 @@
+window	WorkHub	0xe00003
+
+xwininfo: Window id: 0xe00003 "WorkHub"
+
+  Absolute upper-left X:  0
+  Absolute upper-left Y:  1528
+  Relative upper-left X:  0
+  Relative upper-left Y:  1528
+  Width: 1100
+  Height: 780
+  Depth: 24
+  Visual: 0x2f0
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xe00002 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsUnMapped
+  Override Redirect State: no
+  Corners:  +0+1528  -0+1528  -0-1532  +0-1532
+  -geometry 1100x780+0+1528
+
+WM_STATE(WM_STATE):
+		window state: Withdrawn
+		icon window: 0x0
+window	Cuu	0xe00017
+
+xwininfo: Window id: 0xe00017 "Cuu"
+
+  Absolute upper-left X:  556
+  Absolute upper-left Y:  3096
+  Relative upper-left X:  556
+  Relative upper-left Y:  3096
+  Width: 520
+  Height: 720
+  Depth: 32
+  Visual: 0x254
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xe00016 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsUnMapped
+  Override Redirect State: no
+  Corners:  +556+3096  -24+3096  -24-24  +556-24
+  -geometry 520x720-24-24
+
+WM_STATE(WM_STATE):
+		window state: Withdrawn
+		icon window: 0x0

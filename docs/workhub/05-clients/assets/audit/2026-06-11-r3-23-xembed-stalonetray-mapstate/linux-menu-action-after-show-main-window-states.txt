@@ -1,0 +1,82 @@
+window	Cuu	0xe00017
+
+xwininfo: Window id: 0xe00017 "Cuu"
+
+  Absolute upper-left X:  556
+  Absolute upper-left Y:  3096
+  Relative upper-left X:  556
+  Relative upper-left Y:  3096
+  Width: 520
+  Height: 720
+  Depth: 32
+  Visual: 0x254
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xe00016 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsUnMapped
+  Override Redirect State: no
+  Corners:  +556+3096  -24+3096  -24-24  +556-24
+  -geometry 520x720-24-24
+
+WM_STATE(WM_STATE):
+		window state: Withdrawn
+		icon window: 0x0
+window	WorkHub	0xa0003f
+
+xwininfo: Window id: 0xa0003f "WorkHub"
+
+  Absolute upper-left X:  -25
+  Absolute upper-left Y:  1503
+  Relative upper-left X:  -25
+  Relative upper-left Y:  1503
+  Width: 1150
+  Height: 867
+  Depth: 32
+  Visual: 0x75
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xa00001 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsViewable
+  Override Redirect State: no
+  Corners:  +-25+1503  --25+1503  --25-1470  +-25-1470
+  -geometry 1150x867+-25+1503
+
+WM_STATE:  not found.
+window	WorkHub	0xe00003
+
+xwininfo: Window id: 0xe00003 "WorkHub"
+
+  Absolute upper-left X:  0
+  Absolute upper-left Y:  1565
+  Relative upper-left X:  25
+  Relative upper-left Y:  62
+  Width: 1100
+  Height: 780
+  Depth: 24
+  Visual: 0x2f0
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xe00002 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsViewable
+  Override Redirect State: no
+  Corners:  +0+1565  -0+1565  -0-1495  +0-1495
+  -geometry 1100x780+-25+1503
+
+WM_STATE(WM_STATE):
+		window state: Normal
+		icon window: 0x0

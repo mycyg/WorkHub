@@ -1,0 +1,5 @@
+
+(workhub-client-tauri:287710): libayatana-appindicator-WARNING **: 04:58:56.429: libayatana-appindicator is deprecated. Please use libayatana-appindicator-glib in newly written code.
+WorkHub SSE worker disabled by WORKHUB_DISABLE_SSE.
+
+(workhub-client-tauri:287710): Gdk-CRITICAL **: 04:58:56.582: gdk_window_thaw_toplevel_updates: assertion 'window->update_and_descendants_freeze_count > 0' failed

@@ -1,0 +1,20 @@
+could not open /home/mycyg/.stalonetrayrc (No such file or directory)
+X11 error: BadWindow (invalid Window parameter) (request: X_GetProperty, resource 0x14)
+X11 error 3 detected at xembed.c:494:xembed_retrive_data
+X11 error: BadWindow (invalid Window parameter) (request: X_GetWindowAttributes, resource 0x3)
+X11 error 3 detected at debug.c:140:print_icon_data
+X11 error: BadWindow (invalid Window parameter) (request: X_SendEvent, resource 0x19)
+X11 error 3 detected at xutils.c:259:x11_get_window_size
+X11 error: BadWindow (invalid Window parameter) (request: X_ConfigureWindow, resource 0xc)
+X11 error: BadWindow (invalid Window parameter) (request: X_MapWindow, resource 0x8)
+X11 error: BadWindow (invalid Window parameter) (request: X_GetWindowAttributes, resource 0x3)
+X11 error 3 detected at debug.c:140:print_icon_data
+X11 error: BadWindow (invalid Window parameter) (request: X_ChangeWindowAttributes, resource 0x2)
+X11 error: BadWindow (invalid Window parameter) (request: X_UnmapWindow, resource 0xa)
+X11 error: BadWindow (invalid Window parameter) (request: X_ReparentWindow, resource 0x7)
+X11 error: BadWindow (invalid Window parameter) (request: X_ConfigureWindow, resource 0xc)
+X11 error: BadWindow (invalid Window parameter) (request: X_MapWindow, resource 0x8)
+X11 error 3 detected at xutils.c:115:x11_get_server_timestamp
+X11 error: BadWindow (invalid Window parameter) (request: X_SendEvent, resource 0x19)
+X11 error 3 detected at xutils.c:259:x11_get_window_size
+Terminated

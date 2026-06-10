@@ -226,3 +226,40 @@ X11 fallback 每个 action 仍保留前后 `ps/wmctrl/xdotool/screen`、`linux-x
 | 边界 | 该路径证明 XEmbed tray host 下的物理菜单动作，不等同 GNOME AppIndicator/StatusNotifier panel proof |
 
 远端手工预跑显示 `stalonetray` host 下菜单动作能改变窗口状态，但出现过 `wmctrl -l` segfault，且 `xwininfo -root -tree` 会列出部分已隐藏但未销毁的窗口；因此正式归档必须使用第七刀后的 `Map State: IsViewable` 判据重跑，不能用旧 `wmctrl` 或单纯 root tree 结果声明通过。
+
+## 15. 2026-06-11 第八刀落点
+
+第八刀从已推送 main (`883fbd82a5731fcbf9ecb443f5067d12f390f00e`) 在远端 GNOME session 重跑通过：
+
+```bash
+WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 \
+WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon \
+WORKHUB_LINUX_X11_TRAY_HOST=stalonetray \
+WORKHUB_CUU_QA_SCENARIO=run-failure \
+WORKHUB_CUU_QA_LOCALE=en-US \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+归档目录：
+
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-xembed-stalonetray-mapstate/smoke-summary.md`
+
+关键验收：
+
+| Gate | 结果 |
+|---|---|
+| real DE | 远端 `ubuntu:GNOME` / `XDG_SESSION_TYPE=wayland`，SSH 补齐 `/run/user/1000/.mutter-Xwaylandauth.*` |
+| XEmbed tray host | `WORKHUB_LINUX_X11_TRAY_HOST=stalonetray` 启动真实 tray host，WorkHub tray icon 被宿主接管 |
+| restore Cuu | `after-restore-pet-interaction-window-states` 中 `Cuu` 为 `Map State: IsViewable` |
+| toggle Cuu | `after-toggle-pet-window-states` 中 `Cuu` 为 `Map State: IsUnMapped`，`WorkHub` 仍 `IsViewable` |
+| hide main | `after-hide-main-window-states` 中 `WorkHub` 与 `Cuu` 均为 `IsUnMapped` |
+| quit dry-run | `after-quit-ps-app` 显示 Tauri 进程仍存活 |
+| text/frame | `cuu-tauri-dom-report.json` 继续证明 failed run card 无 horizontal/vertical overflow，`bubble_overlaps_live2d=false` |
+
+边界仍不变：这是 XEmbed tray host 物理菜单 proof，不等于 GNOME AppIndicator / StatusNotifier panel proof；远端 root screenshot 仍为黑图，只保留为环境产物，不作为 UI 视觉验收。
+
+下一步：
+
+1. 继续推进 GNOME AppIndicator / StatusNotifier：需要重启 GNOME session 或换 KDE/Xfce 后重跑默认 `WORKHUB_LINUX_MENU_DRIVER=status-notifier`。
+2. 补 macOS 真实 menu bar smoke：有 macOS 机器后运行 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，归档 Accessibility / Screen Recording 权限与点击证据。
+3. 在 AppIndicator 或 macOS 任一真实平台菜单证据完成后，更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 与 README 的平台验收状态。

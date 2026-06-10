@@ -1,0 +1,2 @@
+_NET_SYSTEM_TRAY_S0:  not found.
+_NET_CLIENT_LIST(WINDOW): window id #

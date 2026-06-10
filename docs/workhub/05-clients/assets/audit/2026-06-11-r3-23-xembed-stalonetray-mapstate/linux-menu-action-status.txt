@@ -1,0 +1,5 @@
+driver=x11-tray-icon
+tray_window=0xe0002f
+menu_action_sequence=restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit
+note=This is physical X11 tray-window automation, not AppIndicator panel proof.
+ok

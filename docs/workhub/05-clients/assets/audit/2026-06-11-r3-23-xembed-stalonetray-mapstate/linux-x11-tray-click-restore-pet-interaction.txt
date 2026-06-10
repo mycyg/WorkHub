@@ -1,0 +1,5 @@
+driver=x11-tray-icon
+tray_window=0xe0002f
+action_id=restore-pet-interaction
+label=Restore Cuu interaction
+focus_index=4

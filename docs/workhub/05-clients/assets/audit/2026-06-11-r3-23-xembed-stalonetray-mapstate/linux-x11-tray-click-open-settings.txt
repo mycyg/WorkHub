@@ -1,0 +1,5 @@
+driver=x11-tray-icon
+tray_window=0xe0002f
+action_id=open-settings
+label=Settings
+focus_index=6
