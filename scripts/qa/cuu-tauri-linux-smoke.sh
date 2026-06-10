@@ -114,6 +114,29 @@ tray_menu_label_for_action() {
   esac
 }
 
+bootstrap_real_desktop_session_env() {
+  if ! requires_real_de; then
+    return 0
+  fi
+  local uid
+  uid="$(id -u)"
+  if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -d "/run/user/$uid" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$uid"
+  fi
+  if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-}/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+  fi
+  if [ -n "${DISPLAY:-}" ] && [ -z "${XAUTHORITY:-}" ]; then
+    local candidate
+    for candidate in "${XDG_RUNTIME_DIR:-}"/.mutter-Xwaylandauth.* "$HOME/.Xauthority"; do
+      if [ -f "$candidate" ]; then
+        export XAUTHORITY="$candidate"
+        break
+      fi
+    done
+  fi
+}
+
 record_env() {
   {
     echo "captured_at=$(date -Is)"
@@ -123,6 +146,9 @@ record_env() {
     echo "session_type=${XDG_SESSION_TYPE:-}"
     echo "display=${DISPLAY:-}"
     echo "wayland_display=${WAYLAND_DISPLAY:-}"
+    echo "xauthority=${XAUTHORITY:-}"
+    echo "xdg_runtime_dir=${XDG_RUNTIME_DIR:-}"
+    echo "dbus_session_bus_address=${DBUS_SESSION_BUS_ADDRESS:-}"
     echo "desktop=${XDG_CURRENT_DESKTOP:-}"
     echo "node=$(node -v 2>/dev/null || true)"
     echo "pnpm=$(pnpm -v 2>/dev/null || true)"
@@ -600,6 +626,8 @@ run_desktop_smoke() {
     if [ -n "$api_pid" ]; then kill "$api_pid" >/dev/null 2>&1 || true; fi
     if [ -n "$vite_pid" ] && command -v pkill >/dev/null 2>&1; then pkill -TERM -P "$vite_pid" >/dev/null 2>&1 || true; fi
     if [ -n "$vite_pid" ]; then kill "$vite_pid" >/dev/null 2>&1 || true; fi
+    if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*cuu-r3-tauri-run-stream-server" >/dev/null 2>&1 || true; fi
+    if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*@workhub/desktop-webview.*dev" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/apps/desktop-webview/.*vite.*--port $port" >/dev/null 2>&1 || true; fi
     if [ -n "$wm_pid" ]; then kill "$wm_pid" >/dev/null 2>&1 || true; fi
   }
@@ -818,6 +846,7 @@ PY
   fi
 }
 
+bootstrap_real_desktop_session_env
 record_env
 collect_desktop_environment_probe
 write_tray_menu_action_matrix
@@ -834,7 +863,7 @@ if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY is empty and xvfb-run is unavailable" >&2
     exit 1
   fi
-  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; run_desktop_smoke"
+  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; run_desktop_smoke"
   if command -v dbus-run-session >/dev/null 2>&1; then
     xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session bash -c "$smoke_entry"
   else
