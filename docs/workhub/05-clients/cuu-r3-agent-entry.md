@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补设置矩阵、右键菜单恢复与跨平台 capture。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补 pass-through 真恢复、主窗 settings 截图与跨平台 capture。
 
 | 缺口 | 计划 |
 |---|---|
@@ -470,7 +470,8 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | option payload 更细 | R3.14 已让 launcher chip 带 `delivery_kind` / `risk_hint` / `default_acceptance`，并写入 WorkItem `planning_note` JSON spec 与默认 acceptance items |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；R3.15 已用真实 Tauri reload capture 证明 session/active run/terminal run 恢复且不裁切 |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图；R3.17 已补 zh-CN/en-US 右键菜单截图 |
+| settings / menu 真实证据 | R3.17 已补 settings 八组合、右键菜单 zh-CN/en-US 和黑猫切白猫模型切换 capture；下一步补 pass-through 真恢复和主窗 `/settings` 截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -808,12 +809,69 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario offline -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-business-matrix\hijiki\offline-en-pass
 ```
 
-## 18. 下一刀 R3.17
+## 18. R3.17 已落切片：settings matrix + 右键菜单边界
 
-R3 后续顺序：
+R3.17 关闭右键菜单和基础 settings matrix 没有真实窗口证据的问题。本轮范围限定在现有黑猫/白猫 Live2D、菜单、scale、opacity、pass-through、hide-on-hover 与 QA gate，不新增模型、不改色、不扩动作路线。
 
-1. 保留 R3.12/R3.13.1/R3.13.2/R3.15/R3.16 回归：run-stream completion、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵 capture 必须继续通过 `motion-diff-report.json`、DOM attrs gate、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
-2. 将 R3.14/R3.15/R3.16 文本超框规则继续作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、evidence refs、状态 section 均不得超出 bubble/card。
-3. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix；先做 Windows Hijiki，再评估白猫和双语全矩阵。
-4. 给 pass-through recovery 单独留证：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认右键菜单可用。
-5. 将 Linux/macOS capture 策略排进跨平台验收；继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并按模块提交。
+改动：
+
+| 层 | R3.17 行为 |
+|---|---|
+| Live2D iframe | Hijiki/Tororo canvas 改为比例定位，`bottom:-35%`、`width:91.304%`、`height:175%`，避免 75/150/125 scale 下首帧贴边或裁身 |
+| pet surface 菜单 | 右键菜单改为 `right:88px;width:164px;overflow:hidden`，行内按钮使用 `minmax(0,1fr)`、省略号和 `min-width:0`，zh-CN/en-US 菜单文本留在窗口内 |
+| transient status | 修复模型切换后的 `Cuu 形象已更新。` body-only 提示被默认 bubble 压成竖向残片的问题；无业务 card 的短提示现在走 150px compact bubble，并两行截断 |
+| DOM report | `cuu-qa-dom-report` 新增 `settings_menu` snapshot，菜单开合会 patch 写入 DOM report |
+| capture script | `settings-menu` / `settings-menu-model-switch` 场景走 WebView2 CDP 右键和点击；新增 `settings_menu_layout_gate`，自动校验菜单或模型切换提示在 260px surface 内 |
+| settings script | `cuu-tauri-settings-capture.ps1` 补首帧 bounds gate、MP4 奇数尺寸 padding、transient 文件清理和零字节媒体清理 |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| settings matrix | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/` |
+| menu / model switch | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/` |
+| zh-CN 右键菜单 | `menu-zh-boundary-pass3/`，`settings_menu_layout_gate.passed=true`，menu rect `x=8,width=164,right=172` |
+| en-US 右键菜单 | `menu-en-boundary-pass3/`，`settings_menu_layout_gate.passed=true`，menu rect `x=8,width=164,right=172` |
+| 黑猫 -> 白猫模型切换 | `menu-model-switch-boundary-pass3/`，最终 DOM 为 `cuu-tororo-live2d-cubism2` / `white_cat`，短提示 bubble rect `x=102,width=150,right=252` |
+| settings 8 组合 | `default`、`white-cat`、`scale-75`、`scale-150`、`opacity-60`、`pass-through`、`hide-on-hover`、`combo-125-80-pass-hide` 均 `first_frame_bounds_gate.passed=true`，GIF/MP4/contact sheet/DOM/report 均保留 |
+
+数据流：
+
+```text
+WebView2 CDP right-click / click
+  -> pet surface menu handlers
+  -> Cuu preferences localStorage
+  -> desktopPetWindowSettingsFromPreferences()
+  -> Tauri set_pet_window_settings / model iframe rerender
+  -> DOM report + PrintWindow frames + settings_menu_layout_gate
+```
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 用户截图同类风险继续作为硬门；本轮额外发现模型切换短提示被挤成竖向文字残片，已改 compact status bubble 并用真实 Tauri capture 重录通过 |
+| 数据流 | 设置仍由 TS preferences 驱动，Rust 只接收窗口设置和 QA 注入；右键菜单没有 pass-through 入口，避免用户开启后失去右键恢复路径 |
+| PRD/概念图 | Cuu 仍只在独立 transparent `pet` window；主窗 `/settings` 仍是严肃恢复面，不显示 Cuu 本体或模型预览 |
+| UI/文本边界 | zh-CN/en-US 菜单、模型切换短提示、settings matrix contact sheet 已人工复核；新增 `settings_menu_layout_gate` 后菜单边界不再只靠人工看图 |
+| 中英双语 | 右键菜单 zh-CN/en-US 均有真实 capture；模型切换短提示本轮覆盖 zh-CN，英文短提示由同一 compact status CSS 与单测覆盖 |
+| 限制 | `pass-through` 与组合 case 证明设置可进入真实 pet window；真正通过 OS 托盘或主窗 `/settings` 恢复 pass-through 的端到端点击录屏仍留给下一刀 |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/desktop-webview test
+corepack pnpm --filter @workhub/desktop-webview build
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-settings-capture.ps1 -SkipBuild -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-matrix\hijiki
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario settings-menu -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 6 -IntervalMs 260 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-menu-recovery\hijiki\menu-zh-boundary-pass3
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario settings-menu -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 6 -IntervalMs 260 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-menu-recovery\hijiki\menu-en-boundary-pass3
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario settings-menu-model-switch -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 8 -IntervalMs 260 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-menu-recovery\hijiki\menu-model-switch-boundary-pass3
+```
+
+## 19. 下一刀 R3.18
+
+1. 补 pass-through recovery 真机证据：开启 pass-through 后，通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100`、右键菜单重新可用。
+2. 补主窗 `/settings` zh-CN/en-US 真实截图，确认严肃设置页无 Cuu 本体、无模型预览、文本不超框。
+3. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+4. 继续保留 R3.12-R3.17 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix 和菜单 gate。
+5. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主窗无 Cuu 截图复核仍要闭环。

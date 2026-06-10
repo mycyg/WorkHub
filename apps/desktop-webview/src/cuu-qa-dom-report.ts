@@ -24,6 +24,7 @@ export type DesktopPetQaDomSnapshot = {
   reason: DesktopPetQaDomReportReason;
   surface: DesktopPetQaDomElementSnapshot;
   live2d: DesktopPetQaDomElementSnapshot;
+  settings_menu: DesktopPetQaDomElementSnapshot;
   bubble: DesktopPetQaDomElementSnapshot;
   primary_chip: DesktopPetQaDomElementSnapshot;
   primary_action: DesktopPetQaDomElementSnapshot;
@@ -59,6 +60,7 @@ export function collectDesktopPetQaDomSnapshot(
     reason,
     surface: collectDesktopPetQaDomElement(root, "[data-wh-surface=pet]"),
     live2d: collectDesktopPetQaDomElement(root, ".wh-cuu-cat-live2d"),
+    settings_menu: collectDesktopPetQaDomElement(root, "[data-pet-settings-menu]"),
     bubble: collectDesktopPetQaDomElement(root, "[data-pet-bubble]"),
     primary_chip: collectDesktopPetQaDomElement(root, "[data-chip-id],[data-pet-option-id]"),
     primary_action: collectDesktopPetQaDomElement(root, "[data-cuu-action-id]")

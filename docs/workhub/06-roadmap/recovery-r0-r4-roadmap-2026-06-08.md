@@ -49,6 +49,8 @@ R0 退出门：
 - OQ-2/OQ-3 有 v1 owner 和可执行默认值。
 - 文档树明确后续施工顺序为 R0 -> R1 -> R2 -> R3 -> R4。
 
+2026-06-10 复核口径：R0 文档治理和概念资产基本完成，但不能宣称完全完成。主窗无 Cuu 的 Web/desktop 真实截图复核仍未闭环，后续 R3.18/R4 需要补主窗 `/settings` 和主工作台截图证据。
+
 ## 2. R1 真实纵切
 
 目标：把“AI 干、人把关”的反转第一次用真实数据证明。
@@ -95,8 +97,8 @@ R1 退出门：
 
 仍不能宣称 R1 完成：
 
-- AgentRun queue 的任务 claim/drainer 仍以内存 Map/Set 协调；R2 前还不能宣称多 worker 安全。
-- Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1，因为 GitHub Actions `r1-pg-smoke` job 和 Linux/CI PostgreSQL 给出真实 PG 通过证据。
+- R1 真实纵切和最小 PG-backed Proposal/Replay 链路已经很厚，但完整 approval policy routing、完整 Drive 产品化、完整权限化审批中心仍未完成。
+- Windows 本机 `pnpm qa:r1-pg-smoke` 因无本地 PostgreSQL (`ECONNREFUSED 127.0.0.1:5432`) 且无 Docker/psql 暂未跑通；这不再阻塞 R1 最小链路，因为 GitHub Actions `r1-pg-smoke` job 和 Linux/CI PostgreSQL 给出真实 PG 通过证据。
 - proposal merge/main 已落最小真实切片：DB repository 在 approve/reject/merge 时更新 `reviews/proposals/branches/work_items`；reject 解锁 branch，merge 写 `work_items.status=merged`、`main_branch_id`、`accepted_at` 与 branch head/version；accepted deliverable ledger、ProjectDriveVersion 最小采纳、WorkItem page / AgentRun replay accepted deliverables、download/text-preview、restore、merge snapshot、persistent audit、同 target 冲突 gate、AI fusion candidate、one-click apply、text/spec 正文直写、真实 current/incoming/base prompt context、text patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview、无重叠文本 hunk deterministic diff3、重叠 hunk metadata/prompt/quality gate、replay 选择记录、WorkItem 标量字段写回、字段冲突检测、`acceptance_items` 子记录写回、最新 dispatch plan `task_items` 子记录写回、字段级 Proposal/Replay 落点与写回审计、Proposal 高级字段编辑器与 `structured_field_overrides`、Proposal / Replay 共享逐行富 patch viewer 基础、Proposal / Replay 重叠 hunk review 与逐段点选意图模板、子记录逐项 diff/editor 与 `structured_item_overrides`、Proposal 折叠多冲突批量检查 foundation、Web/Desktop route 视觉 QA、任务子记录多计划/目标 plan 选择 UI、重叠文本 hunk 后端逐段 materialize、批量 keep/accept `bulk_action` 审计、Replay hunk/bulk decision 用户可读回放、Proposal route line editor 已落。完整 Drive 产品化仍待后续 R2/R4。
 
 下一施工顺序：
@@ -104,7 +106,7 @@ R1 退出门：
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口；R2.7 已补 release gate report，并接入 `pnpm verify`。
-4. R3.1 已补 Cuu option-first Agent launcher：点击独立 pet window 的 Cuu body 可展开启动卡；R3.2 已补 TS run stream 回流、终态关闭和错误卡；R3.3/R3.4 已补 `SessionVM` 澄清回退与确认后启动 AgentRun；R3.5 已补 API route-stack launcher-to-run smoke，并把 `nextQuestion()` 合约统一为 `SessionVM`；R3.6 已补 Cuu 双语边界与 session 选择历史合并；R3.7 已补 pet runtime flow harness；R3.8 已补 `bootDesktopPetSurface()` client 注入点；R3.9 已补真实 boot click harness；R3.10 已补真实 Tauri `pet` window launcher/en-US capture；R3.11 已补真实本机 HTTP dev-server launcher-to-run smoke；R3.12 已补真实 Tauri run-stream zh-CN/en-US completion capture 与 SSE/fallback 回流证据；R3.13.1 已补真实 Tauri run-failure zh-CN/en-US terminal capture 与 failed fallback 证据；R3.13.2 已补真实 Tauri 401/403/offline zh-CN/en-US capture 与 error fault smoke；R3.13.3 已补 pet webview boot session/run 恢复；R3.14 已补 launcher chip metadata 进入 WorkItem spec 与文本超框样式门；R3.15 已补真实 Tauri reload session/active/terminal capture 与 reload restore smoke；R3.16 已补真实 Tauri `clarify/search/sync/done/offline/approval` 业务状态矩阵与文本边界回归。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。下一步 R3.17 补 settings matrix、右键菜单恢复与跨平台 capture。
+4. R3.1 已补 Cuu option-first Agent launcher：点击独立 pet window 的 Cuu body 可展开启动卡；R3.2 已补 TS run stream 回流、终态关闭和错误卡；R3.3/R3.4 已补 `SessionVM` 澄清回退与确认后启动 AgentRun；R3.5 已补 API route-stack launcher-to-run smoke，并把 `nextQuestion()` 合约统一为 `SessionVM`；R3.6 已补 Cuu 双语边界与 session 选择历史合并；R3.7 已补 pet runtime flow harness；R3.8 已补 `bootDesktopPetSurface()` client 注入点；R3.9 已补真实 boot click harness；R3.10 已补真实 Tauri `pet` window launcher/en-US capture；R3.11 已补真实本机 HTTP dev-server launcher-to-run smoke；R3.12 已补真实 Tauri run-stream zh-CN/en-US completion capture 与 SSE/fallback 回流证据；R3.13.1 已补真实 Tauri run-failure zh-CN/en-US terminal capture 与 failed fallback 证据；R3.13.2 已补真实 Tauri 401/403/offline zh-CN/en-US capture 与 error fault smoke；R3.13.3 已补 pet webview boot session/run 恢复；R3.14 已补 launcher chip metadata 进入 WorkItem spec 与文本超框样式门；R3.15 已补真实 Tauri reload session/active/terminal capture 与 reload restore smoke；R3.16 已补真实 Tauri `clarify/search/sync/done/offline/approval` 业务状态矩阵与文本边界回归；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。下一步 R3.18 补 pass-through 真恢复、主窗 settings 截图与跨平台 capture。
 
 ## 3. R2 真正解除单 worker
 
@@ -119,6 +121,8 @@ R1 退出门：
 | R2-5 集成测试/CI | **已落首版**：真实 PG + Redis smoke 覆盖 Redis SSE/presence、WorkItem owner 200 / stranger 403、长 provider heartbeat。 | `qa:r2-pg-redis-smoke` 与 CI job |
 | R2-6 Recovery / REST auth | **已落 R2.6**：stuck-job 后台 requeue 调度、Proposal/审批 REST/Page read/list/review/merge 权限全面收口。 | `@workhub/api` 后台调度测试 + REST 403 矩阵；[`r2-recovery-rest-auth.md`](../02-ai-engine/r2-recovery-rest-auth.md) |
 | R2-7 Release gate | **已落 R2.7**：R0/R1/R2 静态门、CI smoke、文档口径、reference discipline 与 secret-like diff count 汇总为可复跑 report。 | `pnpm qa:r2-release-gate`；[`r2-release-gate.md`](../02-ai-engine/r2-release-gate.md) |
+
+2026-06-10 复核口径：R2 可以按“多 worker / PG claim / Redis bus / release gate 地基首版”宣称完成，并作为 R3 继续施工前置；不能把它扩大成所有后端、权限、部署和 dedicated worker daemon 都已经终局完成。
 
 ## 4. R3 Cuu Agent 入口
 
@@ -144,6 +148,7 @@ R1 退出门：
 | R3-14 launcher spec metadata | **已落 R3.14**：launcher chip metadata 写入 `cuu_launcher_spec`，API service 在真实 confirmation 链路中从 selected id 推导 spec，WorkItem `planning_note` 追加 JSON，并生成默认 acceptance items；同轮补 pet bubble / main notice 长文本不超框 CSS contract。 | `corepack pnpm qa:cuu-r3-launcher-smoke` 与 `corepack pnpm qa:cuu-r3-dev-server-smoke` 返回 `launcher_spec_delivery_kind="document_draft"`、`launcher_acceptance_count=2`；contracts/cuu/desktop/api tests 与 typecheck 通过 |
 | R3-15 true Tauri reload restore capture | **已落 R3.15**：真实 Tauri `pet` window 启动前注入 `WORKHUB_CUU_QA_RESTORE_STATE`，再由 `bootDesktopPetSurface()` 生产恢复路径重建 session question、active AgentRun、terminal AgentRun；active run 继续通过 typed API readback 与 stream/fallback 刷新，三组最终帧均确认文本不超框。 | `corepack pnpm --filter @workhub/api qa:cuu-r3-reload-restore-smoke`；`../05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/reload-session-zh-pass/`；`reload-active-run-en-pass/`；`reload-terminal-run-zh-pass/` |
 | R3-16 true Tauri business matrix capture | **已落 R3.16**：真实 Tauri `pet` window 重录 `clarify/search/sync/done/offline/approval` 六类 scripted 业务状态，验证 DOM attrs、motion mapping、contact sheet/GIF/MP4 与文本边界；该矩阵不替代真实审批/检索/同步后端端到端链路。 | `../05-clients/assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/clarify-zh-pass/`、`approval-en-pass/`、`search-zh-pass/`、`sync-en-pass/`、`done-zh-pass/`、`offline-en-pass/`；六组 `right_edge_clip_gate.passed=true` |
+| R3-17 true Tauri settings/menu matrix | **已落 R3.17**：真实 Tauri `pet` window 重录 settings 八组合、zh-CN/en-US 右键菜单与黑猫切白猫模型切换；新增 `settings_menu_layout_gate`，修复模型切换短提示竖向残片，继续把用户截图里的文本超框风险作为硬门。 | `../05-clients/assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/`；`../05-clients/assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/`；settings 八组合 `first_frame_bounds_gate.passed=true`，三组菜单/切换 `settings_menu_layout_gate.passed=true` |
 
 R3 禁止项：不新增模型、改色、动效；settings matrix 只验证现有右键菜单、语言、scale、opacity、pass-through、hide-on-hover 与恢复能力，不新增外观路线。黑猫/白猫 Live2D 仅作为现有运行时。
 

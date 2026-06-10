@@ -1,0 +1,701 @@
+﻿{
+    "passed":  true,
+    "cases":  [
+                  {
+                      "id":  "default",
+                      "settings":  {
+                                       "pet_scale_percent":  100,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  12000,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  260,
+                                         "Height":  340
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\default\\first-frame-probe.png",
+                                               "min_visual_pixels":  12000,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  88400,
+                                                                    "foreground_pixels":  20689,
+                                                                    "light_pixels":  1,
+                                                                    "dark_pixels":  87797,
+                                                                    "visual_pixels":  20689,
+                                                                    "sample_step":  1,
+                                                                    "width":  260,
+                                                                    "height":  340
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  260,
+                                                      "height":  340,
+                                                      "foreground_pixels":  20689,
+                                                      "bounds":  {
+                                                                     "left":  48,
+                                                                     "top":  98,
+                                                                     "right":  225,
+                                                                     "bottom":  335,
+                                                                     "width":  178,
+                                                                     "height":  238
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  48,
+                                                                      "top":  98,
+                                                                      "right":  34,
+                                                                      "bottom":  4
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "white-cat",
+                      "settings":  {
+                                       "pet_scale_percent":  100,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-tororo-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  12000,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  260,
+                                         "Height":  340
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\white-cat\\first-frame-probe.png",
+                                               "min_visual_pixels":  12000,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  88400,
+                                                                    "foreground_pixels":  21278,
+                                                                    "light_pixels":  19665,
+                                                                    "dark_pixels":  67877,
+                                                                    "visual_pixels":  21278,
+                                                                    "sample_step":  1,
+                                                                    "width":  260,
+                                                                    "height":  340
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  260,
+                                                      "height":  340,
+                                                      "foreground_pixels":  21278,
+                                                      "bounds":  {
+                                                                     "left":  48,
+                                                                     "top":  95,
+                                                                     "right":  226,
+                                                                     "bottom":  335,
+                                                                     "width":  179,
+                                                                     "height":  241
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  48,
+                                                                      "top":  95,
+                                                                      "right":  33,
+                                                                      "bottom":  4
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "scale-75",
+                      "settings":  {
+                                       "pet_scale_percent":  75,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  6500,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  1959,
+                                         "Bottom":  995,
+                                         "Width":  195,
+                                         "Height":  255
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-75\\first-frame-probe.png",
+                                               "min_visual_pixels":  6500,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  49725,
+                                                                    "foreground_pixels":  11650,
+                                                                    "light_pixels":  2,
+                                                                    "dark_pixels":  49372,
+                                                                    "visual_pixels":  11650,
+                                                                    "sample_step":  1,
+                                                                    "width":  195,
+                                                                    "height":  255
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  195,
+                                                      "height":  255,
+                                                      "foreground_pixels":  11650,
+                                                      "bounds":  {
+                                                                     "left":  35,
+                                                                     "top":  71,
+                                                                     "right":  167,
+                                                                     "bottom":  251,
+                                                                     "width":  133,
+                                                                     "height":  181
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  35,
+                                                                      "top":  71,
+                                                                      "right":  27,
+                                                                      "bottom":  3
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "scale-150",
+                      "settings":  {
+                                       "pet_scale_percent":  150,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  12000,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1634,
+                                         "Top":  570,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  390,
+                                         "Height":  510
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\scale-150\\first-frame-probe.png",
+                                               "min_visual_pixels":  12000,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  198900,
+                                                                    "foreground_pixels":  46930,
+                                                                    "light_pixels":  7,
+                                                                    "dark_pixels":  197531,
+                                                                    "visual_pixels":  46930,
+                                                                    "sample_step":  1,
+                                                                    "width":  390,
+                                                                    "height":  510
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  390,
+                                                      "height":  510,
+                                                      "foreground_pixels":  46930,
+                                                      "bounds":  {
+                                                                     "left":  72,
+                                                                     "top":  143,
+                                                                     "right":  338,
+                                                                     "bottom":  503,
+                                                                     "width":  267,
+                                                                     "height":  361
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  72,
+                                                                      "top":  143,
+                                                                      "right":  51,
+                                                                      "bottom":  6
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "opacity-60",
+                      "settings":  {
+                                       "pet_scale_percent":  100,
+                                       "pet_opacity_percent":  60,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  500,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  260,
+                                         "Height":  340
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\opacity-60\\first-frame-probe.png",
+                                               "min_visual_pixels":  500,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  88400,
+                                                                    "foreground_pixels":  20424,
+                                                                    "light_pixels":  0,
+                                                                    "dark_pixels":  88292,
+                                                                    "visual_pixels":  20424,
+                                                                    "sample_step":  1,
+                                                                    "width":  260,
+                                                                    "height":  340
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  260,
+                                                      "height":  340,
+                                                      "foreground_pixels":  20424,
+                                                      "bounds":  {
+                                                                     "left":  48,
+                                                                     "top":  96,
+                                                                     "right":  224,
+                                                                     "bottom":  335,
+                                                                     "width":  177,
+                                                                     "height":  240
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  48,
+                                                                      "top":  96,
+                                                                      "right":  35,
+                                                                      "bottom":  4
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "pass-through",
+                      "settings":  {
+                                       "pet_scale_percent":  100,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  true,
+                                       "pet_hide_on_hover":  false,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  12000,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  260,
+                                         "Height":  340
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\pass-through\\first-frame-probe.png",
+                                               "min_visual_pixels":  12000,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  88400,
+                                                                    "foreground_pixels":  20852,
+                                                                    "light_pixels":  2,
+                                                                    "dark_pixels":  87791,
+                                                                    "visual_pixels":  20852,
+                                                                    "sample_step":  1,
+                                                                    "width":  260,
+                                                                    "height":  340
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  260,
+                                                      "height":  340,
+                                                      "foreground_pixels":  20852,
+                                                      "bounds":  {
+                                                                     "left":  48,
+                                                                     "top":  97,
+                                                                     "right":  225,
+                                                                     "bottom":  335,
+                                                                     "width":  178,
+                                                                     "height":  239
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  48,
+                                                                      "top":  97,
+                                                                      "right":  34,
+                                                                      "bottom":  4
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  },
+                  {
+                      "id":  "hide-on-hover",
+                      "settings":  {
+                                       "pet_scale_percent":  100,
+                                       "pet_opacity_percent":  100,
+                                       "pet_pass_through":  false,
+                                       "pet_hide_on_hover":  true,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "hide-on-hover",
+                      "min_first_frame_visual_pixels":  12000,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1764,
+                                         "Top":  740,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  260,
+                                         "Height":  340
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\hide-on-hover\\first-frame-probe.png",
+                                               "min_visual_pixels":  12000,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  88400,
+                                                                    "foreground_pixels":  20799,
+                                                                    "light_pixels":  1,
+                                                                    "dark_pixels":  87780,
+                                                                    "visual_pixels":  20799,
+                                                                    "sample_step":  1,
+                                                                    "width":  260,
+                                                                    "height":  340
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  260,
+                                                      "height":  340,
+                                                      "foreground_pixels":  20799,
+                                                      "bounds":  {
+                                                                     "left":  48,
+                                                                     "top":  96,
+                                                                     "right":  225,
+                                                                     "bottom":  335,
+                                                                     "width":  178,
+                                                                     "height":  240
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  48,
+                                                                      "top":  96,
+                                                                      "right":  34,
+                                                                      "bottom":  4
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+                                              {
+                                                  "frame":  1,
+                                                  "action":  "cursor_near_left_outside",
+                                                  "cursor":  {
+                                                                 "x":  1728,
+                                                                 "y":  910
+                                                             },
+                                                  "window_rect":  {
+                                                                      "Left":  1764,
+                                                                      "Top":  740,
+                                                                      "Right":  2024,
+                                                                      "Bottom":  1080,
+                                                                      "Width":  260,
+                                                                      "Height":  340
+                                                                  }
+                                              },
+                                              {
+                                                  "frame":  4,
+                                                  "action":  "hover_top_right_inside_soft_hide",
+                                                  "cursor":  {
+                                                                 "x":  1936,
+                                                                 "y":  876
+                                                             },
+                                                  "window_rect":  {
+                                                                      "Left":  1764,
+                                                                      "Top":  740,
+                                                                      "Right":  2024,
+                                                                      "Bottom":  1080,
+                                                                      "Width":  260,
+                                                                      "Height":  340
+                                                                  }
+                                              },
+                                              {
+                                                  "frame":  9,
+                                                  "action":  "hover_inside_hold",
+                                                  "cursor":  {
+                                                                 "x":  1894,
+                                                                 "y":  910
+                                                             },
+                                                  "window_rect":  {
+                                                                      "Left":  1764,
+                                                                      "Top":  740,
+                                                                      "Right":  2024,
+                                                                      "Bottom":  1080,
+                                                                      "Width":  260,
+                                                                      "Height":  340
+                                                                  }
+                                              },
+                                              {
+                                                  "frame":  14,
+                                                  "action":  "cursor_leave_recover",
+                                                  "cursor":  {
+                                                                 "x":  2184,
+                                                                 "y":  1160
+                                                             },
+                                                  "window_rect":  {
+                                                                      "Left":  1764,
+                                                                      "Top":  740,
+                                                                      "Right":  2024,
+                                                                      "Bottom":  1080,
+                                                                      "Width":  260,
+                                                                      "Height":  340
+                                                                  }
+                                              },
+                                              {
+                                                  "frame":  18,
+                                                  "action":  "hover_inside_again",
+                                                  "cursor":  {
+                                                                 "x":  1936,
+                                                                 "y":  876
+                                                             },
+                                                  "window_rect":  {
+                                                                      "Left":  1764,
+                                                                      "Top":  740,
+                                                                      "Right":  2024,
+                                                                      "Bottom":  1080,
+                                                                      "Width":  260,
+                                                                      "Height":  340
+                                                                  }
+                                              }
+                                          ]
+                  },
+                  {
+                      "id":  "combo-125-80-pass-hide",
+                      "settings":  {
+                                       "pet_scale_percent":  125,
+                                       "pet_opacity_percent":  80,
+                                       "pet_pass_through":  true,
+                                       "pet_hide_on_hover":  true,
+                                       "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2"
+                                   },
+                      "scenario":  "idle",
+                      "min_first_frame_visual_pixels":  1600,
+                      "first_frame":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\first-frame-probe.png",
+                      "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\cuu-motion-contact-sheet.png",
+                      "gif":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\cuu-motion-printwindow.gif",
+                      "mp4":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\cuu-motion-printwindow.mp4",
+                      "diff_report":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\motion-diff-report.json",
+                      "first_rect":  {
+                                         "Left":  1699,
+                                         "Top":  655,
+                                         "Right":  2024,
+                                         "Bottom":  1080,
+                                         "Width":  325,
+                                         "Height":  425
+                                     },
+                      "first_frame_gate":  {
+                                               "passed":  true,
+                                               "attempts":  7,
+                                               "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\first-frame-probe.png",
+                                               "min_visual_pixels":  1600,
+                                               "business_card_gate":  false,
+                                               "pixel_report":  {
+                                                                    "samples":  138125,
+                                                                    "foreground_pixels":  32498,
+                                                                    "light_pixels":  0,
+                                                                    "dark_pixels":  137523,
+                                                                    "visual_pixels":  32498,
+                                                                    "sample_step":  1,
+                                                                    "width":  325,
+                                                                    "height":  425
+                                                                }
+                                           },
+                      "first_frame_bounds_gate":  {
+                                                      "passed":  true,
+                                                      "width":  325,
+                                                      "height":  425,
+                                                      "foreground_pixels":  32498,
+                                                      "bounds":  {
+                                                                     "left":  60,
+                                                                     "top":  119,
+                                                                     "right":  283,
+                                                                     "bottom":  419,
+                                                                     "width":  224,
+                                                                     "height":  301
+                                                                 },
+                                                      "margins":  {
+                                                                      "left":  60,
+                                                                      "top":  119,
+                                                                      "right":  41,
+                                                                      "bottom":  5
+                                                                  },
+                                                      "min_top_margin_px":  8,
+                                                      "min_bottom_margin_px":  2,
+                                                      "min_side_margin_px":  4
+                                                  },
+                      "right_edge_clip_gate":  {
+                                                   "enabled":  false,
+                                                   "passed":  true,
+                                                   "max_right_edge_light_pixels":  0,
+                                                   "max_allowed_right_edge_light_pixels":  2,
+                                                   "clipped_frames":  [
+
+                                                                      ]
+                                               },
+                      "scenario_events":  [
+
+                                          ]
+                  }
+              ],
+    "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\cuu-settings-contact-sheet.png"
+}

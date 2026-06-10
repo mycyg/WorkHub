@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { cuuMotionForState } from "@workhub/cuu";
 
@@ -9,6 +12,8 @@ import {
   resolveDesktopCuuCatLive2DBehaviorState,
   setDesktopCuuCatLive2DBehaviorState
 } from "./cuu-cat-live2d-runtime.js";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 test("desktop Live2D runtime resolves behavior manifest state for approval cards", () => {
   const behavior = resolveDesktopCuuCatLive2DBehaviorState({
@@ -78,4 +83,18 @@ test("desktop Live2D behavior patch only updates dataset and preserves iframe ma
   assert.equal(live2d.dataset.cuuLive2dMotion, "look_at_mouse");
   assert.equal(live2d.dataset.cuuLive2dRendererState, "mtn/00_idle.mtn");
   assert.equal(live2d.dataset.cuuBehaviorExpectedWindowMode, "body_only");
+});
+
+test("desktop Live2D model pages keep canvas framing proportional across pet scale settings", () => {
+  for (const modelPage of [
+    "../public/cuu/live2d/hijiki/cuu-hijiki.html",
+    "../public/cuu/live2d/tororo/cuu-tororo.html"
+  ]) {
+    const html = readFileSync(resolve(testDir, modelPage), "utf8");
+
+    assert.match(html, /bottom:\s*-35%;/u);
+    assert.match(html, /width:\s*91\.304%;/u);
+    assert.match(html, /height:\s*175%;/u);
+    assert.doesNotMatch(html, /bottom:\s*-112px|width:\s*210px|height:\s*560px/u);
+  }
 });

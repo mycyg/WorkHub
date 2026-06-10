@@ -3,7 +3,7 @@ module: 05-clients
 layer: C-PET / Cuu / Tauri
 status: current
 owner: workflow
-date: 2026-06-08
+date: 2026-06-10
 ---
 
 # P1.4 Pet Right-Click Settings Menu
@@ -69,10 +69,23 @@ cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 
 ## 5. Next Acceptance Work
 
+### 5.1 R3.17 已完成验收
+
+| 项 | 证据 / 结论 |
+|---|---|
+| 右键菜单 zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/menu-zh-boundary-pass3/`，`settings_menu_layout_gate.passed=true` |
+| 右键菜单 en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/menu-en-boundary-pass3/`，`settings_menu_layout_gate.passed=true` |
+| 菜单模型切换 | `menu-model-switch-boundary-pass3/`，真实 Tauri contact sheet 显示黑猫右键菜单 -> 点击白猫 -> Tororo 白猫；最终 DOM `data_cuu_model_pack="cuu-tororo-live2d-cubism2"` |
+| 文本边界 | 菜单宽度固定为 164px，rect 为 `x=8,width=164,right=172`，在 260px pet surface 内；按钮使用 `min-width:0`、grid `minmax(0,1fr)` 和 ellipsis，不再复现用户截图中的文本出框 |
+| 短提示回归 | 模型切换后的 `Cuu 形象已更新。` 修为 compact status bubble；gate 记录 `x=102,width=150,right=252`，在 260px surface 内 |
+| pass-through 菜单项 | 继续不出现在右键菜单；DOM text 不含 pass-through/点击穿透，避免开启后失去右键恢复入口 |
+
+R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单边界：`settings-menu` 场景检查菜单 present、rect 非零、窗口内边界、文本非空且无 pass-through 入口；`settings-menu-model-switch` 场景检查模型切换后的 compact 短提示在窗口内。
+
+### 5.2 后续验收
+
 | 下一步 | 验收 |
 |---|---|
-| 右键菜单真实截图 / DOM dump | zh-CN / en-US 各一份，确认文本不溢出，不遮挡 Cuu 主体 |
-| 菜单模型切换 capture | 黑猫切白猫后真实 Tauri contact sheet，证明不是只改文案 |
-| settings matrix | default / white-cat / scale / opacity / hide-on-hover / card-mode |
-| pass-through recovery | 主窗 settings 和托盘恢复源码已落；真实 matrix 通过前仍不开放右键菜单入口 |
+| pass-through recovery | 主窗 settings 和托盘恢复源码已落；下一刀必须补真实恢复录屏，确认恢复后右键菜单重新可用 |
+| 主窗 settings 截图 | zh-CN / en-US 主窗 `/settings` 截图，确认严肃设置页无 Cuu 本体、无模型预览、文本不溢出 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

@@ -52,6 +52,14 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
       "data-cuu-live2d-runtime": "live2d_cubism2_cat",
       "data-cuu-live2d-model": "hijiki"
     }),
+    "[data-pet-settings-menu]": fakeElement({
+      "data-pet-settings-menu": "true"
+    }, "Cuu settings Black cat White cat EN Dodge hover Open settings Hide Cuu", {
+      x: 62,
+      y: 84,
+      width: 184,
+      height: 218
+    }),
     "[data-pet-bubble]": fakeElement({
       "data-pet-bubble": "true",
       "data-cuu-card-id": "approval-card",
@@ -82,6 +90,16 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
     data_cuu_live2d_renderer_state: "mtn/01.mtn"
   });
   assert.equal(report.live2d.data.data_cuu_live2d_model, "hijiki");
+  assert.equal(report.settings_menu.data.data_pet_settings_menu, "true");
+  assert.equal(report.settings_menu.text, "Cuu settings Black cat White cat EN Dodge hover Open settings Hide Cuu");
+  assert.deepEqual(report.settings_menu.rect, {
+    x: 62,
+    y: 84,
+    width: 184,
+    height: 218,
+    right: 246,
+    bottom: 302
+  });
   assert.equal(report.bubble.data.data_cuu_card_id, "approval-card");
   assert.equal(report.bubble.data.data_pet_payload_ref_entity_type, "agent_run");
   assert.equal(report.bubble.data.data_pet_payload_ref_entity_id, "run-1");

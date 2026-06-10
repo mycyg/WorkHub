@@ -3,7 +3,7 @@ module: 05-clients
 layer: C-PET / Cuu / Tauri / Settings
 status: current
 owner: workflow
-date: 2026-06-08
+date: 2026-06-10
 ---
 
 # P1.5 Pet Settings Recovery Gate
@@ -93,19 +93,30 @@ cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 - Rust 单元测试确认 tray item 数量和恢复动作合同。
 - Pet surface 监听 `tray-action`，恢复后写回偏好，避免本地偏好反向覆盖 Rust 恢复。
 
-## 6. 仍未通过的视觉验收
+## 6. R3.17 视觉验收进展
+
+R3.17 已补 settings matrix，但仍没有把 pass-through 端到端恢复宣称为完成。
+
+| 项 | 证据 / 结论 |
+|---|---|
+| settings matrix | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/` |
+| 覆盖组合 | `default`、`white-cat`、`scale-75`、`scale-150`、`opacity-60`、`pass-through`、`hide-on-hover`、`combo-125-80-pass-hide` |
+| 自动门 | 八组均 `first_frame_bounds_gate.passed=true`，保留 contact sheet/GIF/MP4/DOM report/motion diff report；MP4 奇数尺寸用 pad gate 避免零字节输出 |
+| 视觉复核 | scale 75/150/125、opacity 60、pass-through 与 hide-on-hover 下 Cuu 全身在窗口内，没有只露耳朵或贴边裁切 |
+| pass-through 口径 | `pass-through` case 证明偏好可进入真实 `pet` window；它不是“用户开启后再通过托盘/主窗恢复”的端到端证据 |
+
+仍未通过的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| settings panel 真实截图 | 生成 desktop 主窗 `/settings` zh-CN / en-US 截图，确认没有 Cuu 本体 |
-| pass-through 真机恢复 | 开启 pass-through 后，用托盘恢复并录屏 / 多帧截图 |
-| settings matrix | default / scale / opacity / pass-through / hide-on-hover / card mode 全组合截图 |
+| settings panel 真实截图 | 生成 desktop 主窗 `/settings` zh-CN / en-US 截图，确认没有 Cuu 本体、没有模型预览、文本不溢出 |
+| pass-through 真机恢复 | 开启 pass-through 后，用主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复并录屏 / 多帧截图 |
 | menu 与 settings 联动 | 右键菜单开启 hover 后，主窗 settings 状态同步；主窗恢复后 pet 右键重新可用 |
 | Linux/macOS | 透明窗口 + tray 恢复 smoke；Wayland/X11 需要单独记录 |
 
 ## 7. 后续施工
 
-1. 补 `scripts/qa/cuu-tauri-settings-capture.ps1` 的真实 matrix。
-2. 给 `restore-pet-interaction` 增加端到端截图证据：开启 pass-through、托盘恢复、右键菜单重新可用。
+1. 给 `restore-pet-interaction` 增加端到端截图证据：开启 pass-through、主窗或托盘恢复、右键菜单重新可用。
+2. 补 desktop 主窗 `/settings` 的 zh-CN/en-US 截图，并把“无 Cuu 本体 / 无模型预览 / 文本不出框”写入 gate。
 3. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
 4. 再做主窗视觉审查：Web / desktop 主窗都不能出现 Cuu 本体。

@@ -667,6 +667,10 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
     include_reject_reasons: true,
     locale: "zh-CN"
   });
+  const statusOnly = renderDesktopPetSurface({
+    status_text: "Cuu look updated.",
+    locale: "en-US"
+  });
 
   assert.equal(idle.visual_mode, "live2d_cat");
   assert.equal(idle.live2d.runtime_kind, "live2d_cubism2_cat");
@@ -696,6 +700,10 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.html, /data-pet-menu-locale="zh-CN" aria-pressed="true"/u);
   assert.match(idle.html, /data-pet-menu-open-settings="true"/u);
   assert.doesNotMatch(idle.html, /data-pet-menu-pass-through/u);
+  assert.match(idle.css, /\.wh-pet-menu\{[^}]*right:88px;[^}]*width:164px;[^}]*overflow:hidden/u);
+  assert.match(idle.css, /\.wh-pet-menu-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u);
+  assert.match(idle.css, /\.wh-pet-menu button\{[^}]*min-width:0;max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(idle.css, /\.wh-pet-menu-row button\{[^}]*flex:1 1 0;[^}]*padding-left:6px;padding-right:6px;[^}]*overflow:hidden;text-overflow:ellipsis/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
   assert.match(idle.css, /\.wh-pet-body::after\{content:"";position:absolute;inset:0;z-index:3/u);
@@ -704,6 +712,12 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.doesNotMatch(idle.html, /data-cuu-fallback-visual-mode|data-cuu-image-motion/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
   assert.doesNotMatch(idle.html, /textarea|<input\b/iu);
+
+  assert.match(statusOnly.html, /data-pet-window-mode="body_only"/u);
+  assert.match(statusOnly.html, /data-pet-card-layout="compact"/u);
+  assert.match(statusOnly.html, /<p class="wh-pet-status">Cuu look updated\.<\/p>/u);
+  assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-bubble\{left:auto;right:calc\(8px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(224px \* var\(--wh-pet-scale,1\)\);width:calc\(150px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-status\{line-height:1\.25;display:-webkit-box;-webkit-line-clamp:2/u);
 
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-payload-ref-entity-type="workitem"/u);

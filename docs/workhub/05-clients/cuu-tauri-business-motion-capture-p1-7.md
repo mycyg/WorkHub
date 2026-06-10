@@ -122,6 +122,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 1. R3.16 已用当前脚本版本重录黑猫 `clarify`、`approval`、`search`、`sync`、`done`、`offline` 六场景，每场 40 帧，并保留 contact sheet/GIF/MP4/DOM report/motion diff：`./assets/audit/2026-06-10-cuu-r3-business-matrix/hijiki/`。
 2. R3.16 六场景均通过 `right_edge_clip_gate`，人工复核按钮、chip、evidence refs、英文 offline 文案未超出 bubble/card；后续业务矩阵仍要继续保留该文本边界门。
 3. P1.9 白猫 approval 仍只是冻结前回归证据；白猫同等矩阵放到 R3 后续必要性评估，不作为当前 settings matrix 的前置阻塞。
-4. 下一刀补 settings matrix 与右键菜单恢复：scale 75/150、opacity 60、pass-through、hide-on-hover、语言切换、黑/白模型切换均要有真实窗口证据。
-5. pass-through recovery 必须单独留证：开启后右键入口不可依赖，必须通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复。
-6. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限。
+4. R3.17 已补 settings matrix 与右键菜单边界：scale 75/150、opacity 60、pass-through、hide-on-hover、语言切换、黑/白模型切换均有真实窗口证据，详见 `./assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/`。
+5. R3.17 新增 `settings_menu_layout_gate`：右键菜单必须在 260px `pet` surface 内，模型切换后的短提示也必须完整留在窗口内；用户截图中的文本超框风险继续作为后续硬门。
+6. pass-through recovery 必须单独留证：开启后右键入口不可依赖，必须通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复。
+7. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限。

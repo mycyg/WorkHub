@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -169,8 +169,11 @@ function Invoke-CuuCdpMouseClick {
   param(
     [string]$WebSocketUrl,
     [int]$X,
-    [int]$Y
+    [int]$Y,
+    [ValidateSet("left", "right")]
+    [string]$Button = "left"
   )
+  $buttons = if ($Button -eq "right") { 2 } else { 1 }
   Invoke-CuuCdpCommand -WebSocketUrl $WebSocketUrl -Method "Input.dispatchMouseEvent" -Params @{
     type = "mouseMoved"
     x = $X
@@ -182,18 +185,64 @@ function Invoke-CuuCdpMouseClick {
     type = "mousePressed"
     x = $X
     y = $Y
-    button = "left"
-    buttons = 1
+    button = $Button
+    buttons = $buttons
     clickCount = 1
   } | Out-Null
   Invoke-CuuCdpCommand -WebSocketUrl $WebSocketUrl -Method "Input.dispatchMouseEvent" -Params @{
     type = "mouseReleased"
     x = $X
     y = $Y
-    button = "left"
+    button = $Button
     buttons = 0
     clickCount = 1
   } | Out-Null
+}
+
+function Invoke-CuuCdpJsonExpression {
+  param(
+    [string]$WebSocketUrl,
+    [string]$Expression
+  )
+  $message = Invoke-CuuCdpCommand -WebSocketUrl $WebSocketUrl -Method "Runtime.evaluate" -Params @{
+    expression = $Expression
+    returnByValue = $true
+    awaitPromise = $true
+  }
+  $value = $message.result.result.value
+  if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) {
+    return $null
+  }
+  return ([string]$value | ConvertFrom-Json)
+}
+
+function Invoke-CuuCdpClickSelector {
+  param(
+    [string]$WebSocketUrl,
+    [string]$Selector
+  )
+  $selectorJson = $Selector | ConvertTo-Json -Compress
+  $point = Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(() => {
+  const target = document.querySelector($selectorJson);
+  if (!target) {
+    return JSON.stringify({ found: false });
+  }
+  const rect = target.getBoundingClientRect();
+  return JSON.stringify({
+    found: true,
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  });
+})()
+"@
+  if (-not $point -or -not $point.found) {
+    throw "Unable to find Cuu CDP selector: $Selector"
+  }
+  Invoke-CuuCdpMouseClick -WebSocketUrl $WebSocketUrl -X ([int]$point.x) -Y ([int]$point.y)
+  return $point
 }
 
 function Restore-EnvVar {
@@ -784,6 +833,146 @@ function Test-CuuBubbleRectNearLive2D {
   return $horizontallyAnchored -and $notRightClipped -and $notCoveringCatBody
 }
 
+function New-CuuSettingsMenuLayoutGate {
+  param(
+    [string]$Scenario,
+    [object]$Actual,
+    [string]$ExpectedLocale = "zh-CN"
+  )
+
+  $enabled = @("settings-menu", "settings-menu-model-switch") -contains $Scenario
+  if (-not $enabled) {
+    return [pscustomobject]@{
+      enabled = $false
+      passed = $true
+      reason = "not_settings_menu_scenario"
+    }
+  }
+
+  if (-not $Actual -or -not $Actual.surface -or -not $Actual.surface.rect) {
+    return [pscustomobject]@{
+      enabled = $true
+      passed = $false
+      reason = "missing_surface_rect"
+    }
+  }
+
+  $surfaceWidth = Read-CuuDomRectNumber $Actual.surface.rect "width"
+  $surfaceHeight = Read-CuuDomRectNumber $Actual.surface.rect "height"
+  if ($null -eq $surfaceWidth -or $null -eq $surfaceHeight) {
+    return [pscustomobject]@{
+      enabled = $true
+      passed = $false
+      reason = "invalid_surface_rect"
+    }
+  }
+
+  if ($Scenario -eq "settings-menu") {
+    if (-not $Actual.settings_menu -or -not $Actual.settings_menu.present -or -not $Actual.settings_menu.rect) {
+      return [pscustomobject]@{
+        enabled = $true
+        passed = $false
+        reason = "missing_settings_menu"
+      }
+    }
+    $menuX = Read-CuuDomRectNumber $Actual.settings_menu.rect "x"
+    $menuY = Read-CuuDomRectNumber $Actual.settings_menu.rect "y"
+    $menuWidth = Read-CuuDomRectNumber $Actual.settings_menu.rect "width"
+    $menuHeight = Read-CuuDomRectNumber $Actual.settings_menu.rect "height"
+    $menuRight = Read-CuuDomRectNumber $Actual.settings_menu.rect "right"
+    $menuBottom = Read-CuuDomRectNumber $Actual.settings_menu.rect "bottom"
+    foreach ($value in @($menuX, $menuY, $menuWidth, $menuHeight, $menuRight, $menuBottom)) {
+      if ($null -eq $value) {
+        return [pscustomobject]@{
+          enabled = $true
+          passed = $false
+          reason = "invalid_settings_menu_rect"
+        }
+      }
+    }
+    $menuText = [string]$Actual.settings_menu.text
+    $expectedTitle = if ($ExpectedLocale -eq "en-US") { "Cuu settings" } else { "Cuu 设置" }
+    $passed = $menuWidth -ge 140 -and
+      $menuHeight -ge 180 -and
+      $menuX -ge 0 -and
+      $menuY -ge 0 -and
+      $menuRight -le $surfaceWidth -and
+      $menuBottom -le $surfaceHeight -and
+      -not [string]::IsNullOrWhiteSpace($menuText) -and
+      $menuText.Contains($expectedTitle) -and
+      -not ($menuText -match "pass[- ]?through|点击穿透|穿透")
+    return [pscustomobject]@{
+      enabled = $true
+      passed = $passed
+      reason = if ($passed) { "settings_menu_rect_in_surface" } else { "settings_menu_rect_or_text_failed" }
+      surface = [pscustomobject]@{
+        width = $surfaceWidth
+        height = $surfaceHeight
+      }
+      settings_menu = [pscustomobject]@{
+        x = $menuX
+        y = $menuY
+        width = $menuWidth
+        height = $menuHeight
+        right = $menuRight
+        bottom = $menuBottom
+        text = $menuText
+      }
+    }
+  }
+
+  if (-not $Actual.bubble -or -not $Actual.bubble.present -or -not $Actual.bubble.rect) {
+    return [pscustomobject]@{
+      enabled = $true
+      passed = $false
+      reason = "missing_model_switch_status_bubble"
+    }
+  }
+  $bubbleX = Read-CuuDomRectNumber $Actual.bubble.rect "x"
+  $bubbleY = Read-CuuDomRectNumber $Actual.bubble.rect "y"
+  $bubbleWidth = Read-CuuDomRectNumber $Actual.bubble.rect "width"
+  $bubbleHeight = Read-CuuDomRectNumber $Actual.bubble.rect "height"
+  $bubbleRight = Read-CuuDomRectNumber $Actual.bubble.rect "right"
+  $bubbleBottom = Read-CuuDomRectNumber $Actual.bubble.rect "bottom"
+  foreach ($value in @($bubbleX, $bubbleY, $bubbleWidth, $bubbleHeight, $bubbleRight, $bubbleBottom)) {
+    if ($null -eq $value) {
+      return [pscustomobject]@{
+        enabled = $true
+        passed = $false
+        reason = "invalid_model_switch_status_bubble_rect"
+      }
+    }
+  }
+  $bubbleText = [string]$Actual.bubble.text
+  $expectedStatus = if ($ExpectedLocale -eq "en-US") { "Cuu look updated." } else { "Cuu 形象已更新。" }
+  $bubblePassed = $bubbleWidth -ge 120 -and
+    $bubbleHeight -ge 28 -and
+    $bubbleX -ge 0 -and
+    $bubbleY -ge 0 -and
+    $bubbleRight -le $surfaceWidth -and
+    $bubbleBottom -le $surfaceHeight -and
+    -not [string]::IsNullOrWhiteSpace($bubbleText) -and
+    $bubbleText.Contains($expectedStatus)
+  return [pscustomobject]@{
+    enabled = $true
+    passed = $bubblePassed
+    reason = if ($bubblePassed) { "model_switch_status_bubble_in_surface" } else { "model_switch_status_bubble_failed" }
+    surface = [pscustomobject]@{
+      width = $surfaceWidth
+      height = $surfaceHeight
+    }
+    bubble = [pscustomobject]@{
+      x = $bubbleX
+      y = $bubbleY
+      width = $bubbleWidth
+      height = $bubbleHeight
+      right = $bubbleRight
+      bottom = $bubbleBottom
+      text = $bubbleText
+    }
+  }
+}
+
 if (-not ([System.Management.Automation.PSTypeName]"WorkHubCuuMotionWin32").Type) {
   Add-Type -TypeDefinition @"
 using System;
@@ -1214,7 +1403,7 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch") {
     return $null
   }
 
@@ -1223,6 +1412,8 @@ function Invoke-CuuInteractionScenarioFrame {
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $isLauncher = $ScenarioName -eq "launcher"
+  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch"
+  $isSettingsMenuModelSwitch = $ScenarioName -eq "settings-menu-model-switch"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
   $nearLeftX = [int]($Window.Rect.Left - 36)
@@ -1273,6 +1464,43 @@ function Invoke-CuuInteractionScenarioFrame {
       }
       window_rect = $Window.Rect
     }
+  }
+
+  if ($isSettingsMenu) {
+    if ($FrameIndex -eq 1) {
+      if (-not $script:cuuCdpWebSocketUrl) {
+        throw "settings menu capture requires WebView2 CDP."
+      }
+      $localX = [int][Math]::Round($Window.Rect.Width / 2)
+      $localY = [int][Math]::Round($Window.Rect.Height / 2)
+      Invoke-CuuCdpMouseClick -WebSocketUrl $script:cuuCdpWebSocketUrl -X $localX -Y $localY -Button "right"
+      Start-Sleep -Milliseconds 420
+      return [pscustomobject]@{
+        frame = $FrameIndex
+        action = "right_click_open_settings_menu"
+        input_driver = "webview2_cdp"
+        webview_point = [pscustomobject]@{
+          x = $localX
+          y = $localY
+        }
+        window_rect = $Window.Rect
+      }
+    }
+    if ($isSettingsMenuModelSwitch -and $FrameIndex -eq 2) {
+      if (-not $script:cuuCdpWebSocketUrl) {
+        throw "settings menu model-switch capture requires WebView2 CDP."
+      }
+      $point = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuCdpWebSocketUrl -Selector "[data-pet-menu-model='cuu-tororo-live2d-cubism2']"
+      Start-Sleep -Milliseconds 820
+      return [pscustomobject]@{
+        frame = $FrameIndex
+        action = "click_white_cat_menu_item"
+        input_driver = "webview2_cdp"
+        webview_point = $point
+        window_rect = $Window.Rect
+      }
+    }
+    return $null
   }
 
   if ($isLookOnly) {
@@ -1592,7 +1820,7 @@ try {
   if ($Scenario -eq "idle-long-run") {
     Set-CuuCursorPosition -X 120 -Y 120
   }
-  if ($Scenario -eq "launcher") {
+  if ($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch") {
     $cuuCdpDebugPort = New-CuuCdpDebugPort
     $remoteDebugArgument = "--remote-debugging-port=$cuuCdpDebugPort"
     if ([string]::IsNullOrWhiteSpace($originalWebView2AdditionalBrowserArguments)) {
@@ -1647,7 +1875,7 @@ try {
     throw "Cuu pet first visual frame did not reach pixel threshold visual>=$firstFrameMinVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
   }
   $pet = $firstFrameGate.Pet
-  if ($Scenario -eq "launcher" -and $cuuCdpDebugPort) {
+  if (($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch") -and $cuuCdpDebugPort) {
     $script:cuuCdpWebSocketUrl = Wait-CuuCdpPetWebSocketUrl -Port $cuuCdpDebugPort -TimeoutSeconds $WaitSeconds
   }
   if ($Scenario -eq "look-only") {
@@ -1761,7 +1989,9 @@ try {
       }
     }
   }
-  $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $ModelPackId -Scenario $Scenario -ExpectedLocale $Locale
+  $expectedModelPackIdForDom = if ($Scenario -eq "settings-menu-model-switch") { "cuu-tororo-live2d-cubism2" } else { $ModelPackId }
+  $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $expectedModelPackIdForDom -Scenario $Scenario -ExpectedLocale $Locale
+  $settingsMenuLayoutGate = New-CuuSettingsMenuLayoutGate -Scenario $Scenario -Actual $actualDomReport -ExpectedLocale $Locale
 
   $motionLivenessReport = New-CuuMotionLivenessReport `
     -ScenarioName $Scenario `
@@ -1775,7 +2005,7 @@ try {
     -MaxRectDriftPx $MaxStableRectDriftPx `
     -IsBusinessScenario $isBusinessScenario
   $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
-  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -1803,12 +2033,14 @@ try {
       $null
     }
     right_edge_clip_gate = $rightEdgeClipGate
+    settings_menu_layout_gate = $settingsMenuLayoutGate
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
+      expected_dom_model_pack_id = $expectedModelPackIdForDom
       pet_locale = $Locale
       pet_qa_scenario = if ($isQaScenario) { $Scenario } else { $null }
       webview2_cdp_enabled = [bool]$script:cuuCdpWebSocketUrl
@@ -1853,11 +2085,13 @@ try {
     $gifLog = Join-Path $OutDir "ffmpeg-gif.log"
     $mp4Log = Join-Path $OutDir "ffmpeg-mp4.log"
     $gifProcess = Start-Process -FilePath $ffmpeg.Source -ArgumentList @("-y", "-framerate", "$fps", "-i", $inputPattern, $gifPath) -Wait -PassThru -NoNewWindow -RedirectStandardError $gifLog -RedirectStandardOutput (Join-Path $OutDir "ffmpeg-gif.out")
-    if ($gifProcess.ExitCode -ne 0 -or -not (Test-Path $gifPath)) {
+    if ($gifProcess.ExitCode -ne 0 -or -not (Test-Path $gifPath) -or (Get-Item -LiteralPath $gifPath).Length -le 0) {
+      Remove-Item -LiteralPath $gifPath -ErrorAction SilentlyContinue
       $gifPath = $null
     }
-    $mp4Process = Start-Process -FilePath $ffmpeg.Source -ArgumentList @("-y", "-framerate", "$fps", "-i", $inputPattern, "-pix_fmt", "yuv420p", $mp4Path) -Wait -PassThru -NoNewWindow -RedirectStandardError $mp4Log -RedirectStandardOutput (Join-Path $OutDir "ffmpeg-mp4.out")
-    if ($mp4Process.ExitCode -ne 0 -or -not (Test-Path $mp4Path)) {
+    $mp4Process = Start-Process -FilePath $ffmpeg.Source -ArgumentList @("-y", "-framerate", "$fps", "-i", $inputPattern, "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p", $mp4Path) -Wait -PassThru -NoNewWindow -RedirectStandardError $mp4Log -RedirectStandardOutput (Join-Path $OutDir "ffmpeg-mp4.out")
+    if ($mp4Process.ExitCode -ne 0 -or -not (Test-Path $mp4Path) -or (Get-Item -LiteralPath $mp4Path).Length -le 0) {
+      Remove-Item -LiteralPath $mp4Path -ErrorAction SilentlyContinue
       $mp4Path = $null
     }
   }
@@ -1872,6 +2106,7 @@ try {
     motion_gate_passed = $motionGatePassed
     actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
     actual_dom_matches_expected = $actualDomMatchesExpected
+    settings_menu_layout_gate = $settingsMenuLayoutGate
     reload_restore_seed = if ($reloadRestoreSeed) {
       $seedRun = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "run"
       [pscustomobject]@{
@@ -1892,6 +2127,7 @@ try {
       pet_pass_through = [bool]$PetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
+      expected_dom_model_pack_id = $expectedModelPackIdForDom
       pet_locale = $Locale
       pet_qa_scenario = if ($isQaScenario) { $Scenario } else { $null }
       webview2_cdp_enabled = [bool]$script:cuuCdpWebSocketUrl

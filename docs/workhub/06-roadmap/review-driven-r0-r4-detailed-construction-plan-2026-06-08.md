@@ -101,6 +101,8 @@ R0 退出门：
 - `functional-requirements.md` 与 `phasing-p0-p5.md` 不再用 `mid` 作为权威枚举。
 - 旧橘猫截图只在“失败样例 / stale”上下文出现；当前 shared PNG 不再含橘猫。
 
+2026-06-10 复核：R0 文档治理和概念资产基本完成，但不能宣称完美闭环。主窗无 Cuu 的 Web/desktop 真实截图复核仍未完成，后续 R3.18/R4 必须补 `/settings` 与主工作台截图证据。
+
 ## 4. R1 真实纵切
 
 目标：一条真实需求端到端跑通，并且重启后可查。
@@ -113,6 +115,8 @@ R0 退出门：
 | Manifest 接 Proposal | 成功 `AgentLoopResult.manifest` 会调用 `ProposalService.createFromManifest` 并发 `proposal.opened` | 仍需真实 DB route 端到端验证 |
 | Proposal DB-backed | 默认 `ProposalService` 已写 `branches/proposals/reviews`；merge 已写 `work_items/main_branch_id`、merge snapshot、persistent audit、accepted deliverable ledger，并对 AgentRun-backed delivery 写入最小 `ProjectDriveItem/Version` 正式文件版本；R1.8-R1.44 已连续补齐正式交付物还原、冲突卡、merge attempts/proposals、replay timeline、AI fusion、text/spec 正文直写、真实三方文本上下文、patch preview、无重叠 diff3、重叠 hunk metadata、字段/子记录写回、字段级审计、富 patch viewer、重叠 hunk review、子记录逐项编辑、多冲突折叠区、真实 route 视觉 QA、任务子记录目标 plan 选择、`text_hunk_overrides` 后端逐段 materialize、text hunk merge audit 与批量 keep/accept `bulk_action` 审计、Replay hunk/bulk decision 用户可读回放、Proposal route line editor | 仍未接完整 Drive 富预览/历史/redo UI |
 | P-COST DB-backed | `CostLedgerStore` 与 `BudgetPolicyStore` 已默认 DB-backed；`budget_policies` 保存 policy override；`PUT /api/cost/policies/:scope/:id` 写 `budget_policy.updated` 审计；R1.18 已把真实 PG policy override 纳入 smoke | 仍未发出 `usage.recorded`、`budget.warning`、`budget.exhausted` 事件；Cuu budget bubble 仍属后续 |
+
+2026-06-10 复核：R1 只能说真实纵切和最小 PG-backed Proposal/Replay 链路已落，不能宣称 R1 全量完成。完整 approval policy routing、完整 Drive 产品化、完整权限化审批中心仍是后续缺口。
 
 ### R1 必做顺序
 
@@ -1815,6 +1819,8 @@ R2 验收：
 - 非 owner 订阅他人 run/workitem/proposal 被拒。R2.4 已固定 topic-access 默认 fail-closed；R2.5 已接 WorkItem/Proposal 默认 resolver 并在 PG+Redis smoke 覆盖 WorkItem owner/stranger。
 - release gate 可复跑：`pnpm verify` 会执行 `pnpm qa:r2-release-gate`，检查文档数、R2.1-R2.7 文档、runtime 路径、CI smoke 接线、旧口径、reference discipline、diff check 和 secret-like diff count。
 
+2026-06-10 复核：R2 可以按“多 worker / PG claim / Redis bus / release gate 地基首版”宣称完成，并作为 R3 继续施工前置；不能把它扩大成所有后端、权限、部署和 dedicated worker daemon 都已经终局完成。
+
 ### R2.1 AgentRun claim / lease（2026-06-10）
 
 本切片关闭 R2 的第一处硬缺口：`AgentRunQueue` 不再只能靠进程内 Map/Set 抢任务。只要 `persistence` 暴露 claim 方法，`queue.run(id)` 与 `queue.runNext()` 都必须先取得 PostgreSQL claim。
@@ -2596,13 +2602,22 @@ Bug / 数据流审查：
 - PRD/概念图一致：Cuu 仍只在独立 `pet` window；主窗无 Cuu 本体；Rust 只注入 QA preference，不拥有业务状态。
 - bug 审查：未发现按钮、chip、evidence refs、英文 offline 文案或完成卡超框；不把 fixture capture 夸大成真实服务闭环。
 
-### R3.17 下一刀：settings matrix + pass-through 恢复
+### R3.17 已落：settings matrix + 右键菜单边界
 
-1. 保留 R3.12/R3.13.1/R3.13.2/R3.15/R3.16 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
-2. 补右键菜单真实截图 / DOM dump：zh-CN / en-US 各一份，确认黑/白模型、语言切换、hide-on-hover、打开设置、隐藏 Cuu 文本不溢出且不遮挡 Cuu 主体。
-3. 补 settings matrix：default / white-cat / scale 75 / scale 150 / opacity 60 / pass-through / hide-on-hover / combo。
-4. 补 pass-through recovery：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100` 与右键菜单可用。
-5. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
+1. 已阅读 `pet-right-click-settings-menu-p1-4.md`、`pet-settings-recovery-p1-5.md`、`desktop-pet-tauri.md`、`cuu-r3-agent-entry.md` 与 Cuu/TS-first 概念图，确认本轮只验证现有设置/菜单能力，不新增模型、改色或动效。
+2. 已补 settings matrix：`default` / `white-cat` / `scale-75` / `scale-150` / `opacity-60` / `pass-through` / `hide-on-hover` / `combo-125-80-pass-hide` 八组合，证据在 `../05-clients/assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/`。
+3. 已补右键菜单真实截图 / DOM dump：zh-CN / en-US 各一份，证据在 `../05-clients/assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/menu-zh-boundary-pass3/` 与 `menu-en-boundary-pass3/`。
+4. 已补黑猫切白猫真实 Tauri contact sheet：`menu-model-switch-boundary-pass3/`，最终 DOM 为 `cuu-tororo-live2d-cubism2` / `white_cat`。
+5. 已新增 `settings_menu_layout_gate`：右键菜单场景自动校验菜单 rect/text 在 260px surface 内且无 pass-through 入口；模型切换场景自动校验短提示 bubble 在窗口内。
+6. 已修 bug：settings scale 下 Live2D canvas 改为比例 framing，避免首帧裁切；模型切换后的 `Cuu 形象已更新。` 短提示改为 compact status bubble，修复竖向文字残片。
+7. 限制：`pass-through` 与 combo case 证明设置可进入真实 `pet` window；开启 pass-through 后通过主窗或托盘恢复的端到端点击录屏仍未完成。
+
+### R3.18 下一刀：pass-through 真恢复 + 主窗 settings 截图
+
+1. 保留 R3.12-R3.17 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
+2. 补 pass-through recovery：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100` 与右键菜单可用。
+3. 补主窗 `/settings` zh-CN / en-US 真实截图，确认严肃设置页没有 Cuu 本体、没有模型预览、文本不超框。
+4. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 

@@ -118,6 +118,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble{left:auto;right:calc(8px * var(--wh-pet-scale,1));top:auto;bottom:calc(224px * var(--wh-pet-scale,1));width:calc(150px * var(--wh-pet-scale,1));max-height:calc(86px * var(--wh-pet-scale,1));overflow:hidden;gap:5px;padding:7px 8px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-title{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-bubble>*{min-width:0;max-width:100%}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
@@ -149,13 +150,14 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-action[data-tone=primary],.wh-pet-reason{background:#355cff;border-color:#355cff;color:#fff}",
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
   ".wh-pet-status{min-width:0;max-width:100%;width:100%;margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
-  ".wh-pet-menu{position:absolute;right:10px;bottom:72px;z-index:8;box-sizing:border-box;width:184px;display:grid;gap:8px;border:1px solid rgba(38,49,70,.16);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 44px rgba(30,39,58,.2);padding:10px;pointer-events:auto;backdrop-filter:blur(10px)}",
+  ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(38,49,70,.16);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 44px rgba(30,39,58,.2);padding:10px;pointer-events:auto;backdrop-filter:blur(10px);overflow:hidden}",
   ".wh-pet-menu[hidden]{display:none}",
   ".wh-pet-menu-title{font-size:12px;line-height:1.2;font-weight:900;color:#222b38}",
   ".wh-pet-menu-group{display:grid;gap:5px;min-width:0}",
   ".wh-pet-menu-label{font-size:10px;line-height:1.1;font-weight:900;color:#667085;text-transform:uppercase}",
-  ".wh-pet-menu-row{display:flex;gap:5px;flex-wrap:wrap}",
-  ".wh-pet-menu button{border:1px solid rgba(38,49,70,.14);border-radius:8px;background:#fff;color:#222b38;padding:6px 8px;font:850 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;min-height:28px}",
+  ".wh-pet-menu-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;min-width:0}",
+  ".wh-pet-menu button{min-width:0;max-width:100%;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:#fff;color:#222b38;padding:6px 8px;font:850 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;min-height:28px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-menu-row button{width:auto;min-width:0;flex:1 1 0;padding-left:6px;padding-right:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-menu button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:#eef4ff;color:#2444bf;box-shadow:inset 3px 0 0 #355cff}",
   ".wh-pet-menu button[data-pet-menu-danger=true]{background:#fff4f3;border-color:rgba(238,107,95,.3);color:#b42318}",
   ".wh-pet-menu-action{width:100%;text-align:left}"
@@ -266,7 +268,8 @@ export function renderDesktopPetSurface(input: {
   locale?: CuuLocaleOptions["locale"];
 } = {}): DesktopPetSurfaceRender {
   const locale = input.locale ?? desktopPetLocale();
-  const compactCard = Boolean(input.card && input.window_mode_error);
+  const compactStatusOnly = !input.card && Boolean(input.status_text);
+  const compactCard = Boolean(input.card && input.window_mode_error) || compactStatusOnly;
   const windowMode = compactCard
     ? "body_only"
     : desktopPetWindowModeForCard(input.card, { requested_model_pack_id: input.requested_model_pack_id });
@@ -455,6 +458,7 @@ function setPetSettingsMenuOpen(root: HTMLElement, open: boolean) {
   }
   menu.hidden = !open;
   surface.dataset.petMenuOpen = open ? "true" : "false";
+  writeDesktopPetQaDomSnapshot(root, "patch");
 }
 
 function desktopTrayActionId(payload: unknown) {
@@ -1302,7 +1306,7 @@ function renderDesktopPetBubble(input: {
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
-    ${input.status_text && !compact ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
+    ${input.status_text && (!compact || !card) ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
     ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
     ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
     ${actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}

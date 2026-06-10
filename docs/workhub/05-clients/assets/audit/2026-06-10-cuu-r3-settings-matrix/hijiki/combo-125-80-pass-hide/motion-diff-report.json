@@ -1,0 +1,344 @@
+﻿{
+    "passed":  true,
+    "scenario":  "idle",
+    "business_scenario":  false,
+    "sse_disabled_for_scenario":  true,
+    "cuu_qa_hide_on_hover":  true,
+    "expected_behavior_contract":  {
+                                       "data_cuu_behavior_state":  "idle",
+                                       "data_cuu_behavior_phase":  "idle_random",
+                                       "data_cuu_live2d_motion":  null,
+                                       "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                       "data_cuu_behavior_expected_window_mode":  "body_only",
+                                       "data_cuu_behavior_expected_bubble_mode":  "none",
+                                       "data_pet_window_mode":  "body_only"
+                                   },
+    "motion_gate_passed":  true,
+    "actual_dom_report_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\cuu-tauri-dom-report.json",
+    "actual_dom_matches_expected":  true,
+    "actual_dom_report":  {
+                              "bubble":  {
+                                             "data":  {
+
+                                                      },
+                                             "present":  false,
+                                             "selector":  "[data-pet-bubble]"
+                                         },
+                              "captured_at_iso":  "2026-06-10T11:29:30.022Z",
+                              "contract":  "workhub.cuu.tauri.actual-dom-report",
+                              "live2d":  {
+                                             "data":  {
+                                                          "data_cuu_behavior_coverage":  "partial",
+                                                          "data_cuu_behavior_expected_bubble_mode":  "none",
+                                                          "data_cuu_behavior_expected_window_mode":  "body_only",
+                                                          "data_cuu_behavior_manifest_version":  "1",
+                                                          "data_cuu_behavior_phase":  "idle_random",
+                                                          "data_cuu_behavior_priority":  "0",
+                                                          "data_cuu_behavior_state":  "idle",
+                                                          "data_cuu_live2d_appearance":  "black_cat",
+                                                          "data_cuu_live2d_frame_url":  "./cuu/live2d/hijiki/cuu-hijiki.html",
+                                                          "data_cuu_live2d_framing":  "transparent_full_body",
+                                                          "data_cuu_live2d_interruptible":  "true",
+                                                          "data_cuu_live2d_layer_count":  "native_moc",
+                                                          "data_cuu_live2d_loop":  "false",
+                                                          "data_cuu_live2d_model":  "hijiki",
+                                                          "data_cuu_live2d_model_url":  "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+                                                          "data_cuu_live2d_motion":  "idle_blink",
+                                                          "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                                          "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                          "data_cuu_live2d_state":  "idle_blink",
+                                                          "data_cuu_live2d_status":  "approved_cat_option",
+                                                          "data_cuu_model_pack":  "cuu-hijiki-live2d-cubism2",
+                                                          "data_cuu_model_pack_selection_reason":  "requested_default_ready"
+                                                      },
+                                             "present":  true,
+                                             "rect":  {
+                                                          "bottom":  420,
+                                                          "height":  400,
+                                                          "right":  314,
+                                                          "width":  288,
+                                                          "x":  26,
+                                                          "y":  20
+                                                      },
+                                             "selector":  ".wh-cuu-cat-live2d",
+                                             "text":  "Cuu"
+                                         },
+                              "primary_action":  {
+                                                     "data":  {
+
+                                                              },
+                                                     "present":  false,
+                                                     "selector":  "[data-cuu-action-id]"
+                                                 },
+                              "primary_chip":  {
+                                                   "data":  {
+
+                                                            },
+                                                   "present":  false,
+                                                   "selector":  "[data-chip-id],[data-pet-option-id]"
+                                               },
+                              "reason":  "patch",
+                              "surface":  {
+                                              "data":  {
+                                                           "data_cuu_behavior_coverage":  "partial",
+                                                           "data_cuu_behavior_expected_bubble_mode":  "none",
+                                                           "data_cuu_behavior_expected_window_mode":  "body_only",
+                                                           "data_cuu_behavior_manifest_version":  "1",
+                                                           "data_cuu_behavior_phase":  "idle_random",
+                                                           "data_cuu_behavior_priority":  "0",
+                                                           "data_cuu_behavior_state":  "idle",
+                                                           "data_cuu_idle_action":  "idle_blink",
+                                                           "data_cuu_live2d_appearance":  "black_cat",
+                                                           "data_cuu_live2d_frame_url":  "./cuu/live2d/hijiki/cuu-hijiki.html",
+                                                           "data_cuu_live2d_layer_count":  "native_moc",
+                                                           "data_cuu_live2d_model":  "hijiki",
+                                                           "data_cuu_live2d_model_url":  "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+                                                           "data_cuu_live2d_motion":  "idle_blink",
+                                                           "data_cuu_live2d_renderer_state":  "mtn/00_idle.mtn",
+                                                           "data_cuu_live2d_runtime":  "live2d_cubism2_cat",
+                                                           "data_cuu_live2d_status":  "approved_cat_option",
+                                                           "data_cuu_model_pack":  "cuu-hijiki-live2d-cubism2",
+                                                           "data_cuu_model_pack_selection_reason":  "requested_default_ready",
+                                                           "data_cuu_state":  "idle",
+                                                           "data_cuu_visual_mode":  "live2d_cat",
+                                                           "data_pet_card_layout":  "body",
+                                                           "data_pet_cursor_near":  "false",
+                                                           "data_pet_dragging":  "false",
+                                                           "data_pet_hide_on_hover":  "true",
+                                                           "data_pet_hover_avoidance":  "none",
+                                                           "data_pet_hover_hidden":  "false",
+                                                           "data_pet_hover_hide_mode":  "soft",
+                                                           "data_pet_hovered":  "false",
+                                                           "data_pet_look_x":  "0",
+                                                           "data_pet_look_y":  "0",
+                                                           "data_pet_opacity_percent":  "80",
+                                                           "data_pet_pass_through":  "true",
+                                                           "data_pet_pointer_smoothing_alpha":  "0.58",
+                                                           "data_pet_scale_percent":  "125",
+                                                           "data_pet_window_height":  "425",
+                                                           "data_pet_window_mode":  "body_only",
+                                                           "data_pet_window_width":  "325",
+                                                           "data_wh_surface":  "pet"
+                                                       },
+                                              "present":  true,
+                                              "rect":  {
+                                                           "bottom":  425,
+                                                           "height":  425,
+                                                           "right":  325,
+                                                           "width":  325,
+                                                           "x":  0,
+                                                           "y":  0
+                                                       },
+                                              "selector":  "[data-wh-surface=pet]",
+                                              "text":  "Cuu Cuu 设置 形象 黑猫 白猫 语言 中文 EN 悬停避让 打开设置 隐藏 Cuu"
+                                          },
+                              "version":  1
+                          },
+    "reload_restore_seed":  null,
+    "right_edge_clip_gate":  {
+                                 "enabled":  false,
+                                 "passed":  true,
+                                 "max_right_edge_light_pixels":  0,
+                                 "max_allowed_right_edge_light_pixels":  2,
+                                 "clipped_frames":  [
+
+                                                    ]
+                             },
+    "cuu_qa_preferences":  {
+                               "pet_scale_percent":  125,
+                               "pet_opacity_percent":  80,
+                               "pet_pass_through":  true,
+                               "pet_hide_on_hover":  true,
+                               "pet_model_pack_id":  "cuu-hijiki-live2d-cubism2",
+                               "pet_locale":  "zh-CN",
+                               "pet_qa_scenario":  null,
+                               "webview2_cdp_enabled":  false
+                           },
+    "scenario_events":  [
+
+                        ],
+    "process_id":  12028,
+    "frame_count":  4,
+    "interval_ms":  240,
+    "frames_dir":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\frames",
+    "contact_sheet":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\cuu-motion-contact-sheet.png",
+    "first_frame_gate":  {
+                             "passed":  true,
+                             "attempts":  7,
+                             "probe_path":  "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-10-cuu-r3-settings-matrix\\hijiki\\combo-125-80-pass-hide\\first-frame-probe.png",
+                             "min_visual_pixels":  1600,
+                             "business_card_gate":  false,
+                             "pixel_report":  {
+                                                  "samples":  138125,
+                                                  "foreground_pixels":  32498,
+                                                  "light_pixels":  0,
+                                                  "dark_pixels":  137523,
+                                                  "visual_pixels":  32498,
+                                                  "sample_step":  1,
+                                                  "width":  325,
+                                                  "height":  425
+                                              }
+                         },
+    "max_vs_first_mean_abs_delta":  1.577,
+    "max_vs_previous_mean_abs_delta":  1.088,
+    "max_vs_first_changed_pixels_gt8":  1607,
+    "max_vs_previous_changed_pixels_gt8":  1128,
+    "frame_pixel_reports":  [
+                                {
+                                    "frame":  0,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  32483,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  137551,
+                                                         "visual_pixels":  32483,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  1,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  32128,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  137603,
+                                                         "visual_pixels":  32128,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  2,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  32148,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  137631,
+                                                         "visual_pixels":  32148,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                },
+                                {
+                                    "frame":  3,
+                                    "pixel_report":  {
+                                                         "samples":  138125,
+                                                         "foreground_pixels":  32026,
+                                                         "light_pixels":  0,
+                                                         "dark_pixels":  137620,
+                                                         "visual_pixels":  32026,
+                                                         "sample_step":  1,
+                                                         "width":  325,
+                                                         "height":  425
+                                                     }
+                                }
+                            ],
+    "motion_liveness":  {
+                            "enabled":  false,
+                            "passed":  true,
+                            "quality":  "smoke",
+                            "min_formal_frame_count":  32,
+                            "changed_pixels_gt8_threshold":  60,
+                            "changed_frames_gt8_count":  3,
+                            "changed_frames":  [
+                                                   1,
+                                                   2,
+                                                   3
+                                               ],
+                            "min_changed_frames":  2,
+                            "requires_stable_rect":  true,
+                            "max_rect_drift_px":  2,
+                            "rect_drift_frames":  null
+                        },
+    "long_run":  null,
+    "frames":  [
+                   {
+                       "frame":  0,
+                       "rect":  {
+                                    "Left":  1699,
+                                    "Top":  655,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  0,
+                                        "changed_pixels_gt8":  0,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0,
+                                           "changed_pixels_gt8":  0,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  1,
+                       "rect":  {
+                                    "Left":  1699,
+                                    "Top":  655,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.088,
+                                        "changed_pixels_gt8":  1128,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.088,
+                                           "changed_pixels_gt8":  1128,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  2,
+                       "rect":  {
+                                    "Left":  1699,
+                                    "Top":  655,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.577,
+                                        "changed_pixels_gt8":  1607,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  0.876,
+                                           "changed_pixels_gt8":  917,
+                                           "samples":  34719
+                                       }
+                   },
+                   {
+                       "frame":  3,
+                       "rect":  {
+                                    "Left":  1699,
+                                    "Top":  655,
+                                    "Right":  2024,
+                                    "Bottom":  1080,
+                                    "Width":  325,
+                                    "Height":  425
+                                },
+                       "vs_first":  {
+                                        "mean_abs_delta":  1.013,
+                                        "changed_pixels_gt8":  1005,
+                                        "samples":  34719
+                                    },
+                       "vs_previous":  {
+                                           "mean_abs_delta":  1.045,
+                                           "changed_pixels_gt8":  1105,
+                                           "samples":  34719
+                                       }
+                   }
+               ]
+}

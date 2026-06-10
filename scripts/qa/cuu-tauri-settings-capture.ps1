@@ -99,8 +99,104 @@ function Remove-SettingsCaptureTransientFiles {
     throw "Refusing to clean transient files outside repo: $resolvedRoot"
   }
 
-  Get-ChildItem -Path $resolvedRoot -Recurse -File -Include "ffmpeg-*.log", "ffmpeg-*.out", "*.mp4" |
+  Get-ChildItem -Path $resolvedRoot -Recurse -File -Include "ffmpeg-*.log", "ffmpeg-*.out", "tauri-stdout.log", "tauri-stderr.log" |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+  Get-ChildItem -Path $resolvedRoot -Recurse -File -Include "*.gif", "*.mp4" |
+    Where-Object { $_.Length -le 0 } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+  Get-ChildItem -Path $resolvedRoot -Recurse -Directory -Filter "frames" |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+}
+
+function Test-SettingsFirstFrameBounds {
+  param(
+    [string]$Path,
+    [int]$MinTopMarginPx = 8,
+    [int]$MinBottomMarginPx = 2,
+    [int]$MinSideMarginPx = 4
+  )
+
+  $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $background = $bitmap.GetPixel(0, 0)
+    $minX = $bitmap.Width
+    $minY = $bitmap.Height
+    $maxX = -1
+    $maxY = -1
+    $foregroundPixels = 0
+
+    for ($y = 0; $y -lt $bitmap.Height; $y += 1) {
+      for ($x = 0; $x -lt $bitmap.Width; $x += 1) {
+        $color = $bitmap.GetPixel($x, $y)
+        $distanceFromBackground = [Math]::Abs($color.R - $background.R) +
+          [Math]::Abs($color.G - $background.G) +
+          [Math]::Abs($color.B - $background.B)
+        if ($distanceFromBackground -ge 30) {
+          $foregroundPixels += 1
+          if ($x -lt $minX) {
+            $minX = $x
+          }
+          if ($y -lt $minY) {
+            $minY = $y
+          }
+          if ($x -gt $maxX) {
+            $maxX = $x
+          }
+          if ($y -gt $maxY) {
+            $maxY = $y
+          }
+        }
+      }
+    }
+
+    if ($foregroundPixels -eq 0) {
+      return [pscustomobject]@{
+        passed = $false
+        reason = "no_foreground_pixels"
+        width = $bitmap.Width
+        height = $bitmap.Height
+        foreground_pixels = 0
+        min_top_margin_px = $MinTopMarginPx
+        min_bottom_margin_px = $MinBottomMarginPx
+        min_side_margin_px = $MinSideMarginPx
+      }
+    }
+
+    $leftMargin = $minX
+    $topMargin = $minY
+    $rightMargin = $bitmap.Width - 1 - $maxX
+    $bottomMargin = $bitmap.Height - 1 - $maxY
+    $passed = $topMargin -ge $MinTopMarginPx -and
+      $bottomMargin -ge $MinBottomMarginPx -and
+      $leftMargin -ge $MinSideMarginPx -and
+      $rightMargin -ge $MinSideMarginPx
+
+    [pscustomobject]@{
+      passed = $passed
+      width = $bitmap.Width
+      height = $bitmap.Height
+      foreground_pixels = $foregroundPixels
+      bounds = [pscustomobject]@{
+        left = $minX
+        top = $minY
+        right = $maxX
+        bottom = $maxY
+        width = $maxX - $minX + 1
+        height = $maxY - $minY + 1
+      }
+      margins = [pscustomobject]@{
+        left = $leftMargin
+        top = $topMargin
+        right = $rightMargin
+        bottom = $bottomMargin
+      }
+      min_top_margin_px = $MinTopMarginPx
+      min_bottom_margin_px = $MinBottomMarginPx
+      min_side_margin_px = $MinSideMarginPx
+    }
+  } finally {
+    $bitmap.Dispose()
+  }
 }
 
 New-Item -ItemType Directory -Force -Path $resolvedOutDir | Out-Null
@@ -151,7 +247,28 @@ foreach ($case in $cases) {
   $raw = & $motionScript @params
   $capture = ($raw -join "`n") | ConvertFrom-Json
   $motionReport = Get-Content -Raw -Path $capture.diff_report | ConvertFrom-Json
-  $firstFrame = Join-Path $capture.frames_dir "frame-000.png"
+  if (-not $capture.passed) {
+    throw "Settings capture case '$($case.id)' failed motion capture."
+  }
+  if (-not $motionReport.passed) {
+    throw "Settings capture case '$($case.id)' failed motion report gate."
+  }
+  if (-not $motionReport.motion_gate_passed) {
+    throw "Settings capture case '$($case.id)' failed motion liveness gate."
+  }
+  if ($motionReport.right_edge_clip_gate -and -not $motionReport.right_edge_clip_gate.passed) {
+    throw "Settings capture case '$($case.id)' failed right-edge clip gate."
+  }
+  $firstFrameProbe = Join-Path $caseOutDir "first-frame-probe.png"
+  $firstFrame = if (Test-Path -LiteralPath $firstFrameProbe) {
+    $firstFrameProbe
+  } else {
+    Join-Path $capture.frames_dir "frame-000.png"
+  }
+  $firstFrameBoundsGate = Test-SettingsFirstFrameBounds -Path $firstFrame
+  if (-not $firstFrameBoundsGate.passed) {
+    throw "Settings capture case '$($case.id)' failed first-frame bounds gate: $($firstFrameBoundsGate | ConvertTo-Json -Compress -Depth 6)"
+  }
   $caseReports += [pscustomobject]@{
     id = $case.id
     settings = [pscustomobject]@{
@@ -165,9 +282,13 @@ foreach ($case in $cases) {
     min_first_frame_visual_pixels = $case.minVisual
     first_frame = $firstFrame
     contact_sheet = $capture.contact_sheet
+    gif = $capture.gif
+    mp4 = $capture.mp4
     diff_report = $capture.diff_report
     first_rect = $motionReport.frames[0].rect
     first_frame_gate = $motionReport.first_frame_gate
+    first_frame_bounds_gate = $firstFrameBoundsGate
+    right_edge_clip_gate = $motionReport.right_edge_clip_gate
     scenario_events = $motionReport.scenario_events
   }
 }
