@@ -2510,11 +2510,44 @@ Bug / 数据流审查：
 - 数据流仍为 TS-first：`pet` window -> typed API client -> session/workitem/agent-run routes -> forced API fault -> `cardFromDesktopCuuRuntimeError(error,{run})` -> permission/offline card。Rust/Tauri 不拥有业务 API 或 Agent 状态。
 - PRD/概念图一致：option-first、不在主窗渲染 Cuu、权限/离线态提供轻卡和 replay/open task 入口。
 
-### R3.13.3 下一刀：刷新恢复与 chip metadata
+### R3.13.3 已落：pet window session/run 刷新恢复
 
-1. 继续阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md` 与三张 Cuu 概念图。
-2. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 pet window 后恢复当前 run card 或 terminal completion/error card。
-3. 将 launcher chip metadata 结构化进入 WorkItem spec：`delivery_kind` / `risk_hint` / `default_acceptance`，并在 smoke 中断言。
+本切片补 `pet` webview boot 层恢复，不让刷新或重启 pet window 后丢掉当前 Cuu 上下文。它没有新增 Cuu 外观，没有让 Rust 调业务 API，也没有改变黑/白 Live2D 模型白名单。
+
+改动：
+
+- `apps/desktop-webview/src/pet-surface.ts`
+  - 新增 `desktopPetRunRestoreStorageKey="workhub.cuu.currentRun.v1"`。
+  - `setCard()` 持久化当前 `payload_ref.entity_type="session"` 或 `agent_run`。
+  - session question 保存 card snapshot；刷新后恢复同一 option-first 问题卡，下一步点击仍走 typed `submit_option`。
+  - AgentRun 只保存 run id；刷新后调用 `client.getAgentRun(run_id)`，用 `cardFromAgentRunLive()` 重建 active/terminal card。
+  - 恢复到 `queued/running` 时重新进入 `subscribeDesktopCuuAgentRunStream()`；恢复到 terminal 时保留 replay/open task，不重跑 launcher。
+  - QA scenario 跳过本地恢复，避免污染 R3.12/R3.13.1/R3.13.2 capture。
+- `packages/cuu/src/i18n.ts`
+  - 新增 `cuuStart.restored` 中英双语文案。
+- `apps/desktop-webview/src/pet-surface.test.ts`
+  - 覆盖 session question restore、active AgentRun restore、terminal AgentRun restore。
+- `apps/desktop-webview/src/main.ts`
+  - 导出恢复 key，供后续 QA harness 复用。
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview test`：75/75 通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/cuu test`：33/33 通过。
+
+复核：
+
+- 数据流：pet card -> versioned local restore ref -> boot -> session snapshot 或 `GET /api/agent-runs/:id` -> Cuu card -> active stream resubscribe。
+- PRD/概念图一致：符合 TS-first runtime 和 endpoint/page/Cuu 独立映射；Cuu 仍只在独立 `pet` window，主窗不出现 Cuu 本体。
+- bug 审查：localStorage 读取失败、JSON 损坏、异步恢复期间用户产生新 current card 均 fail closed；恢复错误卡不覆盖旧 restore ref，允许下次重试。
+- UI 审查：本轮不改 card 布局；R3.13.2 的 `right_edge_clip_gate` 仍作为真实 capture 的文本/边缘裁切回归门。
+
+### R3.14 下一刀：chip metadata + 真实 reload capture
+
+1. 继续阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md` 与 Cuu/TS-first 概念图。
+2. 将 launcher chip metadata 结构化进入 WorkItem spec：`delivery_kind` / `risk_hint` / `default_acceptance`，并在 route-stack/dev-server smoke 中断言。
+3. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
 4. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream、run-failure、401/403/offline 的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
 5. 验收命令：desktop-webview typecheck/test、API typecheck/test、R3 run-stream + run-failure + error-fault smoke、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 

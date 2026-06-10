@@ -17,6 +17,7 @@ import {
   desktopPetInitialIdleAction,
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
+  desktopPetRunRestoreStorageKey,
   renderDesktopPetSurface,
   resolveDesktopSurface,
   scheduleDesktopPetFirstPaint,
@@ -348,6 +349,30 @@ function cloneHarnessPayload<T>(payload: T): T {
   return JSON.parse(JSON.stringify(payload)) as T;
 }
 
+function createFakeLocalStorage(initial: Record<string, string> = {}): Storage {
+  const values = new Map<string, string>(Object.entries(initial));
+  return {
+    get length() {
+      return values.size;
+    },
+    clear() {
+      values.clear();
+    },
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    key(index: number) {
+      return [...values.keys()][index] ?? null;
+    },
+    removeItem(key: string) {
+      values.delete(key);
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    }
+  };
+}
+
 function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarnessRun()): DesktopPetSurfaceClient {
   return {
     async createSession(payload: unknown): Promise<SessionVM> {
@@ -386,7 +411,8 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
       calls.push({ step: "startAgentRun", workItemId, payload: cloneHarnessPayload(payload) });
       return run;
     },
-    async getAgentRun(): Promise<AgentRunLiveVM> {
+    async getAgentRun(runId?: string): Promise<AgentRunLiveVM> {
+      calls.push({ step: "getAgentRun", runId });
       return run;
     },
     streamUrl(href: string) {
@@ -543,6 +569,25 @@ function dataAttributeToDatasetKey(attributeName: string) {
 
 function fakePetTarget(attributes: Record<string, string>, tagName = "button") {
   return new FakePetDomElement(tagName, attributes);
+}
+
+async function completePetBootAgentRunFlow(root: FakePetDomRoot) {
+  await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+  await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+  await root.click(fakePetTarget({
+    href: "/api/cuu/start-agent",
+    "data-cuu-action-id": "start_agent_from_cuu"
+  }, "a"));
+  await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+  await root.click(fakePetTarget({
+    href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+    "data-cuu-action-id": "submit_option"
+  }, "a"));
+  await root.click(fakePetTarget({ "data-pet-option-id": "create-workitem" }));
+  await root.click(fakePetTarget({
+    href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+    "data-cuu-action-id": "submit_option"
+  }, "a"));
 }
 
 async function withFakePetDom(callback: (root: FakePetDomRoot) => Promise<void>) {
@@ -1006,6 +1051,202 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
       payload: { title: "Cuu 桌面入口任务" }
     }
   ]);
+});
+
+test("pet surface persists and restores the current session question card", async () => {
+  const storage = createFakeLocalStorage();
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const calls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(calls)
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+        await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
+        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+
+    const persisted = storage.getItem(desktopPetRunRestoreStorageKey);
+    assert.ok(persisted);
+    const restoreState = JSON.parse(persisted);
+    assert.equal(restoreState.entity_type, "session");
+    assert.equal(restoreState.entity_id, "10000000-0000-4000-8000-000000000201");
+
+    await withFakePetDom(async (root) => {
+      const restoreCalls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(restoreCalls)
+      });
+      try {
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
+        assert.match(root.innerHTML, /data-pet-payload-ref-entity-type="session"/u);
+        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
+        assert.match(root.innerHTML, /Cuu 已恢复：这件事先按哪种交付方式处理？/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.deepEqual(restoreCalls, []);
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
+});
+
+test("pet surface persists and restores the active agent run card after refresh", async () => {
+  const run = petHarnessRun();
+  const storage = createFakeLocalStorage();
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const firstCalls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(firstCalls, run)
+      });
+      try {
+        await completePetBootAgentRunFlow(root);
+        assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+
+    const persisted = storage.getItem(desktopPetRunRestoreStorageKey);
+    assert.ok(persisted);
+    assert.equal(JSON.parse(persisted).entity_type, "agent_run");
+    assert.equal(JSON.parse(persisted).entity_id, run.run_id);
+
+    await withFakePetDom(async (root) => {
+      const restoreCalls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(restoreCalls, run)
+      });
+      try {
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-kind="trace"/u);
+        assert.match(root.innerHTML, /data-cuu-state="thinking"/u);
+        assert.match(root.innerHTML, /Cuu 已恢复：Cuu 桌面入口任务/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.deepEqual(restoreCalls, [{ step: "getAgentRun", runId: run.run_id }]);
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
+});
+
+test("pet surface restores a terminal agent run card without rerunning the launcher flow", async () => {
+  const terminalRun: AgentRunLiveVM = {
+    ...petHarnessRun(),
+    status: "succeeded",
+    run: {
+      ...petHarnessRun().run,
+      status: "succeeded"
+    },
+    trace: [
+      ...petHarnessRun().trace,
+      {
+        id: "10000000-0000-4000-8000-000000000302",
+        agent_run_id: "10000000-0000-4000-8000-000000000301",
+        step_no: 2,
+        phase: "final",
+        input_json: {},
+        output_excerpt: "已完成交付物。",
+        created_at: "2026-06-10T01:01:00.000Z"
+      }
+    ]
+  };
+  const storage = createFakeLocalStorage({
+    [desktopPetRunRestoreStorageKey]: JSON.stringify({
+      version: 1,
+      entity_type: "agent_run",
+      entity_id: terminalRun.run_id,
+      href: `/agent-runs/${terminalRun.run_id}/replay`,
+      updated_at_ms: Date.now()
+    })
+  });
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const restoreCalls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(restoreCalls, terminalRun)
+      });
+      try {
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-kind="completion"/u);
+        assert.match(root.innerHTML, /data-cuu-state="celebrating"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="view_replay"/u);
+        assert.match(root.innerHTML, /Cuu 已恢复：Cuu 桌面入口任务/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.deepEqual(restoreCalls, [{ step: "getAgentRun", runId: terminalRun.run_id }]);
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
 });
 
 test("pet surface localizes fixed approval bubble controls in English", () => {

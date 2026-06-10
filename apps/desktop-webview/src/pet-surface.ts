@@ -1,5 +1,6 @@
 import { createApiClient } from "@workhub/api-client/client";
 import {
+  cardFromAgentRunLive,
   createCuuController,
   createCuuIdleScheduler,
   cuuFormat,
@@ -14,7 +15,7 @@ import {
   type CuuLocaleOptions,
   type CuuMotionHint
 } from "@workhub/cuu";
-import { normalizeWorkHubLocale, workHubLocaleStorageKey, type WorkHubLocale } from "@workhub/contracts";
+import { normalizeWorkHubLocale, workHubLocaleStorageKey, type AgentRunLiveVM, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   renderDesktopCuuCatLive2DForIdleAction,
@@ -72,6 +73,25 @@ export type DesktopPetSurfaceRuntime = {
 };
 
 export type DesktopPetSurfaceClient = ReturnType<typeof createApiClient>;
+
+export const desktopPetRunRestoreStorageKey = "workhub.cuu.currentRun.v1";
+
+type DesktopPetRestoreState =
+  | {
+      version: 1;
+      entity_type: "agent_run";
+      entity_id: string;
+      href?: string | undefined;
+      updated_at_ms: number;
+    }
+  | {
+      version: 1;
+      entity_type: "session";
+      entity_id: string;
+      href?: string | undefined;
+      card: CuuCard;
+      updated_at_ms: number;
+    };
 
 export const desktopPetSurfaceCss = [
   "html,body,#root{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden}",
@@ -739,7 +759,7 @@ export async function bootDesktopPetSurface(
     });
   };
 
-  const setCard = (card: CuuCard | undefined, status?: string) => {
+  const setCard = (card: CuuCard | undefined, status?: string, options: { persist?: boolean } = {}) => {
     const nextRunId = agentRunIdFromPetCard(card);
     if (runStreamSubscription && nextRunId !== runStreamSubscription.runId) {
       runStreamSubscription.close();
@@ -751,6 +771,9 @@ export async function bootDesktopPetSurface(
     currentCard = card;
     statusText = status;
     pendingAction = undefined;
+    if (options.persist !== false) {
+      writeDesktopPetRestoreState(card);
+    }
     render();
   };
 
@@ -777,6 +800,32 @@ export async function bootDesktopPetSurface(
     });
     runStreamSubscription = subscription.streamUrl ? subscription : undefined;
   };
+
+  async function restoreDesktopPetCard() {
+    const restore = readDesktopPetRestoreState();
+    if (!restore || currentCard || qaScenario) {
+      return;
+    }
+    if (restore.entity_type === "session") {
+      setCard(restore.card, cuuFormat(locale, "cuuStart.restored", { title: restore.card.title }), { persist: false });
+      return;
+    }
+    try {
+      const run = await client.getAgentRun(restore.entity_id);
+      if (currentCard) {
+        return;
+      }
+      setCard(cardFromAgentRunLive(run, { locale }), cuuFormat(locale, "cuuStart.restored", { title: run.title }));
+      if (desktopPetAgentRunIsActive(run)) {
+        subscribeToAgentRun({ agentRun: run });
+      }
+    } catch (error) {
+      if (currentCard) {
+        return;
+      }
+      setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale), { persist: false });
+    }
+  }
 
   const updatePetPreferences = (preferences: Partial<CuuControllerPreferences>, message?: string) => {
     const snapshot = controller.setPreferences(preferences);
@@ -827,6 +876,9 @@ export async function bootDesktopPetSurface(
   };
 
   render();
+  if (!qaScenario) {
+    void restoreDesktopPetCard();
+  }
 
   pointerSensor = createDesktopPetPointerSensor(root, {
     bridge: petWindowBridge,
@@ -1384,6 +1436,103 @@ function clientToken() {
 
 function agentRunIdFromPetCard(card: CuuCard | undefined) {
   return card?.payload_ref?.entity_type === "agent_run" ? card.payload_ref.entity_id : undefined;
+}
+
+function desktopPetAgentRunIsActive(run: AgentRunLiveVM) {
+  return run.status === "queued" || run.status === "running";
+}
+
+function writeDesktopPetRestoreState(card: CuuCard | undefined) {
+  try {
+    const state = desktopPetRestoreStateFromCard(card);
+    if (!state) {
+      globalThis.localStorage?.removeItem(desktopPetRunRestoreStorageKey);
+      return;
+    }
+    globalThis.localStorage?.setItem(desktopPetRunRestoreStorageKey, JSON.stringify(state));
+  } catch {
+    // localStorage may be disabled in privacy-mode webviews or test DOMs.
+  }
+}
+
+function readDesktopPetRestoreState(): DesktopPetRestoreState | undefined {
+  let raw: string | null | undefined;
+  try {
+    raw = globalThis.localStorage?.getItem(desktopPetRunRestoreStorageKey);
+  } catch {
+    return undefined;
+  }
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<DesktopPetRestoreState> | undefined;
+    if (!parsed || parsed.version !== 1 || typeof parsed.entity_id !== "string" || !parsed.entity_id) {
+      return undefined;
+    }
+    if (parsed.entity_type === "agent_run") {
+      return {
+        version: 1,
+        entity_type: "agent_run",
+        entity_id: parsed.entity_id,
+        href: typeof parsed.href === "string" ? parsed.href : undefined,
+        updated_at_ms: typeof parsed.updated_at_ms === "number" ? parsed.updated_at_ms : Date.now()
+      };
+    }
+    if (parsed.entity_type === "session" && isRestorableCuuSessionCard(parsed.card, parsed.entity_id)) {
+      return {
+        version: 1,
+        entity_type: "session",
+        entity_id: parsed.entity_id,
+        href: typeof parsed.href === "string" ? parsed.href : undefined,
+        card: parsed.card,
+        updated_at_ms: typeof parsed.updated_at_ms === "number" ? parsed.updated_at_ms : Date.now()
+      };
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function desktopPetRestoreStateFromCard(card: CuuCard | undefined): DesktopPetRestoreState | undefined {
+  const ref = card?.payload_ref;
+  if (!ref) {
+    return undefined;
+  }
+  if (ref.entity_type === "agent_run") {
+    return {
+      version: 1,
+      entity_type: "agent_run",
+      entity_id: ref.entity_id,
+      href: ref.href,
+      updated_at_ms: Date.now()
+    };
+  }
+  if (ref.entity_type === "session") {
+    return {
+      version: 1,
+      entity_type: "session",
+      entity_id: ref.entity_id,
+      href: ref.href,
+      card,
+      updated_at_ms: Date.now()
+    };
+  }
+  return undefined;
+}
+
+function isRestorableCuuSessionCard(value: unknown, sessionId: string): value is CuuCard {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const card = value as Partial<CuuCard>;
+  return typeof card.id === "string" &&
+    typeof card.title === "string" &&
+    typeof card.message === "string" &&
+    Array.isArray(card.actions) &&
+    card.payload_ref?.entity_type === "session" &&
+    card.payload_ref.entity_id === sessionId;
 }
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {

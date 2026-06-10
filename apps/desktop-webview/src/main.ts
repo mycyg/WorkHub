@@ -176,6 +176,7 @@ export async function loadDesktopAgentRunCuuCard(client: WorkHubApiClient, runId
 
 export {
   bootDesktopPetSurface,
+  desktopPetRunRestoreStorageKey,
   desktopPetSurfaceCss,
   renderDesktopPetSurface,
   resolveDesktopSurface,

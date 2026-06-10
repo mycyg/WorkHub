@@ -61,7 +61,7 @@ visuals:
 | QA 合同 | `apps/desktop-webview/src/pet-surface-qa.ts` | 验证独立透明窗口、Live2D cat runtime、无旧实验 DOM |
 | 主窗事件卡 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | 只保留严肃通知桥接，不渲染 Cuu 形象 |
 | QA 模型注入 | `scripts/qa/cuu-tauri-motion-capture.ps1` / `client-tauri/src-tauri/src/main.rs` | 允许 QA 用黑猫或白猫 pack id 启动 pet window；`look-only` 验证 hover 不移动窗口 |
-| QA 业务场景注入 | `apps/desktop-webview/src/cuu-qa-scenarios.ts` / `WORKHUB_CUU_QA_SCENARIO` / `WORKHUB_CUU_QA_LOCALE` | 允许真实 Tauri pet window 录 `launcher` / `clarify` / `approval` / `search` / `sync` / `done` / `offline` / `run-stream` / `run-failure` / `permission-401` / `permission-403` / `stream-offline`；R3.10 已补 `launcher` 双语 locale 注入与 WebView2 CDP 点击，R3.12 已补真实 run-stream completion，R3.13.1 已补真实 run-failure terminal，R3.13.2 已补真实 permission/offline error states |
+| QA 业务场景注入 | `apps/desktop-webview/src/cuu-qa-scenarios.ts` / `WORKHUB_CUU_QA_SCENARIO` / `WORKHUB_CUU_QA_LOCALE` | 允许真实 Tauri pet window 录 `launcher` / `clarify` / `approval` / `search` / `sync` / `done` / `offline` / `run-stream` / `run-failure` / `permission-401` / `permission-403` / `stream-offline`；R3.10 已补 `launcher` 双语 locale 注入与 WebView2 CDP 点击，R3.12 已补真实 run-stream completion，R3.13.1 已补真实 run-failure terminal，R3.13.2 已补真实 permission/offline error states，R3.13.3 已补 webview boot session/run restore 单测 |
 | QA actual DOM / anchor | `apps/desktop-webview/src/cuu-qa-dom-report.ts` / `WORKHUB_CUU_QA_DOM_REPORT_PATH` | P1.8 已允许真实 Tauri pet window 把 runtime DOM attrs 写入 report；approval 气泡锚点贴近 Cuu |
 | QA business matrix / framing | `scripts/qa/cuu-tauri-motion-capture.ps1` / `apps/desktop-webview/src/pet-surface.ts` | P1.9 已补黑猫业务 smoke 矩阵、白猫 approval、强 actual DOM gate；card 画布已校准为不裁猫、不裁气泡 |
 
@@ -129,7 +129,7 @@ P1.6 源码合同已经落地，详见 [`cuu-behavior-manifest-p1-6.md`](./cuu-b
 | `enter` / `loop` / `exit` | 已落源码合同，coverage 标记为 `partial` |
 | `idle_random` | 已落 breathe / blink / tail / look / wave 池 |
 | desktop runtime attrs | 已输出 `data-cuu-behavior-*` 与 `data-cuu-live2d-renderer-state` |
-| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；P1.9 已落黑猫业务 smoke 矩阵 + 白猫 approval；R3.10 已补真实 Tauri `launcher/en-US` 32 帧证据；R3.11 已补真实本机 HTTP dev-server launcher-to-run 数据流 smoke；R3.12 已补 zh-CN/en-US 真实 Tauri run-stream completion capture；R3.13.1 已补 zh-CN/en-US 真实 Tauri run-failure terminal capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture；刷新恢复仍待补 |
+| 真实 Tauri motion evidence | P1.7 已落业务录屏入口；P1.8 已落 actual DOM / approval anchor smoke；P1.9 已落黑猫业务 smoke 矩阵 + 白猫 approval；R3.10 已补真实 Tauri `launcher/en-US` 32 帧证据；R3.11 已补真实本机 HTTP dev-server launcher-to-run 数据流 smoke；R3.12 已补 zh-CN/en-US 真实 Tauri run-stream completion capture；R3.13.1 已补 zh-CN/en-US 真实 Tauri run-failure terminal capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture；R3.13.3 已补 webview boot 恢复单测，真实 reload capture 待补 |
 
 最小字段：
 
@@ -169,6 +169,7 @@ P1.6 验收口径：即使 motion coverage 仍是 `partial`，也必须能证明
 - R3.12 的 run-stream 验收必须同时看真实 Tauri contact sheet/GIF/MP4、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`；zh-CN 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/run-stream-zh-pass/`，en-US 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/run-stream-en-pass2/`。
 - R3.13.1 的 run-failure 验收必须同时看真实 Tauri contact sheet/GIF/MP4、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`；zh-CN 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-zh-pass/`，en-US 证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-en-pass/`。最终帧还必须确认长文本、`Run progress/执行进度` 与 `Budget/预算` 不超出轻卡边界。
 - R3.13.2 的 401/403/offline 验收必须同时看真实 Tauri contact sheet/GIF/MP4、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`；证据位于 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/`。六个中英 capture 必须满足 `right_edge_clip_gate.passed=true` 且最终帧右边缘亮色像素为 0。
+- R3.13.3 的刷新恢复源码验收必须覆盖 session question card、active AgentRun card 和 terminal AgentRun card；`@workhub/desktop-webview` 单测必须证明刷新后仍保留 `payload_ref`、replay action、active run stream 订阅路径和 `cuuStart.restored` 双语文案。后续真实 reload capture 仍需要继续使用 R3.13.2 的右边缘裁切门。
 - 黑猫/白猫切换后 iframe、model json、data attrs 一致。
 - Web / desktop 主窗没有 Cuu 形象 DOM。
 - 旧实验 class、runtime data attribute 或模型 ID 不出现在运行态 HTML。
@@ -179,8 +180,8 @@ R1 真实纵切通过前，不再把 Cuu 外观矩阵作为当前施工任务。
 
 1. 当前立即项：主窗无 Cuu 截图复核、透明 pet smoke、文档资产对账、真实回归修复。
 2. 当前工程主线：继续 R1/R2 后端缺口；真实 `sessions/workitems/knowledge/page workitem` service、CostLedger/BudgetPolicy 默认 store、merge accepted deliverable ledger、persistent merge audit、AgentRun-backed delivery 正式文件落盘、WorkItem page / AgentRun replay accepted deliverables、下载/文本预览、最小 restore、AI fusion text/spec 正文直写、真实 current/incoming/base 文本上下文、数据层 patch preview、Replay patch preview 渲染、Proposal 采用前最小 patch preview 与无重叠文本 hunk deterministic diff3 与重叠 hunk metadata/prompt/quality gate 已接入，下一批优先 `ai_fusion` v2 重叠 hunk 逐项确认/编辑、React route 级富 patch viewer、字段级结构化 patch、多冲突工作台、PG queue claim 与多 worker。
-3. R3 后恢复：`launcher/en-US` 已升级为真实 Tauri 32 帧 capture，真实 API dev-server launcher-to-run smoke 已落，zh-CN/en-US run-stream completion capture 已落，zh-CN/en-US run-failure terminal capture 已落，zh-CN/en-US 401/403/offline capture 已落；下一步先补 pet window 刷新恢复与 launcher chip metadata，再评估 `clarify/search/sync/done/offline/approval` 正式矩阵。
+3. R3 后恢复：`launcher/en-US` 已升级为真实 Tauri 32 帧 capture，真实 API dev-server launcher-to-run smoke 已落，zh-CN/en-US run-stream completion capture 已落，zh-CN/en-US run-failure terminal capture 已落，zh-CN/en-US 401/403/offline capture 已落，webview boot session/run 恢复已落；下一步先补 launcher chip metadata 和真实 reload capture，再评估 `clarify/search/sync/done/offline/approval` 正式矩阵。
 4. R3 后恢复：录 tap、drag、hide-on-hover、pass-through、scale、opacity settings matrix，证明二选项都真实可用；不能只依赖浏览器模型页源帧。
-5. R3 后恢复：持续输出 contact sheet、GIF/MP4、DOM dump、diff report 到本轮审计目录；R3.10 launcher 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，R3.12 run-stream 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/`，R3.13.1 run-failure 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/`，R3.13.2 error-state 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/`，后续矩阵继续按日期分目录回写当前审计文档。
+5. R3 后恢复：持续输出 contact sheet、GIF/MP4、DOM dump、diff report 到本轮审计目录；R3.10 launcher 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，R3.12 run-stream 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/`，R3.13.1 run-failure 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/`，R3.13.2 error-state 证据已落 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/`，R3.13.3 当前证据是源码/单测/typecheck；后续真实 reload capture 继续按日期分目录回写当前审计文档。
 6. 发布前必须完成授权评估；若不能商用，按同一接口替换原创黑猫/白猫模型。
 7. P1.6 `CuuBehaviorManifest` 源码合同已落，P1.7 业务录屏入口已落，P1.8 actual DOM / 气泡锚点首证据已落，P1.9 黑猫业务 smoke 矩阵与白猫 approval 已落；这些是冻结前回归证据，不能当作最终视觉通过，也不能作为 R1 前继续外观扩面的理由。

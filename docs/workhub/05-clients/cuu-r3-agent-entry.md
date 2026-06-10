@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据。仍不能宣称 R3 完成：pet window 刷新恢复和 launcher chip metadata 产品化仍未验收。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复。仍不能宣称 R3 完成：launcher chip metadata 产品化和真实 reload capture 回归仍未验收。
 
 | 缺口 | 计划 |
 |---|---|
@@ -469,7 +469,7 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | 真实确认后启动 | R3.5 已落 API route-stack smoke，R3.9 已落 boot click harness，R3.11 已落真实 dev-server smoke，R3.12 已落 Tauri run-stream 终态 capture |
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
-| 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
+| 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；后续补真实 Tauri reload capture |
 | 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
@@ -611,11 +611,43 @@ Bug / 数据流审查：
 | PRD/概念图 | 仍符合 option-first；Cuu 仍是独立 transparent `pet` window；错误态用轻卡和 replay/open task 入口，不把 Cuu 放回主窗 |
 | 中英双语 | zh-CN/en-US 真实 frames 均已覆盖；英文不透出中文 fallback |
 
-## 14. 下一刀 R3.13.3
+## 14. R3.13.3 已落切片：pet window session/run 恢复
+
+R3.13.3 关闭 `pet` webview 刷新或重启后丢失当前 Cuu 上下文的缺口。范围只覆盖当前 card 的最小恢复，不新增 Cuu 外观、不新增 Rust 业务状态机、不改变黑猫/白猫模型白名单。
+
+改动：
+
+| 层 | R3.13.3 行为 |
+|---|---|
+| pet surface persistence | `setCard()` 在当前卡带 `payload_ref.entity_type="session"` 或 `agent_run` 时写入 `workhub.cuu.currentRun.v1`；切到无 payload 的 launcher/普通卡时清理旧恢复引用 |
+| session restore | 当前卡是 SessionVM question 时保存 card snapshot；刷新后先恢复同一 option-first 问题卡，下一步点击仍走原 `submit_option` typed action |
+| AgentRun restore | 当前卡是 AgentRun 时只保存 run id；刷新后调用 `client.getAgentRun(run_id)`，再用 `cardFromAgentRunLive()` 重建 active/terminal card，避免用旧快照伪装状态 |
+| stream recovery | 如果恢复到 `queued/running`，继续调用 `subscribeDesktopCuuAgentRunStream()` 订阅或 fallback refresh；如果恢复到 `succeeded/failed/escalated/budget_exhausted/cancelled`，只显示终态卡并保留 replay/open task |
+| QA boundary | 有 `__WORKHUB_CUU_QA_SCENARIO__` 时跳过本地恢复，避免污染 R3.12/R3.13.1/R3.13.2 的 deterministic capture |
+| i18n | 新增 `cuuStart.restored` zh-CN/en-US 文案 |
+| public export | `apps/desktop-webview/src/main.ts` 导出 `desktopPetRunRestoreStorageKey` 供后续 QA harness 复用同一 key |
+
+验收：
+
+- `corepack pnpm --filter @workhub/desktop-webview test`：75/75 通过，覆盖 session question restore、active AgentRun restore、terminal AgentRun restore。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/cuu test`：33/33 通过。
+
+复核：
+
+| 项 | 结论 |
+|---|---|
+| bug 审查 | 恢复读取 fail-closed；localStorage 禁用或 JSON 损坏不会打断 pet boot；用户先点击产生新 current card 时，异步恢复结果会被丢弃 |
+| 数据流 | `pet` card -> versioned local restore ref -> boot -> session snapshot 或 typed API `GET /api/agent-runs/:id` -> `cardFromAgentRunLive()` -> active run 重新订阅 stream |
+| PRD/概念图 | 符合 TS-first runtime 与 endpoint/page/Cuu 独立映射：Rust 不读写业务状态，Cuu 仍只在独立 transparent `pet` window 展示 |
+| UI/文本边界 | 本轮不改 bubble 布局；R3.13.2 的安全左锚与 `right_edge_clip_gate` 继续作为后续真实 capture 回归门 |
+| 中英双语 | 恢复状态文案已补 zh-CN/en-US；现有英文固定卡测试继续通过 |
+
+## 15. 下一刀 R3.14
 
 R3 后续顺序：
 
-1. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 `pet` window 后恢复当前 run card 或 terminal completion/error card。
-2. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
+1. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
+2. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
 3. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream completion、run-failure、401/403/offline 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json`、DOM attrs gate 与 `right_edge_clip_gate`。
 4. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并提交。
