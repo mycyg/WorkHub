@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>R4 Web Route State Matrix</title>
+  <style>
+    :root{color-scheme:light;--ink:#172033;--muted:#66728c;--line:#dfe5f1;--paper:#fff;--soft:#f5f8fc;--blue:#355cff}
+    body{margin:0;font-family:"Aptos","Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(180deg,#fbfdff 0%,#edf4fb 100%);padding:24px;overflow-x:hidden}
+    main{max-width:1280px;margin:0 auto;display:grid;gap:18px;min-width:0}
+    header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;min-width:0}
+    h1{font-size:30px;line-height:1.15;margin:0;overflow-wrap:anywhere}
+    p{margin:6px 0 0;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
+    .r4qa-badge{border:1px solid var(--line);border-radius:999px;background:#fff;padding:7px 10px;color:var(--muted);font-size:12px;font-weight:800;max-width:100%;overflow-wrap:anywhere}
+    .wh-route-state-matrix{display:grid;gap:16px;min-width:0;max-width:100%}.wh-route-state-row{display:grid;grid-template-columns:160px repeat(4,minmax(0,1fr));gap:12px;align-items:stretch;min-width:0}.wh-route-state-route{border:1px solid #dfe5f1;border-radius:8px;background:#fff;padding:14px;display:grid;align-content:center;gap:6px;min-width:0;overflow-wrap:anywhere}.wh-route-state-route strong{font-size:14px}.wh-route-state-route span{font-size:12px;color:#66728c;overflow-wrap:anywhere}.wh-route-state-card{border:1px solid #dfe5f1;background:rgba(255,255,255,.94);border-radius:8px;padding:14px;display:grid;gap:10px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 14px 38px rgba(37,51,79,.07)}.wh-route-state-card[data-route-state=loading]{border-color:#b8c7ff}.wh-route-state-card[data-route-state=empty]{border-color:#dfe8d7}.wh-route-state-card[data-route-state=error]{border-color:#f0c5bd}.wh-route-state-card[data-route-state=forbidden]{border-color:#d8dff2}.wh-route-state-pill{display:inline-flex;align-items:center;max-width:100%;border-radius:999px;background:#f5f8fc;color:#66728c;font-size:11px;font-weight:800;padding:5px 8px;overflow-wrap:anywhere}.wh-route-state-card h3{margin:0;font-size:16px;line-height:1.25;overflow-wrap:anywhere}.wh-route-state-card p{margin:0;color:#66728c;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.wh-route-state-action{display:inline-flex;width:max-content;max-width:100%;align-items:center;justify-content:center;border:1px solid #dfe5f1;border-radius:8px;background:#fff;color:#172033;text-decoration:none;font-weight:800;font-size:12px;padding:8px 10px;overflow-wrap:anywhere}@media (max-width:980px){.wh-route-state-row{grid-template-columns:1fr}.wh-route-state-route{position:sticky;top:0;z-index:1}}
+  </style>
+</head>
+<body data-r4-web-route-state-case="matrix-en-US" data-r4-locale="en-US">
+  <main>
+    <header>
+      <div><h1>R4 Web Route State Matrix</h1><p>Covers loading, empty, error, and forbidden states for overview, intake, approvals, work items, proposals, replay, cost, and settings.</p></div>
+      <span class="r4qa-badge">R4.1 route-state foundation</span>
+    </header>
+    <section class="wh-route-state-matrix" data-r4-route-state-matrix="true" data-locale="en-US">
+    <div class="wh-route-state-row" data-route-key="home">
+      <div class="wh-route-state-route"><strong>Overview</strong><span>/</span></div>
+      <article class="wh-route-state-card" data-route-key="home" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="home" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="home" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="home" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="intake">
+      <div class="wh-route-state-route"><strong>Intake</strong><span>/intake/:sessionId</span></div>
+      <article class="wh-route-state-card" data-route-key="intake" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/intake/:sessionId</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/intake/:sessionId">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/intake/:sessionId</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/intake/:sessionId">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/intake/:sessionId">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="approvals">
+      <div class="wh-route-state-route"><strong>Approval center</strong><span>/approvals</span></div>
+      <article class="wh-route-state-card" data-route-key="approvals" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/approvals</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/approvals">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/approvals</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/approvals">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/approvals">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="workitem">
+      <div class="wh-route-state-route"><strong>Work item detail</strong><span>/workitems/:id</span></div>
+      <article class="wh-route-state-card" data-route-key="workitem" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/workitems/:id</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/workitems/:id">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/workitems/:id</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/workitems/:id">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/workitems/:id">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="proposal">
+      <div class="wh-route-state-route"><strong>Change request</strong><span>/proposals/:id</span></div>
+      <article class="wh-route-state-card" data-route-key="proposal" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/proposals/:id</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/proposals/:id">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/proposals/:id</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/proposals/:id">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/proposals/:id">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="replay">
+      <div class="wh-route-state-route"><strong>Run replay</strong><span>/agent-runs/:id/replay</span></div>
+      <article class="wh-route-state-card" data-route-key="replay" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/agent-runs/:id/replay</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/agent-runs/:id/replay">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/agent-runs/:id/replay</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/agent-runs/:id/replay">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/agent-runs/:id/replay">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="cost">
+      <div class="wh-route-state-route"><strong>Cost dashboard</strong><span>/dashboard/cost</span></div>
+      <article class="wh-route-state-card" data-route-key="cost" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/dashboard/cost</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/dashboard/cost">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/dashboard/cost</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/dashboard/cost">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/dashboard/cost">Request access</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="settings">
+      <div class="wh-route-state-route"><strong>Settings</strong><span>/settings</span></div>
+      <article class="wh-route-state-card" data-route-key="settings" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/settings</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the WorkHub daemon instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/settings">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/settings</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/settings">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/settings">Request access</a>
+  </article>
+    </div>
+  </section>
+  </main>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      document.body.dataset.r4ClientWidth = String(root.clientWidth);
+      document.body.dataset.r4ScrollWidth = String(root.scrollWidth);
+    })();
+  </script>
+</body>
+</html>

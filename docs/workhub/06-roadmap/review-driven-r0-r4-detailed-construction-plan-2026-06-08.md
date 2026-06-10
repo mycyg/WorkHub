@@ -2700,6 +2700,21 @@ R4 验收：
 - zh-CN/en-US 截图通过，Rust 系统串纳入 locale contract。
 - 主窗口无 Cuu 本体。
 
+### R4.1 已落：Web route-state matrix foundation
+
+1. 已阅读 `web-app.md`、`page-concepts.md`、本篇 R4 与 Web 概念图：`web-ai-first-home.png`、`web-workitem-detail.png`、`web-approval-center.png`、`web-deliverable-change-request.png`、`web-real-ui-gap-roadmap.png`、`r0-governance-boundary-concept.svg`。
+2. 已新增 `packages/ui/src/route-state.ts`，把 R4 高频页 `home/intake/approvals/workitem/proposal/replay/cost/settings` 与四态 `loading/empty/error/forbidden` 做成中英双语 helper。
+3. 已新增 `scripts/qa/r4-web-route-state-matrix.ts` 和 root `pnpm qa:r4-web-route-state-matrix`，生成 ready shell + route-state matrix 的 desktop/mobile Chrome 截图、contact sheet 与 JSON report。
+4. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-route-state-matrix/`；report gates 全部为 true：`screenshots_captured`、`ready_shell_pages`、`route_state_coverage`、`bilingual_state_copy`、`no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`。
+5. 验证通过：`@workhub/ui test` 36/36、`@workhub/ui typecheck`、`@workhub/web test` 4/4、`@workhub/web typecheck`、`pnpm qa:r4-web-route-state-matrix`。
+6. 边界：R4.1 只是 QA foundation。不能宣称真实 React SPA 已完成，不能宣称每个 route 已接真实多条后端数据，也不能把 `weekly_report_manifest_doc` 当作 R4 完成证据。
+
+下一施工顺序：
+
+1. **R4.2 real route registry + loader**：在 `apps/web/src` 建立 route registry，将 `renderRouteStateCard()` 接进真实 loading/empty/error/forbidden，不再只由 QA matrix 独立渲染。
+2. **R4.3 multi-record Page VM visual QA**：使用 R1/R2 seed 或 PG smoke 生成多 work item / proposal / approval / cost usage，ready screenshot 不再只有“客户周报”单场景。
+3. **R4.4 product shell polish**：按概念图收紧 AI-first home、approval center、workitem detail、proposal detail 的信息密度和响应式截图 baseline。
+
 ## 8. 模块开工前阅读清单
 
 | 模块 | 必读文档 | 必读概念/证据 |

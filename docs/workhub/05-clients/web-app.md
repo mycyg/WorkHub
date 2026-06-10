@@ -26,6 +26,7 @@ owner: workflow
 | Web typed surface | `apps/web/src/main.ts` | 暴露 `loadWebGoldPathSurface`、`renderWebIntakeSession`、`renderWebWorkItemDetail`、`renderWebProposalDetail`、`renderWebAgentRunLive` 等 helpers |
 | Shared render helpers | `packages/ui/src/*` | Gold Path、intake、workitem、proposal、agent-run 的 HTML render helpers |
 | Bilingual locale contract | `packages/contracts/src/locale.ts`、`packages/ui/src/gold-path/i18n.ts`、`apps/web/src/browser.ts` | 已支持 `zh-CN` / `en-US` normalize、`workhub.locale` 持久化、Gold Path 静态 chrome 与运行时提示本地化 |
+| R4 route-state foundation | `packages/ui/src/route-state.ts`、`scripts/qa/r4-web-route-state-matrix.ts` | 已覆盖 home/intake/approvals/workitem/proposal/replay/cost/settings 的中英 loading/empty/error/forbidden 状态卡、desktop/mobile Chrome 截图与无横向溢出 gate |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
@@ -36,7 +37,7 @@ owner: workflow
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- 视觉回归、响应式、移动端、空/错/载/无权限、无默认 Kanban 等门禁尚未形成。
+- R4.1 已形成第一版 route-state matrix 门禁，但这些状态还没有全部接入真实 route loader；真实 React route 与多记录截图仍待 R4.2+。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -104,6 +105,17 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 - 双语：固定 chrome 已接 `packages/ui/src/gold-path/i18n.ts`，zh-CN / en-US 均有测试；动态 rationale 保留服务端原文，不在客户端硬翻译。
 
 边界：这是只读 replay 解释面，不是新的看板或冲突工作台；Web/Desktop 主窗仍不出现 Cuu 本体。
+
+### 0.6 R4.1 Web route-state matrix foundation（2026-06-11 已落）
+
+本轮把 R4 的“四态 + 双语 + 无 Cuu 主窗 + 不横向溢出”从文字要求变成可复跑 QA foundation。详细计划与验收见 [`../06-roadmap/r4-01-web-route-state-matrix-plan-2026-06-11.md`](../06-roadmap/r4-01-web-route-state-matrix-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| 状态卡 helper | `packages/ui/src/route-state.ts` 固定 `loading/empty/error/forbidden` 与 `home/intake/approvals/workitem/proposal/replay/cost/settings` | 接入 `apps/web` 真实 route loader，而不是只在 QA matrix 中渲染 |
+| 双语 | zh-CN / en-US 固定状态 copy 已覆盖；`@workhub/ui` 测试防止 Cuu / kanban 词泄漏 | 动态 Page VM 摘要由服务端按 locale 生成 |
+| 视觉 QA | `pnpm qa:r4-web-route-state-matrix` 生成 desktop/mobile Chrome 截图和 `route-state-matrix-report.json` | 每个真实 route 都补 ready + 四态截图 baseline |
+| 边界 | R4.1 不能证明真实 React SPA 完成，也不能证明多条真实后端数据已渲染 | R4.2 建真实 route registry；R4.3 接多 work item / proposal / approval seed |
 
 ---
 

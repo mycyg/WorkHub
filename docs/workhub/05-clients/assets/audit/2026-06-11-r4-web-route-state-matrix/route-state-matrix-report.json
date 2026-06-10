@@ -1,0 +1,185 @@
+{
+  "generated_at": "2026-06-10T21:53:50.492Z",
+  "module": "R4.1 Web route-state matrix",
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-route-state-matrix",
+  "gates": {
+    "screenshots_captured": true,
+    "ready_shell_pages": true,
+    "route_state_coverage": true,
+    "bilingual_state_copy": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_horizontal_overflow": true
+  },
+  "required_routes": [
+    "home",
+    "intake",
+    "approvals",
+    "workitem",
+    "proposal",
+    "replay",
+    "cost",
+    "settings"
+  ],
+  "required_states": [
+    "loading",
+    "empty",
+    "error",
+    "forbidden"
+  ],
+  "cases": [
+    {
+      "id": "ready-zh-desktop",
+      "label": "Ready shell zh-CN desktop",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 1600
+      },
+      "html": "ready-zh-desktop.html",
+      "screenshot": "ready-zh-desktop.png",
+      "markers": {
+        "routeStateCards": 0,
+        "routeStates": {
+          "loading": 0,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 0,
+          "intake": 0,
+          "approvals": 0,
+          "workitem": 0,
+          "proposal": 0,
+          "replay": 0,
+          "cost": 0,
+          "settings": 0
+        },
+        "readyPanels": 8,
+        "zhCopy": false,
+        "enCopy": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1332,
+        "scrollWidth": 1332,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "ready-en-mobile",
+      "label": "Ready shell en-US mobile",
+      "locale": "en-US",
+      "viewport": {
+        "width": 467,
+        "height": 1900
+      },
+      "html": "ready-en-mobile.html",
+      "screenshot": "ready-en-mobile.png",
+      "markers": {
+        "routeStateCards": 0,
+        "routeStates": {
+          "loading": 0,
+          "empty": 0,
+          "error": 0,
+          "forbidden": 0
+        },
+        "routeKeys": {
+          "home": 0,
+          "intake": 0,
+          "approvals": 0,
+          "workitem": 0,
+          "proposal": 0,
+          "replay": 0,
+          "cost": 0,
+          "settings": 0
+        },
+        "readyPanels": 8,
+        "zhCopy": false,
+        "enCopy": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "states-zh-desktop",
+      "label": "Route states zh-CN desktop",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1365,
+        "height": 1800
+      },
+      "html": "states-zh-desktop.html",
+      "screenshot": "states-zh-desktop.png",
+      "markers": {
+        "routeStateCards": 32,
+        "routeStates": {
+          "loading": 8,
+          "empty": 8,
+          "error": 8,
+          "forbidden": 8
+        },
+        "routeKeys": {
+          "home": 5,
+          "intake": 5,
+          "approvals": 5,
+          "workitem": 5,
+          "proposal": 5,
+          "replay": 5,
+          "cost": 5,
+          "settings": 5
+        },
+        "readyPanels": 0,
+        "zhCopy": true,
+        "enCopy": false,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 1347,
+        "scrollWidth": 1347,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "id": "states-en-mobile",
+      "label": "Route states en-US mobile",
+      "locale": "en-US",
+      "viewport": {
+        "width": 467,
+        "height": 6400
+      },
+      "html": "states-en-mobile.html",
+      "screenshot": "states-en-mobile.png",
+      "markers": {
+        "routeStateCards": 32,
+        "routeStates": {
+          "loading": 8,
+          "empty": 8,
+          "error": 8,
+          "forbidden": 8
+        },
+        "routeKeys": {
+          "home": 5,
+          "intake": 5,
+          "approvals": 5,
+          "workitem": 5,
+          "proposal": 5,
+          "replay": 5,
+          "cost": 5,
+          "settings": 5
+        },
+        "readyPanels": 0,
+        "zhCopy": false,
+        "enCopy": true,
+        "cuuLeak": 0,
+        "kanbanLeak": 0,
+        "clientWidth": 467,
+        "scrollWidth": 467,
+        "horizontalOverflow": false
+      }
+    }
+  ]
+}

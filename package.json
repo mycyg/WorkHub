@@ -16,6 +16,7 @@
     "lint": "pnpm audit:portable-config && pnpm audit:target-paths && pnpm audit:migrations && pnpm qa:r2-release-gate && pnpm qa:cuu-r3-launcher-smoke && pnpm qa:cuu-r3-dev-server-smoke && pnpm qa:cuu-r3-run-stream-smoke && pnpm qa:cuu-r3-run-failure-smoke && pnpm qa:cuu-r3-reload-restore-smoke && pnpm qa:cuu-r3-error-fault-smoke",
     "verify": "pnpm typecheck && pnpm test && pnpm lint",
     "qa:r1-route-visual": "tsx scripts/qa/r1-route-visual-qa.ts",
+    "qa:r4-web-route-state-matrix": "tsx scripts/qa/r4-web-route-state-matrix.ts",
     "qa:r2-release-gate": "tsx scripts/qa/r2-release-gate-report.ts",
     "qa:cuu-r3-launcher-smoke": "pnpm --filter @workhub/api qa:cuu-r3-launcher-smoke",
     "qa:cuu-r3-dev-server-smoke": "pnpm --filter @workhub/api qa:cuu-r3-dev-server-smoke",
