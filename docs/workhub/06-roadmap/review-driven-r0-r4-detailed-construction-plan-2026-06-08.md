@@ -2070,21 +2070,56 @@ R2 验收：
 | 权限 | 仍走 API client；没有后端 `/api/cuu/start-agent` 路由，也没有 Cuu 权限旁路 |
 | 返回 | `AgentRunLiveVM` 转 `agent_run` Cuu card |
 | 主窗 | 未显示 Cuu 本体 |
-| 未覆盖 | 真实 Tauri 点击截图、SSE run stream 回流、失败态、刷新恢复、launcher-to-run smoke |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon SSE 回流、刷新恢复、launcher-to-run smoke |
 
 验证：
 
-- `corepack pnpm --filter @workhub/desktop-webview test`：61/61 通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：64/64 通过。
 - `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
 
-### R3.2 下一刀
+### R3.2 已落：run stream 回流与错误卡
 
-1. 抽出 `startDesktopCuuAgentFromLauncher()` helper，避免 runtime submit 分支继续膨胀。
-2. 用轻 DOM harness 覆盖真实 click body -> launcher card，而不仅是 render/output test。
-3. 启动 run 后订阅 `AgentRunLiveVM.stream_href`，把 queued/running/succeeded/failed 回灌到 Cuu。
-4. 把 API error、403、budget_exhausted、offline 统一映射为 Cuu failure/offline card。
-5. 生成真实 Tauri `pet` window 截图：body-only idle、launcher card、queued run card、failure/offline card。
-6. 加一条 launcher-to-run smoke，证明不是单元测试里的 mock client。
+详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。
+
+已落代码：
+
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`
+  - 新增 `startDesktopCuuAgentFromLauncher()`，封装三段 API 组合，避免 submit 分支继续膨胀。
+  - `submitDesktopCuuAction()` 对 `cuu-start-agent` 返回 `agentRun`，让 pet surface 能订阅 `stream_href`。
+  - 新增 `subscribeDesktopCuuAgentRunStream()`：`EventSource(stream_href)` -> 过滤 run 事件 -> `client.getAgentRun(run_id)` -> `cardFromAgentRunLive()`。
+  - 新增 `cardFromDesktopCuuRuntimeError()`：budget exhausted、401/403、offline/network、generic error 转成 Cuu 轻卡。
+- `apps/desktop-webview/src/pet-surface.ts`
+  - 启动成功后订阅 run stream；切到其他 card 或 dispose 时关闭旧订阅。
+  - action 失败时展示 Cuu 错误卡，而不是只写一行 status。
+- `apps/desktop-webview/src/main.ts`
+  - 导出 R3.2 helper、subscription、error card types。
+- `packages/cuu/src/i18n.ts`
+  - 新增 run stream/error card 的 zh-CN / en-US 文案。
+
+当前边界：
+
+| 项 | R3.2 行为 |
+|---|---|
+| run event 过滤 | 接受 `topic=run:{id}`、`event.run_id` 或 `event.data.run_id` |
+| Cuu 刷新 | 不直接信任 SSE payload；每次匹配事件重新拉 `GET /api/agent-runs/:id` |
+| 终态 | 非 `queued/running` 后自动关闭订阅 |
+| 错误态 | budget / permission / offline / generic 四类 Cuu card |
+| Rust | 仍只做窗口、托盘、通知、SSE 转发；不拥有业务状态机 |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、需要澄清时的 SessionVM question 回退 |
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview test`：64/64 通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+
+### R3.3 下一刀
+
+1. 用轻 DOM harness 覆盖真实 click body -> launcher card -> selected chip -> submit，而不仅是 render/output test。
+2. 用 API dev server 做 launcher-to-run smoke，证明不是单元测试里的 mock client。
+3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、queued/running card、completion card、failure/offline card。
+4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 run card。
+5. 如果后端返回 clarification/session pending，则 Cuu 展示 `SessionVM.question`，不强行 start run。
+6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 

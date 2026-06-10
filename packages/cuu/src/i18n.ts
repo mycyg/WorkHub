@@ -109,6 +109,21 @@ export type CuuCopyKey =
   | "cuuStart.progressIntent"
   | "cuuStart.progressTask"
   | "cuuStart.progressRun"
+  | "cuuStart.streamUpdated"
+  | "cuuStart.errorBudgetTitle"
+  | "cuuStart.errorBudgetMessage"
+  | "cuuStart.errorPermissionTitle"
+  | "cuuStart.errorPermissionMessage"
+  | "cuuStart.errorOfflineTitle"
+  | "cuuStart.errorOfflineMessage"
+  | "cuuStart.errorGenericTitle"
+  | "cuuStart.errorGenericMessage"
+  | "cuuStart.errorChip.budget"
+  | "cuuStart.errorChip.permission"
+  | "cuuStart.errorChip.offline"
+  | "cuuStart.errorChip.generic"
+  | "cuuStart.errorViewReplay"
+  | "cuuStart.errorOpenWorkItem"
   | "pet.aria"
   | "pet.windowModeExpanding"
   | "pet.reducedMotionOffline"
@@ -247,6 +262,21 @@ const cuuCopy = {
     "cuuStart.progressIntent": "方向",
     "cuuStart.progressTask": "事项",
     "cuuStart.progressRun": "执行",
+    "cuuStart.streamUpdated": "Cuu 更新了进度：{title}",
+    "cuuStart.errorBudgetTitle": "预算挡住了这次执行",
+    "cuuStart.errorBudgetMessage": "这次任务已到预算线，需要你确认下一步。",
+    "cuuStart.errorPermissionTitle": "这步需要权限",
+    "cuuStart.errorPermissionMessage": "Cuu 没有权限直接继续，需要你打开详情处理。",
+    "cuuStart.errorOfflineTitle": "Cuu 暂时收不到进度",
+    "cuuStart.errorOfflineMessage": "连接中断或服务暂不可用，Cuu 会等连接恢复后继续。",
+    "cuuStart.errorGenericTitle": "这次启动没有成功",
+    "cuuStart.errorGenericMessage": "Cuu 没能完成这步操作，请打开详情查看原因。",
+    "cuuStart.errorChip.budget": "预算",
+    "cuuStart.errorChip.permission": "权限",
+    "cuuStart.errorChip.offline": "离线",
+    "cuuStart.errorChip.generic": "异常",
+    "cuuStart.errorViewReplay": "查看回放",
+    "cuuStart.errorOpenWorkItem": "打开事项",
     "pet.aria": "Cuu 桌宠",
     "pet.windowModeExpanding": "Cuu 轻卡窗口正在展开。",
     "pet.reducedMotionOffline": "Cuu 遇到连接问题，正在提醒你。",
@@ -384,6 +414,21 @@ const cuuCopy = {
     "cuuStart.progressIntent": "Direction",
     "cuuStart.progressTask": "Task",
     "cuuStart.progressRun": "Run",
+    "cuuStart.streamUpdated": "Cuu updated progress: {title}",
+    "cuuStart.errorBudgetTitle": "Budget stopped this run",
+    "cuuStart.errorBudgetMessage": "This task reached its budget limit and needs your decision.",
+    "cuuStart.errorPermissionTitle": "This step needs permission",
+    "cuuStart.errorPermissionMessage": "Cuu cannot continue directly. Open the detail view to handle it.",
+    "cuuStart.errorOfflineTitle": "Cuu cannot receive progress",
+    "cuuStart.errorOfflineMessage": "The connection or service is unavailable. Cuu will continue when it recovers.",
+    "cuuStart.errorGenericTitle": "This start did not finish",
+    "cuuStart.errorGenericMessage": "Cuu could not complete this step. Open the detail view to inspect the reason.",
+    "cuuStart.errorChip.budget": "Budget",
+    "cuuStart.errorChip.permission": "Permission",
+    "cuuStart.errorChip.offline": "Offline",
+    "cuuStart.errorChip.generic": "Error",
+    "cuuStart.errorViewReplay": "View replay",
+    "cuuStart.errorOpenWorkItem": "Open task",
     "pet.aria": "Cuu desktop pet",
     "pet.windowModeExpanding": "Cuu is expanding the light card window.",
     "pet.reducedMotionOffline": "Cuu hit a connection issue and is notifying you.",

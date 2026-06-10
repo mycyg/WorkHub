@@ -27,11 +27,14 @@ import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
+  cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
   resolveDesktopShellListen,
+  subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
+  type DesktopCuuRunStreamSubscription,
   type DesktopShellListen,
   type DesktopShellUnlisten
 } from "./desktop-cuu-runtime.js";
@@ -605,6 +608,7 @@ export async function bootDesktopPetSurface(
     : desktopPetInitialIdleAction;
   let statusText: string | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
+  let runStreamSubscription: DesktopCuuRunStreamSubscription | undefined;
   let confirmedPetWindowMode: DesktopPetWindowMode | undefined;
   let syncingPetWindowMode: DesktopPetWindowMode | undefined;
   let failedPetWindowMode: DesktopPetWindowMode | undefined;
@@ -681,6 +685,11 @@ export async function bootDesktopPetSurface(
   };
 
   const setCard = (card: CuuCard | undefined, status?: string) => {
+    const nextRunId = agentRunIdFromPetCard(card);
+    if (runStreamSubscription && nextRunId !== runStreamSubscription.runId) {
+      runStreamSubscription.close();
+      runStreamSubscription = undefined;
+    }
     if (card) {
       idleScheduler.observeWorkEvent(Date.now());
     }
@@ -688,6 +697,27 @@ export async function bootDesktopPetSurface(
     statusText = status;
     pendingAction = undefined;
     render();
+  };
+
+  const subscribeToAgentRun = (result: { agentRun?: Parameters<typeof subscribeDesktopCuuAgentRunStream>[0]["run"] }) => {
+    if (!result.agentRun) {
+      return;
+    }
+    runStreamSubscription?.close();
+    const subscription = subscribeDesktopCuuAgentRunStream({
+      client,
+      run: result.agentRun,
+      locale,
+      onCard(card, message) {
+        setCard(card, message);
+      },
+      onStatus(status) {
+        if (status.state === "closed" && runStreamSubscription?.runId === status.runId) {
+          runStreamSubscription = undefined;
+        }
+      }
+    });
+    runStreamSubscription = subscription.streamUrl ? subscription : undefined;
   };
 
   const updatePetPreferences = (preferences: Partial<CuuControllerPreferences>, message?: string) => {
@@ -826,9 +856,9 @@ export async function bootDesktopPetSurface(
           locale
         });
         setCard(result.card ?? currentCard, result.message);
+        subscribeToAgentRun(result);
       } catch (error) {
-        statusText = actionMessage(error, locale);
-        render();
+        setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
       }
       return;
     }
@@ -882,9 +912,9 @@ export async function bootDesktopPetSurface(
     try {
       const result = await submitDesktopCuuAction({ client, action, locale });
       setCard(result.card ?? currentCard, result.message);
+      subscribeToAgentRun(result);
     } catch (error) {
-      statusText = actionMessage(error, locale);
-      render();
+      setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
     }
   });
 
@@ -981,6 +1011,7 @@ export async function bootDesktopPetSurface(
       window.clearInterval(idleTimer);
       cancelPendingFirstPaintSync?.();
       pointerSensor?.dispose();
+      runStreamSubscription?.close();
       trayActionUnlisten?.();
       await runtime.dispose();
     }
@@ -1256,6 +1287,10 @@ function petPriorityLabel(priority: CuuCard["priority"], locale: WorkHubLocale) 
 
 function clientToken() {
   return globalThis.localStorage?.getItem("workhub_client_token") ?? globalThis.localStorage?.getItem("yqgl_client_token") ?? undefined;
+}
+
+function agentRunIdFromPetCard(card: CuuCard | undefined) {
+  return card?.payload_ref?.entity_type === "agent_run" ? card.payload_ref.entity_id : undefined;
 }
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {

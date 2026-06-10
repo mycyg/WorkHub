@@ -4,6 +4,7 @@ import {
   cardFromEvidenceBubble,
   cardFromWorkItemDetail,
   cuuFormat,
+  cuuMotionForState,
   cuuT,
   type CuuCard,
   type CuuCardAction,
@@ -12,16 +13,18 @@ import {
   type CuuControllerDecision,
   type CuuLocaleOptions
 } from "@workhub/cuu";
-import type { WorkHubApiClient } from "@workhub/api-client";
+import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import {
   eventTypes,
   type ApplyMergeProposalCandidateRequest,
+  type AgentRunLiveVM,
   type CreateSessionRequest,
   type CreateWorkItemRequest,
   type EvidenceRef,
   type GoldPathSurfaceVM,
   type MergeProposalRequest,
-  type StartAgentRunRequest
+  type StartAgentRunRequest,
+  type WorkHubEvent
 } from "@workhub/contracts";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
@@ -108,6 +111,54 @@ export type DesktopCuuActionRequest =
 export type DesktopCuuActionResult = {
   message: string;
   card?: CuuCard;
+  agentRun?: AgentRunLiveVM;
+};
+
+export type DesktopCuuStartAgentAction = Extract<DesktopCuuActionRequest, { kind: "cuu-start-agent" }>;
+
+export type DesktopCuuAgentLaunchClient = {
+  createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
+  createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
+  startAgentRun?: (
+    workItemId: string,
+    payload?: StartAgentRunRequest
+  ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
+};
+
+export type DesktopCuuAgentLaunchResult = {
+  session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>;
+  workItem: Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>;
+  run: AgentRunLiveVM;
+  card: CuuCard;
+  message: string;
+};
+
+export type DesktopCuuEventSourceEvent = {
+  data?: string;
+};
+
+export type DesktopCuuEventSourceLike = {
+  addEventListener: (eventName: string, handler: (event: DesktopCuuEventSourceEvent) => void) => void;
+  close: () => void;
+};
+
+export type DesktopCuuEventSourceConstructor = new (
+  url: string,
+  init?: { withCredentials?: boolean }
+) => DesktopCuuEventSourceLike;
+
+export type DesktopCuuRunStreamStatus =
+  | { state: "subscribed"; runId: string; streamUrl: string }
+  | { state: "event"; runId: string; eventType: string }
+  | { state: "refreshed"; runId: string; status: AgentRunLiveVM["status"] }
+  | { state: "unavailable"; runId: string; reason: string }
+  | { state: "error"; runId: string; message: string }
+  | { state: "closed"; runId: string; reason: string };
+
+export type DesktopCuuRunStreamSubscription = {
+  runId: string;
+  streamUrl?: string;
+  close: () => void;
 };
 
 type DesktopShellGlobal = {
@@ -232,6 +283,211 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
       entity_id: "cuu-agent-launcher",
       href: "/api/cuu/start-agent"
     }
+  };
+}
+
+export async function startDesktopCuuAgentFromLauncher(input: {
+  client: DesktopCuuAgentLaunchClient;
+  action: DesktopCuuStartAgentAction;
+  locale?: CuuLocaleOptions["locale"];
+}): Promise<DesktopCuuAgentLaunchResult> {
+  if (!input.action.selectedOptionIds?.length) {
+    throw new Error(cuuT(input.locale, "pet.optionRequired"));
+  }
+  if (!input.client.createSession || !input.client.createWorkItem || !input.client.startAgentRun) {
+    throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
+  }
+  const sessionPayload: CreateSessionRequest = {
+    title: input.action.title,
+    intent_text: input.action.intentText,
+    ...(input.action.projectId ? { project_id: input.action.projectId } : {})
+  };
+  const session = await input.client.createSession(sessionPayload);
+  const workItem = await input.client.createWorkItem({
+    session_id: session.session_id,
+    title: input.action.title,
+    raw_description: input.action.intentText,
+    selected_option_ids: input.action.selectedOptionIds,
+    kickoff_agent: true,
+    ...(input.action.projectId ? { project_id: input.action.projectId } : {})
+  });
+  const workItemId = workItem.workitem.id;
+  const runPayload: StartAgentRunRequest = {
+    title: input.action.runTitle ?? input.action.title,
+    ...(input.action.mode ? { mode: input.action.mode } : {})
+  };
+  const run = await input.client.startAgentRun(workItemId, runPayload);
+  return {
+    session,
+    workItem,
+    run,
+    message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
+    card: cardFromAgentRunLive(run, input)
+  };
+}
+
+export function subscribeDesktopCuuAgentRunStream(input: {
+  client: Pick<WorkHubApiClient, "getAgentRun" | "streamUrl">;
+  run: AgentRunLiveVM;
+  EventSourceCtor?: DesktopCuuEventSourceConstructor | undefined;
+  onCard: (card: CuuCard, statusMessage?: string | undefined) => void;
+  onStatus?: (status: DesktopCuuRunStreamStatus) => void;
+  locale?: CuuLocaleOptions["locale"];
+}): DesktopCuuRunStreamSubscription {
+  const runId = input.run.run_id;
+  const EventSourceCtor = input.EventSourceCtor ?? resolveDesktopCuuEventSource();
+  if (!EventSourceCtor) {
+    input.onStatus?.({ state: "unavailable", runId, reason: "event_source_unavailable" });
+    return {
+      runId,
+      close() {
+        input.onStatus?.({ state: "closed", runId, reason: "event_source_unavailable" });
+      }
+    };
+  }
+
+  const streamUrl = desktopCuuRunStreamUrl(input.client, input.run.stream_href);
+  const source = new EventSourceCtor(streamUrl, { withCredentials: true });
+  let closed = false;
+  let refreshing = false;
+  let refreshAgain = false;
+  let errorCardShown = false;
+
+  const close = (reason = "closed") => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    source.close();
+    input.onStatus?.({ state: "closed", runId, reason });
+  };
+
+  const refresh = async () => {
+    if (closed) {
+      return;
+    }
+    if (refreshing) {
+      refreshAgain = true;
+      return;
+    }
+    refreshing = true;
+    try {
+      const live = await input.client.getAgentRun(runId);
+      input.onCard(cardFromAgentRunLive(live, input), cuuFormat(input.locale, "cuuStart.streamUpdated", { title: live.title }));
+      input.onStatus?.({ state: "refreshed", runId, status: live.status });
+      if (!desktopCuuAgentRunIsActive(live.status)) {
+        close("terminal_status");
+      }
+    } catch (error) {
+      input.onCard(cardFromDesktopCuuRuntimeError(error, { locale: input.locale, run: input.run }));
+      input.onStatus?.({ state: "error", runId, message: desktopCuuErrorMessage(error, input.locale) });
+    } finally {
+      refreshing = false;
+      if (refreshAgain && !closed) {
+        refreshAgain = false;
+        void refresh();
+      }
+    }
+  };
+
+  const handleRunEvent = (eventName: string, event: DesktopCuuEventSourceEvent) => {
+    const workHubEvent = desktopCuuWorkHubEventFromSource(event);
+    if (workHubEvent && !desktopCuuEventBelongsToRun(workHubEvent, runId)) {
+      return;
+    }
+    input.onStatus?.({ state: "event", runId, eventType: workHubEvent?.type ?? eventName });
+    void refresh();
+  };
+
+  for (const eventName of desktopCuuRunStreamEventNames) {
+    source.addEventListener(eventName, (event) => handleRunEvent(eventName, event));
+  }
+  source.addEventListener("error", () => {
+    if (closed) {
+      return;
+    }
+    input.onStatus?.({ state: "error", runId, message: cuuT(input.locale, "cuuStart.errorOfflineMessage") });
+    if (!errorCardShown) {
+      errorCardShown = true;
+      input.onCard(cardFromDesktopCuuRuntimeError(new Error("event_source_error"), { locale: input.locale, run: input.run }));
+    }
+  });
+  input.onStatus?.({ state: "subscribed", runId, streamUrl });
+
+  return {
+    runId,
+    streamUrl,
+    close
+  };
+}
+
+export function cardFromDesktopCuuRuntimeError(
+  error: unknown,
+  options: CuuLocaleOptions & { run?: AgentRunLiveVM | undefined } = {}
+): CuuCard {
+  const kind = desktopCuuErrorKind(error);
+  const state = kind === "budget" ? "asking_approval" : kind === "offline" ? "offline" : "worried";
+  const titleKey =
+    kind === "budget"
+      ? "cuuStart.errorBudgetTitle"
+      : kind === "permission"
+        ? "cuuStart.errorPermissionTitle"
+        : kind === "offline"
+          ? "cuuStart.errorOfflineTitle"
+          : "cuuStart.errorGenericTitle";
+  const messageKey =
+    kind === "budget"
+      ? "cuuStart.errorBudgetMessage"
+      : kind === "permission"
+        ? "cuuStart.errorPermissionMessage"
+        : kind === "offline"
+          ? "cuuStart.errorOfflineMessage"
+          : "cuuStart.errorGenericMessage";
+  const run = options.run;
+  const actions: CuuCardAction[] = run
+    ? [
+        {
+          id: "view_replay",
+          label: cuuT(options.locale, "cuuStart.errorViewReplay"),
+          tone: "secondary",
+          method: "GET",
+          href: `/agent-runs/${run.run_id}/replay`
+        },
+        {
+          id: "open_workitem",
+          label: cuuT(options.locale, "cuuStart.errorOpenWorkItem"),
+          tone: "secondary",
+          method: "GET",
+          href: `/workitems/${run.work_item_id}`
+        }
+      ]
+    : [];
+
+  return {
+    id: run ? `cuu-run-error-${run.run_id}` : "cuu-runtime-error",
+    kind: kind === "budget" ? "budget" : kind === "offline" ? "offline" : "bubble",
+    state,
+    motion: cuuMotionForState(state),
+    title: cuuT(options.locale, titleKey),
+    message: desktopCuuErrorMessage(error, options.locale, messageKey),
+    priority: kind === "budget" || kind === "permission" ? "high" : "normal",
+    chips: [
+      {
+        id: kind,
+        label: cuuT(options.locale, desktopCuuErrorChipKey(kind)),
+        tone: kind === "budget" || kind === "permission" ? "warning" : kind === "offline" ? "warning" : "neutral"
+      }
+    ],
+    actions,
+    ...(run
+      ? {
+          payload_ref: {
+            entity_type: "agent_run" as const,
+            entity_id: run.run_id,
+            href: `/agent-runs/${run.run_id}/replay`
+          }
+        }
+      : {})
   };
 }
 
@@ -532,35 +788,15 @@ export async function submitDesktopCuuAction(input: {
   locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuActionResult> {
   if (input.action.kind === "cuu-start-agent") {
-    if (!input.action.selectedOptionIds?.length) {
-      throw new Error(cuuT(input.locale, "pet.optionRequired"));
-    }
-    if (!input.client.createSession || !input.client.createWorkItem || !input.client.startAgentRun) {
-      throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
-    }
-    const sessionPayload: CreateSessionRequest = {
-      title: input.action.title,
-      intent_text: input.action.intentText,
-      ...(input.action.projectId ? { project_id: input.action.projectId } : {})
-    };
-    const session = await input.client.createSession(sessionPayload);
-    const workItem = await input.client.createWorkItem({
-      session_id: session.session_id,
-      title: input.action.title,
-      raw_description: input.action.intentText,
-      selected_option_ids: input.action.selectedOptionIds,
-      kickoff_agent: true,
-      ...(input.action.projectId ? { project_id: input.action.projectId } : {})
+    const launch = await startDesktopCuuAgentFromLauncher({
+      client: input.client,
+      action: input.action,
+      locale: input.locale
     });
-    const workItemId = workItem.workitem.id;
-    const runPayload: StartAgentRunRequest = {
-      title: input.action.runTitle ?? input.action.title,
-      ...(input.action.mode ? { mode: input.action.mode } : {})
-    };
-    const run = await input.client.startAgentRun(workItemId, runPayload);
     return {
-      message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
-      card: cardFromAgentRunLive(run, input)
+      message: launch.message,
+      card: launch.card,
+      agentRun: launch.run
     };
   }
 
@@ -672,6 +908,105 @@ function intentFromSelectedChips(chips: CuuCardChip[]) {
 
 function startModeFromUnknown(value: unknown): StartAgentRunRequest["mode"] | undefined {
   return value === "worker" || value === "pm" ? value : undefined;
+}
+
+const desktopCuuRunStreamEventNames = [
+  "message",
+  eventTypes.agentRunStarted,
+  eventTypes.agentRunStep,
+  eventTypes.stepToolResult,
+  eventTypes.agentRunCompacting,
+  eventTypes.agentRunFailed,
+  eventTypes.agentRunEscalated,
+  eventTypes.budgetWarning,
+  eventTypes.budgetExhausted,
+  eventTypes.proposalOpened,
+  eventTypes.proposalMerged
+] as const;
+
+function resolveDesktopCuuEventSource(): DesktopCuuEventSourceConstructor | undefined {
+  return (globalThis as typeof globalThis & { EventSource?: DesktopCuuEventSourceConstructor }).EventSource;
+}
+
+function desktopCuuRunStreamUrl(client: Pick<WorkHubApiClient, "streamUrl">, streamHref: string) {
+  return /^https?:\/\//iu.test(streamHref) ? streamHref : client.streamUrl(streamHref);
+}
+
+function desktopCuuAgentRunIsActive(status: AgentRunLiveVM["status"]) {
+  return status === "queued" || status === "running";
+}
+
+function desktopCuuWorkHubEventFromSource(event: DesktopCuuEventSourceEvent): WorkHubEvent<unknown> | undefined {
+  if (!event.data) {
+    return undefined;
+  }
+  try {
+    const value = JSON.parse(event.data) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.event_id === "string" &&
+      typeof record.type === "string" &&
+      typeof record.topic === "string" &&
+      typeof record.ts === "string" &&
+      "data" in record
+    ) {
+      return value as WorkHubEvent<unknown>;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function desktopCuuEventBelongsToRun(event: WorkHubEvent<unknown>, runId: string) {
+  if (event.topic === `run:${runId}` || event.run_id === runId) {
+    return true;
+  }
+  if (event.data && typeof event.data === "object" && !Array.isArray(event.data)) {
+    return (event.data as Record<string, unknown>).run_id === runId;
+  }
+  return false;
+}
+
+function desktopCuuErrorKind(error: unknown): "budget" | "permission" | "offline" | "generic" {
+  if (error instanceof WorkHubApiError) {
+    if (error.code === "budget_exhausted") {
+      return "budget";
+    }
+    if ([401, 403].includes(error.status) || ["forbidden", "unauthorized", "permission_denied"].includes(error.code)) {
+      return "permission";
+    }
+  }
+  if (error instanceof TypeError) {
+    return "offline";
+  }
+  if (error instanceof Error && /event_source_error|failed to fetch|network|offline|disconnected/iu.test(error.message)) {
+    return "offline";
+  }
+  return "generic";
+}
+
+function desktopCuuErrorChipKey(kind: ReturnType<typeof desktopCuuErrorKind>) {
+  switch (kind) {
+    case "budget":
+      return "cuuStart.errorChip.budget";
+    case "permission":
+      return "cuuStart.errorChip.permission";
+    case "offline":
+      return "cuuStart.errorChip.offline";
+    case "generic":
+      return "cuuStart.errorChip.generic";
+  }
+}
+
+function desktopCuuErrorMessage(error: unknown, locale: CuuLocaleOptions["locale"], fallbackKey?: Parameters<typeof cuuT>[1]) {
+  if (error instanceof WorkHubApiError && error.message.trim()) {
+    return error.message.trim();
+  }
+  return cuuT(locale, fallbackKey ?? "cuuStart.errorGenericMessage");
 }
 
 function renderChip(chip: CuuCardChip) {

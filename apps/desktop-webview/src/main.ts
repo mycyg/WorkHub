@@ -203,11 +203,18 @@ export {
 } from "./pet-window-bridge.js";
 
 export {
+  cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
+  startDesktopCuuAgentFromLauncher,
+  subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
-  type DesktopCuuActionResult
+  type DesktopCuuActionResult,
+  type DesktopCuuAgentLaunchClient,
+  type DesktopCuuAgentLaunchResult,
+  type DesktopCuuRunStreamStatus,
+  type DesktopCuuRunStreamSubscription
 } from "./desktop-cuu-runtime.js";
 
 export {

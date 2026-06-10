@@ -42,9 +42,26 @@ R3 补 `FR-PET-002`：Cuu 不只是提醒和审批入口，也能从独立桌宠
 
 R3.1 deliberately uses a local pseudo endpoint path (`/api/cuu/start-agent`) only inside the webview runtime resolver. It is not a backend route and does not bypass the daemon. The submit handler converts it into real API calls.
 
-## 3. 字段级契约
+## 3. R3.2 已落切片：run stream 回流与错误卡
 
-### 3.1 Cuu launcher card
+R3.2 补上第一版“启动后 Cuu 继续跟进”的 TS 合同。它不宣称真实 Tauri 视觉验收完成；当前完成的是 webview runtime 与 pet surface 可复用的订阅、刷新和错误映射。
+
+| 项 | R3.2 行为 |
+|---|---|
+| 启动 helper | 新增 `startDesktopCuuAgentFromLauncher()`，封装 `createSession -> createWorkItem -> startAgentRun` |
+| submit 返回 | `submitDesktopCuuAction()` 对 `cuu-start-agent` 返回 `agentRun`，供 pet surface 订阅 `stream_href` |
+| run stream | 新增 `subscribeDesktopCuuAgentRunStream()`，使用 `EventSource(run.stream_href)`，过滤 `topic=run:{id}` / `run_id` 事件 |
+| card refresh | 每个匹配 run 事件触发 `client.getAgentRun(run_id)`，再用 `cardFromAgentRunLive()` 更新 Cuu |
+| 终态关闭 | `succeeded` / `failed` / `escalated` / `budget_exhausted` / `cancelled` 等非 `queued/running` 状态关闭订阅 |
+| 错误卡 | 新增 `cardFromDesktopCuuRuntimeError()`，把 `budget_exhausted`、401/403、offline/network、generic error 映射为 Cuu 轻卡 |
+| pet surface | 启动成功后持有 run subscription；切换到非同 run card 或 dispose 时关闭旧订阅 |
+| 公共导出 | `apps/desktop-webview/src/main.ts` 导出 R3.2 helper / subscription / error card types |
+
+R3.2 仍保持边界：Rust shell 不解析 intent、不直接调业务 API、不拥有 AgentRun 状态机；真实 daemon SSE、真实 pet window 截图和录屏仍是下一刀。
+
+## 4. 字段级契约
+
+### 4.1 Cuu launcher card
 
 ```ts
 type CuuLauncherCard = CuuCard & {
@@ -69,7 +86,7 @@ type CuuLauncherCard = CuuCard & {
 };
 ```
 
-### 3.2 Runtime action
+### 4.2 Runtime action
 
 `resolveDesktopCuuAction()` maps the card action to:
 
@@ -93,7 +110,7 @@ type DesktopCuuStartAgentAction = {
 
 If no chip is selected, submit fails with the existing `pet.optionRequired` message. This preserves the "先点选项" principle.
 
-### 3.3 Real API chain
+### 4.3 Real API chain
 
 `submitDesktopCuuAction()` executes:
 
@@ -116,7 +133,48 @@ sequenceDiagram
 
 返回给 Cuu 的 card 必须是 `payload_ref.entity_type="agent_run"`，用于后续 replay、abort、open task。
 
-## 4. Rust / Tauri 边界
+### 4.4 Run stream subscription
+
+```ts
+type DesktopCuuRunStreamSubscription = {
+  runId: string;
+  streamUrl?: string;
+  close: () => void;
+};
+
+subscribeDesktopCuuAgentRunStream({
+  client, // getAgentRun + streamUrl
+  run,    // AgentRunLiveVM from startAgentRun()
+  onCard(card, message) {
+    // pet surface setCard(card, message)
+  }
+});
+```
+
+事件处理规则：
+
+1. 只接受 `topic === "run:{run_id}"`、`event.run_id === run_id` 或 `event.data.run_id === run_id` 的事件。
+2. 收到 run 事件后不信任 event payload 直接渲染，而是重新拉 `GET /api/agent-runs/:id`。
+3. 拉回的 `AgentRunLiveVM` 仍走 `cardFromAgentRunLive()`，保持 Web / Desktop / Cuu 同一 DTO。
+4. 终态自动关闭订阅，避免旧 run 继续抢占 Cuu。
+5. EventSource 不可用时只报告 unavailable，不伪造成功。
+
+### 4.5 Runtime error card
+
+```ts
+cardFromDesktopCuuRuntimeError(error, { locale, run? })
+```
+
+| 错误 | Cuu card |
+|---|---|
+| `WorkHubApiError.code="budget_exhausted"` | `kind="budget"`、`state="asking_approval"` |
+| 401 / 403 / `permission_denied` | `kind="bubble"`、`state="worried"` |
+| `TypeError` / network / EventSource error | `kind="offline"`、`state="offline"` |
+| 其他异常 | `kind="bubble"`、`state="worried"` |
+
+如果已知 `run`，错误卡会保留 `payload_ref.entity_type="agent_run"`，并提供“查看回放 / 打开事项”动作。
+
+## 5. Rust / Tauri 边界
 
 R3.1 仍由 TS webview runtime 处理业务 action。Rust shell 不解析 intent、不创建 work item、不启动 AgentRun。
 
@@ -131,7 +189,7 @@ Rust 只负责：
 
 下一步如果要把点击 Cuu body 的首卡展示做成更强的系统行为，Rust 也只能发 `tray-action` 或 `push-event` 给 webview，不直接调用业务 API。
 
-## 5. 当前验证
+## 6. 当前验证
 
 已通过：
 
@@ -144,8 +202,13 @@ Rust 只负责：
 |---|---|
 | `desktop Cuu actions start a real agent run from an option-first launcher card` | selected chip -> `createSession` -> `createWorkItem` -> `startAgentRun` -> AgentRun Cuu card |
 | `pet surface renders the Cuu outbound agent launcher as option-first without text input` | launcher card DOM、无 `textarea/input`、可点击 action |
+| `desktop Cuu launcher helper returns session, work item, run, and Cuu card` | helper 直接返回 session/workItem/run/card/message |
+| `desktop Cuu run stream refreshes agent cards and closes on terminal status` | EventSource run event -> `getAgentRun()` -> Cuu card refresh -> terminal close |
+| `desktop Cuu runtime maps API and stream failures to Cuu cards` | budget / permission / offline error card 分类 |
 
-## 6. 与概念图对齐
+本轮 desktop-webview test 当前为 64/64 通过。
+
+## 7. 与概念图对齐
 
 | 概念要求 | 当前状态 |
 |---|---|
@@ -153,30 +216,30 @@ Rust 只负责：
 | 选项优先澄清 | 已用 `single_choice` launcher 复用同一气泡交互 |
 | 主力是 AI，不是看板 | Cuu 直接触发 AgentRun，不先把用户带到复杂看板 |
 | 桌宠要像入口而不是装饰 | 点击 body 可展开真实启动卡，后续返回 run 进度卡 |
+| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline |
 | 黑猫/白猫 Live2D 二选项 | 未改变模型白名单与外观 |
 
-## 7. 尚未完成
+## 8. 尚未完成
 
-R3.1 只是最小真实链路，不能宣称 R3 完成。
+R3.2 仍只是 TS 合同和单元验证，不能宣称 R3 完成。
 
 | 缺口 | 计划 |
 |---|---|
 | 真实 Tauri 点击截图 | 用 `pet` window 跑 launcher card，截 body-only -> card 展开前后两张图 |
-| SSE 回流 | 订阅新 run 的 stream，把 `agent_run.started/running/succeeded/failed` 回到 Cuu card |
-| 失败态 | API error、budget exhausted、403、offline 分别转成 Cuu 人话卡 |
+| 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；还需真实 API dev server / Tauri pet window 端到端验证 |
+| 失败态 | R3.2 已落 budget/403/offline/generic card mapping；还需真实 API error smoke |
 | 继续澄清 | 如果后端返回需要澄清，不应直接 start run；应展示 SessionVM question card |
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
 | 真实端到端 smoke | 用 API dev server + desktop webview runtime 做一条 launcher-to-run smoke |
 | 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
 
-## 8. 下一刀 R3.2
+## 9. 下一刀 R3.3
 
-R3.2 建议顺序：
+R3.3 建议顺序：
 
-1. 新增 `startDesktopCuuAgentFromLauncher()` helper，封装当前三段 API 组合，供 runtime、main export、后续 browser smoke 共用。
-2. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖真实 click body -> launcher card。
-3. 接 `AgentRunLiveVM.stream_href`：启动后订阅 run stream，更新 Cuu 为 running/succeeded/failed。
+1. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖真实 click body -> launcher card -> selected chip -> submit。
+2. 用 API dev server 做 launcher-to-run smoke，证明 R3.2 不是 mock client 内循环。
+3. 补 Tauri screenshot/motion capture：body-only idle、launcher card、queued/running card、completion card、failure/offline card 五组。
 4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 run card。
-5. 补 Tauri screenshot/motion capture：body-only idle、launcher card、queued/run card、failed/offline 四组。
+5. 如果后端返回 clarification/session pending，则 Cuu 展示 `SessionVM.question`，不强行 start run。
 6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
-

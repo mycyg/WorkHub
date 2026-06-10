@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { WorkHubApiError } from "@workhub/api-client";
 import { eventTypes, type AgentRunLiveVM, type AttentionItem, type EvidenceBubble, type QuestionCard, type SessionVM, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
 import { createCuuController, type CuuCard, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
   bindDesktopShellCuuRuntime,
+  cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
@@ -14,8 +16,11 @@ import {
   renderDesktopCuuNotice,
   resolveDesktopCuuAction,
   resolveDesktopShellListen,
+  startDesktopCuuAgentFromLauncher,
+  subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuNotice,
+  type DesktopCuuRunStreamStatus,
   type DesktopShellEventEnvelope,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
@@ -51,6 +56,88 @@ function workHubEvent(input: {
     ...(input.attention ? { attention: input.attention } : {}),
     data: input.data ?? {}
   };
+}
+
+function agentRunLive(input: Partial<AgentRunLiveVM> & { run_id?: string; status?: AgentRunLiveVM["status"] } = {}): AgentRunLiveVM {
+  const runId = input.run_id ?? "10000000-0000-4000-8000-000000000301";
+  const workItemId = input.work_item_id ?? "10000000-0000-4000-8000-000000000201";
+  const status = input.status ?? "queued";
+  return {
+    run_id: runId,
+    work_item_id: workItemId,
+    title: input.title ?? "Cuu 桌面入口任务",
+    status,
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5.00"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        reason: "desktop launcher smoke"
+      }
+    },
+    usage: {
+      steps_used: status === "queued" ? 0 : 1,
+      token_in: status === "queued" ? 0 : 120,
+      token_out: status === "queued" ? 0 : 80,
+      estimated_cost_cny: status === "queued" ? "0.00" : "0.01"
+    },
+    trace: input.trace ?? [],
+    stream_href: `/api/push/stream/run/${runId}`,
+    replay_href: `/api/agent-runs/${runId}/replay`,
+    ...input,
+    run: {
+      id: runId,
+      work_item_id: workItemId,
+      mode: "worker",
+      actor: "AI",
+      status,
+      model: "deepseek-v4-flash",
+      turns_used: status === "queued" ? 0 : 1,
+      max_turns: 15,
+      token_in: status === "queued" ? 0 : 120,
+      token_out: status === "queued" ? 0 : 80,
+      created_at: "2026-06-10T01:00:00.000Z",
+      updated_at: "2026-06-10T01:00:00.000Z",
+      ...(input.run ?? {})
+    }
+  };
+}
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readonly listeners = new Map<string, Array<(event: { data?: string }) => void>>();
+  closed = false;
+
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(eventName: string, handler: (event: { data?: string }) => void) {
+    const bucket = this.listeners.get(eventName) ?? [];
+    bucket.push(handler);
+    this.listeners.set(eventName, bucket);
+  }
+
+  emit(eventName: string, data?: unknown) {
+    for (const handler of this.listeners.get(eventName) ?? []) {
+      if (data === undefined) {
+        handler({});
+      } else {
+        handler({ data: typeof data === "string" ? data : JSON.stringify(data) });
+      }
+    }
+  }
+
+  close() {
+    this.closed = true;
+  }
 }
 
 test("desktop Cuu runtime listens to Rust push-event and sse-status channels", async () => {
@@ -590,6 +677,7 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
   assert.equal(result.message, "Cuu 已启动：Cuu 桌面入口任务");
   assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
   assert.equal(result.card?.state, "thinking");
+  assert.equal(result.agentRun?.run_id, run.run_id);
   assert.deepEqual(calls, [
     {
       step: "createSession",
@@ -616,6 +704,170 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
       }
     }
   ]);
+});
+
+test("desktop Cuu launcher helper returns session, work item, run, and Cuu card", async () => {
+  const calls: string[] = [];
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "en-US" });
+  const selectedLauncher: CuuCard = {
+    ...launcher,
+    chips: (launcher.chips ?? []).map((chip) => ({ ...chip, selected: chip.id === "structured-data" }))
+  };
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: selectedLauncher
+  });
+  const run = agentRunLive({ title: "Cuu structured task", status: "running" });
+  const client = {
+    async createSession(): Promise<SessionVM> {
+      calls.push("session");
+      return {
+        session_id: "10000000-0000-4000-8000-000000000201",
+        topic: "session:10000000-0000-4000-8000-000000000201",
+        stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000201",
+        next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+        question: {
+          id: "10000000-0000-4000-8000-000000000211",
+          title: "Pick a direction",
+          input_mode: "single_choice",
+          options: [],
+          free_text: { enabled: false, collapsed_by_default: true },
+          progress: [],
+          submit: { method: "POST", href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question" }
+        }
+      };
+    },
+    async createWorkItem(): Promise<WorkItemDetailVM> {
+      calls.push("workitem");
+      return {
+        workitem: {
+          id: run.work_item_id,
+          code: "WH-201",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          title: "Cuu structured task",
+          status: "ai_working"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        evidence_refs: []
+      } as unknown as WorkItemDetailVM;
+    },
+    async startAgentRun(): Promise<AgentRunLiveVM> {
+      calls.push("run");
+      return run;
+    }
+  };
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  if (!action || action.kind !== "cuu-start-agent") {
+    throw new Error("expected Cuu start action");
+  }
+  const result = await startDesktopCuuAgentFromLauncher({ client, action, locale: "en-US" });
+
+  assert.deepEqual(calls, ["session", "workitem", "run"]);
+  assert.equal(result.session.session_id, "10000000-0000-4000-8000-000000000201");
+  assert.equal(result.workItem.workitem.id, run.work_item_id);
+  assert.equal(result.run.run_id, run.run_id);
+  assert.equal(result.card.payload_ref?.entity_type, "agent_run");
+  assert.equal(result.message, "Cuu started: Cuu structured task");
+});
+
+test("desktop Cuu run stream refreshes agent cards and closes on terminal status", async () => {
+  FakeEventSource.instances = [];
+  const statuses: DesktopCuuRunStreamStatus[] = [];
+  const cards: CuuCard[] = [];
+  const refreshes = [
+    agentRunLive({
+      status: "running",
+      trace: [
+        {
+          id: "10000000-0000-4000-8000-000000000401",
+          agent_run_id: "10000000-0000-4000-8000-000000000301",
+          step_no: 1,
+          phase: "think",
+          input_json: {},
+          output_excerpt: "Cuu 正在整理证据。",
+          created_at: "2026-06-10T01:00:01.000Z"
+        }
+      ]
+    }),
+    agentRunLive({ status: "succeeded", title: "Cuu 桌面入口任务" })
+  ];
+  let refreshedResolve: (() => void) | undefined;
+  const refreshed = new Promise<void>((resolve) => {
+    refreshedResolve = resolve;
+  });
+  let closedResolve: (() => void) | undefined;
+  const closed = new Promise<void>((resolve) => {
+    closedResolve = resolve;
+  });
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      return refreshes.shift() ?? agentRunLive({ status: "succeeded" });
+    }
+  };
+  const subscription = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive(),
+    EventSourceCtor: FakeEventSource,
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus(status) {
+      statuses.push(status);
+      if (status.state === "refreshed") {
+        refreshedResolve?.();
+      }
+      if (status.state === "closed") {
+        closedResolve?.();
+      }
+    }
+  });
+
+  assert.equal(subscription.streamUrl, "/daemon/api/push/stream/run/10000000-0000-4000-8000-000000000301");
+  const source = FakeEventSource.instances[0]!;
+  source.emit(eventTypes.agentRunStep, workHubEvent({
+    event_id: "10000000-0000-4000-8000-000000000501",
+    type: eventTypes.agentRunStep,
+    topic: "run:10000000-0000-4000-8000-000000000301",
+    data: { run_id: "10000000-0000-4000-8000-000000000301" }
+  }));
+  await refreshed;
+  assert.equal(cards[0]?.state, "thinking");
+  assert.match(cards[0]?.message ?? "", /整理证据/u);
+
+  source.emit(eventTypes.agentRunStep, workHubEvent({
+    event_id: "10000000-0000-4000-8000-000000000502",
+    type: eventTypes.agentRunStep,
+    topic: "run:10000000-0000-4000-8000-000000000301",
+    data: { run_id: "10000000-0000-4000-8000-000000000301" }
+  }));
+  await closed;
+
+  assert.equal(cards.at(-1)?.state, "celebrating");
+  assert.equal(source.closed, true);
+  assert.deepEqual(statuses.map((status) => status.state), ["subscribed", "event", "refreshed", "event", "refreshed", "closed"]);
+});
+
+test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
+  const budget = cardFromDesktopCuuRuntimeError(new WorkHubApiError(402, "budget_exhausted", "预算用完了。"));
+  const permission = cardFromDesktopCuuRuntimeError(new WorkHubApiError(403, "forbidden", "没有权限。"), { locale: "en-US" });
+  const offline = cardFromDesktopCuuRuntimeError(new TypeError("Failed to fetch"), {
+    run: agentRunLive({ status: "running" })
+  });
+
+  assert.equal(budget.kind, "budget");
+  assert.equal(budget.state, "asking_approval");
+  assert.equal(budget.message, "预算用完了。");
+  assert.equal(permission.state, "worried");
+  assert.equal(permission.title, "This step needs permission");
+  assert.equal(offline.kind, "offline");
+  assert.equal(offline.state, "offline");
+  assert.equal(offline.payload_ref?.entity_type, "agent_run");
+  assert.equal(offline.actions.some((action) => action.id === "view_replay"), true);
 });
 
 test("desktop Cuu actions advance option-first clarification sessions", async () => {
