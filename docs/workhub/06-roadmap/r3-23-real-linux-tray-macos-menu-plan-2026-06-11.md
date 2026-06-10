@@ -173,14 +173,17 @@ WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX
 | 可复用图形变量 | 从 GNOME 进程和 `/run/user/1000` 识别到 `DISPLAY=:0`、`WAYLAND_DISPLAY=wayland-0`、`XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.1SGUP3` |
 | 失败证据 | 未设置 `XAUTHORITY` 时，Tauri/GTK、`wmctrl`、`xdotool`、`xwininfo`、`scrot` 均报 `Authorization required`，app 在 capture 前退出 |
 | 清理问题 | 失败路径留下 orphan mock API node，占用 `127.0.0.1:8787`；已清理旧 R3.22/R3.23 临时 WorkHub smoke 进程 |
+| AppIndicator 扩展 | 远端已安装 `ubuntu-appindicators@ubuntu.com`，手动启用后出现在 enabled extensions；但当前 GNOME Shell 未提供 `org.kde.StatusNotifierWatcher`，可能需要重启 GNOME session 后生效 |
+| orphan Tauri | StatusNotifier 失败后曾留下 `workhub-client-tauri` orphan；下一轮触发单实例退出，表现为 `app-stdout.txt` 为空、`ps-app.txt` 空但旧窗口仍在 |
 
 第四刀脚本改动：
 
 - `scripts/qa/cuu-tauri-linux-smoke.sh` 新增 `bootstrap_real_desktop_session_env()`：仅在 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1` 时补齐 `XDG_RUNTIME_DIR`、`DBUS_SESSION_BUS_ADDRESS`，并在 `DISPLAY` 存在但 `XAUTHORITY` 为空时选择 `/run/user/<uid>/.mutter-Xwaylandauth.*` 或 `~/.Xauthority`。
 - `linux-env-report.txt` 新增 `xauthority`、`xdg_runtime_dir`、`dbus_session_bus_address`，方便复盘 SSH -> GNOME 会话桥接。
 - `cleanup()` 增加当前 `repo_root` 限定的 orphan 清理：`cuu-r3-tauri-run-stream-server` 与 `@workhub/desktop-webview dev`，避免失败后 8787/1420 stale 端口造成下一轮假阻塞。
+- `cleanup()` 后续再收紧为 RETURN + EXIT 双保险，并按当前 `repo_root/client-tauri/src-tauri/target/debug/workhub-client-tauri` 清理 orphan Tauri debug binary，避免下一轮 single-instance 假失败。
 
-当前状态：第四刀是对真实 GNOME 远端首次运行暴露出的环境/清理问题的修复；还需要把本提交推送后，在远端临时克隆拉取最新 `main` 并重跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，才能判断 StatusNotifier DBus menu action 是否真正通过。
+当前状态：远端真实 GNOME 已证明 `DISPLAY/XAUTHORITY` 桥接、窗口列表、截图、DOM `spatial_safety` 与文本/frame hardgate 可跑；StatusNotifier menu action 仍阻塞在 `org.kde.StatusNotifierWatcher` 缺失/扩展未热加载，不能声明 tray menu action 通过。
 
 ## 12. 下一步
 

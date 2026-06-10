@@ -621,17 +621,19 @@ run_desktop_smoke() {
   run_outcome=""
   api_fault=""
   cleanup() {
-    if [ -n "$app_pid" ]; then kill "$app_pid" >/dev/null 2>&1 || true; fi
-    if [ -n "$api_pid" ] && command -v pkill >/dev/null 2>&1; then pkill -TERM -P "$api_pid" >/dev/null 2>&1 || true; fi
-    if [ -n "$api_pid" ]; then kill "$api_pid" >/dev/null 2>&1 || true; fi
-    if [ -n "$vite_pid" ] && command -v pkill >/dev/null 2>&1; then pkill -TERM -P "$vite_pid" >/dev/null 2>&1 || true; fi
-    if [ -n "$vite_pid" ]; then kill "$vite_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${app_pid:-}" ]; then kill "$app_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${api_pid:-}" ] && command -v pkill >/dev/null 2>&1; then pkill -TERM -P "$api_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${api_pid:-}" ]; then kill "$api_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${vite_pid:-}" ] && command -v pkill >/dev/null 2>&1; then pkill -TERM -P "$vite_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${vite_pid:-}" ]; then kill "$vite_pid" >/dev/null 2>&1 || true; fi
+    if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/client-tauri/src-tauri/target/debug/workhub-client-tauri" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*cuu-r3-tauri-run-stream-server" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*@workhub/desktop-webview.*dev" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/apps/desktop-webview/.*vite.*--port $port" >/dev/null 2>&1 || true; fi
-    if [ -n "$wm_pid" ]; then kill "$wm_pid" >/dev/null 2>&1 || true; fi
+    if [ -n "${wm_pid:-}" ]; then kill "$wm_pid" >/dev/null 2>&1 || true; fi
   }
   trap cleanup RETURN
+  trap cleanup EXIT
 
   if scenario_uses_run_api "$scenario"; then
     uses_api="true"
