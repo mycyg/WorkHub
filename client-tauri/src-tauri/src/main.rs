@@ -119,6 +119,7 @@ where
                 "reload-terminal-run",
                 "permission-401",
                 "permission-403",
+                "generic-runtime-error",
                 "stream-offline",
                 "offline",
             ],
@@ -1290,6 +1291,7 @@ mod tests {
             "reload-terminal-run",
             "permission-401",
             "permission-403",
+            "generic-runtime-error",
             "stream-offline",
             "offline",
         ] {

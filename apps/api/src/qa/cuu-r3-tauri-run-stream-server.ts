@@ -37,7 +37,7 @@ function resolveRunOutcome(value: string | undefined): CuuR3RunOutcome {
 }
 
 function resolveApiFault(value: string | undefined): CuuR3ApiFault {
-  return value === "permission-401" || value === "permission-403" || value === "stream-offline"
+  return value === "permission-401" || value === "permission-403" || value === "stream-offline" || value === "generic-502"
     ? value
     : "none";
 }

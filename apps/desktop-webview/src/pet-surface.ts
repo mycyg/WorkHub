@@ -117,6 +117,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px);overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(72px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
@@ -1603,6 +1604,7 @@ function desktopPetQaScenarioStartsRunApiFlow(scenario: ReturnType<typeof deskto
     scenario === "run-failure" ||
     scenario === "permission-401" ||
     scenario === "permission-403" ||
+    scenario === "generic-runtime-error" ||
     scenario === "stream-offline";
 }
 

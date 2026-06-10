@@ -465,8 +465,8 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.match(html, /data-cuu-action-id="submit"/u);
   assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-legacy/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
-  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card\{[^}]*min-width:0;max-width:100%;[^}]*overflow-wrap:anywhere;word-break:break-word/u);
-  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-copy\{[^}]*min-width:0;max-width:100%;width:100%/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card\{[^}]*min-width:0;max-width:100%;[^}]*overflow:hidden;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-copy\{[^}]*min-width:0;max-width:100%;width:100%;overflow:hidden/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-head\{[^}]*min-width:0;max-width:100%;[^}]*flex-wrap:wrap/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-title\{[^}]*max-width:100%;width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-message\{[^}]*max-width:100%;width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
@@ -474,6 +474,31 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-action\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-queue-badge\{[^}]*max-width:calc\(100vw - 36px\);min-width:0/u);
   assert.doesNotMatch(desktopCuuNoticeCss, /wh-cuu-sprite/u);
+
+  const longNoticeHtml = renderDesktopCuuNotice({
+    id: "card-long",
+    kind: "bubble",
+    state: "worried",
+    motion: {
+      state: "worried",
+      sprite_state: "worried_ears",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu needs attention."
+    },
+    title: `Provider failure ${"LongDiagnosticTokenWithoutNaturalBreaks".repeat(8)}`,
+    message: `Open the replay for details ${"LongProviderPayloadWithoutSpaces".repeat(8)}`,
+    priority: "high",
+    chips: [{ id: "provider_failed", label: `Provider ${"LongCodeWithoutBreaks".repeat(5)}` }],
+    actions: [{
+      id: "view_replay",
+      label: `View replay ${"LongActionLabelWithoutBreaks".repeat(5)}`,
+      tone: "secondary",
+      href: "/agent-runs/run-1/replay"
+    }]
+  }, { locale: "en-US" });
+  assert.match(longNoticeHtml, /LongDiagnosticTokenWithoutNaturalBreaks/u);
+  assert.match(longNoticeHtml, /LongProviderPayloadWithoutSpaces/u);
 
   assert.equal(desktopCuuNoticeMessage({
     id: "card-en",

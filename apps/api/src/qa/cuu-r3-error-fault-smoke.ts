@@ -20,6 +20,7 @@ async function main() {
   const permission401 = await runFaultCase("permission-401");
   const permission403 = await runFaultCase("permission-403");
   const streamOffline = await runFaultCase("stream-offline");
+  const generic502 = await runFaultCase("generic-502");
 
   assert.equal(permission401.card.kind, "bubble");
   assert.equal(permission401.card.state, "worried");
@@ -36,11 +37,16 @@ async function main() {
   assert.equal(streamOffline.card.payload_ref?.entity_type, "agent_run");
   assert.equal(streamOffline.card.actions.some((action) => action.id === "view_replay"), true);
 
+  assert.equal(generic502.card.kind, "bubble");
+  assert.equal(generic502.card.state, "worried");
+  assert.equal(generic502.card.payload_ref?.entity_type, "agent_run");
+  assert.equal(generic502.card.actions.some((action) => action.id === "view_replay"), true);
+
   console.log(JSON.stringify({
     ok: true,
     smoke: "cuu-r3-error-fault",
     route_stack: ["sessions", "workitems", "agent-runs", "agent-run-read-fault"],
-    cases: [permission401, permission403, streamOffline].map(({ apiFault, run, error, card }) => ({
+    cases: [permission401, permission403, streamOffline, generic502].map(({ apiFault, run, error, card }) => ({
       api_fault: apiFault,
       run_id: run.run_id,
       error_status: error.status,

@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "generic-runtime-error", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -81,8 +81,8 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
-$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "settings-menu-hover-sync", "pass-through-recovery-settings", "pass-through-recovery-tray", "pass-through-recovery-tray-physical", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "generic-runtime-error", "stream-offline", "offline")
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "generic-runtime-error", "stream-offline", "offline")
 $reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
 $script:cuuMainCdpWebSocketUrl = $null
@@ -934,7 +934,7 @@ function Test-CuuR3RunStreamApiServer {
     [int]$Port = 8787,
     [ValidateSet("succeeded", "failed")]
     [string]$RunOutcome = "succeeded",
-    [ValidateSet("none", "permission-401", "permission-403", "stream-offline")]
+    [ValidateSet("none", "permission-401", "permission-403", "generic-502", "stream-offline")]
     [string]$ApiFault = "none"
   )
   try {
@@ -979,7 +979,7 @@ function Start-CuuR3RunStreamApiServerIfNeeded {
     [int]$Port = 8787,
     [ValidateSet("succeeded", "failed")]
     [string]$RunOutcome = "succeeded",
-    [ValidateSet("none", "permission-401", "permission-403", "stream-offline")]
+    [ValidateSet("none", "permission-401", "permission-403", "generic-502", "stream-offline")]
     [string]$ApiFault = "none"
   )
   if (Test-LocalPort -Port $Port) {
@@ -1239,6 +1239,17 @@ function Get-CuuExpectedBehaviorForScenario {
         data_pet_window_mode = "card"
       }
     }
+    "generic-runtime-error" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "worried"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
     "stream-offline" {
       return [pscustomobject]@{
         data_cuu_behavior_state = "offline"
@@ -1350,6 +1361,7 @@ function Test-CuuActualDomMatchesExpected {
     "reload-terminal-run" = "view_replay"
     "permission-401" = "view_replay"
     "permission-403" = "view_replay"
+    "generic-runtime-error" = "view_replay"
     "stream-offline" = "view_replay"
   }
   if ($expectedActionByScenario.ContainsKey($Scenario)) {
@@ -1388,7 +1400,7 @@ function Test-CuuActualDomMatchesExpected {
       return $false
     }
   }
-  if (@("permission-401", "permission-403", "stream-offline", "reload-session", "reload-active-run", "reload-terminal-run") -contains $Scenario) {
+  if (@("permission-401", "permission-403", "generic-runtime-error", "stream-offline", "reload-session", "reload-active-run", "reload-terminal-run") -contains $Scenario) {
     if (-not $Actual.bubble -or -not $Actual.bubble.data) {
       return $false
     }
@@ -2379,7 +2391,7 @@ function New-CuuPetCardTextOverflowGate {
     [object]$Actual
   )
 
-  $enabled = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
+  $enabled = @("run-stream", "run-failure", "permission-401", "permission-403", "generic-runtime-error", "stream-offline") -contains $Scenario
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -2397,22 +2409,49 @@ function New-CuuPetCardTextOverflowGate {
   $bubblePresent = $bubble -and [bool](Get-CuuObjectPropertyValue -InputObject $bubble -Name "present")
   $bubbleHasLayout = $null -ne $bubbleLayout
   $bubbleNoHorizontalOverflow = $bubbleHasLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $bubbleLayout -Name "horizontal_overflow")
+  $bubbleNoVerticalOverflow = $bubbleHasLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $bubbleLayout -Name "vertical_overflow")
   $primaryActionPresent = $primaryAction -and [bool](Get-CuuObjectPropertyValue -InputObject $primaryAction -Name "present")
   $primaryActionNoHorizontalOverflow = -not $primaryActionPresent -or (
     $primaryActionLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $primaryActionLayout -Name "horizontal_overflow")
   )
+  $primaryActionNoVerticalOverflow = -not $primaryActionPresent -or (
+    $primaryActionLayout -and -not [bool](Get-CuuObjectPropertyValue -InputObject $primaryActionLayout -Name "vertical_overflow")
+  )
+  $spatialSafety = if ($Actual) { Get-CuuObjectPropertyValue -InputObject $Actual -Name "spatial_safety" } else { $null }
+  $bubbleWithinSurfaceVertical = $false
+  $bubbleWithinSurfaceHorizontal = $false
+  $bubbleClearOfLive2d = $false
+  if ($spatialSafety) {
+    $bubbleWithinSurfaceVertical = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_within_surface_vertical") -eq $true
+    $bubbleWithinSurfaceHorizontal = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_within_surface_horizontal") -eq $true
+    $bubbleClearOfLive2d = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_overlaps_live2d") -eq $false
+  }
   $bubbleOffenderCount = ($bubbleOffenders | Where-Object { $null -ne $_ } | Measure-Object).Count
-  $passed = $bubblePresent -and $bubbleNoHorizontalOverflow -and $bubbleOffenderCount -eq 0 -and $primaryActionNoHorizontalOverflow
+  $passed = $bubblePresent `
+    -and $bubbleNoHorizontalOverflow `
+    -and $bubbleNoVerticalOverflow `
+    -and $bubbleOffenderCount -eq 0 `
+    -and $primaryActionNoHorizontalOverflow `
+    -and $primaryActionNoVerticalOverflow `
+    -and $bubbleWithinSurfaceVertical `
+    -and $bubbleWithinSurfaceHorizontal `
+    -and $bubbleClearOfLive2d
 
   [pscustomobject]@{
     enabled = $true
     passed = $passed
-    reason = if ($passed) { "pet_card_text_in_bounds" } else { "pet_card_text_overflow_detected" }
+    reason = if ($passed) { "pet_card_text_and_frame_in_bounds" } else { "pet_card_text_or_frame_overflow_detected" }
     bubble_present = $bubblePresent
     bubble_has_layout = $bubbleHasLayout
     bubble_layout = $bubbleLayout
+    spatial_safety = $spatialSafety
+    bubble_no_vertical_overflow = $bubbleNoVerticalOverflow
+    bubble_within_surface_vertical = $bubbleWithinSurfaceVertical
+    bubble_within_surface_horizontal = $bubbleWithinSurfaceHorizontal
+    bubble_clear_of_live2d = $bubbleClearOfLive2d
     primary_action_layout = $primaryActionLayout
     primary_action_no_horizontal_overflow = $primaryActionNoHorizontalOverflow
+    primary_action_no_vertical_overflow = $primaryActionNoVerticalOverflow
     overflow_offender_count = $bubbleOffenderCount
     overflow_offenders = $bubbleOffenders
   }
@@ -2827,7 +2866,7 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
+  $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "generic-runtime-error", "stream-offline") -contains $Scenario
   $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
   $usesCommandTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray"
   $usesPhysicalTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray-physical"
@@ -2865,7 +2904,9 @@ try {
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_RUN_OUTCOME" -ErrorAction SilentlyContinue
   }
-  if (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
+  if ($Scenario -eq "generic-runtime-error") {
+    $env:WORKHUB_CUU_QA_API_FAULT = "generic-502"
+  } elseif (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
     $env:WORKHUB_CUU_QA_API_FAULT = $Scenario
   } elseif ($usesCuuR3ApiServer) {
     $env:WORKHUB_CUU_QA_API_FAULT = "none"

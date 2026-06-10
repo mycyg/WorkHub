@@ -38,8 +38,8 @@ visuals:
 | `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
 | `apps/desktop-webview/src/browser.ts` | 根据 Rust 注入 surface 分流主窗或 pet surface |
-| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate |
-| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu 卡片 action runtime；R3.1 已新增 `cuu-agent-launcher` 与 `cuu-start-agent` 三段真实 API 组合；R3.2 已补启动 helper、run stream 订阅和错误卡；R3.12 已补 WebView fetch SSE + active-run fallback refresh；R3.14 已补 launcher chip metadata -> WorkItem spec |
+| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate |
+| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu 卡片 action runtime；R3.1 已新增 `cuu-agent-launcher` 与 `cuu-start-agent` 三段真实 API 组合；R3.2 已补启动 helper、run stream 订阅和错误卡；R3.12 已补 WebView fetch SSE + active-run fallback refresh；R3.14 已补 launcher chip metadata -> WorkItem spec；R3.22 已补主窗 notice 长文案 overflow clamp |
 | `apps/desktop-webview/src/pet-window-bridge.ts` | TS 调用 Rust window commands，整合 pointer/drag/cursor sample |
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 黑猫/白猫 Live2D iframe/runtime 适配 |
 | `packages/cuu/src/model-pack.ts` | 当前只注册黑猫/白猫模型包 |
@@ -67,8 +67,8 @@ visuals:
 | 形态 | transparent、decorations false、always-on-top、skip-taskbar |
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
-| card 尺寸 | `520x720` logical px，从 body anchor 向左上展开轻气泡；2026-06-11 起为长失败/预算卡预留纵向安全区 |
-| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:392px; width:300px; max-width:calc(100% - 128px)`，避免高 DPI/PrintWindow 右缘裁切和长文本压住 Cuu 本体 |
+| card 尺寸 | `520x720` logical px，从 body anchor 向左上展开轻气泡；2026-06-11 起为长失败/预算卡预留纵向安全区，R3.22 起 DOM report 证明 bubble / Live2D / surface 空间关系 |
+| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:392px; width:300px; max-width:calc(100% - 128px)`，非 completion 卡最小高度为 `268px * scale`，避免高 DPI/PrintWindow 右缘裁切、旧帧残影和长文本压住 Cuu 本体 |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
 | R3 launcher | 点击 Cuu body 且当前无业务卡片时，webview 展开 option-first Agent 启动卡；启动后 TS 订阅 run stream 并刷新 Cuu card；Rust 只负责窗口模式，不解析业务 intent |
@@ -237,7 +237,7 @@ visuals:
 
 ### 7.4 R3：Cuu Agent 出站入口
 
-R3.1-R3.20b 已落 TS webview 层、route-stack、boot click harness、第一份真实 Tauri launcher 证据、真实本机 HTTP dev-server launcher-to-run smoke、真实 Tauri run-stream completion capture、真实 Tauri run-failure terminal capture、真实 Tauri 401/403/offline error-state capture、pet webview boot restore、launcher spec metadata、真实 Tauri reload restore capture、真实 Tauri 业务状态矩阵 capture、真实 Tauri settings/menu matrix、pass-through recovery 主窗 settings 截图门、tray handler recovery 证据、右键 hover -> main settings 同步截图、Windows 物理 OS 托盘菜单项恢复证据，以及 run failure/run stream 卡片文本 overflow 自动门，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
+R3.1-R3.22 已落 TS webview 层、route-stack、boot click harness、第一份真实 Tauri launcher 证据、真实本机 HTTP dev-server launcher-to-run smoke、真实 Tauri run-stream completion capture、真实 Tauri run-failure terminal capture、真实 Tauri 401/403/offline error-state capture、pet webview boot restore、launcher spec metadata、真实 Tauri reload restore capture、真实 Tauri 业务状态矩阵 capture、真实 Tauri settings/menu matrix、pass-through recovery 主窗 settings 截图门、tray handler recovery 证据、右键 hover -> main settings 同步截图、Windows 物理 OS 托盘菜单项恢复证据、run failure/run stream 卡片文本 overflow 自动门，以及 R3.22 failed/permission/offline/generic/main notice 文本与 frame hardgate，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
 
 - `pet-surface.ts` 在用户点击 Cuu body 且当前无 card 时展示 launcher card。
 - launcher 仅给可点选交付方向，不显示输入框。
@@ -246,7 +246,7 @@ R3.1-R3.20b 已落 TS webview 层、route-stack、boot click harness、第一份
 - R3.2 新增 `startDesktopCuuAgentFromLauncher()`、`subscribeDesktopCuuAgentRunStream()` 与 `cardFromDesktopCuuRuntimeError()`。
 - pet surface 在启动成功后订阅 `AgentRunLiveVM.stream_href`，匹配 run 事件后重新拉 `GET /api/agent-runs/:id` 并刷新 Cuu 卡；终态会关闭订阅。
 - R3.20b 的 `pass-through-recovery-tray-physical` 通过真实 Windows tray overflow panel 点击 `Restore Cuu interaction`，并要求 `command_fallback_used=false`。
-- R3.20b 的 `pet_card_text_overflow_gate` 已覆盖 run failure / run stream 中英证据，防止标题、按钮、Run progress、Budget 超出轻卡容器。
+- R3.20b 的 `pet_card_text_overflow_gate` 已覆盖 run failure / run stream 中英证据，防止标题、按钮、Run progress、Budget 超出轻卡容器；R3.22 进一步加入 DOM `spatial_safety`、Linux mock API smoke、generic-runtime-error 和主窗 notice clamp。
 - budget exhausted、403/401、offline/network 和 generic error 已能映射为 Cuu 轻卡。
 - R3.10 已证明真实 Tauri `pet` window 从 body-only 黑猫点击展开英文 launcher card：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，包含 contact sheet、GIF/MP4、DOM report 与 motion diff report。
 - R3.11 已证明 desktop Cuu runtime 通过 `createApiClient({ baseUrl:"http://127.0.0.1:<port>", getClientToken })` 访问真实 Hono HTTP server 后，仍能完成 launcher -> clarification -> confirmation -> WorkItem -> AgentRun。
@@ -261,10 +261,22 @@ R3.1-R3.20b 已落 TS webview 层、route-stack、boot click harness、第一份
 - R3.18 已证明真实 Tauri 主窗 `/settings` 可恢复 pass-through：zh-CN/en-US 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-zh/` 与 `settings-restore-en/`；`pass_through_recovery_gate.passed=true`，恢复后 pet 右键菜单重新可用，主窗截图无 Cuu 本体、无模型预览、`overflow.offenders=[]`。同轮复跑 `run-failure-card-en/` 覆盖用户截图中的失败运行卡片文本边界。
 - R3.19 已证明同一 Rust tray handler 可恢复 pass-through：zh-CN/en-US 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-zh-official/` 与 `tray-restore-en-official/`；`restore_pet_window_interaction` QA command 只调用 `handle_tray_action(TRAY_RESTORE_PET_INTERACTION_ID)`，恢复后 pet/main settings 同步，右键菜单可用，transient 恢复提示不再被菜单遮挡。
 - R3.20a 已证明右键菜单切 `hide_on_hover` 会同步到主窗 `/settings`：zh-CN/en-US 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-settings-hover-sync/hijiki/hover-sync-zh-official/` 与 `hover-sync-en-official/`；`settings_menu_hover_sync_gate.passed=true`，主窗前后截图直接显示 `Dodge hover` / `悬停避让` 状态变化，两个 locale 的 `overflow.offenders=[]`。
+- R3.21 已证明 Linux Xvfb/openbox 能启动 WorkHub 与 Cuu 独立窗口、Tauri Linux build/test 通过，且 `Cuu 520x720` frame safety 有 DOM report；R3.22 已证明 failed AgentRun 与 generic 502 fallback card 在 Linux mock API smoke 中不越框、不遮住 Live2D，证据在 `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/`。
 
 Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补物理 OS 托盘菜单点击与跨平台 capture。
 
-### 7.5 P4：跨平台客户端
+### 7.5 R3.22 text/frame hardgate
+
+2026-06-11 已补用户截图对应的 Cuu run card 文本越框回归门：
+
+- `cuu-qa-dom-report.ts` 新增 `vertical_overflow` 与 `spatial_safety`，同时记录 surface、bubble、Live2D 和 primary action rect。
+- `scripts/qa/cuu-tauri-motion-capture.ps1` 的 `pet_card_text_overflow_gate` 不再只看横向文本；现在也检查 bubble / primary action 的 `vertical_overflow`、bubble 是否在 `520x720` surface 内、是否遮住 Live2D、是否仍保留 failed AgentRun 的 `Run progress` / `Budget` 文案。
+- `scripts/qa/cuu-tauri-linux-smoke.sh` 新增 mock API server，可在 Linux Xvfb/openbox 中稳定复现 `run-failure` 和 `generic-runtime-error`，其中 generic 通过受控 `generic-502` fault 进入 fallback 卡；Linux gate 还会校验 run API 场景的 state、bubble kind、payload ref、primary action 与场景文案。
+- 证据留存：`docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/run-failure-linux-smoke/` 与 `generic-runtime-error-linux-smoke/`，两组 `screen.png` 和 `cuu-tauri-dom-report.json` 均证明文本、按钮、frame 和 Cuu 本体不重叠越界。
+
+R3.22 仍不声明真实 Linux panel appindicator 或 macOS menu bar 已通过；该缺口进入 R3.23。
+
+### 7.6 P4：跨平台客户端
 
 - Windows：透明 WebView2 截图、托盘、通知、安装包 smoke。
 - macOS：transparent window、menu bar、notification、签名/公证。
@@ -294,9 +306,10 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | R3 settings menu capture | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario settings-menu/settings-menu-model-switch`，证据见 `assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/` |
 | R3 pass-through recovery capture | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario pass-through-recovery-settings -Locale zh-CN/en-US`，证据见 `assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/` |
 | R3 tray handler recovery capture | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario pass-through-recovery-tray -Locale zh-CN/en-US`，证据见 `assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/` |
+| R3.22 text/frame smoke | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario run-failure/generic-runtime-error` 与 `bash scripts/qa/cuu-tauri-linux-smoke.sh`；证据见 `assets/audit/2026-06-11-r3-22-text-overflow/`，要求 `spatial_safety` 和文本 overflow gate 同时通过 |
 | Path hygiene | `git diff --name-only` 不含 `reference/` / `references/` |
 
-真实视觉证据必须写入审计文档，不能只用测试命令替代。R3.10 的真实 Tauri launcher 验收已经保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。R3.12 的 zh-CN/en-US run-stream capture、R3.13.1 的 zh-CN/en-US run-failure capture、R3.13.2 的 zh-CN/en-US 401/403/offline capture、R3.15 的 reload session/active/terminal capture、R3.16 的 `clarify/search/sync/done/offline/approval` capture、R3.17 的 settings/menu capture、R3.18 的 pass-through recovery capture、R3.19 的 tray handler recovery capture、R3.20a 的 hover sync capture 同样保留 contact sheet、GIF/MP4、DOM report 与 motion diff report；API/Tauri stdout/stderr/frames 作为本地调试中间件生成，不进入 Git 跟踪证据。业务 card 截图还必须人工查看最终帧，并要求 `right_edge_clip_gate.passed=true`，确认标题、状态、actions、Run progress/Budget、evidence refs 或 permission/offline 文案不被窗口边界裁切。菜单截图还必须满足 `settings_menu_layout_gate.passed=true`，确认菜单或短提示在 `pet` surface 内；主窗 settings 恢复或同步截图必须滚动到桌面客户端设置区，满足 `layout_gate.overflow.offenders=[]`、无 Cuu 本体、无模型预览，并直接显示相关控件状态。
+真实视觉证据必须写入审计文档，不能只用测试命令替代。R3.10 的真实 Tauri launcher 验收已经保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。R3.12 的 zh-CN/en-US run-stream capture、R3.13.1 的 zh-CN/en-US run-failure capture、R3.13.2 的 zh-CN/en-US 401/403/offline capture、R3.15 的 reload session/active/terminal capture、R3.16 的 `clarify/search/sync/done/offline/approval` capture、R3.17 的 settings/menu capture、R3.18 的 pass-through recovery capture、R3.19 的 tray handler recovery capture、R3.20a 的 hover sync capture、R3.21 的 Linux Xvfb/openbox smoke 与 R3.22 的 text/frame smoke 同样保留截图、DOM report 或脚本 stdout 证据；API/Tauri stdout/stderr/frames 作为本地调试中间件生成，不进入 Git 跟踪证据。业务 card 截图还必须人工查看最终帧，并要求 `right_edge_clip_gate.passed=true` 或 R3.22 `spatial_safety` 等价通过，确认标题、状态、actions、Run progress/Budget、evidence refs 或 permission/offline 文案不被窗口边界裁切。菜单截图还必须满足 `settings_menu_layout_gate.passed=true`，确认菜单或短提示在 `pet` surface 内；主窗 settings 恢复或同步截图必须滚动到桌面客户端设置区，满足 `layout_gate.overflow.offenders=[]`、无 Cuu 本体、无模型预览，并直接显示相关控件状态。
 
 ## 9. 当前缺口
 
@@ -305,11 +318,11 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
-| R3 Agent launcher / run-stream 真实 Tauri capture | 已补真实 `pet` window `launcher/en-US` capture、zh-CN/en-US run-stream completion capture、zh-CN/en-US run-failure terminal capture、zh-CN/en-US 401/403/offline capture、zh-CN/en-US reload session/active/terminal capture、zh-CN/en-US 混合业务状态矩阵 capture、settings matrix、右键菜单 capture、pass-through recovery 主窗截图、tray handler recovery、右键 hover -> main settings 截图、Windows 物理 OS 托盘恢复与 run card 文本 overflow gate；TS runtime、DOM render、run stream/error card tests、dev-server launcher-to-run smoke、run-stream smoke、run-failure smoke、error-fault smoke、R3.13.3 session/run restore 单测、R3.14 chip metadata spec readback、R3.15 reload restore smoke、R3.16 business matrix evidence、R3.17 settings/menu evidence、R3.18 pass-through recovery evidence、R3.19 tray handler recovery evidence、R3.20a hover sync evidence 与 R3.20b physical tray evidence 已落 | 下一步补 Linux/macOS 跨平台 capture |
+| R3 Agent launcher / run-stream 真实 Tauri capture | 已补真实 `pet` window `launcher/en-US` capture、zh-CN/en-US run-stream completion capture、zh-CN/en-US run-failure terminal capture、zh-CN/en-US 401/403/offline capture、zh-CN/en-US reload session/active/terminal capture、zh-CN/en-US 混合业务状态矩阵 capture、settings matrix、右键菜单 capture、pass-through recovery 主窗截图、tray handler recovery、右键 hover -> main settings 截图、Windows 物理 OS 托盘恢复、run card 文本 overflow gate、Linux Xvfb/openbox smoke、R3.22 failed/generic card frame hardgate；TS runtime、DOM render、run stream/error card tests、dev-server launcher-to-run smoke、run-stream smoke、run-failure smoke、error-fault smoke、R3.13.3 session/run restore 单测、R3.14 chip metadata spec readback、R3.15 reload restore smoke、R3.16 business matrix evidence、R3.17 settings/menu evidence、R3.18 pass-through recovery evidence、R3.19 tray handler recovery evidence、R3.20a hover sync evidence、R3.20b physical tray evidence、R3.21 Linux smoke 与 R3.22 text/frame evidence 已落 | 下一步补真实 Linux DE tray menu 与 macOS menu bar capture |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu；R3.17 已补 zh-CN/en-US 真实右键菜单截图 / DOM dump / `settings_menu_layout_gate`，R3.20a 已补右键 hover 同步主窗 settings 截图 | 后续继续把右键菜单作为 pass-through 恢复后的可用性回归门 |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 与托盘 `restore-pet-interaction` 源码恢复门已落；R3.18 已补主窗 `/settings` 真恢复截图，R3.19 已补同 handler tray recovery 截图，R3.20b 已补 Windows 物理 OS 托盘菜单点击证据，均确认 `pass=false/hide=false/opacity=100` 与右键菜单可用 | 下一步补 Linux/macOS 恢复 smoke |
-| Linux/macOS capture | 未补 | 建立跨平台截图策略 |
+| Linux/macOS capture | Linux Xvfb/openbox window/frame smoke 与 R3.22 text/frame hardgate 已补；真实 Linux DE panel 和 macOS menu bar 未补 | R3.23 建立真实 DE/appindicator 与 macOS menu bar 点击策略 |
 | 商用授权 | 未确认 | 联系授权或原创替换 |
 | 主窗彻底严肃化 | 进行中 | 搜索截图确认无 Cuu 本体 |
 | 鲜活动作状态机 | P1.6 `CuuBehaviorManifest` 源码合同已落；P1.7-P1.10 业务 motion capture、actual DOM、card framing、motion_liveness 已落 | 冻结；后续优先 R1 真 AgentLoop 和 R2 多 worker |
@@ -320,7 +333,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 |---|---|---|
 | R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
-| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；R3.11 已补 dev-server launcher-to-run smoke；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure terminal capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture；R3.13.3 已补 webview boot session/run 恢复；R3.14 已补 chip metadata 进入 WorkItem spec；R3.15 已补真实 reload session/active/terminal capture；R3.16 已补业务状态矩阵 capture；R3.17 已补 settings matrix 和右键菜单 boundary gate；R3.18 已补 pass-through 主窗恢复、settings 截图与失败运行卡片文本边界回归；R3.19 已补 tray handler recovery、settings event bridge 与菜单遮挡回归；R3.20a 已补右键 hover -> main settings 截图和 overflow gate；R3.20b 已补 Windows 物理 OS 托盘点击与 run card overflow gate；下一步补 Linux/macOS 跨平台 capture |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；R3.11 已补 dev-server launcher-to-run smoke；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure terminal capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture；R3.13.3 已补 webview boot session/run 恢复；R3.14 已补 chip metadata 进入 WorkItem spec；R3.15 已补真实 reload session/active/terminal capture；R3.16 已补业务状态矩阵 capture；R3.17 已补 settings matrix 和右键菜单 boundary gate；R3.18 已补 pass-through 主窗恢复、settings 截图与失败运行卡片文本边界回归；R3.19 已补 tray handler recovery、settings event bridge 与菜单遮挡回归；R3.20a 已补右键 hover -> main settings 截图和 overflow gate；R3.20b 已补 Windows 物理 OS 托盘点击与 run card overflow gate；R3.21 已补 Linux Xvfb/openbox window smoke；R3.22 已补 failed/generic text/frame hardgate；下一步补真实 Linux DE tray menu 与 macOS menu bar capture |
 | Deferred | 白猫全矩阵、更多动效、外观调优 | R1 通过前冻结；settings matrix 仅验证现有恢复/设置能力 |
 
 ## 10. 与其他文档的边界

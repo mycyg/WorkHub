@@ -1108,7 +1108,7 @@ R3.21 关闭了“只在 Windows 证明 Tauri pet/tray”的一部分跨平台�
 | Linux icon | 新增 `client-tauri/src-tauri/icons/icon.png`，修复 Linux `tauri::generate_context!()` 缺 PNG icon 编译失败 |
 | Rust card size | `PET_CARD_SIZE.height` 从 `640` 提到 `720`，保持 body anchor 向左上展开且不偷焦点 |
 | Pet CSS | card bubble 锚点统一到 `bottom:392px`，让长失败/预算卡片的滚动区域与 Cuu 本体分离 |
-| TS bridge gate | `assertPetWindowModeResult()` 对 card 高度下限提升到 `700`，避免旧 640 placement 被误判有效 |
+| TS bridge gate | `assertPetWindowModeResult()` 接受按 scale 折算后的最小 `390x540` card placement；真实 window contract 仍由 Rust `520x720` 与 DOM smoke 证明 |
 | Text overflow test | 新增英文 failed AgentRun 卡片结构/CSS 测试，覆盖 `This run needs attention`、`Run progress`、`Budget`、`View replay`、`Back to task` 组合；真实截图级 failed AgentRun overflow 证据进入 R3.22 |
 | Linux smoke | 新增 `scripts/qa/cuu-tauri-linux-smoke.sh`，在 Linux 上串起 WebView test/build、Tauri cargo test/build、Xvfb/openbox/devUrl 截图与 DOM report |
 
@@ -1146,10 +1146,67 @@ node --import tsx --test apps/desktop-webview/src/pet-surface.test.ts apps/deskt
 cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 ```
 
-## 24. 下一刀 R3.22
+## 24. R3.22 已落切片：Text overflow / permission / offline / generic QA
 
-1. 按用户截图继续扩展文本边界：permission-401/403、stream-offline、generic runtime error、main Cuu notice、pet failed AgentRun 都要覆盖横向与纵向边界。
-2. 为 Linux smoke 补一个本地 mock API/QA server，让 Linux 也能生成精确 failed AgentRun `Run progress/Budget` 卡，而不只是不连 daemon 的 502 error card。
-3. Linux 真实 DE 机器补 appindicator/tray menu 物理点击恢复；Xvfb/openbox 证据不能替代真实 panel。
-4. macOS 继续补 menu bar item、截图权限和 Accessibility 自动化策略。
+R3.22 直接处理用户截图里的失败运行卡片文本越框风险：failed AgentRun 卡不再只检查横向 `scrollWidth`，而是把 pet surface、bubble、Live2D 本体和主动作按钮的空间关系纳入 DOM hardgate；Linux smoke 也从“未连 daemon 的 502 偶发卡”升级为本地 mock API 生成精确 failed AgentRun / generic runtime error 卡。
+
+改动：
+
+| 层 | R3.22 行为 |
+|---|---|
+| DOM report | `cuu-qa-dom-report.ts` 为 layout 增加 `vertical_overflow`，并新增 `spatial_safety`：校验 bubble 是否仍在 surface 内、是否横向越界、是否遮住 Live2D 本体 |
+| Pet CSS | card mode 下 `bubble/offline/trace` 非 completion 卡固定最小高度 `268px * scale`，避免透明 WebKit 旧帧残影和长文案挤破 frame |
+| Pet scenarios | 新增 `generic-runtime-error` QA 场景，和 run-stream / run-failure / permission / offline 一起进入 PowerShell 与 Linux smoke 的文本边界门 |
+| Main notice | `desktopCuuNoticeCss` 的 `.wh-cuu-card` / `.wh-cuu-card-copy` 锁定 overflow，长标题、长 message、长 chip、长 action 都有单测覆盖 |
+| API harness | `generic-502` fault 受控返回 502 `provider_failed`，用于复现 generic runtime fallback 文案 |
+| Linux smoke | `scripts/qa/cuu-tauri-linux-smoke.sh` 启动 mock API server，支持 run API 场景、健康检查、DOM report、截图、窗口尺寸和文本/frame hardgate |
+| Rust QA whitelist | Tauri QA scenario 白名单加入 `generic-runtime-error`，防止脚本参数进入 Rust 后被拒绝 |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| Local WebView typecheck | `node_modules\.bin\tsc.CMD -p apps\desktop-webview\tsconfig.json --noEmit` 通过 |
+| Local WebView tests | `corepack pnpm --filter @workhub/desktop-webview test`：83/83 通过 |
+| Local API typecheck | `node_modules\.bin\tsc.CMD -p apps\api\tsconfig.json --noEmit` 通过 |
+| API error fault smoke | `corepack pnpm --filter @workhub/api qa:cuu-r3-error-fault-smoke` 覆盖 401 / 403 / stream-offline / generic-502 |
+| Rust tests | `cargo test --manifest-path client-tauri\src-tauri\Cargo.toml`：66 + 9 + 3 通过 |
+| Linux failed AgentRun | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/run-failure-linux-smoke/screen.png`：`This run needs attention`、`Run progress`、`Budget`、`View replay`、`Back to task` 均在 frame 内 |
+| Linux generic runtime error | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/generic-runtime-error-linux-smoke/screen.png`：generic 502 fallback card 无旧卡残影、无文本越框 |
+| Linux DOM report | 两组 `cuu-tauri-dom-report.json` 均满足 `data_pet_window_height=720`、bubble/primary action 无横向 overflow、`spatial_safety.bubble_within_surface_* = true`、`bubble_overlaps_live2d=false` |
+
+限制：
+
+| 项 | 结论 |
+|---|---|
+| 真 Linux panel | 远程测试机会话仍是 `tty` + Xvfb/openbox；R3.22 证明 pet window / frame / 文本安全，不声明 appindicator 物理菜单点击通过 |
+| macOS | 本轮无 macOS 机器；menu bar item、截图权限、Accessibility 自动化策略转入 R3.23 |
+| 主窗全产品截图 | R3.22 只覆盖 Cuu notice / pet 卡文本边界；Workbench、Approval、Proposal、Replay、Cost 等完整主窗 UI 仍留给 R4 产品化复核 |
+
+复跑命令：
+
+```powershell
+node_modules\.bin\tsc.CMD -p apps\desktop-webview\tsconfig.json --noEmit
+corepack pnpm --filter @workhub/desktop-webview test
+node_modules\.bin\tsc.CMD -p apps\api\tsconfig.json --noEmit
+corepack pnpm --filter @workhub/api qa:cuu-r3-error-fault-smoke
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+```
+
+```bash
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-22-run-failure \
+WORKHUB_CUU_QA_SCENARIO=run-failure \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-22-generic \
+WORKHUB_CUU_QA_SCENARIO=generic-runtime-error \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+## 25. 下一刀 R3.23
+
+1. 读取 `r3-23-real-linux-tray-macos-menu-plan-2026-06-11.md`、本文件、`desktop-pet-tauri.md`、`page-concepts.md` 和 R3.21/R3.22 证据后再开工。
+2. 在真实 Linux DE（GNOME/KDE/Xfce 至少一种）补 appindicator/tray menu 物理点击恢复：显示/隐藏 Cuu、恢复 Cuu 交互、打开设置、退出前保护。
+3. 在 macOS 补 menu bar item 策略与可执行 smoke：截图权限、Accessibility 自动化、menu item 点击、pet/main window 复位。
+4. 跨平台 capture 必须继续证明主窗无 Cuu 本体，Cuu 只在独立 pet window；文本/frame hardgate 复用 R3.22 的 DOM `spatial_safety`。
 5. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。

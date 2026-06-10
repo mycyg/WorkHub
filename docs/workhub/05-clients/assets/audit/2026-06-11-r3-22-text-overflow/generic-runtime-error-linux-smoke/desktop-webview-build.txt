@@ -1,0 +1,10 @@
+$ tsc -p tsconfig.json --noEmit && vite build
+vite v8.0.16 building client environment for production...
+[2Ktransforming...✓ 143 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                    0.33 kB │ gzip:   0.24 kB
+dist/pet.html                      0.38 kB │ gzip:   0.27 kB
+dist/assets/browser-CuoiA3gG.js  375.28 kB │ gzip: 102.09 kB
+
+✓ built in 121ms

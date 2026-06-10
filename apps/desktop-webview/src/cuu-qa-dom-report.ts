@@ -16,6 +16,7 @@ export type DesktopPetQaDomLayout = {
   client_height: number;
   scroll_height: number;
   horizontal_overflow: boolean;
+  vertical_overflow: boolean;
 };
 
 export type DesktopPetQaDomOverflowOffender = {
@@ -47,6 +48,18 @@ export type DesktopPetQaDomSnapshot = {
   bubble: DesktopPetQaDomElementSnapshot;
   primary_chip: DesktopPetQaDomElementSnapshot;
   primary_action: DesktopPetQaDomElementSnapshot;
+  spatial_safety: DesktopPetQaDomSpatialSafety;
+};
+
+export type DesktopPetQaDomSpatialSafety = {
+  bubble_within_surface_horizontal: boolean | null;
+  bubble_within_surface_vertical: boolean | null;
+  live2d_within_surface_horizontal: boolean | null;
+  live2d_within_surface_vertical: boolean | null;
+  bubble_overlaps_live2d: boolean | null;
+  bubble_live2d_overlap_width: number | null;
+  bubble_live2d_overlap_height: number | null;
+  bubble_gap_to_live2d_px: number | null;
 };
 
 type DesktopPetQaDomReportTarget = typeof globalThis & {
@@ -77,17 +90,21 @@ export function collectDesktopPetQaDomSnapshot(
   reason: DesktopPetQaDomReportReason,
   now = new Date()
 ): DesktopPetQaDomSnapshot {
+  const surface = collectDesktopPetQaDomElement(root, "[data-wh-surface=pet]");
+  const live2d = collectDesktopPetQaDomElement(root, ".wh-cuu-cat-live2d");
+  const bubble = collectDesktopPetQaDomElement(root, "[data-pet-bubble]");
   return {
     contract: "workhub.cuu.tauri.actual-dom-report",
     version: 1,
     captured_at_iso: now.toISOString(),
     reason,
-    surface: collectDesktopPetQaDomElement(root, "[data-wh-surface=pet]"),
-    live2d: collectDesktopPetQaDomElement(root, ".wh-cuu-cat-live2d"),
+    surface,
+    live2d,
     settings_menu: collectDesktopPetQaDomElement(root, "[data-pet-settings-menu]"),
-    bubble: collectDesktopPetQaDomElement(root, "[data-pet-bubble]"),
+    bubble,
     primary_chip: collectDesktopPetQaDomElement(root, "[data-chip-id],[data-pet-option-id]"),
-    primary_action: collectDesktopPetQaDomElement(root, "[data-cuu-action-id]")
+    primary_action: collectDesktopPetQaDomElement(root, "[data-cuu-action-id]"),
+    spatial_safety: collectDesktopPetQaSpatialSafety(surface, live2d, bubble)
   };
 }
 
@@ -159,7 +176,53 @@ function collectDesktopPetQaLayout(element: DomElementLike): DesktopPetQaDomLayo
     scroll_width: scrollWidth,
     client_height: clientHeight,
     scroll_height: scrollHeight,
-    horizontal_overflow: clientWidth > 0 && scrollWidth > clientWidth + 2
+    horizontal_overflow: clientWidth > 0 && scrollWidth > clientWidth + 2,
+    vertical_overflow: clientHeight > 0 && scrollHeight > clientHeight + 2
+  };
+}
+
+function collectDesktopPetQaSpatialSafety(
+  surface: DesktopPetQaDomElementSnapshot,
+  live2d: DesktopPetQaDomElementSnapshot,
+  bubble: DesktopPetQaDomElementSnapshot
+): DesktopPetQaDomSpatialSafety {
+  const surfaceRect = surface.rect;
+  const live2dRect = live2d.rect;
+  const bubbleRect = bubble.rect;
+  const bubbleWithinSurface = surfaceRect && bubbleRect ? rectWithin(surfaceRect, bubbleRect, 2) : undefined;
+  const live2dWithinSurface = surfaceRect && live2dRect ? rectWithin(surfaceRect, live2dRect, 2) : undefined;
+  const overlap = bubbleRect && live2dRect ? rectOverlap(bubbleRect, live2dRect) : undefined;
+  const overlapWidth = overlap ? roundRectNumber(overlap.width) : null;
+  const overlapHeight = overlap ? roundRectNumber(overlap.height) : null;
+  const meaningfulOverlap = overlap ? overlap.width > 6 && overlap.height > 6 : undefined;
+  const gap = bubbleRect && live2dRect ? roundRectNumber(live2dRect.y - bubbleRect.bottom) : null;
+  return {
+    bubble_within_surface_horizontal: bubbleWithinSurface ? bubbleWithinSurface.horizontal : null,
+    bubble_within_surface_vertical: bubbleWithinSurface ? bubbleWithinSurface.vertical : null,
+    live2d_within_surface_horizontal: live2dWithinSurface ? live2dWithinSurface.horizontal : null,
+    live2d_within_surface_vertical: live2dWithinSurface ? live2dWithinSurface.vertical : null,
+    bubble_overlaps_live2d: typeof meaningfulOverlap === "boolean" ? meaningfulOverlap : null,
+    bubble_live2d_overlap_width: overlapWidth,
+    bubble_live2d_overlap_height: overlapHeight,
+    bubble_gap_to_live2d_px: gap
+  };
+}
+
+function rectWithin(outer: DesktopPetQaDomRect, inner: DesktopPetQaDomRect, tolerance: number) {
+  return {
+    horizontal: inner.x >= outer.x - tolerance && inner.right <= outer.right + tolerance,
+    vertical: inner.y >= outer.y - tolerance && inner.bottom <= outer.bottom + tolerance
+  };
+}
+
+function rectOverlap(a: DesktopPetQaDomRect, b: DesktopPetQaDomRect) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.right, b.right);
+  const y2 = Math.min(a.bottom, b.bottom);
+  return {
+    width: Math.max(0, x2 - x1),
+    height: Math.max(0, y2 - y1)
   };
 }
 
@@ -221,5 +284,5 @@ function normalizeTextContent(input: string | null | undefined) {
   if (!text) {
     return undefined;
   }
-  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+  return text.length > 360 ? `${text.slice(0, 357)}...` : text;
 }

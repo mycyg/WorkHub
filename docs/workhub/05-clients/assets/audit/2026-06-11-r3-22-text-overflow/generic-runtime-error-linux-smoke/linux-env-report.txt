@@ -1,0 +1,17 @@
+captured_at=2026-06-11T02:45:38+08:00
+repo=/home/mycyg/tmp/workhub-r3-22-overflow-20260611022835
+head=e66b54c539977fa9cffea5fb49155e04fa1eacc3
+uname=Linux mycyg 7.0.0-15-generic #15-Ubuntu SMP PREEMPT_DYNAMIC Wed Apr 22 16:06:43 UTC 2026 x86_64 GNU/Linux
+session_type=tty
+display=
+wayland_display=
+desktop=
+node=v22.22.1
+pnpm=11.0.9
+cargo=cargo 1.93.1 (083ac5135 2025-12-15) (built from a source tarball)
+rustc=rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball)
+xvfb_run=/usr/bin/xvfb-run
+openbox=/usr/bin/openbox
+wmctrl=/usr/bin/wmctrl
+xdotool=/usr/bin/xdotool
+scrot=/usr/bin/scrot

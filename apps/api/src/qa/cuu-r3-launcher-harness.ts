@@ -53,7 +53,7 @@ export type CuuR3SmokeApp = {
 };
 
 export type CuuR3RunOutcome = "succeeded" | "failed";
-export type CuuR3ApiFault = "none" | "permission-401" | "permission-403" | "stream-offline";
+export type CuuR3ApiFault = "none" | "permission-401" | "permission-403" | "stream-offline" | "generic-502";
 export type CuuR3ReloadRestoreSeedKind = "reload-session" | "reload-active-run" | "reload-terminal-run";
 
 export type CuuR3SmokeAppOptions = {
@@ -420,10 +420,13 @@ function cuuR3ApiFaultForRequest(fault: CuuR3ApiFault, method: string, path: str
   if (fault === "stream-offline" && (isRunRead || isRunStream)) {
     return cuuR3ApiFaultResponse(503, "network_unavailable", "Cuu R3 QA forced network unavailable.");
   }
+  if (fault === "generic-502" && isRunRead) {
+    return cuuR3ApiFaultResponse(502, "provider_failed", "Cuu R3 QA forced generic provider failure with a long diagnostic message.");
+  }
   return undefined;
 }
 
-function cuuR3ApiFaultResponse(status: 401 | 403 | 503, code: string, message: string) {
+function cuuR3ApiFaultResponse(status: 401 | 403 | 502 | 503, code: string, message: string) {
   return {
     status,
     body: {

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { WorkHubApiError } from "@workhub/api-client";
 import { cardFromAgentRunLive, createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
 import type { AgentRunLiveVM, SessionVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import {
+  cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
   submitDesktopCuuAction,
@@ -729,6 +731,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-pet-card-kind="approval"/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=bubble\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=offline\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=trace\]\{min-height:calc\(268px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
   assert.match(card.css, /\.wh-pet-bubble>\*\{min-width:0;max-width:100%\}/u);
@@ -798,6 +801,37 @@ test("pet surface keeps the failed agent-run card inside the expanded Cuu frame"
   assert.doesNotMatch(surface.html, /data-cuu-action-id="abort_agent_run"/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*bottom:calc\(392px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
+});
+
+test("pet surface constrains long runtime error cards in the expanded Cuu frame", () => {
+  const run = petHarnessRun();
+  const longStatus = `Cuu updated progress: ${"LongProviderDiagnosticWithoutNaturalBreaks".repeat(12)}`;
+  const cards = [
+    cardFromDesktopCuuRuntimeError(new WorkHubApiError(403, "forbidden", "No permission."), { locale: "en-US", run }),
+    cardFromDesktopCuuRuntimeError(new WorkHubApiError(502, "provider_failed", "Provider failed."), { locale: "en-US", run }),
+    cardFromDesktopCuuRuntimeError(new WorkHubApiError(503, "network_unavailable", "Network unavailable."), { locale: "en-US", run })
+  ];
+
+  for (const card of cards) {
+    const surface = renderDesktopPetSurface({
+      card,
+      status_text: longStatus,
+      locale: "en-US"
+    });
+
+    assert.match(surface.html, /data-pet-window-mode="card"/u);
+    assert.match(surface.html, /data-pet-window-height="720"/u);
+    assert.match(surface.html, /data-pet-card-has-context="false"/u);
+    assert.match(surface.html, /data-pet-bubble-kind="(?:bubble|offline)"/u);
+    assert.match(surface.html, /data-cuu-action-id="view_replay"/u);
+    assert.match(surface.html, /data-cuu-action-id="open_workitem"/u);
+    assert.match(surface.html, /LongProviderDiagnosticWithoutNaturalBreaks/u);
+    assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-height:calc\(268px \* var\(--wh-pet-scale,1\)\);overflow:hidden/u);
+    assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-title\{[^}]*-webkit-line-clamp:3;[^}]*overflow:hidden/u);
+    assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-message\{[^}]*-webkit-line-clamp:5;[^}]*overflow:hidden/u);
+    assert.match(surface.css, /\.wh-pet-status\{[^}]*max-width:100%;width:100%;[^}]*overflow-wrap:anywhere;word-break:break-word/u);
+    assert.match(surface.css, /\.wh-pet-chip,\.wh-pet-action,\.wh-pet-reason\{[^}]*max-width:100%;[^}]*overflow-wrap:anywhere;word-break:break-word/u);
+  }
 });
 
 test("pet surface selects the white Live2D cat option and rejects old model packs", () => {

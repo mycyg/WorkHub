@@ -26,6 +26,7 @@ export type DesktopPetQaScenario =
   | "reload-terminal-run"
   | "permission-401"
   | "permission-403"
+  | "generic-runtime-error"
   | "stream-offline"
   | "offline";
 
@@ -53,6 +54,7 @@ const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "reload-terminal-run",
   "permission-401",
   "permission-403",
+  "generic-runtime-error",
   "stream-offline",
   "offline"
 ]);
@@ -175,6 +177,7 @@ function desktopPetQaScenarioUsesRunApi(scenario: DesktopPetQaScenario) {
     scenario === "reload-terminal-run" ||
     scenario === "permission-401" ||
     scenario === "permission-403" ||
+    scenario === "generic-runtime-error" ||
     scenario === "stream-offline";
 }
 
@@ -204,6 +207,7 @@ function eventForScenario(
     | "reload-terminal-run"
     | "permission-401"
     | "permission-403"
+    | "generic-runtime-error"
     | "stream-offline"
     | "offline"
   >

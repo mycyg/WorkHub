@@ -43,6 +43,7 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   const reloadTerminalRun = desktopPetQaScriptForScenario("reload-terminal-run");
   const permission401 = desktopPetQaScriptForScenario("permission-401");
   const permission403 = desktopPetQaScriptForScenario("permission-403");
+  const genericRuntimeError = desktopPetQaScriptForScenario("generic-runtime-error");
   const streamOffline = desktopPetQaScriptForScenario("stream-offline");
   const clarify = desktopPetQaScriptForScenario("clarify");
   const clarifyPayload = clarify[0]?.payload as { data?: string; stream_path?: string };
@@ -65,6 +66,7 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(reloadTerminalRun.length, 0);
   assert.equal(permission401.length, 0);
   assert.equal(permission403.length, 0);
+  assert.equal(genericRuntimeError.length, 0);
   assert.equal(streamOffline.length, 0);
   assert.equal(desktopPetQaScriptForScenario("settings-menu").length, 0);
   assert.equal(desktopPetQaScriptForScenario("settings-menu-model-switch").length, 0);
@@ -82,7 +84,9 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(createDesktopPetQaShellListen("reload-session"), undefined);
   assert.equal(createDesktopPetQaShellListen("reload-active-run"), undefined);
   assert.equal(createDesktopPetQaShellListen("reload-terminal-run"), undefined);
+  assert.equal(createDesktopPetQaShellListen("permission-401"), undefined);
   assert.equal(createDesktopPetQaShellListen("permission-403"), undefined);
+  assert.equal(createDesktopPetQaShellListen("generic-runtime-error"), undefined);
   assert.equal(createDesktopPetQaShellListen("stream-offline"), undefined);
   assert.equal(clarifyPayload.stream_path, "/api/push/stream/session/10000000-0000-4000-8000-000000000104");
   assert.equal(clarifyEvent.attention.kind, "clarification");
@@ -116,6 +120,7 @@ test("desktop pet QA scenario normalization only accepts explicit capture scenar
   assert.equal(normalizeDesktopPetQaScenario("reload-terminal-run"), "reload-terminal-run");
   assert.equal(normalizeDesktopPetQaScenario("permission-401"), "permission-401");
   assert.equal(normalizeDesktopPetQaScenario("permission-403"), "permission-403");
+  assert.equal(normalizeDesktopPetQaScenario("generic-runtime-error"), "generic-runtime-error");
   assert.equal(normalizeDesktopPetQaScenario("stream-offline"), "stream-offline");
   assert.equal(normalizeDesktopPetQaScenario("idle"), undefined);
   assert.equal(normalizeDesktopPetQaScenario("legacy-cuu-pack"), undefined);

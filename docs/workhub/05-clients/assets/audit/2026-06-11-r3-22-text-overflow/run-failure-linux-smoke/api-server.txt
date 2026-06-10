@@ -1,0 +1,8 @@
+$ tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-tauri-run-stream-server.ts
+{"ok":true,"service":"workhub-cuu-r3-tauri-run-stream","run_outcome":"failed","api_fault":"none","base_url":"http://127.0.0.1:8787"}
+{"service":"workhub-cuu-r3-run-stream","event":"queued","run_id":"40000000-0000-4000-8000-000000000001","delay_ms":2600}
+{"service":"workhub-cuu-r3-run-stream","event":"run_start","run_id":"40000000-0000-4000-8000-000000000001"}
+{"service":"workhub-cuu-r3-run-stream","event":"run_done","run_id":"40000000-0000-4000-8000-000000000001","status":"failed"}
+/home/mycyg/tmp/workhub-r3-22-overflow-20260611022835/apps/api:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @workhub/api@0.1.0 qa:cuu-r3-tauri-run-stream-server: `tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-tauri-run-stream-server.ts`
+Command failed with signal "SIGTERM"

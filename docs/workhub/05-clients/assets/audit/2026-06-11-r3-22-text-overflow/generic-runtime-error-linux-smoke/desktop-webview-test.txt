@@ -1,0 +1,509 @@
+$ node --import tsx --test src/*.test.ts
+TAP version 13
+# Subtest: desktop Live2D runtime resolves behavior manifest state for approval cards
+ok 1 - desktop Live2D runtime resolves behavior manifest state for approval cards
+  ---
+  duration_ms: 1.774605
+  type: 'test'
+  ...
+# Subtest: desktop Live2D runtime renders behavior data without introducing another Cuu model
+ok 2 - desktop Live2D runtime renders behavior data without introducing another Cuu model
+  ---
+  duration_ms: 1.083243
+  type: 'test'
+  ...
+# Subtest: desktop Live2D behavior patch only updates dataset and preserves iframe markup
+ok 3 - desktop Live2D behavior patch only updates dataset and preserves iframe markup
+  ---
+  duration_ms: 0.293544
+  type: 'test'
+  ...
+# Subtest: desktop Live2D model pages keep canvas framing proportional across pet scale settings
+ok 4 - desktop Live2D model pages keep canvas framing proportional across pet scale settings
+  ---
+  duration_ms: 0.454738
+  type: 'test'
+  ...
+# Subtest: Cuu preferences load defaults when storage is absent or invalid
+ok 5 - Cuu preferences load defaults when storage is absent or invalid
+  ---
+  duration_ms: 3.123804
+  type: 'test'
+  ...
+# Subtest: Cuu preferences normalize user-editable values before persistence
+ok 6 - Cuu preferences normalize user-editable values before persistence
+  ---
+  duration_ms: 0.962557
+  type: 'test'
+  ...
+# Subtest: desktop pet settings payload maps snake and camel event shapes
+ok 7 - desktop pet settings payload maps snake and camel event shapes
+  ---
+  duration_ms: 0.315475
+  type: 'test'
+  ...
+# Subtest: Cuu preferences accept Rust-injected QA overrides
+ok 8 - Cuu preferences accept Rust-injected QA overrides
+  ---
+  duration_ms: 0.350186
+  type: 'test'
+  ...
+# Subtest: Cuu preference panel renders clickable modes and queue state
+ok 9 - Cuu preference panel renders clickable modes and queue state
+  ---
+  duration_ms: 1.518915
+  type: 'test'
+  ...
+# Subtest: Cuu preference panel renders English black and white model-pack copy only
+ok 10 - Cuu preference panel renders English black and white model-pack copy only
+  ---
+  duration_ms: 0.434974
+  type: 'test'
+  ...
+# Subtest: desktop pet settings panel is a serious recovery surface without model choices
+ok 11 - desktop pet settings panel is a serious recovery surface without model choices
+  ---
+  duration_ms: 0.722651
+  type: 'test'
+  ...
+# Subtest: desktop pet settings panel localizes recovery copy in English
+ok 12 - desktop pet settings panel localizes recovery copy in English
+  ---
+  duration_ms: 0.32623
+  type: 'test'
+  ...
+# Subtest: desktop pet settings css keeps long recovery text inside its frame
+ok 13 - desktop pet settings css keeps long recovery text inside its frame
+  ---
+  duration_ms: 0.565088
+  type: 'test'
+  ...
+# Subtest: Cuu QA DOM report collects exact data attributes from the pet surface
+ok 14 - Cuu QA DOM report collects exact data attributes from the pet surface
+  ---
+  duration_ms: 6.564131
+  type: 'test'
+  ...
+# Subtest: Cuu QA DOM report writes through the Tauri command only when QA reporting is enabled
+ok 15 - Cuu QA DOM report writes through the Tauri command only when QA reporting is enabled
+  ---
+  duration_ms: 10.939148
+  type: 'test'
+  ...
+# Subtest: desktop pet QA scenarios create business push events for motion capture
+ok 16 - desktop pet QA scenarios create business push events for motion capture
+  ---
+  duration_ms: 1.84284
+  type: 'test'
+  ...
+# Subtest: desktop pet QA scenarios cover clarify sync done and offline
+ok 17 - desktop pet QA scenarios cover clarify sync done and offline
+  ---
+  duration_ms: 0.461233
+  type: 'test'
+  ...
+# Subtest: desktop pet QA scenario normalization only accepts explicit capture scenarios
+ok 18 - desktop pet QA scenario normalization only accepts explicit capture scenarios
+  ---
+  duration_ms: 0.234249
+  type: 'test'
+  ...
+# Subtest: desktop Cuu runtime listens to Rust push-event and sse-status channels
+ok 19 - desktop Cuu runtime listens to Rust push-event and sse-status channels
+  ---
+  duration_ms: 9.973029
+  type: 'test'
+  ...
+# Subtest: desktop Cuu runtime respects do-not-disturb controller decisions
+ok 20 - desktop Cuu runtime respects do-not-disturb controller decisions
+  ---
+  duration_ms: 0.726283
+  type: 'test'
+  ...
+# Subtest: desktop Cuu runtime resolves Tauri and mock listeners without subscribing in plain browsers
+ok 21 - desktop Cuu runtime resolves Tauri and mock listeners without subscribing in plain browsers
+  ---
+  duration_ms: 0.320294
+  type: 'test'
+  ...
+# Subtest: desktop Cuu demo script curates Gold Path events into shell push payloads
+ok 22 - desktop Cuu demo script curates Gold Path events into shell push payloads
+  ---
+  duration_ms: 0.664473
+  type: 'test'
+  ...
+# Subtest: scripted desktop shell listener dispatches scheduled push and status events
+ok 23 - scripted desktop shell listener dispatches scheduled push and status events
+  ---
+  duration_ms: 0.661819
+  type: 'test'
+  ...
+# Subtest: desktop Cuu notice renders compact option-first actions
+ok 24 - desktop Cuu notice renders compact option-first actions
+  ---
+  duration_ms: 0.662447
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions submit approval choices through the typed API client
+ok 25 - desktop Cuu actions submit approval choices through the typed API client
+  ---
+  duration_ms: 1.371199
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions start a real agent run from an option-first launcher card
+ok 26 - desktop Cuu actions start a real agent run from an option-first launcher card
+  ---
+  duration_ms: 2.679962
+  type: 'test'
+  ...
+# Subtest: desktop Cuu launcher helper returns session, work item, run, and Cuu card
+ok 27 - desktop Cuu launcher helper returns session, work item, run, and Cuu card
+  ---
+  duration_ms: 1.468698
+  type: 'test'
+  ...
+# Subtest: desktop Cuu launcher stops at backend clarification instead of bypassing the question
+ok 28 - desktop Cuu launcher stops at backend clarification instead of bypassing the question
+  ---
+  duration_ms: 1.227535
+  type: 'test'
+  ...
+# Subtest: desktop Cuu run stream refreshes agent cards and closes on terminal status
+ok 29 - desktop Cuu run stream refreshes agent cards and closes on terminal status
+  ---
+  duration_ms: 1.865958
+  type: 'test'
+  ...
+# Subtest: desktop Cuu run stream falls back to polling when no SSE event arrives
+ok 30 - desktop Cuu run stream falls back to polling when no SSE event arrives
+  ---
+  duration_ms: 8.071522
+  type: 'test'
+  ...
+# Subtest: desktop Cuu run stream fallback maps failed runs to worried replay cards
+ok 31 - desktop Cuu run stream fallback maps failed runs to worried replay cards
+  ---
+  duration_ms: 2.494532
+  type: 'test'
+  ...
+# Subtest: desktop Cuu runtime uses fetch SSE with local client-token headers
+ok 32 - desktop Cuu runtime uses fetch SSE with local client-token headers
+  ---
+  duration_ms: 43.480718
+  type: 'test'
+  ...
+# Subtest: desktop Cuu runtime maps API and stream failures to Cuu cards
+ok 33 - desktop Cuu runtime maps API and stream failures to Cuu cards
+  ---
+  duration_ms: 0.711895
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions advance option-first clarification sessions
+ok 34 - desktop Cuu actions advance option-first clarification sessions
+  ---
+  duration_ms: 0.696809
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions finalize confirmed sessions and start the agent run
+ok 35 - desktop Cuu actions finalize confirmed sessions and start the agent run
+  ---
+  duration_ms: 0.59952
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions submit proposal merge conflict choices with payloads
+ok 36 - desktop Cuu actions submit proposal merge conflict choices with payloads
+  ---
+  duration_ms: 0.343411
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions apply AI fusion merge candidates with payloads
+ok 37 - desktop Cuu actions apply AI fusion merge candidates with payloads
+  ---
+  duration_ms: 0.294732
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions search project knowledge and return an evidence card
+ok 38 - desktop Cuu actions search project knowledge and return an evidence card
+  ---
+  duration_ms: 0.63046
+  type: 'test'
+  ...
+# Subtest: desktop Cuu actions bind evidence refs back to the current work item
+ok 39 - desktop Cuu actions bind evidence refs back to the current work item
+  ---
+  duration_ms: 0.624733
+  type: 'test'
+  ...
+# Subtest: desktop webview surface advertises and loads the shared P0.5 gold path page VM
+ok 40 - desktop webview surface advertises and loads the shared P0.5 gold path page VM
+  ---
+  duration_ms: 9.323293
+  type: 'test'
+  ...
+# Subtest: desktop webview starts option-first intake sessions through the typed client
+ok 41 - desktop webview starts option-first intake sessions through the typed client
+  ---
+  duration_ms: 1.109434
+  type: 'test'
+  ...
+# Subtest: desktop webview creates work items through the typed client and maps the result to Cuu
+ok 42 - desktop webview creates work items through the typed client and maps the result to Cuu
+  ---
+  duration_ms: 0.373862
+  type: 'test'
+  ...
+# Subtest: desktop webview starts agent runs and renders the live trace with Cuu state
+ok 43 - desktop webview starts agent runs and renders the live trace with Cuu state
+  ---
+  duration_ms: 1.289904
+  type: 'test'
+  ...
+# Subtest: desktop webview exposes the shared Cuu event adapter for the Rust shell
+ok 44 - desktop webview exposes the shared Cuu event adapter for the Rust shell
+  ---
+  duration_ms: 2.907086
+  type: 'test'
+  ...
+# Subtest: desktop pet locale accepts QA injection without overriding explicit locale
+ok 45 - desktop pet locale accepts QA injection without overriding explicit locale
+  ---
+  duration_ms: 1.583169
+  type: 'test'
+  ...
+# Subtest: desktop surface resolver sends Tauri pet routes to the pet surface
+ok 46 - desktop surface resolver sends Tauri pet routes to the pet surface
+  ---
+  duration_ms: 0.44531
+  type: 'test'
+  ...
+# Subtest: pet first-paint scheduler waits for two animation frames before showing the window
+ok 47 - pet first-paint scheduler waits for two animation frames before showing the window
+  ---
+  duration_ms: 1.707557
+  type: 'test'
+  ...
+# Subtest: pet surface renders only the Live2D cat runtime without main shell or fallback sprites
+ok 48 - pet surface renders only the Live2D cat runtime without main shell or fallback sprites
+  ---
+  duration_ms: 3.957573
+  type: 'test'
+  ...
+# Subtest: pet surface keeps the failed agent-run card inside the expanded Cuu frame
+ok 49 - pet surface keeps the failed agent-run card inside the expanded Cuu frame
+  ---
+  duration_ms: 0.941464
+  type: 'test'
+  ...
+# Subtest: pet surface constrains long runtime error cards in the expanded Cuu frame
+ok 50 - pet surface constrains long runtime error cards in the expanded Cuu frame
+  ---
+  duration_ms: 1.290812
+  type: 'test'
+  ...
+# Subtest: pet surface selects the white Live2D cat option and rejects old model packs
+ok 51 - pet surface selects the white Live2D cat option and rejects old model packs
+  ---
+  duration_ms: 0.585971
+  type: 'test'
+  ...
+# Subtest: pet surface exposes input-reactive pointer state for Live2D cat QA
+ok 52 - pet surface exposes input-reactive pointer state for Live2D cat QA
+  ---
+  duration_ms: 0.471711
+  type: 'test'
+  ...
+# Subtest: pet pointer helpers normalize Rust look percent and hover avoidance
+ok 53 - pet pointer helpers normalize Rust look percent and hover avoidance
+  ---
+  duration_ms: 0.90389
+  type: 'test'
+  ...
+# Subtest: pet surface renders clarification cards as option-first light cards
+ok 54 - pet surface renders clarification cards as option-first light cards
+  ---
+  duration_ms: 1.255123
+  type: 'test'
+  ...
+# Subtest: pet surface renders the Cuu outbound agent launcher as option-first without text input
+ok 55 - pet surface renders the Cuu outbound agent launcher as option-first without text input
+  ---
+  duration_ms: 0.972334
+  type: 'test'
+  ...
+# Subtest: pet runtime harness advances launcher selections through clarification into a run card
+ok 56 - pet runtime harness advances launcher selections through clarification into a run card
+  ---
+  duration_ms: 5.264868
+  type: 'test'
+  ...
+# Subtest: pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card
+ok 57 - pet surface boot flow opens launcher, resolves clarification, confirms, and renders a run card
+  ---
+  duration_ms: 7.449374
+  type: 'test'
+  ...
+# Subtest: pet surface syncs settings emitted by the main desktop window
+ok 58 - pet surface syncs settings emitted by the main desktop window
+  ---
+  duration_ms: 1.44146
+  type: 'test'
+  ...
+# Subtest: pet right-click menu broadcasts hover setting changes to the main settings panel
+ok 59 - pet right-click menu broadcasts hover setting changes to the main settings panel
+  ---
+  duration_ms: 0.887267
+  type: 'test'
+  ...
+# Subtest: pet surface persists and restores the current session question card
+ok 60 - pet surface persists and restores the current session question card
+  ---
+  duration_ms: 2.454513
+  type: 'test'
+  ...
+# Subtest: pet surface persists and restores the active agent run card after refresh
+ok 61 - pet surface persists and restores the active agent run card after refresh
+  ---
+  duration_ms: 3.956526
+  type: 'test'
+  ...
+# Subtest: pet surface restores a terminal agent run card without rerunning the launcher flow
+ok 62 - pet surface restores a terminal agent run card without rerunning the launcher flow
+  ---
+  duration_ms: 1.048252
+  type: 'test'
+  ...
+# Subtest: pet surface allows seeded restore during reload QA scenarios
+ok 63 - pet surface allows seeded restore during reload QA scenarios
+  ---
+  duration_ms: 1.179275
+  type: 'test'
+  ...
+# Subtest: pet surface localizes fixed approval bubble controls in English
+ok 64 - pet surface localizes fixed approval bubble controls in English
+  ---
+  duration_ms: 0.613698
+  type: 'test'
+  ...
+# Subtest: pet surface starts with a non-static runtime action fixture and fast idle cadence
+ok 65 - pet surface starts with a non-static runtime action fixture and fast idle cadence
+  ---
+  duration_ms: 0.565297
+  type: 'test'
+  ...
+# Subtest: desktop pet scheduler factory uses the lively first-screen cadence
+ok 66 - desktop pet scheduler factory uses the lively first-screen cadence
+  ---
+  duration_ms: 0.177328
+  type: 'test'
+  ...
+# Subtest: pet surface renders compact fallback while card mode is not confirmed
+ok 67 - pet surface renders compact fallback while card mode is not confirmed
+  ---
+  duration_ms: 0.366459
+  type: 'test'
+  ...
+# Subtest: pet surface hides transient compact cards while the Cuu window is expanding
+ok 68 - pet surface hides transient compact cards while the Cuu window is expanding
+  ---
+  duration_ms: 0.249055
+  type: 'test'
+  ...
+# Subtest: pet surface keeps completion cards as anchored celebration tips
+ok 69 - pet surface keeps completion cards as anchored celebration tips
+  ---
+  duration_ms: 0.363246
+  type: 'test'
+  ...
+# Subtest: pet surface anchors full card bubbles near the Cuu body instead of the left window edge
+ok 70 - pet surface anchors full card bubbles near the Cuu body instead of the left window edge
+  ---
+  duration_ms: 0.315125
+  type: 'test'
+  ...
+# Subtest: pet surface keeps offline Cuu fully visible in card mode
+ok 71 - pet surface keeps offline Cuu fully visible in card mode
+  ---
+  duration_ms: 0.31729
+  type: 'test'
+  ...
+# Subtest: pet surface passes the Cuu independent desktop visual QA contract
+ok 72 - pet surface passes the Cuu independent desktop visual QA contract
+  ---
+  duration_ms: 1.275656
+  type: 'test'
+  ...
+# Subtest: pet window bridge resolves body/card modes and Tauri-like commands
+ok 73 - pet window bridge resolves body/card modes and Tauri-like commands
+  ---
+  duration_ms: 0.966398
+  type: 'test'
+  ...
+# Subtest: pet window bridge rejects unavailable invoke and maps preferences
+ok 74 - pet window bridge rejects unavailable invoke and maps preferences
+  ---
+  duration_ms: 0.703445
+  type: 'test'
+  ...
+# Subtest: desktop shell bridge turns Rust push-event payloads into Cuu approval cards
+ok 75 - desktop shell bridge turns Rust push-event payloads into Cuu approval cards
+  ---
+  duration_ms: 5.40113
+  type: 'test'
+  ...
+# Subtest: desktop shell bridge preserves full WorkHubEvent envelopes from daemon SSE
+ok 76 - desktop shell bridge preserves full WorkHubEvent envelopes from daemon SSE
+  ---
+  duration_ms: 1.898853
+  type: 'test'
+  ...
+# Subtest: desktop shell bridge maps run stream events into Cuu trace completion cards
+ok 77 - desktop shell bridge maps run stream events into Cuu trace completion cards
+  ---
+  duration_ms: 0.645965
+  type: 'test'
+  ...
+# Subtest: passive connected frames are parsed but do not create Cuu interruption cards
+ok 78 - passive connected frames are parsed but do not create Cuu interruption cards
+  ---
+  duration_ms: 1.311485
+  type: 'test'
+  ...
+# Subtest: sse-status retrying and closed states become offline Cuu cards
+ok 79 - sse-status retrying and closed states become offline Cuu cards
+  ---
+  duration_ms: 0.529539
+  type: 'test'
+  ...
+# Subtest: desktop shell event bridge dispatches events and Cuu cards to callbacks
+ok 80 - desktop shell event bridge dispatches events and Cuu cards to callbacks
+  ---
+  duration_ms: 1.085129
+  type: 'test'
+  ...
+# Subtest: desktop shell navigate payloads accept only safe WorkHub routes
+ok 81 - desktop shell navigate payloads accept only safe WorkHub routes
+  ---
+  duration_ms: 0.310306
+  type: 'test'
+  ...
+# Subtest: desktop shell bridge parses Rust system-notification plans for Cuu follow-up handling
+ok 82 - desktop shell bridge parses Rust system-notification plans for Cuu follow-up handling
+  ---
+  duration_ms: 0.456694
+  type: 'test'
+  ...
+# Subtest: desktop webview build uses relative asset URLs for the embedded Tauri webview
+ok 83 - desktop webview build uses relative asset URLs for the embedded Tauri webview
+  ---
+  duration_ms: 1.167822
+  type: 'test'
+  ...
+1..83
+# tests 83
+# suites 0
+# pass 83
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1505.193515

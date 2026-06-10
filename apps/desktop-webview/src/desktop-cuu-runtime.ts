@@ -225,8 +225,8 @@ type DesktopCuuActionClient = Pick<
 };
 
 export const desktopCuuNoticeCss = [
-  ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;min-width:0;max-width:100%;font-weight:650;overflow-wrap:anywhere;word-break:break-word}",
-  ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0;max-width:100%;width:100%}",
+  ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;min-width:0;max-width:100%;font-weight:650;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0;max-width:100%;width:100%;overflow:hidden}",
   ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-cuu-card-kicker{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;flex-wrap:wrap;color:var(--wh-app-muted);font-size:12px}",
   ".wh-cuu-card-mark{width:8px;height:8px;border-radius:999px;background:var(--wh-app-blue);box-shadow:0 0 0 3px rgba(53,92,255,.14)}",
