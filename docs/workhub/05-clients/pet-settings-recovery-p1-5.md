@@ -81,6 +81,10 @@ pnpm --filter @workhub/desktop-webview test
 pnpm --filter @workhub/desktop-webview build
 pnpm --filter @workhub/web test
 cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+pnpm --filter @workhub/api test
+pnpm --filter @workhub/ui test
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-settings -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 16 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\settings-restore-zh
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-settings -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 16 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\settings-restore-en
 ```
 
 覆盖点：
@@ -93,9 +97,9 @@ cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 - Rust 单元测试确认 tray item 数量和恢复动作合同。
 - Pet surface 监听 `tray-action`，恢复后写回偏好，避免本地偏好反向覆盖 Rust 恢复。
 
-## 6. R3.17 视觉验收进展
+## 6. R3.18 视觉验收进展
 
-R3.17 已补 settings matrix，但仍没有把 pass-through 端到端恢复宣称为完成。
+R3.18 已补主窗 settings 恢复截图和 pass-through 端到端恢复证据。R3.17 的 settings matrix 仍作为偏好组合回归证据；R3.18 新增的是“开启 pass-through 后从主窗恢复，再确认 pet 右键菜单可用”的真实 Tauri 场景。
 
 | 项 | 证据 / 结论 |
 |---|---|
@@ -103,20 +107,23 @@ R3.17 已补 settings matrix，但仍没有把 pass-through 端到端恢复宣�
 | 覆盖组合 | `default`、`white-cat`、`scale-75`、`scale-150`、`opacity-60`、`pass-through`、`hide-on-hover`、`combo-125-80-pass-hide` |
 | 自动门 | 八组均 `first_frame_bounds_gate.passed=true`，保留 contact sheet/GIF/MP4/DOM report/motion diff report；MP4 奇数尺寸用 pad gate 避免零字节输出 |
 | 视觉复核 | scale 75/150/125、opacity 60、pass-through 与 hide-on-hover 下 Cuu 全身在窗口内，没有只露耳朵或贴边裁切 |
-| pass-through 口径 | `pass-through` case 证明偏好可进入真实 `pet` window；它不是“用户开启后再通过托盘/主窗恢复”的端到端证据 |
+| 主窗 settings zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-zh/`，`main_settings_before_restore` 与 `main_settings_after_restore` 均 `layout_gate.passed=true`、`overflow.offenders=[]` |
+| 主窗 settings en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-en/`，同上 |
+| pass-through 主窗恢复 | 两个 locale 均 `pass_through_recovery_gate.passed=true`：初始 `pass_through=true`，点击恢复后 `pass=false/hide=false/opacity=100`，最终右键菜单可用 |
+| 严肃主窗边界 | 两组主窗截图和 gate 均确认没有 Cuu 本体、Live2D iframe、模型预览或旧模型文案 |
+| 文本边界 | 主窗 settings 状态徽标和长文案无横向 overflow；额外复跑 `run-failure-card-en/`，人工复核失败运行卡片 `Run progress/Budget` 未超框 |
 
 仍未通过的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| settings panel 真实截图 | 生成 desktop 主窗 `/settings` zh-CN / en-US 截图，确认没有 Cuu 本体、没有模型预览、文本不溢出 |
-| pass-through 真机恢复 | 开启 pass-through 后，用主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复并录屏 / 多帧截图 |
-| menu 与 settings 联动 | 右键菜单开启 hover 后，主窗 settings 状态同步；主窗恢复后 pet 右键重新可用 |
+| 托盘恢复真实点击 | 从 pass-through 初始态触发 `restore-pet-interaction` 托盘菜单，再确认 pet 右键菜单可用 |
+| menu 与 settings 双向同步 | R3.18 已验证主窗恢复会同步 pet；下一步补右键切 hover 后主窗 settings 状态同步截图 |
 | Linux/macOS | 透明窗口 + tray 恢复 smoke；Wayland/X11 需要单独记录 |
 
 ## 7. 后续施工
 
-1. 给 `restore-pet-interaction` 增加端到端截图证据：开启 pass-through、主窗或托盘恢复、右键菜单重新可用。
-2. 补 desktop 主窗 `/settings` 的 zh-CN/en-US 截图，并把“无 Cuu 本体 / 无模型预览 / 文本不出框”写入 gate。
+1. 给托盘 `restore-pet-interaction` 增加真实点击截图证据：开启 pass-through、托盘恢复、右键菜单重新可用。
+2. 补右键菜单和主窗 settings 的双向状态同步截图：菜单改 hover 后主窗可见，主窗恢复后 pet 可见。
 3. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
-4. 再做主窗视觉审查：Web / desktop 主窗都不能出现 Cuu 本体。
+4. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。

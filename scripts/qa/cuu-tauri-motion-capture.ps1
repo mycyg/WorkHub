@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -46,6 +46,7 @@ $qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "r
 $businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
+$script:cuuMainCdpWebSocketUrl = $null
 $script:cuuCdpCommandId = 1
 
 function Invoke-Checked {
@@ -113,6 +114,32 @@ function Wait-CuuCdpPetWebSocketUrl {
         Select-Object -First 1
       if ($pet -and $pet.webSocketDebuggerUrl) {
         return $pet.webSocketDebuggerUrl
+      }
+    } catch {
+    }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+  return $null
+}
+
+function Wait-CuuCdpMainWebSocketUrl {
+  param(
+    [int]$Port,
+    [int]$TimeoutSeconds = 8
+  )
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    try {
+      $targets = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 2
+      $main = $targets |
+        Where-Object {
+          $_.webSocketDebuggerUrl -and
+          ($_.title -eq "WorkHub" -or $_.url -like "http://127.0.0.1:1420/*" -or $_.url -like "tauri://localhost/*") -and
+          $_.url -notlike "*/pet.html*"
+        } |
+        Select-Object -First 1
+      if ($main -and $main.webSocketDebuggerUrl) {
+        return $main.webSocketDebuggerUrl
       }
     } catch {
     }
@@ -209,7 +236,25 @@ function Invoke-CuuCdpJsonExpression {
     returnByValue = $true
     awaitPromise = $true
   }
-  $value = $message.result.result.value
+  if ($message.result.PSObject.Properties.Name -contains "exceptionDetails") {
+    $exceptionText = $message.result.exceptionDetails.text
+    if ($message.result.exceptionDetails.exception -and $message.result.exceptionDetails.exception.description) {
+      $exceptionText = $message.result.exceptionDetails.exception.description
+    }
+    throw "CDP Runtime.evaluate failed: $exceptionText"
+  }
+  $resultObject = $message.result.result
+  if (-not $resultObject) {
+    return $null
+  }
+  $valueProperty = $resultObject.PSObject.Properties["value"]
+  $value = if ($valueProperty) { $valueProperty.Value } else { $null }
+  if ($null -eq $value) {
+    $descriptionProperty = $resultObject.PSObject.Properties["description"]
+    if ($descriptionProperty) {
+      $value = $descriptionProperty.Value
+    }
+  }
   if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) {
     return $null
   }
@@ -223,11 +268,13 @@ function Invoke-CuuCdpClickSelector {
   )
   $selectorJson = $Selector | ConvertTo-Json -Compress
   $point = Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
-(() => {
+(async () => {
   const target = document.querySelector($selectorJson);
   if (!target) {
     return JSON.stringify({ found: false });
   }
+  target.scrollIntoView({ block: "center", inline: "center" });
+  await new Promise((resolve) => setTimeout(resolve, 90));
   const rect = target.getBoundingClientRect();
   return JSON.stringify({
     found: true,
@@ -243,6 +290,411 @@ function Invoke-CuuCdpClickSelector {
   }
   Invoke-CuuCdpMouseClick -WebSocketUrl $WebSocketUrl -X ([int]$point.x) -Y ([int]$point.y)
   return $point
+}
+
+function Invoke-CuuCdpPetSettingsSnapshot {
+  param([string]$WebSocketUrl)
+  Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(() => {
+  const surface = document.querySelector("[data-wh-surface='pet']");
+  const menu = document.querySelector("[data-pet-settings-menu]");
+  return JSON.stringify({
+    url: location.href,
+    surface: surface ? {
+      present: true,
+      data_pet_pass_through: surface.dataset.petPassThrough || "",
+      data_pet_hide_on_hover: surface.dataset.petHideOnHover || "",
+      data_pet_opacity_percent: surface.dataset.petOpacityPercent || "",
+      data_pet_scale_percent: surface.dataset.petScalePercent || "",
+      data_pet_menu_open: surface.dataset.petMenuOpen || ""
+    } : { present: false },
+    settings_menu: menu ? {
+      present: true,
+      hidden: menu.hidden === true,
+      text: menu.textContent || ""
+    } : { present: false }
+  });
+})()
+"@
+}
+
+function Invoke-CuuCdpSeedCuuPreferenceStorage {
+  param(
+    [string]$WebSocketUrl,
+    [ValidateSet(75, 100, 125, 150)]
+    [int]$ScalePercent = 100,
+    [ValidateSet(60, 80, 100)]
+    [int]$OpacityPercent = 100,
+    [bool]$PassThrough = $false,
+    [bool]$HideOnHover = $false,
+    [ValidateSet("cuu-hijiki-live2d-cubism2", "cuu-tororo-live2d-cubism2")]
+    [string]$ModelPackId = "cuu-hijiki-live2d-cubism2",
+    [switch]$Reload
+  )
+  $preferences = [ordered]@{
+    attention_mode = "normal"
+    sound_mode = "on"
+    reduced_motion = $false
+    queue_limit = 5
+    pet_scale_percent = $ScalePercent
+    pet_opacity_percent = $OpacityPercent
+    pet_pass_through = $PassThrough
+    pet_hide_on_hover = $HideOnHover
+    pet_model_pack_id = $ModelPackId
+  }
+  $preferencesJson = ($preferences | ConvertTo-Json -Compress) | ConvertTo-Json -Compress
+  $reloadJson = if ($Reload) { "true" } else { "false" }
+  Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(() => {
+  const preferencesJson = $preferencesJson;
+  window.localStorage.setItem("workhub_cuu_preferences", preferencesJson);
+  if ($reloadJson) {
+    window.location.reload();
+  }
+  return JSON.stringify({ seeded: true, reloaded: $reloadJson });
+})()
+"@
+}
+
+function Wait-CuuCdpPetSettingsState {
+  param(
+    [string]$WebSocketUrl,
+    [bool]$ExpectedPassThrough,
+    [bool]$ExpectedHideOnHover = $false,
+    [int]$ExpectedOpacityPercent = 100,
+    [int]$TimeoutSeconds = 8
+  )
+  $expectedPassThroughText = if ($ExpectedPassThrough) { "true" } else { "false" }
+  $expectedHideOnHoverText = if ($ExpectedHideOnHover) { "true" } else { "false" }
+  $expectedOpacityText = [string]$ExpectedOpacityPercent
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastSnapshot = $null
+  $lastErrorMessage = $null
+  do {
+    try {
+      $snapshot = Invoke-CuuCdpPetSettingsSnapshot -WebSocketUrl $WebSocketUrl
+      $lastSnapshot = $snapshot
+      if (
+        $snapshot -and
+        $snapshot.surface -and
+        $snapshot.surface.present -and
+        [string]$snapshot.surface.data_pet_pass_through -eq $expectedPassThroughText -and
+        [string]$snapshot.surface.data_pet_hide_on_hover -eq $expectedHideOnHoverText -and
+        [string]$snapshot.surface.data_pet_opacity_percent -eq $expectedOpacityText
+      ) {
+        return $snapshot
+      }
+    } catch {
+      $lastErrorMessage = $_.Exception.Message
+    }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+
+  $lastSnapshotJson = if ($lastSnapshot) { $lastSnapshot | ConvertTo-Json -Compress -Depth 10 } else { "null" }
+  throw "Cuu pet settings state did not reach pass_through=$expectedPassThroughText hide_on_hover=$expectedHideOnHoverText opacity=$expectedOpacityText. Last snapshot: $lastSnapshotJson Last error: $lastErrorMessage"
+}
+
+function Invoke-CuuCdpMainSettingsSnapshot {
+  param([string]$WebSocketUrl)
+  Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(() => {
+  const rectOf = (element) => {
+    if (!element) {
+      return null;
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      right: Math.round(rect.right),
+      bottom: Math.round(rect.bottom)
+    };
+  };
+  const visibleText = (document.body && document.body.innerText) || "";
+  const panel = document.querySelector("[data-wh-panel='settings']");
+  const desktopPanel = document.querySelector("[data-desktop-pet-settings]");
+  const state = document.querySelector("[data-cuu-pet-settings-state]");
+  const restore = document.querySelector("[data-cuu-pet-restore-interaction]");
+  const pass = document.querySelector("[data-cuu-pet-pass-through]");
+  const hide = document.querySelector("[data-cuu-pet-hide-on-hover]");
+  const offenders = Array.from(document.querySelectorAll("body *"))
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const text = (element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 80);
+      return {
+        tag: element.tagName.toLowerCase(),
+        class_name: String(element.className || ""),
+        text,
+        client_width: element.clientWidth || 0,
+        scroll_width: element.scrollWidth || 0,
+        rect_width: Math.round(rect.width)
+      };
+    })
+    .filter((entry) => entry.text && entry.client_width > 0 && entry.scroll_width > entry.client_width + 2)
+    .slice(0, 12);
+  const forbiddenSelector = [
+    "[data-cuu-model-pack-id]",
+    "[data-cuu-settings-model-pack-id]",
+    "[data-cuu-live2d-runtime]",
+    "[data-cuu-live2d-model]",
+    "[data-cuu-model-pack]",
+    "iframe[src*='cuu/live2d']",
+    ".wh-cuu-cat"
+  ].join(",");
+  return JSON.stringify({
+    url: location.href,
+    hash: location.hash,
+    lang: document.documentElement.lang || "",
+    title: document.title || "",
+    body_text: visibleText,
+    viewport: {
+      client_width: document.documentElement.clientWidth,
+      scroll_width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
+      global_horizontal_overflow: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0) > document.documentElement.clientWidth + 1
+    },
+    settings_panel: {
+      present: !!panel,
+      hidden: panel ? panel.hidden === true : null,
+      rect: rectOf(panel),
+      text: panel ? panel.textContent || "" : ""
+    },
+    desktop_pet_settings: {
+      present: !!desktopPanel,
+      rect: rectOf(desktopPanel),
+      text: desktopPanel ? desktopPanel.textContent || "" : ""
+    },
+    pet_settings: {
+      state: state ? state.getAttribute("data-cuu-pet-settings-state") || "" : "",
+      state_text: state ? state.textContent || "" : "",
+      restore_present: !!restore,
+      pass_checked: pass ? pass.checked === true : null,
+      hide_checked: hide ? hide.checked === true : null,
+      selected_scale: (document.querySelector("[data-cuu-pet-scale][aria-pressed='true']") || {}).dataset?.cuuPetScale || "",
+      selected_opacity: (document.querySelector("[data-cuu-pet-opacity][aria-pressed='true']") || {}).dataset?.cuuPetOpacity || ""
+    },
+    forbidden: {
+      visual_selector_present: !!document.querySelector(forbiddenSelector),
+      model_choice_text_present: /(Black cat|White cat|黑猫|白猫|Live2D|Cuu settings|Cuu 设置)/u.test(visibleText)
+    },
+    overflow: {
+      offenders
+    }
+  });
+})()
+"@
+}
+
+function Wait-CuuCdpMainSettingsPanel {
+  param(
+    [string]$WebSocketUrl,
+    [ValidateSet("zh-CN", "en-US")]
+    [string]$ExpectedLocale,
+    [int]$TimeoutSeconds = 8
+  )
+  $localeJson = $ExpectedLocale | ConvertTo-Json -Compress
+  $localeResult = Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(() => {
+  const expectedLocale = $localeJson;
+  const current = window.localStorage.getItem("workhub.locale");
+  if (current !== expectedLocale || document.documentElement.lang !== expectedLocale) {
+    window.localStorage.setItem("workhub.locale", expectedLocale);
+    window.location.hash = "";
+    window.location.reload();
+    return JSON.stringify({ reloaded: true, locale: expectedLocale });
+  }
+  return JSON.stringify({ reloaded: false, locale: expectedLocale });
+})()
+"@
+  if ($localeResult -and $localeResult.reloaded) {
+    Start-Sleep -Milliseconds 1600
+  }
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastSnapshot = $null
+  $lastNavigation = $null
+  $lastErrorMessage = $null
+  do {
+    try {
+      $navigation = Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(async () => {
+  const isReady = () => {
+    const panel = document.querySelector("[data-wh-panel='settings']");
+    const desktopPanel = document.querySelector("[data-desktop-pet-settings]");
+    const restore = document.querySelector("[data-cuu-pet-restore-interaction]");
+    return !!panel && panel.hidden !== true && !!desktopPanel && !!restore;
+  };
+  const forceSettingsPanel = () => {
+    const panel = document.querySelector("[data-wh-panel='settings']");
+    if (!panel) {
+      return false;
+    }
+    for (const candidate of document.querySelectorAll("[data-wh-panel]")) {
+      candidate.hidden = candidate.getAttribute("data-wh-panel") !== "settings";
+    }
+    for (const candidate of document.querySelectorAll("[data-wh-page-key]")) {
+      candidate.setAttribute("aria-current", candidate.getAttribute("data-wh-page-key") === "settings" ? "page" : "false");
+    }
+    window.history.replaceState(null, "", "#/settings");
+    return true;
+  };
+  let method = "none";
+  const link = document.querySelector("[data-wh-page-key='settings']");
+  if (link) {
+    method = "click";
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  } else {
+    method = "hash";
+    window.location.hash = "#/settings";
+  }
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  if (!isReady()) {
+    method = method + "+hashchange";
+    window.location.hash = "#/settings";
+    window.dispatchEvent(new Event("hashchange"));
+    await new Promise((resolve) => setTimeout(resolve, 180));
+  }
+  if (!isReady() && forceSettingsPanel()) {
+    method = method + "+qa-panel";
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+  return JSON.stringify({
+    ready: isReady(),
+    method,
+    hash: window.location.hash,
+    has_app_root: !!document.querySelector(".wh-app-root"),
+    has_boot_error: !!document.querySelector("[data-boot-tone='error']")
+  });
+})()
+"@
+      $lastNavigation = $navigation
+      $lastSnapshot = Invoke-CuuCdpMainSettingsSnapshot -WebSocketUrl $WebSocketUrl
+      if ($navigation -and $navigation.ready) {
+        return $lastSnapshot
+      }
+    } catch {
+      $lastErrorMessage = $_.Exception.Message
+    }
+    Start-Sleep -Milliseconds 300
+  } while ((Get-Date) -lt $deadline)
+  if ($lastSnapshot) {
+    return $lastSnapshot
+  }
+  try {
+    $debug = [pscustomobject]@{
+      last_navigation = $lastNavigation
+      last_error = $lastErrorMessage
+      captured_at_iso = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    $debug | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $OutDir "main-settings-cdp-debug.json") -Encoding utf8
+  } catch {
+  }
+  throw "Main settings panel did not become ready through CDP."
+}
+
+function New-CuuMainSettingsLayoutGate {
+  param(
+    [object]$Snapshot,
+    [ValidateSet("zh-CN", "en-US")]
+    [string]$ExpectedLocale,
+    [bool]$AfterRestore = $false
+  )
+  if (-not $Snapshot) {
+    return [pscustomobject]@{
+      enabled = $true
+      passed = $false
+      reason = "missing_main_settings_snapshot"
+    }
+  }
+  $bodyText = [string]$Snapshot.body_text
+  $expectedTitle = if ($ExpectedLocale -eq "en-US") { "App settings" } else { "应用设置" }
+  $expectedDesktop = if ($ExpectedLocale -eq "en-US") { "Desktop client" } else { "桌面客户端" }
+  $expectedRestore = if ($ExpectedLocale -eq "en-US") { "Restore interaction" } else { "恢复可交互" }
+  $localeOk = [string]$Snapshot.lang -eq $ExpectedLocale
+  $panelReady = $Snapshot.settings_panel.present -and -not $Snapshot.settings_panel.hidden -and $Snapshot.desktop_pet_settings.present -and $Snapshot.pet_settings.restore_present
+  $copyOk = $bodyText.Contains($expectedTitle) -and $bodyText.Contains($expectedDesktop) -and $bodyText.Contains($expectedRestore)
+  $noGlobalOverflow = -not [bool]$Snapshot.viewport.global_horizontal_overflow
+  $noForbiddenVisual = -not [bool]$Snapshot.forbidden.visual_selector_present
+  $noForbiddenModelText = -not [bool]$Snapshot.forbidden.model_choice_text_present
+  $restoreStateOk = -not $AfterRestore -or (
+    [string]$Snapshot.pet_settings.state -eq "interactive" -and
+    [bool]$Snapshot.pet_settings.pass_checked -eq $false -and
+    [bool]$Snapshot.pet_settings.hide_checked -eq $false -and
+    [string]$Snapshot.pet_settings.selected_opacity -eq "100"
+  )
+  $passed = $localeOk -and $panelReady -and $copyOk -and $noGlobalOverflow -and $noForbiddenVisual -and $noForbiddenModelText -and $restoreStateOk
+  [pscustomobject]@{
+    enabled = $true
+    passed = $passed
+    reason = if ($passed) { "main_settings_panel_in_bounds" } else { "main_settings_panel_failed" }
+    expected_locale = $ExpectedLocale
+    locale_ok = $localeOk
+    panel_ready = $panelReady
+    copy_ok = $copyOk
+    no_global_horizontal_overflow = $noGlobalOverflow
+    no_forbidden_visual = $noForbiddenVisual
+    no_forbidden_model_text = $noForbiddenModelText
+    restore_state_ok = $restoreStateOk
+    viewport = $Snapshot.viewport
+    pet_settings = $Snapshot.pet_settings
+    overflow = $Snapshot.overflow
+  }
+}
+
+function New-CuuPassThroughRecoveryGate {
+  param(
+    [string]$Scenario,
+    [object]$InitialPetSnapshot,
+    [object]$MainBefore,
+    [object]$MainAfter,
+    [object]$FinalPetDomReport
+  )
+  $enabled = $Scenario -eq "pass-through-recovery-settings"
+  if (-not $enabled) {
+    return [pscustomobject]@{
+      enabled = $false
+      passed = $true
+      reason = "not_pass_through_recovery_scenario"
+    }
+  }
+  $initialPassThrough = $InitialPetSnapshot -and
+    $InitialPetSnapshot.surface -and
+    [string]$InitialPetSnapshot.surface.data_pet_pass_through -eq "true"
+  $mainBeforePassed = $MainBefore -and $MainBefore.layout_gate -and [bool]$MainBefore.layout_gate.passed
+  $mainAfterPassed = $MainAfter -and $MainAfter.layout_gate -and [bool]$MainAfter.layout_gate.passed
+  $finalPassThroughOff = $FinalPetDomReport -and
+    $FinalPetDomReport.surface -and
+    $FinalPetDomReport.surface.data -and
+    [string]$FinalPetDomReport.surface.data.data_pet_pass_through -eq "false"
+  $finalHideOff = $FinalPetDomReport -and
+    $FinalPetDomReport.surface -and
+    $FinalPetDomReport.surface.data -and
+    [string]$FinalPetDomReport.surface.data.data_pet_hide_on_hover -eq "false"
+  $finalOpacityRestored = $FinalPetDomReport -and
+    $FinalPetDomReport.surface -and
+    $FinalPetDomReport.surface.data -and
+    [string]$FinalPetDomReport.surface.data.data_pet_opacity_percent -eq "100"
+  $finalMenuUsable = $FinalPetDomReport -and
+    $FinalPetDomReport.settings_menu -and
+    [bool]$FinalPetDomReport.settings_menu.present -and
+    $FinalPetDomReport.settings_menu.rect -and
+    [double]$FinalPetDomReport.settings_menu.rect.width -gt 0 -and
+    [double]$FinalPetDomReport.settings_menu.rect.height -gt 0 -and
+    ([string]$FinalPetDomReport.settings_menu.text).Length -gt 0
+  $passed = $initialPassThrough -and $mainBeforePassed -and $mainAfterPassed -and $finalPassThroughOff -and $finalHideOff -and $finalOpacityRestored -and $finalMenuUsable
+  [pscustomobject]@{
+    enabled = $true
+    passed = $passed
+    reason = if ($passed) { "pass_through_restored_and_menu_usable" } else { "pass_through_recovery_failed" }
+    initial_pet_pass_through = $initialPassThrough
+    main_before_passed = $mainBeforePassed
+    main_after_passed = $mainAfterPassed
+    final_pet_pass_through_off = $finalPassThroughOff
+    final_pet_hide_off = $finalHideOff
+    final_pet_opacity_restored = $finalOpacityRestored
+    final_menu_usable = $finalMenuUsable
+  }
 }
 
 function Restore-EnvVar {
@@ -840,7 +1292,7 @@ function New-CuuSettingsMenuLayoutGate {
     [string]$ExpectedLocale = "zh-CN"
   )
 
-  $enabled = @("settings-menu", "settings-menu-model-switch") -contains $Scenario
+  $enabled = @("settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings") -contains $Scenario
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -867,7 +1319,7 @@ function New-CuuSettingsMenuLayoutGate {
     }
   }
 
-  if ($Scenario -eq "settings-menu") {
+  if ($Scenario -eq "settings-menu" -or $Scenario -eq "pass-through-recovery-settings") {
     if (-not $Actual.settings_menu -or -not $Actual.settings_menu.present -or -not $Actual.settings_menu.rect) {
       return [pscustomobject]@{
         enabled = $true
@@ -1086,6 +1538,14 @@ function Select-CuuWindow {
     Select-Object -First 1
 }
 
+function Select-WorkHubMainWindow {
+  param([object[]]$Windows)
+  $Windows |
+    Where-Object { $_.Title -eq "WorkHub" } |
+    Sort-Object -Property @{ Expression = "Visible"; Descending = $true }, @{ Expression = { $_.Rect.Width * $_.Rect.Height }; Descending = $true } |
+    Select-Object -First 1
+}
+
 function Wait-ForCuuWindow {
   param([int]$TargetProcessId, [int]$TimeoutSeconds)
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -1113,7 +1573,7 @@ function New-WindowFrame {
       $graphics.ReleaseHdc($hdc)
     }
     if (-not $captured) {
-      throw "Win32 PrintWindow capture failed for Cuu."
+      throw "Win32 PrintWindow capture failed for $($Window.Title)."
     }
     $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
   } finally {
@@ -1311,10 +1771,13 @@ function New-CuuMotionLivenessReport {
     [bool]$IsBusinessScenario
   )
 
-  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher")
+  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "pass-through-recovery-settings")
   $enabled = $IsBusinessScenario -or ($interactionScenarios -contains $ScenarioName)
   $quality = if ($FrameCount -ge $FormalFrameCount) { "formal_32" } else { "smoke" }
   $minChangedFrames = if ($quality -eq "formal_32") { $MinChangedFramesFormal } else { $MinChangedFramesSmoke }
+  if ($ScenarioName -eq "pass-through-recovery-settings") {
+    $minChangedFrames = 1
+  }
   [object[]]$changedFrames = @($Diffs | Where-Object {
     $_.frame -gt 0 -and $_.vs_previous.changed_pixels_gt8 -ge $ChangedPixelsThreshold
   })
@@ -1403,7 +1866,7 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "pass-through-recovery-settings") {
     return $null
   }
 
@@ -1412,7 +1875,7 @@ function Invoke-CuuInteractionScenarioFrame {
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $isLauncher = $ScenarioName -eq "launcher"
-  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch"
+  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "pass-through-recovery-settings"
   $isSettingsMenuModelSwitch = $ScenarioName -eq "settings-menu-model-switch"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
@@ -1753,6 +2216,9 @@ $apiServerStartedForCapture = $false
 $isolatedRoot = $null
 $cuuCdpDebugPort = $null
 $reloadRestoreSeed = $null
+$initialPetSettingsSnapshot = $null
+$mainSettingsBeforeRestore = $null
+$mainSettingsAfterRestore = $null
 
 try {
   if (-not $UseRealAppData) {
@@ -1767,7 +2233,8 @@ try {
   $sseDisabledForScenario = $false
   $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
   $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
-  $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario
+  $usesMainSettingsCapture = $Scenario -eq "pass-through-recovery-settings"
+  $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario -or $usesMainSettingsCapture
   if (($Scenario -ne "idle" -and -not $usesCuuR3ApiServer) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
@@ -1806,7 +2273,8 @@ try {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_API_FAULT" -ErrorAction SilentlyContinue
   }
   Remove-Item -Path "Env:WORKHUB_CUU_QA_RESTORE_STATE" -ErrorAction SilentlyContinue
-  if ($PetPassThrough) {
+  $initialPetPassThrough = [bool]$PetPassThrough -or $usesMainSettingsCapture
+  if ($initialPetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_PET_PASS_THROUGH" -ErrorAction SilentlyContinue
@@ -1820,7 +2288,7 @@ try {
   if ($Scenario -eq "idle-long-run") {
     Set-CuuCursorPosition -X 120 -Y 120
   }
-  if ($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch") {
+  if ($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch" -or $usesMainSettingsCapture) {
     $cuuCdpDebugPort = New-CuuCdpDebugPort
     $remoteDebugArgument = "--remote-debugging-port=$cuuCdpDebugPort"
     if ([string]::IsNullOrWhiteSpace($originalWebView2AdditionalBrowserArguments)) {
@@ -1875,14 +2343,93 @@ try {
     throw "Cuu pet first visual frame did not reach pixel threshold visual>=$firstFrameMinVisualPixels after $($firstFrameGate.Attempts) attempt(s). Last pixel report: $pixelReport"
   }
   $pet = $firstFrameGate.Pet
-  if (($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch") -and $cuuCdpDebugPort) {
+  if (($Scenario -eq "launcher" -or $Scenario -eq "settings-menu" -or $Scenario -eq "settings-menu-model-switch" -or $usesMainSettingsCapture) -and $cuuCdpDebugPort) {
     $script:cuuCdpWebSocketUrl = Wait-CuuCdpPetWebSocketUrl -Port $cuuCdpDebugPort -TimeoutSeconds $WaitSeconds
+  }
+  if ($usesMainSettingsCapture -and -not $script:cuuCdpWebSocketUrl) {
+    throw "pass-through recovery capture requires pet WebView2 CDP."
+  }
+  if ($usesMainSettingsCapture -and $cuuCdpDebugPort) {
+    $script:cuuMainCdpWebSocketUrl = Wait-CuuCdpMainWebSocketUrl -Port $cuuCdpDebugPort -TimeoutSeconds $WaitSeconds
+    if (-not $script:cuuMainCdpWebSocketUrl) {
+      throw "pass-through recovery capture requires main WebView2 CDP."
+    }
   }
   if ($Scenario -eq "look-only") {
     Start-Sleep -Milliseconds 700
     $stabilizedPet = Select-CuuWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     if ($stabilizedPet) {
       $pet = $stabilizedPet
+    }
+  }
+
+  if ($usesMainSettingsCapture) {
+    if ($initialPetPassThrough) {
+      Invoke-CuuCdpSeedCuuPreferenceStorage `
+        -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+        -ScalePercent $PetScalePercent `
+        -OpacityPercent 100 `
+        -PassThrough $true `
+        -HideOnHover $false `
+        -ModelPackId $ModelPackId `
+        -Reload | Out-Null
+      Invoke-CuuCdpSeedCuuPreferenceStorage `
+        -WebSocketUrl $script:cuuCdpWebSocketUrl `
+        -ScalePercent $PetScalePercent `
+        -OpacityPercent 100 `
+        -PassThrough $true `
+        -HideOnHover $false `
+        -ModelPackId $ModelPackId `
+        -Reload | Out-Null
+      Start-Sleep -Milliseconds 1600
+      $initialPetSettingsSnapshot = Wait-CuuCdpPetSettingsState `
+        -WebSocketUrl $script:cuuCdpWebSocketUrl `
+        -ExpectedPassThrough $true `
+        -ExpectedHideOnHover $false `
+        -ExpectedOpacityPercent 100 `
+        -TimeoutSeconds $WaitSeconds
+    } else {
+      $initialPetSettingsSnapshot = Invoke-CuuCdpPetSettingsSnapshot -WebSocketUrl $script:cuuCdpWebSocketUrl
+    }
+    $beforeSnapshot = Wait-CuuCdpMainSettingsPanel -WebSocketUrl $script:cuuMainCdpWebSocketUrl -ExpectedLocale $Locale -TimeoutSeconds $WaitSeconds
+    $mainBeforeWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    if (-not $mainBeforeWindow) {
+      throw "WorkHub main window was not found for settings screenshot before restore."
+    }
+    $mainBeforeScreenshot = Join-Path $OutDir "main-settings-before-restore.png"
+    New-WindowFrame -Window $mainBeforeWindow -Path $mainBeforeScreenshot
+    $mainSettingsBeforeRestore = [pscustomobject]@{
+      screenshot = $mainBeforeScreenshot
+      snapshot = $beforeSnapshot
+      layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $beforeSnapshot -ExpectedLocale $Locale -AfterRestore $false
+    }
+
+    $restorePoint = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuMainCdpWebSocketUrl -Selector "[data-cuu-pet-restore-interaction]"
+    Start-Sleep -Milliseconds 900
+    $afterSnapshot = Invoke-CuuCdpMainSettingsSnapshot -WebSocketUrl $script:cuuMainCdpWebSocketUrl
+    $mainAfterWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
+    if (-not $mainAfterWindow) {
+      throw "WorkHub main window was not found for settings screenshot after restore."
+    }
+    $mainAfterScreenshot = Join-Path $OutDir "main-settings-after-restore.png"
+    New-WindowFrame -Window $mainAfterWindow -Path $mainAfterScreenshot
+    $mainSettingsAfterRestore = [pscustomobject]@{
+      screenshot = $mainAfterScreenshot
+      restore_click = $restorePoint
+      snapshot = $afterSnapshot
+      layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $afterSnapshot -ExpectedLocale $Locale -AfterRestore $true
+    }
+    if (-not $mainSettingsBeforeRestore.layout_gate.passed -or -not $mainSettingsAfterRestore.layout_gate.passed) {
+      $layoutDebug = [pscustomobject]@{
+        before = $mainSettingsBeforeRestore
+        after = $mainSettingsAfterRestore
+        captured_at_iso = (Get-Date).ToUniversalTime().ToString("o")
+      }
+      $layoutDebugPath = Join-Path $OutDir "main-settings-layout-gate-debug.json"
+      $layoutDebug | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $layoutDebugPath -Encoding utf8
+      $beforeGate = $mainSettingsBeforeRestore.layout_gate | ConvertTo-Json -Compress -Depth 8
+      $afterGate = $mainSettingsAfterRestore.layout_gate | ConvertTo-Json -Compress -Depth 8
+      throw "Main settings layout gate failed before pet menu recovery capture. Debug: $layoutDebugPath Before: $beforeGate After: $afterGate"
     }
   }
 
@@ -1992,6 +2539,7 @@ try {
   $expectedModelPackIdForDom = if ($Scenario -eq "settings-menu-model-switch") { "cuu-tororo-live2d-cubism2" } else { $ModelPackId }
   $actualDomMatchesExpected = Test-CuuActualDomMatchesExpected -Expected $expectedBehavior -Actual $actualDomReport -ExpectedModelPackId $expectedModelPackIdForDom -Scenario $Scenario -ExpectedLocale $Locale
   $settingsMenuLayoutGate = New-CuuSettingsMenuLayoutGate -Scenario $Scenario -Actual $actualDomReport -ExpectedLocale $Locale
+  $passThroughRecoveryGate = New-CuuPassThroughRecoveryGate -Scenario $Scenario -InitialPetSnapshot $initialPetSettingsSnapshot -MainBefore $mainSettingsBeforeRestore -MainAfter $mainSettingsAfterRestore -FinalPetDomReport $actualDomReport
 
   $motionLivenessReport = New-CuuMotionLivenessReport `
     -ScenarioName $Scenario `
@@ -2005,7 +2553,7 @@ try {
     -MaxRectDriftPx $MaxStableRectDriftPx `
     -IsBusinessScenario $isBusinessScenario
   $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
-  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed -and $settingsMenuLayoutGate.passed -and $passThroughRecoveryGate.passed
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -2034,16 +2582,21 @@ try {
     }
     right_edge_clip_gate = $rightEdgeClipGate
     settings_menu_layout_gate = $settingsMenuLayoutGate
+    pass_through_recovery_gate = $passThroughRecoveryGate
+    main_settings_before_restore = $mainSettingsBeforeRestore
+    main_settings_after_restore = $mainSettingsAfterRestore
+    initial_pet_settings_snapshot = $initialPetSettingsSnapshot
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
-      pet_pass_through = [bool]$PetPassThrough
+      pet_pass_through = $initialPetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
       expected_dom_model_pack_id = $expectedModelPackIdForDom
       pet_locale = $Locale
       pet_qa_scenario = if ($isQaScenario) { $Scenario } else { $null }
       webview2_cdp_enabled = [bool]$script:cuuCdpWebSocketUrl
+      main_webview2_cdp_enabled = [bool]$script:cuuMainCdpWebSocketUrl
     }
     scenario_events = $scenarioEvents.ToArray()
     process_id = $process.Id
@@ -2107,6 +2660,19 @@ try {
     actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
     actual_dom_matches_expected = $actualDomMatchesExpected
     settings_menu_layout_gate = $settingsMenuLayoutGate
+    pass_through_recovery_gate = $passThroughRecoveryGate
+    main_settings_before_restore = if ($mainSettingsBeforeRestore) {
+      [pscustomobject]@{
+        screenshot = $mainSettingsBeforeRestore.screenshot
+        layout_gate = $mainSettingsBeforeRestore.layout_gate
+      }
+    } else { $null }
+    main_settings_after_restore = if ($mainSettingsAfterRestore) {
+      [pscustomobject]@{
+        screenshot = $mainSettingsAfterRestore.screenshot
+        layout_gate = $mainSettingsAfterRestore.layout_gate
+      }
+    } else { $null }
     reload_restore_seed = if ($reloadRestoreSeed) {
       $seedRun = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "run"
       [pscustomobject]@{
@@ -2124,13 +2690,14 @@ try {
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
-      pet_pass_through = [bool]$PetPassThrough
+      pet_pass_through = $initialPetPassThrough
       pet_hide_on_hover = $cuuQaHideOnHover
       pet_model_pack_id = $ModelPackId
       expected_dom_model_pack_id = $expectedModelPackIdForDom
       pet_locale = $Locale
       pet_qa_scenario = if ($isQaScenario) { $Scenario } else { $null }
       webview2_cdp_enabled = [bool]$script:cuuCdpWebSocketUrl
+      main_webview2_cdp_enabled = [bool]$script:cuuMainCdpWebSocketUrl
     }
     frames_dir = $framesDir
     contact_sheet = $contactSheet

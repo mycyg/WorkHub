@@ -460,7 +460,10 @@ test("desktop Cuu notice renders compact option-first actions", () => {
   assert.doesNotMatch(html, /wh-cuu-sprite|wh-cuu-atlas|wh-cuu-legacy/u);
   assert.match(desktopCuuNoticeCss, /wh-cuu-queue-badge/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-card\{[^}]*min-width:0;max-width:100%;[^}]*overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-copy\{[^}]*min-width:0;max-width:100%;width:100%/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-head\{[^}]*min-width:0;max-width:100%;[^}]*flex-wrap:wrap/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-title\{[^}]*max-width:100%;width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(desktopCuuNoticeCss, /\.wh-cuu-card-message\{[^}]*max-width:100%;width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-chip\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-action\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(desktopCuuNoticeCss, /\.wh-cuu-queue-badge\{[^}]*max-width:calc\(100vw - 36px\);min-width:0/u);

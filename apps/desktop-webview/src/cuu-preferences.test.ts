@@ -5,6 +5,7 @@ import { createCuuController } from "@workhub/cuu";
 
 import {
   CUU_PREFERENCES_STORAGE_KEY,
+  desktopPetSettingsCss,
   loadCuuPreferences,
   normalizeCuuPreferences,
   renderDesktopPetSettingsPanel,
@@ -204,4 +205,11 @@ test("desktop pet settings panel localizes recovery copy in English", () => {
   assert.match(html, /data-cuu-pet-scale="100" aria-pressed="true"/u);
   assert.match(html, /data-cuu-pet-opacity="100" aria-pressed="true"/u);
   assert.doesNotMatch(html, /桌面客户端|data-cuu-model-pack-id|Black cat|White cat/u);
+});
+
+test("desktop pet settings css keeps long recovery text inside its frame", () => {
+  assert.match(desktopPetSettingsCss, /\.wh-desktop-pet-state\{[^}]*max-width:100%/u);
+  assert.match(desktopPetSettingsCss, /\.wh-desktop-pet-state\{[^}]*overflow-wrap:anywhere/u);
+  assert.match(desktopPetSettingsCss, /\.wh-desktop-pet-options button,\.wh-desktop-pet-action\{[^}]*min-width:0/u);
+  assert.match(desktopPetSettingsCss, /\.wh-desktop-pet-toggle p\{overflow-wrap:anywhere\}/u);
 });

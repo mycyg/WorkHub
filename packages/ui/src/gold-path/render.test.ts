@@ -97,9 +97,24 @@ test("settings page stays serious and keeps pet model choice out of the main app
   assert.equal(settings?.title, "Settings");
   assert.equal(settings?.html.includes("应用设置"), true);
   assert.equal(settings?.html.includes("桌宠形象只在独立桌宠窗口里配置和验收"), true);
+  assert.equal(settings?.html.includes("wh-grid wh-settings-grid"), true);
   assert.equal(settings?.html.includes("legacy-cuu-pack"), false);
   assert.equal(settings?.html.includes("Live2D 实验形象"), false);
   assert.equal(settings?.html.includes("data-cuu-settings-model-pack-id"), false);
+});
+
+test("gold path page css keeps settings cards and long copy inside the frame", () => {
+  const rendered = renderGoldPathSurface(surfaceVm(), "desktop");
+
+  assert.match(rendered.css, /\.wh-shell\{[^}]*width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden/u);
+  assert.match(rendered.css, /\.wh-shell,\.wh-shell \*\{box-sizing:border-box\}/u);
+  assert.match(rendered.css, /\.wh-stage\{[^}]*width:100%;[^}]*min-width:0/u);
+  assert.match(rendered.css, /\.wh-desktop \.wh-stage\{max-width:660px;margin:0;grid-template-columns:1fr\}/u);
+  assert.match(rendered.css, /\.wh-main\{[^}]*min-width:0/u);
+  assert.match(rendered.css, /\.wh-grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(min\(220px,100%\),1fr\)\);[^}]*min-width:0;max-width:100%/u);
+  assert.match(rendered.css, /\.wh-settings-grid\{grid-template-columns:repeat\(auto-fit,minmax\(min\(360px,100%\),1fr\)\)\}/u);
+  assert.match(rendered.css, /\.wh-card\{[^}]*min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(rendered.css, /\.wh-subtle\{[^}]*overflow-wrap:anywhere/u);
 });
 
 test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {

@@ -7,7 +7,8 @@ import type { AgentRunLiveVM, SessionVM, WorkItemDetailVM } from "@workhub/contr
 import {
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
-  submitDesktopCuuAction
+  submitDesktopCuuAction,
+  type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
 import {
   bootDesktopPetSurface,
@@ -730,7 +731,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
   assert.match(card.css, /\.wh-pet-bubble>\*\{min-width:0;max-width:100%\}/u);
   assert.match(card.css, /\.wh-pet-progress\{[^}]*min-width:0;max-width:100%;width:100%/u);
-  assert.match(card.css, /\.wh-pet-section-title,\.wh-pet-evidence-title,\.wh-pet-input-hint\{[^}]*overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(card.css, /\.wh-pet-progress-label\{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap/u);
+  assert.match(card.css, /\.wh-pet-section-title,\.wh-pet-evidence-title,\.wh-pet-input-hint\{[^}]*width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(card.css, /\.wh-pet-chips,\.wh-pet-actions,\.wh-pet-reasons\{[^}]*min-width:0;max-width:100%;width:100%/u);
   assert.match(card.css, /\.wh-pet-chip,\.wh-pet-action,\.wh-pet-reason\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
@@ -1070,6 +1072,75 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
       payload: { title: "Cuu 桌面入口任务" }
     }
   ]);
+});
+
+test("pet surface syncs settings emitted by the main desktop window", async () => {
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  const storage = createFakeLocalStorage({
+    workhub_cuu_preferences: JSON.stringify({
+      pet_pass_through: true,
+      pet_hide_on_hover: true,
+      pet_opacity_percent: 60
+    })
+  });
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const stopped: string[] = [];
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => stopped.push(eventName);
+      };
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+
+      try {
+        assert.match(root.innerHTML, /data-pet-pass-through="true"/u);
+        assert.match(root.innerHTML, /data-pet-hide-on-hover="true"/u);
+        assert.match(root.innerHTML, /data-pet-opacity-percent="60"/u);
+
+        handlers.get("pet-settings")?.({
+          payload: {
+            scale_percent: 100,
+            opacity_percent: 100,
+            pass_through: false,
+            hide_on_hover: false
+          }
+        });
+
+        assert.match(root.innerHTML, /data-pet-pass-through="false"/u);
+        assert.match(root.innerHTML, /data-pet-hide-on-hover="false"/u);
+        assert.match(root.innerHTML, /data-pet-opacity-percent="100"/u);
+        const persisted = JSON.parse(storage.getItem("workhub_cuu_preferences") ?? "{}") as Record<string, unknown>;
+        assert.equal(persisted.pet_scale_percent, 100);
+        assert.equal(persisted.pet_opacity_percent, 100);
+        assert.equal(persisted.pet_pass_through, false);
+        assert.equal(persisted.pet_hide_on_hover, false);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("pet-settings"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
 });
 
 test("pet surface persists and restores the current session question card", async () => {

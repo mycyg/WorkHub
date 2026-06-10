@@ -101,7 +101,7 @@ R0 退出门：
 - `functional-requirements.md` 与 `phasing-p0-p5.md` 不再用 `mid` 作为权威枚举。
 - 旧橘猫截图只在“失败样例 / stale”上下文出现；当前 shared PNG 不再含橘猫。
 
-2026-06-10 复核：R0 文档治理和概念资产基本完成，但不能宣称完美闭环。主窗无 Cuu 的 Web/desktop 真实截图复核仍未完成，后续 R3.18/R4 必须补 `/settings` 与主工作台截图证据。
+2026-06-10 复核：R0 文档治理和概念资产基本完成，但不能宣称完美闭环。R3.18 已补 desktop 主窗 `/settings` zh-CN/en-US 无 Cuu 本体、无模型预览、文本不超框截图证据；但 Web/desktop 主工作台、审批、Proposal、Replay、Cost 等完整主窗截图复核仍未完成，后续 R4 必须继续补。
 
 ## 4. R1 真实纵切
 
@@ -2610,14 +2610,24 @@ Bug / 数据流审查：
 4. 已补黑猫切白猫真实 Tauri contact sheet：`menu-model-switch-boundary-pass3/`，最终 DOM 为 `cuu-tororo-live2d-cubism2` / `white_cat`。
 5. 已新增 `settings_menu_layout_gate`：右键菜单场景自动校验菜单 rect/text 在 260px surface 内且无 pass-through 入口；模型切换场景自动校验短提示 bubble 在窗口内。
 6. 已修 bug：settings scale 下 Live2D canvas 改为比例 framing，避免首帧裁切；模型切换后的 `Cuu 形象已更新。` 短提示改为 compact status bubble，修复竖向文字残片。
-7. 限制：`pass-through` 与 combo case 证明设置可进入真实 `pet` window；开启 pass-through 后通过主窗或托盘恢复的端到端点击录屏仍未完成。
+7. 限制：`pass-through` 与 combo case 证明设置可进入真实 `pet` window；主窗恢复的端到端证据已由 R3.18 补齐，托盘真实点击证据仍未完成。
 
-### R3.18 下一刀：pass-through 真恢复 + 主窗 settings 截图
+### R3.18 已落：pass-through 主窗恢复 + 主窗 settings 截图
 
-1. 保留 R3.12-R3.17 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
-2. 补 pass-through recovery：开启 pass-through 后通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100` 与右键菜单可用。
-3. 补主窗 `/settings` zh-CN / en-US 真实截图，确认严肃设置页没有 Cuu 本体、没有模型预览、文本不超框。
-4. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
+1. 已阅读 `pet-settings-recovery-p1-5.md`、`pet-right-click-settings-menu-p1-4.md`、`desktop-pet-tauri.md`、`cuu-r3-agent-entry.md` 与 Cuu/TS-first 概念图，确认本轮只补恢复和文本边界，不新增模型、改色或动效。
+2. 已补 `pass-through-recovery-settings` capture：真实 Tauri 同时连接 main/pet WebView2 CDP，写入 pass-through 初始偏好，从 desktop 主窗 `/settings` 点击恢复，再确认 `pass=false/hide=false/opacity=100` 与 pet 右键菜单可用。
+3. 已补主窗 `/settings` zh-CN / en-US 真实截图：证据在 `../05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-zh/` 与 `settings-restore-en/`；两组 `main_settings_before_restore` 和 `main_settings_after_restore` 都 `layout_gate.passed=true`、`overflow.offenders=[]`。
+4. 已补 run-failure 卡片回归：证据在 `../05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/run-failure-card-en/`；人工复核用户截图对应的 `This run needs attention`、Run progress、Budget 与按钮均留在卡片内。
+5. 已补数据流闭环：Rust `set_pet_window_settings` 后 emit `pet-settings` 给 pet webview，`pet-surface` 同步 Cuu preferences 与 localStorage，避免主窗恢复后被旧本地偏好反向覆盖。
+6. 验收通过：`@workhub/desktop-webview test` 已覆盖 CSS/text boundary 与 `pet-settings` 同步；`@workhub/api test` 覆盖 QA locale/auth preferences；`@workhub/ui test` 覆盖 gold-path shell/render 文本边界；真实 capture 三组均 `passed=true`。
+
+### R3.19 下一刀：托盘恢复 + 跨平台 capture
+
+1. 保留 R3.12-R3.18 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate、pass-through 主窗恢复必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
+2. 补托盘 `restore-pet-interaction` 真恢复：开启 pass-through 后通过系统托盘恢复，再确认 `pass=false/hide=false/opacity=100` 与右键菜单可用。
+3. 补 settings/menu 双向状态同步：右键菜单切 hover 后主窗 settings 状态同步；主窗恢复后 pet 状态同步。
+4. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+5. 验收命令：desktop-webview typecheck/test、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 

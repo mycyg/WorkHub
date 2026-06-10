@@ -42,12 +42,13 @@ export type GoldPathRenderedSurface = {
 
 export const goldPathCss = [
   ":root{color-scheme:light;--ink:#182033;--muted:#5e6a86;--line:#dfe5f1;--paper:#fff;--soft:#f5f8fc;--blue:#355cff;--green:#24a66a;--coral:#ee6b5f;--amber:#d98b16;--violet:#7863e6}",
-  ".wh-shell{font-family:\"Aptos\",\"Segoe UI\",sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fbff 0%,#eef4fb 100%);padding:24px;min-height:100%;box-sizing:border-box}",
-  ".wh-stage{max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}",
-  ".wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08)}",
-  ".wh-main{padding:24px}.wh-side{padding:18px;position:sticky;top:16px}.wh-kicker{font-size:12px;color:var(--blue);font-weight:700;text-transform:uppercase;letter-spacing:0}",
-  ".wh-title{font-size:30px;line-height:1.12;margin:8px 0 8px}.wh-subtle{color:var(--muted);line-height:1.55}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-top:18px}",
-  ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}",
+  ".wh-shell{font-family:\"Aptos\",\"Segoe UI\",sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fbff 0%,#eef4fb 100%);padding:24px;min-height:100%;width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden}.wh-shell,.wh-shell *{box-sizing:border-box}",
+  ".wh-stage{width:100%;max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;min-width:0}",
+  ".wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}",
+  ".wh-main{padding:24px;min-width:0}.wh-side{padding:18px;position:sticky;top:16px;min-width:0}.wh-kicker{font-size:12px;color:var(--blue);font-weight:700;text-transform:uppercase;letter-spacing:0}",
+  ".wh-title{font-size:30px;line-height:1.12;margin:8px 0 8px;overflow-wrap:anywhere}.wh-subtle{color:var(--muted);line-height:1.55;overflow-wrap:anywhere}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;margin-top:18px;min-width:0;max-width:100%}",
+  ".wh-settings-grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}",
+  ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}",
   ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}",
   ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
@@ -56,7 +57,7 @@ export const goldPathCss = [
   ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
-  ".wh-desktop .wh-stage{max-width:1040px;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
+  ".wh-desktop .wh-stage{max-width:660px;margin:0;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
   "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
 ].join("");
 
@@ -598,7 +599,7 @@ function renderSettings(surface: GoldPathRenderSurface, locale: WorkHubLocale): 
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "settings.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "settings.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(t(locale, "settings.summary"))}</p>
-    <div class="wh-grid">
+    <div class="wh-grid wh-settings-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "settings.runtimeTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "settings.runtimeBody"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "settings.desktopTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "settings.desktopBody"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "settings.costTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "settings.costBody"))}</p></article>

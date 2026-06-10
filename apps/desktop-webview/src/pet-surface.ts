@@ -123,7 +123,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-bubble>*{min-width:0;max-width:100%}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
-  ".wh-pet-kind,.wh-pet-priority{border:1px solid rgba(38,49,70,.12);border-radius:8px;background:#fff;padding:3px 6px;color:#344054;font-size:10px;line-height:1;font-weight:850;white-space:nowrap}",
+  ".wh-pet-kind,.wh-pet-priority{max-width:100%;border:1px solid rgba(38,49,70,.12);border-radius:8px;background:#fff;padding:3px 6px;color:#344054;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-priority[data-priority=urgent],.wh-pet-priority[data-priority=high]{background:#fff4f3;border-color:rgba(238,107,95,.28);color:#b42318}",
   ".wh-pet-title{min-width:0;max-width:100%;width:100%;font-size:14px;line-height:1.35;font-weight:850;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
   ".wh-pet-message{min-width:0;max-width:100%;width:100%;margin:0;color:#667085;font-size:12px;line-height:1.45;font-weight:650;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
@@ -133,9 +133,9 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-progress-dot{height:4px;border-radius:8px;background:rgba(152,162,179,.24)}",
   ".wh-pet-progress-step[data-state=done] .wh-pet-progress-dot,.wh-pet-progress-step[data-state=active] .wh-pet-progress-dot{background:#355cff}",
   ".wh-pet-progress-step[data-state=active]{color:#344054}",
-  ".wh-pet-progress-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-pet-progress-label{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-pet-section{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
-  ".wh-pet-section-title,.wh-pet-evidence-title,.wh-pet-input-hint{min-width:0;max-width:100%;color:#344054;font-size:11px;font-weight:900;line-height:1.2;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-section-title,.wh-pet-evidence-title,.wh-pet-input-hint{min-width:0;max-width:100%;width:100%;color:#344054;font-size:11px;font-weight:900;line-height:1.2;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-section-line,.wh-pet-evidence-item{min-width:0;max-width:100%;width:100%;color:#667085;font-size:11px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-evidence{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-input-hint{border-top:1px solid rgba(38,49,70,.1);padding-top:7px;color:#667085}",
@@ -467,6 +467,42 @@ function desktopTrayActionId(payload: unknown) {
   }
   const id = (payload as { id?: unknown }).id;
   return typeof id === "string" ? id : undefined;
+}
+
+function desktopPetSettingsPreferencesFromPayload(payload: unknown): Partial<CuuControllerPreferences> | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  const scale = readPetSettingsNumber(record.scale_percent ?? record.scalePercent);
+  const opacity = readPetSettingsNumber(record.opacity_percent ?? record.opacityPercent);
+  const passThrough = readPetSettingsBoolean(record.pass_through ?? record.passThrough);
+  const hideOnHover = readPetSettingsBoolean(record.hide_on_hover ?? record.hideOnHover);
+  const preferences: Partial<CuuControllerPreferences> = {};
+  if (scale !== undefined) {
+    preferences.pet_scale_percent = scale as CuuControllerPreferences["pet_scale_percent"];
+  }
+  if (opacity !== undefined) {
+    preferences.pet_opacity_percent = opacity as CuuControllerPreferences["pet_opacity_percent"];
+  }
+  if (passThrough !== undefined) {
+    preferences.pet_pass_through = passThrough;
+  }
+  if (hideOnHover !== undefined) {
+    preferences.pet_hide_on_hover = hideOnHover;
+  }
+  return Object.keys(preferences).length > 0 ? preferences : undefined;
+}
+
+function readPetSettingsNumber(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function readPetSettingsBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
@@ -1070,6 +1106,18 @@ export async function bootDesktopPetSurface(
     setPetSettingsMenuOpen(root, true);
   });
 
+  let petSettingsUnlisten: DesktopShellUnlisten | undefined;
+  const maybePetSettingsUnlisten = await shellListen?.("pet-settings", (event) => {
+    const preferences = desktopPetSettingsPreferencesFromPayload(event.payload);
+    if (!preferences) {
+      return;
+    }
+    updatePetPreferences(preferences);
+  });
+  if (typeof maybePetSettingsUnlisten === "function") {
+    petSettingsUnlisten = maybePetSettingsUnlisten;
+  }
+
   let trayActionUnlisten: DesktopShellUnlisten | undefined;
   const maybeTrayActionUnlisten = await shellListen?.("tray-action", (event) => {
     if (desktopTrayActionId(event.payload) !== "restore-pet-interaction") {
@@ -1160,6 +1208,7 @@ export async function bootDesktopPetSurface(
       cancelPendingFirstPaintSync?.();
       pointerSensor?.dispose();
       runStreamSubscription?.close();
+      petSettingsUnlisten?.();
       trayActionUnlisten?.();
       await runtime.dispose();
     }

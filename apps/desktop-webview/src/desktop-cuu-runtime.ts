@@ -40,7 +40,7 @@ export type DesktopShellEventEnvelope = {
 export type DesktopShellUnlisten = () => void;
 
 export type DesktopShellListen = (
-  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action",
+  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings",
   handler: (event: DesktopShellEventEnvelope) => void
 ) => DesktopShellUnlisten | Promise<DesktopShellUnlisten> | void | Promise<void>;
 
@@ -56,7 +56,7 @@ export type DesktopShellCuuRuntime = {
 };
 
 export type DesktopShellScriptedEvent = {
-  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action";
+  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings";
   payload: unknown;
   delayMs: number;
 };
@@ -213,13 +213,13 @@ type DesktopCuuActionClient = Pick<
 
 export const desktopCuuNoticeCss = [
   ".wh-cuu-card{display:grid;gap:10px;margin-top:10px;min-width:0;max-width:100%;font-weight:650;overflow-wrap:anywhere;word-break:break-word}",
-  ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0}",
+  ".wh-cuu-card-copy{display:grid;gap:8px;min-width:0;max-width:100%;width:100%}",
   ".wh-cuu-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-cuu-card-kicker{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;flex-wrap:wrap;color:var(--wh-app-muted);font-size:12px}",
   ".wh-cuu-card-mark{width:8px;height:8px;border-radius:999px;background:var(--wh-app-blue);box-shadow:0 0 0 3px rgba(53,92,255,.14)}",
-  ".wh-cuu-card-state{min-width:0;max-width:100%;font-size:11px;color:var(--wh-app-muted);font-weight:800;overflow-wrap:anywhere;word-break:break-word}",
-  ".wh-cuu-card-title{min-width:0;max-width:100%;font-size:15px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}",
-  ".wh-cuu-card-message{min-width:0;max-width:100%;margin:0;color:var(--wh-app-muted);font-size:13px;line-height:1.45;font-weight:600;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-state{min-width:0;max-width:100%;font-size:11px;color:var(--wh-app-muted);font-weight:800;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-title{min-width:0;max-width:100%;width:100%;font-size:15px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-cuu-card-message{min-width:0;max-width:100%;width:100%;margin:0;color:var(--wh-app-muted);font-size:13px;line-height:1.45;font-weight:600;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-cuu-card-chips,.wh-cuu-card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;min-width:0;max-width:100%;width:100%}",
   ".wh-cuu-chip{box-sizing:border-box;min-width:0;max-width:100%;border:1px solid var(--wh-app-line);border-radius:999px;background:#fff;padding:5px 8px;font-size:12px;color:var(--wh-app-ink);white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-cuu-action{box-sizing:border-box;min-width:0;max-width:100%;border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-app-ink);font-size:13px;text-align:left;text-decoration:none;font-weight:800;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",

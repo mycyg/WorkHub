@@ -30,7 +30,7 @@ date: 2026-06-10
 
 - 主窗严肃 settings 页能关闭 `pet_pass_through`。P1.5 已落源码恢复门。
 - 托盘有明确“恢复 Cuu 交互”动作。P1.5 已落 `restore-pet-interaction`。
-- settings matrix 证明开启后可恢复，不只是命令返回成功。该项仍待真实截图 / 录屏。
+- R3.18 已用主窗 `/settings` 真实截图证明开启后可恢复，并确认恢复后右键菜单重新可用；托盘真实点击证据仍在 R3.19。
 
 ## 3. Runtime Contract
 
@@ -82,10 +82,20 @@ cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
 
 R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单边界：`settings-menu` 场景检查菜单 present、rect 非零、窗口内边界、文本非空且无 pass-through 入口；`settings-menu-model-switch` 场景检查模型切换后的 compact 短提示在窗口内。
 
-### 5.2 后续验收
+### 5.2 R3.18 pass-through recovery 已完成
+
+| 项 | 证据 / 结论 |
+|---|---|
+| 主窗恢复 zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-zh/`，`pass_through_recovery_gate.passed=true` |
+| 主窗恢复 en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-en/`，`pass_through_recovery_gate.passed=true` |
+| 右键菜单重新可用 | 两个 locale 的最终 DOM report 均显示 `final_menu_usable=true`，菜单 text 非空且 rect 在 260px pet surface 内 |
+| pass-through 菜单项 | 继续不放进右键菜单；恢复入口留在主窗 `/settings` 和系统托盘 |
+| 主窗 settings 截图 | zh-CN / en-US 均 `layout_gate.passed=true`，无 Cuu 本体、无模型预览、`overflow.offenders=[]` |
+
+### 5.3 后续验收
 
 | 下一步 | 验收 |
 |---|---|
-| pass-through recovery | 主窗 settings 和托盘恢复源码已落；下一刀必须补真实恢复录屏，确认恢复后右键菜单重新可用 |
-| 主窗 settings 截图 | zh-CN / en-US 主窗 `/settings` 截图，确认严肃设置页无 Cuu 本体、无模型预览、文本不溢出 |
+| 托盘恢复真实点击 | 从 pass-through 初始态触发 `restore-pet-interaction`，恢复后右键菜单重新可用 |
+| settings 双向状态同步 | 右键菜单切 hover 后主窗 settings 状态同步；主窗恢复后 pet 状态同步 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

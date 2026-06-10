@@ -53,21 +53,23 @@ export const desktopCuuPreferenceCss = [
 export const desktopPetSettingsCss = [
   ".wh-desktop-pet-settings{margin-top:18px;display:grid;gap:14px}",
   ".wh-desktop-pet-settings-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}",
+  ".wh-desktop-pet-settings-head>div:first-child{min-width:0}",
   ".wh-desktop-pet-settings-head h2{margin:0;font-size:18px;line-height:1.2}",
   ".wh-desktop-pet-settings-head p{margin:6px 0 0;color:var(--muted);line-height:1.5}",
-  ".wh-desktop-pet-state{display:flex;align-items:center;gap:8px;min-width:max-content;border:1px solid var(--line);border-radius:8px;background:#f8fbff;padding:8px 10px;color:var(--muted);font-size:12px;font-weight:800}",
+  ".wh-desktop-pet-state{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#f8fbff;padding:8px 10px;color:var(--muted);font-size:12px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}",
   ".wh-desktop-pet-state span{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(36,166,106,.12)}",
   ".wh-desktop-pet-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}",
   ".wh-desktop-pet-setting{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}",
   ".wh-desktop-pet-setting strong{font-size:13px}.wh-desktop-pet-setting p{margin:0;color:var(--muted);line-height:1.45}",
   ".wh-desktop-pet-options{display:flex;gap:6px;flex-wrap:wrap}",
-  ".wh-desktop-pet-options button,.wh-desktop-pet-action{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:8px 10px;font:800 12px/1.1 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer}",
+  ".wh-desktop-pet-options button,.wh-desktop-pet-action{min-width:0;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:8px 10px;font:800 12px/1.1 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;overflow-wrap:anywhere}",
   ".wh-desktop-pet-options button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:rgba(53,92,255,.08);color:var(--blue);box-shadow:inset 3px 0 0 var(--blue)}",
   ".wh-desktop-pet-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:10px}",
   ".wh-desktop-pet-toggle label{display:flex;align-items:center;gap:8px;font-weight:850}.wh-desktop-pet-toggle input{width:16px;height:16px;accent-color:var(--blue)}",
+  ".wh-desktop-pet-toggle p{overflow-wrap:anywhere}",
   ".wh-desktop-pet-actions{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}",
   ".wh-desktop-pet-action[data-tone=primary]{background:var(--blue);border-color:var(--blue);color:#fff}.wh-desktop-pet-action[data-tone=danger]{background:#fff4f3;border-color:#f3c5c0;color:#a94137}",
-  "@media (max-width:760px){.wh-desktop-pet-settings-head{display:grid}.wh-desktop-pet-settings-grid{grid-template-columns:1fr}.wh-desktop-pet-state{width:max-content}}"
+  "@media (max-width:760px){.wh-desktop-pet-settings-head{display:grid}.wh-desktop-pet-settings-grid{grid-template-columns:1fr}.wh-desktop-pet-state{width:fit-content}}"
 ].join("");
 
 export function loadCuuPreferences(storage = defaultStorage()): CuuControllerPreferences {

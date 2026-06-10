@@ -291,6 +291,18 @@ fn set_pet_window_settings(
         next_settings,
     ));
 
+    app.emit_to(
+        "pet",
+        "pet-settings",
+        serde_json::json!({
+            "scale_percent": next_settings.scale_percent,
+            "opacity_percent": next_settings.opacity_percent,
+            "pass_through": next_settings.pass_through,
+            "hide_on_hover": next_settings.hide_on_hover,
+        }),
+    )
+    .map_err(|error| format!("failed to emit pet settings event: {error}"))?;
+
     Ok(plan)
 }
 

@@ -22,6 +22,8 @@ import {
 import { hashClientToken, type AuthActor, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createPushRoutes } from "../routes/push.js";
+import { createAuthRoutes } from "../routes/auth.js";
+import { createPageRoutes } from "../routes/pages.js";
 import { toAgentRunLiveVm } from "../pages/replay.js";
 import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
@@ -156,29 +158,32 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
 }
 
 function createAuth(settingsOverride: Settings = settings): AuthDependencies {
+  const initialLocale: WorkHubLocale = process.env.WORKHUB_CUU_QA_LOCALE === "en-US" ? "en-US" : "zh-CN";
+  let owner: UserAuthRow = { ...cuuR3SmokeOwner, preferredLocale: initialLocale };
   return {
     settings: settingsOverride,
     users: {
       async findActiveById(id) {
-        return id === cuuR3SmokeOwner.id ? cuuR3SmokeOwner : null;
+        return id === owner.id ? owner : null;
       },
       async findActiveByCookieToken(cookieToken) {
-        return cookieToken === cuuR3SmokeOwner.cookieToken ? cuuR3SmokeOwner : null;
+        return cookieToken === owner.cookieToken ? owner : null;
       },
       async findActiveByNickname(nickname) {
-        return nickname === cuuR3SmokeOwner.nickname ? cuuR3SmokeOwner : null;
+        return nickname === owner.nickname ? owner : null;
       },
       async createUser() {
-        return cuuR3SmokeOwner;
+        return owner;
       },
       async getOrCreateActiveByNickname() {
-        return { user: cuuR3SmokeOwner, created: false };
+        return { user: owner, created: false };
       },
       async rotateCookieToken() {
-        return cuuR3SmokeOwner;
+        return owner;
       },
       async updatePreferredLocale(_userId, locale) {
-        return { ...cuuR3SmokeOwner, preferredLocale: locale };
+        owner = { ...owner, preferredLocale: locale, updatedAt: cuuR3SmokeNow };
+        return owner;
       }
     },
     devices: {
@@ -186,7 +191,7 @@ function createAuth(settingsOverride: Settings = settings): AuthDependencies {
         return tokenHash === clientDevice.clientTokenHash ? clientDevice : null;
       },
       async findActiveByTokenHashForUser(tokenHash, userId) {
-        return tokenHash === clientDevice.clientTokenHash && userId === cuuR3SmokeOwner.id ? clientDevice : null;
+        return tokenHash === clientDevice.clientTokenHash && userId === owner.id ? clientDevice : null;
       },
       async createClientDevice() {
         return clientDevice;
@@ -286,6 +291,13 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
       stream: { heartbeatMs: 250 }
     }));
   }
+  app.route("/api/auth", createAuthRoutes(auth));
+  app.route("/api/pages", createPageRoutes({
+    auth,
+    queue,
+    workItems,
+    allowUnauthenticatedGoldPath: true
+  }));
   app.route("/api", createSessionRoutes({ auth, workItems }));
   app.route("/api", createWorkItemRoutes({ auth, workItems }));
   app.route("/api", createAgentRunRoutes({ auth, queue, workItems, autoRun: false }));

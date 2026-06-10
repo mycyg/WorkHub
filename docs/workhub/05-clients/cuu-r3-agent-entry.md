@@ -868,10 +868,69 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario settings-menu-model-switch -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 8 -IntervalMs 260 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-settings-menu-recovery\hijiki\menu-model-switch-boundary-pass3
 ```
 
-## 19. 下一刀 R3.18
+## 19. R3.18 已落切片：pass-through recovery + 主窗 settings 截图门
 
-1. 补 pass-through recovery 真机证据：开启 pass-through 后，通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复，再确认 `pass=false/hide=false/opacity=100`、右键菜单重新可用。
-2. 补主窗 `/settings` zh-CN/en-US 真实截图，确认严肃设置页无 Cuu 本体、无模型预览、文本不超框。
-3. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
-4. 继续保留 R3.12-R3.17 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix 和菜单 gate。
-5. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主窗无 Cuu 截图复核仍要闭环。
+R3.18 关闭 P1.5 留下的真实恢复缺口：开启点击穿透后，用户可以从 desktop 主窗 `/settings` 恢复交互，并重新使用 pet 右键菜单。范围仍限定在现有黑猫/白猫 Live2D、主窗 settings 恢复面和文本边界；不新增模型、不改色、不把 Cuu 本体放回主窗。
+
+改动：
+
+| 层 | R3.18 行为 |
+|---|---|
+| QA API server | `createCuuR3SmokeApp()` 接入 `/api/auth` 与 `/api/pages`，并用 `WORKHUB_CUU_QA_LOCALE` 初始化 owner locale，真实 desktop main `/api/pages/gold-path` 与语言切换不再 fallback 到中文 |
+| main settings | `/settings` 继续只显示严肃应用设置与独立 pet window 恢复控件；新增 zh-CN/en-US CDP 截图 gate，检查无 Cuu 本体、无模型预览、无全局横向滚动、长文本不超框 |
+| pet settings sync | Rust `set_pet_window_settings` 后向 `pet` webview emit `pet-settings`；`pet-surface` 监听后同步 Cuu preferences、DOM 与 localStorage，避免主窗恢复后 pet 仍按旧 pass-through 状态重绘 |
+| capture script | 新增 `pass-through-recovery-settings` 场景：启动 QA server、同时连接 main/pet WebView2 CDP、写入 pass-through 初始偏好、抓取 main settings 恢复前/后截图、点击恢复、再右键 pet 验证菜单可用 |
+| layout gate | `New-CuuMainSettingsLayoutGate` 检查主窗 settings 面板 locale、copy、禁止视觉元素、恢复状态和 overflow offender；`New-CuuPassThroughRecoveryGate` 检查 `pass=false/hide=false/opacity=100` 与最终菜单可用 |
+| 文本边界 | `pet-surface`、`desktopCuuNoticeCss`、gold-path shell/render、desktop pet settings CSS 补 `min-width:0`、`max-width:100%`、`width:100%`、正常换行和 `overflow-wrap:anywhere`，覆盖截图反馈的失败运行卡片、progress/budget section、状态徽标和 settings 文案 |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| pass-through recovery zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-zh/`，`passed=true`、`motion_gate_passed=true`、`settings_menu_layout_gate.passed=true`、`pass_through_recovery_gate.passed=true` |
+| pass-through recovery en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/settings-restore-en/`，同上 |
+| main settings overflow gate | 两个 locale 的 `main_settings_before_restore.layout_gate.overflow.offenders=[]` 与 `main_settings_after_restore.layout_gate.overflow.offenders=[]` |
+| run-failure card regression | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/run-failure-card-en/`，真实 `run-failure` card mode 通过，人工复核 `This run needs attention`、Run progress、Budget 与按钮均在卡片内 |
+| 视觉复核 | zh-CN/en-US 主窗 settings 截图无 Cuu 本体、无模型预览、无横向裁切；run-failure contact sheet 中长英文 failure 文案和 section 文本未超框 |
+
+数据流：
+
+```text
+main /settings
+  -> saveCuuPreferences(pass=false, hide=false, opacity=100)
+  -> Tauri set_pet_window_settings()
+  -> emit_to("pet", "pet-settings")
+  -> pet surface updates controller preferences + localStorage
+  -> WebView2 CDP right-click opens pet menu again
+  -> DOM report + PrintWindow frames + recovery gate
+```
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 修复主窗 settings 长文案、状态徽标、失败运行卡片 section 文本的同类超框风险；`pass-through-recovery-settings` 的 liveness 改为恢复交互烟测，完整 Live2D 动画门仍由 idle/long-run 场景承担 |
+| 数据流 | 主窗恢复不再只停在 Rust 窗口设置；`pet-settings` 事件把恢复状态回写到 pet webview，避免 localStorage 旧值反向覆盖 |
+| PRD/概念图 | Cuu 仍只在独立 transparent `pet` window；主窗 `/settings` 是严肃设置和恢复入口，不展示 Cuu 形象或模型预览；符合 `endpoint-page-cuu-alignment.png` |
+| 中英双语 | zh-CN/en-US 都有主窗 settings 恢复截图和 gate；英文 QA locale 从 auth/page route 层闭环 |
+| R0/R1/R2 口径 | R2 仍是多 worker/PG claim/Redis/release gate 地基首版；R1 仍不能宣称全量完成；R0 主窗 `/settings` 无 Cuu 证据已推进，但完整主工作台截图复核仍需 R4 继续补 |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/api test
+corepack pnpm --filter @workhub/desktop-webview test
+corepack pnpm --filter @workhub/ui test
+corepack pnpm --filter @workhub/desktop-webview build
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-settings -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 16 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\settings-restore-zh
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-settings -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 16 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\settings-restore-en
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario run-failure -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\run-failure-card-en
+```
+
+## 20. 下一刀 R3.19
+
+1. 补托盘 `restore-pet-interaction` 的真实点击证据：从 pass-through 初始态触发 tray restore，再确认 `pass=false/hide=false/opacity=100`、pet 右键菜单可用。
+2. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+3. 继续保留 R3.12-R3.18 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix、菜单 gate、pass-through recovery。
+4. R4 接手主窗产品化截图：home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow 都必须继续证明主窗无 Cuu 本体和无文本超框。
+5. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主工作台无 Cuu 截图复核仍要闭环。

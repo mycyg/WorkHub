@@ -92,3 +92,20 @@ test("gold path app shell renders a persistent bilingual locale switch", () => {
   assert.equal(shell.html.includes('aria-label="Language"'), true);
   assert.equal(shell.css.includes("wh-locale-toggle"), true);
 });
+
+test("gold path app shell keeps long runtime labels inside the top bar", () => {
+  const shell = renderGoldPathAppShell(renderGoldPathSurface(surfaceVm(), "desktop"), {
+    appName: "WorkHub Desktop",
+    surfaceLabel: "Tauri Webview P0.5",
+    apiBaseLabel: "device-token aware client with an intentionally long endpoint label"
+  });
+
+  assert.match(shell.css, /\.wh-app-root,\.wh-app-root \*\{box-sizing:border-box\}/u);
+  assert.match(shell.css, /\.wh-app-topbar\{[^}]*overflow:hidden/u);
+  assert.match(shell.css, /\.wh-app-top-actions\{[^}]*min-width:0;[^}]*flex:1 1 auto;[^}]*overflow:hidden/u);
+  assert.match(shell.css, /\.wh-app-runtime\{[^}]*min-width:0;[^}]*max-width:100%;[^}]*overflow:hidden/u);
+  assert.match(shell.css, /\.wh-app-runtime span:not\(\.wh-app-dot\)\{[^}]*text-overflow:ellipsis/u);
+  assert.match(shell.css, /\.wh-app-layout\{[^}]*width:100%;overflow:hidden/u);
+  assert.match(shell.css, /\.wh-app-content\{min-width:0;max-width:100%;overflow:hidden\}/u);
+  assert.match(shell.css, /\.wh-route-panel\{min-width:0;max-width:100%;overflow:hidden\}/u);
+});
