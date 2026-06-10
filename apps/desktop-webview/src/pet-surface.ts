@@ -106,7 +106,7 @@ export const desktopPetSurfaceCss = [
   "*,*::before,*::after{box-sizing:border-box}",
   "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38;background:rgba(0,0,0,0)!important}",
   ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,260px);height:var(--wh-pet-window-h,340px);border:0;background:rgba(0,0,0,0)!important;box-shadow:none;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
-  ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,520px);height:var(--wh-pet-window-h,640px)}",
+  ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,520px);height:var(--wh-pet-window-h,720px)}",
   ".wh-pet-body{position:absolute;right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:rgba(0,0,0,0)!important;box-shadow:none;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
   ".wh-pet-body::after{content:\"\";position:absolute;inset:0;z-index:3;background:rgba(0,0,0,0);pointer-events:auto}",
   ".wh-pet-body:active{cursor:grabbing}",
@@ -116,8 +116,8 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
   ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px);overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(72px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(348px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(304px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-message{-webkit-line-clamp:3}",
@@ -583,7 +583,7 @@ function patchDesktopPetSurfaceRuntimeState(
 
 function petWindowSize(mode: DesktopPetWindowMode) {
   return mode === "card"
-    ? { width: 520, height: 640 }
+    ? { width: 520, height: 720 }
     : { width: 260, height: 340 };
 }
 

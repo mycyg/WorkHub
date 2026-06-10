@@ -17,7 +17,7 @@ visuals:
 >
 > **2026-06-08 纠偏更新**：P1.10 已补 motion liveness 硬门和两组 32 帧 evidence；但根据 `D:/workhub审查报告`，R1 真实纵切通过前冻结后续 Cuu 外观/动效/设置矩阵施工。本篇后续计划不再作为立即施工队列，只保留为回归门。
 >
-> **2026-06-08 anchor regression update**：用户复核后仍认为审批框偏向红色左侧。当前源码把 full card 气泡进一步收窄并右移到 `right:24px; bottom:348px; width:288px`，让气泡与 `right:72px; bottom:72px` 的猫体同侧锚定。旧 contact sheet 仍保留为历史 evidence，但不能再单独证明“蓝色位置”已通过；后续真实截图必须以新坐标复核。
+> **2026-06-08 anchor regression update**：用户复核后仍认为审批框偏向红色左侧。P1.9 当时源码把 full card 气泡进一步收窄并右移到 `right:24px; bottom:348px; width:288px`，让气泡与 `right:72px; bottom:72px` 的猫体同侧锚定。R3.21 当前运行合同已更新为 `520x720` card 与 `left:88px; bottom:392px; width:300px`；旧 contact sheet 仍保留为历史 evidence，但不能再单独证明最新位置已通过。
 
 ## 1. User-Facing Problem
 
@@ -25,7 +25,7 @@ visuals:
 
 | 问题 | P1.9 处理 |
 |---|---|
-| 气泡框漂在窗口左上或脱离 Cuu | `card` 模式气泡改为 Cuu 右侧同锚，并重新校准到 `right:24px; bottom:348px; width:288px` |
+| 气泡框漂在窗口左上或脱离 Cuu | `card` 模式气泡围绕 Cuu，同步到 R3.21 当前锚点 `left:88px; bottom:392px; width:300px` |
 | Cuu 在 card 模式被裁切 | `card` 模式猫体改为 `right:72px; bottom:72px`，真实截图保留右侧与底部余量 |
 | `done` 为了 body-only 被裁成一条文字边 | `celebrating` / `thinking` 等业务提示态使用透明 `card` canvas，`done` 仍保留 `bubble_mode=tip` |
 
@@ -43,12 +43,12 @@ visuals:
 
 ## 3. Framing Contract
 
-当前 `card` window 仍是 `520x640` 透明画布；不是主窗里的卡片，也不是让 Cuu 活在 Web 页面中。它只是给桌宠气泡和 Cuu 留出可见区域。
+当前 `card` window 是 `520x720` 透明画布；不是主窗里的卡片，也不是让 Cuu 活在 Web 页面中。它给桌宠气泡、长失败/预算卡和 Cuu 留出可见区域。
 
 | Element | Current anchor | Why |
 |---|---|---|
 | Cuu body in `card` | `right:72px; bottom:72px` | 真实截图中黑/白猫全身不贴边，不裁脚、不裁须 |
-| Bubble in `card/full` | `right:24px; bottom:348px; width:288px` | 气泡右缘靠近 pet window 右侧，整体贴近 Cuu 头顶/右侧，不再铺到透明窗口左半区 |
+| Bubble in `card/full` | `left:88px; bottom:392px; width:300px` | 气泡贴近 Cuu 头顶并避开 Cuu 本体，长文本通过内部滚动承载，不再铺到透明窗口左半区 |
 | Bubble in `compact failed` | `right:8px; bottom:224px; width:150px` | 仅窗口扩展失败时保留救援小框 |
 | Bubble in `compact syncing` | 不渲染 | 避免只出现框、没有猫的过渡首帧 |
 
@@ -66,7 +66,7 @@ Current source-level anchor gate:
 | Gate | Expected |
 |---|---|
 | Cuu body | `right:72px; bottom:72px; width:240px; height:320px` |
-| Full bubble | `right:24px; bottom:348px; width:288px; max-height:268px` |
+| Full bubble | `left:88px; bottom:392px; width:300px; max-height:268px`；context 卡为 `max-height:320px; overflow:auto; overflow-x:hidden` |
 | Rejected regression | `right:112px; bottom:332px` no longer accepted by `pet-surface.test.ts` |
 
 Current Tauri rect evidence after the anchor regression update:

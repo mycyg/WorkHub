@@ -475,8 +475,8 @@ function assertPetWindowModeResult(value: unknown, expectedMode: DesktopPetWindo
   const result = value as PetWindowModeCommandResult;
   const mode = result.placement?.mode;
   const size = result.placement?.size;
-  const minWidth = expectedMode === "card" ? 500 : 240;
-  const minHeight = expectedMode === "card" ? 620 : 320;
+  const minWidth = expectedMode === "card" ? 390 : 195;
+  const minHeight = expectedMode === "card" ? 540 : 255;
   if (mode !== expectedMode || typeof size?.width !== "number" || typeof size?.height !== "number" || size.width < minWidth || size.height < minHeight) {
     throw new Error(`Cuu pet window returned an invalid ${expectedMode} placement plan.`);
   }

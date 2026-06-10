@@ -12,7 +12,7 @@ R3.21 开工前必须先读以下文档和概念图，避免跨平台 smoke 偏�
 - `docs/workhub/05-clients/desktop-pet-tauri.md`
 - `docs/workhub/05-clients/cuu-tauri-business-motion-capture-p1-7.md`
 - `docs/workhub/05-clients/prd-concept-reproduction-gap-audit.md`
-- `docs/workhub/03-design/page-concepts/`
+- `docs/workhub/05-clients/page-concepts.md`
 
 ## 2. 当前基线
 
@@ -63,3 +63,41 @@ R3.21 capture 产物必须继续保留 contact sheet、GIF/MP4、DOM report、mo
 - 文本 overflow gate 覆盖范围扩大后仍无 offender。
 - 文档更新到 `cuu-r3-agent-entry.md`、`pet-settings-recovery-p1-5.md`、`desktop-pet-tauri.md`、`cuu-tauri-business-motion-capture-p1-7.md` 与总路线图。
 - 提交前跑完测试、检查 `reference/` 未入暂存区，并推送 main。
+
+## 8. 2026-06-11 执行结果
+
+R3.21 已完成 Linux 首轮真实环境 smoke，但不冒充 macOS 通过。
+
+| 项 | 结果 |
+|---|---|
+| Linux 登录用户 | `mycyg@192.168.5.53` 可用；`mycyg1994` 不可用 |
+| 原始会话 | `XDG_SESSION_TYPE=tty`，`DISPLAY` / `WAYLAND_DISPLAY` / `XDG_CURRENT_DESKTOP` 均为空；真实桌面会话不可用 |
+| 依赖补齐 | 安装 Node 22.22.1、pnpm 11.0.9、Rust/Cargo 1.93.1、Tauri Linux 依赖、`xvfb-run`、`scrot`、`wmctrl`、`xdotool`、`openbox` |
+| Linux 编译缺口 | Tauri Linux 编译需要 `client-tauri/src-tauri/icons/icon.png`；仓库原来只有 `icon.ico`，已补 PNG 图标并用 Linux `cargo test` 证明通过 |
+| 真实窗口证据 | Xvfb + openbox + Vite devUrl 下，`wmctrl` 有 `WorkHub` 与 `Cuu` 两个窗口，`xwininfo` 有 `WorkHub 1180x780`、`Cuu 520x720`、tray icon `16x16` |
+| 文本越框修正 | card mode 从 `520x640` 调整为 `520x720`，bubble 锚点从 `bottom:304/348px` 收敛到 `bottom:392px`；新增失败 AgentRun 英文长卡结构/CSS 单测，覆盖 `Run progress` / `Budget` / 双按钮组合。真实截图级 failed AgentRun overflow 证据进入 R3.22 |
+| hardgate 复跑 | 加固后的 `scripts/qa/cuu-tauri-linux-smoke.sh` 已在 `/tmp/workhub-r3-linux-smoke-20260611-hardgate5` 退出码 0；脚本断言 `WorkHub` / `Cuu` 窗口、`Cuu 520x720`、截图、DOM report 与横向无 overflow，并在复跑后清理 Vite/1420 残留进程 |
+| devUrl 说明 | debug Tauri 二进制必须配套 `pnpm --filter @workhub/desktop-webview dev -- --host 127.0.0.1 --port 1420`；未启动 dev server 时只会显示 `Could not connect to 127.0.0.1` |
+| tray 限制 | Xvfb/openbox 能看到 Tauri tray icon X window，但没有真实桌面 panel / appindicator 菜单交互；Linux 物理 tray menu click 仍需有真实 DE 的机器补测 |
+| macOS 限制 | 本轮无 macOS 机器，不声明 menu bar 真实通过 |
+
+证据目录：
+
+- 主证据：`docs/workhub/05-clients/assets/audit/2026-06-11-cuu-r3-linux-tray-smoke/mycyg-xvfb-openbox-hardgate/`
+- 诊断证据：`docs/workhub/05-clients/assets/audit/2026-06-11-cuu-r3-linux-tray-smoke/mycyg-xvfb-openbox-smoke/`
+- 诊断证据：`docs/workhub/05-clients/assets/audit/2026-06-11-cuu-r3-linux-tray-smoke/mycyg-xvfb-openbox-devserver-smoke/`
+
+复跑入口：
+
+```bash
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-cuu-tauri-linux-smoke \
+WORKHUB_LINUX_SMOKE_WAIT_SECONDS=22 \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+## 9. 后续计划
+
+1. R3.22：按用户截图继续扩大文本边界门，覆盖 permission/offline/main notice/desktop Cuu card 的纵向高度与滚动边界；详见 `r3-22-text-overflow-permission-offline-qa-plan-2026-06-11.md`。
+2. Linux 真机 DE：找带 GNOME/KDE/Xfce panel 的 Linux 桌面会话，补 appindicator/tray menu 真实点击恢复，不用 Xvfb 结果替代。
+3. macOS：补 menu bar item、截图权限、Accessibility 权限、透明 window 的真实 capture 策略；有机器后再跑实证。
+4. R4：继续补主窗全页面 zh/en、四态、mobile-narrow 视觉审查，避免 R3 Cuu 证据掩盖 R0/R4 主窗缺口。

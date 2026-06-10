@@ -1,0 +1,3 @@
+
+(workhub-client-tauri:245600): libayatana-appindicator-WARNING **: 01:27:47.930: libayatana-appindicator is deprecated. Please use libayatana-appindicator-glib in newly written code.
+WorkHub SSE worker disabled by WORKHUB_DISABLE_SSE.

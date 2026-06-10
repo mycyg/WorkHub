@@ -112,7 +112,7 @@ pub const PET_BODY_ONLY_SIZE: LogicalSize = LogicalSize {
 };
 pub const PET_CARD_SIZE: LogicalSize = LogicalSize {
     width: 520,
-    height: 640,
+    height: 720,
 };
 
 impl Default for PetWindowSettings {
@@ -405,7 +405,7 @@ mod tests {
 
         assert_eq!(plan.mode, PetWindowMode::Card);
         assert_eq!(plan.size, PET_CARD_SIZE);
-        assert_eq!(plan.position, LogicalPosition { x: 1340, y: 350 });
+        assert_eq!(plan.position, LogicalPosition { x: 1340, y: 270 });
     }
 
     #[test]
@@ -444,10 +444,10 @@ mod tests {
             card_plan.size,
             LogicalSize {
                 width: 650,
-                height: 800
+                height: 900
             }
         );
-        assert_eq!(card_plan.position, LogicalPosition { x: 1175, y: 125 });
+        assert_eq!(card_plan.position, LogicalPosition { x: 1175, y: 25 });
         assert_eq!(visual.scale_percent, 125);
         assert_eq!(visual.opacity_percent, 80);
         assert_eq!(visual.pass_through, true);

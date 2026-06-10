@@ -14,14 +14,14 @@ visuals:
 
 > 本篇记录 P1.8：把 P1.7 的“期望行为合同”推进为真实 Tauri WebView DOM attrs 落盘，并修正审批 / 检索 / 澄清轻框的锚点。核心验收口径：气泡必须围绕 Cuu 出现，不能漂在窗口左上角；录屏首帧必须同时有 Cuu 与轻框，不能只出现框。
 >
-> **2026-06-08 anchor regression update**：用户复核指出 full card 气泡仍偏左。当前源码回归门已改为 full card `right:24px; bottom:348px; width:288px`，并拒绝旧 `right:112px; bottom:332px` 坐标。旧截图可作历史证据，不再作为最新合格截图。
+> **2026-06-08 anchor regression update**：用户复核指出 full card 气泡仍偏左。P1.8 当时源码回归门曾改为 full card `right:24px; bottom:348px; width:288px`，并拒绝旧 `right:112px; bottom:332px` 坐标。R3.21 已再次更新为 `520x720` card 与 `left:88px; bottom:392px; width:300px`，旧截图可作历史证据，不再作为最新合格截图。
 
 ## 1. PRD / Concept Alignment
 
 | 要求 | P1.8 落点 |
 |---|---|
 | Cuu 是独立桌宠，不活在主窗里 | 仍只改 `pet` surface 与真实 Tauri capture；Web / desktop 主窗无 Cuu 本体 |
-| 桌宠气泡像 QQ 宠物式“身边提醒” | card mode 气泡从 `left/top` 改为 `right/bottom`，贴近 Cuu 上方 |
+| 桌宠气泡像 QQ 宠物式“身边提醒” | card mode 气泡贴近 Cuu 上方，R3.21 当前锚点为 `left:88px; bottom:392px; width:300px` |
 | 用户截图反馈：框不能在红色左上位置 | stable card 与 compact fallback 均改为 Cuu 邻近锚点；syncing 过渡阶段隐藏小框 |
 | 不能只靠源码合同说通过 | capture report 同时写 `expected_behavior_contract` 与 `actual_dom_report` |
 | “只有框没有猫”不能算通过 | business card 首帧 gate 提高为猫体可见阈值，scale=100 默认 `54000` foreground pixels |
@@ -39,11 +39,11 @@ visuals:
 
 ## 3. Bubble Anchor Contract
 
-Card mode 当前窗口仍保持 `520x640`，用于容纳 Cuu 与轻气泡；但气泡不再占左上角。
+Card mode 当前窗口为 `520x720`，用于容纳 Cuu、轻气泡与长失败/预算卡；气泡不占左上角，也不压住 Cuu 本体。
 
 | Mode | Bubble anchor | Intent |
 |---|---|---|
-| `card/full` | P1.9 回归更新后为 `right: 24px; bottom: 348px; width: 288px` | 气泡贴近 Cuu 头顶 / 右侧，不再铺到透明窗口左半区 |
+| `card/full` | R3.21 更新后为 `left: 88px; bottom: 392px; width: 300px` | 气泡贴近 Cuu 头顶 / 左侧安全区，不再铺到透明窗口左半区，长文本通过内部滚动承载 |
 | `card/compact failed` | `right: 8px; bottom: 224px; width: 150px` | 只有扩展失败时显示小型救援卡 |
 | `card/compact syncing` | 不渲染 bubble | 避免窗口扩展中先出现“只有框没有猫”的过渡画面 |
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
+import { cardFromAgentRunLive, createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
 import type { AgentRunLiveVM, SessionVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import {
@@ -727,9 +727,9 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-pet-payload-ref-entity-id="10000000-0000-4000-8000-000000000101"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
-  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(304px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
   assert.match(card.css, /\.wh-pet-bubble>\*\{min-width:0;max-width:100%\}/u);
   assert.match(card.css, /\.wh-pet-progress\{[^}]*min-width:0;max-width:100%;width:100%/u);
@@ -751,6 +751,53 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-cuu-action-id="approve"/u);
   assert.match(card.html, /data-cuu-action-id="request_changes"/u);
   assert.match(card.html, /data-pet-reason="证据不足"/u);
+});
+
+test("pet surface keeps the failed agent-run card inside the expanded Cuu frame", () => {
+  const failedRun: AgentRunLiveVM = {
+    ...petHarnessRun(),
+    status: "failed",
+    run: {
+      ...petHarnessRun().run,
+      status: "failed",
+      handoff_md: "Cuu R3 run-failure QA forced provider failure."
+    },
+    usage: {
+      steps_used: 1,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0.00"
+    },
+    trace: [
+      {
+        id: "10000000-0000-4000-8000-000000000302",
+        agent_run_id: "10000000-0000-4000-8000-000000000301",
+        step_no: 1,
+        phase: "final",
+        input_json: {},
+        output_excerpt: "Cuu R3 run-failure QA forced provider failure.",
+        created_at: "2026-06-10T01:01:00.000Z"
+      }
+    ]
+  };
+  const card = cardFromAgentRunLive(failedRun, { locale: "en-US" });
+  const surface = renderDesktopPetSurface({
+    card,
+    status_text: "Cuu updated progress: Cuu desktop entry task",
+    locale: "en-US"
+  });
+
+  assert.match(surface.html, /data-pet-window-mode="card"/u);
+  assert.match(surface.html, /data-pet-window-height="720"/u);
+  assert.match(surface.html, /data-pet-card-has-context="true"/u);
+  assert.match(surface.html, /class="wh-pet-title">This run needs attention<\/strong>/u);
+  assert.match(surface.html, /class="wh-pet-section-title">Run progress<\/span>/u);
+  assert.match(surface.html, /class="wh-pet-section-title">Budget<\/span>/u);
+  assert.match(surface.html, /data-cuu-action-id="view_replay"/u);
+  assert.match(surface.html, /data-cuu-action-id="open_workitem"/u);
+  assert.doesNotMatch(surface.html, /data-cuu-action-id="abort_agent_run"/u);
+  assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*bottom:calc\(392px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
 });
 
 test("pet surface selects the white Live2D cat option and rejects old model packs", () => {
@@ -1570,7 +1617,7 @@ test("pet surface anchors full card bubbles near the Cuu body instead of the lef
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-layout="full"/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(72px \* var\(--wh-pet-scale,1\)\);width:calc\(240px \* var\(--wh-pet-scale,1\)\);height:calc\(320px \* var\(--wh-pet-scale,1\)\)\}/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.doesNotMatch(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc/u);
 });
@@ -1616,7 +1663,7 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
         async invoke(command: string, args?: Record<string, unknown>) {
           calls.push(`${command}:${args?.mode ?? args?.scalePercent ?? ""}`);
           if (command === "set_pet_window_mode") {
-            return { placement: { mode: args?.mode, size: { width: 520, height: 640 } } };
+            return { placement: { mode: args?.mode, size: { width: 520, height: 720 } } };
           }
           if (command === "set_pet_window_settings") {
             return {
@@ -1659,6 +1706,22 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
     "hide_pet_window:",
     "sample_pet_cursor_near:"
   ]);
+
+  const scaledTauri = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          calls.push(`scaled:${command}:${args?.mode ?? ""}`);
+          if (command === "set_pet_window_mode") {
+            return { placement: { mode: args?.mode, size: { width: 390, height: 540 } } };
+          }
+          return {};
+        }
+      }
+    }
+  });
+  await scaledTauri?.setMode?.("card");
+  assert.equal(calls.at(-1), "scaled:set_pet_window_mode:card");
 });
 
 test("pet window bridge rejects unavailable invoke and maps preferences", async () => {

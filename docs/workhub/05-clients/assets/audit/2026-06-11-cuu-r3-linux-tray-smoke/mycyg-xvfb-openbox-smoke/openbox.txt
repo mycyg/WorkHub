@@ -1,0 +1,1 @@
+Openbox-Message: 无法找到有效的菜单文件 "/var/lib/openbox/debian-menu.xml"

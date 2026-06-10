@@ -1097,10 +1097,59 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario run-failure -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 24 -IntervalMs 250 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-run-failure\hijiki\run-failure-zh-pass
 ```
 
-## 23. 下一刀 R3.21
+## 23. R3.21 已落切片：Linux cross-platform smoke + card frame safety
 
-1. Linux 透明窗口 + tray/menu smoke：优先使用测试机 `192.168.5.53`，记录 X11/Wayland、截图工具、托盘可见性和权限差异。
-2. macOS menu bar 策略：不强行复用 Windows tray 坐标门，先定义 menu bar restore 的 UIA/AppleScript/截图权限策略。
-3. 把 `pet_card_text_overflow_gate` 扩到 permission-401/403/offline 的最新中英证据目录，保持 card 文案不出框成为长期 gate。
-4. R4 主窗视觉审查继续覆盖 home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow。
+R3.21 关闭了“只在 Windows 证明 Tauri pet/tray”的一部分跨平台缺口：在 Linux 测试机上补齐 Tauri 依赖、编译通过、启动主窗与独立 Cuu pet 窗，并把用户截图里的长卡片文本越框问题继续前推到窗口尺寸与 CSS 锚点层。
+
+改动：
+
+| 层 | R3.21 行为 |
+|---|---|
+| Linux icon | 新增 `client-tauri/src-tauri/icons/icon.png`，修复 Linux `tauri::generate_context!()` 缺 PNG icon 编译失败 |
+| Rust card size | `PET_CARD_SIZE.height` 从 `640` 提到 `720`，保持 body anchor 向左上展开且不偷焦点 |
+| Pet CSS | card bubble 锚点统一到 `bottom:392px`，让长失败/预算卡片的滚动区域与 Cuu 本体分离 |
+| TS bridge gate | `assertPetWindowModeResult()` 对 card 高度下限提升到 `700`，避免旧 640 placement 被误判有效 |
+| Text overflow test | 新增英文 failed AgentRun 卡片结构/CSS 测试，覆盖 `This run needs attention`、`Run progress`、`Budget`、`View replay`、`Back to task` 组合；真实截图级 failed AgentRun overflow 证据进入 R3.22 |
+| Linux smoke | 新增 `scripts/qa/cuu-tauri-linux-smoke.sh`，在 Linux 上串起 WebView test/build、Tauri cargo test/build、Xvfb/openbox/devUrl 截图与 DOM report |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| Linux env | `docs/workhub/05-clients/assets/audit/2026-06-11-cuu-r3-linux-tray-smoke/mycyg-xvfb-openbox-hardgate/linux-env-report.txt`：`XDG_SESSION_TYPE=tty`，无原生 DISPLAY；Node 22.22.1 / pnpm 11.0.9 / cargo 1.93.1 |
+| WebView tests/build | 同目录 `desktop-webview-test.txt`：82/82 通过；`desktop-webview-build.txt` 通过 |
+| Tauri tests/build | `cargo-test.txt`：66 + 9 + 3 通过；`cargo-build.txt` 通过 |
+| Linux windows | `wmctrl.txt` 有 `WorkHub` 与 `Cuu`；`xwininfo.txt` 有 `WorkHub 1180x780`、`Cuu 520x720`、tray icon `16x16` |
+| Linux screenshot | `screen.png` 显示主窗无 Cuu 本体、Cuu 在独立 pet window、bubble 文本在框内 |
+| DOM report | `cuu-tauri-dom-report.json`：`surface.layout.horizontal_overflow=false`、`bubble.layout.horizontal_overflow=false`、`data_pet_window_height=720` |
+| Script hardgate | `WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-linux-smoke-20260611-hardgate5 bash scripts/qa/cuu-tauri-linux-smoke.sh` 退出码 0，仓库留存 `status.txt=ok`，复跑后 Vite/1420 无残留进程 |
+
+限制：
+
+| 项 | 结论 |
+|---|---|
+| Linux tray menu | 当前远程环境没有真实 GNOME/KDE/Xfce panel；Xvfb/openbox 能看到 tray icon X window，但不能证明 appindicator 菜单物理点击恢复 |
+| macOS | 无 macOS 机器，本轮只保留策略缺口，不声明 menu bar 通过 |
+| API backend | Linux devUrl smoke 未启动 full daemon，pet 最终显示 API 502 runtime error 卡；这足够证明窗口/文本边界，但不替代 R3.13/R3.20 的真实 run-failure Windows capture |
+
+复跑命令：
+
+```bash
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-cuu-tauri-linux-smoke \
+WORKHUB_LINUX_SMOKE_WAIT_SECONDS=22 \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+```powershell
+node_modules\.bin\tsc.CMD -p apps\desktop-webview\tsconfig.json --noEmit
+node --import tsx --test apps/desktop-webview/src/pet-surface.test.ts apps/desktop-webview/src/cuu-qa-dom-report.test.ts
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+```
+
+## 24. 下一刀 R3.22
+
+1. 按用户截图继续扩展文本边界：permission-401/403、stream-offline、generic runtime error、main Cuu notice、pet failed AgentRun 都要覆盖横向与纵向边界。
+2. 为 Linux smoke 补一个本地 mock API/QA server，让 Linux 也能生成精确 failed AgentRun `Run progress/Budget` 卡，而不只是不连 daemon 的 502 error card。
+3. Linux 真实 DE 机器补 appindicator/tray menu 物理点击恢复；Xvfb/openbox 证据不能替代真实 panel。
+4. macOS 继续补 menu bar item、截图权限和 Accessibility 自动化策略。
 5. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。

@@ -1,0 +1,22 @@
+captured_at=2026-06-11T01:20:23+08:00
+repo=/home/mycyg/workhub-r3-linux-smoke
+head=e66b54c539977fa9cffea5fb49155e04fa1eacc3
+diff_stat_begin
+ apps/desktop-webview/src/pet-surface-qa.ts    |  4 +-
+ apps/desktop-webview/src/pet-surface.test.ts  | 57 ++++++++++++++++++++++++---
+ apps/desktop-webview/src/pet-surface.ts       |  8 ++--
+ apps/desktop-webview/src/pet-window-bridge.ts |  2 +-
+ client-tauri/src-tauri/src/pet_commands.rs    | 12 +++---
+ client-tauri/src-tauri/src/pet_window.rs      |  8 ++--
+ 6 files changed, 69 insertions(+), 22 deletions(-)
+diff_stat_end
+uname=Linux mycyg 7.0.0-15-generic #15-Ubuntu SMP PREEMPT_DYNAMIC Wed Apr 22 16:06:43 UTC 2026 x86_64 GNU/Linux
+session_type=tty
+display=
+wayland_display=
+desktop=
+node=v22.22.1
+pnpm=11.0.9
+cargo=cargo 1.93.1 (083ac5135 2025-12-15) (built from a source tarball)
+rustc=rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball)
+xvfb_run=/usr/bin/xvfb-run

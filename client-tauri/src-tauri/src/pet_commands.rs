@@ -296,9 +296,9 @@ mod tests {
         assert_eq!(plan.label, "pet");
         assert_eq!(plan.focus, false);
         assert_eq!(placement.mode, PetWindowMode::Card);
-        assert_eq!(placement.position, LogicalPosition { x: 1340, y: 350 });
+        assert_eq!(placement.position, LogicalPosition { x: 1340, y: 270 });
         assert_eq!(placement.size.width, 520);
-        assert_eq!(placement.size.height, 640);
+        assert_eq!(placement.size.height, 720);
         assert_eq!(settings.scale_percent, 100);
     }
 
@@ -337,8 +337,8 @@ mod tests {
         assert_eq!(plan.command, SET_PET_WINDOW_SETTINGS_COMMAND);
         assert_eq!(placement.mode, PetWindowMode::Card);
         assert_eq!(placement.size.width, 650);
-        assert_eq!(placement.size.height, 800);
-        assert_eq!(placement.position, LogicalPosition { x: 1175, y: 125 });
+        assert_eq!(placement.size.height, 900);
+        assert_eq!(placement.position, LogicalPosition { x: 1175, y: 25 });
         assert_eq!(settings.scale_percent, 125);
         assert_eq!(settings.opacity_percent, 80);
         assert_eq!(settings.pass_through, true);
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn card_window_position_converts_back_to_body_anchor_without_drift() {
-        let body = LogicalPosition { x: 1340, y: 350 };
+        let body = LogicalPosition { x: 1340, y: 430 };
         let card = place_pet_window_from_body_anchor(
             work_area(),
             body,
@@ -404,7 +404,7 @@ mod tests {
                 x: 10,
                 y: 20,
                 width: 520,
-                height: 640
+                height: 720
             }
         );
     }

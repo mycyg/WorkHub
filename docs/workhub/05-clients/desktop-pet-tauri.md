@@ -67,8 +67,8 @@ visuals:
 | 形态 | transparent、decorations false、always-on-top、skip-taskbar |
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
-| card 尺寸 | `520x640` logical px，从 body anchor 向左上展开轻气泡 |
-| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:348px; width:300px; max-width:calc(100% - 128px)`，避免高 DPI/PrintWindow 右缘裁切 |
+| card 尺寸 | `520x720` logical px，从 body anchor 向左上展开轻气泡；2026-06-11 起为长失败/预算卡预留纵向安全区 |
+| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:392px; width:300px; max-width:calc(100% - 128px)`，避免高 DPI/PrintWindow 右缘裁切和长文本压住 Cuu 本体 |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
 | R3 launcher | 点击 Cuu body 且当前无业务卡片时，webview 展开 option-first Agent 启动卡；启动后 TS 订阅 run stream 并刷新 Cuu card；Rust 只负责窗口模式，不解析业务 intent |
@@ -184,6 +184,18 @@ visuals:
 - 鼠标靠近必须通过 `look-only` capture：不点击、不拖拽、窗口 rect 全程一致。
 - Pet surface 运行态只能 patch CSS variables / `data-*`，不能因 pointer tick 重建 Live2D iframe。
 - card mode 不得裁切 Cuu 或气泡操作。
+
+### 7.4 R3.21 Linux smoke 结果
+
+2026-06-11 已在 `mycyg@192.168.5.53` 做 Linux 首轮 smoke：
+
+- 原始远程会话是 `tty`，无 `DISPLAY` / `WAYLAND_DISPLAY` / `XDG_CURRENT_DESKTOP`；真实 DE tray 菜单无法在该会话里声明通过。
+- 补齐 Tauri Linux 依赖、`xvfb-run`、`openbox` 后，Xvfb + openbox 能启动 debug Tauri 二进制。
+- `wmctrl` 看到 `WorkHub` 与 `Cuu` 两个窗口；`xwininfo` 看到 `WorkHub 1180x780`、`Cuu 520x720` 与 tray icon `16x16`。
+- 最终 hardgate 截图见 `docs/workhub/05-clients/assets/audit/2026-06-11-cuu-r3-linux-tray-smoke/mycyg-xvfb-openbox-hardgate/screen.png`：主窗不含 Cuu 本体，Cuu 只在独立 pet window，bubble 文本不越框。
+- hardgate 脚本断言 `WorkHub` / `Cuu` 窗口、`Cuu 520x720`、截图、DOM report 与横向无 overflow，`status.txt=ok`。
+- Linux 编译缺口已修：新增 `client-tauri/src-tauri/icons/icon.png`，否则 `tauri::generate_context!()` 在 Linux 会因缺 PNG icon 编译失败。
+- 可复跑脚本：`bash scripts/qa/cuu-tauri-linux-smoke.sh`。
 
 ## 6. 主窗页面规划
 

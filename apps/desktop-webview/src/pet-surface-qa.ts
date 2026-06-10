@@ -44,7 +44,7 @@ export function createDesktopPetVisualQaReport(input: {
         "height:var(--wh-pet-window-h,340px)",
         ".wh-pet-surface[data-pet-window-mode=card]",
         "width:var(--wh-pet-window-w,520px)",
-        "height:var(--wh-pet-window-h,640px)",
+        "height:var(--wh-pet-window-h,720px)",
         "right:calc(4px * var(--wh-pet-scale,1))",
         "bottom:calc(4px * var(--wh-pet-scale,1))",
         "pointer-events:none"
@@ -121,7 +121,7 @@ export function createDesktopPetVisualQaReport(input: {
       hasAll(input.card.css, [
         ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1))",
         ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto",
-        "bottom:calc(348px * var(--wh-pet-scale,1))",
+        "bottom:calc(392px * var(--wh-pet-scale,1))",
         "width:calc(300px * var(--wh-pet-scale,1))",
         "max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)))",
         ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto",
