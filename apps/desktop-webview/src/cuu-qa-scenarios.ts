@@ -15,6 +15,9 @@ export type DesktopPetQaScenario =
   | "done"
   | "run-stream"
   | "run-failure"
+  | "reload-session"
+  | "reload-active-run"
+  | "reload-terminal-run"
   | "permission-401"
   | "permission-403"
   | "stream-offline"
@@ -33,6 +36,9 @@ const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "done",
   "run-stream",
   "run-failure",
+  "reload-session",
+  "reload-active-run",
+  "reload-terminal-run",
   "permission-401",
   "permission-403",
   "stream-offline",
@@ -145,6 +151,9 @@ function streamForTopic(topic: string) {
 function desktopPetQaScenarioUsesRunApi(scenario: DesktopPetQaScenario) {
   return scenario === "run-stream" ||
     scenario === "run-failure" ||
+    scenario === "reload-session" ||
+    scenario === "reload-active-run" ||
+    scenario === "reload-terminal-run" ||
     scenario === "permission-401" ||
     scenario === "permission-403" ||
     scenario === "stream-offline";
@@ -153,7 +162,16 @@ function desktopPetQaScenarioUsesRunApi(scenario: DesktopPetQaScenario) {
 function eventForScenario(
   scenario: Exclude<
     DesktopPetQaScenario,
-    "launcher" | "run-stream" | "run-failure" | "permission-401" | "permission-403" | "stream-offline" | "offline"
+    | "launcher"
+    | "run-stream"
+    | "run-failure"
+    | "reload-session"
+    | "reload-active-run"
+    | "reload-terminal-run"
+    | "permission-401"
+    | "permission-403"
+    | "stream-offline"
+    | "offline"
   >
 ): WorkHubEvent<unknown> {
   switch (scenario) {

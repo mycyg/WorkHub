@@ -1,0 +1,162 @@
+{
+  "bubble": {
+    "data": {
+      "data_cuu_card_id": "a5dd81ca-9a69-4459-94c4-b9229d3f0da4",
+      "data_pet_bubble": "true",
+      "data_pet_bubble_kind": "question",
+      "data_pet_bubble_priority": "high",
+      "data_pet_payload_ref_entity_id": "a5dd81ca-9a69-4459-94c4-b9229d3f0da4",
+      "data_pet_payload_ref_entity_type": "session",
+      "data_pet_payload_ref_href": "/api/sessions/a5dd81ca-9a69-4459-94c4-b9229d3f0da4/next-question"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 336,
+      "height": 320,
+      "right": 388,
+      "width": 300,
+      "x": 88,
+      "y": 16
+    },
+    "selector": "[data-pet-bubble]",
+    "text": "Cuu澄清高 这件事先按哪种交付方式处理？ Tauri pet window 重载后恢复 option-first 澄清卡。 Cuu 已恢复：这件事先按哪种交付方式处理？ 文档/方案草稿 · 适合周报、方案、说明书、PR 式变更说明。结构化数据 · 适合 JSON、YAML、CSV、配置或表格分析。小型代码/模板 · 适合低风险代码片段、模板或配置改动..."
+  },
+  "captured_at_iso": "2026-06-10T10:33:30.273Z",
+  "contract": "workhub.cuu.tauri.actual-dom-report",
+  "live2d": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "90",
+      "data_cuu_behavior_state": "asking_approval",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_framing": "transparent_full_body",
+      "data_cuu_live2d_interruptible": "false",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_loop": "true",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "asking_approval_bounce",
+      "data_cuu_live2d_renderer_state": "mtn/01.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_state": "asking_approval_bounce",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 568,
+      "height": 320,
+      "right": 443,
+      "width": 230,
+      "x": 213,
+      "y": 248
+    },
+    "selector": ".wh-cuu-cat-live2d",
+    "text": "Cuu"
+  },
+  "primary_action": {
+    "data": {
+      "data_cuu_action_id": "submit_option",
+      "data_method": "POST",
+      "data_requires_reason": "false",
+      "data_tone": "primary"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 373.1,
+      "height": 28,
+      "right": 168.4,
+      "width": 65.6,
+      "x": 102.8,
+      "y": 345.1
+    },
+    "selector": "[data-cuu-action-id]",
+    "text": "确认选项"
+  },
+  "primary_chip": {
+    "data": {
+      "data_chip_id": "document-draft",
+      "data_pet_option_first": "true",
+      "data_pet_option_id": "document-draft",
+      "data_recommended": "true",
+      "data_selected": "false",
+      "data_tone": "neutral"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 191.9,
+      "height": 42.4,
+      "right": 362.8,
+      "width": 260,
+      "x": 102.8,
+      "y": 149.5
+    },
+    "selector": "[data-chip-id],[data-pet-option-id]",
+    "text": "文档/方案草稿 · 适合周报、方案、说明书、PR 式变更说明。"
+  },
+  "reason": "render",
+  "surface": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "90",
+      "data_cuu_behavior_state": "asking_approval",
+      "data_cuu_idle_action": "idle_tail_sway",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "asking_approval_bounce",
+      "data_cuu_live2d_renderer_state": "mtn/01.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready",
+      "data_cuu_state": "asking_approval",
+      "data_cuu_visual_mode": "live2d_cat",
+      "data_pet_card_has_context": "true",
+      "data_pet_card_kind": "question",
+      "data_pet_card_layout": "full",
+      "data_pet_card_priority": "high",
+      "data_pet_cursor_near": "false",
+      "data_pet_dragging": "false",
+      "data_pet_hide_on_hover": "false",
+      "data_pet_hover_avoidance": "none",
+      "data_pet_hover_hidden": "false",
+      "data_pet_hover_hide_mode": "off",
+      "data_pet_hovered": "false",
+      "data_pet_look_x": "0",
+      "data_pet_look_y": "0",
+      "data_pet_opacity_percent": "100",
+      "data_pet_pass_through": "false",
+      "data_pet_pointer_smoothing_alpha": "0.58",
+      "data_pet_scale_percent": "100",
+      "data_pet_window_height": "640",
+      "data_pet_window_mode": "card",
+      "data_pet_window_width": "520",
+      "data_wh_surface": "pet"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 640,
+      "height": 640,
+      "right": 520,
+      "width": 520,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-wh-surface=pet]",
+    "text": "Cuu Cuu 设置 形象 黑猫 白猫 语言 中文 EN 悬停避让 打开设置 隐藏 Cuu Cuu澄清高 这件事先按哪种交付方式处理？ Tauri pet window 重载后恢复 option-first 澄清卡。 Cuu 已恢复：这件事先按哪种交付方式处理？ 文档/方案草稿 · 适合周报、方案、说明书、PR 式变更说明。结构化数据 · 适合 JSO..."
+  },
+  "version": 1
+}

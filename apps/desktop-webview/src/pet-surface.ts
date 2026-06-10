@@ -805,7 +805,7 @@ export async function bootDesktopPetSurface(
 
   async function restoreDesktopPetCard() {
     const restore = readDesktopPetRestoreState();
-    if (!restore || currentCard || qaScenario) {
+    if (!restore || currentCard || desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
       return;
     }
     if (restore.entity_type === "session") {
@@ -878,7 +878,7 @@ export async function bootDesktopPetSurface(
   };
 
   render();
-  if (!qaScenario) {
+  if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
     void restoreDesktopPetCard();
   }
 
@@ -1093,7 +1093,7 @@ export async function bootDesktopPetSurface(
     locale
   });
   let samplingCursor = false;
-  if (desktopPetQaScenarioUsesRunApi(qaScenario)) {
+  if (desktopPetQaScenarioStartsRunApiFlow(qaScenario)) {
     window.setTimeout(() => {
       void startRunStreamQaScenario();
     }, 160);
@@ -1541,12 +1541,22 @@ function actionMessage(error: unknown, locale: WorkHubLocale) {
   return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
 }
 
-function desktopPetQaScenarioUsesRunApi(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {
+function desktopPetQaScenarioStartsRunApiFlow(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {
   return scenario === "run-stream" ||
     scenario === "run-failure" ||
     scenario === "permission-401" ||
     scenario === "permission-403" ||
     scenario === "stream-offline";
+}
+
+function desktopPetQaScenarioUsesRestoreSeed(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {
+  return scenario === "reload-session" ||
+    scenario === "reload-active-run" ||
+    scenario === "reload-terminal-run";
+}
+
+function desktopPetQaScenarioSkipsLocalRestore(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {
+  return Boolean(scenario) && !desktopPetQaScenarioUsesRestoreSeed(scenario);
 }
 
 function escapeHtml(value: unknown) {

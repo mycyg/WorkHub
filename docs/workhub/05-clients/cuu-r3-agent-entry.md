@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门。仍不能宣称 R3 完成：真实 reload capture 回归仍未验收。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补更多业务场景矩阵、设置矩阵与跨平台 capture。
 
 | 缺口 | 计划 |
 |---|---|
@@ -469,8 +469,8 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | 真实确认后启动 | R3.5 已落 API route-stack smoke，R3.9 已落 boot click harness，R3.11 已落真实 dev-server smoke，R3.12 已落 Tauri run-stream 终态 capture |
 | option payload 更细 | R3.14 已让 launcher chip 带 `delivery_kind` / `risk_hint` / `default_acceptance`，并写入 WorkItem `planning_note` JSON spec 与默认 acceptance items |
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
-| 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；后续补真实 Tauri reload capture |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图 |
+| 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；R3.15 已用真实 Tauri reload capture 证明 session/active run/terminal run 恢复且不裁切 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -691,11 +691,77 @@ launcher chip metadata
 | UI/文本边界 | 修复用户反馈的同类风险：Cuu 卡片内 title/message/chip/action/progress/section 均有宽度与换行约束 |
 | 中英双语 | launcher 默认 acceptance 文案已补 zh-CN/en-US；英文 action spec 测试覆盖 `structured-data` |
 
-## 16. 下一刀 R3.15
+## 16. R3.15 已落切片：真实 Tauri reload capture
+
+R3.15 关闭 R3.13.3 留下的真实窗口缺口：`pet` window 不是只在源码单测里恢复 card，而是在真实 Tauri 启动前注入同一 versioned restore key，再由 webview boot 走生产恢复路径。范围仍限定在 reload capture 与恢复证据：不新增模型、不改色、不扩动效、不新增设置矩阵。
+
+改动：
+
+| 层 | R3.15 行为 |
+|---|---|
+| desktop QA scenarios | `reload-session`、`reload-active-run`、`reload-terminal-run` 进入 allowlist；它们使用真实 restore seed，不触发本地 click-flow listener |
+| pet surface restore | reload QA scenario 不再跳过 local restore；session 从 snapshot 直接恢复，AgentRun 仍通过 typed API `GET /api/agent-runs/:id` 重建 active/terminal card |
+| Rust init | `WORKHUB_CUU_QA_RESTORE_STATE` 只在 QA 下写入 `localStorage["workhub.cuu.currentRun.v1"]`；Rust 仍不读写业务状态 |
+| API QA seed | `POST /api/qa/cuu-r3-restore-seed` 生成真实 session question、queued active run、succeeded terminal run 三类 restore seed |
+| capture script | `scripts/qa/cuu-tauri-motion-capture.ps1` 支持三类 reload scenario，自动启动 Cuu R3 QA server、取 seed、注入 restore state，并继续执行 DOM / motion / right-edge gates |
+| tests | 新增 API reload seed smoke、desktop scenario normalization test、pet surface seeded restore test、Rust localStorage injection test |
+
+数据流：
+
+```text
+WORKHUB_CUU_QA_RESTORE_STATE
+  -> Tauri pet init script
+  -> localStorage["workhub.cuu.currentRun.v1"]
+  -> bootDesktopPetSurface() restore
+  -> session snapshot or GET /api/agent-runs/:id
+  -> cardFromAgentRunLive()
+  -> active run stream/fallback refresh or terminal card
+```
+
+验收证据：
+
+| 证据 | 结果 |
+|---|---|
+| `corepack pnpm --filter @workhub/api qa:cuu-r3-reload-restore-smoke` | 通过；session 恢复为 `session`，active run 最终 `succeeded`，terminal run 初始即 `succeeded` |
+| `corepack pnpm --filter @workhub/desktop-webview test` | 76/76 通过 |
+| `corepack pnpm --filter @workhub/api typecheck` | 通过 |
+| `corepack pnpm --filter @workhub/desktop-webview typecheck` | 通过 |
+| `cargo test --manifest-path client-tauri\src-tauri\Cargo.toml` | 通过 |
+| reload-session zh-CN capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/reload-session-zh-pass/` |
+| reload-active-run en-US capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/reload-active-run-en-pass/` |
+| reload-terminal-run zh-CN capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/reload-terminal-run-zh-pass/` |
+
+三个 capture 目录均保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json`、`first-frame-probe.png` 与 `motion-diff-report.json`。`motion-diff-report.json` 均满足 `passed=true`、`motion_gate_passed=true`、`actual_dom_matches_expected=true`、`right_edge_clip_gate.passed=true`。人工复核最终帧：中文 session 澄清卡、英文 active run 长标题/Run progress/Budget/action buttons、中文 terminal run 完成卡均留在 bubble/card 边界内，没有复现用户截图里的文本超出框。
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 首轮 zh-CN reload-session capture 暴露 PowerShell `Invoke-RestMethod` 对 seed response 的 UTF-8 解码乱码；已改为 `System.Net.Http.HttpClient` 读取 byte array 后显式 UTF-8 decode，并重跑 zh-CN capture，DOM 与最终帧中文恢复正常 |
+| 数据流 | seed endpoint 只为 QA harness 服务；运行时仍是 TS-first：Rust 只注入 localStorage 初始值，业务恢复由 `bootDesktopPetSurface()`、typed API client 与 card mapper 完成 |
+| PRD/概念图 | 符合 `cuu-option-first-clarify.png` 的 option-first 恢复；符合 `cuu-desktop-approval-search.png` 与 `endpoint-page-cuu-alignment.png` 的独立 pet window；主窗仍无 Cuu 本体 |
+| UI/文本边界 | 三组真实 contact sheet 均复核无超框；active run 英文长标题、progress、budget 与按钮留在卡片内；right-edge pixel gate 继续作为硬门 |
+| 中英双语 | reload-session 与 reload-terminal-run 覆盖 zh-CN，reload-active-run 覆盖 en-US；DOM report 文案无乱码和错误 fallback |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/api qa:cuu-r3-reload-restore-smoke
+corepack pnpm --filter @workhub/desktop-webview test
+corepack pnpm --filter @workhub/api typecheck
+corepack pnpm --filter @workhub/desktop-webview typecheck
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario reload-session -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 40 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-reload-restore\hijiki\reload-session-zh-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario reload-active-run -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 80 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-reload-restore\hijiki\reload-active-run-en-pass
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario reload-terminal-run -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 48 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-reload-restore\hijiki\reload-terminal-run-zh-pass
+```
+
+## 17. 下一刀 R3.16
 
 R3 后续顺序：
 
-1. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
-2. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream completion、run-failure、401/403/offline 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json`、DOM attrs gate 与 `right_edge_clip_gate`。
-3. 将 R3.14 文本超框规则纳入真实 capture 复核：长英文 run title、`Run progress`、`Budget`、按钮和 chip 不得超出 bubble。
-4. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并提交。
+1. 保留 R3.12/R3.13.1/R3.13.2/R3.15 回归：run-stream completion、run-failure、401/403/offline、reload session/active/terminal 的 capture 必须继续通过 `motion-diff-report.json`、DOM attrs gate、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
+2. 将 R3.14/R3.15 文本超框规则继续作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、状态 section 均不得超出 bubble/card。
+3. 开始正式业务矩阵补洞：`clarify/search/sync/done/offline/approval` 真实 Tauri capture，先覆盖当前黑猫 Hijiki，再评估白猫必要矩阵。
+4. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix，并把 Linux/macOS capture 策略排进跨平台验收。
+5. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并按模块提交。

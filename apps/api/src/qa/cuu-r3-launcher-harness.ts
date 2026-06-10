@@ -10,8 +10,8 @@ import { ZodError } from "zod";
 import type { AgentLoopClient } from "@workhub/agent/loop";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { settings, type Settings } from "@workhub/config";
-import { cuuLauncherWorkItemSpecSchema, type AgentRunLiveVM } from "@workhub/contracts";
-import type { CuuCard, CuuLocaleOptions } from "@workhub/cuu";
+import { cuuLauncherWorkItemSpecSchema, type AgentRunLiveVM, type WorkHubLocale } from "@workhub/contracts";
+import { cardFromSessionVm, type CuuCard, type CuuLocaleOptions } from "@workhub/cuu";
 import { defaultSeedIds, type ClientDeviceAuthRow, type UserAuthRow } from "@workhub/db";
 import { InMemoryPresenceStore, InProcessPushBus } from "../broker/index.js";
 import {
@@ -19,9 +19,10 @@ import {
   resolveDesktopCuuAction,
   submitDesktopCuuAction
 } from "../../../desktop-webview/src/desktop-cuu-runtime.js";
-import { hashClientToken, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
+import { hashClientToken, type AuthActor, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createPushRoutes } from "../routes/push.js";
+import { toAgentRunLiveVm } from "../pages/replay.js";
 import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import { createInMemoryWorkItemService } from "../services/work-items.js";
@@ -51,6 +52,7 @@ export type CuuR3SmokeApp = {
 
 export type CuuR3RunOutcome = "succeeded" | "failed";
 export type CuuR3ApiFault = "none" | "permission-401" | "permission-403" | "stream-offline";
+export type CuuR3ReloadRestoreSeedKind = "reload-session" | "reload-active-run" | "reload-terminal-run";
 
 export type CuuR3SmokeAppOptions = {
   runStream?: boolean;
@@ -59,6 +61,30 @@ export type CuuR3SmokeAppOptions = {
   runDelayMs?: number;
   modelDelayMs?: number;
   logRunStream?: boolean;
+};
+
+export type CuuR3ReloadRestoreSeedResult = {
+  kind: CuuR3ReloadRestoreSeedKind;
+  locale: WorkHubLocale;
+  restore_state:
+    | {
+        version: 1;
+        entity_type: "session";
+        entity_id: string;
+        href: string;
+        card: CuuCard;
+        updated_at_ms: number;
+      }
+    | {
+        version: 1;
+        entity_type: "agent_run";
+        entity_id: string;
+        href: string;
+        updated_at_ms: number;
+      };
+  session_id?: string;
+  work_item_id?: string;
+  run?: AgentRunLiveVM;
 };
 
 export type CuuR3LauncherSmokeResult = {
@@ -98,6 +124,16 @@ const clientDevice: ClientDeviceAuthRow = {
   revokedAt: null,
   createdAt: cuuR3SmokeNow,
   updatedAt: cuuR3SmokeNow
+};
+
+const cuuR3SmokeActor: AuthActor = {
+  kind: "human",
+  id: cuuR3SmokeOwner.id,
+  label: cuuR3SmokeOwner.nickname,
+  userId: cuuR3SmokeOwner.id,
+  isAdmin: true,
+  orgId: defaultSeedIds.orgId,
+  workspaceId: defaultSeedIds.workspaceId
 };
 
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
@@ -218,6 +254,20 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
       port: 0
     })
   );
+  app.post("/api/qa/cuu-r3-restore-seed", async (c) => {
+    const payload = await c.req.json().catch(() => ({})) as { kind?: unknown; locale?: unknown };
+    const kind = cuuR3ReloadRestoreSeedKind(payload.kind);
+    const locale = payload.locale === "en-US" ? "en-US" : "zh-CN";
+    const data = await createCuuR3ReloadRestoreSeed({
+      kind,
+      locale,
+      workItems,
+      queue: baseQueue,
+      runDelayMs: options.runDelayMs ?? 900,
+      logRunStream: options.logRunStream === true
+    });
+    return c.json({ ok: true, data });
+  });
   app.use("/api/*", async (c, next) => {
     const fault = cuuR3ApiFaultForRequest(apiFault, c.req.method, new URL(c.req.url).pathname);
     if (fault) {
@@ -240,6 +290,106 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
   app.route("/api", createWorkItemRoutes({ auth, workItems }));
   app.route("/api", createAgentRunRoutes({ auth, queue, workItems, autoRun: false }));
   return { app, workItems, queue };
+}
+
+function cuuR3ReloadRestoreSeedKind(value: unknown): CuuR3ReloadRestoreSeedKind {
+  return value === "reload-session" || value === "reload-active-run" || value === "reload-terminal-run"
+    ? value
+    : "reload-session";
+}
+
+async function createCuuR3ReloadRestoreSeed(input: {
+  kind: CuuR3ReloadRestoreSeedKind;
+  locale: WorkHubLocale;
+  workItems: ReturnType<typeof createInMemoryWorkItemService>;
+  queue: AgentRunQueue;
+  runDelayMs: number;
+  logRunStream: boolean;
+}): Promise<CuuR3ReloadRestoreSeedResult> {
+  const updatedAtMs = cuuR3SmokeNow.getTime();
+  if (input.kind === "reload-session") {
+    const session = await input.workItems.createSession({
+      actor: cuuR3SmokeActor,
+      payload: {
+        title: input.locale === "en-US"
+          ? "Cuu reload session restore QA task"
+          : "Cuu reload session 恢复验收任务",
+        intent_text: input.locale === "en-US"
+          ? "Restore the option-first session card after the Tauri pet window reloads."
+          : "Tauri pet window 重载后恢复 option-first 澄清卡。"
+      }
+    });
+    const card = cardFromSessionVm(session, { locale: input.locale });
+    return {
+      kind: input.kind,
+      locale: input.locale,
+      session_id: session.session_id,
+      ...(session.work_item_id ? { work_item_id: session.work_item_id } : {}),
+      restore_state: {
+        version: 1,
+        entity_type: "session",
+        entity_id: session.session_id,
+        href: session.next_question_href,
+        card,
+        updated_at_ms: updatedAtMs
+      }
+    };
+  }
+
+  const detail = await input.workItems.createWorkItem({
+    actor: cuuR3SmokeActor,
+    payload: {
+      title: input.locale === "en-US"
+        ? "Cuu reload run restore QA task with a deliberately long English title"
+        : "Cuu reload run 恢复验收任务",
+      raw_description: input.locale === "en-US"
+        ? "The restored card must keep Run progress, Budget, actions, and long copy inside the Cuu bubble."
+        : "恢复后的卡片必须让执行进度、预算、按钮和长文案留在 Cuu 气泡边界内。",
+      selected_option_ids: ["document-draft"],
+      kickoff_agent: true
+    }
+  });
+  const run = await input.queue.enqueue({
+    workItemId: detail.workitem.id,
+    actorId: cuuR3SmokeOwner.id,
+    title: input.locale === "en-US"
+      ? "Cuu reload restored active run with long English progress copy"
+      : "Cuu reload 恢复中的执行任务",
+    mode: "worker"
+  });
+  let live = run;
+  if (input.kind === "reload-terminal-run") {
+    live = await input.queue.run(run.run_id);
+  } else {
+    setTimeout(() => {
+      if (input.logRunStream) {
+        console.log(JSON.stringify({ service: "workhub-cuu-r3-run-stream", event: "restore_seed_run_start", run_id: run.run_id }));
+      }
+      void input.queue.run(run.run_id)
+        .then((executed) => {
+          if (input.logRunStream) {
+            console.log(JSON.stringify({ service: "workhub-cuu-r3-run-stream", event: "restore_seed_run_done", run_id: executed.run_id, status: executed.status }));
+          }
+        })
+        .catch((error) => {
+          console.warn("Cuu R3 reload restore seed execution failed", error);
+        });
+    }, Math.max(0, input.runDelayMs));
+  }
+
+  return {
+    kind: input.kind,
+    locale: input.locale,
+    work_item_id: detail.workitem.id,
+    run: toAgentRunLiveVm(live),
+    restore_state: {
+      version: 1,
+      entity_type: "agent_run",
+      entity_id: live.run_id,
+      href: `/agent-runs/${live.run_id}/replay`,
+      updated_at_ms: updatedAtMs
+    }
+  };
 }
 
 function cuuR3ApiFaultForRequest(fault: CuuR3ApiFault, method: string, path: string) {

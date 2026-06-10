@@ -2571,15 +2571,24 @@ Bug / 数据流审查：
 - 数据流：launcher chip metadata -> `CuuCardChip.metadata` -> `DesktopCuuStartAgentAction.cuuLauncherSpec` -> `CreateWorkItemRequest.cuu_launcher_spec` 或 API 端 selected id fallback -> `planning_note` JSON + acceptance items。
 - PRD/概念图一致：仍是 option-first；用户只点选，不被推回打字框；Rust 不拥有业务状态，主窗不渲染 Cuu 本体。
 - bug 审查：旧请求不带 `cuu_launcher_spec` 时仍兼容；`create-workitem` 等确认按钮不会被误写成 delivery spec；schema parse 覆盖 metadata。
-- UI 审查：文本超框风险已在项目 Cuu notice/pet bubble CSS contract 中加门；真实 reload capture 还需要继续用最终帧确认。
+- UI 审查：文本超框风险已在项目 Cuu notice/pet bubble CSS contract 中加门；R3.15 已用真实 reload capture 最终帧确认 session/active/terminal 三类恢复不超框，后续业务矩阵继续沿用该门。
 
-### R3.15 下一刀：真实 reload capture
+### R3.15 已落：真实 reload capture
 
-1. 继续阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md` 与 Cuu/TS-first 概念图。
-2. 补真实 Tauri reload capture：复用 `desktopPetRunRestoreStorageKey` seed 或完整点击后重载 `pet` window，证明 session/active run/terminal run 在真实窗口中恢复且不裁切。
-3. 将 R3.14 文本边界纳入真实 capture gate：长英文 run title、`Run progress`、`Budget`、按钮和 chip 不得超出 bubble。
-4. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream、run-failure、401/403/offline 的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
-5. 验收命令：desktop-webview typecheck/test、API typecheck/test、R3 run-stream + run-failure + error-fault smoke、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
+1. 已阅读 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、`cuu-live2d-cat-options-current-plan.md` 与 Cuu/TS-first 概念图，并确认 Rust 只做窗口/QA 注入，不拥有业务状态。
+2. 已补真实 Tauri reload capture：`reload-session`、`reload-active-run`、`reload-terminal-run` 复用同一 `desktopPetRunRestoreStorageKey`，由 `WORKHUB_CUU_QA_RESTORE_STATE` seed 进入真实 pet boot restore。
+3. 已把 R3.14 文本边界纳入真实 capture gate：zh-CN session、en-US active run、zh-CN terminal run 三组最终帧均确认长标题、`Run progress`、`Budget`、按钮和 chip 不超出 bubble/card。
+4. 已补 route-stack seed smoke：`qa:cuu-r3-reload-restore-smoke` 覆盖 session question、queued active run 到 `succeeded`、terminal run 初始 `succeeded`。
+5. 已修 QA seed response UTF-8 解码 bug：PowerShell 不再用 `Invoke-RestMethod` 直接解码中文，而是读取 byte array 后显式 UTF-8 decode。
+6. 证据目录：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-reload-restore/hijiki/`。
+
+### R3.16 下一刀：业务矩阵 + 设置矩阵回归
+
+1. 保留 R3.12/R3.13.1/R3.13.2/R3.15 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal 的中英 capture 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与 `right_edge_clip_gate`。
+2. 继续把文本边界作为硬门：长英文 run title、`Run progress`、`Budget`、按钮、chip、状态 section 不得超出框。
+3. 补 `clarify/search/sync/done/offline/approval` 正式业务矩阵，优先真实 Tauri Hijiki，再评估白猫必要矩阵。
+4. 补右键菜单、语言切换、hide-on-hover、pass-through、scale、opacity settings matrix 与 Linux/macOS capture 策略。
+5. 验收命令：desktop-webview typecheck/test、API typecheck/test、R3 smoke 矩阵、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
 
 禁止：
 

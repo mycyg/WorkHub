@@ -1254,6 +1254,66 @@ test("pet surface restores a terminal agent run card without rerunning the launc
   }
 });
 
+test("pet surface allows seeded restore during reload QA scenarios", async () => {
+  const terminalRun: AgentRunLiveVM = {
+    ...petHarnessRun(),
+    status: "succeeded",
+    run: {
+      ...petHarnessRun().run,
+      status: "succeeded"
+    }
+  };
+  const storage = createFakeLocalStorage({
+    [desktopPetRunRestoreStorageKey]: JSON.stringify({
+      version: 1,
+      entity_type: "agent_run",
+      entity_id: terminalRun.run_id,
+      href: `/agent-runs/${terminalRun.run_id}/replay`,
+      updated_at_ms: Date.now()
+    })
+  });
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    __WORKHUB_CUU_QA_SCENARIO__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalQaScenario = target.__WORKHUB_CUU_QA_SCENARIO__;
+  const originalLocalStorage = target.localStorage;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+  target.__WORKHUB_CUU_QA_SCENARIO__ = "reload-terminal-run";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const restoreCalls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(restoreCalls, terminalRun)
+      });
+      try {
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-pet-bubble-kind="completion"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="view_replay"/u);
+        assert.match(root.innerHTML, /Cuu restored: Cuu 桌面入口任务/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.deepEqual(restoreCalls, [{ step: "getAgentRun", runId: terminalRun.run_id }]);
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    target.__WORKHUB_CUU_QA_SCENARIO__ = originalQaScenario;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
+});
+
 test("pet surface localizes fixed approval bubble controls in English", () => {
   const card = renderDesktopPetSurface({
     card: approvalCard(),

@@ -53,6 +53,8 @@ const WORKHUB_CUU_QA_SCENARIO_ENV: &str = "WORKHUB_CUU_QA_SCENARIO";
 const WORKHUB_CUU_QA_LOCALE_ENV: &str = "WORKHUB_CUU_QA_LOCALE";
 const WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV: &str = "WORKHUB_CUU_QA_DOM_REPORT_PATH";
 const WORKHUB_CUU_QA_CLIENT_TOKEN_ENV: &str = "WORKHUB_CUU_QA_CLIENT_TOKEN";
+const WORKHUB_CUU_QA_RESTORE_STATE_ENV: &str = "WORKHUB_CUU_QA_RESTORE_STATE";
+const WORKHUB_CUU_RESTORE_STORAGE_KEY: &str = "workhub.cuu.currentRun.v1";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
@@ -65,6 +67,7 @@ struct CuuQaPreferenceOverrides {
     pet_qa_locale: Option<String>,
     pet_qa_dom_report: bool,
     pet_qa_client_token: Option<String>,
+    pet_qa_restore_state: Option<String>,
 }
 
 fn workhub_sse_disabled_from_env(get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -98,7 +101,8 @@ where
             &get_env,
             &[
                 "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-                "run-failure", "permission-401", "permission-403", "stream-offline", "offline",
+                "run-failure", "reload-session", "reload-active-run", "reload-terminal-run",
+                "permission-401", "permission-403", "stream-offline", "offline",
             ],
         ),
         pet_qa_locale: workhub_env_string_allowed(
@@ -109,6 +113,10 @@ where
         pet_qa_dom_report: workhub_env_string_nonempty(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV, &get_env),
         pet_qa_client_token: workhub_env_string_value_nonempty(
             WORKHUB_CUU_QA_CLIENT_TOKEN_ENV,
+            &get_env,
+        ),
+        pet_qa_restore_state: workhub_env_string_value_nonempty(
+            WORKHUB_CUU_QA_RESTORE_STATE_ENV,
             &get_env,
         ),
     }
@@ -750,14 +758,23 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
             )
         })
         .unwrap_or_default();
+    let restore_state_script = preferences
+        .pet_qa_restore_state
+        .map(|state| {
+            let state = js_string_literal(&state);
+            format!(
+                r#" try {{ window.localStorage.setItem("{WORKHUB_CUU_RESTORE_STORAGE_KEY}", {state}); }} catch (_) {{}}"#
+            )
+        })
+        .unwrap_or_default();
 
     if fields.is_empty() {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{locale_script}{dom_report_script}{client_token_script}"#
+            r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{locale_script}{dom_report_script}{client_token_script}{restore_state_script}"#
         )
     } else {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{locale_script}{dom_report_script}{client_token_script}"#,
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{locale_script}{dom_report_script}{client_token_script}{restore_state_script}"#,
             fields.join(", "),
         )
     }
@@ -1184,6 +1201,7 @@ mod tests {
                 pet_qa_locale: Some("en-US".to_string()),
                 pet_qa_dom_report: false,
                 pet_qa_client_token: None,
+                pet_qa_restore_state: None,
             }
         );
     }
@@ -1209,6 +1227,7 @@ mod tests {
                 pet_qa_locale: None,
                 pet_qa_dom_report: false,
                 pet_qa_client_token: None,
+                pet_qa_restore_state: None,
             }
         );
     }
@@ -1217,7 +1236,8 @@ mod tests {
     fn cuu_qa_preferences_env_accepts_qa_capture_scenarios() {
         for scenario in [
             "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-            "run-failure", "permission-401", "permission-403", "stream-offline", "offline",
+            "run-failure", "reload-session", "reload-active-run", "reload-terminal-run",
+            "permission-401", "permission-403", "stream-offline", "offline",
         ] {
             assert_eq!(
                 workhub_cuu_qa_preferences_from_env(named_env(&[(
@@ -1246,6 +1266,7 @@ mod tests {
             pet_qa_locale: Some("en-US".to_string()),
             pet_qa_dom_report: true,
             pet_qa_client_token: Some("qa-token-1".to_string()),
+            pet_qa_restore_state: Some(r#"{"version":1,"entity_type":"agent_run","entity_id":"run-1","updated_at_ms":1}"#.to_string()),
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
         assert!(script.contains("pet_scale_percent: 75"));
@@ -1257,6 +1278,7 @@ mod tests {
         assert!(script.contains(r#"__WORKHUB_CUU_QA_LOCALE__ = "en-US""#));
         assert!(script.contains("__WORKHUB_CUU_QA_DOM_REPORT__ = true"));
         assert!(script.contains(r#"localStorage.setItem("workhub_client_token", "qa-token-1")"#));
+        assert!(script.contains(r#"localStorage.setItem("workhub.cuu.currentRun.v1", "{\"version\":1,"#));
     }
 
     #[test]

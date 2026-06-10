@@ -37,6 +37,9 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   const launcher = desktopPetQaScriptForScenario("launcher");
   const runStream = desktopPetQaScriptForScenario("run-stream");
   const runFailure = desktopPetQaScriptForScenario("run-failure");
+  const reloadSession = desktopPetQaScriptForScenario("reload-session");
+  const reloadActiveRun = desktopPetQaScriptForScenario("reload-active-run");
+  const reloadTerminalRun = desktopPetQaScriptForScenario("reload-terminal-run");
   const permission401 = desktopPetQaScriptForScenario("permission-401");
   const permission403 = desktopPetQaScriptForScenario("permission-403");
   const streamOffline = desktopPetQaScriptForScenario("stream-offline");
@@ -55,11 +58,17 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(launcher.length, 0);
   assert.equal(runStream.length, 0);
   assert.equal(runFailure.length, 0);
+  assert.equal(reloadSession.length, 0);
+  assert.equal(reloadActiveRun.length, 0);
+  assert.equal(reloadTerminalRun.length, 0);
   assert.equal(permission401.length, 0);
   assert.equal(permission403.length, 0);
   assert.equal(streamOffline.length, 0);
   assert.equal(createDesktopPetQaShellListen("run-stream"), undefined);
   assert.equal(createDesktopPetQaShellListen("run-failure"), undefined);
+  assert.equal(createDesktopPetQaShellListen("reload-session"), undefined);
+  assert.equal(createDesktopPetQaShellListen("reload-active-run"), undefined);
+  assert.equal(createDesktopPetQaShellListen("reload-terminal-run"), undefined);
   assert.equal(createDesktopPetQaShellListen("permission-403"), undefined);
   assert.equal(createDesktopPetQaShellListen("stream-offline"), undefined);
   assert.equal(clarifyPayload.stream_path, "/api/push/stream/session/10000000-0000-4000-8000-000000000104");
@@ -83,6 +92,9 @@ test("desktop pet QA scenario normalization only accepts explicit capture scenar
   assert.equal(normalizeDesktopPetQaScenario("approval"), "approval");
   assert.equal(normalizeDesktopPetQaScenario("run-stream"), "run-stream");
   assert.equal(normalizeDesktopPetQaScenario("run-failure"), "run-failure");
+  assert.equal(normalizeDesktopPetQaScenario("reload-session"), "reload-session");
+  assert.equal(normalizeDesktopPetQaScenario("reload-active-run"), "reload-active-run");
+  assert.equal(normalizeDesktopPetQaScenario("reload-terminal-run"), "reload-terminal-run");
   assert.equal(normalizeDesktopPetQaScenario("permission-401"), "permission-401");
   assert.equal(normalizeDesktopPetQaScenario("permission-403"), "permission-403");
   assert.equal(normalizeDesktopPetQaScenario("stream-offline"), "stream-offline");

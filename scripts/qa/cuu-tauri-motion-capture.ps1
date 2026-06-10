@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -42,8 +42,9 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")
-$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")
+$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
 $script:cuuCdpCommandId = 1
 
@@ -349,6 +350,64 @@ function Start-CuuR3RunStreamApiServerIfNeeded {
   return $process
 }
 
+function New-CuuR3ReloadRestoreSeed {
+  param(
+    [string]$ScenarioName,
+    [ValidateSet("zh-CN", "en-US")]
+    [string]$SeedLocale,
+    [int]$Port = 8787
+  )
+  $body = @{
+    kind = $ScenarioName
+    locale = $SeedLocale
+  } | ConvertTo-Json -Compress
+  $headers = @{
+    "Content-Type" = "application/json"
+    "X-WorkHub-Client-Token" = "cuu-r3-local-client-token"
+    "X-YQGL-Client-Token" = "cuu-r3-local-client-token"
+  }
+  Add-Type -AssemblyName System.Net.Http
+  $httpClient = [System.Net.Http.HttpClient]::new()
+  try {
+    $httpClient.Timeout = [TimeSpan]::FromSeconds(15)
+    $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, "http://127.0.0.1:$Port/api/qa/cuu-r3-restore-seed")
+    foreach ($header in $headers.GetEnumerator()) {
+      if ($header.Key -ne "Content-Type") {
+        $request.Headers.TryAddWithoutValidation($header.Key, [string]$header.Value) | Out-Null
+      }
+    }
+    $request.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, "application/json")
+    $responseMessage = $httpClient.SendAsync($request).GetAwaiter().GetResult()
+    $bytes = $responseMessage.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    $responseText = [System.Text.Encoding]::UTF8.GetString($bytes)
+    if (-not $responseMessage.IsSuccessStatusCode) {
+      throw "Cuu R3 reload restore seed endpoint returned HTTP $([int]$responseMessage.StatusCode): $responseText"
+    }
+    $response = $responseText | ConvertFrom-Json
+  } finally {
+    $httpClient.Dispose()
+  }
+  if (-not $response.ok -or -not $response.data -or -not $response.data.restore_state) {
+    throw "Cuu R3 reload restore seed endpoint returned an invalid response for $ScenarioName."
+  }
+  return $response.data
+}
+
+function Get-CuuObjectPropertyValue {
+  param(
+    [object]$InputObject,
+    [string]$Name
+  )
+  if (-not $InputObject) {
+    return $null
+  }
+  $property = $InputObject.PSObject.Properties[$Name]
+  if (-not $property) {
+    return $null
+  }
+  return $property.Value
+}
+
 function Test-CuuBusinessScenario {
   param([string]$ScenarioName)
   return $businessScenarios -contains $ScenarioName
@@ -447,6 +506,39 @@ function Get-CuuExpectedBehaviorForScenario {
         data_cuu_live2d_renderer_state = "mtn/08.mtn"
         data_cuu_behavior_expected_window_mode = "card"
         data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "reload-session" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "asking_approval"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "asking_approval_bounce"
+        data_cuu_live2d_renderer_state = "mtn/01.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "reload-active-run" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "celebrating"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "celebrating_jump"
+        data_cuu_live2d_renderer_state = "mtn/06.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "tip"
+        data_pet_window_mode = "card"
+      }
+    }
+    "reload-terminal-run" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "celebrating"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "celebrating_jump"
+        data_cuu_live2d_renderer_state = "mtn/06.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "tip"
         data_pet_window_mode = "card"
       }
     }
@@ -578,6 +670,9 @@ function Test-CuuActualDomMatchesExpected {
     done = "view_replay"
     "run-stream" = "view_replay"
     "run-failure" = "view_replay"
+    "reload-session" = "submit_option"
+    "reload-active-run" = "view_replay"
+    "reload-terminal-run" = "view_replay"
     "permission-401" = "view_replay"
     "permission-403" = "view_replay"
     "stream-offline" = "view_replay"
@@ -618,11 +713,12 @@ function Test-CuuActualDomMatchesExpected {
       return $false
     }
   }
-  if (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
+  if (@("permission-401", "permission-403", "stream-offline", "reload-session", "reload-active-run", "reload-terminal-run") -contains $Scenario) {
     if (-not $Actual.bubble -or -not $Actual.bubble.data) {
       return $false
     }
-    if ($Actual.bubble.data.data_pet_payload_ref_entity_type -ne "agent_run") {
+    $expectedPayloadType = if ($Scenario -eq "reload-session") { "session" } else { "agent_run" }
+    if ($Actual.bubble.data.data_pet_payload_ref_entity_type -ne $expectedPayloadType) {
       return $false
     }
     if ([string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_pet_payload_ref_entity_id)) {
@@ -1417,6 +1513,7 @@ $originalCuuQaScenario = $env:WORKHUB_CUU_QA_SCENARIO
 $originalCuuQaLocale = $env:WORKHUB_CUU_QA_LOCALE
 $originalCuuQaDomReportPath = $env:WORKHUB_CUU_QA_DOM_REPORT_PATH
 $originalCuuQaClientToken = $env:WORKHUB_CUU_QA_CLIENT_TOKEN
+$originalCuuQaRestoreState = $env:WORKHUB_CUU_QA_RESTORE_STATE
 $originalCuuQaRunOutcome = $env:WORKHUB_CUU_QA_RUN_OUTCOME
 $originalCuuQaApiFault = $env:WORKHUB_CUU_QA_API_FAULT
 $originalWorkHubClientToken = $env:WORKHUB_CLIENT_TOKEN
@@ -1427,6 +1524,7 @@ $apiServerProcess = $null
 $apiServerStartedForCapture = $false
 $isolatedRoot = $null
 $cuuCdpDebugPort = $null
+$reloadRestoreSeed = $null
 
 try {
   if (-not $UseRealAppData) {
@@ -1440,7 +1538,9 @@ try {
 
   $sseDisabledForScenario = $false
   $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
-  if (($Scenario -ne "idle" -and -not $isRunStreamScenario) -or $DisableSse) {
+  $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
+  $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario
+  if (($Scenario -ne "idle" -and -not $usesCuuR3ApiServer) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
   }
@@ -1457,7 +1557,7 @@ try {
   $env:WORKHUB_CUU_QA_MODEL_PACK_ID = $ModelPackId
   $env:WORKHUB_CUU_QA_LOCALE = $Locale
   $env:WORKHUB_CUU_QA_DOM_REPORT_PATH = $domReportPath
-  if ($isRunStreamScenario) {
+  if ($usesCuuR3ApiServer) {
     $env:WORKHUB_CUU_QA_CLIENT_TOKEN = "cuu-r3-local-client-token"
     $env:WORKHUB_CLIENT_TOKEN = "cuu-r3-local-client-token"
   } else {
@@ -1465,18 +1565,19 @@ try {
   }
   if ($Scenario -eq "run-failure") {
     $env:WORKHUB_CUU_QA_RUN_OUTCOME = "failed"
-  } elseif ($isRunStreamScenario) {
+  } elseif ($usesCuuR3ApiServer) {
     $env:WORKHUB_CUU_QA_RUN_OUTCOME = "succeeded"
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_RUN_OUTCOME" -ErrorAction SilentlyContinue
   }
   if (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
     $env:WORKHUB_CUU_QA_API_FAULT = $Scenario
-  } elseif ($isRunStreamScenario) {
+  } elseif ($usesCuuR3ApiServer) {
     $env:WORKHUB_CUU_QA_API_FAULT = "none"
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_API_FAULT" -ErrorAction SilentlyContinue
   }
+  Remove-Item -Path "Env:WORKHUB_CUU_QA_RESTORE_STATE" -ErrorAction SilentlyContinue
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
   } else {
@@ -1514,9 +1615,13 @@ try {
     )
   }
 
-  if ($isRunStreamScenario) {
+  if ($usesCuuR3ApiServer) {
     $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded -RunOutcome $env:WORKHUB_CUU_QA_RUN_OUTCOME -ApiFault $env:WORKHUB_CUU_QA_API_FAULT
     $apiServerStartedForCapture = $null -ne $apiServerProcess
+  }
+  if ($isReloadRestoreScenario) {
+    $reloadRestoreSeed = New-CuuR3ReloadRestoreSeed -ScenarioName $Scenario -SeedLocale $Locale
+    $env:WORKHUB_CUU_QA_RESTORE_STATE = $reloadRestoreSeed.restore_state | ConvertTo-Json -Depth 12 -Compress
   }
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $tauriStdoutPath = Join-Path $OutDir "tauri-stdout.log"
@@ -1683,6 +1788,20 @@ try {
     actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
     actual_dom_matches_expected = $actualDomMatchesExpected
     actual_dom_report = $actualDomReport
+    reload_restore_seed = if ($reloadRestoreSeed) {
+      $seedRun = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "run"
+      [pscustomobject]@{
+        kind = $reloadRestoreSeed.kind
+        locale = $reloadRestoreSeed.locale
+        session_id = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "session_id"
+        work_item_id = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "work_item_id"
+        run_id = if ($seedRun) { $seedRun.run_id } else { $null }
+        restore_entity_type = $reloadRestoreSeed.restore_state.entity_type
+        restore_entity_id = $reloadRestoreSeed.restore_state.entity_id
+      }
+    } else {
+      $null
+    }
     right_edge_clip_gate = $rightEdgeClipGate
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
@@ -1753,6 +1872,20 @@ try {
     motion_gate_passed = $motionGatePassed
     actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
     actual_dom_matches_expected = $actualDomMatchesExpected
+    reload_restore_seed = if ($reloadRestoreSeed) {
+      $seedRun = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "run"
+      [pscustomobject]@{
+        kind = $reloadRestoreSeed.kind
+        locale = $reloadRestoreSeed.locale
+        session_id = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "session_id"
+        work_item_id = Get-CuuObjectPropertyValue -InputObject $reloadRestoreSeed -Name "work_item_id"
+        run_id = if ($seedRun) { $seedRun.run_id } else { $null }
+        restore_entity_type = $reloadRestoreSeed.restore_state.entity_type
+        restore_entity_id = $reloadRestoreSeed.restore_state.entity_id
+      }
+    } else {
+      $null
+    }
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
@@ -1786,6 +1919,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_LOCALE" -Value $originalCuuQaLocale
   Restore-EnvVar -Name "WORKHUB_CUU_QA_DOM_REPORT_PATH" -Value $originalCuuQaDomReportPath
   Restore-EnvVar -Name "WORKHUB_CUU_QA_CLIENT_TOKEN" -Value $originalCuuQaClientToken
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_RESTORE_STATE" -Value $originalCuuQaRestoreState
   Restore-EnvVar -Name "WORKHUB_CUU_QA_RUN_OUTCOME" -Value $originalCuuQaRunOutcome
   Restore-EnvVar -Name "WORKHUB_CUU_QA_API_FAULT" -Value $originalCuuQaApiFault
   Restore-EnvVar -Name "WORKHUB_CLIENT_TOKEN" -Value $originalWorkHubClientToken
