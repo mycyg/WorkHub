@@ -55,7 +55,7 @@ R2.7 的目标是建立一个最小 release gate：每次 `pnpm verify` 都输�
 | workspace CI | `.github/workflows/verify.yml` 缺 `workspace` job、Node 22 或 `pnpm verify` | workflow 文本 |
 | R1 PG smoke | workflow 缺 `r1-pg-smoke`、Postgres 16 或 `pnpm qa:r1-pg-smoke` | workflow 文本 |
 | R2 PG+Redis smoke | workflow 缺 `r2-pg-redis-smoke`、Postgres 16、Redis 7、`BROKER_BACKEND=redis`、`WORKER_COUNT=2` 或 `pnpm qa:r2-pg-redis-smoke` | workflow 文本 |
-| docs count | README 顶部文档数量与 `docs/workhub/**/*.md` 实际数量不一致，或少于 R2.7 后的 60 篇 | README + 文件树 |
+| docs count | README 顶部文档数量与 `docs/workhub/**/*.md` 实际数量不一致，或少于 R2.7 后的 60 篇；2026-06-10 R3.1 后当前为 61 篇 | README + 文件树 |
 | required docs | R2.1-R2.7 文档或纠偏路线文档缺失 | 文件存在性 |
 | required runtime paths | recovery、topic、proposal/approval/page gates、R1/R2 smoke 入口、配置和 DB repo 缺失 | 文件存在性 |
 | stale docs | 文档仍出现 R2.6 未落、后台调度未接、旧文档总数等过期说法 | docs grep |

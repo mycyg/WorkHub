@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
 
+import { createDesktopCuuAgentLauncherCard } from "./desktop-cuu-runtime.js";
 import {
   createDesktopPetIdleScheduler,
   defaultDesktopPetPointerSnapshot,
@@ -354,6 +355,23 @@ test("pet surface renders clarification cards as option-first light cards", () =
   assert.match(english.html, /class="wh-pet-kind">Clarify/u);
   assert.match(english.html, /Choose an option; text is folded away/u);
   assert.match(english.html, /aria-label="Cuu desktop pet"/u);
+});
+
+test("pet surface renders the Cuu outbound agent launcher as option-first without text input", () => {
+  const launcher = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard(), locale: "zh-CN" });
+  const english = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard({ locale: "en-US" }), locale: "en-US" });
+
+  assert.match(launcher.html, /data-cuu-card-id="cuu-agent-launcher"/u);
+  assert.match(launcher.html, /要让 Cuu 做什么/u);
+  assert.match(launcher.html, /data-pet-option-id="document-draft"/u);
+  assert.match(launcher.html, /data-cuu-action-id="start_agent_from_cuu"/u);
+  assert.match(launcher.html, /href="\/api\/cuu\/start-agent"/u);
+  assert.match(launcher.html, /data-pet-input-mode="single_choice"/u);
+  assert.doesNotMatch(launcher.html, /textarea|<input\b/iu);
+
+  assert.match(english.html, /What should Cuu do/u);
+  assert.match(english.html, /Start work/u);
+  assert.doesNotMatch(english.html, /textarea|<input\b/iu);
 });
 
 test("pet surface localizes fixed approval bubble controls in English", () => {

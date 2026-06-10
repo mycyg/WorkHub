@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { eventTypes, type AttentionItem, type EvidenceBubble, type QuestionCard, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
+import { eventTypes, type AgentRunLiveVM, type AttentionItem, type EvidenceBubble, type QuestionCard, type SessionVM, type WorkHubEvent, type WorkItemDetailVM } from "@workhub/contracts";
 import { createCuuController, type CuuCard, type CuuControllerDecision } from "@workhub/cuu";
 
 import {
   bindDesktopShellCuuRuntime,
+  createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
   desktopCuuNoticeCss,
@@ -455,6 +456,166 @@ test("desktop Cuu actions submit approval choices through the typed API client",
     (await submitDesktopCuuAction({ client, action: allow!, locale: "en-US" })).message,
     "Cuu got it: this step is approved."
   );
+});
+
+test("desktop Cuu actions start a real agent run from an option-first launcher card", async () => {
+  const calls: unknown[] = [];
+  const launcher = createDesktopCuuAgentLauncherCard();
+  const selectedChips = launcher.chips?.map((chip) => ({ ...chip, selected: chip.id === "document-draft" })) ?? [];
+  const selectedLauncher: CuuCard = {
+    ...launcher,
+    chips: selectedChips
+  };
+  const run: AgentRunLiveVM = {
+    run_id: "10000000-0000-4000-8000-000000000301",
+    work_item_id: "10000000-0000-4000-8000-000000000201",
+    title: "Cuu 桌面入口任务",
+    status: "queued",
+    run: {
+      id: "10000000-0000-4000-8000-000000000301",
+      work_item_id: "10000000-0000-4000-8000-000000000201",
+      mode: "worker",
+      actor: "AI",
+      status: "queued",
+      model: "deepseek-v4-flash",
+      turns_used: 0,
+      max_turns: 15,
+      token_in: 0,
+      token_out: 0,
+      created_at: "2026-06-10T01:00:00.000Z",
+      updated_at: "2026-06-10T01:00:00.000Z"
+    },
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5.00"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        reason: "desktop launcher smoke"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0.00"
+    },
+    trace: [],
+    stream_href: "/api/push/stream/run/10000000-0000-4000-8000-000000000301",
+    replay_href: "/api/agent-runs/10000000-0000-4000-8000-000000000301/replay"
+  };
+  const client = {
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload });
+      return {
+        session_id: "10000000-0000-4000-8000-000000000201",
+        work_item_id: "10000000-0000-4000-8000-000000000201",
+        topic: "session:10000000-0000-4000-8000-000000000201",
+        stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000201",
+        next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+        question: {
+          id: "10000000-0000-4000-8000-000000000211",
+          title: "这件事先按哪种交付方式处理？",
+          input_mode: "single_choice",
+          options: [],
+          free_text: { enabled: false, collapsed_by_default: true },
+          progress: [],
+          submit: {
+            method: "POST",
+            href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question"
+          }
+        }
+      };
+    },
+    async createWorkItem(payload: unknown) {
+      calls.push({ step: "createWorkItem", payload });
+      return {
+        workitem: {
+          id: "10000000-0000-4000-8000-000000000201",
+          code: "WH-201",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          title: "Cuu 桌面入口任务",
+          status: "ai_working"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        evidence_refs: []
+      } as unknown as WorkItemDetailVM;
+    },
+    async startAgentRun(workItemId: string, payload: unknown) {
+      calls.push({ step: "startAgentRun", workItemId, payload });
+      return run;
+    },
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+
+  const unselectedAction = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: launcher
+  });
+  await assert.rejects(
+    () => submitDesktopCuuAction({ client, action: unselectedAction! }),
+    /先点一个选项/
+  );
+
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: selectedLauncher
+  });
+  const result = await submitDesktopCuuAction({ client, action: action! });
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  assert.deepEqual(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, ["document-draft"]);
+  assert.match(action && "intentText" in action ? action.intentText : "", /文档\/方案草稿/u);
+  assert.equal(result.message, "Cuu 已启动：Cuu 桌面入口任务");
+  assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
+  assert.equal(result.card?.state, "thinking");
+  assert.deepEqual(calls, [
+    {
+      step: "createSession",
+      payload: {
+        title: "Cuu 桌面入口任务",
+        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+      }
+    },
+    {
+      step: "createWorkItem",
+      payload: {
+        session_id: "10000000-0000-4000-8000-000000000201",
+        title: "Cuu 桌面入口任务",
+        raw_description: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明",
+        selected_option_ids: ["document-draft"],
+        kickoff_agent: true
+      }
+    },
+    {
+      step: "startAgentRun",
+      workItemId: "10000000-0000-4000-8000-000000000201",
+      payload: {
+        title: "Cuu 桌面入口任务"
+      }
+    }
+  ]);
 });
 
 test("desktop Cuu actions advance option-first clarification sessions", async () => {

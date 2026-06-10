@@ -203,6 +203,14 @@ export {
 } from "./pet-window-bridge.js";
 
 export {
+  createDesktopCuuAgentLauncherCard,
+  resolveDesktopCuuAction,
+  submitDesktopCuuAction,
+  type DesktopCuuActionRequest,
+  type DesktopCuuActionResult
+} from "./desktop-cuu-runtime.js";
+
+export {
   createDesktopShellEventBridge,
   desktopCuuCardFromShellPush,
   desktopCuuCardFromShellSseStatus,

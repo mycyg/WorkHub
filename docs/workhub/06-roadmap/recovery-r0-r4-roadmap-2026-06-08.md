@@ -103,7 +103,8 @@ R1 退出门：
 
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
-3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口；R2.7 已补 release gate report，并接入 `pnpm verify`。下一步进入 R3 Cuu Agent 入口。
+3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口；R2.7 已补 release gate report，并接入 `pnpm verify`。
+4. R3.1 已补 Cuu option-first Agent launcher：点击独立 pet window 的 Cuu body 可展开启动卡，点选方向后复用真实 `sessions -> workitems -> agent-runs` API 链；详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。下一步 R3.2 补 SSE 回流、失败态与真实 Tauri 点击截图。
 
 ## 3. R2 真正解除单 worker
 
@@ -125,8 +126,8 @@ R1 退出门：
 
 | 步骤 | 必须做什么 | 验收证据 |
 |---|---|---|
-| R3-1 出站输入 | 点 Cuu 出现真实输入/选项气泡；不是静态 input hint。 | DOM 有真实 input/textarea 或 option-first submit contract |
-| R3-2 指令到 Agent | Cuu 输入复用 Web 同一 API：session/intake/workitem/agent-run/proposal。 | 一句话从 Cuu 触发真实 R1/R2 链路 |
+| R3-1 出站输入 | **已落 R3.1**：点 Cuu body 且无当前 card 时出现 `cuu-agent-launcher` option-first 气泡；无 `textarea/input`。 | `@workhub/desktop-webview` DOM test；[`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md) |
+| R3-2 指令到 Agent | **已落 R3.1 最小链路**：`start_agent_from_cuu` action 复用真实 `createSession -> createWorkItem -> startAgentRun`。 | `desktop Cuu actions start a real agent run from an option-first launcher card` 单测；仍需真实 Tauri smoke |
 | R3-3 回流闭环 | 进展经 SSE 回到 Cuu 卡片。 | Cuu 显示 pending/success/failure，人话可恢复 |
 
 R3 禁止项：不新增模型、改色、动效、设置矩阵；黑猫/白猫 Live2D 仅作为现有运行时。

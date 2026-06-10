@@ -167,6 +167,21 @@ R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1
 
 验收口径：用户在桌宠轻卡里点击“采纳这次版本”时，必须提交 `{ conflict_resolution: { accept_incoming_target_keys: [...] } }`；点击“采用 AI 融合稿”时，必须提交 `POST /api/merge-proposals/{id}/apply {confirm:true}`，不能要求用户先手动选择候选、复制 target key 或手写说明。
 
+### 6.5 R3 Agent 出站入口（R3.1 已落）
+
+R3.1 已新增 Cuu option-first 启动卡，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)。当前交互是：用户点击独立 pet window 中的 Cuu body，如果没有正在展示的业务卡片，Cuu 展开 `cuu-agent-launcher` 轻卡；用户点选「文档/方案草稿」「结构化数据」「小型代码/模板」之一后，`start_agent_from_cuu` typed action 依次调用真实 `POST /api/sessions`、`POST /api/workitems`、`POST /api/workitems/:id/agent-runs`，最后把 `AgentRunLiveVM` 转成 Cuu 进度卡。
+
+| 项 | 当前合同 |
+|---|---|
+| 卡片 | `createDesktopCuuAgentLauncherCard()`，`kind="question"`，`state="asking_approval"` |
+| 输入 | `single_choice`、`option_first=true`、无 `textarea/input` |
+| 真实链路 | `SessionVM -> WorkItemDetailVM -> AgentRunLiveVM` |
+| 返回 | `cardFromAgentRunLive(run)`，`payload_ref.entity_type="agent_run"` |
+| 边界 | `/api/cuu/start-agent` 只是 desktop webview runtime pseudo path，不是后端旁路 |
+| 验证 | `@workhub/desktop-webview` test/typecheck 已覆盖 launcher DOM 与三段 API 调用 |
+
+R3.1 仍不能算 R3 完成：还缺真实 Tauri 点击截图、run stream 回流、失败态卡片、刷新恢复和 launcher-to-run smoke。
+
 ## 7. 验收门
 
 视觉验收：
@@ -192,7 +207,7 @@ R1.10 把 `ProposalConflict` 接入 Cuu card adapter 与 pet action runtime，R1
 | R0 | 去除旧橘猫截图作为当前证据；主窗无 Cuu 本体；4 张 shared 概念图已原位替换为黑/白 Live2D 与独立 pet window 口径 | 已完成文档资产修订，仍需补主窗截图复核 |
 | R0 | 商用授权结论：Hijiki/Tororo 目前按“未清”处理，发布前必须取得授权或立项原创替换 | 发布阻塞 |
 | R1/R2 | 暂停新增外观、动效、设置矩阵、白猫全矩阵等施工，把工程力转向真实 AgentLoop + PG + 多 worker | 冻结 |
-| R3 | 恢复 Cuu 功能施工：新增自然语言 / option-first 出站指令入口，驱动真实 R1/R2 Agent 引擎 | 待 R1/R2 通过 |
+| R3 | 恢复 Cuu 功能施工：新增自然语言 / option-first 出站指令入口，驱动真实 R1/R2 Agent 引擎 | R3.1 已落 option-first launcher + 三段 API 链；R3.2 待补 SSE 回流/真实 Tauri 截图 |
 | R4 | Web / 主窗继续保持严肃无 Cuu 本体；Cuu 只作为独立 pet window 和系统通知入口 | 持续验收 |
 
 已完成的 P1.7-P1.10 动效证据只作为“现有运行时没有退回静态/裁切/漂移”的冻结前证据，不开启新的外观投入。

@@ -2015,7 +2015,7 @@ R2 验收：
 - `scripts/qa/r2-release-gate-report.ts`：输出 Markdown gate report；失败时抛错。
 - `package.json`：新增 `qa:r2-release-gate`，并把它接入 `lint`，因此 `pnpm verify` 必跑。
 - `docs/workhub/02-ai-engine/r2-release-gate.md`：记录 gate 清单、报告形状、边界和 R3 入口前置。
-- `docs/workhub/README.md`：文档数更新为 60，并加入 R2.7 文档索引。
+- `docs/workhub/README.md`：R2.7 时文档数更新为 60；R3.1 后更新为 61，并加入 R3 Agent 入口文档索引。
 
 当前边界：
 
@@ -2041,6 +2041,50 @@ R2 验收：
 - 桌宠出站走 Web 同一 API：session、intake、workitem、agent-run、proposal review/merge。
 - 出站动作经真实鉴权与权限引擎，不开 Cuu 专用后门。
 - SSE/CuuState 回流显示 pending/success/failure。
+
+### R3.1 已落：option-first launcher + 三段真实 API 链
+
+详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。
+
+已落代码：
+
+- `apps/desktop-webview/src/desktop-cuu-runtime.ts`
+  - 新增 `createDesktopCuuAgentLauncherCard()`。
+  - 新增 `DesktopCuuActionRequest.kind="cuu-start-agent"`。
+  - `resolveDesktopCuuAction("/api/cuu/start-agent")` 从 action payload + selected chips 生成 `title/intentText/selectedOptionIds/projectId/runTitle/mode`。
+  - `submitDesktopCuuAction()` 对 `cuu-start-agent` 依次调用真实 `client.createSession()`、`client.createWorkItem()`、`client.startAgentRun()`，并返回 `cardFromAgentRunLive(run)`。
+- `apps/desktop-webview/src/pet-surface.ts`
+  - 点击 Cuu body 且当前无业务 card 时展开 launcher card。
+  - `start_agent_from_cuu` 与 `submit_option` 一样要求先选择 chip。
+- `apps/desktop-webview/src/main.ts`
+  - 导出 launcher/action helpers，供后续 Rust/webview shell 复用。
+- `packages/cuu/src/i18n.ts`
+  - 新增 `cuuStart.*` zh-CN / en-US 文案。
+
+当前边界：
+
+| 项 | R3.1 行为 |
+|---|---|
+| 输入 | option-first，三枚 chip：文档/方案草稿、结构化数据、小型代码/模板 |
+| 真实链路 | `SessionVM -> WorkItemDetailVM -> AgentRunLiveVM` |
+| 权限 | 仍走 API client；没有后端 `/api/cuu/start-agent` 路由，也没有 Cuu 权限旁路 |
+| 返回 | `AgentRunLiveVM` 转 `agent_run` Cuu card |
+| 主窗 | 未显示 Cuu 本体 |
+| 未覆盖 | 真实 Tauri 点击截图、SSE run stream 回流、失败态、刷新恢复、launcher-to-run smoke |
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview test`：61/61 通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+
+### R3.2 下一刀
+
+1. 抽出 `startDesktopCuuAgentFromLauncher()` helper，避免 runtime submit 分支继续膨胀。
+2. 用轻 DOM harness 覆盖真实 click body -> launcher card，而不仅是 render/output test。
+3. 启动 run 后订阅 `AgentRunLiveVM.stream_href`，把 queued/running/succeeded/failed 回灌到 Cuu。
+4. 把 API error、403、budget_exhausted、offline 统一映射为 Cuu failure/offline card。
+5. 生成真实 Tauri `pet` window 截图：body-only idle、launcher card、queued run card、failure/offline card。
+6. 加一条 launcher-to-run smoke，证明不是单元测试里的 mock client。
 
 禁止：
 

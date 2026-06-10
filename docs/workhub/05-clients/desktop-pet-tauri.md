@@ -39,6 +39,7 @@ visuals:
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
 | `apps/desktop-webview/src/browser.ts` | 根据 Rust 注入 surface 分流主窗或 pet surface |
 | `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡 |
+| `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu 卡片 action runtime；R3.1 已新增 `cuu-agent-launcher` 与 `cuu-start-agent` 三段真实 API 组合 |
 | `apps/desktop-webview/src/pet-window-bridge.ts` | TS 调用 Rust window commands，整合 pointer/drag/cursor sample |
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 黑猫/白猫 Live2D iframe/runtime 适配 |
 | `packages/cuu/src/model-pack.ts` | 当前只注册黑猫/白猫模型包 |
@@ -69,6 +70,7 @@ visuals:
 | 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须贴近 Cuu 右侧同锚，当前 CSS gate 为 `right:24px; bottom:348px; width:288px` |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
+| R3 launcher | 点击 Cuu body 且当前无业务卡片时，webview 展开 option-first Agent 启动卡；Rust 只负责窗口模式，不解析业务 intent |
 | 不允许 | 白框/卡片底、主窗 UI、完整看板、旧实验 renderer、静态图片 fallback |
 
 ### 3.3 Tray
@@ -219,7 +221,18 @@ visuals:
 - spec watch 把 README/规格变化同步给 daemon。
 - 本地文件操作必须有权限策略与审计。
 
-### 7.4 P4：跨平台客户端
+### 7.4 R3：Cuu Agent 出站入口
+
+R3.1 已落 TS webview 层最小切片，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
+
+- `pet-surface.ts` 在用户点击 Cuu body 且当前无 card 时展示 launcher card。
+- launcher 仅给可点选交付方向，不显示输入框。
+- `desktop-cuu-runtime.ts` 把 `/api/cuu/start-agent` pseudo action 转成真实 `createSession -> createWorkItem -> startAgentRun`。
+- 返回 `AgentRunLiveVM` 后用 `cardFromAgentRunLive()` 显示进度卡。
+
+Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 只需要补真实窗口截图和录屏：body-only idle、launcher card、queued run card、failed/offline card。
+
+### 7.5 P4：跨平台客户端
 
 - Windows：透明 WebView2 截图、托盘、通知、安装包 smoke。
 - macOS：transparent window、menu bar、notification、签名/公证。
@@ -248,6 +261,7 @@ visuals:
 | 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
+| R3 Agent launcher 真实 Tauri 点击截图 | TS runtime 和 DOM render tests 已落；尚未补真实 `pet` window screenshot | R3.2 补 body-only -> launcher card -> queued run card 捕获 |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
@@ -262,7 +276,7 @@ visuals:
 |---|---|---|
 | R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
-| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | 补 FR-PET-002，才是 Cuu 欠的 P1 能力 |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；下一步补 SSE 回流、失败态、真实 Tauri capture |
 | Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |
 
 ## 10. 与其他文档的边界
@@ -273,6 +287,7 @@ visuals:
 - Pet settings 恢复门：[`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md)
 - Cuu behavior manifest：[`cuu-behavior-manifest-p1-6.md`](./cuu-behavior-manifest-p1-6.md)
 - Cuu Tauri business motion capture：[`cuu-tauri-business-motion-capture-p1-7.md`](./cuu-tauri-business-motion-capture-p1-7.md)
+- Cuu R3 Agent 入口：[`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)
 - 桌宠参考包审查：[`desktop-pet-reference-package-audit-2026-06-08.md`](./desktop-pet-reference-package-audit-2026-06-08.md)
 - 页面概念图索引：[`page-concepts.md`](./page-concepts.md)
 - Web 页面规划：[`web-app.md`](./web-app.md)

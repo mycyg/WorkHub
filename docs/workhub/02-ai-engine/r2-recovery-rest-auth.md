@@ -140,4 +140,4 @@ corepack pnpm --filter @workhub/api test
 | 多租户 org/workspace 仍依赖默认 auth actor 字段 | 多租户切片从 auth deps 传真实 org/workspace，并在 WorkItem gate 中验证 workspace |
 | Redis pub/sub 非持久 | REST/DB 仍是真相源，SSE 仅触发 reconcile；云部署再评估 durable queue |
 
-R2.7 完成后，R2 地基首版的验收入口已接入 `pnpm verify`；下一步进入 R3 Cuu Agent 入口。
+R2.7 完成后，R2 地基首版的验收入口已接入 `pnpm verify`；R3.1 已补 Cuu option-first Agent launcher 与真实 `sessions -> workitems -> agent-runs` API 链，下一步进入 R3.2 SSE 回流、失败态和真实 Tauri 点击截图。

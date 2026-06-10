@@ -1,4 +1,5 @@
 import {
+  cardFromAgentRunLive,
   createCuuController,
   cardFromEvidenceBubble,
   cardFromWorkItemDetail,
@@ -15,9 +16,12 @@ import type { WorkHubApiClient } from "@workhub/api-client";
 import {
   eventTypes,
   type ApplyMergeProposalCandidateRequest,
+  type CreateSessionRequest,
+  type CreateWorkItemRequest,
   type EvidenceRef,
   type GoldPathSurfaceVM,
-  type MergeProposalRequest
+  type MergeProposalRequest,
+  type StartAgentRunRequest
 } from "@workhub/contracts";
 
 import { createDesktopShellEventBridge } from "./shell-events.js";
@@ -59,6 +63,15 @@ export type DesktopShellScriptedListener = {
 };
 
 export type DesktopCuuActionRequest =
+  | {
+      kind: "cuu-start-agent";
+      title: string;
+      intentText: string;
+      selectedOptionIds?: string[];
+      projectId?: string;
+      runTitle?: string;
+      mode?: StartAgentRunRequest["mode"];
+    }
   | {
       kind: "approval-response";
       approvalId: string;
@@ -112,6 +125,12 @@ type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
   "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
 > & {
+  createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
+  createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
+  startAgentRun?: (
+    workItemId: string,
+    payload?: StartAgentRunRequest
+  ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
   mergeProposal: (
     proposalId: string,
     payload?: MergeProposalRequest
@@ -147,6 +166,74 @@ export const desktopCuuNoticeCss = [
   ".wh-cuu-queue-badge{position:fixed;right:18px;bottom:124px;z-index:39;display:flex;align-items:center;gap:8px;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.92);box-shadow:0 12px 34px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-ink);font:750 12px/1.2 \"Aptos\",\"Segoe UI\",sans-serif}",
   ".wh-cuu-queue-badge[hidden]{display:none}.wh-cuu-queue-count{min-width:20px;height:20px;border-radius:999px;display:grid;place-items:center;background:var(--wh-app-blue);color:#fff;font-size:11px}.wh-cuu-queue-text{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wh-app-muted)}"
 ].join("");
+
+export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}): CuuCard {
+  return {
+    id: "cuu-agent-launcher",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "busy",
+      loop: true,
+      reduced_motion_fallback: cuuT(options.locale, "cuuStart.reducedMotion")
+    },
+    title: cuuT(options.locale, "cuuStart.title"),
+    message: cuuT(options.locale, "cuuStart.message"),
+    priority: "normal",
+    chips: [
+      {
+        id: "document-draft",
+        label: cuuT(options.locale, "cuuStart.documentDraft"),
+        description: cuuT(options.locale, "cuuStart.documentDraftDesc"),
+        tone: "success",
+        recommended: true
+      },
+      {
+        id: "structured-data",
+        label: cuuT(options.locale, "cuuStart.structuredData"),
+        description: cuuT(options.locale, "cuuStart.structuredDataDesc"),
+        tone: "success"
+      },
+      {
+        id: "code-template",
+        label: cuuT(options.locale, "cuuStart.codeTemplate"),
+        description: cuuT(options.locale, "cuuStart.codeTemplateDesc"),
+        tone: "warning"
+      }
+    ],
+    input: {
+      mode: "single_choice",
+      option_first: true,
+      free_text_enabled: false,
+      free_text_collapsed_by_default: true
+    },
+    progress: [
+      { key: "intent", label: cuuT(options.locale, "cuuStart.progressIntent"), state: "active", index: 0 },
+      { key: "task", label: cuuT(options.locale, "cuuStart.progressTask"), state: "pending", index: 1 },
+      { key: "run", label: cuuT(options.locale, "cuuStart.progressRun"), state: "pending", index: 2 }
+    ],
+    actions: [
+      {
+        id: "start_agent_from_cuu",
+        label: cuuT(options.locale, "cuuStart.action"),
+        tone: "primary",
+        method: "POST",
+        href: "/api/cuu/start-agent",
+        payload: {
+          title: cuuT(options.locale, "cuuStart.defaultTitle"),
+          intent_text: cuuT(options.locale, "cuuStart.defaultIntent")
+        }
+      }
+    ],
+    payload_ref: {
+      entity_type: "event",
+      entity_id: "cuu-agent-launcher",
+      href: "/api/cuu/start-agent"
+    }
+  };
+}
 
 export function resolveDesktopShellListen(input: unknown = globalThis): DesktopShellListen | undefined {
   const target = input as DesktopShellGlobal;
@@ -351,6 +438,28 @@ export function resolveDesktopCuuAction(
 ): DesktopCuuActionRequest | undefined {
   const url = new URL(href, "https://workhub.local");
   const path = url.pathname;
+  if (path === "/api/cuu/start-agent" || path === "/cuu/start-agent") {
+    const payload = actionPayloadFromCard(input.card, input.actionId, href);
+    const selectedChips = selectedChipsFromCard(input.card);
+    const selectedOptionIds = selectedChips.map((chip) => chip.id);
+    const title = stringFromUnknown(payload?.title) ?? url.searchParams.get("title") ?? titleFromSelectedChips(selectedChips);
+    const selectedIntent = intentFromSelectedChips(selectedChips);
+    const payloadIntent = stringFromUnknown(payload?.intent_text) ?? url.searchParams.get("intent_text");
+    const intentText = [payloadIntent, selectedIntent].filter((value): value is string => Boolean(value)).join("\n") || title;
+    const projectId = stringFromUnknown(payload?.project_id) ?? url.searchParams.get("project_id") ?? undefined;
+    const runTitle = stringFromUnknown(payload?.run_title) ?? url.searchParams.get("run_title") ?? undefined;
+    const mode = startModeFromUnknown(payload?.mode ?? url.searchParams.get("mode"));
+    return {
+      kind: "cuu-start-agent",
+      title: compactTitle(title ?? intentText),
+      intentText: compactIntent(intentText ?? title),
+      ...(selectedOptionIds.length ? { selectedOptionIds } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(runTitle ? { runTitle } : {}),
+      ...(mode ? { mode } : {})
+    };
+  }
+
   const approvalMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
   if (approvalMatch?.[1]) {
     return {
@@ -422,6 +531,39 @@ export async function submitDesktopCuuAction(input: {
   reasonMd?: string | undefined;
   locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuActionResult> {
+  if (input.action.kind === "cuu-start-agent") {
+    if (!input.action.selectedOptionIds?.length) {
+      throw new Error(cuuT(input.locale, "pet.optionRequired"));
+    }
+    if (!input.client.createSession || !input.client.createWorkItem || !input.client.startAgentRun) {
+      throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
+    }
+    const sessionPayload: CreateSessionRequest = {
+      title: input.action.title,
+      intent_text: input.action.intentText,
+      ...(input.action.projectId ? { project_id: input.action.projectId } : {})
+    };
+    const session = await input.client.createSession(sessionPayload);
+    const workItem = await input.client.createWorkItem({
+      session_id: session.session_id,
+      title: input.action.title,
+      raw_description: input.action.intentText,
+      selected_option_ids: input.action.selectedOptionIds,
+      kickoff_agent: true,
+      ...(input.action.projectId ? { project_id: input.action.projectId } : {})
+    });
+    const workItemId = workItem.workitem.id;
+    const runPayload: StartAgentRunRequest = {
+      title: input.action.runTitle ?? input.action.title,
+      ...(input.action.mode ? { mode: input.action.mode } : {})
+    };
+    const run = await input.client.startAgentRun(workItemId, runPayload);
+    return {
+      message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
+      card: cardFromAgentRunLive(run, input)
+    };
+  }
+
   if (input.action.kind === "approval-response") {
     if (input.action.decision === "deny" && !input.reasonMd?.trim()) {
       throw new Error(cuuT(input.locale, "action.reasonRequired"));
@@ -492,8 +634,44 @@ function selectedOptionIdsFromCard(card: CuuCard | undefined) {
   return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
 }
 
+function selectedChipsFromCard(card: CuuCard | undefined) {
+  return (card?.chips ?? []).filter((chip) => chip.selected);
+}
+
 function actionPayloadFromCard(card: CuuCard | undefined, actionId: string | undefined, href: string) {
   return card?.actions.find((action) => (actionId ? action.id === actionId : false) || action.href === href)?.payload;
+}
+
+function stringFromUnknown(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function compactTitle(value: string | undefined) {
+  const compact = (value ?? "").replace(/\s+/gu, " ").trim();
+  return compact.length > 96 ? `${compact.slice(0, 95)}...` : compact;
+}
+
+function compactIntent(value: string | undefined) {
+  return (value ?? "")
+    .split(/\r?\n/gu)
+    .map((line) => line.replace(/[ \t]+/gu, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function titleFromSelectedChips(chips: CuuCardChip[]) {
+  return chips.length ? compactTitle(chips.map((chip) => chip.label).join(" + ")) : undefined;
+}
+
+function intentFromSelectedChips(chips: CuuCardChip[]) {
+  if (!chips.length) {
+    return undefined;
+  }
+  return chips.map((chip) => chip.description ? `${chip.label}: ${chip.description}` : chip.label).join("\n");
+}
+
+function startModeFromUnknown(value: unknown): StartAgentRunRequest["mode"] | undefined {
+  return value === "worker" || value === "pm" ? value : undefined;
 }
 
 function renderChip(chip: CuuCardChip) {

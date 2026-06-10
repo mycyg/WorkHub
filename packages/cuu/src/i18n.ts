@@ -92,6 +92,23 @@ export type CuuCopyKey =
   | "action.noEvidence"
   | "action.evidenceBound"
   | "action.nextQuestion"
+  | "cuuStart.title"
+  | "cuuStart.message"
+  | "cuuStart.documentDraft"
+  | "cuuStart.documentDraftDesc"
+  | "cuuStart.structuredData"
+  | "cuuStart.structuredDataDesc"
+  | "cuuStart.codeTemplate"
+  | "cuuStart.codeTemplateDesc"
+  | "cuuStart.action"
+  | "cuuStart.defaultTitle"
+  | "cuuStart.defaultIntent"
+  | "cuuStart.started"
+  | "cuuStart.unavailable"
+  | "cuuStart.reducedMotion"
+  | "cuuStart.progressIntent"
+  | "cuuStart.progressTask"
+  | "cuuStart.progressRun"
   | "pet.aria"
   | "pet.windowModeExpanding"
   | "pet.reducedMotionOffline"
@@ -213,6 +230,23 @@ const cuuCopy = {
     "action.noEvidence": "这张证据卡里没有可绑定的证据。",
     "action.evidenceBound": "Cuu 已把这些证据放进当前任务。",
     "action.nextQuestion": "下一题：{title}",
+    "cuuStart.title": "要让 Cuu 做什么？",
+    "cuuStart.message": "先点一个交付方向，Cuu 会创建事项并启动真实 AI 执行。",
+    "cuuStart.documentDraft": "文档/方案草稿",
+    "cuuStart.documentDraftDesc": "周报、说明、PR 式变更说明",
+    "cuuStart.structuredData": "结构化数据",
+    "cuuStart.structuredDataDesc": "JSON、YAML、CSV、配置",
+    "cuuStart.codeTemplate": "小型代码/模板",
+    "cuuStart.codeTemplateDesc": "低风险片段、模板、配置改动",
+    "cuuStart.action": "开始处理",
+    "cuuStart.defaultTitle": "Cuu 桌面入口任务",
+    "cuuStart.defaultIntent": "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。",
+    "cuuStart.started": "Cuu 已启动：{title}",
+    "cuuStart.unavailable": "Cuu 当前缺少启动 AI 执行的客户端能力。",
+    "cuuStart.reducedMotion": "Cuu 正在等你选择一个交付方向。",
+    "cuuStart.progressIntent": "方向",
+    "cuuStart.progressTask": "事项",
+    "cuuStart.progressRun": "执行",
     "pet.aria": "Cuu 桌宠",
     "pet.windowModeExpanding": "Cuu 轻卡窗口正在展开。",
     "pet.reducedMotionOffline": "Cuu 遇到连接问题，正在提醒你。",
@@ -333,6 +367,23 @@ const cuuCopy = {
     "action.noEvidence": "This evidence card has nothing bindable yet.",
     "action.evidenceBound": "Cuu added this evidence to the current task.",
     "action.nextQuestion": "Next question: {title}",
+    "cuuStart.title": "What should Cuu do?",
+    "cuuStart.message": "Pick one delivery direction. Cuu will create the task and start the real AI run.",
+    "cuuStart.documentDraft": "Document draft",
+    "cuuStart.documentDraftDesc": "Reports, briefs, PR-style change notes",
+    "cuuStart.structuredData": "Structured data",
+    "cuuStart.structuredDataDesc": "JSON, YAML, CSV, config",
+    "cuuStart.codeTemplate": "Small code/template",
+    "cuuStart.codeTemplateDesc": "Low-risk snippets, templates, config changes",
+    "cuuStart.action": "Start work",
+    "cuuStart.defaultTitle": "Cuu desktop entry task",
+    "cuuStart.defaultIntent": "Create an AI-runnable task from the Cuu desktop pet entry and work according to the selected delivery direction.",
+    "cuuStart.started": "Cuu started: {title}",
+    "cuuStart.unavailable": "Cuu is missing the client capability to start an AI run.",
+    "cuuStart.reducedMotion": "Cuu is waiting for a delivery direction.",
+    "cuuStart.progressIntent": "Direction",
+    "cuuStart.progressTask": "Task",
+    "cuuStart.progressRun": "Run",
     "pet.aria": "Cuu desktop pet",
     "pet.windowModeExpanding": "Cuu is expanding the light card window.",
     "pet.reducedMotionOffline": "Cuu hit a connection issue and is notifying you.",

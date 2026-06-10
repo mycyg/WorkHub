@@ -27,6 +27,7 @@ import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
+  createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
   resolveDesktopShellListen,
   submitDesktopCuuAction,
@@ -835,6 +836,10 @@ export async function bootDesktopPetSurface(
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
     const petBody = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-drag-handle]") : null;
     if (petBody && !anchor) {
+      if (!currentCard) {
+        setCard(createDesktopCuuAgentLauncherCard({ locale }));
+        return;
+      }
       const decision = idleScheduler.observeInteraction("tap", Date.now());
       if (decision.action) {
         idleAction = decision.action;
@@ -845,7 +850,11 @@ export async function bootDesktopPetSurface(
     if (!anchor) {
       return;
     }
-    if (anchor.dataset.cuuActionId === "submit_option" && currentCard?.input && (currentCard.chips?.length ?? 0) > 0) {
+    if (
+      (anchor.dataset.cuuActionId === "submit_option" || anchor.dataset.cuuActionId === "start_agent_from_cuu")
+      && currentCard?.input
+      && (currentCard.chips?.length ?? 0) > 0
+    ) {
       const selectedOptionIds = selectedOptionIdsFromCard(currentCard);
       if (selectedOptionIds.length === 0) {
         event.preventDefault();
