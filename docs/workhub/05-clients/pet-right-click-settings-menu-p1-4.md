@@ -92,10 +92,19 @@ R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单�
 | pass-through 菜单项 | 继续不放进右键菜单；恢复入口留在主窗 `/settings` 和系统托盘 |
 | 主窗 settings 截图 | zh-CN / en-US 均 `layout_gate.passed=true`，无 Cuu 本体、无模型预览、`overflow.offenders=[]` |
 
-### 5.3 后续验收
+### 5.3 R3.19 tray handler recovery 已完成
+
+| 项 | 证据 / 结论 |
+|---|---|
+| tray handler 恢复后菜单可用 | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-en-official/` 与 `tray-restore-zh-official/`，两组 `settings_menu_layout_gate.passed=true` |
+| 菜单遮挡回归 | 恢复提示缩短为 `Interaction restored.` / `已恢复交互。`；右键菜单打开时清掉 transient status，official DOM report `bubble=null`，contact sheet 中菜单不遮挡提示文字 |
+| menu -> settings 事件桥 | 右键菜单切 hover 会 emit `pet-settings` 到 main；`pet right-click menu broadcasts hover setting changes to the main settings panel` 单测覆盖 `source="pet-menu"` payload |
+| pass-through 菜单项 | 仍不放进右键菜单；pass-through 恢复入口继续保留在主窗 `/settings`、系统托盘 handler 和后续物理 tray menu 证据 |
+
+### 5.4 后续验收
 
 | 下一步 | 验收 |
 |---|---|
-| 托盘恢复真实点击 | 从 pass-through 初始态触发 `restore-pet-interaction`，恢复后右键菜单重新可用 |
-| settings 双向状态同步 | 右键菜单切 hover 后主窗 settings 状态同步；主窗恢复后 pet 状态同步 |
+| 物理 OS 托盘点击 | 从 pass-through 初始态点击系统 tray menu item，恢复后右键菜单重新可用 |
+| settings 双向状态同步截图 | 右键菜单切 hover 后主窗 settings 状态同步；主窗恢复/托盘 handler 后 pet/main 状态同步继续回归 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

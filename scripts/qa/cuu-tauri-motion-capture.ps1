@@ -14,7 +14,7 @@ param(
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
   [int]$MaxRightEdgeLightPixels = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -42,7 +42,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
+$qaScenarios = @("launcher", "settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "reload-session", "reload-active-run", "reload-terminal-run", "permission-401", "permission-403", "stream-offline", "offline")
 $reloadRestoreScenarios = @("reload-session", "reload-active-run", "reload-terminal-run")
 $script:cuuCdpWebSocketUrl = $null
@@ -290,6 +290,20 @@ function Invoke-CuuCdpClickSelector {
   }
   Invoke-CuuCdpMouseClick -WebSocketUrl $WebSocketUrl -X ([int]$point.x) -Y ([int]$point.y)
   return $point
+}
+
+function Invoke-CuuCdpRestorePetInteractionCommand {
+  param([string]$WebSocketUrl)
+  Invoke-CuuCdpJsonExpression -WebSocketUrl $WebSocketUrl -Expression @"
+(async () => {
+  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  if (!invoke) {
+    return JSON.stringify({ ok: false, error: "missing_tauri_invoke" });
+  }
+  const result = await invoke("restore_pet_window_interaction");
+  return JSON.stringify({ ok: true, result });
+})()
+"@
 }
 
 function Invoke-CuuCdpPetSettingsSnapshot {
@@ -593,6 +607,43 @@ function Wait-CuuCdpMainSettingsPanel {
   throw "Main settings panel did not become ready through CDP."
 }
 
+function Wait-CuuCdpMainSettingsState {
+  param(
+    [string]$WebSocketUrl,
+    [ValidateSet("zh-CN", "en-US")]
+    [string]$ExpectedLocale,
+    [bool]$ExpectedPassThrough,
+    [bool]$ExpectedHideOnHover = $false,
+    [ValidateSet(60, 80, 100)]
+    [int]$ExpectedOpacityPercent = 100,
+    [int]$TimeoutSeconds = 8
+  )
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastSnapshot = $null
+  $lastErrorMessage = ""
+  do {
+    try {
+      $snapshot = Wait-CuuCdpMainSettingsPanel -WebSocketUrl $WebSocketUrl -ExpectedLocale $ExpectedLocale -TimeoutSeconds 2
+      $lastSnapshot = $snapshot
+      if (
+        $snapshot -and
+        $snapshot.pet_settings -and
+        [bool]$snapshot.pet_settings.pass_checked -eq $ExpectedPassThrough -and
+        [bool]$snapshot.pet_settings.hide_checked -eq $ExpectedHideOnHover -and
+        [string]$snapshot.pet_settings.selected_opacity -eq ([string]$ExpectedOpacityPercent)
+      ) {
+        return $snapshot
+      }
+    } catch {
+      $lastErrorMessage = $_.Exception.Message
+    }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+
+  $lastSnapshotJson = if ($lastSnapshot) { $lastSnapshot | ConvertTo-Json -Compress -Depth 10 } else { "null" }
+  throw "Main settings state did not reach pass_through=$ExpectedPassThrough hide_on_hover=$ExpectedHideOnHover opacity=$ExpectedOpacityPercent. Last snapshot: $lastSnapshotJson Last error: $lastErrorMessage"
+}
+
 function New-CuuMainSettingsLayoutGate {
   param(
     [object]$Snapshot,
@@ -650,7 +701,7 @@ function New-CuuPassThroughRecoveryGate {
     [object]$MainAfter,
     [object]$FinalPetDomReport
   )
-  $enabled = $Scenario -eq "pass-through-recovery-settings"
+  $enabled = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -1292,7 +1343,7 @@ function New-CuuSettingsMenuLayoutGate {
     [string]$ExpectedLocale = "zh-CN"
   )
 
-  $enabled = @("settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings") -contains $Scenario
+  $enabled = @("settings-menu", "settings-menu-model-switch", "pass-through-recovery-settings", "pass-through-recovery-tray") -contains $Scenario
   if (-not $enabled) {
     return [pscustomobject]@{
       enabled = $false
@@ -1319,7 +1370,7 @@ function New-CuuSettingsMenuLayoutGate {
     }
   }
 
-  if ($Scenario -eq "settings-menu" -or $Scenario -eq "pass-through-recovery-settings") {
+  if ($Scenario -eq "settings-menu" -or $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray") {
     if (-not $Actual.settings_menu -or -not $Actual.settings_menu.present -or -not $Actual.settings_menu.rect) {
       return [pscustomobject]@{
         enabled = $true
@@ -1771,11 +1822,11 @@ function New-CuuMotionLivenessReport {
     [bool]$IsBusinessScenario
   )
 
-  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "pass-through-recovery-settings")
+  $interactionScenarios = @("idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "pass-through-recovery-settings", "pass-through-recovery-tray")
   $enabled = $IsBusinessScenario -or ($interactionScenarios -contains $ScenarioName)
   $quality = if ($FrameCount -ge $FormalFrameCount) { "formal_32" } else { "smoke" }
   $minChangedFrames = if ($quality -eq "formal_32") { $MinChangedFramesFormal } else { $MinChangedFramesSmoke }
-  if ($ScenarioName -eq "pass-through-recovery-settings") {
+  if ($ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray") {
     $minChangedFrames = 1
   }
   [object[]]$changedFrames = @($Diffs | Where-Object {
@@ -1866,7 +1917,7 @@ function Invoke-CuuInteractionScenarioFrame {
     [object]$Window
   )
 
-  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "pass-through-recovery-settings") {
+  if ($ScenarioName -ne "input-handfeel" -and $ScenarioName -ne "look-avoidance" -and $ScenarioName -ne "look-only" -and $ScenarioName -ne "drag-smoothing" -and $ScenarioName -ne "hide-on-hover" -and $ScenarioName -ne "launcher" -and $ScenarioName -ne "settings-menu" -and $ScenarioName -ne "settings-menu-model-switch" -and $ScenarioName -ne "pass-through-recovery-settings" -and $ScenarioName -ne "pass-through-recovery-tray") {
     return $null
   }
 
@@ -1875,7 +1926,7 @@ function Invoke-CuuInteractionScenarioFrame {
   $isDragSmoothing = $ScenarioName -eq "drag-smoothing"
   $isHideOnHover = $ScenarioName -eq "hide-on-hover"
   $isLauncher = $ScenarioName -eq "launcher"
-  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "pass-through-recovery-settings"
+  $isSettingsMenu = $ScenarioName -eq "settings-menu" -or $ScenarioName -eq "settings-menu-model-switch" -or $ScenarioName -eq "pass-through-recovery-settings" -or $ScenarioName -eq "pass-through-recovery-tray"
   $isSettingsMenuModelSwitch = $ScenarioName -eq "settings-menu-model-switch"
   $centerX = [int][Math]::Round(($Window.Rect.Left + $Window.Rect.Right) / 2)
   $centerY = [int][Math]::Round(($Window.Rect.Top + $Window.Rect.Bottom) / 2)
@@ -2233,7 +2284,8 @@ try {
   $sseDisabledForScenario = $false
   $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
   $isReloadRestoreScenario = $reloadRestoreScenarios -contains $Scenario
-  $usesMainSettingsCapture = $Scenario -eq "pass-through-recovery-settings"
+  $usesMainSettingsCapture = $Scenario -eq "pass-through-recovery-settings" -or $Scenario -eq "pass-through-recovery-tray"
+  $usesTrayRecoveryCapture = $Scenario -eq "pass-through-recovery-tray"
   $usesCuuR3ApiServer = $isRunStreamScenario -or $isReloadRestoreScenario -or $usesMainSettingsCapture
   if (($Scenario -ne "idle" -and -not $usesCuuR3ApiServer) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
@@ -2391,7 +2443,13 @@ try {
     } else {
       $initialPetSettingsSnapshot = Invoke-CuuCdpPetSettingsSnapshot -WebSocketUrl $script:cuuCdpWebSocketUrl
     }
-    $beforeSnapshot = Wait-CuuCdpMainSettingsPanel -WebSocketUrl $script:cuuMainCdpWebSocketUrl -ExpectedLocale $Locale -TimeoutSeconds $WaitSeconds
+    $beforeSnapshot = Wait-CuuCdpMainSettingsState `
+      -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+      -ExpectedLocale $Locale `
+      -ExpectedPassThrough $true `
+      -ExpectedHideOnHover $false `
+      -ExpectedOpacityPercent 100 `
+      -TimeoutSeconds $WaitSeconds
     $mainBeforeWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     if (-not $mainBeforeWindow) {
       throw "WorkHub main window was not found for settings screenshot before restore."
@@ -2404,9 +2462,23 @@ try {
       layout_gate = New-CuuMainSettingsLayoutGate -Snapshot $beforeSnapshot -ExpectedLocale $Locale -AfterRestore $false
     }
 
-    $restorePoint = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuMainCdpWebSocketUrl -Selector "[data-cuu-pet-restore-interaction]"
+    if ($usesTrayRecoveryCapture) {
+      $restorePoint = Invoke-CuuCdpRestorePetInteractionCommand -WebSocketUrl $script:cuuCdpWebSocketUrl
+      if (-not $restorePoint -or -not $restorePoint.ok) {
+        $restoreError = if ($restorePoint) { $restorePoint.error } else { "no_restore_result" }
+        throw "Tray restore command failed: $restoreError"
+      }
+    } else {
+      $restorePoint = Invoke-CuuCdpClickSelector -WebSocketUrl $script:cuuMainCdpWebSocketUrl -Selector "[data-cuu-pet-restore-interaction]"
+    }
     Start-Sleep -Milliseconds 900
-    $afterSnapshot = Invoke-CuuCdpMainSettingsSnapshot -WebSocketUrl $script:cuuMainCdpWebSocketUrl
+    $afterSnapshot = Wait-CuuCdpMainSettingsState `
+      -WebSocketUrl $script:cuuMainCdpWebSocketUrl `
+      -ExpectedLocale $Locale `
+      -ExpectedPassThrough $false `
+      -ExpectedHideOnHover $false `
+      -ExpectedOpacityPercent 100 `
+      -TimeoutSeconds $WaitSeconds
     $mainAfterWindow = Select-WorkHubMainWindow -Windows @(Get-WorkHubProcessWindows -TargetProcessId $process.Id)
     if (-not $mainAfterWindow) {
       throw "WorkHub main window was not found for settings screenshot after restore."

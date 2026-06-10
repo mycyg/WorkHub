@@ -64,6 +64,13 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(permission401.length, 0);
   assert.equal(permission403.length, 0);
   assert.equal(streamOffline.length, 0);
+  assert.equal(desktopPetQaScriptForScenario("settings-menu").length, 0);
+  assert.equal(desktopPetQaScriptForScenario("settings-menu-model-switch").length, 0);
+  assert.equal(desktopPetQaScriptForScenario("pass-through-recovery-settings").length, 0);
+  assert.equal(desktopPetQaScriptForScenario("pass-through-recovery-tray").length, 0);
+  assert.equal(createDesktopPetQaShellListen("launcher"), undefined);
+  assert.equal(createDesktopPetQaShellListen("settings-menu"), undefined);
+  assert.equal(createDesktopPetQaShellListen("pass-through-recovery-tray"), undefined);
   assert.equal(createDesktopPetQaShellListen("run-stream"), undefined);
   assert.equal(createDesktopPetQaShellListen("run-failure"), undefined);
   assert.equal(createDesktopPetQaShellListen("reload-session"), undefined);
@@ -89,6 +96,10 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
 
 test("desktop pet QA scenario normalization only accepts explicit capture scenarios", () => {
   assert.equal(normalizeDesktopPetQaScenario("launcher"), "launcher");
+  assert.equal(normalizeDesktopPetQaScenario("settings-menu"), "settings-menu");
+  assert.equal(normalizeDesktopPetQaScenario("settings-menu-model-switch"), "settings-menu-model-switch");
+  assert.equal(normalizeDesktopPetQaScenario("pass-through-recovery-settings"), "pass-through-recovery-settings");
+  assert.equal(normalizeDesktopPetQaScenario("pass-through-recovery-tray"), "pass-through-recovery-tray");
   assert.equal(normalizeDesktopPetQaScenario("approval"), "approval");
   assert.equal(normalizeDesktopPetQaScenario("run-stream"), "run-stream");
   assert.equal(normalizeDesktopPetQaScenario("run-failure"), "run-failure");

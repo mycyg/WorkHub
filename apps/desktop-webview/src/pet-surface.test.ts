@@ -8,6 +8,7 @@ import {
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
   submitDesktopCuuAction,
+  type DesktopShellEmitter,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
 import {
@@ -716,6 +717,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
 
   assert.match(statusOnly.html, /data-pet-window-mode="body_only"/u);
   assert.match(statusOnly.html, /data-pet-card-layout="compact"/u);
+  assert.match(statusOnly.html, /data-pet-bubble-transient="true"/u);
   assert.match(statusOnly.html, /<p class="wh-pet-status">Cuu look updated\.<\/p>/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-bubble\{left:auto;right:calc\(8px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(224px \* var\(--wh-pet-scale,1\)\);width:calc\(150px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-status\{line-height:1\.25;display:-webkit-box;-webkit-line-clamp:2/u);
@@ -1098,13 +1100,20 @@ test("pet surface syncs settings emitted by the main desktop window", async () =
     await withFakePetDom(async (root) => {
       const handlers = new Map<string, (event: { payload: unknown }) => void>();
       const stopped: string[] = [];
+      const emitted: unknown[] = [];
       const listen: DesktopShellListen = (eventName, handler) => {
         handlers.set(eventName, handler);
         return () => stopped.push(eventName);
       };
+      const shellEmitter: DesktopShellEmitter = {
+        emitTo: (_target, _eventName, payload) => {
+          emitted.push(payload);
+        }
+      };
       const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
         client: createPetHarnessClient([]),
-        listen
+        listen,
+        shellEmitter
       });
 
       try {
@@ -1129,10 +1138,74 @@ test("pet surface syncs settings emitted by the main desktop window", async () =
         assert.equal(persisted.pet_opacity_percent, 100);
         assert.equal(persisted.pet_pass_through, false);
         assert.equal(persisted.pet_hide_on_hover, false);
+        assert.deepEqual(emitted, []);
       } finally {
         await runtime.dispose();
       }
       assert.ok(stopped.includes("pet-settings"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
+});
+
+test("pet right-click menu broadcasts hover setting changes to the main settings panel", async () => {
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  const storage = createFakeLocalStorage({
+    workhub_cuu_preferences: JSON.stringify({
+      pet_pass_through: false,
+      pet_hide_on_hover: false,
+      pet_opacity_percent: 100
+    })
+  });
+  target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const emits: Array<{ target: string; eventName: string; payload: unknown }> = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        shellEmitter: {
+          emitTo(target, eventName, payload) {
+            emits.push({ target, eventName, payload });
+          }
+        }
+      });
+
+      try {
+        assert.match(root.innerHTML, /data-pet-hide-on-hover="false"/u);
+
+        await root.click(fakePetTarget({ "data-pet-menu-toggle-hover": "true" }));
+
+        assert.match(root.innerHTML, /data-pet-hide-on-hover="true"/u);
+        assert.equal(emits.length, 1);
+        assert.deepEqual(emits[0], {
+          target: "main",
+          eventName: "pet-settings",
+          payload: {
+            scale_percent: 100,
+            opacity_percent: 100,
+            pass_through: false,
+            hide_on_hover: true,
+            source: "pet-menu"
+          }
+        });
+      } finally {
+        await runtime.dispose();
+      }
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;

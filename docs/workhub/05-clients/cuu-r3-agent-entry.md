@@ -927,10 +927,69 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario run-failure -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-pass-through-recovery\hijiki\run-failure-card-en
 ```
 
-## 20. 下一刀 R3.19
+## 20. R3.19 已落切片：tray handler recovery + settings event bridge
 
-1. 补托盘 `restore-pet-interaction` 的真实点击证据：从 pass-through 初始态触发 tray restore，再确认 `pass=false/hide=false/opacity=100`、pet 右键菜单可用。
-2. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
-3. 继续保留 R3.12-R3.18 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix、菜单 gate、pass-through recovery。
-4. R4 接手主窗产品化截图：home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow 都必须继续证明主窗无 Cuu 本体和无文本超框。
-5. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主工作台无 Cuu 截图复核仍要闭环。
+R3.19 关闭托盘恢复链路的代码/截图证据缺口：从 pass-through 初始态触发 `restore-pet-interaction` 同一 Rust tray handler，恢复 `pass=false/hide=false/opacity=100`，并确认 pet 右键菜单仍可用、desktop main `/settings` 同步为可交互状态。范围仍限定现有黑猫/白猫 Live2D、主窗 settings 恢复面和右键菜单；不新增模型、不改色、不扩动作路线。
+
+改动：
+
+| 层 | R3.19 行为 |
+|---|---|
+| Tauri tray handler | 新增 QA command `restore_pet_window_interaction`，只调用 `handle_tray_action(TRAY_RESTORE_PET_INTERACTION_ID)`，不接受任意 tray id；用于在 capture 中触发与托盘菜单相同的恢复 handler |
+| QA scenario | `pass-through-recovery-tray` 进入 Rust/TS/PowerShell 白名单；空脚本 QA 场景不再抢占真实 Tauri listener，避免挡住 `tray-action` |
+| settings event bridge | `pet-settings` payload 统一 snake/camel parser；pet menu/tray 更新会 emit 到 main，main `/settings` 监听后刷新 controller、localStorage 和面板状态 |
+| pet surface | `tray-action=restore-pet-interaction` 后写回 `pass=false/hide=false/opacity=100`，并广播 `source="tray"`；右键菜单 hover 切换会广播 `source="pet-menu"` |
+| 文本边界 | status-only transient bubble 增加标记；右键菜单打开前清掉短提示，避免恢复提示被菜单遮挡；恢复提示缩短为 `Interaction restored.` / `已恢复交互。` |
+| capture script | `pass-through-recovery-tray` 同时连接 pet/main CDP：记录 main settings 恢复前/后截图，调用 tray handler command，再右键 pet 验证菜单可用和 DOM gate |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| tray handler recovery en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-en-official/`，`passed=true`、`motion_gate_passed=true`、`settings_menu_layout_gate.passed=true`、`pass_through_recovery_gate.passed=true` |
+| tray handler recovery zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-zh-official/`，同上 |
+| main settings overflow gate | 两个 locale 的 `main_settings_before_restore.layout_gate.overflow.offenders=[]` 与 `main_settings_after_restore.layout_gate.overflow.offenders=[]` |
+| tray -> pet -> main 状态同步 | 两个 locale 均从初始 `pass_checked=true` 恢复到 `pass_checked=false`，最终 `pet_settings.state="interactive"` |
+| 菜单可用性 | 最终 DOM report `bubble=null`、`surface.text` 仅含菜单文案，右键菜单无遮挡；contact sheet frame 1 起不再显示被菜单压住的 transient 恢复提示 |
+
+数据流：
+
+```text
+QA command restore_pet_window_interaction
+  -> handle_tray_action("restore-pet-interaction")
+  -> restore_pet_window_interaction_state()
+  -> set_pet_window_settings(pass=false, hide=false, opacity=100)
+  -> emit tray-action
+  -> pet surface updates preferences + localStorage
+  -> pet surface emit_to("main", "pet-settings", source="tray")
+  -> main /settings refreshes panel state
+  -> WebView2 CDP right-click opens pet menu
+```
+
+审查：
+
+| 项 | 结论 |
+|---|---|
+| Bug | 修复空脚本 QA listener 抢占真实 Tauri listener 导致 tray restore 后 pet DOM 仍显示 `pass_through=true` 的问题；修复 transient 恢复提示被菜单遮住和英文短提示截断的问题 |
+| 数据流 | Rust 仍只做窗口/tray handler；状态同步由 `pet-settings` shell event 在 desktop webview 内完成，不引入 Rust 业务状态 |
+| PRD/概念图 | Cuu 仍只在独立 transparent `pet` window；主窗 `/settings` 仍是严肃恢复面，不显示 Cuu 本体或模型预览 |
+| 中英双语 | zh-CN/en-US 都有 tray handler recovery capture；主窗 settings 和右键菜单文案均无乱码、无错误 fallback、无文本超框 |
+| 限制 | 本轮是 command-backed tray handler 证据，不是物理 OS 托盘图标点击录像；右键菜单切 hover 后主窗 settings 同步已由单测覆盖，真实截图留给 R3.20 |
+
+复跑命令：
+
+```powershell
+corepack pnpm --filter @workhub/desktop-webview test
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario pass-through-recovery-tray -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-tray-recovery\hijiki\tray-restore-en-official
+powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario pass-through-recovery-tray -Locale zh-CN -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 16 -IntervalMs 500 -WaitSeconds 18 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-tray-recovery\hijiki\tray-restore-zh-official
+```
+
+## 21. 下一刀 R3.20
+
+1. 补物理 OS 托盘图标/菜单点击证据：在 Windows 上通过 UI automation 或明确可复跑步骤触发 tray menu item，而不是只调用同 handler command。
+2. 补右键菜单 -> main settings 的真实截图：右键菜单切 hover 后主窗 `/settings` 状态同步，继续验证 `overflow.offenders=[]`。
+3. 建立 Linux 测试机透明窗口和截图策略，至少完成一次 Linux smoke；macOS 记录 menu bar / notification / 截图权限策略。
+4. 继续保留 R3.12-R3.19 回归：run-stream、run-failure、401/403/offline、reload restore、business matrix、settings matrix、菜单 gate、settings recovery、tray handler recovery。
+5. R4 接手主窗产品化截图：home/intake/workitem/proposal/replay/cost/approvals 的 zh-CN/en-US、loading/empty/error/forbidden、desktop/mobile-narrow 都必须继续证明主窗无 Cuu 本体和无文本超框。
+6. 继续检查 R0/R1/R2 口径：R2 地基首版可作为 R3 前置；R1 仍不能宣称全量完成；R0 主工作台无 Cuu 截图复核仍要闭环。

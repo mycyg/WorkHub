@@ -113,17 +113,31 @@ R3.18 已补主窗 settings 恢复截图和 pass-through 端到端恢复证据�
 | 严肃主窗边界 | 两组主窗截图和 gate 均确认没有 Cuu 本体、Live2D iframe、模型预览或旧模型文案 |
 | 文本边界 | 主窗 settings 状态徽标和长文案无横向 overflow；额外复跑 `run-failure-card-en/`，人工复核失败运行卡片 `Run progress/Budget` 未超框 |
 
+## 7. R3.19 tray handler recovery 视觉验收进展
+
+R3.19 补上 `restore-pet-interaction` 同一 Rust tray handler 的真实恢复证据。当前验收通过的是 command-backed handler 触发，不是物理 OS 托盘图标点击；物理点击录像继续列为 R3.20。
+
+| 项 | 证据 / 结论 |
+|---|---|
+| tray handler recovery en-US | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-en-official/`，`pass_through_recovery_gate.passed=true` |
+| tray handler recovery zh-CN | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/tray-restore-zh-official/`，同上 |
+| 恢复状态 | 两个 locale 均从 `pass_checked=true` 恢复为 `pass_checked=false`，`hide_checked=false`，`selected_opacity=100` |
+| pet/main 同步 | `tray-action` 进入 pet 后写回 preferences/localStorage，再通过 `pet-settings source="tray"` 刷新 main `/settings` 面板 |
+| 右键菜单 | 恢复后 WebView2 CDP 右键菜单可用，`settings_menu_layout_gate.passed=true`，菜单 rect 留在 260px surface 内 |
+| 文本边界 | 恢复提示缩短为 `Interaction restored.` / `已恢复交互。`；菜单打开前清掉 transient 提示，official DOM report `bubble=null`，避免文字被菜单遮挡 |
+
 仍未通过的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| 托盘恢复真实点击 | 从 pass-through 初始态触发 `restore-pet-interaction` 托盘菜单，再确认 pet 右键菜单可用 |
-| menu 与 settings 双向同步 | R3.18 已验证主窗恢复会同步 pet；下一步补右键切 hover 后主窗 settings 状态同步截图 |
+| 物理 OS 托盘点击 | 当前 R3.19 已证明同一 Rust tray handler；下一步补系统 tray icon/menu item 的物理点击或 UI automation 证据 |
+| menu 与 settings 双向同步 | R3.19 已补事件桥和单测，tray -> pet -> main 已有截图；下一步补右键切 hover 后主窗 settings 状态同步截图 |
 | Linux/macOS | 透明窗口 + tray 恢复 smoke；Wayland/X11 需要单独记录 |
 
-## 7. 后续施工
+## 8. 后续施工
 
-1. 给托盘 `restore-pet-interaction` 增加真实点击截图证据：开启 pass-through、托盘恢复、右键菜单重新可用。
-2. 补右键菜单和主窗 settings 的双向状态同步截图：菜单改 hover 后主窗可见，主窗恢复后 pet 可见。
-3. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
-4. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。
+1. 补物理 OS 托盘图标/菜单点击截图证据：开启 pass-through、从系统 tray menu 恢复、右键菜单重新可用。
+2. 补右键菜单和主窗 settings 的双向状态同步截图：菜单改 hover 后主窗可见；主窗恢复后 pet 已由 R3.18/R3.19 证明，继续保留回归。
+3. 建立 Linux/macOS 透明窗口、tray/menu bar 与截图权限策略。
+4. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
+5. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。

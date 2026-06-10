@@ -22,7 +22,9 @@ import {
 import {
   bindDesktopPetSettingsPanel,
   desktopPetSettingsCss,
-  loadCuuPreferences
+  desktopPetSettingsPreferencesFromPayload,
+  loadCuuPreferences,
+  saveCuuPreferences
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import {
@@ -516,11 +518,20 @@ async function boot() {
       await petWindowBridge?.setSettings?.(desktopPetWindowSettingsFromPreferences(snapshot.preferences));
     };
     void syncPetSettings(cuuController.snapshot()).catch(() => undefined);
-    bindDesktopPetSettingsPanel(root, cuuController, {
+    const settingsBinding = bindDesktopPetSettingsPanel(root, cuuController, {
       locale,
       bridge: petWindowBridge,
       onChange: syncPetSettings,
       onStatus: (message) => showNotice(root, message)
+    });
+    void realShellListen?.("pet-settings", (event) => {
+      const preferences = desktopPetSettingsPreferencesFromPayload(event.payload);
+      if (!preferences) {
+        return;
+      }
+      const snapshot = cuuController.setPreferences(preferences);
+      saveCuuPreferences(snapshot.preferences);
+      settingsBinding.refresh();
     });
     bindLocaleSwitch(root, locale, client);
     bindRouteLineEditor(root);

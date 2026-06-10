@@ -6,6 +6,8 @@ import { createCuuController } from "@workhub/cuu";
 import {
   CUU_PREFERENCES_STORAGE_KEY,
   desktopPetSettingsCss,
+  desktopPetSettingsPayloadFromPreferences,
+  desktopPetSettingsPreferencesFromPayload,
   loadCuuPreferences,
   normalizeCuuPreferences,
   renderDesktopPetSettingsPanel,
@@ -81,6 +83,41 @@ test("Cuu preferences normalize user-editable values before persistence", () => 
   assert.deepEqual(loadCuuPreferences(storage), normalized);
   assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "legacy-cuu-pack" }).pet_model_pack_id, undefined);
   assert.equal(normalizeCuuPreferences({ pet_model_pack_id: "unsupported-cuu-pack" }).pet_model_pack_id, undefined);
+});
+
+test("desktop pet settings payload maps snake and camel event shapes", () => {
+  const payload = desktopPetSettingsPayloadFromPreferences({
+    pet_scale_percent: 125,
+    pet_opacity_percent: 80,
+    pet_pass_through: true,
+    pet_hide_on_hover: false
+  }, "pet-menu");
+
+  assert.deepEqual(payload, {
+    scale_percent: 125,
+    opacity_percent: 80,
+    pass_through: true,
+    hide_on_hover: false,
+    source: "pet-menu"
+  });
+  assert.deepEqual(desktopPetSettingsPreferencesFromPayload(payload), {
+    pet_scale_percent: 125,
+    pet_opacity_percent: 80,
+    pet_pass_through: true,
+    pet_hide_on_hover: false
+  });
+  assert.deepEqual(desktopPetSettingsPreferencesFromPayload({
+    scalePercent: 100,
+    opacityPercent: 100,
+    passThrough: false,
+    hideOnHover: true
+  }), {
+    pet_scale_percent: 100,
+    pet_opacity_percent: 100,
+    pet_pass_through: false,
+    pet_hide_on_hover: true
+  });
+  assert.equal(desktopPetSettingsPreferencesFromPayload({ source: "pet-menu" }), undefined);
 });
 
 test("Cuu preferences accept Rust-injected QA overrides", () => {

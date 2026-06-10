@@ -100,9 +100,25 @@ where
             WORKHUB_CUU_QA_SCENARIO_ENV,
             &get_env,
             &[
-                "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-                "run-failure", "reload-session", "reload-active-run", "reload-terminal-run",
-                "permission-401", "permission-403", "stream-offline", "offline",
+                "launcher",
+                "settings-menu",
+                "settings-menu-model-switch",
+                "pass-through-recovery-settings",
+                "pass-through-recovery-tray",
+                "clarify",
+                "approval",
+                "search",
+                "sync",
+                "done",
+                "run-stream",
+                "run-failure",
+                "reload-session",
+                "reload-active-run",
+                "reload-terminal-run",
+                "permission-401",
+                "permission-403",
+                "stream-offline",
+                "offline",
             ],
         ),
         pet_qa_locale: workhub_env_string_allowed(
@@ -911,7 +927,7 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
-fn restore_pet_window_interaction(app: &tauri::AppHandle) -> Result<(), String> {
+fn restore_pet_window_interaction_state(app: &tauri::AppHandle) -> Result<(), String> {
     let scale_percent = {
         let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
         let state = runtime_state
@@ -922,6 +938,11 @@ fn restore_pet_window_interaction(app: &tauri::AppHandle) -> Result<(), String> 
     let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
     set_pet_window_settings(app.clone(), runtime_state, scale_percent, 100, false, false)?;
     Ok(())
+}
+
+#[tauri::command]
+fn restore_pet_window_interaction(app: tauri::AppHandle) -> Result<(), String> {
+    handle_tray_action(&app, TRAY_RESTORE_PET_INTERACTION_ID)
 }
 
 fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
@@ -935,7 +956,7 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     }
 
     if plan.id == TRAY_RESTORE_PET_INTERACTION_ID {
-        restore_pet_window_interaction(app)?;
+        restore_pet_window_interaction_state(app)?;
     }
 
     if let Some(control) = plan.window_control.clone() {
@@ -1123,6 +1144,7 @@ fn main() {
             show_pet_window,
             hide_pet_window,
             toggle_pet_window,
+            restore_pet_window_interaction,
             write_cuu_qa_dom_report
         ])
         .run(tauri::generate_context!())
@@ -1247,9 +1269,25 @@ mod tests {
     #[test]
     fn cuu_qa_preferences_env_accepts_qa_capture_scenarios() {
         for scenario in [
-            "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-            "run-failure", "reload-session", "reload-active-run", "reload-terminal-run",
-            "permission-401", "permission-403", "stream-offline", "offline",
+            "launcher",
+            "settings-menu",
+            "settings-menu-model-switch",
+            "pass-through-recovery-settings",
+            "pass-through-recovery-tray",
+            "clarify",
+            "approval",
+            "search",
+            "sync",
+            "done",
+            "run-stream",
+            "run-failure",
+            "reload-session",
+            "reload-active-run",
+            "reload-terminal-run",
+            "permission-401",
+            "permission-403",
+            "stream-offline",
+            "offline",
         ] {
             assert_eq!(
                 workhub_cuu_qa_preferences_from_env(named_env(&[(

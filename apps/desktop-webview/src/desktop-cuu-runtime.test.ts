@@ -16,6 +16,7 @@ import {
   desktopCuuNoticeMessage,
   renderDesktopCuuNotice,
   resolveDesktopCuuAction,
+  resolveDesktopShellEmitter,
   resolveDesktopShellListen,
   startDesktopCuuAgentFromLauncher,
   subscribeDesktopCuuAgentRunStream,
@@ -270,10 +271,15 @@ test("desktop Cuu runtime respects do-not-disturb controller decisions", async (
 
 test("desktop Cuu runtime resolves Tauri and mock listeners without subscribing in plain browsers", async () => {
   const listen: DesktopShellListen = () => undefined;
+  const emit = () => undefined;
+  const emitTo = () => undefined;
 
   assert.equal(resolveDesktopShellListen({ __TAURI__: { event: { listen } } }), listen);
   assert.equal(resolveDesktopShellListen({ __YQGL_MOCK_LISTEN__: listen }), listen);
   assert.equal(resolveDesktopShellListen({}), undefined);
+  assert.deepEqual(resolveDesktopShellEmitter({ __TAURI__: { event: { emit, emitTo } } }), { emit, emitTo });
+  assert.deepEqual(resolveDesktopShellEmitter({ __YQGL_MOCK_EMIT__: emit, __YQGL_MOCK_EMIT_TO__: emitTo }), { emit, emitTo });
+  assert.equal(resolveDesktopShellEmitter({}), undefined);
 
   const runtime = await bindDesktopShellCuuRuntime({
     notify() {

@@ -38,11 +38,20 @@ export type DesktopShellEventEnvelope = {
 };
 
 export type DesktopShellUnlisten = () => void;
+export type DesktopShellEventName = "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings";
 
 export type DesktopShellListen = (
-  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings",
+  eventName: DesktopShellEventName,
   handler: (event: DesktopShellEventEnvelope) => void
 ) => DesktopShellUnlisten | Promise<DesktopShellUnlisten> | void | Promise<void>;
+
+export type DesktopShellEmit = (eventName: DesktopShellEventName, payload?: unknown) => void | Promise<void>;
+export type DesktopShellEmitTo = (target: string, eventName: DesktopShellEventName, payload?: unknown) => void | Promise<void>;
+
+export type DesktopShellEmitter = {
+  emit?: DesktopShellEmit | undefined;
+  emitTo?: DesktopShellEmitTo | undefined;
+};
 
 export type DesktopCuuNotice = {
   card: CuuCard;
@@ -56,7 +65,7 @@ export type DesktopShellCuuRuntime = {
 };
 
 export type DesktopShellScriptedEvent = {
-  eventName: "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings";
+  eventName: DesktopShellEventName;
   payload: unknown;
   delayMs: number;
 };
@@ -176,9 +185,13 @@ type DesktopShellGlobal = {
   __TAURI__?: {
     event?: {
       listen?: DesktopShellListen;
+      emit?: DesktopShellEmit;
+      emitTo?: DesktopShellEmitTo;
     };
   };
   __YQGL_MOCK_LISTEN__?: DesktopShellListen;
+  __YQGL_MOCK_EMIT__?: DesktopShellEmit;
+  __YQGL_MOCK_EMIT_TO__?: DesktopShellEmitTo;
 };
 
 type TimerId = ReturnType<typeof globalThis.setTimeout>;
@@ -551,6 +564,16 @@ export function cardFromDesktopCuuRuntimeError(
 export function resolveDesktopShellListen(input: unknown = globalThis): DesktopShellListen | undefined {
   const target = input as DesktopShellGlobal;
   return target.__TAURI__?.event?.listen ?? target.__YQGL_MOCK_LISTEN__;
+}
+
+export function resolveDesktopShellEmitter(input: unknown = globalThis): DesktopShellEmitter | undefined {
+  const target = input as DesktopShellGlobal;
+  const emit = target.__TAURI__?.event?.emit ?? target.__YQGL_MOCK_EMIT__;
+  const emitTo = target.__TAURI__?.event?.emitTo ?? target.__YQGL_MOCK_EMIT_TO__;
+  if (!emit && !emitTo) {
+    return undefined;
+  }
+  return { emit, emitTo };
 }
 
 export function createDesktopShellScriptedListener(

@@ -29,6 +29,14 @@ export type DesktopPetSettingsPanelBinding = {
   refresh: () => void;
 };
 
+export type DesktopPetSettingsPayload = {
+  scale_percent: CuuPetScalePercent;
+  opacity_percent: CuuPetOpacityPercent;
+  pass_through: boolean;
+  hide_on_hover: boolean;
+  source?: "main-settings" | "pet-menu" | "tray" | undefined;
+};
+
 const petScaleOptions = [75, 100, 125, 150] as const satisfies readonly CuuPetScalePercent[];
 const petOpacityOptions = [60, 80, 100] as const satisfies readonly CuuPetOpacityPercent[];
 
@@ -100,6 +108,55 @@ export function saveCuuPreferences(preferences: CuuControllerPreferences, storag
     return;
   }
   storage.setItem(CUU_PREFERENCES_STORAGE_KEY, JSON.stringify(normalizeCuuPreferences(preferences)));
+}
+
+export function desktopPetSettingsPayloadFromPreferences(
+  preferences: Pick<CuuControllerPreferences, "pet_scale_percent" | "pet_opacity_percent" | "pet_pass_through" | "pet_hide_on_hover">,
+  source?: DesktopPetSettingsPayload["source"]
+): DesktopPetSettingsPayload {
+  return {
+    scale_percent: preferences.pet_scale_percent,
+    opacity_percent: preferences.pet_opacity_percent,
+    pass_through: preferences.pet_pass_through,
+    hide_on_hover: preferences.pet_hide_on_hover,
+    ...(source ? { source } : {})
+  };
+}
+
+export function desktopPetSettingsPreferencesFromPayload(payload: unknown): Partial<CuuControllerPreferences> | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  const scale = readPetSettingsNumber(record.scale_percent ?? record.scalePercent);
+  const opacity = readPetSettingsNumber(record.opacity_percent ?? record.opacityPercent);
+  const passThrough = readPetSettingsBoolean(record.pass_through ?? record.passThrough);
+  const hideOnHover = readPetSettingsBoolean(record.hide_on_hover ?? record.hideOnHover);
+  const preferences: Partial<CuuControllerPreferences> = {};
+  if (scale !== undefined) {
+    preferences.pet_scale_percent = scale as CuuControllerPreferences["pet_scale_percent"];
+  }
+  if (opacity !== undefined) {
+    preferences.pet_opacity_percent = opacity as CuuControllerPreferences["pet_opacity_percent"];
+  }
+  if (passThrough !== undefined) {
+    preferences.pet_pass_through = passThrough;
+  }
+  if (hideOnHover !== undefined) {
+    preferences.pet_hide_on_hover = hideOnHover;
+  }
+  return Object.keys(preferences).length > 0 ? preferences : undefined;
+}
+
+function readPetSettingsNumber(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function readPetSettingsBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 export function normalizeCuuPreferences(input: Partial<CuuControllerPreferences> | undefined): CuuControllerPreferences {

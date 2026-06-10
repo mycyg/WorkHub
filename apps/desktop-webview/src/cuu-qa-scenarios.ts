@@ -8,6 +8,10 @@ import {
 
 export type DesktopPetQaScenario =
   | "launcher"
+  | "settings-menu"
+  | "settings-menu-model-switch"
+  | "pass-through-recovery-settings"
+  | "pass-through-recovery-tray"
   | "clarify"
   | "approval"
   | "search"
@@ -29,6 +33,10 @@ export type DesktopPetQaScenarioGlobal = {
 
 const qaScenarioSet = new Set<DesktopPetQaScenario>([
   "launcher",
+  "settings-menu",
+  "settings-menu-model-switch",
+  "pass-through-recovery-settings",
+  "pass-through-recovery-tray",
   "clarify",
   "approval",
   "search",
@@ -75,7 +83,11 @@ export function createDesktopPetQaShellListen(
   if (desktopPetQaScenarioUsesRunApi(scenario)) {
     return undefined;
   }
-  const listener = createDesktopShellScriptedListener(desktopPetQaScriptForScenario(scenario, input));
+  const events = desktopPetQaScriptForScenario(scenario, input);
+  if (events.length === 0) {
+    return undefined;
+  }
+  const listener = createDesktopShellScriptedListener(events);
   listener.start();
   return listener.listen;
 }
@@ -92,6 +104,9 @@ export function desktopPetQaScriptForScenario(
 ): DesktopShellScriptedEvent[] {
   const initialDelayMs = input.initialDelayMs ?? 650;
   if (scenario === "launcher") {
+    return [];
+  }
+  if (desktopPetQaScenarioUsesManualCdp(scenario)) {
     return [];
   }
   if (desktopPetQaScenarioUsesRunApi(scenario)) {
@@ -159,10 +174,21 @@ function desktopPetQaScenarioUsesRunApi(scenario: DesktopPetQaScenario) {
     scenario === "stream-offline";
 }
 
+function desktopPetQaScenarioUsesManualCdp(scenario: DesktopPetQaScenario) {
+  return scenario === "settings-menu" ||
+    scenario === "settings-menu-model-switch" ||
+    scenario === "pass-through-recovery-settings" ||
+    scenario === "pass-through-recovery-tray";
+}
+
 function eventForScenario(
   scenario: Exclude<
     DesktopPetQaScenario,
     | "launcher"
+    | "settings-menu"
+    | "settings-menu-model-switch"
+    | "pass-through-recovery-settings"
+    | "pass-through-recovery-tray"
     | "run-stream"
     | "run-failure"
     | "reload-session"

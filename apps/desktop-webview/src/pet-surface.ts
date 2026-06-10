@@ -25,18 +25,26 @@ import {
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
-import { loadCuuPreferences, saveCuuPreferences } from "./cuu-preferences.js";
+import {
+  desktopPetSettingsPayloadFromPreferences,
+  desktopPetSettingsPreferencesFromPayload,
+  loadCuuPreferences,
+  saveCuuPreferences,
+  type DesktopPetSettingsPayload
+} from "./cuu-preferences.js";
 import {
   bindDesktopShellCuuRuntime,
   cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
+  resolveDesktopShellEmitter,
   resolveDesktopShellListen,
   subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
   type DesktopCuuRunStreamStatus,
   type DesktopCuuRunStreamSubscription,
+  type DesktopShellEmitter,
   type DesktopShellListen,
   type DesktopShellUnlisten
 } from "./desktop-cuu-runtime.js";
@@ -428,7 +436,7 @@ const desktopPetSettingsMenuCopy = {
     hoverDisabled: "悬停避让已关闭。",
     openSettingsFallback: "请从托盘打开设置。",
     hideFallback: "请从托盘隐藏 Cuu。",
-    restoredFromTray: "Cuu 已恢复为可交互状态。"
+    restoredFromTray: "已恢复交互。"
   },
   "en-US": {
     aria: "Cuu desktop pet settings menu",
@@ -446,7 +454,7 @@ const desktopPetSettingsMenuCopy = {
     hoverDisabled: "Dodge hover is off.",
     openSettingsFallback: "Open settings from the tray.",
     hideFallback: "Hide Cuu from the tray.",
-    restoredFromTray: "Cuu interaction has been restored."
+    restoredFromTray: "Interaction restored."
   }
 } as const;
 
@@ -457,6 +465,10 @@ function setPetSettingsMenuOpen(root: HTMLElement, open: boolean) {
     return;
   }
   menu.hidden = !open;
+  const transientBubble = root.querySelector<HTMLElement>("[data-pet-bubble][data-pet-bubble-transient=true]");
+  if (transientBubble) {
+    transientBubble.hidden = open;
+  }
   surface.dataset.petMenuOpen = open ? "true" : "false";
   writeDesktopPetQaDomSnapshot(root, "patch");
 }
@@ -467,42 +479,6 @@ function desktopTrayActionId(payload: unknown) {
   }
   const id = (payload as { id?: unknown }).id;
   return typeof id === "string" ? id : undefined;
-}
-
-function desktopPetSettingsPreferencesFromPayload(payload: unknown): Partial<CuuControllerPreferences> | undefined {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return undefined;
-  }
-  const record = payload as Record<string, unknown>;
-  const scale = readPetSettingsNumber(record.scale_percent ?? record.scalePercent);
-  const opacity = readPetSettingsNumber(record.opacity_percent ?? record.opacityPercent);
-  const passThrough = readPetSettingsBoolean(record.pass_through ?? record.passThrough);
-  const hideOnHover = readPetSettingsBoolean(record.hide_on_hover ?? record.hideOnHover);
-  const preferences: Partial<CuuControllerPreferences> = {};
-  if (scale !== undefined) {
-    preferences.pet_scale_percent = scale as CuuControllerPreferences["pet_scale_percent"];
-  }
-  if (opacity !== undefined) {
-    preferences.pet_opacity_percent = opacity as CuuControllerPreferences["pet_opacity_percent"];
-  }
-  if (passThrough !== undefined) {
-    preferences.pet_pass_through = passThrough;
-  }
-  if (hideOnHover !== undefined) {
-    preferences.pet_hide_on_hover = hideOnHover;
-  }
-  return Object.keys(preferences).length > 0 ? preferences : undefined;
-}
-
-function readPetSettingsNumber(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return undefined;
-  }
-  return value;
-}
-
-function readPetSettingsBoolean(value: unknown) {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 export function defaultDesktopPetWindowSettings(): DesktopPetWindowSettings {
@@ -678,6 +654,7 @@ export async function bootDesktopPetSurface(
     controller?: CuuController | undefined;
     idleScheduler?: CuuIdleScheduler | undefined;
     petWindowBridge?: DesktopPetWindowBridge | undefined;
+    shellEmitter?: DesktopShellEmitter | undefined;
     client?: DesktopPetSurfaceClient | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
@@ -685,6 +662,7 @@ export async function bootDesktopPetSurface(
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
+  const shellEmitter = input.shellEmitter ?? resolveDesktopShellEmitter();
   const qaScenario = desktopPetQaScenarioFromGlobal();
   const shellListen = input.listen ?? createDesktopPetQaShellListenFromGlobal() ?? resolveDesktopShellListen();
   const client = input.client ?? createApiClient({
@@ -869,13 +847,33 @@ export async function bootDesktopPetSurface(
     }
   }
 
-  const updatePetPreferences = (preferences: Partial<CuuControllerPreferences>, message?: string) => {
+  const broadcastPetSettings = (
+    preferences: CuuControllerPreferences,
+    source: DesktopPetSettingsPayload["source"] = "pet-menu"
+  ) => {
+    const payload = desktopPetSettingsPayloadFromPreferences(preferences, source);
+    const sent = shellEmitter?.emitTo?.("main", "pet-settings", payload);
+    if (!shellEmitter?.emitTo && shellEmitter?.emit) {
+      void Promise.resolve(shellEmitter.emit("pet-settings", payload)).catch(() => undefined);
+      return;
+    }
+    void Promise.resolve(sent).catch(() => undefined);
+  };
+
+  const updatePetPreferences = (
+    preferences: Partial<CuuControllerPreferences>,
+    message?: string,
+    options: { broadcast?: boolean; source?: DesktopPetSettingsPayload["source"] } = {}
+  ) => {
     const snapshot = controller.setPreferences(preferences);
     saveCuuPreferences(snapshot.preferences);
     if (message) {
       statusText = message;
     }
     render();
+    if (options.broadcast !== false) {
+      broadcastPetSettings(snapshot.preferences, options.source);
+    }
   };
 
   async function startRunStreamQaScenario() {
@@ -1103,6 +1101,10 @@ export async function bootDesktopPetSurface(
       return;
     }
     event.preventDefault();
+    if (statusText && !currentCard) {
+      statusText = undefined;
+      render();
+    }
     setPetSettingsMenuOpen(root, true);
   });
 
@@ -1112,7 +1114,7 @@ export async function bootDesktopPetSurface(
     if (!preferences) {
       return;
     }
-    updatePetPreferences(preferences);
+    updatePetPreferences(preferences, undefined, { broadcast: false });
   });
   if (typeof maybePetSettingsUnlisten === "function") {
     petSettingsUnlisten = maybePetSettingsUnlisten;
@@ -1129,7 +1131,8 @@ export async function bootDesktopPetSurface(
         pet_hide_on_hover: false,
         pet_opacity_percent: 100
       },
-      desktopPetSettingsMenuCopy[locale].restoredFromTray
+      desktopPetSettingsMenuCopy[locale].restoredFromTray,
+      { source: "tray" }
     );
   });
   if (typeof maybeTrayActionUnlisten === "function") {
@@ -1351,7 +1354,8 @@ function renderDesktopPetBubble(input: {
   const payloadAttrs = card?.payload_ref
     ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
     : "";
-  return `<aside class="wh-pet-bubble" data-pet-bubble="true" ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${payloadAttrs}>
+  const transientAttrs = input.status_text && !card ? ` data-pet-bubble-transient="true"` : "";
+  return `<aside class="wh-pet-bubble" data-pet-bubble="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${payloadAttrs}>
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}

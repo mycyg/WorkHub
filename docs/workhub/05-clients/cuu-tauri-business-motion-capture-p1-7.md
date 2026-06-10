@@ -124,5 +124,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-
 3. P1.9 白猫 approval 仍只是冻结前回归证据；白猫同等矩阵放到 R3 后续必要性评估，不作为当前 settings matrix 的前置阻塞。
 4. R3.17 已补 settings matrix 与右键菜单边界：scale 75/150、opacity 60、pass-through、hide-on-hover、语言切换、黑/白模型切换均有真实窗口证据，详见 `./assets/audit/2026-06-10-cuu-r3-settings-matrix/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-settings-menu-recovery/hijiki/`。
 5. R3.17 新增 `settings_menu_layout_gate`：右键菜单必须在 260px `pet` surface 内，模型切换后的短提示也必须完整留在窗口内；用户截图中的文本超框风险继续作为后续硬门。
-6. pass-through recovery 必须单独留证：开启后右键入口不可依赖，必须通过主窗 `/settings` 或托盘 `restore-pet-interaction` 恢复。
-7. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限。
+6. R3.18/R3.19 已为 pass-through recovery 单独留证：开启后右键入口不可依赖，可通过主窗 `/settings` 或托盘 `restore-pet-interaction` handler 恢复；证据目录分别为 `./assets/audit/2026-06-10-cuu-r3-pass-through-recovery/hijiki/` 与 `./assets/audit/2026-06-10-cuu-r3-tray-recovery/hijiki/`。
+7. R3.19 已把用户截图对应的文本超框风险纳入托盘恢复门：短提示收敛为一行，打开右键菜单时收起 transient status bubble，主窗 settings capture 继续要求 `overflow.offenders=[]`。
+8. 完成 Linux/macOS 策略：Windows 继续用 Win32 `PrintWindow`；Linux 测试环境需要补 Wayland/X11 截图方案；macOS 需要记录透明窗口、menu bar restore 与截图权限；物理 OS 托盘点击仍需 R3.20 录屏。
