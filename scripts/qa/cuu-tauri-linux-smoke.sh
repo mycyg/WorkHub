@@ -10,6 +10,7 @@ locale="${WORKHUB_CUU_QA_LOCALE:-en-US}"
 port="1420"
 api_port="8787"
 require_real_de="${WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE:-0}"
+menu_action_sequence="${WORKHUB_LINUX_MENU_ACTIONS:-restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit}"
 
 if [ -n "${WORKHUB_LINUX_SMOKE_DEV_PORT:-}" ] && [ "${WORKHUB_LINUX_SMOKE_DEV_PORT}" != "$port" ]; then
   echo "WORKHUB_LINUX_SMOKE_DEV_PORT must stay 1420 because tauri.conf.json devUrl is fixed to http://127.0.0.1:1420." >&2
@@ -89,6 +90,30 @@ write_tray_menu_action_matrix() {
 JSON
 }
 
+requires_real_de() {
+  case "$require_real_de" in
+    1|true|TRUE|yes|YES)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+tray_menu_label_for_action() {
+  case "$1" in
+    show-main) printf '%s\n' "Open WorkHub" ;;
+    hide-main) printf '%s\n' "Hide main window" ;;
+    toggle-pet) printf '%s\n' "Show / hide Cuu" ;;
+    restore-pet-interaction) printf '%s\n' "Restore Cuu interaction" ;;
+    open-inbox) printf '%s\n' "Open inbox" ;;
+    open-settings) printf '%s\n' "Settings" ;;
+    quit) printf '%s\n' "Quit WorkHub" ;;
+    *) return 1 ;;
+  esac
+}
+
 record_env() {
   {
     echo "captured_at=$(date -Is)"
@@ -108,7 +133,11 @@ record_env() {
     echo "wmctrl=$(command -v wmctrl || true)"
     echo "xdotool=$(command -v xdotool || true)"
     echo "scrot=$(command -v scrot || true)"
+    echo "gnome_screenshot=$(command -v gnome-screenshot || true)"
+    echo "busctl=$(command -v busctl || true)"
+    echo "gdbus=$(command -v gdbus || true)"
     echo "require_real_de=$require_real_de"
+    echo "menu_action_sequence=$menu_action_sequence"
   } > "$out_dir/linux-env-report.txt"
 }
 
@@ -166,13 +195,9 @@ has_real_panel_process() {
 }
 
 require_real_desktop_session() {
-  case "$require_real_de" in
-    1|true|TRUE|yes|YES)
-      ;;
-    *)
-      return 0
-      ;;
-  esac
+  if ! requires_real_de; then
+    return 0
+  fi
   if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 requires an existing DISPLAY or WAYLAND_DISPLAY; refusing Xvfb/openbox fallback." >&2
     return 1
@@ -297,6 +322,256 @@ sock.close()
 PY
 }
 
+safe_file_token() {
+  printf '%s' "$1" | tr '/: ' '___' | tr -cd '[:alnum:]_.-'
+}
+
+capture_linux_screen() {
+  local name="$1"
+  if command -v scrot >/dev/null 2>&1; then
+    scrot "$out_dir/screen-$name.png" > "$out_dir/screen-$name.txt" 2>&1 || true
+  elif command -v gnome-screenshot >/dev/null 2>&1; then
+    gnome-screenshot -f "$out_dir/screen-$name.png" > "$out_dir/screen-$name.txt" 2>&1 || true
+  else
+    echo "scrot/gnome-screenshot unavailable" > "$out_dir/screen-$name.txt"
+  fi
+}
+
+status_notifier_items() {
+  local raw="$out_dir/linux-status-notifier-items.raw.txt"
+  if [ -n "${WORKHUB_LINUX_STATUS_NOTIFIER_ITEM:-}" ]; then
+    printf '%s\n' "$WORKHUB_LINUX_STATUS_NOTIFIER_ITEM" > "$raw"
+    printf '%s\n' "$WORKHUB_LINUX_STATUS_NOTIFIER_ITEM"
+    return 0
+  fi
+  if command -v busctl >/dev/null 2>&1; then
+    if ! busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems > "$raw" 2> "$out_dir/linux-status-notifier-items.err.txt"; then
+      return 1
+    fi
+  elif command -v gdbus >/dev/null 2>&1; then
+    if ! gdbus call --session --dest org.kde.StatusNotifierWatcher --object-path /StatusNotifierWatcher --method org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems > "$raw" 2> "$out_dir/linux-status-notifier-items.err.txt"; then
+      return 1
+    fi
+  else
+    echo "busctl/gdbus unavailable" > "$out_dir/linux-status-notifier-items.err.txt"
+    return 1
+  fi
+  python3 - "$raw" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8", errors="replace").read()
+items = []
+for single, double in re.findall(r"'([^']+)'|\"([^\"]+)\"", text):
+    value = single or double
+    if "/" in value and value not in items:
+        items.append(value)
+for item in items:
+    print(item)
+PY
+}
+
+snapshot_status_notifier_item() {
+  local item="$1"
+  local token
+  token="$(safe_file_token "$item")"
+  local service="${item%%/*}"
+  local path="/${item#*/}"
+  {
+    echo "item=$item"
+    echo "service=$service"
+    echo "path=$path"
+    if command -v busctl >/dev/null 2>&1; then
+      for prop in Id Title Status IconName ToolTip Menu; do
+        printf '%s=' "$prop"
+        busctl --user get-property "$service" "$path" org.kde.StatusNotifierItem "$prop" 2>/dev/null || true
+      done
+      echo "introspect="
+      busctl --user introspect "$service" "$path" org.kde.StatusNotifierItem 2>/dev/null || true
+    elif command -v gdbus >/dev/null 2>&1; then
+      gdbus introspect --session --dest "$service" --object-path "$path" 2>/dev/null || true
+    fi
+  } > "$out_dir/linux-status-notifier-item-$token.txt"
+}
+
+select_workhub_status_notifier_item() {
+  local items_file="$out_dir/linux-status-notifier-items.txt"
+  if ! status_notifier_items > "$items_file"; then
+    echo "Could not read org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems." >&2
+    return 1
+  fi
+  if [ ! -s "$items_file" ]; then
+    echo "StatusNotifierWatcher did not report any tray items." >&2
+    return 1
+  fi
+  local item
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    snapshot_status_notifier_item "$item"
+    local token
+    token="$(safe_file_token "$item")"
+    if grep -Eiq 'WorkHub|Cuu|workhub|workhub-main-tray|workhub-client-tauri' "$out_dir/linux-status-notifier-item-$token.txt"; then
+      printf '%s\n' "$item"
+      return 0
+    fi
+  done < "$items_file"
+  echo "No WorkHub/Cuu StatusNotifier item found. Set WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path to override after inspecting $items_file." >&2
+  return 1
+}
+
+status_notifier_menu_path() {
+  local item="$1"
+  local service="${item%%/*}"
+  local path="/${item#*/}"
+  local raw="$out_dir/linux-status-notifier-menu-path.raw.txt"
+  if command -v busctl >/dev/null 2>&1; then
+    busctl --user get-property "$service" "$path" org.kde.StatusNotifierItem Menu > "$raw" 2> "$out_dir/linux-status-notifier-menu-path.err.txt"
+  elif command -v gdbus >/dev/null 2>&1; then
+    gdbus call --session --dest "$service" --object-path "$path" --method org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierItem Menu > "$raw" 2> "$out_dir/linux-status-notifier-menu-path.err.txt"
+  else
+    echo "busctl/gdbus unavailable" > "$out_dir/linux-status-notifier-menu-path.err.txt"
+    return 1
+  fi
+  python3 - "$raw" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8", errors="replace").read()
+match = re.search(r"['\"](/[^'\"]+)['\"]", text)
+if not match:
+    raise SystemExit(1)
+print(match.group(1))
+PY
+}
+
+capture_dbusmenu_layout() {
+  local service="$1"
+  local menu_path="$2"
+  local action_id="$3"
+  local raw="$out_dir/linux-dbusmenu-layout-$action_id.txt"
+  if command -v gdbus >/dev/null 2>&1; then
+    gdbus call --session --dest "$service" --object-path "$menu_path" --method com.canonical.dbusmenu.GetLayout 0 -1 "[]" > "$raw" 2> "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
+  elif command -v busctl >/dev/null 2>&1; then
+    busctl --user call "$service" "$menu_path" com.canonical.dbusmenu GetLayout iias 0 -1 0 > "$raw" 2> "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
+  else
+    echo "gdbus/busctl unavailable" > "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
+    return 1
+  fi
+}
+
+dbusmenu_item_id_for_label() {
+  local layout_file="$1"
+  local action_label="$2"
+  local summary_file="$3"
+  python3 - "$layout_file" "$action_label" "$summary_file" <<'PY'
+import json
+import re
+import sys
+
+layout_file, wanted_label, summary_file = sys.argv[1:4]
+text = open(layout_file, "r", encoding="utf-8", errors="replace").read()
+items = []
+for match in re.finditer(r"\((\d+),\s*\{(.*?)\}", text, flags=re.S):
+    item_id = int(match.group(1))
+    props = match.group(2)
+    label_match = re.search(r"['\"]label['\"]\s*:\s*<['\"]([^'\"]+)['\"]>", props)
+    if label_match:
+        items.append({"id": item_id, "label": label_match.group(1)})
+if not items:
+    for match in re.finditer(r"\bi\s+(\d+)\s+a\{sv\}\s+\d+\s+(.*?)(?=\s+av\s+\d+\s+i\s+\d+\s+a\{sv\}|\s+i\s+\d+\s+a\{sv\}|\Z)", text, flags=re.S):
+        item_id = int(match.group(1))
+        props = match.group(2)
+        label_match = re.search(r'["\']label["\']\s+v\s+s\s+["\']([^"\']+)["\']', props)
+        if label_match:
+            items.append({"id": item_id, "label": label_match.group(1)})
+open(summary_file, "w", encoding="utf-8").write(json.dumps(items, ensure_ascii=False, indent=2))
+for item in items:
+    if item["label"] == wanted_label:
+        print(item["id"])
+        raise SystemExit(0)
+raise SystemExit(f"Could not find menu label {wanted_label!r}; parsed labels: {items!r}")
+PY
+}
+
+emit_dbusmenu_click_event() {
+  local service="$1"
+  local menu_path="$2"
+  local menu_id="$3"
+  local action_id="$4"
+  if command -v busctl >/dev/null 2>&1; then
+    busctl --user call "$service" "$menu_path" com.canonical.dbusmenu Event isvu "$menu_id" clicked s "" 0 > "$out_dir/linux-dbusmenu-event-$action_id.txt" 2> "$out_dir/linux-dbusmenu-event-$action_id.err.txt"
+  elif command -v gdbus >/dev/null 2>&1; then
+    gdbus call --session --dest "$service" --object-path "$menu_path" --method com.canonical.dbusmenu.Event "$menu_id" clicked "<''>" 0 > "$out_dir/linux-dbusmenu-event-$action_id.txt" 2> "$out_dir/linux-dbusmenu-event-$action_id.err.txt"
+  else
+    echo "busctl/gdbus unavailable" > "$out_dir/linux-dbusmenu-event-$action_id.err.txt"
+    return 1
+  fi
+}
+
+capture_linux_menu_action_state() {
+  local label="$1"
+  ps -p "$app_pid" -o pid,stat,etime,cmd > "$out_dir/linux-menu-action-$label-ps-app.txt" 2>&1 || true
+  wmctrl -l > "$out_dir/linux-menu-action-$label-wmctrl.txt" 2>&1 || true
+  {
+    xdotool search --name WorkHub
+    xdotool search --name Cuu
+  } > "$out_dir/linux-menu-action-$label-xdotool.txt" 2>&1 || true
+  capture_linux_screen "menu-action-$label"
+}
+
+click_linux_dbus_menu_action() {
+  local item="$1"
+  local menu_path="$2"
+  local action_id="$3"
+  local action_label="$4"
+  local service="${item%%/*}"
+  capture_dbusmenu_layout "$service" "$menu_path" "$action_id"
+  local menu_id
+  menu_id="$(dbusmenu_item_id_for_label "$out_dir/linux-dbusmenu-layout-$action_id.txt" "$action_label" "$out_dir/linux-dbusmenu-layout-$action_id-summary.json")"
+  echo "action_id=$action_id label=$action_label menu_id=$menu_id service=$service menu_path=$menu_path" > "$out_dir/linux-dbusmenu-click-$action_id.txt"
+  emit_dbusmenu_click_event "$service" "$menu_path" "$menu_id" "$action_id"
+}
+
+run_linux_menu_action_matrix() {
+  if ! requires_real_de; then
+    echo "skipped because WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE is not enabled" > "$out_dir/linux-menu-action-status.txt"
+    return 0
+  fi
+  local item
+  item="$(select_workhub_status_notifier_item)"
+  local menu_path
+  menu_path="$(status_notifier_menu_path "$item")"
+  {
+    echo "status_notifier_item=$item"
+    echo "menu_path=$menu_path"
+    echo "menu_action_sequence=$menu_action_sequence"
+  } > "$out_dir/linux-menu-action-status.txt"
+
+  local old_ifs="$IFS"
+  IFS=","
+  for action_id in $menu_action_sequence; do
+    IFS="$old_ifs"
+    action_id="$(printf '%s' "$action_id" | tr -d '[:space:]')"
+    if [ -z "$action_id" ]; then
+      IFS=","
+      continue
+    fi
+    local action_label
+    action_label="$(tray_menu_label_for_action "$action_id")"
+    capture_linux_menu_action_state "before-$action_id"
+    click_linux_dbus_menu_action "$item" "$menu_path" "$action_id" "$action_label"
+    sleep 1
+    if ! ps -p "$app_pid" >/dev/null 2>&1; then
+      echo "Tauri app process exited after tray menu action '$action_id'; quit dry-run guard failed or a destructive native item was clicked." >&2
+      return 1
+    fi
+    capture_linux_menu_action_state "after-$action_id"
+    IFS=","
+  done
+  IFS="$old_ifs"
+  echo "ok" >> "$out_dir/linux-menu-action-status.txt"
+}
+
 run_desktop_smoke() {
   cd "$repo_root"
   rm -f "$out_dir"/screen*.png "$out_dir"/cuu-tauri-dom-report.json
@@ -355,7 +630,9 @@ run_desktop_smoke() {
     return 1
   fi
 
-  if command -v openbox >/dev/null 2>&1; then
+  if requires_real_de; then
+    echo "real desktop session requested; preserving the existing desktop shell instead of starting openbox" > "$out_dir/openbox.txt"
+  elif command -v openbox >/dev/null 2>&1; then
     openbox > "$out_dir/openbox.txt" 2>&1 &
     wm_pid=$!
     sleep 2
@@ -532,7 +809,13 @@ PY
     return 1
   fi
 
-  echo "xvfb_openbox_devserver_smoke_done" > "$out_dir/xvfb-status.txt"
+  run_linux_menu_action_matrix
+
+  if requires_real_de; then
+    echo "real_de_tray_menu_smoke_done" > "$out_dir/linux-smoke-mode.txt"
+  else
+    echo "xvfb_openbox_devserver_smoke_done" > "$out_dir/linux-smoke-mode.txt"
+  fi
 }
 
 record_env
@@ -551,7 +834,7 @@ if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY is empty and xvfb-run is unavailable" >&2
     exit 1
   fi
-  smoke_entry="$(declare -f port_is_open scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; run_desktop_smoke"
+  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; run_desktop_smoke"
   if command -v dbus-run-session >/dev/null 2>&1; then
     xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session bash -c "$smoke_entry"
   else

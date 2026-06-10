@@ -140,9 +140,31 @@ WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-non-darwin bash script
 - 两个 shell 脚本 Bash 语法通过。
 - 当前非 Darwin 环境运行 macOS smoke 仍按预期退出 2，不声明 macOS 通过。
 
-## 10. 下一步
+## 10. 2026-06-11 第三刀落点
 
-1. 为 Linux 真实 DE 增加原生菜单项点击实现：基于 appindicator/panel 能力选择 `xdotool`、DBus/AppIndicator 或 DE 专属自动化，逐项消化 `tray-menu-action-matrix.json`。
-2. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、tray owner、每个菜单动作前后截图。
+R3.23 第三刀把 Linux 真实 DE 菜单动作从“矩阵合同”推进到“原生执行器”：
+
+| 落点 | 结果 |
+|---|---|
+| real DE preservation | `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1` 时不再启动 openbox，保留现有 GNOME/KDE/Xfce/Waybar panel，避免污染真实桌面证据 |
+| StatusNotifier discovery | Linux smoke 读取 `org.kde.StatusNotifierWatcher.RegisteredStatusNotifierItems`，逐项快照 `Id/Title/ToolTip/Menu`，只选择包含 WorkHub/Cuu/workhub-main-tray 的 item；否则失败并要求显式 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` |
+| DBus menu execution | 真实 DE 下通过 `com.canonical.dbusmenu.GetLayout` 解析 menu label -> menu id，再用 `com.canonical.dbusmenu.Event(..., "clicked", ...)` 触发菜单项；不 fallback 到 Tauri command |
+| action evidence | 每个 action 采集 `linux-dbusmenu-layout-<action>.txt`、`linux-dbusmenu-event-<action>.txt`、前后 `wmctrl/xdotool/ps`、前后截图；`quit` 依赖 dry-run，若进程退出则失败 |
+| fallback safety | 未启用 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE` 时，菜单动作执行器只写 `linux-menu-action-status.txt` skipped，不影响 Xvfb/openbox 的窗口与文本 hardgate |
+
+本地验证待跑：
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/qa/cuu-tauri-linux-smoke.sh
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard bash scripts/qa/cuu-tauri-linux-smoke.sh
+WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+当前本机仍不是真实 Linux DE，所以第三刀只能证明脚本合同、Xvfb fallback 不被破坏、真实 DE guard 不假阳性；真实菜单 action proof 仍需在 GNOME/KDE/Xfce session 上跑。
+
+## 11. 下一步
+
+1. 在真实 Linux DE 机器上跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 panel 进程、DBus service、StatusNotifier item、DBus menu layout/event、每个菜单动作前后截图。
+2. 若 `RegisteredStatusNotifierItems` 无法定位 WorkHub，先读取 `linux-status-notifier-items.txt` 与每个 `linux-status-notifier-item-*.txt`，再用 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` 显式指定，不改用 Tauri command fallback。
 3. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
 4. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。
