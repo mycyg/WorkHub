@@ -11,6 +11,7 @@ port="1420"
 api_port="8787"
 require_real_de="${WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE:-0}"
 menu_action_sequence="${WORKHUB_LINUX_MENU_ACTIONS:-restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit}"
+menu_driver="${WORKHUB_LINUX_MENU_DRIVER:-status-notifier}"
 
 if [ -n "${WORKHUB_LINUX_SMOKE_DEV_PORT:-}" ] && [ "${WORKHUB_LINUX_SMOKE_DEV_PORT}" != "$port" ]; then
   echo "WORKHUB_LINUX_SMOKE_DEV_PORT must stay 1420 because tauri.conf.json devUrl is fixed to http://127.0.0.1:1420." >&2
@@ -164,6 +165,7 @@ record_env() {
     echo "gdbus=$(command -v gdbus || true)"
     echo "require_real_de=$require_real_de"
     echo "menu_action_sequence=$menu_action_sequence"
+    echo "menu_driver=$menu_driver"
   } > "$out_dir/linux-env-report.txt"
 }
 
@@ -534,6 +536,61 @@ emit_dbusmenu_click_event() {
   fi
 }
 
+x11_tray_focus_index_for_action() {
+  case "$1" in
+    show-main) printf '%s\n' 1 ;;
+    hide-main) printf '%s\n' 2 ;;
+    toggle-pet) printf '%s\n' 3 ;;
+    restore-pet-interaction) printf '%s\n' 4 ;;
+    open-inbox) printf '%s\n' 5 ;;
+    open-settings) printf '%s\n' 6 ;;
+    quit) printf '%s\n' 7 ;;
+    *) return 1 ;;
+  esac
+}
+
+x11_workhub_tray_window() {
+  local tree_file="$out_dir/linux-x11-tray-icon-tree.txt"
+  xwininfo -root -tree > "$tree_file" 2> "$out_dir/linux-x11-tray-icon-tree.err.txt"
+  python3 - "$tree_file" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8", errors="replace").read()
+for line in text.splitlines():
+    if "workhub-main-tray" in line or "tray-icon tray app workhub-main-tray" in line:
+        match = re.search(r"(0x[0-9a-fA-F]+)", line)
+        if match:
+            print(match.group(1))
+            raise SystemExit(0)
+raise SystemExit("Could not find WorkHub tray X window in xwininfo root tree.")
+PY
+}
+
+x11_click_tray_menu_action() {
+  local tray_window="$1"
+  local action_id="$2"
+  local action_label="$3"
+  local focus_index
+  focus_index="$(x11_tray_focus_index_for_action "$action_id")"
+  {
+    echo "driver=x11-tray-icon"
+    echo "tray_window=$tray_window"
+    echo "action_id=$action_id"
+    echo "label=$action_label"
+    echo "focus_index=$focus_index"
+  } > "$out_dir/linux-x11-tray-click-$action_id.txt"
+  xdotool mousemove --window "$tray_window" 8 8 click 3
+  sleep 0.4
+  local step=1
+  while [ "$step" -le "$focus_index" ]; do
+    xdotool key Down
+    sleep 0.08
+    step=$((step + 1))
+  done
+  xdotool key Return
+}
+
 capture_linux_menu_action_state() {
   local label="$1"
   ps -p "$app_pid" -o pid,stat,etime,cmd > "$out_dir/linux-menu-action-$label-ps-app.txt" 2>&1 || true
@@ -558,7 +615,7 @@ click_linux_dbus_menu_action() {
   emit_dbusmenu_click_event "$service" "$menu_path" "$menu_id" "$action_id"
 }
 
-run_linux_menu_action_matrix() {
+run_linux_status_notifier_menu_action_matrix() {
   if ! requires_real_de; then
     echo "skipped because WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE is not enabled" > "$out_dir/linux-menu-action-status.txt"
     return 0
@@ -596,6 +653,64 @@ run_linux_menu_action_matrix() {
   done
   IFS="$old_ifs"
   echo "ok" >> "$out_dir/linux-menu-action-status.txt"
+}
+
+run_linux_x11_tray_icon_menu_action_matrix() {
+  if ! requires_real_de; then
+    echo "skipped because WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE is not enabled" > "$out_dir/linux-menu-action-status.txt"
+    return 0
+  fi
+  if ! command -v xdotool >/dev/null 2>&1; then
+    echo "WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon requires xdotool." >&2
+    return 1
+  fi
+  local tray_window
+  tray_window="$(x11_workhub_tray_window)"
+  {
+    echo "driver=x11-tray-icon"
+    echo "tray_window=$tray_window"
+    echo "menu_action_sequence=$menu_action_sequence"
+    echo "note=This is physical X11 tray-window automation, not AppIndicator panel proof."
+  } > "$out_dir/linux-menu-action-status.txt"
+
+  local old_ifs="$IFS"
+  IFS=","
+  for action_id in $menu_action_sequence; do
+    IFS="$old_ifs"
+    action_id="$(printf '%s' "$action_id" | tr -d '[:space:]')"
+    if [ -z "$action_id" ]; then
+      IFS=","
+      continue
+    fi
+    local action_label
+    action_label="$(tray_menu_label_for_action "$action_id")"
+    capture_linux_menu_action_state "before-$action_id"
+    x11_click_tray_menu_action "$tray_window" "$action_id" "$action_label"
+    sleep 1
+    if ! ps -p "$app_pid" >/dev/null 2>&1; then
+      echo "Tauri app process exited after X11 tray menu action '$action_id'; quit dry-run guard failed or a destructive native item was clicked." >&2
+      return 1
+    fi
+    capture_linux_menu_action_state "after-$action_id"
+    IFS=","
+  done
+  IFS="$old_ifs"
+  echo "ok" >> "$out_dir/linux-menu-action-status.txt"
+}
+
+run_linux_menu_action_matrix() {
+  case "$menu_driver" in
+    status-notifier)
+      run_linux_status_notifier_menu_action_matrix
+      ;;
+    x11-tray-icon)
+      run_linux_x11_tray_icon_menu_action_matrix
+      ;;
+    *)
+      echo "Unsupported WORKHUB_LINUX_MENU_DRIVER='$menu_driver'. Use status-notifier or x11-tray-icon." >&2
+      return 1
+      ;;
+  esac
 }
 
 run_desktop_smoke() {
@@ -865,7 +980,7 @@ if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY is empty and xvfb-run is unavailable" >&2
     exit 1
   fi
-  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; run_desktop_smoke"
+  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event x11_tray_focus_index_for_action x11_workhub_tray_window x11_click_tray_menu_action capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_status_notifier_menu_action_matrix run_linux_x11_tray_icon_menu_action_matrix run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; menu_driver='$menu_driver'; run_desktop_smoke"
   if command -v dbus-run-session >/dev/null 2>&1; then
     xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session bash -c "$smoke_entry"
   else

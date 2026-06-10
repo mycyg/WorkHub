@@ -192,10 +192,21 @@ WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX
 - `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/cuu-tauri-dom-report.json`
 - `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-real-de-gnome/gnome-appindicator-status.txt`
 
-## 12. 下一步
+## 12. 2026-06-11 第六刀落点
+
+为避免 GNOME `ubuntu-appindicators@ubuntu.com` 长期 `INACTIVE` 时完全卡死，Linux smoke 增加显式 fallback driver：
+
+| Driver | 用法 | 证明边界 |
+|---|---|---|
+| `status-notifier` | 默认；读取 `org.kde.StatusNotifierWatcher`，通过 DBus menu `GetLayout` / `Event(clicked)` 触发 action | AppIndicator / StatusNotifier panel proof |
+| `x11-tray-icon` | `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon`；解析 `xwininfo -root -tree` 中的 `tray-icon tray app workhub-main-tray` X window，右键后按 focusable menu item 顺序键盘选择 action | 真实 X11 tray-window automation，不等同 GNOME panel/AppIndicator proof |
+
+X11 fallback 每个 action 仍保留前后 `ps/wmctrl/xdotool/screen`、`linux-x11-tray-click-<action>.txt` 和 `linux-menu-action-status.txt`。`quit` 仍必须依赖 dry-run；若进程退出，脚本失败。
+
+## 13. 下一步
 
 1. 重启或重建远端 GNOME session，使已启用的 `ubuntu-appindicators@ubuntu.com` 从 `INACTIVE` 变为 active，再跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 StatusNotifier item、DBus menu layout/event、每个菜单动作前后截图。
 2. 若重启后 `RegisteredStatusNotifierItems` 仍无 WorkHub，先读取 `linux-status-notifier-items.txt` 与每个 `linux-status-notifier-item-*.txt`，再用 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` 显式指定，不改用 Tauri command fallback。
-3. 若 GNOME 长期不提供 watcher，新增显式 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon` fallback：基于 `xwininfo` 中的 `tray-icon tray app workhub-main-tray` X window 做物理右键/键盘菜单验证，并在文档中标明这不是 AppIndicator panel proof。
+3. 在远端当前 session 先跑 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon`，确认 X11 tray-window fallback 是否能触发同一 Rust tray handler；通过后单独归档，不能替代 AppIndicator gate。
 4. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
 5. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。
