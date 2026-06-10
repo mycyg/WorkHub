@@ -12,6 +12,7 @@ api_port="8787"
 require_real_de="${WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE:-0}"
 menu_action_sequence="${WORKHUB_LINUX_MENU_ACTIONS:-restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit}"
 menu_driver="${WORKHUB_LINUX_MENU_DRIVER:-status-notifier}"
+x11_tray_host="${WORKHUB_LINUX_X11_TRAY_HOST:-}"
 
 if [ -n "${WORKHUB_LINUX_SMOKE_DEV_PORT:-}" ] && [ "${WORKHUB_LINUX_SMOKE_DEV_PORT}" != "$port" ]; then
   echo "WORKHUB_LINUX_SMOKE_DEV_PORT must stay 1420 because tauri.conf.json devUrl is fixed to http://127.0.0.1:1420." >&2
@@ -166,6 +167,7 @@ record_env() {
     echo "require_real_de=$require_real_de"
     echo "menu_action_sequence=$menu_action_sequence"
     echo "menu_driver=$menu_driver"
+    echo "x11_tray_host=$x11_tray_host"
   } > "$out_dir/linux-env-report.txt"
 }
 
@@ -567,6 +569,40 @@ raise SystemExit("Could not find WorkHub tray X window in xwininfo root tree.")
 PY
 }
 
+start_linux_x11_tray_host() {
+  case "$x11_tray_host" in
+    ""|none|NONE)
+      return 0
+      ;;
+    stalonetray)
+      if [ "$menu_driver" != "x11-tray-icon" ]; then
+        echo "WORKHUB_LINUX_X11_TRAY_HOST=stalonetray is only supported with WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon." >&2
+        return 1
+      fi
+      if ! command -v stalonetray >/dev/null 2>&1; then
+        echo "WORKHUB_LINUX_X11_TRAY_HOST=stalonetray requires stalonetray to be installed." >&2
+        return 1
+      fi
+      stalonetray --geometry 1x1+0+0 --icon-size 32 --window-type dock --sticky --skip-taskbar > "$out_dir/stalonetray.out" 2> "$out_dir/stalonetray.err" &
+      x11_tray_host_pid=$!
+      echo "$x11_tray_host_pid" > "$out_dir/stalonetray.pid"
+      sleep 1
+      if ! ps -p "$x11_tray_host_pid" >/dev/null 2>&1; then
+        echo "stalonetray exited before the WorkHub app started. See $out_dir/stalonetray.err." >&2
+        return 1
+      fi
+      if command -v xprop >/dev/null 2>&1; then
+        xprop -root _NET_SYSTEM_TRAY_S0 > "$out_dir/linux-x11-tray-owner-after-host.txt" 2>&1 || true
+      fi
+      xwininfo -root -tree > "$out_dir/linux-x11-tray-host-tree.txt" 2>&1 || true
+      ;;
+    *)
+      echo "Unsupported WORKHUB_LINUX_X11_TRAY_HOST='$x11_tray_host'. Use stalonetray or leave it empty." >&2
+      return 1
+      ;;
+  esac
+}
+
 x11_click_tray_menu_action() {
   local tray_window="$1"
   local action_id="$2"
@@ -582,6 +618,7 @@ x11_click_tray_menu_action() {
   } > "$out_dir/linux-x11-tray-click-$action_id.txt"
   xdotool mousemove --window "$tray_window" 8 8 click 3
   sleep 0.4
+  xwininfo -root -tree > "$out_dir/linux-x11-menu-before-select-$action_id.txt" 2>&1 || true
   local step=1
   while [ "$step" -le "$focus_index" ]; do
     xdotool key Down
@@ -589,12 +626,16 @@ x11_click_tray_menu_action() {
     step=$((step + 1))
   done
   xdotool key Return
+  sleep 0.2
+  xwininfo -root -tree > "$out_dir/linux-x11-menu-after-select-$action_id.txt" 2>&1 || true
 }
 
 capture_linux_menu_action_state() {
   local label="$1"
   ps -p "$app_pid" -o pid,stat,etime,cmd > "$out_dir/linux-menu-action-$label-ps-app.txt" 2>&1 || true
   wmctrl -l > "$out_dir/linux-menu-action-$label-wmctrl.txt" 2>&1 || true
+  xwininfo -root -tree > "$out_dir/linux-menu-action-$label-xwininfo.txt" 2>&1 || true
+  capture_linux_window_map_states "$label"
   {
     xdotool search --name WorkHub
     xdotool search --name Cuu
@@ -602,30 +643,106 @@ capture_linux_menu_action_state() {
   capture_linux_screen "menu-action-$label"
 }
 
+capture_linux_window_map_states() {
+  local label="$1"
+  local tree_file="$out_dir/linux-menu-action-$label-xwininfo.txt"
+  local states_file="$out_dir/linux-menu-action-$label-window-states.txt"
+  : > "$states_file"
+  if [ ! -s "$tree_file" ]; then
+    echo "missing_xwininfo_tree=$tree_file" >> "$states_file"
+    return 0
+  fi
+  python3 - "$tree_file" <<'PY' | while IFS=$'\t' read -r window_name window_id; do
+import re
+import sys
+
+path = sys.argv[1]
+pattern = re.compile(r'\s*(0x[0-9a-fA-F]+)\s+"([^"]+)"')
+with open(path, "r", encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        match = pattern.match(line)
+        if match and match.group(2) in {"WorkHub", "Cuu"}:
+            print(f"{match.group(2)}\t{match.group(1)}")
+PY
+    [ -n "$window_name" ] || continue
+    [ -n "$window_id" ] || continue
+    {
+      printf 'window\t%s\t%s\n' "$window_name" "$window_id"
+      xwininfo -id "$window_id" -stats 2>&1 || true
+      xprop -id "$window_id" WM_STATE 2>&1 || true
+    } >> "$states_file"
+  done
+}
+
+linux_window_state_is_viewable() {
+  local states_file="$1"
+  local window_name="$2"
+  if [ ! -s "$states_file" ]; then
+    return 1
+  fi
+  python3 - "$states_file" "$window_name" <<'PY'
+import sys
+
+path, wanted = sys.argv[1:3]
+current = None
+with open(path, "r", encoding="utf-8", errors="replace") as handle:
+    for raw_line in handle:
+        line = raw_line.rstrip("\n")
+        if line.startswith("window\t"):
+            parts = line.split("\t")
+            current = parts[1] if len(parts) >= 2 else None
+            continue
+        if current == wanted and "Map State: IsViewable" in line:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+linux_xwininfo_has_window() {
+  local xwininfo_file="$1"
+  local window_name="$2"
+  if [ ! -s "$xwininfo_file" ]; then
+    return 1
+  fi
+  python3 - "$xwininfo_file" "$window_name" <<'PY'
+import re
+import sys
+
+path, wanted = sys.argv[1:3]
+pattern = re.compile(r'\s*0x[0-9a-fA-F]+\s+"([^"]+)"')
+with open(path, "r", encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        match = pattern.match(line)
+        if match and match.group(1) == wanted:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 verify_linux_menu_action_effect() {
   local action_id="$1"
-  local after_wmctrl="$out_dir/linux-menu-action-after-$action_id-wmctrl.txt"
+  local after_window_states="$out_dir/linux-menu-action-after-$action_id-window-states.txt"
   case "$action_id" in
     show-main|open-inbox|open-settings)
-      if ! grep -q "WorkHub" "$after_wmctrl"; then
+      if ! linux_window_state_is_viewable "$after_window_states" "WorkHub"; then
         echo "Tray action '$action_id' did not leave the WorkHub window visible." >&2
         return 1
       fi
       ;;
     hide-main)
-      if grep -q "WorkHub" "$after_wmctrl"; then
+      if linux_window_state_is_viewable "$after_window_states" "WorkHub"; then
         echo "Tray action hide-main did not hide the WorkHub window." >&2
         return 1
       fi
       ;;
     restore-pet-interaction)
-      if ! grep -q "Cuu" "$after_wmctrl"; then
+      if ! linux_window_state_is_viewable "$after_window_states" "Cuu"; then
         echo "Tray action restore-pet-interaction did not leave the Cuu window visible." >&2
         return 1
       fi
       ;;
     toggle-pet)
-      if grep -q "Cuu" "$after_wmctrl"; then
+      if linux_window_state_is_viewable "$after_window_states" "Cuu"; then
         echo "Tray action toggle-pet did not hide the currently visible Cuu window." >&2
         return 1
       fi
@@ -771,6 +888,7 @@ run_desktop_smoke() {
   wm_pid=""
   app_pid=""
   api_pid=""
+  x11_tray_host_pid=""
   uses_api="false"
   run_outcome=""
   api_fault=""
@@ -784,6 +902,7 @@ run_desktop_smoke() {
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*cuu-r3-tauri-run-stream-server" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/.*@workhub/desktop-webview.*dev" >/dev/null 2>&1 || true; fi
     if command -v pkill >/dev/null 2>&1; then pkill -TERM -f "$repo_root/apps/desktop-webview/.*vite.*--port $port" >/dev/null 2>&1 || true; fi
+    if [ -n "${x11_tray_host_pid:-}" ]; then kill "$x11_tray_host_pid" >/dev/null 2>&1 || true; fi
     if [ -n "${wm_pid:-}" ]; then kill "$wm_pid" >/dev/null 2>&1 || true; fi
   }
   trap cleanup RETURN
@@ -823,6 +942,8 @@ run_desktop_smoke() {
   else
     echo "openbox not found; continuing without a window manager" > "$out_dir/openbox.txt"
   fi
+
+  start_linux_x11_tray_host
 
   export WORKHUB_DISABLE_SSE=1
   export WORKHUB_CUU_QA_SCENARIO="$scenario"
@@ -867,8 +988,8 @@ run_desktop_smoke() {
     echo "Tauri app process exited before capture finished." >&2
     return 1
   fi
-  if ! grep -q "WorkHub" "$out_dir/wmctrl.txt" || ! grep -q "Cuu" "$out_dir/wmctrl.txt"; then
-    echo "wmctrl did not report both WorkHub and Cuu windows." >&2
+  if ! linux_xwininfo_has_window "$out_dir/xwininfo.txt" "WorkHub" || ! linux_xwininfo_has_window "$out_dir/xwininfo.txt" "Cuu"; then
+    echo "xwininfo did not report both WorkHub and Cuu windows." >&2
     return 1
   fi
   if ! grep -q "Cuu.*520x720" "$out_dir/xwininfo.txt"; then
@@ -1019,7 +1140,7 @@ if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY is empty and xvfb-run is unavailable" >&2
     exit 1
   fi
-  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event x11_tray_focus_index_for_action x11_workhub_tray_window x11_click_tray_menu_action capture_linux_menu_action_state verify_linux_menu_action_effect click_linux_dbus_menu_action run_linux_status_notifier_menu_action_matrix run_linux_x11_tray_icon_menu_action_matrix run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; menu_driver='$menu_driver'; run_desktop_smoke"
+  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event x11_tray_focus_index_for_action x11_workhub_tray_window start_linux_x11_tray_host x11_click_tray_menu_action capture_linux_menu_action_state capture_linux_window_map_states linux_window_state_is_viewable linux_xwininfo_has_window verify_linux_menu_action_effect click_linux_dbus_menu_action run_linux_status_notifier_menu_action_matrix run_linux_x11_tray_icon_menu_action_matrix run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; menu_driver='$menu_driver'; x11_tray_host='$x11_tray_host'; run_desktop_smoke"
   if command -v dbus-run-session >/dev/null 2>&1; then
     xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session bash -c "$smoke_entry"
   else

@@ -207,6 +207,22 @@ X11 fallback 每个 action 仍保留前后 `ps/wmctrl/xdotool/screen`、`linux-x
 
 1. 重启或重建远端 GNOME session，使已启用的 `ubuntu-appindicators@ubuntu.com` 从 `INACTIVE` 变为 active，再跑 `WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1`，保留 StatusNotifier item、DBus menu layout/event、每个菜单动作前后截图。
 2. 若重启后 `RegisteredStatusNotifierItems` 仍无 WorkHub，先读取 `linux-status-notifier-items.txt` 与每个 `linux-status-notifier-item-*.txt`，再用 `WORKHUB_LINUX_STATUS_NOTIFIER_ITEM=service/path` 显式指定，不改用 Tauri command fallback。
-3. 在远端当前 session 先跑 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon`，确认 X11 tray-window fallback 是否能触发同一 Rust tray handler；通过后单独归档，不能替代 AppIndicator gate。
+3. 在远端当前 session 先跑 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon WORKHUB_LINUX_X11_TRAY_HOST=stalonetray`，确认 XEmbed tray host 下的物理菜单是否能触发同一 Rust tray handler；通过后单独归档，不能替代 AppIndicator gate。
 4. 在 macOS 机器上跑 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，若 Accessibility / Screen Recording 权限不足，保留失败截图与权限前置条件，不声明通过。
 5. 成功取得任一真实平台菜单证据后，再更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 和 README。
+
+## 14. 2026-06-11 第七刀落点
+
+远端 GNOME 裸 `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon` 已暴露一个假阳性风险：root tree 中能看到 `tray-icon tray app workhub-main-tray`，但没有真实 tray host 时右键/键盘选择不会稳定触发原生菜单动作；`toggle-pet` 前后 `wmctrl` 均仍显示 `Cuu`，脚本按失败退出。
+
+为把 fallback 做成可复跑的物理菜单路径，而不是直接 Tauri command fallback，Linux smoke 增加：
+
+| 落点 | 结果 |
+|---|---|
+| XEmbed host | `WORKHUB_LINUX_X11_TRAY_HOST=stalonetray` 时，smoke 在启动 WorkHub 前启动 `stalonetray`，结束时清理该进程 |
+| host 证据 | 写入 `stalonetray.pid/out/err`、`linux-x11-tray-owner-after-host.txt`、`linux-x11-tray-host-tree.txt` |
+| xwininfo 主判据 | 每个菜单动作前后写 `linux-menu-action-*-xwininfo.txt` 与 `linux-menu-action-*-window-states.txt`，窗口效果验证改用精确窗口名的 `Map State: IsViewable`，不再依赖会偶发 segfault 的 `wmctrl -l`，也不把 root tree 残留的未映射窗口误判为可见 |
+| 菜单弹出证据 | 每次右键后、按键选择前后写 `linux-x11-menu-before-select-<action>.txt` / `linux-x11-menu-after-select-<action>.txt` |
+| 边界 | 该路径证明 XEmbed tray host 下的物理菜单动作，不等同 GNOME AppIndicator/StatusNotifier panel proof |
+
+远端手工预跑显示 `stalonetray` host 下菜单动作能改变窗口状态，但出现过 `wmctrl -l` segfault，且 `xwininfo -root -tree` 会列出部分已隐藏但未销毁的窗口；因此正式归档必须使用第七刀后的 `Map State: IsViewable` 判据重跑，不能用旧 `wmctrl` 或单纯 root tree 结果声明通过。
