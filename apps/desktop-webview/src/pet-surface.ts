@@ -87,7 +87,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
   ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px);overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(72px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:auto;right:calc(24px * var(--wh-pet-scale,1));top:auto;bottom:calc(348px * var(--wh-pet-scale,1));width:calc(288px * var(--wh-pet-scale,1));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
+  ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(348px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(304px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
@@ -1039,7 +1039,7 @@ export async function bootDesktopPetSurface(
     locale
   });
   let samplingCursor = false;
-  if (qaScenario === "run-stream" || qaScenario === "run-failure") {
+  if (desktopPetQaScenarioUsesRunApi(qaScenario)) {
     window.setTimeout(() => {
       void startRunStreamQaScenario();
     }, 160);
@@ -1241,7 +1241,10 @@ function renderDesktopPetBubble(input: {
   const inputHint = !compact && card?.input ? renderPetInputHint(card.input, locale) : "";
   const context = [progress, sections, evidence, inputHint].filter(Boolean).join("");
   const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
-  return `<aside class="wh-pet-bubble" data-pet-bubble="true" ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}>
+  const payloadAttrs = card?.payload_ref
+    ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
+    : "";
+  return `<aside class="wh-pet-bubble" data-pet-bubble="true" ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${payloadAttrs}>
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
@@ -1385,6 +1388,14 @@ function agentRunIdFromPetCard(card: CuuCard | undefined) {
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {
   return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
+}
+
+function desktopPetQaScenarioUsesRunApi(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {
+  return scenario === "run-stream" ||
+    scenario === "run-failure" ||
+    scenario === "permission-401" ||
+    scenario === "permission-403" ||
+    scenario === "stream-offline";
 }
 
 function escapeHtml(value: unknown) {

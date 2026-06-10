@@ -50,10 +50,12 @@ export type CuuR3SmokeApp = {
 };
 
 export type CuuR3RunOutcome = "succeeded" | "failed";
+export type CuuR3ApiFault = "none" | "permission-401" | "permission-403" | "stream-offline";
 
 export type CuuR3SmokeAppOptions = {
   runStream?: boolean;
   runOutcome?: CuuR3RunOutcome;
+  apiFault?: CuuR3ApiFault;
   runDelayMs?: number;
   modelDelayMs?: number;
   logRunStream?: boolean;
@@ -170,6 +172,7 @@ function createAuth(settingsOverride: Settings = settings): AuthDependencies {
 export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3SmokeApp {
   let runSequence = 0;
   const runOutcome = options.runOutcome ?? "succeeded";
+  const apiFault = options.apiFault ?? "none";
   const nextRunSequence = () => {
     runSequence += 1;
     return runSequence;
@@ -208,10 +211,18 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
       ok: true,
       service: options.runStream ? "workhub-cuu-r3-tauri-run-stream" : "workhub-cuu-r3-smoke",
       run_outcome: options.runStream ? runOutcome : undefined,
+      api_fault: apiFault,
       runtime: "node-hono",
       port: 0
     })
   );
+  app.use("/api/*", async (c, next) => {
+    const fault = cuuR3ApiFaultForRequest(apiFault, c.req.method, new URL(c.req.url).pathname);
+    if (fault) {
+      return c.json(fault.body, fault.status as 400);
+    }
+    return next();
+  });
   if (options.runStream) {
     app.route("/api/push", createPushRoutes({
       auth,
@@ -227,6 +238,38 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
   app.route("/api", createWorkItemRoutes({ auth, workItems }));
   app.route("/api", createAgentRunRoutes({ auth, queue, workItems, autoRun: false }));
   return { app, workItems, queue };
+}
+
+function cuuR3ApiFaultForRequest(fault: CuuR3ApiFault, method: string, path: string) {
+  if (fault === "none") {
+    return undefined;
+  }
+  const methodUpper = method.toUpperCase();
+  const isRunRead = methodUpper === "GET" && /^\/api\/agent-runs\/[^/]+$/u.test(path);
+  const isRunStream = methodUpper === "GET" && /^\/api\/push\/stream\/run\/[^/]+$/u.test(path);
+  if (fault === "permission-401" && isRunRead) {
+    return cuuR3ApiFaultResponse(401, "unauthorized", "Cuu R3 QA forced 401 permission failure.");
+  }
+  if (fault === "permission-403" && isRunRead) {
+    return cuuR3ApiFaultResponse(403, "permission_denied", "Cuu R3 QA forced 403 permission failure.");
+  }
+  if (fault === "stream-offline" && (isRunRead || isRunStream)) {
+    return cuuR3ApiFaultResponse(503, "network_unavailable", "Cuu R3 QA forced network unavailable.");
+  }
+  return undefined;
+}
+
+function cuuR3ApiFaultResponse(status: 401 | 403 | 503, code: string, message: string) {
+  return {
+    status,
+    body: {
+      ok: false,
+      error: {
+        code,
+        message
+      }
+    }
+  };
 }
 
 function withDelayedRunExecution(queue: AgentRunQueue, delayMs: number, logEvents: boolean): AgentRunQueue {

@@ -54,7 +54,10 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
     }),
     "[data-pet-bubble]": fakeElement({
       "data-pet-bubble": "true",
-      "data-cuu-card-id": "approval-card"
+      "data-cuu-card-id": "approval-card",
+      "data-pet-payload-ref-entity-type": "agent_run",
+      "data-pet-payload-ref-entity-id": "run-1",
+      "data-pet-payload-ref-href": "/agent-runs/run-1/replay"
     }, "Cuu Approval needed Approve", { x: 208.456, y: 142.123, width: 288, height: 164 }),
     "[data-chip-id],[data-pet-option-id]": fakeElement({
       "data-chip-id": "file-only",
@@ -80,6 +83,8 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
   });
   assert.equal(report.live2d.data.data_cuu_live2d_model, "hijiki");
   assert.equal(report.bubble.data.data_cuu_card_id, "approval-card");
+  assert.equal(report.bubble.data.data_pet_payload_ref_entity_type, "agent_run");
+  assert.equal(report.bubble.data.data_pet_payload_ref_entity_id, "run-1");
   assert.deepEqual(report.bubble.rect, {
     x: 208.46,
     y: 142.12,

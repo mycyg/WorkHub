@@ -1158,6 +1158,9 @@ function desktopCuuErrorKind(error: unknown): "budget" | "permission" | "offline
     if ([401, 403].includes(error.status) || ["forbidden", "unauthorized", "permission_denied"].includes(error.code)) {
       return "permission";
     }
+    if (["network_unavailable", "stream_unavailable", "offline", "disconnected"].includes(error.code)) {
+      return "offline";
+    }
   }
   if (error instanceof TypeError) {
     return "offline";

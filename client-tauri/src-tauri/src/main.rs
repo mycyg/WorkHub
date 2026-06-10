@@ -98,7 +98,7 @@ where
             &get_env,
             &[
                 "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-                "run-failure", "offline",
+                "run-failure", "permission-401", "permission-403", "stream-offline", "offline",
             ],
         ),
         pet_qa_locale: workhub_env_string_allowed(
@@ -1217,7 +1217,7 @@ mod tests {
     fn cuu_qa_preferences_env_accepts_qa_capture_scenarios() {
         for scenario in [
             "launcher", "clarify", "approval", "search", "sync", "done", "run-stream",
-            "run-failure", "offline",
+            "run-failure", "permission-401", "permission-403", "stream-offline", "offline",
         ] {
             assert_eq!(
                 workhub_cuu_qa_preferences_from_env(named_env(&[(

@@ -1,0 +1,166 @@
+{
+  "bubble": {
+    "data": {
+      "data_cuu_card_id": "cuu-run-error-40000000-0000-4000-8000-000000000001",
+      "data_pet_bubble": "true",
+      "data_pet_bubble_kind": "bubble",
+      "data_pet_bubble_priority": "high",
+      "data_pet_payload_ref_entity_id": "40000000-0000-4000-8000-000000000001",
+      "data_pet_payload_ref_entity_type": "agent_run",
+      "data_pet_payload_ref_href": "/agent-runs/40000000-0000-4000-8000-000000000001/replay"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 292,
+      "height": 184.9,
+      "right": 388,
+      "width": 300,
+      "x": 88,
+      "y": 107.1
+    },
+    "selector": "[data-pet-bubble]",
+    "text": "CuuNoticeHigh This step needs permission Cuu cannot continue directly. Open the detail view to handle it. Permission View replayOpen task"
+  },
+  "captured_at_iso": "2026-06-10T09:02:13.164Z",
+  "contract": "workhub.cuu.tauri.actual-dom-report",
+  "live2d": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "70",
+      "data_cuu_behavior_state": "worried",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_framing": "transparent_full_body",
+      "data_cuu_live2d_interruptible": "true",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_loop": "true",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "worried_ears",
+      "data_cuu_live2d_renderer_state": "mtn/08.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_state": "worried_ears",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 569.17,
+      "height": 320.68,
+      "right": 443.11,
+      "width": 230.95,
+      "x": 212.17,
+      "y": 248.49
+    },
+    "selector": ".wh-cuu-cat-live2d",
+    "text": "Cuu"
+  },
+  "primary_action": {
+    "data": {
+      "data_cuu_action_id": "view_replay",
+      "data_method": "GET",
+      "data_requires_reason": "false",
+      "data_tone": "secondary"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 279.2,
+      "height": 28,
+      "right": 189.7,
+      "width": 86.9,
+      "x": 102.8,
+      "y": 251.2
+    },
+    "selector": "[data-cuu-action-id]",
+    "text": "View replay"
+  },
+  "primary_chip": {
+    "data": {
+      "data_chip_id": "permission",
+      "data_recommended": "false",
+      "data_selected": "false",
+      "data_tone": "warning"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 243.2,
+      "height": 28,
+      "right": 185.74,
+      "width": 82.94,
+      "x": 102.8,
+      "y": 215.2
+    },
+    "selector": "[data-chip-id],[data-pet-option-id]",
+    "text": "Permission"
+  },
+  "reason": "patch",
+  "surface": {
+    "data": {
+      "data_cuu_behavior_coverage": "partial",
+      "data_cuu_behavior_expected_bubble_mode": "card",
+      "data_cuu_behavior_expected_window_mode": "card",
+      "data_cuu_behavior_manifest_version": "1",
+      "data_cuu_behavior_phase": "loop",
+      "data_cuu_behavior_priority": "70",
+      "data_cuu_behavior_state": "worried",
+      "data_cuu_idle_action": "idle_tail_sway",
+      "data_cuu_live2d_appearance": "black_cat",
+      "data_cuu_live2d_frame_url": "./cuu/live2d/hijiki/cuu-hijiki.html",
+      "data_cuu_live2d_layer_count": "native_moc",
+      "data_cuu_live2d_model": "hijiki",
+      "data_cuu_live2d_model_url": "./cuu/live2d/hijiki/cuu-hijiki.model.json",
+      "data_cuu_live2d_motion": "worried_ears",
+      "data_cuu_live2d_renderer_state": "mtn/08.mtn",
+      "data_cuu_live2d_runtime": "live2d_cubism2_cat",
+      "data_cuu_live2d_status": "approved_cat_option",
+      "data_cuu_model_pack": "cuu-hijiki-live2d-cubism2",
+      "data_cuu_model_pack_selection_reason": "requested_default_ready",
+      "data_cuu_run_stream_close_reason": "",
+      "data_cuu_run_stream_event_type": "",
+      "data_cuu_run_stream_message": "Cuu R3 QA forced 403 permission failure.",
+      "data_cuu_run_stream_refreshed_status": "",
+      "data_cuu_run_stream_run_id": "40000000-0000-4000-8000-000000000001",
+      "data_cuu_run_stream_state": "error",
+      "data_cuu_state": "worried",
+      "data_cuu_visual_mode": "live2d_cat",
+      "data_pet_card_has_context": "false",
+      "data_pet_card_kind": "bubble",
+      "data_pet_card_layout": "full",
+      "data_pet_card_priority": "high",
+      "data_pet_cursor_near": "false",
+      "data_pet_dragging": "false",
+      "data_pet_hide_on_hover": "false",
+      "data_pet_hover_avoidance": "none",
+      "data_pet_hover_hidden": "false",
+      "data_pet_hover_hide_mode": "off",
+      "data_pet_hovered": "false",
+      "data_pet_look_x": "0",
+      "data_pet_look_y": "0",
+      "data_pet_opacity_percent": "100",
+      "data_pet_pass_through": "false",
+      "data_pet_pointer_smoothing_alpha": "0.58",
+      "data_pet_scale_percent": "100",
+      "data_pet_window_height": "640",
+      "data_pet_window_mode": "card",
+      "data_pet_window_width": "520",
+      "data_wh_surface": "pet"
+    },
+    "present": true,
+    "rect": {
+      "bottom": 640,
+      "height": 640,
+      "right": 520,
+      "width": 520,
+      "x": 0,
+      "y": 0
+    },
+    "selector": "[data-wh-surface=pet]",
+    "text": "Cuu Cuu settings Look Black cat White cat Language 中文 EN Dodge hover Open settings Hide Cuu CuuNoticeHigh This step needs permission Cuu cannot continue directly. Open the detai..."
+  },
+  "version": 1
+}

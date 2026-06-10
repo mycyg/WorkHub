@@ -360,8 +360,8 @@ Rust 只负责：
 | 选项优先澄清 | launcher 与后端 `SessionVM.question` 都走 option-first Cuu 气泡 |
 | 主力是 AI，不是看板 | Cuu 能从澄清确认直接进入 AgentRun；需要澄清时只展示用户必须看到的问题 |
 | 桌宠要像入口而不是装饰 | R3.10 已用真实 Tauri `pet` window 证明 body-only -> launcher card 展开；R3.11 已用真实本机 HTTP dev server 证明同一 launcher-to-run 数据流不只是进程内 route stack |
-| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline；R3.6 已补 budget exhausted 预算态；R3.13.1 已用真实 Tauri run-failure 证明 failed AgentRun 会进入 `worried` trace card |
-| 中英双语边界 | R3.10 已补真实 Tauri `pet` window en-US launcher capture；R3.6 已补未知事件 fallback、runtime error、Replay cost、budget exhausted AgentRun 的 en-US 测试；R3.13.1 已补 en-US run-failure capture |
+| 任务时候有对应动作 | R3.2 已把 run stream 刷新接回 `cardFromAgentRunLive()`，Cuu 可从 thinking 变为 celebrating/worried/offline；R3.6 已补 budget exhausted 预算态；R3.13.1 已用真实 Tauri run-failure 证明 failed AgentRun 会进入 `worried` trace card；R3.13.2 已用真实 Tauri capture 证明 401/403 进入 permission/worried 轻卡，stream offline 进入 offline card |
+| 中英双语边界 | R3.10 已补真实 Tauri `pet` window en-US launcher capture；R3.6 已补未知事件 fallback、runtime error、Replay cost、budget exhausted AgentRun 的 en-US 测试；R3.13.1 已补 en-US run-failure capture；R3.13.2 已补 401/403/offline 的 zh-CN 与 en-US capture |
 | 黑猫/白猫 Live2D 二选项 | 未改变模型白名单与外观 |
 
 ## 8. R3.10 已落：真实 Tauri launcher capture
@@ -459,18 +459,18 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据。仍不能宣称 R3 完成：401/403、offline/network、pet window 刷新恢复和 launcher chip metadata 产品化仍未验收。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据。仍不能宣称 R3 完成：pet window 刷新恢复和 launcher chip metadata 产品化仍未验收。
 
 | 缺口 | 计划 |
 |---|---|
-| 真实 Tauri 点击截图 | R3.10 已补真实 `pet` window launcher/en-US capture；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure capture；仍需补 401/403 与 offline 状态截图 |
+| 真实 Tauri 点击截图 | R3.10 已补真实 `pet` window launcher/en-US capture；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture |
 | 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；R3.11 已补本机 HTTP server launcher-to-run；R3.12 已补 Tauri pet window 内 stream 订阅 + fallback refresh 的 DOM/capture 证据 |
-| 失败态 | R3.2 已落 budget/403/offline/generic card mapping；R3.13.1 已落真实 run failure smoke + Tauri capture；仍需 401/403 与 offline/network 真机 capture |
+| 失败态 | R3.2 已落 budget/403/offline/generic card mapping；R3.13.1 已落真实 run failure smoke + Tauri capture；R3.13.2 已落 401/403/offline route-stack fault smoke + 真实 Tauri capture |
 | 真实确认后启动 | R3.5 已落 API route-stack smoke，R3.9 已落 boot click harness，R3.11 已落真实 dev-server smoke，R3.12 已落 Tauri run-stream 终态 capture |
 | option payload 更细 | 每个 chip 可带 `delivery_kind` / `risk_hint` / `default_acceptance`，进入 WorkItem spec |
-| 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture |
+| 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | launcher 启动后记录 pending run id，刷新 pet window 后能恢复当前卡 |
-| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图 |
+| 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -570,13 +570,52 @@ powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1
 powershell -ExecutionPolicy Bypass -File scripts\qa\cuu-tauri-motion-capture.ps1 -Scenario run-failure -Locale en-US -ModelPackId cuu-hijiki-live2d-cubism2 -FrameCount 72 -IntervalMs 180 -OutDir docs\workhub\05-clients\assets\audit\2026-06-10-cuu-r3-run-failure\hijiki\run-failure-en-pass
 ```
 
-## 13. 下一刀 R3.13.2
+## 13. R3.13.2 已落切片：真实 Tauri 401/403/offline capture
 
-R3.13 后续顺序：
+R3.13.2 关闭权限与网络错误态的真实窗口缺口。范围仍只覆盖 R3 数据流、错误映射、视觉裁切和 capture 可信度；不新增 Cuu 模型、不改色、不扩设置矩阵。
 
-1. 补真实 401/403 Tauri capture：API 权限错误必须映射到 `cardFromDesktopCuuRuntimeError()` 的 permission/worried 轻卡，DOM report 必须保留 action 与 payload_ref。
-2. 补真实 network/offline Tauri capture：断网或 stream error 必须映射 offline card，且 `data_cuu_live2d_motion="worried_ears"` / offline state 不互相误判。
-3. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 `pet` window 后恢复当前 run card 或 terminal completion/error card。
-4. 继续保留 R3.12/R3.13.1 回归：run-stream completion 与 run-failure 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json` 与 DOM attrs gate。
-5. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+改动：
+
+| 层 | R3.13.2 行为 |
+|---|---|
+| API QA harness | `createCuuR3SmokeApp({ apiFault })` 支持 `permission-401`、`permission-403`、`stream-offline`；`/api/health` 暴露 `api_fault` |
+| error fault smoke | `apps/api/src/qa/cuu-r3-error-fault-smoke.ts` 通过真实 route stack + typed client 验证 401/403 -> `bubble/worried`，503 offline -> `offline/offline`，且保留 `payload_ref.entity_type="agent_run"` 与 `view_replay` |
+| desktop runtime | `network_unavailable` / `stream_unavailable` / `offline` / `disconnected` 统一进入 offline 分支；permission error 仍进入 worried 轻卡 |
+| pet surface | `permission-401` / `permission-403` / `stream-offline` QA scenario 复用真实 launcher -> clarification -> confirmation -> WorkItem -> AgentRun flow；气泡 DOM 暴露 `data-pet-payload-ref-*` |
+| Tauri shell | Rust QA allowlist 增加三个错误态 scenario；仍只注入 scenario/locale/client token |
+| capture script | `WORKHUB_CUU_QA_API_FAULT` 驱动本机 QA server；新增 right-edge light-pixel gate，真实 PNG 右边缘出现白色卡片裁切即失败；同时修复 stale QA server 子进程端口清理 |
+| card layout | 普通 card bubble 从右锚改为 `left:88px;width:300px` 安全区，避免高 DPI/PrintWindow 下 DOM 通过但右侧实际裁切 |
+
+验收证据：
+
+| 证据 | 结果 |
+|---|---|
+| `corepack pnpm qa:cuu-r3-error-fault-smoke` | 通过；401=`unauthorized`、403=`permission_denied`、offline=`network_unavailable` |
+| `corepack pnpm --filter @workhub/desktop-webview test` | 72/72 通过 |
+| `cargo test --manifest-path client-tauri\src-tauri\Cargo.toml cuu_qa_preferences_env_accepts_qa_capture_scenarios` | 通过 |
+| 401 zh-CN capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/permission-401-zh-pass/` |
+| 401 en-US capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/permission-401-en-pass/` |
+| 403 zh-CN capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/permission-403-zh-pass/` |
+| 403 en-US capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/permission-403-en-pass/` |
+| offline zh-CN capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/stream-offline-zh-pass/` |
+| offline en-US capture | `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/stream-offline-en-pass/` |
+
+六个 capture 目录均保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json`、`first-frame-probe.png` 与 `motion-diff-report.json`。`motion-diff-report.json` 均满足 `passed=true`、`motion_gate_passed=true`、`actual_dom_matches_expected=true`、`right_edge_clip_gate.passed=true`、`right_edge_clip_gate.max_right_edge_light_pixels=0`。权限态 DOM 终态显示 `data_cuu_state="worried"`、`data_pet_card_kind="bubble"`、`data_cuu_live2d_motion="worried_ears"`、primary action `view_replay`；offline 终态显示 `data_cuu_state="offline"`、`data_pet_card_kind="offline"`、primary action `view_replay`。人工复核最终帧：中英文 permission/offline 文案、chip 与 actions 均完整留在卡片边界内，右边框未被 PrintWindow 裁切。
+
+Bug / 数据流审查：
+
+| 项 | 结论 |
+|---|---|
+| 已修 UI bug | 用户截图指出轻卡右侧文本被窗口裁切；R3.13.2 发现 DOM rect gate 不能覆盖高 DPI/PrintWindow 真实像素裁切，已新增右边缘亮色像素门并把普通 card bubble 改为安全左锚 |
+| 数据流 | `pet` window QA click flow -> typed API client -> `/api/sessions` -> `/api/workitems` -> `/api/workitems/:id/agent-runs` -> forced API fault -> `cardFromDesktopCuuRuntimeError(error,{run})` -> permission/offline card |
+| PRD/概念图 | 仍符合 option-first；Cuu 仍是独立 transparent `pet` window；错误态用轻卡和 replay/open task 入口，不把 Cuu 放回主窗 |
+| 中英双语 | zh-CN/en-US 真实 frames 均已覆盖；英文不透出中文 fallback |
+
+## 14. 下一刀 R3.13.3
+
+R3 后续顺序：
+
+1. 补 pet window 刷新恢复：记录 current session/run id，刷新或重启 `pet` window 后恢复当前 run card 或 terminal completion/error card。
+2. 把 launcher chip metadata 产品化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，不再只落 planning note。
+3. 保留 R3.12/R3.13.1/R3.13.2 回归：run-stream completion、run-failure、401/403/offline 的 zh-CN/en-US capture 目录必须继续通过 `motion-diff-report.json`、DOM attrs gate 与 `right_edge_clip_gate`。
+4. 继续检查主窗无 Cuu、reference path hygiene、secret-like diff，最后跑 full `pnpm verify`、Rust full tests、R2 release gate，并提交。

@@ -68,7 +68,7 @@ visuals:
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
 | card 尺寸 | `520x640` logical px，从 body anchor 向左上展开轻气泡 |
-| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须贴近 Cuu 右侧同锚，当前 CSS gate 为 `right:24px; bottom:348px; width:288px` |
+| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:348px; width:300px; max-width:calc(100% - 128px)`，避免高 DPI/PrintWindow 右缘裁切 |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
 | R3 launcher | 点击 Cuu body 且当前无业务卡片时，webview 展开 option-first Agent 启动卡；启动后 TS 订阅 run stream 并刷新 Cuu card；Rust 只负责窗口模式，不解析业务 intent |
@@ -224,7 +224,7 @@ visuals:
 
 ### 7.4 R3：Cuu Agent 出站入口
 
-R3.1-R3.13.1 已落 TS webview 层、route-stack、boot click harness、第一份真实 Tauri launcher 证据、真实本机 HTTP dev-server launcher-to-run smoke、真实 Tauri run-stream completion capture，以及真实 Tauri run-failure terminal capture，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
+R3.1-R3.13.2 已落 TS webview 层、route-stack、boot click harness、第一份真实 Tauri launcher 证据、真实本机 HTTP dev-server launcher-to-run smoke、真实 Tauri run-stream completion capture、真实 Tauri run-failure terminal capture，以及真实 Tauri 401/403/offline error-state capture，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
 
 - `pet-surface.ts` 在用户点击 Cuu body 且当前无 card 时展示 launcher card。
 - launcher 仅给可点选交付方向，不显示输入框。
@@ -237,8 +237,9 @@ R3.1-R3.13.1 已落 TS webview 层、route-stack、boot click harness、第一�
 - R3.11 已证明 desktop Cuu runtime 通过 `createApiClient({ baseUrl:"http://127.0.0.1:<port>", getClientToken })` 访问真实 Hono HTTP server 后，仍能完成 launcher -> clarification -> confirmation -> WorkItem -> AgentRun。
 - R3.12 已证明真实 Tauri `pet` window 可从 launcher 走到 run-stream completion：zh-CN 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/run-stream-zh-pass/`，en-US 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-stream/hijiki/run-stream-en-pass2/`。
 - R3.13.1 已证明真实 Tauri `pet` window 可从 launcher 走到 failed AgentRun 的 `worried` trace card：zh-CN 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-zh-pass/`，en-US 证据在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-run-failure/hijiki/run-failure-en-pass/`；同轮修复了 run-failure trace card 的文本超框问题，最终帧确认 `Budget/预算` 与英文长 failure 文案均在卡片边界内。
+- R3.13.2 已证明真实 Tauri `pet` window 可从 launcher 走到 permission/offline 错误态：401/403 的 zh-CN/en-US 证据与 stream-offline 的 zh-CN/en-US 证据均在 `docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-error-states/hijiki/`；同轮补上 `right_edge_clip_gate`，六个 capture 的最终帧右边缘亮色像素均为 0。
 
-Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补 401/403、offline/network card、刷新恢复、右键菜单/设置矩阵、pass-through 恢复与跨平台 capture。
+Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补 pet window 刷新恢复、launcher chip metadata 产品化、右键菜单/设置矩阵、pass-through 恢复与跨平台 capture。
 
 ### 7.5 P4：跨平台客户端
 
@@ -266,7 +267,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | Settings matrix | `scripts/qa/cuu-tauri-settings-capture.ps1` |
 | Path hygiene | `git diff --name-only` 不含 `reference/` / `references/` |
 
-真实视觉证据必须写入审计文档，不能只用测试命令替代。R3.10 的真实 Tauri launcher 验收已经保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。R3.12 的 zh-CN/en-US run-stream capture 与 R3.13.1 的 zh-CN/en-US run-failure capture 同样保留 contact sheet、GIF/MP4、DOM report 与 motion diff report；API/Tauri stdout/stderr 作为本地调试日志生成，不进入 Git 跟踪证据。业务 trace card 截图还必须人工查看最终帧，确认标题、状态、actions、Run progress 与 Budget 不被窗口边界裁切。
+真实视觉证据必须写入审计文档，不能只用测试命令替代。R3.10 的真实 Tauri launcher 验收已经保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。R3.12 的 zh-CN/en-US run-stream capture、R3.13.1 的 zh-CN/en-US run-failure capture、R3.13.2 的 zh-CN/en-US 401/403/offline capture 同样保留 contact sheet、GIF/MP4、DOM report 与 motion diff report；API/Tauri stdout/stderr 作为本地调试日志生成，不进入 Git 跟踪证据。业务 card 截图还必须人工查看最终帧，并要求 `right_edge_clip_gate.passed=true`，确认标题、状态、actions、Run progress/Budget 或 permission/offline 文案不被窗口边界裁切。
 
 ## 9. 当前缺口
 
@@ -275,7 +276,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
-| R3 Agent launcher / run-stream 真实 Tauri capture | 已补真实 `pet` window `launcher/en-US` capture、zh-CN/en-US run-stream completion capture、zh-CN/en-US run-failure terminal capture；TS runtime、DOM render、run stream/error card tests、dev-server launcher-to-run smoke、run-stream smoke 与 run-failure smoke 已落 | 下一步补 401/403、offline/network card 捕获、刷新恢复、chip metadata 产品化与跨平台 capture |
+| R3 Agent launcher / run-stream 真实 Tauri capture | 已补真实 `pet` window `launcher/en-US` capture、zh-CN/en-US run-stream completion capture、zh-CN/en-US run-failure terminal capture、zh-CN/en-US 401/403/offline capture；TS runtime、DOM render、run stream/error card tests、dev-server launcher-to-run smoke、run-stream smoke、run-failure smoke 与 error-fault smoke 已落 | 下一步补刷新恢复、chip metadata 产品化与跨平台 capture |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
@@ -290,7 +291,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 |---|---|---|
 | R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
-| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；R3.11 已补 dev-server launcher-to-run smoke；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure terminal capture；下一步补 401/403、offline/network 与刷新恢复 |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；R3.11 已补 dev-server launcher-to-run smoke；R3.12 已补 zh-CN/en-US run-stream completion capture；R3.13.1 已补 zh-CN/en-US run-failure terminal capture；R3.13.2 已补 zh-CN/en-US 401/403/offline capture；下一步补刷新恢复与 chip metadata |
 | Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |
 
 ## 10. 与其他文档的边界

@@ -16,6 +16,7 @@
     "qa:cuu-r3-dev-server-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-dev-server-launcher-smoke.ts",
     "qa:cuu-r3-run-stream-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-run-stream-smoke.ts",
     "qa:cuu-r3-run-failure-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-run-failure-smoke.ts",
+    "qa:cuu-r3-error-fault-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-error-fault-smoke.ts",
     "qa:cuu-r3-tauri-run-stream-server": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-tauri-run-stream-server.ts"
   },
   "dependencies": {

@@ -13,7 +13,8 @@ param(
   [int]$MinMotionChangedFramesFormal = 6,
   [int]$MinMotionFrameCountForFormal = 32,
   [int]$MaxStableRectDriftPx = 2,
-  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")]
+  [int]$MaxRightEdgeLightPixels = 2,
+  [ValidateSet("idle", "idle-long-run", "input-handfeel", "look-avoidance", "look-only", "drag-smoothing", "hide-on-hover", "launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")]
   [string]$Scenario = "idle",
   [ValidateSet(75, 100, 125, 150)]
   [int]$PetScalePercent = 100,
@@ -41,8 +42,8 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 $srcTauriRoot = Join-Path $repoRoot "client-tauri\src-tauri"
 $exePath = Join-Path $srcTauriRoot "target\debug\workhub-client-tauri.exe"
-$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")
-$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "offline")
+$qaScenarios = @("launcher", "clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")
+$businessScenarios = @("clarify", "approval", "search", "sync", "done", "run-stream", "run-failure", "permission-401", "permission-403", "stream-offline", "offline")
 $script:cuuCdpWebSocketUrl = $null
 $script:cuuCdpCommandId = 1
 
@@ -211,6 +212,17 @@ function Test-LocalPort {
   return $null -ne $listener
 }
 
+function Get-LocalPortListenerProcessId {
+  param([int]$Port)
+  $listener = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.LocalPort -eq $Port } |
+    Select-Object -First 1
+  if (-not $listener) {
+    return $null
+  }
+  return [int]$listener.OwningProcess
+}
+
 function Start-DesktopWebviewDevServerIfNeeded {
   param([int]$Port = 1420)
   if (Test-LocalPort -Port $Port) {
@@ -245,30 +257,74 @@ function Test-CuuR3RunStreamApiServer {
   param(
     [int]$Port = 8787,
     [ValidateSet("succeeded", "failed")]
-    [string]$RunOutcome = "succeeded"
+    [string]$RunOutcome = "succeeded",
+    [ValidateSet("none", "permission-401", "permission-403", "stream-offline")]
+    [string]$ApiFault = "none"
   )
   try {
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
-    return $health.service -eq "workhub-cuu-r3-tauri-run-stream" -and $health.run_outcome -eq $RunOutcome
+    return $health.service -eq "workhub-cuu-r3-tauri-run-stream" -and $health.run_outcome -eq $RunOutcome -and $health.api_fault -eq $ApiFault
   } catch {
     return $false
   }
+}
+
+function Get-CuuR3RunStreamApiServerHealth {
+  param([int]$Port = 8787)
+  try {
+    return Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
+  } catch {
+    return $null
+  }
+}
+
+function Stop-CuuR3RunStreamApiServerIfOwned {
+  param([int]$Port = 8787)
+  $health = Get-CuuR3RunStreamApiServerHealth -Port $Port
+  if (-not $health -or $health.service -ne "workhub-cuu-r3-tauri-run-stream") {
+    return $false
+  }
+  $processId = Get-LocalPortListenerProcessId -Port $Port
+  if (-not $processId) {
+    return $false
+  }
+  Stop-Process -Id $processId -Force
+  for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
+    if (-not (Test-LocalPort -Port $Port)) {
+      return $true
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  return -not (Test-LocalPort -Port $Port)
 }
 
 function Start-CuuR3RunStreamApiServerIfNeeded {
   param(
     [int]$Port = 8787,
     [ValidateSet("succeeded", "failed")]
-    [string]$RunOutcome = "succeeded"
+    [string]$RunOutcome = "succeeded",
+    [ValidateSet("none", "permission-401", "permission-403", "stream-offline")]
+    [string]$ApiFault = "none"
   )
   if (Test-LocalPort -Port $Port) {
-    if (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome) {
+    if (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome -ApiFault $ApiFault) {
       return $null
     }
-    throw "Port $Port is already in use, but it is not the Cuu R3 Tauri run-stream QA server for outcome $RunOutcome."
+    $health = Get-CuuR3RunStreamApiServerHealth -Port $Port
+    if (-not $health -or $health.service -ne "workhub-cuu-r3-tauri-run-stream") {
+      throw "Port $Port is already in use, but it is not the Cuu R3 Tauri run-stream QA server for outcome $RunOutcome and api fault $ApiFault."
+    }
+    if (-not (Stop-CuuR3RunStreamApiServerIfOwned -Port $Port)) {
+      throw "Port $Port is held by a stale Cuu R3 Tauri run-stream QA server that could not be stopped."
+    }
+  }
+
+  if (Test-LocalPort -Port $Port) {
+    throw "Port $Port is still in use after stale Cuu R3 Tauri run-stream QA server cleanup."
   }
 
   $env:WORKHUB_CUU_QA_RUN_OUTCOME = $RunOutcome
+  $env:WORKHUB_CUU_QA_API_FAULT = $ApiFault
   $commandSpec = Get-PnpmCommandSpec
   $arguments = @()
   $arguments += $commandSpec.ArgumentPrefix
@@ -285,10 +341,10 @@ function Start-CuuR3RunStreamApiServerIfNeeded {
       throw "Cuu R3 run-stream API server exited before health check. Exit code: $($process.ExitCode). stderr: $stderrTail stdout: $stdoutTail"
     }
     Start-Sleep -Milliseconds 500
-  } while (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome) -and (Get-Date) -lt $deadline)
+  } while (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome -ApiFault $ApiFault) -and (Get-Date) -lt $deadline)
 
-  if (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome)) {
-    throw "Cuu R3 run-stream API server did not pass /api/health in time for outcome $RunOutcome."
+  if (-not (Test-CuuR3RunStreamApiServer -Port $Port -RunOutcome $RunOutcome -ApiFault $ApiFault)) {
+    throw "Cuu R3 run-stream API server did not pass /api/health in time for outcome $RunOutcome and api fault $ApiFault."
   }
   return $process
 }
@@ -394,6 +450,39 @@ function Get-CuuExpectedBehaviorForScenario {
         data_pet_window_mode = "card"
       }
     }
+    "permission-401" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "worried"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "permission-403" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "worried"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
+    "stream-offline" {
+      return [pscustomobject]@{
+        data_cuu_behavior_state = "offline"
+        data_cuu_behavior_phase = "loop"
+        data_cuu_live2d_motion = "worried_ears"
+        data_cuu_live2d_renderer_state = "mtn/08.mtn"
+        data_cuu_behavior_expected_window_mode = "card"
+        data_cuu_behavior_expected_bubble_mode = "card"
+        data_pet_window_mode = "card"
+      }
+    }
     "offline" {
       return [pscustomobject]@{
         data_cuu_behavior_state = "offline"
@@ -489,6 +578,9 @@ function Test-CuuActualDomMatchesExpected {
     done = "view_replay"
     "run-stream" = "view_replay"
     "run-failure" = "view_replay"
+    "permission-401" = "view_replay"
+    "permission-403" = "view_replay"
+    "stream-offline" = "view_replay"
   }
   if ($expectedActionByScenario.ContainsKey($Scenario)) {
     if (-not $Actual.primary_action -or -not $Actual.primary_action.present -or -not $Actual.primary_action.data) {
@@ -523,6 +615,20 @@ function Test-CuuActualDomMatchesExpected {
   if ($Scenario -eq "launcher" -and $Actual.bubble -and $Actual.bubble.text) {
     $expectedTitle = if ($ExpectedLocale -eq "en-US") { "What should Cuu do?" } else { "要让 Cuu 做什么" }
     if (-not ([string]$Actual.bubble.text).Contains($expectedTitle)) {
+      return $false
+    }
+  }
+  if (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
+    if (-not $Actual.bubble -or -not $Actual.bubble.data) {
+      return $false
+    }
+    if ($Actual.bubble.data.data_pet_payload_ref_entity_type -ne "agent_run") {
+      return $false
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_pet_payload_ref_entity_id)) {
+      return $false
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Actual.bubble.data.data_pet_payload_ref_href)) {
       return $false
     }
   }
@@ -780,6 +886,29 @@ function Measure-CuuFrameVisualPixels {
       sample_step = $step
       width = $bitmap.Width
       height = $bitmap.Height
+    }
+  } finally {
+    $bitmap.Dispose()
+  }
+}
+
+function Measure-CuuFrameRightEdgeLightPixels {
+  param([string]$Path)
+
+  $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $x = $bitmap.Width - 1
+    $lightPixels = 0
+    for ($y = 0; $y -lt $bitmap.Height; $y += 1) {
+      $color = $bitmap.GetPixel($x, $y)
+      if ($color.R -ge 180 -and $color.G -ge 180 -and $color.B -ge 155) {
+        $lightPixels += 1
+      }
+    }
+    [pscustomobject]@{
+      width = $bitmap.Width
+      height = $bitmap.Height
+      right_edge_light_pixels = $lightPixels
     }
   } finally {
     $bitmap.Dispose()
@@ -1289,11 +1418,13 @@ $originalCuuQaLocale = $env:WORKHUB_CUU_QA_LOCALE
 $originalCuuQaDomReportPath = $env:WORKHUB_CUU_QA_DOM_REPORT_PATH
 $originalCuuQaClientToken = $env:WORKHUB_CUU_QA_CLIENT_TOKEN
 $originalCuuQaRunOutcome = $env:WORKHUB_CUU_QA_RUN_OUTCOME
+$originalCuuQaApiFault = $env:WORKHUB_CUU_QA_API_FAULT
 $originalWorkHubClientToken = $env:WORKHUB_CLIENT_TOKEN
 $originalWebView2AdditionalBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 $process = $null
 $devServerProcess = $null
 $apiServerProcess = $null
+$apiServerStartedForCapture = $false
 $isolatedRoot = $null
 $cuuCdpDebugPort = $null
 
@@ -1308,7 +1439,7 @@ try {
   }
 
   $sseDisabledForScenario = $false
-  $isRunStreamScenario = $Scenario -eq "run-stream" -or $Scenario -eq "run-failure"
+  $isRunStreamScenario = @("run-stream", "run-failure", "permission-401", "permission-403", "stream-offline") -contains $Scenario
   if (($Scenario -ne "idle" -and -not $isRunStreamScenario) -or $DisableSse) {
     $env:WORKHUB_DISABLE_SSE = "1"
     $sseDisabledForScenario = $true
@@ -1334,10 +1465,17 @@ try {
   }
   if ($Scenario -eq "run-failure") {
     $env:WORKHUB_CUU_QA_RUN_OUTCOME = "failed"
-  } elseif ($Scenario -eq "run-stream") {
+  } elseif ($isRunStreamScenario) {
     $env:WORKHUB_CUU_QA_RUN_OUTCOME = "succeeded"
   } else {
     Remove-Item -Path "Env:WORKHUB_CUU_QA_RUN_OUTCOME" -ErrorAction SilentlyContinue
+  }
+  if (@("permission-401", "permission-403", "stream-offline") -contains $Scenario) {
+    $env:WORKHUB_CUU_QA_API_FAULT = $Scenario
+  } elseif ($isRunStreamScenario) {
+    $env:WORKHUB_CUU_QA_API_FAULT = "none"
+  } else {
+    Remove-Item -Path "Env:WORKHUB_CUU_QA_API_FAULT" -ErrorAction SilentlyContinue
   }
   if ($PetPassThrough) {
     $env:WORKHUB_CUU_QA_PET_PASS_THROUGH = "1"
@@ -1377,7 +1515,8 @@ try {
   }
 
   if ($isRunStreamScenario) {
-    $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded -RunOutcome $env:WORKHUB_CUU_QA_RUN_OUTCOME
+    $apiServerProcess = Start-CuuR3RunStreamApiServerIfNeeded -RunOutcome $env:WORKHUB_CUU_QA_RUN_OUTCOME -ApiFault $env:WORKHUB_CUU_QA_API_FAULT
+    $apiServerStartedForCapture = $null -ne $apiServerProcess
   }
   $devServerProcess = Start-DesktopWebviewDevServerIfNeeded
   $tauriStdoutPath = Join-Path $OutDir "tauri-stdout.log"
@@ -1439,13 +1578,19 @@ try {
 
   $diffs = @()
   $framePixelReports = @()
+  $rightEdgeReports = @()
   for ($i = 0; $i -lt $frames.Count; $i++) {
     $framePixelReport = Measure-CuuFrameVisualPixels -Path $frames[$i]
+    $rightEdgeReport = Measure-CuuFrameRightEdgeLightPixels -Path $frames[$i]
     $vsFirst = Measure-FrameDiff -BasePath $frames[0] -Path $frames[$i] -Step $PixelStep
     $vsPrevious = if ($i -gt 0) { Measure-FrameDiff -BasePath $frames[$i - 1] -Path $frames[$i] -Step $PixelStep } else { $vsFirst }
     $framePixelReports += [pscustomobject]@{
       frame = $i
       pixel_report = $framePixelReport
+    }
+    $rightEdgeReports += [pscustomobject]@{
+      frame = $i
+      right_edge = $rightEdgeReport
     }
     $diffs += [pscustomobject]@{
       frame = $i
@@ -1453,6 +1598,21 @@ try {
       vs_first = $vsFirst
       vs_previous = $vsPrevious
     }
+  }
+
+  $rightEdgeClipGateEnabled = $expectedBehavior.data_cuu_behavior_expected_bubble_mode -ne "none" -and $expectedBehavior.data_pet_window_mode -eq "card"
+  $rightEdgeClippedFrames = @()
+  if ($rightEdgeClipGateEnabled) {
+    $rightEdgeClippedFrames = @($rightEdgeReports | Where-Object {
+      $_.right_edge.right_edge_light_pixels -gt $MaxRightEdgeLightPixels
+    })
+  }
+  $rightEdgeClipGate = [pscustomobject]@{
+    enabled = $rightEdgeClipGateEnabled
+    passed = (-not $rightEdgeClipGateEnabled) -or $rightEdgeClippedFrames.Count -eq 0
+    max_right_edge_light_pixels = if ($rightEdgeReports.Count -gt 0) { ($rightEdgeReports | ForEach-Object { $_.right_edge.right_edge_light_pixels } | Measure-Object -Maximum).Maximum } else { 0 }
+    max_allowed_right_edge_light_pixels = $MaxRightEdgeLightPixels
+    clipped_frames = @($rightEdgeClippedFrames | ForEach-Object { $_.frame })
   }
 
   $longRunReport = $null
@@ -1510,7 +1670,7 @@ try {
     -MaxRectDriftPx $MaxStableRectDriftPx `
     -IsBusinessScenario $isBusinessScenario
   $motionGatePassed = $motionLivenessReport.passed -and (($null -eq $longRunReport) -or $longRunReport.passed)
-  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected
+  $capturePassed = $motionGatePassed -and $actualDomReportAvailable -and $actualDomMatchesExpected -and $rightEdgeClipGate.passed
 
   $report = [pscustomobject]@{
     passed = $capturePassed
@@ -1523,6 +1683,7 @@ try {
     actual_dom_report_path = if ($actualDomReportAvailable) { $domReportPath } else { $null }
     actual_dom_matches_expected = $actualDomMatchesExpected
     actual_dom_report = $actualDomReport
+    right_edge_clip_gate = $rightEdgeClipGate
     cuu_qa_preferences = [pscustomobject]@{
       pet_scale_percent = $PetScalePercent
       pet_opacity_percent = $PetOpacityPercent
@@ -1626,6 +1787,7 @@ try {
   Restore-EnvVar -Name "WORKHUB_CUU_QA_DOM_REPORT_PATH" -Value $originalCuuQaDomReportPath
   Restore-EnvVar -Name "WORKHUB_CUU_QA_CLIENT_TOKEN" -Value $originalCuuQaClientToken
   Restore-EnvVar -Name "WORKHUB_CUU_QA_RUN_OUTCOME" -Value $originalCuuQaRunOutcome
+  Restore-EnvVar -Name "WORKHUB_CUU_QA_API_FAULT" -Value $originalCuuQaApiFault
   Restore-EnvVar -Name "WORKHUB_CLIENT_TOKEN" -Value $originalWorkHubClientToken
   Restore-EnvVar -Name "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" -Value $originalWebView2AdditionalBrowserArguments
   if ($isolatedRoot) {
@@ -1642,5 +1804,8 @@ try {
   if ($apiServerProcess -and -not $apiServerProcess.HasExited) {
     Stop-Process -Id $apiServerProcess.Id -Force
     $apiServerProcess.WaitForExit()
+  }
+  if ($apiServerStartedForCapture) {
+    [void](Stop-CuuR3RunStreamApiServerIfOwned -Port 8787)
   }
 }

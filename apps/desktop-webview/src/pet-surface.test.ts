@@ -77,6 +77,11 @@ function approvalCard(): CuuCard {
     title: "Cuu 等你审批",
     message: "点一个选项即可继续。",
     priority: "urgent",
+    payload_ref: {
+      entity_type: "workitem",
+      entity_id: "10000000-0000-4000-8000-000000000101",
+      href: "/workitems/10000000-0000-4000-8000-000000000101"
+    },
     chips: [{ id: "file-only", label: "仅改文件", recommended: true }],
     sections: [
       { id: "changes", title: "这次改了什么", lines: ["更新周报草稿和验收清单", "新增 JSON 配置示例"] },
@@ -656,9 +661,12 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.doesNotMatch(idle.html, /textarea|<input\b/iu);
 
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
+  assert.match(card.html, /data-pet-payload-ref-entity-type="workitem"/u);
+  assert.match(card.html, /data-pet-payload-ref-entity-id="10000000-0000-4000-8000-000000000101"/u);
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-kind="approval"/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(24px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(288px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(304px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(320px \* var\(--wh-pet-scale,1\)\);overflow:auto;overflow-x:hidden/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
@@ -1098,8 +1106,9 @@ test("pet surface anchors full card bubbles near the Cuu body instead of the lef
   assert.match(card.html, /data-pet-window-mode="card"/u);
   assert.match(card.html, /data-pet-card-layout="full"/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(72px \* var\(--wh-pet-scale,1\)\);width:calc\(240px \* var\(--wh-pet-scale,1\)\);height:calc\(320px \* var\(--wh-pet-scale,1\)\)\}/u);
-  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(24px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(288px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.doesNotMatch(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc\(112px \* var/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;top:auto;bottom:calc\(348px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
+  assert.doesNotMatch(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{left:auto;right:calc/u);
 });
 
 test("pet surface keeps offline Cuu fully visible in card mode", () => {

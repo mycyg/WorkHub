@@ -1132,6 +1132,11 @@ test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
   const offline = cardFromDesktopCuuRuntimeError(new TypeError("Failed to fetch"), {
     run: agentRunLive({ status: "running" })
   });
+  const apiOffline = cardFromDesktopCuuRuntimeError(new WorkHubApiError(
+    503,
+    "network_unavailable",
+    "Cuu R3 QA forced network unavailable."
+  ), { locale: "en-US", run: agentRunLive({ status: "running" }) });
 
   assert.equal(budget.kind, "budget");
   assert.equal(budget.state, "asking_approval");
@@ -1149,6 +1154,11 @@ test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
   assert.equal(offline.state, "offline");
   assert.equal(offline.payload_ref?.entity_type, "agent_run");
   assert.equal(offline.actions.some((action) => action.id === "view_replay"), true);
+  assert.equal(apiOffline.kind, "offline");
+  assert.equal(apiOffline.state, "offline");
+  assert.equal(apiOffline.message, "The connection or service is unavailable. Cuu will continue when it recovers.");
+  assert.equal(apiOffline.payload_ref?.entity_type, "agent_run");
+  assert.equal(apiOffline.actions.some((action) => action.id === "view_replay"), true);
 });
 
 test("desktop Cuu actions advance option-first clarification sessions", async () => {
