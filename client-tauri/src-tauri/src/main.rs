@@ -39,7 +39,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     utils::config::Color,
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
-    PhysicalPosition as TauriPhysicalPosition, State, WebviewWindowBuilder,
+    PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -50,6 +50,7 @@ const WORKHUB_CUU_QA_PET_OPACITY_PERCENT_ENV: &str = "WORKHUB_CUU_QA_PET_OPACITY
 const WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV: &str = "WORKHUB_CUU_QA_PET_PASS_THROUGH";
 const WORKHUB_CUU_QA_MODEL_PACK_ID_ENV: &str = "WORKHUB_CUU_QA_MODEL_PACK_ID";
 const WORKHUB_CUU_QA_SCENARIO_ENV: &str = "WORKHUB_CUU_QA_SCENARIO";
+const WORKHUB_CUU_QA_LOCALE_ENV: &str = "WORKHUB_CUU_QA_LOCALE";
 const WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV: &str = "WORKHUB_CUU_QA_DOM_REPORT_PATH";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -60,6 +61,7 @@ struct CuuQaPreferenceOverrides {
     pet_hide_on_hover: Option<bool>,
     pet_model_pack_id: Option<String>,
     pet_qa_scenario: Option<String>,
+    pet_qa_locale: Option<String>,
     pet_qa_dom_report: bool,
 }
 
@@ -92,7 +94,14 @@ where
         pet_qa_scenario: workhub_env_string_allowed(
             WORKHUB_CUU_QA_SCENARIO_ENV,
             &get_env,
-            &["clarify", "approval", "search", "sync", "done", "offline"],
+            &[
+                "launcher", "clarify", "approval", "search", "sync", "done", "offline",
+            ],
+        ),
+        pet_qa_locale: workhub_env_string_allowed(
+            WORKHUB_CUU_QA_LOCALE_ENV,
+            &get_env,
+            &["zh-CN", "en-US"],
         ),
         pet_qa_dom_report: workhub_env_string_nonempty(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV, &get_env),
     }
@@ -595,6 +604,9 @@ fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
         .set_ignore_cursor_events(settings.pass_through)
         .map_err(|error| format!("failed to set pet window startup click-through: {error}"))?;
     keep_pet_window_above_desktop(&window)?;
+    window
+        .show()
+        .map_err(|error| format!("failed to show pet window on startup: {error}"))?;
 
     let mut state = runtime_state
         .lock()
@@ -606,8 +618,8 @@ fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
         settings,
     ));
 
-    // The pet webview shows itself through set_pet_window_mode after the first DOM paint,
-    // so motion capture no longer records cold-start blank frames.
+    // The pet window is visible on startup but never focused; the webview still
+    // syncs the exact body/card mode after its first DOM paint.
     Ok(())
 }
 
@@ -629,13 +641,35 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
             std::env::var(name).ok()
         }));
 
-    let window = WebviewWindowBuilder::from_config(app.handle(), pet_config)
-        .map_err(|error| format!("failed to create pet window builder: {error}"))?
+    let mut builder = WebviewWindowBuilder::new(
+        app.handle(),
+        pet_config.label.clone(),
+        WebviewUrl::App("pet.html".into()),
+    )
+        .title(pet_config.title.clone())
+        .inner_size(pet_config.width, pet_config.height)
+        .resizable(pet_config.resizable)
+        .maximizable(pet_config.maximizable)
+        .minimizable(pet_config.minimizable)
+        .closable(pet_config.closable)
+        .fullscreen(pet_config.fullscreen)
+        .focused(pet_config.focus)
+        .decorations(pet_config.decorations)
+        .always_on_top(pet_config.always_on_top)
+        .skip_taskbar(true)
+        .visible(pet_config.visible)
         .transparent(true)
         .background_color(Color(0, 0, 0, 0))
-        .skip_taskbar(true)
         .shadow(false)
-        .initialization_script(initialization_script)
+        .initialization_script(initialization_script);
+    if let (Some(min_width), Some(min_height)) = (pet_config.min_width, pet_config.min_height) {
+        builder = builder.min_inner_size(min_width, min_height);
+    }
+    if pet_config.center {
+        builder = builder.center();
+    }
+
+    let window = builder
         .build()
         .map_err(|error| format!("failed to create pet window: {error}"))?;
     configure_pet_window_chrome(&window)?;
@@ -683,6 +717,10 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
         .pet_qa_scenario
         .map(|scenario| format!(r#" window.__WORKHUB_CUU_QA_SCENARIO__ = "{scenario}";"#))
         .unwrap_or_default();
+    let locale_script = preferences
+        .pet_qa_locale
+        .map(|locale| format!(r#" window.__WORKHUB_CUU_QA_LOCALE__ = "{locale}";"#))
+        .unwrap_or_default();
     let dom_report_script = if preferences.pet_qa_dom_report {
         r#" window.__WORKHUB_CUU_QA_DOM_REPORT__ = true;"#
     } else {
@@ -690,10 +728,12 @@ fn pet_window_initialization_script(preferences: CuuQaPreferenceOverrides) -> St
     };
 
     if fields.is_empty() {
-        format!(r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{dom_report_script}"#)
+        format!(
+            r#"window.__WORKHUB_SURFACE__ = "pet";{scenario_script}{locale_script}{dom_report_script}"#
+        )
     } else {
         format!(
-            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{dom_report_script}"#,
+            r#"window.__WORKHUB_SURFACE__ = "pet"; window.__WORKHUB_CUU_PREFERENCES__ = {{ {} }};{scenario_script}{locale_script}{dom_report_script}"#,
             fields.join(", "),
         )
     }
@@ -1104,6 +1144,7 @@ mod tests {
                     WORKHUB_CUU_QA_MODEL_PACK_ID_ENV,
                     "cuu-tororo-live2d-cubism2"
                 ),
+                (WORKHUB_CUU_QA_LOCALE_ENV, "en-US"),
             ])),
             CuuQaPreferenceOverrides {
                 pet_scale_percent: Some(150),
@@ -1112,6 +1153,7 @@ mod tests {
                 pet_hide_on_hover: Some(true),
                 pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
                 pet_qa_scenario: None,
+                pet_qa_locale: Some("en-US".to_string()),
                 pet_qa_dom_report: false,
             }
         );
@@ -1126,6 +1168,7 @@ mod tests {
                 (WORKHUB_CUU_QA_PET_PASS_THROUGH_ENV, "0"),
                 (WORKHUB_CUU_QA_MODEL_PACK_ID_ENV, "legacy-cuu-pack"),
                 (WORKHUB_CUU_QA_SCENARIO_ENV, "orange"),
+                (WORKHUB_CUU_QA_LOCALE_ENV, "fr-FR"),
             ])),
             CuuQaPreferenceOverrides {
                 pet_scale_percent: None,
@@ -1134,14 +1177,17 @@ mod tests {
                 pet_hide_on_hover: None,
                 pet_model_pack_id: None,
                 pet_qa_scenario: None,
+                pet_qa_locale: None,
                 pet_qa_dom_report: false,
             }
         );
     }
 
     #[test]
-    fn cuu_qa_preferences_env_accepts_business_motion_scenarios() {
-        for scenario in ["clarify", "approval", "search", "sync", "done", "offline"] {
+    fn cuu_qa_preferences_env_accepts_qa_capture_scenarios() {
+        for scenario in [
+            "launcher", "clarify", "approval", "search", "sync", "done", "offline",
+        ] {
             assert_eq!(
                 workhub_cuu_qa_preferences_from_env(named_env(&[(
                     WORKHUB_CUU_QA_SCENARIO_ENV,
@@ -1166,6 +1212,7 @@ mod tests {
             pet_hide_on_hover: Some(true),
             pet_model_pack_id: Some("cuu-tororo-live2d-cubism2".to_string()),
             pet_qa_scenario: Some("approval".to_string()),
+            pet_qa_locale: Some("en-US".to_string()),
             pet_qa_dom_report: true,
         });
         assert!(script.contains("__WORKHUB_CUU_PREFERENCES__"));
@@ -1175,6 +1222,7 @@ mod tests {
         assert!(script.contains("pet_hide_on_hover: true"));
         assert!(script.contains(r#"pet_model_pack_id: "cuu-tororo-live2d-cubism2""#));
         assert!(script.contains(r#"__WORKHUB_CUU_QA_SCENARIO__ = "approval""#));
+        assert!(script.contains(r#"__WORKHUB_CUU_QA_LOCALE__ = "en-US""#));
         assert!(script.contains("__WORKHUB_CUU_QA_DOM_REPORT__ = true"));
     }
 

@@ -7,6 +7,7 @@ import {
 } from "./desktop-cuu-runtime.js";
 
 export type DesktopPetQaScenario =
+  | "launcher"
   | "clarify"
   | "approval"
   | "search"
@@ -19,6 +20,7 @@ export type DesktopPetQaScenarioGlobal = {
 };
 
 const qaScenarioSet = new Set<DesktopPetQaScenario>([
+  "launcher",
   "clarify",
   "approval",
   "search",
@@ -70,6 +72,9 @@ export function desktopPetQaScriptForScenario(
   input: { initialDelayMs?: number | undefined } = {}
 ): DesktopShellScriptedEvent[] {
   const initialDelayMs = input.initialDelayMs ?? 650;
+  if (scenario === "launcher") {
+    return [];
+  }
   if (scenario === "offline") {
     return [
       {
@@ -121,7 +126,7 @@ function streamForTopic(topic: string) {
   return { kind: "global", path: "/api/push/stream" };
 }
 
-function eventForScenario(scenario: Exclude<DesktopPetQaScenario, "offline">): WorkHubEvent<unknown> {
+function eventForScenario(scenario: Exclude<DesktopPetQaScenario, "launcher" | "offline">): WorkHubEvent<unknown> {
   switch (scenario) {
     case "clarify":
       return {

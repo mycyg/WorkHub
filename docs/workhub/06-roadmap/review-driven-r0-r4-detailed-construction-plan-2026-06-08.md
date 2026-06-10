@@ -2224,14 +2224,70 @@ R2 验收：
 仍未覆盖：
 
 - 真实 API dev server + desktop webview runtime smoke。
-- 真实 Tauri `pet` window 点击截图/录屏。
+- 真实 Tauri `pet` window 更多状态截图/录屏。
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
-### R3.10 下一刀
+### R3.10 已落：真实 Tauri launcher/en-US capture
+
+本切片补齐 R3.9 之后最大的视觉验收缺口：不是浏览器模型页、不是 fake DOM，而是真实 Tauri `pet` window 从 body-only 进入 launcher card 的证据。范围仍是 R3 数据流与 QA 可信度，不新增 Cuu 外观、不改变黑猫/白猫模型包。
+
+改动：
+
+- `client-tauri/src-tauri/src/main.rs`
+  - 手动创建 `pet` window 时显式指向 `pet.html`，修掉 WebView2 target 可能是 `about:blank` 的真实捕获失败。
+  - QA env allowlist 加入 `launcher` 与 `zh-CN/en-US` locale injection。
+- `client-tauri/src-tauri/tauri.conf.json`、`client-tauri/src-tauri/src/windows.rs`
+  - pet route 明确为 `/pet.html`，主窗仍为 `/`。
+- `apps/desktop-webview/src/pet-surface.ts`
+  - `desktopPetLocale()` 接受 QA locale injection。
+  - body button 增加透明 overlay，避免 Live2D iframe 吃掉 body tap。
+- `apps/desktop-webview/src/cuu-qa-scenarios.ts`
+  - `launcher` 加入 QA scenario allowlist，且不伪造 business SSE 事件。
+- `packages/events/src/envelope.ts`
+  - 去掉浏览器入口不兼容的 `node:crypto` 静态导入，避免 `pet.html` boot 空白。
+- `scripts/qa/cuu-tauri-motion-capture.ps1`
+  - `launcher` 场景支持 `-Locale en-US`。
+  - 对真实 Tauri pet WebView 使用 WebView2 CDP mouse event 驱动 body tap；截图和 DOM report 仍来自真实 Tauri `pet` window。
+
+验收证据：
+
+- `../05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/motion-diff-report.json`
+  - `passed=true`
+  - `motion_gate_passed=true`
+  - `actual_dom_matches_expected=true`
+  - `cuu_qa_preferences.pet_locale="en-US"`
+  - `cuu_qa_preferences.pet_qa_scenario="launcher"`
+  - `cuu_qa_preferences.webview2_cdp_enabled=true`
+  - `scenario_events[0].action="tap_body_open_launcher"`
+  - `scenario_events[0].input_driver="webview2_cdp"`
+  - `actual_dom_report.bubble.data.data_cuu_card_id="cuu-agent-launcher"`
+  - `actual_dom_report.primary_action.data.data_cuu_action_id="start_agent_from_cuu"`
+  - `actual_dom_report.primary_chip.data.data_pet_option_id="document-draft"`
+- `../05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/cuu-motion-contact-sheet.png`
+  - frame 000-002 为 body-only 黑猫；frame 003 起展开英文 launcher card。
+- 同目录保留 `cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json`、`frames/` 与 `first-frame-probe.png`。
+
+验证：
+
+- `corepack pnpm --filter @workhub/events test`：12/12 通过。
+- `corepack pnpm --filter @workhub/events typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：69/69 通过。
+- `cargo test --manifest-path client-tauri/src-tauri/Cargo.toml`：66 + 9 + 3 通过。
+- `powershell -ExecutionPolicy Bypass -File scripts/qa/cuu-tauri-motion-capture.ps1 -SkipBuild -Scenario launcher -Locale en-US -FrameCount 32 -IntervalMs 180 -OutDir docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US`：通过。
+
+仍未覆盖：
+
+- 真实 API dev server + desktop webview runtime launcher-to-run smoke。
+- 真实 Tauri clarification / queued / running / completion / failure / offline 状态截图。
+- pet window 刷新后的当前 session/run card 恢复。
+- launcher chip metadata 结构化进入 WorkItem spec。
+
+### R3.11 下一刀
 
 1. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack、纯 TS runtime harness 或 fake DOM boot harness。
-2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
+2. 继续生成真实 Tauri `pet` window 截图/录屏：clarification card、queued/running card、completion card、failure/offline card；launcher/en-US 已由 R3.10 覆盖。
 3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
 4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
 5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。

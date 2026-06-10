@@ -5,13 +5,27 @@ import { z } from "zod";
 
 import { eventTypes, type BudgetNotice, workHubEventSchema } from "@workhub/contracts";
 
-import { formatSseEvent, makeWorkHubEvent, parseSseFrames, toAttentionItem, toCuuState, topics } from "./index.js";
+import { createWorkHubEventId, formatSseEvent, makeWorkHubEvent, parseSseFrames, toAttentionItem, toCuuState, topics } from "./index.js";
 
 test("topic helpers keep identity-scoped topic names explicit", () => {
   assert.equal(topics.all().topic, "all");
   assert.equal(topics.user("u1").topic, "user:u1");
   assert.equal(topics.workitem("w1").topic, "workitem:w1");
   assert.equal(topics.run("r1").topic, "run:r1");
+});
+
+test("WorkHubEvent envelope creates browser-safe UUID ids", () => {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+  assert.match(createWorkHubEventId(), uuidPattern);
+  assert.match(
+    makeWorkHubEvent({
+      type: eventTypes.permissionAsk,
+      topic: topics.user("10000000-0000-4000-8000-000000000001").topic,
+      ts: new Date("2026-06-05T00:00:00.000Z"),
+      data: { approval_id: "40000000-0000-4000-8000-000000000001" }
+    }).event_id,
+    uuidPattern
+  );
 });
 
 test("WorkHubEvent envelope uses formal event names and trims Cuu preview text", () => {

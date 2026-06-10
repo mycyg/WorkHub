@@ -15,6 +15,7 @@ import {
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
   desktopPetInitialIdleAction,
+  desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   renderDesktopPetSurface,
   resolveDesktopSurface,
@@ -30,6 +31,42 @@ import {
   pointerPatchFromEvent,
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
+
+test("desktop pet locale accepts QA injection without overriding explicit locale", () => {
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+    navigator?: Navigator;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  const originalNavigator = target.navigator;
+
+  try {
+    target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: { getItem: () => "zh-CN" }
+    });
+    Object.defineProperty(target, "navigator", {
+      configurable: true,
+      value: { language: "zh-CN" }
+    });
+
+    assert.equal(desktopPetLocale(), "en-US");
+    assert.equal(desktopPetLocale("zh-CN"), "zh-CN");
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+    Object.defineProperty(target, "navigator", {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
+});
 
 function approvalCard(): CuuCard {
   return {
@@ -604,6 +641,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.doesNotMatch(idle.html, /data-pet-menu-pass-through/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
+  assert.match(idle.css, /\.wh-pet-body::after\{content:"";position:absolute;inset:0;z-index:3/u);
+  assert.match(idle.css, /\.wh-cuu-cat-live2d-frame\{[^}]*pointer-events:none/u);
   assert.doesNotMatch(idle.html, /wh-cuu-legacy|wh-cuu-atlas|wh-cuu-sprite|experimental_draft_probe/u);
   assert.doesNotMatch(idle.html, /data-cuu-fallback-visual-mode|data-cuu-image-motion/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);

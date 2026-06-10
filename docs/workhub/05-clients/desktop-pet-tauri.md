@@ -30,7 +30,7 @@ visuals:
 
 | 文件 | 当前职责 |
 |---|---|
-| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry，创建 `main` / `pet`，注入 `window.__WORKHUB_SURFACE__`，注册 commands / plugins / SSE worker |
+| `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry，创建 `main` / `pet`，pet 显式加载 `/pet.html`，注入 `window.__WORKHUB_SURFACE__` 与 QA 场景/语言，注册 commands / plugins / SSE worker |
 | `client-tauri/src-tauri/src/pet_window.rs` | `pet` 几何、右下角定位、body/card 尺寸、work area 夹取、scale/opacity/pass-through/hide-on-hover |
 | `client-tauri/src-tauri/src/pet_commands.rs` | `set_pet_window_mode`、`set_pet_window_settings`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` |
 | `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、恢复 Cuu 交互、打开收件箱、打开设置、退出 |
@@ -63,6 +63,7 @@ visuals:
 | 属性 | 规划 |
 |---|---|
 | label | `pet` |
+| 入口路由 | `/pet.html`，与主窗 `/` 分离，避免 QA 和生产启动时误载主窗 bundle |
 | 形态 | transparent、decorations false、always-on-top、skip-taskbar |
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
@@ -223,7 +224,7 @@ visuals:
 
 ### 7.4 R3：Cuu Agent 出站入口
 
-R3.1/R3.2 已落 TS webview 层最小切片，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
+R3.1-R3.10 已落 TS webview 层、route-stack、boot click harness 与第一份真实 Tauri launcher 证据，详见 [`cuu-r3-agent-entry.md`](./cuu-r3-agent-entry.md)：
 
 - `pet-surface.ts` 在用户点击 Cuu body 且当前无 card 时展示 launcher card。
 - launcher 仅给可点选交付方向，不显示输入框。
@@ -232,8 +233,9 @@ R3.1/R3.2 已落 TS webview 层最小切片，详见 [`cuu-r3-agent-entry.md`](.
 - R3.2 新增 `startDesktopCuuAgentFromLauncher()`、`subscribeDesktopCuuAgentRunStream()` 与 `cardFromDesktopCuuRuntimeError()`。
 - pet surface 在启动成功后订阅 `AgentRunLiveVM.stream_href`，匹配 run 事件后重新拉 `GET /api/agent-runs/:id` 并刷新 Cuu 卡；终态会关闭订阅。
 - budget exhausted、403/401、offline/network 和 generic error 已能映射为 Cuu 轻卡。
+- R3.10 已证明真实 Tauri `pet` window 从 body-only 黑猫点击展开英文 launcher card：`docs/workhub/05-clients/assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/`，包含 contact sheet、GIF/MP4、DOM report 与 motion diff report。
 
-Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 只需要补真实窗口截图和录屏：body-only idle、launcher card、queued run card、failed/offline card。
+Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 Agent 状态机。下一步 Rust/Tauri 需要继续补 queued/running/completion/failure/offline card、中文 launcher、dev-server launcher-to-run smoke 与跨平台 capture。
 
 ### 7.5 P4：跨平台客户端
 
@@ -252,10 +254,11 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | Rust unit tests | `cargo test` in `client-tauri/src-tauri` |
 | Tauri smoke | `scripts/qa/cuu-tauri-smoke.ps1` |
 | Motion capture | `scripts/qa/cuu-tauri-motion-capture.ps1` |
+| R3 launcher capture | `scripts/qa/cuu-tauri-motion-capture.ps1 -Scenario launcher -Locale en-US -FrameCount 32`，证据见 `assets/audit/2026-06-10-cuu-r3-10-sidecar/hijiki/launcher-en-US/` |
 | Settings matrix | `scripts/qa/cuu-tauri-settings-capture.ps1` |
 | Path hygiene | `git diff --name-only` 不含 `reference/` / `references/` |
 
-真实视觉证据必须写入审计文档，不能只用测试命令替代。
+真实视觉证据必须写入审计文档，不能只用测试命令替代。R3.10 的真实 Tauri launcher 验收已经保留 `cuu-motion-contact-sheet.png`、`cuu-motion-printwindow.gif`、`cuu-motion-printwindow.mp4`、`cuu-tauri-dom-report.json` 与 `motion-diff-report.json`。
 
 ## 9. 当前缺口
 
@@ -264,7 +267,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 | 黑猫真实长驻录屏 | 已有 Hijiki P1.10 approval/look-only 32 帧 formal 证据 | 冻结为回归证据；R1 前不继续扩矩阵 |
 | 黑/白 hover 固定锚点 | 已补 `look-only` Tauri 证据；P1.10 新增 motion_liveness + rect 稳定门 | 冻结为回归证据；R1 前只修真实回归 |
 | 白猫真实长驻录屏 | 浏览器模型源帧已补；Tauri hover 已补 | 冻结；R3 后再补功能相关必要证据 |
-| R3 Agent launcher 真实 Tauri 点击截图 | TS runtime、DOM render、run stream/error card tests 已落；尚未补真实 `pet` window screenshot | R3.3 补 body-only -> launcher card -> queued/running/completion/failure/offline card 捕获 |
+| R3 Agent launcher 真实 Tauri 点击截图 | 已补真实 `pet` window `launcher/en-US` capture；TS runtime、DOM render、run stream/error card tests 已落 | 下一步补中文 launcher、queued/running/completion/failure/offline card 捕获与 dev-server launcher-to-run smoke |
 | 右键设置轻菜单 | 已补 pet window 右键菜单、黑/白切换、语言切换、悬停避让、打开设置、隐藏 Cuu | 补真实右键菜单截图 / DOM dump 和 settings matrix |
 | 多屏恢复 | 未实测 | 模拟屏幕变化和离屏恢复 |
 | full hide/pass-through 恢复 | 主窗 `/settings` 和托盘 `restore-pet-interaction` 源码恢复门已落 | 补真实 pass-through 恢复录屏和 settings matrix |
@@ -279,7 +282,7 @@ Rust 边界保持不变：Rust 不调用业务 API、不绕过 auth、不拥有 
 |---|---|---|
 | R1 支撑 | 真实 AgentRun / Proposal / Replay deep-link、merge decision timeline 与系统通知对接 | 让桌面端承接真纵切，而不是 fixture |
 | R2 支撑 | 私有 SSE、订阅边界、跨 worker 事件与设备令牌验证 | 桌面端必须证明多 worker 后不丢/不泄漏 |
-| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；下一步补真实 Tauri capture 与 launcher-to-run smoke |
+| R3 恢复 | Cuu 自然语言 / option-first 出站入口 | R3.1 已补 option-first launcher + 真实 API 链；R3.2 已补 TS run stream 回流和失败态；R3.10 已补真实 Tauri launcher/en-US capture；下一步补 dev-server launcher-to-run smoke 和更多 card 状态 |
 | Deferred | 白猫全矩阵、更多动效、设置矩阵、外观调优 | R1 通过前冻结 |
 
 ## 10. 与其他文档的边界

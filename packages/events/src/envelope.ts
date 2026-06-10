@@ -1,6 +1,39 @@
-import { randomUUID } from "node:crypto";
-
 import type { Actor, CuuState, EventType, WorkHubEvent } from "@workhub/contracts";
+
+type RuntimeCrypto = {
+  randomUUID?: () => string;
+  getRandomValues?: (array: Uint8Array) => Uint8Array;
+};
+
+function runtimeCrypto(): RuntimeCrypto | undefined {
+  return (globalThis as typeof globalThis & { crypto?: RuntimeCrypto }).crypto;
+}
+
+function randomByteValues() {
+  const bytes = new Uint8Array(16);
+  const crypto = runtimeCrypto();
+  if (crypto?.getRandomValues) {
+    return crypto.getRandomValues(bytes);
+  }
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Math.floor(Math.random() * 256);
+  }
+  return bytes;
+}
+
+export function createWorkHubEventId(): string {
+  const crypto = runtimeCrypto();
+  if (crypto?.randomUUID) {
+    return crypto.randomUUID();
+  }
+  const bytes = randomByteValues();
+  const versionByte = bytes[6] ?? 0;
+  const variantByte = bytes[8] ?? 0;
+  bytes[6] = (versionByte & 0x0f) | 0x40;
+  bytes[8] = (variantByte & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export type MakeWorkHubEventInput<T> = {
   type: EventType;
@@ -21,7 +54,7 @@ export type MakeWorkHubEventInput<T> = {
 
 export function makeWorkHubEvent<T>(input: MakeWorkHubEventInput<T>): WorkHubEvent<T> {
   const event: WorkHubEvent<T> = {
-    event_id: input.event_id ?? randomUUID(),
+    event_id: input.event_id ?? createWorkHubEventId(),
     type: input.type,
     topic: input.topic,
     ts: (input.ts ?? new Date()).toISOString(),
