@@ -125,6 +125,25 @@ R3.6 先补两个会影响真实用户判断的低层缺口：Cuu 英文环境�
 
 R3.6 关闭的是数据流与双语边界，不覆盖真实桌面窗口视觉。下一步必须把同一链路升级到 dev server / Tauri pet window 级别，并补刷新恢复。
 
+## 3.9 R3.7 已落切片：pet runtime flow harness
+
+R3.7 先补一层可复跑的 pet runtime flow harness，证明 Cuu pet bubble 的真实 card render、option-first chip selection、typed action resolver 与 `submitDesktopCuuAction()` 可以连续跑完：
+
+```text
+launcher card -> select document-draft -> createSession -> clarification card -> select document-draft -> nextQuestion -> confirmation card -> select create-workitem -> nextQuestion -> createWorkItem -> startAgentRun -> trace card
+```
+
+本切片使用 `renderDesktopPetSurface()` 检查每一步的 pet bubble DOM 属性，并复用真实 `resolveDesktopCuuAction()` / `submitDesktopCuuAction()`。它不新增 UI、不改 Cuu 外观、不冒充真实 Tauri window click；真实 dev server / Tauri screenshot 仍是下一刀。
+
+| 层 | R3.7 行为 |
+|---|---|
+| launcher render | 断言 `data-cuu-card-id="cuu-agent-launcher"`、`data-pet-option-id="document-draft"`、无 `textarea/input` |
+| option selection | 断言已选 chip 渲染为 `data-selected="true"` |
+| clarification | fake typed client 返回 `SessionVM.question.options[]` 后，Cuu 渲染 session question card |
+| confirmation | `submit_option` 后渲染 `create-workitem` 确认卡 |
+| run card | `create-workitem` 后调用 `nextQuestion -> createWorkItem -> startAgentRun`，最终渲染 `data-pet-bubble-kind="trace"`、`data-cuu-state="thinking"` |
+| API order | 测试记录并断言 `createSession`、两次 `nextQuestion`、`createWorkItem`、`startAgentRun` 的 payload 顺序 |
+
 ## 4. 字段级契约
 
 ### 4.1 Cuu launcher card
@@ -292,8 +311,9 @@ Rust 只负责：
 | `replay cost cards localize remaining budget labels` | Replay cost section 不再出现硬编码中文 `剩余` |
 | `generic English events use localized fallback instead of Chinese attention defaults` | en-US 未知事件 fallback 不含 CJK |
 | `desktop Cuu runtime maps API and stream failures to Cuu cards` | budget / permission / offline / generic 错误卡英文环境不透出中文服务端 message |
+| `pet runtime harness advances launcher selections through clarification into a run card` | pet render + option selection + typed runtime action 连续跑通 launcher -> clarification -> confirmation -> AgentRun |
 
-本轮 Cuu test 当前为 33/33 通过，desktop-webview test 当前为 66/66 通过；R2 release gate 在 root `pnpm lint` 中为 PASS。
+本轮 Cuu test 当前为 33/33 通过，desktop-webview test 当前为 67/67 通过；R2 release gate 在 root `pnpm lint` 中为 PASS。
 
 ## 7. 与概念图对齐
 
@@ -313,7 +333,7 @@ R3.6 已补 API route-stack smoke 的选择历史回读、Cuu 双语边界与预
 
 | 缺口 | 计划 |
 |---|---|
-| 真实 Tauri 点击截图 | 用 `pet` window 跑 launcher card，截 body-only -> card 展开前后两张图 |
+| 真实 Tauri 点击截图 | R3.7 已补 runtime flow harness；仍需用真实 `pet` window 跑 launcher card，截 body-only -> card 展开前后两张图 |
 | 真实 daemon SSE 回流 | R3.2 已落 EventSource + `getAgentRun()` 合同；还需真实 API dev server / Tauri pet window 端到端验证 |
 | 失败态 | R3.2 已落 budget/403/offline/generic card mapping；还需真实 API error smoke |
 | 真实确认后启动 | R3.5 已落 API route-stack smoke；仍需真实 dev server / desktop shell smoke |
@@ -323,13 +343,12 @@ R3.6 已补 API route-stack smoke 的选择历史回读、Cuu 双语边界与预
 | 真实双语截图 | R3.6 已补 TS 级 en-US 边界；仍需真实 pet window 英文截图 |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；后续可把 `delivery_kind` / `risk_hint` 结构化进 WorkItem spec |
 
-## 9. 下一刀 R3.7
+## 9. 下一刀 R3.8
 
-R3.7 建议顺序：
+R3.8 建议顺序：
 
-1. 给 `pet-surface.ts` 增加 runtime test harness 或轻 DOM harness，覆盖 click body -> launcher card -> selected chip -> submit -> clarification card -> confirm -> run card。
-2. 升级 smoke 到真实 API dev server + desktop webview runtime，证明不只是进程内 Hono route stack。
-3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组；其中至少一组 en-US。
-4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+1. 升级 smoke 到真实 API dev server + desktop webview runtime，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
+2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card 六组；其中至少一组 en-US。
+3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。

@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
+import type { AgentRunLiveVM, SessionVM, WorkItemDetailVM } from "@workhub/contracts";
 
-import { createDesktopCuuAgentLauncherCard } from "./desktop-cuu-runtime.js";
+import {
+  createDesktopCuuAgentLauncherCard,
+  resolveDesktopCuuAction,
+  submitDesktopCuuAction
+} from "./desktop-cuu-runtime.js";
 import {
   createDesktopPetIdleScheduler,
   defaultDesktopPetPointerSnapshot,
@@ -149,6 +154,147 @@ function completionCard(): CuuCard {
     priority: "normal",
     actions: [{ id: "view_replay", label: "查看回放", tone: "primary", method: "GET", href: "/agent-runs/run-1/replay" }]
   };
+}
+
+function petHarnessSession(stage: "scope" | "confirm"): SessionVM {
+  const sessionId = "10000000-0000-4000-8000-000000000201";
+  return {
+    session_id: sessionId,
+    work_item_id: sessionId,
+    topic: `session:${sessionId}`,
+    stream_href: `/api/push/stream/session/${sessionId}`,
+    next_question_href: `/api/sessions/${sessionId}/next-question`,
+    question: stage === "scope"
+      ? {
+          id: "10000000-0000-4000-8000-000000000211",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "这件事先按哪种交付方式处理？",
+          body: "Cuu 会先按你点选的交付方向继续。",
+          input_mode: "single_choice",
+          options: [
+            {
+              id: "document-draft",
+              label: "文档/方案草稿",
+              description: "周报、方案、PR 式变更说明",
+              icon: "file-text"
+            },
+            {
+              id: "structured-data",
+              label: "结构化数据",
+              description: "JSON、YAML、CSV 或表格分析",
+              icon: "table"
+            }
+          ],
+          recommended_option_ids: ["document-draft"],
+          free_text: { enabled: true, collapsed_by_default: true, max_length: 300 },
+          progress: [
+            { key: "intent", label: "需求", state: "done" },
+            { key: "scope", label: "口径", state: "active" },
+            { key: "confirm", label: "确认", state: "pending" },
+            { key: "run", label: "执行", state: "pending" }
+          ],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
+      : {
+          id: "10000000-0000-4000-8000-000000000212",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "是否按这个方向创建事项？",
+          body: "点确认后会进入可执行事项。",
+          input_mode: "confirm",
+          options: [
+            {
+              id: "create-workitem",
+              label: "创建事项",
+              description: "进入 AI 可施工状态。",
+              icon: "check"
+            },
+            {
+              id: "search-evidence-first",
+              label: "先找证据",
+              description: "先从项目资料里找依据。",
+              icon: "search"
+            }
+          ],
+          recommended_option_ids: ["create-workitem"],
+          free_text: { enabled: true, collapsed_by_default: true, max_length: 300 },
+          progress: [
+            { key: "intent", label: "需求", state: "done" },
+            { key: "scope", label: "口径", state: "done" },
+            { key: "confirm", label: "确认", state: "active" },
+            { key: "run", label: "执行", state: "pending" }
+          ],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
+  };
+}
+
+function petHarnessRun(): AgentRunLiveVM {
+  const runId = "10000000-0000-4000-8000-000000000301";
+  const workItemId = "10000000-0000-4000-8000-000000000201";
+  return {
+    run_id: runId,
+    work_item_id: workItemId,
+    title: "Cuu 桌面入口任务",
+    status: "queued",
+    run: {
+      id: runId,
+      work_item_id: workItemId,
+      mode: "worker",
+      actor: "AI",
+      status: "queued",
+      model: "deepseek-v4-flash",
+      turns_used: 0,
+      max_turns: 15,
+      token_in: 0,
+      token_out: 0,
+      created_at: "2026-06-10T01:00:00.000Z",
+      updated_at: "2026-06-10T01:00:00.000Z"
+    },
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5.00"
+    },
+    budget_decision: {
+      decision_id: "budget-pet-harness",
+      allowed: true,
+      model_route: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        reason: "pet runtime harness"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0.00"
+    },
+    trace: [],
+    stream_href: `/api/push/stream/run/${runId}`,
+    replay_href: `/api/agent-runs/${runId}/replay`
+  };
+}
+
+function selectHarnessOption(card: CuuCard, optionId: string): CuuCard {
+  return {
+    ...card,
+    chips: (card.chips ?? []).map((chip) => ({
+      ...chip,
+      selected: chip.id === optionId
+    }))
+  };
+}
+
+function resolveHarnessAction(card: CuuCard, actionId: string) {
+  const action = card.actions.find((candidate) => candidate.id === actionId);
+  assert.ok(action?.href);
+  const resolved = resolveDesktopCuuAction(action.href, { actionId: action.id, card });
+  assert.ok(resolved);
+  return resolved;
 }
 
 test("desktop surface resolver sends Tauri pet routes to the pet surface", () => {
@@ -372,6 +518,144 @@ test("pet surface renders the Cuu outbound agent launcher as option-first withou
   assert.match(english.html, /What should Cuu do/u);
   assert.match(english.html, /Start work/u);
   assert.doesNotMatch(english.html, /textarea|<input\b/iu);
+});
+
+test("pet runtime harness advances launcher selections through clarification into a run card", async () => {
+  const calls: unknown[] = [];
+  const run = petHarnessRun();
+  const client = {
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload });
+      return petHarnessSession("scope");
+    },
+    async nextQuestion(sessionId: string, payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "nextQuestion", sessionId, payload });
+      return petHarnessSession("confirm");
+    },
+    async createWorkItem(payload: unknown): Promise<WorkItemDetailVM> {
+      calls.push({ step: "createWorkItem", payload });
+      return {
+        workitem: {
+          id: run.work_item_id,
+          code: "WH-201",
+          project_id: "10000000-0000-4000-8000-000000000002",
+          submitter_user_id: "10000000-0000-4000-8000-000000000101",
+          title: run.title,
+          status: "ai_working",
+          priority: "normal",
+          sync_state: "pending",
+          version: 1,
+          mode: "worker",
+          human_reserved: false,
+          created_at: "2026-06-10T01:00:00.000Z",
+          updated_at: "2026-06-10T01:00:00.000Z"
+        },
+        acceptance: [],
+        agent_trace_preview: [],
+        accepted_deliverables: [],
+        evidence_refs: []
+      } as WorkItemDetailVM;
+    },
+    async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
+      calls.push({ step: "startAgentRun", workItemId, payload });
+      return run;
+    },
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+
+  let card = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
+  let surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
+  assert.match(surface.html, /data-cuu-card-id="cuu-agent-launcher"/u);
+  assert.match(surface.html, /data-pet-option-id="document-draft"/u);
+  assert.match(surface.html, /data-cuu-action-id="start_agent_from_cuu"/u);
+  assert.doesNotMatch(surface.html, /textarea|<input\b/iu);
+
+  card = selectHarnessOption(card, "document-draft");
+  surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
+  assert.match(surface.html, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+
+  const launcherResult = await submitDesktopCuuAction({
+    client,
+    action: resolveHarnessAction(card, "start_agent_from_cuu"),
+    locale: "zh-CN"
+  });
+  assert.match(launcherResult.message, /还需要你点选/u);
+  assert.equal(launcherResult.card?.payload_ref?.entity_type, "session");
+  assert.equal(launcherResult.agentRun, undefined);
+  card = launcherResult.card!;
+  surface = renderDesktopPetSurface({ card, status_text: launcherResult.message, locale: "zh-CN" });
+  assert.match(surface.html, /data-pet-bubble-kind="question"/u);
+  assert.match(surface.html, /data-pet-option-id="document-draft"/u);
+  assert.match(surface.html, /这件事先按哪种交付方式处理/u);
+
+  card = selectHarnessOption(card, "document-draft");
+  const clarificationResult = await submitDesktopCuuAction({
+    client,
+    action: resolveHarnessAction(card, "submit_option"),
+    locale: "zh-CN"
+  });
+  card = clarificationResult.card!;
+  surface = renderDesktopPetSurface({ card, status_text: clarificationResult.message, locale: "zh-CN" });
+  assert.match(surface.html, /data-pet-option-id="create-workitem"/u);
+  assert.match(surface.html, /是否按这个方向创建事项/u);
+
+  card = selectHarnessOption(card, "create-workitem");
+  const runResult = await submitDesktopCuuAction({
+    client,
+    action: resolveHarnessAction(card, "submit_option"),
+    locale: "zh-CN"
+  });
+  assert.equal(runResult.agentRun?.run_id, run.run_id);
+  assert.equal(runResult.card?.payload_ref?.entity_type, "agent_run");
+  surface = renderDesktopPetSurface({ card: runResult.card, status_text: runResult.message, locale: "zh-CN" });
+  assert.match(surface.html, /data-cuu-card-id="10000000-0000-4000-8000-000000000301"/u);
+  assert.match(surface.html, /data-pet-bubble-kind="trace"/u);
+  assert.match(surface.html, /data-cuu-state="thinking"/u);
+  assert.match(surface.html, /data-cuu-action-id="view_replay"/u);
+
+  assert.deepEqual(calls, [
+    {
+      step: "createSession",
+      payload: {
+        title: "Cuu 桌面入口任务",
+        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+      }
+    },
+    {
+      step: "nextQuestion",
+      sessionId: "10000000-0000-4000-8000-000000000201",
+      payload: { selected_option_ids: ["document-draft"] }
+    },
+    {
+      step: "nextQuestion",
+      sessionId: "10000000-0000-4000-8000-000000000201",
+      payload: { selected_option_ids: ["create-workitem"] }
+    },
+    {
+      step: "createWorkItem",
+      payload: {
+        session_id: "10000000-0000-4000-8000-000000000201",
+        selected_option_ids: ["create-workitem"],
+        kickoff_agent: true
+      }
+    },
+    {
+      step: "startAgentRun",
+      workItemId: "10000000-0000-4000-8000-000000000201",
+      payload: { title: "Cuu 桌面入口任务" }
+    }
+  ]);
 });
 
 test("pet surface localizes fixed approval bubble controls in English", () => {

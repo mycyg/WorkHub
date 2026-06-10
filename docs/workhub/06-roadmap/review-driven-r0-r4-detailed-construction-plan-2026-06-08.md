@@ -2155,14 +2155,38 @@ R2 验收：
 - pet window 刷新后的当前 session/run card 恢复。
 - launcher chip metadata 结构化进入 WorkItem spec。
 
-### R3.7 下一刀
+### R3.7 已落：pet runtime flow harness
 
-1. 用轻 DOM harness 覆盖真实 click body -> launcher card -> selected chip -> submit -> clarification -> confirm -> run，而不仅是 render/output test。
-2. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack。
-3. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
-4. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
-5. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
-6. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
+本切片先补一层可复跑 runtime harness，覆盖 Cuu pet bubble 从 launcher 到 run card 的连续路径。它复用真实 `renderDesktopPetSurface()`、`resolveDesktopCuuAction()` 和 `submitDesktopCuuAction()`，但不冒充真实 Tauri `pet` window 点击或截图。
+
+改动：
+
+- `apps/desktop-webview/src/pet-surface.test.ts`
+  - 新增 `pet runtime harness advances launcher selections through clarification into a run card`。
+  - 从 `createDesktopCuuAgentLauncherCard()` 开始，断言 launcher DOM 有 `data-cuu-card-id="cuu-agent-launcher"`、`data-pet-option-id="document-draft"`，且无 `textarea/input`。
+  - 模拟 option-first chip selection 后，断言 `data-selected="true"`。
+  - 通过 fake typed client 返回 `SessionVM`，跑通 clarification card、confirmation card、`createWorkItem`、`startAgentRun`。
+  - 断言最终 run card 渲染为 `data-pet-bubble-kind="trace"`、`data-cuu-state="thinking"`，并记录 API payload 顺序。
+
+验证：
+
+- `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：67/67 通过。
+
+仍未覆盖：
+
+- 真实 Tauri `pet` window 点击截图/录屏。
+- 真实 API dev server + desktop webview runtime smoke。
+- pet window 刷新后的当前 session/run card 恢复。
+- launcher chip metadata 结构化进入 WorkItem spec。
+
+### R3.8 下一刀
+
+1. 用 API dev server + desktop webview runtime 升级 launcher-to-run smoke，证明不只是进程内 Hono route stack 或纯 TS runtime harness。
+2. 生成真实 Tauri `pet` window 截图/录屏：body-only idle、launcher card、clarification card、queued/running card、completion card、failure/offline card；至少补一组 en-US。
+3. 新增 `/api/pages/cuu-current` 或轻量 local state adapter，刷新 pet window 后恢复当前 session/run card。
+4. 把 launcher chip metadata 结构化：`delivery_kind` / `risk_hint` / `default_acceptance` 进入 WorkItem spec，而不是只落 planning note。
+5. 再运行 full `pnpm verify`、R2 release gate、reference path hygiene，并提交。
 
 禁止：
 
