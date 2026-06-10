@@ -459,7 +459,7 @@ PRD/概念图一致性：
 
 ## 10. 尚未完成
 
-R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`；R3.18 已补 pass-through 主窗 settings 恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> main settings 同步截图；R3.20b 已补 Windows 物理 OS 托盘菜单恢复和 run card 文本 overflow 自动门。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续 R3+ 继续补 Linux/macOS 跨平台 capture。
+R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏与中英双语证据；R3.13.1 已补真实 Tauri `run-failure` 终态截图/录屏与中英双语证据；R3.13.2 已补真实 Tauri 401/403 与 stream offline 错误态中英双语证据；R3.13.3 已补 pet webview boot 层 session/run 恢复；R3.14 已补 launcher chip metadata 结构化进入 WorkItem spec，并补 Cuu 卡片长文本不超框样式门；R3.15 已补真实 Tauri reload capture，覆盖 session question、active AgentRun、terminal AgentRun 三类恢复；R3.16 已补 `clarify/search/sync/done/offline/approval` 真实 Tauri 业务状态矩阵 capture；R3.17 已补 settings matrix、右键菜单双语 capture、模型切换 capture 与 `settings_menu_layout_gate`；R3.18 已补 pass-through 主窗 settings 恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> main settings 同步截图；R3.20b 已补 Windows 物理 OS 托盘菜单恢复和 run card 文本 overflow 自动门；R3.23 已补 Linux GNOME StatusNotifier/AppIndicator 菜单动作。R3 Agent entry 的最小可恢复闭环已有真实窗口证据；后续继续补 macOS menu bar 与 R4 主窗产品化。
 
 | 缺口 | 计划 |
 |---|---|
@@ -471,7 +471,7 @@ R3.12 已补真实 Tauri `pet` window run-stream completion 终态截图/录屏�
 | 真实端到端 smoke | R3.5 已补进程内 Hono route-stack；R3.11 已补 API dev server；R3.12 已补 run-stream smoke 与 Tauri capture；R3.13.1 已补 run-failure smoke 与 Tauri capture；R3.13.2 已补 error fault route-stack smoke 与 Tauri capture |
 | 可恢复状态 | R3.13.3 已补 `bootDesktopPetSurface()` 刷新/重启恢复：session question 用本地 card snapshot 恢复，AgentRun 用 `GET /api/agent-runs/:id` 重新拉取并恢复 active/terminal card；R3.15 已用真实 Tauri reload capture 证明 session/active run/terminal run 恢复且不裁切 |
 | 真实双语截图 | R3.10 已补真实 pet window 英文 launcher 截图；R3.12 已补 zh-CN 与 en-US run-stream completion 截图；R3.13.1 已补 zh-CN 与 en-US run-failure 截图；R3.13.2 已补 zh-CN 与 en-US 401/403/offline 截图；R3.15 已补 zh-CN reload session、en-US reload active run、zh-CN reload terminal run 截图；R3.16 已补 zh-CN/en-US 混合覆盖的业务状态矩阵截图；R3.17 已补 zh-CN/en-US 右键菜单截图；R3.18/R3.19/R3.20a/R3.20b 已补 zh-CN/en-US 主窗 settings 恢复/同步/物理托盘截图 |
-| settings / menu 真实证据 | R3.17 已补 settings 八组合、右键菜单 zh-CN/en-US 和黑猫切白猫模型切换 capture；R3.18 已补 pass-through 主窗恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> 主窗 settings 同步截图；R3.20b 已补物理 OS 托盘点击恢复证据；下一步补 Linux/macOS tray/menu smoke |
+| settings / menu 真实证据 | R3.17 已补 settings 八组合、右键菜单 zh-CN/en-US 和黑猫切白猫模型切换 capture；R3.18 已补 pass-through 主窗恢复；R3.19 已补 tray handler recovery；R3.20a 已补右键 hover -> 主窗 settings 同步截图；R3.20b 已补 Windows 物理 OS 托盘点击恢复证据；R3.23 已补 Linux GNOME StatusNotifier/AppIndicator 菜单动作；下一步补 macOS menu bar smoke |
 | 选择历史产品化 | R3.6 已合并 selected option IDs 到 planning note；R3.14 已把 `delivery_kind` / `risk_hint` / `default_acceptance` 结构化进 WorkItem spec |
 
 ## 11. R3.12 已落切片：真实 Tauri run-stream capture + 回流证据
@@ -1179,8 +1179,8 @@ R3.22 直接处理用户截图里的失败运行卡片文本越框风险：faile
 
 | 项 | 结论 |
 |---|---|
-| 真 Linux panel | 远程测试机会话仍是 `tty` + Xvfb/openbox；R3.22 证明 pet window / frame / 文本安全，不声明 appindicator 物理菜单点击通过 |
-| macOS | 本轮无 macOS 机器；menu bar item、截图权限、Accessibility 自动化策略转入 R3.23 |
+| 真 Linux panel | R3.23 已补真实 GNOME StatusNotifier/AppIndicator 主路径；R3.22 的限制只保留为历史边界 |
+| macOS | 本轮无 macOS 机器；menu bar item、截图权限、Accessibility 自动化仍待真机验证 |
 | 主窗全产品截图 | R3.22 只覆盖 Cuu notice / pet 卡文本边界；Workbench、Approval、Proposal、Replay、Cost 等完整主窗 UI 仍留给 R4 产品化复核 |
 
 复跑命令：
@@ -1203,10 +1203,39 @@ WORKHUB_CUU_QA_SCENARIO=generic-runtime-error \
 bash scripts/qa/cuu-tauri-linux-smoke.sh
 ```
 
-## 25. 下一刀 R3.23
+## 25. R3.23 已落切片：Linux GNOME StatusNotifier / AppIndicator menu
 
-1. 读取 `r3-23-real-linux-tray-macos-menu-plan-2026-06-11.md`、本文件、`desktop-pet-tauri.md`、`page-concepts.md` 和 R3.21/R3.22 证据后再开工。
-2. 在真实 Linux DE（GNOME/KDE/Xfce 至少一种）补 appindicator/tray menu 物理点击恢复：显示/隐藏 Cuu、恢复 Cuu 交互、打开设置、退出前保护。
-3. 在 macOS 补 menu bar item 策略与可执行 smoke：截图权限、Accessibility 自动化、menu item 点击、pet/main window 复位。
-4. 跨平台 capture 必须继续证明主窗无 Cuu 本体，Cuu 只在独立 pet window；文本/frame hardgate 复用 R3.22 的 DOM `spatial_safety`。
-5. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。
+R3.23 关闭 Linux 真实 DE tray/menu 主路径。远端 GNOME Wayland 会话中启动 `ayatana-indicator-application.service` 后，`org.kde.StatusNotifierWatcher` 可用，WorkHub StatusNotifier item 可枚举，DBusMenu layout 与 Event action 均可跑通。
+
+改动：
+
+| 层 | R3.23 行为 |
+|---|---|
+| Linux smoke | `scripts/qa/cuu-tauri-linux-smoke.sh` 默认 `status-notifier` driver 继续读 `org.kde.StatusNotifierWatcher`，并用 DBusMenu `GetLayout` / `Event` 触发菜单 action |
+| DBusMenu 兼容 | `GetLayout` 优先使用 `busctl ... iias 0 1 0`，避免 `-1` 被解析为 busctl option；parser 兼容 `(ia{sv}av)` 紧凑输出 |
+| Window effect gate | `restore/open-settings/open-inbox/show-main/hide-main/toggle-pet/quit` 均用前后 `Map State: IsViewable` / `IsUnMapped` 验证，不靠 Tauri command fallback |
+| Text/frame gate | 用户截图暴露的长卡贴边风险收紧为 `bubble_gap_to_live2d_px >= 8`；card 模式 Cuu 本体下移到 `bottom:48px` |
+
+证据：
+
+| 证据 | 结果 |
+|---|---|
+| Linux env | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-appindicator-statusnotifier-busctl/linux-env-report.txt`：`desktop=ubuntu:GNOME`、`session_type=wayland`、`DISPLAY=:0` |
+| StatusNotifier item | `linux-status-notifier-items.txt` 包含 WorkHub item `:1.771/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray` |
+| DBusMenu layout | `linux-dbusmenu-layout-restore-pet-interaction-summary.json` 解析出 `Open WorkHub` / `Hide main window` / `Show / hide Cuu` / `Restore Cuu interaction` / `Open inbox` / `Settings` / `Quit WorkHub` |
+| Menu actions | `linux-menu-action-status.txt` 以 `ok` 结束，`linux-dbusmenu-event-*.err.txt` 均为空 |
+| Text/frame | `cuu-tauri-dom-report.json`：`horizontal_overflow=false`、`vertical_overflow=false`、`bubble_overlaps_live2d=false`、`bubble_gap_to_live2d_px=22.04` |
+
+限制：
+
+| 项 | 结论 |
+|---|---|
+| GNOME screenshot | 远端 root screenshot 仍是黑图，只作为环境产物；Linux AppIndicator 验收以 DBusMenu、window state 和 DOM report 为准 |
+| macOS | 仍无 macOS 真机，不声明 menu bar 通过 |
+| R4 主窗 | 本轮只关闭桌面 tray/menu 与 Cuu run card frame；Workbench、Approval、Proposal、Replay、Cost 等完整主窗视觉矩阵仍属于 R4 |
+
+## 26. 下一刀
+
+1. 有 macOS 机器后补 `scripts/qa/cuu-tauri-macos-menu-smoke.sh` 真机 menu bar：Accessibility / Screen Recording 权限、menu item 点击、pet/main window 复位。
+2. 进入 R4 主窗产品化视觉矩阵：Workbench、Approval、Proposal、Replay、Cost 等页面补 zh-CN/en-US、desktop/mobile、loading/empty/error/forbidden、文本不越框和截图审查。
+3. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。

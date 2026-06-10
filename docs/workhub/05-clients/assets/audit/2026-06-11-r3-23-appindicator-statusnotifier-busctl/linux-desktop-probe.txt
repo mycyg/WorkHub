@@ -1,0 +1,14 @@
+captured_at=2026-06-11T05:24:49+08:00
+require_real_de=1
+session_type=wayland
+desktop=ubuntu:GNOME
+display=:0
+wayland_display=wayland-0
+dbus_session_bus_address=unix:path=/run/user/1000/bus
+loginctl_available=true
+Name=mycyg
+Remote=yes
+Desktop=
+Type=tty
+Class=user
+State=active

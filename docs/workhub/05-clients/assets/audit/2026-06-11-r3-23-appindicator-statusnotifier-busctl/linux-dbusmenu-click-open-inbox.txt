@@ -1,0 +1,1 @@
+action_id=open-inbox label=Open inbox menu_id=7 service=:1.771 menu_path=/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu

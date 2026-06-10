@@ -1,0 +1,1 @@
+action_id=show-main label=Open WorkHub menu_id=2 service=:1.771 menu_path=/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu

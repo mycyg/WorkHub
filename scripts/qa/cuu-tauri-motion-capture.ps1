@@ -2421,10 +2421,16 @@ function New-CuuPetCardTextOverflowGate {
   $bubbleWithinSurfaceVertical = $false
   $bubbleWithinSurfaceHorizontal = $false
   $bubbleClearOfLive2d = $false
+  $bubbleGapToLive2dPx = $null
+  $bubbleHasLive2dClearance = $false
   if ($spatialSafety) {
     $bubbleWithinSurfaceVertical = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_within_surface_vertical") -eq $true
     $bubbleWithinSurfaceHorizontal = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_within_surface_horizontal") -eq $true
     $bubbleClearOfLive2d = (Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_overlaps_live2d") -eq $false
+    $bubbleGapToLive2dPx = Get-CuuObjectPropertyValue -InputObject $spatialSafety -Name "bubble_gap_to_live2d_px"
+    if ($null -ne $bubbleGapToLive2dPx) {
+      $bubbleHasLive2dClearance = ([double]$bubbleGapToLive2dPx) -ge 8
+    }
   }
   $bubbleOffenderCount = ($bubbleOffenders | Where-Object { $null -ne $_ } | Measure-Object).Count
   $passed = $bubblePresent `
@@ -2435,7 +2441,8 @@ function New-CuuPetCardTextOverflowGate {
     -and $primaryActionNoVerticalOverflow `
     -and $bubbleWithinSurfaceVertical `
     -and $bubbleWithinSurfaceHorizontal `
-    -and $bubbleClearOfLive2d
+    -and $bubbleClearOfLive2d `
+    -and $bubbleHasLive2dClearance
 
   [pscustomobject]@{
     enabled = $true
@@ -2449,6 +2456,8 @@ function New-CuuPetCardTextOverflowGate {
     bubble_within_surface_vertical = $bubbleWithinSurfaceVertical
     bubble_within_surface_horizontal = $bubbleWithinSurfaceHorizontal
     bubble_clear_of_live2d = $bubbleClearOfLive2d
+    bubble_gap_to_live2d_px = $bubbleGapToLive2dPx
+    bubble_has_live2d_clearance = $bubbleHasLive2dClearance
     primary_action_layout = $primaryActionLayout
     primary_action_no_horizontal_overflow = $primaryActionNoHorizontalOverflow
     primary_action_no_vertical_overflow = $primaryActionNoVerticalOverflow

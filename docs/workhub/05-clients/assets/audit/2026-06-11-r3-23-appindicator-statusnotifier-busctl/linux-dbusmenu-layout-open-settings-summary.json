@@ -1,0 +1,30 @@
+[
+  {
+    "id": 2,
+    "label": "Open WorkHub"
+  },
+  {
+    "id": 3,
+    "label": "Hide main window"
+  },
+  {
+    "id": 5,
+    "label": "Show / hide Cuu"
+  },
+  {
+    "id": 6,
+    "label": "Restore Cuu interaction"
+  },
+  {
+    "id": 7,
+    "label": "Open inbox"
+  },
+  {
+    "id": 8,
+    "label": "Settings"
+  },
+  {
+    "id": 10,
+    "label": "Quit WorkHub"
+  }
+]

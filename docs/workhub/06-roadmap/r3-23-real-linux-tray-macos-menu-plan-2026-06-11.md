@@ -51,7 +51,7 @@ R3.21 已证明 Linux Xvfb/openbox 能启动 WorkHub main window、独立 Cuu pe
 | settings proof | 打开设置后主窗路由、控件状态和 `overflow.offenders=[]` 均有证据 |
 | pet restore proof | restore 后 Cuu 可交互，右键菜单可用，`pass=false`、`hide=false`、`opacity=100` |
 | macOS proof | 有 macOS 机器时必须提供 menu bar 截图、权限探测和点击日志；没有机器时只能交付策略与脚本，不声明通过 |
-| regression proof | R3.22 text/frame hardgate 继续通过，尤其是 `spatial_safety.bubble_overlaps_live2d=false` |
+| regression proof | R3.22 text/frame hardgate 继续通过，尤其是 `spatial_safety.bubble_overlaps_live2d=false` 且 `bubble_gap_to_live2d_px >= 8` |
 | path hygiene | 不提交 `reference/`、临时 askpass、日志缓存或本地密钥 |
 
 ## 6. 必跑命令
@@ -183,7 +183,7 @@ WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX
 - `cleanup()` 增加当前 `repo_root` 限定的 orphan 清理：`cuu-r3-tauri-run-stream-server` 与 `@workhub/desktop-webview dev`，避免失败后 8787/1420 stale 端口造成下一轮假阻塞。
 - `cleanup()` 后续再收紧为 RETURN + EXIT 双保险，并按当前 `repo_root/client-tauri/src-tauri/target/debug/workhub-client-tauri` 清理 orphan Tauri debug binary，避免下一轮 single-instance 假失败。
 
-当前状态：远端真实 GNOME 已证明 `DISPLAY/XAUTHORITY` 桥接、窗口列表、DOM `spatial_safety` 与文本/frame hardgate 可跑；root screenshot 在该远程 GNOME session 下是黑图，不作为 UI 验收截图；StatusNotifier menu action 仍阻塞在 `org.kde.StatusNotifierWatcher` 缺失/扩展未热加载，不能声明 tray menu action 通过。
+第五刀当时状态：远端真实 GNOME 已证明 `DISPLAY/XAUTHORITY` 桥接、窗口列表、DOM `spatial_safety` 与文本/frame hardgate 可跑；root screenshot 在该远程 GNOME session 下是黑图，不作为 UI 验收截图；StatusNotifier menu action 当时阻塞在 `org.kde.StatusNotifierWatcher` 缺失/扩展未热加载。该阻塞已由第九刀通过 `ayatana-indicator-application.service` + DBusMenu `busctl` 路径关闭，见本文件 §16。
 
 本地证据已归档：
 
@@ -254,12 +254,42 @@ bash scripts/qa/cuu-tauri-linux-smoke.sh
 | toggle Cuu | `after-toggle-pet-window-states` 中 `Cuu` 为 `Map State: IsUnMapped`，`WorkHub` 仍 `IsViewable` |
 | hide main | `after-hide-main-window-states` 中 `WorkHub` 与 `Cuu` 均为 `IsUnMapped` |
 | quit dry-run | `after-quit-ps-app` 显示 Tauri 进程仍存活 |
-| text/frame | `cuu-tauri-dom-report.json` 继续证明 failed run card 无 horizontal/vertical overflow，`bubble_overlaps_live2d=false` |
+| text/frame | `cuu-tauri-dom-report.json` 继续证明 failed run card 无 horizontal/vertical overflow，`bubble_overlaps_live2d=false`；用户截图暴露的贴边风险已收紧为 `bubble_gap_to_live2d_px >= 8` |
 
 边界仍不变：这是 XEmbed tray host 物理菜单 proof，不等于 GNOME AppIndicator / StatusNotifier panel proof；远端 root screenshot 仍为黑图，只保留为环境产物，不作为 UI 视觉验收。
 
-下一步：
+## 16. 2026-06-11 第九刀落点
 
-1. 继续推进 GNOME AppIndicator / StatusNotifier：需要重启 GNOME session 或换 KDE/Xfce 后重跑默认 `WORKHUB_LINUX_MENU_DRIVER=status-notifier`。
-2. 补 macOS 真实 menu bar smoke：有 macOS 机器后运行 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，归档 Accessibility / Screen Recording 权限与点击证据。
-3. 在 AppIndicator 或 macOS 任一真实平台菜单证据完成后，更新 `cuu-r3-agent-entry.md`、`desktop-pet-tauri.md`、R0-R4 roadmap 与 README 的平台验收状态。
+第九刀关闭 Linux GNOME AppIndicator / StatusNotifier 主路径：远端启动 `ayatana-indicator-application.service` 后，`org.kde.StatusNotifierWatcher` 出现在 session bus，默认 `WORKHUB_LINUX_MENU_DRIVER=status-notifier` smoke 通过。
+
+```bash
+WORKHUB_LINUX_SMOKE_REQUIRE_REAL_DE=1 \
+WORKHUB_LINUX_MENU_DRIVER=status-notifier \
+WORKHUB_CUU_QA_SCENARIO=run-failure \
+WORKHUB_CUU_QA_LOCALE=en-US \
+bash scripts/qa/cuu-tauri-linux-smoke.sh
+```
+
+归档目录：
+
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-appindicator-statusnotifier-busctl/smoke-summary.md`
+
+关键验收：
+
+| Gate | 结果 |
+|---|---|
+| real DE | `ubuntu:GNOME` / `XDG_SESSION_TYPE=wayland` / `DISPLAY=:0` / `/run/user/1000/.mutter-Xwaylandauth.*` |
+| StatusNotifier watcher | `linux-status-notifier-items.txt` 包含 WorkHub item：`:1.771/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray` |
+| DBusMenu path | `linux-status-notifier-menu-path.raw.txt` 返回 `/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu` |
+| layout parser | `linux-dbusmenu-layout-restore-pet-interaction-summary.json` 解析出 `Open WorkHub`、`Hide main window`、`Show / hide Cuu`、`Restore Cuu interaction`、`Open inbox`、`Settings`、`Quit WorkHub` |
+| Event action | `linux-dbusmenu-event-*.err.txt` 均为空，`linux-menu-action-status.txt` 以 `ok` 结束 |
+| window effects | `restore/open-settings/open-inbox/show-main/hide-main/toggle-pet/quit` 均有前后 `window-states`，效果用 `Map State: IsViewable` / `IsUnMapped` 验证 |
+| text/frame | failed run card `horizontal_overflow=false`、`vertical_overflow=false`、`bubble_overlaps_live2d=false`、`bubble_gap_to_live2d_px=22.04` |
+| script hardening | `GetLayout` 改为优先 `busctl`，递归深度用 `1` 避免 `-1` 被解析为 busctl option；parser 兼容 `(ia{sv}av)` 紧凑输出 |
+
+用户截图暴露的长卡贴边风险已并入本轮：card 模式 Cuu 本体下移到 `bottom:48px`，PowerShell/Linux hardgate 都要求 `bubble_gap_to_live2d_px >= 8`。
+
+仍未关闭：
+
+1. macOS 真实 menu bar smoke：有 macOS 机器后运行 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，归档 Accessibility / Screen Recording 权限与点击证据。
+2. R4 主窗产品化：Workbench、Approval、Proposal、Replay、Cost 等完整页面仍需 zh-CN/en-US、mobile/desktop、四态、文本不越框和截图审查。

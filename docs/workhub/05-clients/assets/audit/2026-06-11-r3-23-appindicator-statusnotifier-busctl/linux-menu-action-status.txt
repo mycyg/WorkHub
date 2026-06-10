@@ -1,0 +1,4 @@
+status_notifier_item=:1.771/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray
+menu_path=/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu
+menu_action_sequence=restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit
+ok

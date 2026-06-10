@@ -1,0 +1,62 @@
+{
+  "contract": "workhub.cuu.tray-menu-action-matrix",
+  "version": 1,
+  "actions": [
+    {
+      "id": "show-main",
+      "label": "Open WorkHub",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_root",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "hide-main",
+      "label": "Hide main window",
+      "target": "main",
+      "expected_effect": "hide_main_window",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "toggle-pet",
+      "label": "Show / hide Cuu",
+      "target": "pet",
+      "expected_effect": "toggle_pet_window",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "restore-pet-interaction",
+      "label": "Restore Cuu interaction",
+      "target": "pet",
+      "expected_effect": "pass_false_hide_false_opacity_100",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "open-inbox",
+      "label": "Open inbox",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_inbox",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "open-settings",
+      "label": "Settings",
+      "target": "main",
+      "expected_effect": "show_and_focus_main_route_settings",
+      "destructive": false,
+      "dry_run_only": false
+    },
+    {
+      "id": "quit",
+      "label": "Quit WorkHub",
+      "target": "app",
+      "expected_effect": "exit_app",
+      "destructive": true,
+      "dry_run_only": true
+    }
+  ]
+}

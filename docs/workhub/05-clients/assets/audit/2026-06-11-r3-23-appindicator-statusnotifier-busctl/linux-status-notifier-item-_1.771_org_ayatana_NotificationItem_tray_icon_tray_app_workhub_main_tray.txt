@@ -1,0 +1,32 @@
+item=:1.771/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray
+service=:1.771
+path=/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray
+Id=s "tray-icon tray app workhub-main-tray"
+Title=s "workhub-client-tauri"
+Status=s "Active"
+IconName=s "/run/user/1000/tray-icon/tray-icon-workhub-main-tray-0.png"
+ToolTip=Menu=o "/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu"
+introspect=
+NAME                       TYPE     SIGNATURE RESULT/VALUE                                                              FLAGS
+.Scroll                    method   is        -                                                                         -
+.SecondaryActivate         method   ii        -                                                                         -
+.XAyatanaSecondaryActivate method   u         -                                                                         -
+.AttentionAccessibleDesc   property s         ""                                                                        emits-change
+.AttentionIconName         property s         ""                                                                        emits-change
+.Category                  property s         "ApplicationStatus"                                                       emits-change
+.IconAccessibleDesc        property s         "icon"                                                                    emits-change
+.IconName                  property s         "/run/user/1000/tray-icon/tray-icon-workhub-main-tray-0.png"              emits-change
+.IconThemePath             property s         "/run/user/1000/tray-icon"                                                emits-change
+.Id                        property s         "tray-icon tray app workhub-main-tray"                                    emits-change
+.Menu                      property o         "/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray/Menu" emits-change
+.Status                    property s         "Active"                                                                  emits-change
+.Title                     property s         "workhub-client-tauri"                                                    emits-change
+.XAyatanaLabel             property s         ""                                                                        emits-change
+.XAyatanaLabelGuide        property s         ""                                                                        emits-change
+.XAyatanaOrderingIndex     property u         0                                                                         emits-change
+.NewAttentionIcon          signal   -         -                                                                         -
+.NewIcon                   signal   -         -                                                                         -
+.NewIconThemePath          signal   s         -                                                                         -
+.NewStatus                 signal   s         -                                                                         -
+.NewTitle                  signal   -         -                                                                         -
+.XAyatanaNewLabel          signal   ss        -                                                                         -

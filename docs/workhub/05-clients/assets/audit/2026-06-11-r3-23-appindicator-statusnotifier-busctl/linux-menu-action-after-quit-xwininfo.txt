@@ -1,0 +1,41 @@
+
+xwininfo: Window id: 0x379 (the root window) (has no name)
+
+  Root window id: 0x379 (the root window) (has no name)
+  Parent window id: 0x0 (none)
+     26 children:
+     0x600003 "WorkHub": ("workhub-client-tauri" "Workhub-client-tauri")  1100x780+0+1528  +0+1528
+        1 child:
+        0x600004 (has no name): ()  1x1+-1+-1  +-1+1527
+     0x600017 "Cuu": ("workhub-client-tauri" "Workhub-client-tauri")  520x720+556+3096  +556+3096
+        1 child:
+        0x600018 (has no name): ()  1x1+-1+-1  +555+3095
+     0x600009 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x600001 "workhub-client-tauri": ("workhub-client-tauri" "Workhub-client-tauri")  10x10+10+10  +10+10
+     0xc0000f (has no name): ()  1x1+0+0  +0+0
+     0xc0000e (has no name): ()  1x1+0+0  +0+0
+     0xc0000c (has no name): ()  1x1+0+0  +0+0
+     0xc0000b (has no name): ()  1x1+0+0  +0+0
+     0xa00009 (has no name): ()  1x1+-1+-1  +-1+-1
+     0xc0000a (has no name): ()  1x1+0+0  +0+0
+     0xc00009 (has no name): ()  1x1+0+0  +0+0
+     0xc00008 (has no name): ()  1x1+0+0  +0+0
+     0xc00007 (has no name): ()  1x1+0+0  +0+0
+     0xa00002 "mutter-x11-frames": ("mutter-x11-frames" "mutter-x11-frames")  1x1+0+0  +0+0
+        1 child:
+        0xa00003 (has no name): ()  1x1+-1+-1  +-1+-1
+     0xc00003 "ibus-xim": ()  1x1+0+0  +0+0
+        1 child:
+        0xc00004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0xc00001 "ibus-x11": ("ibus-x11" "")  10x10+10+10  +10+10
+     0x400008 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400007 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400006 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400005 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400003 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400002 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400001 "GNOME Shell": ()  1x1+-100+-100  +-100+-100
+     0x200001 (has no name): ()  10x10+0+0  +0+0
+     0x40000a "mutter guard window": ()  1100x3840+0+0  +0+0
+

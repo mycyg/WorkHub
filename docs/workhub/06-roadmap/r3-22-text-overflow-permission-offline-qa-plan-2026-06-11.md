@@ -131,7 +131,7 @@ Linux 证据：
 
 | 场景 | 证据目录 | 验收摘要 |
 |---|---|---|
-| failed AgentRun | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/run-failure-linux-smoke/` | `status=ok`，`data_pet_window_height=720`，bubble/primary action 无横向 overflow，`Run progress` 与 `Budget` 存在，`bubble_overlaps_live2d=false` |
+| failed AgentRun | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/run-failure-linux-smoke/` | `status=ok`，`data_pet_window_height=720`，bubble/primary action 无横向 overflow，`Run progress` 与 `Budget` 存在，`bubble_overlaps_live2d=false`。2026-06-11 追加用户截图回归：QA gate 现在要求 `bubble_gap_to_live2d_px >= 8`，避免长卡贴住 Cuu 头部造成“文本越框感” |
 | generic runtime error | `docs/workhub/05-clients/assets/audit/2026-06-11-r3-22-text-overflow/generic-runtime-error-linux-smoke/` | `status=ok`，`api_fault=generic-502`，bubble 高度稳定，未出现旧 failed card 残影，`spatial_safety` 通过 |
 
 截图：

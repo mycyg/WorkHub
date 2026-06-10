@@ -479,10 +479,10 @@ capture_dbusmenu_layout() {
   local menu_path="$2"
   local action_id="$3"
   local raw="$out_dir/linux-dbusmenu-layout-$action_id.txt"
-  if command -v gdbus >/dev/null 2>&1; then
+  if command -v busctl >/dev/null 2>&1; then
+    busctl --user call "$service" "$menu_path" com.canonical.dbusmenu GetLayout iias 0 1 0 > "$raw" 2> "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
+  elif command -v gdbus >/dev/null 2>&1; then
     gdbus call --session --dest "$service" --object-path "$menu_path" --method com.canonical.dbusmenu.GetLayout 0 -1 "[]" > "$raw" 2> "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
-  elif command -v busctl >/dev/null 2>&1; then
-    busctl --user call "$service" "$menu_path" com.canonical.dbusmenu GetLayout iias 0 -1 0 > "$raw" 2> "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
   else
     echo "gdbus/busctl unavailable" > "$out_dir/linux-dbusmenu-layout-$action_id.err.txt"
     return 1
@@ -512,6 +512,13 @@ if not items:
         item_id = int(match.group(1))
         props = match.group(2)
         label_match = re.search(r'["\']label["\']\s+v\s+s\s+["\']([^"\']+)["\']', props)
+        if label_match:
+            items.append({"id": item_id, "label": label_match.group(1)})
+if not items:
+    for match in re.finditer(r"\(ia\{sv\}av\)\s+(\d+)\s+\d+\s+(.*?)(?=\s+\(ia\{sv\}av\)|\Z)", text, flags=re.S):
+        item_id = int(match.group(1))
+        props = match.group(2)
+        label_match = re.search(r'["\']label["\']\s+s\s+["\']([^"\']+)["\']', props)
         if label_match:
             items.append({"id": item_id, "label": label_match.group(1)})
 open(summary_file, "w", encoding="utf-8").write(json.dumps(items, ensure_ascii=False, indent=2))
@@ -1027,6 +1034,7 @@ spatial = report.get("spatial_safety", {})
 bubble_within_vertical = spatial.get("bubble_within_surface_vertical")
 bubble_within_horizontal = spatial.get("bubble_within_surface_horizontal")
 bubble_overlaps_live2d = spatial.get("bubble_overlaps_live2d")
+bubble_gap_to_live2d = spatial.get("bubble_gap_to_live2d_px")
 bubble_text = report.get("bubble", {}).get("text") or ""
 surface_data = report.get("surface", {}).get("data", {})
 bubble_data = report.get("bubble", {}).get("data", {})
@@ -1059,7 +1067,9 @@ if (
 if scenario in run_api_scenarios and (
     bubble_within_vertical is not True or
     bubble_within_horizontal is not True or
-    bubble_overlaps_live2d is not False
+    bubble_overlaps_live2d is not False or
+    not isinstance(bubble_gap_to_live2d, (int, float)) or
+    bubble_gap_to_live2d < 8
 ):
     raise SystemExit(f"Unsafe pet card spatial report: {spatial!r}")
 expected_state = {

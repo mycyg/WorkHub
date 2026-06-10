@@ -1,0 +1,5 @@
+:1.771/org/ayatana/NotificationItem/tray_icon_tray_app_workhub_main_tray
+:1.58/org/ayatana/NotificationItem/unattended_upgrade
+:1.58/org/ayatana/NotificationItem/un_reboot
+:1.58/org/ayatana/NotificationItem/software_update_available
+:1.58/org/ayatana/NotificationItem/livepatch
