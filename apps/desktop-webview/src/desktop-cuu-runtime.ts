@@ -1,5 +1,7 @@
 import {
   cardFromAgentRunLive,
+  cardFromQuestionCard,
+  cardFromSessionVm,
   createCuuController,
   cardFromEvidenceBubble,
   cardFromWorkItemDetail,
@@ -127,11 +129,18 @@ export type DesktopCuuAgentLaunchClient = {
 
 export type DesktopCuuAgentLaunchResult = {
   session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>;
-  workItem: Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>;
-  run: AgentRunLiveVM;
   card: CuuCard;
   message: string;
-};
+} & (
+  | {
+      outcome: "clarification";
+    }
+  | {
+      outcome: "started";
+      workItem: Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>;
+      run: AgentRunLiveVM;
+    }
+);
 
 export type DesktopCuuEventSourceEvent = {
   data?: string;
@@ -303,6 +312,14 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
   };
   const session = await input.client.createSession(sessionPayload);
+  if (desktopCuuSessionNeedsClarification(session)) {
+    return {
+      outcome: "clarification",
+      session,
+      message: cuuFormat(input.locale, "cuuStart.clarificationNeeded", { title: session.question.title }),
+      card: cardFromSessionVm(session, input)
+    };
+  }
   const workItem = await input.client.createWorkItem({
     session_id: session.session_id,
     title: input.action.title,
@@ -318,6 +335,7 @@ export async function startDesktopCuuAgentFromLauncher(input: {
   };
   const run = await input.client.startAgentRun(workItemId, runPayload);
   return {
+    outcome: "started",
     session,
     workItem,
     run,
@@ -796,7 +814,7 @@ export async function submitDesktopCuuAction(input: {
     return {
       message: launch.message,
       card: launch.card,
-      agentRun: launch.run
+      ...(launch.outcome === "started" ? { agentRun: launch.run } : {})
     };
   }
 
@@ -862,8 +880,13 @@ export async function submitDesktopCuuAction(input: {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
   });
   return {
-    message: cuuFormat(input.locale, "action.nextQuestion", { title: question.title })
+    message: cuuFormat(input.locale, "action.nextQuestion", { title: question.title }),
+    card: cardFromQuestionCard(question, input)
   };
+}
+
+function desktopCuuSessionNeedsClarification(session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>) {
+  return session.question.options.length > 0;
 }
 
 function selectedOptionIdsFromCard(card: CuuCard | undefined) {

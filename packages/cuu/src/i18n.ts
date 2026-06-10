@@ -104,6 +104,7 @@ export type CuuCopyKey =
   | "cuuStart.defaultTitle"
   | "cuuStart.defaultIntent"
   | "cuuStart.started"
+  | "cuuStart.clarificationNeeded"
   | "cuuStart.unavailable"
   | "cuuStart.reducedMotion"
   | "cuuStart.progressIntent"
@@ -257,6 +258,7 @@ const cuuCopy = {
     "cuuStart.defaultTitle": "Cuu 桌面入口任务",
     "cuuStart.defaultIntent": "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。",
     "cuuStart.started": "Cuu 已启动：{title}",
+    "cuuStart.clarificationNeeded": "Cuu 还需要你点选：{title}",
     "cuuStart.unavailable": "Cuu 当前缺少启动 AI 执行的客户端能力。",
     "cuuStart.reducedMotion": "Cuu 正在等你选择一个交付方向。",
     "cuuStart.progressIntent": "方向",
@@ -409,6 +411,7 @@ const cuuCopy = {
     "cuuStart.defaultTitle": "Cuu desktop entry task",
     "cuuStart.defaultIntent": "Create an AI-runnable task from the Cuu desktop pet entry and work according to the selected delivery direction.",
     "cuuStart.started": "Cuu started: {title}",
+    "cuuStart.clarificationNeeded": "Cuu needs one more choice: {title}",
     "cuuStart.unavailable": "Cuu is missing the client capability to start an AI run.",
     "cuuStart.reducedMotion": "Cuu is waiting for a delivery direction.",
     "cuuStart.progressIntent": "Direction",

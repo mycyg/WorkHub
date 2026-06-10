@@ -765,11 +765,108 @@ test("desktop Cuu launcher helper returns session, work item, run, and Cuu card"
   const result = await startDesktopCuuAgentFromLauncher({ client, action, locale: "en-US" });
 
   assert.deepEqual(calls, ["session", "workitem", "run"]);
+  assert.equal(result.outcome, "started");
   assert.equal(result.session.session_id, "10000000-0000-4000-8000-000000000201");
   assert.equal(result.workItem.workitem.id, run.work_item_id);
   assert.equal(result.run.run_id, run.run_id);
   assert.equal(result.card.payload_ref?.entity_type, "agent_run");
   assert.equal(result.message, "Cuu started: Cuu structured task");
+});
+
+test("desktop Cuu launcher stops at backend clarification instead of bypassing the question", async () => {
+  const calls: string[] = [];
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "en-US" });
+  const selectedLauncher: CuuCard = {
+    ...launcher,
+    chips: (launcher.chips ?? []).map((chip) => ({ ...chip, selected: chip.id === "document-draft" }))
+  };
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: selectedLauncher
+  });
+  const session: SessionVM = {
+    session_id: "10000000-0000-4000-8000-000000000201",
+    work_item_id: "10000000-0000-4000-8000-000000000201",
+    topic: "session:10000000-0000-4000-8000-000000000201",
+    stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000201",
+    next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
+    question: {
+      id: "10000000-0000-4000-8000-000000000211",
+      session_id: "10000000-0000-4000-8000-000000000201",
+      work_item_id: "10000000-0000-4000-8000-000000000201",
+      title: "Which delivery path should Cuu use?",
+      body: "Pick one option before Cuu creates the executable task.",
+      input_mode: "single_choice",
+      options: [
+        { id: "document-draft", label: "Document draft", description: "PR-style note or plan.", risk_hint: "low" },
+        { id: "structured-data", label: "Structured data", description: "JSON, YAML, CSV, config.", risk_hint: "low" }
+      ],
+      recommended_option_ids: ["document-draft"],
+      free_text: { enabled: true, collapsed_by_default: true, placeholder: "Optional detail", max_length: 300 },
+      progress: [
+        { key: "intent", label: "Intent", state: "done" },
+        { key: "scope", label: "Scope", state: "active" },
+        { key: "run", label: "Run", state: "pending" }
+      ],
+      submit: {
+        method: "POST",
+        href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question"
+      }
+    }
+  };
+  const client = {
+    async createSession(): Promise<SessionVM> {
+      calls.push("session");
+      return session;
+    },
+    async createWorkItem(): Promise<WorkItemDetailVM> {
+      calls.push("workitem");
+      throw new Error("createWorkItem should wait for clarification");
+    },
+    async startAgentRun(): Promise<AgentRunLiveVM> {
+      calls.push("run");
+      throw new Error("startAgentRun should wait for clarification");
+    }
+  };
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  if (!action || action.kind !== "cuu-start-agent") {
+    throw new Error("expected Cuu start action");
+  }
+  const result = await startDesktopCuuAgentFromLauncher({ client, action, locale: "en-US" });
+
+  assert.deepEqual(calls, ["session"]);
+  assert.equal(result.outcome, "clarification");
+  assert.equal(result.session.session_id, session.session_id);
+  assert.equal(result.card.kind, "question");
+  assert.equal(result.card.payload_ref?.entity_type, "session");
+  assert.equal(result.card.input?.option_first, true);
+  assert.equal(result.card.input?.free_text_collapsed_by_default, true);
+  assert.equal(result.card.actions[0]?.href, session.next_question_href);
+  assert.equal(result.message, "Cuu needs one more choice: Which delivery path should Cuu use?");
+
+  const submitClient = {
+    ...client,
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const submitted = await submitDesktopCuuAction({ client: submitClient, action, locale: "en-US" });
+
+  assert.equal(submitted.card?.payload_ref?.entity_type, "session");
+  assert.equal(submitted.agentRun, undefined);
 });
 
 test("desktop Cuu run stream refreshes agent cards and closes on terminal status", async () => {
@@ -936,7 +1033,13 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option", card });
 
   assert.deepEqual(action, { kind: "session-next-question", sessionId: "session-1", selectedOptionIds: ["risk-first"] });
-  assert.equal((await submitDesktopCuuAction({ client, action: action! })).message, "下一题：下一步要谁审批？");
+  const result = await submitDesktopCuuAction({ client, action: action! });
+
+  assert.equal(result.message, "下一题：下一步要谁审批？");
+  assert.equal(result.card?.kind, "question");
+  assert.equal(result.card?.title, "下一步要谁审批？");
+  assert.equal(result.card?.payload_ref?.entity_type, "question");
+  assert.equal(result.card?.input?.option_first, true);
   assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
   assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
 });

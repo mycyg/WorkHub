@@ -2066,15 +2066,15 @@ R2 验收：
 | 项 | R3.1 行为 |
 |---|---|
 | 输入 | option-first，三枚 chip：文档/方案草稿、结构化数据、小型代码/模板 |
-| 真实链路 | `SessionVM -> WorkItemDetailVM -> AgentRunLiveVM` |
+| 真实链路 | `SessionVM -> question card` 或 `SessionVM -> WorkItemDetailVM -> AgentRunLiveVM` |
 | 权限 | 仍走 API client；没有后端 `/api/cuu/start-agent` 路由，也没有 Cuu 权限旁路 |
-| 返回 | `AgentRunLiveVM` 转 `agent_run` Cuu card |
+| 返回 | 需要澄清时转 session/question Cuu card；启动成功时 `AgentRunLiveVM` 转 `agent_run` Cuu card |
 | 主窗 | 未显示 Cuu 本体 |
-| 未覆盖 | 真实 Tauri 点击截图、真实 daemon SSE 回流、刷新恢复、launcher-to-run smoke |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon SSE 回流、刷新恢复、launcher-to-run smoke、确认后自动启动 |
 
 验证：
 
-- `corepack pnpm --filter @workhub/desktop-webview test`：64/64 通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：65/65 通过。
 - `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
 
 ### R3.2 已落：run stream 回流与错误卡
@@ -2098,18 +2098,20 @@ R2 验收：
 
 当前边界：
 
-| 项 | R3.2 行为 |
+| 项 | R3.3 行为 |
 |---|---|
 | run event 过滤 | 接受 `topic=run:{id}`、`event.run_id` 或 `event.data.run_id` |
 | Cuu 刷新 | 不直接信任 SSE payload；每次匹配事件重新拉 `GET /api/agent-runs/:id` |
 | 终态 | 非 `queued/running` 后自动关闭订阅 |
 | 错误态 | budget / permission / offline / generic 四类 Cuu card |
+| 澄清回退 | `createSession()` 返回 `SessionVM.question.options[]` 时显示 `cardFromSessionVm()`，不绕过澄清直接启动 run |
+| 下一题 | `nextQuestion()` 返回 `cardFromQuestionCard()`，保持 option-first 桌宠链路 |
 | Rust | 仍只做窗口、托盘、通知、SSE 转发；不拥有业务状态机 |
-| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、需要澄清时的 SessionVM question 回退 |
+| 未覆盖 | 真实 Tauri 点击截图、真实 daemon launcher-to-run smoke、刷新恢复、确认澄清后自动 `createWorkItem -> startAgentRun` |
 
 验证：
 
-- `corepack pnpm --filter @workhub/desktop-webview test`：64/64 通过。
+- `corepack pnpm --filter @workhub/desktop-webview test`：65/65 通过。
 - `corepack pnpm --filter @workhub/desktop-webview typecheck`：通过。
 
 ### R3.3 下一刀
