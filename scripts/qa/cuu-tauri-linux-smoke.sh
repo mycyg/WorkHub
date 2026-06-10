@@ -602,6 +602,43 @@ capture_linux_menu_action_state() {
   capture_linux_screen "menu-action-$label"
 }
 
+verify_linux_menu_action_effect() {
+  local action_id="$1"
+  local after_wmctrl="$out_dir/linux-menu-action-after-$action_id-wmctrl.txt"
+  case "$action_id" in
+    show-main|open-inbox|open-settings)
+      if ! grep -q "WorkHub" "$after_wmctrl"; then
+        echo "Tray action '$action_id' did not leave the WorkHub window visible." >&2
+        return 1
+      fi
+      ;;
+    hide-main)
+      if grep -q "WorkHub" "$after_wmctrl"; then
+        echo "Tray action hide-main did not hide the WorkHub window." >&2
+        return 1
+      fi
+      ;;
+    restore-pet-interaction)
+      if ! grep -q "Cuu" "$after_wmctrl"; then
+        echo "Tray action restore-pet-interaction did not leave the Cuu window visible." >&2
+        return 1
+      fi
+      ;;
+    toggle-pet)
+      if grep -q "Cuu" "$after_wmctrl"; then
+        echo "Tray action toggle-pet did not hide the currently visible Cuu window." >&2
+        return 1
+      fi
+      ;;
+    quit)
+      if ! ps -p "$app_pid" >/dev/null 2>&1; then
+        echo "Tray action quit exited the app despite dry-run guard." >&2
+        return 1
+      fi
+      ;;
+  esac
+}
+
 click_linux_dbus_menu_action() {
   local item="$1"
   local menu_path="$2"
@@ -649,6 +686,7 @@ run_linux_status_notifier_menu_action_matrix() {
       return 1
     fi
     capture_linux_menu_action_state "after-$action_id"
+    verify_linux_menu_action_effect "$action_id"
     IFS=","
   done
   IFS="$old_ifs"
@@ -692,6 +730,7 @@ run_linux_x11_tray_icon_menu_action_matrix() {
       return 1
     fi
     capture_linux_menu_action_state "after-$action_id"
+    verify_linux_menu_action_effect "$action_id"
     IFS=","
   done
   IFS="$old_ifs"
@@ -980,7 +1019,7 @@ if [ -z "${DISPLAY:-}" ]; then
     echo "DISPLAY is empty and xvfb-run is unavailable" >&2
     exit 1
   fi
-  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event x11_tray_focus_index_for_action x11_workhub_tray_window x11_click_tray_menu_action capture_linux_menu_action_state click_linux_dbus_menu_action run_linux_status_notifier_menu_action_matrix run_linux_x11_tray_icon_menu_action_matrix run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; menu_driver='$menu_driver'; run_desktop_smoke"
+  smoke_entry="$(declare -f requires_real_de tray_menu_label_for_action bootstrap_real_desktop_session_env port_is_open safe_file_token capture_linux_screen status_notifier_items snapshot_status_notifier_item select_workhub_status_notifier_item status_notifier_menu_path capture_dbusmenu_layout dbusmenu_item_id_for_label emit_dbusmenu_click_event x11_tray_focus_index_for_action x11_workhub_tray_window x11_click_tray_menu_action capture_linux_menu_action_state verify_linux_menu_action_effect click_linux_dbus_menu_action run_linux_status_notifier_menu_action_matrix run_linux_x11_tray_icon_menu_action_matrix run_linux_menu_action_matrix scenario_uses_run_api run_outcome_for_scenario api_fault_for_scenario wait_for_api_server wait_for_vite run_desktop_smoke); set -euo pipefail; repo_root='$repo_root'; out_dir='$out_dir'; wait_seconds='$wait_seconds'; scenario='$scenario'; locale='$locale'; port='$port'; api_port='$api_port'; require_real_de='$require_real_de'; menu_action_sequence='$menu_action_sequence'; menu_driver='$menu_driver'; run_desktop_smoke"
   if command -v dbus-run-session >/dev/null 2>&1; then
     xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session bash -c "$smoke_entry"
   else

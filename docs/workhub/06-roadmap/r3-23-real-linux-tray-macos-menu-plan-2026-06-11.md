@@ -201,7 +201,7 @@ WORKHUB_LINUX_SMOKE_OUT_DIR=/tmp/workhub-r3-23-linux-real-de-guard WORKHUB_LINUX
 | `status-notifier` | 默认；读取 `org.kde.StatusNotifierWatcher`，通过 DBus menu `GetLayout` / `Event(clicked)` 触发 action | AppIndicator / StatusNotifier panel proof |
 | `x11-tray-icon` | `WORKHUB_LINUX_MENU_DRIVER=x11-tray-icon`；解析 `xwininfo -root -tree` 中的 `tray-icon tray app workhub-main-tray` X window，右键后按 focusable menu item 顺序键盘选择 action | 真实 X11 tray-window automation，不等同 GNOME panel/AppIndicator proof |
 
-X11 fallback 每个 action 仍保留前后 `ps/wmctrl/xdotool/screen`、`linux-x11-tray-click-<action>.txt` 和 `linux-menu-action-status.txt`。`quit` 仍必须依赖 dry-run；若进程退出，脚本失败。
+X11 fallback 每个 action 仍保留前后 `ps/wmctrl/xdotool/screen`、`linux-x11-tray-click-<action>.txt` 和 `linux-menu-action-status.txt`。脚本会校验基础窗口效果：`hide-main` 后 WorkHub 不应可见、`show/open-*` 后 WorkHub 应可见、`restore` 后 Cuu 应可见、`toggle-pet` 后 Cuu 应隐藏；`quit` 仍必须依赖 dry-run，若进程退出则失败。
 
 ## 13. 下一步
 
