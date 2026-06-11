@@ -428,10 +428,18 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
-  assert.equal(resolveWebRoute("/#/approvals")?.key, "approvals");
+  assert.equal(resolveWebRoute("/#/approvals")?.key, "home");
   assert.equal(resolveWebRoute("/unknown"), undefined);
-  assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff#top");
+  assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff");
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
+});
+
+test("R4.24 web route helpers canonicalize legacy hash routes without treating hash as route truth", () => {
+  const legacyMatch = resolveWebRoute("https://workhub.local/#/proposals/p-1?tab=diff");
+  assert.equal(legacyMatch?.key, "home");
+  assert.equal(legacyMatch?.pathname, "/");
+  assert.equal(webRouteHref("https://workhub.local/#/proposals/p-1?tab=diff"), "/proposals/p-1?tab=diff");
+  assert.equal(webRouteHref("https://workhub.local/settings#desktop"), "/settings");
 });
 
 test("R4.16 web route tree declares hydration fallback boundaries for every product route", () => {

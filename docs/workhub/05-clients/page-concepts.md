@@ -443,6 +443,20 @@ R4.23 已把 Proposal advanced 区的 text hunk line editor 迁成第二段真�
 - HTML fallback boundary 仍可审计：原 line editor fallback preserved/hidden；structured field、subrecord 与 bulk workbench 没被本轮误删。
 - 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.23 no-new-smoke-sprawl gate 通过。
 
+### 6.20 R4.24 Web Runtime Finalization
+
+![R4.24 Web runtime finalization contact sheet](./assets/audit/2026-06-11-r4-web-live-route-interaction/contact-sheet.png)
+
+R4.24 没有新增视觉图，而是以同一 42 步 contact sheet 做 runtime/governance regression。证据目录仍为 `./assets/audit/2026-06-11-r4-web-live-route-interaction/`。
+
+本轮对概念图的符合点：
+
+- Path navigation 口径收口：生产导航不再写 `#/...`，legacy hash route 只在启动时迁成 path URL；这与 Web 主窗“浏览器可达的一切”一致。
+- R4.23 Proposal line editor 继续符合 `web-deliverable-change-request.png`：dirty SSE 后 hunk/search state 不丢，apply payload 与 HTML fallback boundary 仍可审计。
+- R5.1 第一条业务纵切选择 Drive；开工前必须复读 `web-project-drive-meetings-knowledge.png` 与 `web-drive-preview-change-draft.png`。
+- `web-drive-preview-change-draft.png` 中旧 Cuu 影像只作为“文件评论触发草稿”的信息架构参考，不代表 Cuu 进入 Web 主窗；当前 Cuu 边界仍以本页第 1 节和第 5 节为准。
+- 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.24 no-hash-write gate 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

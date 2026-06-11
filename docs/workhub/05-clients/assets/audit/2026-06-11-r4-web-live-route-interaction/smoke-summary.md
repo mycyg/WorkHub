@@ -84,6 +84,8 @@
 - R4.23 HTML fallback boundary regression: true
 - R4.23 single dispatcher regression: true
 - R4.23 no new smoke sprawl: true
+- R4.24 no hash write: true
+- R4.24 R4.23 React line editor regression: true
 - R4.16 hydration boundary regression: true
 - R4.15 settings boundary regression: true
 - active-only product panels: true

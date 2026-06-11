@@ -281,8 +281,7 @@ function escapeHtml(value: unknown) {
 
 function normalizePathname(input: string) {
   const parsed = new URL(input || "/", "https://workhub.local");
-  const hashPath = parsed.hash.startsWith("#/") ? new URL(parsed.hash.slice(1), "https://workhub.local").pathname : "";
-  const pathname = hashPath || parsed.pathname || "/";
+  const pathname = parsed.pathname || "/";
   if (pathname.length > 1 && pathname.endsWith("/")) {
     return pathname.slice(0, -1);
   }
@@ -291,9 +290,6 @@ function normalizePathname(input: string) {
 
 function normalizeSearch(input: string) {
   const parsed = new URL(input || "/", "https://workhub.local");
-  if (parsed.hash.startsWith("#/")) {
-    return new URL(parsed.hash.slice(1), "https://workhub.local").search;
-  }
   return parsed.search;
 }
 
@@ -346,7 +342,7 @@ export function webRouteHref(input: string) {
     const hashRoute = new URL(parsed.hash.slice(1), "https://workhub.local");
     return `${normalizePathname(hashRoute.pathname)}${hashRoute.search}`;
   }
-  return `${normalizePathname(parsed.pathname)}${parsed.search}${parsed.hash}`;
+  return `${normalizePathname(parsed.pathname)}${parsed.search}`;
 }
 
 function apiLabelFor(match: WebRouteMatch) {

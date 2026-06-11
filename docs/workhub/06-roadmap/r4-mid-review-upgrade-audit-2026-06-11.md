@@ -111,6 +111,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **建议**：R4 收尾时显式拍板"R5 第一条业务纵切是哪个模块"（建议 M-DRIVE：它是 OQ-4 合并语义的现实雏形载体，且 Python 锚点最厚），把断档写进 roadmap，避免"R4 推完 = 产品可用"的预期落空。
 
+**回写状态（2026-06-11 R4.24）**：已新增 [`r5-01-drive-business-slice-decision-2026-06-11.md`](./r5-01-drive-business-slice-decision-2026-06-11.md)，R5 第一条业务纵切拍板为 M-DRIVE。理由是 Drive 已承接 accepted deliverables、`ProjectDriveItem/Version`、download/text preview、restore 与 OQ-4 文档合并语义；Meeting/Schedule 仍登记为后续业务断档。
+
 ### P1-3 每路由双请求模式
 
 每次 `loadRouteSurface` 都 `await loadGoldPathTemplate()` + page VM 两次串行请求（`apps/web/src/routes.ts:469/477/484/491/504/508/514/521/525`）。随 P0-3 fixture 退役一并消掉；若 shell 改为前端常量，导航只剩一次 VM 请求。
@@ -127,6 +129,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **建议（R4.20 起分两步）**：① 把现有 smoke 按路由拆成 headless Playwright spec 进 CI（Linux Chrome 已被 R4.7-R4.9 远端 smoke 验证可行）；② 本机 contact-sheet 截图门保留，但降频为"里程碑发布门"而非每步必跑。
 
+**回写状态（2026-06-11 R4.24）**：R4.24 已在 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md) 登记五组拆分目标：`nav-locale`、`intake-knowledge`、`proposal-actions`、`settings-cost-replay`、`route-states`。单体 42 步 smoke 暂保留 contact sheet 与 R4.24 gates；CI 化实现仍是 R5 前置项。
+
 ### P1-6 身份是 demo 残留：自动注册 "P0.5 Reviewer"
 
 Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Reviewer" })`（`apps/web/src/browser.ts:1176`）。LAN-first 可接受，但它绕过了 onboarding/画像（PJ-1）且写死英文昵称。R5 前需要最小 identify/onboarding 闭环（昵称 + locale + 角色），并把 demo 自动注册移除。
@@ -141,11 +145,11 @@ Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Revie
 
 | # | 问题 | 证据 | 处置 |
 |---|---|---|---|
-| P2-1 | hash route 兼容是死代码与口径漂移：R4 验收说"无 hash route"，但 normalize 仍解析 `#/`，`setActivePage` 仍写 `window.history.replaceState(..., '#${route}')` | `apps/web/src/routes.ts:240-246`、`apps/web/src/browser.ts:393-397` | R4.24 清理 + 加"无 hash 写入"断言 |
+| P2-1 | hash route 兼容是死代码与口径漂移：R4 验收说"无 hash route"，但 normalize 仍解析 `#/`，`setActivePage` 仍写 `window.history.replaceState(..., '#${route}')` | `apps/web/src/routes.ts:240-246`、`apps/web/src/browser.ts:393-397` | **R4.24 已处理**：生产导航不再写 hash，hash 不再作为 route truth，legacy `#/` 只在 canonicalization 转 path；新增 `r4_24_no_hash_write` gate |
 | P2-2 | 手写 HTML 字符串的 XSS 面：依赖每处手工 `escapeHtml`（三处重复实现），server 文本经 `insertAdjacentHTML` 入 DOM | `apps/web/src/browser.ts:378`、`routes.ts:230`、`desktop-webview/src/browser.ts:129` | React 化天然消除；迁移前不再新增裸 innerHTML 注入点 |
 | P2-3 | 渲染层双轨并存：`packages/ui/src/replay/render.ts`、`agent-run`、`intake` 等旧 renderer 与 route-components 并行，桌面端还在直接用 | `apps/desktop-webview/src/main.ts:5-10` | 随 P1-1 共享 runtime 一并收敛 |
 | P2-4 | 可观测性空白：无错误上报/结构化日志聚合/前端异常采集，生产化前补 | （全仓无相关依赖） | R5 前置项 |
-| P2-5 | README 状态行已成 4000+ 字单行，可读性塌陷 | `docs/workhub/README.md:6` | 拆成"当前状态表"，状态行只留最新 3 条 |
+| P2-5 | README 状态行已成 4000+ 字单行，可读性塌陷 | `docs/workhub/README.md:6` | **R4.24 已处理**：根 README 与 docs README 均改成短状态 + 最近里程碑表，规格树计数更新到 117 |
 | P2-6 | 未提交的 R4.18 变更挂在工作区（16 个文件 + 2 个新目录） | `git status` | 已于 R4.19-pre 开工前提交 R4.18；R4.19 完成后继续一步一 commit |
 
 ---
@@ -163,7 +167,8 @@ R4.20   (已完成)                    数据流地基：app 级 SSE 长连接 +
 R4.21   (已完成)                    共享 web runtime 包：dispatcher/notice/编辑器抽包，Desktop 对齐 (P1-1)
 R4.22   (已完成)                    Proposal structured field scalar editor 第一段真 React 迁移
 R4.23   (已完成)                    Proposal line editor hunk decision/search/current file panel React 迁移
-R4.24   (当前下一步)                R4 收尾门：P2-1 hash 清理、P2-5 README 治理、P1-5 smoke CI 拆分、业务纵切优先级拍板 (P1-2)
+R4.24   (已完成)                    R4 收尾门：P2-1 hash 清理、P2-5 README 治理、P1-5 smoke CI 拆分计划、业务纵切优先级拍板 (P1-2)
+R5.1    (下一步)                    M-DRIVE business slice：Drive Page VM、version history、preview/download/restore、OQ-4 DOC 指针语义
 R5 前置清单                        权限矩阵审计 (P1-4)、Playwright CI 化 (P1-5)、onboarding (P1-6)、可观测性 (P2-4)
 ```
 
@@ -180,4 +185,4 @@ R5 前置清单                        权限矩阵审计 (P1-4)、Playwright CI
 
 ---
 
-*本篇为 R4 中期权威升级清单。R4.19-pre 与 R4.19 gate 已逐条回写；任何一条升级为施工项时按惯例另立 r4-xx plan。*
+*本篇为 R4 中期权威升级清单。R4.19-pre 至 R4.24 gate 已逐条回写；任何一条升级为施工项时按惯例另立 r4-xx / r5-xx plan。*

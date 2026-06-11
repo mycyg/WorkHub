@@ -28,6 +28,7 @@ type ApiRequestRecord = {
 type BrowserAudit = {
   pathname: string;
   search: string;
+  locationHash: string;
   lang: string;
   storedLocale: string | null;
   status: string;
@@ -1608,6 +1609,7 @@ function auditExpression() {
     return {
       pathname: location.pathname,
       search: location.search,
+      locationHash: location.hash,
       lang: document.documentElement.lang,
       storedLocale: localStorage.getItem("workhub.locale"),
       status: statusRoot ? statusRoot.getAttribute("data-r4-web-route-status") || "" : "",
@@ -2978,6 +2980,27 @@ async function main() {
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
       r4_23_no_new_smoke_sprawl: steps.length === 42,
+      r4_24_no_hash_write:
+        steps.length === 42 &&
+        steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
+      r4_24_r4_23_react_line_editor_regression:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.reactRuntimeVisibleLineEditor === "true" &&
+          step.audit.reactRuntimeLineEditorKind === "text-hunk"
+        ) &&
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.reactRuntimeLineEditorSearchValue === "scope"
+        ) &&
+        steps.some((step) =>
+          step.id === "06b-proposal-line-editor-apply-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.reactRuntimeLineEditorKind === "text-hunk"
+        ) &&
+        proof.advancedPayloads.textHunkOverrides &&
+        proof.advancedPayloads.textHunkFullCoverage,
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -3129,6 +3152,8 @@ async function main() {
         `- R4.23 HTML fallback boundary regression: ${String(gates.r4_23_html_fallback_boundary_regression)}`,
         `- R4.23 single dispatcher regression: ${String(gates.r4_23_single_dispatcher_regression)}`,
         `- R4.23 no new smoke sprawl: ${String(gates.r4_23_no_new_smoke_sprawl)}`,
+        `- R4.24 no hash write: ${String(gates.r4_24_no_hash_write)}`,
+        `- R4.24 R4.23 React line editor regression: ${String(gates.r4_24_r4_23_react_line_editor_regression)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

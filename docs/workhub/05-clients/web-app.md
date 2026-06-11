@@ -49,17 +49,18 @@ owner: workflow
 | R4.21 Shared web runtime | `packages/web-runtime/src/*`、`apps/web/src/browser.ts`、`apps/desktop-webview/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.21 已新增 `@workhub/web-runtime`，共享 browser locale、structured notices、action payload materializer、dirty markers、route line editor binding 与可注入 app-level live runtime；Web 保持 R4.20 SSE/dataflow 语义，desktop-webview 删除旧 dispatcher/parser/line-editor 拷贝并接共享 helpers；42 步 Chrome smoke 与 R4.21 gates 均通过 |
 | R4.22 Proposal mutation editor migration | `apps/web/src/react-route-mount.ts`、`apps/web/src/routes.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.22 已把 Proposal structured field scalar editor 接成第一段真实可见 React mutation editor：`createRoot()` 挂载、textarea controlled state、SSE dirty guard 保留输入、action payload 仍走 delegated dispatcher；HTML fallback preserved/hidden boundary、single dispatcher 与 42 步 smoke 均通过 |
 | R4.23 Proposal line editor React migration | `apps/web/src/react-route-mount.ts`、`apps/web/src/routes.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.23 已把 Proposal text hunk line editor 的 hunk decision/search/current file scope 接成第二段真实可见 React mutation island；`text_hunk_overrides` payload parity、dirty SSE state retention、HTML fallback preserved/hidden、single dispatcher 与 42 步 smoke 均通过 |
+| R4.24 Web runtime finalization | `apps/web/src/browser.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts`、`README.md`、`docs/workhub/README.md` | R4.24 已清理生产 hash route 写入，legacy `#/` 只作为启动时 path canonicalization；README 状态治理、browser smoke CI 拆分计划与 R5.1 Drive 业务纵切决策均已落 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，R4.14 已把 Option Intake / Knowledge fallback 串成真实 route dataflow，R4.15 已硬化 Settings / locale persistence / device boundary，R4.16 已建立 route tree / hydration boundary，R4.17 已完成 Home / Settings first migration，R4.18 已完成 Cost / Replay 扩展迁移，R4.19-pre 已证明 Home 真 React mount / dispatcher 共存 / SSE props update，R4.19 已完成 Proposal split migration 和编辑态 dirty guard，R4.20 已完成 app-level SSE、Page VM local refetch、cursor 与 `/api/pages/gold-path` fixture chrome 退役，R4.21 已完成 Web/desktop-webview shared runtime，R4.22 已完成 Proposal structured field scalar editor 第一段真实可见 React controlled-state 迁移，R4.23 已完成 Proposal line editor hunk decision/search/current file scope 最小 React island。剩余重点进入 R4.24 Web runtime finalization：hash route 清理、README 治理、smoke CI 拆分和 R5 业务纵切拍板。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10-R4.23 已完成 route componentization、action/notice locale、Proposal advanced UX、Option Intake / Knowledge、Settings boundary、hydration boundary、true React mount spike、Proposal split、app-level SSE、shared runtime 与两段可见 React mutation island。R4.24 已完成 Web runtime finalization：生产导航不再写 hash route，README 状态治理、smoke CI 拆分计划和 R5.1 Drive 业务纵切决策已落。
 - 现有产品壳已脱离 P0.5 preview 外观，并支持 active-only panel；R4.12 已把 approval/proposal action、reason gate、desktop gate、retry/request access route-state、SSE refresh notice 纳入统一中英 action feedback contract。
 - `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings`、`Option Intake`、`Knowledge fallback` 已有第一版 ready route component；Proposal 高级冲突/字段/逐行编辑器已在 R4.13 收敛，Intake/Knowledge 真实 dataflow 已在 R4.14 收敛，Settings locale/device boundary 已在 R4.15 收敛，R4.16 已为这些 route 建立可迁移的 hydration boundary，R4.17 已让 Home / Settings 具备 React-compatible props adapter，R4.18 已扩展到 Cost / Replay 并补齐 Replay restore single dispatcher。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence；R4.14 已补 Option Intake / Knowledge fallback route componentization；R4.15 已补 Settings / locale persistence / device boundary hardening；R4.16 已补 React route tree / hydration boundary；R4.17 已补 React-compatible first migration；R4.18 已补 Cost / Replay 扩展迁移；R4.19-pre 已补真 React mount spike；R4.19 已补 Proposal split adapter、advanced fallback boundary、dirty guard 与 fixture chrome 冻结门；R4.20 已补 app 级 SSE、local Page VM refetch、Last-Event-ID/cursor 与 `/api/pages/gold-path` fixture chrome 退役；R4.21 已补 `@workhub/web-runtime` shared dispatcher/notice/payload/line-editor/live runtime；R4.22 已补 Proposal structured field scalar visible React mutation editor；R4.23 已补 Proposal line editor visible React mutation island。下一步进入 R4.24 Web runtime finalization。
+- R4.1-R4.24 的 QA 门禁已覆盖 route-state matrix、真实 route loader、多记录 Page VM、product shell、live browser interaction、Rust i18n、PG/Redis/SSE、locale metrics、componentization、action notice、Proposal advanced UX、Intake/Knowledge、Settings boundary、hydration boundary、React mount、app-level SSE、shared runtime、visible React editors、no hash write、no Cuu/no Kanban/no weekly/no secret 与 no overflow。下一步进入 R5.1 Drive 业务纵切。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -453,6 +454,20 @@ R4.23 把 Proposal advanced 区的 text hunk line editor 迁成第二段真实�
 | QA gates | R4 42 步 browser smoke 新增 R4.23 六个 gates 且全部为 true；`06aa` 与 `06b` 截图覆盖 dirty SSE 与 apply success | R4.24 把单体 smoke 拆向 CI 可持续门 |
 
 边界：R4.23 不重写 Proposal 首屏、不迁 subrecord/bulk workbench、不改变后端 merge/apply 语义。它关闭的是 line editor 的 React controlled-state 风险：真实 mount、hunk/search state retention、single dispatcher、payload parity 与 fallback boundary 同时成立。主窗继续无 Cuu、无 secret、无 Kanban/hash/weekly 文案、无 horizontal/text overflow。
+
+### 0.30 R4.24 Web Runtime Finalization（2026-06-11 已落）
+
+R4.24 把 R4 收尾风险从运行时和治理层面清掉。详细计划与验收状态见 [`../06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md`](../06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Hash route cleanup | `apps/web/src/browser.ts` 不再在生产导航写 `#/...`；`apps/web/src/routes.ts` 不再把 hash 当 route truth，legacy `#/` 只在 canonical href/boot 迁移时转换为 path URL | R5 新 route 默认只接受 path navigation |
+| Runtime regression | R4 live route smoke 新增 `r4_24_no_hash_write` 与 `r4_24_r4_23_react_line_editor_regression`，继续保护 dirty guard、payload parity 与 single dispatcher | 拆成 CI 小 spec 后保留为 route-runtime base gate |
+| README governance | 根 README 与 docs README 改成短状态 + 最近里程碑表，规格树计数更新到 117 | 每轮只更新表格，不再堆长句 |
+| Smoke split | R4.24 plan 登记 `nav-locale`、`intake-knowledge`、`proposal-actions`、`settings-cost-replay`、`route-states` 五组拆分目标 | R5.1 Drive 增独立 Drive browser spec |
+| R5 decision | 新增 `r5-01-drive-business-slice-decision-2026-06-11.md`，第一条业务纵切选择 M-DRIVE | Drive Page VM + version history + preview/download/restore |
+
+边界：R4.24 不新增 Proposal editor 迁移，不把 Meeting/Schedule 宣称为已完成，也不改变 Cuu 独立桌宠边界。它的作用是让 R5.1 可以在 path route、shared runtime、Page VM/SSE 与文档治理都更稳定的地基上开工。
 
 ---
 

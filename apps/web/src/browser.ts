@@ -4,7 +4,6 @@ import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
-  resolveGoldPathPageKey,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
@@ -191,10 +190,7 @@ function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey:
   for (const link of shellRoot.querySelectorAll<HTMLAnchorElement>("[data-wh-page-key]")) {
     link.setAttribute("aria-current", link.dataset.whPageKey === pageKey ? "page" : "false");
   }
-  const route = Object.entries(shell.routeMap).find(([, key]) => key === pageKey)?.[0];
-  if (route && window.location.hash !== `#${route}`) {
-    window.history.replaceState(null, "", `#${route}`);
-  }
+  void shell;
 }
 
 function showPayloadFailureNotice(
@@ -238,14 +234,6 @@ function bindGoldPathNavigation(
   let pendingReviewActionId: string | undefined;
   let pendingApprovalId: string | undefined;
   let pendingApprovalActionId: string | undefined;
-
-  const activateFromHash = () => {
-    const hashRoute = window.location.hash.slice(1) || "/";
-    const pageKey = resolveGoldPathPageKey(shell.routeMap, hashRoute);
-    if (pageKey) {
-      setActivePage(shellRoot, shell, pageKey);
-    }
-  };
 
   shellRoot.addEventListener("click", async (event) => {
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
@@ -483,10 +471,6 @@ function bindGoldPathNavigation(
     }
   }, eventListenerOptions(signal));
 
-  if (!onNavigate) {
-    window.addEventListener("hashchange", activateFromHash, eventListenerOptions(signal));
-    activateFromHash();
-  }
 }
 
 let activeRouteRenderId = 0;
@@ -583,11 +567,24 @@ function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiCli
 
 async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
   const nextHref = webRouteHref(href);
-  const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const currentHref = `${window.location.pathname}${window.location.search}`;
   if (nextHref !== currentHref) {
     window.history.pushState(null, "", nextHref);
   }
   await renderCurrentRoute(client, locale);
+}
+
+function canonicalizeLegacyHashRoute() {
+  const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (!window.location.hash.startsWith("#/")) {
+    document.documentElement.dataset.r4WebLegacyHashCanonicalized = "false";
+    return;
+  }
+  const nextHref = webRouteHref(window.location.href);
+  if (nextHref !== currentHref) {
+    window.history.replaceState(null, "", nextHref);
+  }
+  document.documentElement.dataset.r4WebLegacyHashCanonicalized = "true";
 }
 
 function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
@@ -637,6 +634,7 @@ async function boot() {
   }
   let locale = browserLocale();
   setDocumentLocale(locale);
+  canonicalizeLegacyHashRoute();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "idle", locale).html;
 
   try {
