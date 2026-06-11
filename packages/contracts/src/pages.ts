@@ -6,6 +6,7 @@ import {
   snapshotSchema,
   structuredHandoffSchema
 } from "./domain/agent.js";
+import { workHubLocaleSchema } from "./locale.js";
 import { auditLogFactSchema, manifestFactsSchema } from "./audit.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
@@ -252,6 +253,50 @@ export const costDashboardVmSchema = z.object({
 });
 export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
 
+export const settingsPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  locale: workHubLocaleSchema,
+  runtime: z.object({
+    app_env: z.enum(["development", "test", "production"]),
+    worker_count: z.number().int().positive(),
+    broker_backend: z.enum(["memory", "redis", "pg_listen"]),
+    broker_configured: z.boolean(),
+    database_configured: z.boolean(),
+    agent_run_lease_ms: z.number().int().positive(),
+    agent_run_recovery_interval_ms: z.number().int().nonnegative()
+  }),
+  llm_runtime: z.object({
+    default_provider: z.string().min(1),
+    default_model: z.string().min(1),
+    provider_count: z.number().int().nonnegative(),
+    api_key_configured: z.boolean(),
+    base_url_configured: z.boolean()
+  }),
+  budgets: z.object({
+    run_tokens: z.number().int().positive(),
+    user_daily_tokens: z.number().int().positive(),
+    team_daily_tokens: z.number().int().positive(),
+    team_monthly_tokens: z.number().int().positive(),
+    run_cost_cny: z.string(),
+    user_daily_cost_cny: z.string(),
+    team_daily_cost_cny: z.string(),
+    team_monthly_cost_cny: z.string()
+  }),
+  language: z.object({
+    active_locale: workHubLocaleSchema,
+    supported_locales: z.array(workHubLocaleSchema).min(1),
+    storage_key: z.string().min(1)
+  }),
+  device: z.object({
+    desktop_client: z.literal("tauri"),
+    local_execution_boundary: z.boolean(),
+    independent_pet_window: z.boolean(),
+    pet_model_settings_in_web: z.literal(false),
+    restore_href: z.string().min(1)
+  })
+});
+export type SettingsPageVM = z.infer<typeof settingsPageVmSchema>;
+
 export const goldPathSurfaceVmSchema = z.object({
   fixture_id: z.literal("weekly_report_manifest_doc"),
   routes: z.object({
@@ -271,7 +316,8 @@ export const goldPathSurfaceVmSchema = z.object({
     workitem: workItemDetailVmSchema,
     proposal: proposalDetailVmSchema,
     replay: replayTraceVmSchema,
-    cost: costDashboardVmSchema
+    cost: costDashboardVmSchema,
+    settings: settingsPageVmSchema.optional()
   }),
   events: z.array(workHubEventSchema(z.unknown())),
   cuu_states: z.array(cuuStateSchema)

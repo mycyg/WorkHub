@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice；下一步进入 R4.11 Web route componentization second slice。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice；下一步进入 R4.12 Web action/notice locale route UX。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2821,11 +2821,24 @@ R4 验收：
 8. 验证通过：`pnpm --filter @workhub/ui test` 40/40、`pnpm --filter @workhub/web test` 12/12、`pnpm typecheck`、R4.10 browser smoke、`git diff --check`。
 9. 边界：R4.10 不是完整 React SPA，也不宣称 WorkItem / Proposal / Cost / Settings 已组件化；用户输入、证据摘录、manifest、LLM 正文继续保持 VM 原文。
 
+### R4.11 已落：Web route componentization second slice
+
+1. 已阅读 [`r4-11-web-route-componentization-second-slice-plan-2026-06-11.md`](./r4-11-web-route-componentization-second-slice-plan-2026-06-11.md)、R4.10 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-ai-first-home.png`、`web-approval-center.png`。
+2. 已新增 Settings typed Page VM：`packages/contracts/src/pages.ts` 定义 `settingsPageVmSchema`，`apps/api/src/pages/settings.ts` 构建安全 VM，`apps/api/src/routes/pages.ts` 暴露 `/api/pages/settings`，`packages/api-client` 增加 `pages.settings()`。
+3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：WorkItem / Proposal / Cost / Settings 四个显式 route components，均带 `data-r4-route-component`、`source=page-vm`、locale marker 与 route-specific counts。
+4. 已改 `apps/web/src/routes.ts`：`/settings` 先读 `client.pages.settings({ locale })`，再读 `gold-path` shell metadata；所有 ready route 继续 active-only product panel。
+5. 已修视觉与安全边界：Settings 长 model 名改为 label/value 行布局；Settings Page VM 只返回配置状态布尔值，不返回 API key 或 base URL；Web 主窗仍无 Cuu 外观设置。
+6. 已扩展 tests：UI route component tests 覆盖 WorkItem/Proposal/Cost/Settings；Web route tests 覆盖 settings endpoint 与 route marker；API client 与 API i18n tests 覆盖 Settings Page VM；desktop/web fake client 同步补 settings。
+7. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：13 步 browser smoke 覆盖 WorkItem click、history、locale reload、Proposal mobile scrolled、Cost mobile、Settings desktop、Replay、empty/forbidden/error；新增 R4.11 route-specific marker、source truth、VM/DOM match gates。
+8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-11-web-route-componentization-second-slice-browser-smoke/`；report gates 全部为 true：`r4_11_workitem_proposal_cost_settings_route_components`、`r4_11_route_component_source_truth`、`r4_11_route_specific_markers`、`r4_11_vm_dom_value_match`、`active_only_product_panels`、`no_text_box_overflow`。
+9. 验证通过：`pnpm --filter @workhub/web test`、`pnpm --filter @workhub/api-client test`、`pnpm --filter @workhub/ui test`、`pnpm --filter @workhub/api test -- pages-i18n`、`pnpm typecheck`、R4.11 browser smoke、`git diff --check`。
+10. 边界：R4.11 完成 ready route componentization 第二刀，但不是完整 React SPA。Proposal 的高级 conflict workbench、field editor、line editor、subrecord editor 仍待 R4.13+ route UX 收敛；action/notice locale feedback 进入 R4.12。
+
 下一施工顺序：
 
-1. **R4.11 Web route componentization second slice**：拆 WorkItem / Proposal / Cost / Settings route component，继续使用 active-only panel 与 Page VM truth。
-2. **R4.12 action / notice locale continuation**：把 proposal opened/merged、budget warning、approval response toast、retry/request access 等动作反馈纳入同一 locale contract。
-3. **后续门禁**：继续保留 R4.8/R4.9/R4.10 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.12 Web action / notice locale route UX**：把 proposal opened/merged、budget warning、approval response、reason gate、retry/request access、SSE refresh notice 等动作反馈纳入同一 locale contract。
+2. **R4.13 Proposal advanced route UX convergence**：把 R1 已有 conflict workbench、field editor、line editor、subrecord editor 收敛到 Proposal route component 的 active-only detail。
+3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

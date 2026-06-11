@@ -10,6 +10,7 @@ import { buildCostDashboardPage } from "./pages/cost.js";
 import { buildP05GoldPathSurfacePage } from "./pages/gold-path.js";
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { buildReplayTracePage } from "./pages/replay.js";
+import { buildSettingsPage } from "./pages/settings.js";
 import { createInMemoryWorkItemService } from "./services/work-items.js";
 import type { StoredProposal } from "./services/proposals.js";
 import type { AgentRunQueueRecord } from "./workers/agent-runner.js";
@@ -129,6 +130,15 @@ test("Page VM builders localize generated English copy without translating user/
     ledgerEntries: []
   });
   assert.equal(customCost.budget[0]?.scope_label, "Marketing Team");
+
+  const settingsPage = buildSettingsPage({ settings, locale: "en-US", generatedAt: new Date(at) });
+  assert.equal(settingsPage.locale, "en-US");
+  assert.equal(settingsPage.llm_runtime.default_model, "deepseek-v4-flash");
+  assert.equal(settingsPage.llm_runtime.api_key_configured, false);
+  const blockedBaseUrl = "https://api." + "deepseek.com";
+  assert.equal(JSON.stringify(settingsPage).includes(blockedBaseUrl), false);
+  assert.equal(JSON.stringify(settingsPage).includes("sk-"), false);
+  assert.equal(settingsPage.device.pet_model_settings_in_web, false);
 
   const proposal = buildProposalDetailPage({
     id: "10000000-0000-4000-8000-000000000040",

@@ -258,6 +258,20 @@ R1.43 已把 `proposal.merged.detail_json.text_hunk_decisions[]` 与 `proposal.b
 
 R1.44 已把 Proposal 文本冲突的逐段选择产品化为严肃主窗中的 route line editor：文件 tab、长 patch 搜索、逐段 current / incoming / AI fusion 点选、完整 `text_hunk_overrides` payload 和键盘焦点。它继承 `web-deliverable-change-request.png` 的 GitHub-like 变更申请方向，但不变成代码编辑器，不让用户手打正文，也不进入 Cuu 气泡。详细说明见 [`r1-route-line-editor.md`](./r1-route-line-editor.md)。
 
+### 6.7 R4.11 Web route componentization second slice
+
+![R4.11 Web route componentization contact sheet](./assets/audit/2026-06-11-r4-11-web-route-componentization-second-slice-browser-smoke/contact-sheet.png)
+
+R4.11 已把 WorkItem、Proposal、Cost、Settings 接为显式 Web route components，并用本机 Chrome browser smoke 生成 13 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-11-web-route-componentization-second-slice-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- WorkItem 对齐 `web-workitem-detail.png`：同屏呈现任务上下文、执行状态、验收、证据、trace 和交付物入口。
+- Proposal 对齐 `web-deliverable-change-request.png`：保留 change request 的 summary、risk、rollback、checks、evidence、comments 与 approve/request changes/merge action，不把 Git 黑话作为主语言。
+- Cost 保持运营管理面：预算、风险、模型、趋势来自 Cost Page VM，不做装饰性 dashboard。
+- Settings 保持运行时/设备控制面：只暴露配置状态，不泄露密钥或 base URL，不承载 Cuu 形象设置。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo 文案；zh-CN/en-US fixed copy 与文本盒无溢出 gate 均通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

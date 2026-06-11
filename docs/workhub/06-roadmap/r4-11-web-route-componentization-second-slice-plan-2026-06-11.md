@@ -1,7 +1,7 @@
 ---
 module: R4-web-route-componentization-second-slice
 layer: C-WEB / C-UI / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -17,6 +17,8 @@ depends_on:
 ---
 
 # R4.11 Web Route Componentization Second Slice Plan
+
+> 2026-06-11 竣工：WorkItem / Proposal / Cost / Settings 已接入显式 route components；Settings 新增 typed Page VM endpoint；Web ready route 继续保持 active-only product panel、REST/Page VM as truth、path navigation、zh-CN/en-US fixed copy、主窗无 Cuu、无 Kanban/hash/weekly 回归词和文本盒无溢出 gate。
 
 ## 1. 开工前必读
 
@@ -94,21 +96,27 @@ flowchart LR
 
 ## 7. 验收证据目录
 
-建议目录：
-
 `docs/workhub/05-clients/assets/audit/2026-06-11-r4-11-web-route-componentization-second-slice-browser-smoke/`
 
-至少包含：
+已落证据：
 
 - `route-componentization-second-slice-report.json`
 - `smoke-summary.md`
 - `contact-sheet.html`
 - `contact-sheet.png`
-- WorkItem desktop/mobile screenshot
-- Proposal desktop/mobile scrolled screenshot
-- Cost desktop/mobile screenshot
-- Settings desktop/mobile screenshot
-- empty/forbidden/error route-state screenshots
+- `01-home-zh-desktop.png`
+- `02-approvals-click-zh-desktop.png`
+- `03-workitem-click-zh-desktop-route-component.png`
+- `04-history-back-approvals.png`
+- `05-history-forward-workitem.png`
+- `06-locale-toggle-en-workitem-route-component.png`
+- `07-proposal-en-mobile-scrolled-route-component.png`
+- `08-cost-en-mobile-route-component.png`
+- `09-settings-en-desktop-route-component.png`
+- `10-replay-en-desktop-route-component.png`
+- `11-empty-approvals-mobile.png`
+- `12-forbidden-workitem-desktop.png`
+- `13-unknown-route-error.png`
 
 ## 8. PRD / 概念图验收口径
 
@@ -118,6 +126,35 @@ flowchart LR
 - Settings 必须是运行时控制面，不承载角色形象；Cuu 外观仍只在独立 pet window 设置与验收。
 - 所有 route 都必须使用中英固定 copy；用户/证据/manifest/raw LLM 正文保持源文本可审计。
 
-## 9. R4.12 候选
+竣工审视：
 
-R4.11 通过后进入 R4.12：Action/notice locale continuation + route action UX。优先把 proposal opened/merged、approval response、budget warning、retry/request access、SSE refresh notice 纳入统一 locale/action feedback contract，并补真实浏览器 action smoke。
+- WorkItem component 使用 `WorkItemDetailVM` 直接渲染任务上下文、状态动作、交付物入口、验收项、trace 与 evidence，并写入 `data-r4-workitem-*` 计数 marker；没有引入 chat wall、默认 Kanban 或 Cuu 主窗元素。
+- Proposal component 使用 `ProposalDetailVM` 渲染 summary/risk/rollback、review/checks、changes、evidence、comments 与 actions；`approve/request_changes/merge` 保留 `data-method="POST"` 与 reason gate，不把 Git 术语作为主语言。
+- Cost component 使用 `CostPageVM` 渲染 token/cost/budget/risk/model/trend，浏览器 smoke 对总 token、预算、模型与趋势 DOM marker 做 VM/DOM 一致性检查。
+- Settings component 新增 `SettingsPageVM`，只暴露 runtime、broker、worker、LLM provider/model 配置状态、budget、language 与 desktop local-execution boundary；不泄露 API key/base URL，不显示 Cuu model pack 或 Web 主窗 Cuu 设置。
+- 浏览器 contact sheet 逐图复核：Proposal mobile scrolled、Cost mobile、Settings desktop 均无文本盒越框；Settings 长 model 名已改为 label/value 行布局，避免 compact chip 挤压。
+
+## 9. 数据流与 bug 审查
+
+| 项 | 结论 |
+|---|---|
+| Page VM truth | WorkItem/Proposal/Cost 继续从专用 typed Page VM endpoint 读取；Settings 新增 `/api/pages/settings`，Web loader 先读 settings Page VM，再读 `gold-path` shell metadata |
+| Active-only | `renderReadyRoute()` 继续传 `renderActivePanelOnly: true`；browser smoke gate `active_only_product_panels=true` |
+| Locale | route component fixed copy 支持 `zh-CN/en-US`；用户输入、证据摘录、manifest、LLM 正文仍保留源文本 |
+| Security | Settings Page VM 只返回 `api_key_configured` / `base_url_configured` 布尔值，不返回原始密钥或 base URL |
+| Browser regression | 13 步 Vite + Chrome smoke 通过，覆盖 path nav、history、locale reload、empty/forbidden/error、route-specific markers、VM/DOM match、no overflow |
+| Known continuation | Proposal route component 当前展示 summary/change/action 主体；R1 的高级 conflict workbench、field editor 与 line editor 仍由 R4.12+ 继续纳入 route action UX 与 notice locale contract |
+
+已通过命令：
+
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/api test -- pages-i18n`
+- `pnpm typecheck`
+- `pnpm qa:r4-web-live-route-interaction` with R4.11 output env
+- `git diff --check`
+
+## 10. R4.12 后续计划
+
+R4.12 进入 Action/notice locale continuation + route action UX。优先把 proposal opened/merged、approval response、budget warning、retry/request access、SSE refresh notice 纳入统一 locale/action feedback contract，并补真实浏览器 action smoke。详细计划见 [`r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](./r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)。

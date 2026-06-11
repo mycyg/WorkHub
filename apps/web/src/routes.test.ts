@@ -8,7 +8,8 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   GoldPathSurfaceVM,
-  ReplayTraceVM
+  ReplayTraceVM,
+  SettingsPageVM
 } from "@workhub/contracts";
 
 import {
@@ -24,10 +25,56 @@ type RouteClientOverrides = {
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
   replay?: ReplayTraceVM;
+  settings?: SettingsPageVM;
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
 };
+
+function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    locale,
+    runtime: {
+      app_env: "test",
+      worker_count: 2,
+      broker_backend: "memory",
+      broker_configured: true,
+      database_configured: true,
+      agent_run_lease_ms: 300000,
+      agent_run_recovery_interval_ms: 30000
+    },
+    llm_runtime: {
+      default_provider: "deepseek",
+      default_model: "deepseek-v4-flash",
+      provider_count: 1,
+      api_key_configured: true,
+      base_url_configured: true
+    },
+    budgets: {
+      run_tokens: 120000,
+      user_daily_tokens: 500000,
+      team_daily_tokens: 5000000,
+      team_monthly_tokens: 50000000,
+      run_cost_cny: "5",
+      user_daily_cost_cny: "20",
+      team_daily_cost_cny: "200",
+      team_monthly_cost_cny: "2000"
+    },
+    language: {
+      active_locale: locale,
+      supported_locales: ["zh-CN", "en-US"],
+      storage_key: "workhub.locale"
+    },
+    device: {
+      desktop_client: "tauri",
+      local_execution_boundary: true,
+      independent_pet_window: true,
+      pet_model_settings_in_web: false,
+      restore_href: "/settings?panel=desktop"
+    }
+  };
+}
 
 function goldPathSurfaceVm(): GoldPathSurfaceVM {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
@@ -85,6 +132,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         }
         return overrides.cost ?? surface.page_vms.cost;
       },
+      async settings(options?: { locale?: string }) {
+        localeCall("settings", options);
+        return overrides.settings ?? settingsVm(options?.locale === "en-US" ? "en-US" : "zh-CN");
+      },
       async goldPath(options?: { locale?: string }) {
         localeCall("goldPath", options);
         return surface;
@@ -134,7 +185,8 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
   for (const [path, endpointCall] of [
     ["/", "attention:en-US"],
     ["/approvals", "approvals:en-US"],
-    ["/dashboard/cost", "cost:en-US"]
+    ["/dashboard/cost", "cost:en-US"],
+    ["/settings", "settings:en-US"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);
@@ -174,13 +226,17 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
   }
 });
 
-test("R4.10 web loader marks Home, Approvals, and Replay as route components", async () => {
+test("R4.11 web loader marks ready routes as route components", async () => {
   const surface = goldPathSurfaceVm();
 
   for (const [path, endpointCall, routeComponent] of [
     ["/", "attention:en-US", "home"],
     ["/approvals", "approvals:en-US", "approvals"],
-    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US", "replay"]
+    ["/workitems/work-42", "workItem:work-42:en-US", "workitem"],
+    ["/proposals/proposal-42", "proposal:proposal-42:en-US", "proposal"],
+    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US", "replay"],
+    ["/dashboard/cost", "cost:en-US", "cost"],
+    ["/settings", "settings:en-US", "settings"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);

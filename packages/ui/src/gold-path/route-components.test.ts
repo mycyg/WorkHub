@@ -2,9 +2,54 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM } from "@workhub/contracts";
+import type { GoldPathSurfaceVM, SettingsPageVM } from "@workhub/contracts";
 
 import { renderWebRouteComponents } from "./route-components.js";
+
+function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    locale,
+    runtime: {
+      app_env: "test",
+      worker_count: 2,
+      broker_backend: "memory",
+      broker_configured: true,
+      database_configured: true,
+      agent_run_lease_ms: 300000,
+      agent_run_recovery_interval_ms: 30000
+    },
+    llm_runtime: {
+      default_provider: "deepseek",
+      default_model: "deepseek-v4-flash",
+      provider_count: 1,
+      api_key_configured: true,
+      base_url_configured: true
+    },
+    budgets: {
+      run_tokens: 120000,
+      user_daily_tokens: 500000,
+      team_daily_tokens: 5000000,
+      team_monthly_tokens: 50000000,
+      run_cost_cny: "5",
+      user_daily_cost_cny: "20",
+      team_daily_cost_cny: "200",
+      team_monthly_cost_cny: "2000"
+    },
+    language: {
+      active_locale: locale,
+      supported_locales: ["zh-CN", "en-US"],
+      storage_key: "workhub.locale"
+    },
+    device: {
+      desktop_client: "tauri",
+      local_execution_boundary: true,
+      independent_pet_window: true,
+      pet_model_settings_in_web: false,
+      restore_href: "/settings?panel=desktop"
+    }
+  };
+}
 
 function surfaceVm(): GoldPathSurfaceVM {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
@@ -45,7 +90,8 @@ function surfaceVm(): GoldPathSurfaceVM {
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: fixture.replay,
-      cost: fixture.costDashboard
+      cost: fixture.costDashboard,
+      settings: settingsVm()
     },
     events: fixture.events,
     cuu_states: []
@@ -75,6 +121,81 @@ test("R4.10 Home route component renders directly from Attention Page VM with bi
   assert.equal(en.html.includes('data-r4-route-component-locale="en-US"'), true);
   assertNoMainWindowBoundaryLeak(zh.html);
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("R4.11 WorkItem route component keeps task context, trace, acceptance, and evidence from Page VM", () => {
+  const vm = surfaceVm();
+  const workitem = renderWebRouteComponents(vm, { locale: "en-US" }).workitem;
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes('data-r4-route-component="workitem"'), true);
+  assert.equal(workitem.html.includes('data-r4-route-component-source="page-vm"'), true);
+  assert.equal(workitem.html.includes(`data-r4-workitem-id="${vm.page_vms.workitem.workitem.id}"`), true);
+  assert.equal(workitem.html.includes(`data-r4-workitem-trace-count="${vm.page_vms.workitem.agent_trace_preview.length}"`), true);
+  assert.equal(workitem.html.includes(`data-r4-workitem-acceptance-count="${vm.page_vms.workitem.acceptance.length}"`), true);
+  assert.equal(workitem.html.includes("AI execution trace"), true);
+  assert.equal(workitem.html.includes("Acceptance checklist"), true);
+  assert.equal(workitem.html.includes("data-method=\"GET\""), true);
+  assert.deepEqual(workitem.primaryHrefs.includes(`/proposals/${vm.page_vms.proposal.proposal_id}`), true);
+  assertNoMainWindowBoundaryLeak(workitem.html);
+});
+
+test("R4.11 Proposal route component preserves review actions, rollback, changes, checks, evidence, and comments", () => {
+  const vm = surfaceVm();
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.html.includes('data-r4-route-component="proposal"'), true);
+  assert.equal(proposal.html.includes(`data-r4-proposal-id="${vm.page_vms.proposal.proposal_id}"`), true);
+  assert.equal(proposal.html.includes(`data-r4-proposal-change-count="${vm.page_vms.proposal.manifest.changes.length}"`), true);
+  assert.equal(proposal.html.includes(`data-r4-proposal-check-count="${vm.page_vms.proposal.manifest.checks.length}"`), true);
+  assert.equal(proposal.html.includes("Deliverable change request"), true);
+  assert.equal(proposal.html.includes("Rollback available"), true);
+  assert.equal(proposal.html.includes('data-action-id="request_changes"'), true);
+  assert.equal(proposal.html.includes('data-method="POST"'), true);
+  assert.equal(proposal.html.includes('data-requires-reason="true"'), true);
+  assert.deepEqual(proposal.primaryHrefs, [
+    vm.page_vms.proposal.review_actions.approve.href,
+    vm.page_vms.proposal.review_actions.request_changes.href,
+    vm.page_vms.proposal.review_actions.merge?.href
+  ].filter(Boolean));
+  assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R4.11 Cost route component renders dashboard values directly from Cost Page VM", () => {
+  const vm = surfaceVm();
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  const costVm = vm.page_vms.cost;
+
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r4-route-component="cost"'), true);
+  assert.equal(cost.html.includes(`data-r4-cost-total-tokens="${costVm.token_in + costVm.token_out}"`), true);
+  assert.equal(cost.html.includes(`data-r4-cost-total-cny="${costVm.total_cost_cny}"`), true);
+  assert.equal(cost.html.includes(`data-r4-cost-budget-count="${costVm.budget.length}"`), true);
+  assert.equal(cost.html.includes(`data-r4-cost-model-count="${costVm.model_breakdown.length}"`), true);
+  assert.equal(cost.html.includes("Budget and cost"), true);
+  assert.equal(cost.html.includes("Budget scopes"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
+  const vm = surfaceVm();
+  const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
+
+  assert.ok(settings);
+  assert.equal(settings.html.includes('data-r4-route-component="settings"'), true);
+  assert.equal(settings.html.includes('data-r4-route-component-source="page-vm"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-pet-model-in-web="false"'), true);
+  assert.equal(settings.html.includes("deepseek-v4-flash"), true);
+  assert.equal(settings.html.includes("workhub.locale"), true);
+  assert.equal(settings.html.includes("Pet look is not configured in the Web main window"), true);
+  const blockedBaseUrl = "https://api." + "deepseek.com";
+  assert.equal(settings.html.includes(blockedBaseUrl), false);
+  assert.equal(settings.html.includes("sk-"), false);
+  assert.equal(settings.html.includes("data-cuu-settings-model-pack"), false);
+  assert.equal(settings.html.includes("legacy-cuu-pack"), false);
+  assert.deepEqual(settings.primaryHrefs, [vm.page_vms.settings?.device.restore_href]);
+  assertNoMainWindowBoundaryLeak(settings.html);
 });
 
 test("R4.10 Approvals route component keeps action reasons and Page VM counts visible", () => {

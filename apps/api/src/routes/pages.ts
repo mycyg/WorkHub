@@ -22,6 +22,7 @@ import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage } from "../pages/proposals.js";
+import { buildSettingsPage } from "../pages/settings.js";
 import {
   createApprovalService,
   type ApprovalService
@@ -199,6 +200,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       ledgerEntries: ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries
     });
     return c.json(pageEnvelope(data, locale));
+  });
+
+  routes.get("/settings", createCurrentUserMiddleware(authSource), (c) => {
+    const locale = requestLocale(c);
+    return c.json(pageEnvelope(buildSettingsPage({ settings: authSettings, locale }), locale));
   });
 
   return routes;

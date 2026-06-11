@@ -6,6 +6,7 @@ import type {
   GoldPathSurfaceVM,
   ProposalDetailVM,
   ReplayTraceVM,
+  SettingsPageVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
 import {
@@ -293,6 +294,16 @@ function withReplay(surface: GoldPathSurfaceVM, match: WebRouteMatch, replay: Re
   };
 }
 
+function withSettings(surface: GoldPathSurfaceVM, match: WebRouteMatch, settings: SettingsPageVM) {
+  return {
+    ...withCurrentRoute(surface, match),
+    page_vms: {
+      ...surface.page_vms,
+      settings
+    }
+  };
+}
+
 function isAttentionEmpty(data: AttentionHomeVM) {
   return !data.primary && data.background_runs.length === 0;
 }
@@ -348,6 +359,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     return withReplay(await loadGoldPathTemplate(client, locale), match, replay);
+  }
+  if (match.key === "settings") {
+    const settings = await client.pages.settings(withLocale(locale));
+    return withSettings(await loadGoldPathTemplate(client, locale), match, settings);
   }
   return withCurrentRoute(await loadGoldPathTemplate(client, locale), match);
 }

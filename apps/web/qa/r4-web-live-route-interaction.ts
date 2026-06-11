@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM, WorkHubLocale } from "@workhub/contracts";
+import type { GoldPathSurfaceVM, SettingsPageVM, WorkHubLocale } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -38,6 +38,21 @@ type BrowserAudit = {
   routeComponentSource: string | null;
   routeComponentPanel: string | null;
   routeComponentActive: boolean;
+  routeSpecificMarker: boolean;
+  routeData: {
+    workitemTraceCount: string | null;
+    workitemEvidenceCount: string | null;
+    workitemAcceptanceCount: string | null;
+    proposalChangeCount: string | null;
+    proposalActionCount: string | null;
+    proposalEvidenceCount: string | null;
+    costTotalTokens: string | null;
+    costTotalCny: string | null;
+    costBudgetCount: string | null;
+    costModelCount: string | null;
+    settingsPetModelInWeb: string | null;
+    settingsWorkerCount: string | null;
+  };
   panelCount: number;
   visiblePanelCount: number;
   activeLocale: string | null;
@@ -91,6 +106,7 @@ const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   ? path.resolve(repoRoot, process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"])
   : defaultOutputDir;
 const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
+const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -122,6 +138,51 @@ function deepReplace<T>(value: T): T {
   return value;
 }
 
+function settingsPage(locale: WorkHubLocale): SettingsPageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    locale,
+    runtime: {
+      app_env: "test",
+      worker_count: 2,
+      broker_backend: "memory",
+      broker_configured: true,
+      database_configured: true,
+      agent_run_lease_ms: 300000,
+      agent_run_recovery_interval_ms: 30000
+    },
+    llm_runtime: {
+      default_provider: "deepseek",
+      default_model: "deepseek-v4-flash-r4-11-browser-smoke",
+      provider_count: 1,
+      api_key_configured: true,
+      base_url_configured: true
+    },
+    budgets: {
+      run_tokens: 120000,
+      user_daily_tokens: 500000,
+      team_daily_tokens: 5000000,
+      team_monthly_tokens: 50000000,
+      run_cost_cny: "5",
+      user_daily_cost_cny: "20",
+      team_daily_cost_cny: "200",
+      team_monthly_cost_cny: "2000"
+    },
+    language: {
+      active_locale: locale,
+      supported_locales: ["zh-CN", "en-US"],
+      storage_key: "workhub.locale"
+    },
+    device: {
+      desktop_client: "tauri",
+      local_execution_boundary: true,
+      independent_pet_window: true,
+      pet_model_settings_in_web: false,
+      restore_href: "/settings?panel=desktop"
+    }
+  };
+}
+
 function productSurface(): GoldPathSurfaceVM {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
   return deepReplace({
@@ -143,7 +204,8 @@ function productSurface(): GoldPathSurfaceVM {
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: fixture.replay,
-      cost: fixture.costDashboard
+      cost: fixture.costDashboard,
+      settings: settingsPage("zh-CN")
     },
     events: fixture.events,
     cuu_states: []
@@ -236,6 +298,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     if (request.method === "GET" && url.pathname === "/api/pages/cost") {
       sendJson(response, 200, surface.page_vms.cost);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/pages/settings") {
+      sendJson(response, 200, settingsPage(currentLocale));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -595,6 +661,31 @@ function auditExpression() {
     const routeComponentPanel = document.querySelector("[data-r4-route-component-panel]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
+    const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
+    const routeData = {
+      workitemTraceCount: routeComponent?.getAttribute("data-r4-workitem-trace-count") || null,
+      workitemEvidenceCount: routeComponent?.getAttribute("data-r4-workitem-evidence-count") || null,
+      workitemAcceptanceCount: routeComponent?.getAttribute("data-r4-workitem-acceptance-count") || null,
+      proposalChangeCount: routeComponent?.getAttribute("data-r4-proposal-change-count") || null,
+      proposalActionCount: routeComponent?.getAttribute("data-r4-proposal-action-count") || null,
+      proposalEvidenceCount: routeComponent?.getAttribute("data-r4-proposal-evidence-count") || null,
+      costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
+      costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
+      costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
+      costModelCount: routeComponent?.getAttribute("data-r4-cost-model-count") || null,
+      settingsPetModelInWeb: routeComponent?.getAttribute("data-r4-settings-pet-model-in-web") || null,
+      settingsWorkerCount: routeComponent?.getAttribute("data-r4-settings-worker-count") || null
+    };
+    const routeSpecificMarker =
+      routeComponentKey === "workitem"
+        ? Boolean(document.querySelector("[data-r4-workitem-context]") && document.querySelector("[data-r4-workitem-trace]") && document.querySelector("[data-r4-workitem-evidence]"))
+        : routeComponentKey === "proposal"
+          ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']"))
+          : routeComponentKey === "cost"
+            ? Boolean(document.querySelector("[data-r4-cost-metrics]") && document.querySelector("[data-r4-cost-budget]") && document.querySelector("[data-r4-cost-models]"))
+            : routeComponentKey === "settings"
+              ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
+              : Boolean(routeComponentKey);
     return {
       pathname: location.pathname,
       search: location.search,
@@ -605,10 +696,12 @@ function auditExpression() {
       productShell: Boolean(routeRoot),
       linkModePath: routeRoot ? routeRoot.getAttribute("data-r4-product-link-mode") === "path" : false,
       masthead: Boolean(document.querySelector("[data-r4-product-masthead]")),
-      routeComponent: routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null,
+      routeComponent: routeComponentKey,
       routeComponentSource: routeComponent ? routeComponent.getAttribute("data-r4-route-component-source") : null,
       routeComponentPanel: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-panel") : null,
       routeComponentActive: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-active") === "true" : false,
+      routeSpecificMarker,
+      routeData,
       panelCount: panels.length,
       visiblePanelCount: visiblePanels.length,
       activeLocale: document.querySelector("[data-wh-locale][aria-pressed='true']")?.getAttribute("data-wh-locale") || null,
@@ -641,6 +734,9 @@ async function captureStep(
   }
   if (input.expectedRouteComponent && audit.routeComponent !== input.expectedRouteComponent) {
     throw new Error(`${input.id} expected route component ${input.expectedRouteComponent}, got ${audit.routeComponent ?? "missing"}`);
+  }
+  if (input.expectedRouteComponent && !audit.routeSpecificMarker) {
+    throw new Error(`${input.id} is missing route-specific R4.11 markers`);
   }
   if (audit.productShell && audit.status === "ready" && (audit.panelCount !== 1 || audit.visiblePanelCount !== 1)) {
     throw new Error(`${input.id} expected one active product panel, got ${audit.visiblePanelCount}/${audit.panelCount}`);
@@ -743,13 +839,13 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "02-approvals-click-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
 
   await clickAndWait(cdp, 'a[href="/workitems/r4-live-workitem"]', "/workitems/r4-live-workitem");
-  steps.push(await captureStep(cdp, { id: "03-workitem-click-zh-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "03-workitem-click-zh-desktop-route-component", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
   await historyAndWait(cdp, "back", "/approvals");
   steps.push(await captureStep(cdp, { id: "04-history-back-approvals", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready" }));
 
   await historyAndWait(cdp, "forward", "/workitems/r4-live-workitem");
-  steps.push(await captureStep(cdp, { id: "05-history-forward-workitem", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "05-history-forward-workitem", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
   await clickAndWait(cdp, '[data-wh-locale="en-US"]', "/workitems/r4-live-workitem");
   await waitFor<BrowserAudit>(
@@ -758,27 +854,34 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
     auditExpression(),
     (audit) => audit.lang === "en-US" && audit.enChrome && audit.storedLocale === "en-US" && audit.activeLocale === "en-US"
   );
-  steps.push(await captureStep(cdp, { id: "06-locale-toggle-en-reload", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready" }));
-
-  await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
-  steps.push(await captureStep(cdp, { id: "07-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
-
-  await setViewport(cdp, mobile);
-  await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
-  steps.push(await captureStep(cdp, { id: "08-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
-
-  await setViewport(cdp, desktop);
-  await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
-  steps.push(await captureStep(cdp, { id: "09-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
-
-  await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
-  steps.push(await captureStep(cdp, { id: "10-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
+  steps.push(await captureStep(cdp, { id: "06-locale-toggle-en-workitem-route-component", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/proposals/r4-live-proposal`, "ready");
   await cdp.evaluate("window.scrollTo(0, 680); true");
   await new Promise((resolve) => setTimeout(resolve, 250));
-  steps.push(await captureStep(cdp, { id: "11-proposal-mobile-scrolled", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "07-proposal-en-mobile-scrolled-route-component", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await navigate(cdp, `${baseUrl}/dashboard/cost`, "ready");
+  steps.push(await captureStep(cdp, { id: "08-cost-en-mobile-route-component", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
+
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/settings`, "ready");
+  steps.push(await captureStep(cdp, { id: "09-settings-en-desktop-route-component", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+
+  await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
+  steps.push(await captureStep(cdp, { id: "10-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
+  steps.push(await captureStep(cdp, { id: "11-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
+
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
+  steps.push(await captureStep(cdp, { id: "12-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
+
+  await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
+  steps.push(await captureStep(cdp, { id: "13-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
 
   return steps;
 }
@@ -792,6 +895,8 @@ function requestProof(requests: ApiRequestRecord[]) {
     workitem: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem"),
     workitemEn: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem" && request.locale === "en-US"),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
+    cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
+    settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
     goldPath: requests.filter((request) => request.pathname === "/api/pages/gold-path").length >= 4,
     goldPathEn: requests.some((request) => request.pathname === "/api/pages/gold-path" && request.locale === "en-US"),
@@ -802,11 +907,53 @@ function requestProof(requests: ApiRequestRecord[]) {
       workitem: count("/api/pages/workitems/r4-live-workitem"),
       workitemForbidden: count("/api/pages/workitems/r4-live-forbidden"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
+      cost: count("/api/pages/cost"),
+      settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
       goldPath: count("/api/pages/gold-path"),
       preferencePatch: count("/api/auth/preferences", "PATCH")
     }
   };
+}
+
+function hasActiveComponent(steps: StepReport[], id: string, key: string) {
+  return steps.some((step) =>
+    step.id === id &&
+    step.audit.routeComponent === key &&
+    step.audit.routeComponentSource === "page-vm" &&
+    step.audit.routeComponentActive &&
+    step.audit.routeSpecificMarker
+  );
+}
+
+function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const workitem = byId.get("03-workitem-click-zh-desktop-route-component")?.audit.routeData;
+  const proposal = byId.get("07-proposal-en-mobile-scrolled-route-component")?.audit.routeData;
+  const cost = byId.get("08-cost-en-mobile-route-component")?.audit.routeData;
+  const settings = byId.get("09-settings-en-desktop-route-component")?.audit.routeData;
+  return Boolean(
+    workitem &&
+      workitem.workitemTraceCount === String(surface.page_vms.workitem.agent_trace_preview.length) &&
+      workitem.workitemEvidenceCount === String(surface.page_vms.workitem.evidence_refs.length) &&
+      workitem.workitemAcceptanceCount === String(surface.page_vms.workitem.acceptance.length) &&
+      proposal &&
+      proposal.proposalChangeCount === String(surface.page_vms.proposal.manifest.changes.length) &&
+      proposal.proposalActionCount === String([
+        surface.page_vms.proposal.review_actions.approve,
+        surface.page_vms.proposal.review_actions.request_changes,
+        surface.page_vms.proposal.review_actions.merge
+      ].filter(Boolean).length) &&
+      proposal.proposalEvidenceCount === String(surface.page_vms.proposal.evidence_refs.length) &&
+      cost &&
+      cost.costTotalTokens === String(surface.page_vms.cost.token_in + surface.page_vms.cost.token_out) &&
+      cost.costTotalCny === surface.page_vms.cost.total_cost_cny &&
+      cost.costBudgetCount === String(surface.page_vms.cost.budget.length) &&
+      cost.costModelCount === String(surface.page_vms.cost.model_breakdown.length) &&
+      settings &&
+      settings.settingsPetModelInWeb === "false" &&
+      settings.settingsWorkerCount === "2"
+  );
 }
 
 async function main() {
@@ -853,16 +1000,29 @@ async function main() {
       dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
       path_nav_clicks: steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.pathname === "/approvals") &&
-        steps.some((step) => step.id === "03-workitem-click-zh-desktop" && step.audit.pathname === "/workitems/r4-live-workitem"),
+        steps.some((step) => step.id === "03-workitem-click-zh-desktop-route-component" && step.audit.pathname === "/workitems/r4-live-workitem"),
       history_back_forward: steps.some((step) => step.id === "04-history-back-approvals" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
-      locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-reload" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
+      locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.cost && proof.settings && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
       r4_10_home_approvals_replay_route_components:
         steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
         steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
-        steps.some((step) => step.id === "07-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
+        steps.some((step) => step.id === "10-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
+      r4_11_workitem_proposal_cost_settings_route_components:
+        hasActiveComponent(steps, "03-workitem-click-zh-desktop-route-component", "workitem") &&
+        hasActiveComponent(steps, "07-proposal-en-mobile-scrolled-route-component", "proposal") &&
+        hasActiveComponent(steps, "08-cost-en-mobile-route-component", "cost") &&
+        hasActiveComponent(steps, "09-settings-en-desktop-route-component", "settings"),
+      r4_11_route_component_source_truth: steps
+        .filter((step) => step.audit.productShell && step.audit.status === "ready")
+        .every((step) => step.audit.routeComponentSource === "page-vm"),
+      r4_11_route_specific_markers: steps
+        .filter((step) => step.audit.productShell && step.audit.status === "ready")
+        .every((step) => step.audit.routeSpecificMarker),
+      r4_11_vm_dom_value_match: vmDomValueMatches(steps, surface),
+      active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
@@ -870,9 +1030,11 @@ async function main() {
         proof.counts.workitem === 3 &&
         proof.counts.workitemForbidden === 1 &&
         proof.counts.proposal === 1 &&
+        proof.counts.cost === 1 &&
+        proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
         proof.counts.preferencePatch === 1,
-      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-mobile-scrolled" && !step.audit.topbarNavOverlap),
+      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "07-proposal-en-mobile-scrolled-route-component" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
       no_default_kanban: steps.every((step) => !step.audit.kanbanLeak),
       no_old_preview_shell: steps.every((step) => !step.audit.oldShellLeak),
@@ -894,7 +1056,7 @@ async function main() {
       api_requests: requests,
       steps
     };
-    await writeFile(path.join(outputDir, "live-route-interaction-report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    await writeFile(path.join(outputDir, reportFilename), `${JSON.stringify(report, null, 2)}\n`, "utf8");
     await writeFile(
       path.join(outputDir, "smoke-summary.md"),
       [
@@ -906,7 +1068,10 @@ async function main() {
         `- history back/forward: ${String(gates.history_back_forward)}`,
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,
         `- R4.10 route components: ${String(gates.r4_10_home_approvals_replay_route_components)}`,
-        `- active-only product panels: ${String(gates.r4_10_active_only_product_panels)}`,
+        `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
+        `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
+        `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
+        `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""
       ].join("\n"),

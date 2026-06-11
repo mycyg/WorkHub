@@ -76,6 +76,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   });
 
   await client.pages.goldPath();
+  await client.pages.settings();
   await client.me();
   await client.updatePreferences({ locale: "en-US" });
   await client.pages.workItem("work-1");
@@ -115,6 +116,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
 
   assert.deepEqual(calls, [
     "GET /api/pages/gold-path",
+    "GET /api/pages/settings",
     "GET /api/auth/me",
     'PATCH /api/auth/preferences {"locale":"en-US"}',
     "GET /api/pages/workitems/work-1",
@@ -161,6 +163,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.attention({ locale: "en-US" });
   await client.pages.approvals({ locale: "en-US" });
   await client.pages.cost({ locale: "en-US" });
+  await client.pages.settings({ locale: "en-US" });
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
   await client.replayAgentRun("run/1", { locale: "en-US" });
@@ -170,6 +173,7 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/attention?locale=en-US",
     "/api/pages/approvals?locale=en-US",
     "/api/pages/cost?locale=en-US",
+    "/api/pages/settings?locale=en-US",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
     "/api/pages/proposals/proposal%201?locale=en-US",
     "/api/agent-runs/run%2F1/replay?locale=en-US"

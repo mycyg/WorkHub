@@ -28,6 +28,7 @@ import type {
   MergeProposalRequest,
   NextQuestionRequest,
   SessionVM,
+  SettingsPageVM,
   StartAgentRunRequest,
   StructuredHandoff,
   UpdateUserPreferencesRequest,
@@ -102,6 +103,7 @@ export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: PageRequestOptions) => Promise<ApprovalCenterVM>;
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
+  settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
