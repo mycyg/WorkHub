@@ -124,6 +124,6 @@ R3.17 新增 `settings_menu_layout_gate`，不再只靠人工截图判断菜单�
 
 | 下一步 | 验收 |
 |---|---|
-| Linux/macOS tray/menu smoke | Linux 已补 Xvfb/openbox window/frame、XEmbed stalonetray fallback 与 GNOME StatusNotifier/AppIndicator DBusMenu action；macOS 仍需形成 menu bar / screenshot permission 策略 |
+| Linux/macOS tray/menu smoke | Linux 已补 Xvfb/openbox window/frame、XEmbed stalonetray fallback 与 GNOME StatusNotifier/AppIndicator DBusMenu action；macOS 已补 menu bar status item + Accessibility + Screen Recording zh-CN/en-US 真机 smoke |
 | settings 双向状态同步回归 | R3.20a 已补右键菜单切 hover 后主窗 settings 状态同步截图；R3.20b 已补物理托盘恢复后 pet/main 同步；后续保留跨平台回归 |
 | Live2D motion driver | 菜单完成后继续接业务动作 `.mtn`，让 approval/search/offline 不只是 data attr |

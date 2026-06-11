@@ -2610,7 +2610,7 @@ Bug / 数据流审查：
 4. 已补黑猫切白猫真实 Tauri contact sheet：`menu-model-switch-boundary-pass3/`，最终 DOM 为 `cuu-tororo-live2d-cubism2` / `white_cat`。
 5. 已新增 `settings_menu_layout_gate`：右键菜单场景自动校验菜单 rect/text 在 260px surface 内且无 pass-through 入口；模型切换场景自动校验短提示 bubble 在窗口内。
 6. 已修 bug：settings scale 下 Live2D canvas 改为比例 framing，避免首帧裁切；模型切换后的 `Cuu 形象已更新。` 短提示改为 compact status bubble，修复竖向文字残片。
-7. 限制：`pass-through` 与 combo case 证明设置可进入真实 `pet` window；主窗恢复的端到端证据已由 R3.18 补齐，Windows 物理托盘真实点击证据已由 R3.20b 补齐；Linux/macOS 跨平台 smoke 仍未完成。
+7. 限制：`pass-through` 与 combo case 证明设置可进入真实 `pet` window；主窗恢复的端到端证据已由 R3.18 补齐，Windows 物理托盘真实点击证据已由 R3.20b 补齐；Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 主路径已由 R3.23 补齐。
 
 ### R3.18 已落：pass-through 主窗恢复 + 主窗 settings 截图
 
@@ -2649,7 +2649,7 @@ Bug / 数据流审查：
 4. 已把用户截图对应的文本越框风险做成自动门：DOM report 记录 `bubble` / `primary_action` 的 client/scroll layout 和 descendant overflow offenders；run-failure/run-stream 中英证据均 `pet_card_text_overflow_gate.passed=true`、`overflow_offender_count=0`。
 5. 已修 QA bug：初版 UIA 可能误点 app 内同名 `WorkHub`，现只接受系统托盘/溢出区域元素；UIA Rect 兼容 PowerShell StrictMode 下的 `X/Y` 与 `Left/Top` 属性。
 6. 验收通过：`@workhub/desktop-webview test`、Tauri Rust tests、物理 tray restore zh-CN/en-US capture、run-failure zh-CN/en-US capture、run-stream zh-CN/en-US capture 均通过。
-7. 限制：Windows 物理托盘恢复已闭环；Linux/macOS transparent window + tray/menu bar smoke 仍是下一刀。
+7. 限制：Windows 物理托盘恢复已闭环；Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 主路径已由 R3.23 补齐，后续只作为跨平台回归门。
 
 ### R3.20c 已落：run-card bottom text clipping hard gate
 
@@ -2772,7 +2772,7 @@ R4 验收：
 5. 已补 deep-link / single-instance diagnostics 双语：只翻译错误类型描述，raw URL、unsafe target、scheme、route、ID 保留原文。
 6. 已新增 root `pnpm qa:r4-rust-system-i18n` 并接入 `pnpm lint` / `pnpm verify`。
 7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-rust-system-i18n/`；report gates 全部为 true：`cargo_tests_passed`、`locale_contract_has_two_values`、`shell_config_consumes_locale`、`tray_labels_and_tooltip_bilingual`、`main_installs_tray_with_shell_locale`、`notification_fallbacks_bilingual`、`dynamic_notification_payload_preserved`、`sse_worker_passes_locale_to_notification_plan`、`deep_link_diagnostics_bilingual`、`single_instance_rejections_bilingual`。
-8. 边界：R4.6 是 Rust 代码合同和可复跑 QA gate，不替代 Windows/Linux/macOS 原生菜单视觉截图；WebView runtime locale 热更新 OS tray label 仍属后续。
+8. 边界：R4.6 是 Rust 代码合同和可复跑 QA gate；Windows 物理托盘、Linux StatusNotifier 与 macOS menu bar 原生菜单视觉/日志证据已分别由 R3.20b/R3.23 补齐。WebView runtime locale 热更新 OS tray label 仍属后续。
 
 ### R4.7 已落：Web live API/PG seed smoke
 

@@ -1,0 +1,1 @@
+clicked action_id=show-main label=打开 WorkHub process=WorkHub menu_bar=2 item=1 name=missing value description=status menu

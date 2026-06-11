@@ -289,7 +289,84 @@ bash scripts/qa/cuu-tauri-linux-smoke.sh
 
 用户截图暴露的长卡贴边风险已并入本轮：card 模式 Cuu 本体下移到 `bottom:48px`，PowerShell/Linux hardgate 都要求 `bubble_gap_to_live2d_px >= 8`。
 
-仍未关闭：
+第九刀后仍未关闭、且已由第十刀补齐的项：
 
-1. macOS 真实 menu bar smoke：有 macOS 机器后运行 `scripts/qa/cuu-tauri-macos-menu-smoke.sh`，归档 Accessibility / Screen Recording 权限与点击证据。
+1. macOS 真实 menu bar smoke：第十刀已在 macOS 26.3.1 真机跑通 zh-CN/en-US，见 §17。
 2. R4 主窗产品化：Workbench、Approval、Proposal、Replay、Cost 等完整页面仍需 zh-CN/en-US、mobile/desktop、四态、文本不越框和截图审查。
+
+## 17. 2026-06-11 第十刀落点
+
+第十刀在 macOS 26.3.1 真机关闭 menu bar 主路径，并顺手修复 Windows -> macOS 迁移后的 Tauri 编译与 QA 脚本兼容问题。
+
+### 17.1 代码/脚本改动
+
+| 层 | 改动 |
+|---|---|
+| Tauri macOS build | `client-tauri/src-tauri/Cargo.toml` 为 `tauri` 开启 `macos-private-api`，`tauri.conf.json` 增加 `macOSPrivateApi: true`，恢复透明 `pet` window 编译 |
+| macOS warning | `DEEP_LINK_SCHEMES` 只在 Windows/Linux 分支导入，macOS `cargo test/build` 不再因 unused import 失败 |
+| smoke 时间戳 | `date -Is` 改为 BSD/macOS 兼容的 `date -u '+%Y-%m-%dT%H:%M:%SZ'` |
+| smoke 权限诊断 | `screencapture`、Accessibility probe、menu inventory、menu click 失败都会写 `status.txt` 与独立 `.err` |
+| smoke menu driver | AppleScript 优先打开 `WorkHub menu_bar=2 description=status menu`，避免误点顶部普通应用菜单 |
+| smoke 双语 | 新增 `WORKHUB_MACOS_MENU_SMOKE_LOCALE`，默认 `zh-CN`，并同步 `WORKHUB_LOCALE` / `WORKHUB_CUU_QA_LOCALE`，确保菜单 label 与 shell locale 一致 |
+
+### 17.2 真机命令
+
+```bash
+WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-menu-smoke-20260611-zh \
+bash scripts/qa/cuu-tauri-macos-menu-smoke.sh
+
+WORKHUB_MACOS_MENU_SMOKE_OUT_DIR=/tmp/workhub-r3-23-macos-menu-smoke-20260611-en \
+WORKHUB_MACOS_MENU_SMOKE_LOCALE=en-US \
+bash scripts/qa/cuu-tauri-macos-menu-smoke.sh
+```
+
+两轮 smoke 均跑完整矩阵：
+
+`restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit`
+
+归档目录：
+
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-macos-menu/zh-CN/`
+- `docs/workhub/05-clients/assets/audit/2026-06-11-r3-23-macos-menu/en-US/`
+
+### 17.3 验收结果
+
+| Gate | zh-CN | en-US |
+|---|---|---|
+| `status.txt` | `ok` | `ok` |
+| desktop-webview tests | 83/83 passed | 83/83 passed |
+| Tauri cargo tests | 74 lib + 10 main + 3 scaffold passed | 74 lib + 10 main + 3 scaffold passed |
+| Screen Recording | `screen-before-menu.png` 与关键 after 截图生成 | `screen-before-menu.png` 与关键 after 截图生成 |
+| Accessibility | `osascript-accessibility-probe.txt` 写入 `process_count` | `osascript-accessibility-probe.txt` 写入 `process_count` |
+| status menu | `menu-bar-inventory.txt` 包含 `WorkHub menu_bar=2 item=1 description=status menu` | 同左 |
+| restore | `menu-click-restore-pet-interaction.txt` 点击 `恢复 Cuu 交互` | 点击 `Restore Cuu interaction` |
+| open settings | 点击 `设置` | 点击 `Settings` |
+| open inbox | 点击 `打开收件箱` | 点击 `Open inbox` |
+| toggle pet | 点击 `显示/隐藏 Cuu` | 点击 `Show / hide Cuu` |
+| show/hide main | 点击 `打开 WorkHub` / `隐藏主窗` | 点击 `Open WorkHub` / `Hide main window` |
+| quit dry-run | 点击 `退出 WorkHub` 后 app 仍存活并截图 | 点击 `Quit WorkHub` 后 app 仍存活并截图 |
+
+人工截图审查：
+
+- `screen-after-restore-pet-interaction.png` 显示独立 `Cuu` pet window 位于桌面右下角，主窗没有 Cuu 本体。
+- 英文轮恢复提示显示 `Cuu / Interaction restored.`，中文轮菜单日志证明同一 action 使用中文 label。
+- 所有菜单动作日志均来自 `process=WorkHub menu_bar=2 item=1 description=status menu`，不是 Tauri command fallback。
+
+### 17.4 Bug / Dataflow / PRD 审查
+
+| 审查项 | 结论 |
+|---|---|
+| Bug | macOS 编译失败来自 Tauri transparent private API gate，已用 `macos-private-api` + `macOSPrivateApi` 修复；脚本失败来自 BSD `date -Is`、权限无结构化日志、普通应用菜单优先级、locale label 不一致，均已修复 |
+| Dataflow | `WORKHUB_MACOS_MENU_SMOKE_LOCALE` -> `WORKHUB_LOCALE` -> Rust `WorkHubLocale` -> tray label -> AppleScript menu click；webview QA locale 同步为同一值，不再出现 shell 中文而脚本找英文的错配 |
+| PRD / 概念图 | Cuu 仍只出现在独立透明 `pet` window；主窗保持严肃工作台。menu action 经真实 OS menu bar status item 触发，满足“Windows/Linux/macOS 原生托盘/菜单路径不使用 fallback command”的验收边界 |
+| 双语 | zh-CN / en-US 两轮均点击真实系统菜单 label，并保留截图和日志 |
+| Reference discipline | 未使用或提交 `reference/`；本轮无第三方源码引入 |
+
+### 17.5 后续详细计划
+
+R3.23 平台 tray/menu 主路径已关闭，下一模块切到 R4.10：
+
+1. 开工前复读 `r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`、`web-app.md`、`page-concepts.md` 与 Web 概念图。
+2. 优先 Home / Approvals / Replay，把 shared HTML renderer 的高频路径拆成真实 route component 或更细粒度 shared component，同时保留 Page VM、REST-as-truth、locale reload、path navigation 与 SSE refresh。
+3. 新增/更新 `r4-10-web-route-componentization-plan-2026-06-11.md`，明确组件拆分范围、QA gates、数据流和视觉验收图。
+4. QA 必须继续保留 `no Cuu in main window`、`no hash navigation`、`no default Kanban/weekly fixture`、`no horizontal/text overflow`、desktop/mobile、zh-CN/en-US、ready/empty/forbidden/error。

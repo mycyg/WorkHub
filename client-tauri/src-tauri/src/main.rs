@@ -1,7 +1,5 @@
 use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
-use workhub_client_tauri::deep_link::{
-    deep_link_plan_from_url, describe_deep_link_error, DEEP_LINK_SCHEMES,
-};
+use workhub_client_tauri::deep_link::{deep_link_plan_from_url, describe_deep_link_error};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::locale::{normalize_workhub_locale, WorkHubLocale};
 use workhub_client_tauri::pet_commands::{
@@ -1000,6 +998,8 @@ fn current_workhub_locale(app: &tauri::AppHandle) -> WorkHubLocale {
 fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
     #[cfg(any(windows, target_os = "linux"))]
     {
+        use workhub_client_tauri::deep_link::DEEP_LINK_SCHEMES;
+
         let schemes = DEEP_LINK_SCHEMES.join(", ");
         app.deep_link().register_all().map_err(|error| {
             format!("failed to register WorkHub deep-link schemes ({schemes}): {error}")

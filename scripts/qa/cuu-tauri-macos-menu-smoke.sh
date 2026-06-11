@@ -6,10 +6,66 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 out_dir="${WORKHUB_MACOS_MENU_SMOKE_OUT_DIR:-/tmp/workhub-cuu-macos-menu-smoke}"
 wait_seconds="${WORKHUB_MACOS_MENU_SMOKE_WAIT_SECONDS:-22}"
 menu_action_sequence="${WORKHUB_MACOS_MENU_ACTIONS:-restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit}"
+smoke_locale_raw="${WORKHUB_MACOS_MENU_SMOKE_LOCALE:-${WORKHUB_LOCALE:-zh-CN}}"
+case "$smoke_locale_raw" in
+  en | en-* | en_*) smoke_locale="en-US" ;;
+  *) smoke_locale="zh-CN" ;;
+esac
 port="1420"
 app_bin="$repo_root/client-tauri/src-tauri/target/debug/workhub-client-tauri"
 
 mkdir -p "$out_dir"
+
+timestamp_iso() {
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+capture_screen() {
+  local label="$1"
+  local target="$2"
+  local error_file="$out_dir/screencapture-$label.err"
+
+  if ! screencapture -x "$target" 2> "$error_file"; then
+    {
+      echo "screencapture_failed"
+      echo "label=$label"
+      echo "target=$target"
+      echo "error_file=$error_file"
+      echo "hint=Screen Recording permission or an attached/capturable desktop session may be missing."
+    } > "$out_dir/status.txt"
+    return 1
+  fi
+}
+
+record_osascript_failure() {
+  local phase="$1"
+  local error_file="$2"
+  local reason="${3:-osascript_menu_automation_failed}"
+  local hint="${4:-Ensure Accessibility permission is enabled, then inspect the phase-specific error file for menu structure or label mismatches.}"
+
+  {
+    echo "$reason"
+    echo "phase=$phase"
+    echo "error_file=$error_file"
+    echo "hint=$hint"
+  } > "$out_dir/status.txt"
+}
+
+probe_accessibility() {
+  local error_file="$out_dir/osascript-accessibility-probe.err"
+  if ! osascript > "$out_dir/osascript-accessibility-probe.txt" 2> "$error_file" <<'OSA'; then
+tell application "System Events"
+  return "process_count=" & (count of processes)
+end tell
+OSA
+    record_osascript_failure \
+      "accessibility-probe" \
+      "$error_file" \
+      "osascript_accessibility_failed" \
+      "Grant Accessibility permission to osascript/Codex/Terminal in macOS Privacy & Security settings, then rerun this smoke."
+    return 1
+  fi
+}
 
 write_tray_menu_action_matrix() {
   cat > "$out_dir/tray-menu-action-matrix.json" <<'JSON'
@@ -79,21 +135,28 @@ JSON
 }
 
 tray_menu_label_for_action() {
-  case "$1" in
-    show-main) printf '%s\n' "Open WorkHub" ;;
-    hide-main) printf '%s\n' "Hide main window" ;;
-    toggle-pet) printf '%s\n' "Show / hide Cuu" ;;
-    restore-pet-interaction) printf '%s\n' "Restore Cuu interaction" ;;
-    open-inbox) printf '%s\n' "Open inbox" ;;
-    open-settings) printf '%s\n' "Settings" ;;
-    quit) printf '%s\n' "Quit WorkHub" ;;
+  case "$smoke_locale:$1" in
+    en-US:show-main) printf '%s\n' "Open WorkHub" ;;
+    en-US:hide-main) printf '%s\n' "Hide main window" ;;
+    en-US:toggle-pet) printf '%s\n' "Show / hide Cuu" ;;
+    en-US:restore-pet-interaction) printf '%s\n' "Restore Cuu interaction" ;;
+    en-US:open-inbox) printf '%s\n' "Open inbox" ;;
+    en-US:open-settings) printf '%s\n' "Settings" ;;
+    en-US:quit) printf '%s\n' "Quit WorkHub" ;;
+    zh-CN:show-main) printf '%s\n' "打开 WorkHub" ;;
+    zh-CN:hide-main) printf '%s\n' "隐藏主窗" ;;
+    zh-CN:toggle-pet) printf '%s\n' "显示/隐藏 Cuu" ;;
+    zh-CN:restore-pet-interaction) printf '%s\n' "恢复 Cuu 交互" ;;
+    zh-CN:open-inbox) printf '%s\n' "打开收件箱" ;;
+    zh-CN:open-settings) printf '%s\n' "设置" ;;
+    zh-CN:quit) printf '%s\n' "退出 WorkHub" ;;
     *) return 1 ;;
   esac
 }
 
 record_env() {
   {
-    echo "captured_at=$(date -Is)"
+    echo "captured_at=$(timestamp_iso)"
     echo "repo=$repo_root"
     echo "head=$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
     echo "uname=$(uname -a)"
@@ -105,6 +168,7 @@ record_env() {
     echo "system_profiler=$(command -v system_profiler || true)"
     echo "port=$port"
     echo "menu_action_sequence=$menu_action_sequence"
+    echo "smoke_locale=$smoke_locale"
   } > "$out_dir/macos-env-report.txt"
 }
 
@@ -164,7 +228,8 @@ wait_for_app_process() {
 }
 
 capture_menu_bar_inventory() {
-  osascript > "$out_dir/menu-bar-inventory.txt" <<'OSA' || true
+  local error_file="$out_dir/menu-bar-inventory.err"
+  if ! osascript > "$out_dir/menu-bar-inventory.txt" 2> "$error_file" <<'OSA'; then
 tell application "System Events"
   set output to {}
   repeat with processName in {"SystemUIServer", "WorkHub"}
@@ -191,12 +256,16 @@ tell application "System Events"
   return output as text
 end tell
 OSA
+    record_osascript_failure "menu-bar-inventory" "$error_file"
+    return 1
+  fi
 }
 
 click_workhub_menu_action() {
   local action_id="$1"
   local action_label="$2"
-  osascript - "$action_id" "$action_label" > "$out_dir/menu-click-$action_id.txt" <<'OSA'
+  local error_file="$out_dir/menu-click-$action_id.err"
+  if ! osascript - "$action_id" "$action_label" > "$out_dir/menu-click-$action_id.txt" 2> "$error_file" <<'OSA'; then
 on run argv
 set actionId to item 1 of argv
 set wantedLabel to item 2 of argv
@@ -215,7 +284,21 @@ tell application "System Events"
             try
               set itemDescription to description of itemRef
             end try
-            if itemName contains "WorkHub" or itemName contains "Cuu" or itemDescription contains "WorkHub" or itemDescription contains "Cuu" then
+            set itemNameText to ""
+            set itemDescriptionText to ""
+            try
+              if itemName is not missing value then set itemNameText to itemName as text
+            end try
+            try
+              if itemDescription is not missing value then set itemDescriptionText to itemDescription as text
+            end try
+            set statusMenuCandidate to false
+            if barIndex > 1 then set statusMenuCandidate to true
+            if itemDescriptionText contains "status" then set statusMenuCandidate to true
+            if itemDescriptionText contains "WorkHub" then set statusMenuCandidate to true
+            if itemDescriptionText contains "Cuu" then set statusMenuCandidate to true
+            if itemNameText contains "Cuu" then set statusMenuCandidate to true
+            if statusMenuCandidate then
               try
                 perform action "AXShowMenu" of itemRef
               on error actionError
@@ -227,6 +310,19 @@ tell application "System Events"
                   click menu item wantedLabel of menu 1 of itemRef
                   return "clicked action_id=" & actionId & " label=" & wantedLabel & " process=" & processName & " menu_bar=" & barIndex & " item=" & itemIndex & " name=" & itemName & " description=" & itemDescription
                 end if
+                set availableItems to {}
+                repeat with menuItemIndex from 1 to count of menu items of menu 1 of itemRef
+                  set menuItemRef to menu item menuItemIndex of menu 1 of itemRef
+                  set menuItemName to ""
+                  try
+                    if name of menuItemRef is not missing value then set menuItemName to name of menuItemRef as text
+                  end try
+                  set end of availableItems to (menuItemIndex as text) & ":" & menuItemName
+                end repeat
+                set AppleScript's text item delimiters to ", "
+                set availableText to availableItems as text
+                set AppleScript's text item delimiters to ""
+                error "Unable to find menu item '" & wantedLabel & "' after opening WorkHub/Cuu menu bar item. Available menu items: " & availableText
               end if
               error "Unable to find menu item '" & wantedLabel & "' after opening WorkHub/Cuu menu bar item."
             end if
@@ -239,6 +335,9 @@ tell application "System Events"
 end tell
 end run
 OSA
+    record_osascript_failure "menu-click-$action_id" "$error_file"
+    return 1
+  fi
 }
 
 assert_app_still_running_after_action() {
@@ -264,7 +363,7 @@ run_menu_action_matrix() {
     click_workhub_menu_action "$action_id" "$action_label"
     sleep 1
     assert_app_still_running_after_action "$action_id"
-    screencapture -x "$out_dir/screen-after-$action_id.png"
+    capture_screen "after-$action_id" "$out_dir/screen-after-$action_id.png"
     IFS=","
   done
   IFS="$old_ifs"
@@ -302,7 +401,8 @@ run_smoke() {
 
   export WORKHUB_DISABLE_SSE=1
   export WORKHUB_CUU_QA_SCENARIO="${WORKHUB_CUU_QA_SCENARIO:-pass-through-recovery-tray-physical}"
-  export WORKHUB_CUU_QA_LOCALE="${WORKHUB_CUU_QA_LOCALE:-en-US}"
+  export WORKHUB_LOCALE="$smoke_locale"
+  export WORKHUB_CUU_QA_LOCALE="${WORKHUB_CUU_QA_LOCALE:-$smoke_locale}"
   export WORKHUB_CUU_QA_HIDE_ON_HOVER="${WORKHUB_CUU_QA_HIDE_ON_HOVER:-1}"
   export WORKHUB_CUU_QA_PET_PASS_THROUGH="${WORKHUB_CUU_QA_PET_PASS_THROUGH:-true}"
   export WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN=1
@@ -312,7 +412,8 @@ run_smoke() {
   wait_for_app_process
   sleep 3
 
-  screencapture -x "$out_dir/screen-before-menu.png"
+  capture_screen "before-menu" "$out_dir/screen-before-menu.png"
+  probe_accessibility
   run_menu_action_matrix
 
   echo "ok" > "$out_dir/status.txt"

@@ -1,0 +1,111 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (client-tauri/src-tauri/target/debug/deps/workhub_client_tauri-3b80b652de20a807)
+
+running 74 tests
+test config::tests::normalizes_server_urls_for_daemon_requests ... ok
+test config::tests::loads_shell_config_from_file_and_normalizes_empty_fields ... ok
+test config::tests::exposes_only_a_safe_device_token_tail ... ok
+test config::tests::env_overrides_file_config_and_supports_legacy_token_name ... ok
+test config::tests::rejects_invalid_shell_config_json ... ok
+test config::tests::workhub_token_env_takes_priority_over_legacy_token_env ... ok
+test deep_link::tests::localizes_deep_link_error_diagnostics_without_hiding_raw_values ... ok
+test deep_link::tests::allows_whitelisted_direct_route_query ... ok
+test deep_link::tests::maps_workhub_open_task_to_current_workitem_route ... ok
+test deep_link::tests::maps_legacy_yqgl_short_routes ... ok
+test deep_link::tests::maps_workhub_proposal_and_replay_targets ... ok
+test deep_link::tests::rejects_external_or_traversal_deep_links ... ok
+test events::tests::keeps_tauri_channel_names_stable ... ok
+test http::tests::daemon_request_plan_prefixes_base_url_and_injects_device_token_headers ... ok
+test locale::tests::falls_back_to_chinese_for_unknown_or_empty_locale ... ok
+test locale::tests::normalizes_supported_locale_families ... ok
+test locale::tests::serializes_as_shared_contract_values ... ok
+test notify::tests::budget_events_route_to_cost_dashboard ... ok
+test notify::tests::dynamic_notification_payload_text_is_not_client_translated ... ok
+test notify::tests::default_notification_fallback_copy_is_chinese ... ok
+test notify::tests::embedded_workhub_event_envelopes_are_supported ... ok
+test notify::tests::global_streams_never_create_os_notifications ... ok
+test notify::tests::high_private_notifications_become_os_notification_plans ... ok
+test notify::tests::normal_notifications_do_not_interrupt_the_desktop ... ok
+test notify::tests::notification_deduper_evicts_oldest_keys_when_full ... ok
+test notify::tests::notification_deduper_suppresses_replayed_events ... ok
+test notify::tests::permission_asks_route_to_approval_center ... ok
+test pet_commands::tests::card_window_position_converts_back_to_body_anchor_without_drift ... ok
+test notify::tests::unsafe_target_urls_fall_back_to_safe_routes ... ok
+test pet_commands::tests::command_names_match_the_desktop_webview_bridge ... ok
+test pet_commands::tests::cursor_near_command_returns_pointer_decision_for_scheduler ... ok
+test pet_commands::tests::drag_and_save_position_commands_are_focusless_and_persistable ... ok
+test pet_commands::tests::pet_window_rect_uses_the_active_mode_size ... ok
+test pet_commands::tests::saved_body_position_is_clamped_when_the_monitor_layout_changes ... ok
+test pet_commands::tests::set_mode_command_expands_card_without_stealing_focus ... ok
+test pet_commands::tests::set_mode_command_starts_body_only_at_bottom_right_without_focus ... ok
+test pet_commands::tests::settings_command_resizes_the_active_mode_and_confirms_pass_through ... ok
+test pet_window::tests::body_only_pet_defaults_to_visible_bottom_right ... ok
+test pet_window::tests::card_mode_expands_left_and_up_from_body_anchor ... ok
+test pet_window::tests::drag_plans_never_steal_focus_and_map_to_cuu_actions ... ok
+test pet_window::tests::placement_clamps_to_work_area_when_saved_position_is_offscreen ... ok
+test pet_window::tests::pointer_decision_marks_inside_and_near_without_expanding_click_area ... ok
+test pet_window::tests::window_settings_scale_the_body_and_card_without_losing_anchor ... ok
+test single_instance::tests::malformed_workhub_deep_links_are_kept_for_diagnostics ... ok
+test single_instance::tests::rejected_deep_link_diagnostics_follow_locale_but_keep_raw_url ... ok
+test single_instance::tests::second_launch_without_deep_link_focuses_the_main_window ... ok
+test single_instance::tests::second_launch_extracts_workhub_and_legacy_deep_links ... ok
+test sse::tests::default_sse_targets_keep_global_and_private_streams ... ok
+test sse::tests::forwards_sse_payloads_as_opaque_webview_events ... ok
+test sse::tests::frame_buffer_holds_partial_sse_frames_across_chunks ... ok
+test sse::tests::parses_sse_frames_like_the_ts_client ... ok
+test sse::tests::plans_contract_stream_paths_without_copying_domain_logic ... ok
+test sse::tests::rejects_unsafe_stream_path_segments ... ok
+test sse::tests::startup_targets_wait_for_a_trusted_device_token_before_private_streams ... ok
+test sse::tests::status_payloads_use_the_dedicated_sse_status_channel ... ok
+test sse::tests::worker_plan_keeps_retry_policy_and_subscription_headers ... ok
+test sse_worker::tests::default_reconnect_delay_is_small_enough_for_desktop_feedback ... ok
+test tray::tests::keeps_tray_ids_stable_and_unique ... ok
+test tray::tests::localizes_user_visible_tray_labels_without_changing_ids ... ok
+test tray::tests::maps_tray_window_actions_to_existing_window_control_contract ... ok
+test tray::tests::opens_inbox_through_a_safe_main_route ... ok
+test tray::tests::opens_settings_through_a_safe_main_route ... ok
+test tray::tests::quit_action_does_not_claim_business_window_control ... ok
+test tray::tests::restore_pet_interaction_shows_cuu_without_stealing_focus ... ok
+test window_controls::tests::command_names_match_the_tauri_runtime_entry ... ok
+test window_controls::tests::hidden_windows_do_not_carry_stale_routes ... ok
+test window_controls::tests::main_window_controls_show_and_focus_known_routes ... ok
+test window_controls::tests::pet_window_controls_do_not_steal_focus ... ok
+test window_controls::tests::rejects_unsafe_deep_link_routes ... ok
+test window_controls::tests::serializes_for_tauri_command_payloads ... ok
+test windows::tests::default_window_plan_has_main_and_pet_labels ... ok
+test windows::tests::main_window_remains_the_full_workhub_shell ... ok
+test windows::tests::pet_window_contract_matches_cuu_desktop_concept ... ok
+test windows::tests::window_plans_serialize_with_tauri_style_field_names ... ok
+
+test result: ok. 74 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (client-tauri/src-tauri/target/debug/deps/workhub_client_tauri-f34ed93cbf281480)
+
+running 10 tests
+test tests::cuu_qa_preferences_env_accepts_hide_on_hover_truthy_values ... ok
+test tests::cuu_qa_preferences_env_enables_dom_report_when_path_is_present ... ok
+test tests::cuu_qa_preferences_env_accepts_window_settings ... ok
+test tests::cuu_qa_preferences_env_ignores_invalid_settings ... ok
+test tests::sse_disable_env_accepts_explicit_truthy_values ... ok
+test tests::pet_initialization_script_can_inject_qa_preferences ... ok
+test tests::sse_disable_env_ignores_missing_and_falsey_values ... ok
+test tests::tray_quit_dry_run_env_accepts_truthy_values_only ... ok
+test tests::cuu_qa_preferences_env_accepts_qa_capture_scenarios ... ok
+test tests::cuu_qa_dom_report_writer_writes_pretty_json_to_the_env_owned_path ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tauri_scaffold.rs (client-tauri/src-tauri/target/debug/deps/tauri_scaffold-e6041fac698e1601)
+
+running 3 tests
+test default_capability_is_local_and_window_scoped ... ok
+test tauri_build_points_at_the_desktop_webview_surface ... ok
+test tauri_windows_match_the_shell_window_contract ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests workhub_client_tauri
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -158,7 +158,7 @@ flowchart LR
 
 ## 6. 后续详细计划
 
-R4.10 施工顺序建议：
+R4.10 施工顺序已拆成独立计划：[`r4-10-web-route-componentization-plan-2026-06-11.md`](./r4-10-web-route-componentization-plan-2026-06-11.md)。
 
 1. **Web route componentization first slice**
    - 优先 Home / Approvals / Replay，从 shared HTML renderer 拆成真实 route component 或更细粒度 shared component。

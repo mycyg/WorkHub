@@ -1,0 +1,1 @@
+clicked action_id=hide-main label=隐藏主窗 process=WorkHub menu_bar=2 item=1 name=missing value description=status menu

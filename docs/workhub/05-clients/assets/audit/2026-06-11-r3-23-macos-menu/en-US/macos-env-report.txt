@@ -1,0 +1,13 @@
+captured_at=2026-06-11T06:08:25Z
+repo=/Users/apple/Desktop/开发项目/WorkHub
+head=0874aa582b008a38d99db83575f766a401f9b75c
+uname=Darwin appledeMacBook-Pro.local 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:54:46 PST 2026; root:xnu-12377.91.3~2/RELEASE_ARM64_T6000 arm64
+ProductName:		macOS
+ProductVersion:		26.3.1
+BuildVersion:		25D2128
+osascript=/usr/bin/osascript
+screencapture=/usr/sbin/screencapture
+system_profiler=/usr/sbin/system_profiler
+port=1420
+menu_action_sequence=restore-pet-interaction,open-settings,open-inbox,toggle-pet,show-main,hide-main,quit
+smoke_locale=en-US
