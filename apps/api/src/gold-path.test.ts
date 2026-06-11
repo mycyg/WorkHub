@@ -218,7 +218,18 @@ test("P0.5 page routes echo normalized locale metadata for bilingual clients", a
 
   assert.equal(english.status, 200);
   assert.equal(fallback.status, 200);
-  assert.equal((await english.json() as { meta: { locale: string } }).meta.locale, "en-US");
+  const englishBody = await english.json() as {
+    meta: { locale: string };
+    data: {
+      page_vms: {
+        question: { options: { label: string }[] };
+        approvals: { items: { actions: { label: string }[] }[] };
+      };
+    };
+  };
+  assert.equal(englishBody.meta.locale, "en-US");
+  assert.equal(englishBody.data.page_vms.question.options[0]?.label, "Risk first");
+  assert.equal(englishBody.data.page_vms.approvals.items[0]?.actions.some((action) => action.label === "Approve"), true);
   assert.equal((await fallback.json() as { meta: { locale: string } }).meta.locale, "zh-CN");
 });
 

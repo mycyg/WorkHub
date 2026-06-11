@@ -15,6 +15,25 @@ import type {
   WorkItemAccessRecord
 } from "./types.js";
 
+type ApprovalActionCopyKey = "approve" | "deny" | "delegate";
+
+const approvalActionCopy: Record<NonNullable<ApprovalAttentionOptions["locale"]>, Record<ApprovalActionCopyKey, string>> = {
+  "zh-CN": {
+    approve: "同意",
+    deny: "打回",
+    delegate: "转交"
+  },
+  "en-US": {
+    approve: "Approve",
+    deny: "Request changes",
+    delegate: "Delegate"
+  }
+};
+
+function approvalActionLabel(locale: ApprovalAttentionOptions["locale"] | undefined, key: ApprovalActionCopyKey) {
+  return approvalActionCopy[locale ?? "zh-CN"][key];
+}
+
 function toIsoDate(input: Date | string | null | undefined) {
   if (!input) {
     return undefined;
@@ -40,6 +59,7 @@ export function toApprovalAttentionItem(
   const reasonText = ui?.reason_text;
   const evidenceRefs = ui?.evidence_refs as EvidenceRef[] | undefined;
   const requiresDesktop = ui?.requires_desktop ?? false;
+  const locale = options.locale ?? "zh-CN";
 
   return {
     id: approval.id,
@@ -57,7 +77,7 @@ export function toApprovalAttentionItem(
     actions: [
       {
         id: "approve",
-        label: "同意",
+        label: approvalActionLabel(locale, "approve"),
         style: "primary",
         method: "POST",
         href: `/api/approvals/${approval.id}/respond`,
@@ -65,7 +85,7 @@ export function toApprovalAttentionItem(
       },
       {
         id: "deny",
-        label: "打回",
+        label: approvalActionLabel(locale, "deny"),
         style: "danger",
         method: "POST",
         href: `/api/approvals/${approval.id}/respond`,
@@ -74,7 +94,7 @@ export function toApprovalAttentionItem(
       },
       {
         id: "delegate",
-        label: "转交",
+        label: approvalActionLabel(locale, "delegate"),
         style: "secondary",
         method: "POST",
         href: `/api/approvals/${approval.id}/delegate`,

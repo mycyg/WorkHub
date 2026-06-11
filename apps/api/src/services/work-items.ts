@@ -34,7 +34,8 @@ import {
   type SessionVM,
   type UseEvidenceForTaskRequest,
   type WorkItem,
-  type WorkItemDetailVM
+  type WorkItemDetailVM,
+  type WorkHubLocale
 } from "@workhub/contracts";
 
 import type { AuthActor } from "../middleware/auth.js";
@@ -64,28 +65,34 @@ export type WorkItemService = {
   createSession: (input: {
     payload: CreateSessionRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<SessionVM>;
   nextQuestion: (input: {
     sessionId: string;
     payload: NextQuestionRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<SessionVM>;
   createWorkItem: (input: {
     payload: CreateWorkItemRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<WorkItemDetailVM>;
   bindEvidence: (input: {
     workItemId: string;
     payload: UseEvidenceForTaskRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<WorkItemDetailVM>;
   searchKnowledge: (input: {
     payload: KnowledgeSearchRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<EvidenceBubble>;
   detailPage: (input: {
     workItemId: string;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<WorkItemDetailVM>;
   acceptedDeliverableFile: (input: {
     workItemId: string;
@@ -140,6 +147,144 @@ function compactText(value: string | null | undefined, max = 300) {
     return undefined;
   }
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+type WorkItemCopyKey =
+  | "question.confirm.title"
+  | "question.confirm.body"
+  | "question.confirm.create.label"
+  | "question.confirm.create.description"
+  | "question.confirm.evidence.label"
+  | "question.confirm.evidence.description"
+  | "question.confirm.adjust.label"
+  | "question.confirm.adjust.description"
+  | "question.scope.title"
+  | "question.scope.document.label"
+  | "question.scope.document.description"
+  | "question.scope.document.impact"
+  | "question.scope.data.label"
+  | "question.scope.data.description"
+  | "question.scope.data.impact"
+  | "question.scope.code.label"
+  | "question.scope.code.description"
+  | "question.scope.code.impact"
+  | "question.scope.ai.label"
+  | "question.scope.ai.description"
+  | "question.scope.ai.impact"
+  | "question.free.placeholder"
+  | "question.progress.intent"
+  | "question.progress.scope"
+  | "question.progress.confirm"
+  | "question.progress.run"
+  | "evidence.useCurrent"
+  | "evidence.openFull"
+  | "evidence.askFollowup"
+  | "evidence.missing"
+  | "acceptance.optionFirst"
+  | "acceptance.evidenceBound";
+
+const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
+  "zh-CN": {
+    "question.confirm.title": "是否按这个方向创建事项？",
+    "question.confirm.body": "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+    "question.confirm.create.label": "创建事项",
+    "question.confirm.create.description": "进入 AI 可施工的 spec_ready 状态。",
+    "question.confirm.evidence.label": "先找证据",
+    "question.confirm.evidence.description": "先从项目历史、文档和事项里找依据。",
+    "question.confirm.adjust.label": "调整范围",
+    "question.confirm.adjust.description": "回到上一步重新选择口径。",
+    "question.scope.title": "这件事先按哪种交付方式处理？",
+    "question.scope.document.label": "文档/方案草稿",
+    "question.scope.document.description": "适合周报、方案、说明书、PR 式变更说明。",
+    "question.scope.document.impact": "首发 L2 file-only 白名单内，风险最低。",
+    "question.scope.data.label": "结构化数据",
+    "question.scope.data.description": "适合 JSON、YAML、CSV、配置或表格分析。",
+    "question.scope.data.impact": "会保留字段级证据和回滚点。",
+    "question.scope.code.label": "小型代码/模板",
+    "question.scope.code.description": "适合低风险代码片段、模板或配置改动。",
+    "question.scope.code.impact": "需要通过快照、测试和审批。",
+    "question.scope.ai.label": "让 AI 判断",
+    "question.scope.ai.description": "我会按证据和风险选择最稳的交付路径。",
+    "question.scope.ai.impact": "不用打字，保持 option-first。",
+    "question.free.placeholder": "有特殊要求再补一句，不填也可以。",
+    "question.progress.intent": "需求",
+    "question.progress.scope": "口径",
+    "question.progress.confirm": "确认",
+    "question.progress.run": "执行",
+    "evidence.useCurrent": "用这些证据继续",
+    "evidence.openFull": "打开完整检索",
+    "evidence.askFollowup": "换个问法再找",
+    "evidence.missing": "请先上传文档、同步项目文件，或缩小检索范围。",
+    "acceptance.optionFirst": "点选澄清完成",
+    "acceptance.evidenceBound": "证据已绑定"
+  },
+  "en-US": {
+    "question.confirm.title": "Create the work item with this direction?",
+    "question.confirm.body": "Confirming turns this into executable work. If more support is needed, search project evidence first.",
+    "question.confirm.create.label": "Create work item",
+    "question.confirm.create.description": "Move into the spec_ready state so AI can start work.",
+    "question.confirm.evidence.label": "Find evidence first",
+    "question.confirm.evidence.description": "Search project history, documents, and related work first.",
+    "question.confirm.adjust.label": "Adjust scope",
+    "question.confirm.adjust.description": "Go back and choose a different scope.",
+    "question.scope.title": "Which delivery path should this use first?",
+    "question.scope.document.label": "Document / plan draft",
+    "question.scope.document.description": "Best for reports, plans, manuals, and PR-style change notes.",
+    "question.scope.document.impact": "Lowest risk in the first L2 file-only allowlist.",
+    "question.scope.data.label": "Structured data",
+    "question.scope.data.description": "Best for JSON, YAML, CSV, configuration, or spreadsheet analysis.",
+    "question.scope.data.impact": "Keeps field-level evidence and rollback points.",
+    "question.scope.code.label": "Small code / template",
+    "question.scope.code.description": "Best for low-risk snippets, templates, or configuration changes.",
+    "question.scope.code.impact": "Requires snapshots, tests, and approval.",
+    "question.scope.ai.label": "Let AI decide",
+    "question.scope.ai.description": "AI will choose the most stable delivery path from evidence and risk.",
+    "question.scope.ai.impact": "No typing required; keeps the option-first flow.",
+    "question.free.placeholder": "Add special requirements only if needed.",
+    "question.progress.intent": "Intent",
+    "question.progress.scope": "Scope",
+    "question.progress.confirm": "Confirm",
+    "question.progress.run": "Run",
+    "evidence.useCurrent": "Use this evidence",
+    "evidence.openFull": "Open full search",
+    "evidence.askFollowup": "Try another query",
+    "evidence.missing": "Upload documents, sync project files, or narrow the search first.",
+    "acceptance.optionFirst": "Option-first clarification completed",
+    "acceptance.evidenceBound": "Evidence is bound"
+  }
+};
+
+const generatedAcceptanceCopy = new Map<string, string>([
+  ["输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。", "Produce a reviewable document or plan draft with structure, body, and follow-up edit points."],
+  ["标明依据、假设和待确认内容，不把未确认内容写成事实。", "Mark evidence, assumptions, and items needing confirmation without presenting unconfirmed content as fact."],
+  ["输出结构化文件或表格，包含字段说明、样例和校验方式。", "Produce a structured file or sheet with field notes, samples, and validation method."],
+  ["保留数据来源、转换规则和异常项说明。", "Preserve source data, transformation rules, and anomaly notes."],
+  ["输出可运行的小型代码或模板，包含入口、使用说明和验证命令。", "Produce runnable small code or a template with entry point, usage notes, and verification command."],
+  ["列出改动范围、风险点和回滚方式。", "List change scope, risks, and rollback method."],
+  ["根据上下文选择最稳交付形态，并说明选择理由。", "Choose the most stable delivery format from context and explain why."],
+  ["输出可审阅结果和后续验收步骤。", "Produce a reviewable result and follow-up acceptance steps."],
+  ["点选澄清完成", workItemCopy["en-US"]["acceptance.optionFirst"]],
+  ["证据已绑定", workItemCopy["en-US"]["acceptance.evidenceBound"]],
+  ["澄清必须点选优先", "Clarification must stay option-first"],
+  ["交付物变更申请必须像 PR 一样可审", "Deliverable change requests must be PR-like and reviewable"],
+  ["Replay footer 必须显示成本切片", "Replay footer must show cost slices"]
+]);
+
+function workItemT(locale: WorkHubLocale | undefined, key: WorkItemCopyKey) {
+  return workItemCopy[locale ?? "zh-CN"][key];
+}
+
+function localizeGeneratedAcceptanceText(value: string, locale: WorkHubLocale | undefined) {
+  if (locale !== "en-US") {
+    return value;
+  }
+  return generatedAcceptanceCopy.get(value) ?? value;
+}
+
+function localizeGeneratedEvidenceSummary(count: number, locale: WorkHubLocale | undefined) {
+  return locale === "en-US"
+    ? `Found ${count} usable evidence reference${count === 1 ? "" : "s"}.`
+    : `找到了 ${count} 条可引用证据。`;
 }
 
 function mergeSelectedOptionIds(...groups: (readonly string[] | undefined)[]) {
@@ -389,7 +534,7 @@ function acceptedDeliverableToVm(
   return vm;
 }
 
-function buildWorkItemDetail(rows: StoredWorkItemDetailRows): WorkItemDetailVM {
+function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLocale = "zh-CN"): WorkItemDetailVM {
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
     : undefined;
@@ -398,8 +543,8 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows): WorkItemDetailVM {
     acceptance: rows.acceptance.map((item) => ({
       id: item.id,
       work_item_id: item.workItemId,
-      title: item.title,
-      ...(item.description ? { description: item.description } : {}),
+      title: localizeGeneratedAcceptanceText(item.title, locale),
+      ...(item.description ? { description: localizeGeneratedAcceptanceText(item.description, locale) } : {}),
       status: item.status,
       sort_order: item.sortOrder,
       ...(item.sourcePlanId ? { source_plan_id: item.sourcePlanId } : {}),
@@ -413,32 +558,40 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows): WorkItemDetailVM {
   });
 }
 
-function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">, stage: "scope" | "confirm"): QuestionCard {
+function localizedDefaultAcceptance(values: readonly string[], locale: WorkHubLocale) {
+  return values.map((value) => localizeGeneratedAcceptanceText(value, locale));
+}
+
+function questionFor(
+  workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">,
+  stage: "scope" | "confirm",
+  locale: WorkHubLocale = "zh-CN"
+): QuestionCard {
   if (stage === "confirm") {
     return {
       id: stableUuid(`${workItem.id}:question:confirm`),
       session_id: workItem.id,
       work_item_id: workItem.id,
-      title: "是否按这个方向创建事项？",
-      body: "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+      title: workItemT(locale, "question.confirm.title"),
+      body: workItemT(locale, "question.confirm.body"),
       input_mode: "confirm",
       options: [
-        { id: "create-workitem", label: "创建事项", description: "进入 AI 可施工的 spec_ready 状态。", icon: "check" },
-        { id: "search-evidence-first", label: "先找证据", description: "先从项目历史、文档和事项里找依据。", icon: "search" },
-        { id: "adjust-scope", label: "调整范围", description: "回到上一步重新选择口径。", icon: "sliders" }
+        { id: "create-workitem", label: workItemT(locale, "question.confirm.create.label"), description: workItemT(locale, "question.confirm.create.description"), icon: "check" },
+        { id: "search-evidence-first", label: workItemT(locale, "question.confirm.evidence.label"), description: workItemT(locale, "question.confirm.evidence.description"), icon: "search" },
+        { id: "adjust-scope", label: workItemT(locale, "question.confirm.adjust.label"), description: workItemT(locale, "question.confirm.adjust.description"), icon: "sliders" }
       ],
       recommended_option_ids: ["create-workitem"],
       free_text: {
         enabled: true,
         collapsed_by_default: true,
-        placeholder: "需要补充时再写一句。",
+        placeholder: workItemT(locale, "question.free.placeholder"),
         max_length: 300
       },
       progress: [
-        { key: "intent", label: "需求", state: "done" },
-        { key: "scope", label: "口径", state: "done" },
-        { key: "confirm", label: "确认", state: "active" },
-        { key: "run", label: "执行", state: "pending" }
+        { key: "intent", label: workItemT(locale, "question.progress.intent"), state: "done" },
+        { key: "scope", label: workItemT(locale, "question.progress.scope"), state: "done" },
+        { key: "confirm", label: workItemT(locale, "question.progress.confirm"), state: "active" },
+        { key: "run", label: workItemT(locale, "question.progress.run"), state: "pending" }
       ],
       submit: {
         method: "POST",
@@ -455,47 +608,47 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
     id: stableUuid(`${workItem.id}:question:scope`),
     session_id: workItem.id,
     work_item_id: workItem.id,
-    title: "这件事先按哪种交付方式处理？",
+    title: workItemT(locale, "question.scope.title"),
     input_mode: "single_choice",
     options: [
       {
         id: "document-draft",
-        label: "文档/方案草稿",
-        description: "适合周报、方案、说明书、PR 式变更说明。",
-        impact: "首发 L2 file-only 白名单内，风险最低。",
+        label: workItemT(locale, "question.scope.document.label"),
+        description: workItemT(locale, "question.scope.document.description"),
+        impact: workItemT(locale, "question.scope.document.impact"),
         risk_hint: "low",
         delivery_kind: documentDraftSpec.delivery_kind,
-        default_acceptance: [...documentDraftSpec.default_acceptance],
+        default_acceptance: localizedDefaultAcceptance(documentDraftSpec.default_acceptance, locale),
         icon: "file-text"
       },
       {
         id: "structured-data",
-        label: "结构化数据",
-        description: "适合 JSON、YAML、CSV、配置或表格分析。",
-        impact: "会保留字段级证据和回滚点。",
+        label: workItemT(locale, "question.scope.data.label"),
+        description: workItemT(locale, "question.scope.data.description"),
+        impact: workItemT(locale, "question.scope.data.impact"),
         risk_hint: "low",
         delivery_kind: structuredDataSpec.delivery_kind,
-        default_acceptance: [...structuredDataSpec.default_acceptance],
+        default_acceptance: localizedDefaultAcceptance(structuredDataSpec.default_acceptance, locale),
         icon: "table"
       },
       {
         id: "code-template",
-        label: "小型代码/模板",
-        description: "适合低风险代码片段、模板或配置改动。",
-        impact: "需要通过快照、测试和审批。",
+        label: workItemT(locale, "question.scope.code.label"),
+        description: workItemT(locale, "question.scope.code.description"),
+        impact: workItemT(locale, "question.scope.code.impact"),
         risk_hint: "medium",
         delivery_kind: codeTemplateSpec.delivery_kind,
-        default_acceptance: [...codeTemplateSpec.default_acceptance],
+        default_acceptance: localizedDefaultAcceptance(codeTemplateSpec.default_acceptance, locale),
         icon: "code"
       },
       {
         id: "let-ai-decide",
-        label: "让 AI 判断",
-        description: "我会按证据和风险选择最稳的交付路径。",
-        impact: "不用打字，保持 option-first。",
+        label: workItemT(locale, "question.scope.ai.label"),
+        description: workItemT(locale, "question.scope.ai.description"),
+        impact: workItemT(locale, "question.scope.ai.impact"),
         risk_hint: "low",
         delivery_kind: aiDecideSpec.delivery_kind,
-        default_acceptance: [...aiDecideSpec.default_acceptance],
+        default_acceptance: localizedDefaultAcceptance(aiDecideSpec.default_acceptance, locale),
         icon: "sparkles"
       }
     ],
@@ -503,14 +656,14 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
     free_text: {
       enabled: true,
       collapsed_by_default: true,
-      placeholder: "有特殊要求再补一句，不填也可以。",
+      placeholder: workItemT(locale, "question.free.placeholder"),
       max_length: 300
     },
     progress: [
-      { key: "intent", label: "需求", state: "done" },
-      { key: "scope", label: "口径", state: "active" },
-      { key: "confirm", label: "确认", state: "pending" },
-      { key: "run", label: "执行", state: "pending" }
+      { key: "intent", label: workItemT(locale, "question.progress.intent"), state: "done" },
+      { key: "scope", label: workItemT(locale, "question.progress.scope"), state: "active" },
+      { key: "confirm", label: workItemT(locale, "question.progress.confirm"), state: "pending" },
+      { key: "run", label: workItemT(locale, "question.progress.run"), state: "pending" }
     ],
     submit: {
       method: "POST",
@@ -524,14 +677,18 @@ function questionFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescriptio
   return question;
 }
 
-function sessionVmFor(workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">, stage: "scope" | "confirm"): SessionVM {
+function sessionVmFor(
+  workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">,
+  stage: "scope" | "confirm",
+  locale: WorkHubLocale = "zh-CN"
+): SessionVM {
   return sessionVmSchema.parse({
     session_id: workItem.id,
     work_item_id: workItem.id,
     topic: `session:${workItem.id}`,
     stream_href: `/api/push/stream/session/${workItem.id}`,
     next_question_href: `/api/sessions/${workItem.id}/next-question`,
-    question: questionFor(workItem, stage)
+    question: questionFor(workItem, stage, locale)
   });
 }
 
@@ -575,7 +732,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async createSession(input) {
       if (input.payload.work_item_id) {
         const rows = await requireDetail(input.payload.work_item_id, input.actor);
-        return sessionVmFor(rows.workItem, "scope");
+        return sessionVmFor(rows.workItem, "scope", input.locale);
       }
 
       const project = await resolveProject(input.payload.project_id);
@@ -601,7 +758,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         ...(input.payload.intent_text ? { userOtherText: input.payload.intent_text } : {}),
         at: now()
       });
-      return sessionVmFor(workItem, "scope");
+      return sessionVmFor(workItem, "scope", input.locale);
     },
 
     async nextQuestion(input) {
@@ -619,7 +776,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         ...(input.payload.free_text ? { userOtherText: input.payload.free_text } : {}),
         at: now()
       });
-      return sessionVmFor(rows.workItem, "confirm");
+      return sessionVmFor(rows.workItem, "confirm", input.locale);
     },
 
     async createWorkItem(input) {
@@ -671,7 +828,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           },
           at: now()
         });
-        return buildWorkItemDetail(await requireDetail(updated.id, input.actor));
+        return buildWorkItemDetail(await requireDetail(updated.id, input.actor), input.locale);
       }
 
       const project = await resolveProject(input.payload.project_id);
@@ -703,7 +860,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         createInput.acceptanceItems = acceptanceItems;
       }
       const created = await repository.createWorkItem(createInput);
-      return buildWorkItemDetail(await requireDetail(created.id, input.actor));
+      return buildWorkItemDetail(await requireDetail(created.id, input.actor), input.locale);
     },
 
     async bindEvidence(input) {
@@ -720,7 +877,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         ...(input.payload.note ? { userOtherText: input.payload.note } : {}),
         at: now()
       });
-      return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor));
+      return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor), input.locale);
     },
 
     async searchKnowledge(input) {
@@ -739,27 +896,27 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         id: stableUuid(`evidence:${input.actor.id}:${query ?? "recent"}:${input.payload.project_id ?? ""}:${input.payload.work_item_id ?? ""}`),
         ...(query ? { query_text: query } : {}),
         summary_text: refs.length > 0
-          ? `找到了 ${refs.length} 条可引用证据。`
-          : "还没有找到足够证据，我不会编造来源。",
+          ? localizeGeneratedEvidenceSummary(refs.length, input.locale)
+          : (input.locale === "en-US" ? "Not enough evidence is available yet. I will not invent sources." : "还没有找到足够证据，我不会编造来源。"),
         evidence_refs: refs,
-        ...(refs.length === 0 ? { missing_evidence_note: "请先上传文档、同步项目文件，或缩小检索范围。" } : {}),
+        ...(refs.length === 0 ? { missing_evidence_note: workItemT(input.locale, "evidence.missing") } : {}),
         actions: [
           ...(input.payload.work_item_id && refs.length > 0
             ? [{
                 id: "use_for_current_task" as const,
-                label: "用这些证据继续",
+                label: workItemT(input.locale, "evidence.useCurrent"),
                 method: "POST" as const,
                 href: `/api/workitems/${input.payload.work_item_id}/evidence-bindings`
               }]
             : []),
           {
             id: "open_full_search",
-            label: "打开完整检索",
+            label: workItemT(input.locale, "evidence.openFull"),
             href: `/knowledge/search${query ? `?q=${encodeURIComponent(query)}` : ""}`
           },
           {
             id: "ask_followup",
-            label: "换个问法再找",
+            label: workItemT(input.locale, "evidence.askFollowup"),
             href: "/knowledge/search"
           }
         ]
@@ -768,7 +925,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     },
 
     async detailPage(input) {
-      return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor));
+      return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor), input.locale);
     },
 
     async acceptedDeliverableFile(input) {
@@ -884,10 +1041,10 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     return workItem;
   }
 
-  function detail(workItem: MemoryStoredWorkItem): WorkItemDetailVM {
+  function detail(workItem: MemoryStoredWorkItem, locale: WorkHubLocale = "zh-CN"): WorkItemDetailVM {
     const defaultAcceptance = [
-      { id: "option-first", title: "点选澄清完成", status: answers.has(workItem.id) ? "met" : "open" },
-      { id: "evidence-bound", title: "证据已绑定", status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
+      { id: "option-first", title: workItemT(locale, "acceptance.optionFirst"), status: answers.has(workItem.id) ? "met" : "open" },
+      { id: "evidence-bound", title: workItemT(locale, "acceptance.evidenceBound"), status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
     ];
     return workItemDetailVmSchema.parse({
       workitem: workItem,
@@ -915,13 +1072,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             actor: input.actor,
             status: "ai_clarifying"
           });
-      return sessionVmFor(memoryRow(workItem), "scope");
+      return sessionVmFor(memoryRow(workItem), "scope", input.locale);
     },
 
     async nextQuestion(input) {
       const workItem = requireWorkItem(input.sessionId);
       answers.set(input.sessionId, [...(answers.get(input.sessionId) ?? []), input.payload]);
-      return sessionVmFor(memoryRow(workItem), "confirm");
+      return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
     },
 
     async createWorkItem(input) {
@@ -967,13 +1124,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       }
       workItem.updated_at = at();
       workItem.version += 1;
-      return detail(workItem);
+      return detail(workItem, input.locale);
     },
 
     async bindEvidence(input) {
       requireWorkItem(input.workItemId);
       evidence.set(input.workItemId, input.payload.evidence_refs);
-      return detail(requireWorkItem(input.workItemId));
+      return detail(requireWorkItem(input.workItemId), input.locale);
     },
 
     async searchKnowledge(input) {
@@ -998,25 +1155,27 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       return {
         id: stableUuid(`memory:evidence:${query ?? "recent"}:${input.payload.work_item_id ?? ""}`),
         ...(query ? { query_text: query } : {}),
-        summary_text: refs.length > 0 ? `找到了 ${refs.length} 条可引用证据。` : "还没有找到足够证据，我不会编造来源。",
+        summary_text: refs.length > 0
+          ? localizeGeneratedEvidenceSummary(refs.length, input.locale)
+          : (input.locale === "en-US" ? "Not enough evidence is available yet. I will not invent sources." : "还没有找到足够证据，我不会编造来源。"),
         evidence_refs: refs,
-        ...(refs.length === 0 ? { missing_evidence_note: "请先上传或同步项目资料。" } : {}),
+        ...(refs.length === 0 ? { missing_evidence_note: workItemT(input.locale, "evidence.missing") } : {}),
         actions: [
           ...(input.payload.work_item_id && refs.length > 0
             ? [{
                 id: "use_for_current_task" as const,
-                label: "用这些证据继续",
+                label: workItemT(input.locale, "evidence.useCurrent"),
                 method: "POST" as const,
                 href: `/api/workitems/${input.payload.work_item_id}/evidence-bindings`
               }]
             : []),
-          { id: "open_full_search", label: "打开完整检索", href: "/knowledge/search" }
+          { id: "open_full_search", label: workItemT(input.locale, "evidence.openFull"), href: "/knowledge/search" }
         ]
       };
     },
 
     async detailPage(input) {
-      return detail(requireWorkItem(input.workItemId));
+      return detail(requireWorkItem(input.workItemId), input.locale);
     },
 
     async acceptedDeliverableFile(input) {

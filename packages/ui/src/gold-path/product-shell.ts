@@ -167,7 +167,7 @@ const productShellCss = [
   ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:#eef3f9;padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
   ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{border-right:1px solid var(--wh-product-line);background:rgba(247,250,254,.78);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-title{margin:2px 10px 12px;color:var(--wh-product-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-nav-list{display:grid;gap:6px}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:8px;padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:#fff}.wh-product-nav a[aria-current=page]{background:#fff;color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(53,92,255,.18),0 10px 24px rgba(37,51,79,.06)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}",
   ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;max-width:1120px;margin:0 auto 18px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.18;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
-  ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.05)}.wh-product-metric strong{font-size:17px;line-height:1.1}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.15}",
+  ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.05)}.wh-product-metric strong{font-size:17px;line-height:1.1;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.15;overflow-wrap:anywhere}",
   ".wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}",
   ".wh-product-rail{border-left:1px solid var(--wh-product-line);background:rgba(247,250,254,.68);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.2}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-app-notice{position:fixed;right:18px;bottom:18px;z-index:40;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(53,92,255,.22);background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:8px;background:#fff;padding:9px 12px;font-weight:750;color:var(--wh-product-ink)}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}",
@@ -223,66 +223,68 @@ function renderProductMetrics(page: GoldPathRenderedPage, rendered: GoldPathRend
 
 function pageMetrics(page: GoldPathRenderedPage, rendered: GoldPathRenderedSurface, locale: WorkHubLocale) {
   const fallback = [{ id: "locale", label: productT(locale, "metric.locale"), value: locale }];
-  const html = page.html;
+  const vm = rendered.vm.page_vms;
   if (page.key === "home") {
+    const attention = vm.attention;
     return [
-      { id: "primary", label: productT(locale, "metric.primary"), value: html.includes("data-attention-id") ? "1" : "0" },
-      { id: "queue", label: productT(locale, "metric.queue"), value: countNeedle(html, "data-attention-id").toString() },
-      { id: "running", label: productT(locale, "metric.running"), value: countNeedle(html, "data-background-run-id").toString() }
+      { id: "primary", label: productT(locale, "metric.primary"), value: attention.primary ? "1" : "0" },
+      { id: "queue", label: productT(locale, "metric.queue"), value: String(attention.queue.length) },
+      { id: "running", label: productT(locale, "metric.running"), value: String(attention.background_runs.length) }
     ];
   }
   if (page.key === "approvals") {
+    const approvals = vm.approvals;
     return [
-      { id: "pending", label: productT(locale, "metric.pending"), value: countNeedle(html, "data-approval-id").toString() },
-      { id: "requests", label: productT(locale, "metric.requests"), value: countNeedle(html, "data-approval-request-id").toString() },
-      { id: "queue", label: productT(locale, "metric.queue"), value: countNeedle(html, "data-attention-id").toString() }
+      { id: "pending", label: productT(locale, "metric.pending"), value: String(approvals.counts.pending ?? approvals.items.length) },
+      { id: "requests", label: productT(locale, "metric.requests"), value: String(approvals.requests.length) },
+      { id: "queue", label: productT(locale, "metric.queue"), value: String(approvals.items.length) }
     ];
   }
   if (page.key === "workitem") {
+    const workitem = vm.workitem;
     return [
-      { id: "trace", label: productT(locale, "metric.trace"), value: countNeedle(html, "data-agent-step-id").toString() },
-      { id: "deliverables", label: productT(locale, "metric.deliverables"), value: countNeedle(html, "data-accepted-deliverable-id").toString() },
-      { id: "evidence", label: productT(locale, "metric.evidence"), value: countNeedle(html, "data-evidence-ref-id").toString() }
+      { id: "trace", label: productT(locale, "metric.trace"), value: String(workitem.agent_trace_preview.length) },
+      { id: "deliverables", label: productT(locale, "metric.deliverables"), value: String(workitem.accepted_deliverables.length) },
+      { id: "evidence", label: productT(locale, "metric.evidence"), value: String(workitem.evidence_refs.length) }
     ];
   }
   if (page.key === "proposal") {
+    const proposal = vm.proposal;
     return [
-      { id: "checks", label: productT(locale, "metric.checks"), value: countNeedle(html, "data-deliverable-check-id").toString() },
-      { id: "evidence", label: productT(locale, "metric.evidence"), value: countNeedle(html, "data-evidence-ref-id").toString() },
-      { id: "comments", label: productT(locale, "metric.comments"), value: countNeedle(html, "data-proposal-comment-id").toString() }
+      { id: "checks", label: productT(locale, "metric.checks"), value: String(proposal.manifest.checks.length) },
+      { id: "evidence", label: productT(locale, "metric.evidence"), value: String(proposal.evidence_refs.length) },
+      { id: "comments", label: productT(locale, "metric.comments"), value: String(proposal.comments.length) }
     ];
   }
   if (page.key === "replay") {
+    const replay = vm.replay;
     return [
-      { id: "steps", label: productT(locale, "metric.steps"), value: countNeedle(html, "data-agent-step-id").toString() },
-      { id: "decisions", label: productT(locale, "metric.decisions"), value: countNeedle(html, "data-replay-merge-attempt-id").toString() },
-      { id: "snapshots", label: productT(locale, "metric.snapshots"), value: countNeedle(html, "data-snapshot-id").toString() }
+      { id: "steps", label: productT(locale, "metric.steps"), value: String(replay.steps.length) },
+      { id: "decisions", label: productT(locale, "metric.decisions"), value: String(replay.merge_timeline.length) },
+      { id: "snapshots", label: productT(locale, "metric.snapshots"), value: String(replay.snapshots.length) }
     ];
   }
   if (page.key === "cost") {
+    const cost = vm.cost;
+    const totalTokens = cost.token_in + cost.token_out;
     return [
-      { id: "tokens", label: productT(locale, "metric.tokens"), value: countNeedle(html, "data-cost-token-row").toString() },
-      { id: "cost", label: productT(locale, "metric.cost"), value: rendered.fixtureId ? "CNY" : "0" },
-      { id: "budget", label: productT(locale, "metric.budget"), value: countNeedle(html, "data-budget-scope").toString() }
+      { id: "tokens", label: productT(locale, "metric.tokens"), value: String(totalTokens) },
+      { id: "cost", label: productT(locale, "metric.cost"), value: cost.currency === "CNY" ? `¥${cost.total_cost_cny}` : cost.total_cost_cny },
+      { id: "budget", label: productT(locale, "metric.budget"), value: String(cost.budget.length) }
     ];
   }
   return fallback;
 }
 
-function countNeedle(value: string, needle: string) {
-  return value.split(needle).length - 1;
-}
-
 function renderProductNav(
   pages: GoldPathRenderedPage[],
   activeKey: GoldPathRenderedPage["key"],
-  linkMode: GoldPathAppShellOptions["linkMode"],
   locale: WorkHubLocale
 ) {
   return pages
     .map((page) => {
       const active = page.key === activeKey;
-      const navHref = linkMode === "path" ? page.route : `#${page.route}`;
+      const navHref = page.route;
       return `<a href="${escapeHtml(navHref)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span><small>${escapeHtml(page.route)}</small></a>`;
     })
     .join("");
@@ -296,7 +298,7 @@ export function renderWebProductShell(
   const routeMap = buildGoldPathRouteMap(rendered.pages);
   const activeKey = resolveGoldPathPageKey(routeMap, options.currentRoute ?? "") ?? rendered.pages[0]?.key ?? "home";
   const activePage = rendered.pages.find((page) => page.key === activeKey) ?? rendered.pages[0];
-  const nav = renderProductNav(rendered.pages, activeKey, options.linkMode, locale);
+  const nav = renderProductNav(rendered.pages, activeKey, locale);
   const panels = rendered.pages
     .map(
       (page) =>
@@ -311,7 +313,7 @@ export function renderWebProductShell(
   return {
     routeMap,
     css: `${productShellCss}${rendered.css}`,
-    html: `<div class="wh-product-root" data-wh-surface="${rendered.surface}" data-r4-product-shell="true" data-r4-product-route-key="${escapeHtml(activeKey)}" data-r4-product-link-mode="${escapeHtml(options.linkMode ?? "hash")}">
+    html: `<div class="wh-product-root" data-wh-surface="${rendered.surface}" data-r4-product-shell="true" data-r4-product-route-key="${escapeHtml(activeKey)}" data-r4-product-link-mode="path">
       <header class="wh-product-topbar">
         <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></a>
         <div class="wh-product-top-actions">

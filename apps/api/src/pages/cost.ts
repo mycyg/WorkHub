@@ -1,6 +1,7 @@
-import type { BudgetNotice, BudgetUsage, CostDashboardVM, CostSummaryVM } from "@workhub/contracts";
+import type { BudgetNotice, BudgetUsage, CostDashboardVM, CostSummaryVM, WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 import type { BudgetUsage as InternalBudgetUsage, CostLedgerEntry } from "@workhub/cost";
+import { pageT } from "./i18n.js";
 
 type CostPageInput = {
   settings: Settings;
@@ -9,6 +10,7 @@ type CostPageInput = {
   generatedAt?: Date;
   budgetUsages?: InternalBudgetUsage[];
   ledgerEntries?: readonly CostLedgerEntry[];
+  locale?: WorkHubLocale;
 };
 
 function isoAtDayBoundary(date: Date, offsetDays: number) {
@@ -46,10 +48,11 @@ function makeZeroUsage(input: {
 
 export function buildCostSummary(input: CostPageInput): CostSummaryVM {
   const generatedAt = input.generatedAt ?? new Date();
-  const mappedUsages = input.budgetUsages?.map(toApiBudgetUsage) ?? [];
+  const locale = input.locale ?? "zh-CN";
+  const mappedUsages = input.budgetUsages?.map((usage) => toApiBudgetUsage(usage, locale)) ?? [];
   const fallbackMe = makeZeroUsage({
     scope: { kind: "user", user_id: input.userId },
-    scopeLabel: "我的今日 AI 预算",
+    scopeLabel: pageT(locale, "cost.scope.me"),
     policyId: "pcost-user-day-v0",
     period: "day",
     maxTokens: input.settings.budgets.userDailyTokens,
@@ -59,7 +62,7 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
   const me = mappedUsages.find((usage) => usage.scope.kind === "user" && usage.scope.user_id === input.userId) ?? fallbackMe;
   const fallbackTeam = makeZeroUsage({
     scope: { kind: "team", team_id: input.settings.auth.defaultWorkspaceId },
-    scopeLabel: "团队今日 AI 预算",
+    scopeLabel: pageT(locale, "cost.scope.team"),
     policyId: "pcost-team-day-v0",
     period: "day",
     maxTokens: input.settings.budgets.teamDailyTokens,
@@ -73,13 +76,14 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
     me,
     team,
     scopes,
-    active_notices: budgetNoticesFor(scopes),
+    active_notices: budgetNoticesFor(scopes, locale),
     generated_at: generatedAt.toISOString()
   };
 }
 
 export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const generatedAt = input.generatedAt ?? new Date();
+  const locale = input.locale ?? "zh-CN";
   const summary = buildCostSummary({ ...input, generatedAt });
   const uniqueEntries = uniqueUsageEntries(input.ledgerEntries ?? []);
   const totalCost = sumCost(uniqueEntries);
@@ -100,13 +104,13 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     trend: aggregateTrend(uniqueEntries),
     by_user: input.isAdmin ? byUser.map((item) => ({
       user_id: item.id,
-      label: item.id === input.userId ? "当前用户" : item.id,
+      label: item.id === input.userId ? pageT(locale, "cost.label.currentUser") : item.id,
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
     })) : [],
     by_team: byTeam.map((item) => ({
       team_id: item.id,
-      label: "团队预算",
+      label: pageT(locale, "cost.label.teamBudget"),
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
     })),
@@ -131,10 +135,10 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   };
 }
 
-function toApiBudgetUsage(usage: InternalBudgetUsage): BudgetUsage {
+function toApiBudgetUsage(usage: InternalBudgetUsage, locale: WorkHubLocale): BudgetUsage {
   return {
     scope: toApiScope(usage.scope),
-    scope_label: usage.scopeLabel,
+    scope_label: localizedScopeLabel(usage, locale),
     policy_id: usage.policyId,
     period: usage.period,
     period_start: usage.periodStart,
@@ -152,6 +156,24 @@ function toApiBudgetUsage(usage: InternalBudgetUsage): BudgetUsage {
   };
 }
 
+function localizedScopeLabel(usage: InternalBudgetUsage, locale: WorkHubLocale) {
+  if (usage.scope.kind === "user" && usage.period === "day" && isDefaultUserDayScopeLabel(usage.scopeLabel)) {
+    return pageT(locale, "cost.scope.me");
+  }
+  if (usage.scope.kind === "team" && usage.period === "day" && isDefaultTeamDayScopeLabel(usage.scopeLabel)) {
+    return pageT(locale, "cost.scope.team");
+  }
+  return usage.scopeLabel;
+}
+
+function isDefaultUserDayScopeLabel(label: string) {
+  return label === "我的 AI 日预算" || label === pageT("zh-CN", "cost.scope.me") || label === pageT("en-US", "cost.scope.me");
+}
+
+function isDefaultTeamDayScopeLabel(label: string) {
+  return label === "团队 AI 预算" || label === pageT("zh-CN", "cost.scope.team") || label === pageT("en-US", "cost.scope.team");
+}
+
 function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
   switch (scope.kind) {
     case "workitem":
@@ -165,7 +187,7 @@ function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
   }
 }
 
-function budgetNoticesFor(usages: BudgetUsage[]): BudgetNotice[] {
+function budgetNoticesFor(usages: BudgetUsage[], locale: WorkHubLocale): BudgetNotice[] {
   return usages
     .filter((usage) => usage.status === "warning" || usage.status === "critical" || usage.status === "exhausted")
     .map((usage) => {
@@ -173,14 +195,14 @@ function budgetNoticesFor(usages: BudgetUsage[]): BudgetNotice[] {
       return {
         code: exhausted ? "budget_exhausted" : "budget_warning",
         severity: exhausted ? "critical" : usage.status === "critical" ? "critical" : "warning",
-        message: exhausted ? "AI 预算已经用完，先暂停新的自动执行。" : "AI 预算快用完了，建议先选择更省的执行方式。",
+        message: pageT(locale, exhausted ? "cost.notice.exhausted" : "cost.notice.warning"),
         scope: usage.scope,
         usage_ratio: usage.warning_ratio,
         recommended_action: exhausted ? "pause" : "downgrade_model",
         options: [
-          { id: "downgrade_model", label: "降级模型继续", action_href: "/dashboard/cost" },
-          { id: "pause", label: "先暂停", action_href: "/dashboard/cost" },
-          { id: "ask_admin", label: "找管理员", action_href: "/dashboard/cost" }
+          { id: "downgrade_model", label: pageT(locale, "cost.action.downgrade"), action_href: "/dashboard/cost" },
+          { id: "pause", label: pageT(locale, "cost.action.pause"), action_href: "/dashboard/cost" },
+          { id: "ask_admin", label: pageT(locale, "cost.action.askAdmin"), action_href: "/dashboard/cost" }
         ],
         action_href: "/dashboard/cost"
       };

@@ -1,8 +1,12 @@
-import type { AttentionHomeVM } from "@workhub/contracts";
+import type { AttentionHomeVM, WorkHubLocale } from "@workhub/contracts";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
+import { pageT } from "./i18n.js";
 
-function toBackgroundRun(run: AgentRunQueueRecord): AttentionHomeVM["background_runs"][number] | undefined {
+function toBackgroundRun(
+  run: AgentRunQueueRecord,
+  locale: WorkHubLocale
+): AttentionHomeVM["background_runs"][number] | undefined {
   if (run.status === "succeeded" || run.status === "cancelled") {
     return undefined;
   }
@@ -17,17 +21,19 @@ function toBackgroundRun(run: AgentRunQueueRecord): AttentionHomeVM["background_
     work_item_id: run.work_item_id,
     title: run.title,
     state,
-    preview_text: run.handoff?.blockers[0] ?? (run.status === "running" ? "AI 正在处理这个事项。" : "AI 已排队等待开始。")
+    preview_text: run.handoff?.blockers[0] ?? pageT(locale, run.status === "running" ? "attention.running" : "attention.queued")
   };
 }
 
 export function buildAttentionHomePage(input: {
   queue?: AttentionHomeVM["queue"];
   backgroundRuns?: AgentRunQueueRecord[];
+  locale?: WorkHubLocale;
 } = {}): AttentionHomeVM {
+  const locale = input.locale ?? "zh-CN";
   const queue = input.queue ?? [];
   const background_runs = (input.backgroundRuns ?? [])
-    .map(toBackgroundRun)
+    .map((run) => toBackgroundRun(run, locale))
     .filter((run): run is AttentionHomeVM["background_runs"][number] => Boolean(run));
 
   return {

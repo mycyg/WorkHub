@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -38,6 +39,10 @@ function handleWorkItemError(error: unknown): never {
   throw error;
 }
 
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
 export function createKnowledgeRoutes(deps: KnowledgeRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -45,9 +50,10 @@ export function createKnowledgeRoutes(deps: KnowledgeRoutesDependencies = {}) {
 
   routes.post("/search", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = knowledgeSearchRequestSchema.parse(await readJsonBody(c.req));
+    const locale = requestLocale(c);
     try {
-      const data = await workItems.searchKnowledge({ payload, actor: c.var.actor });
-      return c.json({ ok: true, data });
+      const data = await workItems.searchKnowledge({ payload, actor: c.var.actor, locale });
+      return c.json({ ok: true, data, meta: { locale } });
     } catch (error) {
       handleWorkItemError(error);
     }

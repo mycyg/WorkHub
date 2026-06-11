@@ -1,0 +1,900 @@
+{
+  "generated_at": "2026-06-11T04:25:49.488Z",
+  "module": "R4.9 Web locale Page VM + shell metrics browser smoke",
+  "chrome_path": "/usr/bin/google-chrome",
+  "api_target": "http://127.0.0.1:40223",
+  "vite_url": "http://127.0.0.1:43141",
+  "broker_backend": "redis",
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-locale-metrics-browser-smoke",
+  "contact_sheet": "contact-sheet.png",
+  "seed": {
+    "ids": {
+      "userId": "00000000-0000-4000-8000-000000000102",
+      "forbiddenUserId": "00000000-0000-4000-8000-000000000471",
+      "projectId": "00000000-0000-4000-8000-000000000004",
+      "workspaceId": "00000000-0000-4000-8000-000000000002",
+      "teamId": "00000000-0000-4000-8000-000000000002",
+      "workItemId": "00000000-0000-4000-8000-000000000104",
+      "forbiddenWorkItemId": "00000000-0000-4000-8000-000000000472",
+      "missingProposalId": "00000000-0000-4000-8000-000000000473",
+      "branchId": "00000000-0000-4000-8000-000000000106",
+      "runId": "00000000-0000-4000-8000-000000000107",
+      "proposalId": "00000000-0000-4000-8000-000000000108",
+      "baseSnapshotId": "00000000-0000-4000-8000-000000000109",
+      "draftSnapshotId": "00000000-0000-4000-8000-00000000010a",
+      "auditSnapshotId": "00000000-0000-4000-8000-000000000501",
+      "auditProposalId": "00000000-0000-4000-8000-000000000502",
+      "acceptanceFitId": "00000000-0000-4000-8000-000000000474",
+      "acceptanceEvidenceId": "00000000-0000-4000-8000-000000000475",
+      "evidenceMessageId": "00000000-0000-4000-8000-000000000476",
+      "stepPlanId": "00000000-0000-4000-8000-000000000701",
+      "stepEvidenceId": "00000000-0000-4000-8000-000000000702",
+      "stepFinalId": "00000000-0000-4000-8000-000000000705",
+      "reviewId": "00000000-0000-4000-8000-000000000801",
+      "approvalId": "00000000-0000-4000-8000-000000000802",
+      "usageRecordId": "r4-web-live-api-pg-seed:deepseek-v4-flash:2026-06-11",
+      "costLedgerUserId": "00000000-0000-4000-8000-000000000901",
+      "costLedgerTeamId": "00000000-0000-4000-8000-000000000902",
+      "costLedgerWorkItemId": "00000000-0000-4000-8000-000000000903",
+      "changeMarkdownId": "00000000-0000-4000-8000-000000000401",
+      "changePreviewId": "00000000-0000-4000-8000-000000000402",
+      "currentUserId": "00000000-0000-4000-8000-000000000102",
+      "forbiddenActorUserId": "00000000-0000-4000-8000-000000000471"
+    },
+    "seededAt": "2026-06-11T08:00:00.000Z"
+  },
+  "gates": {
+    "pg_seed_applied": true,
+    "proposal_locale_meta_en": true,
+    "proposal_actions_english": true,
+    "replay_locale_meta_en": true,
+    "replay_handoff_english": true,
+    "replay_cost_scope_english": true,
+    "cost_locale_meta_en": true,
+    "cost_scope_labels_english": true,
+    "browser_replay_requested_locale": true,
+    "replay_metric_matches_vm": true,
+    "cost_metric_matches_vm": true,
+    "all_screenshots_captured": true,
+    "no_horizontal_overflow": true,
+    "no_text_box_overflow": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_hash_navigation": true
+  },
+  "direct_api": {
+    "proposal": {
+      "proposal_id": "00000000-0000-4000-8000-000000000108",
+      "work_item_id": "00000000-0000-4000-8000-000000000104",
+      "title": "R4.7 live API review package",
+      "status": "reviewed",
+      "manifest": {
+        "version": 0,
+        "proposal_id": "00000000-0000-4000-8000-000000000108",
+        "work_item_id": "00000000-0000-4000-8000-000000000104",
+        "branch_id": "00000000-0000-4000-8000-000000000106",
+        "title": "R4.7 live API review package",
+        "summary_md": "Real API and Postgres seed smoke package for the Web route workbench.\n\n- Adds a regional launch review draft with route-ready proof.\n- Keeps Web copy productized and free of legacy demo wording.\n- Includes explicit overflow acceptance for dense cards and mobile routes.",
+        "author": {
+          "actor_kind": "ai",
+          "actor_user_id": "00000000-0000-4000-8000-000000000102",
+          "label": "WorkHub AI"
+        },
+        "base": {
+          "snapshot_id": "00000000-0000-4000-8000-000000000109",
+          "branch_head_ref": "workhub://branches/r4-web-live-api-pg@base",
+          "created_at": "2026-06-11T08:00:00.000Z"
+        },
+        "changes": [
+          {
+            "id": "00000000-0000-4000-8000-000000000401",
+            "target_kind": "text_doc",
+            "target_ref": {
+              "entity_type": "work_item",
+              "entity_id": "00000000-0000-4000-8000-000000000104",
+              "path": "/outputs/regional-launch-review.md",
+              "version_before": "base",
+              "version_after": "r4.7-live-api-pg",
+              "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "change_type": "generated",
+            "human_summary": "Generated the regional launch review draft used by the Web live API smoke.",
+            "machine_summary": {
+              "before_excerpt": "No launch review package was attached to the seeded work item.",
+              "after_excerpt": "## Regional launch review\n\n- Blockers\n- Owner actions\n- Evidence links",
+              "changed_fields": [
+                "summary_md",
+                "evidence_refs",
+                "review_actions"
+              ]
+            },
+            "preview_ref": {
+              "kind": "text",
+              "href": "/api/previews/regional-launch-review.md"
+            },
+            "evidence_refs": [
+              {
+                "id": "00000000-0000-4000-8000-000000000201",
+                "source_type": "meeting",
+                "source_id": "regional-launch-sync-2026-06-11",
+                "title": "Regional launch sync decisions",
+                "excerpt": "Stakeholders need a concise launch review focused on blocker status, owner actions, and evidence links.",
+                "locator": {
+                  "timestamp_s": 728
+                },
+                "confidence_hint": "found",
+                "href": "/api/evidence/regional-launch-sync-2026-06-11"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000202",
+                "source_type": "drive_file",
+                "source_id": "drive-regional-launch-metrics",
+                "title": "Regional launch metrics export",
+                "excerpt": "The source pack includes readiness, risk, follow-up owner, and budget columns for the launch review.",
+                "locator": {
+                  "path": "/project-drive/regional-launch/metrics.csv"
+                },
+                "confidence_hint": "found",
+                "href": "/api/evidence/drive-regional-launch-metrics"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000402",
+            "target_kind": "text_doc",
+            "target_ref": {
+              "entity_type": "work_item",
+              "entity_id": "00000000-0000-4000-8000-000000000104",
+              "path": "/outputs/regional-launch-review-preview.html",
+              "version_after": "r4.7-live-api-pg-preview",
+              "sha256_after": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "change_type": "generated",
+            "human_summary": "Generated a browser preview artifact for screenshot QA.",
+            "preview_ref": {
+              "kind": "text",
+              "href": "/api/previews/regional-launch-review-preview.html"
+            },
+            "evidence_refs": [
+              {
+                "id": "00000000-0000-4000-8000-000000000201",
+                "source_type": "meeting",
+                "source_id": "regional-launch-sync-2026-06-11",
+                "title": "Regional launch sync decisions",
+                "excerpt": "Stakeholders need a concise launch review focused on blocker status, owner actions, and evidence links.",
+                "locator": {
+                  "timestamp_s": 728
+                },
+                "confidence_hint": "found",
+                "href": "/api/evidence/regional-launch-sync-2026-06-11"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000202",
+                "source_type": "drive_file",
+                "source_id": "drive-regional-launch-metrics",
+                "title": "Regional launch metrics export",
+                "excerpt": "The source pack includes readiness, risk, follow-up owner, and budget columns for the launch review.",
+                "locator": {
+                  "path": "/project-drive/regional-launch/metrics.csv"
+                },
+                "confidence_hint": "found",
+                "href": "/api/evidence/drive-regional-launch-metrics"
+              }
+            ]
+          }
+        ],
+        "checks": [
+          {
+            "id": "live_api_pg_seed",
+            "label": "Real API + Postgres seed routes are browser reachable",
+            "status": "passed",
+            "detail": "The R4.7 smoke drives Vite through the TCP API daemon and seeded DB rows."
+          },
+          {
+            "id": "text_box_overflow",
+            "label": "Dense Web cards do not leak text outside their containers",
+            "status": "passed",
+            "detail": "Desktop and mobile route captures include horizontal and text containment checks."
+          }
+        ],
+        "evidence_refs": [
+          {
+            "id": "00000000-0000-4000-8000-000000000201",
+            "source_type": "meeting",
+            "source_id": "regional-launch-sync-2026-06-11",
+            "title": "Regional launch sync decisions",
+            "excerpt": "Stakeholders need a concise launch review focused on blocker status, owner actions, and evidence links.",
+            "locator": {
+              "timestamp_s": 728
+            },
+            "confidence_hint": "found",
+            "href": "/api/evidence/regional-launch-sync-2026-06-11"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000202",
+            "source_type": "drive_file",
+            "source_id": "drive-regional-launch-metrics",
+            "title": "Regional launch metrics export",
+            "excerpt": "The source pack includes readiness, risk, follow-up owner, and budget columns for the launch review.",
+            "locator": {
+              "path": "/project-drive/regional-launch/metrics.csv"
+            },
+            "confidence_hint": "found",
+            "href": "/api/evidence/drive-regional-launch-metrics"
+          }
+        ],
+        "risk": {
+          "level": "low",
+          "human_label": "Reversible UI/data smoke seed",
+          "reversible": true
+        },
+        "rollback": {
+          "available": true,
+          "snapshot_id": "00000000-0000-4000-8000-000000000109",
+          "description": "Remove the R4.7 seed rows and return to the default local seed."
+        },
+        "review": {
+          "suggested_decision": "approve",
+          "reason_required_on_reject": true
+        }
+      },
+      "evidence_refs": [
+        {
+          "id": "00000000-0000-4000-8000-000000000201",
+          "source_type": "meeting",
+          "source_id": "regional-launch-sync-2026-06-11",
+          "title": "Regional launch sync decisions",
+          "excerpt": "Stakeholders need a concise launch review focused on blocker status, owner actions, and evidence links.",
+          "locator": {
+            "timestamp_s": 728
+          },
+          "confidence_hint": "found",
+          "href": "/api/evidence/regional-launch-sync-2026-06-11"
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000202",
+          "source_type": "drive_file",
+          "source_id": "drive-regional-launch-metrics",
+          "title": "Regional launch metrics export",
+          "excerpt": "The source pack includes readiness, risk, follow-up owner, and budget columns for the launch review.",
+          "locator": {
+            "path": "/project-drive/regional-launch/metrics.csv"
+          },
+          "confidence_hint": "found",
+          "href": "/api/evidence/drive-regional-launch-metrics"
+        }
+      ],
+      "review_actions": {
+        "approve": {
+          "id": "approve",
+          "label": "Approve",
+          "method": "POST",
+          "href": "/api/proposals/00000000-0000-4000-8000-000000000108/review"
+        },
+        "request_changes": {
+          "id": "request_changes",
+          "label": "Request changes with a reason",
+          "method": "POST",
+          "href": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
+          "requires_reason": true
+        },
+        "merge": {
+          "id": "merge",
+          "label": "Accept into the official version",
+          "method": "POST",
+          "href": "/api/proposals/00000000-0000-4000-8000-000000000108/merge"
+        }
+      },
+      "comments": [
+        {
+          "id": "00000000-0000-4000-8000-000000000801",
+          "author_label": "Owner",
+          "body": "Seeded approval comment for R4.7 browser smoke.",
+          "created_at": "2026-06-11T08:00:00.000Z"
+        }
+      ]
+    },
+    "replay": {
+      "run": {
+        "id": "00000000-0000-4000-8000-000000000107",
+        "work_item_id": "00000000-0000-4000-8000-000000000104",
+        "mode": "worker",
+        "actor": "human",
+        "status": "running",
+        "model": "deepseek-v4-flash",
+        "turns_used": 3,
+        "max_turns": 15,
+        "token_in": 64000,
+        "token_out": 12000,
+        "cost_estimate": "0.224000",
+        "outcome_reason": "Opened the R4.7 live API review package for approval.",
+        "handoff_md": "Done: Seeded work item, proposal, approval, run trace, and cost rows.\nRemaining: Review screenshots and approve R4.7 gate.\nNext: Run R4.8 Redis/SSE production browser smoke.",
+        "created_at": "2026-06-11T08:00:00.000Z",
+        "updated_at": "2026-06-11T08:00:00.000Z"
+      },
+      "steps": [
+        {
+          "id": "371d09f8-90c4-45d5-b299-e8b0b08903ce",
+          "agent_run_id": "00000000-0000-4000-8000-000000000107",
+          "step_no": 1,
+          "phase": "think",
+          "input_json": {},
+          "output_excerpt": "Planned real API, Postgres seed, bilingual reload, and text overflow checks.",
+          "created_at": "2026-06-11T08:00:00.000Z"
+        },
+        {
+          "id": "59e74503-1639-4a0c-a39a-2f36dfa332e1",
+          "agent_run_id": "00000000-0000-4000-8000-000000000107",
+          "step_no": 2,
+          "phase": "tool_result",
+          "input_json": {},
+          "output_excerpt": "Inserted route-ready work item, proposal, approval, evidence, and cost records.",
+          "created_at": "2026-06-11T08:00:00.000Z"
+        },
+        {
+          "id": "eaac4c31-96a0-4acf-b058-e88034a9c76b",
+          "agent_run_id": "00000000-0000-4000-8000-000000000107",
+          "step_no": 3,
+          "phase": "final",
+          "input_json": {},
+          "output_excerpt": "Opened the R4.7 live API review package for approval.",
+          "snapshot_id": "00000000-0000-4000-8000-00000000010a",
+          "created_at": "2026-06-11T08:00:00.000Z"
+        }
+      ],
+      "evidence_refs": [],
+      "snapshots": [],
+      "audit_logs": [],
+      "accepted_deliverables": [],
+      "merge_timeline": [],
+      "manifest_facts": {
+        "checks": {
+          "snapshot_exists": "failed",
+          "revert_available": "failed"
+        },
+        "rollback": {
+          "available": false,
+          "description": "这次改动含不可逆动作,需要人工确认。"
+        },
+        "risk": {
+          "reversible": false,
+          "irreversible_reasons": []
+        },
+        "evidence_refs": []
+      },
+      "cost": {
+        "me": {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000102"
+          },
+          "scope_label": "My current AI run budget",
+          "policy_id": "pcost-user-run-summary-v0",
+          "period": "run",
+          "period_start": "2026-06-11T08:00:00.000Z",
+          "period_end": "2026-06-11T08:00:00.000Z",
+          "token_in": 64000,
+          "token_out": 12000,
+          "total_tokens": 76000,
+          "max_tokens": 120000,
+          "remaining_tokens": 44000,
+          "estimated_cost_cny": "0.224000",
+          "max_cost_cny": "5.000000",
+          "remaining_cost_cny": "4.776",
+          "warning_ratio": 0.6333333333333333,
+          "status": "ok"
+        },
+        "scopes": [
+          {
+            "scope": {
+              "kind": "workitem",
+              "workitem_id": "00000000-0000-4000-8000-000000000104"
+            },
+            "scope_label": "R4.7 live API PG seed browser smoke",
+            "policy_id": "pcost-workitem-run-v0",
+            "period": "run",
+            "period_start": "2026-06-11T08:00:00.000Z",
+            "period_end": "2026-06-11T08:00:00.000Z",
+            "token_in": 64000,
+            "token_out": 12000,
+            "total_tokens": 76000,
+            "max_tokens": 120000,
+            "remaining_tokens": 44000,
+            "estimated_cost_cny": "0.224000",
+            "max_cost_cny": "5.000000",
+            "remaining_cost_cny": "4.776",
+            "warning_ratio": 0.6333333333333333,
+            "status": "ok"
+          },
+          {
+            "scope": {
+              "kind": "user",
+              "user_id": "00000000-0000-4000-8000-000000000102"
+            },
+            "scope_label": "My current AI run budget",
+            "policy_id": "pcost-user-run-summary-v0",
+            "period": "run",
+            "period_start": "2026-06-11T08:00:00.000Z",
+            "period_end": "2026-06-11T08:00:00.000Z",
+            "token_in": 64000,
+            "token_out": 12000,
+            "total_tokens": 76000,
+            "max_tokens": 120000,
+            "remaining_tokens": 44000,
+            "estimated_cost_cny": "0.224000",
+            "max_cost_cny": "5.000000",
+            "remaining_cost_cny": "4.776",
+            "warning_ratio": 0.6333333333333333,
+            "status": "ok"
+          }
+        ],
+        "active_notices": [],
+        "generated_at": "2026-06-11T08:00:00.000Z"
+      }
+    },
+    "cost": {
+      "generated_at": "2026-06-11T04:25:46.960Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.273",
+      "token_in": 74500,
+      "token_out": 15500,
+      "unit_cost_cny": "0.000003",
+      "trend": [
+        {
+          "date": "2026-06-08",
+          "cost_cny": "0.049",
+          "tokens": 14000
+        },
+        {
+          "date": "2026-06-11",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        }
+      ],
+      "by_user": [],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.273",
+          "tokens": 90000
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "3027a365-2808-4efe-a5b3-8adcc9ed354d",
+          "code": "3027a365-2808-4efe-a5b3-8adcc9ed354d",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "4058c018-98de-4885-b00b-1c116e2258a5",
+          "code": "4058c018-98de-4885-b00b-1c116e2258a5",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "89befbf0-72f2-4070-a106-7216b3bafbe1",
+          "code": "89befbf0-72f2-4070-a106-7216b3bafbe1",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "2471e3d9-faee-4349-b89e-70253aab3d88",
+          "code": "2471e3d9-faee-4349-b89e-70253aab3d88",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "573b631b-936e-48cf-9c30-45f92ca2c6bd",
+          "code": "573b631b-936e-48cf-9c30-45f92ca2c6bd",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "b4cc725b-caec-41da-9a28-666e4edd0d15",
+          "code": "b4cc725b-caec-41da-9a28-666e4edd0d15",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "37aebc8e-03e9-493b-9235-43bef460c72c",
+          "code": "37aebc8e-03e9-493b-9235-43bef460c72c",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "00000000-0000-4000-8000-000000000104",
+          "code": "00000000-0000-4000-8000-000000000104",
+          "cost_cny": "0.672",
+          "turns": 3
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 8,
+          "cost_cny": "0.273"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000102"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-11T00:00:00.000Z",
+          "period_end": "2026-06-12T00:00:00.000Z",
+          "token_in": 64000,
+          "token_out": 12000,
+          "total_tokens": 76000,
+          "max_tokens": 500000,
+          "remaining_tokens": 424000,
+          "estimated_cost_cny": "0.224",
+          "max_cost_cny": "20",
+          "remaining_cost_cny": "19.776",
+          "warning_ratio": 0.152,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-11T00:00:00.000Z",
+          "period_end": "2026-06-12T00:00:00.000Z",
+          "token_in": 74500,
+          "token_out": 15500,
+          "total_tokens": 90000,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4910000,
+          "estimated_cost_cny": "0.273",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.727",
+          "warning_ratio": 0.018,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "团队 AI 预算",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 74500,
+          "token_out": 15500,
+          "total_tokens": 90000,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49910000,
+          "estimated_cost_cny": "0.273",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.727",
+          "warning_ratio": 0.0018,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    }
+  },
+  "api_requests": [
+    {
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/me"
+    },
+    {
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:43141/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "pathname": "/api/auth/identify",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/identify"
+    },
+    {
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:43141/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:43141/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/me"
+    },
+    {
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "pathname": "/api/auth/preferences",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/preferences"
+    },
+    {
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/me"
+    },
+    {
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=en-US"
+    },
+    {
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/me"
+    },
+    {
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/me"
+    },
+    {
+      "pathname": "/api/pages/proposals/00000000-0000-4000-8000-000000000108",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/proposals/00000000-0000-4000-8000-000000000108?locale=en-US"
+    },
+    {
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/me"
+    },
+    {
+      "pathname": "/api/push/stream/proposal/00000000-0000-4000-8000-000000000108",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/proposal/00000000-0000-4000-8000-000000000108"
+    },
+    {
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/me"
+    },
+    {
+      "pathname": "/api/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/agent-runs/00000000-0000-4000-8000-000000000107/replay?locale=en-US"
+    },
+    {
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/me"
+    },
+    {
+      "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/run/00000000-0000-4000-8000-000000000107"
+    },
+    {
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/auth/me"
+    },
+    {
+      "pathname": "/api/pages/cost",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/cost?locale=en-US"
+    },
+    {
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:43141/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:43141/api/push/stream/me"
+    }
+  ],
+  "api_log_tail": [
+    "WorkHub API daemon listening on http://127.0.0.1:40223"
+  ],
+  "steps": [
+    {
+      "id": "01-workitem-zh-desktop-locale-metrics",
+      "url": "http://127.0.0.1:43141/workitems/00000000-0000-4000-8000-000000000104",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "screenshot": "01-workitem-zh-desktop-locale-metrics.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
+        "lang": "zh-CN",
+        "status": "ready",
+        "routeKey": "workitem",
+        "productShell": true,
+        "activeLocale": "zh-CN",
+        "mastheadTitle": "任务详情",
+        "bodyText": "WorkHub\nWeb R4\n/api/pages/workitems/:id\n中\nEN\n工作入口\n总览\n/\n接入\n/intake/00000000-0000-4000-8000-000000000105\n审批\n/approvals\n任务\n/workitems/00000000-0000-4000-8000-000000000104\n变更\n/proposals/00000000-0000-4000-8000-000000000108\n回放\n/agent-runs/00000000-0000-4000-8000-000000000107/replay\n成本\n/dashboard/cost\n设置\n/settings\n\n当前焦点\n\n任务详情\n\n任务详情把验收、证据、AI 轨迹与最近变更放在同一处。\n\n3\n轨迹\n0\n交付物\n2\n证据\nWORK ITEM\nR4.7 live API PG seed review package with deliberately-long-provider-diagnostic-token-alpha-beta-1234567890\n\nReal API + PG seeded review package for Web route smoke verification.\n\n状态\n\nin_review\n\n交付物\n\nR4.7 live API review package\n\nAI 轨迹预览\nPlanned real API, Postgres seed, bilingual reload, and text overflow checks.\n#1\nInserted route-ready work item, proposal, approval, evidence, and cost records.\n#2\nOpened the R4.7 live API review package for approval.\n#3\n查看变更申请\n看 AI 怎么做的\n数据源\nREST 真相源\n\nSSE 只触发刷新，页面以 REST Page VM 为准。\n\n下一步\n任务\n\n核对验收项、AI 轨迹和交付物。\n\nWeb 管理端\n\n主窗口保持严肃工作界面。",
+        "metricValues": {
+          "trace": "3",
+          "deliverables": "0",
+          "evidence": "2"
+        },
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "hashNavigationLeak": false
+      }
+    },
+    {
+      "id": "02-proposal-en-desktop-locale-actions",
+      "url": "http://127.0.0.1:43141/proposals/00000000-0000-4000-8000-000000000108",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "screenshot": "02-proposal-en-desktop-locale-actions.png",
+      "audit": {
+        "pathname": "/proposals/00000000-0000-4000-8000-000000000108",
+        "lang": "en-US",
+        "status": "ready",
+        "routeKey": "proposal",
+        "productShell": true,
+        "activeLocale": "en-US",
+        "mastheadTitle": "Proposal Detail",
+        "bodyText": "WorkHub\nWeb R4\n/api/pages/proposals/:id\n中\nEN\nWORK ENTRY\nOverview\n/\nIntake\n/intake/00000000-0000-4000-8000-000000000105\nApprovals\n/approvals\nTasks\n/workitems/00000000-0000-4000-8000-000000000104\nChanges\n/proposals/00000000-0000-4000-8000-000000000108\nReplay\n/agent-runs/00000000-0000-4000-8000-000000000107/replay\nCost\n/dashboard/cost\nSettings\n/settings\n\nFOCUS\n\nProposal Detail\n\nChange requests read like PRs, but cover documents, sheets, files, and versions.\n\n2\nChecks\n2\nEvidence\n1\nComments\nDELIVERABLE CHANGE REQUEST\nR4.7 live API review package\n\nReal API and Postgres seed smoke package for the Web route workbench. Adds a regional launch review draft with route ready proof. Keeps Web copy productized and free of legacy demo wording. Includes explicit overf\n\nRisk\n\nReversible UI/data smoke seed\n\nRollback\n\nRemove the R4.7 seed rows and return to the default local seed.\n\nEvidence\n\n2 source(s)\n\nWhat changed\nGenerated the regional launch review draft used by the Web live API smoke.\n\n/outputs/regional-launch-review.md\n\nText document\nGenerated a browser preview artifact for screenshot QA.\n\n/outputs/regional-launch-review-preview.html\n\nText document\nCheck results\nReal API + Postgres seed routes are browser reachable\npassed · The R4.7 smoke drives Vite through the TCP API daemon and seeded DB rows.\nDense Web cards do not leak text outside their containers\npassed · Desktop and mobile route captures include horizontal and text containment checks.\nApprove\nRequest changes with a reason\nAccept into the official version\nData source\nREST source\n\nSSE triggers refresh; REST Page VMs remain the source.\n\nNext\nChanges\n\nCheck risk, evidence, and rollback path.\n\nWeb manager\n\nThe main window stays a serious work surface.",
+        "metricValues": {
+          "checks": "2",
+          "evidence": "2",
+          "comments": "1"
+        },
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "hashNavigationLeak": false
+      }
+    },
+    {
+      "id": "03-replay-en-desktop-vm-metrics",
+      "url": "http://127.0.0.1:43141/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "screenshot": "03-replay-en-desktop-vm-metrics.png",
+      "audit": {
+        "pathname": "/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+        "lang": "en-US",
+        "status": "ready",
+        "routeKey": "replay",
+        "productShell": true,
+        "activeLocale": "en-US",
+        "mastheadTitle": "Replay Work",
+        "bodyText": "WorkHub\nWeb R4\n/api/agent-runs/:id/replay\n中\nEN\nWORK ENTRY\nOverview\n/\nIntake\n/intake/00000000-0000-4000-8000-000000000105\nApprovals\n/approvals\nTasks\n/workitems/00000000-0000-4000-8000-000000000104\nChanges\n/proposals/00000000-0000-4000-8000-000000000108\nReplay\n/agent-runs/00000000-0000-4000-8000-000000000107/replay\nCost\n/dashboard/cost\nSettings\n/settings\n\nFOCUS\n\nReplay Work\n\nA read-only explanation of how AI executed, spent, accepted, and rolled back.\n\n3\nSteps\n0\nDecisions\n0\nSnapshots\nREPLAY WORK\nSee how AI did it\n\nDone: Seeded work item, proposal, approval, run trace, and cost rows. Remaining: Review screenshots and approve R4.7 gate. Next: Run R4.8 Redis/SSE production browser smoke.\n\nthink\n\nPlanned real API, Postgres seed, bilingual reload, and text overflow checks.\n\n#1\ntool_result\n\nInserted route-ready work item, proposal, approval, evidence, and cost records.\n\n#2\nfinal\n\nOpened the R4.7 live API review package for approval.\n\n#3\nToken\n\n76000\n\nEstimated cost\n\n¥0.224000\n\nSnapshot\n\n0 rollback point(s)\n\nAccepted deliverables\n\n0 file(s)\n\nDecision record\n\n0 attempt(s)\n\nData source\nREST source\n\nSSE triggers refresh; REST Page VMs remain the source.\n\nNext\nReplay\n\nReview execution, cost, snapshots, and decisions.\n\nWeb manager\n\nThe main window stays a serious work surface.",
+        "metricValues": {
+          "steps": "3",
+          "decisions": "0",
+          "snapshots": "0"
+        },
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "hashNavigationLeak": false
+      }
+    },
+    {
+      "id": "04-cost-en-mobile-vm-metrics",
+      "url": "http://127.0.0.1:43141/dashboard/cost",
+      "viewport": {
+        "width": 390,
+        "height": 1180
+      },
+      "screenshot": "04-cost-en-mobile-vm-metrics.png",
+      "audit": {
+        "pathname": "/dashboard/cost",
+        "lang": "en-US",
+        "status": "ready",
+        "routeKey": "cost",
+        "productShell": true,
+        "activeLocale": "en-US",
+        "mastheadTitle": "Cost Dashboard",
+        "bodyText": "WorkHub\nWeb R4\n/api/pages/cost\n中\nEN\nOverview\nIntake\nApprovals\nTasks\nChanges\nReplay\nCost\nSettings\n\nFOCUS\n\nCost Dashboard\n\nCost breaks budget risk down by person, team, task, and model.\n\n90000\nTokens\n¥0.273\nCost\n3\nBudget\nCOST GOVERNANCE\nBudget and cost\n\nRegular users see their own slice; managers can open the team view.\n\nCurrent tokens\n\n90000\n\nEstimated cost\n\n¥0.273\n\nBudget status\n\nok",
+        "metricValues": {
+          "tokens": "90000",
+          "cost": "¥0.273",
+          "budget": "3"
+        },
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "hashNavigationLeak": false
+      }
+    }
+  ]
+}

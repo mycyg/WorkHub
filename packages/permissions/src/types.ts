@@ -3,7 +3,8 @@ import type {
   AttentionItem,
   PermissionEffect,
   PermissionScopeKind,
-  RiskLevel
+  RiskLevel,
+  WorkHubLocale
 } from "@workhub/contracts";
 
 export type PermissionActor = {
@@ -100,4 +101,5 @@ export type ApprovalAttentionOptions = {
   kind?: ApprovalKind;
   priority?: AttentionItem["priority"];
   riskLevel?: RiskLevel;
+  locale?: WorkHubLocale;
 };

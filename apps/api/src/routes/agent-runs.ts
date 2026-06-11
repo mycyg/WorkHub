@@ -10,7 +10,7 @@ import {
   type SnapshotRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
-import { startAgentRunRequestSchema } from "@workhub/contracts";
+import { normalizeWorkHubLocale, startAgentRunRequestSchema, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -60,6 +60,10 @@ function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
     return;
   }
   throw new HTTPException(403, { message: "你没有权限查看这次 AI 执行。" });
+}
+
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
 export type ProposalReplayAuditReader = {
@@ -192,6 +196,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   });
 
   routes.get("/agent-runs/:id/replay", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
     const run = await queue.get(c.req.param("id"));
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
@@ -212,7 +217,8 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, stores.auditLogs, run.work_item_id);
       return c.json({
         ok: true,
-        data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables, mergeTimeline })
+        data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables, mergeTimeline, locale }),
+        meta: { locale }
       });
     } catch (error) {
       if (error instanceof WorkItemServiceError) {

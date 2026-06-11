@@ -92,12 +92,12 @@ export function loadWebAgentRunTrace(client: WorkHubApiClient, runId: string, af
   return client.getAgentRunTrace(runId, after);
 }
 
-export function loadWebAgentRunReplay(client: WorkHubApiClient, runId: string) {
-  return client.replayAgentRun(runId);
+export function loadWebAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
+  return client.replayAgentRun(runId, locale ? { locale } : undefined);
 }
 
 export async function renderWebAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
-  return renderAgentRunReplay(await loadWebAgentRunReplay(client, runId), "web", locale ? { locale } : undefined);
+  return renderAgentRunReplay(await loadWebAgentRunReplay(client, runId, locale), "web", locale ? { locale } : undefined);
 }
 
 export async function renderWebAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {

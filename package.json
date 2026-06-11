@@ -23,6 +23,7 @@
     "qa:r4-web-live-route-interaction": "pnpm --filter @workhub/web qa:r4-live-route-interaction",
     "qa:r4-web-live-api-pg-seed": "pnpm --filter @workhub/web qa:r4-live-api-pg-seed",
     "qa:r4-web-redis-sse-browser-smoke": "pnpm --filter @workhub/web qa:r4-redis-sse-browser-smoke",
+    "qa:r4-web-locale-metrics-browser-smoke": "pnpm --filter @workhub/web qa:r4-locale-metrics-browser-smoke",
     "qa:r4-rust-system-i18n": "tsx scripts/qa/r4-rust-system-i18n.ts",
     "qa:cuu-pet-run-card-overflow": "tsx scripts/qa/cuu-pet-run-card-overflow-qa.ts",
     "qa:r2-release-gate": "tsx scripts/qa/r2-release-gate-report.ts",

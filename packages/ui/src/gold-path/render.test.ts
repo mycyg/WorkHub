@@ -94,7 +94,7 @@ test("settings page stays serious and keeps pet model choice out of the main app
   const settings = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "settings");
 
   assert.equal(settings?.route, "/settings");
-  assert.equal(settings?.title, "Settings");
+  assert.equal(settings?.title, "设置");
   assert.equal(settings?.html.includes("应用设置"), true);
   assert.equal(settings?.html.includes("桌宠形象只在独立桌宠窗口里配置和验收"), true);
   assert.equal(settings?.html.includes("wh-grid wh-settings-grid"), true);

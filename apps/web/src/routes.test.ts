@@ -96,8 +96,8 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         return surface.page_vms.proposal;
       }
     },
-    async replayAgentRun(id: string) {
-      calls.push(`replayAgentRun:${id}`);
+    async replayAgentRun(id: string, options?: { locale?: string }) {
+      localeCall(`replayAgentRun:${id}`, options);
       return surface.page_vms.replay;
     }
   } as unknown as WorkHubApiClient;
@@ -120,8 +120,10 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
+  assert.equal(resolveWebRoute("/#/approvals")?.key, "approvals");
   assert.equal(resolveWebRoute("/unknown"), undefined);
   assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff#top");
+  assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
 });
 
 test("R4 web loader uses typed Page VM endpoints before rendering ready routes", async () => {
@@ -153,7 +155,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
   for (const [path, endpointCall] of [
     ["/workitems/work-42", "workItem:work-42:en-US"],
     ["/proposals/proposal-42", "proposal:proposal-42:en-US"],
-    ["/agent-runs/run-42/replay", "replayAgentRun:run-42"]
+    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);

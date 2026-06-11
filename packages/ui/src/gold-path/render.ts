@@ -37,6 +37,7 @@ export type GoldPathRenderedPage = {
 export type GoldPathRenderedSurface = {
   surface: GoldPathRenderSurface;
   fixtureId: string;
+  vm: GoldPathSurfaceVM;
   css: string;
   pages: GoldPathRenderedPage[];
 };
@@ -76,6 +77,33 @@ function href(value: string) {
 
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {
   return goldPathT(locale, key);
+}
+
+const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
+  "zh-CN": {
+    home: "AI 优先首页",
+    intake: "选项接入",
+    approvals: "审批中心",
+    workitem: "任务详情",
+    proposal: "变更申请",
+    replay: "执行回放",
+    cost: "成本看板",
+    settings: "设置"
+  },
+  "en-US": {
+    home: "AI-first Home",
+    intake: "Option Intake",
+    approvals: "Approval Center",
+    workitem: "WorkItem Detail",
+    proposal: "Proposal Detail",
+    replay: "Replay Work",
+    cost: "Cost Dashboard",
+    settings: "Settings"
+  }
+};
+
+function pageTitle(locale: WorkHubLocale, key: GoldPathRenderedPage["key"]) {
+  return pageTitles[locale][key];
 }
 
 function evidenceList(evidenceRefs: EvidenceRef[], locale: WorkHubLocale) {
@@ -351,8 +379,8 @@ function renderHome(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
   return {
     key: "home",
     route: vm.routes.home,
-    title: "AI-first Home",
-    html: pageShell(surface, "AI-first Home", main),
+    title: pageTitle(locale, "home"),
+    html: pageShell(surface, pageTitle(locale, "home"), main),
     primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
     cuuState: page.cuu_state
   };
@@ -385,8 +413,8 @@ function renderIntake(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
   return {
     key: "intake",
     route: vm.routes.intake,
-    title: "Option Intake",
-    html: pageShell(surface, "Option Intake", main),
+    title: pageTitle(locale, "intake"),
+    html: pageShell(surface, pageTitle(locale, "intake"), main),
     primaryHrefs: [question.submit.href],
     cuuState: "asking_approval"
   };
@@ -421,8 +449,8 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   return {
     key: "approvals",
     route: vm.routes.approvals,
-    title: "Approval Center",
-    html: pageShell(surface, "Approval Center", main),
+    title: pageTitle(locale, "approvals"),
+    html: pageShell(surface, pageTitle(locale, "approvals"), main),
     primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
     cuuState: "asking_approval"
   };
@@ -445,8 +473,8 @@ function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
   return {
     key: "workitem",
     route: vm.routes.workitem,
-    title: "WorkItem Detail",
-    html: pageShell(surface, "WorkItem Detail", main),
+    title: pageTitle(locale, "workitem"),
+    html: pageShell(surface, pageTitle(locale, "workitem"), main),
     primaryHrefs: [vm.routes.proposal, vm.routes.replay],
     cuuState: "thinking"
   };
@@ -483,8 +511,8 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
   return {
     key: "proposal",
     route: vm.routes.proposal,
-    title: "Proposal Detail",
-    html: pageShell(surface, "Proposal Detail", main),
+    title: pageTitle(locale, "proposal"),
+    html: pageShell(surface, pageTitle(locale, "proposal"), main),
     primaryHrefs: proposalActions.map((action) => action.href),
     cuuState: "carrying_document"
   };
@@ -566,8 +594,8 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
   return {
     key: "replay",
     route: vm.routes.replay,
-    title: "Replay Work",
-    html: pageShell(surface, "Replay Work", main),
+    title: pageTitle(locale, "replay"),
+    html: pageShell(surface, pageTitle(locale, "replay"), main),
     primaryHrefs: deliverableHrefs,
     cuuState: "thinking"
   };
@@ -589,8 +617,8 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
   return {
     key: "cost",
     route: vm.routes.cost,
-    title: "Cost Dashboard",
-    html: pageShell(surface, "Cost Dashboard", main),
+    title: pageTitle(locale, "cost"),
+    html: pageShell(surface, pageTitle(locale, "cost"), main),
     primaryHrefs: [],
     cuuState: "worried"
   };
@@ -609,8 +637,8 @@ function renderSettings(surface: GoldPathRenderSurface, locale: WorkHubLocale): 
   return {
     key: "settings",
     route: "/settings",
-    title: "Settings",
-    html: pageShell(surface, "Settings", main),
+    title: pageTitle(locale, "settings"),
+    html: pageShell(surface, pageTitle(locale, "settings"), main),
     primaryHrefs: [],
     cuuState: "idle"
   };
@@ -625,6 +653,7 @@ export function renderGoldPathSurface(
   return {
     surface,
     fixtureId: vm.fixture_id,
+    vm,
     css: goldPathCss,
     pages: [
       renderHome(surface, vm, locale),

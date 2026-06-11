@@ -155,7 +155,7 @@ export type WorkHubApiClient = {
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
-  replayAgentRun: (runId: string) => Promise<ReplayTraceVM>;
+  replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;

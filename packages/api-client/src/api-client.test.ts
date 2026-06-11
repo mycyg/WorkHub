@@ -158,13 +158,21 @@ test("api client carries locale on typed page VM requests", async () => {
   });
 
   await client.pages.goldPath({ locale: "en-US" });
+  await client.pages.attention({ locale: "en-US" });
+  await client.pages.approvals({ locale: "en-US" });
+  await client.pages.cost({ locale: "en-US" });
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
+  await client.replayAgentRun("run/1", { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
+    "/api/pages/attention?locale=en-US",
+    "/api/pages/approvals?locale=en-US",
+    "/api/pages/cost?locale=en-US",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
-    "/api/pages/proposals/proposal%201?locale=en-US"
+    "/api/pages/proposals/proposal%201?locale=en-US",
+    "/api/agent-runs/run%2F1/replay?locale=en-US"
   ]);
 });
 

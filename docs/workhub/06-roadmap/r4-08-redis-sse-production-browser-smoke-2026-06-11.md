@@ -133,15 +133,16 @@ R4.8 report：
 
 ## 6. 后续详细计划
 
-R4.9 施工顺序建议：
+R4.9 已按本计划完成，详见 [`r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`](./r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md)：Page VM 系统生成标签已按 `locale` 输出，Replay/Cost shell metrics 已改为从 VM 结构字段取数，远端 Linux PG + Redis + Chrome locale metrics browser smoke 已通过。
 
-1. **Page VM 动态双语与 shell 指标一致性**
-   - 让 Home / WorkItem / Proposal / Replay / Cost 的 Page VM 固定摘要、状态、metric title/value 可按 `locale` 输出。
-   - 修正 product shell 顶部 metric 与页面内容的语义一致性；例如 Replay 页面内容已有 step 时，shell 不应继续显示无意义的 `0 Steps`。
-   - 保留动态原文边界：用户输入、证据摘录、LLM 产物正文不在客户端硬翻译。
-2. **Web route renderer componentization plan**
-   - 选 Home/Approvals/Replay 三页先从 shared HTML renderer 收敛到真实 route component 或更细粒度 shared component。
-   - 保留 R4.8 的 EventSource + REST reconcile 行为和所有 overflow gate。
+R4.10 施工顺序建议：
+
+1. **Web route renderer componentization first slice**
+   - 选 Home / Approvals / Replay 三页，从 shared HTML renderer 收敛到真实 route component 或更细粒度 shared component。
+   - 保留 R4.8/R4.9 的 EventSource + REST reconcile、locale、path navigation 与 overflow gate。
+2. **Action / notice locale continuation**
+   - 把 proposal opened/merged、budget warning、approval response toast、retry/request access 等动作反馈接入同一 locale contract。
+   - 继续保留 raw error、resource id、user text、evidence excerpt、proposal manifest 原文。
 3. **继续远端真实环境验收**
-   - R4.9 仍使用远端 Linux PG + Redis + Chrome。
-   - 继续 gate：no Cuu、no Kanban、no weekly、no hash、no horizontal overflow、no text box overflow、ready/empty/forbidden/error、locale reload、topic auth、Redis/SSE reconnect。
+   - R4.10 仍使用远端 Linux PG + Redis + Chrome。
+   - 继续 gate：no Cuu、no Kanban、no weekly、no hash、no horizontal overflow、no text box overflow、ready/empty/forbidden/error、locale reload、topic auth、Redis/SSE reconcile。

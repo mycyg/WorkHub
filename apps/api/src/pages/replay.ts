@@ -12,12 +12,14 @@ import type {
   ReplayMergeCandidateVM,
   ReplayMergeAttemptVM,
   Snapshot,
-  StructuredHandoff
+  StructuredHandoff,
+  WorkHubLocale
 } from "@workhub/contracts";
 import { buildManifestFacts, type AuditLogFact as InternalAuditLogFact, type SnapshotRef } from "@workhub/audit";
 import type { AuditLogRow, MergeAttemptRow, MergeProposalRow, SnapshotRow } from "@workhub/db";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
+import { pageT } from "./i18n.js";
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -31,21 +33,22 @@ function stableUuid(input: string) {
   ].join("-");
 }
 
-function handoffMd(handoff: AgentRunQueueRecord["handoff"]) {
+function handoffMd(handoff: AgentRunQueueRecord["handoff"], locale: WorkHubLocale) {
   if (!handoff) {
     return undefined;
   }
+  const separator = locale === "en-US" ? "; " : "；";
   return [
-    handoff.done.length ? `已完成: ${handoff.done.join("；")}` : undefined,
-    handoff.remaining.length ? `还剩: ${handoff.remaining.join("；")}` : undefined,
-    handoff.next_steps.length ? `下一步: ${handoff.next_steps.join("；")}` : undefined,
-    handoff.blockers.length ? `阻塞: ${handoff.blockers.join("；")}` : undefined
+    handoff.done.length ? `${pageT(locale, "replay.handoff.done")}: ${handoff.done.join(separator)}` : undefined,
+    handoff.remaining.length ? `${pageT(locale, "replay.handoff.remaining")}: ${handoff.remaining.join(separator)}` : undefined,
+    handoff.next_steps.length ? `${pageT(locale, "replay.handoff.next")}: ${handoff.next_steps.join(separator)}` : undefined,
+    handoff.blockers.length ? `${pageT(locale, "replay.handoff.blockers")}: ${handoff.blockers.join(separator)}` : undefined
   ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
-export function toAgentRunVm(run: AgentRunQueueRecord): AgentRun {
+export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): AgentRun {
   const latestOutput = run.trace.at(-1)?.output_excerpt;
-  const handoffText = handoffMd(run.handoff);
+  const handoffText = handoffMd(run.handoff, locale);
   return {
     id: run.run_id,
     work_item_id: run.work_item_id,
@@ -90,9 +93,9 @@ function toStructuredHandoff(handoff: NonNullable<AgentRunQueueRecord["handoff"]
   };
 }
 
-export function toAgentRunLiveVm(run: AgentRunQueueRecord): AgentRunLiveVM {
+export function toAgentRunLiveVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): AgentRunLiveVM {
   return {
-    run: toAgentRunVm(run),
+    run: toAgentRunVm(run, locale),
     run_id: run.run_id,
     work_item_id: run.work_item_id,
     title: run.title,
@@ -403,7 +406,7 @@ export function toReplayMergeAttemptVm(input: {
   };
 }
 
-export function buildReplayCostSummary(run: AgentRunQueueRecord): CostSummaryVM {
+export function buildReplayCostSummary(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): CostSummaryVM {
   const totalTokens = run.usage.token_in + run.usage.token_out;
   const maxTokens = run.budget.max_tokens;
   const remainingTokens = Math.max(maxTokens - totalTokens, 0);
@@ -435,7 +438,7 @@ export function buildReplayCostSummary(run: AgentRunQueueRecord): CostSummaryVM 
   const userUsage: CostSummaryVM["me"] = {
     ...workitemUsage,
     scope: { kind: "user", user_id: run.actor_id },
-    scope_label: "我的当前 AI 执行预算",
+    scope_label: pageT(locale, "replay.scope.userRun"),
     policy_id: "pcost-user-run-summary-v0"
   };
 
@@ -448,12 +451,12 @@ export function buildReplayCostSummary(run: AgentRunQueueRecord): CostSummaryVM 
             {
               code: usageRatio >= 1 ? "budget_exhausted" : "budget_warning",
               severity: usageRatio >= 1 ? "critical" : "warning",
-              message: usageRatio >= 1 ? "本次 AI 预算已经用完。" : "本次 AI 预算快用完了。",
+              message: pageT(locale, usageRatio >= 1 ? "replay.notice.exhausted" : "replay.notice.warning"),
               scope: workitemUsage.scope,
               usage_ratio: usageRatio,
               recommended_action: usageRatio >= 1 ? "pause" : "downgrade_model",
               options: [
-                { id: "open_cost", label: "查看预算", action_href: `/dashboard/cost?workItemId=${run.work_item_id}` }
+                { id: "open_cost", label: pageT(locale, "replay.action.openCost"), action_href: `/dashboard/cost?workItemId=${run.work_item_id}` }
               ],
               action_href: `/dashboard/cost?workItemId=${run.work_item_id}`
             }
@@ -470,11 +473,13 @@ export function buildReplayTracePage(input: {
   acceptedDeliverables?: AcceptedDeliverableVM[];
   mergeTimeline?: ReplayMergeAttemptVM[];
   manifestFacts?: ManifestFacts;
+  locale?: WorkHubLocale;
 }) {
   const snapshots = input.snapshots ?? [];
   const auditLogs = input.auditLogs ?? [];
+  const locale = input.locale ?? "zh-CN";
   return {
-    run: toAgentRunVm(input.run),
+    run: toAgentRunVm(input.run, locale),
     steps: input.run.trace.map((step) => toAgentStepVm(input.run.run_id, step)),
     evidence_refs: buildReplayEvidenceRefs(auditLogs),
     snapshots,
@@ -482,6 +487,6 @@ export function buildReplayTracePage(input: {
     accepted_deliverables: input.acceptedDeliverables ?? [],
     merge_timeline: input.mergeTimeline ?? [],
     manifest_facts: input.manifestFacts ?? buildReplayManifestFacts({ snapshots, auditLogs }),
-    cost: buildReplayCostSummary(input.run)
+    cost: buildReplayCostSummary(input.run, locale)
   };
 }

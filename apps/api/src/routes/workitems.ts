@@ -5,6 +5,8 @@ import { HTTPException } from "hono/http-exception";
 
 import {
   createWorkItemRequestSchema,
+  normalizeWorkHubLocale,
+  type WorkHubLocale,
   useEvidenceForTaskRequestSchema
 } from "@workhub/contracts";
 
@@ -30,6 +32,10 @@ function handleWorkItemError(error: unknown): never {
     throw new HTTPException(error.status as 400, { message: error.message });
   }
   throw error;
+}
+
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
 function contentDisposition(filename: string) {
@@ -84,9 +90,10 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
 
   routes.post("/workitems", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createWorkItemRequestSchema.parse(await readJsonBody(c));
+    const locale = requestLocale(c);
     try {
-      const data = await workItems.createWorkItem({ payload, actor: c.var.actor });
-      return c.json({ ok: true, data }, 201);
+      const data = await workItems.createWorkItem({ payload, actor: c.var.actor, locale });
+      return c.json({ ok: true, data, meta: { locale } }, 201);
     } catch (error) {
       handleWorkItemError(error);
     }
@@ -94,13 +101,15 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
 
   routes.post("/workitems/:id/evidence-bindings", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = useEvidenceForTaskRequestSchema.parse(await readJsonBody(c));
+    const locale = requestLocale(c);
     try {
       const data = await workItems.bindEvidence({
         workItemId: c.req.param("id"),
         payload,
-        actor: c.var.actor
+        actor: c.var.actor,
+        locale
       });
-      return c.json({ ok: true, data });
+      return c.json({ ok: true, data, meta: { locale } });
     } catch (error) {
       handleWorkItemError(error);
     }

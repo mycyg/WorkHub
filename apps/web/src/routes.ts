@@ -142,7 +142,8 @@ function escapeHtml(value: unknown) {
 
 function normalizePathname(input: string) {
   const parsed = new URL(input || "/", "https://workhub.local");
-  const pathname = parsed.pathname || "/";
+  const hashPath = parsed.hash.startsWith("#/") ? new URL(parsed.hash.slice(1), "https://workhub.local").pathname : "";
+  const pathname = hashPath || parsed.pathname || "/";
   if (pathname.length > 1 && pathname.endsWith("/")) {
     return pathname.slice(0, -1);
   }
@@ -192,6 +193,10 @@ export function createUnknownWebRouteMatch(input: string): WebRouteMatch {
 
 export function webRouteHref(input: string) {
   const parsed = new URL(input, "https://workhub.local");
+  if (parsed.hash.startsWith("#/")) {
+    const hashRoute = new URL(parsed.hash.slice(1), "https://workhub.local");
+    return `${normalizePathname(hashRoute.pathname)}${hashRoute.search}`;
+  }
   return `${normalizePathname(parsed.pathname)}${parsed.search}${parsed.hash}`;
 }
 
@@ -337,7 +342,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return withProposal(await loadGoldPathTemplate(client, locale), match, proposal);
   }
   if (match.key === "replay") {
-    const replay = await client.replayAgentRun(match.params["id"] ?? "");
+    const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));
     if (isReplayEmpty(replay)) {
       return "empty" as const;
     }

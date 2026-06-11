@@ -242,7 +242,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "PUT",
         body: JSON.stringify(payload)
       }),
-    replayAgentRun: (runId) => request(`/api/agent-runs/${runId}/replay`),
+    replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withPageLocale("/api/pages/approvals", options)),

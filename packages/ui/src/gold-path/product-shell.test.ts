@@ -6,7 +6,7 @@ import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/a
 import { renderGoldPathSurface } from "./render.js";
 import { renderWebProductShell } from "./product-shell.js";
 
-function renderedSurface() {
+function renderedSurface(locale: "zh-CN" | "en-US" = "en-US") {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
   return renderGoldPathSurface({
     fixture_id: fixture.id,
@@ -31,11 +31,11 @@ function renderedSurface() {
     },
     events: fixture.events,
     cuu_states: []
-  }, "web", { locale: "en-US" });
+  }, "web", { locale });
 }
 
 test("R4 product shell preserves browser hooks while replacing the preview chrome", () => {
-  const shell = renderWebProductShell(renderedSurface(), {
+  const shell = renderWebProductShell(renderedSurface("zh-CN"), {
     appName: "WorkHub",
     surfaceLabel: "Web R4",
     apiBaseLabel: "/api/pages/attention",
@@ -59,7 +59,7 @@ test("R4 product shell preserves browser hooks while replacing the preview chrom
 });
 
 test("R4 product shell localizes fixed product chrome", () => {
-  const shell = renderWebProductShell(renderedSurface(), {
+  const shell = renderWebProductShell(renderedSurface("zh-CN"), {
     appName: "WorkHub",
     surfaceLabel: "Web R4",
     currentRoute: "/workitems/r4-product-shell-workitem",
@@ -68,10 +68,72 @@ test("R4 product shell localizes fixed product chrome", () => {
   });
 
   assert.equal(shell.html.includes("工作入口"), true);
+  assert.equal(shell.html.includes("<h1>任务详情</h1>"), true);
   assert.equal(shell.html.includes("当前焦点"), true);
   assert.equal(shell.html.includes("任务详情把验收、证据、AI 轨迹与最近变更放在同一处。"), true);
   assert.equal(shell.html.includes("REST 真相源"), true);
   assert.equal(shell.html.includes("Web 管理端"), true);
   assert.equal(shell.html.includes('data-r4-product-route-key="workitem"'), true);
   assert.equal(shell.html.includes('aria-pressed="true" title="中文"'), true);
+});
+
+test("R4 product shell defaults to path navigation without hash fallback", () => {
+  const shell = renderWebProductShell(renderedSurface(), {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/approvals",
+    locale: "en-US"
+  });
+
+  assert.equal(shell.html.includes('data-r4-product-link-mode="path"'), true);
+  assert.equal(shell.html.includes('href="#/'), false);
+  assert.equal(shell.html.includes('href="/approvals"'), true);
+});
+
+test("R4 product shell metrics come from Page VM data instead of HTML probes", () => {
+  const replaySurface = renderedSurface();
+  const replayShell = renderWebProductShell(replaySurface, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/agent-runs/r4-product-shell-run/replay",
+    locale: "en-US",
+    linkMode: "path"
+  });
+  const replay = replaySurface.vm.page_vms.replay;
+
+  assert.equal(
+    replayShell.html.includes(
+      `data-r4-product-metric="steps"><strong>${replay.steps.length}</strong><span>Steps</span>`
+    ),
+    true
+  );
+  assert.equal(
+    replayShell.html.includes(
+      `data-r4-product-metric="decisions"><strong>${replay.merge_timeline.length}</strong><span>Decisions</span>`
+    ),
+    true
+  );
+
+  const costSurface = renderedSurface();
+  const costShell = renderWebProductShell(costSurface, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/dashboard/cost",
+    locale: "en-US",
+    linkMode: "path"
+  });
+  const cost = costSurface.vm.page_vms.cost;
+
+  assert.equal(
+    costShell.html.includes(
+      `data-r4-product-metric="tokens"><strong>${cost.token_in + cost.token_out}</strong><span>Tokens</span>`
+    ),
+    true
+  );
+  assert.equal(
+    costShell.html.includes(
+      `data-r4-product-metric="cost"><strong>¥${cost.total_cost_cny}</strong><span>Cost</span>`
+    ),
+    true
+  );
 });

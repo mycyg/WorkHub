@@ -33,6 +33,7 @@ owner: workflow
 | R4 Rust system-string i18n | `client-tauri/src-tauri/src/locale.rs`、`tray.rs`、`notify.rs`、`deep_link.rs`、`single_instance.rs`、`scripts/qa/r4-rust-system-i18n.ts` | R4.6 已把 Rust shell 固定系统串纳入 `zh-CN/en-US` contract：tray/menu/tooltip、notification fallback、deep-link/single-instance diagnostics 双语，动态 payload/raw URL/ID 原文保留 |
 | R4 live API + PG seed | `packages/db/src/r4-web-seed.ts`、`apps/web/qa/r4-web-live-api-pg-seed.ts` | R4.7 已在远端 Linux PostgreSQL/Chrome 环境通过真实 API daemon + deterministic PG seed browser smoke，覆盖 13 步 path route |
 | R4 Redis/SSE production smoke | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-redis-sse-browser-smoke.ts`、`apps/api/src/workers/agent-runner.ts` | R4.8 已在远端 Linux PG + Redis + Chrome 环境通过 15 步 production browser smoke：`stream/me`、run/workitem topic、topic auth、跨 worker event、REST reconcile 与文本溢出 gate |
+| R4 locale Page VM + shell metrics | `apps/api/src/pages/i18n.ts`、`apps/web/qa/r4-web-locale-metrics-browser-smoke.ts`、`packages/ui/src/gold-path/product-shell.ts` | R4.9 已在远端 Linux PG + Redis + Chrome 环境通过 locale metrics browser smoke：系统生成 Page VM 标签双语、Replay/Cost 顶部指标与 VM 一致、无 hash 导航与文本越框 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
@@ -42,8 +43,8 @@ owner: workflow
 - 现有产品壳已脱离 P0.5 preview 外观；后续仍需把 shared HTML render helpers 迁到真实 Web component route tree。
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
-- Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke。真实 component route tree、服务端动态本地化与 shell 指标语义一致性仍待后续。
+- Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性。真实 component route tree 仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -213,14 +214,28 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
-| EventSource 绑定 | `apps/web/src/browser.ts` 对 ready route 订 `stream/me`，detail route 追加 `workitem` / `proposal` / `run` topic；事件只触发 REST Page VM 重拉 | R4.9 继续保留同一 REST-as-truth 行为，补动态双语 Page VM |
+| EventSource 绑定 | `apps/web/src/browser.ts` 对 ready route 订 `stream/me`，detail route 追加 `workitem` / `proposal` / `run` topic；事件只触发 REST Page VM 重拉 | R4.9 已在同一 REST-as-truth 行为上补 Page VM 系统生成双语；R4.10 继续组件化 |
 | Production smoke | `apps/web/qa/r4-web-redis-sse-browser-smoke.ts` 启动两个真实 API worker、Vite、Chrome CDP，环境为 `BROKER_BACKEND=redis` / `WORKER_COUNT=2` | 纳入稳定远端 smoke 或 CI Redis service |
 | Topic auth | owner workitem stream 200，stranger workitem stream 403，非 admin `all` stream 403 | 所有新增资源 topic 都必须 fail-closed |
 | REST reconcile | 跨 worker `permission.decided` 后 `/approvals` 变 empty；Redis `agent_run.step` 后 Replay 显示新增 step | 后续对 notification toast、proposal opened/merged、budget warning 做同类 gate |
-| Queue stale cache 修复 | `AgentRunQueue.get/trace/abort` 与 persistence 择新，避免跨 worker Redis 事件后读旧 trace | R4.9 继续检查运行中 run 与 DB persistence 的一致性 |
+| Queue stale cache 修复 | `AgentRunQueue.get/trace/abort` 与 persistence 择新，避免跨 worker Redis 事件后读旧 trace | R4.9 已继续用远端 PG + Redis 验证 Replay/Cost locale 与 VM 指标一致 |
 | 溢出门 | 15 步截图 `no_horizontal_overflow=true`、`no_text_box_overflow=true`，移动 proposal/settings/Replay 单图无文本越框 | 所有后续 Web route 继续阻塞文本越框 |
 
-边界：R4.8 不等同于完整 React component route tree，也不等同于服务端动态内容双语完成；当前动态任务标题、提议摘要、证据摘录仍按 daemon/seed 原文显示。
+边界：R4.8 不等同于完整 React component route tree，也不等同于服务端动态内容双语完成；R4.9 已补系统生成标签，但用户/证据/manifest/LLM 正文仍按 daemon/seed 原文显示。
+
+### 0.14 R4.9 Web locale Page VM + shell metrics consistency（2026-06-11 已通过远端 locale metrics gate）
+
+本轮把 R4.8 留下的“只回 `meta.locale`、但 Page VM 动态系统标签仍未本地化”和“shell 顶部指标从 DOM 猜数”两个风险收口。详细计划与验收状态见 [`../06-roadmap/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`](../06-roadmap/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Page VM 服务端词表 | `apps/api/src/pages/i18n.ts` 覆盖 attention/cost/proposal/replay/gold-path 的系统生成标签，workitem/session/knowledge/approval 同步透传 locale | 继续把 toast、notice、retry/request access、budget warning 等动作反馈纳入同一 locale contract |
+| 原文边界 | 用户输入、证据摘录、proposal manifest、LLM 正文与 resource id 保持原文；只本地化系统生成 label、action、fallback、prefix | Agent/daemon 真正按 locale 生成摘要时，必须在源头生成，不在客户端硬翻译 |
+| Shell metrics | `renderGoldPathSurface()` 返回 VM，`product-shell.ts` 从 `page_vms` 结构取 Replay/Cost 等 metrics | R4.10 component route 迁移时仍以 Page VM 结构字段为指标真相源 |
+| 路由边界 | product shell 默认 path href；旧 `/#/...` 只作为迁移输入，输出不再生成 `href="#/..."` | command menu/deep link 继续走 path route |
+| 远端验收 | `pnpm qa:r4-web-locale-metrics-browser-smoke` 在远端 Linux PG + Redis + Chrome 通过，report gates 包括 `proposal_actions_english`、`replay_handoff_english`、`replay_metric_matches_vm`、`cost_metric_matches_vm`、`no_hash_navigation`、`no_text_box_overflow` | R4.10 继续保留 Redis/SSE、locale、overflow、no Cuu/no Kanban/no weekly 门禁 |
+
+边界：R4.9 不是完整 React component route tree，也不宣称所有业务正文双语；它解决的是 Page VM 系统生成文本和产品壳指标的可靠性。
 
 ---
 

@@ -12,7 +12,8 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "qa:r4-live-route-interaction": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-live-route-interaction.ts",
     "qa:r4-live-api-pg-seed": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-live-api-pg-seed.ts",
-    "qa:r4-redis-sse-browser-smoke": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-redis-sse-browser-smoke.ts"
+    "qa:r4-redis-sse-browser-smoke": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-redis-sse-browser-smoke.ts",
+    "qa:r4-locale-metrics-browser-smoke": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-locale-metrics-browser-smoke.ts"
   },
   "dependencies": {
     "@workhub/api-client": "workspace:*",

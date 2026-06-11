@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke；下一步进入 R4.9 动态双语 Page VM 与 shell 指标一致性。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke；下一步进入 R4.10 Web route componentization first slice。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2797,11 +2797,23 @@ R4 验收：
 8. R4.8 gates 全部为 true：`redis_server_available`、`broker_backend_redis`、`production_multi_worker_memory_fail_closed`、`topic_auth_owner_200_stranger_403`、`browser_connected_to_sse`、`cross_worker_permission_event_delivered`、`redis_run_event_reconciled_replay`、`no_horizontal_overflow`、`no_text_box_overflow`、`mobile_scroll_no_topbar_nav_overlap`。
 9. 边界：R4.8 不等同于完整 React component route tree，也不等同于服务端动态双语内容完成；当前动态 task/proposal/run 文案仍来自 seed/daemon 原文。
 
+### R4.9 已落：Web locale Page VM + shell metrics consistency
+
+1. 已阅读 `web-app.md`、`page-concepts.md`、R4.8 计划、本篇 R4 与 Web 概念图：`web-ai-first-home.png`、`web-approval-center.png`、`web-workitem-detail.png`、`web-deliverable-change-request.png`。
+2. 已新增 `apps/api/src/pages/i18n.ts`，并让 attention/cost/proposal/replay/gold-path Page VM builder 只本地化系统生成标签、动作、fallback、budget notice 与 handoff prefix；用户输入、证据摘录、proposal manifest、LLM 正文保持原文。
+3. 已把 locale 贯穿 approvals、sessions、workitems、knowledge、agent-runs replay routes；API envelope 继续回 `meta.locale`，typed API client 的 `replayAgentRun()` 已接 `PageRequestOptions`。
+4. 已改 `packages/ui/src/gold-path/render.ts` 让 render 结果携带 VM，`packages/ui/src/gold-path/product-shell.ts` 的顶部 metrics 从 `page_vms` 结构取数，Replay/Cost 指标与正文 VM 一致。
+5. 已收口 path 导航：product shell / app shell 默认 path href，Web route helper 只把旧 `/#/...` 作为迁移输入，不再生成 `href="#/..."`。
+6. 已通过本机 API/Web/UI/API client/permissions typecheck、R4.9 QA 脚本 typecheck、API i18n/gold-path/agent-runs tests、UI render/product shell、API client、Web routes/main tests。
+7. 已通过远端真实 PG + Redis browser smoke：Ubuntu 26.04 / PostgreSQL 18.4 / Redis 8.0.5 / Chrome，`pnpm qa:r4-web-locale-metrics-browser-smoke` 4 步通过，生成 `../05-clients/assets/audit/2026-06-11-r4-web-locale-metrics-browser-smoke/` report/contact sheet。
+8. R4.9 gates 全部为 true：`proposal_actions_english`、`replay_handoff_english`、`replay_cost_scope_english`、`cost_scope_labels_english`、`browser_replay_requested_locale`、`replay_metric_matches_vm`、`cost_metric_matches_vm`、`no_horizontal_overflow`、`no_text_box_overflow`、`no_main_window_cuu`、`no_default_kanban`、`no_hash_navigation`。
+9. 边界：R4.9 不等同于完整 React component route tree，也不宣称所有动态业务正文双语；它解决的是 Page VM 系统生成文本与 product shell 指标可靠性。
+
 下一施工顺序：
 
-1. **R4.9 Page VM 动态双语与 shell 指标一致性**：让 Home/WorkItem/Proposal/Replay/Cost 的固定摘要、状态、metric title/value 按 `locale` 输出；修正 Replay 等页面顶部 metric 与正文内容不一致的问题。
-2. **R4.9 Web route renderer componentization plan**：优先 Home/Approvals/Replay，从 shared HTML renderer 逐步收敛到真实 route component 或更细粒度 shared component。
-3. **R4.9 后续门禁**：继续保留 R4.8 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、no Cuu/no Kanban/no weekly、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.10 Web route renderer componentization first slice**：优先 Home/Approvals/Replay，从 shared HTML renderer 逐步收敛到真实 route component 或更细粒度 shared component。
+2. **R4.10 action / notice locale continuation**：把 proposal opened/merged、budget warning、approval response toast、retry/request access 等动作反馈纳入同一 locale contract。
+3. **R4.10 后续门禁**：继续保留 R4.8/R4.9 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

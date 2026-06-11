@@ -5,7 +5,8 @@ import {
   type ApprovalRequest,
   type AttentionItem,
   type PermissionPolicyWrite,
-  type RespondApprovalRequest
+  type RespondApprovalRequest,
+  type WorkHubLocale
 } from "@workhub/contracts";
 import {
   createApprovalRequestRepository,
@@ -313,10 +314,11 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       return { outcome: "pending", approval: toApprovalRequestResponse(approval), attention };
     },
 
-    async listPendingForUser(user: UserAuthRow) {
+    async listPendingForUser(user: UserAuthRow, options: { locale?: WorkHubLocale } = {}) {
       const rows = await deps.approvals.listPendingForUser(user.id, { includeAll: user.isAdmin });
+      const itemOptions = options.locale ? { locale: options.locale } : {};
       return {
-        items: rows.map((row) => toApprovalAttentionItem(toRecord(row))),
+        items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length }

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createSessionRequestSchema, nextQuestionRequestSchema } from "@workhub/contracts";
+import { createSessionRequestSchema, nextQuestionRequestSchema, normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -26,6 +26,10 @@ function handleWorkItemError(error: unknown): never {
   throw error;
 }
 
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
 export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -33,9 +37,10 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
 
   routes.post("/sessions", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createSessionRequestSchema.parse(await optionalJson(c.req));
+    const locale = requestLocale(c);
     try {
-      const data = await workItems.createSession({ payload, actor: c.var.actor });
-      return c.json({ ok: true, data });
+      const data = await workItems.createSession({ payload, actor: c.var.actor, locale });
+      return c.json({ ok: true, data, meta: { locale } });
     } catch (error) {
       handleWorkItemError(error);
     }
@@ -43,13 +48,15 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
 
   routes.post("/sessions/:id/next-question", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = nextQuestionRequestSchema.parse(await optionalJson(c.req));
+    const locale = requestLocale(c);
     try {
       const data = await workItems.nextQuestion({
         sessionId: c.req.param("id"),
         payload,
-        actor: c.var.actor
+        actor: c.var.actor,
+        locale
       });
-      return c.json({ ok: true, data });
+      return c.json({ ok: true, data, meta: { locale } });
     } catch (error) {
       handleWorkItemError(error);
     }

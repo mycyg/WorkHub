@@ -110,10 +110,11 @@ corepack pnpm qa:r4-rust-system-i18n
 
 1. R4.7 真实 API daemon + deterministic PG seed browser smoke；远端 Linux `192.168.5.53` 已用 PostgreSQL 18.4 + Chrome 跑通 `pnpm qa:r4-web-live-api-pg-seed`，详见 [`r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](./r4-07-web-live-api-pg-seed-smoke-2026-06-11.md)。
 2. R4.8 真实 Redis/SSE production browser smoke；远端 Linux 已补 Redis 8.0.5，双 API worker + Chrome EventSource 15 步通过，详见 [`r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](./r4-08-redis-sse-production-browser-smoke-2026-06-11.md)。
+3. R4.9 动态双语 Page VM 与 shell 指标一致性；远端 Linux PG + Redis + Chrome locale metrics smoke 已通过，详见 [`r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`](./r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md)。
 
-下一刀进入 R4.9：动态双语 Page VM 与 shell 指标一致性。
+下一刀进入 R4.10：Web route componentization first slice。
 
-1. 开工前复读 `web-app.md`、`page-concepts.md`、`api-contract.md`、R4.7/R4.8 计划和 Web 概念图。
-2. 让 Home / WorkItem / Proposal / Replay / Cost 的固定摘要、状态、metric title/value 可按 `locale` 输出。
-3. 修正 Replay 等页面顶部 metric 与正文内容不一致的问题。
+1. 开工前复读 `web-app.md`、`page-concepts.md`、R4.8/R4.9 计划和 Web 概念图。
+2. 优先 Home / Approvals / Replay，从 shared HTML renderer 拆成真实 route component 或更细粒度 shared component。
+3. 把 proposal opened/merged、budget warning、approval response toast、retry/request access 等动作反馈继续接入 locale contract。
 4. 继续保留 endpoint-first Page VM proof、Redis/SSE topic auth、REST reconcile、path nav/back/forward、locale query/meta、no Cuu/no Kanban/no old shell、text box overflow 与 horizontal overflow hard gate。

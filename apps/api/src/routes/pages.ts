@@ -126,32 +126,38 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
     const activeRuns = await queue.listActive();
-    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns }), requestLocale(c)));
+    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns, locale }), locale));
   });
 
   if (allowUnauthenticatedGoldPath) {
     routes.get("/gold-path", (c) => {
-      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(), requestLocale(c)));
+      const locale = requestLocale(c);
+      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(locale), locale));
     });
   } else {
     routes.get("/gold-path", createCurrentUserMiddleware(authSource), (c) => {
-      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(), requestLocale(c)));
+      const locale = requestLocale(c);
+      return c.json(pageEnvelope(buildP05GoldPathSurfacePage(locale), locale));
     });
   }
 
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await approvals.listPendingForUser(c.var.currentUser);
-    return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor), requestLocale(c)));
+    const locale = requestLocale(c);
+    const data = await approvals.listPendingForUser(c.var.currentUser, { locale });
+    return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor), locale));
   });
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
     try {
       const data = await workItems.detailPage({
         workItemId: c.req.param("id"),
-        actor: c.var.actor
+        actor: c.var.actor,
+        locale
       });
-      return c.json(pageEnvelope(data, requestLocale(c)));
+      return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
         throw new HTTPException(error.status as 400, { message: error.message });
@@ -161,6 +167,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   });
 
   routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
     const proposal = await proposals.get(c.req.param("id"));
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个变更申请。" });
@@ -168,10 +175,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     if (!await canReadWorkItem(workItems, proposal.work_item_id, c.var.actor)) {
       throw new HTTPException(403, { message: "你没有权限查看这个变更申请。" });
     }
-    return c.json(pageEnvelope(buildProposalDetailPage(proposal), requestLocale(c)));
+    return c.json(pageEnvelope(buildProposalDetailPage(proposal, locale), locale));
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
     const teamId = settings.auth.defaultWorkspaceId;
     const decision = decideRunBudget({
       settings,
@@ -186,10 +194,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       settings,
       isAdmin: c.var.currentUser.isAdmin,
       userId: c.var.currentUser.id,
+      locale,
       budgetUsages: decision.usages,
       ledgerEntries: ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries
     });
-    return c.json(pageEnvelope(data, requestLocale(c)));
+    return c.json(pageEnvelope(data, locale));
   });
 
   return routes;
