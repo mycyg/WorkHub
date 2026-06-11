@@ -34,6 +34,7 @@ import {
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
   driveCommentDraftFromHref,
+  driveDraftProposalFromHref,
   driveItemMutationFromHref,
   driveUploadFromHref,
   eventListenerOptions,
@@ -446,6 +447,19 @@ function bindGoldPathNavigation(
       if (driveCommentDraft) {
         try {
           const result = await client.createDriveCommentDraft(driveCommentDraft.projectId, driveCommentDraft.commentId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const driveDraftProposal = driveDraftProposalFromHref(href);
+      if (driveDraftProposal) {
+        try {
+          const result = await client.createDriveDraftProposal(driveDraftProposal.workItemId, { locale });
           await renderCurrentRoute(client, locale);
           if (root) {
             showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));

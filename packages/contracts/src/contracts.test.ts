@@ -39,6 +39,7 @@ import {
   sessionVmSchema,
   structuredFieldPatchDryRunSchema,
   useEvidenceForTaskRequestSchema,
+  workItemDetailVmSchema,
   workItemStatuses
 } from "./index.js";
 
@@ -382,10 +383,13 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         project_id: "92000000-0000-4000-8000-000000000001",
         author_label: "PM",
         body: "转成下一步任务",
-        status: "draft_created",
+        status: "proposal_created",
         created_at: "2026-06-11T01:00:00.000Z",
         draft_work_item_id: "92000000-0000-4000-8000-000000000005",
-        draft_href: "/workitems/92000000-0000-4000-8000-000000000005"
+        draft_href: "/workitems/92000000-0000-4000-8000-000000000005",
+        proposal_id: "92000000-0000-4000-8000-000000000006",
+        proposal_href: "/proposals/92000000-0000-4000-8000-000000000006",
+        proposal_status: "opened"
       },
       {
         id: "92000000-0000-4000-8000-000000000012",
@@ -407,10 +411,10 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         id: "92000000-0000-4000-8000-000000000010",
         project_id: "92000000-0000-4000-8000-000000000001",
         actor_user_id: "92000000-0000-4000-8000-000000000011",
-        op_type: "comment_to_draft",
+        op_type: "draft_to_proposal",
         target_item_id: "92000000-0000-4000-8000-000000000002",
         target_path: "/客户复盘.md",
-        summary_text: "Created draft from Drive comment",
+        summary_text: "Created proposal from Drive draft",
         created_at: "2026-06-11T01:00:00.000Z"
       }
     ],
@@ -425,11 +429,55 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
   });
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
-  assert.equal(parsed.comments[0]?.status, "draft_created");
+  assert.equal(parsed.comments[0]?.status, "proposal_created");
+  assert.equal(parsed.comments[0]?.proposal_href, "/proposals/92000000-0000-4000-8000-000000000006");
   assert.equal(parsed.comments[1]?.draft_action?.method, "POST");
   assert.equal(parsed.deleted_items[0]?.deleted_at, "2026-06-11T01:00:00.000Z");
-  assert.equal(parsed.operations[0]?.op_type, "comment_to_draft");
+  assert.equal(parsed.operations[0]?.op_type, "draft_to_proposal");
   assert.equal(parsed.actions.upload_file?.method, "POST");
+});
+
+test("work item detail VM carries Drive source context and proposal draft action", () => {
+  const parsed = workItemDetailVmSchema.parse({
+    workitem: {
+      id: "92000000-0000-4000-8000-000000000005",
+      code: "R5-7",
+      project_id: "92000000-0000-4000-8000-000000000001",
+      submitter_user_id: "92000000-0000-4000-8000-000000000011",
+      status: "ai_clarifying",
+      priority: "normal",
+      sync_state: "synced",
+      version: 1,
+      mode: "worker",
+      human_reserved: false,
+      created_at: "2026-06-11T01:00:00.000Z",
+      updated_at: "2026-06-11T01:00:00.000Z"
+    },
+    acceptance: [],
+    agent_trace_preview: [],
+    evidence_refs: [],
+    source_context: {
+      source_type: "drive_comment",
+      project_id: "92000000-0000-4000-8000-000000000001",
+      comment_id: "92000000-0000-4000-8000-000000000008",
+      folder_path: "/客户复盘",
+      author_label: "PM",
+      body: "转成下一步任务",
+      status: "draft_created",
+      created_at: "2026-06-11T01:00:00.000Z"
+    },
+    actions: {
+      create_proposal_draft: {
+        id: "drive_draft_to_proposal",
+        label: "生成变更提议",
+        method: "POST",
+        href: "/api/drive/workitems/92000000-0000-4000-8000-000000000005/proposal-draft"
+      }
+    }
+  });
+
+  assert.equal(parsed.source_context?.source_type, "drive_comment");
+  assert.equal(parsed.actions.create_proposal_draft?.method, "POST");
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

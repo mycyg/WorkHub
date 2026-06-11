@@ -72,6 +72,12 @@ export function getOpenApiDocument() {
           summary: "Create or return a work item draft from a project drive comment"
         }
       },
+      "/api/drive/workitems/{workItemId}/proposal-draft": {
+        post: {
+          tags: ["drive"],
+          summary: "Create or return a deterministic proposal from a Drive comment work item draft"
+        }
+      },
       "/api/workitems/{id}/proposals": {
         post: {
           tags: ["proposals"],

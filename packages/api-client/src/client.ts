@@ -203,11 +203,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     createProposalFromManifest: (workItemId, payload) =>
-      request(`/api/workitems/${workItemId}/proposals`, {
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    listWorkItemProposals: (workItemId) => request(`/api/workitems/${workItemId}/proposals`),
+    listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getProposal: (id) => request(`/api/proposals/${id}`),
     reviewProposal: (id, payload) =>
@@ -266,6 +266,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     createDriveCommentDraft: (projectId, commentId, options) =>
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}/draft`, options), {
+        method: "POST"
+      }),
+    createDriveDraftProposal: (workItemId, options) =>
+      request(withPageLocale(`/api/drive/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
         method: "POST"
       }),
     costUsage: () => request("/api/cost/usage"),

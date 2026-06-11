@@ -115,6 +115,10 @@ type BrowserAudit = {
     workitemTraceCount: string | null;
     workitemEvidenceCount: string | null;
     workitemAcceptanceCount: string | null;
+    workitemSourceContext: string | null;
+    workitemSourceCommentId: string | null;
+    workitemSourceProposalId: string | null;
+    workitemCreateProposalAction: string | null;
     proposalChangeCount: string | null;
     proposalActionCount: string | null;
     proposalEvidenceCount: string | null;
@@ -164,6 +168,9 @@ type BrowserAudit = {
     driveDeletedCount: string | null;
     driveOperationCount: string | null;
     driveCanManage: string | null;
+    driveProposalLink: string | null;
+    driveProposalHref: string | null;
+    driveProposalStatus: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -652,7 +659,41 @@ function productSurface(): GoldPathSurfaceVM {
   });
 }
 
-function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
+const driveDraftProposalId = "10000000-0000-4000-8000-000000001631";
+
+function qaWorkItemDetail(
+  surface: GoldPathSurfaceVM,
+  driveCommentDraftCreated = false,
+  driveDraftProposalCreated = false
+): WorkItemDetailVM {
+  const latestProposal = driveDraftProposalCreated
+    ? {
+      ...surface.page_vms.proposal.manifest,
+      proposal_id: driveDraftProposalId,
+      work_item_id: "r4-live-workitem",
+      branch_id: "10000000-0000-4000-8000-000000001632",
+      title: "Drive draft proposal",
+      summary_md: "Reviewable proposal generated from the Drive comment draft."
+    }
+    : undefined;
+  const sourceContext = driveCommentDraftCreated
+    ? {
+      source_type: "drive_comment" as const,
+      project_id: "10000000-0000-4000-8000-000000001600",
+      comment_id: "10000000-0000-4000-8000-000000001623",
+      folder_id: "10000000-0000-4000-8000-000000001619",
+      folder_path: "/docs",
+      author_label: "PM",
+      body: "把这个版本差异整理成下一轮复盘行动。",
+      status: driveDraftProposalCreated ? "proposal_created" as const : "draft_created" as const,
+      created_at: "2026-06-11T09:22:00.000Z",
+      ...(driveDraftProposalCreated ? {
+        proposal_id: driveDraftProposalId,
+        proposal_href: `/proposals/${driveDraftProposalId}`,
+        proposal_status: "opened"
+      } : {})
+    }
+    : undefined;
   return {
     ...surface.page_vms.workitem,
     workitem: {
@@ -660,13 +701,30 @@ function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
       id: "r4-live-workitem",
       code: "WH-R4-14",
       title: "区域发布复盘包"
+    },
+    ...(latestProposal ? { latest_proposal: latestProposal } : {}),
+    ...(sourceContext ? { source_context: sourceContext } : {}),
+    actions: {
+      ...(driveCommentDraftCreated && !driveDraftProposalCreated ? {
+        create_proposal_draft: {
+          id: "drive_draft_to_proposal",
+          label: "Create proposal draft",
+          method: "POST" as const,
+          href: "/api/drive/workitems/r4-live-workitem/proposal-draft"
+        }
+      } : {})
     }
   };
 }
 
 type DriveQaState = "initial" | "uploaded" | "deleted" | "restored";
 
-function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial", commentDraftCreated = false): DrivePageVM {
+function drivePage(
+  surface: GoldPathSurfaceVM,
+  state: DriveQaState = "initial",
+  commentDraftCreated = false,
+  driveDraftProposalCreated = false
+): DrivePageVM {
   const accepted = surface.page_vms.replay.accepted_deliverables[0];
   const acceptedId = accepted?.id ?? "10000000-0000-4000-8000-000000001518";
   const workItemId = accepted?.work_item_id ?? "10000000-0000-4000-8000-000000001500";
@@ -775,6 +833,13 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial", 
       op_type: "comment_to_draft" as const,
       summary_text: "Created draft r4-live-workitem from Drive comment",
       created_at: "2026-06-11T09:29:00.000Z"
+    }] : []),
+    ...(driveDraftProposalCreated ? [{
+      id: "10000000-0000-4000-8000-000000001633",
+      project_id: projectId,
+      op_type: "draft_to_proposal" as const,
+      summary_text: `Created proposal ${driveDraftProposalId} from Drive draft`,
+      created_at: "2026-06-11T09:30:00.000Z"
     }] : [])
   ];
   const items = [
@@ -888,11 +953,16 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial", 
         folder_path: "/docs",
         author_label: "PM",
         body: "把这个版本差异整理成下一轮复盘行动。",
-        status: commentDraftCreated ? "draft_created" : "pending_llm",
+        status: driveDraftProposalCreated ? "proposal_created" : commentDraftCreated ? "draft_created" : "pending_llm",
         created_at: "2026-06-11T09:22:00.000Z",
         ...(commentDraftCreated ? {
           draft_work_item_id: workItemId,
-          draft_href: `/workitems/${workItemId}`
+          draft_href: `/workitems/${workItemId}`,
+          ...(driveDraftProposalCreated ? {
+            proposal_id: driveDraftProposalId,
+            proposal_href: `/proposals/${driveDraftProposalId}`,
+            proposal_status: "opened"
+          } : {})
         } : {
           draft_action: {
             id: "drive_comment_to_draft",
@@ -1094,6 +1164,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let sessionStage: "scope" | "confirm" = "scope";
   let driveQaState: DriveQaState = "initial";
   let driveCommentDraftCreated = false;
+  let driveDraftProposalCreated = false;
   let failNextPreferencePatch = false;
   let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
@@ -1211,21 +1282,29 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/drive") {
-      sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated));
+      sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     const driveUploadMatch = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(url.pathname);
     if (request.method === "POST" && driveUploadMatch?.[1]) {
       requestRecord.body = await requestBody(request);
       driveQaState = "uploaded";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
       return;
     }
     const driveCommentDraftMatch = /^\/api\/drive\/projects\/([^/]+)\/comments\/([^/]+)\/draft$/u.exec(url.pathname);
     if (request.method === "POST" && driveCommentDraftMatch?.[1] && driveCommentDraftMatch?.[2]) {
       requestRecord.body = await requestBody(request);
       driveCommentDraftCreated = true;
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
+      return;
+    }
+    const driveDraftProposalMatch = /^\/api\/drive\/workitems\/([^/]+)\/proposal-draft$/u.exec(url.pathname);
+    if (request.method === "POST" && driveDraftProposalMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      driveCommentDraftCreated = true;
+      driveDraftProposalCreated = true;
+      sendJson(response, 200, { ok: true, data: qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
       return;
     }
     const driveDeleteMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/delete$/u.exec(url.pathname);
@@ -1236,14 +1315,14 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         return;
       }
       driveQaState = "deleted";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
       return;
     }
     const driveRestoreMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/restore$/u.exec(url.pathname);
     if (request.method === "POST" && driveRestoreMatch?.[1] && driveRestoreMatch?.[2]) {
       requestRecord.body = await requestBody(request);
       driveQaState = "restored";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -1264,7 +1343,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     if (request.method === "POST" && url.pathname === "/api/workitems") {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, qaWorkItemDetail(surface));
+      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/knowledge/search") {
@@ -1296,13 +1375,13 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         sendApiError(response, 403, "forbidden", "Needs owner approval");
         return;
       }
-      sendJson(response, 200, qaWorkItemDetail(surface));
+      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     const evidenceBindingMatch = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(url.pathname);
     if (request.method === "POST" && evidenceBindingMatch?.[1]) {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, qaWorkItemDetail(surface));
+      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     const acceptedDeliverableRestoreMatch = /^\/api\/workitems\/([^/]+)\/deliverables\/([^/]+)\/restore$/u.exec(url.pathname);
@@ -1805,6 +1884,10 @@ function auditExpression() {
       workitemTraceCount: routeComponent?.getAttribute("data-r4-workitem-trace-count") || null,
       workitemEvidenceCount: routeComponent?.getAttribute("data-r4-workitem-evidence-count") || null,
       workitemAcceptanceCount: routeComponent?.getAttribute("data-r4-workitem-acceptance-count") || null,
+      workitemSourceContext: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-context") || null,
+      workitemSourceCommentId: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-comment-id") || null,
+      workitemSourceProposalId: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-proposal-id") || null,
+      workitemCreateProposalAction: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-create-proposal-action") || null,
       proposalChangeCount: routeComponent?.getAttribute("data-r4-proposal-change-count") || null,
       proposalActionCount: routeComponent?.getAttribute("data-r4-proposal-action-count") || null,
       proposalEvidenceCount: routeComponent?.getAttribute("data-r4-proposal-evidence-count") || null,
@@ -1854,6 +1937,9 @@ function auditExpression() {
       driveDeletedCount: routeComponent?.getAttribute("data-r5-drive-deleted-count") || null,
       driveOperationCount: routeComponent?.getAttribute("data-r5-drive-operation-count") || null,
       driveCanManage: routeComponent?.getAttribute("data-r5-drive-can-manage") || null,
+      driveProposalLink: document.querySelector("[data-r5-drive-proposal-link]") ? "true" : "false",
+      driveProposalHref: document.querySelector("[data-r5-drive-proposal-link]")?.getAttribute("href") || null,
+      driveProposalStatus: document.querySelector("[data-r5-drive-proposal-link]")?.getAttribute("data-r5-drive-proposal-status") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -2437,6 +2523,15 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="comment_to_draft"]', "action_success", "comment_to_draft");
   steps.push(await captureStep(cdp, { id: "15bb-drive-comment-to-draft-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
+  await clickAndWait(cdp, 'a[href="/workitems/r4-live-workitem"]', "/workitems/r4-live-workitem");
+  steps.push(await captureStep(cdp, { id: "15bc-drive-open-workitem-draft-en-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="drive_draft_to_proposal"]', "action_success", "drive_draft_to_proposal");
+  steps.push(await captureStep(cdp, { id: "15bd-drive-draft-to-proposal-success-en-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
+  await navigate(cdp, `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, "ready");
+  steps.push(await captureStep(cdp, { id: "15be-drive-proposal-link-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_upload_file"]', "action_success", "drive_upload_file");
   steps.push(await captureStep(cdp, { id: "15c-drive-upload-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
@@ -2488,6 +2583,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     drive: requests.some((request) => request.pathname === "/api/pages/drive" && request.locale === "en-US"),
     driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes("project_id=10000000-0000-4000-8000-000000001600")),
     driveCommentDraft: requests.some((request) => request.method === "POST" && /^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u.test(request.pathname)),
+    driveDraftProposal: requests.some((request) => request.method === "POST" && /^\/api\/drive\/workitems\/[^/]+\/proposal-draft$/u.test(request.pathname)),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2515,6 +2611,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       acceptedDeliverableRestore: countMatch(/^\/api\/workitems\/[^/]+\/deliverables\/[^/]+\/restore$/u, "POST"),
       driveUpload: countMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST"),
       driveCommentDraft: countMatch(/^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u, "POST"),
+      driveDraftProposal: countMatch(/^\/api\/drive\/workitems\/[^/]+\/proposal-draft$/u, "POST"),
       driveDelete: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST"),
       driveRestore: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/restore$/u, "POST"),
       cost: count("/api/pages/cost"),
@@ -2545,6 +2642,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       driveCommentDraftRequest: requests.some((request) =>
         request.method === "POST" &&
         /^\/api\/drive\/projects\/10000000-0000-4000-8000-000000001600\/comments\/10000000-0000-4000-8000-000000001623\/draft$/u.test(request.pathname)
+      ),
+      driveDraftProposalRequest: requests.some((request) =>
+        request.method === "POST" &&
+        /^\/api\/drive\/workitems\/r4-live-workitem\/proposal-draft$/u.test(request.pathname)
       ),
       driveDeleteExpectedCurrent: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "expected_current_version_id") &&
         bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "10000000-0000-4000-8000-000000001625")
@@ -2699,7 +2800,7 @@ async function main() {
           step.audit.textOverflowCount === 0
         ),
       r5_2_drive_upload_recycle_operation_log:
-        proof.counts.drive === 5 &&
+        proof.counts.drive === 6 &&
         proof.counts.driveUpload === 1 &&
         proof.counts.driveDelete === 1 &&
         proof.counts.driveRestore === 1 &&
@@ -2713,7 +2814,7 @@ async function main() {
           step.audit.routeData.driveItemCount === "3" &&
           step.audit.routeData.driveVersionCount === "3" &&
           step.audit.routeData.driveDeletedCount === "0" &&
-          step.audit.routeData.driveOperationCount === "3" &&
+          step.audit.routeData.driveOperationCount === "4" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ) &&
@@ -2723,7 +2824,7 @@ async function main() {
           step.audit.notice.actionId === "drive_delete_item" &&
           step.audit.routeData.driveItemCount === "2" &&
           step.audit.routeData.driveDeletedCount === "1" &&
-          step.audit.routeData.driveOperationCount === "4" &&
+          step.audit.routeData.driveOperationCount === "5" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ) &&
@@ -2733,7 +2834,7 @@ async function main() {
           step.audit.notice.actionId === "drive_restore_item" &&
           step.audit.routeData.driveItemCount === "3" &&
           step.audit.routeData.driveDeletedCount === "0" &&
-          step.audit.routeData.driveOperationCount === "5" &&
+          step.audit.routeData.driveOperationCount === "6" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
@@ -2752,6 +2853,39 @@ async function main() {
           step.audit.routeData.driveCommentCount === "1" &&
           step.audit.routeData.driveDeletedCount === "0" &&
           step.audit.routeData.driveOperationCount === "2" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_4_drive_draft_to_proposal:
+        proof.driveDraftProposal &&
+        proof.counts.driveDraftProposal === 1 &&
+        proof.advancedPayloads.driveDraftProposalRequest &&
+        steps.some((step) =>
+          step.id === "15bc-drive-open-workitem-draft-en-desktop" &&
+          step.audit.routeComponent === "workitem" &&
+          step.audit.routeData.workitemSourceContext === "drive_comment" &&
+          step.audit.routeData.workitemSourceCommentId === "10000000-0000-4000-8000-000000001623" &&
+          step.audit.routeData.workitemCreateProposalAction === "true" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15bd-drive-draft-to-proposal-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "drive_draft_to_proposal" &&
+          step.audit.routeData.workitemSourceContext === "drive_comment" &&
+          step.audit.routeData.workitemSourceProposalId === driveDraftProposalId &&
+          step.audit.routeData.workitemCreateProposalAction === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15be-drive-proposal-link-en-desktop" &&
+          step.audit.routeComponent === "drive" &&
+          step.audit.routeData.driveProposalLink === "true" &&
+          step.audit.routeData.driveProposalHref === `/proposals/${driveDraftProposalId}` &&
+          step.audit.routeData.driveProposalStatus === "opened" &&
+          step.audit.routeData.driveOperationCount === "3" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
@@ -3315,7 +3449,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 47,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 50,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3367,7 +3501,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 47,
+      r4_22_no_new_smoke_sprawl: steps.length === 50,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3416,9 +3550,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 47,
+      r4_23_no_new_smoke_sprawl: steps.length === 50,
       r4_24_no_hash_write:
-        steps.length === 47 &&
+        steps.length === 50 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3455,8 +3589,10 @@ async function main() {
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
         proof.counts.approvals === 3 &&
-        proof.counts.workitem === 4 &&
+        proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
+        proof.counts.drive === 6 &&
+        proof.counts.driveDraftProposal === 1 &&
         proof.counts.session === 3 &&
         proof.counts.nextQuestion === 1 &&
         proof.counts.createWorkItem === 1 &&
@@ -3515,6 +3651,7 @@ async function main() {
         `- R5.1 Drive route component: ${String(gates.r5_1_drive_route_component)}`,
         `- R5.2 Drive upload/recycle/operation log: ${String(gates.r5_2_drive_upload_recycle_operation_log)}`,
         `- R5.3 Drive comment to draft: ${String(gates.r5_3_drive_comment_to_draft)}`,
+        `- R5.4 Drive draft to proposal: ${String(gates.r5_4_drive_draft_to_proposal)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

@@ -36,6 +36,7 @@ export const desktopWebviewSurface = {
     "/api/drive/projects/:projectId/items/:itemId/delete",
     "/api/drive/projects/:projectId/items/:itemId/restore",
     "/api/drive/projects/:projectId/comments/:commentId/draft",
+    "/api/drive/workitems/:workItemId/proposal-draft",
     "/api/pages/approvals",
     "/api/pages/cost",
     "/api/pages/settings",

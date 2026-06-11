@@ -121,10 +121,13 @@ export const driveCommentVmSchema = z.object({
   folder_path: z.string().min(1).optional(),
   author_label: z.string().min(1),
   body: z.string().min(1),
-  status: z.enum(["pending_llm", "draft_created", "dismissed"]),
+  status: z.enum(["pending_llm", "draft_created", "proposal_created", "dismissed"]),
   created_at: isoDateTimeSchema,
   draft_work_item_id: idSchema.optional(),
   draft_href: z.string().min(1).optional(),
+  proposal_id: idSchema.optional(),
+  proposal_href: z.string().min(1).optional(),
+  proposal_status: z.string().min(1).optional(),
   draft_action: actionSpecSchema.optional()
 });
 export type DriveCommentVM = z.infer<typeof driveCommentVmSchema>;
@@ -133,7 +136,7 @@ export const driveOperationVmSchema = z.object({
   id: idSchema,
   project_id: idSchema,
   actor_user_id: idSchema.optional(),
-  op_type: z.enum(["upload_file", "delete_item", "restore_item", "restore_version", "rename_item", "comment_to_draft"]),
+  op_type: z.enum(["upload_file", "delete_item", "restore_item", "restore_version", "rename_item", "comment_to_draft", "draft_to_proposal"]),
   target_item_id: idSchema.optional(),
   target_path: z.string().min(1).optional(),
   summary_text: z.string().min(1),
@@ -243,13 +246,33 @@ export const replayMergeAttemptVmSchema = z.object({
 });
 export type ReplayMergeAttemptVM = z.infer<typeof replayMergeAttemptVmSchema>;
 
+export const workItemSourceContextVmSchema = z.object({
+  source_type: z.literal("drive_comment"),
+  project_id: idSchema,
+  comment_id: idSchema,
+  folder_id: idSchema.optional(),
+  folder_path: z.string().min(1).optional(),
+  author_label: z.string().min(1),
+  body: z.string().min(1),
+  status: z.enum(["pending_llm", "draft_created", "proposal_created", "dismissed"]),
+  created_at: isoDateTimeSchema,
+  proposal_id: idSchema.optional(),
+  proposal_href: z.string().min(1).optional(),
+  proposal_status: z.string().min(1).optional()
+});
+export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   acceptance: z.array(z.unknown()),
   agent_trace_preview: z.array(agentStepSchema),
   latest_proposal: deliverableChangeManifestSchema.optional(),
   accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
-  evidence_refs: z.array(evidenceRefSchema)
+  evidence_refs: z.array(evidenceRefSchema),
+  source_context: workItemSourceContextVmSchema.optional(),
+  actions: z.object({
+    create_proposal_draft: actionSpecSchema.optional()
+  }).default({})
 });
 export type WorkItemDetailVM = z.infer<typeof workItemDetailVmSchema>;
 

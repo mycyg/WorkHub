@@ -111,6 +111,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.deleteDriveItem("project-1", "drive-item-1");
   await client.restoreDriveItem("project-1", "drive-item-1");
   await client.createDriveCommentDraft("project-1", "comment-1");
+  await client.createDriveDraftProposal("work-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -148,6 +149,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/drive/projects/project-1/items/drive-item-1/delete",
     "POST /api/drive/projects/project-1/items/drive-item-1/restore",
     "POST /api/drive/projects/project-1/comments/comment-1/draft",
+    "POST /api/drive/workitems/work-1/proposal-draft",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",
@@ -186,6 +188,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.deleteDriveItem("project 1", "item 1", {}, { locale: "zh-CN" });
   await client.restoreDriveItem("project 1", "item 1", { locale: "en-US" });
   await client.createDriveCommentDraft("project 1", "comment 1", { locale: "zh-CN" });
+  await client.createDriveDraftProposal("work 1", { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -202,7 +205,8 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/drive/projects/project%201/files?locale=en-US",
     "/api/drive/projects/project%201/items/item%201/delete?locale=zh-CN",
     "/api/drive/projects/project%201/items/item%201/restore?locale=en-US",
-    "/api/drive/projects/project%201/comments/comment%201/draft?locale=zh-CN"
+    "/api/drive/projects/project%201/comments/comment%201/draft?locale=zh-CN",
+    "/api/drive/workitems/work%201/proposal-draft?locale=en-US"
   ]);
 });
 

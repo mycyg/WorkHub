@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
+import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -132,10 +132,13 @@ function drivePageVm(): DrivePageVM {
         project_id: "94000000-0000-4000-8000-000000000001",
         author_label: "PM",
         body: "Turn this into a follow-up draft.",
-        status: "draft_created",
+        status: "proposal_created",
         created_at: "2026-06-11T09:00:00.000Z",
         draft_work_item_id: "94000000-0000-4000-8000-000000000005",
-        draft_href: "/workitems/94000000-0000-4000-8000-000000000005"
+        draft_href: "/workitems/94000000-0000-4000-8000-000000000005",
+        proposal_id: "94000000-0000-4000-8000-000000000006",
+        proposal_href: "/proposals/94000000-0000-4000-8000-000000000006",
+        proposal_status: "opened"
       },
       {
         id: "94000000-0000-4000-8000-000000000014",
@@ -510,6 +513,38 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assert.equal(workitem.html.includes("data-method=\"GET\""), true);
   assert.deepEqual(workitem.primaryHrefs.includes(`/proposals/${vm.page_vms.proposal.proposal_id}`), true);
   assertNoMainWindowBoundaryLeak(workitem.html);
+});
+
+test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
+  const vm = surfaceVm();
+  const draftVm: WorkItemDetailVM = {
+    ...vm.page_vms.workitem,
+    source_context: {
+      source_type: "drive_comment",
+      project_id: "94000000-0000-4000-8000-000000000001",
+      comment_id: "94000000-0000-4000-8000-000000000008",
+      folder_path: "/deliverables",
+      author_label: "PM",
+      body: "Turn this Drive note into a proposal draft.",
+      status: "draft_created",
+      created_at: "2026-06-11T09:00:00.000Z"
+    },
+    actions: {
+      create_proposal_draft: {
+        id: "drive_draft_to_proposal",
+        label: "Create proposal draft",
+        method: "POST",
+        href: "/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"
+      }
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: draftVm }, { locale: "en-US" });
+
+  assert.equal(workitem.html.includes('data-r5-workitem-source-context="drive_comment"'), true);
+  assert.equal(workitem.html.includes('data-r5-workitem-source-comment-id="94000000-0000-4000-8000-000000000008"'), true);
+  assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
+  assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
 test("R4.11 Proposal route component preserves review actions, rollback, changes, checks, evidence, and comments", () => {
@@ -914,10 +949,12 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes("/workitems/94000000-0000-4000-8000-000000000005"), true);
   assert.equal(drive.html.includes('data-action-id="comment_to_draft" data-method="POST"'), true);
   assert.equal(drive.html.includes("/api/drive/projects/94000000-0000-4000-8000-000000000001/comments/94000000-0000-4000-8000-000000000014/draft"), true);
-  assert.equal(drive.html.includes("Draft created"), true);
+  assert.equal(drive.html.includes("Proposal created"), true);
   assert.equal(drive.html.includes("Pending draft"), true);
+  assert.equal(drive.html.includes('data-r5-drive-proposal-link="true"'), true);
+  assert.equal(drive.html.includes("/proposals/94000000-0000-4000-8000-000000000006"), true);
   assert.equal(drive.hydration.pageVm, "drive");
-  assert.equal(drive.primaryHrefs.length, 8);
+  assert.equal(drive.primaryHrefs.length, 9);
   assertNoMainWindowBoundaryLeak(drive.html);
 });
 

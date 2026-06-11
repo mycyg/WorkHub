@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 
-import { normalizeWorkHubLocale, type DrivePageVM } from "@workhub/contracts";
+import { normalizeWorkHubLocale, type DrivePageVM, type WorkItemDetailVM } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -36,7 +36,7 @@ function requestLocale(c: { req: { query: (key: string) => string | undefined; h
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
-function pageEnvelope(data: DrivePageVM, locale: ReturnType<typeof requestLocale>) {
+function pageEnvelope<T extends DrivePageVM | WorkItemDetailVM>(data: T, locale: ReturnType<typeof requestLocale>) {
   return {
     ok: true,
     data,
@@ -133,6 +133,23 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
         actor: c.var.actor,
         projectId: c.req.param("projectId"),
         commentId: c.req.param("commentId")
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof DrivePageServiceError) {
+        return driveErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
+  routes.post("/workitems/:workItemId/proposal-draft", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const data = await drivePages.draftToProposal({
+        actor: c.var.actor,
+        locale,
+        workItemId: c.req.param("workItemId")
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

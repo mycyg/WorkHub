@@ -16,12 +16,13 @@ import type {
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
-import type { DrivePageVM } from "@workhub/contracts";
+import type { DeliverableChangeManifest, DrivePageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createDriveRoutes } from "./routes/drive.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createDrivePageService, DrivePageServiceError, type DrivePageService } from "./services/drive-pages.js";
+import { ProposalServiceError, type StoredProposal } from "./services/proposals.js";
 
 const now = new Date("2026-06-11T01:00:00.000Z");
 const projectId = "91000000-0000-4000-8000-000000000001";
@@ -189,6 +190,7 @@ function rows(): DrivePageRows {
       }
     ],
     deletedItems: [],
+    commentProposals: [],
     operations: [
       {
         id: "91000000-0000-4000-8000-000000000014",
@@ -219,6 +221,130 @@ function actor() {
   };
 }
 
+function workItemDetail(partial: Partial<WorkItemDetailVM> = {}): WorkItemDetailVM {
+  return {
+    workitem: {
+      id: workItemId,
+      code: "R5-7",
+      project_id: projectId,
+      submitter_user_id: userId,
+      title: "把网盘评论转为提议",
+      raw_description: "把这条评论转成后续行动草稿。",
+      summary_md: "把这条评论转成后续行动草稿。",
+      status: "ai_clarifying",
+      priority: "normal",
+      sync_state: "synced",
+      version: 1,
+      mode: "worker",
+      human_reserved: false,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString()
+    },
+    acceptance: [],
+    agent_trace_preview: [],
+    accepted_deliverables: [],
+    evidence_refs: [],
+    source_context: {
+      source_type: "drive_comment",
+      project_id: projectId,
+      comment_id: "91000000-0000-4000-8000-000000000012",
+      folder_id: folderId,
+      folder_path: "/复盘包",
+      author_label: "PM",
+      body: "把这条评论转成后续行动草稿。",
+      status: "draft_created",
+      created_at: now.toISOString()
+    },
+    actions: {
+      create_proposal_draft: {
+        id: "drive_draft_to_proposal",
+        label: "生成变更提议",
+        method: "POST",
+        href: `/api/drive/workitems/${workItemId}/proposal-draft`
+      }
+    },
+    ...partial
+  };
+}
+
+function proposalManifest(input: { id?: string; workItemId?: string } = {}): DeliverableChangeManifest {
+  return {
+    version: 0,
+    proposal_id: input.id ?? proposalId,
+    work_item_id: input.workItemId ?? workItemId,
+    branch_id: "91000000-0000-4000-8000-000000000099",
+    title: "Drive draft proposal",
+    summary_md: "Create a reviewable proposal from a Drive comment.",
+    author: {
+      actor_kind: "human",
+      actor_user_id: userId,
+      label: "drive-user"
+    },
+    base: {
+      created_at: now.toISOString()
+    },
+    changes: [
+      {
+        id: changeId,
+        target_kind: "text_doc",
+        target_ref: {
+          entity_type: "drive_item",
+          entity_id: folderId,
+          path: "/复盘包/drive-comment-R5-7.md"
+        },
+        change_type: "generated",
+        human_summary: "Generate a proposal draft from the Drive comment."
+      }
+    ],
+    checks: [
+      {
+        id: "drive_comment_source",
+        label: "Drive comment source is attached",
+        status: "passed"
+      }
+    ],
+    evidence_refs: [
+      {
+        id: "91000000-0000-4000-8000-000000000098",
+        source_type: "comment",
+        source_id: "91000000-0000-4000-8000-000000000012",
+        title: "Drive comment",
+        confidence_hint: "found"
+      }
+    ],
+    risk: {
+      level: "low",
+      human_label: "Preview-only proposal",
+      reversible: true
+    },
+    rollback: {
+      available: true,
+      description: "Discard the proposal."
+    },
+    review: {
+      suggested_decision: "needs_human",
+      reason_required_on_reject: true
+    }
+  };
+}
+
+function storedProposalFromManifest(manifest: DeliverableChangeManifest): StoredProposal {
+  return {
+    id: manifest.proposal_id ?? proposalId,
+    work_item_id: manifest.work_item_id,
+    branch_id: manifest.branch_id ?? "91000000-0000-4000-8000-000000000099",
+    round: 1,
+    title: manifest.title,
+    status: "opened",
+    diff_manifest: manifest,
+    opened_by_kind: "human",
+    opened_by_user_id: userId,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    reviews: []
+  };
+}
+
 test("drive page service builds project files, version history, accepted deliverable links, and comment draft state", async () => {
   let seenProjectId: string | undefined;
   const repo: DriveRepository = {
@@ -236,6 +362,9 @@ test("drive page service builds project files, version history, accepted deliver
       throw new Error("not needed");
     },
     async commentToDraft() {
+      throw new Error("not needed");
+    },
+    async recordDraftProposal() {
       throw new Error("not needed");
     }
   };
@@ -262,6 +391,58 @@ test("drive page service builds project files, version history, accepted deliver
   assert.equal(page.actions.comment_to_draft?.href, page.comments[1]?.draft_action?.href);
   assert.equal(page.operations[0]?.target_path, "/复盘包/客户复盘.md");
   assert.equal(page.operations[0]?.op_type, "upload_file");
+});
+
+test("drive page service surfaces proposal links for comment-created drafts", async () => {
+  const pageRows = rows();
+  pageRows.comments[0]!.status = "proposal_created";
+  pageRows.commentProposals.push({
+    id: proposalId,
+    workItemId,
+    branchId: "91000000-0000-4000-8000-000000000099",
+    round: 1,
+    title: "Drive draft proposal",
+    status: "opened",
+    diffManifest: proposalManifest(),
+    confidenceId: null,
+    mergeSnapshotId: null,
+    openedByKind: "human",
+    openedByUserId: userId,
+    reviewedAt: null,
+    mergedAt: null,
+    createdAt: now,
+    updatedAt: now
+  });
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), locale: "en-US", projectId });
+
+  assert.equal(page.comments[0]?.status, "proposal_created");
+  assert.equal(page.comments[0]?.proposal_id, proposalId);
+  assert.equal(page.comments[0]?.proposal_href, `/proposals/${proposalId}`);
+  assert.equal(page.comments[0]?.proposal_status, "opened");
 });
 
 test("drive page service targets the latest manual file for recycle actions", async () => {
@@ -314,6 +495,9 @@ test("drive page service targets the latest manual file for recycle actions", as
       },
       async commentToDraft() {
         throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -349,6 +533,9 @@ test("drive page service does not 403 the generic drive route on an invisible de
       },
       async commentToDraft() {
         throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -367,7 +554,7 @@ test("drive page service exposes a no-project empty state instead of throwing", 
   const service = createDrivePageService({
     repo: {
       async readPage() {
-        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [] };
+        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
       },
       async uploadFile() {
         throw new Error("not needed");
@@ -379,6 +566,9 @@ test("drive page service exposes a no-project empty state instead of throwing", 
         throw new Error("not needed");
       },
       async commentToDraft() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
         throw new Error("not needed");
       }
     },
@@ -420,6 +610,9 @@ test("drive page service creates a work item draft from a pending drive comment"
         comment.draftWorkItemId = workItemId;
         comment.updatedAt = now;
         return { comment, workItem: null, created: true };
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -430,6 +623,138 @@ test("drive page service creates a work item draft from a pending drive comment"
   assert.deepEqual(calls, [{ projectId, commentId: comment.id, actorUserId: userId }]);
   assert.equal(page.comments[1]?.status, "draft_created");
   assert.equal(page.comments[1]?.draft_href, `/workitems/${workItemId}`);
+});
+
+test("drive page service creates a deterministic proposal from a drive comment draft", async () => {
+  const manifests: DeliverableChangeManifest[] = [];
+  const records: Array<{ workItemId: string; proposalId: string; actorUserId: string }> = [];
+  const refreshed = workItemDetail({
+    source_context: {
+      ...workItemDetail().source_context!,
+      status: "proposal_created",
+      proposal_id: proposalId,
+      proposal_href: `/proposals/${proposalId}`,
+      proposal_status: "opened"
+    },
+    actions: {}
+  });
+  let detailCallCount = 0;
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return rows();
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal(input) {
+        records.push({
+          workItemId: input.workItemId,
+          proposalId: input.proposalId,
+          actorUserId: input.actorUserId
+        });
+        return {
+          comment: rows().comments[0]!,
+          operation: rows().operations[0]!
+        };
+      }
+    },
+    proposals: {
+      async createFromManifest(input) {
+        manifests.push(input.manifest);
+        return storedProposalFromManifest(input.manifest);
+      },
+      async get() {
+        return null;
+      }
+    },
+    workItems: {
+      async detailPage() {
+        detailCallCount += 1;
+        return detailCallCount === 1 ? workItemDetail() : refreshed;
+      }
+    },
+    now: () => now
+  });
+
+  const result = await service.draftToProposal({ actor: actor(), locale: "zh-CN", workItemId });
+
+  assert.equal(manifests.length, 1);
+  assert.equal(manifests[0]?.work_item_id, workItemId);
+  assert.equal(manifests[0]?.changes[0]?.target_ref.entity_type, "drive_item");
+  assert.equal(manifests[0]?.evidence_refs[0]?.source_id, "91000000-0000-4000-8000-000000000012");
+  assert.deepEqual(records, [{
+    workItemId,
+    proposalId: manifests[0]!.proposal_id!,
+    actorUserId: userId
+  }]);
+  assert.equal(result.source_context?.proposal_status, "opened");
+});
+
+test("drive page service treats deterministic proposal conflicts as idempotent", async () => {
+  let recordedProposalId: string | undefined;
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return rows();
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal(input) {
+        recordedProposalId = input.proposalId;
+        return {
+          comment: rows().comments[0]!,
+          operation: rows().operations[0]!
+        };
+      }
+    },
+    proposals: {
+      async createFromManifest() {
+        throw new ProposalServiceError(409, "proposal_already_exists", "exists");
+      },
+      async get() {
+        return null;
+      }
+    },
+    workItems: {
+      async detailPage() {
+        return workItemDetail({
+          source_context: {
+            ...workItemDetail().source_context!,
+            proposal_id: recordedProposalId,
+            proposal_href: recordedProposalId ? `/proposals/${recordedProposalId}` : undefined,
+            proposal_status: recordedProposalId ? "opened" : undefined
+          },
+          actions: recordedProposalId ? {} : workItemDetail().actions
+        });
+      }
+    },
+    now: () => now
+  });
+
+  const result = await service.draftToProposal({ actor: actor(), workItemId });
+
+  assert.equal(recordedProposalId?.length, 36);
+  assert.equal(result.source_context?.proposal_id, recordedProposalId);
 });
 
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
@@ -595,6 +920,9 @@ test("drive page route returns an authenticated bilingual page envelope and forw
     },
     async commentToDraft() {
       throw new Error("not needed");
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -637,6 +965,9 @@ test("drive upload route authenticates, parses payload, and returns a refreshed 
       throw new Error("not needed");
     },
     async commentToDraft() {
+      throw new Error("not needed");
+    },
+    async draftToProposal() {
       throw new Error("not needed");
     }
   };
@@ -683,6 +1014,9 @@ test("drive comment draft route authenticates and returns a refreshed page VM", 
         ...(input.actor.userId ? { actorId: input.actor.userId } : {})
       });
       return minimalDrivePage();
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -703,6 +1037,61 @@ test("drive comment draft route authenticates and returns a refreshed page VM", 
   assert.deepEqual(calls, [{ projectId, commentId, actorId: userId }]);
 });
 
+test("drive draft proposal route authenticates and returns a refreshed work item VM", async () => {
+  const runtimeSettings = settings();
+  const calls: { workItemId: string; locale?: string; actorId?: string }[] = [];
+  const drivePages: DrivePageService = {
+    async page() {
+      throw new Error("not needed");
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async deleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
+    },
+    async commentToDraft() {
+      throw new Error("not needed");
+    },
+    async draftToProposal(input) {
+      calls.push({
+        workItemId: input.workItemId,
+        ...(input.locale ? { locale: input.locale } : {}),
+        ...(input.actor.userId ? { actorId: input.actor.userId } : {})
+      });
+      return workItemDetail({
+        source_context: {
+          ...workItemDetail().source_context!,
+          status: "proposal_created",
+          proposal_id: proposalId,
+          proposal_href: `/proposals/${proposalId}`,
+          proposal_status: "opened"
+        },
+        actions: {}
+      });
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/drive", createDriveRoutes({
+    auth: authDeps(runtimeSettings),
+    drivePages
+  }));
+
+  const response = await app.request(`/api/drive/workitems/${workItemId}/proposal-draft?locale=en-US`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: WorkItemDetailVM; meta: { locale: string } };
+  assert.equal(body.meta.locale, "en-US");
+  assert.equal(body.data.source_context?.proposal_href, `/proposals/${proposalId}`);
+  assert.deepEqual(calls, [{ workItemId, locale: "en-US", actorId: userId }]);
+});
+
 test("drive mutation routes preserve service conflict codes", async () => {
   const runtimeSettings = settings();
   const drivePages: DrivePageService = {
@@ -719,6 +1108,9 @@ test("drive mutation routes preserve service conflict codes", async () => {
       throw new Error("not needed");
     },
     async commentToDraft() {
+      throw new Error("not needed");
+    },
+    async draftToProposal() {
       throw new Error("not needed");
     }
   };

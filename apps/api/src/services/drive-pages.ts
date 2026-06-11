@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   createDatabaseClient,
   createDriveRepository,
@@ -16,12 +18,23 @@ import {
   type DriveItemVM,
   type DriveOperationVM,
   type DrivePageVM,
+  type WorkItemDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
 import { canManageProjectDrive, canViewProjectDrive } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
+import {
+  getDefaultProposalService,
+  ProposalServiceError,
+  type ProposalActor,
+  type ProposalService
+} from "./proposals.js";
+import {
+  getDefaultWorkItemService,
+  type WorkItemService
+} from "./work-items.js";
 
 export type DrivePageService = {
   page: (input: {
@@ -46,10 +59,17 @@ export type DrivePageService = {
   commentToDraft: (input: DriveMutationInput & {
     commentId: string;
   }) => Promise<DrivePageVM>;
+  draftToProposal: (input: {
+    actor: AuthActor;
+    locale?: WorkHubLocale;
+    workItemId: string;
+  }) => Promise<WorkItemDetailVM>;
 };
 
 export type DrivePageServiceDependencies = {
   repo: DriveRepository;
+  proposals?: Pick<ProposalService, "createFromManifest" | "get">;
+  workItems?: Pick<WorkItemService, "detailPage">;
   now?: () => Date;
 };
 
@@ -82,6 +102,40 @@ function itemPath(item: DriveItemRow, itemById: Map<string, DriveItemRow>) {
 
 function itemDepth(path: string) {
   return Math.max(0, path.split("/").filter(Boolean).length - 1);
+}
+
+function stableUuid(input: string) {
+  const hex = createHash("sha256").update(input).digest("hex");
+  const variant = ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(18, 20)}`,
+    hex.slice(20, 32)
+  ].join("-");
+}
+
+function compactText(value: string | null | undefined, max = 260) {
+  const text = value?.replace(/\s+/gu, " ").trim();
+  if (!text) {
+    return undefined;
+  }
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function proposalActorFromAuth(actor: AuthActor): ProposalActor {
+  if (actor.kind === "human") {
+    return {
+      actor_kind: "human",
+      actor_user_id: actor.userId ?? actor.id,
+      label: actor.label
+    };
+  }
+  return {
+    actor_kind: actor.kind,
+    label: actor.label
+  };
 }
 
 function versionToVm(
@@ -123,8 +177,8 @@ function versionToVm(
   return vm;
 }
 
-function commentStatus(status: string): "pending_llm" | "draft_created" | "dismissed" {
-  if (status === "draft_created" || status === "dismissed") {
+function commentStatus(status: string): "pending_llm" | "draft_created" | "proposal_created" | "dismissed" {
+  if (status === "draft_created" || status === "proposal_created" || status === "dismissed") {
     return status;
   }
   return "pending_llm";
@@ -151,6 +205,10 @@ function operationSummary(operation: DriveOperationRow, pathByItemId: Map<string
     const workItemId = typeof payload.work_item_id === "string" ? payload.work_item_id : "work item";
     return `Created draft ${workItemId} from Drive comment`;
   }
+  if (operation.opType === "draft_to_proposal") {
+    const proposalId = typeof payload.proposal_id === "string" ? payload.proposal_id : "proposal";
+    return `Created proposal ${proposalId} from Drive draft`;
+  }
   return `Updated ${target}`;
 }
 
@@ -162,7 +220,7 @@ function operationToVm(operation: DriveOperationRow, pathByItemId: Map<string, s
     id: operation.id,
     project_id: operation.projectId,
     actor_user_id: operation.actorUserId,
-    op_type: operation.opType === "upload_file" || operation.opType === "delete_item" || operation.opType === "restore_item" || operation.opType === "restore_version" || operation.opType === "rename_item" || operation.opType === "comment_to_draft"
+    op_type: operation.opType === "upload_file" || operation.opType === "delete_item" || operation.opType === "restore_item" || operation.opType === "restore_version" || operation.opType === "rename_item" || operation.opType === "comment_to_draft" || operation.opType === "draft_to_proposal"
       ? operation.opType
       : "rename_item",
     ...(itemId ? { target_item_id: itemId } : {}),
@@ -259,6 +317,13 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
   const commentToDraft = canManage
     ? rows.comments.find((comment) => commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId)
     : undefined;
+  const latestProposalByWorkItemId = new Map<string, (typeof rows.commentProposals)[number]>();
+  for (const proposal of rows.commentProposals) {
+    const current = latestProposalByWorkItemId.get(proposal.workItemId);
+    if (!current || proposal.createdAt > current.createdAt) {
+      latestProposalByWorkItemId.set(proposal.workItemId, proposal);
+    }
+  }
   const data: DrivePageVM = {
     generated_at: now.toISOString(),
     summary: {
@@ -280,6 +345,7 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
     comments: rows.comments.map((comment) => {
       const folderPath = comment.folderId ? pathByItemId.get(comment.folderId) : undefined;
       const canCreateDraft = canManage && projectId && commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId;
+      const proposal = comment.draftWorkItemId ? latestProposalByWorkItemId.get(comment.draftWorkItemId) : undefined;
       return {
         id: comment.id,
         project_id: comment.projectId,
@@ -292,6 +358,11 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
         ...(comment.draftWorkItemId ? {
           draft_work_item_id: comment.draftWorkItemId,
           draft_href: `/workitems/${comment.draftWorkItemId}`
+        } : {}),
+        ...(proposal ? {
+          proposal_id: proposal.id,
+          proposal_href: `/proposals/${proposal.id}`,
+          proposal_status: proposal.status
         } : {}),
         ...(canCreateDraft ? {
           draft_action: {
@@ -345,6 +416,9 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
 }
 
 export function createDrivePageService(deps: DrivePageServiceDependencies): DrivePageService {
+  const proposalService = () => deps.proposals ?? getDefaultProposalService();
+  const workItemService = () => deps.workItems ?? getDefaultWorkItemService();
+
   async function pageForActor(input: { actor: AuthActor; projectId?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -353,7 +427,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     });
     if (rows.project && !canViewProjectDrive(rows.project, input.actor)) {
       if (!input.projectId) {
-        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [] };
+        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
       }
       throw new DrivePageServiceError(403, "你没有权限查看这个项目网盘。", "drive_forbidden");
     }
@@ -387,6 +461,127 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       throw new DrivePageServiceError(409, error.message, error.code);
     }
     throw error;
+  }
+
+  function driveDraftProposalManifest(input: {
+    page: WorkItemDetailVM;
+    actor: AuthActor;
+    createdAt: Date;
+  }) {
+    const source = input.page.source_context;
+    if (!source || source.source_type !== "drive_comment") {
+      throw new DrivePageServiceError(409, "这个事项不是从网盘评论生成的草稿。", "drive_draft_source_missing");
+    }
+    const workItem = input.page.workitem;
+    const titleBase = compactText(workItem.title ?? workItem.summary_md ?? source.body, 80) ?? "Drive comment proposal";
+    const proposalId = stableUuid(`drive-draft-proposal:${workItem.id}:${source.comment_id}`);
+    const branchId = stableUuid(`drive-draft-branch:${workItem.id}:${source.comment_id}`);
+    const changeId = stableUuid(`drive-draft-change:${workItem.id}:${source.comment_id}`);
+    const evidenceId = stableUuid(`drive-draft-evidence:${source.comment_id}`);
+    const targetPath = `${source.folder_path ?? "/Drive"}/drive-comment-${workItem.code}.md`.replace(/\/{2,}/gu, "/");
+    const sourcePreview = compactText(source.body, 240) ?? "Drive comment";
+    const actorUserId = input.actor.kind === "human" ? input.actor.userId ?? input.actor.id : undefined;
+    return {
+      version: 0 as const,
+      proposal_id: proposalId,
+      work_item_id: workItem.id,
+      branch_id: branchId,
+      title: `Drive draft: ${titleBase}`,
+      summary_md: [
+        "Create a reviewable proposal from the Drive comment draft.",
+        "",
+        `Source comment: ${sourcePreview}`
+      ].join("\n"),
+      author: {
+        actor_kind: input.actor.kind,
+        ...(actorUserId ? { actor_user_id: actorUserId } : {}),
+        label: input.actor.label ?? "WorkHub"
+      },
+      base: {
+        created_at: input.createdAt.toISOString()
+      },
+      changes: [
+        {
+          id: changeId,
+          target_kind: "text_doc" as const,
+          target_ref: {
+            entity_type: "drive_item" as const,
+            ...(source.folder_id ? { entity_id: source.folder_id } : {}),
+            path: targetPath
+          },
+          change_type: "generated" as const,
+          human_summary: "Generate a proposal draft from the Drive comment.",
+          machine_summary: {
+            before_excerpt: "",
+            after_excerpt: sourcePreview,
+            changed_fields: ["drive_comment.body"]
+          },
+          preview_ref: {
+            kind: "text" as const,
+            href: `/workitems/${workItem.id}`
+          },
+          evidence_refs: [
+            {
+              id: evidenceId,
+              source_type: "comment" as const,
+              source_id: source.comment_id,
+              title: `Drive comment from ${source.author_label}`,
+              excerpt: sourcePreview,
+              locator: {
+                ...(source.folder_path ? { path: source.folder_path } : {})
+              },
+              confidence_hint: "found" as const,
+              href: `/drive?project_id=${source.project_id}`
+            }
+          ]
+        }
+      ],
+      checks: [
+        {
+          id: "drive_comment_source",
+          label: "Drive comment source is attached",
+          status: "passed" as const,
+          detail: source.comment_id
+        },
+        {
+          id: "human_review_required",
+          label: "Proposal requires human review before merge",
+          status: "passed" as const
+        },
+        {
+          id: "drive_file_unchanged",
+          label: "Drive official files are not changed by draft creation",
+          status: "passed" as const
+        }
+      ],
+      evidence_refs: [
+        {
+          id: evidenceId,
+          source_type: "comment" as const,
+          source_id: source.comment_id,
+          title: `Drive comment from ${source.author_label}`,
+          excerpt: sourcePreview,
+          locator: {
+            ...(source.folder_path ? { path: source.folder_path } : {})
+          },
+          confidence_hint: "found" as const,
+          href: `/drive?project_id=${source.project_id}`
+        }
+      ],
+      risk: {
+        level: "low" as const,
+        human_label: "Preview-only proposal; no Drive file is overwritten.",
+        reversible: true
+      },
+      rollback: {
+        available: true,
+        description: "Discard this proposal to keep the Drive files unchanged."
+      },
+      review: {
+        suggested_decision: "needs_human" as const,
+        reason_required_on_reject: true as const
+      }
+    };
   }
 
   return {
@@ -473,6 +668,76 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       } catch (error) {
         mutationError(error);
       }
+    },
+    async draftToProposal(input) {
+      const actorUserId = ensureHumanActor({
+        actor: input.actor,
+        projectId: ""
+      });
+      const detailInput = {
+        workItemId: input.workItemId,
+        actor: input.actor,
+        ...(input.locale ? { locale: input.locale } : {})
+      };
+      const initialPage = await workItemService().detailPage(detailInput);
+      const source = initialPage.source_context;
+      if (!source || source.source_type !== "drive_comment") {
+        throw new DrivePageServiceError(409, "这个事项不是从网盘评论生成的草稿。", "drive_draft_source_missing");
+      }
+      await ensureCanManage({
+        actor: input.actor,
+        projectId: source.project_id
+      });
+      if (source.status === "dismissed") {
+        throw new DrivePageServiceError(409, "这条网盘评论已经被忽略，不能生成变更提议。", "drive_comment_dismissed");
+      }
+      if (initialPage.latest_proposal?.proposal_id ?? source.proposal_id) {
+        return initialPage;
+      }
+
+      const createdAt = deps.now?.() ?? new Date();
+      const manifest = driveDraftProposalManifest({
+        page: initialPage,
+        actor: input.actor,
+        createdAt
+      });
+      const actor = proposalActorFromAuth(input.actor);
+      try {
+        const created = await proposalService().createFromManifest({
+          workItemId: input.workItemId,
+          manifest,
+          actor,
+          title: manifest.title,
+          branchId: manifest.branch_id
+        });
+        await deps.repo.recordDraftProposal({
+          actorKind: input.actor.kind,
+          actorUserId,
+          workItemId: input.workItemId,
+          proposalId: created.id,
+          at: createdAt
+        });
+      } catch (error) {
+        if (error instanceof ProposalServiceError && error.code === "proposal_already_exists") {
+          await deps.repo.recordDraftProposal({
+            actorKind: input.actor.kind,
+            actorUserId,
+            workItemId: input.workItemId,
+            proposalId: manifest.proposal_id,
+            at: createdAt
+          });
+        } else if (error instanceof ProposalServiceError) {
+          const status = error.status === 403 || error.status === 404 || error.status === 409 ? error.status : 409;
+          throw new DrivePageServiceError(status, error.message, error.code);
+        } else {
+          throw error;
+        }
+      }
+      return workItemService().detailPage({
+        workItemId: input.workItemId,
+        actor: input.actor,
+        ...(input.locale ? { locale: input.locale } : {})
+      });
     }
   };
 }

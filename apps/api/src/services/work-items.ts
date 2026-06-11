@@ -186,7 +186,8 @@ type WorkItemCopyKey =
   | "evidence.askFollowup"
   | "evidence.missing"
   | "acceptance.optionFirst"
-  | "acceptance.evidenceBound";
+  | "acceptance.evidenceBound"
+  | "proposalDraft.create.label";
 
 const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   "zh-CN": {
@@ -221,7 +222,8 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "evidence.askFollowup": "换个问法再找",
     "evidence.missing": "请先上传文档、同步项目文件，或缩小检索范围。",
     "acceptance.optionFirst": "点选澄清完成",
-    "acceptance.evidenceBound": "证据已绑定"
+    "acceptance.evidenceBound": "证据已绑定",
+    "proposalDraft.create.label": "生成变更提议"
   },
   "en-US": {
     "question.confirm.title": "Create the work item with this direction?",
@@ -255,7 +257,8 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "evidence.askFollowup": "Try another query",
     "evidence.missing": "Upload documents, sync project files, or narrow the search first.",
     "acceptance.optionFirst": "Option-first clarification completed",
-    "acceptance.evidenceBound": "Evidence is bound"
+    "acceptance.evidenceBound": "Evidence is bound",
+    "proposalDraft.create.label": "Create proposal draft"
   }
 };
 
@@ -487,6 +490,37 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
     : undefined;
+  const sourceComment = rows.driveSourceComment;
+  const latestProposalId = latestProposal?.success ? latestProposal.data.proposal_id : rows.latestProposal?.id;
+  const sourceContext = sourceComment
+    ? {
+      source_type: "drive_comment" as const,
+      project_id: sourceComment.comment.projectId,
+      comment_id: sourceComment.comment.id,
+      ...(sourceComment.comment.folderId ? { folder_id: sourceComment.comment.folderId } : {}),
+      ...(sourceComment.folderPath ? { folder_path: sourceComment.folderPath } : {}),
+      author_label: sourceComment.comment.authorNickname,
+      body: sourceComment.comment.body,
+      status: sourceComment.comment.status === "proposal_created"
+        ? "proposal_created"
+        : sourceComment.comment.status === "draft_created"
+          ? "draft_created"
+          : sourceComment.comment.status === "dismissed"
+            ? "dismissed"
+            : "pending_llm",
+      created_at: sourceComment.comment.createdAt.toISOString(),
+      ...(latestProposalId ? { proposal_id: latestProposalId, proposal_href: `/proposals/${latestProposalId}` } : {}),
+      ...(rows.latestProposal?.status ? { proposal_status: rows.latestProposal.status } : {})
+    }
+    : undefined;
+  const createProposalAction = sourceContext && !latestProposalId
+    ? {
+      id: "drive_draft_to_proposal",
+      label: workItemT(locale, "proposalDraft.create.label"),
+      method: "POST" as const,
+      href: `/api/drive/workitems/${rows.workItem.id}/proposal-draft`
+    }
+    : undefined;
   return workItemDetailVmSchema.parse({
     workitem: toWorkItemVm(rows.workItem),
     acceptance: rows.acceptance.map((item) => ({
@@ -503,7 +537,11 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
     agent_trace_preview: rows.agentSteps.map(toAgentStepVm),
     ...(latestProposal?.success ? { latest_proposal: latestProposal.data } : {}),
     accepted_deliverables: rows.acceptedDeliverables.map(acceptedDeliverableToVm),
-    evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings)
+    evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
+    ...(sourceContext ? { source_context: sourceContext } : {}),
+    actions: {
+      ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
+    }
   });
 }
 

@@ -190,6 +190,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createDriveCommentDraft() {
       throw new Error("not needed");
     },
+    async createDriveDraftProposal() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },
@@ -488,6 +491,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/drive"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/drive/workitems/:workItemId/proposal-draft"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/settings"), true);
   assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
   assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");

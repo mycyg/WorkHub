@@ -130,6 +130,7 @@ type RouteCopyKey =
   | "workitem.context"
   | "workitem.trace"
   | "workitem.deliverables"
+  | "workitem.driveSource"
   | "workitem.openProposal"
   | "workitem.openReplay"
   | "workitem.startRun"
@@ -163,8 +164,10 @@ type RouteCopyKey =
   | "drive.pendingDrafts"
   | "drive.createDraft"
   | "drive.openDraft"
+  | "drive.openProposal"
   | "drive.status.pending_llm"
   | "drive.status.draft_created"
+  | "drive.status.proposal_created"
   | "drive.status.dismissed"
   | "cost.scopes"
   | "cost.risks"
@@ -214,6 +217,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.context": "任务上下文",
     "workitem.trace": "AI 执行轨迹",
     "workitem.deliverables": "交付物入口",
+    "workitem.driveSource": "网盘评论来源",
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
     "workitem.startRun": "开始 AI 执行",
@@ -247,8 +251,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.pendingDrafts": "待转草稿",
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
+    "drive.openProposal": "打开提议",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
+    "drive.status.proposal_created": "已生成提议",
     "drive.status.dismissed": "已忽略",
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
@@ -297,6 +303,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.context": "Task context",
     "workitem.trace": "AI execution trace",
     "workitem.deliverables": "Deliverable entry",
+    "workitem.driveSource": "Drive comment source",
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
     "workitem.startRun": "Start AI run",
@@ -330,8 +337,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.pendingDrafts": "Pending drafts",
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
+    "drive.openProposal": "Open proposal",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
+    "drive.status.proposal_created": "Proposal created",
     "drive.status.dismissed": "Dismissed",
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
@@ -754,6 +763,7 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
   const proposalId = vm.latest_proposal?.proposal_id;
   const runId = vm.agent_trace_preview[0]?.agent_run_id;
   const actions: Array<ActionSpec | undefined> = [
+    vm.actions.create_proposal_draft,
     proposalId
       ? {
         id: "open_proposal",
@@ -780,6 +790,29 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
       : undefined
   ];
   return actions.filter((action): action is ActionSpec => Boolean(action));
+}
+
+function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale) {
+  const source = vm.source_context;
+  if (!source) {
+    return "";
+  }
+  const folder = source.folder_path ? `<span class="wh-pill">${escapeHtml(source.folder_path)}</span>` : "";
+  const proposal = source.proposal_href
+    ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
+    : "";
+  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
+    <div>
+      <strong>${escapeHtml(routeT(locale, "workitem.driveSource"))}</strong>
+      <p>${escapeHtml(source.body)}</p>
+    </div>
+    <div class="wh-r4-route-meta">
+      <span class="wh-pill">${escapeHtml(source.author_label)}</span>
+      <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(source.status, locale))}</span>
+      ${folder}
+      ${proposal}
+    </div>
+  </div>`;
 }
 
 function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocale): WebRouteComponent {
@@ -822,6 +855,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <span class="wh-pill">${escapeHtml(vm.workitem.mode)}</span>
           </div>
           <p>${escapeHtml(vm.workitem.planning_note ?? vm.workitem.raw_description)}</p>
+          ${renderWorkItemSourceContext(vm, locale)}
           ${renderActions(actions)}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-workitem-deliverables="true">
@@ -1019,6 +1053,9 @@ function driveCommentStatusLabel(status: DrivePageVM["comments"][number]["status
   if (status === "draft_created") {
     return routeT(locale, "drive.status.draft_created");
   }
+  if (status === "proposal_created") {
+    return routeT(locale, "drive.status.proposal_created");
+  }
   if (status === "dismissed") {
     return routeT(locale, "drive.status.dismissed");
   }
@@ -1084,7 +1121,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
     </article>`).join("")
     : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "drive.empty"))}</p></article>`;
   const commentRows = vm.comments.length
-    ? vm.comments.slice(0, 5).map((comment) => `<div class="wh-r4-route-row" data-r4-drive-comment="${escapeHtml(comment.id)}" data-r4-drive-comment-status="${escapeHtml(comment.status)}">
+    ? vm.comments.slice(0, 5).map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-comment="${escapeHtml(comment.id)}" data-r4-drive-comment-status="${escapeHtml(comment.status)}">
       <div>
         <strong>${escapeHtml(comment.author_label)}</strong>
         <p>${escapeHtml(comment.body)}</p>
@@ -1093,6 +1130,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(comment.status, locale))}</span>
         ${comment.draft_action ? `<a class="wh-btn" href="${escapeHtml(comment.draft_action.href)}" data-action-id="comment_to_draft" data-method="POST">${escapeHtml(routeT(locale, "drive.createDraft"))}</a>` : ""}
         ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(comment.draft_href)}">${escapeHtml(routeT(locale, "drive.openDraft"))}</a>` : ""}
+        ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(comment.proposal_href)}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
@@ -1130,7 +1168,8 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
       accepted.restore_href
     ]),
     ...vm.comments.map((comment) => comment.draft_action?.href),
-    ...vm.comments.map((comment) => comment.draft_href)
+    ...vm.comments.map((comment) => comment.draft_href),
+    ...vm.comments.map((comment) => comment.proposal_href)
   ].filter((value): value is string => Boolean(value));
 
   return createWebRouteComponent({

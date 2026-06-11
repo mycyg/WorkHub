@@ -8,11 +8,11 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:R5.3 Drive 评论到草稿已落，R5.4 准备开工 🚧
+## 现状:R5.4 Drive 草稿到提议已落，R5.5 准备开工 🚧
 
-本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。R5.3 已把 Drive comment 升级为可审计的 comment-to-draft / WorkItem 草稿链路；下一步把 Drive draft 接入 proposal/change preview 主线。
+本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。R5.4 已把 Drive-created WorkItem draft 接入 proposal/change preview 主线；下一步补齐 Meeting insight-to-draft 业务纵切。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 120 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 121 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -28,7 +28,8 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 | R5.1 | ✅ | Drive Page VM/API/Web route 已落，承接 accepted deliverables、Drive versions、preview/download/restore 与 comment draft link。 |
 | R5.2 | ✅ | Drive upload/recycle/operation log、project 权限门、shared mapper 与 46 步 browser gate 已落。 |
 | R5.3 | ✅ | Drive comment-to-draft / WorkItem 草稿链路已落，47 步 browser gate 覆盖 request proof、notice、operation log 与无溢出。 |
-| R5.4 | planned | 下一步把 Drive draft 接入 proposal/change preview，并保持正式资料写回只走审批/merge。 |
+| R5.4 | ✅ | Drive draft-to-proposal 已落，50 步 browser gate 覆盖 source context、proposal action/link 与 operation log。 |
+| R5.5 | planned | 下一步推进 Meeting insight-to-draft，并复用 R5.4 source context 与 proposal writeback 模式。 |
 
 ## 本地开发
 

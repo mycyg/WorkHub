@@ -12,6 +12,7 @@ import {
   auditLogs,
   chatMessages,
   knowledgeDocuments,
+  projectDriveComments,
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
@@ -73,6 +74,11 @@ export type WorkItemAgentStepRow = typeof agentSteps.$inferSelect;
 export type WorkItemProposalRow = typeof proposals.$inferSelect;
 export type WorkItemChatMessageRow = typeof chatMessages.$inferSelect;
 export type WorkItemKnowledgeDocumentRow = typeof knowledgeDocuments.$inferSelect;
+export type WorkItemDriveSourceCommentRow = {
+  comment: typeof projectDriveComments.$inferSelect;
+  folder: typeof projectDriveItems.$inferSelect | null;
+  folderPath: string | null;
+};
 export type WorkItemAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
   driveItem: typeof projectDriveItems.$inferSelect | null;
@@ -148,6 +154,7 @@ export type StoredWorkItemDetailRows = {
   latestProposal: WorkItemProposalRow | null;
   acceptedDeliverables: WorkItemAcceptedDeliverableRow[];
   evidenceBindings: WorkItemChatMessageRow[];
+  driveSourceComment: WorkItemDriveSourceCommentRow | null;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -232,6 +239,18 @@ function acceptedDeliverableColumns() {
     driveItem: projectDriveItems,
     driveVersion: projectDriveVersions
   };
+}
+
+function projectDriveItemPath(item: typeof projectDriveItems.$inferSelect, itemById: Map<string, typeof projectDriveItems.$inferSelect>) {
+  const names: string[] = [];
+  let cursor: typeof projectDriveItems.$inferSelect | undefined = item;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor.id) && names.length < 50) {
+    seen.add(cursor.id);
+    names.unshift(cursor.name);
+    cursor = cursor.parentId ? itemById.get(cursor.parentId) : undefined;
+  }
+  return `/${names.join("/")}`;
 }
 
 function acceptedDeliverableQuery(db: WorkHubDb, input: { workItemId: string; acceptedChangeId?: string }) {
@@ -492,7 +511,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings] = await Promise.all([
+      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments] = await Promise.all([
         db
           .select()
           .from(workItemAcceptanceItems)
@@ -511,8 +530,38 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .from(chatMessages)
           .where(and(eq(chatMessages.workItemId, workItemId), eq(chatMessages.kind, "evidence_binding")))
           .orderBy(desc(chatMessages.createdAt))
-          .limit(20)
+          .limit(20),
+        db
+          .select({
+            comment: projectDriveComments,
+            folder: projectDriveItems
+          })
+          .from(projectDriveComments)
+          .leftJoin(projectDriveItems, eq(projectDriveComments.folderId, projectDriveItems.id))
+          .where(eq(projectDriveComments.draftWorkItemId, workItemId))
+          .orderBy(desc(projectDriveComments.updatedAt), desc(projectDriveComments.createdAt))
+          .limit(1)
       ]);
+
+      const driveSourceComment = driveSourceComments[0] ?? null;
+      let driveSourceCommentWithPath: WorkItemDriveSourceCommentRow | null = null;
+      if (driveSourceComment) {
+        let folderPath: string | null = null;
+        if (driveSourceComment.folder) {
+          const projectDriveItemRows = await db
+            .select()
+            .from(projectDriveItems)
+            .where(eq(projectDriveItems.projectId, driveSourceComment.comment.projectId));
+          folderPath = projectDriveItemPath(
+            driveSourceComment.folder,
+            new Map(projectDriveItemRows.map((item) => [item.id, item]))
+          );
+        }
+        driveSourceCommentWithPath = {
+          ...driveSourceComment,
+          folderPath
+        };
+      }
 
       return {
         workItem: row.workItem,
@@ -521,7 +570,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         agentSteps: agentStepRows,
         latestProposal: latestProposals[0] ?? null,
         acceptedDeliverables,
-        evidenceBindings
+        evidenceBindings,
+        driveSourceComment: driveSourceCommentWithPath
       };
     },
 

@@ -637,7 +637,8 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
         acceptance: [],
         agent_trace_preview: [],
         accepted_deliverables: deliverables,
-        evidence_refs: []
+        evidence_refs: [],
+        actions: {}
       };
     },
     async acceptedDeliverableFile() {

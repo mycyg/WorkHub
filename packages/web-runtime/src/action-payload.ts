@@ -100,6 +100,12 @@ export function driveCommentDraftFromHref(href: string) {
   };
 }
 
+export function driveDraftProposalFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/drive\/workitems\/([^/]+)\/proposal-draft$/u.exec(path);
+  return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

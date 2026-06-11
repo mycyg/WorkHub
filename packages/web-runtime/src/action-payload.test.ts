@@ -10,6 +10,7 @@ import {
   conflictsFromMergeError,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
+  driveDraftProposalFromHref,
   driveItemMutationFromHref,
   driveUploadFromHref,
   evidenceBindingWorkItemIdFromHref,
@@ -36,6 +37,9 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.deepEqual(driveCommentDraftFromHref("/api/drive/projects/p-1/comments/c-1/draft"), {
     projectId: "p-1",
     commentId: "c-1"
+  });
+  assert.deepEqual(driveDraftProposalFromHref("/api/drive/workitems/w%201/proposal-draft"), {
+    workItemId: "w 1"
   });
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",

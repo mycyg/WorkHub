@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -12,6 +12,7 @@ import {
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
+  proposals,
   projects,
   workItems
 } from "../schema/index.js";
@@ -22,6 +23,7 @@ export type DriveVersionRow = typeof projectDriveVersions.$inferSelect;
 export type DriveCommentRow = typeof projectDriveComments.$inferSelect;
 export type DriveOperationRow = typeof projectDriveOperations.$inferSelect;
 export type DriveWorkItemRow = typeof workItems.$inferSelect;
+export type DriveProposalRow = typeof proposals.$inferSelect;
 export type DriveAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
   driveItem: typeof projectDriveItems.$inferSelect | null;
@@ -36,6 +38,7 @@ export type DrivePageRows = {
   comments: DriveCommentRow[];
   deletedItems: DriveItemRow[];
   operations: DriveOperationRow[];
+  commentProposals: DriveProposalRow[];
 };
 
 export type DriveRepositoryActor = {
@@ -54,6 +57,11 @@ export type DriveCommentDraftRows = {
   workItem: DriveWorkItemRow | null;
   operation?: DriveOperationRow;
   created: boolean;
+};
+
+export type DriveDraftProposalRows = {
+  comment: DriveCommentRow;
+  operation: DriveOperationRow;
 };
 
 export class DriveRepositoryConflictError extends Error {
@@ -109,6 +117,11 @@ export type DriveRepository = {
     commentId: string;
     at?: Date;
   }) => Promise<DriveCommentDraftRows | null>;
+  recordDraftProposal: (input: DriveRepositoryActor & {
+    workItemId: string;
+    proposalId: string;
+    at?: Date;
+  }) => Promise<DriveDraftProposalRows | null>;
 };
 
 function clampLimit(limit: number | undefined) {
@@ -242,7 +255,8 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           acceptedDeliverables: [],
           comments: [],
           deletedItems: [],
-          operations: []
+          operations: [],
+          commentProposals: []
         };
       }
 
@@ -298,6 +312,15 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .orderBy(desc(projectDriveOperations.createdAt))
           .limit(Math.max(1, Math.min(input.operationLimit ?? 20, 100)))
       ]);
+      const draftWorkItemIds = [...new Set(comments.map((comment) => comment.draftWorkItemId).filter((id): id is string => Boolean(id)))];
+      const commentProposals = draftWorkItemIds.length
+        ? await db
+          .select()
+          .from(proposals)
+          .where(inArray(proposals.workItemId, draftWorkItemIds))
+          .orderBy(desc(proposals.createdAt))
+          .limit(100)
+        : [];
 
       return {
         project,
@@ -306,7 +329,8 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         acceptedDeliverables,
         comments,
         deletedItems,
-        operations
+        operations,
+        commentProposals
       };
     },
 
@@ -718,6 +742,75 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           operation,
           created: true
         };
+      });
+      return result;
+    },
+
+    async recordDraftProposal(input) {
+      const at = input.at ?? new Date();
+      let result: DriveDraftProposalRows | null = null;
+      await db.transaction(async (tx) => {
+        const commentRows = await tx
+          .select()
+          .from(projectDriveComments)
+          .where(eq(projectDriveComments.draftWorkItemId, input.workItemId))
+          .orderBy(desc(projectDriveComments.updatedAt), desc(projectDriveComments.createdAt))
+          .limit(1);
+        const comment = commentRows[0];
+        if (!comment) {
+          return;
+        }
+        const project = await findProject(tx, comment.projectId);
+        if (!project) {
+          return;
+        }
+        const updatedComments = await tx
+          .update(projectDriveComments)
+          .set({
+            status: "proposal_created",
+            updatedAt: at
+          })
+          .where(and(
+            eq(projectDriveComments.id, comment.id),
+            eq(projectDriveComments.draftWorkItemId, input.workItemId)
+          ))
+          .returning();
+        const updatedComment = updatedComments[0] as DriveCommentRow | undefined;
+        if (!updatedComment) {
+          return;
+        }
+        const payloadJson = {
+          drive_comment_id: comment.id,
+          work_item_id: input.workItemId,
+          proposal_id: input.proposalId,
+          proposal_href: `/proposals/${input.proposalId}`
+        };
+        const operation = await insertDriveOperation(tx, {
+          ...input,
+          projectId: comment.projectId,
+          opType: "draft_to_proposal",
+          payloadJson,
+          at
+        });
+        await insertDriveAudit(tx, {
+          ...input,
+          project,
+          entityType: "proposal",
+          action: "proposal.created_from_drive_draft",
+          entityId: input.proposalId,
+          detailJson: payloadJson,
+          at
+        });
+        await insertDriveAudit(tx, {
+          ...input,
+          project,
+          entityType: "project_drive_comment",
+          action: "drive.comment.proposal_created",
+          entityId: comment.id,
+          detailJson: payloadJson,
+          at
+        });
+        result = { comment: updatedComment, operation };
       });
       return result;
     }

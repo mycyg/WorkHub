@@ -412,7 +412,8 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
         acceptance: [],
         agent_trace_preview: [],
         accepted_deliverables: [],
-        evidence_refs: []
+        evidence_refs: [],
+        actions: {}
       } as WorkItemDetailVM;
     },
     async startAgentRun(workItemId: string, payload: unknown): Promise<AgentRunLiveVM> {
