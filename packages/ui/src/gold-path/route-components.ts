@@ -8,6 +8,7 @@ import type {
   DeliverableChange,
   DeliverableCheck,
   EvidenceRef,
+  ProposalConflict,
   ProposalDetailVM,
   SettingsPageVM,
   GoldPathSurfaceVM,
@@ -15,6 +16,7 @@ import type {
 } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
+import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
   changeTypeLabel,
   checkStatusLabel,
@@ -41,6 +43,11 @@ export type WebRouteComponentMap = Partial<Record<GoldPathRenderedPage["key"], W
 
 type RouteComponentOptions = {
   locale?: WorkHubLocale | undefined;
+};
+
+type ProposalConflictSurface = GoldPathSurfaceVM & {
+  conflicts?: ProposalConflict[];
+  proposal_conflicts?: ProposalConflict[];
 };
 
 export const webRouteComponentCss = [
@@ -555,8 +562,16 @@ function proposalActions(vm: ProposalDetailVM) {
   ];
 }
 
-function renderProposalRouteComponent(vm: ProposalDetailVM, locale: WorkHubLocale): WebRouteComponent {
+function renderProposalRouteComponent(
+  vm: ProposalDetailVM,
+  locale: WorkHubLocale,
+  conflicts: ProposalConflict[] = []
+): WebRouteComponent {
   const actions = proposalActions(vm);
+  const conflictCards = renderProposalConflictCards(conflicts, { locale });
+  const hasLineEditor = conflictCards.html.includes("data-route-line-editor=");
+  const hasFieldEditor = conflictCards.html.includes("data-proposal-structured-field-editor=");
+  const hasSubrecordEditor = conflictCards.html.includes("data-proposal-subrecord-item-diff=");
   const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 320);
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
@@ -568,12 +583,15 @@ function renderProposalRouteComponent(vm: ProposalDetailVM, locale: WorkHubLocal
       <span class="wh-pill">${escapeHtml(comment.created_at)}</span>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.comments"))}</p>`;
+  const advancedConflictReview = conflictCards.html
+    ? `<section class="wh-r4-route-card" data-r4-proposal-advanced-review="true" data-r4-proposal-advanced-source="workitem-conflicts" data-r4-proposal-conflicts="${escapeHtml(String(conflictCards.conflictCount))}" data-r4-proposal-line-editor="${escapeHtml(String(hasLineEditor))}" data-r4-proposal-field-editor="${escapeHtml(String(hasFieldEditor))}" data-r4-proposal-subrecord-editor="${escapeHtml(String(hasSubrecordEditor))}">${conflictCards.html}</section>`
+    : "";
 
   return {
     key: "proposal",
-    css: webRouteComponentCss,
-    primaryHrefs: actions.map((action) => action.href),
-    html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-proposal-id="${escapeHtml(vm.proposal_id)}" data-r4-proposal-workitem-id="${escapeHtml(vm.work_item_id)}" data-r4-proposal-change-count="${escapeHtml(String(vm.manifest.changes.length))}" data-r4-proposal-check-count="${escapeHtml(String(vm.manifest.checks.length))}" data-r4-proposal-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(vm.comments.length))}">
+    css: `${webRouteComponentCss}${proposalCss}`,
+    primaryHrefs: [...actions.map((action) => action.href), ...conflictCards.actionHrefs],
+    html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-proposal-id="${escapeHtml(vm.proposal_id)}" data-r4-proposal-workitem-id="${escapeHtml(vm.work_item_id)}" data-r4-proposal-change-count="${escapeHtml(String(vm.manifest.changes.length))}" data-r4-proposal-check-count="${escapeHtml(String(vm.manifest.checks.length))}" data-r4-proposal-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(vm.comments.length))}" data-r4-proposal-conflict-count="${escapeHtml(String(conflictCards.conflictCount))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>
@@ -601,6 +619,7 @@ function renderProposalRouteComponent(vm: ProposalDetailVM, locale: WorkHubLocal
         <h3>${escapeHtml(routeT(locale, "proposal.files"))}</h3>
         <div class="wh-r4-route-table">${vm.manifest.changes.map((change) => renderChange(change, locale)).join("")}</div>
       </section>
+      ${advancedConflictReview}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-proposal-evidence="true">
           <h3>${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
@@ -613,6 +632,11 @@ function renderProposalRouteComponent(vm: ProposalDetailVM, locale: WorkHubLocal
       </div>
     </section>`
   };
+}
+
+function proposalConflictsFromSurface(vm: ProposalConflictSurface) {
+  const conflicts = vm.proposal_conflicts ?? vm.conflicts ?? [];
+  return conflicts.filter((conflict) => conflict.proposal_id === vm.page_vms.proposal.proposal_id);
 }
 
 function costAmount(value: string) {
@@ -772,11 +796,12 @@ export function renderWebRouteComponents(
   options: RouteComponentOptions = {}
 ): WebRouteComponentMap {
   const locale = normalizeWorkHubLocale(options.locale);
+  const conflictSurface = vm as ProposalConflictSurface;
   return {
     home: renderHomeRouteComponent(vm.page_vms.attention, locale),
     approvals: renderApprovalsRouteComponent(vm.page_vms.approvals, locale),
     workitem: renderWorkItemRouteComponent(vm.page_vms.workitem, locale),
-    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale),
+    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(conflictSurface)),
     replay: renderReplayRouteComponent(vm, locale),
     cost: renderCostRouteComponent(vm.page_vms.cost, locale),
     ...(vm.page_vms.settings ? { settings: renderSettingsRouteComponent(vm.page_vms.settings, locale) } : {})

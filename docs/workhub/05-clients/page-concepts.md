@@ -273,6 +273,20 @@ R4.11 已把 WorkItem、Proposal、Cost、Settings 接为显式 Web route compon
 - Settings 保持运行时/设备控制面：只暴露配置状态，不泄露密钥或 base URL，不承载 Cuu 形象设置。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo 文案；zh-CN/en-US fixed copy 与文本盒无溢出 gate 均通过。
 
+### 6.8 R4.13 Proposal advanced route UX convergence
+
+![R4.13 Proposal advanced route UX contact sheet](./assets/audit/2026-06-11-r4-13-proposal-advanced-route-ux-browser-smoke/contact-sheet.png)
+
+R4.13 已把 Proposal 的 conflict workbench、line editor、structured field editor、subrecord editor 收敛到 Web active-only route component，并用本机 Chrome browser smoke 生成 29 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-13-proposal-advanced-route-ux-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- Proposal 对齐 `web-deliverable-change-request.png`：首屏仍是 change request 的摘要、风险、回滚、文件变化和 review actions；高级冲突区位于下方，有边界、有折叠，不把页面变成 IDE。
+- WorkItem 对齐 `web-workitem-detail.png`：高级 editor 没有泄漏到 WorkItem 详情；WorkItem 仍只保留任务上下文、验收、执行轨迹、证据与交付物入口。
+- Approval 对齐 `web-approval-center.png`：高级 Proposal 操作不会制造第二套审批流；成功、空值 fail-closed、SSE refresh 都通过 R4.12 notice contract 回到用户。
+- 数据流保持 REST 真相源：`/proposals/:id` 读取 Proposal Page VM，另读 `/api/workitems/:id/conflicts` 注入 route surface；SSE 只触发 refresh notice 与 REST reconcile。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo 文案；`r4_13_proposal_advanced_route_sections`、`r4_13_advanced_apply_payloads`、`r4_13_custom_field_fail_closed`、`r4_13_structured_editor_visual_no_overflow` 全部通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

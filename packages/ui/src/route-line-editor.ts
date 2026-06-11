@@ -248,7 +248,7 @@ function renderPanel(file: LineEditorFile, locale: WorkHubLocale, active: boolea
       <div class="wh-line-editor-hunks">${file.ranges.map((range) => renderHunk(file, range, locale)).join("")}</div>
     </div>
     <div class="wh-line-editor-actions">
-      <a class="wh-btn wh-btn-primary" href="${escapeHtml(file.option.action?.href)}" data-line-editor-apply="true" data-action-id="${escapeHtml(file.option.action?.id ?? "apply_ai_fusion")}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(payload)}">${escapeHtml(uiT(locale, "proposal.lineEditorApply"))}</a>
+      <a class="wh-btn wh-btn-primary" href="${escapeHtml(file.option.action?.href)}" data-line-editor-apply="true" data-action-id="${escapeHtml(file.option.action?.id ?? "apply_ai_fusion")}" data-action-href="${escapeHtml(file.option.action?.href)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(payload)}">${escapeHtml(uiT(locale, "proposal.lineEditorApply"))}</a>
     </div>
   </section>`;
 }

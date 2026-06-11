@@ -8,6 +8,7 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   GoldPathSurfaceVM,
+  ProposalConflict,
   ReplayTraceVM,
   SettingsPageVM
 } from "@workhub/contracts";
@@ -26,6 +27,7 @@ type RouteClientOverrides = {
   cost?: CostDashboardVM;
   replay?: ReplayTraceVM;
   settings?: SettingsPageVM;
+  conflicts?: ProposalConflict[];
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
@@ -149,12 +151,92 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         return surface.page_vms.proposal;
       }
     },
+    async listWorkItemConflicts(workItemId: string) {
+      localeCall(`conflicts:${workItemId}`);
+      const conflicts = (overrides.conflicts ?? []).filter((conflict) => conflict.work_item_id === workItemId);
+      return conflicts.length > 0 ? { conflicts } : { conflicts, empty_state: "no_conflicts" as const };
+    },
     async replayAgentRun(id: string, options?: { locale?: string }) {
       localeCall(`replayAgentRun:${id}`, options);
       return overrides.replay ?? surface.page_vms.replay;
     }
   } as unknown as WorkHubApiClient;
   return { client, calls };
+}
+
+function routeAdvancedProposalConflict(surface: GoldPathSurfaceVM): ProposalConflict {
+  const proposal = surface.page_vms.proposal;
+  return {
+    id: "r4-13-route-conflict",
+    work_item_id: proposal.work_item_id,
+    proposal_id: proposal.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000913",
+    change_id: proposal.manifest.changes[0]?.id ?? "change-1",
+    target_key: "drive_item:docs/r4-13-route.md",
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: "docs/r4-13-route.md",
+    headline: "docs/r4-13-route.md needs review",
+    summary_text: "Current and incoming edits overlap; the route must surface advanced choices.",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000914",
+      change_id: "10000000-0000-4000-8000-000000000915",
+      sha256: "a".repeat(64)
+    },
+    incoming: {
+      sha256_before: "b".repeat(64),
+      sha256_after: "c".repeat(64)
+    },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "keep_current",
+        label: "Keep current",
+        summary_text: "Do not overwrite the accepted version.",
+        action: {
+          id: "keep_current",
+          label: "Keep current",
+          method: "POST",
+          href: `/api/proposals/${proposal.proposal_id}/merge`,
+          request_json: { confirm: true, conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "ai_fusion",
+        label: "Use AI fusion draft",
+        summary_text: "Apply a reviewed line-level merge.",
+        recommended: true,
+        quality_gate: {
+          text_patch_preview: {
+            type: "unified_text_patch_preview",
+            base_available: true,
+            stats: {
+              changed: true,
+              added_lines: 1,
+              removed_lines: 1,
+              overlap_risk: "requires_review"
+            },
+            hunks: [{ header: "@@ -2 +2 @@", lines: ["-Current sentence", "+Merged sentence"] }]
+          },
+          text_diff3: {
+            type: "line_text_diff3",
+            auto_merge: false,
+            current_hunks: 1,
+            incoming_hunks: 1,
+            conflict_hunks: 1,
+            conflict_ranges: [{ start_line: 2, end_line: 2 }]
+          }
+        },
+        action: {
+          id: "apply_ai_fusion",
+          label: "Use AI fusion draft",
+          method: "POST",
+          href: "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
+          request_json: { confirm: true }
+        }
+      }
+    ]
+  };
 }
 
 test("R4 web route registry resolves product URL routes", () => {
@@ -177,6 +259,32 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/unknown"), undefined);
   assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff#top");
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
+});
+
+test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {
+  const surface = goldPathSurfaceVm();
+  const conflict = routeAdvancedProposalConflict(surface);
+  const { client, calls } = fakeRouteClient(surface, { conflicts: [conflict] });
+  const match = resolveWebRoute("/proposals/proposal-42");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls.slice(0, 3), [
+    "proposal:proposal-42:en-US",
+    `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
+    "goldPath:en-US"
+  ]);
+  assert.equal(result.html.includes('data-r4-route-component="proposal"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-conflict-count="1"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-advanced-review="true"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-conflicts="1"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-line-editor="true"'), true);
+  assert.equal(result.html.includes('data-proposal-conflicts="1"'), true);
+  assert.equal(result.html.includes('data-route-line-editor="true"'), true);
+  assert.equal(result.html.includes('data-line-editor-apply="true"'), true);
+  assert.equal(result.html.includes("Use AI fusion draft"), true);
 });
 
 test("R4 web loader uses typed Page VM endpoints before rendering ready routes", async () => {
@@ -207,17 +315,21 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
 test("R4 web loader uses detail Page VM endpoints before rendering ready routes", async () => {
   const surface = goldPathSurfaceVm();
 
-  for (const [path, endpointCall] of [
-    ["/workitems/work-42", "workItem:work-42:en-US"],
-    ["/proposals/proposal-42", "proposal:proposal-42:en-US"],
-    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US"]
+  for (const [path, endpointCalls] of [
+    ["/workitems/work-42", ["workItem:work-42:en-US", "goldPath:en-US"]],
+    ["/proposals/proposal-42", [
+      "proposal:proposal-42:en-US",
+      `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
+      "goldPath:en-US"
+    ]],
+    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US", "goldPath:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);
     assert.ok(match);
     const result = await loadWebRoute(client, match, "en-US");
     assert.equal(result.status, "ready");
-    assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
+    assert.deepEqual(calls.slice(0, endpointCalls.length), endpointCalls);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
     assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
@@ -229,21 +341,25 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
 test("R4.11 web loader marks ready routes as route components", async () => {
   const surface = goldPathSurfaceVm();
 
-  for (const [path, endpointCall, routeComponent] of [
-    ["/", "attention:en-US", "home"],
-    ["/approvals", "approvals:en-US", "approvals"],
-    ["/workitems/work-42", "workItem:work-42:en-US", "workitem"],
-    ["/proposals/proposal-42", "proposal:proposal-42:en-US", "proposal"],
-    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US", "replay"],
-    ["/dashboard/cost", "cost:en-US", "cost"],
-    ["/settings", "settings:en-US", "settings"]
+  for (const [path, endpointCalls, routeComponent] of [
+    ["/", ["attention:en-US", "goldPath:en-US"], "home"],
+    ["/approvals", ["approvals:en-US", "goldPath:en-US"], "approvals"],
+    ["/workitems/work-42", ["workItem:work-42:en-US", "goldPath:en-US"], "workitem"],
+    ["/proposals/proposal-42", [
+      "proposal:proposal-42:en-US",
+      `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
+      "goldPath:en-US"
+    ], "proposal"],
+    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US", "goldPath:en-US"], "replay"],
+    ["/dashboard/cost", ["cost:en-US", "goldPath:en-US"], "cost"],
+    ["/settings", ["settings:en-US", "goldPath:en-US"], "settings"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);
     assert.ok(match);
     const result = await loadWebRoute(client, match, "en-US");
     assert.equal(result.status, "ready");
-    assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
+    assert.deepEqual(calls.slice(0, endpointCalls.length), endpointCalls);
     assert.equal(result.html.includes(`data-r4-route-component="${routeComponent}"`), true);
     assert.equal(result.html.includes('data-r4-route-component-source="page-vm"'), true);
     assert.equal(result.html.includes('data-r4-route-component-locale="en-US"'), true);

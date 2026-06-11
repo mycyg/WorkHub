@@ -238,7 +238,7 @@ function renderStructuredFieldEditor(input: {
       </div>
       <div class="wh-field-editor-custom">
         <textarea data-structured-field-custom-input="${escapeHtml(field)}" aria-label="${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustomPlaceholder"))}"></textarea>
-        <button type="button" class="wh-btn" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="custom" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-href="${escapeHtml(href)}" data-request-json-template="${escapeHtml(JSON.stringify(customTemplate))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustom"))}</button>
+        <button type="button" class="wh-btn" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="custom" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-action-href="${escapeHtml(href)}" data-href="${escapeHtml(href)}" data-request-json-template="${escapeHtml(JSON.stringify(customTemplate))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustom"))}</button>
       </div>
     </div>`;
   }).join("");

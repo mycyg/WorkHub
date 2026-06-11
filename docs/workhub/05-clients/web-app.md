@@ -37,17 +37,18 @@ owner: workflow
 | R4 route componentization first slice | `packages/ui/src/gold-path/route-components.ts`、`packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.10 已把 Home / Approvals / Replay 接为显式 route components，Web 产品壳在 route component 模式下只渲染 active panel；本机 Chrome smoke 11 步通过 |
 | R4 route componentization second slice | `packages/ui/src/gold-path/route-components.ts`、`apps/api/src/pages/settings.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.11 已把 WorkItem / Proposal / Cost / Settings 接为显式 route components，并新增 Settings typed Page VM；本机 Chrome smoke 13 步通过，route-specific marker、VM/DOM match 与 no-overflow gates 均通过 |
 | R4 action/notice locale route UX | `apps/web/src/browser.ts`、`packages/ui/src/gold-path/i18n.ts`、`packages/ui/src/gold-path/product-shell.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.12 已把 approval/proposal action、reason gate、desktop gate、SSE refresh、budget warning 与 route-state action 反馈接入统一中英 notice contract；本机 Chrome smoke 22 步通过 |
+| R4 Proposal advanced route UX | `packages/ui/src/gold-path/route-components.ts`、`apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.13 已把 conflict workbench、line editor、structured field editor、subrecord editor 收敛到 Proposal active-only route component；本机 Chrome smoke 29 步通过，advanced payload、fail-closed 与 no-overflow gates 均通过 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，剩余重点转向 Proposal advanced UX、Option Intake、Knowledge fallback 与后续真实 React route tree。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，剩余重点转向 Option Intake、Knowledge fallback 与后续真实 React route tree。
 - 现有产品壳已脱离 P0.5 preview 外观，并支持 active-only panel；R4.12 已把 approval/proposal action、reason gate、desktop gate、retry/request access route-state、SSE refresh notice 纳入统一中英 action feedback contract。
-- `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings` 已有第一版 ready route component；`Option Intake`、`Knowledge fallback`、Proposal 高级冲突/字段/逐行编辑器的 route component 收敛仍需要继续深化。
+- `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings` 已有第一版 ready route component；Proposal 高级冲突/字段/逐行编辑器已在 R4.13 收敛。`Option Intake`、`Knowledge fallback` 的 route component 仍需要继续深化。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback。Proposal 高级 route UX 仍待 R4.13+。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence。下一步 R4.14 进入 Option Intake / Knowledge fallback route componentization。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -266,7 +267,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | 视觉与安全 | Settings 不泄露 API key/base URL，只显示 configured 布尔值；Cost model/name、Proposal mobile scrolled 与 Settings long model 均通过 no-overflow gate | 所有新增 notice/action UI 继续阻塞文本盒越框 |
 | QA gate | 本机 `pnpm qa:r4-web-live-route-interaction` 以 R4.11 env 输出 13 步 report/contact sheet，`r4_11_workitem_proposal_cost_settings_route_components=true`、`r4_11_vm_dom_value_match=true`、`active_only_product_panels=true`、`no_text_box_overflow=true` | R4.12 已补 approval/proposal/budget/SSE action smoke |
 
-边界：R4.11 仍不是完整 React SPA；它完成的是 ready route componentization 的第二刀。Proposal 的高级 conflict workbench、field editor、line editor、subrecord editor 仍需 R4.13+ 收敛到 route component；用户输入、证据摘录、manifest、LLM 正文继续保持 VM 原文。
+边界：R4.11 仍不是完整 React SPA；它完成的是 ready route componentization 的第二刀。Proposal 的高级 conflict workbench、field editor、line editor、subrecord editor 已在 R4.13 后续模块收敛到 route component；用户输入、证据摘录、manifest、LLM 正文继续保持 VM 原文。
 
 ### 0.17 R4.12 Web action / notice locale route UX（2026-06-11 已落）
 
@@ -280,6 +281,19 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | Visual QA | `pnpm qa:r4-web-live-route-interaction` 以 R4.12 env 输出 22 步 report/contact sheet，approval/proposal/desktop/SSE/budget/mobile gates 全 true | R4.13 增加 advanced Proposal mobile no-overflow |
 
 边界：R4.12 不是完整 React SPA，也不宣称所有业务 action 都已接真实 API。未接线动作仍应 fail-closed，不假成功；SSE 只触发 REST Page VM refresh 与提示，不作为唯一数据源。
+
+### 0.18 R4.13 Proposal advanced route UX convergence（2026-06-11 已落）
+
+本轮把 Proposal 高级冲突能力从 shared helper 收敛进 Web active-only route component。详细计划与验收状态见 [`../06-roadmap/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](../06-roadmap/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Advanced route sections | Proposal route component 读取 route surface 的 `proposal_conflicts`，渲染 conflict workbench、line editor、structured field editor、subrecord editor，并暴露 `data-r4-proposal-conflicts/line-editor/field-editor/subrecord-editor` | R4.14 把同样 active-only/marker discipline 扩到 Intake / Knowledge fallback |
+| Data truth | `/proposals/:id` 先读 Proposal Page VM，再读 `/api/workitems/:id/conflicts` 过滤当前 proposal；`ProposalDetailVM` 不被冲突缓存污染 | 后续逐步减少 `gold-path` template 对 detail route 内容的依赖 |
+| Action dispatcher | `apps/web/src/browser.ts` 支持 button-style `data-action-href` / `data-request-json-template`；line/task-plan/subrecord/custom field apply 走 typed REST mutation；空 custom field 显示 `field_value_required` notice 且不发 mutation | 后续 Intake submit / Knowledge fallback action 复用同一 fail-closed notice contract |
+| Visual QA | `pnpm qa:r4-web-live-route-interaction` 以 R4.13 env 输出 29 步 report/contact sheet，`r4_13_proposal_advanced_route_sections`、`r4_13_advanced_apply_payloads`、`r4_13_custom_field_fail_closed`、`r4_13_structured_editor_visual_no_overflow` 全 true | R4.14 增加 intake/knowledge mobile no-overflow |
+
+边界：R4.13 不是完整 React SPA，也不改变后端 merge 语义。它把已有 Proposal advanced helper 和 candidate apply payload 产品化到 Web route，并通过截图、DOM marker、请求计数证明没有变成 IDE、WorkItem 工作台或第二套审批中心。
 
 ---
 

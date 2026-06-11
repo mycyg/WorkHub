@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM, SettingsPageVM, WorkHubLocale } from "@workhub/contracts";
+import type { GoldPathSurfaceVM, ProposalConflict, SettingsPageVM, WorkHubLocale } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -22,6 +22,7 @@ type ApiRequestRecord = {
   search: string;
   locale: string | null;
   referer: string | null;
+  body: string | null;
 };
 
 type BrowserAudit = {
@@ -46,6 +47,15 @@ type BrowserAudit = {
     proposalChangeCount: string | null;
     proposalActionCount: string | null;
     proposalEvidenceCount: string | null;
+    proposalConflictCount: string | null;
+    proposalLineEditorFileCount: string | null;
+    proposalLineEditorHunkCount: string | null;
+    proposalStructuredFieldEditorCount: string | null;
+    proposalSubrecordItemCount: string | null;
+    proposalAdvancedConflicts: string | null;
+    proposalAdvancedLineEditor: string | null;
+    proposalAdvancedFieldEditor: string | null;
+    proposalAdvancedSubrecordEditor: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -208,9 +218,234 @@ function settingsPage(locale: WorkHubLocale): SettingsPageVM {
   };
 }
 
+function r4AdvancedProposalConflicts(surface: GoldPathSurfaceVM): ProposalConflict[] {
+  const proposal = surface.page_vms.proposal;
+  const mergeHref = `/api/proposals/${proposal.proposal_id}/merge`;
+  const textApplyHref = "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply";
+  const structuredApplyHref = "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply";
+  const keepCurrentAction = (targetKey: string) => ({
+    id: "keep_current",
+    label: "保留正式版",
+    method: "POST" as const,
+    href: mergeHref,
+    request_json: { confirm: true, conflict_resolution: { accept_incoming_target_keys: [] } }
+  });
+  const acceptIncomingAction = (targetKey: string) => ({
+    id: "accept_incoming",
+    label: "采纳这次版本",
+    method: "POST" as const,
+    href: mergeHref,
+    request_json: { confirm: true, conflict_resolution: { accept_incoming_target_keys: [targetKey] } }
+  });
+
+  const textTargetKey = "drive_item:docs/regional-launch-review.md";
+  const structuredTargetKey = `work_item:${proposal.work_item_id}:task_items`;
+  return [
+    {
+      id: "r4-13-text-conflict",
+      work_item_id: proposal.work_item_id,
+      proposal_id: proposal.proposal_id,
+      merge_proposal_id: "10000000-0000-4000-8000-000000000913",
+      change_id: proposal.manifest.changes[0]?.id ?? "change-1",
+      target_key: textTargetKey,
+      target_kind: "text_doc",
+      change_type: "updated",
+      target_path: "docs/regional-launch-review.md",
+      headline: "发布复盘正文需要逐行确认",
+      summary_text: "正式版和这次版本都改到了同一段，默认先展示一件最重要的冲突。",
+      existing: {
+        proposal_id: "10000000-0000-4000-8000-000000000920",
+        change_id: "10000000-0000-4000-8000-000000000921",
+        sha256: "a".repeat(64)
+      },
+      incoming: {
+        sha256_before: "b".repeat(64),
+        sha256_after: "c".repeat(64)
+      },
+      recommended_option_id: "ai_fusion",
+      options: [
+        {
+          id: "keep_current",
+          label: "保留正式版",
+          summary_text: "不覆盖当前正式内容。",
+          action: keepCurrentAction(textTargetKey)
+        },
+        {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          summary_text: "使用这次版本覆盖正式内容。",
+          action: acceptIncomingAction(textTargetKey)
+        },
+        {
+          id: "ai_fusion",
+          label: "采用 AI 融合稿",
+          summary_text: "AI 已生成融合稿，仍需要确认重叠行。",
+          recommended: true,
+          quality_gate: {
+            text_patch_preview: {
+              type: "unified_text_patch_preview",
+              base_available: true,
+              stats: {
+                changed: true,
+                added_lines: 1,
+                removed_lines: 1,
+                overlap_risk: "requires_review"
+              },
+              hunks: [{ header: "@@ -2 +2 @@", lines: ["-正式版结论偏保守。", "+融合稿保留结论并补充新证据。"] }]
+            },
+            text_diff3: {
+              type: "line_text_diff3",
+              auto_merge: false,
+              current_hunks: 1,
+              incoming_hunks: 1,
+              conflict_hunks: 1,
+              conflict_ranges: [{ start_line: 2, end_line: 2 }]
+            }
+          },
+          action: {
+            id: "apply_ai_fusion",
+            label: "采用 AI 融合稿",
+            method: "POST",
+            href: textApplyHref,
+            request_json: { confirm: true }
+          }
+        }
+      ]
+    },
+    {
+      id: "r4-13-structured-conflict",
+      work_item_id: proposal.work_item_id,
+      proposal_id: proposal.proposal_id,
+      merge_proposal_id: "10000000-0000-4000-8000-000000000914",
+      change_id: proposal.manifest.changes[0]?.id ?? "change-2",
+      target_key: structuredTargetKey,
+      target_kind: "structured_record",
+      change_type: "updated",
+      target_path: "task_items",
+      headline: "任务字段需要确认",
+      summary_text: "AI 更新了标题和任务项，可以展开高级字段与子记录编辑。",
+      existing: {
+        proposal_id: "10000000-0000-4000-8000-000000000922",
+        change_id: "10000000-0000-4000-8000-000000000923",
+        ref: "main"
+      },
+      incoming: { ref: "proposal" },
+      recommended_option_id: "ai_fusion",
+      options: [
+        {
+          id: "keep_current",
+          label: "保留正式版",
+          summary_text: "不覆盖当前任务字段。",
+          action: keepCurrentAction(structuredTargetKey)
+        },
+        {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          summary_text: "使用这次任务字段覆盖正式版。",
+          action: acceptIncomingAction(structuredTargetKey)
+        },
+        {
+          id: "ai_fusion",
+          label: "采用 AI 融合稿",
+          summary_text: "AI 已生成字段级补丁。",
+          recommended: true,
+          quality_gate: {
+            structured_record_patch: {
+              type: "structured_record_field_patch",
+              changed_fields: ["title", "task_items"],
+              merged_value_fields: ["title", "task_items"],
+              missing_fields: [],
+              unknown_fields: [],
+              field_count: 2,
+              has_structured_result: true,
+              task_plan_scope: {
+                selected_plan_id: "10000000-0000-4000-8000-000000000928",
+                options: [
+                  {
+                    id: "10000000-0000-4000-8000-000000000928",
+                    label: "方案拆解计划",
+                    stage: "dispatch",
+                    status: "draft",
+                    item_count: 1,
+                    recommended: true
+                  },
+                  {
+                    id: "10000000-0000-4000-8000-000000000929",
+                    label: "执行计划",
+                    stage: "worker",
+                    status: "draft",
+                    item_count: 2
+                  }
+                ]
+              },
+              structured_field_patch_dry_run: {
+                type: "structured_field_patch_dry_run",
+                status: "ready",
+                executable: true,
+                patch: {
+                  type: "structured_field_patch",
+                  target_entity_type: "work_item",
+                  target_entity_id: proposal.work_item_id,
+                  source: "ai_fusion",
+                  operations: [
+                    {
+                      op: "set",
+                      target_entity_type: "work_item",
+                      target_entity_id: proposal.work_item_id,
+                      field: "title",
+                      value_type: "string",
+                      before_value: "旧复盘任务",
+                      current_value: "旧复盘任务",
+                      value: "区域发布复盘包",
+                      source: "ai_fusion"
+                    },
+                    {
+                      op: "set",
+                      target_entity_type: "work_item",
+                      target_entity_id: proposal.work_item_id,
+                      field: "task_items",
+                      value_type: "json_array",
+                      before_value: [
+                        { id: "10000000-0000-4000-8000-000000000924", title: "原始任务项", item_type: "task", sort_order: 0 }
+                      ],
+                      current_value: [
+                        { id: "10000000-0000-4000-8000-000000000924", title: "原始任务项", item_type: "task", sort_order: 0 }
+                      ],
+                      value: [
+                        { id: "10000000-0000-4000-8000-000000000924", title: "原始任务项", item_type: "task", sort_order: 0 },
+                        { id: "10000000-0000-4000-8000-000000000925", title: "新增风险项", item_type: "risk", sort_order: 1 }
+                      ],
+                      source: "ai_fusion"
+                    }
+                  ]
+                },
+                issues: [],
+                audit_payload: {
+                  target_entity_type: "work_item",
+                  target_entity_id: proposal.work_item_id,
+                  field_count: 2,
+                  operation_fields: ["title", "task_items"],
+                  source: "ai_fusion"
+                }
+              }
+            }
+          },
+          action: {
+            id: "apply_ai_fusion",
+            label: "采用 AI 融合稿",
+            method: "POST",
+            href: structuredApplyHref,
+            request_json: { confirm: true }
+          }
+        }
+      ]
+    }
+  ];
+}
+
 function productSurface(): GoldPathSurfaceVM {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
-  return deepReplace({
+  const surface = {
     fixture_id: fixture.id,
     routes: {
       home: "/",
@@ -234,7 +469,15 @@ function productSurface(): GoldPathSurfaceVM {
     },
     events: fixture.events,
     cuu_states: []
+  } satisfies GoldPathSurfaceVM;
+  return deepReplace({
+    ...surface,
+    proposal_conflicts: r4AdvancedProposalConflicts(surface)
   });
+}
+
+function proposalConflictsFromSurface(surface: GoldPathSurfaceVM) {
+  return ((surface as GoldPathSurfaceVM & { proposal_conflicts?: ProposalConflict[] }).proposal_conflicts ?? []);
 }
 
 function identity(locale: WorkHubLocale) {
@@ -297,13 +540,15 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   };
   const server = createHttpServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    requestLog.push({
+    const requestRecord: ApiRequestRecord = {
       method: request.method ?? "GET",
       pathname: url.pathname,
       search: url.search,
       locale: url.searchParams.get("locale"),
-      referer: typeof request.headers.referer === "string" ? request.headers.referer : null
-    });
+      referer: typeof request.headers.referer === "string" ? request.headers.referer : null,
+      body: null
+    };
+    requestLog.push(requestRecord);
 
     if (request.method === "GET" && (url.pathname === "/api/push/stream" || url.pathname.startsWith("/api/push/stream/"))) {
       const streamKey = sseStreamKey(url.pathname);
@@ -338,7 +583,8 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "PATCH" && url.pathname === "/api/auth/preferences") {
-      const body = JSON.parse(await requestBody(request) || "{}") as { locale?: WorkHubLocale };
+      requestRecord.body = await requestBody(request);
+      const body = JSON.parse(requestRecord.body || "{}") as { locale?: WorkHubLocale };
       currentLocale = body.locale === "en-US" ? "en-US" : "zh-CN";
       sendJson(response, 200, identity(currentLocale));
       return;
@@ -378,7 +624,8 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     const approvalRespondMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(url.pathname);
     if (request.method === "POST" && approvalRespondMatch?.[1]) {
-      const body = JSON.parse(await requestBody(request) || "{}") as { decision?: string };
+      requestRecord.body = await requestBody(request);
+      const body = JSON.parse(requestRecord.body || "{}") as { decision?: string };
       sendJson(response, 200, {
         approval: { id: approvalRespondMatch[1], status: body.decision === "deny" ? "denied" : "allowed" },
         attention: {
@@ -402,6 +649,15 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, surface.page_vms.workitem);
       return;
     }
+    const conflictsMatch = /^\/api\/workitems\/([^/]+)\/conflicts$/u.exec(url.pathname);
+    if (request.method === "GET" && conflictsMatch?.[1]) {
+      const conflicts = proposalConflictsFromSurface(surface).filter((conflict) => conflict.work_item_id === conflictsMatch[1]);
+      sendJson(response, 200, {
+        conflicts,
+        ...(conflicts.length === 0 ? { empty_state: "no_conflicts" } : {})
+      });
+      return;
+    }
     const proposalMatch = /^\/api\/pages\/proposals\/([^/]+)$/u.exec(url.pathname);
     if (request.method === "GET" && proposalMatch?.[1]) {
       if (proposalMatch[1] === "r4-live-missing") {
@@ -413,7 +669,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(url.pathname);
     if (request.method === "POST" && proposalReviewMatch?.[1]) {
-      await requestBody(request);
+      requestRecord.body = await requestBody(request);
       sendJson(response, 200, {
         attention: {
           summary_text: currentLocale === "en-US"
@@ -425,12 +681,25 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     const proposalMergeMatch = /^\/api\/proposals\/([^/]+)\/merge$/u.exec(url.pathname);
     if (request.method === "POST" && proposalMergeMatch?.[1]) {
-      await requestBody(request);
+      requestRecord.body = await requestBody(request);
       sendJson(response, 200, {
         attention: {
           summary_text: currentLocale === "en-US"
             ? "Accepted into the official version."
             : "已合入正式版本。"
+        }
+      });
+      return;
+    }
+    const mergeApplyMatch = /^\/api\/merge-proposals\/([^/]+)\/apply$/u.exec(url.pathname);
+    if (request.method === "POST" && mergeApplyMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      sendJson(response, 200, {
+        merge_proposal_id: mergeApplyMatch[1],
+        attention: {
+          summary_text: currentLocale === "en-US"
+            ? "Advanced AI fusion choices applied."
+            : "已应用高级 AI 融合选择。"
         }
       });
       return;
@@ -698,6 +967,29 @@ async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: str
   );
 }
 
+async function openProposalAdvancedDetails(cdp: CdpClient) {
+  await cdp.evaluate(`(() => {
+    document.querySelectorAll("details[data-proposal-conflict-workbench],details[data-proposal-structured-field-editor],details[data-proposal-subrecord-item-diff]").forEach((details) => {
+      details.open = true;
+    });
+    return true;
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 180));
+}
+
+async function fillStructuredFieldCustomValue(cdp: CdpClient, field: string, value: string) {
+  const filled = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector(${JSON.stringify(`[data-structured-field-custom-input="${field}"]`)});
+    if (!input) return false;
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  if (!filled) {
+    throw new Error(`Could not fill structured custom field: ${field}`);
+  }
+}
+
 async function emitQaSseEvent(cdp: CdpClient, event: string, stream = "proposal") {
   const ok = await cdp.evaluate<boolean>(`fetch(${JSON.stringify(`/api/__qa/emit?event=${encodeURIComponent(event)}&stream=${encodeURIComponent(stream)}`)}).then((response) => response.ok)`);
   if (!ok) {
@@ -795,6 +1087,7 @@ function auditExpression() {
     const statusRoot = document.querySelector("[data-r4-web-route-status]");
     const routeRoot = document.querySelector("[data-r4-product-shell]");
     const routeComponent = document.querySelector("[data-r4-route-component]");
+    const proposalAdvanced = document.querySelector("[data-r4-proposal-advanced-review]");
     const routeComponentPanel = document.querySelector("[data-r4-route-component-panel]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
@@ -806,6 +1099,15 @@ function auditExpression() {
       proposalChangeCount: routeComponent?.getAttribute("data-r4-proposal-change-count") || null,
       proposalActionCount: routeComponent?.getAttribute("data-r4-proposal-action-count") || null,
       proposalEvidenceCount: routeComponent?.getAttribute("data-r4-proposal-evidence-count") || null,
+      proposalConflictCount: routeComponent?.getAttribute("data-r4-proposal-conflict-count") || null,
+      proposalLineEditorFileCount: document.querySelector("[data-route-line-editor]")?.getAttribute("data-route-line-editor-file-count") || null,
+      proposalLineEditorHunkCount: document.querySelector("[data-route-line-editor]")?.getAttribute("data-route-line-editor-hunk-count") || null,
+      proposalStructuredFieldEditorCount: document.querySelector("[data-proposal-structured-field-editor]")?.getAttribute("data-proposal-structured-field-editor-count") || null,
+      proposalSubrecordItemCount: document.querySelector("[data-subrecord-item-count]")?.getAttribute("data-subrecord-item-count") || null,
+      proposalAdvancedConflicts: proposalAdvanced?.getAttribute("data-r4-proposal-conflicts") || null,
+      proposalAdvancedLineEditor: proposalAdvanced?.getAttribute("data-r4-proposal-line-editor") || null,
+      proposalAdvancedFieldEditor: proposalAdvanced?.getAttribute("data-r4-proposal-field-editor") || null,
+      proposalAdvancedSubrecordEditor: proposalAdvanced?.getAttribute("data-r4-proposal-subrecord-editor") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -1040,6 +1342,32 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
     auditExpression(),
     (audit) => Number(audit.live.connectedCount ?? "0") > 0 && Number(audit.live.streamCount ?? "0") >= 3
   );
+  await openProposalAdvancedDetails(cdp);
+  steps.push(await captureStep(cdp, { id: "06a-proposal-advanced-review-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, "[data-line-editor-apply]", "action_success", "apply_ai_fusion");
+  steps.push(await captureStep(cdp, { id: "06b-proposal-line-editor-apply-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, '[data-task-plan-choice][data-task-plan-id="10000000-0000-4000-8000-000000000929"]', "action_success", "apply_ai_fusion");
+  steps.push(await captureStep(cdp, { id: "06c-proposal-task-plan-apply-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, '[data-subrecord-item-choice][data-subrecord-decision="accept_incoming"]', "action_success", "apply_ai_fusion");
+  steps.push(await captureStep(cdp, { id: "06d-proposal-subrecord-apply-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, '[data-field-editor-action="custom"][data-structured-field="title"]', "field_value_required", "apply_ai_fusion");
+  steps.push(await captureStep(cdp, { id: "06e-proposal-custom-field-empty-fail-closed-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await fillStructuredFieldCustomValue(cdp, "title", "R4.13 custom reviewed title");
+  await clickAndWaitForNotice(cdp, '[data-field-editor-action="custom"][data-structured-field="title"]', "action_success", "apply_ai_fusion");
+  steps.push(await captureStep(cdp, { id: "06f-proposal-custom-field-apply-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  const tallDesktop = { width: 1365, height: 3000 };
+  await setViewport(cdp, tallDesktop);
+  await cdp.evaluate("window.scrollTo(0, 0); true");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  steps.push(await captureStep(cdp, { id: "06g-proposal-structured-field-editor-visual-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: tallDesktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+  await setViewport(cdp, desktop);
+
   await clickAndWaitForNotice(cdp, '[data-action-id="request_changes"]', "reason_required", "request_changes");
   steps.push(await captureStep(cdp, { id: "07-proposal-reason-gate-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
@@ -1110,12 +1438,20 @@ function requestProof(requests: ApiRequestRecord[]) {
     requests.filter((request) => request.method === method && request.pathname === pathname).length;
   const countMatch = (pattern: RegExp, method = "GET") =>
     requests.filter((request) => request.method === method && pattern.test(request.pathname)).length;
+  const bodyMatch = (pattern: RegExp, method = "POST", bodyFragment: string) =>
+    requests.some((request) =>
+      request.method === method &&
+      pattern.test(request.pathname) &&
+      typeof request.body === "string" &&
+      request.body.includes(bodyFragment)
+    );
   return {
     attention: requests.some((request) => request.pathname === "/api/pages/attention" && request.locale === "zh-CN"),
     approvals: requests.some((request) => request.pathname === "/api/pages/approvals"),
     workitem: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem"),
     workitemEn: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem" && request.locale === "en-US"),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
+    conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -1128,9 +1464,11 @@ function requestProof(requests: ApiRequestRecord[]) {
       workitem: count("/api/pages/workitems/r4-live-workitem"),
       workitemForbidden: count("/api/pages/workitems/r4-live-forbidden"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
+      proposalConflicts: countMatch(/^\/api\/workitems\/[^/]+\/conflicts$/u),
       approvalRespond: countMatch(/^\/api\/approvals\/[^/]+\/respond$/u, "POST"),
       proposalReview: countMatch(/^\/api\/proposals\/[^/]+\/review$/u, "POST"),
       proposalMerge: countMatch(/^\/api\/proposals\/[^/]+\/merge$/u, "POST"),
+      mergeApply: countMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -1138,6 +1476,13 @@ function requestProof(requests: ApiRequestRecord[]) {
       sseProposal: count("/api/push/stream/proposal/r4-live-proposal"),
       goldPath: count("/api/pages/gold-path"),
       preferencePatch: count("/api/auth/preferences", "PATCH")
+    },
+    advancedPayloads: {
+      textHunkOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "text_hunk_overrides"),
+      taskPlanScope: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "task_plan_scope"),
+      structuredItemOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_item_overrides"),
+      structuredFieldOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_field_overrides"),
+      customFieldValue: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "R4.13 custom reviewed title")
     }
   };
 }
@@ -1171,6 +1516,7 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
         surface.page_vms.proposal.review_actions.merge
       ].filter(Boolean).length) &&
       proposal.proposalEvidenceCount === String(surface.page_vms.proposal.evidence_refs.length) &&
+      proposal.proposalConflictCount === String(proposalConflictsFromSurface(surface).length) &&
       cost &&
       cost.costTotalTokens === String(surface.page_vms.cost.token_in + surface.page_vms.cost.token_out) &&
       cost.costTotalCny === surface.page_vms.cost.total_cost_cny &&
@@ -1231,7 +1577,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.cost && proof.settings && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.cost && proof.settings && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
       r4_10_home_approvals_replay_route_components:
         steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
         steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
@@ -1273,6 +1619,55 @@ async function main() {
         steps.some((step) => step.id === "18-unknown-route-error" && step.audit.routeState.kind === "error" && step.audit.routeState.actionText === "Retry"),
       r4_12_mobile_notice_no_overflow:
         steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.notice.kind === "sse_refresh" && !step.audit.horizontalOverflow && step.audit.textOverflowCount === 0),
+      r4_13_proposal_advanced_route_dom:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalConflictCount === "2" &&
+          step.audit.routeData.proposalLineEditorFileCount === "1" &&
+          step.audit.routeData.proposalLineEditorHunkCount === "1" &&
+          step.audit.routeData.proposalStructuredFieldEditorCount === "2" &&
+          step.audit.routeData.proposalSubrecordItemCount === "1"
+        ),
+      r4_13_proposal_advanced_route_sections:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalAdvancedConflicts === "2" &&
+          step.audit.routeData.proposalAdvancedLineEditor === "true" &&
+          step.audit.routeData.proposalAdvancedFieldEditor === "true" &&
+          step.audit.routeData.proposalAdvancedSubrecordEditor === "true"
+        ),
+      r4_13_advanced_apply_payloads:
+        steps.some((step) => step.id === "06b-proposal-line-editor-apply-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "apply_ai_fusion") &&
+        steps.some((step) => step.id === "06c-proposal-task-plan-apply-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "apply_ai_fusion") &&
+        steps.some((step) => step.id === "06d-proposal-subrecord-apply-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "apply_ai_fusion") &&
+        steps.some((step) => step.id === "06f-proposal-custom-field-apply-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "apply_ai_fusion") &&
+        proof.counts.mergeApply === 4 &&
+        proof.advancedPayloads.textHunkOverrides &&
+        proof.advancedPayloads.taskPlanScope &&
+        proof.advancedPayloads.structuredItemOverrides &&
+        proof.advancedPayloads.structuredFieldOverrides &&
+        proof.advancedPayloads.customFieldValue,
+      r4_13_custom_field_fail_closed:
+        steps.some((step) =>
+          step.id === "06e-proposal-custom-field-empty-fail-closed-en-desktop" &&
+          step.audit.notice.kind === "field_value_required" &&
+          step.audit.notice.tone === "warning" &&
+          step.audit.notice.source === "client" &&
+          step.audit.notice.actionId === "apply_ai_fusion"
+        ) &&
+        proof.counts.mergeApply === 4,
+      r4_13_conflict_api_source_truth:
+        proof.counts.proposalConflicts === 2 &&
+        steps.some((step) => step.id === "06a-proposal-advanced-review-en-desktop" && step.audit.routeData.proposalConflictCount === "2") &&
+        steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.routeData.proposalConflictCount === "2" && !step.audit.horizontalOverflow),
+      r4_13_structured_editor_visual_no_overflow:
+        steps.some((step) =>
+          step.id === "06g-proposal-structured-field-editor-visual-en-desktop" &&
+          step.audit.routeData.proposalStructuredFieldEditorCount === "2" &&
+          step.audit.routeData.proposalSubrecordItemCount === "1" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
       active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
@@ -1281,9 +1676,11 @@ async function main() {
         proof.counts.workitem === 3 &&
         proof.counts.workitemForbidden === 1 &&
         proof.counts.proposal === 2 &&
+        proof.counts.proposalConflicts === 2 &&
         proof.counts.approvalRespond === 2 &&
         proof.counts.proposalReview === 1 &&
         proof.counts.proposalMerge === 1 &&
+        proof.counts.mergeApply === 4 &&
         proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
@@ -1335,6 +1732,12 @@ async function main() {
         `- R4.12 budget warning notice: ${String(gates.r4_12_budget_warning_notice)}`,
         `- R4.12 desktop gate: ${String(gates.r4_12_desktop_gate_fail_closed)}`,
         `- R4.12 route-state actions: ${String(gates.r4_12_retry_access_route_states)}`,
+        `- R4.13 proposal advanced route DOM: ${String(gates.r4_13_proposal_advanced_route_dom)}`,
+        `- R4.13 proposal advanced route sections: ${String(gates.r4_13_proposal_advanced_route_sections)}`,
+        `- R4.13 advanced apply payloads: ${String(gates.r4_13_advanced_apply_payloads)}`,
+        `- R4.13 custom field fail-closed: ${String(gates.r4_13_custom_field_fail_closed)}`,
+        `- R4.13 conflict API source truth: ${String(gates.r4_13_conflict_api_source_truth)}`,
+        `- R4.13 structured editor visual: ${String(gates.r4_13_structured_editor_visual_no_overflow)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""

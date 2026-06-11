@@ -35,7 +35,8 @@ type RouteNoticeKind =
   | "desktop_required"
   | "merge_conflict"
   | "sse_refresh"
-  | "budget_warning";
+  | "budget_warning"
+  | "field_value_required";
 type RouteNoticeTone = "info" | "success" | "warning" | "danger";
 type RouteNoticeSource = "client" | "rest" | "sse";
 type RouteNoticeVM = {
@@ -274,6 +275,18 @@ function reasonRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNo
   };
 }
 
+function fieldValueRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "field_value_required",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.fieldValueRequiredTitle"),
+    body: goldPathT(locale, "runtime.notice.fieldValueRequiredBody"),
+    actionId
+  };
+}
+
 function selectionNotice(locale: WorkHubLocale, label: string): RouteNoticeVM {
   return {
     kind: "selection",
@@ -365,24 +378,101 @@ function mergeProposalCandidateApplyIdFromHref(href: string) {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
-function anchorJsonPayload<T>(anchor: HTMLAnchorElement): T | undefined {
-  const raw = anchor.dataset.requestJson;
+function actionHrefFromElement(element: HTMLElement) {
+  if (element instanceof HTMLAnchorElement) {
+    return element.getAttribute("href") ?? "";
+  }
+  return element.dataset.actionHref ?? element.dataset.href ?? "";
+}
+
+function replaceCustomFieldPlaceholder(value: unknown, customValue: string): unknown {
+  if (value === "__WORKHUB_CUSTOM_FIELD_VALUE__") {
+    return customValue;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceCustomFieldPlaceholder(item, customValue));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, replaceCustomFieldPlaceholder(item, customValue)])
+    );
+  }
+  return value;
+}
+
+function hasCustomFieldPlaceholder(value: unknown): boolean {
+  if (value === "__WORKHUB_CUSTOM_FIELD_VALUE__") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasCustomFieldPlaceholder);
+  }
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      Object.values(value).some(hasCustomFieldPlaceholder)
+  );
+}
+
+function customFieldValueForElement(element: HTMLElement) {
+  const field = element.dataset.structuredField;
+  if (!field) {
+    return "";
+  }
+  const row = element.closest<HTMLElement>("[data-proposal-structured-field-editor-row]");
+  const input = row?.querySelector<HTMLTextAreaElement>(`[data-structured-field-custom-input="${CSS.escape(field)}"]`);
+  return input?.value.trim() ?? "";
+}
+
+type ActionPayloadResult<T> =
+  | { ok: true; payload?: T }
+  | { ok: false; reason: "field_value_required" | "invalid_json" };
+
+function actionElementJsonPayload<T>(element: HTMLElement): ActionPayloadResult<T> {
+  const raw = element.dataset.requestJson ?? element.dataset.requestJsonTemplate;
   if (!raw) {
-    return undefined;
+    return { ok: true };
   }
   try {
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw) as unknown;
+    if (hasCustomFieldPlaceholder(parsed)) {
+      const customValue = customFieldValueForElement(element);
+      if (!customValue) {
+        return { ok: false, reason: "field_value_required" };
+      }
+      const materialized = replaceCustomFieldPlaceholder(parsed, customValue);
+      element.dataset.requestJson = JSON.stringify(materialized);
+      return { ok: true, payload: materialized as T };
+    }
+    return { ok: true, payload: parsed as T };
   } catch {
-    return undefined;
+    return { ok: false, reason: "invalid_json" };
   }
 }
 
-function anchorMergePayload(anchor: HTMLAnchorElement): MergeProposalRequest | undefined {
-  return anchorJsonPayload<MergeProposalRequest>(anchor);
+function actionElementMergePayload(element: HTMLElement): ActionPayloadResult<MergeProposalRequest> {
+  return actionElementJsonPayload<MergeProposalRequest>(element);
 }
 
-function anchorApplyPayload(anchor: HTMLAnchorElement): ApplyMergeProposalCandidateRequest | undefined {
-  return anchorJsonPayload<ApplyMergeProposalCandidateRequest>(anchor);
+function actionElementApplyPayload(element: HTMLElement): ActionPayloadResult<ApplyMergeProposalCandidateRequest> {
+  return actionElementJsonPayload<ApplyMergeProposalCandidateRequest>(element);
+}
+
+function showPayloadFailureNotice(
+  shellRoot: HTMLElement,
+  locale: WorkHubLocale,
+  payload: ActionPayloadResult<unknown>,
+  actionId?: string
+) {
+  if (payload.ok) {
+    return false;
+  }
+  if (payload.reason === "field_value_required") {
+    showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
+  } else {
+    showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(goldPathT(locale, "runtime.actionFail")), actionId));
+  }
+  return true;
 }
 
 function conflictsFromMergeError(error: unknown): ProposalConflict[] {
@@ -633,20 +723,25 @@ function bindGoldPathNavigation(
       return;
     }
 
-    const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-    if (!anchor) {
+    const actionTarget = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("a[href],[data-action-href],[data-href]")
+      : null;
+    if (!actionTarget) {
       return;
     }
-    const href = anchor.getAttribute("href") ?? "";
-    const actionId = anchor.dataset.actionId;
-    if (anchor.dataset.requiresDesktop === "true") {
+    const href = actionHrefFromElement(actionTarget);
+    if (!href) {
+      return;
+    }
+    const actionId = actionTarget.dataset.actionId;
+    if (actionTarget.dataset.requiresDesktop === "true") {
       event.preventDefault();
       showRouteNotice(shellRoot, desktopRequiredNotice(locale, actionId));
       return;
     }
     const action = classifyGoldPathHref(shell.routeMap, href, {
-      requiresReason: anchor.dataset.requiresReason === "true",
-      method: anchor.dataset.method
+      requiresReason: actionTarget.dataset.requiresReason === "true",
+      method: actionTarget.dataset.method
     });
     if (action.kind === "navigate") {
       event.preventDefault();
@@ -661,8 +756,13 @@ function bindGoldPathNavigation(
       event.preventDefault();
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
       if (mergeProposalCandidateApplyId) {
+        const payload = actionElementApplyPayload(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
         try {
-          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, anchorApplyPayload(anchor));
+          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload);
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
@@ -705,8 +805,13 @@ function bindGoldPathNavigation(
         return;
       }
       if (proposalAction?.action === "merge") {
+        const payload = actionElementMergePayload(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
         try {
-          const merge = await client.mergeProposal(proposalAction.proposalId, anchorMergePayload(anchor));
+          const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload);
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {

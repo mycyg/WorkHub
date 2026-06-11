@@ -4,6 +4,7 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   GoldPathSurfaceVM,
+  ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
   SettingsPageVM,
@@ -59,6 +60,10 @@ export type WebRouteStateResult = {
 };
 
 export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
+
+type GoldPathSurfaceWithProposalConflicts = GoldPathSurfaceVM & {
+  proposal_conflicts?: ProposalConflict[];
+};
 
 const routeMatchers = [
   {
@@ -274,9 +279,15 @@ function withWorkItem(surface: GoldPathSurfaceVM, match: WebRouteMatch, workitem
   };
 }
 
-function withProposal(surface: GoldPathSurfaceVM, match: WebRouteMatch, proposal: ProposalDetailVM) {
+function withProposal(
+  surface: GoldPathSurfaceVM,
+  match: WebRouteMatch,
+  proposal: ProposalDetailVM,
+  conflicts: ProposalConflict[] = []
+): GoldPathSurfaceWithProposalConflicts {
   return {
     ...withCurrentRoute(surface, match),
+    proposal_conflicts: conflicts,
     page_vms: {
       ...surface.page_vms,
       proposal
@@ -351,7 +362,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   }
   if (match.key === "proposal") {
     const proposal = await client.pages.proposal(match.params["id"] ?? "", withLocale(locale));
-    return withProposal(await loadGoldPathTemplate(client, locale), match, proposal);
+    const result = await client.listWorkItemConflicts(proposal.work_item_id);
+    const conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
+    return withProposal(await loadGoldPathTemplate(client, locale), match, proposal, conflicts);
   }
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));

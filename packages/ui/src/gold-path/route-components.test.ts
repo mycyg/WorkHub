@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM, SettingsPageVM } from "@workhub/contracts";
+import type { GoldPathSurfaceVM, ProposalConflict, SettingsPageVM } from "@workhub/contracts";
 
 import { renderWebRouteComponents } from "./route-components.js";
 
@@ -106,6 +106,119 @@ function assertNoMainWindowBoundaryLeak(html: string) {
   assert.equal(html.includes("weekly_report_manifest_doc"), false);
 }
 
+function structuredProposalConflict(vm: GoldPathSurfaceVM): ProposalConflict {
+  const proposal = vm.page_vms.proposal;
+  const applyHref = "/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply";
+  return {
+    id: "r4-13-structured-conflict",
+    work_item_id: proposal.work_item_id,
+    proposal_id: proposal.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000813",
+    change_id: proposal.manifest.changes[0]?.id ?? "change-1",
+    target_key: `work_item:${proposal.work_item_id}`,
+    target_kind: "structured_record",
+    change_type: "updated",
+    headline: "事项字段需要确认",
+    summary_text: "AI 更新了标题和任务项，可以展开高级字段编辑。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000814",
+      change_id: "10000000-0000-4000-8000-000000000815",
+      ref: "main"
+    },
+    incoming: { ref: "proposal" },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成字段级补丁。",
+        recommended: true,
+        quality_gate: {
+          structured_record_patch: {
+            type: "structured_record_field_patch",
+            changed_fields: ["title", "task_items"],
+            merged_value_fields: ["title", "task_items"],
+            missing_fields: [],
+            unknown_fields: [],
+            field_count: 2,
+            has_structured_result: true,
+            task_plan_scope: {
+              selected_plan_id: "10000000-0000-4000-8000-000000000818",
+              options: [
+                {
+                  id: "10000000-0000-4000-8000-000000000818",
+                  label: "方案拆解计划",
+                  stage: "dispatch",
+                  status: "draft",
+                  item_count: 1,
+                  recommended: true
+                }
+              ]
+            },
+            structured_field_patch_dry_run: {
+              type: "structured_field_patch_dry_run",
+              status: "ready",
+              executable: true,
+              patch: {
+                type: "structured_field_patch",
+                target_entity_type: "work_item",
+                target_entity_id: proposal.work_item_id,
+                source: "ai_fusion",
+                operations: [
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: proposal.work_item_id,
+                    field: "title",
+                    value_type: "string",
+                    before_value: "旧标题",
+                    current_value: "旧标题",
+                    value: "新标题",
+                    source: "ai_fusion"
+                  },
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: proposal.work_item_id,
+                    field: "task_items",
+                    value_type: "json_array",
+                    before_value: [
+                      { id: "10000000-0000-4000-8000-000000000816", title: "原始任务项", item_type: "task", sort_order: 0 }
+                    ],
+                    current_value: [
+                      { id: "10000000-0000-4000-8000-000000000816", title: "原始任务项", item_type: "task", sort_order: 0 }
+                    ],
+                    value: [
+                      { id: "10000000-0000-4000-8000-000000000816", title: "原始任务项", item_type: "task", sort_order: 0 },
+                      { id: "10000000-0000-4000-8000-000000000817", title: "新增风险项", item_type: "risk", sort_order: 1 }
+                    ],
+                    source: "ai_fusion"
+                  }
+                ]
+              },
+              issues: [],
+              audit_payload: {
+                target_entity_type: "work_item",
+                target_entity_id: proposal.work_item_id,
+                field_count: 2,
+                operation_fields: ["title", "task_items"],
+                source: "ai_fusion"
+              }
+            }
+          }
+        },
+        action: {
+          id: "apply_ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: applyHref,
+          request_json: { confirm: true }
+        }
+      }
+    ]
+  };
+}
+
 test("R4.10 Home route component renders directly from Attention Page VM with bilingual fixed copy", () => {
   const zh = renderWebRouteComponents(surfaceVm(), { locale: "zh-CN" }).home;
   const en = renderWebRouteComponents(surfaceVm(), { locale: "en-US" }).home;
@@ -159,6 +272,34 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
     vm.page_vms.proposal.review_actions.request_changes.href,
     vm.page_vms.proposal.review_actions.merge?.href
   ].filter(Boolean));
+  assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R4.13 Proposal route component exposes advanced structured conflict editors from route surface", () => {
+  const vm = {
+    ...surfaceVm(),
+    proposal_conflicts: [] as ProposalConflict[]
+  };
+  vm.proposal_conflicts = [structuredProposalConflict(vm)];
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.html.includes('data-r4-route-component="proposal"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-conflict-count="1"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-advanced-review="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-conflicts="1"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-field-editor="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-subrecord-editor="true"'), true);
+  assert.equal(proposal.html.includes('data-proposal-conflicts="1"'), true);
+  assert.equal(proposal.html.includes('data-structured-record-patch="true"'), true);
+  assert.equal(proposal.html.includes('data-proposal-structured-field-editor="true"'), true);
+  assert.equal(proposal.html.includes('data-proposal-subrecord-item-diff="true"'), true);
+  assert.equal(proposal.html.includes('data-task-plan-scope="required"'), true);
+  assert.equal(proposal.html.includes('data-field-editor-action="custom"'), true);
+  assert.equal(proposal.html.includes('data-action-href="/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply"'), true);
+  assert.equal(proposal.html.includes("Advanced field editor"), true);
+  assert.equal(proposal.html.includes("Advanced item editor"), true);
+  assert.equal(proposal.primaryHrefs.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply"), true);
   assertNoMainWindowBoundaryLeak(proposal.html);
 });
 

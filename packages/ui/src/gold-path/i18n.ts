@@ -173,7 +173,9 @@ export type GoldPathCopyKey =
   | "runtime.notice.sseRefreshTitle"
   | "runtime.notice.sseRefreshBody"
   | "runtime.notice.budgetWarningTitle"
-  | "runtime.notice.budgetWarningBody";
+  | "runtime.notice.budgetWarningBody"
+  | "runtime.notice.fieldValueRequiredTitle"
+  | "runtime.notice.fieldValueRequiredBody";
 
 const goldPathCopy = {
   "zh-CN": {
@@ -327,7 +329,9 @@ const goldPathCopy = {
     "runtime.notice.sseRefreshTitle": "页面已刷新",
     "runtime.notice.sseRefreshBody": "后台有新事件，当前页面已重新读取最新数据。",
     "runtime.notice.budgetWarningTitle": "预算需要留意",
-    "runtime.notice.budgetWarningBody": "成本状态有新变化，页面已重新读取最新预算数据。"
+    "runtime.notice.budgetWarningBody": "成本状态有新变化，页面已重新读取最新预算数据。",
+    "runtime.notice.fieldValueRequiredTitle": "需要字段值",
+    "runtime.notice.fieldValueRequiredBody": "请先填写自定义字段值，Web 不会提交空的高级编辑。"
   },
   "en-US": {
     "state.idle": "Idle",
@@ -480,7 +484,9 @@ const goldPathCopy = {
     "runtime.notice.sseRefreshTitle": "Page refreshed",
     "runtime.notice.sseRefreshBody": "A background event arrived, and this page has reloaded the latest data.",
     "runtime.notice.budgetWarningTitle": "Budget needs attention",
-    "runtime.notice.budgetWarningBody": "Cost status changed, and this page has reloaded the latest budget data."
+    "runtime.notice.budgetWarningBody": "Cost status changed, and this page has reloaded the latest budget data.",
+    "runtime.notice.fieldValueRequiredTitle": "Field value required",
+    "runtime.notice.fieldValueRequiredBody": "Enter a custom field value first. Web will not submit an empty advanced edit."
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 
