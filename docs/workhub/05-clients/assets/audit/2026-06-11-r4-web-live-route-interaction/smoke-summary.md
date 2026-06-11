@@ -78,6 +78,12 @@
 - R4.22 single dispatcher regression: true
 - R4.22 HTML fallback boundary regression: true
 - R4.22 no new smoke sprawl: true
+- R4.23 visible React line editor: true
+- R4.23 hunk state survives SSE: true
+- R4.23 line editor payload parity: true
+- R4.23 HTML fallback boundary regression: true
+- R4.23 single dispatcher regression: true
+- R4.23 no new smoke sprawl: true
 - R4.16 hydration boundary regression: true
 - R4.15 settings boundary regression: true
 - active-only product panels: true

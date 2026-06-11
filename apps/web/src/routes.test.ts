@@ -492,6 +492,7 @@ test("R4.19-pre route tree declares the Home true React mount spike boundary", (
   assert.equal(proposal?.hydration.runtimeMount?.propsUpdate, "dirty-guard-preserves-controlled-state");
   assert.equal(proposal?.hydration.runtimeMount?.dispatcher, "delegated-click-bubble");
   assert.equal(proposal?.hydration.runtimeMount?.mutationEditor, "structured-field-scalar");
+  assert.equal(proposal?.hydration.runtimeMount?.lineEditor, "text-hunk");
 });
 
 test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
@@ -553,9 +554,13 @@ test("R4.13 proposal route loader carries conflict API data into advanced route 
   assert.equal(result.html.includes('data-r4-proposal-advanced-review="true"'), true);
   assert.equal(result.html.includes('data-r4-proposal-conflicts="1"'), true);
   assert.equal(result.html.includes('data-r4-proposal-line-editor="true"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-react-line-editor-host="text-hunk"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-react-line-editor-mounted="false"'), true);
+  assert.equal(result.html.includes('data-r4-route-tree-runtime-line-editor="text-hunk"'), true);
   assert.equal(result.html.includes('data-proposal-conflicts="1"'), true);
   assert.equal(result.html.includes('data-route-line-editor="true"'), true);
   assert.equal(result.html.includes('data-line-editor-apply="true"'), true);
+  assert.equal(result.html.includes("text_hunk_overrides"), true);
   assert.equal(result.html.includes("Use AI fusion draft"), true);
 });
 

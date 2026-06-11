@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-06-11T15:19:09.209Z",
+  "generated_at": "2026-06-11T15:58:40.013Z",
   "module": "R4.5 Web Live Route Interaction Smoke",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "vite_url": "http://127.0.0.1:60316",
-  "api_target": "http://127.0.0.1:60315",
+  "vite_url": "http://127.0.0.1:62879",
+  "api_target": "http://127.0.0.1:62878",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction",
   "contact_sheet": "contact-sheet.png",
   "gates": {
@@ -92,6 +92,12 @@
     "r4_22_single_dispatcher_regression": true,
     "r4_22_html_fallback_boundary_regression": true,
     "r4_22_no_new_smoke_sprawl": true,
+    "r4_23_visible_react_line_editor": true,
+    "r4_23_hunk_state_survives_sse": true,
+    "r4_23_line_editor_payload_parity": true,
+    "r4_23_html_fallback_boundary_regression": true,
+    "r4_23_single_dispatcher_regression": true,
+    "r4_23_no_new_smoke_sprawl": true,
     "r4_16_hydration_boundary_regression": true,
     "r4_15_settings_boundary_regression": true,
     "active_only_product_panels": true,
@@ -159,6 +165,7 @@
       "knowledgeWorkItemFilter": true,
       "evidenceBindingRefs": true,
       "textHunkOverrides": true,
+      "textHunkFullCoverage": true,
       "taskPlanScope": true,
       "structuredItemOverrides": true,
       "structuredFieldOverrides": true,
@@ -171,7 +178,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/",
+      "referer": "http://127.0.0.1:62879/",
       "body": null
     },
     {
@@ -179,7 +186,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/",
+      "referer": "http://127.0.0.1:62879/",
       "body": null
     },
     {
@@ -187,7 +194,7 @@
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/",
+      "referer": "http://127.0.0.1:62879/",
       "body": null
     },
     {
@@ -195,7 +202,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/",
+      "referer": "http://127.0.0.1:62879/",
       "body": null
     },
     {
@@ -203,7 +210,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/",
+      "referer": "http://127.0.0.1:62879/",
       "body": null
     },
     {
@@ -211,7 +218,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -219,7 +226,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -227,7 +234,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -235,7 +242,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -243,7 +250,7 @@
       "pathname": "/api/sessions/10000000-0000-4000-8000-000000001414/next-question",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": "{\"selected_option_ids\":[\"risk-first\"]}"
     },
     {
@@ -251,7 +258,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -259,7 +266,7 @@
       "pathname": "/api/workitems",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": "{\"session_id\":\"10000000-0000-4000-8000-000000001414\",\"selected_option_ids\":[\"create-worker\"]}"
     },
     {
@@ -267,7 +274,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -275,7 +282,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -283,7 +290,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/approvals",
+      "referer": "http://127.0.0.1:62879/approvals",
       "body": null
     },
     {
@@ -291,7 +298,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/approvals",
+      "referer": "http://127.0.0.1:62879/approvals",
       "body": "{\"decision\":\"deny\",\"reason_md\":\"证据不足\",\"remember\":\"once\"}"
     },
     {
@@ -299,7 +306,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/approvals",
+      "referer": "http://127.0.0.1:62879/approvals",
       "body": "{\"decision\":\"allow\",\"remember\":\"once\"}"
     },
     {
@@ -307,7 +314,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -315,7 +322,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -323,7 +330,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/approvals",
+      "referer": "http://127.0.0.1:62879/approvals",
       "body": null
     },
     {
@@ -331,7 +338,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -339,7 +346,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -347,7 +354,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -355,7 +362,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -363,7 +370,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -371,7 +378,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -379,7 +386,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -387,7 +394,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -395,7 +402,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -403,7 +410,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -411,7 +418,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -419,7 +426,7 @@
       "pathname": "/api/push/stream/proposal/r4-live-proposal",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -427,7 +434,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -435,7 +442,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -443,7 +450,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"text_hunk_overrides\":{\"hunks\":[{\"hunk_index\":0,\"start_line\":2,\"end_line\":2,\"decision\":\"keep_current\"}]}}"
     },
     {
@@ -451,7 +458,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000929\"}}"
     },
     {
@@ -459,7 +466,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_item_overrides\":{\"items\":[{\"field\":\"task_items\",\"item_id\":\"10000000-0000-4000-8000-000000000925\",\"decision\":\"accept_incoming\"}]},\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000928\"}}"
     },
     {
@@ -467,7 +474,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_field_overrides\":{\"operations\":[{\"field\":\"title\",\"decision\":\"custom\",\"value\":\"R4.13 custom reviewed title\"}]}}"
     },
     {
@@ -475,7 +482,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{\"decision\":\"request_changes\",\"reason_md\":\"Evidence is not enough\",\"remember\":\"once\"}"
     },
     {
@@ -483,7 +490,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/merge",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": "{}"
     },
     {
@@ -491,7 +498,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -499,7 +506,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -507,7 +514,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -515,7 +522,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/dashboard/cost",
+      "referer": "http://127.0.0.1:62879/dashboard/cost",
       "body": null
     },
     {
@@ -523,7 +530,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/dashboard/cost",
+      "referer": "http://127.0.0.1:62879/dashboard/cost",
       "body": null
     },
     {
@@ -531,7 +538,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_3",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/dashboard/cost",
+      "referer": "http://127.0.0.1:62879/dashboard/cost",
       "body": null
     },
     {
@@ -539,7 +546,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/dashboard/cost",
+      "referer": "http://127.0.0.1:62879/dashboard/cost",
       "body": null
     },
     {
@@ -547,7 +554,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/dashboard/cost",
+      "referer": "http://127.0.0.1:62879/dashboard/cost",
       "body": null
     },
     {
@@ -555,7 +562,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -563,7 +570,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"q\":\"regional\",\"work_item_id\":\"r4-live-workitem\",\"limit\":6}"
     },
     {
@@ -571,7 +578,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -579,7 +586,7 @@
       "pathname": "/api/workitems/r4-live-workitem/evidence-bindings",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"evidence_bubble_id\":\"10000000-0000-4000-8000-000000001424\",\"evidence_refs\":[{\"id\":\"10000000-0000-4000-8000-000000001425\",\"source_type\":\"meeting\",\"source_id\":\"regional-sync\",\"title\":\"Regional launch sync\",\"excerpt\":\"Supply delay is the blocker that needs the closest follow-up.\",\"href\":\"/knowledge/sources/regional-sync\"},{\"id\":\"10000000-0000-4000-8000-000000001426\",\"source_type\":\"drive_file\",\"source_id\":\"drive:regional-launch-review\",\"title\":\"Regional launch review draft\",\"excerpt\":\"The draft records metrics, risks, and next actions.\",\"href\":\"/knowledge/sources/regional-launch-review\"}]}"
     },
     {
@@ -587,7 +594,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -595,7 +602,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -603,7 +610,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -611,7 +618,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/intake/r4-live-session",
+      "referer": "http://127.0.0.1:62879/intake/r4-live-session",
       "body": null
     },
     {
@@ -619,7 +626,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/settings",
+      "referer": "http://127.0.0.1:62879/settings",
       "body": null
     },
     {
@@ -627,7 +634,7 @@
       "pathname": "/api/pages/settings",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/settings",
+      "referer": "http://127.0.0.1:62879/settings",
       "body": null
     },
     {
@@ -635,7 +642,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/settings",
+      "referer": "http://127.0.0.1:62879/settings",
       "body": null
     },
     {
@@ -643,7 +650,7 @@
       "pathname": "/api/__qa/fail-next-preference-patch",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/settings",
+      "referer": "http://127.0.0.1:62879/settings",
       "body": null
     },
     {
@@ -651,7 +658,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/settings",
+      "referer": "http://127.0.0.1:62879/settings",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -659,7 +666,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -667,7 +674,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -675,7 +682,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -683,7 +690,7 @@
       "pathname": "/api/push/stream/run/r4-live-run",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -691,7 +698,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -699,7 +706,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/deliverables/10000000-0000-4000-8000-000000001518/restore",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "body": ""
     },
     {
@@ -707,7 +714,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:62879/approvals?empty=approvals",
       "body": null
     },
     {
@@ -715,7 +722,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:62879/approvals?empty=approvals",
       "body": null
     },
     {
@@ -723,7 +730,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -731,7 +738,7 @@
       "pathname": "/api/pages/workitems/r4-live-forbidden",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:60316/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:62879/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -739,14 +746,14 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:60316/missing-r4-live-route",
+      "referer": "http://127.0.0.1:62879/missing-r4-live-route",
       "body": null
     }
   ],
   "steps": [
     {
       "id": "01-home-zh-desktop",
-      "url": "http://127.0.0.1:60316/",
+      "url": "http://127.0.0.1:62879/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -801,6 +808,7 @@
         "routeTreeRuntimePropsUpdate": "sse-react-render",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "HomeRouteComponent",
         "reactComponentRoute": "home",
         "reactComponentMode": "html-fallback",
@@ -828,6 +836,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": true,
         "reactRuntimeDispatcherProbeActionId": "r4_react_mount_probe",
         "routeSpecificMarker": true,
@@ -963,7 +977,7 @@
     },
     {
       "id": "01r-home-react-dispatcher-probe-zh-desktop",
-      "url": "http://127.0.0.1:60316/",
+      "url": "http://127.0.0.1:62879/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1018,6 +1032,7 @@
         "routeTreeRuntimePropsUpdate": "sse-react-render",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "HomeRouteComponent",
         "reactComponentRoute": "home",
         "reactComponentMode": "html-fallback",
@@ -1045,6 +1060,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": true,
         "reactRuntimeDispatcherProbeActionId": "r4_react_mount_probe",
         "routeSpecificMarker": true,
@@ -1180,7 +1201,7 @@
     },
     {
       "id": "01s-home-react-sse-props-update-zh-desktop",
-      "url": "http://127.0.0.1:60316/",
+      "url": "http://127.0.0.1:62879/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1235,6 +1256,7 @@
         "routeTreeRuntimePropsUpdate": "sse-react-render",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "HomeRouteComponent",
         "reactComponentRoute": "home",
         "reactComponentMode": "html-fallback",
@@ -1262,6 +1284,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": true,
         "reactRuntimeDispatcherProbeActionId": "r4_react_mount_probe",
         "routeSpecificMarker": true,
@@ -1397,7 +1425,7 @@
     },
     {
       "id": "01a-intake-zh-desktop-route-component",
-      "url": "http://127.0.0.1:60316/intake/r4-live-session",
+      "url": "http://127.0.0.1:62879/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1452,6 +1480,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -1479,6 +1508,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -1614,7 +1649,7 @@
     },
     {
       "id": "01b-intake-empty-fail-closed-zh-desktop",
-      "url": "http://127.0.0.1:60316/intake/r4-live-session",
+      "url": "http://127.0.0.1:62879/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1669,6 +1704,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -1696,6 +1732,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -1831,7 +1873,7 @@
     },
     {
       "id": "01c-intake-next-question-success-zh-desktop",
-      "url": "http://127.0.0.1:60316/intake/r4-live-session",
+      "url": "http://127.0.0.1:62879/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1886,6 +1928,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -1913,6 +1956,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -2048,7 +2097,7 @@
     },
     {
       "id": "01d-intake-create-workitem-success-zh-desktop",
-      "url": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2103,6 +2152,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -2130,6 +2180,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -2265,7 +2321,7 @@
     },
     {
       "id": "02-approvals-click-zh-desktop",
-      "url": "http://127.0.0.1:60316/approvals",
+      "url": "http://127.0.0.1:62879/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2320,6 +2376,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -2347,6 +2404,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -2482,7 +2545,7 @@
     },
     {
       "id": "02a-approval-deny-reason-gate-zh-desktop",
-      "url": "http://127.0.0.1:60316/approvals",
+      "url": "http://127.0.0.1:62879/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2537,6 +2600,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -2564,6 +2628,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -2699,7 +2769,7 @@
     },
     {
       "id": "02b-approval-deny-success-zh-desktop",
-      "url": "http://127.0.0.1:60316/approvals",
+      "url": "http://127.0.0.1:62879/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2754,6 +2824,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -2781,6 +2852,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -2916,7 +2993,7 @@
     },
     {
       "id": "02c-approval-approve-success-zh-desktop",
-      "url": "http://127.0.0.1:60316/approvals",
+      "url": "http://127.0.0.1:62879/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2971,6 +3048,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -2998,6 +3076,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -3133,7 +3217,7 @@
     },
     {
       "id": "03-workitem-click-zh-desktop-route-component",
-      "url": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3188,6 +3272,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -3215,6 +3300,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -3350,7 +3441,7 @@
     },
     {
       "id": "04-history-back-approvals",
-      "url": "http://127.0.0.1:60316/approvals",
+      "url": "http://127.0.0.1:62879/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3405,6 +3496,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -3432,6 +3524,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -3567,7 +3665,7 @@
     },
     {
       "id": "05-history-forward-workitem",
-      "url": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3622,6 +3720,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -3649,6 +3748,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -3784,7 +3889,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-route-component",
-      "url": "http://127.0.0.1:60316/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:62879/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3839,6 +3944,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -3866,6 +3972,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4001,7 +4113,7 @@
     },
     {
       "id": "06a-proposal-advanced-review-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4056,6 +4168,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -4083,6 +4196,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "ai_fusion",
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4218,7 +4337,7 @@
     },
     {
       "id": "06aa-proposal-dirty-edit-sse-guard-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4273,6 +4392,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -4300,6 +4420,12 @@
         "reactRuntimeControlledValue": "R4.19 guarded custom title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4435,7 +4561,7 @@
     },
     {
       "id": "06b-proposal-line-editor-apply-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4490,6 +4616,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -4517,6 +4644,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4547,7 +4680,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -4652,7 +4785,7 @@
     },
     {
       "id": "06c-proposal-task-plan-apply-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4707,6 +4840,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -4734,6 +4868,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4764,7 +4904,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -4869,7 +5009,7 @@
     },
     {
       "id": "06d-proposal-subrecord-apply-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4924,6 +5064,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -4951,6 +5092,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -4981,7 +5128,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -5086,7 +5233,7 @@
     },
     {
       "id": "06e-proposal-custom-field-empty-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5141,6 +5288,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -5168,6 +5316,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -5198,7 +5352,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -5303,7 +5457,7 @@
     },
     {
       "id": "06f-proposal-custom-field-apply-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5358,6 +5512,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -5385,6 +5540,12 @@
         "reactRuntimeControlledValue": "R4.13 custom reviewed title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -5415,7 +5576,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "R4.13 custom reviewed title",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -5520,7 +5681,7 @@
     },
     {
       "id": "06g-proposal-structured-field-editor-visual-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 3000
@@ -5575,6 +5736,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -5602,6 +5764,12 @@
         "reactRuntimeControlledValue": "R4.13 custom reviewed title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -5632,7 +5800,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "R4.13 custom reviewed title",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -5737,7 +5905,7 @@
     },
     {
       "id": "07-proposal-reason-gate-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5792,6 +5960,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -5819,6 +5988,12 @@
         "reactRuntimeControlledValue": "R4.13 custom reviewed title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -5849,7 +6024,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "R4.13 custom reviewed title",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -5954,7 +6129,7 @@
     },
     {
       "id": "08-proposal-request-changes-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6009,6 +6184,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -6036,6 +6212,12 @@
         "reactRuntimeControlledValue": "R4.13 custom reviewed title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -6066,7 +6248,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "R4.13 custom reviewed title",
           "routeDirty": "true",
           "routeDirtyReason": "proposal_custom_field",
@@ -6171,7 +6353,7 @@
     },
     {
       "id": "09-proposal-merge-success-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6226,6 +6408,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -6253,6 +6436,12 @@
         "reactRuntimeControlledValue": "R4.13 custom reviewed title",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "keep_current",
+        "reactRuntimeLineEditorSearchValue": "scope",
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -6283,7 +6472,7 @@
           "proposalAdvancedFieldEditor": "true",
           "proposalAdvancedSubrecordEditor": "true",
           "proposalLineEditorSelectedDecision": "keep_current",
-          "proposalLineEditorSearchValue": "",
+          "proposalLineEditorSearchValue": "scope",
           "proposalCustomFieldValue": "R4.13 custom reviewed title",
           "routeDirty": null,
           "routeDirtyReason": null,
@@ -6388,7 +6577,7 @@
     },
     {
       "id": "10-proposal-sse-refresh-notice-en-desktop",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6443,6 +6632,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -6460,7 +6650,7 @@
         "reactRuntimePropsSource": "typed-page-vm",
         "reactRuntimeFingerprint": "proposal|structured-field-scalar|title",
         "reactRuntimeLastUpdateReason": "initial",
-        "reactRuntimeMountCount": "2",
+        "reactRuntimeMountCount": "3",
         "reactRuntimePropsUpdateCount": "0",
         "reactRuntimePrimaryActionCount": null,
         "reactRuntimeQueueCount": null,
@@ -6470,6 +6660,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "ai_fusion",
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -6605,7 +6801,7 @@
     },
     {
       "id": "11-proposal-en-mobile-scrolled-notice-route-component",
-      "url": "http://127.0.0.1:60316/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:62879/proposals/r4-live-proposal",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -6660,6 +6856,7 @@
         "routeTreeRuntimePropsUpdate": "dirty-guard-preserves-controlled-state",
         "routeTreeRuntimeDispatcher": "delegated-click-bubble",
         "routeTreeRuntimeMutationEditor": "structured-field-scalar",
+        "routeTreeRuntimeLineEditor": "text-hunk",
         "reactComponentName": "ProposalRouteComponent",
         "reactComponentRoute": "proposal",
         "reactComponentMode": "html-fallback",
@@ -6677,7 +6874,7 @@
         "reactRuntimePropsSource": "typed-page-vm",
         "reactRuntimeFingerprint": "proposal|structured-field-scalar|title",
         "reactRuntimeLastUpdateReason": "initial",
-        "reactRuntimeMountCount": "2",
+        "reactRuntimeMountCount": "3",
         "reactRuntimePropsUpdateCount": "0",
         "reactRuntimePrimaryActionCount": null,
         "reactRuntimeQueueCount": null,
@@ -6687,6 +6884,12 @@
         "reactRuntimeControlledValue": "",
         "reactRuntimeHtmlFallbackPreserved": "true",
         "reactRuntimeHtmlFallbackHidden": "true",
+        "reactRuntimeVisibleLineEditor": "true",
+        "reactRuntimeLineEditorKind": "text-hunk",
+        "reactRuntimeLineEditorSelectedDecision": "ai_fusion",
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "true",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "true",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -6822,7 +7025,7 @@
     },
     {
       "id": "12-cost-en-mobile-route-component",
-      "url": "http://127.0.0.1:60316/dashboard/cost",
+      "url": "http://127.0.0.1:62879/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -6877,6 +7080,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "CostRouteComponent",
         "reactComponentRoute": "cost",
         "reactComponentMode": "html-fallback",
@@ -6904,6 +7108,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -7039,7 +7249,7 @@
     },
     {
       "id": "12a-cost-budget-warning-notice-en-mobile",
-      "url": "http://127.0.0.1:60316/dashboard/cost",
+      "url": "http://127.0.0.1:62879/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7094,6 +7304,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "CostRouteComponent",
         "reactComponentRoute": "cost",
         "reactComponentMode": "html-fallback",
@@ -7121,6 +7332,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -7256,7 +7473,7 @@
     },
     {
       "id": "12b-knowledge-fallback-en-desktop-route-component",
-      "url": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7311,6 +7528,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -7338,6 +7556,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -7473,7 +7697,7 @@
     },
     {
       "id": "12c-knowledge-bind-success-en-desktop",
-      "url": "http://127.0.0.1:60316/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:62879/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7528,6 +7752,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -7555,6 +7780,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -7690,7 +7921,7 @@
     },
     {
       "id": "12d-intake-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:60316/intake/r4-live-session",
+      "url": "http://127.0.0.1:62879/intake/r4-live-session",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7745,6 +7976,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -7772,6 +8004,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -7907,7 +8145,7 @@
     },
     {
       "id": "13-settings-en-desktop-route-component",
-      "url": "http://127.0.0.1:60316/settings",
+      "url": "http://127.0.0.1:62879/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7962,6 +8200,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "SettingsRouteComponent",
         "reactComponentRoute": "settings",
         "reactComponentMode": "html-fallback",
@@ -7989,6 +8228,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -8124,7 +8369,7 @@
     },
     {
       "id": "13a-settings-locale-persistence-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:60316/settings",
+      "url": "http://127.0.0.1:62879/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8179,6 +8424,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "SettingsRouteComponent",
         "reactComponentRoute": "settings",
         "reactComponentMode": "html-fallback",
@@ -8206,6 +8452,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -8341,7 +8593,7 @@
     },
     {
       "id": "14-settings-desktop-gate-en-desktop",
-      "url": "http://127.0.0.1:60316/settings",
+      "url": "http://127.0.0.1:62879/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8396,6 +8648,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "SettingsRouteComponent",
         "reactComponentRoute": "settings",
         "reactComponentMode": "html-fallback",
@@ -8423,6 +8676,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -8558,7 +8817,7 @@
     },
     {
       "id": "14a-settings-en-mobile-boundary-no-overflow",
-      "url": "http://127.0.0.1:60316/settings",
+      "url": "http://127.0.0.1:62879/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -8613,6 +8872,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "SettingsRouteComponent",
         "reactComponentRoute": "settings",
         "reactComponentMode": "html-fallback",
@@ -8640,6 +8900,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -8775,7 +9041,7 @@
     },
     {
       "id": "15-replay-en-desktop-route-component",
-      "url": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8830,6 +9096,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "ReplayRouteComponent",
         "reactComponentRoute": "replay",
         "reactComponentMode": "html-fallback",
@@ -8857,6 +9124,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -8992,7 +9265,7 @@
     },
     {
       "id": "15a-replay-restore-success-en-desktop",
-      "url": "http://127.0.0.1:60316/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:62879/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9047,6 +9320,7 @@
         "routeTreeRuntimePropsUpdate": "",
         "routeTreeRuntimeDispatcher": "",
         "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
         "reactComponentName": "ReplayRouteComponent",
         "reactComponentRoute": "replay",
         "reactComponentMode": "html-fallback",
@@ -9074,6 +9348,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": true,
@@ -9209,7 +9489,7 @@
     },
     {
       "id": "16-empty-approvals-mobile",
-      "url": "http://127.0.0.1:60316/approvals?empty=approvals",
+      "url": "http://127.0.0.1:62879/approvals?empty=approvals",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -9264,6 +9544,7 @@
         "routeTreeRuntimePropsUpdate": null,
         "routeTreeRuntimeDispatcher": null,
         "routeTreeRuntimeMutationEditor": null,
+        "routeTreeRuntimeLineEditor": null,
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -9291,6 +9572,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": false,
@@ -9426,7 +9713,7 @@
     },
     {
       "id": "17-forbidden-workitem-desktop",
-      "url": "http://127.0.0.1:60316/workitems/r4-live-forbidden",
+      "url": "http://127.0.0.1:62879/workitems/r4-live-forbidden",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9481,6 +9768,7 @@
         "routeTreeRuntimePropsUpdate": null,
         "routeTreeRuntimeDispatcher": null,
         "routeTreeRuntimeMutationEditor": null,
+        "routeTreeRuntimeLineEditor": null,
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -9508,6 +9796,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": false,
@@ -9643,7 +9937,7 @@
     },
     {
       "id": "18-unknown-route-error",
-      "url": "http://127.0.0.1:60316/missing-r4-live-route",
+      "url": "http://127.0.0.1:62879/missing-r4-live-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9698,6 +9992,7 @@
         "routeTreeRuntimePropsUpdate": null,
         "routeTreeRuntimeDispatcher": null,
         "routeTreeRuntimeMutationEditor": null,
+        "routeTreeRuntimeLineEditor": null,
         "reactComponentName": null,
         "reactComponentRoute": null,
         "reactComponentMode": null,
@@ -9725,6 +10020,12 @@
         "reactRuntimeControlledValue": null,
         "reactRuntimeHtmlFallbackPreserved": "false",
         "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
         "reactRuntimeDispatcherProbe": false,
         "reactRuntimeDispatcherProbeActionId": null,
         "routeSpecificMarker": false,

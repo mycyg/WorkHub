@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**115 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R4.19-pre 已完成真 React mount spike，R4.19 已完成 Proposal split migration、advanced fallback boundary 与编辑态 dirty guard，R4.20 已完成 app 级 SSE、Page VM local refetch、Last-Event-ID/cursor 与 `/api/pages/gold-path` fixture chrome 退役；R4.21 已完成 `@workhub/web-runtime` shared dispatcher/notice/payload/line-editor/live runtime 抽包；R4.22 已完成 Proposal structured field scalar 第一段真实可见 React mutation editor，controlled state、dirty SSE guard、single dispatcher 与 HTML fallback boundary 均通过；下一步按 [`06-roadmap/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./06-roadmap/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md) 推进 Proposal line editor hunk decision/search/scope React 迁移。数据库验收后续优先本地构建/本地 PG+Redis 复跑。
+> 状态(2026-06-11):**116 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。R4.19-pre/R4.19/R4.20/R4.21/R4.22/R4.23 已完成 true React mount、Proposal split、app-level SSE、shared runtime、Proposal structured field scalar React editor 与 Proposal line editor React island；下一步按 [`06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md`](./06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md) 推进 hash route 清理、README 治理、browser smoke CI 拆分与 R5 业务纵切拍板。数据库验收后续优先本地构建/本地 PG+Redis 复跑。
 
 ---
 
@@ -173,7 +173,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r4-20-dataflow-foundation-plan-2026-06-11.md` | **R4.20**:Dataflow foundation，app 级 SSE、Page VM local refetch、Last-Event-ID/cursor、fixture chrome 退役与本机 Chrome 42 步 smoke 通过，`goldPath=0` | ✅ |
 | `r4-21-shared-web-runtime-plan-2026-06-11.md` | **R4.21**:Shared web runtime，新增 `@workhub/web-runtime`，收敛 Web 与 desktop-webview dispatcher/notice/payload/line-editor/live SSE runtime 分叉，42 步 smoke 与 R4.21 gates 通过 | ✅ |
 | `r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md` | **R4.22**:Proposal mutation editor migration，structured field scalar editor 第一段真实可见 React controlled-state 迁移，42 步 smoke 与 R4.22 gates 通过 | ✅ |
-| `r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md` | **R4.23**:Proposal line editor React migration，计划迁 hunk decision/search/scope 最小 React island，并保持 shared dispatcher、dirty guard 与 fallback boundary | planned |
+| `r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md` | **R4.23**:Proposal line editor React migration，text hunk decision/search/current file scope 第二段真实可见 React mutation island，42 步 smoke 与 R4.23 gates 通过 | ✅ |
+| `r4-24-web-runtime-finalization-plan-2026-06-11.md` | **R4.24**:Web runtime finalization，计划清理 hash route 兼容漂移、治理 README 状态行、拆分 browser smoke CI 化计划，并拍板 R5 第一条业务纵切 | planned |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

@@ -428,6 +428,21 @@ R4.22 已把 Proposal advanced 区的 structured field scalar editor 迁成第�
 - HTML fallback boundary 仍可审计：原 structured field fallback preserved，React mount 后 hidden；line editor、subrecord editor 与 bulk workbench 没被本轮偷迁或删除。
 - 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.22 no-new-smoke-sprawl gate 通过。
 
+### 6.19 R4.23 Proposal Line Editor React Migration
+
+![R4.23 Proposal React line editor dirty guard](./assets/audit/2026-06-11-r4-web-live-route-interaction/06aa-proposal-dirty-edit-sse-guard-en-desktop.png)
+
+R4.23 已把 Proposal advanced 区的 text hunk line editor 迁成第二段真实可见 React mutation island，并继续使用 R4 live route interaction 42 步 contact sheet 做视觉回归证据。证据目录：`./assets/audit/2026-06-11-r4-web-live-route-interaction/`；重点截图为 `06aa-proposal-dirty-edit-sse-guard-en-desktop.png` 与 `06b-proposal-line-editor-apply-success-en-desktop.png`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-deliverable-change-request.png`：Proposal 首屏仍是变更申请审阅面，line editor 只作为下方高级冲突处理能力存在。
+- React migration 扩展到复杂 editor：browser report 证明 line editor kind 为 `text-hunk`，hunk decision、search query 与当前文件 panel 由 React state 控制。
+- Dirty guard 继续成立：`06aa` 证明 hunk decision 保持 `keep_current`、search 保持 `scope`，SSE 只显示手动刷新 notice。
+- Payload parity 成立：`06b` apply success 后仍走既有 Proposal action contract，`text_hunk_overrides.hunks[]` 完整覆盖 hunk index、line range 与 decision。
+- HTML fallback boundary 仍可审计：原 line editor fallback preserved/hidden；structured field、subrecord 与 bulk workbench 没被本轮误删。
+- 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.23 no-new-smoke-sprawl gate 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

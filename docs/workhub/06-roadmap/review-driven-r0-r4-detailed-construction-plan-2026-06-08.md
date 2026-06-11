@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10-R4.18 已落 route componentization、hydration boundary 与 React-compatible adapters，R4.19-pre 已落真 React mount spike，R4.19 已落 Proposal split migration、dirty guard 与 fixture chrome 冻结门，R4.20 已落 dataflow foundation，R4.21 已落 shared web runtime，R4.22 已落 Proposal structured field scalar visible React mutation editor；下一步进入 R4.23 Proposal line editor React migration。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10-R4.18 已落 route componentization、hydration boundary 与 React-compatible adapters，R4.19-pre 已落真 React mount spike，R4.19 已落 Proposal split migration、dirty guard 与 fixture chrome 冻结门，R4.20 已落 dataflow foundation，R4.21 已落 shared web runtime，R4.22 已落 Proposal structured field scalar visible React mutation editor，R4.23 已落 Proposal line editor visible React mutation island；下一步进入 R4.24 Web runtime finalization。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2931,7 +2931,7 @@ R4 验收：
 3. P0-2 判定当前 SSE 任何事件触发整页重渲会清空 DOM 编辑态；R4.19 必须新增 dirty edit guard，未提交编辑时只提示刷新，不得清掉 line editor/intake/custom input。
 4. P0-3 判定生产导航 chrome 仍依赖 P0.5 fixture surface、正则替换和手写中英 map；R4.19 冻结新增 fixture chrome 依赖，R4.20 集中退役。
 5. P0-4 判定 SSE 连接重建和全量 refetch 抵消 R2 broker 边界；R4.20 必须集中处理 app 级长连接、局部 Page VM refetch 和 Last-Event-ID。
-6. R4.19-pre 已完成 true React mount spike，R4.19 已完成 Proposal split + dirty guard，R4.20 已完成 dataflow foundation，R4.21 已完成 shared runtime，R4.22 已完成 structured field scalar visible React mutation editor；当前下一步为 R4.23 line editor React migration。
+6. R4.19-pre 已完成 true React mount spike，R4.19 已完成 Proposal split + dirty guard，R4.20 已完成 dataflow foundation，R4.21 已完成 shared runtime，R4.22 已完成 structured field scalar visible React mutation editor，R4.23 已完成 line editor visible React mutation island；当前下一步为 R4.24 Web runtime finalization。
 
 ### R4.19-pre 已落：true React mount spike
 
@@ -2942,7 +2942,7 @@ R4 验收：
 5. 已改 `apps/web/src/routes.ts`：`webReactRouteTree.home.hydration.runtimeMount` 记录 `react-18-createRoot-probe`、`sse-react-render` 与 `delegated-click-bubble` 合同。
 6. 已扩展 tests 与 browser smoke：`@workhub/web test` 20/20；R4.19-pre Chrome smoke 41 步通过，新增 gates `r4_19_pre_true_react_mount`、`r4_19_pre_dispatcher_coexistence`、`r4_19_pre_sse_props_update_without_full_render` 均为 true。
 7. Bug / 数据流审查：React probe hidden，不污染 Home 视觉；probe click 冒泡进入现有 delegated dispatcher；Home `budget.warning` 事件仅更新 React props，mount count 保持 1。限制是可见 UI 仍为 HTML fallback，Proposal editors 的 DOM 编辑态丢失风险继续由 R4.19 dirty guard 处理。
-8. 边界：R4.19-pre 不等于完整 React migration，也不修 P0-3/P0-4 的 fixture chrome 和 app 级 SSE 长连接；R4.19 已先补 dirty guard 与 fixture 冻结门，R4.20/R4.21 已补数据流地基与 shared runtime，R4.22 已完成第一段 Proposal 可见 mutation editor，Proposal line editor 迁移进入 R4.23。
+8. 边界：R4.19-pre 不等于完整 React migration，也不修 P0-3/P0-4 的 fixture chrome 和 app 级 SSE 长连接；R4.19 已先补 dirty guard 与 fixture 冻结门，R4.20/R4.21 已补数据流地基与 shared runtime，R4.22 已完成第一段 Proposal 可见 mutation editor，R4.23 已完成 line editor 最小 React island；R4.24 进入运行时治理收尾。
 
 ### R4.19 已落：Proposal advanced split migration
 
@@ -2992,11 +2992,23 @@ R4 验收：
 8. Bug / 数据流审查：React editor 不直接 fetch；SSE 仍只触发 REST/Page VM reconcile；dirty route 保留 React controlled input 并显示手动刷新；HTML fallback preserved/hidden，未迁移 line/subrecord/bulk editor 继续保留 fallback marker。
 9. 边界：R4.22 不迁 Proposal line editor，不改后端 merge/apply 语义，也不改变 Proposal 首屏视觉。line editor 的 hunk decision/search/scope 最小迁移进入 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)。
 
+### R4.23 已落：Proposal line editor React migration
+
+1. 已阅读 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)、R4.19-pre/R4.19/R4.20/R4.21/R4.22 竣工记录、`r1-route-line-editor.md`、`web-app.md`、`page-concepts.md`、`web-deliverable-change-request.png` 与 R4 live route contact sheet。
+2. 已选择 text hunk line editor 的 hunk decision/search/current file panel 作为第二段 visible React mutation island；没有迁 subrecord/bulk workbench，避免扩大高风险编辑态。
+3. 已改 `packages/ui/src/gold-path/route-components.ts`：Proposal advanced conflict review 增加 `data-r4-proposal-react-line-editor-host="text-hunk"`，HTML line editor fallback 继续输出并可审计。
+4. 已改 `apps/web/src/routes.ts`：`webReactRouteTree.proposal.hydration.runtimeMount` 标记 `lineEditor: "text-hunk"`，ready root 暴露 `data-r4-route-tree-runtime-line-editor="text-hunk"`。
+5. 已改 `apps/web/src/react-route-mount.ts`：从 typed Proposal conflicts 提取 `text_diff3.conflict_ranges[]`，真实 `createRoot()` 挂载 `ProposalLineEditor`；hunk decision/search/panel 为 React controlled state；apply payload 继续输出既有 `text_hunk_overrides.hunks[]`。
+6. 已扩展 tests 与 browser smoke：Web route tests 覆盖 R4.23 host/runtime/payload/fallback；browser smoke 新增 visible React line editor、hunk state survives SSE、payload parity、HTML fallback boundary、single dispatcher、no-new-smoke-sprawl gates。
+7. 验收通过：`@workhub/web-runtime` typecheck/test、`@workhub/web` typecheck/test、`@workhub/ui` typecheck/test、`@workhub/desktop-webview` typecheck/test、`pnpm typecheck`、`pnpm test` 与 R4 42 步 Chrome smoke。
+8. Bug / 数据流审查：React line editor 不直接 fetch；SSE 仍只触发 REST/Page VM reconcile；dirty route 保留 hunk decision/search 与 structured field input；HTML fallback preserved/hidden，未迁移 subrecord/bulk editor 继续保留 fallback marker。
+9. 边界：R4.23 不改后端 merge/apply 语义、不改变 Proposal 首屏视觉，也不宣称整个 Web 已完全 React 化。R4 收尾进入 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md)。
+
 下一施工顺序：
 
-1. **R4.23 Proposal line editor React migration**：迁 Proposal line editor 的 hunk decision/search/scope 最小 React island，继续保留 shared dispatcher、dirty guard 与 HTML fallback boundary。
-2. **R4 收尾门**：清理 hash route 兼容口径、治理 README 状态行、把 browser smoke 拆向 CI Playwright spec，并拍板 R5 第一条业务纵切。
-3. **后续门禁**：继续保留 R4.8-R4.22 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、React-compatible adapter、true React mount probe、visible React mutation editor、app-level SSE、cursor、dirty guard、shared runtime、action notice、desktop boundary、secret-safe、Replay restore、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.24 Web runtime finalization**：清理 hash route 兼容口径、治理 README 状态行、把 browser smoke 拆向 CI Playwright spec，并拍板 R5 第一条业务纵切。
+2. **R5 前置清单**：权限矩阵审计、onboarding、可观测性、M-DRIVE/meeting/schedule 业务断档补齐顺序。
+3. **后续门禁**：继续保留 R4.8-R4.23 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、React-compatible adapter、true React mount probe、visible React mutation editor、React line editor、app-level SSE、cursor、dirty guard、shared runtime、action notice、desktop boundary、secret-safe、Replay restore、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

@@ -1,7 +1,7 @@
 ---
 module: R4-proposal-line-editor-react-migration
 layer: C-WEB / C-UIKIT / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -19,6 +19,12 @@ depends_on:
 ---
 
 # R4.23 Proposal Line Editor React Migration Plan
+
+## 0. 竣工摘要（2026-06-11）
+
+R4.23 已完成 Proposal line editor 的最小真实 React island：`text-hunk` hunk decision、search query 与当前文件 scope 进入 React controlled state，仍复用 Web delegated dispatcher 与 `@workhub/web-runtime` payload materializer。HTML line editor fallback 保留并在 React mount 后隐藏，未迁移的 structured field/subrecord/bulk workbench 边界继续可审计。
+
+验收结果：本机 Chrome R4 live route interaction smoke 保持 42 步，新增 `r4_23_visible_react_line_editor`、`r4_23_hunk_state_survives_sse`、`r4_23_line_editor_payload_parity`、`r4_23_html_fallback_boundary_regression`、`r4_23_single_dispatcher_regression`、`r4_23_no_new_smoke_sprawl` 全部为 true。关键截图为 `06aa-proposal-dirty-edit-sse-guard-en-desktop.png` 与 `06b-proposal-line-editor-apply-success-en-desktop.png`。
 
 ## 1. 开工前必读
 
@@ -88,4 +94,23 @@ R4.22 只迁 structured field scalar editor，证明 React 18 visible island 可
 
 ## 7. 后续候选
 
-R4.23 完成后，优先进入 R4 收尾门：hash route 兼容清理、README 状态行治理、browser smoke CI 化拆分、R5 第一条业务纵切拍板。若 line editor 仍暴露未迁移的高风险子状态，再另立 R4.24 做 subrecord/bulk editor 最小迁移。
+R4.23 完成后，优先进入 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md)：hash route 兼容清理、README 状态行治理、browser smoke CI 化拆分、R5 第一条业务纵切拍板。subrecord/bulk editor 暂不另起迁移，除非 R4.24 的收尾审查发现它们仍是 R5 前阻塞风险。
+
+## 8. 竣工记录
+
+| 项 | 结果 |
+|---|---|
+| React line editor island | `apps/web/src/react-route-mount.ts` 新增 `ProposalLineEditor`，在 `data-r4-proposal-react-line-editor-host="text-hunk"` 下真实 `createRoot()` 挂载 |
+| Controlled state | hunk decision、search query 与 active file panel 由 React state 保存；SSE dirty path 后仍保留 `keep_current` 与 `scope` |
+| Payload parity | Apply 仍输出既有 `text_hunk_overrides.hunks[]`，覆盖 hunk index、start/end line 与 decision，不新增 API |
+| Dispatcher | React action 继续走 `data-action-*` / delegated dispatcher / shared payload materializer，不直接 fetch |
+| Fallback boundary | HTML line editor fallback preserved/hidden；structured field、subrecord、bulk workbench 继续保留原边界 |
+| 视觉 | Proposal 首屏仍对齐 `web-deliverable-change-request.png`；高级编辑区不变成代码 IDE |
+
+## 9. Bug / 数据流 / 概念图复核
+
+- P0-1 React 迁移：R4.23 是第二段可见 React editor，不再停留在 data-attribute adapter；route tree 暴露 `lineEditor: "text-hunk"`。
+- P0-2 编辑态丢失：`06aa` dirty SSE gate 证明 hunk decision/search 与 structured field 输入均未被事件清空。
+- P0-4 SSE 数据流：仍沿 R4.20 app-level SSE + Page VM local refetch；事件只作为 reconcile trigger，不直接驱动业务 UI。
+- P1-1 双端分叉：本轮不新增 component-local dispatcher，继续复用 R4.21 shared runtime；desktop-webview 没有复制新 parser。
+- 概念图：Proposal 页面仍是变更申请审阅面；line editor 只服务高级冲突处理，不进 WorkItem/Home/Approval，也不进入桌宠气泡。

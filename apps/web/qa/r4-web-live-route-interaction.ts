@@ -73,6 +73,7 @@ type BrowserAudit = {
   routeTreeRuntimePropsUpdate: string | null;
   routeTreeRuntimeDispatcher: string | null;
   routeTreeRuntimeMutationEditor: string | null;
+  routeTreeRuntimeLineEditor: string | null;
   reactComponentName: string | null;
   reactComponentRoute: string | null;
   reactComponentMode: string | null;
@@ -100,6 +101,12 @@ type BrowserAudit = {
   reactRuntimeControlledValue: string | null;
   reactRuntimeHtmlFallbackPreserved: string | null;
   reactRuntimeHtmlFallbackHidden: string | null;
+  reactRuntimeVisibleLineEditor: string | null;
+  reactRuntimeLineEditorKind: string | null;
+  reactRuntimeLineEditorSelectedDecision: string | null;
+  reactRuntimeLineEditorSearchValue: string | null;
+  reactRuntimeLineEditorHtmlFallbackPreserved: string | null;
+  reactRuntimeLineEditorHtmlFallbackHidden: string | null;
   reactRuntimeDispatcherProbe: boolean;
   reactRuntimeDispatcherProbeActionId: string | null;
   routeSpecificMarker: boolean;
@@ -1340,6 +1347,23 @@ async function fillStructuredFieldCustomValue(cdp: CdpClient, field: string, val
   }
 }
 
+async function fillLineEditorSearchValue(cdp: CdpClient, value: string) {
+  const focused = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector("[data-line-editor-search]");
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.focus();
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  if (!focused) {
+    throw new Error("Could not focus line editor search");
+  }
+  if (value) {
+    await cdp.send("Input.insertText", { text: value });
+  }
+}
+
 async function emitQaSseEvent(cdp: CdpClient, event: string, stream = "proposal") {
   const ok = await cdp.evaluate<boolean>(`fetch(${JSON.stringify(`/api/__qa/emit?event=${encodeURIComponent(event)}&stream=${encodeURIComponent(stream)}`)}).then((response) => response.ok)`);
   if (!ok) {
@@ -1451,6 +1475,7 @@ function auditExpression() {
     const reactRuntimeProbe = document.querySelector("[data-r4-react-dispatcher-probe]");
     const reactMutationEditor = document.querySelector("[data-r4-proposal-react-mutation-editor]");
     const reactMutationInput = document.querySelector("[data-r4-react-controlled-input]");
+    const reactLineEditor = document.querySelector("[data-r4-proposal-react-line-editor]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1628,6 +1653,7 @@ function auditExpression() {
       routeTreeRuntimePropsUpdate: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-props-update") : null,
       routeTreeRuntimeDispatcher: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-dispatcher") : null,
       routeTreeRuntimeMutationEditor: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-mutation-editor") : null,
+      routeTreeRuntimeLineEditor: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-line-editor") : null,
       reactComponentName: reactComponent ? reactComponent.getAttribute("data-r4-react-component") : null,
       reactComponentRoute: reactComponent ? reactComponent.getAttribute("data-r4-react-component-route") : null,
       reactComponentMode: reactComponent ? reactComponent.getAttribute("data-r4-react-component-mode") : null,
@@ -1657,6 +1683,12 @@ function auditExpression() {
         : reactMutationEditor?.getAttribute("data-r4-proposal-react-controlled-value") || null,
       reactRuntimeHtmlFallbackPreserved: document.documentElement.dataset.r4ReactHtmlFallbackPreserved || reactRuntime?.getAttribute("data-r4-react-html-fallback-preserved") || null,
       reactRuntimeHtmlFallbackHidden: document.documentElement.dataset.r4ReactHtmlFallbackHidden || reactRuntime?.getAttribute("data-r4-react-html-fallback-hidden") || null,
+      reactRuntimeVisibleLineEditor: document.documentElement.dataset.r4ReactVisibleLineEditor || reactLineEditor?.getAttribute("data-r4-react-visible-line-editor") || null,
+      reactRuntimeLineEditorKind: document.documentElement.dataset.r4ReactLineEditorKind || reactLineEditor?.getAttribute("data-r4-react-line-editor-kind") || null,
+      reactRuntimeLineEditorSelectedDecision: reactLineEditor?.getAttribute("data-r4-proposal-react-line-editor-selected-decision") || document.documentElement.dataset.r4ReactLineEditorSelectedDecision || null,
+      reactRuntimeLineEditorSearchValue: reactLineEditor?.getAttribute("data-r4-proposal-react-line-editor-search-value") || document.documentElement.dataset.r4ReactLineEditorSearchValue || null,
+      reactRuntimeLineEditorHtmlFallbackPreserved: document.documentElement.dataset.r4ReactLineEditorHtmlFallbackPreserved || reactLineEditor?.getAttribute("data-r4-react-line-editor-html-fallback-preserved") || null,
+      reactRuntimeLineEditorHtmlFallbackHidden: document.documentElement.dataset.r4ReactLineEditorHtmlFallbackHidden || reactLineEditor?.getAttribute("data-r4-react-line-editor-html-fallback-hidden") || null,
       reactRuntimeDispatcherProbe: Boolean(reactRuntimeProbe),
       reactRuntimeDispatcherProbeActionId: reactRuntimeProbe ? reactRuntimeProbe.getAttribute("data-action-id") : null,
       routeSpecificMarker,
@@ -1938,13 +1970,7 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "06a-proposal-advanced-review-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
   await clickSelector(cdp, "[data-line-editor-decision]:not([data-line-editor-decision-selected='true'])");
-  await cdp.evaluate(`(() => {
-    const input = document.querySelector("[data-line-editor-search]");
-    if (!(input instanceof HTMLInputElement)) return false;
-    input.value = "scope";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  })()`);
+  await fillLineEditorSearchValue(cdp, "scope");
   await fillStructuredFieldCustomValue(cdp, "title", "R4.19 guarded custom title");
   await emitQaSseEvent(cdp, "proposal.merged", "proposal");
   await waitFor<BrowserAudit>(
@@ -1964,13 +1990,10 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
       audit.routeData.proposalLineEditorSearchValue === "scope" &&
       audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
   );
+  await cdp.evaluate("window.scrollTo(0, 0); true");
+  await new Promise((resolve) => setTimeout(resolve, 80));
   steps.push(await captureStep(cdp, { id: "06aa-proposal-dirty-edit-sse-guard-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
   await cdp.evaluate(`(() => {
-    const search = document.querySelector("[data-line-editor-search]");
-    if (search instanceof HTMLInputElement) {
-      search.value = "";
-      search.dispatchEvent(new Event("input", { bubbles: true }));
-    }
     const custom = document.querySelector('[data-structured-field-custom-input="title"]');
     if (custom instanceof HTMLTextAreaElement) {
       custom.value = "";
@@ -2153,6 +2176,11 @@ function requestProof(requests: ApiRequestRecord[]) {
       knowledgeWorkItemFilter: bodyMatch(/^\/api\/knowledge\/search$/u, "POST", "r4-live-workitem"),
       evidenceBindingRefs: bodyMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST", "evidence_bubble_id"),
       textHunkOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "text_hunk_overrides"),
+      textHunkFullCoverage:
+        bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "hunk_index") &&
+        bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "start_line") &&
+        bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "end_line") &&
+        bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "decision"),
       taskPlanScope: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "task_plan_scope"),
       structuredItemOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_item_overrides"),
       structuredFieldOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_field_overrides"),
@@ -2901,6 +2929,55 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
       r4_22_no_new_smoke_sprawl: steps.length === 42,
+      r4_23_visible_react_line_editor:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeComponent === "proposal" &&
+          step.audit.routeTreeRuntimeStrategy === "react-18-visible-mutation-editor" &&
+          step.audit.routeTreeRuntimeLineEditor === "text-hunk" &&
+          step.audit.reactRuntimeRoute === "proposal" &&
+          step.audit.reactRuntimeVisibleLineEditor === "true" &&
+          step.audit.reactRuntimeLineEditorKind === "text-hunk" &&
+          step.audit.routeData.proposalLineEditorFileCount === "1" &&
+          step.audit.routeData.proposalLineEditorHunkCount === "1"
+        ),
+      r4_23_hunk_state_survives_sse:
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.live.refreshMode === "dirty-deferred" &&
+          step.audit.reactRuntimeLineEditorKind === "text-hunk" &&
+          Boolean(step.audit.reactRuntimeLineEditorSelectedDecision) &&
+          step.audit.reactRuntimeLineEditorSelectedDecision === step.audit.routeData.proposalLineEditorSelectedDecision &&
+          step.audit.reactRuntimeLineEditorSearchValue === "scope" &&
+          step.audit.routeData.proposalLineEditorSearchValue === "scope"
+        ),
+      r4_23_line_editor_payload_parity:
+        steps.some((step) =>
+          step.id === "06b-proposal-line-editor-apply-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "apply_ai_fusion" &&
+          step.audit.reactRuntimeLineEditorKind === "text-hunk"
+        ) &&
+        proof.advancedPayloads.textHunkOverrides &&
+        proof.advancedPayloads.textHunkFullCoverage,
+      r4_23_html_fallback_boundary_regression:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalAdvancedFallbackPreserved === "true" &&
+          step.audit.routeData.proposalLineEditorFallback === "true" &&
+          step.audit.reactRuntimeLineEditorHtmlFallbackPreserved === "true" &&
+          step.audit.reactRuntimeLineEditorHtmlFallbackHidden === "true"
+        ),
+      r4_23_single_dispatcher_regression:
+        steps.some((step) =>
+          step.id === "06b-proposal-line-editor-apply-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "apply_ai_fusion"
+        ) &&
+        proof.counts.mergeApply >= 4 &&
+        proof.advancedPayloads.textHunkOverrides,
+      r4_23_no_new_smoke_sprawl: steps.length === 42,
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -3046,6 +3123,12 @@ async function main() {
         `- R4.22 single dispatcher regression: ${String(gates.r4_22_single_dispatcher_regression)}`,
         `- R4.22 HTML fallback boundary regression: ${String(gates.r4_22_html_fallback_boundary_regression)}`,
         `- R4.22 no new smoke sprawl: ${String(gates.r4_22_no_new_smoke_sprawl)}`,
+        `- R4.23 visible React line editor: ${String(gates.r4_23_visible_react_line_editor)}`,
+        `- R4.23 hunk state survives SSE: ${String(gates.r4_23_hunk_state_survives_sse)}`,
+        `- R4.23 line editor payload parity: ${String(gates.r4_23_line_editor_payload_parity)}`,
+        `- R4.23 HTML fallback boundary regression: ${String(gates.r4_23_html_fallback_boundary_regression)}`,
+        `- R4.23 single dispatcher regression: ${String(gates.r4_23_single_dispatcher_regression)}`,
+        `- R4.23 no new smoke sprawl: ${String(gates.r4_23_no_new_smoke_sprawl)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

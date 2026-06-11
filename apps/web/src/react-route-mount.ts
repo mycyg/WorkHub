@@ -7,7 +7,7 @@ import {
   type HomeRouteComponentProps,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
-import { uiT } from "@workhub/ui";
+import { uiCount, uiT } from "@workhub/ui";
 import type { ProposalConflict, ProposalConflictOption } from "@workhub/contracts";
 
 import type { WebRouteReadyResult } from "./routes.js";
@@ -17,7 +17,7 @@ export type ReactRouteMountReason = "initial" | "sse-props";
 export type ReactRouteMountResult = {
   mounted: boolean;
   routeKey?: "home" | "proposal" | undefined;
-  componentName?: "HomeRouteComponent" | "ProposalMutationEditor" | undefined;
+  componentName?: "HomeRouteComponent" | "ProposalMutationEditor" | "ProposalLineEditor" | undefined;
   mountCount: number;
   propsUpdateCount: number;
   reason?: ReactRouteMountReason | undefined;
@@ -35,6 +35,7 @@ type ActiveReactMount = {
 };
 
 let activeMount: ActiveReactMount | undefined;
+let activeProposalLineMount: ActiveReactMount | undefined;
 let totalMountCount = 0;
 
 function setRuntimeMetric(key: string, value: unknown) {
@@ -50,15 +51,23 @@ function resetRuntimeMetrics() {
   setRuntimeMetric("r4ReactControlledField", "");
   setRuntimeMetric("r4ReactHtmlFallbackPreserved", false);
   setRuntimeMetric("r4ReactHtmlFallbackHidden", false);
+  setRuntimeMetric("r4ReactVisibleLineEditor", false);
+  setRuntimeMetric("r4ReactLineEditorKind", "");
+  setRuntimeMetric("r4ReactLineEditorSelectedDecision", "");
+  setRuntimeMetric("r4ReactLineEditorSearchValue", "");
+  setRuntimeMetric("r4ReactLineEditorHtmlFallbackPreserved", false);
+  setRuntimeMetric("r4ReactLineEditorHtmlFallbackHidden", false);
 }
 
 export function unmountReactRouteIsland() {
-  if (!activeMount) {
+  if (!activeMount && !activeProposalLineMount) {
     resetRuntimeMetrics();
     return;
   }
-  activeMount.root.unmount();
+  activeMount?.root.unmount();
+  activeProposalLineMount?.root.unmount();
   activeMount = undefined;
+  activeProposalLineMount = undefined;
   resetRuntimeMetrics();
 }
 
@@ -328,6 +337,370 @@ function ProposalMutationEditor(input: ProposalMutationEditorProps) {
   );
 }
 
+type LineEditorDecision = "keep_current" | "accept_incoming" | "ai_fusion";
+
+type LineEditorRange = {
+  index: number;
+  startLine: number;
+  endLine: number;
+};
+
+type LineEditorRow = {
+  index: number;
+  kind: "add" | "remove" | "context";
+  marker: string;
+  text: string;
+};
+
+type ProposalLineEditorFile = {
+  conflictId: string;
+  targetKey: string;
+  targetLabel: string;
+  panelId: string;
+  href: string;
+  method: string;
+  actionId: string;
+  ranges: LineEditorRange[];
+  rows: LineEditorRow[];
+  defaultDecision: LineEditorDecision;
+  decisions: LineEditorDecision[];
+};
+
+type ProposalLineEditorProps = {
+  locale: WorkHubLocale;
+  files: ProposalLineEditorFile[];
+};
+
+function numberField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function safeId(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/gu, "-");
+}
+
+function textDiff3(option: ProposalConflictOption) {
+  return objectRecord(option.quality_gate?.["text_diff3"]);
+}
+
+function lineEditorConflictRanges(value: unknown): LineEditorRange[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    const record = objectRecord(item);
+    const startLine = numberField(record, "start_line");
+    const endLine = numberField(record, "end_line");
+    return startLine > 0 && endLine >= startLine ? [{ index, startLine, endLine }] : [];
+  });
+}
+
+function lineEditorRows(preview: unknown): LineEditorRow[] {
+  const patch = objectRecord(preview);
+  if (patch?.["type"] !== "unified_text_patch_preview" || !Array.isArray(patch["hunks"])) {
+    return [];
+  }
+  let index = 0;
+  return patch["hunks"].flatMap((hunk) => {
+    const record = objectRecord(hunk);
+    const lines = Array.isArray(record?.["lines"]) ? record["lines"] : [];
+    return lines.flatMap((line) => {
+      if (typeof line !== "string") {
+        return [];
+      }
+      index += 1;
+      const marker = line.startsWith("+") ? "+" : line.startsWith("-") ? "-" : " ";
+      return [{
+        index,
+        kind: marker === "+" ? "add" : marker === "-" ? "remove" : "context",
+        marker,
+        text: line.replace(/^[-+ ]/u, "")
+      }];
+    });
+  });
+}
+
+function lineEditorOption(conflict: ProposalConflict) {
+  return conflict.options.find((option) => {
+    const diff3 = textDiff3(option);
+    return diff3?.["type"] === "line_text_diff3"
+      && lineEditorConflictRanges(diff3["conflict_ranges"]).length > 0
+      && Boolean(option.action?.href);
+  });
+}
+
+function lineEditorDefaultDecision(conflict: ProposalConflict): LineEditorDecision {
+  return conflict.recommended_option_id === "keep_current" ||
+    conflict.recommended_option_id === "accept_incoming" ||
+    conflict.recommended_option_id === "ai_fusion"
+    ? conflict.recommended_option_id
+    : "ai_fusion";
+}
+
+function lineEditorDecisionOptions(conflict: ProposalConflict): LineEditorDecision[] {
+  return conflict.options.flatMap((option) =>
+    option.id === "keep_current" || option.id === "accept_incoming" || option.id === "ai_fusion"
+      ? [option.id]
+      : []
+  );
+}
+
+function proposalLineEditorProps(conflicts: ProposalConflict[], locale: WorkHubLocale): ProposalLineEditorProps | undefined {
+  const files = conflicts.flatMap((conflict): ProposalLineEditorFile[] => {
+    const option = lineEditorOption(conflict);
+    const diff3 = option ? textDiff3(option) : undefined;
+    const ranges = lineEditorConflictRanges(diff3?.["conflict_ranges"]);
+    if (!option?.action?.href || ranges.length === 0) {
+      return [];
+    }
+    return [{
+      conflictId: conflict.id,
+      targetKey: conflict.target_key,
+      targetLabel: conflict.target_path ?? conflict.target_key,
+      panelId: `react-line-editor-${safeId(conflict.id)}`,
+      href: option.action.href,
+      method: option.action.method ?? "POST",
+      actionId: option.action.id ?? "apply_ai_fusion",
+      ranges,
+      rows: lineEditorRows(option.quality_gate?.["text_patch_preview"]),
+      defaultDecision: lineEditorDefaultDecision(conflict),
+      decisions: lineEditorDecisionOptions(conflict)
+    }];
+  });
+  return files.length > 0 ? { locale, files } : undefined;
+}
+
+function lineEditorDecisionLabel(locale: WorkHubLocale, decision: LineEditorDecision) {
+  if (decision === "keep_current") {
+    return uiT(locale, "proposal.overlapReviewKeepCurrent");
+  }
+  if (decision === "accept_incoming") {
+    return uiT(locale, "proposal.overlapReviewAcceptIncoming");
+  }
+  return uiT(locale, "proposal.overlapReviewAiFusion");
+}
+
+function lineEditorRangeLabel(locale: WorkHubLocale, startLine: number, endLine: number) {
+  if (startLine === endLine) {
+    return locale === "zh-CN" ? `第 ${startLine} 行` : `Line ${startLine}`;
+  }
+  return locale === "zh-CN" ? `第 ${startLine}-${endLine} 行` : `Lines ${startLine}-${endLine}`;
+}
+
+function initialLineEditorDecisions(files: ProposalLineEditorFile[]) {
+  return Object.fromEntries(files.map((file) => [
+    file.panelId,
+    Object.fromEntries(file.ranges.map((range) => [String(range.index), file.defaultDecision]))
+  ]));
+}
+
+function lineEditorApplyPayload(file: ProposalLineEditorFile, decisions: Record<string, string | undefined>) {
+  return JSON.stringify({
+    confirm: true,
+    text_hunk_overrides: {
+      hunks: file.ranges.map((range) => ({
+        hunk_index: range.index,
+        start_line: range.startLine,
+        end_line: range.endLine,
+        decision: decisions[String(range.index)] ?? file.defaultDecision
+      }))
+    }
+  });
+}
+
+function ProposalLineEditor(input: ProposalLineEditorProps) {
+  const firstPanelId = input.files[0]?.panelId ?? "";
+  const [activePanelId, setActivePanelId] = useState(firstPanelId);
+  const [searchByPanel, setSearchByPanel] = useState<Record<string, string>>({});
+  const [decisionsByPanel, setDecisionsByPanel] = useState<Record<string, Record<string, string | undefined>>>(() =>
+    initialLineEditorDecisions(input.files)
+  );
+  const activeFile = input.files.find((file) => file.panelId === activePanelId) ?? input.files[0];
+  const activeSearch = activeFile ? searchByPanel[activeFile.panelId] ?? "" : "";
+  const activeDecision = activeFile
+    ? decisionsByPanel[activeFile.panelId]?.[String(activeFile.ranges[0]?.index ?? 0)] ?? activeFile.defaultDecision
+    : "";
+  const hunkCount = input.files.reduce((sum, file) => sum + file.ranges.length, 0);
+  const rowCount = input.files.reduce((sum, file) => sum + file.rows.length, 0);
+
+  return createElement(
+    "section",
+    {
+      className: "wh-line-editor",
+      "data-route-line-editor": "true",
+      "data-route-line-editor-file-count": String(input.files.length),
+      "data-route-line-editor-hunk-count": String(hunkCount),
+      "data-route-line-editor-row-count": String(rowCount),
+      "data-r4-proposal-react-line-editor": "text-hunk",
+      "data-r4-proposal-react-line-editor-controlled-state": "true",
+      "data-r4-proposal-react-line-editor-selected-decision": activeDecision,
+      "data-r4-proposal-react-line-editor-search-value": activeSearch
+    },
+    createElement(
+      "div",
+      { className: "wh-line-editor-head" },
+      createElement("strong", null, uiT(input.locale, "proposal.lineEditorTitle")),
+      createElement("span", { className: "wh-pill" }, uiCount(input.locale, input.files.length, "文件", "file"))
+    ),
+    createElement(
+      "div",
+      { className: "wh-line-editor-tabs", role: "tablist", "aria-label": uiT(input.locale, "proposal.lineEditorTitle") },
+      input.files.map((file, index) => {
+        const active = file.panelId === activePanelId || (!activePanelId && index === 0);
+        return createElement(
+          "button",
+          {
+            key: file.panelId,
+            type: "button",
+            className: "wh-line-editor-tab",
+            role: "tab",
+            id: `${file.panelId}-tab`,
+            "aria-controls": file.panelId,
+            "aria-selected": String(active),
+            tabIndex: active ? 0 : -1,
+            "data-line-editor-tab": file.targetKey,
+            "data-line-editor-panel-id": file.panelId,
+            onClick: () => setActivePanelId(file.panelId)
+          },
+          file.targetLabel
+        );
+      })
+    ),
+    input.files.map((file, index) => {
+      const active = file.panelId === activePanelId || (!activePanelId && index === 0);
+      const search = searchByPanel[file.panelId] ?? "";
+      const lowerSearch = search.trim().toLowerCase();
+      const decisions = decisionsByPanel[file.panelId] ?? {};
+      const visibleRows = file.rows.filter((row) => lowerSearch.length === 0 || row.text.toLowerCase().includes(lowerSearch));
+      return createElement(
+        "section",
+        {
+          key: file.panelId,
+          className: "wh-line-editor-panel",
+          id: file.panelId,
+          role: "tabpanel",
+          "aria-labelledby": `${file.panelId}-tab`,
+          "data-line-editor-panel": file.targetKey,
+          "data-line-editor-match-count": String(visibleRows.length),
+          hidden: !active
+        },
+        createElement(
+          "div",
+          { className: "wh-line-editor-toolbar" },
+          createElement("input", {
+            className: "wh-line-editor-search",
+            type: "search",
+            value: search,
+            "data-line-editor-search": "true",
+            "aria-label": uiT(input.locale, "proposal.lineEditorSearch"),
+            placeholder: uiT(input.locale, "proposal.lineEditorSearch"),
+            onChange: (event: ChangeEvent<HTMLInputElement>) => {
+              const nextValue = event.currentTarget.value;
+              setSearchByPanel((current) => ({ ...current, [file.panelId]: nextValue }));
+            }
+          }),
+          createElement("span", { className: "wh-pill", "data-line-editor-match-count": String(visibleRows.length) }, uiCount(input.locale, visibleRows.length, "行", "line"))
+        ),
+        createElement(
+          "div",
+          { className: "wh-line-editor-body" },
+          createElement(
+            "div",
+            { className: "wh-line-editor-lines", "data-line-editor-row-count": String(file.rows.length) },
+            file.rows.map((row) => {
+              const visible = lowerSearch.length === 0 || row.text.toLowerCase().includes(lowerSearch);
+              return createElement(
+                "div",
+                {
+                  key: row.index,
+                  className: "wh-line-editor-row",
+                  "data-line-editor-row": "true",
+                  "data-line-editor-row-kind": row.kind,
+                  "data-line-editor-row-text": row.text.toLowerCase(),
+                  hidden: !visible
+                },
+                createElement("span", { className: "wh-line-editor-row-no" }, String(row.index)),
+                createElement("span", { className: "wh-line-editor-row-kind" }, row.marker),
+                createElement("span", { className: "wh-line-editor-row-text" }, row.text)
+              );
+            })
+          ),
+          createElement(
+            "div",
+            { className: "wh-line-editor-hunks" },
+            file.ranges.map((range) => {
+              const selectedDecision = decisions[String(range.index)] ?? file.defaultDecision;
+              return createElement(
+                "article",
+                {
+                  key: range.index,
+                  className: "wh-line-editor-hunk",
+                  tabIndex: 0,
+                  "data-line-editor-hunk": "true",
+                  "data-line-editor-hunk-index": String(range.index),
+                  "data-line-editor-start-line": String(range.startLine),
+                  "data-line-editor-end-line": String(range.endLine)
+                },
+                createElement(
+                  "div",
+                  { className: "wh-line-editor-hunk-head" },
+                  createElement("strong", null, `${uiT(input.locale, "proposal.overlapReviewHunk")} ${range.index + 1}`),
+                  createElement("span", { className: "wh-pill" }, lineEditorRangeLabel(input.locale, range.startLine, range.endLine))
+                ),
+                createElement(
+                  "div",
+                  { className: "wh-line-editor-decisions" },
+                  file.decisions.map((decision) => {
+                    const selected = selectedDecision === decision;
+                    return createElement(
+                      "button",
+                      {
+                        key: decision,
+                        type: "button",
+                        className: "wh-line-editor-decision",
+                        "aria-pressed": String(selected),
+                        "data-line-editor-decision": decision,
+                        "data-line-editor-decision-selected": String(selected),
+                        "data-line-editor-hunk-index": String(range.index),
+                        onClick: () => setDecisionsByPanel((current) => ({
+                          ...current,
+                          [file.panelId]: {
+                            ...(current[file.panelId] ?? {}),
+                            [String(range.index)]: decision
+                          }
+                        }))
+                      },
+                      lineEditorDecisionLabel(input.locale, decision)
+                    );
+                  })
+                )
+              );
+            })
+          )
+        ),
+        createElement(
+          "div",
+          { className: "wh-line-editor-actions" },
+          createElement(
+            "a",
+            {
+              className: "wh-btn wh-btn-primary",
+              href: file.href,
+              "data-line-editor-apply": "true",
+              "data-action-id": file.actionId,
+              "data-action-href": file.href,
+              "data-method": file.method,
+              "data-request-json": lineEditorApplyPayload(file, decisions)
+            },
+            uiT(input.locale, "proposal.lineEditorApply")
+          )
+        )
+      );
+    })
+  );
+}
+
 function syncRuntimeMetrics(
   boundary: HTMLElement,
   host: HTMLElement,
@@ -361,6 +734,10 @@ function proposalMountHost() {
   return document.querySelector<HTMLElement>("[data-r4-proposal-react-mutation-editor-host=\"structured-field-scalar\"]");
 }
 
+function proposalLineMountHost() {
+  return document.querySelector<HTMLElement>("[data-r4-proposal-react-line-editor-host=\"text-hunk\"]");
+}
+
 function hideProposalStructuredFieldFallback(host: HTMLElement) {
   const advanced = host.closest<HTMLElement>("[data-r4-proposal-advanced-review]");
   const fallback = advanced?.querySelector<HTMLElement>("details[data-proposal-structured-field-editor=\"true\"]");
@@ -372,6 +749,21 @@ function hideProposalStructuredFieldFallback(host: HTMLElement) {
   fallback.dataset.r4ProposalHtmlFallbackPreserved = "true";
   fallback.dataset.r4ProposalHtmlFallbackHiddenByReact = "true";
   host.dataset.r4ProposalReactMutationEditorFallbackHidden = "true";
+  return true;
+}
+
+function hideProposalLineEditorFallback(host: HTMLElement) {
+  const advanced = host.closest<HTMLElement>("[data-r4-proposal-advanced-review]");
+  const fallback = Array.from(advanced?.querySelectorAll<HTMLElement>(".wh-line-editor[data-route-line-editor=\"true\"]") ?? [])
+    .find((candidate) => !host.contains(candidate) && !candidate.hasAttribute("data-r4-proposal-react-line-editor"));
+  if (!fallback) {
+    host.dataset.r4ProposalReactLineEditorFallbackHidden = "false";
+    return false;
+  }
+  fallback.hidden = true;
+  fallback.dataset.r4ProposalLineEditorHtmlFallbackPreserved = "true";
+  fallback.dataset.r4ProposalLineEditorHtmlFallbackHiddenByReact = "true";
+  host.dataset.r4ProposalReactLineEditorFallbackHidden = "true";
   return true;
 }
 
@@ -410,6 +802,86 @@ function syncProposalRuntimeMetrics(
   }
 }
 
+function syncProposalLineRuntimeMetrics(
+  host: HTMLElement,
+  input: {
+    selectedDecision: string;
+    searchValue: string;
+    reason: ReactRouteMountReason;
+    mountCount: number;
+    propsUpdateCount: number;
+    fallbackHidden: boolean;
+  }
+) {
+  const attrs = {
+    r4ReactVisibleLineEditor: "true",
+    r4ReactLineEditorKind: "text-hunk",
+    r4ReactLineEditorSelectedDecision: input.selectedDecision,
+    r4ReactLineEditorSearchValue: input.searchValue,
+    r4ReactLineEditorHtmlFallbackPreserved: "true",
+    r4ReactLineEditorHtmlFallbackHidden: String(input.fallbackHidden),
+    r4ReactLineEditorLastUpdateReason: input.reason,
+    r4ReactLineEditorMountCount: String(input.mountCount),
+    r4ReactLineEditorPropsUpdateCount: String(input.propsUpdateCount)
+  };
+  host.dataset.r4ProposalReactLineEditorMounted = "true";
+  host.dataset.r4ReactRuntime = reactRuntimeName;
+  for (const [key, value] of Object.entries(attrs)) {
+    host.dataset[key] = value;
+    setRuntimeMetric(key, value);
+  }
+}
+
+function unmountProposalLineEditorRoot() {
+  activeProposalLineMount?.root.unmount();
+  activeProposalLineMount = undefined;
+  setRuntimeMetric("r4ReactVisibleLineEditor", false);
+  setRuntimeMetric("r4ReactLineEditorKind", "");
+  setRuntimeMetric("r4ReactLineEditorSelectedDecision", "");
+  setRuntimeMetric("r4ReactLineEditorSearchValue", "");
+  setRuntimeMetric("r4ReactLineEditorHtmlFallbackPreserved", false);
+  setRuntimeMetric("r4ReactLineEditorHtmlFallbackHidden", false);
+}
+
+function mountProposalLineEditorRoot(
+  props: ProposalLineEditorProps | undefined,
+  host: HTMLElement | null,
+  reason: ReactRouteMountReason
+) {
+  if (!props || !host) {
+    unmountProposalLineEditorRoot();
+    return false;
+  }
+  if (!activeProposalLineMount || activeProposalLineMount.host !== host) {
+    activeProposalLineMount?.root.unmount();
+    totalMountCount += 1;
+    activeProposalLineMount = {
+      host,
+      root: createRoot(host),
+      routeKey: "proposal",
+      mountCount: totalMountCount,
+      propsUpdateCount: 0
+    };
+  } else if (reason === "sse-props") {
+    activeProposalLineMount.propsUpdateCount += 1;
+  }
+  const fallbackHidden = hideProposalLineEditorFallback(host);
+  const firstFile = props.files[0];
+  syncProposalLineRuntimeMetrics(host, {
+    selectedDecision: firstFile?.defaultDecision ?? "",
+    searchValue: "",
+    reason,
+    mountCount: activeProposalLineMount.mountCount,
+    propsUpdateCount: activeProposalLineMount.propsUpdateCount,
+    fallbackHidden
+  });
+  const currentMount = activeProposalLineMount;
+  flushSync(() => {
+    currentMount.root.render(createElement(ProposalLineEditor, props));
+  });
+  return true;
+}
+
 function mountProposalReactRouteIsland(
   result: WebRouteReadyResult,
   locale: WorkHubLocale,
@@ -425,8 +897,10 @@ function mountProposalReactRouteIsland(
     };
   }
   const props = proposalMutationEditorProps(result.surface.proposal_conflicts, locale);
+  const lineProps = proposalLineEditorProps(result.surface.proposal_conflicts, locale);
   const host = proposalMountHost();
-  if (!props || !host) {
+  const lineHost = proposalLineMountHost();
+  if (!props && !lineProps) {
     unmountReactRouteIsland();
     return {
       mounted: false,
@@ -435,37 +909,48 @@ function mountProposalReactRouteIsland(
       propsUpdateCount: activeMount?.propsUpdateCount ?? 0
     };
   }
-  if (!activeMount || activeMount.host !== host || activeMount.routeKey !== "proposal") {
+  let fieldMounted = false;
+  if (props && host) {
+    if (!activeMount || activeMount.host !== host || activeMount.routeKey !== "proposal") {
+      activeMount?.root.unmount();
+      totalMountCount += 1;
+      activeMount = {
+        host,
+        root: createRoot(host),
+        routeKey: "proposal",
+        mountCount: totalMountCount,
+        propsUpdateCount: 0
+      };
+    } else if (reason === "sse-props") {
+      activeMount.propsUpdateCount += 1;
+    }
+    const fallbackHidden = hideProposalStructuredFieldFallback(host);
+    syncProposalRuntimeMetrics(host, {
+      field: props.field,
+      reason,
+      mountCount: activeMount.mountCount,
+      propsUpdateCount: activeMount.propsUpdateCount,
+      fallbackHidden
+    });
+    const currentMount = activeMount;
+    flushSync(() => {
+      currentMount.root.render(createElement(ProposalMutationEditor, props));
+    });
+    fieldMounted = true;
+  } else {
     activeMount?.root.unmount();
-    totalMountCount += 1;
-    activeMount = {
-      host,
-      root: createRoot(host),
-      routeKey: "proposal",
-      mountCount: totalMountCount,
-      propsUpdateCount: 0
-    };
-  } else if (reason === "sse-props") {
-    activeMount.propsUpdateCount += 1;
+    activeMount = undefined;
   }
-  const fallbackHidden = hideProposalStructuredFieldFallback(host);
-  syncProposalRuntimeMetrics(host, {
-    field: props.field,
-    reason,
-    mountCount: activeMount.mountCount,
-    propsUpdateCount: activeMount.propsUpdateCount,
-    fallbackHidden
-  });
-  const currentMount = activeMount;
-  flushSync(() => {
-    currentMount.root.render(createElement(ProposalMutationEditor, props));
-  });
+  const lineMounted = mountProposalLineEditorRoot(lineProps, lineHost, reason);
+  if (!fieldMounted && !lineMounted) {
+    resetRuntimeMetrics();
+  }
   return {
-    mounted: true,
+    mounted: fieldMounted || lineMounted,
     routeKey: "proposal",
-    componentName: "ProposalMutationEditor",
-    mountCount: activeMount.mountCount,
-    propsUpdateCount: activeMount.propsUpdateCount,
+    componentName: fieldMounted ? "ProposalMutationEditor" : "ProposalLineEditor",
+    mountCount: activeMount?.mountCount ?? activeProposalLineMount?.mountCount ?? totalMountCount,
+    propsUpdateCount: activeMount?.propsUpdateCount ?? activeProposalLineMount?.propsUpdateCount ?? 0,
     reason
   };
 }
@@ -552,5 +1037,5 @@ export function mountReactRouteIsland(
 }
 
 export function hasMountedReactRoute(routeKey: "home" | "proposal") {
-  return activeMount?.routeKey === routeKey;
+  return activeMount?.routeKey === routeKey || (routeKey === "proposal" && activeProposalLineMount?.routeKey === "proposal");
 }
