@@ -1071,6 +1071,47 @@ test("persistent agent run enqueue rejects duplicate active work item across que
   assert.equal((await persistence.listActive()).length, 1);
 });
 
+test("agent run queue refreshes stale cached trace from persistence", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000033",
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Cross-worker cached replay run"
+  });
+  assert.equal((await queue.get(run.run_id))?.trace.length, 0);
+
+  const persisted = await persistence.get(run.run_id);
+  assert.ok(persisted);
+  const remoteStep: AgentRunTraceStepRecord = {
+    id: `${run.run_id}:remote:step`,
+    step_no: 1,
+    phase: "tool_result",
+    output_excerpt: "Redis worker wrote a fresh step.",
+    created_at: "2026-06-05T00:00:05.000Z"
+  };
+  persistence.rows.set(run.run_id, {
+    ...persisted,
+    trace: [remoteStep],
+    updated_at: "2026-06-05T00:00:05.000Z"
+  });
+
+  const refreshed = await queue.get(run.run_id);
+  const trace = await queue.trace(run.run_id);
+  assert.equal(refreshed?.trace.at(-1)?.output_excerpt, remoteStep.output_excerpt);
+  assert.deepEqual(trace.map((step) => step.id), [remoteStep.id]);
+});
+
 test("agent run route auto-pump drains through runNext instead of direct run id", async () => {
   const runtimeSettings = settings();
   const queuedRun: AgentRunQueueRecord = {

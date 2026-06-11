@@ -31,6 +31,8 @@ owner: workflow
 | R4 product shell baseline | `packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`scripts/qa/r4-web-product-shell-baseline.ts` | Web ready route 已切到产品壳 baseline，覆盖 Home / Approvals / WorkItem / Proposal 的 desktop/mobile 截图、双语固定 chrome、path nav、无 Cuu/无 Kanban、无横向与文本盒溢出 |
 | R4 live route interaction | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | 已用 Vite dev server + mock API + Chrome CDP 跑 path nav、back/forward、locale reload、ready/empty/forbidden/error、mobile scroll，并 gate 重复 listener、文本越框和导航遮挡 |
 | R4 Rust system-string i18n | `client-tauri/src-tauri/src/locale.rs`、`tray.rs`、`notify.rs`、`deep_link.rs`、`single_instance.rs`、`scripts/qa/r4-rust-system-i18n.ts` | R4.6 已把 Rust shell 固定系统串纳入 `zh-CN/en-US` contract：tray/menu/tooltip、notification fallback、deep-link/single-instance diagnostics 双语，动态 payload/raw URL/ID 原文保留 |
+| R4 live API + PG seed | `packages/db/src/r4-web-seed.ts`、`apps/web/qa/r4-web-live-api-pg-seed.ts` | R4.7 已在远端 Linux PostgreSQL/Chrome 环境通过真实 API daemon + deterministic PG seed browser smoke，覆盖 13 步 path route |
+| R4 Redis/SSE production smoke | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-redis-sse-browser-smoke.ts`、`apps/api/src/workers/agent-runner.ts` | R4.8 已在远端 Linux PG + Redis + Chrome 环境通过 15 步 production browser smoke：`stream/me`、run/workitem topic、topic auth、跨 worker event、REST reconcile 与文本溢出 gate |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
@@ -41,7 +43,7 @@ owner: workflow
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke。真实 component route tree、Redis/SSE production 浏览器联调与完整服务端动态本地化仍待后续。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke。真实 component route tree、服务端动态本地化与 shell 指标语义一致性仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -197,13 +199,28 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
-| PG seed | `packages/db/src/r4-web-seed.ts` 写入 work item / branch / agent run / proposal / approval / evidence / cost ledger | R4.8 复用该 seed 接 Redis/SSE production refresh |
+| PG seed | `packages/db/src/r4-web-seed.ts` 写入 work item / branch / agent run / proposal / approval / evidence / cost ledger | 已由 R4.8 复用该 seed 接 Redis/SSE production refresh |
 | Live smoke | `apps/web/qa/r4-web-live-api-pg-seed.ts` 启动真实 API daemon、Vite、Chrome CDP；远端 Linux `pnpm qa:r4-web-live-api-pg-seed` 已通过 13 步 | 后续纳入 CI 或稳定远端 smoke |
 | 路由覆盖 | 脚本覆盖 `/`、`/approvals`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay`、`/dashboard/cost`、`/settings` | 接 Redis/SSE production refresh |
 | 文案边界 | API gold-path shell 清洗 `Cuu` / `周报` / `weekly` 旧 demo 可见文案；可见正文漏词检查 `leak=false`，API 101/101 通过 | 动态 Page VM 摘要由服务端按 locale 生成 |
 | 溢出门 | 继承 R4.5 `no_horizontal_overflow` / `no_text_box_overflow`，并复跑桌宠 failed run card overflow gate；R4.7 report `no_text_box_overflow=true`、`no_horizontal_overflow=true` | 所有后续 Web 和桌宠视觉 QA 持续保留文本矩形裁切门 |
 
 边界：R4.7 已通过远端 Linux 真实 PostgreSQL 浏览器验收；本机 Windows 仍没有 PostgreSQL、Docker、psql/pg_ctl/postgres 或 WSL 发行版，本机复跑不是 R4.8 前置。
+
+### 0.13 R4.8 Redis/SSE production browser smoke（2026-06-11 已通过远端 Redis gate）
+
+本轮把 R4.7 的真实 API/PG 浏览器 smoke 推进到 Redis broker + 多 worker SSE refresh。详细计划与验收状态见 [`../06-roadmap/r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](../06-roadmap/r4-08-redis-sse-production-browser-smoke-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| EventSource 绑定 | `apps/web/src/browser.ts` 对 ready route 订 `stream/me`，detail route 追加 `workitem` / `proposal` / `run` topic；事件只触发 REST Page VM 重拉 | R4.9 继续保留同一 REST-as-truth 行为，补动态双语 Page VM |
+| Production smoke | `apps/web/qa/r4-web-redis-sse-browser-smoke.ts` 启动两个真实 API worker、Vite、Chrome CDP，环境为 `BROKER_BACKEND=redis` / `WORKER_COUNT=2` | 纳入稳定远端 smoke 或 CI Redis service |
+| Topic auth | owner workitem stream 200，stranger workitem stream 403，非 admin `all` stream 403 | 所有新增资源 topic 都必须 fail-closed |
+| REST reconcile | 跨 worker `permission.decided` 后 `/approvals` 变 empty；Redis `agent_run.step` 后 Replay 显示新增 step | 后续对 notification toast、proposal opened/merged、budget warning 做同类 gate |
+| Queue stale cache 修复 | `AgentRunQueue.get/trace/abort` 与 persistence 择新，避免跨 worker Redis 事件后读旧 trace | R4.9 继续检查运行中 run 与 DB persistence 的一致性 |
+| 溢出门 | 15 步截图 `no_horizontal_overflow=true`、`no_text_box_overflow=true`，移动 proposal/settings/Replay 单图无文本越框 | 所有后续 Web route 继续阻塞文本越框 |
+
+边界：R4.8 不等同于完整 React component route tree，也不等同于服务端动态内容双语完成；当前动态任务标题、提议摘要、证据摘录仍按 daemon/seed 原文显示。
 
 ---
 

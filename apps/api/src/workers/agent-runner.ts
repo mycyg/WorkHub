@@ -470,6 +470,32 @@ export function createInMemoryAgentRunQueue(options: {
     return live && live.status !== "running" ? live : null;
   }
 
+  function runUpdatedAtMs(run: AgentRunQueueRecord) {
+    const value = Date.parse(run.updated_at);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function persistedRunIsFresher(live: AgentRunQueueRecord, persisted: AgentRunQueueRecord) {
+    const liveUpdatedAt = runUpdatedAtMs(live);
+    const persistedUpdatedAt = runUpdatedAtMs(persisted);
+    if (persistedUpdatedAt !== liveUpdatedAt) {
+      return persistedUpdatedAt > liveUpdatedAt;
+    }
+    return persisted.trace.length > live.trace.length;
+  }
+
+  async function readFreshRun(runId: string) {
+    const live = runs.get(runId) ?? null;
+    const persisted = await persistence?.get(runId) ?? null;
+    const run = persisted && (!live || persistedRunIsFresher(live, persisted))
+      ? persisted
+      : live ?? persisted;
+    if (run) {
+      runs.set(run.run_id, run);
+    }
+    return run;
+  }
+
   async function emitRunEvent(
     event: AgentLoopEvent,
     run: AgentRunQueueRecord,
@@ -865,11 +891,7 @@ export function createInMemoryAgentRunQueue(options: {
     },
 
     async get(runId) {
-      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
-      if (run) {
-        runs.set(run.run_id, run);
-      }
-      return run;
+      return readFreshRun(runId);
     },
 
     async workdir(runId) {
@@ -877,16 +899,15 @@ export function createInMemoryAgentRunQueue(options: {
     },
 
     async trace(runId, after = 0) {
-      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
+      const run = await readFreshRun(runId);
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
       }
-      runs.set(run.run_id, run);
       return run.trace.filter((step) => step.step_no > after);
     },
 
     async abort(runId, actor) {
-      const run = runs.get(runId) ?? await persistence?.get(runId) ?? null;
+      const run = await readFreshRun(runId);
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
       }

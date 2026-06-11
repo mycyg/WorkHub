@@ -1,5 +1,10 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import type { ApplyMergeProposalCandidateRequest, MergeProposalRequest, ProposalConflict } from "@workhub/contracts";
+import {
+  eventTypes,
+  type ApplyMergeProposalCandidateRequest,
+  type MergeProposalRequest,
+  type ProposalConflict
+} from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -21,6 +26,10 @@ import {
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+type LiveStreamTarget = {
+  key: string;
+  url: string;
+};
 type IdentityLocaleCarrier = {
   locale?: unknown;
   preferences?: {
@@ -29,6 +38,12 @@ type IdentityLocaleCarrier = {
 } | null | undefined;
 let noticeTimer: number | undefined;
 let readyRouteBindings: AbortController | undefined;
+let liveRefreshTimer: number | undefined;
+let liveEventCount = 0;
+let liveRefreshCount = 0;
+
+const liveRefreshDebounceMs = 220;
+const liveEventTypes = Object.values(eventTypes);
 
 function browserLocale(): WorkHubLocale {
   return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
@@ -56,10 +71,59 @@ function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | u
   return signal ? { signal } : undefined;
 }
 
+function setLiveMetric(key: string, value: unknown) {
+  document.documentElement.dataset[key] = String(value);
+}
+
+function noteLiveStreamTargets(targets: LiveStreamTarget[]) {
+  setLiveMetric("r4LiveStreams", targets.map((target) => target.key).join(","));
+  setLiveMetric("r4LiveStreamCount", targets.length);
+}
+
+function uniqueLiveStreamTargets(targets: LiveStreamTarget[]) {
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    if (seen.has(target.url)) {
+      return false;
+    }
+    seen.add(target.url);
+    return true;
+  });
+}
+
 function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {
   const locale = identityLocale(identity) ?? fallback;
   persistBrowserLocale(locale);
   return locale;
+}
+
+function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserApiClient): LiveStreamTarget[] {
+  const targets: LiveStreamTarget[] = [{ key: "me", url: client.streams.me() }];
+  if (result.match.key === "workitem") {
+    const workItemId = result.match.params["id"];
+    if (workItemId) {
+      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
+    }
+  } else if (result.match.key === "proposal") {
+    const proposalId = result.match.params["id"];
+    const workItemId = result.surface.page_vms.proposal.work_item_id;
+    if (proposalId) {
+      targets.push({ key: "proposal", url: client.streams.proposal(proposalId) });
+    }
+    if (workItemId) {
+      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
+    }
+  } else if (result.match.key === "replay") {
+    const runId = result.match.params["id"];
+    const workItemId = result.surface.page_vms.replay.run.work_item_id;
+    if (runId) {
+      targets.push({ key: "run", url: client.streams.run(runId) });
+    }
+    if (workItemId) {
+      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
+    }
+  }
+  return uniqueLiveStreamTargets(targets);
 }
 
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
@@ -473,6 +537,56 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
   }).html;
 }
 
+function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocale, eventType: string, targetKey: string) {
+  liveEventCount += 1;
+  setLiveMetric("r4LiveEventCount", liveEventCount);
+  setLiveMetric("r4LiveLastEvent", eventType);
+  setLiveMetric("r4LiveLastStream", targetKey);
+  if (liveRefreshTimer !== undefined) {
+    return;
+  }
+  liveRefreshTimer = window.setTimeout(() => {
+    liveRefreshTimer = undefined;
+    liveRefreshCount += 1;
+    setLiveMetric("r4LiveRefreshCount", liveRefreshCount);
+    void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
+  }, liveRefreshDebounceMs);
+}
+
+function bindLiveEventSource(
+  target: LiveStreamTarget,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (typeof EventSource === "undefined") {
+    setLiveMetric("r4LiveSseSupported", false);
+    return;
+  }
+  setLiveMetric("r4LiveSseSupported", true);
+  const source = new EventSource(target.url, { withCredentials: true });
+  signal.addEventListener("abort", () => source.close(), { once: true });
+  source.addEventListener("connected", () => {
+    const connected = Number(document.documentElement.dataset.r4LiveConnectedCount ?? "0") + 1;
+    setLiveMetric("r4LiveConnectedCount", connected);
+    setLiveMetric("r4LiveLastConnectedStream", target.key);
+  });
+  source.addEventListener("error", () => {
+    setLiveMetric("r4LiveLastErrorStream", target.key);
+  });
+  for (const eventType of liveEventTypes) {
+    source.addEventListener(eventType, () => scheduleLiveRouteRefresh(client, locale, eventType, target.key));
+  }
+}
+
+function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale, signal: AbortSignal) {
+  const targets = liveStreamTargetsForRoute(result, client);
+  noteLiveStreamTargets(targets);
+  for (const target of targets) {
+    bindLiveEventSource(target, client, locale, signal);
+  }
+}
+
 async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
   const nextHref = webRouteHref(href);
   const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -492,6 +606,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindLocaleSwitch(root, locale, client, signal);
   bindRouteLineEditor(root, signal);
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
+  bindLiveRouteStreams(result, client, locale, signal);
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {
@@ -515,6 +630,10 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
 function clearReadyRouteBindings() {
   readyRouteBindings?.abort();
   readyRouteBindings = undefined;
+  if (liveRefreshTimer !== undefined) {
+    window.clearTimeout(liveRefreshTimer);
+    liveRefreshTimer = undefined;
+  }
 }
 
 async function boot() {

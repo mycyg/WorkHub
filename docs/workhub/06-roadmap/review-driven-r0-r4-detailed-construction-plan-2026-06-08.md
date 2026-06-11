@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，下一步进入 R4.8 Redis/SSE production browser smoke。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke；下一步进入 R4.9 动态双语 Page VM 与 shell 指标一致性。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2785,10 +2785,23 @@ R4 验收：
 7. 已通过远端真实 PG browser smoke：`192.168.5.53` / Ubuntu 26.04 / PostgreSQL 18.4 / Node 22.22.1 / Chrome，`pnpm qa:r4-web-live-api-pg-seed` 13 步通过，生成 `../05-clients/assets/audit/2026-06-11-r4-web-live-api-pg-seed/` report/contact sheet。
 8. 边界：本机 Windows 仍无 PostgreSQL/Docker/psql/WSL，无法本机复跑 PG smoke；R4.7 竣工证据以远端 Linux 真实验收为准。R4.7 不等同于 Redis/SSE production browser refresh，也不等同于完整 React component route tree。
 
+### R4.8 已落：Redis/SSE production browser smoke
+
+1. 已阅读 `web-app.md`、`page-concepts.md`、`api-contract.md`、R2 Redis/topic/release 文档、R4.7 计划与 Web 概念图：`web-ai-first-home.png`、`web-approval-center.png`、`web-workitem-detail.png`、`web-deliverable-change-request.png`。
+2. 已在远端 Linux 测试机安装并启动 Redis 8.0.5；`redis-cli ping` 返回 `PONG`，服务状态 `active`。
+3. 已改 `apps/web/src/browser.ts`：ready route 使用原生 `EventSource(...,{withCredentials:true})` 订 `stream/me`，detail route 追加 workitem/proposal/run topic；收到 contract event 后 debounce 重拉 REST Page VM。
+4. 已新增 `apps/web/qa/r4-web-redis-sse-browser-smoke.ts` 与 root `pnpm qa:r4-web-redis-sse-browser-smoke`：启动两个真实 API worker、Vite、Chrome CDP，环境为 `BROKER_BACKEND=redis`、`BROKER_URL=redis://127.0.0.1:6379`、`WORKER_COUNT=2`。
+5. 已修真实数据流 bug：多 worker 下 `AgentRunQueue.get()` 原先优先返回进程内旧缓存，导致 Redis event 后 Replay REST reconcile 读不到另一个 worker 写入的 DB trace；现在 `get/trace/abort` 与 persistence 按 `updated_at` 和 trace length 择新，并新增 `agent run queue refreshes stale cached trace from persistence` 回归测试。
+6. 已通过本机 API/Web typecheck、R4.8 QA 脚本 typecheck、`agent-runs.test.ts`、push/broker/notification tests、Web tests。
+7. 已通过远端真实 PG + Redis browser smoke：`192.168.5.53` / Ubuntu 26.04 / PostgreSQL 18.4 / Redis 8.0.5 / Chrome，`pnpm qa:r4-web-redis-sse-browser-smoke` 15 步通过，生成 `../05-clients/assets/audit/2026-06-11-r4-web-redis-sse-production-browser-smoke/` report/contact sheet。
+8. R4.8 gates 全部为 true：`redis_server_available`、`broker_backend_redis`、`production_multi_worker_memory_fail_closed`、`topic_auth_owner_200_stranger_403`、`browser_connected_to_sse`、`cross_worker_permission_event_delivered`、`redis_run_event_reconciled_replay`、`no_horizontal_overflow`、`no_text_box_overflow`、`mobile_scroll_no_topbar_nav_overlap`。
+9. 边界：R4.8 不等同于完整 React component route tree，也不等同于服务端动态双语内容完成；当前动态 task/proposal/run 文案仍来自 seed/daemon 原文。
+
 下一施工顺序：
 
-1. **R4.8 Redis/SSE production browser smoke**：在 R4.7 的真实 API/PG gate 基础上接 Redis broker/SSE refresh，验证多 worker 推送、notification 与页面刷新不脑裂。
-2. **R4.8 后续**：继续保留 R4.7 的 path navigation、locale reload、no Cuu/no Kanban/no weekly、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.9 Page VM 动态双语与 shell 指标一致性**：让 Home/WorkItem/Proposal/Replay/Cost 的固定摘要、状态、metric title/value 按 `locale` 输出；修正 Replay 等页面顶部 metric 与正文内容不一致的问题。
+2. **R4.9 Web route renderer componentization plan**：优先 Home/Approvals/Replay，从 shared HTML renderer 逐步收敛到真实 route component 或更细粒度 shared component。
+3. **R4.9 后续门禁**：继续保留 R4.8 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、no Cuu/no Kanban/no weekly、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

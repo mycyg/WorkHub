@@ -138,15 +138,16 @@ connect ECONNREFUSED 127.0.0.1:5432
 
 ## 6. 后续详细计划
 
-R4.8 施工顺序：
+R4.8 已在 [`r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](./r4-08-redis-sse-production-browser-smoke-2026-06-11.md) 落地：远端 Linux 已补 Redis，真实 PG + Redis + 双 API worker + Chrome EventSource 15 步 smoke 通过。
 
-1. 远端 Linux 补 Redis：安装/启动 Redis 7 或等价服务，监听 `127.0.0.1:6379`，不暴露公网。
-2. 新增 Redis/SSE production browser smoke：
-   - 环境：`BROKER_BACKEND=redis`、`BROKER_URL=redis://127.0.0.1:6379`、`WORKER_COUNT=2`、真实 PostgreSQL。
-   - 覆盖 `stream/me`、`stream/workitem/:id`、run stream、notification/toast、REST reconcile。
-3. 继续沿用 R4.7 gates：
+R4.9 施工顺序：
+
+1. 动态双语 Page VM：让 Home / WorkItem / Proposal / Replay / Cost 的固定摘要、状态、metric title/value 可按 `locale` 输出。
+2. Shell 指标一致性：修正 Replay 等页面顶部 metric 与正文内容不一致的问题；有 step/decision/snapshot 时不再显示无意义的 0 值。
+3. 继续沿用 R4.8 gates：
    - no Cuu / no Kanban / no old shell / no weekly fixture copy。
    - no horizontal overflow / no text box overflow / mobile scroll no topbar nav overlap。
    - route-state ready/empty/forbidden/error 和 path navigation/history/locale reload。
+   - Redis/SSE topic auth、browser EventSource、跨 worker event delivered、REST reconcile。
 4. 本机 Windows 可选收尾：
    - 若后续恢复 Docker 或 PostgreSQL 安装源，再补本机 `pnpm qa:r4-web-live-api-pg-seed` 复跑证据；这不是 R4.8 开工前置，因为远端 Linux 真实验收已闭环。

@@ -106,21 +106,14 @@ corepack pnpm qa:r4-rust-system-i18n
 
 ## 6. 后续详细计划
 
-下一刀进入 R4.8：Redis/SSE production browser smoke。
+2026-06-11 后续已补：
 
-2026-06-11 已补 R4.7 的 DB seed helper、真实 API/Vite/Chrome smoke 脚本、gold-path Web 文案产品化清洗、Vite 动态 API proxy 与 API 子进程绝对 `TSX_TSCONFIG_PATH`；远端 Linux `192.168.5.53` 已用 PostgreSQL 18.4 + Chrome 跑通 `pnpm qa:r4-web-live-api-pg-seed`，生成 [`r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](./r4-07-web-live-api-pg-seed-smoke-2026-06-11.md) 记录的 report/contact sheet。本机 Windows 仍无 PG runtime，但不再阻塞 R4.8。
+1. R4.7 真实 API daemon + deterministic PG seed browser smoke；远端 Linux `192.168.5.53` 已用 PostgreSQL 18.4 + Chrome 跑通 `pnpm qa:r4-web-live-api-pg-seed`，详见 [`r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](./r4-07-web-live-api-pg-seed-smoke-2026-06-11.md)。
+2. R4.8 真实 Redis/SSE production browser smoke；远端 Linux 已补 Redis 8.0.5，双 API worker + Chrome EventSource 15 步通过，详见 [`r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](./r4-08-redis-sse-production-browser-smoke-2026-06-11.md)。
 
-1. 开工前复读：
-   - [`../05-clients/web-app.md`](../05-clients/web-app.md)
-   - [`../05-clients/page-concepts.md`](../05-clients/page-concepts.md)
-   - [`../01-architecture/api-contract.md`](../01-architecture/api-contract.md)
-   - [`../02-ai-engine/r2-release-gate.md`](../02-ai-engine/r2-release-gate.md)
-2. 在 R4.5 mock API live-browser smoke 基础上，接真实 API server + deterministic PG seed。
-3. 覆盖 `/`、`/approvals`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay`、`/dashboard/cost`、`/settings`。
-4. 继续保留：
-   - endpoint-first Page VM proof。
-   - path nav/back/forward。
-   - locale query/meta。
-   - no Cuu / no Kanban / no old preview shell。
-   - text box overflow 和 horizontal overflow hard gate。
-5. R4.8 真实 Redis/SSE production 浏览器联调沿用 R4.7 PG seed + API runtime gate，新增 broker/stream/notification 刷新证明。
+下一刀进入 R4.9：动态双语 Page VM 与 shell 指标一致性。
+
+1. 开工前复读 `web-app.md`、`page-concepts.md`、`api-contract.md`、R4.7/R4.8 计划和 Web 概念图。
+2. 让 Home / WorkItem / Proposal / Replay / Cost 的固定摘要、状态、metric title/value 可按 `locale` 输出。
+3. 修正 Replay 等页面顶部 metric 与正文内容不一致的问题。
+4. 继续保留 endpoint-first Page VM proof、Redis/SSE topic auth、REST reconcile、path nav/back/forward、locale query/meta、no Cuu/no Kanban/no old shell、text box overflow 与 horizontal overflow hard gate。
