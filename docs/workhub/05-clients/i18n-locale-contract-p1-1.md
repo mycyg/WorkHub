@@ -34,6 +34,7 @@ P1.0 只把 Gold Path shell 的固定文案做成双语。P1.1 把语言从“�
 | Cuu fixed copy | `packages/cuu/src/i18n.ts`、`packages/cuu/src/cards.ts` | 业务卡片的标题、action label、fallback message、budget/cost/replay 固定标签双语 |
 | Pet surface | `apps/desktop-webview/src/pet-surface.ts` | 独立桌宠轻气泡 kind/priority/evidence/input hint/action 状态双语 |
 | Shell bridge/runtime | `apps/desktop-webview/src/shell-events.ts`、`apps/desktop-webview/src/desktop-cuu-runtime.ts` | SSE 状态、OS/Rust push card、审批/证据动作结果双语 |
+| Rust shell system strings | `client-tauri/src-tauri/src/locale.rs`、`tray.rs`、`notify.rs`、`deep_link.rs`、`single_instance.rs` | R4.6 起 tray/menu/tooltip、system notification fallback、deep-link/single-instance diagnostics 双语；动态 payload/raw URL/ID 保持原文 |
 
 ## 3. Locale contract
 
@@ -103,8 +104,27 @@ type PageEnvelope<T> = {
 - fallback / empty / error / offline 文案。
 - card kind / priority / state 标签。
 - Cuu 对用户动作的短反馈。
+- Rust shell 的固定系统串：tray label/tooltip、notification fallback、deep-link/single-instance 错误类型描述。
 
 这条是验收护栏：英文模式下如果看到中文任务标题，不算双语失败；如果看到中文按钮、状态、空态、固定 action label，则算失败。
+
+## 6.1 R4.6 Rust shell locale contract
+
+R4.6 已把系统层固定文案接入同一双语合同：
+
+| Rust 落点 | Locale 来源 | 翻译范围 | 不翻译范围 |
+|---|---|---|---|
+| `WorkHubShellConfig.locale` | `workhub-shell-config.json.locale` 或 `WORKHUB_LOCALE` | shell 安装时的系统层固定文案 | WebView `localStorage` runtime 热切换暂不反向刷新 OS tray |
+| `tray.rs` | `WorkHubLocale` | menu label、tooltip | action id、route、window label、focus contract |
+| `notify.rs` | SSE worker 传入 `config.locale` | fallback title/body | payload `title/body/summary_text/message/preview_text` |
+| `deep_link.rs` / `single_instance.rs` | 当前 shell locale | error type description | raw URL、unsafe target、scheme、route、ID |
+
+验证：
+
+```powershell
+cargo test --manifest-path client-tauri\src-tauri\Cargo.toml
+pnpm qa:r4-rust-system-i18n
+```
 
 ## 7. Tests / gates
 

@@ -1,6 +1,9 @@
 use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
-use workhub_client_tauri::deep_link::{deep_link_plan_from_url, DEEP_LINK_SCHEMES};
+use workhub_client_tauri::deep_link::{
+    deep_link_plan_from_url, describe_deep_link_error, DEEP_LINK_SCHEMES,
+};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
+use workhub_client_tauri::locale::{normalize_workhub_locale, WorkHubLocale};
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position_with_settings, pet_window_rect_from_position_with_settings,
     restore_saved_body_position, sample_pet_cursor_near_command_plan,
@@ -13,12 +16,12 @@ use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPlacementPlan, PetWindowPointerInput,
     PetWindowSettings, DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
-use workhub_client_tauri::single_instance::single_instance_plan_from_args;
+use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
 use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
 use workhub_client_tauri::tray::{
-    tray_menu_action_plan_by_id, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
-    TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID,
-    WORKHUB_TRAY_ID, WORKHUB_TRAY_TOOLTIP,
+    tray_menu_action_plan_by_id_for_locale, tray_tooltip, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
+    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
+    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -130,11 +133,7 @@ where
                 "offline",
             ],
         ),
-        pet_qa_locale: workhub_env_string_allowed(
-            WORKHUB_CUU_QA_LOCALE_ENV,
-            &get_env,
-            &["zh-CN", "en-US"],
-        ),
+        pet_qa_locale: workhub_qa_locale_from_env(WORKHUB_CUU_QA_LOCALE_ENV, &get_env),
         pet_qa_dom_report: workhub_env_string_nonempty(
             WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
             &get_env,
@@ -148,6 +147,14 @@ where
             &get_env,
         ),
     }
+}
+
+fn workhub_qa_locale_from_env<F>(name: &str, get_env: &F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    workhub_env_string_value_nonempty(name, get_env)
+        .map(|value| normalize_workhub_locale(&value).as_str().to_string())
 }
 
 fn workhub_env_flag_enabled(name: &str, get_env: impl Fn(&str) -> Option<String>) -> bool {
@@ -846,20 +853,21 @@ fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), St
         .map_err(|error| format!("failed to keep pet window above desktop: {error}"))
 }
 
-fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
-    let show_main = tray_menu_action_plan_by_id(TRAY_SHOW_MAIN_ID)
+fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), String> {
+    let show_main = tray_menu_action_plan_by_id_for_locale(TRAY_SHOW_MAIN_ID, locale)
         .ok_or_else(|| "missing show-main tray action".to_string())?;
-    let hide_main = tray_menu_action_plan_by_id(TRAY_HIDE_MAIN_ID)
+    let hide_main = tray_menu_action_plan_by_id_for_locale(TRAY_HIDE_MAIN_ID, locale)
         .ok_or_else(|| "missing hide-main tray action".to_string())?;
-    let toggle_pet = tray_menu_action_plan_by_id(TRAY_TOGGLE_PET_ID)
+    let toggle_pet = tray_menu_action_plan_by_id_for_locale(TRAY_TOGGLE_PET_ID, locale)
         .ok_or_else(|| "missing toggle-pet tray action".to_string())?;
-    let restore_pet = tray_menu_action_plan_by_id(TRAY_RESTORE_PET_INTERACTION_ID)
-        .ok_or_else(|| "missing restore-pet-interaction tray action".to_string())?;
-    let open_inbox = tray_menu_action_plan_by_id(TRAY_OPEN_INBOX_ID)
+    let restore_pet =
+        tray_menu_action_plan_by_id_for_locale(TRAY_RESTORE_PET_INTERACTION_ID, locale)
+            .ok_or_else(|| "missing restore-pet-interaction tray action".to_string())?;
+    let open_inbox = tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_INBOX_ID, locale)
         .ok_or_else(|| "missing open-inbox tray action".to_string())?;
-    let open_settings = tray_menu_action_plan_by_id(TRAY_OPEN_SETTINGS_ID)
+    let open_settings = tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_SETTINGS_ID, locale)
         .ok_or_else(|| "missing open-settings tray action".to_string())?;
-    let quit = tray_menu_action_plan_by_id(TRAY_QUIT_ID)
+    let quit = tray_menu_action_plan_by_id_for_locale(TRAY_QUIT_ID, locale)
         .ok_or_else(|| "missing quit tray action".to_string())?;
 
     let show_main_item = MenuItemBuilder::with_id(show_main.id.as_str(), show_main.label.as_str())
@@ -904,7 +912,7 @@ fn install_workhub_tray(app: &tauri::App) -> Result<(), String> {
         .map_err(|error| format!("failed to build WorkHub tray menu: {error}"))?;
 
     let mut builder = TrayIconBuilder::with_id(WORKHUB_TRAY_ID)
-        .tooltip(WORKHUB_TRAY_TOOLTIP)
+        .tooltip(tray_tooltip(locale))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -955,7 +963,8 @@ fn restore_pet_window_interaction(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
-    let Some(plan) = tray_menu_action_plan_by_id(id) else {
+    let locale = current_workhub_locale(app);
+    let Some(plan) = tray_menu_action_plan_by_id_for_locale(id, locale) else {
         return Ok(());
     };
 
@@ -979,6 +988,13 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
 
     app.emit("tray-action", plan)
         .map_err(|error| format!("failed to emit tray-action event: {error}"))
+}
+
+fn current_workhub_locale(app: &tauri::AppHandle) -> WorkHubLocale {
+    app.state::<Mutex<WorkHubLocale>>()
+        .lock()
+        .map(|locale| *locale)
+        .unwrap_or_default()
 }
 
 fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
@@ -1014,8 +1030,13 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
 }
 
 fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
-    let plan = deep_link_plan_from_url(raw_url)
-        .map_err(|error| format!("invalid WorkHub deep link {raw_url}: {error:?}"))?;
+    let locale = current_workhub_locale(app);
+    let plan = deep_link_plan_from_url(raw_url).map_err(|error| {
+        format!(
+            "invalid WorkHub deep link {raw_url}: {}",
+            describe_deep_link_error(&error, locale)
+        )
+    })?;
 
     execute_window_control(app, plan.window_control.clone())?;
     app.emit(event_channel_name(ShellEvent::DeepLink), plan)
@@ -1027,7 +1048,7 @@ fn handle_single_instance_launch(
     args: Vec<String>,
     cwd: String,
 ) -> Result<(), String> {
-    let plan = single_instance_plan_from_args(&args, &cwd);
+    let plan = single_instance_plan_from_args_for_locale(&args, &cwd, current_workhub_locale(app));
     if plan.deep_links.is_empty() {
         execute_window_control(app, plan.window_control.clone())?;
     } else {
@@ -1123,7 +1144,12 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
+        .manage(Mutex::new(WorkHubLocale::default()))
         .setup(|app| {
+            let shell_config = load_workhub_shell_config(&app.handle())?;
+            if let Ok(mut locale) = app.state::<Mutex<WorkHubLocale>>().lock() {
+                *locale = shell_config.locale;
+            }
             create_pet_window_with_surface_flag(app)?;
             if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {
                 let work_area = app
@@ -1135,12 +1161,11 @@ fn main() {
                 }
             }
             prepare_pet_window_on_startup(app)?;
-            install_workhub_tray(app)?;
+            install_workhub_tray(app, shell_config.locale)?;
             install_workhub_deep_links(app)?;
             if workhub_sse_disabled_from_env(|name| std::env::var(name).ok()) {
                 eprintln!("WorkHub SSE worker disabled by {WORKHUB_DISABLE_SSE_ENV}.");
             } else {
-                let shell_config = load_workhub_shell_config(&app.handle())?;
                 spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
                     .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             }
@@ -1299,7 +1324,7 @@ mod tests {
                 pet_hide_on_hover: None,
                 pet_model_pack_id: None,
                 pet_qa_scenario: None,
-                pet_qa_locale: None,
+                pet_qa_locale: Some("zh-CN".to_string()),
                 pet_qa_dom_report: false,
                 pet_qa_client_token: None,
                 pet_qa_restore_state: None,

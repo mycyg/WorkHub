@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::locale::{normalize_workhub_locale, WorkHubLocale, WORKHUB_LOCALE_ENV};
+
 pub const WORKHUB_SERVER_URL_ENV: &str = "WORKHUB_SERVER_URL";
 pub const WORKHUB_CLIENT_TOKEN_ENV: &str = "WORKHUB_CLIENT_TOKEN";
 pub const LEGACY_CLIENT_TOKEN_ENV: &str = "YQGL_CLIENT_TOKEN";
@@ -10,6 +12,7 @@ pub struct WorkHubShellConfig {
     pub server_url: String,
     pub client_token: Option<String>,
     pub device_name: String,
+    pub locale: WorkHubLocale,
 }
 
 impl WorkHubShellConfig {
@@ -18,6 +21,7 @@ impl WorkHubShellConfig {
             server_url: "http://127.0.0.1:8787".to_string(),
             client_token: None,
             device_name: "WorkHub desktop".to_string(),
+            locale: WorkHubLocale::default(),
         }
     }
 
@@ -48,6 +52,7 @@ pub struct WorkHubShellConfigFile {
     pub server_url: Option<String>,
     pub client_token: Option<String>,
     pub device_name: Option<String>,
+    pub locale: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +84,9 @@ where
     if let Some(device_name) = clean_optional(from_file.device_name) {
         config.device_name = device_name;
     }
+    if let Some(locale) = clean_optional(from_file.locale) {
+        config.locale = normalize_workhub_locale(&locale);
+    }
     config.client_token = clean_optional(from_file.client_token);
 
     if let Some(server_url) = clean_optional(env_value(WORKHUB_SERVER_URL_ENV)) {
@@ -86,6 +94,9 @@ where
     }
     if let Some(device_name) = clean_optional(env_value(WORKHUB_DEVICE_NAME_ENV)) {
         config.device_name = device_name;
+    }
+    if let Some(locale) = clean_optional(env_value(WORKHUB_LOCALE_ENV)) {
+        config.locale = normalize_workhub_locale(&locale);
     }
     if let Some(token) = clean_optional(env_value(WORKHUB_CLIENT_TOKEN_ENV))
         .or_else(|| clean_optional(env_value(LEGACY_CLIENT_TOKEN_ENV)))
@@ -120,6 +131,7 @@ mod tests {
             server_url: "http://127.0.0.1:8787".to_string(),
             client_token: Some("WH-8J7Q-2K9M-4L3P".to_string()),
             device_name: "desktop".to_string(),
+            locale: WorkHubLocale::EnUs,
         };
 
         assert_eq!(config.has_trusted_device_token(), true);
@@ -133,7 +145,8 @@ mod tests {
                 r#"{
                   "server_url": " http://192.168.5.53:8787/// ",
                   "client_token": " ",
-                  "device_name": " Linux desk "
+                  "device_name": " Linux desk ",
+                  "locale": "en-SG"
                 }"#,
             ),
             |_| None,
@@ -142,6 +155,7 @@ mod tests {
 
         assert_eq!(config.server_url, "http://192.168.5.53:8787");
         assert_eq!(config.device_name, "Linux desk");
+        assert_eq!(config.locale, WorkHubLocale::EnUs);
         assert_eq!(config.client_token, None);
     }
 
@@ -158,6 +172,7 @@ mod tests {
             |name| match name {
                 WORKHUB_SERVER_URL_ENV => Some(" http://10.0.0.2:8787/ ".to_string()),
                 WORKHUB_DEVICE_NAME_ENV => Some("env device".to_string()),
+                WORKHUB_LOCALE_ENV => Some("zh-Hans".to_string()),
                 LEGACY_CLIENT_TOKEN_ENV => Some("legacy-token".to_string()),
                 _ => None,
             },
@@ -166,6 +181,7 @@ mod tests {
 
         assert_eq!(config.server_url, "http://10.0.0.2:8787");
         assert_eq!(config.device_name, "env device");
+        assert_eq!(config.locale, WorkHubLocale::ZhCn);
         assert_eq!(config.client_token, Some("legacy-token".to_string()));
     }
 

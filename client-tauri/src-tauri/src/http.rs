@@ -55,6 +55,7 @@ mod tests {
             server_url: " http://127.0.0.1:8787/ ".to_string(),
             client_token: Some("token-1".to_string()),
             device_name: "desktop".to_string(),
+            locale: crate::locale::WorkHubLocale::EnUs,
         };
 
         let plan = plan_daemon_request(&config, "api/health");

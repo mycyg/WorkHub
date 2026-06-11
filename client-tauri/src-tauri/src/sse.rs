@@ -251,6 +251,7 @@ mod tests {
             server_url: "http://127.0.0.1:8787/".to_string(),
             client_token: Some("device-token".to_string()),
             device_name: "desktop".to_string(),
+            locale: crate::locale::WorkHubLocale::EnUs,
         }
     }
 

@@ -2763,10 +2763,21 @@ R4 验收：
 7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/`；report gates 全部为 true：`dev_server_started`、`screenshots_captured`、`path_nav_clicks`、`history_back_forward`、`locale_toggle_reload`、`ready_empty_forbidden_error_routes`、`ready_routes_use_page_vm_endpoints`、`product_shell_stays_path_mode`、`no_duplicate_route_loader_calls`、`mobile_scroll_no_topbar_nav_overlap`、`no_main_window_cuu`、`no_default_kanban`、`no_old_preview_shell`、`no_weekly_fixture_copy`、`no_hash_navigation`、`no_horizontal_overflow`、`no_text_box_overflow`。
 8. 边界：R4.5 是 mock API live-browser smoke，不是完整 React component route tree，也不是真实 PG/Redis/SSE production 浏览器验收。
 
+### R4.6 已落：Rust system-string i18n
+
+1. 已阅读 [`r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](./r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`pet-right-click-settings-menu-p1-4.md`、`pet-settings-recovery-p1-5.md` 与 desktop/Cuu 概念图。
+2. 已新增 Rust `client-tauri/src-tauri/src/locale.rs`：`WorkHubLocale` 与 TS contract 保持 `zh-CN/en-US`，`WORKHUB_LOCALE` 和 config `locale` 成为 Rust shell 系统串入口。
+3. 已把 tray/menu/tooltip 改为 locale-aware：`tray_menu_items(locale)`、`tray_menu_action_plan_by_id_for_locale()`、`tray_tooltip(locale)`；action id、window control、route、focus 不变。
+4. 已把 system notification fallback title/body 改为 locale-aware，并通过 SSE worker 传入 `config.locale`；payload 的动态 `title/body/summary_text/message/preview_text` 保持原文。
+5. 已补 deep-link / single-instance diagnostics 双语：只翻译错误类型描述，raw URL、unsafe target、scheme、route、ID 保留原文。
+6. 已新增 root `pnpm qa:r4-rust-system-i18n` 并接入 `pnpm lint` / `pnpm verify`。
+7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-rust-system-i18n/`；report gates 全部为 true：`cargo_tests_passed`、`locale_contract_has_two_values`、`shell_config_consumes_locale`、`tray_labels_and_tooltip_bilingual`、`main_installs_tray_with_shell_locale`、`notification_fallbacks_bilingual`、`dynamic_notification_payload_preserved`、`sse_worker_passes_locale_to_notification_plan`、`deep_link_diagnostics_bilingual`、`single_instance_rejections_bilingual`。
+8. 边界：R4.6 是 Rust 代码合同和可复跑 QA gate，不替代 Windows/Linux/macOS 原生菜单视觉截图；WebView runtime locale 热更新 OS tray label 仍属后续。
+
 下一施工顺序：
 
-1. **R4.6 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
-2. **R4.7 Web live API/PG seed smoke**：在 R4.5 交互 smoke 基础上接真实 API/PG seed 与 SSE refresh，继续保留 endpoint count、文本越框和无 Cuu 主窗门。
+1. **R4.7 Web live API/PG seed smoke**：在 R4.5 交互 smoke 基础上接真实 API server + deterministic PG seed，覆盖 Home/Approvals/WorkItem/Proposal/Replay/Cost/Settings，继续保留 endpoint count、文本越框和无 Cuu 主窗门。
+2. **R4.8 Redis/SSE production browser smoke**：在 R4.7 的真实 API/PG 基础上接 Redis broker/SSE refresh，验证多 worker 推送、notification 与页面刷新不脑裂。
 
 ## 8. 模块开工前阅读清单
 

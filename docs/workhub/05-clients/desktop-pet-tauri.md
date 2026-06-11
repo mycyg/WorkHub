@@ -33,9 +33,10 @@ visuals:
 | `client-tauri/src-tauri/src/main.rs` | Tauri runtime entry，创建 `main` / `pet`，pet 显式加载 `/pet.html`，注入 `window.__WORKHUB_SURFACE__` 与 QA 场景/语言，注册 commands / plugins / SSE worker |
 | `client-tauri/src-tauri/src/pet_window.rs` | `pet` 几何、右下角定位、body/card 尺寸、work area 夹取、scale/opacity/pass-through/hide-on-hover |
 | `client-tauri/src-tauri/src/pet_commands.rs` | `set_pet_window_mode`、`set_pet_window_settings`、`start_pet_window_drag`、`save_pet_window_position`、`sample_pet_cursor_near` |
-| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、恢复 Cuu 交互、打开收件箱、打开设置、退出 |
-| `client-tauri/src-tauri/src/notify.rs` | high/urgent 系统通知计划和去重 |
-| `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
+| `client-tauri/src-tauri/src/locale.rs` | R4.6 Rust shell locale contract：`WorkHubLocale`、`WORKHUB_LOCALE`、`zh-CN/en-US` normalize，与 TS contract 保持一致 |
+| `client-tauri/src-tauri/src/tray.rs` | 托盘菜单合同：打开主窗、隐藏主窗、显示/隐藏 Cuu、恢复 Cuu 交互、打开收件箱、打开设置、退出；R4.6 起 label/tooltip 按 Rust shell locale 输出中英双语，action id 不变 |
+| `client-tauri/src-tauri/src/notify.rs` | high/urgent 系统通知计划和去重；R4.6 起 fallback title/body 双语，payload 动态文案保持原文 |
+| `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由；R4.6 起 unsafe/unknown diagnostics 按 locale 输出，但 raw URL/target 保持原文 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
 | `apps/desktop-webview/src/browser.ts` | 根据 Rust 注入 surface 分流主窗或 pet surface |
 | `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate；2026-06-11 追加用户截图回归，失败 trace/budget 重卡会压缩密度并隐藏瞬时 status 行，QA 同时检测 key text rect 是否越过 bubble 边界，确保 `Run progress` / `Budget` 完整留在气泡内 |
@@ -85,6 +86,8 @@ visuals:
 | 收件箱 | deep-link `/inbox` |
 | 设置 | deep-link `/settings`，也是 Cuu 设置恢复入口 |
 | 退出 | graceful shutdown |
+
+R4.6 补充：托盘 label/tooltip 由 `WorkHubShellConfig.locale` 控制，支持 `zh-CN` / `en-US`。`WORKHUB_LOCALE` 或 `workhub-shell-config.json.locale` 可影响系统层文案；菜单 action id、route、focus、恢复逻辑保持稳定，避免本地化破坏自动化和权限边界。
 
 ## 4. Rust IPC 契约
 
@@ -227,6 +230,7 @@ visuals:
 - 点击通知打开安全站内路由。
 - Cuu 气泡和系统通知不重复骚扰。
 - 离线重连只给人话提示，不刷屏。
+- R4.6 起系统通知 fallback title/body 双语；来自 SSE payload 的 `title/body/summary_text/message/preview_text` 和 deep-link raw URL/ID 不在客户端硬翻译。
 
 ### 7.3 P3：本地同步与文件能力
 

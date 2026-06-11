@@ -4,9 +4,10 @@ use tauri::Emitter;
 use tokio::time::{sleep, Duration};
 
 use crate::config::WorkHubShellConfig;
+use crate::locale::WorkHubLocale;
 use crate::notify::{
     show_system_notification, system_notification_event_channel,
-    system_notification_plan_from_push_payload, ShellSystemNotificationDeduper,
+    system_notification_plan_from_push_payload_for_locale, ShellSystemNotificationDeduper,
     ShellSystemNotificationPlan,
 };
 use crate::sse::{
@@ -21,6 +22,7 @@ pub fn spawn_default_shell_sse_workers(
     app: tauri::AppHandle,
     config: WorkHubShellConfig,
 ) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
+    let locale = config.locale;
     spawn_shell_sse_workers(
         app,
         plan_shell_sse_worker(
@@ -28,12 +30,14 @@ pub fn spawn_default_shell_sse_workers(
             startup_shell_sse_targets(&config),
             DEFAULT_SSE_RECONNECT_DELAY_MS,
         )?,
+        locale,
     )
 }
 
 pub fn spawn_shell_sse_workers(
     app: tauri::AppHandle,
     plan: ShellSseWorkerPlan,
+    locale: WorkHubLocale,
 ) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
     let client = reqwest::Client::new();
     let notification_deduper = Arc::new(Mutex::new(ShellSystemNotificationDeduper::default()));
@@ -49,6 +53,7 @@ pub fn spawn_shell_sse_workers(
                 subscription,
                 reconnect_delay_ms,
                 notification_deduper,
+                locale,
             )
             .await;
         });
@@ -62,6 +67,7 @@ async fn run_sse_subscription(
     subscription: ShellSseSubscription,
     reconnect_delay_ms: u64,
     notification_deduper: Arc<Mutex<ShellSystemNotificationDeduper>>,
+    locale: WorkHubLocale,
 ) {
     let delay = Duration::from_millis(reconnect_delay_ms);
     loop {
@@ -76,7 +82,8 @@ async fn run_sse_subscription(
             Ok(response) => {
                 emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
                 if let Err(message) =
-                    pump_sse_response(&app, &subscription, response, &notification_deduper).await
+                    pump_sse_response(&app, &subscription, response, &notification_deduper, locale)
+                        .await
                 {
                     emit_sse_status(
                         &app,
@@ -128,6 +135,7 @@ async fn pump_sse_response(
     subscription: &ShellSseSubscription,
     response: reqwest::Response,
     notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
+    locale: WorkHubLocale,
 ) -> Result<(), String> {
     let mut buffer = ShellSseFrameBuffer::default();
     let mut stream = response.bytes_stream();
@@ -139,8 +147,9 @@ async fn pump_sse_response(
             let payload = push_payload_from_frame(subscription, frame);
             app.emit(&subscription.event_channel, payload.clone())
                 .map_err(|error| format!("failed to emit push-event: {error}"))?;
-            if let Some(plan) = system_notification_plan_from_push_payload(&payload)
-                .map_err(|error| format!("failed to plan system notification: {error:?}"))?
+            if let Some(plan) =
+                system_notification_plan_from_push_payload_for_locale(&payload, locale)
+                    .map_err(|error| format!("failed to plan system notification: {error:?}"))?
             {
                 if !should_deliver_system_notification(notification_deduper, &plan)? {
                     continue;

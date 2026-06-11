@@ -30,6 +30,7 @@ owner: workflow
 | R4 route registry + loader | `apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`scripts/qa/r4-web-route-registry-loader.ts` | 已把 URL route registry、`idle/loading/ready/empty/error/forbidden` 状态机、真实 path 导航和前三个 Page VM endpoint 接入浏览器 boot |
 | R4 product shell baseline | `packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`scripts/qa/r4-web-product-shell-baseline.ts` | Web ready route 已切到产品壳 baseline，覆盖 Home / Approvals / WorkItem / Proposal 的 desktop/mobile 截图、双语固定 chrome、path nav、无 Cuu/无 Kanban、无横向与文本盒溢出 |
 | R4 live route interaction | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | 已用 Vite dev server + mock API + Chrome CDP 跑 path nav、back/forward、locale reload、ready/empty/forbidden/error、mobile scroll，并 gate 重复 listener、文本越框和导航遮挡 |
+| R4 Rust system-string i18n | `client-tauri/src-tauri/src/locale.rs`、`tray.rs`、`notify.rs`、`deep_link.rs`、`single_instance.rs`、`scripts/qa/r4-rust-system-i18n.ts` | R4.6 已把 Rust shell 固定系统串纳入 `zh-CN/en-US` contract：tray/menu/tooltip、notification fallback、deep-link/single-instance diagnostics 双语，动态 payload/raw URL/ID 原文保留 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
@@ -40,7 +41,7 @@ owner: workflow
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke。真实 component route tree、真实 PG live daemon 浏览器联调与完整服务端动态本地化仍待后续。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n。真实 component route tree、真实 API/PG seed 浏览器 smoke、Redis/SSE production 浏览器联调与完整服务端动态本地化仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -175,6 +176,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | 视觉边界 | `no_main_window_cuu`、`no_default_kanban`、`no_old_preview_shell`、`no_weekly_fixture_copy`、`no_horizontal_overflow`、`no_text_box_overflow`、`mobile_scroll_no_topbar_nav_overlap` 全为 true；mobile proposal change pill 已由 raw `text_doc` 改为 `Text document` 并换行落位 | 所有新增 Web route 继续用同一门禁 |
 
 边界：R4.5 仍是 mock API live-browser smoke，不等同于真实 PostgreSQL / Redis / SSE production 浏览器验收；动态 VM 内容仍未完成服务端双语生成。
+
+### 0.11 R4.6 Rust system-string i18n（2026-06-11 已落）
+
+本轮把 Web/desktop/pet 已有 locale contract 延伸到 Rust shell 系统层。详细计划与验收见 [`../06-roadmap/r4-06-rust-system-string-i18n-plan-2026-06-11.md`](../06-roadmap/r4-06-rust-system-string-i18n-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Rust locale contract | `client-tauri/src-tauri/src/locale.rs` 定义 `WorkHubLocale`、`WORKHUB_LOCALE`、normalize 规则 | 后续如要热切换 OS tray label，需要从 WebView preference event 反向刷新原生菜单 |
+| Tray/menu | `tray_menu_items(locale)`、`tray_tooltip(locale)` 输出中英 label/tooltip；action id、route、focus 不变 | Windows/Linux/macOS 原生菜单截图继续作为跨平台实机 smoke |
+| Notification fallback | `system_notification_plan_from_push_payload_for_locale()` 只本地化 fallback title/body | 服务端按 locale 生成动态 notification summary |
+| Diagnostics | `describe_deep_link_error()` 和 `single_instance_plan_from_args_for_locale()` 本地化错误类型描述 | UI 层如展示 diagnostics，继续保留 raw URL/target 供审计 |
+| QA gate | `pnpm qa:r4-rust-system-i18n` 跑 cargo tests 并静态检查系统串合同，已接入 `pnpm verify` | 后续 R4.7/R4.8 保留 R2 release gate 与 no-reference discipline |
+
+边界：R4.6 不等同于完整 Web route tree 或服务端动态本地化；它解决的是 Rust shell 固定系统串单语风险。
 
 ---
 

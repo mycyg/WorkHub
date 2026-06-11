@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::deep_link::{deep_link_plan_from_url, ShellDeepLinkPlan};
+use crate::deep_link::{deep_link_plan_from_url, describe_deep_link_error, ShellDeepLinkPlan};
+use crate::locale::WorkHubLocale;
 use crate::window_controls::{show_main_window, ShellWindowControlPlan, ShellWindowControlSource};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +15,14 @@ pub struct ShellSingleInstancePlan {
 }
 
 pub fn single_instance_plan_from_args(args: &[String], cwd: &str) -> ShellSingleInstancePlan {
+    single_instance_plan_from_args_for_locale(args, cwd, WorkHubLocale::default())
+}
+
+pub fn single_instance_plan_from_args_for_locale(
+    args: &[String],
+    cwd: &str,
+    locale: WorkHubLocale,
+) -> ShellSingleInstancePlan {
     let mut deep_links = Vec::new();
     let mut rejected_deep_links = Vec::new();
 
@@ -24,7 +33,10 @@ pub fn single_instance_plan_from_args(args: &[String], cwd: &str) -> ShellSingle
         }
         match deep_link_plan_from_url(trimmed) {
             Ok(plan) => deep_links.push(plan),
-            Err(error) => rejected_deep_links.push(format!("{trimmed}: {error:?}")),
+            Err(error) => rejected_deep_links.push(format!(
+                "{trimmed}: {}",
+                describe_deep_link_error(&error, locale)
+            )),
         }
     }
 
@@ -82,17 +94,35 @@ mod tests {
 
     #[test]
     fn malformed_workhub_deep_links_are_kept_for_diagnostics() {
-        let plan = single_instance_plan_from_args(
+        let plan = single_instance_plan_from_args_for_locale(
             &[
                 "WorkHub.exe".to_string(),
                 "workhub://open?route=https://evil.test".to_string(),
                 "https://workhub.test/open/task/1".to_string(),
             ],
             "C:/WorkHub",
+            WorkHubLocale::EnUs,
         );
 
         assert!(plan.deep_links.is_empty());
         assert_eq!(plan.rejected_deep_links.len(), 1);
+        assert!(plan.rejected_deep_links[0].contains("Unsafe open target"));
+        assert!(plan.rejected_deep_links[0].contains("https://evil.test"));
+    }
+
+    #[test]
+    fn rejected_deep_link_diagnostics_follow_locale_but_keep_raw_url() {
+        let plan = single_instance_plan_from_args_for_locale(
+            &[
+                "WorkHub.exe".to_string(),
+                "workhub://open?route=https://evil.test".to_string(),
+            ],
+            "C:/WorkHub",
+            WorkHubLocale::ZhCn,
+        );
+
+        assert_eq!(plan.rejected_deep_links.len(), 1);
+        assert!(plan.rejected_deep_links[0].contains("不安全的打开目标"));
         assert!(plan.rejected_deep_links[0].contains("https://evil.test"));
     }
 }

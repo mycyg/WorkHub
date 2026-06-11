@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::locale::WorkHubLocale;
 use crate::window_controls::{
     focus_main_route, ShellWindowControlError, ShellWindowControlPlan, ShellWindowControlSource,
 };
@@ -46,6 +47,59 @@ pub fn deep_link_plan_from_url(raw_url: &str) -> Result<ShellDeepLinkPlan, Shell
         route,
         window_control,
     })
+}
+
+pub fn describe_deep_link_error(error: &ShellDeepLinkError, locale: WorkHubLocale) -> String {
+    match (locale, error) {
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::InvalidUrl) => "链接格式无效".to_string(),
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::UnsupportedScheme(scheme)) => {
+            format!("不支持的链接协议: {scheme}")
+        }
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::MissingTarget) => "缺少打开目标".to_string(),
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::UnknownTarget(target)) => {
+            format!("未知打开目标: {target}")
+        }
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::UnsafeTarget(target)) => {
+            format!("不安全的打开目标: {target}")
+        }
+        (WorkHubLocale::ZhCn, ShellDeepLinkError::UnsafeRoute(error)) => {
+            format!(
+                "不安全的主窗路由: {}",
+                describe_window_control_error(error, locale)
+            )
+        }
+        (WorkHubLocale::EnUs, ShellDeepLinkError::InvalidUrl) => "Invalid URL".to_string(),
+        (WorkHubLocale::EnUs, ShellDeepLinkError::UnsupportedScheme(scheme)) => {
+            format!("Unsupported link scheme: {scheme}")
+        }
+        (WorkHubLocale::EnUs, ShellDeepLinkError::MissingTarget) => {
+            "Missing open target".to_string()
+        }
+        (WorkHubLocale::EnUs, ShellDeepLinkError::UnknownTarget(target)) => {
+            format!("Unknown open target: {target}")
+        }
+        (WorkHubLocale::EnUs, ShellDeepLinkError::UnsafeTarget(target)) => {
+            format!("Unsafe open target: {target}")
+        }
+        (WorkHubLocale::EnUs, ShellDeepLinkError::UnsafeRoute(error)) => {
+            format!(
+                "Unsafe main route: {}",
+                describe_window_control_error(error, locale)
+            )
+        }
+    }
+}
+
+fn describe_window_control_error(
+    error: &ShellWindowControlError,
+    locale: WorkHubLocale,
+) -> &'static str {
+    match (locale, error) {
+        (WorkHubLocale::ZhCn, ShellWindowControlError::EmptyRoute) => "路由为空",
+        (WorkHubLocale::ZhCn, ShellWindowControlError::UnsafeRoute) => "路由不安全",
+        (WorkHubLocale::EnUs, ShellWindowControlError::EmptyRoute) => "empty route",
+        (WorkHubLocale::EnUs, ShellWindowControlError::UnsafeRoute) => "unsafe route",
+    }
 }
 
 fn reject_raw_path_traversal(raw_url: &str) -> Result<(), ShellDeepLinkError> {
@@ -310,6 +364,20 @@ mod tests {
         assert_eq!(
             deep_link_plan_from_url("workhub://open?route=https://evil.test").unwrap_err(),
             ShellDeepLinkError::UnsafeTarget("https://evil.test".to_string())
+        );
+    }
+
+    #[test]
+    fn localizes_deep_link_error_diagnostics_without_hiding_raw_values() {
+        let error = ShellDeepLinkError::UnsafeTarget("https://evil.test".to_string());
+
+        assert_eq!(
+            describe_deep_link_error(&error, WorkHubLocale::ZhCn),
+            "不安全的打开目标: https://evil.test"
+        );
+        assert_eq!(
+            describe_deep_link_error(&error, WorkHubLocale::EnUs),
+            "Unsafe open target: https://evil.test"
         );
     }
 }

@@ -6,6 +6,7 @@ use tauri::plugin::PermissionState;
 use tauri_plugin_notification::NotificationExt;
 
 use crate::events::{event_channel_name, ShellEvent};
+use crate::locale::WorkHubLocale;
 use crate::sse::ShellPushEventPayload;
 use crate::window_controls::{
     focus_main_route, ShellWindowControlError, ShellWindowControlPlan, ShellWindowControlSource,
@@ -29,6 +30,7 @@ pub struct ShellSystemNotificationPlan {
     pub event: String,
     pub title: String,
     pub body: String,
+    pub locale: WorkHubLocale,
     pub urgency: ShellSystemNotificationUrgency,
     pub route: String,
     pub window_control: ShellWindowControlPlan,
@@ -133,6 +135,13 @@ pub fn show_system_notification(
 pub fn system_notification_plan_from_push_payload(
     payload: &ShellPushEventPayload,
 ) -> Result<Option<ShellSystemNotificationPlan>, ShellSystemNotificationError> {
+    system_notification_plan_from_push_payload_for_locale(payload, WorkHubLocale::default())
+}
+
+pub fn system_notification_plan_from_push_payload_for_locale(
+    payload: &ShellPushEventPayload,
+    locale: WorkHubLocale,
+) -> Result<Option<ShellSystemNotificationPlan>, ShellSystemNotificationError> {
     if !allows_os_notification_stream(payload) {
         return Ok(None);
     }
@@ -147,11 +156,11 @@ pub fn system_notification_plan_from_push_payload(
         .map_err(ShellSystemNotificationError::UnsafeRoute)?;
 
     let title = trim_notification_text(
-        title_for_notification(&parsed),
+        title_for_notification(&parsed, locale),
         MAX_SYSTEM_NOTIFICATION_TITLE_CHARS,
     );
     let body = trim_notification_text(
-        body_for_notification(&parsed),
+        body_for_notification(&parsed, locale),
         MAX_SYSTEM_NOTIFICATION_BODY_CHARS,
     );
     let id = notification_id(payload, &parsed)?;
@@ -161,6 +170,7 @@ pub fn system_notification_plan_from_push_payload(
         event: parsed.event,
         title,
         body,
+        locale,
         urgency,
         route,
         window_control,
@@ -225,20 +235,20 @@ fn urgency_from_payload_fields(parsed: &ParsedPushData) -> Option<ShellSystemNot
     }
 }
 
-fn title_for_notification(parsed: &ParsedPushData) -> String {
+fn title_for_notification(parsed: &ParsedPushData, locale: WorkHubLocale) -> String {
     field_string(&parsed.data, "title")
         .or_else(|| nested_field_string(&parsed.data, &["attention", "title"]))
         .or_else(|| parsed.preview_text.clone())
-        .unwrap_or_else(|| fallback_title_for_event(&parsed.event).to_string())
+        .unwrap_or_else(|| fallback_title_for_event(&parsed.event, locale).to_string())
 }
 
-fn body_for_notification(parsed: &ParsedPushData) -> String {
+fn body_for_notification(parsed: &ParsedPushData, locale: WorkHubLocale) -> String {
     field_string(&parsed.data, "body")
         .or_else(|| field_string(&parsed.data, "summary_text"))
         .or_else(|| field_string(&parsed.data, "message"))
         .or_else(|| nested_field_string(&parsed.data, &["attention", "summary_text"]))
         .or_else(|| parsed.preview_text.clone())
-        .unwrap_or_else(|| fallback_body_for_event(&parsed.event).to_string())
+        .unwrap_or_else(|| fallback_body_for_event(&parsed.event, locale).to_string())
 }
 
 fn route_for_notification(parsed: &ParsedPushData) -> Result<String, ShellSystemNotificationError> {
@@ -345,28 +355,51 @@ fn trim_notification_text(raw: String, max_chars: usize) -> String {
     output
 }
 
-fn fallback_title_for_event(event: &str) -> &'static str {
-    match event {
-        "budget.exhausted" => "AI budget is exhausted",
-        "budget.warning" => "AI budget is near the limit",
-        "permission.ask" => "Cuu needs your approval",
-        "proposal.opened" => "New change proposal",
-        "proposal.reviewed" => "Change proposal feedback",
-        "revision.fedback" => "Revision requested",
-        "agent_run.failed" => "AI run failed",
-        "agent_run.escalated" | "escalation.opened" => "Cuu needs a decision",
-        "sync.conflict" => "Local sync conflict",
-        _ => "WorkHub has a new alert",
+fn fallback_title_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
+    match locale {
+        WorkHubLocale::ZhCn => match event {
+            "budget.exhausted" => "AI 预算已耗尽",
+            "budget.warning" => "AI 预算接近上限",
+            "permission.ask" => "Cuu 需要你的审批",
+            "proposal.opened" => "新的变更提案",
+            "proposal.reviewed" => "变更提案有反馈",
+            "revision.fedback" => "需要修订",
+            "agent_run.failed" => "AI 运行失败",
+            "agent_run.escalated" | "escalation.opened" => "Cuu 需要你决策",
+            "sync.conflict" => "本地同步冲突",
+            _ => "WorkHub 有新的提醒",
+        },
+        WorkHubLocale::EnUs => match event {
+            "budget.exhausted" => "AI budget is exhausted",
+            "budget.warning" => "AI budget is near the limit",
+            "permission.ask" => "Cuu needs your approval",
+            "proposal.opened" => "New change proposal",
+            "proposal.reviewed" => "Change proposal feedback",
+            "revision.fedback" => "Revision requested",
+            "agent_run.failed" => "AI run failed",
+            "agent_run.escalated" | "escalation.opened" => "Cuu needs a decision",
+            "sync.conflict" => "Local sync conflict",
+            _ => "WorkHub has a new alert",
+        },
     }
 }
 
-fn fallback_body_for_event(event: &str) -> &'static str {
-    match event {
-        "permission.ask" => "Open WorkHub to allow, deny, or remember this rule.",
-        "budget.exhausted" => "New automated runs are paused until the budget is handled.",
-        "budget.warning" => "Open the cost dashboard and choose a cheaper execution path.",
-        "sync.conflict" => "Choose local, cloud, or the AI merge suggestion.",
-        _ => "Open WorkHub for details.",
+fn fallback_body_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
+    match locale {
+        WorkHubLocale::ZhCn => match event {
+            "permission.ask" => "打开 WorkHub 允许、拒绝或记住这条规则。",
+            "budget.exhausted" => "新的自动运行会暂停，直到预算问题被处理。",
+            "budget.warning" => "打开成本看板，选择更省的执行路径。",
+            "sync.conflict" => "选择本地、云端或 AI 合并建议。",
+            _ => "打开 WorkHub 查看详情。",
+        },
+        WorkHubLocale::EnUs => match event {
+            "permission.ask" => "Open WorkHub to allow, deny, or remember this rule.",
+            "budget.exhausted" => "New automated runs are paused until the budget is handled.",
+            "budget.warning" => "Open the cost dashboard and choose a cheaper execution path.",
+            "sync.conflict" => "Choose local, cloud, or the AI merge suggestion.",
+            _ => "Open WorkHub for details.",
+        },
     }
 }
 
@@ -420,6 +453,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.id, "n1");
+        assert_eq!(plan.locale, WorkHubLocale::ZhCn);
+        assert_eq!(plan.title, "Review needed");
+        assert_eq!(plan.body, "Cuu prepared the result.");
         assert_eq!(plan.urgency, ShellSystemNotificationUrgency::High);
         assert_eq!(plan.route, "/workitems/work-1");
         assert_eq!(
@@ -452,17 +488,54 @@ mod tests {
 
     #[test]
     fn permission_asks_route_to_approval_center() {
+        let plan = system_notification_plan_from_push_payload_for_locale(
+            &payload("permission.ask", r#"{"approval_id":"approval-1"}"#, "me"),
+            WorkHubLocale::EnUs,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.urgency, ShellSystemNotificationUrgency::Urgent);
+        assert_eq!(plan.locale, WorkHubLocale::EnUs);
+        assert_eq!(plan.title, "Cuu needs your approval");
+        assert_eq!(
+            plan.body,
+            "Open WorkHub to allow, deny, or remember this rule."
+        );
+        assert_eq!(plan.route, "/approvals?approvalId=approval-1");
+    }
+
+    #[test]
+    fn default_notification_fallback_copy_is_chinese() {
         let plan = system_notification_plan_from_push_payload(&payload(
             "permission.ask",
-            r#"{"approval_id":"approval-1","summary_text":"AI wants to change a file."}"#,
+            r#"{"approval_id":"approval-1"}"#,
             "me",
         ))
         .unwrap()
         .unwrap();
 
-        assert_eq!(plan.urgency, ShellSystemNotificationUrgency::Urgent);
-        assert_eq!(plan.title, "Cuu needs your approval");
-        assert_eq!(plan.route, "/approvals?approvalId=approval-1");
+        assert_eq!(plan.locale, WorkHubLocale::ZhCn);
+        assert_eq!(plan.title, "Cuu 需要你的审批");
+        assert_eq!(plan.body, "打开 WorkHub 允许、拒绝或记住这条规则。");
+    }
+
+    #[test]
+    fn dynamic_notification_payload_text_is_not_client_translated() {
+        let plan = system_notification_plan_from_push_payload_for_locale(
+            &payload(
+                "notification.created",
+                r#"{"id":"n4","severity":"urgent","title":"中文任务标题","body":"Keep this exact body.","target_url":"/workitems/work-1"}"#,
+                "me",
+            ),
+            WorkHubLocale::EnUs,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.locale, WorkHubLocale::EnUs);
+        assert_eq!(plan.title, "中文任务标题");
+        assert_eq!(plan.body, "Keep this exact body.");
     }
 
     #[test]

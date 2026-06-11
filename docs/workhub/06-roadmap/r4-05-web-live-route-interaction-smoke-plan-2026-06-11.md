@@ -133,16 +133,13 @@ Endpoint count proof：
 
 ## 6. 后续详细计划
 
-下一刀 R4.6：Rust system-string i18n。
+R4.6 已落：Rust system-string i18n。详见 [`r4-06-rust-system-string-i18n-plan-2026-06-11.md`](./r4-06-rust-system-string-i18n-plan-2026-06-11.md)。
 
 1. 开工前复读：
    - [`../05-clients/desktop-pet-tauri.md`](../05-clients/desktop-pet-tauri.md)
    - [`../05-clients/i18n-locale-contract-p1-1.md`](../05-clients/i18n-locale-contract-p1-1.md)
    - [`../05-clients/pet-right-click-settings-menu-p1-4.md`](../05-clients/pet-right-click-settings-menu-p1-4.md)
    - [`../05-clients/pet-settings-recovery-p1-5.md`](../05-clients/pet-settings-recovery-p1-5.md)
-2. 把 Tauri tray、通知、错误、settings 系统串纳入同一 locale contract。
-3. 做 Windows/Linux smoke：
-   - tray/menu 恢复文案。
-   - settings/pass-through/hide-on-hover 系统提示。
-   - system notification plan 中英文案。
-4. 若 macOS 环境不可自动化，保留 macOS 实机待验边界，但代码合同和可跑 mock smoke 必须先落。
+2. 已把 Tauri tray、通知 fallback、deep-link / single-instance diagnostics 系统串纳入 Rust locale contract。
+3. 已补 `cargo test` 与 `pnpm qa:r4-rust-system-i18n`，验证中英 label/fallback/diagnostics、SSE notification locale dataflow 和动态 payload 原文保留。
+4. Windows/Linux/macOS 原生菜单截图仍作为后续跨平台实机 smoke，不替代本轮 Rust 代码合同。
