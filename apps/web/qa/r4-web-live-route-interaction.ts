@@ -1523,6 +1523,9 @@ function auditExpression() {
       reasonButtonCount: noticeVisible ? document.querySelectorAll("[data-review-reason]").length : 0
     };
     const live = {
+      sharedRuntime: document.documentElement.dataset.r4SharedWebRuntime || null,
+      sharedLiveRuntime: document.documentElement.dataset.r4SharedLiveRuntime || null,
+      sharedActionRuntime: document.documentElement.dataset.r4SharedActionRuntime || null,
       runtime: document.documentElement.dataset.r4LiveRuntime || null,
       streamCount: document.documentElement.dataset.r4LiveStreamCount || null,
       activeSourceCount: document.documentElement.dataset.r4LiveActiveSourceCount || null,
@@ -2810,6 +2813,24 @@ async function main() {
       r4_20_no_new_fixture_chrome:
         proof.counts.goldPath === 0 &&
         steps.every((step) => !step.audit.weeklyFixtureLeak),
+      r4_21_shared_runtime_dispatcher_parity:
+        readyProductSteps.every((step) => step.audit.live.sharedActionRuntime === "notice-payload-line-editor") &&
+        steps.some((step) => step.id === "06b-proposal-line-editor-apply-success-en-desktop" && step.audit.notice.kind === "action_success") &&
+        steps.some((step) => step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" && step.audit.notice.kind === "sse_dirty_guard"),
+      r4_21_shared_notice_locale_parity:
+        steps.some((step) => step.id === "02a-approval-deny-reason-gate-zh-desktop" && step.audit.notice.kind === "reason_required" && step.audit.notice.locale === "zh-CN") &&
+        steps.some((step) => step.id === "07-proposal-reason-gate-en-desktop" && step.audit.notice.kind === "reason_required" && step.audit.notice.locale === "en-US"),
+      r4_21_r4_20_sse_runtime_regression:
+        steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.live.sharedRuntime === "@workhub/web-runtime" && step.audit.live.sharedLiveRuntime === "true") &&
+        steps.some((step) => step.id === "10-proposal-sse-refresh-notice-en-desktop" && step.audit.live.refreshMode === "page-vm-render"),
+      r4_21_dirty_guard_regression:
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.live.sharedActionRuntime === "notice-payload-line-editor" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.live.refreshMode === "dirty-deferred"
+        ),
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 42,
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -2945,6 +2966,11 @@ async function main() {
         `- R4.20 dirty guard regression: ${String(gates.r4_20_dirty_guard_regression)}`,
         `- R4.20 Home React props regression: ${String(gates.r4_20_home_react_props_update_regression)}`,
         `- R4.20 no-new-fixture chrome: ${String(gates.r4_20_no_new_fixture_chrome)}`,
+        `- R4.21 shared runtime dispatcher parity: ${String(gates.r4_21_shared_runtime_dispatcher_parity)}`,
+        `- R4.21 shared notice locale parity: ${String(gates.r4_21_shared_notice_locale_parity)}`,
+        `- R4.21 R4.20 SSE runtime regression: ${String(gates.r4_21_r4_20_sse_runtime_regression)}`,
+        `- R4.21 dirty guard regression: ${String(gates.r4_21_dirty_guard_regression)}`,
+        `- R4.21 no new browser smoke sprawl: ${String(gates.r4_21_no_new_browser_smoke_sprawl)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

@@ -1,7 +1,7 @@
 ---
 module: R4-shared-web-runtime
 layer: C-WEB / C-DESKTOP-WEBVIEW / C-UIKIT / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -84,3 +84,48 @@ R4.20 已把 Web 的数据流地基从 route render 级 EventSource 拆成 app-l
 ## 7. 后续候选
 
 R4.21 完成后进入 R4.22 Proposal mutation editor migration：选择 Proposal line editor 或 structured field editor 的最低风险片段，用 R4.19-pre/R4.20/R4.21 稳定后的 React/runtime 合同做真实迁移。
+
+## 8. 竣工记录（2026-06-11）
+
+R4.21 已落地 `@workhub/web-runtime`，把 Web 与 desktop-webview 之间最容易继续分叉的浏览器运行时能力收成共享包：
+
+- `packages/web-runtime` 新增 shared helpers：HTML escape / CSS escape、browser locale persistence、structured route notice VM、action href parser、payload materializer、dirty route marker、route line editor DOM binding 与可注入 app-level live runtime。
+- `apps/web/src/browser.ts` 改为调用 shared runtime，继续保留 Web 自己的 route orchestration、typed API sequencing 与 product shell render；R4.20 的 app-level EventSource reuse、Page VM local refetch、Last-Event-ID/cursor、dirty guard 与 Home `react-props` update 语义保持不变。
+- `apps/desktop-webview/src/browser.ts` 接入 shared locale、notice、payload、line editor helper，删除旧拷贝里的 proposal action parser、merge conflict extractor 和 payload update 重复实现；locale persistence 失败现在 fail-closed 显示结构化 notice。
+- desktop-webview 仍是 R4 主窗回归面和 P0.5/hash shell 过渡面，本轮不把 Cuu、本地能力或完整 Web Page VM route loader 塞回桌面主窗。
+- Browser smoke 暴露 `r4SharedWebRuntime="@workhub/web-runtime"`、`r4SharedLiveRuntime=true`、`r4SharedActionRuntime="notice-payload-line-editor"`，并把 R4.21 gates 写入审计报告。
+
+## 9. QA 结果
+
+已通过：
+
+- `pnpm --filter @workhub/web-runtime typecheck`
+- `pnpm --filter @workhub/web-runtime test`：9/9
+- `pnpm --filter @workhub/web typecheck`
+- `pnpm --filter @workhub/web test`：20/20
+- `pnpm --filter @workhub/ui test`：52/52
+- `pnpm --filter @workhub/desktop-webview typecheck`
+- `pnpm --filter @workhub/desktop-webview test`：85/85
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm qa:r4-web-live-route-interaction`：42 steps，输出到 `../05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/`
+
+新增 R4.21 gates 均为 true：
+
+- `r4_21_shared_runtime_dispatcher_parity`
+- `r4_21_shared_notice_locale_parity`
+- `r4_21_r4_20_sse_runtime_regression`
+- `r4_21_dirty_guard_regression`
+- `r4_21_no_new_browser_smoke_sprawl`
+
+## 10. Bug / 数据流 / PRD 与概念图复核
+
+- Bug 审查：shared runtime 单测覆盖 action payload fail-closed、notice locale 与 live runtime cursor/reuse；desktop-webview 静态 regression 断言旧 parser/extractor 不再作为本地真相源。
+- 数据流审查：SSE payload 仍只触发 refresh/reconcile；REST/Page VM 仍为 UI 真相源；dirty route 收到事件时仍降级 notice + 手动刷新，不清掉未提交 DOM 编辑态。
+- PRD 对账：Web/desktop 主窗继续是严肃工作界面，Cuu 仍只在独立 pet window；共享 runtime 是行为边界，不是新视觉系统。
+- 概念图对账：R4.20 contact sheet 复核未出现 hero、默认 Kanban、Cuu 本体、hash route、weekly demo 文案或文本/横向溢出。
+- 限制：desktop-webview 已消除 dispatcher/notice/payload/line-editor 的旧拷贝主真相源，但还没有接 Web 的完整 app-level Page VM route loader；这留给 R4 收尾或 R5 双向同步 UI 前继续处理。
+
+## 11. 后续详细计划
+
+下一刀进入 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)：基于 R4.19-pre 的真 React mount、R4.20 的 app-level SSE/dataflow foundation 和 R4.21 的 shared runtime，选择 Proposal mutation editor 的最低风险片段做第一段真实可见 React controlled-state 迁移。

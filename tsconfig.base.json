@@ -12,6 +12,7 @@
       "@workhub/api-client/client": ["packages/api-client/src/client.ts"],
       "@workhub/cuu": ["packages/cuu/src/index.ts"],
       "@workhub/cost": ["packages/cost/src/index.ts"],
+      "@workhub/web-runtime": ["packages/web-runtime/src/index.ts"],
       "@workhub/audit": ["packages/audit/src/index.ts"],
       "@workhub/ui": ["packages/ui/src/index.ts"],
       "@workhub/ui/gold-path": ["packages/ui/src/gold-path/index.ts"],

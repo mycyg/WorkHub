@@ -21,6 +21,7 @@
     "@workhub/contracts": "workspace:*",
     "@workhub/cuu": "workspace:*",
     "@workhub/ui": "workspace:*",
+    "@workhub/web-runtime": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

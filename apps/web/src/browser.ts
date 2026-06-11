@@ -1,23 +1,62 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import {
-  eventTypes,
-  type ApplyMergeProposalCandidateRequest,
-  type CreateWorkItemRequest,
-  type MergeProposalRequest,
-  type NextQuestionRequest,
-  type ProposalConflict,
-  type UseEvidenceForTaskRequest
-} from "@workhub/contracts";
+import { eventTypes } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
   resolveGoldPathPageKey,
-  workHubLocaleStorageKey,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
+import {
+  acceptedDeliverableRestoreFromHref,
+  actionElementApplyPayload,
+  actionElementCreateWorkItemPayload,
+  actionElementEvidenceBindingPayload,
+  actionElementMergePayload,
+  actionElementNextQuestionPayload,
+  actionErrorNotice,
+  actionHrefFromElement,
+  actionPendingNotice,
+  actionSuccessNotice,
+  actionSummary,
+  activeRouteHasDirtyEdits as sharedActiveRouteHasDirtyEdits,
+  applyIdentityLocale,
+  approvalRespondIdFromHref,
+  bindRouteLineEditor,
+  browserLocale,
+  clearActiveRouteDirty as sharedClearActiveRouteDirty,
+  clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
+  conflictsFromMergeError,
+  createWebLiveRuntime,
+  createWorkItemActionFromHref,
+  desktopRequiredNotice,
+  dirtyGuardRefreshAction,
+  eventListenerOptions,
+  evidenceBindingWorkItemIdFromHref,
+  fieldValueRequiredNotice,
+  intakeOptionRequiredNotice,
+  localePersistenceFailedNotice,
+  markActiveRouteDirty as sharedMarkActiveRouteDirty,
+  mergeConflictNotice,
+  mergeProposalCandidateApplyIdFromHref,
+  persistBrowserLocale,
+  proposalActionFromHref,
+  reasonRequiredNotice,
+  reviewReasonButtons,
+  selectionNotice,
+  sessionNextQuestionIdFromHref,
+  setDocumentLocale,
+  showRouteNotice as showSharedRouteNotice,
+  sseDirtyGuardNotice,
+  sseRefreshNotice,
+  updateIntakeActionPayloads,
+  type ActionPayloadResult,
+  type RouteNoticeTimerState,
+  type RouteNoticeVM,
+  type WebLiveStreamTarget
+} from "@workhub/web-runtime";
 import {
   createUnknownWebRouteMatch,
   loadWebRoute,
@@ -35,88 +74,11 @@ import {
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
-type RouteNoticeKind =
-  | "action_success"
-  | "action_error"
-  | "selection"
-  | "reason_required"
-  | "action_pending"
-  | "desktop_required"
-  | "merge_conflict"
-  | "sse_refresh"
-  | "sse_dirty_guard"
-  | "budget_warning"
-  | "field_value_required"
-  | "intake_option_required"
-  | "locale_persistence_failed";
-type RouteNoticeTone = "info" | "success" | "warning" | "danger";
-type RouteNoticeSource = "client" | "rest" | "sse";
-type RouteNoticeVM = {
-  kind: RouteNoticeKind;
-  tone: RouteNoticeTone;
-  source: RouteNoticeSource;
-  locale: WorkHubLocale;
-  title: string;
-  body: string;
-  actionId?: string | undefined;
-  eventType?: string | undefined;
-  stream?: string | undefined;
-};
-type LiveStreamTarget = {
-  key: string;
-  url: string;
-};
-type IdentityLocaleCarrier = {
-  locale?: unknown;
-  preferences?: {
-    locale?: unknown;
-  };
-} | null | undefined;
-let noticeTimer: number | undefined;
+const noticeTimerState: RouteNoticeTimerState = {};
 let readyRouteBindings: AbortController | undefined;
-let liveRefreshTimer: number | undefined;
-let liveEventCount = 0;
-let liveRefreshCount = 0;
 let liveDirtyGuardCount = 0;
-let liveEventSourceOpenCount = 0;
-let liveEventSourceCloseCount = 0;
-let liveEventSourceReuseCount = 0;
-let liveLastEventId = readStoredLiveLastEventId();
-
-const liveEventSources = new Map<string, {
-  source: EventSource;
-  target: LiveStreamTarget;
-  openedUrl: string;
-}>();
-
-const liveRefreshDebounceMs = 220;
+let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
 const liveEventTypes = Object.values(eventTypes);
-
-function browserLocale(): WorkHubLocale {
-  return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
-}
-
-function setDocumentLocale(locale: WorkHubLocale) {
-  document.documentElement.lang = locale;
-}
-
-function isWorkHubLocale(value: unknown): value is WorkHubLocale {
-  return value === "zh-CN" || value === "en-US";
-}
-
-function identityLocale(identity: IdentityLocaleCarrier): WorkHubLocale | undefined {
-  const locale = identity?.preferences?.locale ?? identity?.locale;
-  return isWorkHubLocale(locale) ? locale : undefined;
-}
-
-function persistBrowserLocale(locale: WorkHubLocale) {
-  window.localStorage.setItem(workHubLocaleStorageKey, locale);
-  setDocumentLocale(locale);
-}
-
-function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | undefined {
-  return signal ? { signal } : undefined;
-}
 
 function setLiveMetric(key: string, value: unknown) {
   document.documentElement.dataset[key] = String(value);
@@ -135,162 +97,30 @@ function persistLiveLastEventId(eventId: string) {
     window.sessionStorage.setItem(liveLastEventIdStorageKey, eventId);
   } catch {
     setLiveMetric("r4LiveLastEventIdPersisted", false);
-    return;
+    return false;
   }
   setLiveMetric("r4LiveLastEventIdPersisted", true);
+  return true;
 }
 
 function clearLiveDirtyMetrics() {
-  setLiveMetric("r4LiveRouteDirty", false);
-  setLiveMetric("r4LiveDirtyRoute", "");
-  setLiveMetric("r4LiveDirtyReason", "");
-  setLiveMetric("r4LiveDirtyPendingEvent", "");
-  setLiveMetric("r4LiveDirtyPendingStream", "");
-}
-
-function activeRouteElement() {
-  return root?.querySelector<HTMLElement>("[data-r4-route-component]");
+  sharedClearLiveDirtyMetrics(setLiveMetric);
 }
 
 function markActiveRouteDirty(reason: string) {
-  const route = activeRouteElement();
-  if (!route) {
-    return;
-  }
-  route.dataset.r4RouteDirty = "true";
-  route.dataset.r4RouteDirtyReason = reason;
-  setLiveMetric("r4LiveRouteDirty", true);
-  setLiveMetric("r4LiveDirtyRoute", route.dataset.r4RouteComponent ?? "");
-  setLiveMetric("r4LiveDirtyReason", reason);
+  sharedMarkActiveRouteDirty(root, setLiveMetric, reason);
 }
 
 function clearActiveRouteDirty() {
-  const route = activeRouteElement();
-  if (route) {
-    delete route.dataset.r4RouteDirty;
-    delete route.dataset.r4RouteDirtyReason;
-  }
-  clearLiveDirtyMetrics();
+  sharedClearActiveRouteDirty(root, setLiveMetric);
 }
 
 function activeRouteHasDirtyEdits() {
-  return activeRouteElement()?.dataset.r4RouteDirty === "true";
+  return sharedActiveRouteHasDirtyEdits(root);
 }
 
-function noteLiveStreamTargets(targets: LiveStreamTarget[]) {
-  setLiveMetric("r4LiveStreams", targets.map((target) => target.key).join(","));
-  setLiveMetric("r4LiveStreamCount", targets.length);
-  setLiveMetric("r4LiveRuntime", "app-level");
-  setLiveMetric("r4LiveActiveSourceCount", liveEventSources.size);
-  setLiveMetric("r4LiveSseOpenCount", liveEventSourceOpenCount);
-  setLiveMetric("r4LiveSseCloseCount", liveEventSourceCloseCount);
-  setLiveMetric("r4LiveSseReuseCount", liveEventSourceReuseCount);
-  setLiveMetric("r4LiveCursorStrategy", "sse-id-and-query-last_event_id");
-  setLiveMetric("r4LiveLastEventId", liveLastEventId);
-}
-
-function uniqueLiveStreamTargets(targets: LiveStreamTarget[]) {
-  const seen = new Set<string>();
-  return targets.filter((target) => {
-    if (seen.has(target.url)) {
-      return false;
-    }
-    seen.add(target.url);
-    return true;
-  });
-}
-
-function updateLiveRuntimeMetrics() {
-  setLiveMetric("r4LiveRuntime", "app-level");
-  setLiveMetric("r4LiveActiveSourceCount", liveEventSources.size);
-  setLiveMetric("r4LiveSseOpenCount", liveEventSourceOpenCount);
-  setLiveMetric("r4LiveSseCloseCount", liveEventSourceCloseCount);
-  setLiveMetric("r4LiveSseReuseCount", liveEventSourceReuseCount);
-  setLiveMetric("r4LiveCursorStrategy", "sse-id-and-query-last_event_id");
-  setLiveMetric("r4LiveLastEventId", liveLastEventId);
-}
-
-function streamUrlWithCursor(url: string) {
-  if (!liveLastEventId) {
-    setLiveMetric("r4LiveLastOpenHadCursor", false);
-    return url;
-  }
-  const parsed = new URL(url, window.location.href);
-  parsed.searchParams.set("last_event_id", liveLastEventId);
-  setLiveMetric("r4LiveLastOpenHadCursor", true);
-  return /^https?:\/\//u.test(url) ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-}
-
-function eventIdFromPayload(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record["event_id"] === "string" && record["event_id"].length > 0) {
-    return record["event_id"];
-  }
-  const nested = record["event"];
-  if (nested && typeof nested === "object") {
-    const nestedRecord = nested as Record<string, unknown>;
-    if (typeof nestedRecord["event_id"] === "string" && nestedRecord["event_id"].length > 0) {
-      return nestedRecord["event_id"];
-    }
-  }
-  return undefined;
-}
-
-function noteLiveEventCursor(event: Event, source: "sse-id" | "payload" | "connected") {
-  if (!(event instanceof MessageEvent)) {
-    return;
-  }
-  const sseId = event.lastEventId;
-  if (sseId) {
-    liveLastEventId = sseId;
-    persistLiveLastEventId(liveLastEventId);
-    setLiveMetric("r4LiveLastEventIdSource", "sse-id");
-    updateLiveRuntimeMetrics();
-    return;
-  }
-  try {
-    const payload = JSON.parse(String(event.data ?? "")) as unknown;
-    const payloadEventId = eventIdFromPayload(payload);
-    if (payloadEventId) {
-      liveLastEventId = payloadEventId;
-      persistLiveLastEventId(liveLastEventId);
-      setLiveMetric("r4LiveLastEventIdSource", source === "connected" ? "connected-payload" : "payload");
-      updateLiveRuntimeMetrics();
-    }
-  } catch {
-    setLiveMetric("r4LiveLastEventIdSource", "unparseable");
-  }
-}
-
-function closeLiveEventSource(url: string) {
-  const entry = liveEventSources.get(url);
-  if (!entry) {
-    return;
-  }
-  entry.source.close();
-  liveEventSources.delete(url);
-  liveEventSourceCloseCount += 1;
-  setLiveMetric("r4LiveLastClosedStream", entry.target.key);
-  updateLiveRuntimeMetrics();
-}
-
-function closeAllLiveEventSources() {
-  for (const url of Array.from(liveEventSources.keys())) {
-    closeLiveEventSource(url);
-  }
-}
-
-function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {
-  const locale = identityLocale(identity) ?? fallback;
-  persistBrowserLocale(locale);
-  return locale;
-}
-
-function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserApiClient): LiveStreamTarget[] {
-  const targets: LiveStreamTarget[] = [{ key: "me", url: client.streams.me() }];
+function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserApiClient): WebLiveStreamTarget[] {
+  const targets: WebLiveStreamTarget[] = [{ key: "me", url: client.streams.me() }];
   if (result.match.key === "intake") {
     const sessionId = result.match.params["sessionId"];
     if (sessionId) {
@@ -320,7 +150,7 @@ function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserA
       targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
     }
   }
-  return uniqueLiveStreamTargets(targets);
+  return targets;
 }
 
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
@@ -350,217 +180,8 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
   }, eventListenerOptions(signal));
 }
 
-function resetNoticeDataset(notice: HTMLElement) {
-  delete notice.dataset.r4NoticeActionId;
-  delete notice.dataset.r4NoticeEventType;
-  delete notice.dataset.r4NoticeStream;
-}
-
 function showRouteNotice(shellRoot: HTMLElement, vm: RouteNoticeVM, extraHtml?: string, timeoutMs = 4600) {
-  const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
-  if (!notice) {
-    return;
-  }
-  if (noticeTimer !== undefined) {
-    window.clearTimeout(noticeTimer);
-    noticeTimer = undefined;
-  }
-  resetNoticeDataset(notice);
-  notice.dataset.r4RouteNotice = "true";
-  notice.dataset.r4NoticeKind = vm.kind;
-  notice.dataset.r4NoticeTone = vm.tone;
-  notice.dataset.r4NoticeSource = vm.source;
-  notice.dataset.r4NoticeLocale = vm.locale;
-  if (vm.actionId) {
-    notice.dataset.r4NoticeActionId = vm.actionId;
-  }
-  if (vm.eventType) {
-    notice.dataset.r4NoticeEventType = vm.eventType;
-  }
-  if (vm.stream) {
-    notice.dataset.r4NoticeStream = vm.stream;
-  }
-  notice.innerHTML = `<strong class="wh-app-notice-title">${escapeHtml(vm.title)}</strong><span class="wh-app-notice-body">${escapeHtml(vm.body)}</span>`;
-  if (extraHtml) {
-    notice.insertAdjacentHTML("beforeend", extraHtml);
-  }
-  notice.hidden = false;
-  if (timeoutMs > 0) {
-    noticeTimer = window.setTimeout(() => {
-      notice.hidden = true;
-      noticeTimer = undefined;
-    }, timeoutMs);
-  }
-}
-
-function actionSuccessNotice(locale: WorkHubLocale, body: string, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "action_success",
-    tone: "success",
-    source: "rest",
-    locale,
-    title: goldPathT(locale, "runtime.notice.actionSuccessTitle"),
-    body,
-    actionId
-  };
-}
-
-function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "action_error",
-    tone: "danger",
-    source: "rest",
-    locale,
-    title: goldPathT(locale, "runtime.notice.actionErrorTitle"),
-    body: actionMessage(error, locale),
-    actionId
-  };
-}
-
-function actionPendingNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "action_pending",
-    tone: "warning",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.pendingTitle"),
-    body: goldPathT(locale, "runtime.actionPending"),
-    actionId
-  };
-}
-
-function desktopRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "desktop_required",
-    tone: "warning",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.desktopRequiredTitle"),
-    body: goldPathT(locale, "runtime.notice.desktopRequiredBody"),
-    actionId
-  };
-}
-
-function reasonRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "reason_required",
-    tone: "warning",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.reasonRequiredTitle"),
-    body: goldPathT(locale, "runtime.rejectNeedsReason"),
-    actionId
-  };
-}
-
-function fieldValueRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "field_value_required",
-    tone: "warning",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.fieldValueRequiredTitle"),
-    body: goldPathT(locale, "runtime.notice.fieldValueRequiredBody"),
-    actionId
-  };
-}
-
-function intakeOptionRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "intake_option_required",
-    tone: "warning",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.intakeOptionRequiredTitle"),
-    body: goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
-    actionId
-  };
-}
-
-function localePersistenceFailedNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "locale_persistence_failed",
-    tone: "warning",
-    source: "rest",
-    locale,
-    title: goldPathT(locale, "runtime.notice.localePersistenceFailedTitle"),
-    body: goldPathT(locale, "runtime.notice.localePersistenceFailedBody"),
-    actionId
-  };
-}
-
-function selectionNotice(locale: WorkHubLocale, label: string): RouteNoticeVM {
-  return {
-    kind: "selection",
-    tone: "info",
-    source: "client",
-    locale,
-    title: goldPathT(locale, "runtime.notice.selectionTitle"),
-    body: `${goldPathT(locale, "runtime.optionSelectedPrefix")}${label}${goldPathT(locale, "runtime.optionSelectedSuffix")}`,
-    actionId: "select_option"
-  };
-}
-
-function mergeConflictNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
-  return {
-    kind: "merge_conflict",
-    tone: "warning",
-    source: "rest",
-    locale,
-    title: goldPathT(locale, "runtime.notice.mergeConflictTitle"),
-    body: goldPathT(locale, "runtime.notice.mergeConflictBody"),
-    actionId
-  };
-}
-
-function sseRefreshNotice(locale: WorkHubLocale, eventType: string, stream: string): RouteNoticeVM {
-  if (eventType === eventTypes.budgetWarning) {
-    return {
-      kind: "budget_warning",
-      tone: "warning",
-      source: "sse",
-      locale,
-      title: goldPathT(locale, "runtime.notice.budgetWarningTitle"),
-      body: goldPathT(locale, "runtime.notice.budgetWarningBody"),
-      eventType,
-      stream
-    };
-  }
-  return {
-    kind: "sse_refresh",
-    tone: "info",
-    source: "sse",
-    locale,
-    title: goldPathT(locale, "runtime.notice.sseRefreshTitle"),
-    body: goldPathT(locale, "runtime.notice.sseRefreshBody"),
-    eventType,
-    stream
-  };
-}
-
-function sseDirtyGuardNotice(locale: WorkHubLocale, eventType: string, stream: string): RouteNoticeVM {
-  return {
-    kind: "sse_dirty_guard",
-    tone: "warning",
-    source: "sse",
-    locale,
-    title: goldPathT(locale, "runtime.notice.sseDirtyGuardTitle"),
-    body: goldPathT(locale, "runtime.notice.sseDirtyGuardBody"),
-    eventType,
-    stream
-  };
-}
-
-function dirtyGuardRefreshAction(locale: WorkHubLocale) {
-  return `<div class="wh-app-action-row"><button type="button" data-action-href="${escapeHtml(webRouteHref(window.location.pathname))}" data-href="${escapeHtml(webRouteHref(window.location.pathname))}" data-r4-dirty-refresh="true">${escapeHtml(goldPathT(locale, "runtime.notice.sseDirtyGuardAction"))}</button></div>`;
-}
-
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+  showSharedRouteNotice(shellRoot, vm, extraHtml, timeoutMs, noticeTimerState);
 }
 
 function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey: string) {
@@ -574,184 +195,6 @@ function setActivePage(shellRoot: HTMLElement, shell: GoldPathAppShell, pageKey:
   if (route && window.location.hash !== `#${route}`) {
     window.history.replaceState(null, "", `#${route}`);
   }
-}
-
-function proposalActionFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/proposals\/([^/]+)\/(review|merge)$/u.exec(path);
-  if (!match?.[1] || !match[2]) {
-    return undefined;
-  }
-  return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
-}
-
-function approvalRespondIdFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
-}
-
-function mergeProposalCandidateApplyIdFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/merge-proposals\/([^/]+)\/apply$/u.exec(path);
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
-}
-
-function sessionNextQuestionIdFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(path);
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
-}
-
-function createWorkItemActionFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  return path === "/api/workitems";
-}
-
-function evidenceBindingWorkItemIdFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(path);
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
-}
-
-function acceptedDeliverableRestoreFromHref(href: string) {
-  const path = new URL(href, window.location.origin).pathname;
-  const match = /^\/api\/workitems\/([^/]+)\/deliverables\/([^/]+)\/restore$/u.exec(path);
-  if (!match?.[1] || !match[2]) {
-    return undefined;
-  }
-  return {
-    workItemId: decodeURIComponent(match[1]),
-    acceptedChangeId: decodeURIComponent(match[2])
-  };
-}
-
-function actionHrefFromElement(element: HTMLElement) {
-  if (element instanceof HTMLAnchorElement) {
-    return element.getAttribute("href") ?? "";
-  }
-  return element.dataset.actionHref ?? element.dataset.href ?? "";
-}
-
-function replaceCustomFieldPlaceholder(value: unknown, customValue: string): unknown {
-  if (value === "__WORKHUB_CUSTOM_FIELD_VALUE__") {
-    return customValue;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => replaceCustomFieldPlaceholder(item, customValue));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, replaceCustomFieldPlaceholder(item, customValue)])
-    );
-  }
-  return value;
-}
-
-function hasCustomFieldPlaceholder(value: unknown): boolean {
-  if (value === "__WORKHUB_CUSTOM_FIELD_VALUE__") {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.some(hasCustomFieldPlaceholder);
-  }
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      Object.values(value).some(hasCustomFieldPlaceholder)
-  );
-}
-
-function customFieldValueForElement(element: HTMLElement) {
-  const field = element.dataset.structuredField;
-  if (!field) {
-    return "";
-  }
-  const row = element.closest<HTMLElement>("[data-proposal-structured-field-editor-row]");
-  const input = row?.querySelector<HTMLTextAreaElement>(`[data-structured-field-custom-input="${CSS.escape(field)}"]`);
-  return input?.value.trim() ?? "";
-}
-
-type ActionPayloadResult<T> =
-  | { ok: true; payload?: T }
-  | { ok: false; reason: "field_value_required" | "intake_option_required" | "invalid_json" };
-
-function actionElementJsonPayload<T>(element: HTMLElement): ActionPayloadResult<T> {
-  const raw = element.dataset.requestJson ?? element.dataset.requestJsonTemplate;
-  if (!raw) {
-    return { ok: true };
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (hasCustomFieldPlaceholder(parsed)) {
-      const customValue = customFieldValueForElement(element);
-      if (!customValue) {
-        return { ok: false, reason: "field_value_required" };
-      }
-      const materialized = replaceCustomFieldPlaceholder(parsed, customValue);
-      element.dataset.requestJson = JSON.stringify(materialized);
-      return { ok: true, payload: materialized as T };
-    }
-    return { ok: true, payload: parsed as T };
-  } catch {
-    return { ok: false, reason: "invalid_json" };
-  }
-}
-
-function actionElementMergePayload(element: HTMLElement): ActionPayloadResult<MergeProposalRequest> {
-  return actionElementJsonPayload<MergeProposalRequest>(element);
-}
-
-function actionElementApplyPayload(element: HTMLElement): ActionPayloadResult<ApplyMergeProposalCandidateRequest> {
-  return actionElementJsonPayload<ApplyMergeProposalCandidateRequest>(element);
-}
-
-function selectedIntakeOptionIds(scope: ParentNode) {
-  return Array.from(scope.querySelectorAll<HTMLElement>("[data-intake-option-selected=\"true\"]"))
-    .map((option) => option.dataset.intakeOptionId ?? option.dataset.optionId ?? "")
-    .filter((value) => value.length > 0);
-}
-
-function updateIntakeActionPayloads(route: HTMLElement) {
-  const selected = selectedIntakeOptionIds(route);
-  route.dataset.r4IntakeSelectedCount = String(selected.length);
-  for (const action of route.querySelectorAll<HTMLElement>("[data-intake-submit],[data-intake-create-workitem]")) {
-    const base = actionElementJsonPayload<Record<string, unknown>>(action);
-    const payload = base.ok && base.payload && typeof base.payload === "object" ? { ...base.payload } : {};
-    payload["selected_option_ids"] = selected;
-    if (action.dataset.intakeCreateWorkitem === "true") {
-      payload["session_id"] = action.dataset.sessionId;
-    }
-    const raw = JSON.stringify(payload);
-    action.dataset.requestJson = raw;
-    action.setAttribute("data-request-json", raw);
-  }
-}
-
-function materializeIntakePayload<T>(element: HTMLElement): ActionPayloadResult<T> {
-  const route = element.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
-  if (!route) {
-    return actionElementJsonPayload<T>(element);
-  }
-  updateIntakeActionPayloads(route);
-  const selected = selectedIntakeOptionIds(route);
-  const optionCount = Number.parseInt(route.dataset.r4IntakeOptionCount ?? "0", 10);
-  if (optionCount > 0 && selected.length === 0) {
-    return { ok: false, reason: "intake_option_required" };
-  }
-  return actionElementJsonPayload<T>(element);
-}
-
-function actionElementNextQuestionPayload(element: HTMLElement): ActionPayloadResult<NextQuestionRequest> {
-  return materializeIntakePayload<NextQuestionRequest>(element);
-}
-
-function actionElementCreateWorkItemPayload(element: HTMLElement): ActionPayloadResult<CreateWorkItemRequest> {
-  return materializeIntakePayload<CreateWorkItemRequest>(element);
-}
-
-function actionElementEvidenceBindingPayload(element: HTMLElement): ActionPayloadResult<UseEvidenceForTaskRequest> {
-  return actionElementJsonPayload<UseEvidenceForTaskRequest>(element);
 }
 
 function showPayloadFailureNotice(
@@ -773,30 +216,6 @@ function showPayloadFailureNotice(
   return true;
 }
 
-function conflictsFromMergeError(error: unknown): ProposalConflict[] {
-  if (!(error instanceof WorkHubApiError) || error.code !== "merge_conflict") {
-    return [];
-  }
-  const candidates = [error.details];
-  if (error.details && typeof error.details === "object" && !Array.isArray(error.details)) {
-    const record = error.details as Record<string, unknown>;
-    candidates.push(record.details);
-    const nested = record.error;
-    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-      candidates.push((nested as Record<string, unknown>).details);
-    }
-  }
-  for (const candidate of candidates) {
-    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-      const conflicts = (candidate as Record<string, unknown>).conflicts;
-      if (Array.isArray(conflicts)) {
-        return conflicts as ProposalConflict[];
-      }
-    }
-  }
-  return [];
-}
-
 function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale: WorkHubLocale, actionId?: string) {
   const conflicts = conflictsFromMergeError(error);
   if (conflicts.length === 0) {
@@ -805,159 +224,6 @@ function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale:
   const rendered = renderProposalConflictCards(conflicts, { locale });
   showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId), rendered.html, 0);
   return true;
-}
-
-function reviewReasonButtons(locale: WorkHubLocale) {
-  const reasons = [
-    goldPathT(locale, "runtime.reason.evidence"),
-    goldPathT(locale, "runtime.reason.tone"),
-    goldPathT(locale, "runtime.reason.scope")
-  ];
-  return `<div class="wh-app-action-row">${reasons
-    .map((reason) => `<button type="button" data-review-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
-    .join("")}</div>`;
-}
-
-function actionMessage(error: unknown, locale: WorkHubLocale) {
-  return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
-}
-
-function actionSummary(result: unknown, locale: WorkHubLocale) {
-  if (result && typeof result === "object" && !Array.isArray(result)) {
-    const attention = (result as Record<string, unknown>)["attention"];
-    if (attention && typeof attention === "object" && !Array.isArray(attention)) {
-      const summaryText = (attention as Record<string, unknown>)["summary_text"];
-      if (typeof summaryText === "string" && summaryText.trim().length > 0) {
-        return summaryText;
-      }
-    }
-  }
-  return goldPathT(locale, "runtime.notice.actionSuccessTitle");
-}
-
-function datasetInt(element: HTMLElement, key: string) {
-  const value = element.dataset[key];
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function updateLineEditorPanelPayload(panel: HTMLElement) {
-  const hunks = Array.from(panel.querySelectorAll<HTMLElement>("[data-line-editor-hunk]")).flatMap((hunk) => {
-    const selected = hunk.querySelector<HTMLButtonElement>("[data-line-editor-decision-selected=\"true\"]")
-      ?? hunk.querySelector<HTMLButtonElement>("[data-line-editor-decision]");
-    const hunkIndex = datasetInt(hunk, "lineEditorHunkIndex");
-    const startLine = datasetInt(hunk, "lineEditorStartLine");
-    const endLine = datasetInt(hunk, "lineEditorEndLine");
-    const decision = selected?.dataset.lineEditorDecision;
-    return hunkIndex !== undefined && startLine !== undefined && endLine !== undefined && decision
-      ? [{ hunk_index: hunkIndex, start_line: startLine, end_line: endLine, decision }]
-      : [];
-  });
-  const apply = panel.querySelector<HTMLAnchorElement>("[data-line-editor-apply]");
-  if (!apply || hunks.length === 0) {
-    return;
-  }
-  const requestJson = JSON.stringify({ confirm: true, text_hunk_overrides: { hunks } });
-  apply.dataset.requestJson = requestJson;
-  apply.setAttribute("data-request-json", requestJson);
-}
-
-function activateLineEditorPanel(tab: HTMLButtonElement) {
-  const editor = tab.closest<HTMLElement>("[data-route-line-editor]");
-  const panelId = tab.dataset.lineEditorPanelId;
-  if (!editor || !panelId) {
-    return;
-  }
-  for (const item of editor.querySelectorAll<HTMLButtonElement>("[data-line-editor-tab]")) {
-    const active = item === tab;
-    item.setAttribute("aria-selected", String(active));
-    item.tabIndex = active ? 0 : -1;
-  }
-  for (const panel of editor.querySelectorAll<HTMLElement>("[data-line-editor-panel]")) {
-    panel.hidden = panel.id !== panelId;
-  }
-  editor.querySelector<HTMLElement>(`#${CSS.escape(panelId)}`)?.querySelector<HTMLInputElement>("[data-line-editor-search]")?.focus();
-}
-
-function applyLineEditorSearch(input: HTMLInputElement) {
-  const panel = input.closest<HTMLElement>("[data-line-editor-panel]");
-  if (!panel) {
-    return;
-  }
-  const query = input.value.trim().toLowerCase();
-  let visibleCount = 0;
-  for (const row of panel.querySelectorAll<HTMLElement>("[data-line-editor-row]")) {
-    const text = `${row.dataset.lineEditorRowText ?? ""} ${row.textContent ?? ""}`.toLowerCase();
-    const visible = query.length === 0 || text.includes(query);
-    row.hidden = !visible;
-    if (visible) {
-      visibleCount += 1;
-    }
-  }
-  panel.dataset.lineEditorMatchCount = String(visibleCount);
-  const badge = panel.querySelector<HTMLElement>("[data-line-editor-match-count]");
-  if (badge) {
-    badge.textContent = String(visibleCount);
-  }
-}
-
-function bindRouteLineEditor(shellRoot: HTMLElement, signal?: AbortSignal) {
-  shellRoot.addEventListener("click", (event) => {
-    const tab = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-line-editor-tab]") : null;
-    if (tab) {
-      event.preventDefault();
-      activateLineEditorPanel(tab);
-      return;
-    }
-    const decision = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-line-editor-decision]") : null;
-    if (!decision) {
-      return;
-    }
-    const hunk = decision.closest<HTMLElement>("[data-line-editor-hunk]");
-    const panel = decision.closest<HTMLElement>("[data-line-editor-panel]");
-    if (!hunk || !panel) {
-      return;
-    }
-    for (const sibling of hunk.querySelectorAll<HTMLButtonElement>("[data-line-editor-decision]")) {
-      const selected = sibling === decision;
-      sibling.dataset.lineEditorDecisionSelected = String(selected);
-      sibling.setAttribute("aria-pressed", String(selected));
-    }
-    updateLineEditorPanelPayload(panel);
-    markActiveRouteDirty("proposal_line_editor");
-  }, eventListenerOptions(signal));
-
-  shellRoot.addEventListener("input", (event) => {
-    const input = event.target instanceof Element ? event.target.closest<HTMLInputElement>("[data-line-editor-search]") : null;
-    if (input) {
-      applyLineEditorSearch(input);
-      if (input.value.trim().length > 0) {
-        markActiveRouteDirty("proposal_line_search");
-      }
-    }
-  }, eventListenerOptions(signal));
-
-  shellRoot.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
-      return;
-    }
-    const hunk = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-line-editor-hunk]") : null;
-    const panel = hunk?.closest<HTMLElement>("[data-line-editor-panel]");
-    if (!hunk || !panel) {
-      return;
-    }
-    const hunks = Array.from(panel.querySelectorAll<HTMLElement>("[data-line-editor-hunk]"));
-    const index = hunks.indexOf(hunk);
-    const nextIndex = event.key === "ArrowDown" ? index + 1 : index - 1;
-    const next = hunks[nextIndex];
-    if (next) {
-      event.preventDefault();
-      next.focus();
-    }
-  }, eventListenerOptions(signal));
 }
 
 function bindGoldPathNavigation(
@@ -1242,7 +508,7 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
     return;
   }
   clearReadyRouteBindings();
-  closeAllLiveEventSources();
+  liveRuntime?.closeAllLiveEventSources();
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
@@ -1283,90 +549,36 @@ async function refreshCurrentRouteFromLiveEvent(
   return "refreshed";
 }
 
-function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocale, eventType: string, targetKey: string) {
-  liveEventCount += 1;
-  setLiveMetric("r4LiveEventCount", liveEventCount);
-  setLiveMetric("r4LiveLastEvent", eventType);
-  setLiveMetric("r4LiveLastStream", targetKey);
-  if (liveRefreshTimer !== undefined) {
-    return;
-  }
-  liveRefreshTimer = window.setTimeout(() => {
-    liveRefreshTimer = undefined;
-    liveRefreshCount += 1;
-    setLiveMetric("r4LiveRefreshCount", liveRefreshCount);
-    void refreshCurrentRouteFromLiveEvent(client, locale, eventType, targetKey)
-      .then((outcome) => {
-        if (root) {
-          showRouteNotice(
-            root,
-            outcome === "dirty-deferred"
-              ? sseDirtyGuardNotice(locale, eventType, targetKey)
-              : sseRefreshNotice(locale, eventType, targetKey),
-            outcome === "dirty-deferred" ? dirtyGuardRefreshAction(locale) : undefined,
-            outcome === "dirty-deferred" ? 0 : 3600
-          );
-        }
-      })
-      .catch((error) => renderFatalRouteError(locale, error));
-  }, liveRefreshDebounceMs);
-}
-
-function bindLiveEventSource(
-  target: LiveStreamTarget,
-  client: BrowserApiClient,
-  locale: WorkHubLocale
-) {
-  if (typeof EventSource === "undefined") {
-    setLiveMetric("r4LiveSseSupported", false);
-    return;
-  }
-  setLiveMetric("r4LiveSseSupported", true);
-  const existing = liveEventSources.get(target.url);
-  if (existing) {
-    existing.target = target;
-    liveEventSourceReuseCount += 1;
-    setLiveMetric("r4LiveLastReusedStream", target.key);
-    updateLiveRuntimeMetrics();
-    return;
-  }
-  const openedUrl = streamUrlWithCursor(target.url);
-  const source = new EventSource(openedUrl, { withCredentials: true });
-  liveEventSources.set(target.url, { source, target, openedUrl });
-  liveEventSourceOpenCount += 1;
-  setLiveMetric("r4LiveLastOpenedStream", target.key);
-  setLiveMetric("r4LiveLastOpenedUrl", openedUrl);
-  updateLiveRuntimeMetrics();
-  source.addEventListener("connected", (event) => {
-    noteLiveEventCursor(event, "connected");
-    const connected = Number(document.documentElement.dataset.r4LiveConnectedCount ?? "0") + 1;
-    setLiveMetric("r4LiveConnectedCount", connected);
-    setLiveMetric("r4LiveLastConnectedStream", target.key);
+function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocale) {
+  setLiveMetric("r4SharedWebRuntime", "@workhub/web-runtime");
+  setLiveMetric("r4SharedLiveRuntime", true);
+  return createWebLiveRuntime({
+    eventTypes: liveEventTypes,
+    setMetric: setLiveMetric,
+    readCursor: readStoredLiveLastEventId,
+    persistCursor: persistLiveLastEventId,
+    locationHref: window.location.href,
+    onRefresh: (eventType, targetKey) => refreshCurrentRouteFromLiveEvent(client, locale, eventType, targetKey),
+    onRefreshNotice: (outcome, eventType, targetKey) => {
+      if (!root) {
+        return;
+      }
+      showRouteNotice(
+        root,
+        outcome === "dirty-deferred"
+          ? sseDirtyGuardNotice(locale, eventType, targetKey)
+          : sseRefreshNotice(locale, eventType, targetKey),
+        outcome === "dirty-deferred" ? dirtyGuardRefreshAction(locale, webRouteHref(window.location.pathname)) : undefined,
+        outcome === "dirty-deferred" ? 0 : 3600
+      );
+    },
+    onFatal: (error) => renderFatalRouteError(locale, error)
   });
-  source.addEventListener("error", () => {
-    setLiveMetric("r4LiveLastErrorStream", target.key);
-  });
-  for (const eventType of liveEventTypes) {
-    source.addEventListener(eventType, (event) => {
-      noteLiveEventCursor(event, "payload");
-      scheduleLiveRouteRefresh(client, locale, eventType, target.key);
-    });
-  }
 }
 
 function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
-  const targets = liveStreamTargetsForRoute(result, client);
-  noteLiveStreamTargets(targets);
-  const nextUrls = new Set(targets.map((target) => target.url));
-  for (const url of Array.from(liveEventSources.keys())) {
-    if (!nextUrls.has(url)) {
-      closeLiveEventSource(url);
-    }
-  }
-  for (const target of targets) {
-    bindLiveEventSource(target, client, locale);
-  }
-  updateLiveRuntimeMetrics();
+  liveRuntime ??= createBrowserLiveRuntime(client, locale);
+  liveRuntime.syncTargets(liveStreamTargetsForRoute(result, client));
 }
 
 async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
@@ -1385,8 +597,9 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   clearReadyRouteBindings();
   readyRouteBindings = new AbortController();
   const { signal } = readyRouteBindings;
+  setLiveMetric("r4SharedActionRuntime", "notice-payload-line-editor");
   bindLocaleSwitch(root, locale, client, signal);
-  bindRouteLineEditor(root, signal);
+  bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindLiveRouteStreams(result, client, locale);
 }
@@ -1415,10 +628,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
 function clearReadyRouteBindings() {
   readyRouteBindings?.abort();
   readyRouteBindings = undefined;
-  if (liveRefreshTimer !== undefined) {
-    window.clearTimeout(liveRefreshTimer);
-    liveRefreshTimer = undefined;
-  }
+  liveRuntime?.clearRefreshTimer();
 }
 
 async function boot() {
@@ -1444,7 +654,7 @@ async function boot() {
     window.addEventListener("popstate", () => {
       void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
     });
-    window.addEventListener("beforeunload", closeAllLiveEventSources);
+    window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
   } catch (error) {
     renderFatalRouteError(locale, error);
   }

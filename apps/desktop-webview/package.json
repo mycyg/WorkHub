@@ -16,7 +16,8 @@
     "@workhub/config": "workspace:*",
     "@workhub/contracts": "workspace:*",
     "@workhub/cuu": "workspace:*",
-    "@workhub/ui": "workspace:*"
+    "@workhub/ui": "workspace:*",
+    "@workhub/web-runtime": "workspace:*"
   },
   "devDependencies": {
     "vite": "^8.0.16"

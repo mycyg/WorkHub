@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
@@ -600,4 +601,16 @@ test("desktop webview exposes the shared Cuu event adapter for the Rust shell", 
   assert.equal(card.kind, "approval");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.motion.sprite_state, "asking_approval_bounce");
+});
+
+test("R4.21 desktop browser uses the shared web runtime helpers", () => {
+  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+
+  assert.match(source, /@workhub\/web-runtime/u);
+  assert.match(source, /bindRouteLineEditor\(root\)/u);
+  assert.match(source, /actionElementMergePayload/u);
+  assert.match(source, /showRouteNotice\(shellRoot, reasonRequiredNotice/u);
+  assert.doesNotMatch(source, /function proposalActionFromHref/u);
+  assert.doesNotMatch(source, /function conflictsFromMergeError/u);
+  assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
 });

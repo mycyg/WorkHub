@@ -399,6 +399,20 @@ R4.20 已把 Web ready route 从 P0.5 `/api/pages/gold-path` fixture chrome 剥�
 - App-level SSE 与 cursor 可审计：report 暴露 `runtime=app-level`、`sseProposal=1`、`lastEventId=evt_r4_20_*`、`lastOpenHadCursor=true`，route switch 不再整建整拆所有 EventSource。
 - R4.19 风险门继续成立：Proposal dirty edit SSE guard、Home React `react-props` update、active-only panel、no hash、no weekly fixture、no horizontal/text overflow 均作为 R4.20 regression 通过。
 
+### 6.17 R4.21 Shared Web Runtime
+
+![R4.21 shared runtime visual regression contact sheet](./assets/audit/2026-06-11-r4-web-live-route-interaction/contact-sheet.png)
+
+R4.21 没有引入新视觉系统，而是把 Web 与 desktop-webview 的 notice、action payload、dirty marker、line editor binding 与 app-level live runtime 收敛到 `@workhub/web-runtime`。仍使用 R4 live route interaction 42 步 contact sheet 做视觉回归证据，证据目录：`./assets/audit/2026-06-11-r4-web-live-route-interaction/`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-operations-pages-atlas.png`：主窗仍是严肃 workbench，导航、active panel、metrics 与 right rail 没有改成 hero、装饰 dashboard 或默认 Kanban。
+- 对齐 `web-deliverable-change-request.png`：Proposal 高级编辑区仍保持 HTML fallback boundary，R4.21 只共享运行时，不把 mutation editor 偷偷迁成未验收的 React state。
+- 双端行为边界更一致：Web 与 desktop-webview 的 structured notice、payload fail-closed、line editor payload 更新和 locale persistence 失败提示不再各写一套。
+- R4.20 数据流继续成立：SSE 仍是 refresh/reconcile trigger，REST/Page VM 仍是真相源，dirty guard 仍防止用户编辑中状态被事件清空。
+- 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.21 no-new-smoke-sprawl gate 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

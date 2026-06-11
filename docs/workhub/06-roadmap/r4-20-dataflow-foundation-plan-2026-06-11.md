@@ -104,7 +104,7 @@ flowchart LR
 
 ## 8. 后续候选
 
-R4.20 完成后进入 R4.21 shared web runtime：把 Web 与 desktop-webview 的 dispatcher、notice、locale、dirty guard、SSE refresh 运行时收敛成共享包，再选择 R4.22 Proposal mutation editor 的最低风险一段做真实迁移。
+R4.20 完成后已进入并完成 R4.21 shared web runtime：Web 与 desktop-webview 的 dispatcher、notice、locale、dirty guard、SSE refresh 运行时已收敛到 `@workhub/web-runtime`。下一步进入 R4.22 Proposal mutation editor 的最低风险片段真实迁移。
 
 ## 9. 竣工记录（2026-06-11）
 

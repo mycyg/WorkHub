@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-06-11T14:12:25.330Z",
+  "generated_at": "2026-06-11T14:47:51.290Z",
   "module": "R4.5 Web Live Route Interaction Smoke",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "vite_url": "http://127.0.0.1:57355",
-  "api_target": "http://127.0.0.1:57354",
+  "vite_url": "http://127.0.0.1:58606",
+  "api_target": "http://127.0.0.1:58605",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction",
   "contact_sheet": "contact-sheet.png",
   "gates": {
@@ -82,6 +82,11 @@
     "r4_20_dirty_guard_regression": true,
     "r4_20_home_react_props_update_regression": true,
     "r4_20_no_new_fixture_chrome": true,
+    "r4_21_shared_runtime_dispatcher_parity": true,
+    "r4_21_shared_notice_locale_parity": true,
+    "r4_21_r4_20_sse_runtime_regression": true,
+    "r4_21_dirty_guard_regression": true,
+    "r4_21_no_new_browser_smoke_sprawl": true,
     "r4_16_hydration_boundary_regression": true,
     "r4_15_settings_boundary_regression": true,
     "active_only_product_panels": true,
@@ -161,7 +166,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/",
+      "referer": "http://127.0.0.1:58606/",
       "body": null
     },
     {
@@ -169,7 +174,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/",
+      "referer": "http://127.0.0.1:58606/",
       "body": null
     },
     {
@@ -177,7 +182,7 @@
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/",
+      "referer": "http://127.0.0.1:58606/",
       "body": null
     },
     {
@@ -185,7 +190,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/",
+      "referer": "http://127.0.0.1:58606/",
       "body": null
     },
     {
@@ -193,7 +198,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/",
+      "referer": "http://127.0.0.1:58606/",
       "body": null
     },
     {
@@ -201,7 +206,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -209,7 +214,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -217,7 +222,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -225,7 +230,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -233,7 +238,7 @@
       "pathname": "/api/sessions/10000000-0000-4000-8000-000000001414/next-question",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": "{\"selected_option_ids\":[\"risk-first\"]}"
     },
     {
@@ -241,7 +246,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -249,7 +254,7 @@
       "pathname": "/api/workitems",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": "{\"session_id\":\"10000000-0000-4000-8000-000000001414\",\"selected_option_ids\":[\"create-worker\"]}"
     },
     {
@@ -257,7 +262,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -265,7 +270,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -273,7 +278,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/approvals",
+      "referer": "http://127.0.0.1:58606/approvals",
       "body": null
     },
     {
@@ -281,7 +286,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/approvals",
+      "referer": "http://127.0.0.1:58606/approvals",
       "body": "{\"decision\":\"deny\",\"reason_md\":\"证据不足\",\"remember\":\"once\"}"
     },
     {
@@ -289,7 +294,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/approvals",
+      "referer": "http://127.0.0.1:58606/approvals",
       "body": "{\"decision\":\"allow\",\"remember\":\"once\"}"
     },
     {
@@ -297,7 +302,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -305,7 +310,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -313,7 +318,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/approvals",
+      "referer": "http://127.0.0.1:58606/approvals",
       "body": null
     },
     {
@@ -321,7 +326,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -329,7 +334,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -337,7 +342,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -345,7 +350,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -353,7 +358,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -361,7 +366,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -369,7 +374,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -377,7 +382,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -385,7 +390,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -393,7 +398,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -401,7 +406,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -409,7 +414,7 @@
       "pathname": "/api/push/stream/proposal/r4-live-proposal",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -417,7 +422,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -425,7 +430,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -433,7 +438,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"text_hunk_overrides\":{\"hunks\":[{\"hunk_index\":0,\"start_line\":2,\"end_line\":2,\"decision\":\"keep_current\"}]}}"
     },
     {
@@ -441,7 +446,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000929\"}}"
     },
     {
@@ -449,7 +454,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_item_overrides\":{\"items\":[{\"field\":\"task_items\",\"item_id\":\"10000000-0000-4000-8000-000000000925\",\"decision\":\"accept_incoming\"}]},\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000928\"}}"
     },
     {
@@ -457,7 +462,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_field_overrides\":{\"operations\":[{\"field\":\"title\",\"decision\":\"custom\",\"value\":\"R4.13 custom reviewed title\"}]}}"
     },
     {
@@ -465,7 +470,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{\"decision\":\"request_changes\",\"reason_md\":\"Evidence is not enough\",\"remember\":\"once\"}"
     },
     {
@@ -473,7 +478,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/merge",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": "{}"
     },
     {
@@ -481,7 +486,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -489,7 +494,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -497,7 +502,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -505,7 +510,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/dashboard/cost",
+      "referer": "http://127.0.0.1:58606/dashboard/cost",
       "body": null
     },
     {
@@ -513,7 +518,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/dashboard/cost",
+      "referer": "http://127.0.0.1:58606/dashboard/cost",
       "body": null
     },
     {
@@ -521,7 +526,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_3",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/dashboard/cost",
+      "referer": "http://127.0.0.1:58606/dashboard/cost",
       "body": null
     },
     {
@@ -529,7 +534,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/dashboard/cost",
+      "referer": "http://127.0.0.1:58606/dashboard/cost",
       "body": null
     },
     {
@@ -537,7 +542,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/dashboard/cost",
+      "referer": "http://127.0.0.1:58606/dashboard/cost",
       "body": null
     },
     {
@@ -545,7 +550,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -553,7 +558,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"q\":\"regional\",\"work_item_id\":\"r4-live-workitem\",\"limit\":6}"
     },
     {
@@ -561,7 +566,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -569,7 +574,7 @@
       "pathname": "/api/workitems/r4-live-workitem/evidence-bindings",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"evidence_bubble_id\":\"10000000-0000-4000-8000-000000001424\",\"evidence_refs\":[{\"id\":\"10000000-0000-4000-8000-000000001425\",\"source_type\":\"meeting\",\"source_id\":\"regional-sync\",\"title\":\"Regional launch sync\",\"excerpt\":\"Supply delay is the blocker that needs the closest follow-up.\",\"href\":\"/knowledge/sources/regional-sync\"},{\"id\":\"10000000-0000-4000-8000-000000001426\",\"source_type\":\"drive_file\",\"source_id\":\"drive:regional-launch-review\",\"title\":\"Regional launch review draft\",\"excerpt\":\"The draft records metrics, risks, and next actions.\",\"href\":\"/knowledge/sources/regional-launch-review\"}]}"
     },
     {
@@ -577,7 +582,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -585,7 +590,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -593,7 +598,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -601,7 +606,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/intake/r4-live-session",
+      "referer": "http://127.0.0.1:58606/intake/r4-live-session",
       "body": null
     },
     {
@@ -609,7 +614,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/settings",
+      "referer": "http://127.0.0.1:58606/settings",
       "body": null
     },
     {
@@ -617,7 +622,7 @@
       "pathname": "/api/pages/settings",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/settings",
+      "referer": "http://127.0.0.1:58606/settings",
       "body": null
     },
     {
@@ -625,7 +630,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/settings",
+      "referer": "http://127.0.0.1:58606/settings",
       "body": null
     },
     {
@@ -633,7 +638,7 @@
       "pathname": "/api/__qa/fail-next-preference-patch",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/settings",
+      "referer": "http://127.0.0.1:58606/settings",
       "body": null
     },
     {
@@ -641,7 +646,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/settings",
+      "referer": "http://127.0.0.1:58606/settings",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -649,7 +654,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -657,7 +662,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -665,7 +670,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -673,7 +678,7 @@
       "pathname": "/api/push/stream/run/r4-live-run",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -681,7 +686,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -689,7 +694,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/deliverables/10000000-0000-4000-8000-000000001518/restore",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "body": ""
     },
     {
@@ -697,7 +702,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:58606/approvals?empty=approvals",
       "body": null
     },
     {
@@ -705,7 +710,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:58606/approvals?empty=approvals",
       "body": null
     },
     {
@@ -713,7 +718,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -721,7 +726,7 @@
       "pathname": "/api/pages/workitems/r4-live-forbidden",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:57355/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:58606/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -729,14 +734,14 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:57355/missing-r4-live-route",
+      "referer": "http://127.0.0.1:58606/missing-r4-live-route",
       "body": null
     }
   ],
   "steps": [
     {
       "id": "01-home-zh-desktop",
-      "url": "http://127.0.0.1:57355/",
+      "url": "http://127.0.0.1:58606/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -890,6 +895,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -943,7 +951,7 @@
     },
     {
       "id": "01r-home-react-dispatcher-probe-zh-desktop",
-      "url": "http://127.0.0.1:57355/",
+      "url": "http://127.0.0.1:58606/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1097,6 +1105,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -1150,7 +1161,7 @@
     },
     {
       "id": "01s-home-react-sse-props-update-zh-desktop",
-      "url": "http://127.0.0.1:57355/",
+      "url": "http://127.0.0.1:58606/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1304,6 +1315,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -1357,7 +1371,7 @@
     },
     {
       "id": "01a-intake-zh-desktop-route-component",
-      "url": "http://127.0.0.1:57355/intake/r4-live-session",
+      "url": "http://127.0.0.1:58606/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1511,6 +1525,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -1564,7 +1581,7 @@
     },
     {
       "id": "01b-intake-empty-fail-closed-zh-desktop",
-      "url": "http://127.0.0.1:57355/intake/r4-live-session",
+      "url": "http://127.0.0.1:58606/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1718,6 +1735,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -1771,7 +1791,7 @@
     },
     {
       "id": "01c-intake-next-question-success-zh-desktop",
-      "url": "http://127.0.0.1:57355/intake/r4-live-session",
+      "url": "http://127.0.0.1:58606/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1925,6 +1945,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -1978,7 +2001,7 @@
     },
     {
       "id": "01d-intake-create-workitem-success-zh-desktop",
-      "url": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2132,6 +2155,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -2185,7 +2211,7 @@
     },
     {
       "id": "02-approvals-click-zh-desktop",
-      "url": "http://127.0.0.1:57355/approvals",
+      "url": "http://127.0.0.1:58606/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2339,6 +2365,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -2392,7 +2421,7 @@
     },
     {
       "id": "02a-approval-deny-reason-gate-zh-desktop",
-      "url": "http://127.0.0.1:57355/approvals",
+      "url": "http://127.0.0.1:58606/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2546,6 +2575,9 @@
           "reasonButtonCount": 3
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -2599,7 +2631,7 @@
     },
     {
       "id": "02b-approval-deny-success-zh-desktop",
-      "url": "http://127.0.0.1:57355/approvals",
+      "url": "http://127.0.0.1:58606/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2753,6 +2785,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -2806,7 +2841,7 @@
     },
     {
       "id": "02c-approval-approve-success-zh-desktop",
-      "url": "http://127.0.0.1:57355/approvals",
+      "url": "http://127.0.0.1:58606/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2960,6 +2995,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -3013,7 +3051,7 @@
     },
     {
       "id": "03-workitem-click-zh-desktop-route-component",
-      "url": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3167,6 +3205,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -3220,7 +3261,7 @@
     },
     {
       "id": "04-history-back-approvals",
-      "url": "http://127.0.0.1:57355/approvals",
+      "url": "http://127.0.0.1:58606/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3374,6 +3415,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -3427,7 +3471,7 @@
     },
     {
       "id": "05-history-forward-workitem",
-      "url": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3581,6 +3625,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -3634,7 +3681,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-route-component",
-      "url": "http://127.0.0.1:57355/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:58606/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3788,6 +3835,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -3841,7 +3891,7 @@
     },
     {
       "id": "06a-proposal-advanced-review-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3995,6 +4045,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -4048,7 +4101,7 @@
     },
     {
       "id": "06aa-proposal-dirty-edit-sse-guard-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4202,6 +4255,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -4255,7 +4311,7 @@
     },
     {
       "id": "06b-proposal-line-editor-apply-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4409,6 +4465,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -4462,7 +4521,7 @@
     },
     {
       "id": "06c-proposal-task-plan-apply-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4616,6 +4675,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -4669,7 +4731,7 @@
     },
     {
       "id": "06d-proposal-subrecord-apply-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4823,6 +4885,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -4876,7 +4941,7 @@
     },
     {
       "id": "06e-proposal-custom-field-empty-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5030,6 +5095,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -5083,7 +5151,7 @@
     },
     {
       "id": "06f-proposal-custom-field-apply-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5237,6 +5305,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -5290,7 +5361,7 @@
     },
     {
       "id": "06g-proposal-structured-field-editor-visual-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 3000
@@ -5444,6 +5515,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -5497,7 +5571,7 @@
     },
     {
       "id": "07-proposal-reason-gate-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5651,6 +5725,9 @@
           "reasonButtonCount": 3
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -5704,7 +5781,7 @@
     },
     {
       "id": "08-proposal-request-changes-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5858,6 +5935,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -5911,7 +5991,7 @@
     },
     {
       "id": "09-proposal-merge-success-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6065,6 +6145,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -6118,7 +6201,7 @@
     },
     {
       "id": "10-proposal-sse-refresh-notice-en-desktop",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6272,6 +6355,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -6325,7 +6411,7 @@
     },
     {
       "id": "11-proposal-en-mobile-scrolled-notice-route-component",
-      "url": "http://127.0.0.1:57355/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:58606/proposals/r4-live-proposal",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -6479,6 +6565,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -6532,7 +6621,7 @@
     },
     {
       "id": "12-cost-en-mobile-route-component",
-      "url": "http://127.0.0.1:57355/dashboard/cost",
+      "url": "http://127.0.0.1:58606/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -6686,6 +6775,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -6739,7 +6831,7 @@
     },
     {
       "id": "12a-cost-budget-warning-notice-en-mobile",
-      "url": "http://127.0.0.1:57355/dashboard/cost",
+      "url": "http://127.0.0.1:58606/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -6893,6 +6985,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -6946,7 +7041,7 @@
     },
     {
       "id": "12b-knowledge-fallback-en-desktop-route-component",
-      "url": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7100,6 +7195,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -7153,7 +7251,7 @@
     },
     {
       "id": "12c-knowledge-bind-success-en-desktop",
-      "url": "http://127.0.0.1:57355/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:58606/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7307,6 +7405,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -7360,7 +7461,7 @@
     },
     {
       "id": "12d-intake-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:57355/intake/r4-live-session",
+      "url": "http://127.0.0.1:58606/intake/r4-live-session",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7514,6 +7615,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "2",
           "activeSourceCount": "2",
@@ -7567,7 +7671,7 @@
     },
     {
       "id": "13-settings-en-desktop-route-component",
-      "url": "http://127.0.0.1:57355/settings",
+      "url": "http://127.0.0.1:58606/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7721,6 +7825,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -7774,7 +7881,7 @@
     },
     {
       "id": "13a-settings-locale-persistence-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:57355/settings",
+      "url": "http://127.0.0.1:58606/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7928,6 +8035,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -7981,7 +8091,7 @@
     },
     {
       "id": "14-settings-desktop-gate-en-desktop",
-      "url": "http://127.0.0.1:57355/settings",
+      "url": "http://127.0.0.1:58606/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8135,6 +8245,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -8188,7 +8301,7 @@
     },
     {
       "id": "14a-settings-en-mobile-boundary-no-overflow",
-      "url": "http://127.0.0.1:57355/settings",
+      "url": "http://127.0.0.1:58606/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -8342,6 +8455,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "1",
           "activeSourceCount": "1",
@@ -8395,7 +8511,7 @@
     },
     {
       "id": "15-replay-en-desktop-route-component",
-      "url": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8549,6 +8665,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -8602,7 +8721,7 @@
     },
     {
       "id": "15a-replay-restore-success-en-desktop",
-      "url": "http://127.0.0.1:57355/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:58606/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8756,6 +8875,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
           "runtime": "app-level",
           "streamCount": "3",
           "activeSourceCount": "3",
@@ -8809,7 +8931,7 @@
     },
     {
       "id": "16-empty-approvals-mobile",
-      "url": "http://127.0.0.1:57355/approvals?empty=approvals",
+      "url": "http://127.0.0.1:58606/approvals?empty=approvals",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -8963,6 +9085,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": null,
+          "sharedLiveRuntime": null,
+          "sharedActionRuntime": null,
           "runtime": null,
           "streamCount": null,
           "activeSourceCount": null,
@@ -9016,7 +9141,7 @@
     },
     {
       "id": "17-forbidden-workitem-desktop",
-      "url": "http://127.0.0.1:57355/workitems/r4-live-forbidden",
+      "url": "http://127.0.0.1:58606/workitems/r4-live-forbidden",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9170,6 +9295,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": null,
+          "sharedLiveRuntime": null,
+          "sharedActionRuntime": null,
           "runtime": null,
           "streamCount": null,
           "activeSourceCount": null,
@@ -9223,7 +9351,7 @@
     },
     {
       "id": "18-unknown-route-error",
-      "url": "http://127.0.0.1:57355/missing-r4-live-route",
+      "url": "http://127.0.0.1:58606/missing-r4-live-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9377,6 +9505,9 @@
           "reasonButtonCount": 0
         },
         "live": {
+          "sharedRuntime": null,
+          "sharedLiveRuntime": null,
+          "sharedActionRuntime": null,
           "runtime": null,
           "streamCount": null,
           "activeSourceCount": null,

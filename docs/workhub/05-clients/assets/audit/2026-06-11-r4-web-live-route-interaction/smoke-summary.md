@@ -68,6 +68,11 @@
 - R4.20 dirty guard regression: true
 - R4.20 Home React props regression: true
 - R4.20 no-new-fixture chrome: true
+- R4.21 shared runtime dispatcher parity: true
+- R4.21 shared notice locale parity: true
+- R4.21 R4.20 SSE runtime regression: true
+- R4.21 dirty guard regression: true
+- R4.21 no new browser smoke sprawl: true
 - R4.16 hydration boundary regression: true
 - R4.15 settings boundary regression: true
 - active-only product panels: true
