@@ -44,17 +44,18 @@ owner: workflow
 | R4 React route component first migration | `packages/ui/src/gold-path/route-react-components.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.17 已把 Home / Settings 接入 React-compatible component adapter，保留 HTML fallback、delegated action dispatcher 与 Settings boundary；本机 Chrome smoke 38 步通过 |
 | R4 React route migration expansion | `packages/ui/src/gold-path/route-react-components.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.18 已把 Cost / Replay 接入 React-compatible component adapter，并补齐 Replay accepted deliverable restore 的 typed dispatcher；本机 Chrome smoke 39 步通过 |
 | R4.19-pre true React mount spike | `apps/web/src/react-route-mount.ts`、`apps/web/src/browser.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.19-pre 已给 Home hydration root 接入真实 React 18 `createRoot()` hidden probe，证明 delegated dispatcher 共存与 Home SSE `react-props` 更新；本机 Chrome smoke 41 步通过 |
+| R4.19 Proposal advanced split migration | `packages/ui/src/gold-path/route-react-components.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.19 已把 Proposal readonly summary / review metadata 接入 split adapter，保留 advanced editors HTML fallback，并补 dirty edit SSE guard 与 no-new-fixture-chrome gate；本机 Chrome smoke 42 步通过 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，R4.14 已把 Option Intake / Knowledge fallback 串成真实 route dataflow，R4.15 已硬化 Settings / locale persistence / device boundary，R4.16 已建立 route tree / hydration boundary，R4.17 已完成 Home / Settings first migration，R4.18 已完成 Cost / Replay 扩展迁移，R4.19-pre 已证明 Home 真 React mount / dispatcher 共存 / SSE props update，剩余重点进入 R4.19 Proposal advanced split migration。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，R4.14 已把 Option Intake / Knowledge fallback 串成真实 route dataflow，R4.15 已硬化 Settings / locale persistence / device boundary，R4.16 已建立 route tree / hydration boundary，R4.17 已完成 Home / Settings first migration，R4.18 已完成 Cost / Replay 扩展迁移，R4.19-pre 已证明 Home 真 React mount / dispatcher 共存 / SSE props update，R4.19 已完成 Proposal split migration 和编辑态 dirty guard。剩余重点进入 R4.20 数据流地基。
 - 现有产品壳已脱离 P0.5 preview 外观，并支持 active-only panel；R4.12 已把 approval/proposal action、reason gate、desktop gate、retry/request access route-state、SSE refresh notice 纳入统一中英 action feedback contract。
 - `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings`、`Option Intake`、`Knowledge fallback` 已有第一版 ready route component；Proposal 高级冲突/字段/逐行编辑器已在 R4.13 收敛，Intake/Knowledge 真实 dataflow 已在 R4.14 收敛，Settings locale/device boundary 已在 R4.15 收敛，R4.16 已为这些 route 建立可迁移的 hydration boundary，R4.17 已让 Home / Settings 具备 React-compatible props adapter，R4.18 已扩展到 Cost / Replay 并补齐 Replay restore single dispatcher。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence；R4.14 已补 Option Intake / Knowledge fallback route componentization；R4.15 已补 Settings / locale persistence / device boundary hardening；R4.16 已补 React route tree / hydration boundary；R4.17 已补 React-compatible first migration；R4.18 已补 Cost / Replay 扩展迁移；R4.19-pre 已补真 React mount spike。下一步让 R4.19 进入 Proposal advanced split migration。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence；R4.14 已补 Option Intake / Knowledge fallback route componentization；R4.15 已补 Settings / locale persistence / device boundary hardening；R4.16 已补 React route tree / hydration boundary；R4.17 已补 React-compatible first migration；R4.18 已补 Cost / Replay 扩展迁移；R4.19-pre 已补真 React mount spike；R4.19 已补 Proposal split adapter、advanced fallback boundary、dirty guard 与 fixture chrome 冻结门。下一步进入 R4.20 app 级 SSE 与局部 Page VM refetch。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -378,6 +379,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | Visual QA | 本机 Chrome 41 步 smoke 覆盖 true mount、dispatcher coexistence、SSE props update without full render 与 R4.18 全量 regression | R4.19 增加 Proposal split adapter、dirty edit guard 和 no-new-fixture-chrome gates |
 
 边界：R4.19-pre 不把可见 Home UI 迁成 React，也不解决 Proposal editors 的 DOM 编辑态风险；它只证明 R4.19 可以在真实 React runtime 合同上继续 split migration。主窗继续无 Cuu、无 secret、无 Kanban/hash/weekly 文案、无 horizontal/text overflow。
+
+### 0.25 R4.19 Proposal Advanced Split Migration（2026-06-11 已落）
+
+本轮把 Proposal route 做成 split adapter：readonly summary / review metadata / counts / action hrefs 进入 `ProposalRouteComponent` props，mutation-heavy editors 继续保留在 HTML fallback。详细计划与验收状态见 [`../06-roadmap/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](../06-roadmap/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Proposal split adapter | `ProposalRouteComponent` props 来自 typed Proposal Page VM 与 conflicts API，包含 proposal/work item id、状态、change/check/evidence/comment/conflict counts、review action hrefs | R4.22 前不迁 mutation-heavy editors，先让 readonly data shape 稳定 |
+| Advanced fallback | line editor、structured field editor、subrecord editor、custom field editor 保留 HTML fallback，并暴露 `proposal-advanced-editors-html-fallback` marker | R4.21 共享 runtime 后再选最低风险 editor 做真迁移 |
+| Dirty guard | Proposal line decision、line search、custom field、intake selected option 有未提交状态时，SSE 刷新降级为 warning notice + 手动刷新，不整页重渲 | R4.20 把 dirty guard 纳入 app 级 SSE runtime |
+| Fixture chrome freeze | Browser smoke 固定 gold-path/proposal/conflicts 请求次数，阻止 R4.19 继续往 fixture chrome 上加依赖 | R4.20 退役生产 chrome 对 `/api/pages/gold-path` 的依赖 |
+| Visual QA | 本机 Chrome 42 步 smoke 覆盖 split marker、advanced fallback、readonly parity、dirty edit SSE guard、no-new-fixture chrome 与 R4.19-pre/R4.18 regression | R4.20 继续把 Redis/SSE、dirty guard、react-props update 合成数据流地基 gate |
+
+边界：R4.19 不改变 Proposal 后端 merge/apply 语义，不新增第二套 click handler，也不把高级编辑器变成 React controlled state。它关闭了编辑中 SSE 自动重渲的数据丢失风险，但 app 级长连接、局部 refetch、Last-Event-ID 和 fixture chrome 退役仍属于 R4.20。
 
 ---
 

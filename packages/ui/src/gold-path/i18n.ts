@@ -172,6 +172,9 @@ export type GoldPathCopyKey =
   | "runtime.notice.mergeConflictBody"
   | "runtime.notice.sseRefreshTitle"
   | "runtime.notice.sseRefreshBody"
+  | "runtime.notice.sseDirtyGuardTitle"
+  | "runtime.notice.sseDirtyGuardBody"
+  | "runtime.notice.sseDirtyGuardAction"
   | "runtime.notice.budgetWarningTitle"
   | "runtime.notice.budgetWarningBody"
   | "runtime.notice.fieldValueRequiredTitle"
@@ -332,6 +335,9 @@ const goldPathCopy = {
     "runtime.notice.mergeConflictBody": "这次变更和正式版本撞车了，先选一个处理方式。",
     "runtime.notice.sseRefreshTitle": "页面已刷新",
     "runtime.notice.sseRefreshBody": "后台有新事件，当前页面已重新读取最新数据。",
+    "runtime.notice.sseDirtyGuardTitle": "有新更新，已先保留编辑",
+    "runtime.notice.sseDirtyGuardBody": "你正在编辑未提交内容，页面不会自动刷新以免丢失选择或输入。",
+    "runtime.notice.sseDirtyGuardAction": "手动刷新",
     "runtime.notice.budgetWarningTitle": "预算需要留意",
     "runtime.notice.budgetWarningBody": "成本状态有新变化，页面已重新读取最新预算数据。",
     "runtime.notice.fieldValueRequiredTitle": "需要字段值",
@@ -491,6 +497,9 @@ const goldPathCopy = {
     "runtime.notice.mergeConflictBody": "This change conflicts with the current version. Choose how to continue.",
     "runtime.notice.sseRefreshTitle": "Page refreshed",
     "runtime.notice.sseRefreshBody": "A background event arrived, and this page has reloaded the latest data.",
+    "runtime.notice.sseDirtyGuardTitle": "New update held while you edit",
+    "runtime.notice.sseDirtyGuardBody": "This page kept your unsaved choices or input instead of refreshing automatically.",
+    "runtime.notice.sseDirtyGuardAction": "Refresh manually",
     "runtime.notice.budgetWarningTitle": "Budget needs attention",
     "runtime.notice.budgetWarningBody": "Cost status changed, and this page has reloaded the latest budget data.",
     "runtime.notice.fieldValueRequiredTitle": "Field value required",

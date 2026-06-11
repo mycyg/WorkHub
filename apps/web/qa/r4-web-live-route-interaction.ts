@@ -104,14 +104,29 @@ type BrowserAudit = {
     proposalActionCount: string | null;
     proposalEvidenceCount: string | null;
     proposalConflictCount: string | null;
+    proposalSplitAdapter: string | null;
+    proposalReadonlyReviewActionCount: string | null;
+    proposalAdvancedFallbackPreserved: string | null;
+    proposalAdvancedFallbackActionCount: string | null;
+    proposalLineEditorFallback: string | null;
+    proposalFieldEditorFallback: string | null;
+    proposalSubrecordEditorFallback: string | null;
     proposalLineEditorFileCount: string | null;
     proposalLineEditorHunkCount: string | null;
     proposalStructuredFieldEditorCount: string | null;
     proposalSubrecordItemCount: string | null;
     proposalAdvancedConflicts: string | null;
+    proposalAdvancedFallback: string | null;
+    proposalAdvancedFallbackSource: string | null;
+    proposalAdvancedFallbackBoundaryActionCount: string | null;
     proposalAdvancedLineEditor: string | null;
     proposalAdvancedFieldEditor: string | null;
     proposalAdvancedSubrecordEditor: string | null;
+    proposalLineEditorSelectedDecision: string | null;
+    proposalLineEditorSearchValue: string | null;
+    proposalCustomFieldValue: string | null;
+    routeDirty: string | null;
+    routeDirtyReason: string | null;
     intakeOptionCount: string | null;
     intakeProgressCount: string | null;
     intakeFreeTextCollapsed: string | null;
@@ -167,6 +182,12 @@ type BrowserAudit = {
     reactPropsEvent: string | null;
     reactPropsStream: string | null;
     reactPropsUpdateCount: string | null;
+    routeDirty: string | null;
+    dirtyRoute: string | null;
+    dirtyReason: string | null;
+    dirtyGuardCount: string | null;
+    dirtyPendingEvent: string | null;
+    dirtyPendingStream: string | null;
   };
   routeState: {
     kind: string | null;
@@ -224,6 +245,7 @@ const defaultOutputDir = path.join(
 );
 const r4ReactComponentByRoute: Record<string, string> = {
   home: "HomeRouteComponent",
+  proposal: "ProposalRouteComponent",
   replay: "ReplayRouteComponent",
   cost: "CostRouteComponent",
   settings: "SettingsRouteComponent"
@@ -1390,6 +1412,9 @@ function auditExpression() {
     const routeRoot = document.querySelector("[data-r4-product-shell]");
     const routeComponent = document.querySelector("[data-r4-route-component]");
     const proposalAdvanced = document.querySelector("[data-r4-proposal-advanced-review]");
+    const proposalLineSelected = document.querySelector("[data-line-editor-decision-selected='true']");
+    const proposalLineSearch = document.querySelector("[data-line-editor-search]");
+    const proposalCustomField = document.querySelector("[data-structured-field-custom-input]");
     const routeComponentPanel = document.querySelector("[data-r4-route-component-panel]");
     const hydrationBoundary = document.querySelector("[data-r4-hydration-boundary]");
     const hydrationPanel = document.querySelector("[data-r4-hydration-panel]");
@@ -1409,14 +1434,29 @@ function auditExpression() {
       proposalActionCount: routeComponent?.getAttribute("data-r4-proposal-action-count") || null,
       proposalEvidenceCount: routeComponent?.getAttribute("data-r4-proposal-evidence-count") || null,
       proposalConflictCount: routeComponent?.getAttribute("data-r4-proposal-conflict-count") || null,
+      proposalSplitAdapter: routeComponent?.getAttribute("data-r4-proposal-split-adapter") || null,
+      proposalReadonlyReviewActionCount: routeComponent?.getAttribute("data-r4-proposal-readonly-review-action-count") || null,
+      proposalAdvancedFallbackPreserved: routeComponent?.getAttribute("data-r4-proposal-advanced-fallback-preserved") || null,
+      proposalAdvancedFallbackActionCount: routeComponent?.getAttribute("data-r4-proposal-advanced-fallback-action-count") || null,
+      proposalLineEditorFallback: routeComponent?.getAttribute("data-r4-proposal-line-editor-fallback") || null,
+      proposalFieldEditorFallback: routeComponent?.getAttribute("data-r4-proposal-field-editor-fallback") || null,
+      proposalSubrecordEditorFallback: routeComponent?.getAttribute("data-r4-proposal-subrecord-editor-fallback") || null,
       proposalLineEditorFileCount: document.querySelector("[data-route-line-editor]")?.getAttribute("data-route-line-editor-file-count") || null,
       proposalLineEditorHunkCount: document.querySelector("[data-route-line-editor]")?.getAttribute("data-route-line-editor-hunk-count") || null,
       proposalStructuredFieldEditorCount: document.querySelector("[data-proposal-structured-field-editor]")?.getAttribute("data-proposal-structured-field-editor-count") || null,
       proposalSubrecordItemCount: document.querySelector("[data-subrecord-item-count]")?.getAttribute("data-subrecord-item-count") || null,
       proposalAdvancedConflicts: proposalAdvanced?.getAttribute("data-r4-proposal-conflicts") || null,
+      proposalAdvancedFallback: proposalAdvanced?.getAttribute("data-r4-proposal-advanced-fallback") || null,
+      proposalAdvancedFallbackSource: proposalAdvanced?.getAttribute("data-r4-proposal-advanced-fallback-source") || null,
+      proposalAdvancedFallbackBoundaryActionCount: proposalAdvanced?.getAttribute("data-r4-proposal-advanced-fallback-action-count") || null,
       proposalAdvancedLineEditor: proposalAdvanced?.getAttribute("data-r4-proposal-line-editor") || null,
       proposalAdvancedFieldEditor: proposalAdvanced?.getAttribute("data-r4-proposal-field-editor") || null,
       proposalAdvancedSubrecordEditor: proposalAdvanced?.getAttribute("data-r4-proposal-subrecord-editor") || null,
+      proposalLineEditorSelectedDecision: proposalLineSelected?.getAttribute("data-line-editor-decision") || null,
+      proposalLineEditorSearchValue: proposalLineSearch instanceof HTMLInputElement ? proposalLineSearch.value : null,
+      proposalCustomFieldValue: proposalCustomField instanceof HTMLTextAreaElement ? proposalCustomField.value : null,
+      routeDirty: routeComponent?.getAttribute("data-r4-route-dirty") || null,
+      routeDirtyReason: routeComponent?.getAttribute("data-r4-route-dirty-reason") || null,
       intakeOptionCount: routeComponent?.getAttribute("data-r4-intake-option-count") || null,
       intakeProgressCount: routeComponent?.getAttribute("data-r4-intake-progress-count") || null,
       intakeFreeTextCollapsed: routeComponent?.getAttribute("data-r4-intake-free-text-collapsed") || null,
@@ -1473,7 +1513,13 @@ function auditExpression() {
       refreshMode: document.documentElement.dataset.r4LiveRefreshMode || null,
       reactPropsEvent: document.documentElement.dataset.r4LiveReactPropsEvent || null,
       reactPropsStream: document.documentElement.dataset.r4LiveReactPropsStream || null,
-      reactPropsUpdateCount: document.documentElement.dataset.r4LiveReactPropsUpdateCount || null
+      reactPropsUpdateCount: document.documentElement.dataset.r4LiveReactPropsUpdateCount || null,
+      routeDirty: document.documentElement.dataset.r4LiveRouteDirty || null,
+      dirtyRoute: document.documentElement.dataset.r4LiveDirtyRoute || null,
+      dirtyReason: document.documentElement.dataset.r4LiveDirtyReason || null,
+      dirtyGuardCount: document.documentElement.dataset.r4LiveDirtyGuardCount || null,
+      dirtyPendingEvent: document.documentElement.dataset.r4LiveDirtyPendingEvent || null,
+      dirtyPendingStream: document.documentElement.dataset.r4LiveDirtyPendingStream || null
     };
     const routeStateCard = document.querySelector("[data-route-state]");
     const routeState = {
@@ -1646,6 +1692,14 @@ async function captureStep(
       }
       if (!audit.reactRuntimeDispatcherProbe || audit.reactRuntimeDispatcherProbeActionId !== "r4_react_mount_probe") {
         throw new Error(`${input.id} is missing React dispatcher bubble probe`);
+      }
+    }
+    if (input.expectedRouteComponent === "proposal") {
+      if (audit.reactComponentName !== "ProposalRouteComponent" || audit.routeTreeReactComponent !== "ProposalRouteComponent") {
+        throw new Error(`${input.id} is missing R4.19 Proposal split adapter markers`);
+      }
+      if (audit.routeData.proposalSplitAdapter !== "true" || audit.routeData.proposalAdvancedFallbackPreserved !== "true") {
+        throw new Error(`${input.id} is missing R4.19 Proposal split/fallback boundary markers`);
       }
     }
   }
@@ -1833,6 +1887,48 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   );
   await openProposalAdvancedDetails(cdp);
   steps.push(await captureStep(cdp, { id: "06a-proposal-advanced-review-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickSelector(cdp, "[data-line-editor-decision]:not([data-line-editor-decision-selected='true'])");
+  await cdp.evaluate(`(() => {
+    const input = document.querySelector("[data-line-editor-search]");
+    if (!(input instanceof HTMLInputElement)) return false;
+    input.value = "scope";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  await fillStructuredFieldCustomValue(cdp, "title", "R4.19 guarded custom title");
+  await emitQaSseEvent(cdp, "proposal.merged", "proposal");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "proposal dirty edit SSE guard",
+    auditExpression(),
+    (audit) =>
+      audit.notice.visible &&
+      audit.notice.kind === "sse_dirty_guard" &&
+      audit.notice.eventType === "proposal.merged" &&
+      audit.notice.stream === "proposal" &&
+      audit.live.refreshMode === "dirty-deferred" &&
+      audit.live.dirtyPendingEvent === "proposal.merged" &&
+      audit.live.dirtyPendingStream === "proposal" &&
+      audit.routeData.routeDirty === "true" &&
+      audit.routeData.proposalLineEditorSelectedDecision !== null &&
+      audit.routeData.proposalLineEditorSearchValue === "scope" &&
+      audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
+  );
+  steps.push(await captureStep(cdp, { id: "06aa-proposal-dirty-edit-sse-guard-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+  await cdp.evaluate(`(() => {
+    const search = document.querySelector("[data-line-editor-search]");
+    if (search instanceof HTMLInputElement) {
+      search.value = "";
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    const custom = document.querySelector('[data-structured-field-custom-input="title"]');
+    if (custom instanceof HTMLTextAreaElement) {
+      custom.value = "";
+      custom.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    return true;
+  })()`);
 
   await clickAndWaitForNotice(cdp, "[data-line-editor-apply]", "action_success", "apply_ai_fusion");
   steps.push(await captureStep(cdp, { id: "06b-proposal-line-editor-apply-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
@@ -2564,6 +2660,59 @@ async function main() {
           Number(step.audit.reactRuntimePropsUpdateCount ?? "0") >= 1 &&
           Number(step.audit.live.reactPropsUpdateCount ?? "0") >= 1
         ),
+      r4_19_proposal_split_component_marker:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeComponent === "proposal" &&
+          step.audit.reactComponentName === "ProposalRouteComponent" &&
+          step.audit.reactComponentRoute === "proposal" &&
+          step.audit.reactComponentPageVm === "proposal" &&
+          step.audit.routeTreeReactComponent === "ProposalRouteComponent" &&
+          step.audit.hydrationReactComponent === "ProposalRouteComponent" &&
+          step.audit.routeData.proposalSplitAdapter === "true"
+        ),
+      r4_19_proposal_advanced_fallback_boundary:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalAdvancedFallbackPreserved === "true" &&
+          step.audit.routeData.proposalAdvancedFallback === "true" &&
+          step.audit.routeData.proposalAdvancedFallbackSource === "proposal-advanced-editors-html-fallback" &&
+          step.audit.routeData.proposalAdvancedFieldEditor === "true" &&
+          step.audit.routeData.proposalAdvancedSubrecordEditor === "true" &&
+          step.audit.routeData.proposalFieldEditorFallback === "true" &&
+          step.audit.routeData.proposalSubrecordEditorFallback === "true"
+        ),
+      r4_19_proposal_readonly_props_parity:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalChangeCount === String(surface.page_vms.proposal.manifest.changes.length) &&
+          step.audit.routeData.proposalEvidenceCount === String(surface.page_vms.proposal.evidence_refs.length) &&
+          step.audit.routeData.proposalConflictCount === "2" &&
+          step.audit.routeData.proposalReadonlyReviewActionCount === "3" &&
+          step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
+          step.audit.reactComponentActionCount === step.audit.hydrationPanelActionCount
+        ),
+      r4_19_dirty_edit_sse_guard:
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.notice.eventType === "proposal.merged" &&
+          step.audit.notice.stream === "proposal" &&
+          step.audit.live.refreshMode === "dirty-deferred" &&
+          step.audit.live.dirtyRoute === "proposal" &&
+          step.audit.live.dirtyPendingEvent === "proposal.merged" &&
+          step.audit.live.dirtyPendingStream === "proposal" &&
+          step.audit.routeData.routeDirty === "true" &&
+          step.audit.routeData.proposalLineEditorSearchValue === "scope" &&
+          step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
+        ) &&
+        proof.counts.proposal === 2 &&
+        proof.counts.proposalConflicts === 2,
+      r4_19_no_new_fixture_chrome:
+        proof.counts.goldPath === 18 &&
+        proof.counts.proposal === 2 &&
+        proof.counts.proposalConflicts === 2 &&
+        steps.every((step) => !step.audit.weeklyFixtureLeak),
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -2600,7 +2749,7 @@ async function main() {
         proof.counts.replay === 1 &&
         proof.counts.preferencePatch === 2 &&
         proof.counts.preferenceFailureArmed === 1 &&
-        proof.counts.qaEmit === 3 &&
+        proof.counts.qaEmit === 4 &&
         proof.counts.sseProposal >= 2,
       mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
@@ -2685,6 +2834,11 @@ async function main() {
         `- R4.19-pre true React mount: ${String(gates.r4_19_pre_true_react_mount)}`,
         `- R4.19-pre dispatcher coexistence: ${String(gates.r4_19_pre_dispatcher_coexistence)}`,
         `- R4.19-pre SSE props update without full render: ${String(gates.r4_19_pre_sse_props_update_without_full_render)}`,
+        `- R4.19 Proposal split component marker: ${String(gates.r4_19_proposal_split_component_marker)}`,
+        `- R4.19 Proposal advanced fallback boundary: ${String(gates.r4_19_proposal_advanced_fallback_boundary)}`,
+        `- R4.19 Proposal readonly props parity: ${String(gates.r4_19_proposal_readonly_props_parity)}`,
+        `- R4.19 dirty edit SSE guard: ${String(gates.r4_19_dirty_edit_sse_guard)}`,
+        `- R4.19 no-new-fixture chrome: ${String(gates.r4_19_no_new_fixture_chrome)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

@@ -368,13 +368,14 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
   assert.equal(webReactRouteTree.every((route) => route.hydration.activeOnly), true);
 });
 
-test("R4.18 web route tree marks expanded React-compatible route components", () => {
+test("R4.19 web route tree marks expanded React-compatible route components", () => {
   const migrated = webReactRouteTree
     .filter((route) => route.hydration.reactComponent)
     .map((route) => [route.key, route.hydration.reactComponent?.componentName, route.hydration.reactComponent?.propsSource]);
 
   assert.deepEqual(migrated, [
     ["home", "HomeRouteComponent", "typed-page-vm"],
+    ["proposal", "ProposalRouteComponent", "typed-page-vm"],
     ["replay", "ReplayRouteComponent", "typed-page-vm"],
     ["cost", "CostRouteComponent", "typed-page-vm"],
     ["settings", "SettingsRouteComponent", "typed-page-vm"]
@@ -552,6 +553,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     assert.equal(result.html.match(/data-r4-hydration-boundary="true"/gu)?.length, 1);
     const expectedReactComponent = ({
       home: "HomeRouteComponent",
+      proposal: "ProposalRouteComponent",
       replay: "ReplayRouteComponent",
       cost: "CostRouteComponent",
       settings: "SettingsRouteComponent"

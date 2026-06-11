@@ -62,6 +62,8 @@ depends_on:
 
 **建议**：R4.19 范围内即加 **dirty guard**：route 内存在"未提交编辑"（有选中 hunk / 非空 custom input / intake 已选项）时，SSE 刷新降级为 notice 提示 + 手动刷新按钮，不自动重渲；并把它做成 browser smoke 的新 gate（模拟编辑中收事件，断言选择不丢）。长期解法随 P0-1 的 React 化把编辑状态从 DOM 移入组件 state。
 
+**回写状态（2026-06-11 R4.19）**：已完成 dirty guard。Proposal line decision、line search、custom field 与 intake option 会把 active route 标记为 dirty；收到 `proposal.merged` SSE 时 refresh mode 为 `dirty-deferred`，显示 `sse_dirty_guard` notice，保留 `keep_current`、`scope` 与 `R4.19 guarded custom title` 三个未提交 DOM 编辑态。本修复是止血，R4.20 仍需把它纳入 app 级 SSE runtime。
+
 ### P0-3 生产 chrome 的真相源仍是 P0.5 fixture + 正则文案替换
 
 **现状**：每次路由加载都先请求 `/api/pages/gold-path`，该端点的实现是 `createP05GoldPathFixture()`（demo fixture）+ `productCopy()` 正则替换（`周报→复盘包`、`weekly→regional`）+ 一张手工维护的中→英翻译 `Map`（`apps/api/src/pages/gold-path.ts:11-30` 及 `generatedEnglishCopy`；接线见 `apps/api/src/routes/pages.ts:136-141`）。routes.ts 再把真实 page VM 叠加覆盖当前路由的 VM（`apps/web/src/routes.ts:460-528`）。
@@ -72,6 +74,8 @@ depends_on:
 - 与 i18n locale 合同（`05-clients/i18n-locale-contract-p1-1.md`）方向冲突：系统文案应走 locale 合同，不应走"fixture 中文 → 硬编码英文 Map"。
 
 **建议**：把 shell/nav/routes 从 fixture 剥离为真实 chrome 来源（前端常量或轻量 `/api/pages/shell` 端点），page VM 全部按路由直取；fixture 退回测试与 P0.5 回归专用。可与 R4.20 合并施工，但**退役计划现在就要写进 R4.19/R4.20 plan**，避免新 gate 继续往 fixture 上挂。
+
+**回写状态（2026-06-11 R4.19）**：R4.19 未退役 fixture chrome，但已新增冻结门 `r4_19_no_new_fixture_chrome=true`，锁定本轮 browser smoke 中 `goldPath=18`、`proposal=2`、`proposalConflicts=2`，避免继续扩大 `/api/pages/gold-path` 依赖。退役计划已独立写入 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)。
 
 ### P0-4 SSE 连接随每次渲染整建整拆 + 事件触发全量 refetch
 
@@ -132,7 +136,7 @@ Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Revie
 | P2-3 | 渲染层双轨并存：`packages/ui/src/replay/render.ts`、`agent-run`、`intake` 等旧 renderer 与 route-components 并行，桌面端还在直接用 | `apps/desktop-webview/src/main.ts:5-10` | 随 P1-1 共享 runtime 一并收敛 |
 | P2-4 | 可观测性空白：无错误上报/结构化日志聚合/前端异常采集，生产化前补 | （全仓无相关依赖） | R5 前置项 |
 | P2-5 | README 状态行已成 4000+ 字单行，可读性塌陷 | `docs/workhub/README.md:6` | 拆成"当前状态表"，状态行只留最新 3 条 |
-| P2-6 | 未提交的 R4.18 变更挂在工作区（16 个文件 + 2 个新目录） | `git status` | R4.19 开工前先提交，保持"一步一 commit"纪律 |
+| P2-6 | 未提交的 R4.18 变更挂在工作区（16 个文件 + 2 个新目录） | `git status` | 已于 R4.19-pre 开工前提交 R4.18；R4.19 完成后继续一步一 commit |
 
 ---
 
@@ -141,7 +145,7 @@ Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Revie
 ```
 R4.19-pre (spike, 新增, ~1 迭代)   真 React mount proof：Home route 真挂载 + dispatcher 共存 + SSE props 更新
                                    ↳ 产出：修订版 adapter 合同，写回 r4-19 plan §3
-R4.19   (按原计划 + 2 个新 gate)    Proposal readonly split migration
+R4.19   (已完成)                    Proposal readonly split migration
                                    + gate: 编辑中 SSE 刷新不丢状态 (P0-2 dirty guard)
                                    + gate: 不新增 fixture-chrome 依赖 (P0-3 冻结线)
 R4.20   (调整)                     数据流地基：app 级 SSE 长连接 + page VM 局部 refetch + Last-Event-ID
@@ -165,4 +169,4 @@ R5 前置清单                        权限矩阵审计 (P1-4)、Playwright CI
 
 ---
 
-*本篇为 R4 中期权威升级清单。R4.19-pre spike 与各 gate 落地后，逐条回写状态；任何一条升级为施工项时按惯例另立 r4-xx plan。*
+*本篇为 R4 中期权威升级清单。R4.19-pre 与 R4.19 gate 已逐条回写；任何一条升级为施工项时按惯例另立 r4-xx plan。*

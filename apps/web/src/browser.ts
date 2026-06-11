@@ -43,6 +43,7 @@ type RouteNoticeKind =
   | "desktop_required"
   | "merge_conflict"
   | "sse_refresh"
+  | "sse_dirty_guard"
   | "budget_warning"
   | "field_value_required"
   | "intake_option_required"
@@ -75,6 +76,7 @@ let readyRouteBindings: AbortController | undefined;
 let liveRefreshTimer: number | undefined;
 let liveEventCount = 0;
 let liveRefreshCount = 0;
+let liveDirtyGuardCount = 0;
 
 const liveRefreshDebounceMs = 220;
 const liveEventTypes = Object.values(eventTypes);
@@ -107,6 +109,43 @@ function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | u
 
 function setLiveMetric(key: string, value: unknown) {
   document.documentElement.dataset[key] = String(value);
+}
+
+function clearLiveDirtyMetrics() {
+  setLiveMetric("r4LiveRouteDirty", false);
+  setLiveMetric("r4LiveDirtyRoute", "");
+  setLiveMetric("r4LiveDirtyReason", "");
+  setLiveMetric("r4LiveDirtyPendingEvent", "");
+  setLiveMetric("r4LiveDirtyPendingStream", "");
+}
+
+function activeRouteElement() {
+  return root?.querySelector<HTMLElement>("[data-r4-route-component]");
+}
+
+function markActiveRouteDirty(reason: string) {
+  const route = activeRouteElement();
+  if (!route) {
+    return;
+  }
+  route.dataset.r4RouteDirty = "true";
+  route.dataset.r4RouteDirtyReason = reason;
+  setLiveMetric("r4LiveRouteDirty", true);
+  setLiveMetric("r4LiveDirtyRoute", route.dataset.r4RouteComponent ?? "");
+  setLiveMetric("r4LiveDirtyReason", reason);
+}
+
+function clearActiveRouteDirty() {
+  const route = activeRouteElement();
+  if (route) {
+    delete route.dataset.r4RouteDirty;
+    delete route.dataset.r4RouteDirtyReason;
+  }
+  clearLiveDirtyMetrics();
+}
+
+function activeRouteHasDirtyEdits() {
+  return activeRouteElement()?.dataset.r4RouteDirty === "true";
 }
 
 function noteLiveStreamTargets(targets: LiveStreamTarget[]) {
@@ -378,6 +417,23 @@ function sseRefreshNotice(locale: WorkHubLocale, eventType: string, stream: stri
     eventType,
     stream
   };
+}
+
+function sseDirtyGuardNotice(locale: WorkHubLocale, eventType: string, stream: string): RouteNoticeVM {
+  return {
+    kind: "sse_dirty_guard",
+    tone: "warning",
+    source: "sse",
+    locale,
+    title: goldPathT(locale, "runtime.notice.sseDirtyGuardTitle"),
+    body: goldPathT(locale, "runtime.notice.sseDirtyGuardBody"),
+    eventType,
+    stream
+  };
+}
+
+function dirtyGuardRefreshAction(locale: WorkHubLocale) {
+  return `<div class="wh-app-action-row"><button type="button" data-action-href="${escapeHtml(webRouteHref(window.location.pathname))}" data-href="${escapeHtml(webRouteHref(window.location.pathname))}" data-r4-dirty-refresh="true">${escapeHtml(goldPathT(locale, "runtime.notice.sseDirtyGuardAction"))}</button></div>`;
 }
 
 function escapeHtml(value: unknown) {
@@ -752,12 +808,16 @@ function bindRouteLineEditor(shellRoot: HTMLElement, signal?: AbortSignal) {
       sibling.setAttribute("aria-pressed", String(selected));
     }
     updateLineEditorPanelPayload(panel);
+    markActiveRouteDirty("proposal_line_editor");
   }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("input", (event) => {
     const input = event.target instanceof Element ? event.target.closest<HTMLInputElement>("[data-line-editor-search]") : null;
     if (input) {
       applyLineEditorSearch(input);
+      if (input.value.trim().length > 0) {
+        markActiveRouteDirty("proposal_line_search");
+      }
     }
   }, eventListenerOptions(signal));
 
@@ -857,6 +917,7 @@ function bindGoldPathNavigation(
           option.setAttribute("aria-pressed", String(selected));
         }
         updateIntakeActionPayloads(intakeRoute);
+        markActiveRouteDirty("intake_option");
       }
       showRouteNotice(shellRoot, selectionNotice(locale, option.querySelector("strong")?.textContent ?? option.dataset.optionId ?? ""));
       return;
@@ -998,6 +1059,7 @@ function bindGoldPathNavigation(
         try {
           const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
           const merge = await client.mergeProposal(proposalAction.proposalId);
+          clearActiveRouteDirty();
           showRouteNotice(shellRoot, actionSuccessNotice(locale, `${review.attention.summary_text} ${merge.attention.summary_text}`, actionId));
         } catch (error) {
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
@@ -1014,6 +1076,7 @@ function bindGoldPathNavigation(
         }
         try {
           const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload);
+          clearActiveRouteDirty();
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
@@ -1023,6 +1086,15 @@ function bindGoldPathNavigation(
         return;
       }
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
+    }
+  }, eventListenerOptions(signal));
+
+  shellRoot.addEventListener("input", (event) => {
+    const customField = event.target instanceof Element
+      ? event.target.closest<HTMLTextAreaElement>("[data-structured-field-custom-input]")
+      : null;
+    if (customField && customField.value.trim().length > 0) {
+      markActiveRouteDirty("proposal_custom_field");
     }
   }, eventListenerOptions(signal));
 
@@ -1052,6 +1124,7 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
   }
   clearReadyRouteBindings();
   unmountReactRouteIsland();
+  clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
     traceId: routeErrorTrace(error)
   }).html;
@@ -1062,7 +1135,7 @@ async function refreshCurrentRouteFromLiveEvent(
   locale: WorkHubLocale,
   eventType: string,
   targetKey: string
-) {
+): Promise<"refreshed" | "dirty-deferred"> {
   const match = currentRouteMatch();
   if (match.key === "home" && hasMountedReactRoute("home")) {
     const result = await loadWebRoute(client, match, locale);
@@ -1073,12 +1146,21 @@ async function refreshCurrentRouteFromLiveEvent(
         setLiveMetric("r4LiveReactPropsEvent", eventType);
         setLiveMetric("r4LiveReactPropsStream", targetKey);
         setLiveMetric("r4LiveReactPropsUpdateCount", mounted.propsUpdateCount);
-        return;
+        return "refreshed";
       }
     }
   }
+  if (activeRouteHasDirtyEdits()) {
+    liveDirtyGuardCount += 1;
+    setLiveMetric("r4LiveRefreshMode", "dirty-deferred");
+    setLiveMetric("r4LiveDirtyGuardCount", liveDirtyGuardCount);
+    setLiveMetric("r4LiveDirtyPendingEvent", eventType);
+    setLiveMetric("r4LiveDirtyPendingStream", targetKey);
+    return "dirty-deferred";
+  }
   setLiveMetric("r4LiveRefreshMode", "full-render");
   await renderCurrentRoute(client, locale);
+  return "refreshed";
 }
 
 function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocale, eventType: string, targetKey: string) {
@@ -1094,9 +1176,16 @@ function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocal
     liveRefreshCount += 1;
     setLiveMetric("r4LiveRefreshCount", liveRefreshCount);
     void refreshCurrentRouteFromLiveEvent(client, locale, eventType, targetKey)
-      .then(() => {
+      .then((outcome) => {
         if (root) {
-          showRouteNotice(root, sseRefreshNotice(locale, eventType, targetKey), undefined, 3600);
+          showRouteNotice(
+            root,
+            outcome === "dirty-deferred"
+              ? sseDirtyGuardNotice(locale, eventType, targetKey)
+              : sseRefreshNotice(locale, eventType, targetKey),
+            outcome === "dirty-deferred" ? dirtyGuardRefreshAction(locale) : undefined,
+            outcome === "dirty-deferred" ? 0 : 3600
+          );
         }
       })
       .catch((error) => renderFatalRouteError(locale, error));
@@ -1167,6 +1256,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   const match = currentRouteMatch();
   clearReadyRouteBindings();
   unmountReactRouteIsland();
+  clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(match, "loading", locale).html;
   const result = await loadWebRoute(client, match, locale);
   if (renderId !== activeRouteRenderId) {

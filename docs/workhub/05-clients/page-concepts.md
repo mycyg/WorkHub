@@ -371,6 +371,20 @@ R4.19-pre 已把 Home hydration boundary 接入真实 React 18 `createRoot()` pr
 - SSE props update 初步成立：Home `budget.warning` 事件走 `react-props` refresh mode，mount count 保持 1，证明可在不整页 `innerHTML` 重渲的情况下更新 React props。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
 
+### 6.15 R4.19 Proposal Advanced Split Migration
+
+![R4.19 Proposal advanced split migration contact sheet](./assets/audit/2026-06-11-r4-19-proposal-advanced-split-migration-browser-smoke/contact-sheet.png)
+
+R4.19 已把 Proposal readonly summary / review metadata 接入 split adapter，并用本机 Chrome browser smoke 生成 42 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-19-proposal-advanced-split-migration-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- Proposal 继续对齐 `web-deliverable-change-request.png`：页面仍是变更申请审阅面，首屏保持 summary、risk、checks、evidence、comments 和 review actions，不变成代码 IDE。
+- Advanced editors 保持有边界的 fallback：line editor、structured field editor、subrecord editor 与 custom field editor 均留在高级区，不泄漏到 WorkItem/Approval/Home。
+- Dirty guard 对齐“工作中不打扰”：用户正在点选 hunk、搜索或填写 custom field 时，SSE 事件只显示 `sse_dirty_guard` notice 和手动刷新，不清空未提交编辑。
+- React split 只推进实现边界：readonly props 来自 typed Page VM 与 conflicts API，不从 DOM 文案反推数据；mutation 行为仍走同一 delegated dispatcher。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.19 no-new-fixture-chrome gate 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

@@ -1,13 +1,15 @@
 ---
 module: R4-proposal-advanced-split-migration
 layer: C-WEB / C-UI / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
   - ../05-clients/assets/web/web-operations-pages-atlas.png
   - ../05-clients/assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/contact-sheet.png
+  - ../05-clients/assets/audit/2026-06-11-r4-19-proposal-advanced-split-migration-browser-smoke/contact-sheet.png
 depends_on:
+  - r4-mid-review-upgrade-audit-2026-06-11.md
   - r4-19-pre-true-react-mount-spike-plan-2026-06-11.md
   - r4-18-react-route-migration-expansion-plan-2026-06-11.md
   - r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md
@@ -100,3 +102,72 @@ flowchart LR
 ## 8. 后续候选
 
 R4.19 通过后不直接进入 mutation editor 迁移。按中期审查建议，R4.20 先集中修数据流地基：app 级 SSE 长连接、Page VM 局部 refetch、Last-Event-ID/断连续传与 fixture chrome 退役；R4.21 再抽共享 web runtime，收敛 Web/desktop 分叉 dispatcher；R4.22 才选择 Proposal mutation editor 中风险最低的一段做真实迁移。
+
+## 9. 竣工记录（2026-06-11）
+
+本轮已完成 Proposal advanced split migration，且保持 R4.13 advanced editors 的 mutation 行为不搬家：
+
+| Area | 已落实现 | 竣工判定 |
+|---|---|---|
+| Proposal split adapter | `ProposalRouteComponent` 已加入 `route-react-components.ts`，props 来自 `ProposalDetailVM` 与 conflicts API：proposal/work item id、状态、change/check/evidence/comment/conflict count、review action hrefs 与 advanced fallback action count | `r4_19_proposal_split_component_marker=true`、`r4_19_proposal_readonly_props_parity=true` |
+| Advanced fallback boundary | `renderProposalRouteComponent()` 保留 line editor、structured field editor、subrecord editor、custom field editor 的 HTML fallback，并输出 `proposal-advanced-editors-html-fallback` marker | `r4_19_proposal_advanced_fallback_boundary=true`，advanced fallback action count 为 8 |
+| Dirty edit SSE guard | Web runtime 记录 intake option、Proposal line decision、line search、custom field 输入的 dirty state；SSE 事件遇到未提交编辑时不整页重渲，改为 warning notice + 手动刷新动作 | `r4_19_dirty_edit_sse_guard=true`，line decision/search/custom field 值在事件后保持 |
+| Fixture chrome 冻结 | R4.19 smoke 锁定 `/api/pages/gold-path` 请求次数，不新增 chrome fixture 依赖；Proposal/Conflicts endpoint count 也被固定 | `r4_19_no_new_fixture_chrome=true`，`goldPath=18`、`proposal=2`、`proposalConflicts=2` |
+| Regression | R4.13 advanced payload、R4.14 intake/knowledge、R4.15 settings boundary、R4.16 hydration、R4.17/18 adapters、R4.19-pre true React mount 均作为本轮回归门 | R4.19 Chrome smoke 42 步通过 |
+
+新增浏览器证据目录：
+
+- `../05-clients/assets/audit/2026-06-11-r4-19-proposal-advanced-split-migration-browser-smoke/`
+- dirty guard 关键截图：`06aa-proposal-dirty-edit-sse-guard-en-desktop.png`
+- report：`proposal-advanced-split-migration-report.json`
+
+关键 dirty guard 证据：
+
+```json
+{
+  "notice.kind": "sse_dirty_guard",
+  "notice.eventType": "proposal.merged",
+  "notice.stream": "proposal",
+  "live.refreshMode": "dirty-deferred",
+  "live.dirtyRoute": "proposal",
+  "live.dirtyReason": "proposal_custom_field",
+  "routeData.proposalLineEditorSelectedDecision": "keep_current",
+  "routeData.proposalLineEditorSearchValue": "scope",
+  "routeData.proposalCustomFieldValue": "R4.19 guarded custom title"
+}
+```
+
+## 10. 验收结果
+
+已通过：
+
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/ui typecheck`
+- `pnpm --filter @workhub/web typecheck`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm qa:r4-web-live-route-interaction` with `WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE="R4.19 Proposal Advanced Split Migration Browser Smoke"`
+
+待提交前继续执行：
+
+- `git diff --check`
+- no secret / no reference-folder diff scans
+
+## 11. Bug / 数据流 / PRD / 概念图审查
+
+- Bug 审查：R4.13 的 Proposal review/merge/apply dispatcher 没有分叉，advanced editor payload 仍走同一 delegated action dispatcher；custom field 空值 fail-closed 与 Replay restore single dispatcher 回归继续通过。
+- 数据流审查：Proposal readonly adapter 只读取 typed Page VM 与 conflicts API 的结构化值，不从 DOM 文案反推 props；mutation-heavy editors 继续作为 HTML fallback，不自行 fetch，也不引入第二套状态源。
+- SSE 审查：dirty guard 是 R4.19 范围的止血，不是终局。它避免编辑态丢失，但仍保留当前多 EventSource + full route refresh 模型；R4.20 必须继续做 app 级长连接、局部 Page VM refetch 与 Last-Event-ID。
+- PRD 审查：Proposal 仍是“AI 产物审阅与合并”页，用户看到的是变更申请、风险、证据、检查和处理选项，不暴露 Git 黑话，也不把页面变成 IDE。
+- 概念图审查：对齐 `web-deliverable-change-request.png` 与 `web-operations-pages-atlas.png`；dirty notice 位于右下角，不遮挡主要 review actions；主窗继续无 Cuu、无 Kanban、无 weekly demo、无 hash route、无 horizontal/text overflow。
+
+## 12. 后续详细计划
+
+R4.20 已拆成独立计划 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)。R4.20 开工前必须复读本计划竣工记录、R4 中期审查、R4.19-pre spike、`web-app.md`、`page-concepts.md`，再处理：
+
+1. app 级 SSE 长连接，路由切换只变 topic，不重建整个 EventSource 群。
+2. 当前路由 Page VM 局部 refetch，shell/nav/chrome 不再依赖 `/api/pages/gold-path` fixture。
+3. Last-Event-ID / event cursor 续传合同，与 `07-open-questions.md` 的 SY-1 收敛。
+4. 将 R4.19 dirty guard、R4.19-pre `react-props` path 与 R4.8 Redis/SSE smoke 纳入 R4.20 regression。

@@ -22,6 +22,7 @@ import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
   createCostReactRouteComponent,
   createHomeReactRouteComponent,
+  createProposalReactRouteComponent,
   createReplayReactRouteComponent,
   createSettingsReactRouteComponent,
   reactRouteComponentMarkerAttrs,
@@ -829,6 +830,14 @@ function renderProposalRouteComponent(
   const hasLineEditor = conflictCards.html.includes("data-route-line-editor=");
   const hasFieldEditor = conflictCards.html.includes("data-proposal-structured-field-editor=");
   const hasSubrecordEditor = conflictCards.html.includes("data-proposal-subrecord-item-diff=");
+  const reactComponent = createProposalReactRouteComponent(vm, conflicts, locale, {
+    actionHrefs: conflictCards.actionHrefs,
+    lineEditor: hasLineEditor,
+    fieldEditor: hasFieldEditor,
+    subrecordEditor: hasSubrecordEditor
+  });
+  const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
+  const props = reactComponent.props;
   const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 320);
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
@@ -841,17 +850,18 @@ function renderProposalRouteComponent(
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.comments"))}</p>`;
   const advancedConflictReview = conflictCards.html
-    ? `<section class="wh-r4-route-card" data-r4-proposal-advanced-review="true" data-r4-proposal-advanced-source="workitem-conflicts" data-r4-proposal-conflicts="${escapeHtml(String(conflictCards.conflictCount))}" data-r4-proposal-line-editor="${escapeHtml(String(hasLineEditor))}" data-r4-proposal-field-editor="${escapeHtml(String(hasFieldEditor))}" data-r4-proposal-subrecord-editor="${escapeHtml(String(hasSubrecordEditor))}">${conflictCards.html}</section>`
+    ? `<section class="wh-r4-route-card" data-r4-proposal-advanced-review="true" data-r4-proposal-advanced-source="workitem-conflicts" data-r4-proposal-advanced-fallback="true" data-r4-proposal-advanced-fallback-source="${escapeHtml(props.advancedFallbackSource)}" data-r4-proposal-advanced-fallback-action-count="${escapeHtml(String(props.advancedFallbackActionCount))}" data-r4-proposal-conflicts="${escapeHtml(String(conflictCards.conflictCount))}" data-r4-proposal-line-editor="${escapeHtml(String(hasLineEditor))}" data-r4-proposal-field-editor="${escapeHtml(String(hasFieldEditor))}" data-r4-proposal-subrecord-editor="${escapeHtml(String(hasSubrecordEditor))}">${conflictCards.html}</section>`
     : "";
 
   return createWebRouteComponent({
     key: "proposal",
     css: `${webRouteComponentCss}${proposalCss}`,
-    primaryHrefs: [...actions.map((action) => action.href), ...conflictCards.actionHrefs],
+    primaryHrefs: reactComponent.primaryHrefs,
     source: "page-vm",
     locale,
     pageVm: "proposal",
-    html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-proposal-id="${escapeHtml(vm.proposal_id)}" data-r4-proposal-workitem-id="${escapeHtml(vm.work_item_id)}" data-r4-proposal-change-count="${escapeHtml(String(vm.manifest.changes.length))}" data-r4-proposal-check-count="${escapeHtml(String(vm.manifest.checks.length))}" data-r4-proposal-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(vm.comments.length))}" data-r4-proposal-conflict-count="${escapeHtml(String(conflictCards.conflictCount))}">
+    reactComponent,
+    html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-proposal-id="${escapeHtml(props.proposalId)}" data-r4-proposal-workitem-id="${escapeHtml(props.workItemId)}" data-r4-proposal-change-count="${escapeHtml(String(props.changeCount))}" data-r4-proposal-check-count="${escapeHtml(String(props.checkCount))}" data-r4-proposal-evidence-count="${escapeHtml(String(props.evidenceRefCount))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(props.commentCount))}" data-r4-proposal-conflict-count="${escapeHtml(String(props.conflictCount))}" data-r4-proposal-split-adapter="true" data-r4-proposal-readonly-review-action-count="${escapeHtml(String(props.reviewActionCount))}" data-r4-proposal-advanced-fallback-preserved="${escapeHtml(String(props.advancedFallbackPreserved))}" data-r4-proposal-advanced-fallback-action-count="${escapeHtml(String(props.advancedFallbackActionCount))}" data-r4-proposal-line-editor-fallback="${escapeHtml(String(props.lineEditorFallback))}" data-r4-proposal-field-editor-fallback="${escapeHtml(String(props.fieldEditorFallback))}" data-r4-proposal-subrecord-editor-fallback="${escapeHtml(String(props.subrecordEditorFallback))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>

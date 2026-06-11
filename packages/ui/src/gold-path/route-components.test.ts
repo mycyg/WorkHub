@@ -9,6 +9,7 @@ import { renderWebRouteComponents } from "./route-components.js";
 import {
   createCostReactRouteComponent,
   createHomeReactRouteComponent,
+  createProposalReactRouteComponent,
   createReplayReactRouteComponent,
   createSettingsReactRouteComponent
 } from "./route-react-components.js";
@@ -385,6 +386,56 @@ test("R4.13 Proposal route component exposes advanced structured conflict editor
   assert.equal(proposal.html.includes("Advanced field editor"), true);
   assert.equal(proposal.html.includes("Advanced item editor"), true);
   assert.equal(proposal.primaryHrefs.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply"), true);
+  assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R4.19 Proposal split adapter keeps readonly props separate from advanced editor fallback", () => {
+  const vm = {
+    ...surfaceVm(),
+    proposal_conflicts: [] as ProposalConflict[]
+  };
+  vm.proposal_conflicts = [structuredProposalConflict(vm)];
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.reactComponent?.routeKey, "proposal");
+  if (proposal.reactComponent?.routeKey !== "proposal") {
+    throw new Error("R4.19 Proposal split adapter is missing");
+  }
+  const expected = createProposalReactRouteComponent(vm.page_vms.proposal, vm.proposal_conflicts, "en-US", {
+    actionHrefs: ["/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply"],
+    lineEditor: false,
+    fieldEditor: true,
+    subrecordEditor: true
+  });
+
+  assert.equal(proposal.reactComponent.componentName, "ProposalRouteComponent");
+  assert.equal(proposal.reactComponent.adapter, "react-compatible-route-component-v1");
+  assert.equal(proposal.reactComponent.mode, "html-fallback");
+  assert.equal(proposal.reactComponent.htmlFallback, true);
+  assert.equal(proposal.reactComponent.propsSource, "typed-page-vm");
+  assert.equal(proposal.reactComponent.propsFingerprint, expected.propsFingerprint);
+  assert.deepEqual(proposal.reactComponent.primaryHrefs, proposal.primaryHrefs);
+  assert.equal(proposal.reactComponent.props.proposalId, vm.page_vms.proposal.proposal_id);
+  assert.equal(proposal.reactComponent.props.workItemId, vm.page_vms.proposal.work_item_id);
+  assert.equal(proposal.reactComponent.props.changeCount, vm.page_vms.proposal.manifest.changes.length);
+  assert.equal(proposal.reactComponent.props.checkCount, vm.page_vms.proposal.manifest.checks.length);
+  assert.equal(proposal.reactComponent.props.evidenceRefCount, vm.page_vms.proposal.evidence_refs.length);
+  assert.equal(proposal.reactComponent.props.commentCount, vm.page_vms.proposal.comments.length);
+  assert.equal(proposal.reactComponent.props.conflictCount, 1);
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 3);
+  assert.equal(proposal.reactComponent.props.advancedFallbackPreserved, true);
+  assert.equal(proposal.reactComponent.props.advancedFallbackSource, "proposal-advanced-editors-html-fallback");
+  assert.equal(proposal.reactComponent.props.advancedFallbackActionCount, 1);
+  assert.equal(proposal.reactComponent.props.fieldEditorFallback, true);
+  assert.equal(proposal.reactComponent.props.subrecordEditorFallback, true);
+  assert.equal(proposal.html.includes('data-r4-react-component="ProposalRouteComponent"'), true);
+  assert.equal(proposal.html.includes('data-r4-hydration-react-component="ProposalRouteComponent"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-split-adapter="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-advanced-fallback-preserved="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-advanced-fallback="true"'), true);
+  assert.equal(proposal.html.includes('data-proposal-structured-field-editor="true"'), true);
+  assert.equal(proposal.html.includes('data-proposal-subrecord-item-diff="true"'), true);
   assertNoMainWindowBoundaryLeak(proposal.html);
 });
 

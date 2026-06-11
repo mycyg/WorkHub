@@ -1,13 +1,21 @@
-import type { AttentionAction, AttentionHomeVM, CostDashboardVM, SettingsPageVM } from "@workhub/contracts";
+import type {
+  AttentionAction,
+  AttentionHomeVM,
+  CostDashboardVM,
+  ProposalConflict,
+  ProposalDetailVM,
+  SettingsPageVM
+} from "@workhub/contracts";
 
 import { normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { ReplayRenderedPage } from "../replay/index.js";
 import type { WebRouteComponentKey } from "./route-components.js";
 
-export type WebReactRouteComponentKey = Extract<WebRouteComponentKey, "home" | "replay" | "cost" | "settings">;
+export type WebReactRouteComponentKey = Extract<WebRouteComponentKey, "home" | "proposal" | "replay" | "cost" | "settings">;
 
 export type WebReactRouteComponentName =
   | "HomeRouteComponent"
+  | "ProposalRouteComponent"
   | "ReplayRouteComponent"
   | "CostRouteComponent"
   | "SettingsRouteComponent";
@@ -19,7 +27,7 @@ export type WebReactRouteComponentPropsSource = "typed-page-vm";
 type WebReactRouteComponentAdapterBase<
   RouteKey extends WebReactRouteComponentKey,
   ComponentName extends WebReactRouteComponentName,
-  PageVm extends "attention" | "replay" | "cost" | "settings",
+  PageVm extends "attention" | "proposal" | "replay" | "cost" | "settings",
   Props
 > = {
   routeKey: RouteKey;
@@ -37,6 +45,8 @@ type WebReactRouteComponentAdapterBase<
 
 export type HomeReactRouteComponentAdapter = WebReactRouteComponentAdapterBase<"home", "HomeRouteComponent", "attention", HomeRouteComponentProps>;
 
+export type ProposalReactRouteComponentAdapter = WebReactRouteComponentAdapterBase<"proposal", "ProposalRouteComponent", "proposal", ProposalRouteComponentProps>;
+
 export type ReplayReactRouteComponentAdapter = WebReactRouteComponentAdapterBase<"replay", "ReplayRouteComponent", "replay", ReplayRouteComponentProps>;
 
 export type CostReactRouteComponentAdapter = WebReactRouteComponentAdapterBase<"cost", "CostRouteComponent", "cost", CostRouteComponentProps>;
@@ -45,6 +55,7 @@ export type SettingsReactRouteComponentAdapter = WebReactRouteComponentAdapterBa
 
 export type WebReactRouteComponentAdapter =
   | HomeReactRouteComponentAdapter
+  | ProposalReactRouteComponentAdapter
   | ReplayReactRouteComponentAdapter
   | CostReactRouteComponentAdapter
   | SettingsReactRouteComponentAdapter;
@@ -63,6 +74,31 @@ export type HomeRouteComponentProps = {
   evidenceRefCount: number;
 };
 
+export type ProposalRouteComponentProps = {
+  routeKey: "proposal";
+  locale: WorkHubLocale;
+  pageVm: "proposal";
+  proposalId: string;
+  workItemId: string;
+  title: string;
+  status: ProposalDetailVM["status"];
+  changeCount: number;
+  checkCount: number;
+  evidenceRefCount: number;
+  commentCount: number;
+  conflictCount: number;
+  reviewActionCount: number;
+  reviewActionHrefs: string[];
+  mergeActionAvailable: boolean;
+  rollbackAvailable: boolean;
+  advancedFallbackPreserved: true;
+  advancedFallbackSource: "proposal-advanced-editors-html-fallback";
+  advancedFallbackActionCount: number;
+  lineEditorFallback: boolean;
+  fieldEditorFallback: boolean;
+  subrecordEditorFallback: boolean;
+};
+
 export type ReplayRouteComponentProps = {
   routeKey: "replay";
   locale: WorkHubLocale;
@@ -76,6 +112,20 @@ export type ReplayRouteComponentProps = {
   structuredAuditCount: number;
   primaryActionHrefs: string[];
 };
+
+function proposalReviewActions(vm: ProposalDetailVM) {
+  return [
+    vm.review_actions.approve,
+    vm.review_actions.request_changes,
+    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
+  ];
+}
+
+function proposalConflictActionHrefs(conflicts: ProposalConflict[]) {
+  return conflicts.flatMap((conflict) =>
+    conflict.options.map((option) => option.action?.href).filter((href): href is string => Boolean(href))
+  );
+}
 
 export type CostRouteComponentProps = {
   routeKey: "cost";
@@ -170,6 +220,77 @@ export function createHomeReactRouteComponent(vm: AttentionHomeVM, locale: WorkH
       props.backgroundRunCount,
       props.evidenceRefCount,
       primaryHrefs.length
+    ]),
+    props
+  };
+}
+
+export function createProposalReactRouteComponent(
+  vm: ProposalDetailVM,
+  conflicts: ProposalConflict[],
+  locale: WorkHubLocale,
+  advancedFallback?: {
+    actionHrefs?: string[] | undefined;
+    lineEditor?: boolean | undefined;
+    fieldEditor?: boolean | undefined;
+    subrecordEditor?: boolean | undefined;
+  }
+): ProposalReactRouteComponentAdapter {
+  const normalizedLocale = normalizeWorkHubLocale(locale);
+  const reviewActions = proposalReviewActions(vm);
+  const reviewActionHrefs = reviewActions.map((action) => action.href);
+  const advancedFallbackActionHrefs = advancedFallback?.actionHrefs ?? proposalConflictActionHrefs(conflicts);
+  const props: ProposalRouteComponentProps = {
+    routeKey: "proposal",
+    locale: normalizedLocale,
+    pageVm: "proposal",
+    proposalId: vm.proposal_id,
+    workItemId: vm.work_item_id,
+    title: vm.title,
+    status: vm.status,
+    changeCount: vm.manifest.changes.length,
+    checkCount: vm.manifest.checks.length,
+    evidenceRefCount: vm.evidence_refs.length,
+    commentCount: vm.comments.length,
+    conflictCount: conflicts.length,
+    reviewActionCount: reviewActionHrefs.length,
+    reviewActionHrefs,
+    mergeActionAvailable: Boolean(vm.review_actions.merge),
+    rollbackAvailable: vm.manifest.rollback.available,
+    advancedFallbackPreserved: true,
+    advancedFallbackSource: "proposal-advanced-editors-html-fallback",
+    advancedFallbackActionCount: advancedFallbackActionHrefs.length,
+    lineEditorFallback: advancedFallback?.lineEditor ?? conflicts.length > 0,
+    fieldEditorFallback: advancedFallback?.fieldEditor ?? false,
+    subrecordEditorFallback: advancedFallback?.subrecordEditor ?? false
+  };
+  return {
+    routeKey: "proposal",
+    componentName: "ProposalRouteComponent",
+    mode: "html-fallback",
+    propsSource: "typed-page-vm",
+    htmlFallback: true,
+    adapter: "react-compatible-route-component-v1",
+    locale: normalizedLocale,
+    pageVm: "proposal",
+    primaryHrefs: [...reviewActionHrefs, ...advancedFallbackActionHrefs],
+    propsFingerprint: compactHash([
+      props.routeKey,
+      props.locale,
+      props.pageVm,
+      props.proposalId,
+      props.workItemId,
+      props.status,
+      props.changeCount,
+      props.checkCount,
+      props.evidenceRefCount,
+      props.commentCount,
+      props.conflictCount,
+      props.reviewActionCount,
+      props.advancedFallbackActionCount,
+      props.lineEditorFallback,
+      props.fieldEditorFallback,
+      props.subrecordEditorFallback
     ]),
     props
   };
