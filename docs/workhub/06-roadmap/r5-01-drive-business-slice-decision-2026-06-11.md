@@ -1,7 +1,7 @@
 ---
 module: R5-drive-business-slice
 layer: M-DRIVE / P-COLLAB / C-WEB / C-DESKTOP
-status: planned
+status: current
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -17,6 +17,8 @@ depends_on:
 ---
 
 # R5.1 Drive Business Slice Decision
+
+> 2026-06-11 update: R5.1 first vertical slice is implemented. It adds a real Drive Page VM/API/Web route over `ProjectDriveItem/Version` and `accepted_deliverable_changes`; upload/recycle/operation-log depth moves to R5.2.
 
 ## 1. Decision
 
@@ -91,11 +93,56 @@ R5.1 最小验收：
 - Browser smoke 拆分后至少一条 Drive spec：Drive list -> version detail -> preview/download link -> restore fail-closed -> locale toggle。
 - 视觉证据对照 `web-project-drive-meetings-knowledge.png` 和 `web-drive-preview-change-draft.png`：严肃资料工作台、证据/版本/草稿入口清晰，不把 Cuu 放进主窗。
 
-## 7. 后续计划
+## 7. R5.1 实施结果
+
+已落范围：
+
+- Contracts: `DrivePageVM` / `DriveItemVM` / `DriveFileVersionVM` / `DriveCommentVM`，并用 contracts test 固定 project files、versions、accepted deliverables、comment draft links。
+- DB: 新增 `createDriveRepository(db)`，只读聚合 active project、Drive items、Drive versions、当前 accepted deliverables、Drive comments。
+- API: 新增 `DrivePageService` 与 `GET /api/pages/drive`，走登录态、locale envelope、typed service injection；OpenAPI seed 已登记。
+- API client: `client.pages.drive(options)`，Web/desktop typed client 契约同步扩散。
+- Web/UI: `/drive` route 进入 product shell/nav/route tree；Drive route component 展示文件树、版本历史、正式交付物 preview/download/restore link、comment draft link，中英固定文案接入。
+- Desktop webview catalog: 暴露 `/api/pages/drive`，暂不做独立桌面渲染器。
+- Live browser smoke: `r4-web-live-route-interaction` 增加 Drive Page VM mock、`/drive` screenshot/audit gate；步数从 42 调整为 43。
+
+与 PRD/概念图对照：
+
+- 符合 `web-project-drive-meetings-knowledge.png` 的项目资料工作台方向：左/中以文件和版本为主，右侧保留评论草稿线索。
+- 符合 `web-drive-preview-change-draft.png` 的 preview/download/restore 与 comment-to-draft 信息架构，但未把旧 Cuu/猫元素带入 Web 主窗。
+- 符合 branch/proposal/merge 文档：Drive 当前版本来自 accepted deliverables，restore 入口沿用 WorkItem accepted-deliverable restore 事务。
+- 双语要求：导航、masthead、route component fixed copy、route-state 均在 zh-CN/en-US contract 内。
+
+明确未完成：
+
+- 项目级细粒度授权仍只是登录态 + project_id 选择，R5.2/R5.3 需补 project membership / owner gate。
+- R5.1 只读聚合，不提供真实上传、移动、重命名、回收站和 operation log UI。
+- `acceptedDeliverableToVm` 目前在 WorkItem service 与 Drive service 各有一份，R5.2 应抽到共享 mapper，避免 preview/download/restore href 漂移。
+- Drive deep-link 尚未支持 `item_id/version_id` 选中态。
+
+## 8. R5.1 验收
+
+已跑：
+
+- `pnpm --filter @workhub/contracts test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/api test`
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/desktop-webview test`
+- `pnpm --filter @workhub/web typecheck`
+- `pnpm typecheck`
+
+待最终提交前复跑：
+
+- `pnpm test`
+- `pnpm qa:r4-web-live-route-interaction`，需验证新增 `R5.1 Drive route component` gate 与 Drive screenshot。
+- `git diff --check`、secret scan、reference folder exclusion。
+
+## 9. 后续计划
 
 R5.1 完成后再决定：
 
-- R5.2 Drive upload/recycle/operation log。
+- R5.2 Drive upload/recycle/operation log：见 [`r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md`](./r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md)。
 - R5.3 comment-to-intake / comment-to-proposal deeper automation。
 - R5.4 Meeting insight to draft，复用 Drive evidence 与 proposal flow。
 - R5.5 Schedule/Notify，以 Drive/Meeting 已产生的真实 work items 作为提醒来源。

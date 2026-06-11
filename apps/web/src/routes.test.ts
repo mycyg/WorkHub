@@ -7,6 +7,7 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  DrivePageVM,
   EvidenceBubble,
   GoldPathSurfaceVM,
   ProposalConflict,
@@ -28,6 +29,7 @@ type RouteClientOverrides = {
   attention?: AttentionHomeVM;
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
+  drive?: DrivePageVM;
   replay?: ReplayTraceVM;
   session?: SessionVM;
   knowledge?: EvidenceBubble;
@@ -37,6 +39,123 @@ type RouteClientOverrides = {
   approvalsError?: Error;
   costError?: Error;
 };
+
+function driveVm(): DrivePageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      item_count: 1,
+      file_count: 1,
+      folder_count: 0,
+      version_count: 1,
+      accepted_deliverable_count: 1,
+      pending_comment_count: 0
+    },
+    selected_item_id: "93000000-0000-4000-8000-000000000002",
+    items: [
+      {
+        id: "93000000-0000-4000-8000-000000000002",
+        project_id: "93000000-0000-4000-8000-000000000001",
+        name: "客户复盘.md",
+        kind: "file",
+        path: "/复盘包/客户复盘.md",
+        depth: 1,
+        current_version_id: "93000000-0000-4000-8000-000000000003",
+        current_version: {
+          id: "93000000-0000-4000-8000-000000000003",
+          item_id: "93000000-0000-4000-8000-000000000002",
+          version_no: 2,
+          filename: "客户复盘.md",
+          mime: "text/markdown",
+          size_bytes: 2048,
+          sha256: "a".repeat(64),
+          created_at: "2026-06-11T09:00:00.000Z",
+          current: true,
+          source: "accepted_deliverable",
+          accepted_deliverable_id: "93000000-0000-4000-8000-000000000004",
+          work_item_id: "93000000-0000-4000-8000-000000000005",
+          proposal_id: "93000000-0000-4000-8000-000000000006",
+          preview_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/preview",
+          download_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/download",
+          restore_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/restore"
+        },
+        children_count: 0,
+        accepted_deliverable: {
+          id: "93000000-0000-4000-8000-000000000004",
+          work_item_id: "93000000-0000-4000-8000-000000000005",
+          proposal_id: "93000000-0000-4000-8000-000000000006",
+          change_id: "93000000-0000-4000-8000-000000000007",
+          target_kind: "text_doc",
+          target_key: "drive:/复盘包/客户复盘.md",
+          change_type: "updated",
+          accepted_version: 2,
+          target_path: "/复盘包/客户复盘.md",
+          drive_item_id: "93000000-0000-4000-8000-000000000002",
+          drive_version_id: "93000000-0000-4000-8000-000000000003",
+          filename: "客户复盘.md",
+          mime: "text/markdown",
+          size_bytes: 2048,
+          preview_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/preview",
+          download_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/download",
+          restore_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/restore",
+          accepted_at: "2026-06-11T09:00:00.000Z"
+        },
+        updated_at: "2026-06-11T09:00:00.000Z"
+      }
+    ],
+    versions: [
+      {
+        id: "93000000-0000-4000-8000-000000000003",
+        item_id: "93000000-0000-4000-8000-000000000002",
+        version_no: 2,
+        filename: "客户复盘.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        sha256: "a".repeat(64),
+        created_at: "2026-06-11T09:00:00.000Z",
+        current: true,
+        source: "accepted_deliverable",
+        accepted_deliverable_id: "93000000-0000-4000-8000-000000000004",
+        work_item_id: "93000000-0000-4000-8000-000000000005",
+        proposal_id: "93000000-0000-4000-8000-000000000006",
+        preview_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/preview",
+        download_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/download",
+        restore_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/restore"
+      }
+    ],
+    accepted_deliverables: [
+      {
+        id: "93000000-0000-4000-8000-000000000004",
+        work_item_id: "93000000-0000-4000-8000-000000000005",
+        proposal_id: "93000000-0000-4000-8000-000000000006",
+        change_id: "93000000-0000-4000-8000-000000000007",
+        target_kind: "text_doc",
+        target_key: "drive:/复盘包/客户复盘.md",
+        change_type: "updated",
+        accepted_version: 2,
+        target_path: "/复盘包/客户复盘.md",
+        drive_item_id: "93000000-0000-4000-8000-000000000002",
+        drive_version_id: "93000000-0000-4000-8000-000000000003",
+        filename: "客户复盘.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        preview_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/preview",
+        download_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/download",
+        restore_href: "/api/workitems/93000000-0000-4000-8000-000000000005/deliverables/93000000-0000-4000-8000-000000000004/restore",
+        accepted_at: "2026-06-11T09:00:00.000Z"
+      }
+    ],
+    comments: [],
+    actions: {}
+  };
+}
 
 function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
   return {
@@ -215,6 +334,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       async goldPath(options?: { locale?: string }) {
         localeCall("goldPath", options);
         return surface;
+      },
+      async drive(options?: { locale?: string }) {
+        localeCall("drive", options);
+        return overrides.drive ?? driveVm();
       },
       async workItem(id: string, options?: { locale?: string }) {
         localeCall(`workItem:${id}`, options);
@@ -416,6 +539,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "approvals",
     "workitem",
     "proposal",
+    "drive",
     "replay",
     "cost",
     "knowledge",
@@ -424,6 +548,7 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/")?.key, "home");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
+  assert.equal(resolveWebRoute("/drive")?.key, "drive");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
@@ -452,6 +577,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["approvals", "approvals"],
       ["workitem", "workitem"],
       ["proposal", "proposal"],
+      ["drive", "drive"],
       ["replay", "replay"],
       ["cost", "cost"],
       ["knowledge", "evidence"],
@@ -601,6 +727,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
   for (const [path, endpointCall] of [
     ["/", "attention:en-US"],
     ["/approvals", "approvals:en-US"],
+    ["/drive", "drive:en-US"],
     ["/dashboard/cost", "cost:en-US"],
     ["/settings", "settings:en-US"]
   ] as const) {
@@ -629,6 +756,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
       "proposal:proposal-42:en-US",
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ]],
+    ["/drive", ["drive:en-US"]],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
@@ -656,6 +784,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
       "proposal:proposal-42:en-US",
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ], "proposal"],
+    ["/drive", ["drive:en-US"], "drive"],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"], "replay"],
     ["/dashboard/cost", ["cost:en-US"], "cost"],
     ["/settings", ["settings:en-US"], "settings"]
@@ -695,6 +824,31 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
     assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
   }
+});
+
+test("R5.1 drive route loader renders accepted deliverables and version actions from the Drive Page VM", async () => {
+  const surface = goldPathSurfaceVm();
+  const drive = driveVm();
+  const { client, calls } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute("/drive");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["drive:zh-CN"]);
+  assert.equal(result.html.includes('data-r4-route-component="drive"'), true);
+  assert.equal(result.html.includes('data-r4-drive-project-id="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(result.html.includes('data-r4-drive-item-count="1"'), true);
+  assert.equal(result.html.includes('data-r4-drive-version-count="1"'), true);
+  assert.equal(result.html.includes('data-r4-drive-accepted-count="1"'), true);
+  assert.equal(result.html.includes("客户复盘.md"), true);
+  assert.equal(result.html.includes('data-action-id="drive_preview"'), true);
+  assert.equal(result.html.includes('data-action-id="drive_download"'), true);
+  assert.equal(result.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
+  assert.equal(result.html.includes('data-r4-product-metric="files"'), true);
+  assert.equal(result.html.includes('data-r4-product-metric="versions"'), true);
+  assert.equal(result.html.includes('href="/drive"'), true);
 });
 
 test("R4.15 settings route keeps locale preference and device boundary markers auditable", async () => {

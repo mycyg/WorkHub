@@ -42,6 +42,12 @@ export function getOpenApiDocument() {
           summary: "Proposal detail page VM"
         }
       },
+      "/api/pages/drive": {
+        get: {
+          tags: ["pages"],
+          summary: "Project drive page VM"
+        }
+      },
       "/api/workitems/{id}/proposals": {
         post: {
           tags: ["proposals"],

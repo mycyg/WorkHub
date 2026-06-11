@@ -215,6 +215,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       async goldPath() {
         return surface;
       },
+      async drive() {
+        throw new Error("not needed");
+      },
       async workItem() {
         return surface.page_vms.workitem;
       },
@@ -472,6 +475,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   } as unknown as GoldPathSurfaceVM;
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/pages/drive"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/settings"), true);
   assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
   assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");

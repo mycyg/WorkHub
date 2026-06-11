@@ -1,12 +1,13 @@
 # R4.5 Web Live Route Interaction Smoke
 
 - ok: true
-- steps: 42
+- steps: 43
 - path nav clicks: true
 - history back/forward: true
 - locale toggle reload: true
 - R4.10 route components: true
 - R4.11 route components: true
+- R5.1 Drive route component: true
 - R4.11 source truth: true
 - R4.11 VM/DOM match: true
 - R4.14 session/knowledge endpoints: true

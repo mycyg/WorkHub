@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
+import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
-import { renderWebRouteComponents } from "./route-components.js";
+import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
 import {
   createCostReactRouteComponent,
   createHomeReactRouteComponent,
@@ -13,6 +13,96 @@ import {
   createReplayReactRouteComponent,
   createSettingsReactRouteComponent
 } from "./route-react-components.js";
+
+function drivePageVm(): DrivePageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "94000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      item_count: 1,
+      file_count: 1,
+      folder_count: 0,
+      version_count: 1,
+      accepted_deliverable_count: 1,
+      pending_comment_count: 0
+    },
+    selected_item_id: "94000000-0000-4000-8000-000000000002",
+    items: [
+      {
+        id: "94000000-0000-4000-8000-000000000002",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        name: "client-review.md",
+        kind: "file",
+        path: "/deliverables/client-review.md",
+        depth: 1,
+        current_version_id: "94000000-0000-4000-8000-000000000003",
+        children_count: 0,
+        updated_at: "2026-06-11T09:00:00.000Z"
+      }
+    ],
+    versions: [
+      {
+        id: "94000000-0000-4000-8000-000000000003",
+        item_id: "94000000-0000-4000-8000-000000000002",
+        version_no: 2,
+        filename: "client-review.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        sha256: "a".repeat(64),
+        created_at: "2026-06-11T09:00:00.000Z",
+        current: true,
+        source: "accepted_deliverable",
+        accepted_deliverable_id: "94000000-0000-4000-8000-000000000004",
+        work_item_id: "94000000-0000-4000-8000-000000000005",
+        proposal_id: "94000000-0000-4000-8000-000000000006",
+        preview_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/preview",
+        download_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/download",
+        restore_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/restore"
+      }
+    ],
+    accepted_deliverables: [
+      {
+        id: "94000000-0000-4000-8000-000000000004",
+        work_item_id: "94000000-0000-4000-8000-000000000005",
+        proposal_id: "94000000-0000-4000-8000-000000000006",
+        change_id: "94000000-0000-4000-8000-000000000007",
+        target_kind: "text_doc",
+        target_key: "drive:/deliverables/client-review.md",
+        change_type: "updated",
+        accepted_version: 2,
+        target_path: "/deliverables/client-review.md",
+        drive_item_id: "94000000-0000-4000-8000-000000000002",
+        drive_version_id: "94000000-0000-4000-8000-000000000003",
+        filename: "client-review.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        preview_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/preview",
+        download_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/download",
+        restore_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/restore",
+        accepted_at: "2026-06-11T09:00:00.000Z"
+      }
+    ],
+    comments: [
+      {
+        id: "94000000-0000-4000-8000-000000000008",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        author_label: "PM",
+        body: "Turn this into a follow-up draft.",
+        status: "draft_created",
+        created_at: "2026-06-11T09:00:00.000Z",
+        draft_work_item_id: "94000000-0000-4000-8000-000000000005",
+        draft_href: "/api/pages/workitems/94000000-0000-4000-8000-000000000005"
+      }
+    ],
+    actions: {}
+  };
+}
 
 function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
   return {
@@ -712,6 +802,26 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assert.equal(approvals.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(approvals.primaryHrefs, vm.page_vms.approvals.items[0]?.actions.map((action) => action.href) ?? []);
   assertNoMainWindowBoundaryLeak(approvals.html);
+});
+
+test("R5.1 Drive route component exposes files, versions, deliverable actions, and comment draft links", () => {
+  const drive = renderWebRouteComponent({ key: "drive", drive: drivePageVm() }, { locale: "en-US" });
+
+  assert.equal(drive.key, "drive");
+  assert.equal(drive.html.includes('data-r4-route-component="drive"'), true);
+  assert.equal(drive.html.includes('data-r4-route-component-source="page-vm"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-item-count="1"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-version-count="1"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-accepted-count="1"'), true);
+  assert.equal(drive.html.includes("client-review.md"), true);
+  assert.equal(drive.html.includes('data-r4-drive-version-current="true"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_preview"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_download"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
+  assert.equal(drive.html.includes("/api/pages/workitems/94000000-0000-4000-8000-000000000005"), true);
+  assert.equal(drive.hydration.pageVm, "drive");
+  assert.equal(drive.primaryHrefs.length, 4);
+  assertNoMainWindowBoundaryLeak(drive.html);
 });
 
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {

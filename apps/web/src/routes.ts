@@ -3,6 +3,7 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  DrivePageVM,
   EvidenceBubble,
   ProposalConflict,
   ProposalDetailVM,
@@ -76,6 +77,7 @@ export type WebRouteSurface =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
+  | { key: "drive"; drive: DrivePageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -116,6 +118,13 @@ const routeMatchers = [
     apiBaseLabel: "/api/pages/proposals/:id",
     regex: /^\/proposals\/([^/]+)$/u,
     paramNames: ["id"]
+  },
+  {
+    key: "drive",
+    pattern: "/drive",
+    apiBaseLabel: "/api/pages/drive",
+    regex: /^\/drive$/u,
+    paramNames: []
   },
   {
     key: "replay",
@@ -159,6 +168,7 @@ type WebRouteTreePageVm =
   | "approvals"
   | "workitem"
   | "proposal"
+  | "drive"
   | "replay"
   | "cost"
   | "evidence"
@@ -198,6 +208,7 @@ const routeTreePageVmByKey = {
   approvals: "approvals",
   workitem: "workitem",
   proposal: "proposal",
+  drive: "drive",
   replay: "replay",
   cost: "cost",
   knowledge: "evidence",
@@ -363,6 +374,7 @@ const shellPageOrder = [
   "approvals",
   "workitem",
   "proposal",
+  "drive",
   "replay",
   "cost",
   "knowledge",
@@ -375,6 +387,7 @@ const shellDefaultRoutes = {
   approvals: "/approvals",
   workitem: "/workitems/r4-live-workitem",
   proposal: "/proposals/r4-live-proposal",
+  drive: "/drive",
   replay: "/agent-runs/r4-live-run/replay",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
@@ -388,6 +401,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     approvals: "审批",
     workitem: "任务详情",
     proposal: "变更申请",
+    drive: "项目网盘",
     replay: "执行回放",
     cost: "成本",
     knowledge: "知识证据",
@@ -399,6 +413,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     approvals: "Approvals",
     workitem: "Task detail",
     proposal: "Change request",
+    drive: "Project drive",
     replay: "Execution replay",
     cost: "Cost",
     knowledge: "Knowledge evidence",
@@ -415,6 +430,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     requests: "请求",
     trace: "轨迹",
     deliverables: "交付物",
+    files: "文件",
+    folders: "文件夹",
+    versions: "版本",
     evidence: "证据",
     checks: "检查",
     comments: "评论",
@@ -436,6 +454,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     requests: "Requests",
     trace: "Trace",
     deliverables: "Deliverables",
+    files: "Files",
+    folders: "Folders",
+    versions: "Versions",
     evidence: "Evidence",
     checks: "Checks",
     comments: "Comments",
@@ -511,6 +532,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "comments", String(surface.proposal.comments.length))
     ];
   }
+  if (surface.key === "drive") {
+    return [
+      metric(locale, "files", String(surface.drive.summary.file_count)),
+      metric(locale, "versions", String(surface.drive.summary.version_count)),
+      metric(locale, "deliverables", String(surface.drive.summary.accepted_deliverable_count))
+    ];
+  }
   if (surface.key === "replay") {
     return [
       metric(locale, "steps", String(surface.replay.steps.length)),
@@ -559,6 +587,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
       proposal: surface.proposal,
       proposalConflicts: surface.proposal_conflicts
     }, { locale });
+  }
+  if (surface.key === "drive") {
+    return renderWebRouteComponent({ key: "drive", drive: surface.drive }, { locale });
   }
   if (surface.key === "replay") {
     return renderWebRouteComponent({ key: "replay", replay: surface.replay }, { locale });
@@ -658,6 +689,13 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const result = await client.listWorkItemConflicts(proposal.work_item_id);
     const conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
     return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
+  }
+  if (match.key === "drive") {
+    const drive = await client.pages.drive(withLocale(locale));
+    if (drive.empty_state === "no_project") {
+      return "empty" as const;
+    }
+    return { key: "drive", drive } satisfies WebRouteSurface;
   }
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));

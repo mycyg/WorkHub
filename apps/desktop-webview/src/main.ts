@@ -31,6 +31,7 @@ export const desktopWebviewSurface = {
     "/api/pages/workitems/:id",
     "/api/workitems/:id/conflicts",
     "/api/pages/proposals/:id",
+    "/api/pages/drive",
     "/api/pages/approvals",
     "/api/pages/cost",
     "/api/pages/settings",

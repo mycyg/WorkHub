@@ -7,6 +7,7 @@ import type {
   CostDashboardVM,
   DeliverableChange,
   DeliverableCheck,
+  DrivePageVM,
   EvidenceBubble,
   EvidenceRef,
   ProposalConflict,
@@ -42,7 +43,7 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost" | "knowledge" | "settings">;
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "replay" | "cost" | "knowledge" | "settings">;
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -105,6 +106,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:14px;align-items:start}",
   ".wh-r4-route-stack{display:grid;gap:12px;min-width:0}",
   ".wh-r4-route-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;border-top:1px solid var(--wh-product-line,#dce4f1);padding-top:12px}",
+  ".wh-r4-route-row--stacked{grid-template-columns:1fr;gap:8px}",
   ".wh-r4-route-row:first-child{border-top:0;padding-top:0}",
   ".wh-r4-route-row p,.wh-r4-route-row h3,.wh-r4-route-row strong{margin:0;overflow-wrap:anywhere}",
   ".wh-r4-route-row p{color:var(--wh-product-muted,#66728c);line-height:1.45}",
@@ -144,6 +146,17 @@ type RouteCopyKey =
   | "proposal.review"
   | "proposal.rollback"
   | "proposal.files"
+  | "drive.kicker"
+  | "drive.files"
+  | "drive.versions"
+  | "drive.accepted"
+  | "drive.comments"
+  | "drive.empty"
+  | "drive.preview"
+  | "drive.download"
+  | "drive.restore"
+  | "drive.current"
+  | "drive.pendingDrafts"
   | "cost.scopes"
   | "cost.risks"
   | "cost.models"
@@ -208,6 +221,17 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "proposal.review": "审阅动作",
     "proposal.rollback": "回滚路径",
     "proposal.files": "文件与对象变化",
+    "drive.kicker": "项目网盘",
+    "drive.files": "文件树",
+    "drive.versions": "版本历史",
+    "drive.accepted": "正式交付物",
+    "drive.comments": "评论草稿",
+    "drive.empty": "这个项目还没有正式交付物。",
+    "drive.preview": "预览",
+    "drive.download": "下载",
+    "drive.restore": "还原",
+    "drive.current": "当前",
+    "drive.pendingDrafts": "待转草稿",
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
     "cost.models": "模型拆解",
@@ -271,6 +295,17 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "proposal.review": "Review actions",
     "proposal.rollback": "Rollback path",
     "proposal.files": "Files and object changes",
+    "drive.kicker": "Project drive",
+    "drive.files": "File tree",
+    "drive.versions": "Version history",
+    "drive.accepted": "Accepted deliverables",
+    "drive.comments": "Comment drafts",
+    "drive.empty": "This project does not have accepted deliverables yet.",
+    "drive.preview": "Preview",
+    "drive.download": "Download",
+    "drive.restore": "Restore",
+    "drive.current": "Current",
+    "drive.pendingDrafts": "Pending drafts",
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
     "cost.models": "Model breakdown",
@@ -916,6 +951,136 @@ function proposalConflictsFromSurface(vm: ProposalConflictSurface) {
   return conflicts.filter((conflict) => conflict.proposal_id === vm.page_vms.proposal.proposal_id);
 }
 
+function formatBytes(value: number, locale: WorkHubLocale) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(locale === "zh-CN" ? 0 : 1)} KB`;
+  }
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function driveActionLinks(
+  item: NonNullable<DrivePageVM["items"][number]["accepted_deliverable"]>,
+  locale: WorkHubLocale
+) {
+  const links: string[] = [];
+  if (item.preview_href) {
+    links.push(`<a class="wh-btn" href="${escapeHtml(item.preview_href)}" data-action-id="drive_preview">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
+  }
+  if (item.download_href) {
+    links.push(`<a class="wh-btn" href="${escapeHtml(item.download_href)}" data-action-id="drive_download">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
+  }
+  if (item.restore_href) {
+    links.push(`<a class="wh-btn" href="${escapeHtml(item.restore_href)}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
+  }
+  return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
+}
+
+function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
+  const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
+  const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
+  const fileRows = vm.items.length
+    ? vm.items.slice(0, 12).map((item) => {
+      const current = item.current_version;
+      const size = current ? formatBytes(current.size_bytes, locale) : "";
+      return `<div class="wh-r4-route-row" data-r4-drive-item="${escapeHtml(item.id)}" data-r4-drive-item-kind="${escapeHtml(item.kind)}" data-r4-drive-item-depth="${escapeHtml(String(item.depth))}" data-r4-drive-item-selected="${escapeHtml(String(item.id === selectedItem?.id))}">
+        <div>
+          <strong>${escapeHtml(item.name)}</strong>
+          <p>${escapeHtml(item.path)}</p>
+        </div>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(item.kind)}</span>
+          ${current ? `<span class="wh-pill">v${escapeHtml(String(current.version_no))}</span>` : ""}
+          ${size ? `<span class="wh-pill">${escapeHtml(size)}</span>` : ""}
+        </div>
+      </div>`;
+    }).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.empty"))}</p>`;
+  const versionRows = vm.versions.length
+    ? vm.versions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
+      <div>
+        <strong>${escapeHtml(`${version.filename} · v${version.version_no}`)}</strong>
+        <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at}`)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(version.source)}</span>
+        ${version.current ? `<span class="wh-pill">${escapeHtml(routeT(locale, "drive.current"))}</span>` : ""}
+      </div>
+    </div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.empty"))}</p>`;
+  const acceptedRows = vm.accepted_deliverables.length
+    ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(accepted.target_kind)}</span>
+        <span class="wh-pill">v${escapeHtml(String(accepted.accepted_version))}</span>
+      </div>
+      <h3>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
+      <p>${escapeHtml(accepted.target_path ?? accepted.target_key)}</p>
+      ${driveActionLinks(accepted, locale)}
+    </article>`).join("")
+    : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "drive.empty"))}</p></article>`;
+  const commentRows = vm.comments.length
+    ? vm.comments.slice(0, 5).map((comment) => `<div class="wh-r4-route-row" data-r4-drive-comment="${escapeHtml(comment.id)}" data-r4-drive-comment-status="${escapeHtml(comment.status)}">
+      <div>
+        <strong>${escapeHtml(comment.author_label)}</strong>
+        <p>${escapeHtml(comment.body)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(comment.status)}</span>
+        ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(comment.draft_href)}">${escapeHtml(routeT(locale, "workitem.context"))}</a>` : ""}
+      </div>
+    </div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
+  const primaryHrefs = [
+    ...vm.accepted_deliverables.flatMap((accepted) => [
+      accepted.preview_href,
+      accepted.download_href,
+      accepted.restore_href
+    ]),
+    ...vm.comments.map((comment) => comment.draft_href)
+  ].filter((value): value is string => Boolean(value));
+
+  return createWebRouteComponent({
+    key: "drive",
+    css: webRouteComponentCss,
+    primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "drive",
+    html: `<section class="wh-r4-route" data-r4-route-component="drive" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-drive-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r4-drive-item-count="${escapeHtml(String(vm.summary.item_count))}" data-r4-drive-version-count="${escapeHtml(String(vm.summary.version_count))}" data-r4-drive-accepted-count="${escapeHtml(String(vm.summary.accepted_deliverable_count))}" data-r4-drive-comment-count="${escapeHtml(String(vm.comments.length))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
+          <h2>${escapeHtml(projectTitle)}</h2>
+          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.empty"))}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true">
+          <h3>${escapeHtml(routeT(locale, "drive.files"))}</h3>
+          <div class="wh-r4-route-timeline">${fileRows}</div>
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
+          <h3>${escapeHtml(routeT(locale, "drive.versions"))}</h3>
+          <div class="wh-r4-route-timeline">${versionRows}</div>
+        </section>
+      </div>
+      <div class="wh-r4-route-grid">
+        <section class="wh-r4-route-stack" data-r4-drive-accepted="true">
+          ${acceptedRows}
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r4-drive-comments="true">
+          <h3>${escapeHtml(routeT(locale, "drive.comments"))}</h3>
+          <div class="wh-r4-route-timeline">${commentRows}</div>
+        </section>
+      </div>
+    </section>`
+  });
+}
+
 function costAmount(value: string) {
   return `¥${value}`;
 }
@@ -1150,6 +1315,7 @@ export type WebRouteComponentInput =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
+  | { key: "drive"; drive: DrivePageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -1171,6 +1337,8 @@ export function renderWebRouteComponent(
       return renderWorkItemRouteComponent(input.workitem, locale);
     case "proposal":
       return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? []);
+    case "drive":
+      return renderDriveRouteComponent(input.drive, locale);
     case "replay":
       return renderReplayRouteComponent(input.replay, locale);
     case "cost":

@@ -19,6 +19,7 @@ import {
   createWorkItemRequestSchema,
   cuuLauncherSpecFromSelectedOptionIds,
   confidenceGrades,
+  drivePageVmSchema,
   identifyRequestSchema,
   normalizeWorkHubLocale,
   mergeProposalRequestSchema,
@@ -287,6 +288,95 @@ test("replay pages carry F10 audit facts and rollback state", () => {
   assert.equal(parsed.merge_timeline[0]?.text_hunk_decisions[0]?.decision, "accept_incoming");
   assert.equal(parsed.merge_timeline[0]?.bulk_action?.action, "accept_incoming");
   assert.deepEqual(parsed.merge_timeline[0]?.bulk_action?.accepted_incoming_target_keys, ["delivery:/outputs/result.md"]);
+});
+
+test("drive page VM carries project files, versions, accepted deliverables, and comment draft links", () => {
+  const parsed = drivePageVmSchema.parse({
+    generated_at: "2026-06-11T01:00:00.000Z",
+    project: {
+      id: "92000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      item_count: 1,
+      file_count: 1,
+      folder_count: 0,
+      version_count: 1,
+      accepted_deliverable_count: 1,
+      pending_comment_count: 0
+    },
+    selected_item_id: "92000000-0000-4000-8000-000000000002",
+    items: [
+      {
+        id: "92000000-0000-4000-8000-000000000002",
+        project_id: "92000000-0000-4000-8000-000000000001",
+        name: "客户复盘.md",
+        kind: "file",
+        path: "/客户复盘.md",
+        depth: 0,
+        current_version_id: "92000000-0000-4000-8000-000000000003",
+        children_count: 0,
+        updated_at: "2026-06-11T01:00:00.000Z"
+      }
+    ],
+    versions: [
+      {
+        id: "92000000-0000-4000-8000-000000000003",
+        item_id: "92000000-0000-4000-8000-000000000002",
+        version_no: 2,
+        filename: "客户复盘.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        sha256: "a".repeat(64),
+        created_at: "2026-06-11T01:00:00.000Z",
+        current: true,
+        source: "accepted_deliverable",
+        accepted_deliverable_id: "92000000-0000-4000-8000-000000000004",
+        work_item_id: "92000000-0000-4000-8000-000000000005",
+        proposal_id: "92000000-0000-4000-8000-000000000006",
+        download_href: "/api/workitems/92000000-0000-4000-8000-000000000005/deliverables/92000000-0000-4000-8000-000000000004/download",
+        preview_href: "/api/workitems/92000000-0000-4000-8000-000000000005/deliverables/92000000-0000-4000-8000-000000000004/preview",
+        restore_href: "/api/workitems/92000000-0000-4000-8000-000000000005/deliverables/92000000-0000-4000-8000-000000000004/restore"
+      }
+    ],
+    accepted_deliverables: [
+      {
+        id: "92000000-0000-4000-8000-000000000004",
+        work_item_id: "92000000-0000-4000-8000-000000000005",
+        proposal_id: "92000000-0000-4000-8000-000000000006",
+        change_id: "92000000-0000-4000-8000-000000000007",
+        target_kind: "text_doc",
+        target_key: "drive:/客户复盘.md",
+        change_type: "updated",
+        accepted_version: 2,
+        drive_item_id: "92000000-0000-4000-8000-000000000002",
+        drive_version_id: "92000000-0000-4000-8000-000000000003",
+        filename: "客户复盘.md",
+        mime: "text/markdown",
+        size_bytes: 2048,
+        accepted_at: "2026-06-11T01:00:00.000Z"
+      }
+    ],
+    comments: [
+      {
+        id: "92000000-0000-4000-8000-000000000008",
+        project_id: "92000000-0000-4000-8000-000000000001",
+        author_label: "PM",
+        body: "转成下一步任务",
+        status: "draft_created",
+        created_at: "2026-06-11T01:00:00.000Z",
+        draft_work_item_id: "92000000-0000-4000-8000-000000000005",
+        draft_href: "/api/pages/workitems/92000000-0000-4000-8000-000000000005"
+      }
+    ],
+    actions: {}
+  });
+
+  assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
+  assert.equal(parsed.comments[0]?.status, "draft_created");
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

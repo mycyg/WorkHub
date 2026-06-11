@@ -24,6 +24,10 @@ import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
 import {
+  getDefaultDrivePageService,
+  type DrivePageService
+} from "../services/drive-pages.js";
+import {
   createApprovalService,
   type ApprovalService
 } from "../services/approvals.js";
@@ -51,6 +55,7 @@ export type PageRoutesDependencies = {
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
   workItems?: WorkItemService;
+  drivePages?: DrivePageService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -125,6 +130,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
   const workItems = deps.workItems ?? getDefaultWorkItemService();
+  const drivePages = deps.drivePages ?? getDefaultDrivePageService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -177,6 +183,17 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       throw new HTTPException(403, { message: "你没有权限查看这个变更申请。" });
     }
     return c.json(pageEnvelope(buildProposalDetailPage(proposal, locale), locale));
+  });
+
+  routes.get("/drive", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const projectId = c.req.query("project_id");
+    const data = await drivePages.page({
+      actor: c.var.actor,
+      locale,
+      ...(projectId ? { projectId } : {})
+    });
+    return c.json(pageEnvelope(data, locale));
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {

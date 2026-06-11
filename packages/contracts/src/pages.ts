@@ -77,6 +77,85 @@ export const acceptedDeliverableRestoreResultSchema = z.object({
 });
 export type AcceptedDeliverableRestoreResult = z.infer<typeof acceptedDeliverableRestoreResultSchema>;
 
+export const driveFileVersionVmSchema = z.object({
+  id: idSchema,
+  item_id: idSchema,
+  version_no: z.number().int().positive(),
+  filename: z.string().min(1),
+  mime: z.string().min(1).optional(),
+  size_bytes: z.number().int().nonnegative(),
+  sha256: z.string().length(64).optional(),
+  created_at: isoDateTimeSchema,
+  current: z.boolean(),
+  source: z.enum(["accepted_deliverable", "manual_upload", "comment_draft"]).default("manual_upload"),
+  accepted_deliverable_id: idSchema.optional(),
+  work_item_id: idSchema.optional(),
+  proposal_id: idSchema.optional(),
+  preview_href: z.string().min(1).optional(),
+  download_href: z.string().min(1).optional(),
+  restore_href: z.string().min(1).optional()
+});
+export type DriveFileVersionVM = z.infer<typeof driveFileVersionVmSchema>;
+
+export const driveItemVmSchema = z.object({
+  id: idSchema,
+  project_id: idSchema,
+  parent_id: idSchema.optional(),
+  name: z.string().min(1),
+  kind: z.enum(["file", "folder"]),
+  path: z.string().min(1),
+  depth: z.number().int().nonnegative(),
+  current_version_id: idSchema.optional(),
+  current_version: driveFileVersionVmSchema.optional(),
+  accepted_deliverable: acceptedDeliverableVmSchema.optional(),
+  children_count: z.number().int().nonnegative(),
+  updated_at: isoDateTimeSchema
+});
+export type DriveItemVM = z.infer<typeof driveItemVmSchema>;
+
+export const driveCommentVmSchema = z.object({
+  id: idSchema,
+  project_id: idSchema,
+  folder_id: idSchema.optional(),
+  folder_path: z.string().min(1).optional(),
+  author_label: z.string().min(1),
+  body: z.string().min(1),
+  status: z.enum(["pending_llm", "draft_created", "dismissed"]),
+  created_at: isoDateTimeSchema,
+  draft_work_item_id: idSchema.optional(),
+  draft_href: z.string().min(1).optional()
+});
+export type DriveCommentVM = z.infer<typeof driveCommentVmSchema>;
+
+export const drivePageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  project: z.object({
+    id: idSchema,
+    name: z.string().min(1),
+    slug: z.string().min(1),
+    owner_label: z.string().min(1).optional(),
+    status: z.enum(["active", "archived"])
+  }).optional(),
+  summary: z.object({
+    item_count: z.number().int().nonnegative(),
+    file_count: z.number().int().nonnegative(),
+    folder_count: z.number().int().nonnegative(),
+    version_count: z.number().int().nonnegative(),
+    accepted_deliverable_count: z.number().int().nonnegative(),
+    pending_comment_count: z.number().int().nonnegative()
+  }),
+  selected_item_id: idSchema.optional(),
+  items: z.array(driveItemVmSchema),
+  versions: z.array(driveFileVersionVmSchema),
+  accepted_deliverables: z.array(acceptedDeliverableVmSchema),
+  comments: z.array(driveCommentVmSchema).default([]),
+  actions: z.object({
+    comment_to_draft: actionSpecSchema.optional()
+  }).default({}),
+  empty_state: z.enum(["no_project", "no_drive_items"]).optional()
+});
+export type DrivePageVM = z.infer<typeof drivePageVmSchema>;
+
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),

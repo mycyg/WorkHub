@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -156,6 +156,11 @@ type BrowserAudit = {
     replayAcceptedDeliverableCount: string | null;
     replayMergeAttemptCount: string | null;
     replayStructuredAuditCount: string | null;
+    driveProjectId: string | null;
+    driveItemCount: string | null;
+    driveVersionCount: string | null;
+    driveAcceptedCount: string | null;
+    driveCommentCount: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -656,6 +661,146 @@ function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
   };
 }
 
+function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
+  const accepted = surface.page_vms.replay.accepted_deliverables[0];
+  const acceptedId = accepted?.id ?? "10000000-0000-4000-8000-000000001518";
+  const workItemId = accepted?.work_item_id ?? "10000000-0000-4000-8000-000000001500";
+  const proposalId = accepted?.proposal_id ?? surface.page_vms.proposal.proposal_id;
+  const itemId = "10000000-0000-4000-8000-000000001620";
+  const versionId = "10000000-0000-4000-8000-000000001621";
+  const deliverable = {
+    id: acceptedId,
+    work_item_id: workItemId,
+    proposal_id: proposalId,
+    change_id: accepted?.change_id ?? "10000000-0000-4000-8000-000000001519",
+    target_kind: accepted?.target_kind ?? "text_doc",
+    target_key: accepted?.target_key ?? "drive:regional-launch-review",
+    change_type: accepted?.change_type ?? "updated",
+    accepted_version: accepted?.accepted_version ?? 2,
+    target_path: accepted?.target_path ?? "docs/regional-launch-review.md",
+    drive_item_id: itemId,
+    drive_version_id: versionId,
+    filename: accepted?.filename ?? "regional-launch-review.md",
+    mime: accepted?.mime ?? "text/markdown",
+    size_bytes: accepted?.size_bytes ?? 4200,
+    sha256: accepted?.sha256 ?? "a".repeat(64),
+    preview_href: accepted?.preview_href ?? `/api/workitems/${workItemId}/deliverables/${acceptedId}/preview`,
+    download_href: accepted?.download_href ?? `/api/workitems/${workItemId}/deliverables/${acceptedId}/download`,
+    restore_href: accepted?.restore_href ?? `/api/workitems/${workItemId}/deliverables/${acceptedId}/restore`,
+    accepted_at: accepted?.accepted_at ?? "2026-06-11T09:20:00.000Z"
+  };
+  return {
+    generated_at: "2026-06-11T09:24:00.000Z",
+    project: {
+      id: "10000000-0000-4000-8000-000000001600",
+      name: "区域发布资料库",
+      slug: "regional-launch",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      item_count: 2,
+      file_count: 1,
+      folder_count: 1,
+      version_count: 2,
+      accepted_deliverable_count: 1,
+      pending_comment_count: 0
+    },
+    selected_item_id: itemId,
+    items: [
+      {
+        id: "10000000-0000-4000-8000-000000001619",
+        project_id: "10000000-0000-4000-8000-000000001600",
+        name: "docs",
+        kind: "folder",
+        path: "/docs",
+        depth: 0,
+        children_count: 1,
+        updated_at: "2026-06-11T09:20:00.000Z"
+      },
+      {
+        id: itemId,
+        project_id: "10000000-0000-4000-8000-000000001600",
+        parent_id: "10000000-0000-4000-8000-000000001619",
+        name: "regional-launch-review.md",
+        kind: "file",
+        path: "/docs/regional-launch-review.md",
+        depth: 1,
+        current_version_id: versionId,
+        current_version: {
+          id: versionId,
+          item_id: itemId,
+          version_no: 2,
+          filename: "regional-launch-review.md",
+          mime: "text/markdown",
+          size_bytes: 4200,
+          sha256: "a".repeat(64),
+          created_at: "2026-06-11T09:20:00.000Z",
+          current: true,
+          source: "accepted_deliverable",
+          accepted_deliverable_id: acceptedId,
+          work_item_id: workItemId,
+          proposal_id: proposalId,
+          preview_href: deliverable.preview_href,
+          download_href: deliverable.download_href,
+          restore_href: deliverable.restore_href
+        },
+        accepted_deliverable: deliverable,
+        children_count: 0,
+        updated_at: "2026-06-11T09:20:00.000Z"
+      }
+    ],
+    versions: [
+      {
+        id: versionId,
+        item_id: itemId,
+        version_no: 2,
+        filename: "regional-launch-review.md",
+        mime: "text/markdown",
+        size_bytes: 4200,
+        sha256: "a".repeat(64),
+        created_at: "2026-06-11T09:20:00.000Z",
+        current: true,
+        source: "accepted_deliverable",
+        accepted_deliverable_id: acceptedId,
+        work_item_id: workItemId,
+        proposal_id: proposalId,
+        preview_href: deliverable.preview_href,
+        download_href: deliverable.download_href,
+        restore_href: deliverable.restore_href
+      },
+      {
+        id: "10000000-0000-4000-8000-000000001622",
+        item_id: itemId,
+        version_no: 1,
+        filename: "regional-launch-review.md",
+        mime: "text/markdown",
+        size_bytes: 3180,
+        sha256: "b".repeat(64),
+        created_at: "2026-06-11T08:30:00.000Z",
+        current: false,
+        source: "manual_upload"
+      }
+    ],
+    accepted_deliverables: [deliverable],
+    comments: [
+      {
+        id: "10000000-0000-4000-8000-000000001623",
+        project_id: "10000000-0000-4000-8000-000000001600",
+        folder_id: "10000000-0000-4000-8000-000000001619",
+        folder_path: "/docs",
+        author_label: "PM",
+        body: "把这个版本差异整理成下一轮复盘行动。",
+        status: "draft_created",
+        created_at: "2026-06-11T09:22:00.000Z",
+        draft_work_item_id: workItemId,
+        draft_href: `/api/pages/workitems/${workItemId}`
+      }
+    ],
+    actions: {}
+  };
+}
+
 function r4LiveSession(stage: "scope" | "confirm", surface: GoldPathSurfaceVM, locale: WorkHubLocale): SessionVM {
   const sessionId = "10000000-0000-4000-8000-000000001414";
   const workItemId = "r4-live-workitem";
@@ -923,6 +1068,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     if (request.method === "GET" && url.pathname === "/api/pages/settings") {
       sendJson(response, 200, settingsPage(currentLocale));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/pages/drive") {
+      sendJson(response, 200, drivePage(surface));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -1525,6 +1674,11 @@ function auditExpression() {
       replayAcceptedDeliverableCount: routeComponent?.getAttribute("data-r4-replay-accepted-deliverable-count") || null,
       replayMergeAttemptCount: routeComponent?.getAttribute("data-r4-replay-merge-attempt-count") || null,
       replayStructuredAuditCount: routeComponent?.getAttribute("data-r4-replay-structured-audit-count") || null,
+      driveProjectId: routeComponent?.getAttribute("data-r4-drive-project-id") || null,
+      driveItemCount: routeComponent?.getAttribute("data-r4-drive-item-count") || null,
+      driveVersionCount: routeComponent?.getAttribute("data-r4-drive-version-count") || null,
+      driveAcceptedCount: routeComponent?.getAttribute("data-r4-drive-accepted-count") || null,
+      driveCommentCount: routeComponent?.getAttribute("data-r4-drive-comment-count") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -1603,6 +1757,8 @@ function auditExpression() {
               ? Boolean(document.querySelector("[data-r4-intake-options]") && document.querySelector("[data-r4-intake-progress]") && document.querySelector("[data-intake-submit='next-question']"))
               : routeComponentKey === "knowledge"
                 ? Boolean(document.querySelector("[data-r4-knowledge-fallback]") && document.querySelector("[data-r4-knowledge-evidence-ref]") && document.querySelector("[data-action-id='use_for_current_task']"))
+                : routeComponentKey === "drive"
+                  ? Boolean(document.querySelector("[data-r4-drive-files]") && document.querySelector("[data-r4-drive-versions]") && document.querySelector("[data-r4-drive-accepted]") && document.querySelector("[data-action-id='drive_preview']") && document.querySelector("[data-action-id='drive_download']") && document.querySelector("[data-action-id='drive_restore'][data-method='POST']"))
                 : routeComponentKey === "settings"
                   ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
                   : Boolean(routeComponentKey);
@@ -2100,6 +2256,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="restore_deliverable"]', "action_success", "restore_deliverable");
   steps.push(await captureStep(cdp, { id: "15a-replay-restore-success-en-desktop", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
 
+  await navigate(cdp, `${baseUrl}/drive`, "ready");
+  steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
   steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
@@ -2139,6 +2298,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     evidenceBinding: requests.some((request) => request.method === "POST" && /^\/api\/workitems\/[^/]+\/evidence-bindings$/u.test(request.pathname)),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
     conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
+    drive: requests.some((request) => request.pathname === "/api/pages/drive" && request.locale === "en-US"),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2158,6 +2318,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       evidenceBinding: countMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
       proposalConflicts: countMatch(/^\/api\/workitems\/[^/]+\/conflicts$/u),
+      drive: count("/api/pages/drive"),
       approvalRespond: countMatch(/^\/api\/approvals\/[^/]+\/respond$/u, "POST"),
       proposalReview: countMatch(/^\/api\/proposals\/[^/]+\/review$/u, "POST"),
       proposalMerge: countMatch(/^\/api\/proposals\/[^/]+\/merge$/u, "POST"),
@@ -2286,6 +2447,7 @@ async function main() {
       approvals: "approvals",
       workitem: "workitem",
       proposal: "proposal",
+      drive: "drive",
       replay: "replay",
       cost: "cost",
       knowledge: "evidence",
@@ -2301,7 +2463,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.cost && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.cost && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -2318,6 +2480,21 @@ async function main() {
         hasActiveComponent(steps, "11-proposal-en-mobile-scrolled-notice-route-component", "proposal") &&
         hasActiveComponent(steps, "12-cost-en-mobile-route-component", "cost") &&
         hasActiveComponent(steps, "13-settings-en-desktop-route-component", "settings"),
+      r5_1_drive_route_component:
+        hasActiveComponent(steps, "15b-drive-en-desktop-route-component", "drive") &&
+        proof.drive &&
+        proof.counts.drive === 1 &&
+        steps.some((step) =>
+          step.id === "15b-drive-en-desktop-route-component" &&
+          step.audit.routeComponentSource === "page-vm" &&
+          step.audit.routeData.driveProjectId === "10000000-0000-4000-8000-000000001600" &&
+          step.audit.routeData.driveItemCount === "2" &&
+          step.audit.routeData.driveVersionCount === "2" &&
+          step.audit.routeData.driveAcceptedCount === "1" &&
+          step.audit.routeData.driveCommentCount === "1" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
       r4_11_route_component_source_truth: steps
         .filter((step) => step.audit.productShell && step.audit.status === "ready" && !["intake", "knowledge"].includes(step.audit.routeComponent ?? ""))
         .every((step) => step.audit.routeComponentSource === "page-vm"),
@@ -2544,7 +2721,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "9" &&
+        step.audit.routeTreeRouteCount === "10" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
@@ -2878,7 +3055,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 42,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 43,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -2930,7 +3107,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 42,
+      r4_22_no_new_smoke_sprawl: steps.length === 43,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -2979,9 +3156,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 42,
+      r4_23_no_new_smoke_sprawl: steps.length === 43,
       r4_24_no_hash_write:
-        steps.length === 42 &&
+        steps.length === 43 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3075,6 +3252,7 @@ async function main() {
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,
         `- R4.10 route components: ${String(gates.r4_10_home_approvals_replay_route_components)}`,
         `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
+        `- R5.1 Drive route component: ${String(gates.r5_1_drive_route_component)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

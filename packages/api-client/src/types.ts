@@ -11,6 +11,7 @@ import type {
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
+  DrivePageVM,
   ApplyMergeProposalCandidateRequest,
   ChooseMergeProposalCandidateRequest,
   EvidenceBubble,
@@ -105,6 +106,7 @@ export type PageClient = {
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
+  drive: (options?: PageRequestOptions) => Promise<DrivePageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
