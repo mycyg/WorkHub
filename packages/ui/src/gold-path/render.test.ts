@@ -177,6 +177,7 @@ test("replay page surfaces accepted deliverables with preview and download actio
   assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/preview"), true);
   assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/download"), true);
   assert.equal(replay?.html.includes("/api/workitems/demo/deliverables/accepted-1/restore"), true);
+  assert.equal(replay?.html.includes("data-action-id=\"restore_deliverable\""), true);
   assert.equal(replay?.html.includes("data-method=\"POST\""), true);
   assert.deepEqual(replay?.primaryHrefs, [
     "/api/workitems/demo/deliverables/accepted-1/preview",

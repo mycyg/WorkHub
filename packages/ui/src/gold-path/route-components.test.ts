@@ -4,8 +4,14 @@ import test from "node:test";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
 
+import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponents } from "./route-components.js";
-import { createHomeReactRouteComponent, createSettingsReactRouteComponent } from "./route-react-components.js";
+import {
+  createCostReactRouteComponent,
+  createHomeReactRouteComponent,
+  createReplayReactRouteComponent,
+  createSettingsReactRouteComponent
+} from "./route-react-components.js";
 
 function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
   return {
@@ -581,6 +587,61 @@ test("R4.17 Home and Settings route components expose React-compatible props wit
   assert.equal(/api\.deepseek\.com|sk-[0-9A-Za-z]{20,}/u.test(settings.html), false);
   assertNoMainWindowBoundaryLeak(home.html);
   assertNoMainWindowBoundaryLeak(settings.html);
+});
+
+test("R4.18 Cost and Replay route components expose React-compatible props without changing fallback renderers", () => {
+  const vm = surfaceVm();
+  const components = renderWebRouteComponents(vm, { locale: "en-US" });
+  const expectedCost = createCostReactRouteComponent(vm.page_vms.cost, "en-US");
+  const expectedReplay = createReplayReactRouteComponent(renderAgentRunReplay(vm.page_vms.replay, "web", { locale: "en-US" }), "en-US");
+  const cost = components.cost;
+  const replay = components.replay;
+
+  assert.ok(cost);
+  assert.ok(replay);
+  assert.equal(cost.reactComponent?.routeKey, "cost");
+  assert.equal(replay.reactComponent?.routeKey, "replay");
+  if (cost.reactComponent?.routeKey !== "cost" || replay.reactComponent?.routeKey !== "replay") {
+    throw new Error("R4.18 migrated route components are missing typed adapters");
+  }
+
+  assert.equal(cost.reactComponent.componentName, "CostRouteComponent");
+  assert.equal(cost.reactComponent.adapter, "react-compatible-route-component-v1");
+  assert.equal(cost.reactComponent.mode, "html-fallback");
+  assert.equal(cost.reactComponent.htmlFallback, true);
+  assert.equal(cost.reactComponent.propsSource, "typed-page-vm");
+  assert.equal(cost.reactComponent.propsFingerprint, expectedCost.propsFingerprint);
+  assert.deepEqual(cost.reactComponent.primaryHrefs, cost.primaryHrefs);
+  assert.deepEqual(cost.reactComponent.props.primaryActionHrefs, cost.primaryHrefs);
+  assert.equal(cost.reactComponent.props.totalTokens, vm.page_vms.cost.token_in + vm.page_vms.cost.token_out);
+  assert.equal(cost.reactComponent.props.totalCostCny, vm.page_vms.cost.total_cost_cny);
+  assert.equal(cost.reactComponent.props.budgetCount, vm.page_vms.cost.budget.length);
+  assert.equal(cost.reactComponent.props.riskCount, vm.page_vms.cost.top_exhaustion_risks.length);
+  assert.equal(cost.reactComponent.props.modelCount, vm.page_vms.cost.model_breakdown.length);
+  assert.equal(cost.reactComponent.props.trendCount, vm.page_vms.cost.trend.length);
+  assert.equal(cost.html.includes('data-r4-react-component="CostRouteComponent"'), true);
+  assert.equal(cost.html.includes('data-r4-hydration-react-component="CostRouteComponent"'), true);
+  assert.equal(cost.html.includes(`data-r4-react-component-action-count="${cost.primaryHrefs.length}"`), true);
+  assert.equal(cost.html.includes(`data-r4-cost-total-tokens="${vm.page_vms.cost.token_in + vm.page_vms.cost.token_out}"`), true);
+
+  assert.equal(replay.reactComponent.componentName, "ReplayRouteComponent");
+  assert.equal(replay.reactComponent.adapter, "react-compatible-route-component-v1");
+  assert.equal(replay.reactComponent.mode, "html-fallback");
+  assert.equal(replay.reactComponent.htmlFallback, true);
+  assert.equal(replay.reactComponent.propsSource, "typed-page-vm");
+  assert.equal(replay.reactComponent.propsFingerprint, expectedReplay.propsFingerprint);
+  assert.deepEqual(replay.reactComponent.primaryHrefs, replay.primaryHrefs);
+  assert.deepEqual(replay.reactComponent.props.primaryActionHrefs, replay.primaryHrefs);
+  assert.equal(replay.reactComponent.props.runId, vm.page_vms.replay.run.id);
+  assert.equal(replay.reactComponent.props.stepCount, vm.page_vms.replay.steps.length);
+  assert.equal(replay.reactComponent.props.acceptedDeliverableCount, vm.page_vms.replay.accepted_deliverables?.length ?? 0);
+  assert.equal(replay.html.includes("Accepted deliverables"), true);
+  assert.equal(replay.html.includes('data-r4-react-component="ReplayRouteComponent"'), true);
+  assert.equal(replay.html.includes('data-r4-hydration-react-component="ReplayRouteComponent"'), true);
+  assert.equal(replay.html.includes(`data-r4-react-component-action-count="${replay.primaryHrefs.length}"`), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+  assertNoMainWindowBoundaryLeak(replay.html);
+  assert.equal(/api\.deepseek\.com|sk-[0-9A-Za-z]{20,}/u.test(`${cost.html}${replay.html}`), false);
 });
 
 test("R4.10 Approvals route component keeps action reasons and Page VM counts visible", () => {

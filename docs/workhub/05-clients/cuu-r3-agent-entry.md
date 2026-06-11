@@ -1262,6 +1262,6 @@ R3.23 第十刀在 macOS 26.3.1 真机关闭 menu bar 主路径。脚本先跑 d
 
 ## 27. 下一刀
 
-1. R4.10-R4.17 已完成 Web route componentization、action notice、Proposal advanced、Option Intake / Knowledge、Settings / locale / device boundary、React route tree / hydration boundary 与 Home / Settings React-compatible first migration。
-2. R4.18 继续保留 Page VM、REST-as-truth、path navigation、locale reload、Redis/SSE reconcile、desktop/mobile、zh-CN/en-US、ready/empty/forbidden/error、文本不越框、Settings boundary、hydration boundary、R4.17 component adapter 和无 Cuu 主窗门，并扩展到 Cost / Replay。
-3. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。
+1. R4.10-R4.18 已完成 Web route componentization、action notice、Proposal advanced、Option Intake / Knowledge、Settings / locale / device boundary、React route tree / hydration boundary、Home / Settings / Cost / Replay React-compatible migration 与 Replay restore single-dispatcher proof。
+2. 下一刀先做 R4.19-pre 真 React mount spike：保留 Page VM、REST-as-truth、path navigation、locale reload、Redis/SSE reconcile、desktop/mobile、zh-CN/en-US、ready/empty/forbidden/error、文本不越框、Settings boundary、hydration boundary、无 Cuu 主窗门，并证明真实 React mount 不破坏 delegated dispatcher 与 SSE props update。
+3. R4.19 再进入 Proposal advanced split migration，并增加 dirty edit SSE guard 与 no-new-fixture-chrome gates；R0/R1/R2 口径继续保持：R2 地基首版完成，R1/R0 仍不能宣称全量完成。

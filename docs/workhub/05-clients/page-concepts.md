@@ -343,6 +343,20 @@ R4.17 已把 Home / Settings 迁入 React-compatible component adapter，并用�
 - Settings 边界继续成立：secret-safe、desktop required、web local actions disabled、pet model not in Web、mobile no-overflow 均作为 R4.17 regression 通过。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
 
+### 6.13 R4.18 React Route Migration Expansion
+
+![R4.18 React route migration expansion contact sheet](./assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/contact-sheet.png)
+
+R4.18 已把 Cost / Replay 迁入 React-compatible component adapter，并用本机 Chrome browser smoke 生成 39 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- Cost 对齐 `web-operations-pages-atlas.png`：仍是成本治理页，展示 token、cost、budget scope、risk、model、notice，不做营销 dashboard，不泄露 provider secret/base URL。
+- Replay 对齐 audit/recovery workbench 概念：仍展示执行步骤、成本、快照、accepted deliverables，并保持只读解释与恢复动作边界。
+- React-compatible 扩展只推进实现边界：Cost props 来自 `CostDashboardVM`，Replay props 来自 existing replay renderer output，不从 DOM 文案反推数据。
+- Action boundary 更强：Replay accepted deliverable preview/download/restore 形成非零 action parity；restore click 通过 typed client 单次 POST，而不是 pending 或第二套 dispatcher。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

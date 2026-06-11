@@ -188,6 +188,8 @@ const routeTreePageVmByKey = {
 
 const routeTreeReactComponentByKey: Partial<Record<R4WebRouteKey, WebReactRouteComponentName>> = {
   home: "HomeRouteComponent",
+  replay: "ReplayRouteComponent",
+  cost: "CostRouteComponent",
   settings: "SettingsRouteComponent"
 };
 

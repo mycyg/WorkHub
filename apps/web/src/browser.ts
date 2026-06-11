@@ -434,6 +434,18 @@ function evidenceBindingWorkItemIdFromHref(href: string) {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
+function acceptedDeliverableRestoreFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/workitems\/([^/]+)\/deliverables\/([^/]+)\/restore$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    workItemId: decodeURIComponent(match[1]),
+    acceptedChangeId: decodeURIComponent(match[2])
+  };
+}
+
 function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";
@@ -920,6 +932,19 @@ function bindGoldPathNavigation(
         }
         try {
           const result = await client.useEvidenceForWorkItem(evidenceWorkItemId, payload.payload);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const acceptedDeliverableRestore = acceptedDeliverableRestoreFromHref(href);
+      if (acceptedDeliverableRestore) {
+        try {
+          const result = await client.restoreAcceptedDeliverable(
+            acceptedDeliverableRestore.workItemId,
+            acceptedDeliverableRestore.acceptedChangeId
+          );
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

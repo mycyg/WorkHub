@@ -1,12 +1,13 @@
 ---
 module: R4-react-route-migration-expansion
 layer: C-WEB / C-UI / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
   - ../05-clients/assets/web/web-operations-pages-atlas.png
   - ../05-clients/assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/contact-sheet.png
+  - ../05-clients/assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/contact-sheet.png
 depends_on:
   - r4-17-react-route-component-first-migration-plan-2026-06-11.md
   - r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md
@@ -78,6 +79,7 @@ flowchart LR
 - `r4_18_replay_react_component_marker=true`
 - `r4_18_cost_replay_html_fallback_parity=true`
 - `r4_18_action_dispatcher_single_path=true`
+- `r4_18_replay_nonzero_deliverable_action_parity=true`
 - `r4_17_first_migration_regression=true`
 
 ## 7. PRD / 概念图验收口径
@@ -86,6 +88,32 @@ flowchart LR
 - Replay 仍是审计和恢复工作台，不变成代码 IDE，也不把 Cuu 气泡塞回主窗。
 - Web 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无横向/文本溢出。
 
-## 8. 后续候选
+## 8. 竣工记录
+
+2026-06-11 已完成 R4.18 React route migration expansion。
+
+实现范围：
+
+- `packages/ui/src/gold-path/route-react-components.ts` 新增 `CostRouteComponent` / `ReplayRouteComponent` typed adapter props、component name、primary hrefs 与 fingerprint。
+- `packages/ui/src/gold-path/route-components.ts` 将 Cost / Replay section、hydration root、route tree marker 接入同一 React-compatible metadata；Cost props 来自 `CostDashboardVM`，Replay props 来自 `renderAgentRunReplay()` 输出。
+- `apps/web/src/routes.ts` 将 `webReactRouteTree` 的 migrated route 扩展为 Home / Replay / Cost / Settings。
+- `apps/web/src/browser.ts` 补齐 Replay accepted deliverable restore 的 typed client dispatcher，`restore_deliverable` 单击走 `restoreAcceptedDeliverable()`，不再停留在 pending。
+- `apps/web/qa/r4-web-live-route-interaction.ts` 新增 Cost / Replay R4.18 gates、Replay route data、非零 accepted deliverable action parity 和 restore POST proof。
+
+验收结果：
+
+- `pnpm --filter @workhub/ui test`：51/51 通过。
+- `pnpm --filter @workhub/web test`：19/19 通过。
+- `pnpm typecheck`：通过。
+- `pnpm qa:r4-web-live-route-interaction` with R4.18 env：39 步 Chrome smoke 通过，报告目录 [`../05-clients/assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/`](../05-clients/assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/)，所有 R4.10-R4.18 gates 均为 true。
+
+Bug / 数据流审查：
+
+- Cost `reactComponentActionCount=1`、hydration action count、hydration panel action count 与 budget notice href 一致；`104000 / ¥4.2 / budget=3 / model=1 / notice=1` 均来自 Cost Page VM。
+- Replay `reactComponentActionCount=3`、hydration action count、hydration panel action count 与 accepted deliverable preview/download/restore href 一致；restore click 只产生 1 次 `/api/workitems/:id/deliverables/:id/restore` POST。
+- 本轮仍不引入 React runtime dependency，不调用 `hydrateRoot()`，不新增第二套 action dispatcher；Proposal advanced / Intake / Knowledge 未迁移。
+- Browser report 与截图确认 active-only panel、Page VM truth、Settings boundary、no Cuu/no Kanban/no weekly/no hash/no secret/no horizontal overflow/no text overflow 均保持。
+
+## 9. 后续候选
 
 R4.18 通过后进入 R4.19：评估 Proposal advanced 的拆分迁移，先把 conflict summary / readonly review sections 与 mutation-heavy editors 分层，再决定是否逐段迁移。

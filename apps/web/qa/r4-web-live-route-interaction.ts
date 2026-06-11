@@ -104,10 +104,16 @@ type BrowserAudit = {
     knowledgeEvidenceCount: string | null;
     knowledgeMissing: string | null;
     knowledgeActionCount: string | null;
+    replayRunId: string | null;
+    replayStepCount: string | null;
+    replayAcceptedDeliverableCount: string | null;
+    replayMergeAttemptCount: string | null;
+    replayStructuredAuditCount: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
     costModelCount: string | null;
+    costNoticeCount: string | null;
     settingsRuntimeStatus: string | null;
     settingsPetModelInWeb: string | null;
     settingsWorkerCount: string | null;
@@ -197,6 +203,8 @@ const defaultOutputDir = path.join(
 );
 const r4ReactComponentByRoute: Record<string, string> = {
   home: "HomeRouteComponent",
+  replay: "ReplayRouteComponent",
+  cost: "CostRouteComponent",
   settings: "SettingsRouteComponent"
 };
 const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
@@ -534,7 +542,29 @@ function productSurface(): GoldPathSurfaceVM {
       approvals: fixture.approvalCenter,
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
-      replay: fixture.replay,
+      replay: {
+        ...fixture.replay,
+        accepted_deliverables: [
+          {
+            id: "10000000-0000-4000-8000-000000001518",
+            work_item_id: fixture.replay.run.work_item_id ?? fixture.proposalDetail.work_item_id,
+            proposal_id: fixture.proposalDetail.proposal_id,
+            change_id: fixture.proposalDetail.manifest.changes[0]?.id ?? "10000000-0000-4000-8000-000000001519",
+            target_kind: "drive_file",
+            target_key: "drive:regional-launch-review",
+            change_type: "updated",
+            accepted_version: 2,
+            target_path: "docs/regional-launch-review.md",
+            filename: "regional-launch-review.md",
+            mime: "text/markdown",
+            size_bytes: 4200,
+            preview_href: "/deliverables/10000000-0000-4000-8000-000000001518/preview",
+            download_href: "/deliverables/10000000-0000-4000-8000-000000001518/download",
+            restore_href: `/api/workitems/${fixture.replay.run.work_item_id ?? fixture.proposalDetail.work_item_id}/deliverables/10000000-0000-4000-8000-000000001518/restore`,
+            accepted_at: "2026-06-11T09:20:00.000Z"
+          }
+        ]
+      },
       cost: fixture.costDashboard,
       settings: settingsPage("zh-CN")
     },
@@ -875,6 +905,16 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     if (request.method === "POST" && evidenceBindingMatch?.[1]) {
       requestRecord.body = await requestBody(request);
       sendJson(response, 200, qaWorkItemDetail(surface));
+      return;
+    }
+    const acceptedDeliverableRestoreMatch = /^\/api\/workitems\/([^/]+)\/deliverables\/([^/]+)\/restore$/u.exec(url.pathname);
+    if (request.method === "POST" && acceptedDeliverableRestoreMatch?.[1] && acceptedDeliverableRestoreMatch[2]) {
+      requestRecord.body = await requestBody(request);
+      const acceptedDeliverable = surface.page_vms.replay.accepted_deliverables.find((item) => item.id === acceptedDeliverableRestoreMatch[2])
+        ?? surface.page_vms.replay.accepted_deliverables[0];
+      sendJson(response, 200, {
+        accepted_deliverable: acceptedDeliverable
+      });
       return;
     }
     const conflictsMatch = /^\/api\/workitems\/([^/]+)\/conflicts$/u.exec(url.pathname);
@@ -1363,10 +1403,16 @@ function auditExpression() {
       knowledgeEvidenceCount: routeComponent?.getAttribute("data-r4-knowledge-evidence-count") || null,
       knowledgeMissing: routeComponent?.getAttribute("data-r4-knowledge-missing") || null,
       knowledgeActionCount: routeComponent?.getAttribute("data-r4-knowledge-action-count") || null,
+      replayRunId: routeComponent?.getAttribute("data-r4-replay-run-id") || null,
+      replayStepCount: routeComponent?.getAttribute("data-r4-replay-step-count") || null,
+      replayAcceptedDeliverableCount: routeComponent?.getAttribute("data-r4-replay-accepted-deliverable-count") || null,
+      replayMergeAttemptCount: routeComponent?.getAttribute("data-r4-replay-merge-attempt-count") || null,
+      replayStructuredAuditCount: routeComponent?.getAttribute("data-r4-replay-structured-audit-count") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
       costModelCount: routeComponent?.getAttribute("data-r4-cost-model-count") || null,
+      costNoticeCount: routeComponent?.getAttribute("data-r4-cost-notice-count") || null,
       settingsRuntimeStatus: routeComponent?.getAttribute("data-r4-settings-runtime-status") || null,
       settingsPetModelInWeb: routeComponent?.getAttribute("data-r4-settings-pet-model-in-web") || null,
       settingsWorkerCount: routeComponent?.getAttribute("data-r4-settings-worker-count") || null,
@@ -1532,16 +1578,16 @@ async function captureStep(
     const expectedReactComponent = r4ReactComponentByRoute[input.expectedRouteComponent];
     if (expectedReactComponent) {
       if (audit.reactComponentName !== expectedReactComponent || audit.reactComponentRoute !== input.expectedRouteComponent) {
-        throw new Error(`${input.id} is missing R4.17 React-compatible component markers`);
+        throw new Error(`${input.id} is missing R4 React-compatible component markers`);
       }
       if (audit.reactComponentMode !== "html-fallback" || !audit.reactComponentHtmlFallback || audit.reactComponentPropsSource !== "typed-page-vm") {
-        throw new Error(`${input.id} has invalid R4.17 React-compatible fallback props markers`);
+        throw new Error(`${input.id} has invalid R4 React-compatible fallback props markers`);
       }
       if (audit.hydrationReactComponent !== expectedReactComponent || audit.hydrationReactComponentRoute !== input.expectedRouteComponent) {
-        throw new Error(`${input.id} is missing R4.17 hydration component markers`);
+        throw new Error(`${input.id} is missing R4 hydration component markers`);
       }
       if (audit.routeTreeReactComponent !== expectedReactComponent || !audit.routeTreeReactComponentFallback) {
-        throw new Error(`${input.id} is missing R4.17 route tree component markers`);
+        throw new Error(`${input.id} is missing R4 route tree component markers`);
       }
       if (audit.reactComponentActionCount !== audit.hydrationActionCount) {
         throw new Error(`${input.id} expected React-compatible action count to match hydration action count`);
@@ -1801,6 +1847,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
   steps.push(await captureStep(cdp, { id: "15-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
 
+  await clickAndWaitForNotice(cdp, '[data-action-id="restore_deliverable"]', "action_success", "restore_deliverable");
+  steps.push(await captureStep(cdp, { id: "15a-replay-restore-success-en-desktop", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
   steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
@@ -1863,6 +1912,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       proposalReview: countMatch(/^\/api\/proposals\/[^/]+\/review$/u, "POST"),
       proposalMerge: countMatch(/^\/api\/proposals\/[^/]+\/merge$/u, "POST"),
       mergeApply: countMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST"),
+      acceptedDeliverableRestore: countMatch(/^\/api\/workitems\/[^/]+\/deliverables\/[^/]+\/restore$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -2314,6 +2364,86 @@ async function main() {
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
+      r4_18_cost_react_component_marker:
+        steps.some((step) =>
+          step.id === "12-cost-en-mobile-route-component" &&
+          step.audit.routeComponent === "cost" &&
+          step.audit.reactComponentName === "CostRouteComponent" &&
+          step.audit.reactComponentRoute === "cost" &&
+          step.audit.reactComponentPageVm === "cost" &&
+          step.audit.routeTreeReactComponent === "CostRouteComponent" &&
+          step.audit.hydrationReactComponent === "CostRouteComponent" &&
+          step.audit.routeData.costTotalTokens === String(surface.page_vms.cost.token_in + surface.page_vms.cost.token_out) &&
+          step.audit.routeData.costTotalCny === surface.page_vms.cost.total_cost_cny &&
+          step.audit.routeData.costBudgetCount === String(surface.page_vms.cost.budget.length) &&
+          step.audit.routeData.costModelCount === String(surface.page_vms.cost.model_breakdown.length) &&
+          step.audit.routeData.costNoticeCount === String(surface.page_vms.cost.notices.length)
+        ),
+      r4_18_replay_react_component_marker:
+        steps.some((step) =>
+          step.id === "15-replay-en-desktop-route-component" &&
+          step.audit.routeComponent === "replay" &&
+          step.audit.reactComponentName === "ReplayRouteComponent" &&
+          step.audit.reactComponentRoute === "replay" &&
+          step.audit.reactComponentPageVm === "replay" &&
+          step.audit.routeTreeReactComponent === "ReplayRouteComponent" &&
+          step.audit.hydrationReactComponent === "ReplayRouteComponent" &&
+          step.audit.routeData.replayRunId === surface.page_vms.replay.run.id &&
+          step.audit.routeData.replayStepCount === String(surface.page_vms.replay.steps.length) &&
+          step.audit.routeData.replayAcceptedDeliverableCount === String(surface.page_vms.replay.accepted_deliverables?.length ?? 0) &&
+          step.audit.reactComponentActionCount === "3"
+        ),
+      r4_18_cost_replay_html_fallback_parity:
+        migratedReactSteps
+          .filter((step) => step.audit.routeComponent === "cost" || step.audit.routeComponent === "replay")
+          .every((step) =>
+            step.audit.reactComponentMode === "html-fallback" &&
+            step.audit.reactComponentHtmlFallback &&
+            step.audit.reactComponentPropsSource === "typed-page-vm" &&
+            step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
+            step.audit.reactComponentActionCount === step.audit.hydrationPanelActionCount &&
+            step.audit.hydrationReactComponentMode === "html-fallback" &&
+            step.audit.hydrationReactComponentFallback &&
+            step.audit.routeTreeReactComponentFallback
+          ) &&
+        migratedReactSteps.some((step) => step.audit.routeComponent === "cost") &&
+        migratedReactSteps.some((step) => step.audit.routeComponent === "replay"),
+      r4_18_action_dispatcher_single_path: migratedReactSteps.every((step) =>
+        step.audit.reactComponentActionCount !== null &&
+        step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
+        step.audit.reactComponentActionCount === step.audit.hydrationPanelActionCount
+      ) &&
+        steps.some((step) =>
+          step.id === "15a-replay-restore-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "restore_deliverable" &&
+          step.audit.reactComponentActionCount === "3"
+        ) &&
+        proof.counts.acceptedDeliverableRestore === 1,
+      r4_18_replay_nonzero_deliverable_action_parity:
+        steps.some((step) =>
+          step.id === "15a-replay-restore-success-en-desktop" &&
+          step.audit.routeComponent === "replay" &&
+          step.audit.routeData.replayAcceptedDeliverableCount === "1" &&
+          step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
+          step.audit.reactComponentActionCount === "3"
+        ) &&
+        proof.counts.acceptedDeliverableRestore === 1,
+      r4_17_first_migration_regression:
+        steps.some((step) =>
+          step.id === "01-home-zh-desktop" &&
+          step.audit.routeComponent === "home" &&
+          step.audit.reactComponentName === "HomeRouteComponent" &&
+          step.audit.reactComponentPageVm === "attention"
+        ) &&
+        steps.some((step) =>
+          step.id === "13-settings-en-desktop-route-component" &&
+          step.audit.routeComponent === "settings" &&
+          step.audit.reactComponentName === "SettingsRouteComponent" &&
+          step.audit.reactComponentPageVm === "settings" &&
+          step.audit.routeData.settingsSecretSafe === "true" &&
+          step.audit.routeData.settingsPetModelInWeb === "false"
+        ),
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -2344,6 +2474,7 @@ async function main() {
         proof.counts.proposalReview === 1 &&
         proof.counts.proposalMerge === 1 &&
         proof.counts.mergeApply === 4 &&
+        proof.counts.acceptedDeliverableRestore === 1 &&
         proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
@@ -2425,6 +2556,12 @@ async function main() {
         `- R4.17 HTML fallback parity: ${String(gates.r4_17_html_fallback_parity)}`,
         `- R4.17 action dispatcher single path: ${String(gates.r4_17_action_dispatcher_single_path)}`,
         `- R4.17 settings boundary regression: ${String(gates.r4_17_settings_boundary_regression)}`,
+        `- R4.18 Cost React component marker: ${String(gates.r4_18_cost_react_component_marker)}`,
+        `- R4.18 Replay React component marker: ${String(gates.r4_18_replay_react_component_marker)}`,
+        `- R4.18 Cost/Replay fallback parity: ${String(gates.r4_18_cost_replay_html_fallback_parity)}`,
+        `- R4.18 action dispatcher single path: ${String(gates.r4_18_action_dispatcher_single_path)}`,
+        `- R4.18 Replay nonzero deliverable action parity: ${String(gates.r4_18_replay_nonzero_deliverable_action_parity)}`,
+        `- R4.17 first migration regression: ${String(gates.r4_17_first_migration_regression)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

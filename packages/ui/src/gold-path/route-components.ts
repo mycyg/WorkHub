@@ -20,7 +20,9 @@ import type {
 import { renderAgentRunReplay } from "../replay/index.js";
 import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
+  createCostReactRouteComponent,
   createHomeReactRouteComponent,
+  createReplayReactRouteComponent,
   createSettingsReactRouteComponent,
   reactRouteComponentMarkerAttrs,
   type WebReactRouteComponentAdapter
@@ -919,7 +921,9 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
 }
 
 function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): WebRouteComponent {
-  const totalTokens = vm.token_in + vm.token_out;
+  const reactComponent = createCostReactRouteComponent(vm, locale);
+  const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
+  const props = reactComponent.props;
   const risks = vm.top_exhaustion_risks.length
     ? vm.top_exhaustion_risks.map((risk) => `<div class="wh-r4-route-row" data-r4-cost-risk="${escapeHtml(risk.label)}" data-r4-cost-risk-status="${escapeHtml(risk.status)}">
       <div>
@@ -951,26 +955,27 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   return createWebRouteComponent({
     key: "cost",
     css: webRouteComponentCss,
-    primaryHrefs: vm.notices.map((notice) => notice.action_href).filter((href): href is string => Boolean(href)),
+    primaryHrefs: reactComponent.primaryHrefs,
     source: "page-vm",
     locale,
     pageVm: "cost",
-    html: `<section class="wh-r4-route" data-r4-route-component="cost" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-cost-total-tokens="${escapeHtml(String(totalTokens))}" data-r4-cost-total-cny="${escapeHtml(vm.total_cost_cny)}" data-r4-cost-budget-count="${escapeHtml(String(vm.budget.length))}" data-r4-cost-risk-count="${escapeHtml(String(vm.top_exhaustion_risks.length))}" data-r4-cost-model-count="${escapeHtml(String(vm.model_breakdown.length))}" data-r4-cost-trend-count="${escapeHtml(String(vm.trend.length))}">
+    reactComponent,
+    html: `<section class="wh-r4-route" data-r4-route-component="cost" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-cost-total-tokens="${escapeHtml(String(props.totalTokens))}" data-r4-cost-total-cny="${escapeHtml(props.totalCostCny)}" data-r4-cost-budget-count="${escapeHtml(String(props.budgetCount))}" data-r4-cost-risk-count="${escapeHtml(String(props.riskCount))}" data-r4-cost-model-count="${escapeHtml(String(props.modelCount))}" data-r4-cost-trend-count="${escapeHtml(String(props.trendCount))}" data-r4-cost-notice-count="${escapeHtml(String(props.noticeCount))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "cost.kicker"))}</span>
           <h2>${escapeHtml(goldPathT(locale, "cost.title"))}</h2>
           <p>${escapeHtml(goldPathT(locale, "cost.summary"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(costAmount(vm.total_cost_cny))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(costAmount(props.totalCostCny))}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
           <h3>${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.tokenTitle"))}: ${escapeHtml(String(totalTokens))}</span>
-            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(vm.total_cost_cny))}</span>
-            <span class="wh-pill">${escapeHtml(routeT(locale, "cost.trend"))}: ${escapeHtml(String(vm.trend.length))}</span>
+            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.tokenTitle"))}: ${escapeHtml(String(props.totalTokens))}</span>
+            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny))}</span>
+            <span class="wh-pill">${escapeHtml(routeT(locale, "cost.trend"))}: ${escapeHtml(String(props.trendCount))}</span>
           </div>
           ${notices}
         </section>
@@ -1108,14 +1113,17 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
 
 function renderReplayRouteComponent(vm: GoldPathSurfaceVM, locale: WorkHubLocale): WebRouteComponent {
   const rendered = renderAgentRunReplay(vm.page_vms.replay, "web", { locale });
+  const reactComponent = createReplayReactRouteComponent(rendered, locale);
+  const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   return createWebRouteComponent({
     key: "replay",
     css: `${webRouteComponentCss}${rendered.css}`,
-    primaryHrefs: rendered.primaryHrefs,
+    primaryHrefs: reactComponent.primaryHrefs,
     source: "page-vm",
     locale,
     pageVm: "replay",
-    html: `<section class="wh-r4-route" data-r4-route-component="replay" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-replay-run-id="${escapeHtml(rendered.runId)}" data-r4-replay-step-count="${escapeHtml(String(rendered.stepCount))}">${rendered.html}</section>`
+    reactComponent,
+    html: `<section class="wh-r4-route" data-r4-route-component="replay" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-replay-run-id="${escapeHtml(reactComponent.props.runId)}" data-r4-replay-workitem-id="${escapeHtml(reactComponent.props.workItemId)}" data-r4-replay-step-count="${escapeHtml(String(reactComponent.props.stepCount))}" data-r4-replay-accepted-deliverable-count="${escapeHtml(String(reactComponent.props.acceptedDeliverableCount))}" data-r4-replay-merge-attempt-count="${escapeHtml(String(reactComponent.props.mergeAttemptCount))}" data-r4-replay-structured-audit-count="${escapeHtml(String(reactComponent.props.structuredAuditCount))}">${rendered.html}</section>`
   });
 }
 
