@@ -3,14 +3,17 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
+import { allocateProjectCode } from "../sequences.js";
 import {
   acceptedDeliverableChanges,
   auditLogs,
+  chatMessages,
   projectDriveComments,
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
-  projects
+  projects,
+  workItems
 } from "../schema/index.js";
 
 export type DriveProjectRow = typeof projects.$inferSelect;
@@ -18,6 +21,7 @@ export type DriveItemRow = typeof projectDriveItems.$inferSelect;
 export type DriveVersionRow = typeof projectDriveVersions.$inferSelect;
 export type DriveCommentRow = typeof projectDriveComments.$inferSelect;
 export type DriveOperationRow = typeof projectDriveOperations.$inferSelect;
+export type DriveWorkItemRow = typeof workItems.$inferSelect;
 export type DriveAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
   driveItem: typeof projectDriveItems.$inferSelect | null;
@@ -45,6 +49,13 @@ export type DriveMutationRows = {
   operation: DriveOperationRow;
 };
 
+export type DriveCommentDraftRows = {
+  comment: DriveCommentRow;
+  workItem: DriveWorkItemRow | null;
+  operation?: DriveOperationRow;
+  created: boolean;
+};
+
 export class DriveRepositoryConflictError extends Error {
   constructor(
     public readonly code:
@@ -54,7 +65,10 @@ export class DriveRepositoryConflictError extends Error {
       | "drive_item_not_deleted"
       | "drive_folder_not_empty"
       | "drive_current_version_changed"
-      | "drive_accepted_deliverable_locked",
+      | "drive_accepted_deliverable_locked"
+      | "drive_comment_draft_exists"
+      | "drive_comment_draft_missing"
+      | "drive_comment_not_pending",
     message: string
   ) {
     super(message);
@@ -90,6 +104,11 @@ export type DriveRepository = {
     itemId: string;
     at?: Date;
   }) => Promise<DriveMutationRows | null>;
+  commentToDraft: (input: DriveRepositoryActor & {
+    projectId: string;
+    commentId: string;
+    at?: Date;
+  }) => Promise<DriveCommentDraftRows | null>;
 };
 
 function clampLimit(limit: number | undefined) {
@@ -178,6 +197,7 @@ async function insertDriveAudit(
   input: DriveRepositoryActor & {
     action: string;
     project: DriveProjectRow;
+    entityType?: string;
     entityId: string;
     detailJson: Record<string, unknown>;
     at: Date;
@@ -189,12 +209,25 @@ async function insertDriveAudit(
     workspaceId: input.project.workspaceId,
     actorKind: input.actorKind,
     actorUserId: input.actorUserId,
-    entityType: "project_drive_item",
+    entityType: input.entityType ?? "project_drive_item",
     entityId: input.entityId,
     action: input.action,
     detailJson: input.detailJson,
     createdAt: input.at
   });
+}
+
+function draftTitleFromComment(body: string) {
+  const firstLine = body.replace(/\s+/gu, " ").trim();
+  if (!firstLine) {
+    return "Drive comment draft";
+  }
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+}
+
+function commentPreview(body: string) {
+  const text = body.replace(/\s+/gu, " ").trim();
+  return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }
 
 export function createDriveRepository(db: WorkHubDb): DriveRepository {
@@ -524,6 +557,167 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           at
         });
         result = { item: updated[0] as DriveItemRow, operation };
+      });
+      return result;
+    },
+
+    async commentToDraft(input) {
+      const at = input.at ?? new Date();
+      let result: DriveCommentDraftRows | null = null;
+      await db.transaction(async (tx) => {
+        const project = await findProject(tx, input.projectId);
+        if (!project) {
+          return;
+        }
+        const commentRows = await tx
+          .select()
+          .from(projectDriveComments)
+          .where(and(
+            eq(projectDriveComments.id, input.commentId),
+            eq(projectDriveComments.projectId, input.projectId)
+          ))
+          .limit(1);
+        const comment = commentRows[0];
+        if (!comment) {
+          return;
+        }
+        if (comment.draftWorkItemId) {
+          const existingRows = await tx
+            .select()
+            .from(workItems)
+            .where(eq(workItems.id, comment.draftWorkItemId))
+            .limit(1);
+          if (!existingRows[0] || existingRows[0].deletedAt) {
+            throw new DriveRepositoryConflictError("drive_comment_draft_missing", "这条评论关联的草稿已经不可用，请刷新后联系项目负责人。");
+          }
+          result = {
+            comment,
+            workItem: existingRows[0],
+            created: false
+          };
+          return;
+        }
+        if (comment.status === "draft_created") {
+          throw new DriveRepositoryConflictError("drive_comment_draft_missing", "这条评论的草稿状态不完整，请刷新后联系项目负责人。");
+        }
+        if (comment.status !== "pending_llm") {
+          throw new DriveRepositoryConflictError("drive_comment_not_pending", "只有待生成草稿的网盘评论可以创建草稿。");
+        }
+
+        const allocation = await allocateProjectCode(tx, input.projectId);
+        const workItemId = randomUUID();
+        const title = draftTitleFromComment(comment.body);
+        const workItemRows = await tx
+          .insert(workItems)
+          .values({
+            id: workItemId,
+            code: allocation.code,
+            projectId: input.projectId,
+            workspaceId: project.workspaceId,
+            submitterUserId: input.actorUserId,
+            title,
+            rawDescription: comment.body,
+            summaryMd: comment.body,
+            status: "ai_clarifying",
+            priority: "normal",
+            mode: "worker",
+            humanReserved: false,
+            planningNote: `source=drive_comment comment_id=${comment.id}`,
+            createdAt: at,
+            updatedAt: at
+          })
+          .returning();
+        const workItem = workItemRows[0] as DriveWorkItemRow | undefined;
+        if (!workItem) {
+          throw new Error("Failed to create work item draft from drive comment");
+        }
+        await tx.insert(chatMessages).values({
+          id: randomUUID(),
+          workItemId,
+          role: "user",
+          kind: "intent",
+          contentJson: {
+            source: "drive_comment",
+            drive_comment_id: comment.id,
+            project_id: input.projectId,
+            folder_id: comment.folderId ?? null,
+            body: comment.body
+          },
+          userOtherText: comment.body,
+          createdAt: at,
+          updatedAt: at
+        });
+
+        const updatedComments = await tx
+          .update(projectDriveComments)
+          .set({
+            status: "draft_created",
+            draftWorkItemId: workItemId,
+            updatedAt: at
+          })
+          .where(and(
+            eq(projectDriveComments.id, comment.id),
+            eq(projectDriveComments.projectId, input.projectId),
+            isNull(projectDriveComments.draftWorkItemId)
+          ))
+          .returning();
+        const updatedComment = updatedComments[0] as DriveCommentRow | undefined;
+        if (!updatedComment) {
+          throw new DriveRepositoryConflictError("drive_comment_draft_exists", "这条评论已经生成过草稿，请刷新后打开已有草稿。");
+        }
+
+        let folderPath = "/";
+        if (comment.folderId) {
+          const folderRows = await tx
+            .select()
+            .from(projectDriveItems)
+            .where(and(
+              eq(projectDriveItems.id, comment.folderId),
+              eq(projectDriveItems.projectId, input.projectId)
+            ))
+            .limit(1);
+          if (folderRows[0]) {
+            folderPath = await driveItemPath(tx, folderRows[0] as DriveItemRow);
+          }
+        }
+        const payloadJson = {
+          drive_comment_id: comment.id,
+          work_item_id: workItemId,
+          folder_id: comment.folderId ?? null,
+          folder_path: folderPath,
+          body_preview: commentPreview(comment.body)
+        };
+        const operation = await insertDriveOperation(tx, {
+          ...input,
+          projectId: input.projectId,
+          opType: "comment_to_draft",
+          payloadJson,
+          at
+        });
+        await insertDriveAudit(tx, {
+          ...input,
+          project,
+          entityType: "work_item",
+          action: "work_item.created_from_drive_comment",
+          entityId: workItemId,
+          detailJson: payloadJson,
+          at
+        });
+        await insertDriveAudit(tx, {
+          ...input,
+          project,
+          entityType: "project_drive_comment",
+          action: "drive.comment.draft_created",
+          entityId: comment.id,
+          detailJson: payloadJson,
+          at
+        });
+        result = {
+          comment: updatedComment,
+          workItem,
+          operation,
+          created: true
+        };
       });
       return result;
     }

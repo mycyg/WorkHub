@@ -385,7 +385,21 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         status: "draft_created",
         created_at: "2026-06-11T01:00:00.000Z",
         draft_work_item_id: "92000000-0000-4000-8000-000000000005",
-        draft_href: "/api/pages/workitems/92000000-0000-4000-8000-000000000005"
+        draft_href: "/workitems/92000000-0000-4000-8000-000000000005"
+      },
+      {
+        id: "92000000-0000-4000-8000-000000000012",
+        project_id: "92000000-0000-4000-8000-000000000001",
+        author_label: "PM",
+        body: "请生成下一步草稿",
+        status: "pending_llm",
+        created_at: "2026-06-11T01:01:00.000Z",
+        draft_action: {
+          id: "drive_comment_to_draft",
+          label: "生成草稿",
+          method: "POST",
+          href: "/api/drive/projects/92000000-0000-4000-8000-000000000001/comments/92000000-0000-4000-8000-000000000012/draft"
+        }
       }
     ],
     operations: [
@@ -393,10 +407,10 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         id: "92000000-0000-4000-8000-000000000010",
         project_id: "92000000-0000-4000-8000-000000000001",
         actor_user_id: "92000000-0000-4000-8000-000000000011",
-        op_type: "upload_file",
+        op_type: "comment_to_draft",
         target_item_id: "92000000-0000-4000-8000-000000000002",
         target_path: "/客户复盘.md",
-        summary_text: "Uploaded /客户复盘.md",
+        summary_text: "Created draft from Drive comment",
         created_at: "2026-06-11T01:00:00.000Z"
       }
     ],
@@ -412,8 +426,9 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
   assert.equal(parsed.comments[0]?.status, "draft_created");
+  assert.equal(parsed.comments[1]?.draft_action?.method, "POST");
   assert.equal(parsed.deleted_items[0]?.deleted_at, "2026-06-11T01:00:00.000Z");
-  assert.equal(parsed.operations[0]?.op_type, "upload_file");
+  assert.equal(parsed.operations[0]?.op_type, "comment_to_draft");
   assert.equal(parsed.actions.upload_file?.method, "POST");
 });
 

@@ -178,6 +178,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async restoreDriveItem() {
       throw new Error("not needed");
     },
+    async createDriveCommentDraft() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },

@@ -1,7 +1,7 @@
 ---
 module: R5-drive-comment-to-draft
 layer: M-DRIVE / M-WORKITEM / P-COLLAB / C-WEB
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -65,3 +65,49 @@ Drive comment action
 ## 5. R5.4 Handoff
 
 R5.3 后继续推进 Drive preview/change draft 的 proposal 化：从 draft work item 触发 proposal manifest，最终由审批/merge 写回 accepted deliverable，而不是让 Drive 页面直接改正式文件。
+
+后续计划见 [`r5-04-drive-draft-to-proposal-plan-2026-06-11.md`](./r5-04-drive-draft-to-proposal-plan-2026-06-11.md)。
+
+## 6. 竣工记录（2026-06-11）
+
+完成项：
+
+1. Contracts 增补 per-comment `draft_action`，Drive operation enum 增补 `comment_to_draft`，并把 `draft_href` 收敛为产品路由 `/workitems/:id`。
+2. DB repository 增补 `commentToDraft` 事务：校验 active project/comment/pending status，创建 `ai_clarifying` WorkItem 与首条 user intent chat message，更新 `ProjectDriveComment.status/draftWorkItemId`，写 `ProjectDriveOperation` 与两条 audit log。
+3. API 增补 `POST /api/drive/projects/:projectId/comments/:commentId/draft`，沿用 human actor、`canManageProjectDrive`、404/409 fail-closed envelope。
+4. Drive Page VM 在 top-level actions 与每条 pending comment 上同时暴露 `comment_to_draft`，重复已生成 comment 展示 `draft_href`。
+5. API client、Web runtime href parser、Web/desktop surface catalog 与 browser dispatcher 均接入 comment draft action；Web 主窗保持无 Cuu 入口。
+6. UI 增补中英双语 `Create draft` / `Open draft`、comment status 人话标签，并在 comment card 内保持紧凑布局。
+7. Browser smoke 增补 `15bb-drive-comment-to-draft-success-en-desktop`，R5.3 gate 校验 request proof、notice、operation count、无横向与文本盒溢出。
+
+PRD/概念图复核：
+
+- `web-drive-preview-change-draft.png` 要求资料变更从“草稿/提议/审批”进入正式版本；本轮只把 Drive comment 变成 WorkItem 草稿，不直接修改 Drive 文件。
+- `web-project-drive-meetings-knowledge.png` 要求 Drive 是项目知识与后续行动入口；本轮 comment card 已从静态文本变成可审计 action，并回写 Drive operation log。
+- `requirements-workitem.md` 的 option-first / AI 澄清主线得到保留：新 WorkItem 初始为 `ai_clarifying`，后续仍由 intake/agent/proposal 流承接。
+- 固定 UI 文案继续支持 zh-CN/en-US；项目名、文件名、评论正文等用户内容不翻译。
+
+已知边界：
+
+- R5.3 创建 WorkItem 草稿和 intent message，不调用真实 LLM 扩写，也不自动启动 Agent run。
+- 重复点击返回既有 draft；非 `pending_llm` 评论不允许生成草稿；若 comment 标记为 `draft_created` 但 draft WorkItem 丢失或软删除，返回 409。
+- 细粒度项目成员 ACL 仍是后续权限收敛项；本轮沿用 R5.2 owner/admin/same-workspace 管理门。
+- draft work item 到 proposal manifest、Drive preview/change draft、accepted deliverable 写回留给 R5.4。
+
+验收证据：
+
+- `pnpm --filter @workhub/db typecheck`
+- `pnpm --filter @workhub/contracts test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm --filter @workhub/web-runtime test`
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/api test`
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/desktop-webview test`
+- `pnpm --filter @workhub/api typecheck`
+- `pnpm --filter @workhub/web typecheck`
+- `pnpm --filter @workhub/desktop-webview typecheck`
+- `pnpm --filter @workhub/db check`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：47 步通过，新增 R5.3 gate `r5_3_drive_comment_to_draft=true`，关键截图为 `15bb-drive-comment-to-draft-success-en-desktop.png`。

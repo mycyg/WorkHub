@@ -124,7 +124,8 @@ export const driveCommentVmSchema = z.object({
   status: z.enum(["pending_llm", "draft_created", "dismissed"]),
   created_at: isoDateTimeSchema,
   draft_work_item_id: idSchema.optional(),
-  draft_href: z.string().min(1).optional()
+  draft_href: z.string().min(1).optional(),
+  draft_action: actionSpecSchema.optional()
 });
 export type DriveCommentVM = z.infer<typeof driveCommentVmSchema>;
 
@@ -132,7 +133,7 @@ export const driveOperationVmSchema = z.object({
   id: idSchema,
   project_id: idSchema,
   actor_user_id: idSchema.optional(),
-  op_type: z.enum(["upload_file", "delete_item", "restore_item", "restore_version", "rename_item"]),
+  op_type: z.enum(["upload_file", "delete_item", "restore_item", "restore_version", "rename_item", "comment_to_draft"]),
   target_item_id: idSchema.optional(),
   target_path: z.string().min(1).optional(),
   summary_text: z.string().min(1),

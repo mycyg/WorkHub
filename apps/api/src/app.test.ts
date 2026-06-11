@@ -37,6 +37,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/files"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/items/{itemId}/delete"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/items/{itemId}/restore"]), true);
+  assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/comments/{commentId}/draft"]), true);
   assert.equal(Boolean(body.paths["/api/cost/usage"]), true);
   assert.equal(Boolean(body.paths["/api/cost/policies"]), true);
   assert.equal(Boolean(body.paths["/api/cost/policies/{scope}/{id}"]), true);

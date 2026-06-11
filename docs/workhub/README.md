@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**119 篇文档已落盘**。R5.2 Drive upload/recycle/operation log、project 权限门与 browser gate 已落，下一步 R5.3 推进 Drive comment-to-draft。权威路线见 [`06-roadmap/r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md`](./06-roadmap/r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md) 与 [`06-roadmap/r5-03-drive-comment-to-draft-plan-2026-06-11.md`](./06-roadmap/r5-03-drive-comment-to-draft-plan-2026-06-11.md)。
+> 状态(2026-06-11):**120 篇文档已落盘**。R5.3 Drive comment-to-draft / WorkItem 草稿链路与 47 步 browser gate 已落，下一步 R5.4 推进 Drive draft-to-proposal。权威路线见 [`06-roadmap/r5-03-drive-comment-to-draft-plan-2026-06-11.md`](./06-roadmap/r5-03-drive-comment-to-draft-plan-2026-06-11.md) 与 [`06-roadmap/r5-04-drive-draft-to-proposal-plan-2026-06-11.md`](./06-roadmap/r5-04-drive-draft-to-proposal-plan-2026-06-11.md)。
 
 ---
 
@@ -24,7 +24,8 @@
 | R4.24 | ✅ | hash route 写入清理、README 治理、browser smoke CI 拆分计划与 R5 业务纵切拍板已落。 |
 | R5.1 | ✅ | Drive Page VM/API/Web route 已落，承接 accepted deliverables、Drive versions、preview/download/restore 与 comment draft link。 |
 | R5.2 | ✅ | Drive upload/recycle/operation log、project 权限门、shared mapper 与 46 步 browser gate 已落。 |
-| R5.3 | planned | Drive comment-to-draft / work item 草稿链路是下一模块硬门。 |
+| R5.3 | ✅ | Drive comment-to-draft / WorkItem 草稿链路已落，47 步 browser gate 覆盖 request proof、notice、operation log 与无溢出。 |
+| R5.4 | planned | Drive draft-to-proposal 是下一模块硬门，正式资料写回继续只走审批/merge。 |
 
 ---
 
@@ -188,8 +189,9 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md` | **R4.23**:Proposal line editor React migration，text hunk decision/search/current file scope 第二段真实可见 React mutation island，42 步 smoke 与 R4.23 gates 通过 | ✅ |
 | `r4-24-web-runtime-finalization-plan-2026-06-11.md` | **R4.24**:Web runtime finalization，hash route 写入清理、README 状态治理、browser smoke CI 拆分计划与 R5.1 Drive 决策均落地 | ✅ |
 | `r5-01-drive-business-slice-decision-2026-06-11.md` | **R5.1**:Drive business slice first vertical，已落 Drive Page VM/API/Web route，承接 accepted deliverables、Drive versions、preview/download/restore 与 comment draft link | ✅ |
-| `r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md` | **R5.2**:Drive upload/recycle/operation log，补写操作、project 权限门、operation timeline 与 46 步 browser gate 已落 | current |
-| `r5-03-drive-comment-to-draft-plan-2026-06-11.md` | **R5.3**:Drive comment-to-draft，把资料评论生成可审批 work item/intake 草稿，不直接改正式文件 | planned |
+| `r5-02-drive-upload-recycle-operation-log-plan-2026-06-11.md` | **R5.2**:Drive upload/recycle/operation log，补写操作、project 权限门、operation timeline 与 46 步 browser gate 已落 | ✅ |
+| `r5-03-drive-comment-to-draft-plan-2026-06-11.md` | **R5.3**:Drive comment-to-draft，把资料评论生成可审批 WorkItem 草稿，不直接改正式文件；47 步 browser gate 已落 | ✅ |
+| `r5-04-drive-draft-to-proposal-plan-2026-06-11.md` | **R5.4**:Drive draft-to-proposal，把 comment draft 接入 proposal/change preview 与正式审批写回主线 | planned |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

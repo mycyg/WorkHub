@@ -66,6 +66,12 @@ export function getOpenApiDocument() {
           summary: "Restore a recycled project drive item"
         }
       },
+      "/api/drive/projects/{projectId}/comments/{commentId}/draft": {
+        post: {
+          tags: ["drive"],
+          summary: "Create or return a work item draft from a project drive comment"
+        }
+      },
       "/api/workitems/{id}/proposals": {
         post: {
           tags: ["proposals"],

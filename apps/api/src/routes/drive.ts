@@ -126,5 +126,22 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
     }
   });
 
+  routes.post("/projects/:projectId/comments/:commentId/draft", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const data = await drivePages.commentToDraft({
+        actor: c.var.actor,
+        projectId: c.req.param("projectId"),
+        commentId: c.req.param("commentId")
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof DrivePageServiceError) {
+        return driveErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
   return routes;
 }

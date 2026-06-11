@@ -43,6 +43,9 @@ export type DrivePageService = {
   restoreItem: (input: DriveMutationInput & {
     itemId: string;
   }) => Promise<DrivePageVM>;
+  commentToDraft: (input: DriveMutationInput & {
+    commentId: string;
+  }) => Promise<DrivePageVM>;
 };
 
 export type DrivePageServiceDependencies = {
@@ -144,6 +147,10 @@ function operationSummary(operation: DriveOperationRow, pathByItemId: Map<string
   if (operation.opType === "restore_version") {
     return `Restored version for ${target}`;
   }
+  if (operation.opType === "comment_to_draft") {
+    const workItemId = typeof payload.work_item_id === "string" ? payload.work_item_id : "work item";
+    return `Created draft ${workItemId} from Drive comment`;
+  }
   return `Updated ${target}`;
 }
 
@@ -155,7 +162,7 @@ function operationToVm(operation: DriveOperationRow, pathByItemId: Map<string, s
     id: operation.id,
     project_id: operation.projectId,
     actor_user_id: operation.actorUserId,
-    op_type: operation.opType === "upload_file" || operation.opType === "delete_item" || operation.opType === "restore_item" || operation.opType === "restore_version" || operation.opType === "rename_item"
+    op_type: operation.opType === "upload_file" || operation.opType === "delete_item" || operation.opType === "restore_item" || operation.opType === "restore_version" || operation.opType === "rename_item" || operation.opType === "comment_to_draft"
       ? operation.opType
       : "rename_item",
     ...(itemId ? { target_item_id: itemId } : {}),
@@ -247,7 +254,11 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
   const deletableItem = manualFileDeleteCandidates[0] ?? emptyFolderDeleteCandidates[0];
   const selectedItemId = deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
+  const projectId = rows.project?.id;
   const canManage = rows.project ? canManageProjectDrive(rows.project, actor) : false;
+  const commentToDraft = canManage
+    ? rows.comments.find((comment) => commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId)
+    : undefined;
   const data: DrivePageVM = {
     generated_at: now.toISOString(),
     summary: {
@@ -268,6 +279,7 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
     accepted_deliverables: acceptedDeliverables,
     comments: rows.comments.map((comment) => {
       const folderPath = comment.folderId ? pathByItemId.get(comment.folderId) : undefined;
+      const canCreateDraft = canManage && projectId && commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId;
       return {
         id: comment.id,
         project_id: comment.projectId,
@@ -279,29 +291,43 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
         created_at: comment.createdAt.toISOString(),
         ...(comment.draftWorkItemId ? {
           draft_work_item_id: comment.draftWorkItemId,
-          draft_href: `/api/pages/workitems/${comment.draftWorkItemId}`
+          draft_href: `/workitems/${comment.draftWorkItemId}`
+        } : {}),
+        ...(canCreateDraft ? {
+          draft_action: {
+            id: "drive_comment_to_draft",
+            label: "Create draft",
+            method: "POST",
+            href: `/api/drive/projects/${projectId}/comments/${comment.id}/draft`
+          }
         } : {})
       };
     }),
     operations: rows.operations.map((operation) => operationToVm(operation, pathByItemId)),
-    actions: canManage && rows.project ? {
+    actions: canManage && projectId ? {
       upload_file: {
         id: "drive_upload_file",
         label: "Upload sample",
         method: "POST",
-        href: `/api/drive/projects/${rows.project.id}/files`
+        href: `/api/drive/projects/${projectId}/files`
       },
       delete_item: deletableItem ? {
         id: "drive_delete_item",
         label: `Move ${deletableItem.name} to recycle`,
         method: "POST",
-        href: `/api/drive/projects/${rows.project.id}/items/${deletableItem.id}/delete`
+        href: `/api/drive/projects/${projectId}/items/${deletableItem.id}/delete`
       } : undefined,
       restore_item: deletedItemVms[0] ? {
         id: "drive_restore_item",
         label: "Restore item",
         method: "POST",
-        href: `/api/drive/projects/${rows.project.id}/items/${deletedItemVms[0].id}/restore`
+        href: `/api/drive/projects/${projectId}/items/${deletedItemVms[0].id}/restore`
+      } : undefined,
+      comment_to_draft: commentToDraft ? {
+        id: "drive_comment_to_draft",
+        label: "Create draft",
+        method: "POST",
+        href: `/api/drive/projects/${projectId}/comments/${commentToDraft.id}/draft`
       } : undefined
     } : {},
     ...(rows.project ? {
@@ -423,6 +449,25 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         });
         if (!restored) {
           throw new DrivePageServiceError(404, "没有找到这个回收站项目。", "drive_not_found");
+        }
+        return pageAfterMutation(input);
+      } catch (error) {
+        mutationError(error);
+      }
+    },
+    async commentToDraft(input) {
+      const actorUserId = ensureHumanActor(input);
+      await ensureCanManage(input);
+      try {
+        const created = await deps.repo.commentToDraft({
+          actorKind: input.actor.kind,
+          actorUserId,
+          projectId: input.projectId,
+          commentId: input.commentId,
+          at: deps.now?.() ?? new Date()
+        });
+        if (!created) {
+          throw new DrivePageServiceError(404, "没有找到这条网盘评论。", "drive_comment_not_found");
         }
         return pageAfterMutation(input);
       } catch (error) {

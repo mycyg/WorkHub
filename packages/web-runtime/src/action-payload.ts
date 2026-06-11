@@ -88,6 +88,18 @@ export function driveItemMutationFromHref(href: string) {
   };
 }
 
+export function driveCommentDraftFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/drive\/projects\/([^/]+)\/comments\/([^/]+)\/draft$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    projectId: decodeURIComponent(match[1]),
+    commentId: decodeURIComponent(match[2])
+  };
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

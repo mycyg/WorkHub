@@ -31,7 +31,7 @@ function drivePageVm(): DrivePageVM {
       deleted_item_count: 1,
       version_count: 2,
       accepted_deliverable_count: 1,
-      pending_comment_count: 0,
+      pending_comment_count: 1,
       operation_count: 1
     },
     can_manage: true,
@@ -135,7 +135,21 @@ function drivePageVm(): DrivePageVM {
         status: "draft_created",
         created_at: "2026-06-11T09:00:00.000Z",
         draft_work_item_id: "94000000-0000-4000-8000-000000000005",
-        draft_href: "/api/pages/workitems/94000000-0000-4000-8000-000000000005"
+        draft_href: "/workitems/94000000-0000-4000-8000-000000000005"
+      },
+      {
+        id: "94000000-0000-4000-8000-000000000014",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        author_label: "PM",
+        body: "Create a safe follow-up draft from this change note.",
+        status: "pending_llm",
+        created_at: "2026-06-11T09:01:00.000Z",
+        draft_action: {
+          id: "drive_comment_to_draft",
+          label: "Create draft",
+          method: "POST",
+          href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/comments/94000000-0000-4000-8000-000000000014/draft"
+        }
       }
     ],
     operations: [
@@ -897,9 +911,13 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes('data-action-id="drive_preview"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_download"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
-  assert.equal(drive.html.includes("/api/pages/workitems/94000000-0000-4000-8000-000000000005"), true);
+  assert.equal(drive.html.includes("/workitems/94000000-0000-4000-8000-000000000005"), true);
+  assert.equal(drive.html.includes('data-action-id="comment_to_draft" data-method="POST"'), true);
+  assert.equal(drive.html.includes("/api/drive/projects/94000000-0000-4000-8000-000000000001/comments/94000000-0000-4000-8000-000000000014/draft"), true);
+  assert.equal(drive.html.includes("Draft created"), true);
+  assert.equal(drive.html.includes("Pending draft"), true);
   assert.equal(drive.hydration.pageVm, "drive");
-  assert.equal(drive.primaryHrefs.length, 7);
+  assert.equal(drive.primaryHrefs.length, 8);
   assertNoMainWindowBoundaryLeak(drive.html);
 });
 

@@ -33,6 +33,7 @@ import {
   createWorkItemActionFromHref,
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
+  driveCommentDraftFromHref,
   driveItemMutationFromHref,
   driveUploadFromHref,
   eventListenerOptions,
@@ -432,6 +433,19 @@ function bindGoldPathNavigation(
       if (driveItemMutation?.action === "restore") {
         try {
           const result = await client.restoreDriveItem(driveItemMutation.projectId, driveItemMutation.itemId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const driveCommentDraft = driveCommentDraftFromHref(href);
+      if (driveCommentDraft) {
+        try {
+          const result = await client.createDriveCommentDraft(driveCommentDraft.projectId, driveCommentDraft.commentId, { locale });
           await renderCurrentRoute(client, locale);
           if (root) {
             showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));

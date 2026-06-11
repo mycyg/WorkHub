@@ -666,7 +666,7 @@ function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
 
 type DriveQaState = "initial" | "uploaded" | "deleted" | "restored";
 
-function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"): DrivePageVM {
+function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial", commentDraftCreated = false): DrivePageVM {
   const accepted = surface.page_vms.replay.accepted_deliverables[0];
   const acceptedId = accepted?.id ?? "10000000-0000-4000-8000-000000001518";
   const workItemId = accepted?.work_item_id ?? "10000000-0000-4000-8000-000000001500";
@@ -768,6 +768,13 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"):
       target_path: "/docs/r5-upload-sample.md",
       summary_text: "Restored r5-upload-sample.md from recycle bin",
       created_at: "2026-06-11T09:28:00.000Z"
+    }] : []),
+    ...(commentDraftCreated ? [{
+      id: "10000000-0000-4000-8000-000000001630",
+      project_id: projectId,
+      op_type: "comment_to_draft" as const,
+      summary_text: "Created draft r4-live-workitem from Drive comment",
+      created_at: "2026-06-11T09:29:00.000Z"
     }] : [])
   ];
   const items = [
@@ -864,7 +871,7 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"):
       deleted_item_count: deletedItems.length,
       version_count: versions.length,
       accepted_deliverable_count: 1,
-      pending_comment_count: 0,
+      pending_comment_count: commentDraftCreated ? 0 : 1,
       operation_count: operations.length
     },
     can_manage: true,
@@ -881,10 +888,19 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"):
         folder_path: "/docs",
         author_label: "PM",
         body: "把这个版本差异整理成下一轮复盘行动。",
-        status: "draft_created",
+        status: commentDraftCreated ? "draft_created" : "pending_llm",
         created_at: "2026-06-11T09:22:00.000Z",
-        draft_work_item_id: workItemId,
-        draft_href: `/api/pages/workitems/${workItemId}`
+        ...(commentDraftCreated ? {
+          draft_work_item_id: workItemId,
+          draft_href: `/workitems/${workItemId}`
+        } : {
+          draft_action: {
+            id: "drive_comment_to_draft",
+            label: "Create draft",
+            method: "POST" as const,
+            href: `/api/drive/projects/${projectId}/comments/10000000-0000-4000-8000-000000001623/draft`
+          }
+        })
       }
     ],
     operations,
@@ -909,6 +925,14 @@ function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"):
           label: "Restore file",
           method: "POST" as const,
           href: `/api/drive/projects/${projectId}/items/${manualItemId}/restore`
+        }
+      } : {}),
+      ...(!commentDraftCreated ? {
+        comment_to_draft: {
+          id: "drive_comment_to_draft",
+          label: "Create draft",
+          method: "POST" as const,
+          href: `/api/drive/projects/${projectId}/comments/10000000-0000-4000-8000-000000001623/draft`
         }
       } : {})
     }
@@ -1069,6 +1093,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let currentLocale: WorkHubLocale = "zh-CN";
   let sessionStage: "scope" | "confirm" = "scope";
   let driveQaState: DriveQaState = "initial";
+  let driveCommentDraftCreated = false;
   let failNextPreferencePatch = false;
   let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
@@ -1186,14 +1211,21 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/drive") {
-      sendJson(response, 200, drivePage(surface, driveQaState));
+      sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated));
       return;
     }
     const driveUploadMatch = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(url.pathname);
     if (request.method === "POST" && driveUploadMatch?.[1]) {
       requestRecord.body = await requestBody(request);
       driveQaState = "uploaded";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
+      return;
+    }
+    const driveCommentDraftMatch = /^\/api\/drive\/projects\/([^/]+)\/comments\/([^/]+)\/draft$/u.exec(url.pathname);
+    if (request.method === "POST" && driveCommentDraftMatch?.[1] && driveCommentDraftMatch?.[2]) {
+      requestRecord.body = await requestBody(request);
+      driveCommentDraftCreated = true;
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
       return;
     }
     const driveDeleteMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/delete$/u.exec(url.pathname);
@@ -1204,14 +1236,14 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         return;
       }
       driveQaState = "deleted";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
       return;
     }
     const driveRestoreMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/restore$/u.exec(url.pathname);
     if (request.method === "POST" && driveRestoreMatch?.[1] && driveRestoreMatch?.[2]) {
       requestRecord.body = await requestBody(request);
       driveQaState = "restored";
-      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated), meta: { locale: currentLocale } });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -2402,6 +2434,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, "ready");
   steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
+  await clickAndWaitForNotice(cdp, '[data-action-id="comment_to_draft"]', "action_success", "comment_to_draft");
+  steps.push(await captureStep(cdp, { id: "15bb-drive-comment-to-draft-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_upload_file"]', "action_success", "drive_upload_file");
   steps.push(await captureStep(cdp, { id: "15c-drive-upload-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
@@ -2452,6 +2487,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
     drive: requests.some((request) => request.pathname === "/api/pages/drive" && request.locale === "en-US"),
     driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes("project_id=10000000-0000-4000-8000-000000001600")),
+    driveCommentDraft: requests.some((request) => request.method === "POST" && /^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u.test(request.pathname)),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2478,6 +2514,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       mergeApply: countMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST"),
       acceptedDeliverableRestore: countMatch(/^\/api\/workitems\/[^/]+\/deliverables\/[^/]+\/restore$/u, "POST"),
       driveUpload: countMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST"),
+      driveCommentDraft: countMatch(/^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u, "POST"),
       driveDelete: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST"),
       driveRestore: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/restore$/u, "POST"),
       cost: count("/api/pages/cost"),
@@ -2505,6 +2542,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       structuredFieldOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_field_overrides"),
       customFieldValue: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "R4.13 custom reviewed title"),
       driveUploadFilename: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST", "r5-upload-sample.md"),
+      driveCommentDraftRequest: requests.some((request) =>
+        request.method === "POST" &&
+        /^\/api\/drive\/projects\/10000000-0000-4000-8000-000000001600\/comments\/10000000-0000-4000-8000-000000001623\/draft$/u.test(request.pathname)
+      ),
       driveDeleteExpectedCurrent: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "expected_current_version_id") &&
         bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "10000000-0000-4000-8000-000000001625")
     }
@@ -2658,7 +2699,7 @@ async function main() {
           step.audit.textOverflowCount === 0
         ),
       r5_2_drive_upload_recycle_operation_log:
-        proof.counts.drive === 4 &&
+        proof.counts.drive === 5 &&
         proof.counts.driveUpload === 1 &&
         proof.counts.driveDelete === 1 &&
         proof.counts.driveRestore === 1 &&
@@ -2672,7 +2713,7 @@ async function main() {
           step.audit.routeData.driveItemCount === "3" &&
           step.audit.routeData.driveVersionCount === "3" &&
           step.audit.routeData.driveDeletedCount === "0" &&
-          step.audit.routeData.driveOperationCount === "2" &&
+          step.audit.routeData.driveOperationCount === "3" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ) &&
@@ -2682,7 +2723,7 @@ async function main() {
           step.audit.notice.actionId === "drive_delete_item" &&
           step.audit.routeData.driveItemCount === "2" &&
           step.audit.routeData.driveDeletedCount === "1" &&
-          step.audit.routeData.driveOperationCount === "3" &&
+          step.audit.routeData.driveOperationCount === "4" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ) &&
@@ -2692,7 +2733,25 @@ async function main() {
           step.audit.notice.actionId === "drive_restore_item" &&
           step.audit.routeData.driveItemCount === "3" &&
           step.audit.routeData.driveDeletedCount === "0" &&
-          step.audit.routeData.driveOperationCount === "4" &&
+          step.audit.routeData.driveOperationCount === "5" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_3_drive_comment_to_draft:
+        proof.driveCommentDraft &&
+        proof.counts.driveCommentDraft === 1 &&
+        proof.advancedPayloads.driveCommentDraftRequest &&
+        steps.some((step) =>
+          step.id === "15bb-drive-comment-to-draft-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "comment_to_draft" &&
+          step.audit.routeData.driveProjectId === "10000000-0000-4000-8000-000000001600" &&
+          step.audit.routeData.driveItemCount === "2" &&
+          step.audit.routeData.driveVersionCount === "2" &&
+          step.audit.routeData.driveAcceptedCount === "1" &&
+          step.audit.routeData.driveCommentCount === "1" &&
+          step.audit.routeData.driveDeletedCount === "0" &&
+          step.audit.routeData.driveOperationCount === "2" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
@@ -3256,7 +3315,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 46,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 47,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3308,7 +3367,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 46,
+      r4_22_no_new_smoke_sprawl: steps.length === 47,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3357,9 +3416,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 46,
+      r4_23_no_new_smoke_sprawl: steps.length === 47,
       r4_24_no_hash_write:
-        steps.length === 46 &&
+        steps.length === 47 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3455,6 +3514,7 @@ async function main() {
         `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
         `- R5.1 Drive route component: ${String(gates.r5_1_drive_route_component)}`,
         `- R5.2 Drive upload/recycle/operation log: ${String(gates.r5_2_drive_upload_recycle_operation_log)}`,
+        `- R5.3 Drive comment to draft: ${String(gates.r5_3_drive_comment_to_draft)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

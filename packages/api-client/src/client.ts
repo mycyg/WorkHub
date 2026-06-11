@@ -264,6 +264,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/restore`, options), {
         method: "POST"
       }),
+    createDriveCommentDraft: (projectId, commentId, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}/draft`, options), {
+        method: "POST"
+      }),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>

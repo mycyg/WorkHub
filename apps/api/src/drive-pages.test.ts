@@ -172,6 +172,20 @@ function rows(): DrivePageRows {
         draftWorkItemId: workItemId,
         createdAt: now,
         updatedAt: now
+      },
+      {
+        id: "91000000-0000-4000-8000-000000000015",
+        projectId,
+        folderId,
+        authorUserId: userId,
+        authorNickname: "PM",
+        body: "请转成新的澄清草稿。",
+        status: "pending_llm",
+        llmKind: "task",
+        llmReason: "用户请求生成任务",
+        draftWorkItemId: null,
+        createdAt: now,
+        updatedAt: now
       }
     ],
     deletedItems: [],
@@ -220,6 +234,9 @@ test("drive page service builds project files, version history, accepted deliver
     },
     async restoreDeletedItem() {
       throw new Error("not needed");
+    },
+    async commentToDraft() {
+      throw new Error("not needed");
     }
   };
   const service = createDrivePageService({ repo, now: () => now });
@@ -240,7 +257,9 @@ test("drive page service builds project files, version history, accepted deliver
   assert.equal(page.versions[0]?.preview_href, `/api/workitems/${workItemId}/deliverables/${acceptedChangeId}/preview`);
   assert.equal(page.versions[0]?.restore_href, `/api/workitems/${workItemId}/deliverables/${acceptedChangeId}/restore`);
   assert.equal(page.comments[0]?.folder_path, "/复盘包");
-  assert.equal(page.comments[0]?.draft_href, `/api/pages/workitems/${workItemId}`);
+  assert.equal(page.comments[0]?.draft_href, `/workitems/${workItemId}`);
+  assert.equal(page.comments[1]?.draft_action?.href, `/api/drive/projects/${projectId}/comments/91000000-0000-4000-8000-000000000015/draft`);
+  assert.equal(page.actions.comment_to_draft?.href, page.comments[1]?.draft_action?.href);
   assert.equal(page.operations[0]?.target_path, "/复盘包/客户复盘.md");
   assert.equal(page.operations[0]?.op_type, "upload_file");
 });
@@ -292,6 +311,9 @@ test("drive page service targets the latest manual file for recycle actions", as
       },
       async restoreDeletedItem() {
         throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -324,6 +346,9 @@ test("drive page service does not 403 the generic drive route on an invisible de
       },
       async restoreDeletedItem() {
         throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -352,6 +377,9 @@ test("drive page service exposes a no-project empty state instead of throwing", 
       },
       async restoreDeletedItem() {
         throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -362,6 +390,46 @@ test("drive page service exposes a no-project empty state instead of throwing", 
   assert.equal(page.empty_state, "no_project");
   assert.equal(page.summary.item_count, 0);
   assert.deepEqual(page.items, []);
+});
+
+test("drive page service creates a work item draft from a pending drive comment", async () => {
+  const pageRows = rows();
+  const comment = pageRows.comments[1]!;
+  const calls: { projectId: string; commentId: string; actorUserId: string }[] = [];
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      },
+      async commentToDraft(input) {
+        calls.push({
+          projectId: input.projectId,
+          commentId: input.commentId,
+          actorUserId: input.actorUserId
+        });
+        comment.status = "draft_created";
+        comment.draftWorkItemId = workItemId;
+        comment.updatedAt = now;
+        return { comment, workItem: null, created: true };
+      }
+    },
+    now: () => now
+  });
+
+  const page = await service.commentToDraft({ actor: actor(), projectId, commentId: comment.id });
+
+  assert.deepEqual(calls, [{ projectId, commentId: comment.id, actorUserId: userId }]);
+  assert.equal(page.comments[1]?.status, "draft_created");
+  assert.equal(page.comments[1]?.draft_href, `/workitems/${workItemId}`);
 });
 
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
@@ -524,6 +592,9 @@ test("drive page route returns an authenticated bilingual page envelope and forw
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async commentToDraft() {
+      throw new Error("not needed");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -564,6 +635,9 @@ test("drive upload route authenticates, parses payload, and returns a refreshed 
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async commentToDraft() {
+      throw new Error("not needed");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -585,6 +659,50 @@ test("drive upload route authenticates, parses payload, and returns a refreshed 
   assert.deepEqual(calls, [{ projectId, filename: "r5-upload.md", actorId: userId }]);
 });
 
+test("drive comment draft route authenticates and returns a refreshed page VM", async () => {
+  const runtimeSettings = settings();
+  const commentId = "91000000-0000-4000-8000-000000000015";
+  const calls: { projectId: string; commentId: string; actorId?: string }[] = [];
+  const drivePages: DrivePageService = {
+    async page() {
+      throw new Error("not needed");
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async deleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
+    },
+    async commentToDraft(input) {
+      calls.push({
+        projectId: input.projectId,
+        commentId: input.commentId,
+        ...(input.actor.userId ? { actorId: input.actor.userId } : {})
+      });
+      return minimalDrivePage();
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/drive", createDriveRoutes({
+    auth: authDeps(runtimeSettings),
+    drivePages
+  }));
+
+  const response = await app.request(`/api/drive/projects/${projectId}/comments/${commentId}/draft?locale=en-US`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: DrivePageVM; meta: { locale: string } };
+  assert.equal(body.meta.locale, "en-US");
+  assert.equal(body.data.project?.id, projectId);
+  assert.deepEqual(calls, [{ projectId, commentId, actorId: userId }]);
+});
+
 test("drive mutation routes preserve service conflict codes", async () => {
   const runtimeSettings = settings();
   const drivePages: DrivePageService = {
@@ -598,6 +716,9 @@ test("drive mutation routes preserve service conflict codes", async () => {
       throw new DrivePageServiceError(409, "文件版本已经变化，请刷新后重试。", "drive_current_version_changed");
     },
     async restoreItem() {
+      throw new Error("not needed");
+    },
+    async commentToDraft() {
       throw new Error("not needed");
     }
   };

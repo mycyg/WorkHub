@@ -161,6 +161,11 @@ type RouteCopyKey =
   | "drive.restore"
   | "drive.current"
   | "drive.pendingDrafts"
+  | "drive.createDraft"
+  | "drive.openDraft"
+  | "drive.status.pending_llm"
+  | "drive.status.draft_created"
+  | "drive.status.dismissed"
   | "cost.scopes"
   | "cost.risks"
   | "cost.models"
@@ -240,6 +245,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.restore": "还原",
     "drive.current": "当前",
     "drive.pendingDrafts": "待转草稿",
+    "drive.createDraft": "生成草稿",
+    "drive.openDraft": "打开草稿",
+    "drive.status.pending_llm": "待生成草稿",
+    "drive.status.draft_created": "已生成草稿",
+    "drive.status.dismissed": "已忽略",
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
     "cost.models": "模型拆解",
@@ -318,6 +328,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.restore": "Restore",
     "drive.current": "Current",
     "drive.pendingDrafts": "Pending drafts",
+    "drive.createDraft": "Create draft",
+    "drive.openDraft": "Open draft",
+    "drive.status.pending_llm": "Pending draft",
+    "drive.status.draft_created": "Draft created",
+    "drive.status.dismissed": "Dismissed",
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
     "cost.models": "Model breakdown",
@@ -1000,6 +1015,16 @@ function driveItemMutationIdFromHref(href: string) {
   }
 }
 
+function driveCommentStatusLabel(status: DrivePageVM["comments"][number]["status"], locale: WorkHubLocale) {
+  if (status === "draft_created") {
+    return routeT(locale, "drive.status.draft_created");
+  }
+  if (status === "dismissed") {
+    return routeT(locale, "drive.status.dismissed");
+  }
+  return routeT(locale, "drive.status.pending_llm");
+}
+
 function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
   const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
@@ -1065,8 +1090,9 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <p>${escapeHtml(comment.body)}</p>
       </div>
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(comment.status)}</span>
-        ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(comment.draft_href)}">${escapeHtml(routeT(locale, "workitem.context"))}</a>` : ""}
+        <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(comment.status, locale))}</span>
+        ${comment.draft_action ? `<a class="wh-btn" href="${escapeHtml(comment.draft_action.href)}" data-action-id="comment_to_draft" data-method="POST">${escapeHtml(routeT(locale, "drive.createDraft"))}</a>` : ""}
+        ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(comment.draft_href)}">${escapeHtml(routeT(locale, "drive.openDraft"))}</a>` : ""}
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
@@ -1103,6 +1129,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
       accepted.download_href,
       accepted.restore_href
     ]),
+    ...vm.comments.map((comment) => comment.draft_action?.href),
     ...vm.comments.map((comment) => comment.draft_href)
   ].filter((value): value is string => Boolean(value));
 
