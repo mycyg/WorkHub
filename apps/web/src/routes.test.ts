@@ -321,6 +321,94 @@ function routeAdvancedProposalConflict(surface: GoldPathSurfaceVM): ProposalConf
   };
 }
 
+function routeStructuredProposalConflict(surface: GoldPathSurfaceVM): ProposalConflict {
+  const proposal = surface.page_vms.proposal;
+  return {
+    id: "r4-22-structured-route-conflict",
+    work_item_id: proposal.work_item_id,
+    proposal_id: proposal.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000923",
+    change_id: proposal.manifest.changes[0]?.id ?? "change-1",
+    target_key: `work_item:${proposal.work_item_id}`,
+    target_kind: "structured_record",
+    change_type: "updated",
+    headline: "Work item fields need review",
+    summary_text: "AI updated a scalar field that can be migrated first.",
+    existing: { proposal_id: "previous", change_id: "previous-change", ref: "main" },
+    incoming: { ref: "proposal" },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "Use AI fusion draft",
+        summary_text: "Apply a reviewed field-level merge.",
+        recommended: true,
+        quality_gate: {
+          structured_record_patch: {
+            type: "structured_record_field_patch",
+            changed_fields: ["title", "priority"],
+            merged_value_fields: ["title", "priority"],
+            missing_fields: [],
+            unknown_fields: [],
+            field_count: 2,
+            has_structured_result: true,
+            structured_field_patch_dry_run: {
+              type: "structured_field_patch_dry_run",
+              status: "ready",
+              executable: true,
+              patch: {
+                type: "structured_field_patch",
+                target_entity_type: "work_item",
+                target_entity_id: proposal.work_item_id,
+                source: "ai_fusion",
+                operations: [
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: proposal.work_item_id,
+                    field: "title",
+                    value_type: "string",
+                    before_value: "Old title",
+                    current_value: "Old title",
+                    value: "New title",
+                    source: "ai_fusion"
+                  },
+                  {
+                    op: "set",
+                    target_entity_type: "work_item",
+                    target_entity_id: proposal.work_item_id,
+                    field: "priority",
+                    value_type: "string",
+                    before_value: "medium",
+                    current_value: "medium",
+                    value: "high",
+                    source: "ai_fusion"
+                  }
+                ]
+              },
+              issues: [],
+              audit_payload: {
+                target_entity_type: "work_item",
+                target_entity_id: proposal.work_item_id,
+                field_count: 2,
+                operation_fields: ["title", "priority"],
+                source: "ai_fusion"
+              }
+            }
+          }
+        },
+        action: {
+          id: "apply_ai_fusion",
+          label: "Use AI fusion draft",
+          method: "POST",
+          href: "/api/merge-proposals/10000000-0000-4000-8000-000000000923/apply",
+          request_json: { confirm: true }
+        }
+      }
+    ]
+  };
+}
+
 test("R4 web route registry resolves product URL routes", () => {
   assert.deepEqual(webRouteRegistry.map((route) => route.key), [
     "home",
@@ -390,13 +478,20 @@ test("R4.19-pre route tree declares the Home true React mount spike boundary", (
     .filter((route) => route.hydration.runtimeMount)
     .map((route) => route.key);
   const home = webReactRouteTree.find((route) => route.key === "home");
+  const proposal = webReactRouteTree.find((route) => route.key === "proposal");
 
-  assert.deepEqual(runtimeMounted, ["home"]);
+  assert.deepEqual(runtimeMounted, ["home", "proposal"]);
   assert.equal(home?.hydration.runtimeMount?.strategy, "react-18-createRoot-probe");
   assert.equal(home?.hydration.runtimeMount?.componentName, "HomeRouteComponent");
   assert.equal(home?.hydration.runtimeMount?.fallbackPreserved, true);
   assert.equal(home?.hydration.runtimeMount?.propsUpdate, "sse-react-render");
   assert.equal(home?.hydration.runtimeMount?.dispatcher, "delegated-click-bubble");
+  assert.equal(proposal?.hydration.runtimeMount?.strategy, "react-18-visible-mutation-editor");
+  assert.equal(proposal?.hydration.runtimeMount?.componentName, "ProposalMutationEditor");
+  assert.equal(proposal?.hydration.runtimeMount?.fallbackPreserved, true);
+  assert.equal(proposal?.hydration.runtimeMount?.propsUpdate, "dirty-guard-preserves-controlled-state");
+  assert.equal(proposal?.hydration.runtimeMount?.dispatcher, "delegated-click-bubble");
+  assert.equal(proposal?.hydration.runtimeMount?.mutationEditor, "structured-field-scalar");
 });
 
 test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
@@ -462,6 +557,29 @@ test("R4.13 proposal route loader carries conflict API data into advanced route 
   assert.equal(result.html.includes('data-route-line-editor="true"'), true);
   assert.equal(result.html.includes('data-line-editor-apply="true"'), true);
   assert.equal(result.html.includes("Use AI fusion draft"), true);
+});
+
+test("R4.22 proposal route loader exposes a React mutation editor host without removing HTML fallback", async () => {
+  const surface = goldPathSurfaceVm();
+  const conflict = routeStructuredProposalConflict(surface);
+  const { client } = fakeRouteClient(surface, { conflicts: [conflict] });
+  const match = resolveWebRoute("/proposals/proposal-42");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-proposal-react-mutation-editor-host="structured-field-scalar"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-react-mutation-editor-mounted="false"'), true);
+  assert.equal(result.html.includes('data-r4-route-tree-runtime-strategy="react-18-visible-mutation-editor"'), true);
+  assert.equal(result.html.includes('data-r4-route-tree-runtime-mutation-editor="structured-field-scalar"'), true);
+  assert.equal(result.html.includes('data-r4-proposal-field-editor="true"'), true);
+  assert.equal(result.html.includes('data-proposal-structured-field-editor="true"'), true);
+  assert.equal(result.html.includes('data-proposal-structured-field-editor-row="title"'), true);
+  assert.equal(result.html.includes('data-field-editor-action="custom"'), true);
+  assert.equal(result.html.includes("structured_field_overrides"), true);
+  assert.equal(result.html.includes("__WORKHUB_CUSTOM_FIELD_VALUE__"), true);
+  assert.equal(result.html.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000923/apply"), true);
 });
 
 test("R4 web loader uses typed Page VM endpoints before rendering ready routes", async () => {

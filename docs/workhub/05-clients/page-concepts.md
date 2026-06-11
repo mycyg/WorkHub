@@ -413,6 +413,21 @@ R4.21 没有引入新视觉系统，而是把 Web 与 desktop-webview 的 notice
 - R4.20 数据流继续成立：SSE 仍是 refresh/reconcile trigger，REST/Page VM 仍是真相源，dirty guard 仍防止用户编辑中状态被事件清空。
 - 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.21 no-new-smoke-sprawl gate 通过。
 
+### 6.18 R4.22 Proposal Mutation Editor Migration
+
+![R4.22 Proposal visible React mutation editor](./assets/audit/2026-06-11-r4-web-live-route-interaction/06a-proposal-advanced-review-en-desktop.png)
+
+R4.22 已把 Proposal advanced 区的 structured field scalar editor 迁成第一段真实可见 React mutation editor，并继续使用 R4 live route interaction 42 步 contact sheet 做视觉回归证据。证据目录：`./assets/audit/2026-06-11-r4-web-live-route-interaction/`；重点截图为 `06a-proposal-advanced-review-en-desktop.png` 与 `06aa-proposal-dirty-edit-sse-guard-en-desktop.png`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-deliverable-change-request.png`：Proposal 首屏仍是变更申请审阅面，summary、risk、checks、evidence、comments 与 review actions 不变；React editor 只出现在高级编辑区。
+- 对齐 `web-operations-pages-atlas.png`：主窗仍是严肃工作台，没有 hero、装饰 dashboard、默认 Kanban 或 Cuu 本体。
+- React migration 进入真实可见状态：browser report 证明 `ProposalMutationEditor` 由 `createRoot()` 挂载，kind 为 `structured-field-scalar`，controlled field 为 `title`。
+- Dirty guard 继续成立：`06aa` 截图证明 textarea 输入在 SSE 后仍保留，并显示手动刷新 notice，而不是整页重渲清空编辑态。
+- HTML fallback boundary 仍可审计：原 structured field fallback preserved，React mount 后 hidden；line editor、subrecord editor 与 bulk workbench 没被本轮偷迁或删除。
+- 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.22 no-new-smoke-sprawl gate 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

@@ -73,6 +73,11 @@
 - R4.21 R4.20 SSE runtime regression: true
 - R4.21 dirty guard regression: true
 - R4.21 no new browser smoke sprawl: true
+- R4.22 visible React mutation editor: true
+- R4.22 controlled state survives SSE: true
+- R4.22 single dispatcher regression: true
+- R4.22 HTML fallback boundary regression: true
+- R4.22 no new smoke sprawl: true
 - R4.16 hydration boundary regression: true
 - R4.15 settings boundary regression: true
 - active-only product panels: true

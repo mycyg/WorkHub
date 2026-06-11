@@ -72,6 +72,7 @@ type BrowserAudit = {
   routeTreeRuntimeStrategy: string | null;
   routeTreeRuntimePropsUpdate: string | null;
   routeTreeRuntimeDispatcher: string | null;
+  routeTreeRuntimeMutationEditor: string | null;
   reactComponentName: string | null;
   reactComponentRoute: string | null;
   reactComponentMode: string | null;
@@ -93,6 +94,12 @@ type BrowserAudit = {
   reactRuntimePropsUpdateCount: string | null;
   reactRuntimePrimaryActionCount: string | null;
   reactRuntimeQueueCount: string | null;
+  reactRuntimeVisibleMutationEditor: string | null;
+  reactRuntimeMutationEditorKind: string | null;
+  reactRuntimeControlledField: string | null;
+  reactRuntimeControlledValue: string | null;
+  reactRuntimeHtmlFallbackPreserved: string | null;
+  reactRuntimeHtmlFallbackHidden: string | null;
   reactRuntimeDispatcherProbe: boolean;
   reactRuntimeDispatcherProbeActionId: string | null;
   routeSpecificMarker: boolean;
@@ -1442,6 +1449,8 @@ function auditExpression() {
     const reactComponent = document.querySelector("[data-r4-react-component]");
     const reactRuntime = document.querySelector("[data-r4-react-mounted-component]");
     const reactRuntimeProbe = document.querySelector("[data-r4-react-dispatcher-probe]");
+    const reactMutationEditor = document.querySelector("[data-r4-proposal-react-mutation-editor]");
+    const reactMutationInput = document.querySelector("[data-r4-react-controlled-input]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1618,6 +1627,7 @@ function auditExpression() {
       routeTreeRuntimeStrategy: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-strategy") : null,
       routeTreeRuntimePropsUpdate: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-props-update") : null,
       routeTreeRuntimeDispatcher: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-dispatcher") : null,
+      routeTreeRuntimeMutationEditor: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-mutation-editor") : null,
       reactComponentName: reactComponent ? reactComponent.getAttribute("data-r4-react-component") : null,
       reactComponentRoute: reactComponent ? reactComponent.getAttribute("data-r4-react-component-route") : null,
       reactComponentMode: reactComponent ? reactComponent.getAttribute("data-r4-react-component-mode") : null,
@@ -1639,6 +1649,14 @@ function auditExpression() {
       reactRuntimePropsUpdateCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-props-update-count") : null,
       reactRuntimePrimaryActionCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-primary-action-count") : null,
       reactRuntimeQueueCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-queue-count") : null,
+      reactRuntimeVisibleMutationEditor: document.documentElement.dataset.r4ReactVisibleMutationEditor || reactRuntime?.getAttribute("data-r4-react-visible-mutation-editor") || null,
+      reactRuntimeMutationEditorKind: document.documentElement.dataset.r4ReactMutationEditorKind || reactRuntime?.getAttribute("data-r4-react-mutation-editor-kind") || null,
+      reactRuntimeControlledField: document.documentElement.dataset.r4ReactControlledField || reactRuntime?.getAttribute("data-r4-react-controlled-field") || null,
+      reactRuntimeControlledValue: reactMutationInput instanceof HTMLTextAreaElement
+        ? reactMutationInput.value
+        : reactMutationEditor?.getAttribute("data-r4-proposal-react-controlled-value") || null,
+      reactRuntimeHtmlFallbackPreserved: document.documentElement.dataset.r4ReactHtmlFallbackPreserved || reactRuntime?.getAttribute("data-r4-react-html-fallback-preserved") || null,
+      reactRuntimeHtmlFallbackHidden: document.documentElement.dataset.r4ReactHtmlFallbackHidden || reactRuntime?.getAttribute("data-r4-react-html-fallback-hidden") || null,
       reactRuntimeDispatcherProbe: Boolean(reactRuntimeProbe),
       reactRuntimeDispatcherProbeActionId: reactRuntimeProbe ? reactRuntimeProbe.getAttribute("data-action-id") : null,
       routeSpecificMarker,
@@ -2831,6 +2849,58 @@ async function main() {
           step.audit.live.refreshMode === "dirty-deferred"
         ),
       r4_21_no_new_browser_smoke_sprawl: steps.length === 42,
+      r4_22_visible_react_mutation_editor:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeComponent === "proposal" &&
+          step.audit.routeTreeRuntimeStrategy === "react-18-visible-mutation-editor" &&
+          step.audit.routeTreeRuntimeMutationEditor === "structured-field-scalar" &&
+          step.audit.reactRuntimeMounted &&
+          step.audit.reactRuntimeRoute === "proposal" &&
+          step.audit.reactRuntimeComponent === "ProposalMutationEditor" &&
+          step.audit.reactRuntimeName === "react-18-createRoot" &&
+          step.audit.reactRuntimeVisibleMutationEditor === "true" &&
+          step.audit.reactRuntimeMutationEditorKind === "structured-field-scalar" &&
+          step.audit.reactRuntimeControlledField === "title"
+        ),
+      r4_22_controlled_state_survives_sse:
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.live.refreshMode === "dirty-deferred" &&
+          step.audit.reactRuntimeRoute === "proposal" &&
+          step.audit.reactRuntimeComponent === "ProposalMutationEditor" &&
+          step.audit.reactRuntimeControlledField === "title" &&
+          step.audit.reactRuntimeControlledValue === "R4.19 guarded custom title" &&
+          step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
+        ) &&
+        proof.counts.proposal === 2 &&
+        proof.counts.proposalConflicts === 2,
+      r4_22_single_dispatcher_regression:
+        steps.some((step) =>
+          step.id === "06e-proposal-custom-field-empty-fail-closed-en-desktop" &&
+          step.audit.notice.kind === "field_value_required" &&
+          step.audit.reactRuntimeRoute === "proposal"
+        ) &&
+        steps.some((step) =>
+          step.id === "06f-proposal-custom-field-apply-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.reactRuntimeRoute === "proposal"
+        ) &&
+        proof.advancedPayloads.structuredFieldOverrides,
+      r4_22_html_fallback_boundary_regression:
+        steps.some((step) =>
+          step.id === "06a-proposal-advanced-review-en-desktop" &&
+          step.audit.routeData.proposalAdvancedFallbackPreserved === "true" &&
+          step.audit.routeData.proposalAdvancedFallbackSource === "proposal-advanced-editors-html-fallback" &&
+          step.audit.routeData.proposalLineEditorFallback === "true" &&
+          step.audit.routeData.proposalFieldEditorFallback === "true" &&
+          step.audit.routeData.proposalSubrecordEditorFallback === "true" &&
+          Number(step.audit.routeData.proposalStructuredFieldEditorCount ?? "0") >= 1 &&
+          step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
+          step.audit.reactRuntimeHtmlFallbackHidden === "true"
+        ),
+      r4_22_no_new_smoke_sprawl: steps.length === 42,
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -2971,6 +3041,11 @@ async function main() {
         `- R4.21 R4.20 SSE runtime regression: ${String(gates.r4_21_r4_20_sse_runtime_regression)}`,
         `- R4.21 dirty guard regression: ${String(gates.r4_21_dirty_guard_regression)}`,
         `- R4.21 no new browser smoke sprawl: ${String(gates.r4_21_no_new_browser_smoke_sprawl)}`,
+        `- R4.22 visible React mutation editor: ${String(gates.r4_22_visible_react_mutation_editor)}`,
+        `- R4.22 controlled state survives SSE: ${String(gates.r4_22_controlled_state_survives_sse)}`,
+        `- R4.22 single dispatcher regression: ${String(gates.r4_22_single_dispatcher_regression)}`,
+        `- R4.22 HTML fallback boundary regression: ${String(gates.r4_22_html_fallback_boundary_regression)}`,
+        `- R4.22 no new smoke sprawl: ${String(gates.r4_22_no_new_smoke_sprawl)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

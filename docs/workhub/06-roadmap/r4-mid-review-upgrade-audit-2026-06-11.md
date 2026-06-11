@@ -101,6 +101,8 @@ depends_on:
 
 **回写状态（2026-06-11 R4.21）**：已完成 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md)。新增 `packages/web-runtime`，Web 与 desktop-webview 已共享 locale、structured notice、action payload materializer、dirty marker、route line editor binding 与可注入 live runtime；desktop-webview 旧 proposal parser、merge conflict extractor、line editor payload updater 不再作为本地主真相源。限制是 desktop-webview 仍未完整接入 Web app-level Page VM route loader，后续 R4/R5 主窗产品化继续处理。
 
+**回写状态（2026-06-11 R4.22）**：已完成 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)。Proposal structured field scalar editor 已成为第一段真实可见 React mutation editor；`ProposalMutationEditor` 在 Proposal advanced host 下用 `createRoot()` 挂载，textarea controlled state 在 dirty SSE 后不丢，accept/keep/custom 仍走 delegated dispatcher 与 shared payload materializer，HTML fallback preserved/hidden boundary 可审计。限制是 line editor hunk decision/search/scope 仍未迁，进入 R4.23。
+
 ### P1-2 业务面断档：六模块只有约一半有 API/页面
 
 DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core.ts:317-483`），但 `apps/api/src/routes/` **没有** drive/meeting/schedule/dashboard(经营面) 路由；Web 9 条路由覆盖 WorkItem/Proposal/Approval/Cost/Replay/Knowledge/Settings，**没有**项目网盘、会议洞察、任务提醒中心页。规格树里 M-DRIVE/M-MEETING 标 ✅ 的是"规格"，不是实现。
@@ -157,7 +159,8 @@ R4.19   (已完成)                    Proposal readonly split migration
 R4.20   (已完成)                    数据流地基：app 级 SSE 长连接 + page VM 局部 refetch + Last-Event-ID
                                    + fixture chrome 退役 (P0-3/P1-3 一并消)
 R4.21   (已完成)                    共享 web runtime 包：dispatcher/notice/编辑器抽包，Desktop 对齐 (P1-1)
-R4.22   (当前下一步)                Proposal mutation editor 第一段真 React 迁移（基于 spike 合同）
+R4.22   (已完成)                    Proposal structured field scalar editor 第一段真 React 迁移
+R4.23   (当前下一步)                Proposal line editor hunk decision/search/scope React 迁移
 R4 收尾门                          P2-1 hash 清理、P2-5 README 治理、业务纵切优先级拍板 (P1-2)
 R5 前置清单                        权限矩阵审计 (P1-4)、Playwright CI 化 (P1-5)、onboarding (P1-6)、可观测性 (P2-4)
 ```

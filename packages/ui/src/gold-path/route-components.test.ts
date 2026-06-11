@@ -376,6 +376,8 @@ test("R4.13 Proposal route component exposes advanced structured conflict editor
   assert.equal(proposal.html.includes('data-r4-proposal-conflicts="1"'), true);
   assert.equal(proposal.html.includes('data-r4-proposal-field-editor="true"'), true);
   assert.equal(proposal.html.includes('data-r4-proposal-subrecord-editor="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-react-mutation-editor-host="structured-field-scalar"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-react-mutation-editor-mounted="false"'), true);
   assert.equal(proposal.html.includes('data-proposal-conflicts="1"'), true);
   assert.equal(proposal.html.includes('data-structured-record-patch="true"'), true);
   assert.equal(proposal.html.includes('data-proposal-structured-field-editor="true"'), true);
@@ -434,6 +436,7 @@ test("R4.19 Proposal split adapter keeps readonly props separate from advanced e
   assert.equal(proposal.html.includes('data-r4-proposal-split-adapter="true"'), true);
   assert.equal(proposal.html.includes('data-r4-proposal-advanced-fallback-preserved="true"'), true);
   assert.equal(proposal.html.includes('data-r4-proposal-advanced-fallback="true"'), true);
+  assert.equal(proposal.html.includes('data-r4-proposal-react-mutation-editor-host="structured-field-scalar"'), true);
   assert.equal(proposal.html.includes('data-proposal-structured-field-editor="true"'), true);
   assert.equal(proposal.html.includes('data-proposal-subrecord-item-diff="true"'), true);
   assertNoMainWindowBoundaryLeak(proposal.html);

@@ -49,7 +49,7 @@ R0 退出门：
 - OQ-2/OQ-3 有 v1 owner 和可执行默认值。
 - 文档树明确后续施工顺序为 R0 -> R1 -> R2 -> R3 -> R4。
 
-2026-06-11 复核口径：R0 文档治理和概念资产基本完成，但不能宣称完全完成。R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action 与 macOS menu bar status item 中英 smoke；R4.1-R4.18 已补 Web route-state、真实 path loader、Page VM visual QA、product shell、live interaction、Rust i18n、PG/Redis/SSE、locale metrics、route componentization、action notice、Proposal advanced UX、Intake/Knowledge、Settings boundary、hydration boundary 与 React-compatible adapters；R4.19-pre 已补真实 React 18 `createRoot` mount spike；R4.19 已补 Proposal readonly split adapter、advanced fallback boundary、dirty edit SSE guard 与 no-new-fixture-chrome gate；R4.20 已补 app-level SSE、Page VM 局部 refetch、Last-Event-ID/cursor 与 fixture chrome 退役；R4.21 已补 `@workhub/web-runtime` shared dispatcher/notice/payload/line-editor/live runtime。下一步进入 R4.22 Proposal mutation editor 第一段真实可见 React controlled-state 迁移。
+2026-06-11 复核口径：R0 文档治理和概念资产基本完成，但不能宣称完全完成。R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action 与 macOS menu bar status item 中英 smoke；R4.1-R4.18 已补 Web route-state、真实 path loader、Page VM visual QA、product shell、live interaction、Rust i18n、PG/Redis/SSE、locale metrics、route componentization、action notice、Proposal advanced UX、Intake/Knowledge、Settings boundary、hydration boundary 与 React-compatible adapters；R4.19-pre 已补真实 React 18 `createRoot` mount spike；R4.19 已补 Proposal readonly split adapter、advanced fallback boundary、dirty edit SSE guard 与 no-new-fixture-chrome gate；R4.20 已补 app-level SSE、Page VM 局部 refetch、Last-Event-ID/cursor 与 fixture chrome 退役；R4.21 已补 `@workhub/web-runtime` shared dispatcher/notice/payload/line-editor/live runtime；R4.22 已补 Proposal structured field scalar 第一段真实可见 React mutation editor。下一步进入 R4.23 Proposal line editor React migration。
 
 ## 2. R1 真实纵切
 
@@ -106,7 +106,7 @@ R1 退出门：
 1. R2.1 已补：AgentRun PG claim/lease，包含 `FOR UPDATE SKIP LOCKED` claim、lease 字段、step heartbeat 与 stuck run requeue primitive；详见 [`../02-ai-engine/r2-agent-run-claim-lease.md`](../02-ai-engine/r2-agent-run-claim-lease.md)。
 2. R2.2 已补：同 work item active run partial unique index、DB 原子 enqueue、route `runNext()` drain 与 PG smoke hook；详见 [`../02-ai-engine/r2-multi-worker-pump.md`](../02-ai-engine/r2-multi-worker-pump.md)。
 3. R2.3 已补 Redis broker/presence 跨实例后端与 unsubscribe 竞态门；R2.4 已补订阅权限边界；R2.5 已补长 provider call heartbeat、默认 resource resolver 与 PG/Redis smoke；R2.6 已补 stuck-job 后台调度与 Proposal/审批 REST 权限收口；R2.7 已补 release gate report，并接入 `pnpm verify`。
-4. R3.1-R3.23 已补 Cuu option-first Agent launcher、真实 Tauri run-stream/failure/error/reload/business/settings/tray/menu capture、Windows 物理 OS 托盘、Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 主路径。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。R4.19/R4.20/R4.21 已完成 Proposal advanced split migration、dataflow foundation 与 shared web runtime；下一步进入 R4.22 Proposal mutation editor migration。
+4. R3.1-R3.23 已补 Cuu option-first Agent launcher、真实 Tauri run-stream/failure/error/reload/business/settings/tray/menu capture、Windows 物理 OS 托盘、Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 主路径。详见 [`../05-clients/cuu-r3-agent-entry.md`](../05-clients/cuu-r3-agent-entry.md)。R4.19/R4.20/R4.21/R4.22 已完成 Proposal advanced split migration、dataflow foundation、shared web runtime 与第一段 visible React mutation editor；下一步进入 R4.23 Proposal line editor React migration。
 
 ## 3. R2 真正解除单 worker
 
@@ -185,7 +185,8 @@ R3 禁止项：不新增模型、改色、动效；settings matrix 只验证现�
 | R4-19 Proposal advanced split migration | **已落 R4.19**：Proposal readonly split adapter、advanced fallback boundary、dirty edit SSE guard、no-new-fixture-chrome gate 与 42 步 Chrome smoke 通过。 | [`r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](./r4-19-proposal-advanced-split-migration-plan-2026-06-11.md) |
 | R4-20 dataflow foundation | **已落 R4.20**：ready route 退役 `/api/pages/gold-path` fixture chrome，app-level SSE runtime 复用 EventSource，事件后只重拉当前 Page VM 或 Home React props；SSE `id:` / `last_event_id` cursor 合同与 42 步 Chrome smoke 通过。 | [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md) |
 | R4-21 shared web runtime | **已落 R4.21**：新增 `@workhub/web-runtime`，收敛 Web 与 desktop-webview dispatcher/notice/payload/line-editor/live runtime 分叉，R4.20 SSE/dirty guard regression 继续通过。 | [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md) |
-| R4-22 Proposal mutation editor migration | **下一步**：选择 Proposal mutation editor 的最低风险片段，做第一段真实可见 React controlled-state 迁移，并保持 shared dispatcher、dirty guard 与 HTML fallback boundary。 | [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md) |
+| R4-22 Proposal mutation editor migration | **已落 R4.22**：Proposal structured field scalar editor 已成为第一段真实可见 React mutation editor，controlled state、dirty SSE guard、single dispatcher 与 HTML fallback preserved/hidden boundary 均通过。 | [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md) |
+| R4-23 Proposal line editor React migration | **下一步**：迁 Proposal line editor 的 hunk decision/search/scope 最小 React island，继续保持 shared dispatcher、dirty guard、HTML fallback 与 no-smoke-sprawl。 | [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md) |
 
 ## 6. 已完成但降级为“冻结前证据”的 Cuu QA
 

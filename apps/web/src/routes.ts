@@ -180,12 +180,13 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
     };
     runtimeMount?: {
       enabled: true;
-      strategy: "react-18-createRoot-probe";
-      routeKey: "home";
-      componentName: "HomeRouteComponent";
+      strategy: "react-18-createRoot-probe" | "react-18-visible-mutation-editor";
+      routeKey: "home" | "proposal";
+      componentName: "HomeRouteComponent" | "ProposalMutationEditor";
       fallbackPreserved: true;
-      propsUpdate: "sse-react-render";
+      propsUpdate: "sse-react-render" | "dirty-guard-preserves-controlled-state";
       dispatcher: "delegated-click-bubble";
+      mutationEditor?: "structured-field-scalar";
     };
   };
 };
@@ -219,6 +220,16 @@ const routeTreeRuntimeMountByKey: Partial<Record<R4WebRouteKey, WebReactRouteTre
     fallbackPreserved: true,
     propsUpdate: "sse-react-render",
     dispatcher: "delegated-click-bubble"
+  },
+  proposal: {
+    enabled: true,
+    strategy: "react-18-visible-mutation-editor",
+    routeKey: "proposal",
+    componentName: "ProposalMutationEditor",
+    fallbackPreserved: true,
+    propsUpdate: "dirty-guard-preserves-controlled-state",
+    dispatcher: "delegated-click-bubble",
+    mutationEditor: "structured-field-scalar"
   }
 };
 
@@ -744,7 +755,7 @@ function renderReadyRoute(
     match,
     shell,
     surface,
-    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}" data-r4-route-tree-react-component="${escapeHtml(routeTreeNode?.hydration.reactComponent?.componentName ?? "")}" data-r4-route-tree-react-component-adapter="${escapeHtml(routeTreeNode?.hydration.reactComponent?.adapter ?? "")}" data-r4-route-tree-react-component-fallback="${escapeHtml(String(routeTreeNode?.hydration.reactComponent?.htmlFallback ?? false))}" data-r4-route-tree-runtime-mount="${escapeHtml(String(routeTreeNode?.hydration.runtimeMount?.enabled ?? false))}" data-r4-route-tree-runtime-strategy="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.strategy ?? "")}" data-r4-route-tree-runtime-props-update="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.propsUpdate ?? "")}" data-r4-route-tree-runtime-dispatcher="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.dispatcher ?? "")}">${shell.html}</div>`
+    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}" data-r4-route-tree-react-component="${escapeHtml(routeTreeNode?.hydration.reactComponent?.componentName ?? "")}" data-r4-route-tree-react-component-adapter="${escapeHtml(routeTreeNode?.hydration.reactComponent?.adapter ?? "")}" data-r4-route-tree-react-component-fallback="${escapeHtml(String(routeTreeNode?.hydration.reactComponent?.htmlFallback ?? false))}" data-r4-route-tree-runtime-mount="${escapeHtml(String(routeTreeNode?.hydration.runtimeMount?.enabled ?? false))}" data-r4-route-tree-runtime-strategy="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.strategy ?? "")}" data-r4-route-tree-runtime-props-update="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.propsUpdate ?? "")}" data-r4-route-tree-runtime-dispatcher="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.dispatcher ?? "")}" data-r4-route-tree-runtime-mutation-editor="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.mutationEditor ?? "")}">${shell.html}</div>`
   };
 }
 
