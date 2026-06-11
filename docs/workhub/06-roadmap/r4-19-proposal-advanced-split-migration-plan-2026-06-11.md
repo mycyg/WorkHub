@@ -8,6 +8,7 @@ visuals:
   - ../05-clients/assets/web/web-operations-pages-atlas.png
   - ../05-clients/assets/audit/2026-06-11-r4-18-react-route-migration-expansion-browser-smoke/contact-sheet.png
 depends_on:
+  - r4-19-pre-true-react-mount-spike-plan-2026-06-11.md
   - r4-18-react-route-migration-expansion-plan-2026-06-11.md
   - r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md
   - r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md
@@ -19,7 +20,8 @@ depends_on:
 
 ## 1. 开工前必读
 
-- [`r4-mid-review-upgrade-audit-2026-06-11.md`](./r4-mid-review-upgrade-audit-2026-06-11.md) —— **前置硬门**：先完成 R4.19-pre 真 React mount spike（P0-1），并把 spike 结论回写本计划 §3；本计划新增编辑态 dirty guard 与 fixture-chrome 冻结两个 gate（见 §6）
+- [`r4-mid-review-upgrade-audit-2026-06-11.md`](./r4-mid-review-upgrade-audit-2026-06-11.md) —— **前置硬门来源**：R4.19-pre 已完成真 React mount spike（P0-1），本计划继续承接编辑态 dirty guard 与 fixture-chrome 冻结两个 gate（见 §6）
+- [`r4-19-pre-true-react-mount-spike-plan-2026-06-11.md`](./r4-19-pre-true-react-mount-spike-plan-2026-06-11.md)
 - [`r4-18-react-route-migration-expansion-plan-2026-06-11.md`](./r4-18-react-route-migration-expansion-plan-2026-06-11.md)
 - [`r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](./r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)
 - [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)
@@ -33,6 +35,8 @@ depends_on:
 R4.18 已把 Cost / Replay 迁入 React-compatible component adapter，并补齐 Replay accepted deliverable restore 的 single dispatcher proof。下一步不能直接把 Proposal advanced 全量迁移成一个“大组件”：Proposal advanced 包含 line editor、structured field editor、subrecord editor、bulk conflict actions 与 custom field fail-closed，mutation 面比 Home/Settings/Cost/Replay 高很多。R4.19 先做 split migration：把 readonly summary / review metadata / conflict count adapter 化，把 mutation-heavy editors 留在现有 HTML fallback renderer。
 
 ## 3. 目标
+
+R4.19-pre spike 结论（2026-06-11 已回写）：Home route 已在现有 R4.16 hydration boundary 内用 React 18 `createRoot()` 真挂载 hidden probe，HTML fallback 视觉保持不变；React 渲染的 probe click 已证明可冒泡到现有 delegated dispatcher；Home SSE 事件已证明可走 `react-props` 更新路径，不触发整页 `innerHTML` 重渲和 EventSource 重建。R4.19 可以继续按 split migration 开工，但 mutation-heavy editors 必须保留 fallback，并必须新增 dirty edit SSE guard。
 
 | Area | R4.19 目标 | 必守边界 |
 |---|---|---|

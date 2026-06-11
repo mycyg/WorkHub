@@ -68,6 +68,10 @@ type BrowserAudit = {
   routeTreeReactComponent: string | null;
   routeTreeReactComponentAdapter: string | null;
   routeTreeReactComponentFallback: boolean;
+  routeTreeRuntimeMount: boolean;
+  routeTreeRuntimeStrategy: string | null;
+  routeTreeRuntimePropsUpdate: string | null;
+  routeTreeRuntimeDispatcher: string | null;
   reactComponentName: string | null;
   reactComponentRoute: string | null;
   reactComponentMode: string | null;
@@ -78,6 +82,19 @@ type BrowserAudit = {
   reactComponentAdapter: string | null;
   reactComponentActionCount: string | null;
   reactComponentFingerprint: string | null;
+  reactRuntimeMounted: boolean;
+  reactRuntimeRoute: string | null;
+  reactRuntimeComponent: string | null;
+  reactRuntimeName: string | null;
+  reactRuntimePropsSource: string | null;
+  reactRuntimeFingerprint: string | null;
+  reactRuntimeLastUpdateReason: string | null;
+  reactRuntimeMountCount: string | null;
+  reactRuntimePropsUpdateCount: string | null;
+  reactRuntimePrimaryActionCount: string | null;
+  reactRuntimeQueueCount: string | null;
+  reactRuntimeDispatcherProbe: boolean;
+  reactRuntimeDispatcherProbeActionId: string | null;
   routeSpecificMarker: boolean;
   routeData: {
     workitemTraceCount: string | null;
@@ -146,6 +163,10 @@ type BrowserAudit = {
     refreshCount: string | null;
     lastEvent: string | null;
     lastStream: string | null;
+    refreshMode: string | null;
+    reactPropsEvent: string | null;
+    reactPropsStream: string | null;
+    reactPropsUpdateCount: string | null;
   };
   routeState: {
     kind: string | null;
@@ -1375,6 +1396,8 @@ function auditExpression() {
     const hydrationPanels = Array.from(document.querySelectorAll("[data-r4-hydration-panel]"));
     const routeTreeRoot = document.querySelector("[data-r4-react-route-tree]");
     const reactComponent = document.querySelector("[data-r4-react-component]");
+    const reactRuntime = document.querySelector("[data-r4-react-mounted-component]");
+    const reactRuntimeProbe = document.querySelector("[data-r4-react-dispatcher-probe]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1446,7 +1469,11 @@ function auditExpression() {
       eventCount: document.documentElement.dataset.r4LiveEventCount || null,
       refreshCount: document.documentElement.dataset.r4LiveRefreshCount || null,
       lastEvent: document.documentElement.dataset.r4LiveLastEvent || null,
-      lastStream: document.documentElement.dataset.r4LiveLastStream || null
+      lastStream: document.documentElement.dataset.r4LiveLastStream || null,
+      refreshMode: document.documentElement.dataset.r4LiveRefreshMode || null,
+      reactPropsEvent: document.documentElement.dataset.r4LiveReactPropsEvent || null,
+      reactPropsStream: document.documentElement.dataset.r4LiveReactPropsStream || null,
+      reactPropsUpdateCount: document.documentElement.dataset.r4LiveReactPropsUpdateCount || null
     };
     const routeStateCard = document.querySelector("[data-route-state]");
     const routeState = {
@@ -1510,6 +1537,10 @@ function auditExpression() {
       routeTreeReactComponent: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component") : null,
       routeTreeReactComponentAdapter: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component-adapter") : null,
       routeTreeReactComponentFallback: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component-fallback") === "true" : false,
+      routeTreeRuntimeMount: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-mount") === "true" : false,
+      routeTreeRuntimeStrategy: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-strategy") : null,
+      routeTreeRuntimePropsUpdate: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-props-update") : null,
+      routeTreeRuntimeDispatcher: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-runtime-dispatcher") : null,
       reactComponentName: reactComponent ? reactComponent.getAttribute("data-r4-react-component") : null,
       reactComponentRoute: reactComponent ? reactComponent.getAttribute("data-r4-react-component-route") : null,
       reactComponentMode: reactComponent ? reactComponent.getAttribute("data-r4-react-component-mode") : null,
@@ -1520,6 +1551,19 @@ function auditExpression() {
       reactComponentAdapter: reactComponent ? reactComponent.getAttribute("data-r4-react-component-adapter") : null,
       reactComponentActionCount: reactComponent ? reactComponent.getAttribute("data-r4-react-component-action-count") : null,
       reactComponentFingerprint: reactComponent ? reactComponent.getAttribute("data-r4-react-component-props-fingerprint") : null,
+      reactRuntimeMounted: Boolean(reactRuntime),
+      reactRuntimeRoute: reactRuntime ? reactRuntime.getAttribute("data-r4-react-mounted-route") : null,
+      reactRuntimeComponent: reactRuntime ? reactRuntime.getAttribute("data-r4-react-mounted-component") : null,
+      reactRuntimeName: reactRuntime ? reactRuntime.getAttribute("data-r4-react-runtime") : null,
+      reactRuntimePropsSource: reactRuntime ? reactRuntime.getAttribute("data-r4-react-props-source") : null,
+      reactRuntimeFingerprint: reactRuntime ? reactRuntime.getAttribute("data-r4-react-props-fingerprint") : null,
+      reactRuntimeLastUpdateReason: reactRuntime ? reactRuntime.getAttribute("data-r4-react-last-update-reason") : null,
+      reactRuntimeMountCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-mount-count") : null,
+      reactRuntimePropsUpdateCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-props-update-count") : null,
+      reactRuntimePrimaryActionCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-primary-action-count") : null,
+      reactRuntimeQueueCount: reactRuntime ? reactRuntime.getAttribute("data-r4-react-queue-count") : null,
+      reactRuntimeDispatcherProbe: Boolean(reactRuntimeProbe),
+      reactRuntimeDispatcherProbeActionId: reactRuntimeProbe ? reactRuntimeProbe.getAttribute("data-action-id") : null,
       routeSpecificMarker,
       routeData,
       notice,
@@ -1591,6 +1635,17 @@ async function captureStep(
       }
       if (audit.reactComponentActionCount !== audit.hydrationActionCount) {
         throw new Error(`${input.id} expected React-compatible action count to match hydration action count`);
+      }
+    }
+    if (input.expectedRouteComponent === "home") {
+      if (!audit.routeTreeRuntimeMount || audit.routeTreeRuntimeStrategy !== "react-18-createRoot-probe") {
+        throw new Error(`${input.id} is missing R4.19-pre route tree runtime mount markers`);
+      }
+      if (!audit.reactRuntimeMounted || audit.reactRuntimeComponent !== "HomeRouteComponent" || audit.reactRuntimeName !== "react-18-createRoot") {
+        throw new Error(`${input.id} is missing true React createRoot runtime probe`);
+      }
+      if (!audit.reactRuntimeDispatcherProbe || audit.reactRuntimeDispatcherProbeActionId !== "r4_react_mount_probe") {
+        throw new Error(`${input.id} is missing React dispatcher bubble probe`);
       }
     }
   }
@@ -1693,6 +1748,31 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/`, "ready");
   steps.push(await captureStep(cdp, { id: "01-home-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
+
+  await waitFor<BrowserAudit>(
+    cdp,
+    "home SSE stream connected",
+    auditExpression(),
+    (audit) => Number(audit.live.connectedCount ?? "0") > 0 && audit.live.streamCount === "1"
+  );
+  await clickAndWaitForNotice(cdp, "[data-r4-react-dispatcher-probe]", "action_pending", "r4_react_mount_probe");
+  steps.push(await captureStep(cdp, { id: "01r-home-react-dispatcher-probe-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
+
+  await emitQaSseEvent(cdp, "budget.warning", "me");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "home React props SSE refresh",
+    auditExpression(),
+    (audit) =>
+      audit.notice.visible &&
+      audit.notice.kind === "budget_warning" &&
+      audit.live.refreshMode === "react-props" &&
+      audit.live.reactPropsEvent === "budget.warning" &&
+      audit.live.reactPropsStream === "me" &&
+      audit.reactRuntimeLastUpdateReason === "sse-props" &&
+      Number(audit.reactRuntimePropsUpdateCount ?? "0") >= 1
+  );
+  steps.push(await captureStep(cdp, { id: "01s-home-react-sse-props-update-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
   await navigate(cdp, `${baseUrl}/intake/r4-live-session`, "ready");
   steps.push(await captureStep(cdp, { id: "01a-intake-zh-desktop-route-component", url: `${baseUrl}/intake/r4-live-session`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "intake" }));
@@ -2085,7 +2165,7 @@ async function main() {
         proof.counts.proposalMerge === 1,
       r4_12_sse_refresh_notice:
         steps.some((step) => step.id === "10-proposal-sse-refresh-notice-en-desktop" && step.audit.notice.kind === "sse_refresh" && step.audit.notice.source === "sse" && step.audit.notice.eventType === "proposal.merged" && step.audit.notice.stream === "proposal" && Number(step.audit.live.refreshCount ?? "0") >= 1) &&
-        proof.counts.qaEmit === 2,
+        proof.counts.qaEmit >= 3,
       r4_12_budget_warning_notice:
         steps.some((step) => step.id === "12a-cost-budget-warning-notice-en-mobile" && step.audit.notice.kind === "budget_warning" && step.audit.notice.source === "sse" && step.audit.notice.eventType === "budget.warning" && step.audit.notice.tone === "warning" && !step.audit.horizontalOverflow),
       r4_12_desktop_gate_fail_closed:
@@ -2444,6 +2524,46 @@ async function main() {
           step.audit.routeData.settingsSecretSafe === "true" &&
           step.audit.routeData.settingsPetModelInWeb === "false"
         ),
+      r4_19_pre_true_react_mount:
+        steps.some((step) =>
+          step.id === "01-home-zh-desktop" &&
+          step.audit.routeComponent === "home" &&
+          step.audit.routeTreeRuntimeMount &&
+          step.audit.routeTreeRuntimeStrategy === "react-18-createRoot-probe" &&
+          step.audit.routeTreeRuntimePropsUpdate === "sse-react-render" &&
+          step.audit.routeTreeRuntimeDispatcher === "delegated-click-bubble" &&
+          step.audit.reactRuntimeMounted &&
+          step.audit.reactRuntimeComponent === "HomeRouteComponent" &&
+          step.audit.reactRuntimeRoute === "home" &&
+          step.audit.reactRuntimeName === "react-18-createRoot" &&
+          step.audit.reactRuntimePropsSource === "typed-page-vm" &&
+          step.audit.reactRuntimeLastUpdateReason === "initial" &&
+          step.audit.reactRuntimeMountCount === "1"
+        ),
+      r4_19_pre_dispatcher_coexistence:
+        steps.some((step) =>
+          step.id === "01r-home-react-dispatcher-probe-zh-desktop" &&
+          step.audit.reactRuntimeDispatcherProbe &&
+          step.audit.reactRuntimeDispatcherProbeActionId === "r4_react_mount_probe" &&
+          step.audit.notice.kind === "action_pending" &&
+          step.audit.notice.actionId === "r4_react_mount_probe" &&
+          step.audit.reactRuntimeMountCount === "1"
+        ),
+      r4_19_pre_sse_props_update_without_full_render:
+        steps.some((step) =>
+          step.id === "01s-home-react-sse-props-update-zh-desktop" &&
+          step.audit.notice.kind === "budget_warning" &&
+          step.audit.notice.source === "sse" &&
+          step.audit.notice.eventType === "budget.warning" &&
+          step.audit.notice.stream === "me" &&
+          step.audit.live.refreshMode === "react-props" &&
+          step.audit.live.reactPropsEvent === "budget.warning" &&
+          step.audit.live.reactPropsStream === "me" &&
+          step.audit.reactRuntimeLastUpdateReason === "sse-props" &&
+          step.audit.reactRuntimeMountCount === "1" &&
+          Number(step.audit.reactRuntimePropsUpdateCount ?? "0") >= 1 &&
+          Number(step.audit.live.reactPropsUpdateCount ?? "0") >= 1
+        ),
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
         step.audit.hydrationRoute === step.audit.routeComponent &&
@@ -2480,7 +2600,7 @@ async function main() {
         proof.counts.replay === 1 &&
         proof.counts.preferencePatch === 2 &&
         proof.counts.preferenceFailureArmed === 1 &&
-        proof.counts.qaEmit === 2 &&
+        proof.counts.qaEmit === 3 &&
         proof.counts.sseProposal >= 2,
       mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
@@ -2562,6 +2682,9 @@ async function main() {
         `- R4.18 action dispatcher single path: ${String(gates.r4_18_action_dispatcher_single_path)}`,
         `- R4.18 Replay nonzero deliverable action parity: ${String(gates.r4_18_replay_nonzero_deliverable_action_parity)}`,
         `- R4.17 first migration regression: ${String(gates.r4_17_first_migration_regression)}`,
+        `- R4.19-pre true React mount: ${String(gates.r4_19_pre_true_react_mount)}`,
+        `- R4.19-pre dispatcher coexistence: ${String(gates.r4_19_pre_dispatcher_coexistence)}`,
+        `- R4.19-pre SSE props update without full render: ${String(gates.r4_19_pre_sse_props_update_without_full_render)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

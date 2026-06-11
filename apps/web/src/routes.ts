@@ -171,6 +171,15 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
       htmlFallback: true;
       mode: "html-fallback";
     };
+    runtimeMount?: {
+      enabled: true;
+      strategy: "react-18-createRoot-probe";
+      routeKey: "home";
+      componentName: "HomeRouteComponent";
+      fallbackPreserved: true;
+      propsUpdate: "sse-react-render";
+      dispatcher: "delegated-click-bubble";
+    };
   };
 };
 
@@ -193,8 +202,21 @@ const routeTreeReactComponentByKey: Partial<Record<R4WebRouteKey, WebReactRouteC
   settings: "SettingsRouteComponent"
 };
 
+const routeTreeRuntimeMountByKey: Partial<Record<R4WebRouteKey, WebReactRouteTreeNode["hydration"]["runtimeMount"]>> = {
+  home: {
+    enabled: true,
+    strategy: "react-18-createRoot-probe",
+    routeKey: "home",
+    componentName: "HomeRouteComponent",
+    fallbackPreserved: true,
+    propsUpdate: "sse-react-render",
+    dispatcher: "delegated-click-bubble"
+  }
+};
+
 export const webReactRouteTree: readonly WebReactRouteTreeNode[] = webRouteRegistry.map((route) => {
   const componentName = routeTreeReactComponentByKey[route.key];
+  const runtimeMount = routeTreeRuntimeMountByKey[route.key];
   return {
     ...route,
     hydration: {
@@ -213,7 +235,8 @@ export const webReactRouteTree: readonly WebReactRouteTreeNode[] = webRouteRegis
             mode: "html-fallback"
           }
         }
-        : {})
+        : {}),
+      ...(runtimeMount ? { runtimeMount } : {})
     }
   };
 });
@@ -607,7 +630,7 @@ function renderReadyRoute(
     match,
     shell,
     surface,
-    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}" data-r4-route-tree-react-component="${escapeHtml(routeTreeNode?.hydration.reactComponent?.componentName ?? "")}" data-r4-route-tree-react-component-adapter="${escapeHtml(routeTreeNode?.hydration.reactComponent?.adapter ?? "")}" data-r4-route-tree-react-component-fallback="${escapeHtml(String(routeTreeNode?.hydration.reactComponent?.htmlFallback ?? false))}">${shell.html}</div>`
+    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}" data-r4-route-tree-react-component="${escapeHtml(routeTreeNode?.hydration.reactComponent?.componentName ?? "")}" data-r4-route-tree-react-component-adapter="${escapeHtml(routeTreeNode?.hydration.reactComponent?.adapter ?? "")}" data-r4-route-tree-react-component-fallback="${escapeHtml(String(routeTreeNode?.hydration.reactComponent?.htmlFallback ?? false))}" data-r4-route-tree-runtime-mount="${escapeHtml(String(routeTreeNode?.hydration.runtimeMount?.enabled ?? false))}" data-r4-route-tree-runtime-strategy="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.strategy ?? "")}" data-r4-route-tree-runtime-props-update="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.propsUpdate ?? "")}" data-r4-route-tree-runtime-dispatcher="${escapeHtml(routeTreeNode?.hydration.runtimeMount?.dispatcher ?? "")}">${shell.html}</div>`
   };
 }
 

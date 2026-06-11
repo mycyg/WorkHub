@@ -26,6 +26,11 @@ import {
   webRouteHref,
   type WebRouteReadyResult
 } from "./routes.js";
+import {
+  hasMountedReactRoute,
+  mountReactRouteIsland,
+  unmountReactRouteIsland
+} from "./react-route-mount.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -1046,9 +1051,34 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
     return;
   }
   clearReadyRouteBindings();
+  unmountReactRouteIsland();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
     traceId: routeErrorTrace(error)
   }).html;
+}
+
+async function refreshCurrentRouteFromLiveEvent(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  eventType: string,
+  targetKey: string
+) {
+  const match = currentRouteMatch();
+  if (match.key === "home" && hasMountedReactRoute("home")) {
+    const result = await loadWebRoute(client, match, locale);
+    if (result.status === "ready" && result.match.key === "home") {
+      const mounted = mountReactRouteIsland(result, locale, "sse-props");
+      if (mounted.mounted) {
+        setLiveMetric("r4LiveRefreshMode", "react-props");
+        setLiveMetric("r4LiveReactPropsEvent", eventType);
+        setLiveMetric("r4LiveReactPropsStream", targetKey);
+        setLiveMetric("r4LiveReactPropsUpdateCount", mounted.propsUpdateCount);
+        return;
+      }
+    }
+  }
+  setLiveMetric("r4LiveRefreshMode", "full-render");
+  await renderCurrentRoute(client, locale);
 }
 
 function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocale, eventType: string, targetKey: string) {
@@ -1063,7 +1093,7 @@ function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocal
     liveRefreshTimer = undefined;
     liveRefreshCount += 1;
     setLiveMetric("r4LiveRefreshCount", liveRefreshCount);
-    void renderCurrentRoute(client, locale)
+    void refreshCurrentRouteFromLiveEvent(client, locale, eventType, targetKey)
       .then(() => {
         if (root) {
           showRouteNotice(root, sseRefreshNotice(locale, eventType, targetKey), undefined, 3600);
@@ -1136,6 +1166,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   const renderId = ++activeRouteRenderId;
   const match = currentRouteMatch();
   clearReadyRouteBindings();
+  unmountReactRouteIsland();
   root.innerHTML = renderWebRouteState(match, "loading", locale).html;
   const result = await loadWebRoute(client, match, locale);
   if (renderId !== activeRouteRenderId) {
@@ -1143,6 +1174,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   }
   root.innerHTML = result.html;
   if (result.status === "ready") {
+    mountReactRouteIsland(result, locale, "initial");
     bindReadyRoute(result, client, locale);
   }
 }

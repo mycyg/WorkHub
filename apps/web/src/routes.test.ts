@@ -384,6 +384,20 @@ test("R4.18 web route tree marks expanded React-compatible route components", ()
   assert.equal(webReactRouteTree.every((route) => route.hydration.reactComponent?.adapter === "react-compatible-route-component-v1" || !route.hydration.reactComponent), true);
 });
 
+test("R4.19-pre route tree declares the Home true React mount spike boundary", () => {
+  const runtimeMounted = webReactRouteTree
+    .filter((route) => route.hydration.runtimeMount)
+    .map((route) => route.key);
+  const home = webReactRouteTree.find((route) => route.key === "home");
+
+  assert.deepEqual(runtimeMounted, ["home"]);
+  assert.equal(home?.hydration.runtimeMount?.strategy, "react-18-createRoot-probe");
+  assert.equal(home?.hydration.runtimeMount?.componentName, "HomeRouteComponent");
+  assert.equal(home?.hydration.runtimeMount?.fallbackPreserved, true);
+  assert.equal(home?.hydration.runtimeMount?.propsUpdate, "sse-react-render");
+  assert.equal(home?.hydration.runtimeMount?.dispatcher, "delegated-click-bubble");
+});
+
 test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
   const surface = goldPathSurfaceVm();
   const session = routeSession();

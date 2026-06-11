@@ -357,6 +357,20 @@ R4.18 已把 Cost / Replay 迁入 React-compatible component adapter，并用本
 - Action boundary 更强：Replay accepted deliverable preview/download/restore 形成非零 action parity；restore click 通过 typed client 单次 POST，而不是 pending 或第二套 dispatcher。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
 
+### 6.14 R4.19-pre True React Mount Spike
+
+![R4.19-pre true React mount spike contact sheet](./assets/audit/2026-06-11-r4-19-pre-true-react-mount-spike-browser-smoke/contact-sheet.png)
+
+R4.19-pre 已把 Home hydration boundary 接入真实 React 18 `createRoot()` probe，并用本机 Chrome browser smoke 生成 41 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-19-pre-true-react-mount-spike-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-operations-pages-atlas.png`：Home 视觉仍是 AI attention workspace，不新增营销 hero、解释卡、装饰背景或 Cuu 本体。
+- Runtime proof 不污染界面：React probe hidden，只在 DOM / report 中暴露 `react-18-createRoot`、mount count、props update count 与 dispatcher probe action id。
+- Dispatcher boundary 继续成立：React 渲染的 probe link 仍由现有 delegated dispatcher 处理，显示 pending notice，而不是新增第二套 click handler。
+- SSE props update 初步成立：Home `budget.warning` 事件走 `react-props` refresh mode，mount count 保持 1，证明可在不整页 `innerHTML` 重渲的情况下更新 React props。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

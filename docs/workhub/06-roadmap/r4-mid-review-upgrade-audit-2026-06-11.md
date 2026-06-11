@@ -52,6 +52,8 @@ depends_on:
 3. 用 spike 结论修订 adapter 合同，再开 R4.19。
 **若 spike 证明合同成立**，R4.18 的全部脚手架原样保值；**若不成立**，现在改 4 个路由的成本远小于 R4.20 后改 9 个路由 + Proposal advanced。
 
+**回写状态（2026-06-11 R4.19-pre）**：已完成 [`r4-19-pre-true-react-mount-spike-plan-2026-06-11.md`](./r4-19-pre-true-react-mount-spike-plan-2026-06-11.md)。结论是最小合同成立：Home route 已用 React 18 `createRoot()` 在 hydration boundary 内真挂载 hidden probe；probe click 已进入现有 delegated dispatcher；Home SSE 事件已走 `react-props` 更新而不整页重渲。限制是可见 UI 仍是 HTML fallback，Proposal editors 的编辑态风险仍由 R4.19 dirty guard 和 R4.20 数据流地基继续处理。
+
 ### P0-2 SSE 全量重渲会摧毁用户编辑中状态（数据丢失级）
 
 **现状**：任何订阅流上的任何事件 → 220ms debounce → `renderCurrentRoute()` → 全页 `root.innerHTML = result.html`（`apps/web/src/browser.ts:1054-1074`、`1132-1148`）。而用户的编辑状态全部存在 DOM data 属性里：line editor 的逐 hunk 点选（`browser.ts:667-686`）、intake 多选（`browser.ts:535-563`）、structured field 自定义输入框（`browser.ts:485-493`）。
