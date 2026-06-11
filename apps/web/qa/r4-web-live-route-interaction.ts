@@ -161,6 +161,9 @@ type BrowserAudit = {
     driveVersionCount: string | null;
     driveAcceptedCount: string | null;
     driveCommentCount: string | null;
+    driveDeletedCount: string | null;
+    driveOperationCount: string | null;
+    driveCanManage: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -661,13 +664,21 @@ function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
   };
 }
 
-function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
+type DriveQaState = "initial" | "uploaded" | "deleted" | "restored";
+
+function drivePage(surface: GoldPathSurfaceVM, state: DriveQaState = "initial"): DrivePageVM {
   const accepted = surface.page_vms.replay.accepted_deliverables[0];
   const acceptedId = accepted?.id ?? "10000000-0000-4000-8000-000000001518";
   const workItemId = accepted?.work_item_id ?? "10000000-0000-4000-8000-000000001500";
   const proposalId = accepted?.proposal_id ?? surface.page_vms.proposal.proposal_id;
+  const projectId = "10000000-0000-4000-8000-000000001600";
+  const folderId = "10000000-0000-4000-8000-000000001619";
   const itemId = "10000000-0000-4000-8000-000000001620";
   const versionId = "10000000-0000-4000-8000-000000001621";
+  const manualItemId = "10000000-0000-4000-8000-000000001624";
+  const manualVersionId = "10000000-0000-4000-8000-000000001625";
+  const hasManualActive = state === "uploaded" || state === "restored";
+  const hasManualDeleted = state === "deleted";
   const deliverable = {
     id: acceptedId,
     work_item_id: workItemId,
@@ -689,69 +700,97 @@ function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
     restore_href: accepted?.restore_href ?? `/api/workitems/${workItemId}/deliverables/${acceptedId}/restore`,
     accepted_at: accepted?.accepted_at ?? "2026-06-11T09:20:00.000Z"
   };
-  return {
-    generated_at: "2026-06-11T09:24:00.000Z",
-    project: {
-      id: "10000000-0000-4000-8000-000000001600",
-      name: "区域发布资料库",
-      slug: "regional-launch",
-      owner_label: "owner",
-      status: "active"
+  const manualVersion = {
+    id: manualVersionId,
+    item_id: manualItemId,
+    version_no: 1,
+    filename: "r5-upload-sample.md",
+    mime: "text/markdown",
+    size_bytes: 82,
+    sha256: "c".repeat(64),
+    created_at: "2026-06-11T09:26:00.000Z",
+    current: true,
+    source: "manual_upload" as const,
+    preview_href: `/api/drive/projects/${projectId}/items/${manualItemId}/preview`,
+    download_href: `/api/drive/projects/${projectId}/items/${manualItemId}/download`
+  };
+  const manualItem = {
+    id: manualItemId,
+    project_id: projectId,
+    parent_id: folderId,
+    name: "r5-upload-sample.md",
+    kind: "file" as const,
+    path: "/docs/r5-upload-sample.md",
+    depth: 1,
+    current_version_id: manualVersionId,
+    current_version: manualVersion,
+    children_count: 0,
+    updated_at: state === "restored" ? "2026-06-11T09:28:00.000Z" : "2026-06-11T09:26:00.000Z"
+  };
+  const deletedManualItem = {
+    ...manualItem,
+    deleted_at: "2026-06-11T09:27:00.000Z",
+    updated_at: "2026-06-11T09:27:00.000Z"
+  };
+  const operations = [
+    {
+      id: "10000000-0000-4000-8000-000000001626",
+      project_id: projectId,
+      op_type: "upload_file" as const,
+      target_item_id: itemId,
+      target_path: "/docs/regional-launch-review.md",
+      summary_text: "Accepted deliverable linked into Drive",
+      created_at: "2026-06-11T09:20:00.000Z"
     },
-    summary: {
-      item_count: 2,
-      file_count: 1,
-      folder_count: 1,
-      version_count: 2,
-      accepted_deliverable_count: 1,
-      pending_comment_count: 0
+    ...(state === "initial" ? [] : [{
+      id: "10000000-0000-4000-8000-000000001627",
+      project_id: projectId,
+      op_type: "upload_file" as const,
+      target_item_id: manualItemId,
+      target_path: "/docs/r5-upload-sample.md",
+      summary_text: "Uploaded r5-upload-sample.md",
+      created_at: "2026-06-11T09:26:00.000Z"
+    }]),
+    ...(["deleted", "restored"].includes(state) ? [{
+      id: "10000000-0000-4000-8000-000000001628",
+      project_id: projectId,
+      op_type: "delete_item" as const,
+      target_item_id: manualItemId,
+      target_path: "/docs/r5-upload-sample.md",
+      summary_text: "Moved r5-upload-sample.md to recycle bin",
+      created_at: "2026-06-11T09:27:00.000Z"
+    }] : []),
+    ...(state === "restored" ? [{
+      id: "10000000-0000-4000-8000-000000001629",
+      project_id: projectId,
+      op_type: "restore_item" as const,
+      target_item_id: manualItemId,
+      target_path: "/docs/r5-upload-sample.md",
+      summary_text: "Restored r5-upload-sample.md from recycle bin",
+      created_at: "2026-06-11T09:28:00.000Z"
+    }] : [])
+  ];
+  const items = [
+    {
+      id: folderId,
+      project_id: projectId,
+      name: "docs",
+      kind: "folder" as const,
+      path: "/docs",
+      depth: 0,
+      children_count: hasManualActive ? 2 : 1,
+      updated_at: "2026-06-11T09:20:00.000Z"
     },
-    selected_item_id: itemId,
-    items: [
-      {
-        id: "10000000-0000-4000-8000-000000001619",
-        project_id: "10000000-0000-4000-8000-000000001600",
-        name: "docs",
-        kind: "folder",
-        path: "/docs",
-        depth: 0,
-        children_count: 1,
-        updated_at: "2026-06-11T09:20:00.000Z"
-      },
-      {
-        id: itemId,
-        project_id: "10000000-0000-4000-8000-000000001600",
-        parent_id: "10000000-0000-4000-8000-000000001619",
-        name: "regional-launch-review.md",
-        kind: "file",
-        path: "/docs/regional-launch-review.md",
-        depth: 1,
-        current_version_id: versionId,
-        current_version: {
-          id: versionId,
-          item_id: itemId,
-          version_no: 2,
-          filename: "regional-launch-review.md",
-          mime: "text/markdown",
-          size_bytes: 4200,
-          sha256: "a".repeat(64),
-          created_at: "2026-06-11T09:20:00.000Z",
-          current: true,
-          source: "accepted_deliverable",
-          accepted_deliverable_id: acceptedId,
-          work_item_id: workItemId,
-          proposal_id: proposalId,
-          preview_href: deliverable.preview_href,
-          download_href: deliverable.download_href,
-          restore_href: deliverable.restore_href
-        },
-        accepted_deliverable: deliverable,
-        children_count: 0,
-        updated_at: "2026-06-11T09:20:00.000Z"
-      }
-    ],
-    versions: [
-      {
+    {
+      id: itemId,
+      project_id: projectId,
+      parent_id: folderId,
+      name: "regional-launch-review.md",
+      kind: "file" as const,
+      path: "/docs/regional-launch-review.md",
+      depth: 1,
+      current_version_id: versionId,
+      current_version: {
         id: versionId,
         item_id: itemId,
         version_no: 2,
@@ -761,7 +800,7 @@ function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
         sha256: "a".repeat(64),
         created_at: "2026-06-11T09:20:00.000Z",
         current: true,
-        source: "accepted_deliverable",
+        source: "accepted_deliverable" as const,
         accepted_deliverable_id: acceptedId,
         work_item_id: workItemId,
         proposal_id: proposalId,
@@ -769,19 +808,70 @@ function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
         download_href: deliverable.download_href,
         restore_href: deliverable.restore_href
       },
-      {
-        id: "10000000-0000-4000-8000-000000001622",
-        item_id: itemId,
-        version_no: 1,
-        filename: "regional-launch-review.md",
-        mime: "text/markdown",
-        size_bytes: 3180,
-        sha256: "b".repeat(64),
-        created_at: "2026-06-11T08:30:00.000Z",
-        current: false,
-        source: "manual_upload"
-      }
-    ],
+      accepted_deliverable: deliverable,
+      children_count: 0,
+      updated_at: "2026-06-11T09:20:00.000Z"
+    },
+    ...(hasManualActive ? [manualItem] : [])
+  ];
+  const deletedItems = hasManualDeleted ? [deletedManualItem] : [];
+  const versions = [
+    {
+      id: versionId,
+      item_id: itemId,
+      version_no: 2,
+      filename: "regional-launch-review.md",
+      mime: "text/markdown",
+      size_bytes: 4200,
+      sha256: "a".repeat(64),
+      created_at: "2026-06-11T09:20:00.000Z",
+      current: true,
+      source: "accepted_deliverable" as const,
+      accepted_deliverable_id: acceptedId,
+      work_item_id: workItemId,
+      proposal_id: proposalId,
+      preview_href: deliverable.preview_href,
+      download_href: deliverable.download_href,
+      restore_href: deliverable.restore_href
+    },
+    {
+      id: "10000000-0000-4000-8000-000000001622",
+      item_id: itemId,
+      version_no: 1,
+      filename: "regional-launch-review.md",
+      mime: "text/markdown",
+      size_bytes: 3180,
+      sha256: "b".repeat(64),
+      created_at: "2026-06-11T08:30:00.000Z",
+      current: false,
+      source: "manual_upload" as const
+    },
+    ...(state === "initial" ? [] : [manualVersion])
+  ];
+  return {
+    generated_at: "2026-06-11T09:24:00.000Z",
+    project: {
+      id: projectId,
+      name: "区域发布资料库",
+      slug: "regional-launch",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      item_count: items.length,
+      file_count: items.filter((item) => item.kind === "file").length,
+      folder_count: 1,
+      deleted_item_count: deletedItems.length,
+      version_count: versions.length,
+      accepted_deliverable_count: 1,
+      pending_comment_count: 0,
+      operation_count: operations.length
+    },
+    can_manage: true,
+    selected_item_id: hasManualActive ? manualItemId : itemId,
+    items,
+    deleted_items: deletedItems,
+    versions,
     accepted_deliverables: [deliverable],
     comments: [
       {
@@ -797,7 +887,31 @@ function drivePage(surface: GoldPathSurfaceVM): DrivePageVM {
         draft_href: `/api/pages/workitems/${workItemId}`
       }
     ],
-    actions: {}
+    operations,
+    actions: {
+      upload_file: {
+        id: "upload_file",
+        label: "Upload file",
+        method: "POST",
+        href: `/api/drive/projects/${projectId}/files`
+      },
+      ...(hasManualActive ? {
+        delete_item: {
+          id: "delete_item",
+          label: "Delete file",
+          method: "POST" as const,
+          href: `/api/drive/projects/${projectId}/items/${manualItemId}/delete`
+        }
+      } : {}),
+      ...(hasManualDeleted ? {
+        restore_item: {
+          id: "restore_item",
+          label: "Restore file",
+          method: "POST" as const,
+          href: `/api/drive/projects/${projectId}/items/${manualItemId}/restore`
+        }
+      } : {})
+    }
   };
 }
 
@@ -954,6 +1068,7 @@ function sendApiError(response: ServerResponse, status: number, code: string, me
 function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestRecord[]) {
   let currentLocale: WorkHubLocale = "zh-CN";
   let sessionStage: "scope" | "confirm" = "scope";
+  let driveQaState: DriveQaState = "initial";
   let failNextPreferencePatch = false;
   let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
@@ -1071,7 +1186,32 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/drive") {
-      sendJson(response, 200, drivePage(surface));
+      sendJson(response, 200, drivePage(surface, driveQaState));
+      return;
+    }
+    const driveUploadMatch = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(url.pathname);
+    if (request.method === "POST" && driveUploadMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      driveQaState = "uploaded";
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
+      return;
+    }
+    const driveDeleteMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/delete$/u.exec(url.pathname);
+    if (request.method === "POST" && driveDeleteMatch?.[1] && driveDeleteMatch?.[2]) {
+      requestRecord.body = await requestBody(request);
+      if (!requestRecord.body.includes("10000000-0000-4000-8000-000000001625")) {
+        sendApiError(response, 409, "drive_current_version_changed", "Drive item version changed.");
+        return;
+      }
+      driveQaState = "deleted";
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
+      return;
+    }
+    const driveRestoreMatch = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/restore$/u.exec(url.pathname);
+    if (request.method === "POST" && driveRestoreMatch?.[1] && driveRestoreMatch?.[2]) {
+      requestRecord.body = await requestBody(request);
+      driveQaState = "restored";
+      sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState), meta: { locale: currentLocale } });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -1679,6 +1819,9 @@ function auditExpression() {
       driveVersionCount: routeComponent?.getAttribute("data-r4-drive-version-count") || null,
       driveAcceptedCount: routeComponent?.getAttribute("data-r4-drive-accepted-count") || null,
       driveCommentCount: routeComponent?.getAttribute("data-r4-drive-comment-count") || null,
+      driveDeletedCount: routeComponent?.getAttribute("data-r5-drive-deleted-count") || null,
+      driveOperationCount: routeComponent?.getAttribute("data-r5-drive-operation-count") || null,
+      driveCanManage: routeComponent?.getAttribute("data-r5-drive-can-manage") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -1758,7 +1901,7 @@ function auditExpression() {
               : routeComponentKey === "knowledge"
                 ? Boolean(document.querySelector("[data-r4-knowledge-fallback]") && document.querySelector("[data-r4-knowledge-evidence-ref]") && document.querySelector("[data-action-id='use_for_current_task']"))
                 : routeComponentKey === "drive"
-                  ? Boolean(document.querySelector("[data-r4-drive-files]") && document.querySelector("[data-r4-drive-versions]") && document.querySelector("[data-r4-drive-accepted]") && document.querySelector("[data-action-id='drive_preview']") && document.querySelector("[data-action-id='drive_download']") && document.querySelector("[data-action-id='drive_restore'][data-method='POST']"))
+                  ? Boolean(document.querySelector("[data-r4-drive-files]") && document.querySelector("[data-r4-drive-versions]") && document.querySelector("[data-r4-drive-accepted]") && document.querySelector("[data-r5-drive-recycle]") && document.querySelector("[data-r5-drive-operations]") && document.querySelector("[data-action-id='drive_preview']") && document.querySelector("[data-action-id='drive_download']") && document.querySelector("[data-action-id='drive_restore'][data-method='POST']"))
                 : routeComponentKey === "settings"
                   ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
                   : Boolean(routeComponentKey);
@@ -2256,8 +2399,17 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="restore_deliverable"]', "action_success", "restore_deliverable");
   steps.push(await captureStep(cdp, { id: "15a-replay-restore-success-en-desktop", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
 
-  await navigate(cdp, `${baseUrl}/drive`, "ready");
-  steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  await navigate(cdp, `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, "ready");
+  steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="drive_upload_file"]', "action_success", "drive_upload_file");
+  steps.push(await captureStep(cdp, { id: "15c-drive-upload-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="drive_delete_item"]', "action_success", "drive_delete_item");
+  steps.push(await captureStep(cdp, { id: "15d-drive-delete-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="drive_restore_item"]', "action_success", "drive_restore_item");
+  steps.push(await captureStep(cdp, { id: "15e-drive-restore-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
@@ -2299,6 +2451,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
     conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
     drive: requests.some((request) => request.pathname === "/api/pages/drive" && request.locale === "en-US"),
+    driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes("project_id=10000000-0000-4000-8000-000000001600")),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2324,6 +2477,9 @@ function requestProof(requests: ApiRequestRecord[]) {
       proposalMerge: countMatch(/^\/api\/proposals\/[^/]+\/merge$/u, "POST"),
       mergeApply: countMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST"),
       acceptedDeliverableRestore: countMatch(/^\/api\/workitems\/[^/]+\/deliverables\/[^/]+\/restore$/u, "POST"),
+      driveUpload: countMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST"),
+      driveDelete: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST"),
+      driveRestore: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/restore$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -2347,7 +2503,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       taskPlanScope: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "task_plan_scope"),
       structuredItemOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_item_overrides"),
       structuredFieldOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_field_overrides"),
-      customFieldValue: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "R4.13 custom reviewed title")
+      customFieldValue: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "R4.13 custom reviewed title"),
+      driveUploadFilename: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST", "r5-upload-sample.md"),
+      driveDeleteExpectedCurrent: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "expected_current_version_id") &&
+        bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "10000000-0000-4000-8000-000000001625")
     }
   };
 }
@@ -2483,7 +2642,8 @@ async function main() {
       r5_1_drive_route_component:
         hasActiveComponent(steps, "15b-drive-en-desktop-route-component", "drive") &&
         proof.drive &&
-        proof.counts.drive === 1 &&
+        proof.driveProjectParam &&
+        proof.counts.drive >= 1 &&
         steps.some((step) =>
           step.id === "15b-drive-en-desktop-route-component" &&
           step.audit.routeComponentSource === "page-vm" &&
@@ -2492,6 +2652,47 @@ async function main() {
           step.audit.routeData.driveVersionCount === "2" &&
           step.audit.routeData.driveAcceptedCount === "1" &&
           step.audit.routeData.driveCommentCount === "1" &&
+          step.audit.routeData.driveDeletedCount === "0" &&
+          step.audit.routeData.driveOperationCount === "1" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_2_drive_upload_recycle_operation_log:
+        proof.counts.drive === 4 &&
+        proof.counts.driveUpload === 1 &&
+        proof.counts.driveDelete === 1 &&
+        proof.counts.driveRestore === 1 &&
+        proof.advancedPayloads.driveUploadFilename &&
+        proof.advancedPayloads.driveDeleteExpectedCurrent &&
+        steps.some((step) =>
+          step.id === "15c-drive-upload-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "drive_upload_file" &&
+          step.audit.routeData.driveCanManage === "true" &&
+          step.audit.routeData.driveItemCount === "3" &&
+          step.audit.routeData.driveVersionCount === "3" &&
+          step.audit.routeData.driveDeletedCount === "0" &&
+          step.audit.routeData.driveOperationCount === "2" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15d-drive-delete-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "drive_delete_item" &&
+          step.audit.routeData.driveItemCount === "2" &&
+          step.audit.routeData.driveDeletedCount === "1" &&
+          step.audit.routeData.driveOperationCount === "3" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15e-drive-restore-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "drive_restore_item" &&
+          step.audit.routeData.driveItemCount === "3" &&
+          step.audit.routeData.driveDeletedCount === "0" &&
+          step.audit.routeData.driveOperationCount === "4" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
@@ -3055,7 +3256,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 43,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 46,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3107,7 +3308,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 43,
+      r4_22_no_new_smoke_sprawl: steps.length === 46,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3156,9 +3357,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 43,
+      r4_23_no_new_smoke_sprawl: steps.length === 46,
       r4_24_no_hash_write:
-        steps.length === 43 &&
+        steps.length === 46 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3253,6 +3454,7 @@ async function main() {
         `- R4.10 route components: ${String(gates.r4_10_home_approvals_replay_route_components)}`,
         `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
         `- R5.1 Drive route component: ${String(gates.r5_1_drive_route_component)}`,
+        `- R5.2 Drive upload/recycle/operation log: ${String(gates.r5_2_drive_upload_recycle_operation_log)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

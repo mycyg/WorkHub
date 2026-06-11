@@ -48,6 +48,24 @@ export function getOpenApiDocument() {
           summary: "Project drive page VM"
         }
       },
+      "/api/drive/projects/{projectId}/files": {
+        post: {
+          tags: ["drive"],
+          summary: "Upload a minimal project drive file and return the refreshed Drive Page VM"
+        }
+      },
+      "/api/drive/projects/{projectId}/items/{itemId}/delete": {
+        post: {
+          tags: ["drive"],
+          summary: "Move a project drive item to the recycle area"
+        }
+      },
+      "/api/drive/projects/{projectId}/items/{itemId}/restore": {
+        post: {
+          tags: ["drive"],
+          summary: "Restore a recycled project drive item"
+        }
+      },
       "/api/workitems/{id}/proposals": {
         post: {
           tags: ["proposals"],

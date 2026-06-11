@@ -304,10 +304,13 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
       item_count: 1,
       file_count: 1,
       folder_count: 0,
+      deleted_item_count: 1,
       version_count: 1,
       accepted_deliverable_count: 1,
-      pending_comment_count: 0
+      pending_comment_count: 0,
+      operation_count: 1
     },
+    can_manage: true,
     selected_item_id: "92000000-0000-4000-8000-000000000002",
     items: [
       {
@@ -319,6 +322,19 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         depth: 0,
         current_version_id: "92000000-0000-4000-8000-000000000003",
         children_count: 0,
+        updated_at: "2026-06-11T01:00:00.000Z"
+      }
+    ],
+    deleted_items: [
+      {
+        id: "92000000-0000-4000-8000-000000000009",
+        project_id: "92000000-0000-4000-8000-000000000001",
+        name: "旧草稿.md",
+        kind: "file",
+        path: "/旧草稿.md",
+        depth: 0,
+        children_count: 0,
+        deleted_at: "2026-06-11T01:00:00.000Z",
         updated_at: "2026-06-11T01:00:00.000Z"
       }
     ],
@@ -372,11 +388,33 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         draft_href: "/api/pages/workitems/92000000-0000-4000-8000-000000000005"
       }
     ],
-    actions: {}
+    operations: [
+      {
+        id: "92000000-0000-4000-8000-000000000010",
+        project_id: "92000000-0000-4000-8000-000000000001",
+        actor_user_id: "92000000-0000-4000-8000-000000000011",
+        op_type: "upload_file",
+        target_item_id: "92000000-0000-4000-8000-000000000002",
+        target_path: "/客户复盘.md",
+        summary_text: "Uploaded /客户复盘.md",
+        created_at: "2026-06-11T01:00:00.000Z"
+      }
+    ],
+    actions: {
+      upload_file: {
+        id: "drive_upload_file",
+        label: "Upload sample",
+        method: "POST",
+        href: "/api/drive/projects/92000000-0000-4000-8000-000000000001/files"
+      }
+    }
   });
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
   assert.equal(parsed.comments[0]?.status, "draft_created");
+  assert.equal(parsed.deleted_items[0]?.deleted_at, "2026-06-11T01:00:00.000Z");
+  assert.equal(parsed.operations[0]?.op_type, "upload_file");
+  assert.equal(parsed.actions.upload_file?.method, "POST");
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

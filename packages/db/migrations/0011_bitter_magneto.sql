@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "project_drive_items_active_path_uq" ON "project_drive_items" USING btree ("project_id",coalesce("parent_id", '00000000-0000-0000-0000-000000000000'::uuid),"name") WHERE "project_drive_items"."deleted_at" is null;

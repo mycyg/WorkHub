@@ -54,10 +54,13 @@ function driveVm(): DrivePageVM {
       item_count: 1,
       file_count: 1,
       folder_count: 0,
+      deleted_item_count: 0,
       version_count: 1,
       accepted_deliverable_count: 1,
-      pending_comment_count: 0
+      pending_comment_count: 0,
+      operation_count: 0
     },
+    can_manage: false,
     selected_item_id: "93000000-0000-4000-8000-000000000002",
     items: [
       {
@@ -110,6 +113,7 @@ function driveVm(): DrivePageVM {
         updated_at: "2026-06-11T09:00:00.000Z"
       }
     ],
+    deleted_items: [],
     versions: [
       {
         id: "93000000-0000-4000-8000-000000000003",
@@ -153,6 +157,7 @@ function driveVm(): DrivePageVM {
       }
     ],
     comments: [],
+    operations: [],
     actions: {}
   };
 }
@@ -301,7 +306,7 @@ function goldPathSurfaceVm(): GoldPathSurfaceVM {
 
 function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverrides = {}) {
   const calls: string[] = [];
-  const localeCall = (name: string, options?: { locale?: string }) => {
+  const localeCall = (name: string, options?: { locale?: string; projectId?: string }) => {
     calls.push(`${name}:${options?.locale ?? "none"}`);
   };
   const client = {
@@ -335,8 +340,8 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         localeCall("goldPath", options);
         return surface;
       },
-      async drive(options?: { locale?: string }) {
-        localeCall("drive", options);
+      async drive(options?: { locale?: string; projectId?: string }) {
+        calls.push(`drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
         return overrides.drive ?? driveVm();
       },
       async workItem(id: string, options?: { locale?: string }) {
@@ -727,7 +732,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
   for (const [path, endpointCall] of [
     ["/", "attention:en-US"],
     ["/approvals", "approvals:en-US"],
-    ["/drive", "drive:en-US"],
+    ["/drive", "drive:en-US:none"],
     ["/dashboard/cost", "cost:en-US"],
     ["/settings", "settings:en-US"]
   ] as const) {
@@ -756,7 +761,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
       "proposal:proposal-42:en-US",
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ]],
-    ["/drive", ["drive:en-US"]],
+    ["/drive", ["drive:en-US:none"]],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
@@ -784,7 +789,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
       "proposal:proposal-42:en-US",
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ], "proposal"],
-    ["/drive", ["drive:en-US"], "drive"],
+    ["/drive", ["drive:en-US:none"], "drive"],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"], "replay"],
     ["/dashboard/cost", ["cost:en-US"], "cost"],
     ["/settings", ["settings:en-US"], "settings"]
@@ -836,7 +841,7 @@ test("R5.1 drive route loader renders accepted deliverables and version actions 
   const result = await loadWebRoute(client, match, "zh-CN");
 
   assert.equal(result.status, "ready");
-  assert.deepEqual(calls, ["drive:zh-CN"]);
+  assert.deepEqual(calls, ["drive:zh-CN:none"]);
   assert.equal(result.html.includes('data-r4-route-component="drive"'), true);
   assert.equal(result.html.includes('data-r4-drive-project-id="93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(result.html.includes('data-r4-drive-item-count="1"'), true);
@@ -849,6 +854,18 @@ test("R5.1 drive route loader renders accepted deliverables and version actions 
   assert.equal(result.html.includes('data-r4-product-metric="files"'), true);
   assert.equal(result.html.includes('data-r4-product-metric="versions"'), true);
   assert.equal(result.html.includes('href="/drive"'), true);
+});
+
+test("R5.2 drive route loader forwards project id query to the Page VM client", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client, calls } = fakeRouteClient(surface, { drive: driveVm() });
+  const match = resolveWebRoute("/drive?project_id=93000000-0000-4000-8000-000000000001");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["drive:en-US:93000000-0000-4000-8000-000000000001"]);
 });
 
 test("R4.15 settings route keeps locale preference and device boundary markers auditable", async () => {

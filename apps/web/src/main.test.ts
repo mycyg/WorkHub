@@ -169,6 +169,15 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async restoreAcceptedDeliverable() {
       throw new Error("not needed");
     },
+    async uploadDriveFile() {
+      throw new Error("not needed");
+    },
+    async deleteDriveItem() {
+      throw new Error("not needed");
+    },
+    async restoreDriveItem() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },

@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   canAddWorkItemAttachment,
   canClaimWorkItem,
+  canManageProjectDrive,
   canManageWorkItemAssignees,
+  canViewProjectDrive,
   canViewWorkItemRecord,
   canWorkWorkItem,
   resolvePermissionDecision,
@@ -63,6 +65,34 @@ test("resource gate hides private work items from strangers but keeps public boa
 
   assert.equal(canViewWorkItemRecord(workItem({ status: "intake" }), stranger), false);
   assert.equal(canViewWorkItemRecord(workItem({ status: "in_review" }), stranger), true);
+});
+
+test("drive project gate allows owner, admin, and same-workspace policy actors", () => {
+  const project = {
+    archived: false,
+    deletedAt: null,
+    ownerUserId: "10000000-0000-4000-8000-000000000003",
+    workspaceId: "workspace-1",
+    orgId: "org-1"
+  };
+
+  assert.equal(canViewProjectDrive(project, { id: "stranger", workspaceId: "other", orgId: "org-1" }), false);
+  assert.equal(canViewProjectDrive(project, { id: "member", workspaceId: "workspace-1", orgId: "org-1" }), true);
+  assert.equal(canManageProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "other", orgId: "org-1" }), true);
+  assert.equal(canManageProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "other" }), true);
+});
+
+test("drive project write gate blocks archived projects even for admins", () => {
+  const archived = {
+    archived: true,
+    deletedAt: null,
+    ownerUserId: "10000000-0000-4000-8000-000000000003",
+    workspaceId: "workspace-1",
+    orgId: "org-1"
+  };
+
+  assert.equal(canViewProjectDrive(archived, { id: "admin", isAdmin: true }), true);
+  assert.equal(canManageProjectDrive(archived, { id: "admin", isAdmin: true }), false);
 });
 
 test("action gate resolves by scope, priority, specificity, and fail-safe effect strength", () => {

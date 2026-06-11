@@ -9,6 +9,8 @@ import {
   approvalRespondIdFromHref,
   conflictsFromMergeError,
   createWorkItemActionFromHref,
+  driveItemMutationFromHref,
+  driveUploadFromHref,
   evidenceBindingWorkItemIdFromHref,
   hasCustomFieldPlaceholder,
   mergeProposalCandidateApplyIdFromHref,
@@ -28,6 +30,17 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {
     workItemId: "w-1",
     acceptedChangeId: "ac-1"
+  });
+  assert.deepEqual(driveUploadFromHref("/api/drive/projects/p-1/files"), { projectId: "p-1" });
+  assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
+    projectId: "p-1",
+    itemId: "i-1",
+    action: "delete"
+  });
+  assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/restore"), {
+    projectId: "p-1",
+    itemId: "i-1",
+    action: "restore"
   });
 });
 

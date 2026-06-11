@@ -24,6 +24,7 @@ import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
 import {
+  DrivePageServiceError,
   getDefaultDrivePageService,
   type DrivePageService
 } from "../services/drive-pages.js";
@@ -188,12 +189,19 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   routes.get("/drive", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const projectId = c.req.query("project_id");
-    const data = await drivePages.page({
-      actor: c.var.actor,
-      locale,
-      ...(projectId ? { projectId } : {})
-    });
-    return c.json(pageEnvelope(data, locale));
+    try {
+      const data = await drivePages.page({
+        actor: c.var.actor,
+        locale,
+        ...(projectId ? { projectId } : {})
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof DrivePageServiceError) {
+        throw new HTTPException(error.status, { message: error.message });
+      }
+      throw error;
+    }
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {

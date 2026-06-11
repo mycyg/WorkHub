@@ -107,6 +107,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     ]
   });
   await client.restoreAcceptedDeliverable("work-1", "accepted-1");
+  await client.uploadDriveFile("project-1", { filename: "r5.md", parsed_text: "hello" });
+  await client.deleteDriveItem("project-1", "drive-item-1");
+  await client.restoreDriveItem("project-1", "drive-item-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -140,6 +143,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/knowledge/search",
     "POST /api/workitems/work-1/evidence-bindings",
     "POST /api/workitems/work-1/deliverables/accepted-1/restore",
+    "POST /api/drive/projects/project-1/files",
+    "POST /api/drive/projects/project-1/items/drive-item-1/delete",
+    "POST /api/drive/projects/project-1/items/drive-item-1/restore",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",
@@ -168,12 +174,15 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.approvals({ locale: "en-US" });
   await client.pages.cost({ locale: "en-US" });
   await client.pages.settings({ locale: "en-US" });
-  await client.pages.drive({ locale: "en-US" });
+  await client.pages.drive({ locale: "en-US", projectId: "project 1" });
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
   await client.replayAgentRun("run/1", { locale: "en-US" });
   await client.getSession("session 1", { locale: "en-US" });
   await client.searchKnowledge({ q: "weekly" }, { locale: "zh-CN" });
+  await client.uploadDriveFile("project 1", { filename: "r5.md" }, { locale: "en-US" });
+  await client.deleteDriveItem("project 1", "item 1", {}, { locale: "zh-CN" });
+  await client.restoreDriveItem("project 1", "item 1", { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -181,12 +190,15 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/approvals?locale=en-US",
     "/api/pages/cost?locale=en-US",
     "/api/pages/settings?locale=en-US",
-    "/api/pages/drive?locale=en-US",
+    "/api/pages/drive?locale=en-US&project_id=project+1",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
     "/api/pages/proposals/proposal%201?locale=en-US",
     "/api/agent-runs/run%2F1/replay?locale=en-US",
     "/api/sessions/session%201?locale=en-US",
-    "/api/knowledge/search?locale=zh-CN"
+    "/api/knowledge/search?locale=zh-CN",
+    "/api/drive/projects/project%201/files?locale=en-US",
+    "/api/drive/projects/project%201/items/item%201/delete?locale=zh-CN",
+    "/api/drive/projects/project%201/items/item%201/restore?locale=en-US"
   ]);
 });
 

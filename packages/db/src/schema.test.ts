@@ -15,6 +15,9 @@ import {
   costLedgerEntries,
   mergeAttempts,
   mergeProposals,
+  projectDriveItems,
+  projectDriveOperations,
+  projectDriveVersions,
   proposals,
   usageRecords,
   workHubTables,
@@ -91,6 +94,21 @@ test("accepted deliverable changes capture merged proposal targets for replay an
   assert.equal(acceptedDeliverableChanges.sha256Before.name, "sha256_before");
   assert.equal(acceptedDeliverableChanges.sha256After.name, "sha256_after");
   assert.equal(acceptedDeliverableChanges.supersededAt.name, "superseded_at");
+});
+
+test("drive tables expose soft-delete, version pointer, and operation log fields", () => {
+  assert.equal(projectDriveItems.currentVersionId.name, "current_version_id");
+  assert.equal(projectDriveItems.deletedAt.name, "deleted_at");
+  assert.equal(projectDriveItems.deletedByUserId.name, "deleted_by_user_id");
+  assert.equal(projectDriveVersions.versionNo.name, "version_no");
+  assert.equal(projectDriveVersions.storagePath.name, "storage_path");
+  assert.equal(projectDriveOperations.opType.name, "op_type");
+  assert.equal(projectDriveOperations.payloadJson.name, "payload_json");
+  assert.equal(projectDriveOperations.undoneAt.name, "undone_at");
+  const activePathMigration = readFileSync(join(process.cwd(), "migrations", "0011_bitter_magneto.sql"), "utf8");
+  assert.match(activePathMigration, /project_drive_items_active_path_uq/u);
+  assert.match(activePathMigration, /coalesce\("parent_id"/u);
+  assert.match(activePathMigration, /deleted_at" is null/u);
 });
 
 test("core renamed fields are present on Drizzle table objects", () => {

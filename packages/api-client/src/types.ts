@@ -75,6 +75,23 @@ export type PageRequestOptions = {
   locale?: WorkHubLocale;
 };
 
+export type DrivePageRequestOptions = PageRequestOptions & {
+  projectId?: string;
+  project_id?: string;
+};
+
+export type DriveUploadFileRequest = {
+  filename: string;
+  mime?: string;
+  size_bytes?: number;
+  sha256?: string;
+  parsed_text?: string;
+};
+
+export type DriveDeleteItemRequest = {
+  expected_current_version_id?: string | null;
+};
+
 export type HealthResponse = {
   ok: true;
   service: string;
@@ -106,7 +123,7 @@ export type PageClient = {
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
-  drive: (options?: PageRequestOptions) => Promise<DrivePageVM>;
+  drive: (options?: DrivePageRequestOptions) => Promise<DrivePageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
@@ -157,6 +174,9 @@ export type WorkHubApiClient = {
     workItemId: string,
     acceptedChangeId: string
   ) => Promise<AcceptedDeliverableRestoreResult>;
+  uploadDriveFile: (projectId: string, payload: DriveUploadFileRequest, options?: PageRequestOptions) => Promise<DrivePageVM>;
+  deleteDriveItem: (projectId: string, itemId: string, payload?: DriveDeleteItemRequest, options?: PageRequestOptions) => Promise<DrivePageVM>;
+  restoreDriveItem: (projectId: string, itemId: string, options?: PageRequestOptions) => Promise<DrivePageVM>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;

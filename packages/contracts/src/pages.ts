@@ -109,6 +109,7 @@ export const driveItemVmSchema = z.object({
   current_version: driveFileVersionVmSchema.optional(),
   accepted_deliverable: acceptedDeliverableVmSchema.optional(),
   children_count: z.number().int().nonnegative(),
+  deleted_at: isoDateTimeSchema.optional(),
   updated_at: isoDateTimeSchema
 });
 export type DriveItemVM = z.infer<typeof driveItemVmSchema>;
@@ -127,6 +128,18 @@ export const driveCommentVmSchema = z.object({
 });
 export type DriveCommentVM = z.infer<typeof driveCommentVmSchema>;
 
+export const driveOperationVmSchema = z.object({
+  id: idSchema,
+  project_id: idSchema,
+  actor_user_id: idSchema.optional(),
+  op_type: z.enum(["upload_file", "delete_item", "restore_item", "restore_version", "rename_item"]),
+  target_item_id: idSchema.optional(),
+  target_path: z.string().min(1).optional(),
+  summary_text: z.string().min(1),
+  created_at: isoDateTimeSchema
+});
+export type DriveOperationVM = z.infer<typeof driveOperationVmSchema>;
+
 export const drivePageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   project: z.object({
@@ -140,16 +153,24 @@ export const drivePageVmSchema = z.object({
     item_count: z.number().int().nonnegative(),
     file_count: z.number().int().nonnegative(),
     folder_count: z.number().int().nonnegative(),
+    deleted_item_count: z.number().int().nonnegative().default(0),
     version_count: z.number().int().nonnegative(),
     accepted_deliverable_count: z.number().int().nonnegative(),
-    pending_comment_count: z.number().int().nonnegative()
+    pending_comment_count: z.number().int().nonnegative(),
+    operation_count: z.number().int().nonnegative().default(0)
   }),
+  can_manage: z.boolean().default(false),
   selected_item_id: idSchema.optional(),
   items: z.array(driveItemVmSchema),
+  deleted_items: z.array(driveItemVmSchema).default([]),
   versions: z.array(driveFileVersionVmSchema),
   accepted_deliverables: z.array(acceptedDeliverableVmSchema),
   comments: z.array(driveCommentVmSchema).default([]),
+  operations: z.array(driveOperationVmSchema).default([]),
   actions: z.object({
+    upload_file: actionSpecSchema.optional(),
+    delete_item: actionSpecSchema.optional(),
+    restore_item: actionSpecSchema.optional(),
     comment_to_draft: actionSpecSchema.optional()
   }).default({}),
   empty_state: z.enum(["no_project", "no_drive_items"]).optional()

@@ -691,7 +691,12 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
   }
   if (match.key === "drive") {
-    const drive = await client.pages.drive(withLocale(locale));
+    const params = new URLSearchParams(match.search);
+    const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
+    const drive = await client.pages.drive({
+      ...withLocale(locale),
+      ...(projectId ? { projectId } : {})
+    });
     if (drive.empty_state === "no_project") {
       return "empty" as const;
     }

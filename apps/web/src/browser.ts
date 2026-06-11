@@ -13,6 +13,7 @@ import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
   actionElementEvidenceBindingPayload,
+  actionElementJsonPayload,
   actionElementMergePayload,
   actionElementNextQuestionPayload,
   actionErrorNotice,
@@ -32,6 +33,8 @@ import {
   createWorkItemActionFromHref,
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
+  driveItemMutationFromHref,
+  driveUploadFromHref,
   eventListenerOptions,
   evidenceBindingWorkItemIdFromHref,
   fieldValueRequiredNotice,
@@ -385,6 +388,54 @@ function bindGoldPathNavigation(
             acceptedDeliverableRestore.acceptedChangeId
           );
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const driveUpload = driveUploadFromHref(href);
+      if (driveUpload) {
+        const payload = actionElementJsonPayload<Parameters<BrowserApiClient["uploadDriveFile"]>[1]>(actionTarget);
+        if (!payload.ok || !payload.payload) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "invalid_json" } : payload, actionId);
+          return;
+        }
+        try {
+          const result = await client.uploadDriveFile(driveUpload.projectId, payload.payload, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const driveItemMutation = driveItemMutationFromHref(href);
+      if (driveItemMutation?.action === "delete") {
+        const payload = actionElementJsonPayload<Parameters<BrowserApiClient["deleteDriveItem"]>[2]>(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          const result = await client.deleteDriveItem(driveItemMutation.projectId, driveItemMutation.itemId, payload.payload ?? {}, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (driveItemMutation?.action === "restore") {
+        try {
+          const result = await client.restoreDriveItem(driveItemMutation.projectId, driveItemMutation.itemId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }

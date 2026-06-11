@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   IdentifyRequest,
   IdentityResponse,
+  DrivePageRequestOptions,
   PageRequestOptions,
   WorkHubApiClient,
   WorkHubApiClientOptions
@@ -47,6 +48,19 @@ function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id
 
 function withPageLocale(path: string, options?: PageRequestOptions) {
   return options?.locale ? `${path}?locale=${encodeURIComponent(options.locale)}` : path;
+}
+
+function withDrivePageOptions(path: string, options?: DrivePageRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.locale) {
+    params.set("locale", options.locale);
+  }
+  const projectId = options?.projectId ?? options?.project_id;
+  if (projectId) {
+    params.set("project_id", projectId);
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 async function readJson(response: Response) {
@@ -236,6 +250,20 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         `/api/workitems/${encodeURIComponent(workItemId)}/deliverables/${encodeURIComponent(acceptedChangeId)}/restore`,
         { method: "POST" }
       ),
+    uploadDriveFile: (projectId, payload, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/files`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    deleteDriveItem: (projectId, itemId, payload = {}, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/delete`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    restoreDriveItem: (projectId, itemId, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/restore`, options), {
+        method: "POST"
+      }),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>
@@ -250,7 +278,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       cost: (options) => request(withPageLocale("/api/pages/cost", options)),
       settings: (options) => request(withPageLocale("/api/pages/settings", options)),
       goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),
-      drive: (options) => request(withPageLocale("/api/pages/drive", options)),
+      drive: (options) => request(withDrivePageOptions("/api/pages/drive", options)),
       workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
       proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options))
     }

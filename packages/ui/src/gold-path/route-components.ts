@@ -151,7 +151,11 @@ type RouteCopyKey =
   | "drive.versions"
   | "drive.accepted"
   | "drive.comments"
+  | "drive.recycle"
+  | "drive.operations"
   | "drive.empty"
+  | "drive.upload"
+  | "drive.delete"
   | "drive.preview"
   | "drive.download"
   | "drive.restore"
@@ -226,7 +230,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.versions": "版本历史",
     "drive.accepted": "正式交付物",
     "drive.comments": "评论草稿",
+    "drive.recycle": "回收站",
+    "drive.operations": "操作日志",
     "drive.empty": "这个项目还没有正式交付物。",
+    "drive.upload": "上传样例",
+    "drive.delete": "移到回收站",
     "drive.preview": "预览",
     "drive.download": "下载",
     "drive.restore": "还原",
@@ -300,7 +308,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.versions": "Version history",
     "drive.accepted": "Accepted deliverables",
     "drive.comments": "Comment drafts",
+    "drive.recycle": "Recycle",
+    "drive.operations": "Operation log",
     "drive.empty": "This project does not have accepted deliverables yet.",
+    "drive.upload": "Upload sample",
+    "drive.delete": "Move to recycle",
     "drive.preview": "Preview",
     "drive.download": "Download",
     "drive.restore": "Restore",
@@ -978,9 +990,34 @@ function driveActionLinks(
   return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
 }
 
+function driveItemMutationIdFromHref(href: string) {
+  try {
+    const path = new URL(href, "http://workhub.local").pathname;
+    const match = /^\/api\/drive\/projects\/[^/]+\/items\/([^/]+)\/(?:delete|restore)$/u.exec(path);
+    return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
   const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
+  const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
+  const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
+  const deletePayload = {
+    expected_current_version_id: deleteTarget?.current_version_id ?? null
+  };
+  const uploadPayload = {
+    filename: locale === "zh-CN" ? "R5-上传样例.md" : "r5-upload-sample.md",
+    mime: "text/markdown",
+    parsed_text: locale === "zh-CN" ? "# R5 上传样例\n\n这是一份可审计的项目资料上传样例。" : "# R5 upload sample\n\nA small auditable project drive upload sample."
+  };
+  const driveManageActions = [
+    vm.actions.upload_file ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(vm.actions.upload_file.href)}" data-action-id="drive_upload_file" data-method="POST" data-request-json="${jsonAttr(uploadPayload)}">${escapeHtml(routeT(locale, "drive.upload"))}</a>` : "",
+    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(vm.actions.delete_item.href)}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : "",
+    vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(vm.actions.restore_item.href)}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
+  ].filter(Boolean).join("");
   const fileRows = vm.items.length
     ? vm.items.slice(0, 12).map((item) => {
       const current = item.current_version;
@@ -1033,7 +1070,34 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
+  const recycleRows = vm.deleted_items.length
+    ? vm.deleted_items.slice(0, 5).map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
+      <div>
+        <strong>${escapeHtml(item.name)}</strong>
+        <p>${escapeHtml(item.path)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(item.kind)}</span>
+        ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at)}</span>` : ""}
+      </div>
+    </div>`).join("")
+    : `<p class="wh-subtle">0</p>`;
+  const operationRows = vm.operations.length
+    ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
+      <div>
+        <strong>${escapeHtml(operation.summary_text)}</strong>
+        <p>${escapeHtml(operation.created_at)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(operation.op_type)}</span>
+        ${operation.target_path ? `<span class="wh-pill">${escapeHtml(operation.target_path)}</span>` : ""}
+      </div>
+    </div>`).join("")
+    : `<p class="wh-subtle">0</p>`;
   const primaryHrefs = [
+    vm.actions.upload_file?.href,
+    vm.actions.delete_item?.href,
+    vm.actions.restore_item?.href,
     ...vm.accepted_deliverables.flatMap((accepted) => [
       accepted.preview_href,
       accepted.download_href,
@@ -1049,12 +1113,13 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
     source: "page-vm",
     locale,
     pageVm: "drive",
-    html: `<section class="wh-r4-route" data-r4-route-component="drive" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-drive-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r4-drive-item-count="${escapeHtml(String(vm.summary.item_count))}" data-r4-drive-version-count="${escapeHtml(String(vm.summary.version_count))}" data-r4-drive-accepted-count="${escapeHtml(String(vm.summary.accepted_deliverable_count))}" data-r4-drive-comment-count="${escapeHtml(String(vm.comments.length))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="drive" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-drive-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r4-drive-item-count="${escapeHtml(String(vm.summary.item_count))}" data-r4-drive-version-count="${escapeHtml(String(vm.summary.version_count))}" data-r4-drive-accepted-count="${escapeHtml(String(vm.summary.accepted_deliverable_count))}" data-r4-drive-comment-count="${escapeHtml(String(vm.comments.length))}" data-r5-drive-deleted-count="${escapeHtml(String(vm.summary.deleted_item_count))}" data-r5-drive-operation-count="${escapeHtml(String(vm.summary.operation_count))}" data-r5-drive-can-manage="${escapeHtml(String(vm.can_manage))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h2>${escapeHtml(projectTitle)}</h2>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.empty"))}</p>
+          ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
       </header>
@@ -1075,6 +1140,16 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <section class="wh-card wh-r4-route-card" data-r4-drive-comments="true">
           <h3>${escapeHtml(routeT(locale, "drive.comments"))}</h3>
           <div class="wh-r4-route-timeline">${commentRows}</div>
+        </section>
+      </div>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card" data-r5-drive-recycle="true">
+          <h3>${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
+          <div class="wh-r4-route-timeline">${recycleRows}</div>
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
+          <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>
+          <div class="wh-r4-route-timeline">${operationRows}</div>
         </section>
       </div>
     </section>`

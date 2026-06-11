@@ -69,6 +69,25 @@ export function acceptedDeliverableRestoreFromHref(href: string) {
   };
 }
 
+export function driveUploadFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(path);
+  return match?.[1] ? { projectId: decodeURIComponent(match[1]) } : undefined;
+}
+
+export function driveItemMutationFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/drive\/projects\/([^/]+)\/items\/([^/]+)\/(delete|restore)$/u.exec(path);
+  if (!match?.[1] || !match[2] || !match[3]) {
+    return undefined;
+  }
+  return {
+    projectId: decodeURIComponent(match[1]),
+    itemId: decodeURIComponent(match[2]),
+    action: match[3] as "delete" | "restore"
+  };
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

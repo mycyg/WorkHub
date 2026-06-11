@@ -78,6 +78,13 @@
       "when": 1781041817394,
       "tag": "0010_whole_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781199513857,
+      "tag": "0011_bitter_magneto",
+      "breakpoints": true
     }
   ]
 }

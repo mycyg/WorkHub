@@ -1,5 +1,5 @@
 import { hasExplicitAssignees, isAssignedUser, leadAssignment } from "./assignments.js";
-import type { ResourceScope, UserAccessRecord, WorkItemAccessRecord } from "./types.js";
+import type { PermissionActor, ProjectAccessRecord, ResourceScope, UserAccessRecord, WorkItemAccessRecord } from "./types.js";
 
 export const PRIVATE_WORK_ITEM_STATUSES = ["intake", "ai_clarifying", "spec_ready"] as const;
 export const ASSIGNMENT_EDITABLE_STATUSES = new Set([
@@ -40,6 +40,53 @@ function scopeMatches(workItem: WorkItemAccessRecord, scope?: ResourceScope): bo
     return false;
   }
   return true;
+}
+
+function projectIsActive(project: ProjectAccessRecord): boolean {
+  return Boolean(!project.archived && project.deletedAt == null);
+}
+
+function projectScopeMatches(project: ProjectAccessRecord, actor: Pick<PermissionActor, "orgId" | "workspaceId">): boolean {
+  if (project.workspaceId && actor.workspaceId && project.workspaceId !== actor.workspaceId) {
+    return false;
+  }
+  if (project.orgId && actor.orgId && project.orgId !== actor.orgId) {
+    return false;
+  }
+  return true;
+}
+
+function projectActorUserId(actor: Pick<PermissionActor, "id" | "userId">): string | undefined {
+  return actor.userId ?? actor.id;
+}
+
+export function canViewProjectDrive(
+  project: ProjectAccessRecord,
+  actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
+): boolean {
+  if (actor.isAdmin === true) {
+    return true;
+  }
+  if (!projectIsActive(project)) {
+    return false;
+  }
+  if (project.ownerUserId && project.ownerUserId === projectActorUserId(actor)) {
+    return true;
+  }
+  if (!projectScopeMatches(project, actor)) {
+    return false;
+  }
+  return Boolean(project.workspaceId && actor.workspaceId && project.workspaceId === actor.workspaceId);
+}
+
+export function canManageProjectDrive(
+  project: ProjectAccessRecord,
+  actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
+): boolean {
+  if (!projectIsActive(project)) {
+    return false;
+  }
+  return canViewProjectDrive(project, actor);
 }
 
 export function canViewWorkItemRecord(

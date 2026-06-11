@@ -25,13 +25,16 @@ function drivePageVm(): DrivePageVM {
       status: "active"
     },
     summary: {
-      item_count: 1,
-      file_count: 1,
+      item_count: 2,
+      file_count: 2,
       folder_count: 0,
-      version_count: 1,
+      deleted_item_count: 1,
+      version_count: 2,
       accepted_deliverable_count: 1,
-      pending_comment_count: 0
+      pending_comment_count: 0,
+      operation_count: 1
     },
+    can_manage: true,
     selected_item_id: "94000000-0000-4000-8000-000000000002",
     items: [
       {
@@ -42,6 +45,17 @@ function drivePageVm(): DrivePageVM {
         path: "/deliverables/client-review.md",
         depth: 1,
         current_version_id: "94000000-0000-4000-8000-000000000003",
+        children_count: 0,
+        updated_at: "2026-06-11T09:00:00.000Z"
+      },
+      {
+        id: "94000000-0000-4000-8000-000000000009",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        name: "manual-note.md",
+        kind: "file",
+        path: "/manual-note.md",
+        depth: 0,
+        current_version_id: "94000000-0000-4000-8000-000000000010",
         children_count: 0,
         updated_at: "2026-06-11T09:00:00.000Z"
       }
@@ -64,6 +78,17 @@ function drivePageVm(): DrivePageVM {
         preview_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/preview",
         download_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/download",
         restore_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/restore"
+      },
+      {
+        id: "94000000-0000-4000-8000-000000000010",
+        item_id: "94000000-0000-4000-8000-000000000009",
+        version_no: 1,
+        filename: "manual-note.md",
+        mime: "text/markdown",
+        size_bytes: 128,
+        created_at: "2026-06-11T09:00:00.000Z",
+        current: true,
+        source: "manual_upload"
       }
     ],
     accepted_deliverables: [
@@ -88,6 +113,19 @@ function drivePageVm(): DrivePageVM {
         accepted_at: "2026-06-11T09:00:00.000Z"
       }
     ],
+    deleted_items: [
+      {
+        id: "94000000-0000-4000-8000-000000000011",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        name: "old-note.md",
+        kind: "file",
+        path: "/old-note.md",
+        depth: 0,
+        children_count: 0,
+        deleted_at: "2026-06-11T08:00:00.000Z",
+        updated_at: "2026-06-11T08:00:00.000Z"
+      }
+    ],
     comments: [
       {
         id: "94000000-0000-4000-8000-000000000008",
@@ -100,7 +138,38 @@ function drivePageVm(): DrivePageVM {
         draft_href: "/api/pages/workitems/94000000-0000-4000-8000-000000000005"
       }
     ],
-    actions: {}
+    operations: [
+      {
+        id: "94000000-0000-4000-8000-000000000012",
+        project_id: "94000000-0000-4000-8000-000000000001",
+        actor_user_id: "94000000-0000-4000-8000-000000000013",
+        op_type: "upload_file",
+        target_item_id: "94000000-0000-4000-8000-000000000009",
+        target_path: "/manual-note.md",
+        summary_text: "Uploaded /manual-note.md",
+        created_at: "2026-06-11T09:00:00.000Z"
+      }
+    ],
+    actions: {
+      upload_file: {
+        id: "drive_upload_file",
+        label: "Upload sample",
+        method: "POST",
+        href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/files"
+      },
+      delete_item: {
+        id: "drive_delete_item",
+        label: "Move to recycle",
+        method: "POST",
+        href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/delete"
+      },
+      restore_item: {
+        id: "drive_restore_item",
+        label: "Restore item",
+        method: "POST",
+        href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000011/restore"
+      }
+    }
   };
 }
 
@@ -810,17 +879,27 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.key, "drive");
   assert.equal(drive.html.includes('data-r4-route-component="drive"'), true);
   assert.equal(drive.html.includes('data-r4-route-component-source="page-vm"'), true);
-  assert.equal(drive.html.includes('data-r4-drive-item-count="1"'), true);
-  assert.equal(drive.html.includes('data-r4-drive-version-count="1"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-item-count="2"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-version-count="2"'), true);
   assert.equal(drive.html.includes('data-r4-drive-accepted-count="1"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-deleted-count="1"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-operation-count="1"'), true);
   assert.equal(drive.html.includes("client-review.md"), true);
   assert.equal(drive.html.includes('data-r4-drive-version-current="true"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_upload_file" data-method="POST"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_delete_item" data-method="POST"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-delete-target="94000000-0000-4000-8000-000000000009"'), true);
+  assert.equal(drive.html.includes("expected_current_version_id"), true);
+  assert.equal(drive.html.includes("94000000-0000-4000-8000-000000000010"), true);
+  assert.equal(drive.html.includes('data-action-id="drive_restore_item" data-method="POST"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-recycle="true"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-operations="true"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_preview"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_download"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
   assert.equal(drive.html.includes("/api/pages/workitems/94000000-0000-4000-8000-000000000005"), true);
   assert.equal(drive.hydration.pageVm, "drive");
-  assert.equal(drive.primaryHrefs.length, 4);
+  assert.equal(drive.primaryHrefs.length, 7);
   assertNoMainWindowBoundaryLeak(drive.html);
 });
 

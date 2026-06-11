@@ -19,8 +19,9 @@ import type {
 import type { DrivePageVM } from "@workhub/contracts";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { createDriveRoutes } from "./routes/drive.js";
 import { createPageRoutes } from "./routes/pages.js";
-import { createDrivePageService, type DrivePageService } from "./services/drive-pages.js";
+import { createDrivePageService, DrivePageServiceError, type DrivePageService } from "./services/drive-pages.js";
 
 const now = new Date("2026-06-11T01:00:00.000Z");
 const projectId = "91000000-0000-4000-8000-000000000001";
@@ -34,7 +35,7 @@ const acceptedChangeId = "91000000-0000-4000-8000-000000000008";
 const changeId = "91000000-0000-4000-8000-000000000009";
 const userId = "91000000-0000-4000-8000-000000000010";
 
-function projectRow(): DrivePageRows["project"] {
+function projectRow(): NonNullable<DrivePageRows["project"]> {
   return {
     id: projectId,
     workspaceId: "91000000-0000-4000-8000-000000000011",
@@ -172,6 +173,22 @@ function rows(): DrivePageRows {
         createdAt: now,
         updatedAt: now
       }
+    ],
+    deletedItems: [],
+    operations: [
+      {
+        id: "91000000-0000-4000-8000-000000000014",
+        projectId,
+        actorUserId: userId,
+        opType: "upload_file",
+        payloadJson: {
+          drive_item_id: itemId,
+          path: "/复盘包/客户复盘.md"
+        },
+        undoneAt: null,
+        createdAt: now,
+        updatedAt: now
+      }
     ]
   };
 }
@@ -194,6 +211,15 @@ test("drive page service builds project files, version history, accepted deliver
     async readPage(input) {
       seenProjectId = input?.projectId;
       return rows();
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async softDeleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreDeletedItem() {
+      throw new Error("not needed");
     }
   };
   const service = createDrivePageService({ repo, now: () => now });
@@ -206,6 +232,7 @@ test("drive page service builds project files, version history, accepted deliver
   assert.equal(page.summary.file_count, 1);
   assert.equal(page.summary.version_count, 2);
   assert.equal(page.summary.accepted_deliverable_count, 1);
+  assert.equal(page.summary.operation_count, 1);
   assert.equal(page.items[1]?.path, "/复盘包/客户复盘.md");
   assert.equal(page.items[1]?.current_version?.source, "accepted_deliverable");
   assert.equal(page.items[1]?.accepted_deliverable?.id, acceptedChangeId);
@@ -214,13 +241,117 @@ test("drive page service builds project files, version history, accepted deliver
   assert.equal(page.versions[0]?.restore_href, `/api/workitems/${workItemId}/deliverables/${acceptedChangeId}/restore`);
   assert.equal(page.comments[0]?.folder_path, "/复盘包");
   assert.equal(page.comments[0]?.draft_href, `/api/pages/workitems/${workItemId}`);
+  assert.equal(page.operations[0]?.target_path, "/复盘包/客户复盘.md");
+  assert.equal(page.operations[0]?.op_type, "upload_file");
+});
+
+test("drive page service targets the latest manual file for recycle actions", async () => {
+  const manualItemId = "91000000-0000-4000-8000-000000000015";
+  const manualVersionId = "91000000-0000-4000-8000-000000000016";
+  const manualUpdatedAt = new Date("2026-06-11T02:00:00.000Z");
+  const pageRows = rows();
+  pageRows.items.push({
+    id: manualItemId,
+    projectId,
+    parentId: folderId,
+    name: "manual-note.md",
+    kind: "file",
+    currentVersionId: manualVersionId,
+    createdByUserId: userId,
+    updatedByUserId: userId,
+    deletedAt: null,
+    deletedByUserId: null,
+    createdAt: manualUpdatedAt,
+    updatedAt: manualUpdatedAt
+  });
+  pageRows.versions.unshift({
+    id: manualVersionId,
+    itemId: manualItemId,
+    versionNo: 1,
+    filename: "manual-note.md",
+    mime: "text/markdown",
+    sizeBytes: 128,
+    storagePath: "drive/r5/manual-note.md",
+    sha256: null,
+    parsedText: "手工上传",
+    parsedTextPath: null,
+    createdByUserId: userId,
+    createdAt: manualUpdatedAt,
+    updatedAt: manualUpdatedAt
+  });
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), locale: "zh-CN", projectId });
+
+  assert.equal(page.selected_item_id, manualItemId);
+  assert.equal(page.actions.delete_item?.href, `/api/drive/projects/${projectId}/items/${manualItemId}/delete`);
+  assert.equal(page.actions.delete_item?.label.includes("manual-note.md"), true);
+});
+
+test("drive page service does not 403 the generic drive route on an invisible default project", async () => {
+  const hiddenRows = rows();
+  hiddenRows.project = {
+    ...projectRow(),
+    ownerUserId: "91000000-0000-4000-8000-000000000099",
+    workspaceId: "91000000-0000-4000-8000-000000000098"
+  };
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return hiddenRows;
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  const genericPage = await service.page({ actor: actor(), locale: "zh-CN" });
+  assert.equal(genericPage.empty_state, "no_project");
+
+  await assert.rejects(
+    () => service.page({ actor: actor(), locale: "zh-CN", projectId }),
+    (error) => error instanceof DrivePageServiceError && error.status === 403 && error.code === "drive_forbidden"
+  );
 });
 
 test("drive page service exposes a no-project empty state instead of throwing", async () => {
   const service = createDrivePageService({
     repo: {
       async readPage() {
-        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [] };
+        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [] };
+      },
+      async uploadFile() {
+        throw new Error("not needed");
+      },
+      async softDeleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreDeletedItem() {
+        throw new Error("not needed");
       }
     },
     now: () => now
@@ -357,12 +488,17 @@ function minimalDrivePage(): DrivePageVM {
       folder_count: 0,
       version_count: 0,
       accepted_deliverable_count: 0,
-      pending_comment_count: 0
+      pending_comment_count: 0,
+      deleted_item_count: 0,
+      operation_count: 0
     },
+    can_manage: true,
     items: [],
+    deleted_items: [],
     versions: [],
     accepted_deliverables: [],
     comments: [],
+    operations: [],
     actions: {},
     empty_state: "no_drive_items"
   };
@@ -379,6 +515,15 @@ test("drive page route returns an authenticated bilingual page envelope and forw
         ...(input.actor.userId ? { actorId: input.actor.userId } : {})
       });
       return minimalDrivePage();
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async deleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -397,4 +542,83 @@ test("drive page route returns an authenticated bilingual page envelope and forw
   assert.equal(body.meta.locale, "en-US");
   assert.equal(body.data.project?.id, projectId);
   assert.deepEqual(calls, [{ locale: "en-US", projectId, actorId: userId }]);
+});
+
+test("drive upload route authenticates, parses payload, and returns a refreshed page VM", async () => {
+  const runtimeSettings = settings();
+  const calls: { projectId: string; filename: string; actorId?: string }[] = [];
+  const drivePages: DrivePageService = {
+    async page() {
+      throw new Error("not needed");
+    },
+    async uploadFile(input) {
+      calls.push({
+        projectId: input.projectId,
+        filename: input.filename,
+        ...(input.actor.userId ? { actorId: input.actor.userId } : {})
+      });
+      return minimalDrivePage();
+    },
+    async deleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/drive", createDriveRoutes({
+    auth: authDeps(runtimeSettings),
+    drivePages
+  }));
+
+  const response = await app.request(`/api/drive/projects/${projectId}/files?locale=en-US`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: "r5-upload.md", mime: "text/markdown", parsed_text: "# R5" })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: DrivePageVM; meta: { locale: string } };
+  assert.equal(body.meta.locale, "en-US");
+  assert.equal(body.data.project?.id, projectId);
+  assert.deepEqual(calls, [{ projectId, filename: "r5-upload.md", actorId: userId }]);
+});
+
+test("drive mutation routes preserve service conflict codes", async () => {
+  const runtimeSettings = settings();
+  const drivePages: DrivePageService = {
+    async page() {
+      throw new Error("not needed");
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async deleteItem() {
+      throw new DrivePageServiceError(409, "文件版本已经变化，请刷新后重试。", "drive_current_version_changed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/drive", createDriveRoutes({
+    auth: authDeps(runtimeSettings),
+    drivePages
+  }));
+
+  const response = await app.request(`/api/drive/projects/${projectId}/items/${itemId}/delete`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_current_version_id: currentVersionId })
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "drive_current_version_changed",
+      message: "文件版本已经变化，请刷新后重试。"
+    }
+  });
 });

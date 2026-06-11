@@ -336,7 +336,10 @@ export const projectDriveItems = pgTable(
     index("project_drive_items_created_by_user_id_idx").on(table.createdByUserId),
     index("project_drive_items_updated_by_user_id_idx").on(table.updatedByUserId),
     index("project_drive_items_deleted_at_idx").on(table.deletedAt),
-    index("project_drive_items_deleted_by_user_id_idx").on(table.deletedByUserId)
+    index("project_drive_items_deleted_by_user_id_idx").on(table.deletedByUserId),
+    uniqueIndex("project_drive_items_active_path_uq")
+      .on(table.projectId, sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`, table.name)
+      .where(sql`${table.deletedAt} is null`)
   ]
 );
 

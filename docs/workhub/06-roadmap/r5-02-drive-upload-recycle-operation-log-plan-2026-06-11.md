@@ -1,7 +1,7 @@
 ---
 module: R5-drive-upload-recycle-operation-log
 layer: M-DRIVE / P-AUDIT / P-COLLAB / C-WEB
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -62,13 +62,54 @@ Upload / delete / restore action
 
 ## 4. QA Gate
 
-- Unit: DB repository command tests for upload/delete/restore/log rows.
-- API: route tests for 403/409/200 and operation log Page VM shape.
-- UI: Drive component tests for recycle/log panels, upload/recover actions, bilingual copy.
-- Web: route loader tests for forbidden/empty/ready and action notices.
-- Browser: update live route smoke with Drive upload/recycle/log proof and screenshot.
+- DB/schema: migration gate for the active-path unique index and Drive soft-delete/version/operation fields.
+- API/service: route tests for 403/409/200, exact conflict codes, mutation payloads, and operation log Page VM shape.
+- UI: Drive component tests for recycle/log panels, upload/recover actions, delete CAS payload, bilingual copy.
+- Web: route loader tests for `project_id`, forbidden/empty/ready, and action notices.
+- Browser: update live route smoke with Drive upload/recycle/log proof, delete CAS request proof, and screenshot.
 - Final: `pnpm typecheck`, `pnpm test`, browser smoke, `git diff --check`, secret scan, no `reference/`.
 
 ## 5. R5.3 Handoff
 
-R5.2 完成后，R5.3 接 comment-to-intake / comment-to-proposal：Drive comment 不直接改正式资料，而是生成可审批的草稿或 proposal。
+R5.2 完成后，R5.3 接 comment-to-intake / comment-to-proposal：Drive comment 不直接改正式资料，而是生成可审批的草稿或 proposal。后续计划见 [`r5-03-drive-comment-to-draft-plan-2026-06-11.md`](./r5-03-drive-comment-to-draft-plan-2026-06-11.md)。
+
+## 6. 竣工记录（2026-06-11）
+
+完成项：
+
+1. Contracts 增补 `deleted_items`、`operations`、`can_manage`、Drive mutation actions 与 summary counts。
+2. DB repository 增补 `uploadFile`、`softDeleteItem`、`restoreDeletedItem`，写入 `ProjectDriveItem`、`ProjectDriveVersion`、`ProjectDriveOperation` 与 `AuditLog`。
+3. API 增补 `/api/drive/projects/:projectId/files`、`/items/:itemId/delete`、`/items/:itemId/restore`，冲突语义保留 409 code。
+4. 权限包增补 `canViewProjectDrive` / `canManageProjectDrive`，项目 owner/admin/same-workspace 作为当前最小 workspace policy。
+5. Web client 与 shared runtime 增补 Drive action href parser，主窗口点击 upload/delete/restore 后 refetch Drive Page VM。
+6. UI 增补上传、移入回收站、恢复、Recycle、Operation log 双语入口和 R5 审计标记。
+7. accepted deliverable -> VM mapper 已抽到共享 service，WorkItem 与 Drive 不再重复拼 href。
+8. 审查返工项已收束：Web route 传递 `project_id`、delete action 绑定最新可删手工文件并带 `expected_current_version_id`、browser smoke 校验 delete CAS body、DB migration 增补 active-path partial unique index。
+
+PRD/概念图复核：
+
+- `web-project-drive-meetings-knowledge.png` 要求 Drive 与知识/会议同处项目资料工作台；本轮保持 Drive 主页面、文件树、版本史、评论草稿与右侧工作入口。
+- `web-drive-preview-change-draft.png` 要求正式资料变更可追踪且由协作流承接；本轮上传/删除/恢复全部进入 operation timeline 和 audit，accepted deliverable 删除仍 fail-closed。
+- 固定文案继续双语；用户文件名、评论正文和证据摘录不做机器翻译。
+
+已知边界：
+
+- 上传是最小 JSON/text-backed 单文件入口，不含 multipart、chunk upload、云对象存储和断点续传。
+- same-workspace policy 仍是 MVP 级 project gate，细粒度成员/角色 ACL 留给后续权限收敛。
+- active-path 唯一性已新增数据库级 partial unique index；当前 DB 包仍缺少真实临时 Postgres integration harness，仓储行级行为由 API/service fake repo tests、schema/migration gate 与 browser smoke 共同覆盖。
+- comment-to-draft/comment-to-proposal 不在 R5.2 内实现，已转入 R5.3。
+
+验收证据：
+
+- `pnpm --filter @workhub/permissions test`
+- `pnpm --filter @workhub/contracts test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm --filter @workhub/web-runtime test`
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/db test`
+- `pnpm --filter @workhub/api test`
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/web typecheck`
+- `pnpm --filter @workhub/desktop-webview test`
+- `pnpm --filter @workhub/desktop-webview typecheck`
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：46 步通过，新增 R5.2 gate `r5_2_drive_upload_recycle_operation_log=true`，关键截图为 `15c-drive-upload-success-en-desktop.png`、`15d-drive-delete-success-en-desktop.png`、`15e-drive-restore-success-en-desktop.png`。

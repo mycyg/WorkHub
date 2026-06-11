@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-06-11T16:49:49.958Z",
+  "generated_at": "2026-06-11T17:48:28.188Z",
   "module": "R4.5 Web Live Route Interaction Smoke",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "vite_url": "http://127.0.0.1:49535",
-  "api_target": "http://127.0.0.1:49534",
+  "vite_url": "http://127.0.0.1:52766",
+  "api_target": "http://127.0.0.1:52765",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction",
   "contact_sheet": "contact-sheet.png",
   "gates": {
@@ -18,6 +18,7 @@
     "r4_10_home_approvals_replay_route_components": true,
     "r4_11_workitem_proposal_cost_settings_route_components": true,
     "r5_1_drive_route_component": true,
+    "r5_2_drive_upload_recycle_operation_log": true,
     "r4_11_route_component_source_truth": true,
     "r4_11_route_specific_markers": true,
     "r4_11_vm_dom_value_match": true,
@@ -130,6 +131,7 @@
     "proposal": true,
     "conflicts": true,
     "drive": true,
+    "driveProjectParam": true,
     "cost": true,
     "settings": true,
     "replay": true,
@@ -149,12 +151,15 @@
       "evidenceBinding": 1,
       "proposal": 2,
       "proposalConflicts": 2,
-      "drive": 1,
+      "drive": 4,
       "approvalRespond": 2,
       "proposalReview": 1,
       "proposalMerge": 1,
       "mergeApply": 4,
       "acceptedDeliverableRestore": 1,
+      "driveUpload": 1,
+      "driveDelete": 1,
+      "driveRestore": 1,
       "cost": 2,
       "settings": 1,
       "replay": 1,
@@ -174,7 +179,9 @@
       "taskPlanScope": true,
       "structuredItemOverrides": true,
       "structuredFieldOverrides": true,
-      "customFieldValue": true
+      "customFieldValue": true,
+      "driveUploadFilename": true,
+      "driveDeleteExpectedCurrent": true
     }
   },
   "api_requests": [
@@ -183,7 +190,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/",
+      "referer": "http://127.0.0.1:52766/",
       "body": null
     },
     {
@@ -191,7 +198,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/",
+      "referer": "http://127.0.0.1:52766/",
       "body": null
     },
     {
@@ -199,7 +206,7 @@
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/",
+      "referer": "http://127.0.0.1:52766/",
       "body": null
     },
     {
@@ -207,7 +214,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/",
+      "referer": "http://127.0.0.1:52766/",
       "body": null
     },
     {
@@ -215,7 +222,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/",
+      "referer": "http://127.0.0.1:52766/",
       "body": null
     },
     {
@@ -223,7 +230,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -231,7 +238,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -239,7 +246,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -247,7 +254,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -255,7 +262,7 @@
       "pathname": "/api/sessions/10000000-0000-4000-8000-000000001414/next-question",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": "{\"selected_option_ids\":[\"risk-first\"]}"
     },
     {
@@ -263,7 +270,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -271,7 +278,7 @@
       "pathname": "/api/workitems",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": "{\"session_id\":\"10000000-0000-4000-8000-000000001414\",\"selected_option_ids\":[\"create-worker\"]}"
     },
     {
@@ -279,7 +286,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -287,7 +294,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -295,7 +302,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/approvals",
+      "referer": "http://127.0.0.1:52766/approvals",
       "body": null
     },
     {
@@ -303,7 +310,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/approvals",
+      "referer": "http://127.0.0.1:52766/approvals",
       "body": "{\"decision\":\"deny\",\"reason_md\":\"证据不足\",\"remember\":\"once\"}"
     },
     {
@@ -311,7 +318,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/approvals",
+      "referer": "http://127.0.0.1:52766/approvals",
       "body": "{\"decision\":\"allow\",\"remember\":\"once\"}"
     },
     {
@@ -319,7 +326,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -327,7 +334,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -335,7 +342,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/approvals",
+      "referer": "http://127.0.0.1:52766/approvals",
       "body": null
     },
     {
@@ -343,7 +350,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -351,7 +358,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -359,7 +366,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -367,7 +374,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -375,7 +382,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -383,7 +390,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -391,7 +398,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -399,7 +406,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -407,7 +414,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -415,7 +422,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -423,7 +430,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -431,7 +438,7 @@
       "pathname": "/api/push/stream/proposal/r4-live-proposal",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -439,7 +446,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -447,7 +454,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -455,7 +462,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"text_hunk_overrides\":{\"hunks\":[{\"hunk_index\":0,\"start_line\":2,\"end_line\":2,\"decision\":\"keep_current\"}]}}"
     },
     {
@@ -463,7 +470,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000929\"}}"
     },
     {
@@ -471,7 +478,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_item_overrides\":{\"items\":[{\"field\":\"task_items\",\"item_id\":\"10000000-0000-4000-8000-000000000925\",\"decision\":\"accept_incoming\"}]},\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000928\"}}"
     },
     {
@@ -479,7 +486,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_field_overrides\":{\"operations\":[{\"field\":\"title\",\"decision\":\"custom\",\"value\":\"R4.13 custom reviewed title\"}]}}"
     },
     {
@@ -487,7 +494,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{\"decision\":\"request_changes\",\"reason_md\":\"Evidence is not enough\",\"remember\":\"once\"}"
     },
     {
@@ -495,7 +502,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/merge",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": "{}"
     },
     {
@@ -503,7 +510,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -511,7 +518,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -519,7 +526,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -527,7 +534,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/dashboard/cost",
+      "referer": "http://127.0.0.1:52766/dashboard/cost",
       "body": null
     },
     {
@@ -535,7 +542,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/dashboard/cost",
+      "referer": "http://127.0.0.1:52766/dashboard/cost",
       "body": null
     },
     {
@@ -543,7 +550,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_3",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/dashboard/cost",
+      "referer": "http://127.0.0.1:52766/dashboard/cost",
       "body": null
     },
     {
@@ -551,7 +558,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/dashboard/cost",
+      "referer": "http://127.0.0.1:52766/dashboard/cost",
       "body": null
     },
     {
@@ -559,7 +566,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/dashboard/cost",
+      "referer": "http://127.0.0.1:52766/dashboard/cost",
       "body": null
     },
     {
@@ -567,7 +574,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -575,7 +582,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"q\":\"regional\",\"work_item_id\":\"r4-live-workitem\",\"limit\":6}"
     },
     {
@@ -583,7 +590,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -591,7 +598,7 @@
       "pathname": "/api/workitems/r4-live-workitem/evidence-bindings",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"evidence_bubble_id\":\"10000000-0000-4000-8000-000000001424\",\"evidence_refs\":[{\"id\":\"10000000-0000-4000-8000-000000001425\",\"source_type\":\"meeting\",\"source_id\":\"regional-sync\",\"title\":\"Regional launch sync\",\"excerpt\":\"Supply delay is the blocker that needs the closest follow-up.\",\"href\":\"/knowledge/sources/regional-sync\"},{\"id\":\"10000000-0000-4000-8000-000000001426\",\"source_type\":\"drive_file\",\"source_id\":\"drive:regional-launch-review\",\"title\":\"Regional launch review draft\",\"excerpt\":\"The draft records metrics, risks, and next actions.\",\"href\":\"/knowledge/sources/regional-launch-review\"}]}"
     },
     {
@@ -599,7 +606,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -607,7 +614,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -615,7 +622,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -623,7 +630,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52766/intake/r4-live-session",
       "body": null
     },
     {
@@ -631,7 +638,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/settings",
+      "referer": "http://127.0.0.1:52766/settings",
       "body": null
     },
     {
@@ -639,7 +646,7 @@
       "pathname": "/api/pages/settings",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/settings",
+      "referer": "http://127.0.0.1:52766/settings",
       "body": null
     },
     {
@@ -647,7 +654,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/settings",
+      "referer": "http://127.0.0.1:52766/settings",
       "body": null
     },
     {
@@ -655,7 +662,7 @@
       "pathname": "/api/__qa/fail-next-preference-patch",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/settings",
+      "referer": "http://127.0.0.1:52766/settings",
       "body": null
     },
     {
@@ -663,7 +670,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/settings",
+      "referer": "http://127.0.0.1:52766/settings",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -671,7 +678,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -679,7 +686,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -687,7 +694,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -695,7 +702,7 @@
       "pathname": "/api/push/stream/run/r4-live-run",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -703,7 +710,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -711,7 +718,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/deliverables/10000000-0000-4000-8000-000000001518/restore",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "body": ""
     },
     {
@@ -719,15 +726,15 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/drive",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
       "method": "GET",
       "pathname": "/api/pages/drive",
-      "search": "?locale=en-US",
+      "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/drive",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -735,7 +742,55 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/drive",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/files",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": "{\"filename\":\"r5-upload-sample.md\",\"mime\":\"text/markdown\",\"parsed_text\":\"# R5 upload sample\\n\\nA small auditable project drive upload sample.\"}"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/drive",
+      "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/delete",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": "{\"expected_current_version_id\":\"10000000-0000-4000-8000-000000001625\"}"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/drive",
+      "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": null
+    },
+    {
+      "method": "POST",
+      "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/restore",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": ""
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/drive",
+      "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -743,7 +798,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:52766/approvals?empty=approvals",
       "body": null
     },
     {
@@ -751,7 +806,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/approvals?empty=approvals",
+      "referer": "http://127.0.0.1:52766/approvals?empty=approvals",
       "body": null
     },
     {
@@ -759,7 +814,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -767,7 +822,7 @@
       "pathname": "/api/pages/workitems/r4-live-forbidden",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49535/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:52766/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -775,14 +830,14 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49535/missing-r4-live-route",
+      "referer": "http://127.0.0.1:52766/missing-r4-live-route",
       "body": null
     }
   ],
   "steps": [
     {
       "id": "01-home-zh-desktop",
-      "url": "http://127.0.0.1:49535/",
+      "url": "http://127.0.0.1:52766/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -925,6 +980,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -1012,7 +1070,7 @@
     },
     {
       "id": "01r-home-react-dispatcher-probe-zh-desktop",
-      "url": "http://127.0.0.1:49535/",
+      "url": "http://127.0.0.1:52766/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1155,6 +1213,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -1242,7 +1303,7 @@
     },
     {
       "id": "01s-home-react-sse-props-update-zh-desktop",
-      "url": "http://127.0.0.1:49535/",
+      "url": "http://127.0.0.1:52766/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1385,6 +1446,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -1472,7 +1536,7 @@
     },
     {
       "id": "01a-intake-zh-desktop-route-component",
-      "url": "http://127.0.0.1:49535/intake/r4-live-session",
+      "url": "http://127.0.0.1:52766/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1615,6 +1679,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -1702,7 +1769,7 @@
     },
     {
       "id": "01b-intake-empty-fail-closed-zh-desktop",
-      "url": "http://127.0.0.1:49535/intake/r4-live-session",
+      "url": "http://127.0.0.1:52766/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1845,6 +1912,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -1932,7 +2002,7 @@
     },
     {
       "id": "01c-intake-next-question-success-zh-desktop",
-      "url": "http://127.0.0.1:49535/intake/r4-live-session",
+      "url": "http://127.0.0.1:52766/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2075,6 +2145,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -2162,7 +2235,7 @@
     },
     {
       "id": "01d-intake-create-workitem-success-zh-desktop",
-      "url": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2305,6 +2378,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -2392,7 +2468,7 @@
     },
     {
       "id": "02-approvals-click-zh-desktop",
-      "url": "http://127.0.0.1:49535/approvals",
+      "url": "http://127.0.0.1:52766/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2535,6 +2611,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -2622,7 +2701,7 @@
     },
     {
       "id": "02a-approval-deny-reason-gate-zh-desktop",
-      "url": "http://127.0.0.1:49535/approvals",
+      "url": "http://127.0.0.1:52766/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2765,6 +2844,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -2852,7 +2934,7 @@
     },
     {
       "id": "02b-approval-deny-success-zh-desktop",
-      "url": "http://127.0.0.1:49535/approvals",
+      "url": "http://127.0.0.1:52766/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2995,6 +3077,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -3082,7 +3167,7 @@
     },
     {
       "id": "02c-approval-approve-success-zh-desktop",
-      "url": "http://127.0.0.1:49535/approvals",
+      "url": "http://127.0.0.1:52766/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3225,6 +3310,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -3312,7 +3400,7 @@
     },
     {
       "id": "03-workitem-click-zh-desktop-route-component",
-      "url": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3455,6 +3543,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -3542,7 +3633,7 @@
     },
     {
       "id": "04-history-back-approvals",
-      "url": "http://127.0.0.1:49535/approvals",
+      "url": "http://127.0.0.1:52766/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3685,6 +3776,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -3772,7 +3866,7 @@
     },
     {
       "id": "05-history-forward-workitem",
-      "url": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3915,6 +4009,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -4002,7 +4099,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-route-component",
-      "url": "http://127.0.0.1:49535/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52766/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4145,6 +4242,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -4232,7 +4332,7 @@
     },
     {
       "id": "06a-proposal-advanced-review-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4375,6 +4475,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -4462,7 +4565,7 @@
     },
     {
       "id": "06aa-proposal-dirty-edit-sse-guard-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4605,6 +4708,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -4692,7 +4798,7 @@
     },
     {
       "id": "06b-proposal-line-editor-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4835,6 +4941,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -4922,7 +5031,7 @@
     },
     {
       "id": "06c-proposal-task-plan-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5065,6 +5174,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -5152,7 +5264,7 @@
     },
     {
       "id": "06d-proposal-subrecord-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5295,6 +5407,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -5382,7 +5497,7 @@
     },
     {
       "id": "06e-proposal-custom-field-empty-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5525,6 +5640,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -5612,7 +5730,7 @@
     },
     {
       "id": "06f-proposal-custom-field-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5755,6 +5873,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -5842,7 +5963,7 @@
     },
     {
       "id": "06g-proposal-structured-field-editor-visual-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 3000
@@ -5985,6 +6106,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -6072,7 +6196,7 @@
     },
     {
       "id": "07-proposal-reason-gate-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6215,6 +6339,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -6302,7 +6429,7 @@
     },
     {
       "id": "08-proposal-request-changes-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6445,6 +6572,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -6532,7 +6662,7 @@
     },
     {
       "id": "09-proposal-merge-success-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6675,6 +6805,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -6762,7 +6895,7 @@
     },
     {
       "id": "10-proposal-sse-refresh-notice-en-desktop",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6905,6 +7038,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -6992,7 +7128,7 @@
     },
     {
       "id": "11-proposal-en-mobile-scrolled-notice-route-component",
-      "url": "http://127.0.0.1:49535/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52766/proposals/r4-live-proposal",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7135,6 +7271,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -7222,7 +7361,7 @@
     },
     {
       "id": "12-cost-en-mobile-route-component",
-      "url": "http://127.0.0.1:49535/dashboard/cost",
+      "url": "http://127.0.0.1:52766/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7365,6 +7504,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": "104000",
           "costTotalCny": "4.2",
           "costBudgetCount": "3",
@@ -7452,7 +7594,7 @@
     },
     {
       "id": "12a-cost-budget-warning-notice-en-mobile",
-      "url": "http://127.0.0.1:49535/dashboard/cost",
+      "url": "http://127.0.0.1:52766/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -7595,6 +7737,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": "104000",
           "costTotalCny": "4.2",
           "costBudgetCount": "3",
@@ -7682,7 +7827,7 @@
     },
     {
       "id": "12b-knowledge-fallback-en-desktop-route-component",
-      "url": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7825,6 +7970,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -7912,7 +8060,7 @@
     },
     {
       "id": "12c-knowledge-bind-success-en-desktop",
-      "url": "http://127.0.0.1:49535/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:52766/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8055,6 +8203,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -8142,7 +8293,7 @@
     },
     {
       "id": "12d-intake-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49535/intake/r4-live-session",
+      "url": "http://127.0.0.1:52766/intake/r4-live-session",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -8285,6 +8436,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -8372,7 +8526,7 @@
     },
     {
       "id": "13-settings-en-desktop-route-component",
-      "url": "http://127.0.0.1:49535/settings",
+      "url": "http://127.0.0.1:52766/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8515,6 +8669,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -8602,7 +8759,7 @@
     },
     {
       "id": "13a-settings-locale-persistence-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:49535/settings",
+      "url": "http://127.0.0.1:52766/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8745,6 +8902,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -8832,7 +8992,7 @@
     },
     {
       "id": "14-settings-desktop-gate-en-desktop",
-      "url": "http://127.0.0.1:49535/settings",
+      "url": "http://127.0.0.1:52766/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8975,6 +9135,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -9062,7 +9225,7 @@
     },
     {
       "id": "14a-settings-en-mobile-boundary-no-overflow",
-      "url": "http://127.0.0.1:49535/settings",
+      "url": "http://127.0.0.1:52766/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -9205,6 +9368,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -9292,7 +9458,7 @@
     },
     {
       "id": "15-replay-en-desktop-route-component",
-      "url": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9435,6 +9601,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -9522,7 +9691,7 @@
     },
     {
       "id": "15a-replay-restore-success-en-desktop",
-      "url": "http://127.0.0.1:49535/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:52766/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9665,6 +9834,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -9752,7 +9924,7 @@
     },
     {
       "id": "15b-drive-en-desktop-route-component",
-      "url": "http://127.0.0.1:49535/drive",
+      "url": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9761,7 +9933,7 @@
       "screenshot": "15b-drive-en-desktop-route-component.png",
       "audit": {
         "pathname": "/drive",
-        "search": "",
+        "search": "?project_id=10000000-0000-4000-8000-000000001600",
         "locationHash": "",
         "lang": "en-US",
         "storedLocale": "en-US",
@@ -9779,7 +9951,7 @@
         "hydrationSource": "page-vm",
         "hydrationMode": "html-fallback",
         "hydrationPageVm": "drive",
-        "hydrationActionCount": "4",
+        "hydrationActionCount": "5",
         "hydrationAdapter": "route-component-v1",
         "hydrationReactComponent": null,
         "hydrationReactComponentRoute": null,
@@ -9791,7 +9963,7 @@
         "hydrationPanelRoute": "drive",
         "hydrationPanelMode": "html-fallback",
         "hydrationPanelPageVm": "drive",
-        "hydrationPanelActionCount": "4",
+        "hydrationPanelActionCount": "5",
         "hydrationPanelCount": 1,
         "reactRouteTree": true,
         "routeTreeKey": "drive",
@@ -9895,6 +10067,9 @@
           "driveVersionCount": "2",
           "driveAcceptedCount": "1",
           "driveCommentCount": "1",
+          "driveDeletedCount": "0",
+          "driveOperationCount": "1",
+          "driveCanManage": "true",
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -9981,8 +10156,707 @@
       }
     },
     {
+      "id": "15c-drive-upload-success-en-desktop",
+      "url": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "15c-drive-upload-success-en-desktop.png",
+      "audit": {
+        "pathname": "/drive",
+        "search": "?project_id=10000000-0000-4000-8000-000000001600",
+        "locationHash": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "drive",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "routeComponent": "drive",
+        "routeComponentSource": "page-vm",
+        "routeComponentPanel": "drive",
+        "routeComponentActive": true,
+        "hydrationBoundary": true,
+        "hydrationRoute": "drive",
+        "hydrationSource": "page-vm",
+        "hydrationMode": "html-fallback",
+        "hydrationPageVm": "drive",
+        "hydrationActionCount": "6",
+        "hydrationAdapter": "route-component-v1",
+        "hydrationReactComponent": null,
+        "hydrationReactComponentRoute": null,
+        "hydrationReactComponentMode": null,
+        "hydrationReactComponentPropsSource": null,
+        "hydrationReactComponentFallback": false,
+        "hydrationReactComponentAdapter": null,
+        "hydrationPanel": true,
+        "hydrationPanelRoute": "drive",
+        "hydrationPanelMode": "html-fallback",
+        "hydrationPanelPageVm": "drive",
+        "hydrationPanelActionCount": "6",
+        "hydrationPanelCount": 1,
+        "reactRouteTree": true,
+        "routeTreeKey": "drive",
+        "routeTreePageVm": "drive",
+        "routeTreeMode": "html-fallback",
+        "routeTreeAdapter": "route-component-v1",
+        "routeTreeActiveOnly": true,
+        "routeTreeRouteCount": "10",
+        "routeTreeReactComponent": "",
+        "routeTreeReactComponentAdapter": "",
+        "routeTreeReactComponentFallback": false,
+        "routeTreeRuntimeMount": false,
+        "routeTreeRuntimeStrategy": "",
+        "routeTreeRuntimePropsUpdate": "",
+        "routeTreeRuntimeDispatcher": "",
+        "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
+        "reactComponentName": null,
+        "reactComponentRoute": null,
+        "reactComponentMode": null,
+        "reactComponentPropsSource": null,
+        "reactComponentPageVm": null,
+        "reactComponentLocale": null,
+        "reactComponentHtmlFallback": false,
+        "reactComponentAdapter": null,
+        "reactComponentActionCount": null,
+        "reactComponentFingerprint": null,
+        "reactRuntimeMounted": true,
+        "reactRuntimeRoute": "",
+        "reactRuntimeComponent": "",
+        "reactRuntimeName": null,
+        "reactRuntimePropsSource": null,
+        "reactRuntimeFingerprint": null,
+        "reactRuntimeLastUpdateReason": null,
+        "reactRuntimeMountCount": null,
+        "reactRuntimePropsUpdateCount": null,
+        "reactRuntimePrimaryActionCount": null,
+        "reactRuntimeQueueCount": null,
+        "reactRuntimeVisibleMutationEditor": "false",
+        "reactRuntimeMutationEditorKind": null,
+        "reactRuntimeControlledField": null,
+        "reactRuntimeControlledValue": null,
+        "reactRuntimeHtmlFallbackPreserved": "false",
+        "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
+        "reactRuntimeDispatcherProbe": false,
+        "reactRuntimeDispatcherProbeActionId": null,
+        "routeSpecificMarker": true,
+        "routeData": {
+          "workitemTraceCount": null,
+          "workitemEvidenceCount": null,
+          "workitemAcceptanceCount": null,
+          "proposalChangeCount": null,
+          "proposalActionCount": null,
+          "proposalEvidenceCount": null,
+          "proposalConflictCount": null,
+          "proposalSplitAdapter": null,
+          "proposalReadonlyReviewActionCount": null,
+          "proposalAdvancedFallbackPreserved": null,
+          "proposalAdvancedFallbackActionCount": null,
+          "proposalLineEditorFallback": null,
+          "proposalFieldEditorFallback": null,
+          "proposalSubrecordEditorFallback": null,
+          "proposalLineEditorFileCount": null,
+          "proposalLineEditorHunkCount": null,
+          "proposalStructuredFieldEditorCount": null,
+          "proposalSubrecordItemCount": null,
+          "proposalAdvancedConflicts": null,
+          "proposalAdvancedFallback": null,
+          "proposalAdvancedFallbackSource": null,
+          "proposalAdvancedFallbackBoundaryActionCount": null,
+          "proposalAdvancedLineEditor": null,
+          "proposalAdvancedFieldEditor": null,
+          "proposalAdvancedSubrecordEditor": null,
+          "proposalLineEditorSelectedDecision": null,
+          "proposalLineEditorSearchValue": null,
+          "proposalCustomFieldValue": null,
+          "routeDirty": null,
+          "routeDirtyReason": null,
+          "intakeOptionCount": null,
+          "intakeProgressCount": null,
+          "intakeFreeTextCollapsed": null,
+          "intakeInputMode": null,
+          "intakeOptionFirst": null,
+          "intakeSelectedCount": "0",
+          "knowledgeEvidenceCount": null,
+          "knowledgeMissing": null,
+          "knowledgeActionCount": null,
+          "replayRunId": null,
+          "replayStepCount": null,
+          "replayAcceptedDeliverableCount": null,
+          "replayMergeAttemptCount": null,
+          "replayStructuredAuditCount": null,
+          "driveProjectId": "10000000-0000-4000-8000-000000001600",
+          "driveItemCount": "3",
+          "driveVersionCount": "3",
+          "driveAcceptedCount": "1",
+          "driveCommentCount": "1",
+          "driveDeletedCount": "0",
+          "driveOperationCount": "2",
+          "driveCanManage": "true",
+          "costTotalTokens": null,
+          "costTotalCny": null,
+          "costBudgetCount": null,
+          "costModelCount": null,
+          "costNoticeCount": null,
+          "settingsRuntimeStatus": null,
+          "settingsPetModelInWeb": null,
+          "settingsWorkerCount": null,
+          "settingsActiveLocale": null,
+          "settingsPreferenceLocale": null,
+          "settingsPreferenceSource": null,
+          "settingsPreferenceSynced": null,
+          "settingsSecretSafe": null,
+          "settingsRestoreRequiresDesktop": null,
+          "settingsWebLocalActions": null,
+          "settingsLocalBoundary": null
+        },
+        "notice": {
+          "visible": true,
+          "kind": "action_success",
+          "tone": "success",
+          "source": "rest",
+          "locale": "en-US",
+          "actionId": "drive_upload_file",
+          "eventType": null,
+          "stream": null,
+          "title": "Submitted",
+          "body": "Submitted",
+          "reasonButtonCount": 0
+        },
+        "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
+          "runtime": "app-level",
+          "streamCount": "1",
+          "activeSourceCount": "1",
+          "openCount": "1",
+          "closeCount": "0",
+          "reuseCount": "1",
+          "connectedCount": "1",
+          "eventCount": null,
+          "refreshCount": null,
+          "lastEvent": null,
+          "lastStream": null,
+          "lastEventId": "evt_r4_20_4",
+          "lastEventIdSource": null,
+          "cursorStrategy": "sse-id-and-query-last_event_id",
+          "lastOpenHadCursor": "true",
+          "refreshMode": null,
+          "reactPropsEvent": null,
+          "reactPropsStream": null,
+          "reactPropsUpdateCount": null,
+          "routeDirty": "false",
+          "dirtyRoute": null,
+          "dirtyReason": null,
+          "dirtyGuardCount": null,
+          "dirtyPendingEvent": null,
+          "dirtyPendingStream": null
+        },
+        "routeState": {
+          "kind": null,
+          "actionText": null
+        },
+        "panelCount": 1,
+        "visiblePanelCount": 1,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "secretLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "15d-drive-delete-success-en-desktop",
+      "url": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "15d-drive-delete-success-en-desktop.png",
+      "audit": {
+        "pathname": "/drive",
+        "search": "?project_id=10000000-0000-4000-8000-000000001600",
+        "locationHash": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "drive",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "routeComponent": "drive",
+        "routeComponentSource": "page-vm",
+        "routeComponentPanel": "drive",
+        "routeComponentActive": true,
+        "hydrationBoundary": true,
+        "hydrationRoute": "drive",
+        "hydrationSource": "page-vm",
+        "hydrationMode": "html-fallback",
+        "hydrationPageVm": "drive",
+        "hydrationActionCount": "6",
+        "hydrationAdapter": "route-component-v1",
+        "hydrationReactComponent": null,
+        "hydrationReactComponentRoute": null,
+        "hydrationReactComponentMode": null,
+        "hydrationReactComponentPropsSource": null,
+        "hydrationReactComponentFallback": false,
+        "hydrationReactComponentAdapter": null,
+        "hydrationPanel": true,
+        "hydrationPanelRoute": "drive",
+        "hydrationPanelMode": "html-fallback",
+        "hydrationPanelPageVm": "drive",
+        "hydrationPanelActionCount": "6",
+        "hydrationPanelCount": 1,
+        "reactRouteTree": true,
+        "routeTreeKey": "drive",
+        "routeTreePageVm": "drive",
+        "routeTreeMode": "html-fallback",
+        "routeTreeAdapter": "route-component-v1",
+        "routeTreeActiveOnly": true,
+        "routeTreeRouteCount": "10",
+        "routeTreeReactComponent": "",
+        "routeTreeReactComponentAdapter": "",
+        "routeTreeReactComponentFallback": false,
+        "routeTreeRuntimeMount": false,
+        "routeTreeRuntimeStrategy": "",
+        "routeTreeRuntimePropsUpdate": "",
+        "routeTreeRuntimeDispatcher": "",
+        "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
+        "reactComponentName": null,
+        "reactComponentRoute": null,
+        "reactComponentMode": null,
+        "reactComponentPropsSource": null,
+        "reactComponentPageVm": null,
+        "reactComponentLocale": null,
+        "reactComponentHtmlFallback": false,
+        "reactComponentAdapter": null,
+        "reactComponentActionCount": null,
+        "reactComponentFingerprint": null,
+        "reactRuntimeMounted": true,
+        "reactRuntimeRoute": "",
+        "reactRuntimeComponent": "",
+        "reactRuntimeName": null,
+        "reactRuntimePropsSource": null,
+        "reactRuntimeFingerprint": null,
+        "reactRuntimeLastUpdateReason": null,
+        "reactRuntimeMountCount": null,
+        "reactRuntimePropsUpdateCount": null,
+        "reactRuntimePrimaryActionCount": null,
+        "reactRuntimeQueueCount": null,
+        "reactRuntimeVisibleMutationEditor": "false",
+        "reactRuntimeMutationEditorKind": null,
+        "reactRuntimeControlledField": null,
+        "reactRuntimeControlledValue": null,
+        "reactRuntimeHtmlFallbackPreserved": "false",
+        "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
+        "reactRuntimeDispatcherProbe": false,
+        "reactRuntimeDispatcherProbeActionId": null,
+        "routeSpecificMarker": true,
+        "routeData": {
+          "workitemTraceCount": null,
+          "workitemEvidenceCount": null,
+          "workitemAcceptanceCount": null,
+          "proposalChangeCount": null,
+          "proposalActionCount": null,
+          "proposalEvidenceCount": null,
+          "proposalConflictCount": null,
+          "proposalSplitAdapter": null,
+          "proposalReadonlyReviewActionCount": null,
+          "proposalAdvancedFallbackPreserved": null,
+          "proposalAdvancedFallbackActionCount": null,
+          "proposalLineEditorFallback": null,
+          "proposalFieldEditorFallback": null,
+          "proposalSubrecordEditorFallback": null,
+          "proposalLineEditorFileCount": null,
+          "proposalLineEditorHunkCount": null,
+          "proposalStructuredFieldEditorCount": null,
+          "proposalSubrecordItemCount": null,
+          "proposalAdvancedConflicts": null,
+          "proposalAdvancedFallback": null,
+          "proposalAdvancedFallbackSource": null,
+          "proposalAdvancedFallbackBoundaryActionCount": null,
+          "proposalAdvancedLineEditor": null,
+          "proposalAdvancedFieldEditor": null,
+          "proposalAdvancedSubrecordEditor": null,
+          "proposalLineEditorSelectedDecision": null,
+          "proposalLineEditorSearchValue": null,
+          "proposalCustomFieldValue": null,
+          "routeDirty": null,
+          "routeDirtyReason": null,
+          "intakeOptionCount": null,
+          "intakeProgressCount": null,
+          "intakeFreeTextCollapsed": null,
+          "intakeInputMode": null,
+          "intakeOptionFirst": null,
+          "intakeSelectedCount": "0",
+          "knowledgeEvidenceCount": null,
+          "knowledgeMissing": null,
+          "knowledgeActionCount": null,
+          "replayRunId": null,
+          "replayStepCount": null,
+          "replayAcceptedDeliverableCount": null,
+          "replayMergeAttemptCount": null,
+          "replayStructuredAuditCount": null,
+          "driveProjectId": "10000000-0000-4000-8000-000000001600",
+          "driveItemCount": "2",
+          "driveVersionCount": "3",
+          "driveAcceptedCount": "1",
+          "driveCommentCount": "1",
+          "driveDeletedCount": "1",
+          "driveOperationCount": "3",
+          "driveCanManage": "true",
+          "costTotalTokens": null,
+          "costTotalCny": null,
+          "costBudgetCount": null,
+          "costModelCount": null,
+          "costNoticeCount": null,
+          "settingsRuntimeStatus": null,
+          "settingsPetModelInWeb": null,
+          "settingsWorkerCount": null,
+          "settingsActiveLocale": null,
+          "settingsPreferenceLocale": null,
+          "settingsPreferenceSource": null,
+          "settingsPreferenceSynced": null,
+          "settingsSecretSafe": null,
+          "settingsRestoreRequiresDesktop": null,
+          "settingsWebLocalActions": null,
+          "settingsLocalBoundary": null
+        },
+        "notice": {
+          "visible": true,
+          "kind": "action_success",
+          "tone": "success",
+          "source": "rest",
+          "locale": "en-US",
+          "actionId": "drive_delete_item",
+          "eventType": null,
+          "stream": null,
+          "title": "Submitted",
+          "body": "Submitted",
+          "reasonButtonCount": 0
+        },
+        "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
+          "runtime": "app-level",
+          "streamCount": "1",
+          "activeSourceCount": "1",
+          "openCount": "1",
+          "closeCount": "0",
+          "reuseCount": "2",
+          "connectedCount": "1",
+          "eventCount": null,
+          "refreshCount": null,
+          "lastEvent": null,
+          "lastStream": null,
+          "lastEventId": "evt_r4_20_4",
+          "lastEventIdSource": null,
+          "cursorStrategy": "sse-id-and-query-last_event_id",
+          "lastOpenHadCursor": "true",
+          "refreshMode": null,
+          "reactPropsEvent": null,
+          "reactPropsStream": null,
+          "reactPropsUpdateCount": null,
+          "routeDirty": "false",
+          "dirtyRoute": null,
+          "dirtyReason": null,
+          "dirtyGuardCount": null,
+          "dirtyPendingEvent": null,
+          "dirtyPendingStream": null
+        },
+        "routeState": {
+          "kind": null,
+          "actionText": null
+        },
+        "panelCount": 1,
+        "visiblePanelCount": 1,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "secretLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "15e-drive-restore-success-en-desktop",
+      "url": "http://127.0.0.1:52766/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "15e-drive-restore-success-en-desktop.png",
+      "audit": {
+        "pathname": "/drive",
+        "search": "?project_id=10000000-0000-4000-8000-000000001600",
+        "locationHash": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "drive",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "routeComponent": "drive",
+        "routeComponentSource": "page-vm",
+        "routeComponentPanel": "drive",
+        "routeComponentActive": true,
+        "hydrationBoundary": true,
+        "hydrationRoute": "drive",
+        "hydrationSource": "page-vm",
+        "hydrationMode": "html-fallback",
+        "hydrationPageVm": "drive",
+        "hydrationActionCount": "6",
+        "hydrationAdapter": "route-component-v1",
+        "hydrationReactComponent": null,
+        "hydrationReactComponentRoute": null,
+        "hydrationReactComponentMode": null,
+        "hydrationReactComponentPropsSource": null,
+        "hydrationReactComponentFallback": false,
+        "hydrationReactComponentAdapter": null,
+        "hydrationPanel": true,
+        "hydrationPanelRoute": "drive",
+        "hydrationPanelMode": "html-fallback",
+        "hydrationPanelPageVm": "drive",
+        "hydrationPanelActionCount": "6",
+        "hydrationPanelCount": 1,
+        "reactRouteTree": true,
+        "routeTreeKey": "drive",
+        "routeTreePageVm": "drive",
+        "routeTreeMode": "html-fallback",
+        "routeTreeAdapter": "route-component-v1",
+        "routeTreeActiveOnly": true,
+        "routeTreeRouteCount": "10",
+        "routeTreeReactComponent": "",
+        "routeTreeReactComponentAdapter": "",
+        "routeTreeReactComponentFallback": false,
+        "routeTreeRuntimeMount": false,
+        "routeTreeRuntimeStrategy": "",
+        "routeTreeRuntimePropsUpdate": "",
+        "routeTreeRuntimeDispatcher": "",
+        "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
+        "reactComponentName": null,
+        "reactComponentRoute": null,
+        "reactComponentMode": null,
+        "reactComponentPropsSource": null,
+        "reactComponentPageVm": null,
+        "reactComponentLocale": null,
+        "reactComponentHtmlFallback": false,
+        "reactComponentAdapter": null,
+        "reactComponentActionCount": null,
+        "reactComponentFingerprint": null,
+        "reactRuntimeMounted": true,
+        "reactRuntimeRoute": "",
+        "reactRuntimeComponent": "",
+        "reactRuntimeName": null,
+        "reactRuntimePropsSource": null,
+        "reactRuntimeFingerprint": null,
+        "reactRuntimeLastUpdateReason": null,
+        "reactRuntimeMountCount": null,
+        "reactRuntimePropsUpdateCount": null,
+        "reactRuntimePrimaryActionCount": null,
+        "reactRuntimeQueueCount": null,
+        "reactRuntimeVisibleMutationEditor": "false",
+        "reactRuntimeMutationEditorKind": null,
+        "reactRuntimeControlledField": null,
+        "reactRuntimeControlledValue": null,
+        "reactRuntimeHtmlFallbackPreserved": "false",
+        "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
+        "reactRuntimeDispatcherProbe": false,
+        "reactRuntimeDispatcherProbeActionId": null,
+        "routeSpecificMarker": true,
+        "routeData": {
+          "workitemTraceCount": null,
+          "workitemEvidenceCount": null,
+          "workitemAcceptanceCount": null,
+          "proposalChangeCount": null,
+          "proposalActionCount": null,
+          "proposalEvidenceCount": null,
+          "proposalConflictCount": null,
+          "proposalSplitAdapter": null,
+          "proposalReadonlyReviewActionCount": null,
+          "proposalAdvancedFallbackPreserved": null,
+          "proposalAdvancedFallbackActionCount": null,
+          "proposalLineEditorFallback": null,
+          "proposalFieldEditorFallback": null,
+          "proposalSubrecordEditorFallback": null,
+          "proposalLineEditorFileCount": null,
+          "proposalLineEditorHunkCount": null,
+          "proposalStructuredFieldEditorCount": null,
+          "proposalSubrecordItemCount": null,
+          "proposalAdvancedConflicts": null,
+          "proposalAdvancedFallback": null,
+          "proposalAdvancedFallbackSource": null,
+          "proposalAdvancedFallbackBoundaryActionCount": null,
+          "proposalAdvancedLineEditor": null,
+          "proposalAdvancedFieldEditor": null,
+          "proposalAdvancedSubrecordEditor": null,
+          "proposalLineEditorSelectedDecision": null,
+          "proposalLineEditorSearchValue": null,
+          "proposalCustomFieldValue": null,
+          "routeDirty": null,
+          "routeDirtyReason": null,
+          "intakeOptionCount": null,
+          "intakeProgressCount": null,
+          "intakeFreeTextCollapsed": null,
+          "intakeInputMode": null,
+          "intakeOptionFirst": null,
+          "intakeSelectedCount": "0",
+          "knowledgeEvidenceCount": null,
+          "knowledgeMissing": null,
+          "knowledgeActionCount": null,
+          "replayRunId": null,
+          "replayStepCount": null,
+          "replayAcceptedDeliverableCount": null,
+          "replayMergeAttemptCount": null,
+          "replayStructuredAuditCount": null,
+          "driveProjectId": "10000000-0000-4000-8000-000000001600",
+          "driveItemCount": "3",
+          "driveVersionCount": "3",
+          "driveAcceptedCount": "1",
+          "driveCommentCount": "1",
+          "driveDeletedCount": "0",
+          "driveOperationCount": "4",
+          "driveCanManage": "true",
+          "costTotalTokens": null,
+          "costTotalCny": null,
+          "costBudgetCount": null,
+          "costModelCount": null,
+          "costNoticeCount": null,
+          "settingsRuntimeStatus": null,
+          "settingsPetModelInWeb": null,
+          "settingsWorkerCount": null,
+          "settingsActiveLocale": null,
+          "settingsPreferenceLocale": null,
+          "settingsPreferenceSource": null,
+          "settingsPreferenceSynced": null,
+          "settingsSecretSafe": null,
+          "settingsRestoreRequiresDesktop": null,
+          "settingsWebLocalActions": null,
+          "settingsLocalBoundary": null
+        },
+        "notice": {
+          "visible": true,
+          "kind": "action_success",
+          "tone": "success",
+          "source": "rest",
+          "locale": "en-US",
+          "actionId": "drive_restore_item",
+          "eventType": null,
+          "stream": null,
+          "title": "Submitted",
+          "body": "Submitted",
+          "reasonButtonCount": 0
+        },
+        "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
+          "runtime": "app-level",
+          "streamCount": "1",
+          "activeSourceCount": "1",
+          "openCount": "1",
+          "closeCount": "0",
+          "reuseCount": "3",
+          "connectedCount": "1",
+          "eventCount": null,
+          "refreshCount": null,
+          "lastEvent": null,
+          "lastStream": null,
+          "lastEventId": "evt_r4_20_4",
+          "lastEventIdSource": null,
+          "cursorStrategy": "sse-id-and-query-last_event_id",
+          "lastOpenHadCursor": "true",
+          "refreshMode": null,
+          "reactPropsEvent": null,
+          "reactPropsStream": null,
+          "reactPropsUpdateCount": null,
+          "routeDirty": "false",
+          "dirtyRoute": null,
+          "dirtyReason": null,
+          "dirtyGuardCount": null,
+          "dirtyPendingEvent": null,
+          "dirtyPendingStream": null
+        },
+        "routeState": {
+          "kind": null,
+          "actionText": null
+        },
+        "panelCount": 1,
+        "visiblePanelCount": 1,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "secretLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
       "id": "16-empty-approvals-mobile",
-      "url": "http://127.0.0.1:49535/approvals?empty=approvals",
+      "url": "http://127.0.0.1:52766/approvals?empty=approvals",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -10125,6 +10999,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -10212,7 +11089,7 @@
     },
     {
       "id": "17-forbidden-workitem-desktop",
-      "url": "http://127.0.0.1:49535/workitems/r4-live-forbidden",
+      "url": "http://127.0.0.1:52766/workitems/r4-live-forbidden",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10355,6 +11232,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
@@ -10442,7 +11322,7 @@
     },
     {
       "id": "18-unknown-route-error",
-      "url": "http://127.0.0.1:49535/missing-r4-live-route",
+      "url": "http://127.0.0.1:52766/missing-r4-live-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10585,6 +11465,9 @@
           "driveVersionCount": null,
           "driveAcceptedCount": null,
           "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
           "costTotalTokens": null,
           "costTotalCny": null,
           "costBudgetCount": null,
