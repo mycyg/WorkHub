@@ -1,0 +1,41 @@
+# R4.15 Settings Locale Device Boundary Browser Smoke
+
+- ok: true
+- steps: 38
+- path nav clicks: true
+- history back/forward: true
+- locale toggle reload: true
+- R4.10 route components: true
+- R4.11 route components: true
+- R4.11 source truth: true
+- R4.11 VM/DOM match: true
+- R4.14 session/knowledge endpoints: true
+- R4.12 approval response notice: true
+- R4.12 reason gate: true
+- R4.12 request changes notice: true
+- R4.12 merge notice: true
+- R4.12 SSE refresh notice: true
+- R4.12 budget warning notice: true
+- R4.12 desktop gate: true
+- R4.12 route-state actions: true
+- R4.13 proposal advanced route DOM: true
+- R4.13 proposal advanced route sections: true
+- R4.13 advanced apply payloads: true
+- R4.13 custom field fail-closed: true
+- R4.13 conflict API source truth: true
+- R4.13 structured editor visual: true
+- R4.13 proposal regression: true
+- R4.14 route component source truth: true
+- R4.14 intake route: true
+- R4.14 option-first fail-closed: true
+- R4.14 intake submit/create: true
+- R4.14 knowledge fallback/bind: true
+- R4.14 mobile no overflow: true
+- R4.15 settings locale persistence: true
+- R4.15 settings secret safe: true
+- R4.15 desktop boundary gate: true
+- R4.15 route recovery actions: true
+- R4.15 settings mobile no overflow: true
+- R4.14 intake/knowledge regression: true
+- active-only product panels: true
+- no text box overflow: true

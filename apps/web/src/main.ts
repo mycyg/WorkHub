@@ -15,6 +15,8 @@ export const webSurface = {
   apiBaseUrlEnv: "VITE_API_BASE_URL",
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,
   pages: [
+    "/api/auth/me",
+    "/api/auth/preferences",
     "/api/pages/attention",
     "/api/sessions",
     "/api/sessions/:id",
@@ -31,6 +33,7 @@ export const webSurface = {
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
     "/api/pages/cost",
+    "/api/pages/settings",
     "/api/agent-runs/:id/replay",
     "/settings"
   ],

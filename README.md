@@ -8,11 +8,11 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:地基施工已开始 🚧
+## 现状:R4 Web 产品化持续施工中 🚧
 
-本仓库目前是 **产品规格文档树 + TS-first 地基脚手架**。规格已细化到屏级 / 接口级 / 功能级,实现代码会按 F01–F11 逐步加入。
+本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。规格已细化到屏级 / 接口级 / 功能级，R1/R2/R3/R4 正在按真实链路、桌宠入口与 Web 产品化持续推进。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 88 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 101 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -32,7 +32,7 @@ pnpm dev
 - Tauri webview 规划端口: `1420`。
 - 默认配置来自 [`packages/config`](packages/config);复制 [`.env.example`](.env.example) 到 `.env` 后填入本地密钥。
 - PostgreSQL/Redis 可用 `docker compose up -d postgres redis` 启动;Drizzle 迁移命令为 `pnpm db:generate`、`pnpm db:check`、`pnpm db:migrate`。R4.9 已在远端 Linux PG + Redis + Chrome 环境通过 locale metrics browser smoke。
-- 生产沙箱与 Agent 执行后续要求 Linux；Windows 当前用于开发、文档与地基验证；桌面端已补 Windows 物理托盘与 Linux GNOME StatusNotifier/AppIndicator smoke，macOS menu bar 仍待真机验收。
+- 生产沙箱与 Agent 执行后续要求 Linux；桌面端已补 Windows 物理托盘、Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 中英 smoke；Web R4.15 已补 Settings / locale / device boundary browser smoke，后续继续推进 React route tree / hydration boundary 与最终跨平台打包验收。
 
 ## 许可证与商业授权 ⚖️
 

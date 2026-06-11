@@ -133,12 +133,20 @@ test("Page VM builders localize generated English copy without translating user/
 
   const settingsPage = buildSettingsPage({ settings, locale: "en-US", generatedAt: new Date(at) });
   assert.equal(settingsPage.locale, "en-US");
+  assert.equal(settingsPage.runtime.runtime_status, "ready");
   assert.equal(settingsPage.llm_runtime.default_model, "deepseek-v4-flash");
   assert.equal(settingsPage.llm_runtime.api_key_configured, false);
+  assert.equal(settingsPage.llm_runtime.secret_safe, true);
+  assert.equal(settingsPage.language.preference_locale, "en-US");
+  assert.equal(settingsPage.language.preference_source, "request");
+  assert.equal(settingsPage.language.preference_synced, true);
+  assert.equal(settingsPage.language.update_href, "/api/auth/preferences");
   const blockedBaseUrl = "https://api." + "deepseek.com";
   assert.equal(JSON.stringify(settingsPage).includes(blockedBaseUrl), false);
   assert.equal(JSON.stringify(settingsPage).includes("sk-"), false);
   assert.equal(settingsPage.device.pet_model_settings_in_web, false);
+  assert.equal(settingsPage.device.restore_requires_desktop, true);
+  assert.equal(settingsPage.device.web_local_actions_enabled, false);
 
   const proposal = buildProposalDetailPage({
     id: "10000000-0000-4000-8000-000000000040",

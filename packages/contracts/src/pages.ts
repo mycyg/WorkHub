@@ -258,6 +258,7 @@ export const settingsPageVmSchema = z.object({
   locale: workHubLocaleSchema,
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
+    runtime_status: z.enum(["ready", "attention_needed"]),
     worker_count: z.number().int().positive(),
     broker_backend: z.enum(["memory", "redis", "pg_listen"]),
     broker_configured: z.boolean(),
@@ -270,7 +271,8 @@ export const settingsPageVmSchema = z.object({
     default_model: z.string().min(1),
     provider_count: z.number().int().nonnegative(),
     api_key_configured: z.boolean(),
-    base_url_configured: z.boolean()
+    base_url_configured: z.boolean(),
+    secret_safe: z.literal(true)
   }),
   budgets: z.object({
     run_tokens: z.number().int().positive(),
@@ -284,15 +286,21 @@ export const settingsPageVmSchema = z.object({
   }),
   language: z.object({
     active_locale: workHubLocaleSchema,
+    preference_locale: workHubLocaleSchema,
+    preference_source: z.enum(["server", "request", "fallback"]),
+    preference_synced: z.boolean(),
     supported_locales: z.array(workHubLocaleSchema).min(1),
-    storage_key: z.string().min(1)
+    storage_key: z.string().min(1),
+    update_href: z.string().min(1)
   }),
   device: z.object({
     desktop_client: z.literal("tauri"),
     local_execution_boundary: z.boolean(),
     independent_pet_window: z.boolean(),
     pet_model_settings_in_web: z.literal(false),
-    restore_href: z.string().min(1)
+    restore_href: z.string().min(1),
+    restore_requires_desktop: z.literal(true),
+    web_local_actions_enabled: z.literal(false)
   })
 });
 export type SettingsPageVM = z.infer<typeof settingsPageVmSchema>;

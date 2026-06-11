@@ -12,6 +12,7 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
     locale,
     runtime: {
       app_env: "test",
+      runtime_status: "ready",
       worker_count: 2,
       broker_backend: "memory",
       broker_configured: true,
@@ -24,7 +25,8 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
       default_model: "deepseek-v4-flash",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true
+      base_url_configured: true,
+      secret_safe: true
     },
     budgets: {
       run_tokens: 120000,
@@ -38,15 +40,21 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
     },
     language: {
       active_locale: locale,
+      preference_locale: locale,
+      preference_source: "server",
+      preference_synced: true,
       supported_locales: ["zh-CN", "en-US"],
-      storage_key: "workhub.locale"
+      storage_key: "workhub.locale",
+      update_href: "/api/auth/preferences"
     },
     device: {
       desktop_client: "tauri",
       local_execution_boundary: true,
       independent_pet_window: true,
       pet_model_settings_in_web: false,
-      restore_href: "/settings?panel=desktop"
+      restore_href: "/settings?panel=desktop",
+      restore_requires_desktop: true,
+      web_local_actions_enabled: false
     }
   };
 }
@@ -458,9 +466,20 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.ok(settings);
   assert.equal(settings.html.includes('data-r4-route-component="settings"'), true);
   assert.equal(settings.html.includes('data-r4-route-component-source="page-vm"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-runtime-status="ready"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-active-locale="zh-CN"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-preference-locale="zh-CN"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-preference-source="server"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-preference-synced="true"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-secret-safe="true"'), true);
   assert.equal(settings.html.includes('data-r4-settings-pet-model-in-web="false"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
+  assert.equal(settings.html.includes('data-r4-settings-web-local-actions="false"'), true);
   assert.equal(settings.html.includes("deepseek-v4-flash"), true);
   assert.equal(settings.html.includes("workhub.locale"), true);
+  assert.equal(settings.html.includes("/api/auth/preferences"), true);
+  assert.equal(settings.html.includes("Server preference"), true);
+  assert.equal(settings.html.includes("Synced"), true);
   assert.equal(settings.html.includes("Pet look is not configured in the Web main window"), true);
   assert.equal(settings.html.includes('data-action-id="open_desktop_settings"'), true);
   assert.equal(settings.html.includes('data-requires-desktop="true"'), true);

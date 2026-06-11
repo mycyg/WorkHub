@@ -40,7 +40,8 @@ type RouteNoticeKind =
   | "sse_refresh"
   | "budget_warning"
   | "field_value_required"
-  | "intake_option_required";
+  | "intake_option_required"
+  | "locale_persistence_failed";
 type RouteNoticeTone = "info" | "success" | "warning" | "danger";
 type RouteNoticeSource = "client" | "rest" | "sse";
 type RouteNoticeVM = {
@@ -175,9 +176,14 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
       return;
     }
     persistBrowserLocale(nextLocale);
-    void client.updatePreferences({ locale: nextLocale }).catch(() => undefined).finally(() => {
-      window.location.reload();
-    });
+    void client.updatePreferences({ locale: nextLocale })
+      .then(() => {
+        window.location.reload();
+      })
+      .catch(() => {
+        persistBrowserLocale(locale);
+        showRouteNotice(shellRoot, localePersistenceFailedNotice(locale, "locale_switch"));
+      });
   }, eventListenerOptions(signal));
 }
 
@@ -304,6 +310,18 @@ function intakeOptionRequiredNotice(locale: WorkHubLocale, actionId?: string): R
     locale,
     title: goldPathT(locale, "runtime.notice.intakeOptionRequiredTitle"),
     body: goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
+    actionId
+  };
+}
+
+function localePersistenceFailedNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "locale_persistence_failed",
+    tone: "warning",
+    source: "rest",
+    locale,
+    title: goldPathT(locale, "runtime.notice.localePersistenceFailedTitle"),
+    body: goldPathT(locale, "runtime.notice.localePersistenceFailedBody"),
     actionId
   };
 }

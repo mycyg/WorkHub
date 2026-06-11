@@ -301,6 +301,20 @@ R4.14 已把 Option Intake 与 Knowledge fallback 收敛到 Web active-only rout
 - Attention workspace 边界继续成立：Intake / Knowledge 作为 active-only route panel，不把 Home 变回多列 Kanban；主窗仍无 Cuu 本体。
 - 双语固定 chrome、R4.13 Proposal regression、no hash、no weekly fixture、no horizontal/text overflow gates 全部通过。
 
+### 6.10 R4.15 Settings / Locale / Device Boundary
+
+![R4.15 Settings locale device boundary contact sheet](./assets/audit/2026-06-11-r4-15-settings-locale-device-boundary-browser-smoke/contact-sheet.png)
+
+R4.15 已把 Settings / locale persistence / desktop boundary 收敛到 Web active-only route component，并用本机 Chrome browser smoke 生成 38 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-15-settings-locale-device-boundary-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- Settings 对齐 `web-operations-pages-atlas.png`：页面是严肃管理面，展示 runtime、language、secret-safe、device boundary 和 recovery action，不做营销页、不做装饰面。
+- Desktop boundary 对齐 `desktop-support-pages-atlas.png`：浏览器只显示桌面客户端状态和恢复入口，不能执行托盘、通知、本地接活、同步等本地能力。
+- `desktop-device-setup-update.png` 中旧橘猫只作为 device/setup 信息架构参考，不作为当前视觉真相；Web/desktop 主窗仍无 Cuu 本体、无模型预览。
+- Locale persistence 走 typed preference API；PATCH 失败会保留旧语言并显示 fail-closed notice，不假装已跨设备保存。
+- 本轮 gates 覆盖 `r4_15_settings_locale_persistence`、`r4_15_settings_secret_safe`、`r4_15_desktop_boundary_gate`、`r4_15_route_recovery_actions`、`r4_15_settings_mobile_no_overflow` 与 R4.14 regression。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

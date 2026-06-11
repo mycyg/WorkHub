@@ -1,7 +1,7 @@
 ---
 module: R4-settings-locale-device-boundary-hardening
 layer: C-WEB / C-UI / C-API / C-PET boundary / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -12,6 +12,7 @@ depends_on:
   - r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md
   - ../05-clients/web-app.md
   - ../05-clients/desktop-pet-tauri.md
+  - ../05-clients/i18n-locale-contract-p1-1.md
   - ../05-clients/i18n-user-locale-preference-p1-3.md
   - ../05-clients/pet-settings-recovery-p1-5.md
 ---
@@ -92,6 +93,43 @@ flowchart LR
 - `desktop-support-pages-atlas.png`：桌面支持能力属于 C-PET / Rust shell，Web 只显示状态和恢复入口。
 - `desktop-device-setup-update.png`：Web 主窗不能承载 Cuu 外观配置；桌宠形象和本地能力继续留在独立桌宠/桌面客户端边界内。
 
-## 8. 后续候选
+## 8. 完成记录
 
-R4.15 通过后进入 R4.16：真实 React route tree migration / route component hydration boundary。目标是在保持当前 typed Page VM、active-only shell、QA gates 的前提下，把 HTML render helpers 逐步迁移到可复用前端组件结构。
+### 8.1 实现清单
+
+| Area | 已落实现 | 验收点 |
+|---|---|---|
+| Settings Page VM | `SettingsPageVM` 扩展 `runtime.runtime_status`、`llm_runtime.secret_safe`、`language.preference_*`、`device.restore_requires_desktop`、`web_local_actions_enabled=false` | Settings route 可审计 runtime、locale preference sync、secret-safe 与桌面能力边界 |
+| API dataflow | `/api/pages/settings` 从当前用户偏好注入 server preference，`buildSettingsPage()` 区分 request/server/fallback source | Page VM active locale、server preference 与 sync state 可对齐 |
+| Route component | Settings component 增加 runtime、locale、preference source、sync、secret-safe、desktop gate、restore boundary markers | Browser smoke 可直接读取 `data-r4-settings-*` markers |
+| Locale persistence | Web locale toggle 对 `PATCH /api/auth/preferences` 失败执行 fail-closed：恢复旧 locale/localStorage/html lang 并显示双语 notice | 不假装保存成功，失败后页面保持旧语言 |
+| Surface catalog | Web / desktop webview surface catalog 显式包含 auth preference 与 settings page API，仍不暴露 desktop-local 能力给 Web | R4.15 boundary gate 防止 Web 执行本地能力 |
+
+### 8.2 QA / 验证
+
+- `pnpm --filter @workhub/ui test`：48/48 通过。
+- `pnpm --filter @workhub/web test`：17/17 通过。
+- `pnpm --filter @workhub/api test -- gold-path pages-i18n`：105/105 通过。
+- `pnpm --filter @workhub/desktop-webview test`：84/84 通过。
+- `pnpm typecheck` 通过。
+- `pnpm qa:r4-web-live-route-interaction` with R4.15 env 通过，生成 `../05-clients/assets/audit/2026-06-11-r4-15-settings-locale-device-boundary-browser-smoke/`，38 步截图与 report 均通过。
+
+R4.15 gates 全部为 true：`r4_15_settings_locale_persistence`、`r4_15_settings_secret_safe`、`r4_15_desktop_boundary_gate`、`r4_15_route_recovery_actions`、`r4_15_settings_mobile_no_overflow`、`r4_14_intake_knowledge_regression`。
+
+### 8.3 Bug / 数据流审查
+
+- 初版 locale toggle 会吞掉 `PATCH /api/auth/preferences` 失败并继续切语言；已改为 fail-closed notice，恢复旧 locale 与 DOM lang。
+- Settings route 初版缺少可机器审计 marker；已补 `data-r4-settings-*`，QA 不再靠肉眼猜状态。
+- Surface catalog 初版遗漏 settings/auth preference endpoints；已补 Web 与 desktop-webview 目录测试，后续仍需在 R4.16 检查 Tauri allowlist 漂移风险。
+- Secret scan 口径升级为长 key / DeepSeek host 可见文本扫描；Settings Page VM 只返回 configured/secret-safe，不返回 base URL、API key、token 或本地路径。
+
+### 8.4 PRD / 概念图复核
+
+- `web-operations-pages-atlas.png`：Settings 作为严肃管理页呈现 runtime、language、device boundary 和 recovery action，没有营销页化。
+- `desktop-support-pages-atlas.png`：Web 只显示桌面客户端能力状态与恢复入口；本地接活、同步、托盘、通知恢复仍属于 C-PET / Rust shell。
+- `desktop-device-setup-update.png`：该图中的旧橘猫仅保留为设备/setup 信息架构参考，不作为当前视觉真相；R4.15 Web/desktop 主窗仍无 Cuu 本体、无模型预览。
+- 双语：locale persistence failure notice、Settings fixed copy 与 mobile/desktop screenshots 均覆盖 en-US；zh-CN 词表同步补齐。用户输入、证据和 LLM 正文继续保持来源原文。
+
+## 9. 后续候选
+
+R4.15 已通过，后续进入 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)：真实 React route tree migration / route component hydration boundary。目标是在保持当前 typed Page VM、active-only shell、QA gates 的前提下，把 HTML render helpers 逐步迁移到可复用前端组件结构。

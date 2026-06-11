@@ -490,6 +490,17 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal(renderedConflict.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
 });
 
+test("web surface catalog keeps settings locale APIs but not desktop-local capabilities", () => {
+  assert.equal(webSurface.pages.includes("/api/auth/me"), true);
+  assert.equal(webSurface.pages.includes("/api/auth/preferences"), true);
+  assert.equal(webSurface.pages.includes("/api/pages/settings"), true);
+  assert.equal(webSurface.pages.includes("/settings"), true);
+  assert.equal("rustOwns" in webSurface, false);
+  assert.equal("cuuCardAdapter" in webSurface, false);
+  const catalog = webSurface.pages.join("\n");
+  assert.equal(/device_token|tray|deep_link|local_sync|system_notification/u.test(catalog), false);
+});
+
 test("web surface starts option-first intake sessions through the typed client", async () => {
   const surface = { page_vms: { proposal: {} } } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);

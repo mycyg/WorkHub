@@ -177,7 +177,9 @@ export type GoldPathCopyKey =
   | "runtime.notice.fieldValueRequiredTitle"
   | "runtime.notice.fieldValueRequiredBody"
   | "runtime.notice.intakeOptionRequiredTitle"
-  | "runtime.notice.intakeOptionRequiredBody";
+  | "runtime.notice.intakeOptionRequiredBody"
+  | "runtime.notice.localePersistenceFailedTitle"
+  | "runtime.notice.localePersistenceFailedBody";
 
 const goldPathCopy = {
   "zh-CN": {
@@ -335,7 +337,9 @@ const goldPathCopy = {
     "runtime.notice.fieldValueRequiredTitle": "需要字段值",
     "runtime.notice.fieldValueRequiredBody": "请先填写自定义字段值，Web 不会提交空的高级编辑。",
     "runtime.notice.intakeOptionRequiredTitle": "请先选择一个选项",
-    "runtime.notice.intakeOptionRequiredBody": "Intake 保持选项优先，未选择时不会提交空澄清。"
+    "runtime.notice.intakeOptionRequiredBody": "Intake 保持选项优先，未选择时不会提交空澄清。",
+    "runtime.notice.localePersistenceFailedTitle": "语言偏好未保存",
+    "runtime.notice.localePersistenceFailedBody": "服务端偏好没有更新，页面已保留当前语言。"
   },
   "en-US": {
     "state.idle": "Idle",
@@ -492,7 +496,9 @@ const goldPathCopy = {
     "runtime.notice.fieldValueRequiredTitle": "Field value required",
     "runtime.notice.fieldValueRequiredBody": "Enter a custom field value first. Web will not submit an empty advanced edit.",
     "runtime.notice.intakeOptionRequiredTitle": "Choose an option first",
-    "runtime.notice.intakeOptionRequiredBody": "Intake stays option-first, so Web will not submit an empty clarification."
+    "runtime.notice.intakeOptionRequiredBody": "Intake stays option-first, so Web will not submit an empty clarification.",
+    "runtime.notice.localePersistenceFailedTitle": "Language preference was not saved",
+    "runtime.notice.localePersistenceFailedBody": "The server preference did not update, so this page kept the current language."
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 

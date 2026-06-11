@@ -15,6 +15,8 @@ export const desktopWebviewSurface = {
   devPort: defaultPorts.desktopWebview,
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,
   pages: [
+    "/api/auth/me",
+    "/api/auth/preferences",
     "/api/pages/attention",
     "/api/sessions",
     "/api/sessions/:id",
@@ -31,6 +33,7 @@ export const desktopWebviewSurface = {
     "/api/pages/proposals/:id",
     "/api/pages/approvals",
     "/api/pages/cost",
+    "/api/pages/settings",
     "/api/agent-runs/:id/replay",
     "/settings"
   ],

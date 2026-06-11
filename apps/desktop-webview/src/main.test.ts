@@ -502,6 +502,16 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal(conflictCards[0]?.actions.find((action) => action.id === "accept_incoming")?.payload !== undefined, true);
 });
 
+test("desktop webview catalog exposes settings APIs while Rust owns local capabilities", () => {
+  assert.equal(desktopWebviewSurface.pages.includes("/api/auth/me"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/auth/preferences"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/pages/settings"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/settings"), true);
+  assert.deepEqual(desktopWebviewSurface.rustOwns, ["device_token", "tray", "deep_link", "local_sync", "system_notification"]);
+  const catalog = desktopWebviewSurface.pages.join("\n");
+  assert.equal(/device_token|tray|deep_link|local_sync|system_notification/u.test(catalog), false);
+});
+
 test("desktop webview starts option-first intake sessions through the typed client", async () => {
   const surface = { page_vms: { proposal: {} } } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);

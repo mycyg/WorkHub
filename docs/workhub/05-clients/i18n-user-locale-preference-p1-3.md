@@ -102,8 +102,8 @@ P1.4 不再只做抽象 locale 截图，应和 Cuu 桌宠设置入口合并推�
 
 | 下一模块 | 工作 | 验收 |
 |---|---|---|
-| Pet right-click settings | **已落**：独立 `pet` window 右键紧凑菜单支持黑猫/白猫、中文/EN、悬停避让、打开设置、隐藏 Cuu；详情见 [`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md) | 待补 zh-CN/en-US DOM dump 或截图；菜单不造成 Cuu 位移或 iframe 重建 |
-| Tray settings deep-link | 托盘增加“设置 / Settings”，打开 `/settings` | Rust tests + desktop bridge smoke |
-| Pet settings recovery | **已落**：desktop 主窗 `/settings` 嵌入严肃恢复面板，支持 pass-through / hide-on-hover / show-hide / restore；详情见 [`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md) | 待补 zh-CN/en-US 主窗截图和 pass-through 真实恢复录屏 |
-| Locale visual regression | Web 主窗、desktop 主窗、Cuu pet card 各生成中英截图 | 固定按钮/标签不残留错误语言；主窗无 Cuu 本体 |
+| Pet right-click settings | **已落**：独立 `pet` window 右键紧凑菜单支持黑猫/白猫、中文/EN、悬停避让、打开设置、隐藏 Cuu；详情见 [`pet-right-click-settings-menu-p1-4.md`](./pet-right-click-settings-menu-p1-4.md) | R3.17/R3.20a 已补 zh-CN/en-US 真实菜单/主窗同步截图；菜单不造成 Cuu 位移或 iframe 重建 |
+| Tray settings deep-link | **已落**：托盘/menu bar 增加设置与恢复入口，打开 `/settings` 或恢复 Cuu interaction | R3.19-R3.23 已补 Windows tray、Linux StatusNotifier/AppIndicator 与 macOS menu bar smoke |
+| Pet settings recovery | **已落**：desktop 主窗 `/settings` 嵌入严肃恢复面板，支持 pass-through / hide-on-hover / show-hide / restore；详情见 [`pet-settings-recovery-p1-5.md`](./pet-settings-recovery-p1-5.md) | R3.18-R3.23 已补 zh-CN/en-US 主窗截图、pass-through 恢复和跨平台 menu smoke |
+| Locale visual regression | Web 主窗、desktop 主窗、Cuu pet card 各生成中英截图 | R4.15 已补 Settings locale persistence fail-closed browser smoke；后续 R4.16 继续作为 React boundary regression |
 | Server multilingual VM | Agent / daemon 生成新任务 summary 时接 locale | 英文新任务的服务端摘要可生成英文；历史中文内容保持原文 |

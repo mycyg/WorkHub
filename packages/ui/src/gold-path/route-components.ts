@@ -120,20 +120,33 @@ type RouteCopyKey =
   | "settings.device"
   | "settings.configured"
   | "settings.notConfigured"
+  | "settings.ready"
+  | "settings.needsAttention"
+  | "settings.synced"
+  | "settings.needsSync"
   | "settings.worker"
   | "settings.broker"
   | "settings.database"
+  | "settings.runtimeStatus"
   | "settings.lease"
   | "settings.recovery"
   | "settings.provider"
   | "settings.model"
   | "settings.apiKey"
   | "settings.baseUrl"
+  | "settings.secretSafe"
+  | "settings.activeLocale"
+  | "settings.preferenceLocale"
+  | "settings.preferenceSource"
+  | "settings.preferenceSync"
+  | "settings.updateEndpoint"
   | "settings.supported"
   | "settings.storage"
   | "settings.localExecution"
   | "settings.independentPet"
   | "settings.petBoundary"
+  | "settings.desktopGate"
+  | "settings.webLocalActions"
   | "settings.restore";
 
 const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
@@ -171,20 +184,33 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.device": "桌面与本地能力",
     "settings.configured": "已配置",
     "settings.notConfigured": "未配置",
+    "settings.ready": "就绪",
+    "settings.needsAttention": "需要处理",
+    "settings.synced": "已同步",
+    "settings.needsSync": "待同步",
     "settings.worker": "Worker",
     "settings.broker": "事件总线",
     "settings.database": "数据库",
+    "settings.runtimeStatus": "运行状态",
     "settings.lease": "执行租约",
     "settings.recovery": "恢复间隔",
     "settings.provider": "提供方",
     "settings.model": "模型",
     "settings.apiKey": "密钥状态",
     "settings.baseUrl": "服务地址状态",
+    "settings.secretSafe": "密钥安全",
+    "settings.activeLocale": "当前语言",
+    "settings.preferenceLocale": "服务端偏好",
+    "settings.preferenceSource": "偏好来源",
+    "settings.preferenceSync": "同步状态",
+    "settings.updateEndpoint": "保存接口",
     "settings.supported": "支持语言",
     "settings.storage": "本地键",
     "settings.localExecution": "本地执行边界",
     "settings.independentPet": "独立桌宠窗口",
     "settings.petBoundary": "桌宠形象不在 Web 主窗配置",
+    "settings.desktopGate": "桌面能力门",
+    "settings.webLocalActions": "Web 本地动作",
     "settings.restore": "恢复入口"
   },
   "en-US": {
@@ -221,20 +247,33 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.device": "Desktop and local capability",
     "settings.configured": "Configured",
     "settings.notConfigured": "Not configured",
+    "settings.ready": "Ready",
+    "settings.needsAttention": "Needs attention",
+    "settings.synced": "Synced",
+    "settings.needsSync": "Needs sync",
     "settings.worker": "Worker",
     "settings.broker": "Event broker",
     "settings.database": "Database",
+    "settings.runtimeStatus": "Runtime status",
     "settings.lease": "Run lease",
     "settings.recovery": "Recovery interval",
     "settings.provider": "Provider",
     "settings.model": "Model",
     "settings.apiKey": "Key status",
     "settings.baseUrl": "Service URL status",
+    "settings.secretSafe": "Secret safety",
+    "settings.activeLocale": "Active locale",
+    "settings.preferenceLocale": "Server preference",
+    "settings.preferenceSource": "Preference source",
+    "settings.preferenceSync": "Sync state",
+    "settings.updateEndpoint": "Save endpoint",
     "settings.supported": "Supported locales",
     "settings.storage": "Storage key",
     "settings.localExecution": "Local execution boundary",
     "settings.independentPet": "Independent pet window",
     "settings.petBoundary": "Pet look is not configured in the Web main window",
+    "settings.desktopGate": "Desktop capability gate",
+    "settings.webLocalActions": "Web local actions",
     "settings.restore": "Recovery entry"
   }
 };
@@ -257,6 +296,14 @@ function stripMarkdown(value: string | undefined) {
 
 function boolLabel(value: boolean, locale: WorkHubLocale) {
   return routeT(locale, value ? "settings.configured" : "settings.notConfigured");
+}
+
+function runtimeStatusLabel(value: SettingsPageVM["runtime"]["runtime_status"], locale: WorkHubLocale) {
+  return routeT(locale, value === "ready" ? "settings.ready" : "settings.needsAttention");
+}
+
+function syncLabel(value: boolean, locale: WorkHubLocale) {
+  return routeT(locale, value ? "settings.synced" : "settings.needsSync");
 }
 
 function actionClass(action: AttentionAction | ActionSpec, index: number) {
@@ -902,7 +949,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
     key: "settings",
     css: webRouteComponentCss,
     primaryHrefs: [vm.device.restore_href],
-    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-settings-generated-at="${escapeHtml(vm.generated_at)}" data-r4-settings-broker="${escapeHtml(vm.runtime.broker_backend)}" data-r4-settings-worker-count="${escapeHtml(String(vm.runtime.worker_count))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(vm.device.pet_model_settings_in_web))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-settings-generated-at="${escapeHtml(vm.generated_at)}" data-r4-settings-runtime-status="${escapeHtml(vm.runtime.runtime_status)}" data-r4-settings-broker="${escapeHtml(vm.runtime.broker_backend)}" data-r4-settings-worker-count="${escapeHtml(String(vm.runtime.worker_count))}" data-r4-settings-active-locale="${escapeHtml(vm.language.active_locale)}" data-r4-settings-preference-locale="${escapeHtml(vm.language.preference_locale)}" data-r4-settings-preference-source="${escapeHtml(vm.language.preference_source)}" data-r4-settings-preference-synced="${escapeHtml(String(vm.language.preference_synced))}" data-r4-settings-secret-safe="${escapeHtml(String(vm.llm_runtime.secret_safe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(vm.device.pet_model_settings_in_web))}" data-r4-settings-desktop-client="${escapeHtml(vm.device.desktop_client)}" data-r4-settings-local-boundary="${escapeHtml(String(vm.device.local_execution_boundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(vm.device.restore_requires_desktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(vm.device.web_local_actions_enabled))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "settings.kicker"))}</span>
@@ -914,6 +961,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
           <h3>${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(vm.runtime.runtime_status, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(vm.runtime.worker_count))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(vm.runtime.broker_backend)} · ${escapeHtml(boolLabel(vm.runtime.broker_configured, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.runtime.database_configured, locale))}</span></div>
@@ -926,20 +974,28 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <div class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(vm.llm_runtime.default_model)}</p></div><span class="wh-pill">${escapeHtml(String(vm.llm_runtime.provider_count))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.api_key_configured, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.base_url_configured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.secret_safe, locale))}</span></div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-settings-language="true">
           <h3>${escapeHtml(routeT(locale, "settings.language"))}</h3>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(vm.language.active_locale)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(vm.language.preference_locale)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(vm.language.preference_source)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(vm.language.preference_synced, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(vm.language.supported_locales.join(" / "))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.storage"))}</strong><span class="wh-pill">${escapeHtml(vm.language.storage_key)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.updateEndpoint"))}</strong><span class="wh-pill">${escapeHtml(vm.language.update_href)}</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.local_execution_boundary))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.independent_pet_window))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!vm.device.pet_model_settings_in_web))}</span></div>
-          <a class="wh-btn" href="${escapeHtml(vm.device.restore_href)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(routeT(locale, "settings.restore"))}</a>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.restore_requires_desktop))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.web_local_actions_enabled))}</span></div>
+          <a class="wh-btn" href="${escapeHtml(vm.device.restore_href)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(vm.device.restore_requires_desktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
     </section>`

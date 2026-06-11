@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization；下一步进入 R4.15 Settings / locale / device boundary hardening。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization，R4.15 已落 Settings / locale / device boundary hardening；下一步进入 R4.16 React route tree / hydration boundary。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2870,11 +2870,26 @@ R4 验收：
 8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-14-intake-knowledge-route-ux-browser-smoke/`；report gates 全部为 true：`r4_14_intake_route_component`、`r4_14_option_first_no_chat_wall`、`r4_14_intake_fail_closed`、`r4_14_intake_submit_success`、`r4_14_intake_create_workitem_success`、`r4_14_knowledge_fallback_route`、`r4_14_knowledge_bind_success`、`r4_14_mobile_no_overflow`、`r4_13_proposal_advanced_regression`。
 9. 边界：R4.14 不是完整搜索产品，也不是 React route tree 终局。Knowledge 只做 cited fallback，不编造答案；Intake 继续 option-first，free text 只是 collapsed fallback。
 
+### R4.15 已落：Settings / locale / device boundary hardening
+
+1. 已阅读 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)、R4.14 竣工记录、`web-app.md`、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`i18n-user-locale-preference-p1-3.md`、`pet-settings-recovery-p1-5.md` 与概念图：`web-operations-pages-atlas.png`、`desktop-support-pages-atlas.png`、`desktop-device-setup-update.png`。
+2. 概念图审查结论：`desktop-device-setup-update.png` 中旧橘猫只作为 device/setup 信息架构参考，不作为当前视觉真相；Web/desktop 主窗继续无 Cuu 本体、无模型预览。
+3. 已扩展 `SettingsPageVM`：runtime status、secret-safe LLM configured state、language preference/source/sync/update href、desktop restore boundary 与 `web_local_actions_enabled=false` 进入 typed contract。
+4. 已改 `/api/pages/settings` dataflow：服务端从当前用户偏好注入 server preference，Page VM 能表达 request/server/fallback source 和 preference synced state。
+5. 已改 Settings route component：新增 `data-r4-settings-runtime-status`、`active-locale`、`preference-locale/source/synced`、`secret-safe`、`desktop-client`、`local-boundary`、`restore-requires-desktop`、`web-local-actions` markers，并渲染对应双语 copy。
+6. 已改 Web locale toggle：`PATCH /api/auth/preferences` 失败时恢复旧 locale/localStorage/html lang，显示 `locale_persistence_failed` notice，不假装偏好已保存。
+7. 已补 Web / desktop-webview surface catalog：包含 `/api/auth/me`、`/api/auth/preferences`、`/api/pages/settings`，但仍不把 desktop-local 托盘、通知、接活、同步能力暴露给 Web。
+8. 已扩展 tests：UI route component、Web routes/main、API gold-path/pages-i18n、desktop-webview main、secret-safe 与 settings marker 均覆盖；`@workhub/ui` 48/48、`@workhub/web` 17/17、`@workhub/api` targeted 105/105、`@workhub/desktop-webview` 84/84、`pnpm typecheck` 通过。
+9. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：38 步 browser smoke 覆盖 Settings desktop/mobile、locale persistence fail-closed、desktop gate、route recovery、secret scan 与 R4.14 regression。
+10. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-15-settings-locale-device-boundary-browser-smoke/`；report gates 全部为 true：`r4_15_settings_locale_persistence`、`r4_15_settings_secret_safe`、`r4_15_desktop_boundary_gate`、`r4_15_route_recovery_actions`、`r4_15_settings_mobile_no_overflow`、`r4_14_intake_knowledge_regression`。
+11. Bug / 数据流审查：修复 locale PATCH 失败被吞的问题；Settings markers 从可见文案升级为机器审计；surface catalog 补齐 auth preference/settings endpoints；后续 R4.16 继续审查 Tauri allowlist drift 风险。
+12. 边界：R4.15 不是完整 React route tree，也不让 Web 执行本地能力。Settings 只展示配置状态、secret-safe、恢复入口和桌面能力门；API key、base URL、token、本地路径和 Cuu 外观设置均不能泄漏到主窗。
+
 下一施工顺序：
 
-1. **R4.15 Settings / locale persistence / device boundary hardening**：把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface。
-2. **R4.16 React route tree migration / hydration boundary**：在不降低 typed Page VM 与 active-only QA gates 的前提下，逐步把 HTML render helpers 迁到可复用前端组件。
-3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.16 React route tree migration / hydration boundary**：在不降低 typed Page VM、active-only product shell、Settings boundary 与 QA gates 的前提下，逐步把 HTML render helpers 迁到可复用前端组件。
+2. **R4.17 真实 React route component migration**：R4.16 boundary 通过后，按低风险 route 优先把 Home / Approvals / Settings 等页面迁到真实 React components。
+3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11/R4.12/R4.13/R4.14/R4.15 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、action notice、desktop boundary、secret-safe、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

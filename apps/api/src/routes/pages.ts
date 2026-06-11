@@ -204,7 +204,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/settings", createCurrentUserMiddleware(authSource), (c) => {
     const locale = requestLocale(c);
-    return c.json(pageEnvelope(buildSettingsPage({ settings: authSettings, locale }), locale));
+    const preferenceLocale = normalizeWorkHubLocale(c.var.currentUser.preferredLocale);
+    return c.json(pageEnvelope(buildSettingsPage({
+      settings: authSettings,
+      locale,
+      preferenceLocale,
+      preferenceSource: "server"
+    }), locale));
   });
 
   return routes;

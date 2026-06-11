@@ -43,6 +43,7 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
     locale,
     runtime: {
       app_env: "test",
+      runtime_status: "ready",
       worker_count: 2,
       broker_backend: "memory",
       broker_configured: true,
@@ -55,7 +56,8 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
       default_model: "deepseek-v4-flash",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true
+      base_url_configured: true,
+      secret_safe: true
     },
     budgets: {
       run_tokens: 120000,
@@ -69,15 +71,21 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
     },
     language: {
       active_locale: locale,
+      preference_locale: locale,
+      preference_source: "server",
+      preference_synced: true,
       supported_locales: ["zh-CN", "en-US"],
-      storage_key: "workhub.locale"
+      storage_key: "workhub.locale",
+      update_href: "/api/auth/preferences"
     },
     device: {
       desktop_client: "tauri",
       local_execution_boundary: true,
       independent_pet_window: true,
       pet_model_settings_in_web: false,
-      restore_href: "/settings?panel=desktop"
+      restore_href: "/settings?panel=desktop",
+      restore_requires_desktop: true,
+      web_local_actions_enabled: false
     }
   };
 }
@@ -488,6 +496,26 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
     assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
   }
+});
+
+test("R4.15 settings route keeps locale preference and device boundary markers auditable", async () => {
+  const surface = goldPathSurfaceVm();
+  const settings = settingsVm("en-US");
+  const { client } = fakeRouteClient(surface, { settings });
+  const match = resolveWebRoute("/settings");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-settings-active-locale="en-US"'), true);
+  assert.equal(result.html.includes('data-r4-settings-preference-locale="en-US"'), true);
+  assert.equal(result.html.includes('data-r4-settings-preference-synced="true"'), true);
+  assert.equal(result.html.includes('data-r4-settings-secret-safe="true"'), true);
+  assert.equal(result.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
+  assert.equal(result.html.includes('data-r4-settings-web-local-actions="false"'), true);
+  assert.equal(result.html.includes("/api/auth/preferences"), true);
+  assert.equal(/sk-[0-9A-Za-z]{20,}/u.test(result.html), false);
 });
 
 test("R4 web loader renders route-state empty without fake ready content", async () => {

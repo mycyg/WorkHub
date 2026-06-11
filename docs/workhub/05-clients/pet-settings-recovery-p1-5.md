@@ -150,16 +150,16 @@ R3.20b 补上真实 Windows OS 托盘图标/菜单项点击证据：从 `pass_th
 | 系统菜单截图 | `windows-tray-menu-before-restore.png` 显示真实 tray overflow panel 与原生 WorkHub menu，包含 `Restore Cuu interaction` |
 | 文本边界 | 主窗 settings 恢复前/后 `overflow.offenders=[]`；状态徽标可换行但不出框 |
 
-仍未通过的视觉验收：
+后续仍需作为回归门的视觉验收：
 
 | 缺口 | 下一步 |
 |---|---|
-| Linux/macOS | 透明窗口 + tray/menu bar 恢复 smoke；Wayland/X11、macOS 截图权限需要单独记录 |
-| 更广文本门 | R3.20b 已覆盖 run-failure/run-stream；下一步把 permission/offline 的最新证据也纳入 `pet_card_text_overflow_gate` |
+| Linux/macOS | R3.23 已补 GNOME StatusNotifier/AppIndicator 与 macOS menu bar smoke；后续继续记录 Wayland/X11 差异、截图权限和打包回归 |
+| 更广文本门 | R3.20b 已覆盖 run-failure/run-stream，R3.22 已补 failed/permission/offline/generic/main notice 文本与 frame hardgate；后续新 card 必须继续纳入 `pet_card_text_overflow_gate` 或等价 `spatial_safety` |
 
 ## 10. 后续施工
 
-1. 建立 Linux/macOS 透明窗口、tray/menu bar 与截图权限策略。
+1. 保留 Linux/macOS 透明窗口、tray/menu bar、截图权限和 Accessibility 策略作为跨平台回归门。
 2. 保留右键菜单和主窗 settings 双向状态同步回归：R3.20a 已证明菜单改 hover 后主窗可见；主窗/物理托盘恢复后 pet 已由 R3.18/R3.19/R3.20b 证明。
 3. 继续业务动作 motion driver：approval / search / sync / done / offline 不只停留在 CSS/data attr。
-4. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost 都不能出现 Cuu 本体，且必须保留文本不出框 gate。
+4. R4 继续做主窗视觉审查：Web / desktop 主工作台、审批、Replay、Proposal、Cost、Settings 都不能出现 Cuu 本体，且必须保留文本不出框 gate；R4.15 已把 Web Settings locale/device boundary 纳入 browser smoke。

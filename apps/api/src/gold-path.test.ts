@@ -111,9 +111,9 @@ function settings(): Settings {
   });
 }
 
-function authDeps(runtimeSettings: Settings): AuthDependencies {
+function authDeps(runtimeSettings: Settings, rows: UserAuthRow[] = [user()]): AuthDependencies {
   return {
-    users: new MemoryUsers([user()]),
+    users: new MemoryUsers(rows),
     devices: new MemoryDevices(),
     settings: runtimeSettings,
     now: () => now
@@ -202,6 +202,54 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
   assert.equal(body.data.events.some((event) => event.type === "permission.ask" && event.topic.startsWith("user:")), true);
   assert.equal(body.data.cuu_states.includes("carrying_document"), true);
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
+});
+
+test("settings page carries server locale preference sync state without secrets", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings, [user({ preferredLocale: "en-US" })]),
+    queue: emptyQueue()
+  }));
+
+  const response = await app.request("/api/pages/settings?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    meta: { locale: string };
+    data: {
+      locale: string;
+      runtime: { runtime_status: string };
+      llm_runtime: { secret_safe: boolean };
+      language: {
+        active_locale: string;
+        preference_locale: string;
+        preference_source: string;
+        preference_synced: boolean;
+        update_href: string;
+      };
+      device: {
+        restore_requires_desktop: boolean;
+        web_local_actions_enabled: boolean;
+        pet_model_settings_in_web: boolean;
+      };
+    };
+  };
+  assert.equal(body.meta.locale, "zh-CN");
+  assert.equal(body.data.locale, "zh-CN");
+  assert.equal(body.data.runtime.runtime_status, "ready");
+  assert.equal(body.data.llm_runtime.secret_safe, true);
+  assert.equal(body.data.language.active_locale, "zh-CN");
+  assert.equal(body.data.language.preference_locale, "en-US");
+  assert.equal(body.data.language.preference_source, "server");
+  assert.equal(body.data.language.preference_synced, false);
+  assert.equal(body.data.language.update_href, "/api/auth/preferences");
+  assert.equal(body.data.device.restore_requires_desktop, true);
+  assert.equal(body.data.device.web_local_actions_enabled, false);
+  assert.equal(body.data.device.pet_model_settings_in_web, false);
+  assert.equal(JSON.stringify(body.data).includes("sk-"), false);
 });
 
 test("P0.5 page routes echo normalized locale metadata for bilingual clients", async () => {

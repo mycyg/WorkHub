@@ -69,8 +69,17 @@ type BrowserAudit = {
     costTotalCny: string | null;
     costBudgetCount: string | null;
     costModelCount: string | null;
+    settingsRuntimeStatus: string | null;
     settingsPetModelInWeb: string | null;
     settingsWorkerCount: string | null;
+    settingsActiveLocale: string | null;
+    settingsPreferenceLocale: string | null;
+    settingsPreferenceSource: string | null;
+    settingsPreferenceSynced: string | null;
+    settingsSecretSafe: string | null;
+    settingsRestoreRequiresDesktop: string | null;
+    settingsWebLocalActions: string | null;
+    settingsLocalBoundary: string | null;
   };
   notice: {
     visible: boolean;
@@ -106,6 +115,7 @@ type BrowserAudit = {
   weeklyFixtureLeak: boolean;
   cuuLeak: boolean;
   kanbanLeak: boolean;
+  secretLeak: boolean;
   clientWidth: number;
   scrollWidth: number;
   horizontalOverflow: boolean;
@@ -188,6 +198,7 @@ function settingsPage(locale: WorkHubLocale): SettingsPageVM {
     locale,
     runtime: {
       app_env: "test",
+      runtime_status: "ready",
       worker_count: 2,
       broker_backend: "memory",
       broker_configured: true,
@@ -200,7 +211,8 @@ function settingsPage(locale: WorkHubLocale): SettingsPageVM {
       default_model: "deepseek-v4-flash-r4-11-browser-smoke",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true
+      base_url_configured: true,
+      secret_safe: true
     },
     budgets: {
       run_tokens: 120000,
@@ -214,15 +226,21 @@ function settingsPage(locale: WorkHubLocale): SettingsPageVM {
     },
     language: {
       active_locale: locale,
+      preference_locale: locale,
+      preference_source: "server",
+      preference_synced: true,
       supported_locales: ["zh-CN", "en-US"],
-      storage_key: "workhub.locale"
+      storage_key: "workhub.locale",
+      update_href: "/api/auth/preferences"
     },
     device: {
       desktop_client: "tauri",
       local_execution_boundary: true,
       independent_pet_window: true,
       pet_model_settings_in_web: false,
-      restore_href: "/settings?panel=desktop"
+      restore_href: "/settings?panel=desktop",
+      restore_requires_desktop: true,
+      web_local_actions_enabled: false
     }
   };
 }
@@ -651,6 +669,7 @@ function sendApiError(response: ServerResponse, status: number, code: string, me
 function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestRecord[]) {
   let currentLocale: WorkHubLocale = "zh-CN";
   let sessionStage: "scope" | "confirm" = "scope";
+  let failNextPreferencePatch = false;
   const sseClients = new Map<ServerResponse, string>();
   const sseStreamKey = (pathname: string) => {
     if (pathname === "/api/push/stream") {
@@ -706,12 +725,22 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, { ok: true, event, stream, emitted });
       return;
     }
+    if (request.method === "POST" && url.pathname === "/api/__qa/fail-next-preference-patch") {
+      failNextPreferencePatch = true;
+      sendJson(response, 200, { ok: true });
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
       sendJson(response, 200, identity(currentLocale));
       return;
     }
     if (request.method === "PATCH" && url.pathname === "/api/auth/preferences") {
       requestRecord.body = await requestBody(request);
+      if (failNextPreferencePatch) {
+        failNextPreferencePatch = false;
+        sendApiError(response, 503, "preference_unavailable", "Locale preference is temporarily unavailable.");
+        return;
+      }
       const body = JSON.parse(requestRecord.body || "{}") as { locale?: WorkHubLocale };
       currentLocale = body.locale === "en-US" ? "en-US" : "zh-CN";
       sendJson(response, 200, identity(currentLocale));
@@ -1290,8 +1319,17 @@ function auditExpression() {
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
       costModelCount: routeComponent?.getAttribute("data-r4-cost-model-count") || null,
+      settingsRuntimeStatus: routeComponent?.getAttribute("data-r4-settings-runtime-status") || null,
       settingsPetModelInWeb: routeComponent?.getAttribute("data-r4-settings-pet-model-in-web") || null,
-      settingsWorkerCount: routeComponent?.getAttribute("data-r4-settings-worker-count") || null
+      settingsWorkerCount: routeComponent?.getAttribute("data-r4-settings-worker-count") || null,
+      settingsActiveLocale: routeComponent?.getAttribute("data-r4-settings-active-locale") || null,
+      settingsPreferenceLocale: routeComponent?.getAttribute("data-r4-settings-preference-locale") || null,
+      settingsPreferenceSource: routeComponent?.getAttribute("data-r4-settings-preference-source") || null,
+      settingsPreferenceSynced: routeComponent?.getAttribute("data-r4-settings-preference-synced") || null,
+      settingsSecretSafe: routeComponent?.getAttribute("data-r4-settings-secret-safe") || null,
+      settingsRestoreRequiresDesktop: routeComponent?.getAttribute("data-r4-settings-restore-requires-desktop") || null,
+      settingsWebLocalActions: routeComponent?.getAttribute("data-r4-settings-web-local-actions") || null,
+      settingsLocalBoundary: routeComponent?.getAttribute("data-r4-settings-local-boundary") || null
     };
     const noticeElement = document.querySelector("[data-wh-app-notice]");
     const noticeVisible = Boolean(noticeElement && !noticeElement.hasAttribute("hidden"));
@@ -1363,6 +1401,7 @@ function auditExpression() {
       weeklyFixtureLeak: /客户周报|weekly report/i.test(text),
       cuuLeak: /\\bCuu\\b/i.test(text) || Boolean(document.querySelector("[data-cuu]")),
       kanbanLeak: /\\bkanban\\b/i.test(text),
+      secretLeak: /api\\.deepseek\\.com|sk-[0-9A-Za-z]{20,}/u.test(text),
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
       horizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > document.documentElement.clientWidth + 2,
@@ -1398,6 +1437,9 @@ async function captureStep(
   }
   if (audit.kanbanLeak) {
     throw new Error(`${input.id} leaked Kanban wording`);
+  }
+  if (audit.secretLeak) {
+    throw new Error(`${input.id} leaked secret-like settings text`);
   }
   if (audit.hashNavigationLeak) {
     throw new Error(`${input.id} leaked hash navigation`);
@@ -1626,8 +1668,16 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/settings`, "ready");
   steps.push(await captureStep(cdp, { id: "13-settings-en-desktop-route-component", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
 
+  await cdp.evaluate("fetch('/api/__qa/fail-next-preference-patch', { method: 'POST' }).then((response) => response.ok)");
+  await clickAndWaitForNotice(cdp, '[data-wh-locale="zh-CN"]', "locale_persistence_failed", "locale_switch");
+  steps.push(await captureStep(cdp, { id: "13a-settings-locale-persistence-fail-closed-en-desktop", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+
   await clickAndWaitForNotice(cdp, '[data-action-id="open_desktop_settings"]', "desktop_required", "open_desktop_settings");
   steps.push(await captureStep(cdp, { id: "14-settings-desktop-gate-en-desktop", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+
+  await setViewport(cdp, mobile);
+  steps.push(await captureStep(cdp, { id: "14a-settings-en-mobile-boundary-no-overflow", url: `${baseUrl}/settings`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+  await setViewport(cdp, desktop);
 
   await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
   steps.push(await captureStep(cdp, { id: "15-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
@@ -1677,6 +1727,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     goldPath: requests.filter((request) => request.pathname === "/api/pages/gold-path").length >= 4,
     goldPathEn: requests.some((request) => request.pathname === "/api/pages/gold-path" && request.locale === "en-US"),
     localePatch: requests.some((request) => request.method === "PATCH" && request.pathname === "/api/auth/preferences"),
+    localePatchFailureArmed: requests.some((request) => request.method === "POST" && request.pathname === "/api/__qa/fail-next-preference-patch"),
     counts: {
       attention: count("/api/pages/attention"),
       approvals: count("/api/pages/approvals"),
@@ -1697,6 +1748,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
       qaEmit: count("/api/__qa/emit"),
+      preferenceFailureArmed: count("/api/__qa/fail-next-preference-patch", "POST"),
       sseProposal: count("/api/push/stream/proposal/r4-live-proposal"),
       goldPath: count("/api/pages/gold-path"),
       preferencePatch: count("/api/auth/preferences", "PATCH")
@@ -1752,7 +1804,14 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
       cost.costModelCount === String(surface.page_vms.cost.model_breakdown.length) &&
       settings &&
       settings.settingsPetModelInWeb === "false" &&
-      settings.settingsWorkerCount === "2"
+      settings.settingsWorkerCount === "2" &&
+      settings.settingsRuntimeStatus === "ready" &&
+      settings.settingsActiveLocale === "en-US" &&
+      settings.settingsPreferenceLocale === "en-US" &&
+      settings.settingsPreferenceSynced === "true" &&
+      settings.settingsSecretSafe === "true" &&
+      settings.settingsRestoreRequiresDesktop === "true" &&
+      settings.settingsWebLocalActions === "false"
   );
 }
 
@@ -1981,6 +2040,59 @@ async function main() {
           step.audit.textOverflowCount === 0 &&
           !step.audit.topbarNavOverlap
         ),
+      r4_15_settings_locale_persistence:
+        proof.localePatch &&
+        proof.localePatchFailureArmed &&
+        proof.counts.preferencePatch === 2 &&
+        proof.counts.preferenceFailureArmed === 1 &&
+        steps.some((step) =>
+          step.id === "13-settings-en-desktop-route-component" &&
+          step.audit.routeData.settingsActiveLocale === "en-US" &&
+          step.audit.routeData.settingsPreferenceLocale === "en-US" &&
+          step.audit.routeData.settingsPreferenceSynced === "true"
+        ) &&
+        steps.some((step) =>
+          step.id === "13a-settings-locale-persistence-fail-closed-en-desktop" &&
+          step.audit.notice.kind === "locale_persistence_failed" &&
+          step.audit.notice.actionId === "locale_switch" &&
+          step.audit.lang === "en-US" &&
+          step.audit.storedLocale === "en-US" &&
+          step.audit.activeLocale === "en-US"
+        ),
+      r4_15_settings_secret_safe:
+        steps.some((step) =>
+          step.id === "13-settings-en-desktop-route-component" &&
+          step.audit.routeData.settingsSecretSafe === "true" &&
+          step.audit.routeData.settingsPetModelInWeb === "false" &&
+          !step.audit.secretLeak
+        ),
+      r4_15_desktop_boundary_gate:
+        steps.some((step) =>
+          step.id === "14-settings-desktop-gate-en-desktop" &&
+          step.audit.notice.kind === "desktop_required" &&
+          step.audit.notice.actionId === "open_desktop_settings" &&
+          step.audit.routeData.settingsRestoreRequiresDesktop === "true" &&
+          step.audit.routeData.settingsWebLocalActions === "false" &&
+          step.audit.routeData.settingsLocalBoundary === "true"
+        ),
+      r4_15_route_recovery_actions:
+        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
+        steps.some((step) => step.id === "18-unknown-route-error" && step.audit.routeState.kind === "error" && step.audit.routeState.actionText === "Retry") &&
+        steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.notice.kind === "desktop_required"),
+      r4_15_settings_mobile_no_overflow:
+        steps.some((step) =>
+          step.id === "14a-settings-en-mobile-boundary-no-overflow" &&
+          step.audit.routeComponent === "settings" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0 &&
+          !step.audit.topbarNavOverlap
+        ),
+      r4_14_intake_knowledge_regression:
+        steps.some((step) => step.id === "12d-intake-en-mobile-no-overflow" && step.audit.routeComponent === "intake") &&
+        steps.some((step) => step.id === "12b-knowledge-fallback-en-desktop-route-component" && step.audit.routeComponent === "knowledge") &&
+        proof.counts.nextQuestion === 1 &&
+        proof.counts.evidenceBinding === 1,
       active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
@@ -2002,7 +2114,8 @@ async function main() {
         proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
-        proof.counts.preferencePatch === 1 &&
+        proof.counts.preferencePatch === 2 &&
+        proof.counts.preferenceFailureArmed === 1 &&
         proof.counts.qaEmit === 2 &&
         proof.counts.sseProposal >= 2,
       mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && !step.audit.topbarNavOverlap),
@@ -2064,6 +2177,12 @@ async function main() {
         `- R4.14 intake submit/create: ${String(gates.r4_14_intake_submit_success && gates.r4_14_intake_create_workitem_success)}`,
         `- R4.14 knowledge fallback/bind: ${String(gates.r4_14_knowledge_fallback_route && gates.r4_14_knowledge_bind_success)}`,
         `- R4.14 mobile no overflow: ${String(gates.r4_14_mobile_no_overflow)}`,
+        `- R4.15 settings locale persistence: ${String(gates.r4_15_settings_locale_persistence)}`,
+        `- R4.15 settings secret safe: ${String(gates.r4_15_settings_secret_safe)}`,
+        `- R4.15 desktop boundary gate: ${String(gates.r4_15_desktop_boundary_gate)}`,
+        `- R4.15 route recovery actions: ${String(gates.r4_15_route_recovery_actions)}`,
+        `- R4.15 settings mobile no overflow: ${String(gates.r4_15_settings_mobile_no_overflow)}`,
+        `- R4.14 intake/knowledge regression: ${String(gates.r4_14_intake_knowledge_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""

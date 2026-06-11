@@ -64,7 +64,7 @@ flowchart LR
 5. 扩展 browser dispatcher：Intake continue / option submit 复用 R4.12 notice；缺必要选项时 fail-closed，不发 mutation。
 6. 扩展 unit tests：route component marker、双语固定文案、free text collapsed、payload attrs、no Cuu/no Kanban/no secret。
 7. 扩展 `qa:r4-web-live-route-interaction`：Intake desktop/mobile、knowledge fallback、submit success/fail-closed、history/path navigation、locale reload、no duplicate loader calls。
-8. 更新 `web-app.md`、`page-concepts.md`、roadmap、详细计划、README，并制定 R4.15 后续计划。
+8. 更新 `web-app.md`、`page-concepts.md`、roadmap、详细计划、README，并制定后续计划。
 
 ## 6. QA Gate
 
@@ -144,6 +144,8 @@ R4.14 browser smoke 关键 gates：
 - `web-project-attention-workspace.png`：Home 仍是单一优先事项，Intake / Knowledge 作为 route components 进入 active-only product shell；没有把默认首页变回多列 Kanban。
 - 双语：route chrome、固定 helper、notice、QA mock Page VM 已覆盖 zh-CN/en-US；动态用户/证据正文仍按 API VM 原文呈现。
 
-## 9. R4.15 后续计划
+## 9. R4.15 完成与 R4.16 后续计划
 
-下一步进入 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)：Web settings / locale persistence / device boundary hardening。目标是把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface，并继续保留主窗无 Cuu、本地能力不在 Web 执行的边界。
+R4.15 已完成 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)：Web settings / locale persistence / device boundary hardening。语言偏好、桌面能力门、运行时状态和错误恢复已经统一到 typed settings surface，并继续保留主窗无 Cuu、本地能力不在 Web 执行的边界。
+
+下一步进入 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)：在不降低 typed Page VM、active-only shell、Settings boundary 与 QA gates 的前提下，建立 React route tree / hydration boundary。
