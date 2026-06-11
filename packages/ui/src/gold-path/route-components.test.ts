@@ -5,6 +5,7 @@ import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/a
 import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
 
 import { renderWebRouteComponents } from "./route-components.js";
+import { createHomeReactRouteComponent, createSettingsReactRouteComponent } from "./route-react-components.js";
 
 function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
   return {
@@ -528,6 +529,58 @@ test("R4.16 route components expose hydration boundary metadata without weakenin
     assert.equal(component.html.includes(`data-r4-route-component="${key}"`), true);
     assertNoMainWindowBoundaryLeak(component.html);
   }
+});
+
+test("R4.17 Home and Settings route components expose React-compatible props with HTML fallback parity", () => {
+  const vm = surfaceVm();
+  const components = renderWebRouteComponents(vm, { locale: "en-US" });
+  const expectedHome = createHomeReactRouteComponent(vm.page_vms.attention, "en-US");
+  const expectedSettings = createSettingsReactRouteComponent(vm.page_vms.settings!, "en-US");
+  const home = components.home;
+  const settings = components.settings;
+
+  assert.ok(home);
+  assert.ok(settings);
+  assert.equal(home.reactComponent?.routeKey, "home");
+  assert.equal(settings.reactComponent?.routeKey, "settings");
+  if (home.reactComponent?.routeKey !== "home" || settings.reactComponent?.routeKey !== "settings") {
+    throw new Error("R4.17 migrated route components are missing typed adapters");
+  }
+
+  assert.equal(home.reactComponent.componentName, "HomeRouteComponent");
+  assert.equal(home.reactComponent.adapter, "react-compatible-route-component-v1");
+  assert.equal(home.reactComponent.mode, "html-fallback");
+  assert.equal(home.reactComponent.htmlFallback, true);
+  assert.equal(home.reactComponent.propsSource, "typed-page-vm");
+  assert.equal(home.reactComponent.propsFingerprint, expectedHome.propsFingerprint);
+  assert.deepEqual(home.reactComponent.primaryHrefs, home.primaryHrefs);
+  assert.equal(home.reactComponent.props.primaryActions.length, home.primaryHrefs.length);
+  assert.equal(home.reactComponent.props.queueCount, vm.page_vms.attention.queue.length);
+  assert.equal(home.html.includes('data-r4-react-component="HomeRouteComponent"'), true);
+  assert.equal(home.html.includes('data-r4-react-component-html-fallback="true"'), true);
+  assert.equal(home.html.includes(`data-r4-react-component-action-count="${home.primaryHrefs.length}"`), true);
+  assert.equal(home.html.includes('data-r4-hydration-react-component="HomeRouteComponent"'), true);
+  assert.equal(home.html.includes('data-r4-hydration-react-component-fallback="true"'), true);
+
+  assert.equal(settings.reactComponent.componentName, "SettingsRouteComponent");
+  assert.equal(settings.reactComponent.adapter, "react-compatible-route-component-v1");
+  assert.equal(settings.reactComponent.mode, "html-fallback");
+  assert.equal(settings.reactComponent.htmlFallback, true);
+  assert.equal(settings.reactComponent.propsSource, "typed-page-vm");
+  assert.equal(settings.reactComponent.propsFingerprint, expectedSettings.propsFingerprint);
+  assert.deepEqual(settings.reactComponent.primaryHrefs, settings.primaryHrefs);
+  assert.equal(settings.reactComponent.props.secretSafe, true);
+  assert.equal(settings.reactComponent.props.petModelSettingsInWeb, false);
+  assert.equal(settings.reactComponent.props.restoreRequiresDesktop, true);
+  assert.equal(settings.reactComponent.props.webLocalActionsEnabled, false);
+  assert.equal(settings.html.includes('data-r4-react-component="SettingsRouteComponent"'), true);
+  assert.equal(settings.html.includes('data-r4-react-component-html-fallback="true"'), true);
+  assert.equal(settings.html.includes(`data-r4-react-component-action-count="${settings.primaryHrefs.length}"`), true);
+  assert.equal(settings.html.includes('data-r4-hydration-react-component="SettingsRouteComponent"'), true);
+  assert.equal(settings.html.includes('data-r4-hydration-react-component-props-source="typed-page-vm"'), true);
+  assert.equal(/api\.deepseek\.com|sk-[0-9A-Za-z]{20,}/u.test(settings.html), false);
+  assertNoMainWindowBoundaryLeak(home.html);
+  assertNoMainWindowBoundaryLeak(settings.html);
 });
 
 test("R4.10 Approvals route component keeps action reasons and Page VM counts visible", () => {

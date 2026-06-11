@@ -1262,6 +1262,6 @@ R3.23 第十刀在 macOS 26.3.1 真机关闭 menu bar 主路径。脚本先跑 d
 
 ## 27. 下一刀
 
-1. R4.10-R4.16 已完成 Web route componentization、action notice、Proposal advanced、Option Intake / Knowledge、Settings / locale / device boundary 与 React route tree / hydration boundary。
-2. R4.17 继续保留 Page VM、REST-as-truth、path navigation、locale reload、Redis/SSE reconcile、desktop/mobile、zh-CN/en-US、ready/empty/forbidden/error、文本不越框、Settings boundary、hydration boundary 和无 Cuu 主窗门，并启动首个真实 React-compatible route component migration。
+1. R4.10-R4.17 已完成 Web route componentization、action notice、Proposal advanced、Option Intake / Knowledge、Settings / locale / device boundary、React route tree / hydration boundary 与 Home / Settings React-compatible first migration。
+2. R4.18 继续保留 Page VM、REST-as-truth、path navigation、locale reload、Redis/SSE reconcile、desktop/mobile、zh-CN/en-US、ready/empty/forbidden/error、文本不越框、Settings boundary、hydration boundary、R4.17 component adapter 和无 Cuu 主窗门，并扩展到 Cost / Replay。
 3. R0/R1/R2 口径继续保持：R2 地基首版完成；R1/R0 仍不能宣称全量完成。

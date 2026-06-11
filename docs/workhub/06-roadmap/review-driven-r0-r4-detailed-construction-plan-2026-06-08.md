@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization，R4.15 已落 Settings / locale / device boundary hardening，R4.16 已落 React route tree / hydration boundary；下一步进入 R4.17 React route component first migration。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization，R4.15 已落 Settings / locale / device boundary hardening，R4.16 已落 React route tree / hydration boundary，R4.17 已落 Home / Settings React-compatible first migration；下一步进入 R4.18 Cost / Replay 扩展迁移。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2898,11 +2898,24 @@ R4 验收：
 9. Bug / 数据流审查：动作仍走 delegated browser dispatcher，没有新增第二套 mutation 事件系统；typed Page VM loader 仍是真相源；Settings locale/device/secret boundary 作为 R4.16 regression 通过。
 10. 边界：R4.16 不是完整 React component migration。它只是为 R4.17 真实 React-compatible route components 建立可测试边界，视觉、文案、路由和桌面能力边界均不改变。
 
+### R4.17 已落：React route component first migration
+
+1. 已阅读 [`r4-17-react-route-component-first-migration-plan-2026-06-11.md`](./r4-17-react-route-component-first-migration-plan-2026-06-11.md)、R4.16 竣工记录、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.16 route adapter hydration boundary contact sheet。
+2. 已选择 Home / Settings 作为首批低风险迁移 route：Home 验证 AI-first typed Page VM props，Settings 作为 secret/device boundary 哨兵；暂不触碰 Proposal advanced、Intake、Knowledge。
+3. 已新增 `packages/ui/src/gold-path/route-react-components.ts`：定义 Home / Settings React-compatible adapter、typed props、component name、fallback state、action hrefs、fingerprint 与 marker attrs。
+4. 已扩展 `packages/ui/src/gold-path/route-components.ts`：Home / Settings 由 adapter 提供 props/action hrefs，并在 route section 与 hydration root 暴露 `data-r4-react-component-*`、`data-r4-hydration-react-component-*`。
+5. 已扩展 `apps/web/src/routes.ts`：`webReactRouteTree` 标出 Home / Settings 的 `react-compatible-route-component-v1` adapter，ready root 暴露 component/fallback markers。
+6. 已扩展 tests：UI route component adapter parity、Web route tree first migration markers；`@workhub/ui` 50/50、`@workhub/web` 19/19、`pnpm typecheck` 通过。
+7. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：browser audit 读取 component markers，并新增 R4.17 gates：`r4_17_react_component_marker`、`r4_17_html_fallback_parity`、`r4_17_action_dispatcher_single_path`、`r4_17_settings_boundary_regression`、`r4_16_hydration_boundary_regression`。
+8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/`；38 步 Chrome smoke 与 contact sheet 通过，R4.10-R4.16 regression gates 继续全 true。
+9. Bug / 数据流审查：本轮不引入 React runtime dependency、不调用 `hydrateRoot()`、不新增第二套 click/mutation handler；Home / Settings adapter props 来自 typed Page VM，primary href count 与 hydration action count 对齐。
+10. 边界：R4.17 仍不是全量 React runtime migration。它完成首批 React-compatible component source，保持 HTML fallback、active-only panel、Settings secret/device boundary、no Cuu/no Kanban/no weekly/no hash/no overflow。
+
 下一施工顺序：
 
-1. **R4.17 React route component first migration**：按低风险 route 优先，把 Home / Approvals / Settings 中 1-2 个页面迁到真实 React-compatible component source，同时保留 HTML fallback 与 delegated action contract。
-2. **R4.18 React route migration expansion**：R4.17 通过后扩到 Cost / Replay 等中等复杂 route，再评估 Proposal advanced 的拆分迁移。
-3. **后续门禁**：继续保留 R4.8-R4.16 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、action notice、desktop boundary、secret-safe、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.18 React route migration expansion**：把 Cost / Replay 接入同一 React-compatible component adapter，继续保留 HTML fallback 与 delegated action contract。
+2. **R4.19 Proposal advanced split migration**：R4.18 通过后再评估 Proposal advanced，把 readonly summary 与 mutation-heavy editors 分层迁移。
+3. **后续门禁**：继续保留 R4.8-R4.17 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、React-compatible adapter、action notice、desktop boundary、secret-safe、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

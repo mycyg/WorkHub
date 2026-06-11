@@ -329,6 +329,20 @@ R4.16 已把 Web active-only route components 包进可审计的 route adapter /
 - Action boundary 继续成立：R4.12-R4.15 的 delegated action dispatcher、reason gate、desktop gate、locale persistence fail-closed 和 Settings secret/device gates 均作为 R4.16 regression 通过。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
 
+### 6.12 R4.17 React Route Component First Migration
+
+![R4.17 React route component first migration contact sheet](./assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/contact-sheet.png)
+
+R4.17 已把 Home / Settings 迁入 React-compatible component adapter，并用本机 Chrome browser smoke 生成 38 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-operations-pages-atlas.png`：Home 仍是 AI-first 工作台，Settings 仍是 runtime/language/device 管理页，不新增营销 hero、装饰背景或 Cuu 本体。
+- React-compatible 只是实现边界推进：Home / Settings adapter props 来自 typed Page VM、locale 和 action hrefs，不从 DOM 文案反推数据。
+- HTML fallback 继续成立：route section、hydration root 与 route tree 三层 marker 均证明 fallback、Page VM truth 和 action count 一致。
+- Settings 边界继续成立：secret-safe、desktop required、web local actions disabled、pet model not in Web、mobile no-overflow 均作为 R4.17 regression 通过。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

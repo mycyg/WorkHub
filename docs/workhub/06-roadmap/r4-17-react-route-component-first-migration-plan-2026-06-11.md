@@ -1,12 +1,13 @@
 ---
 module: R4-react-route-component-first-migration
 layer: C-WEB / C-UI / C-API / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
   - ../05-clients/assets/web/web-operations-pages-atlas.png
   - ../05-clients/assets/audit/2026-06-11-r4-16-route-adapter-hydration-boundary-browser-smoke/contact-sheet.png
+  - ../05-clients/assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/contact-sheet.png
 depends_on:
   - r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md
   - r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md
@@ -90,6 +91,39 @@ flowchart LR
 - R4.16 contact sheet 中的 active-only、Settings boundary 和 mobile no-overflow 是回归基线。
 - React migration 只是实现层推进；PRD 的 REST truth、审批/派活边界、Cuu 独立窗口边界不变。
 
-## 8. 后续候选
+## 8. 完成记录
 
-R4.17 通过后进入 R4.18：扩大 React route component 迁移范围，优先把 Cost / Replay 等中等复杂度 route 接入同一 component adapter，再评估 Proposal advanced 的拆分迁移。
+### 8.1 实现清单
+
+| Area | 已落实现 | 验收点 |
+|---|---|---|
+| First migration | 新增 `route-react-components.ts`，Home / Settings 进入 React-compatible component adapter | adapter props 只来自 typed Page VM、locale、route key 和 action href，不从 DOM 文案反推 |
+| HTML fallback | Home / Settings 继续走现有 HTML fallback，但 section/root 均暴露 `data-r4-react-component-*` 与 `data-r4-hydration-react-component-*` | 不引入 React runtime，不调用 `hydrateRoot()`，失败时不会 blank page |
+| Route tree | `webReactRouteTree` 为 Home / Settings 标出 component name、adapter、typed-page-vm source 与 fallback state | ready root、hydration root、route section 三层 marker 一致 |
+| QA gates | Browser smoke 新增 R4.17 component marker、HTML fallback parity、single action path、Settings boundary、R4.16 hydration regression gates | 38 步 R4 live browser smoke 全部通过，未降低 R4.10-R4.16 regression |
+
+### 8.2 QA / 验证
+
+- `pnpm --filter @workhub/ui test`：50/50 通过。
+- `pnpm --filter @workhub/web test`：19/19 通过。
+- `pnpm typecheck` 通过。
+- `pnpm qa:r4-web-live-route-interaction` with R4.17 env 通过，生成 `../05-clients/assets/audit/2026-06-11-r4-17-react-route-component-first-migration-browser-smoke/`，38 步截图与 report 均通过。
+
+R4.17 gates 全部为 true：`r4_17_react_component_marker`、`r4_17_html_fallback_parity`、`r4_17_action_dispatcher_single_path`、`r4_17_settings_boundary_regression`、`r4_16_hydration_boundary_regression`。
+
+### 8.3 Bug / 数据流审查
+
+- 本轮没有新增 React runtime dependency，也没有新增第二套 mutation/event handler；动作仍走 existing delegated browser dispatcher。
+- Home / Settings adapter props 由 typed Page VM 生成；`primaryHrefs` 与 hydration action count、route section action count 在 unit 和 browser gates 中保持一致。
+- Settings 继续只显示 secret-safe/configured boolean、desktop boundary 和 recovery entry；不泄露 API key、base URL、token、本地路径或 Cuu 外观设置。
+- Active-only 继续成立：browser report 证明每个 ready route 只有一个 product panel 和一个 hydration panel。
+
+### 8.4 PRD / 概念图复核
+
+- `web-operations-pages-atlas.png`：R4.17 不改变视觉方向，Home 仍是 AI-first 工作台，Settings 仍是严肃管理页。
+- R4.16 contact sheet：active-only、Settings boundary、mobile no-overflow 均作为 R4.17 regression 继续通过。
+- `page-concepts.md`：Cuu 仍只在独立 pet window；Web 主窗无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本。
+
+## 9. 后续候选
+
+R4.17 已通过，后续进入 [`r4-18-react-route-migration-expansion-plan-2026-06-11.md`](./r4-18-react-route-migration-expansion-plan-2026-06-11.md)：扩大 React-compatible route component 迁移范围，优先把 Cost / Replay 等中等复杂度 route 接入同一 component adapter，再评估 Proposal advanced 的拆分迁移。

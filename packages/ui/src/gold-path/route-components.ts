@@ -20,6 +20,12 @@ import type {
 import { renderAgentRunReplay } from "../replay/index.js";
 import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
+  createHomeReactRouteComponent,
+  createSettingsReactRouteComponent,
+  reactRouteComponentMarkerAttrs,
+  type WebReactRouteComponentAdapter
+} from "./route-react-components.js";
+import {
   changeTypeLabel,
   checkStatusLabel,
   deliverableTargetLabel,
@@ -40,6 +46,7 @@ export type WebRouteComponent = {
   css: string;
   primaryHrefs: string[];
   hydration: WebRouteHydrationBoundary;
+  reactComponent?: WebReactRouteComponentAdapter;
 };
 
 export type WebRouteComponentMap = Partial<Record<GoldPathRenderedPage["key"], WebRouteComponent>>;
@@ -71,6 +78,7 @@ type CreateWebRouteComponentInput = {
   source: WebRouteComponentSource;
   locale: WorkHubLocale;
   pageVm: string;
+  reactComponent?: WebReactRouteComponentAdapter;
 };
 
 type ProposalConflictSurface = GoldPathSurfaceVM & {
@@ -312,6 +320,12 @@ function escapeHtml(value: unknown) {
     .replace(/"/gu, "&quot;");
 }
 
+function dataAttrs(attrs: Record<string, string>) {
+  return Object.entries(attrs)
+    .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
+    .join("");
+}
+
 function createWebRouteComponent(input: CreateWebRouteComponentInput): WebRouteComponent {
   const hydration: WebRouteHydrationBoundary = {
     rootId: `wh-r4-hydration-${input.key}`,
@@ -323,12 +337,24 @@ function createWebRouteComponent(input: CreateWebRouteComponentInput): WebRouteC
     actionHrefCount: input.primaryHrefs.length,
     adapter: "route-component-v1"
   };
-  const html = `<div class="wh-r4-hydration-root" id="${escapeHtml(hydration.rootId)}" data-r4-hydration-boundary="true" data-r4-hydration-route="${escapeHtml(hydration.routeKey)}" data-r4-hydration-mode="${escapeHtml(hydration.mode)}" data-r4-hydration-source="${escapeHtml(hydration.source)}" data-r4-hydration-locale="${escapeHtml(hydration.locale)}" data-r4-hydration-page-vm="${escapeHtml(hydration.pageVm)}" data-r4-hydration-action-count="${escapeHtml(String(hydration.actionHrefCount))}" data-r4-hydration-adapter="${escapeHtml(hydration.adapter)}">${input.html}</div>`;
+  const reactBoundary = input.reactComponent
+    ? dataAttrs({
+      "data-r4-hydration-react-component": input.reactComponent.componentName,
+      "data-r4-hydration-react-component-route": input.reactComponent.routeKey,
+      "data-r4-hydration-react-component-mode": input.reactComponent.mode,
+      "data-r4-hydration-react-component-props-source": input.reactComponent.propsSource,
+      "data-r4-hydration-react-component-fallback": String(input.reactComponent.htmlFallback),
+      "data-r4-hydration-react-component-adapter": input.reactComponent.adapter,
+      "data-r4-hydration-react-component-fingerprint": input.reactComponent.propsFingerprint
+    })
+    : "";
+  const html = `<div class="wh-r4-hydration-root" id="${escapeHtml(hydration.rootId)}" data-r4-hydration-boundary="true" data-r4-hydration-route="${escapeHtml(hydration.routeKey)}" data-r4-hydration-mode="${escapeHtml(hydration.mode)}" data-r4-hydration-source="${escapeHtml(hydration.source)}" data-r4-hydration-locale="${escapeHtml(hydration.locale)}" data-r4-hydration-page-vm="${escapeHtml(hydration.pageVm)}" data-r4-hydration-action-count="${escapeHtml(String(hydration.actionHrefCount))}" data-r4-hydration-adapter="${escapeHtml(hydration.adapter)}"${reactBoundary}>${input.html}</div>`;
   return {
     key: input.key,
     css: input.css,
     primaryHrefs: input.primaryHrefs,
     hydration,
+    ...(input.reactComponent ? { reactComponent: input.reactComponent } : {}),
     html
   };
 }
@@ -402,6 +428,8 @@ function approvalRouteLabel(routedToUserId: string | undefined, locale: WorkHubL
 }
 
 function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): WebRouteComponent {
+  const reactComponent = createHomeReactRouteComponent(vm, locale);
+  const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const primary = vm.primary;
   const primaryActions = primary?.actions ?? [];
   const backgroundRows = vm.background_runs.length
@@ -426,11 +454,12 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   return createWebRouteComponent({
     key: "home",
     css: webRouteComponentCss,
-    primaryHrefs: primaryActions.map((action) => action.href),
+    primaryHrefs: reactComponent.primaryHrefs,
     source: "page-vm",
     locale,
     pageVm: "attention",
-    html: `<section class="wh-r4-route" data-r4-route-component="home" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-home-primary="${escapeHtml(String(Boolean(primary)))}">
+    reactComponent,
+    html: `<section class="wh-r4-route" data-r4-route-component="home" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-home-primary="${escapeHtml(String(Boolean(primary)))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.kicker"))}</span>
@@ -1013,60 +1042,64 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
 }
 
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const reactComponent = createSettingsReactRouteComponent(vm, locale);
+  const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
+  const props = reactComponent.props;
   return createWebRouteComponent({
     key: "settings",
     css: webRouteComponentCss,
-    primaryHrefs: [vm.device.restore_href],
+    primaryHrefs: reactComponent.primaryHrefs,
     source: "page-vm",
     locale,
     pageVm: "settings",
-    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-settings-generated-at="${escapeHtml(vm.generated_at)}" data-r4-settings-runtime-status="${escapeHtml(vm.runtime.runtime_status)}" data-r4-settings-broker="${escapeHtml(vm.runtime.broker_backend)}" data-r4-settings-worker-count="${escapeHtml(String(vm.runtime.worker_count))}" data-r4-settings-active-locale="${escapeHtml(vm.language.active_locale)}" data-r4-settings-preference-locale="${escapeHtml(vm.language.preference_locale)}" data-r4-settings-preference-source="${escapeHtml(vm.language.preference_source)}" data-r4-settings-preference-synced="${escapeHtml(String(vm.language.preference_synced))}" data-r4-settings-secret-safe="${escapeHtml(String(vm.llm_runtime.secret_safe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(vm.device.pet_model_settings_in_web))}" data-r4-settings-desktop-client="${escapeHtml(vm.device.desktop_client)}" data-r4-settings-local-boundary="${escapeHtml(String(vm.device.local_execution_boundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(vm.device.restore_requires_desktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(vm.device.web_local_actions_enabled))}">
+    reactComponent,
+    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-settings-generated-at="${escapeHtml(props.generatedAt)}" data-r4-settings-runtime-status="${escapeHtml(props.runtimeStatus)}" data-r4-settings-broker="${escapeHtml(props.brokerBackend)}" data-r4-settings-worker-count="${escapeHtml(String(props.workerCount))}" data-r4-settings-active-locale="${escapeHtml(props.activeLocale)}" data-r4-settings-preference-locale="${escapeHtml(props.preferenceLocale)}" data-r4-settings-preference-source="${escapeHtml(props.preferenceSource)}" data-r4-settings-preference-synced="${escapeHtml(String(props.preferenceSynced))}" data-r4-settings-secret-safe="${escapeHtml(String(props.secretSafe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(props.petModelSettingsInWeb))}" data-r4-settings-desktop-client="${escapeHtml(props.desktopClient)}" data-r4-settings-local-boundary="${escapeHtml(String(props.localExecutionBoundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(props.webLocalActionsEnabled))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "settings.kicker"))}</span>
           <h2>${escapeHtml(goldPathT(locale, "settings.title"))}</h2>
           <p>${escapeHtml(goldPathT(locale, "settings.summary"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(vm.runtime.app_env)}</span>
+        <span class="wh-r4-route-count">${escapeHtml(props.appEnv)}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
           <h3>${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(vm.runtime.runtime_status, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(vm.runtime.worker_count))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(vm.runtime.broker_backend)} · ${escapeHtml(boolLabel(vm.runtime.broker_configured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.runtime.database_configured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.lease"))}</strong><span class="wh-pill">${escapeHtml(String(vm.runtime.agent_run_lease_ms))}ms</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.recovery"))}</strong><span class="wh-pill">${escapeHtml(String(vm.runtime.agent_run_recovery_interval_ms))}ms</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(props.brokerBackend)} · ${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.lease"))}</strong><span class="wh-pill">${escapeHtml(String(props.agentRunLeaseMs))}ms</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.recovery"))}</strong><span class="wh-pill">${escapeHtml(String(props.agentRunRecoveryIntervalMs))}ms</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
           <h3>${escapeHtml(routeT(locale, "settings.llm"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(vm.llm_runtime.default_provider)}</span></div>
-          <div class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(vm.llm_runtime.default_model)}</p></div><span class="wh-pill">${escapeHtml(String(vm.llm_runtime.provider_count))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.api_key_configured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.base_url_configured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(vm.llm_runtime.secret_safe, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
+          <div class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-settings-language="true">
           <h3>${escapeHtml(routeT(locale, "settings.language"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(vm.language.active_locale)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(vm.language.preference_locale)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(vm.language.preference_source)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(vm.language.preference_synced, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(vm.language.supported_locales.join(" / "))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.storage"))}</strong><span class="wh-pill">${escapeHtml(vm.language.storage_key)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.updateEndpoint"))}</strong><span class="wh-pill">${escapeHtml(vm.language.update_href)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(props.activeLocale)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceLocale)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceSource)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(props.preferenceSynced, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(props.supportedLocales.join(" / "))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.storage"))}</strong><span class="wh-pill">${escapeHtml(props.storageKey)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.updateEndpoint"))}</strong><span class="wh-pill">${escapeHtml(props.updateHref)}</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.local_execution_boundary))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.independent_pet_window))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!vm.device.pet_model_settings_in_web))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.restore_requires_desktop))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.web_local_actions_enabled))}</span></div>
-          <a class="wh-btn" href="${escapeHtml(vm.device.restore_href)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(vm.device.restore_requires_desktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(String(props.localExecutionBoundary))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(String(props.independentPetWindow))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!props.petModelSettingsInWeb))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(String(props.restoreRequiresDesktop))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(String(props.webLocalActionsEnabled))}</span></div>
+          <a class="wh-btn" href="${escapeHtml(props.restoreHref)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
     </section>`

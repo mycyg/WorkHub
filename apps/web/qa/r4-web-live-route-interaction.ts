@@ -46,6 +46,12 @@ type BrowserAudit = {
   hydrationPageVm: string | null;
   hydrationActionCount: string | null;
   hydrationAdapter: string | null;
+  hydrationReactComponent: string | null;
+  hydrationReactComponentRoute: string | null;
+  hydrationReactComponentMode: string | null;
+  hydrationReactComponentPropsSource: string | null;
+  hydrationReactComponentFallback: boolean;
+  hydrationReactComponentAdapter: string | null;
   hydrationPanel: boolean;
   hydrationPanelRoute: string | null;
   hydrationPanelMode: string | null;
@@ -59,6 +65,19 @@ type BrowserAudit = {
   routeTreeAdapter: string | null;
   routeTreeActiveOnly: boolean;
   routeTreeRouteCount: string | null;
+  routeTreeReactComponent: string | null;
+  routeTreeReactComponentAdapter: string | null;
+  routeTreeReactComponentFallback: boolean;
+  reactComponentName: string | null;
+  reactComponentRoute: string | null;
+  reactComponentMode: string | null;
+  reactComponentPropsSource: string | null;
+  reactComponentPageVm: string | null;
+  reactComponentLocale: string | null;
+  reactComponentHtmlFallback: boolean;
+  reactComponentAdapter: string | null;
+  reactComponentActionCount: string | null;
+  reactComponentFingerprint: string | null;
   routeSpecificMarker: boolean;
   routeData: {
     workitemTraceCount: string | null;
@@ -176,6 +195,10 @@ const defaultOutputDir = path.join(
   "audit",
   "2026-06-11-r4-web-live-route-interaction"
 );
+const r4ReactComponentByRoute: Record<string, string> = {
+  home: "HomeRouteComponent",
+  settings: "SettingsRouteComponent"
+};
 const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   ? path.resolve(repoRoot, process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"])
   : defaultOutputDir;
@@ -1311,6 +1334,7 @@ function auditExpression() {
     const hydrationPanel = document.querySelector("[data-r4-hydration-panel]");
     const hydrationPanels = Array.from(document.querySelectorAll("[data-r4-hydration-panel]"));
     const routeTreeRoot = document.querySelector("[data-r4-react-route-tree]");
+    const reactComponent = document.querySelector("[data-r4-react-component]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1418,6 +1442,12 @@ function auditExpression() {
       hydrationPageVm: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-page-vm") : null,
       hydrationActionCount: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-action-count") : null,
       hydrationAdapter: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-adapter") : null,
+      hydrationReactComponent: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component") : null,
+      hydrationReactComponentRoute: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component-route") : null,
+      hydrationReactComponentMode: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component-mode") : null,
+      hydrationReactComponentPropsSource: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component-props-source") : null,
+      hydrationReactComponentFallback: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component-fallback") === "true" : false,
+      hydrationReactComponentAdapter: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-react-component-adapter") : null,
       hydrationPanel: Boolean(hydrationPanel),
       hydrationPanelRoute: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-route") : null,
       hydrationPanelMode: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-mode") : null,
@@ -1431,6 +1461,19 @@ function auditExpression() {
       routeTreeAdapter: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-adapter") : null,
       routeTreeActiveOnly: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-active-only") === "true" : false,
       routeTreeRouteCount: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-route-count") : null,
+      routeTreeReactComponent: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component") : null,
+      routeTreeReactComponentAdapter: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component-adapter") : null,
+      routeTreeReactComponentFallback: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-react-component-fallback") === "true" : false,
+      reactComponentName: reactComponent ? reactComponent.getAttribute("data-r4-react-component") : null,
+      reactComponentRoute: reactComponent ? reactComponent.getAttribute("data-r4-react-component-route") : null,
+      reactComponentMode: reactComponent ? reactComponent.getAttribute("data-r4-react-component-mode") : null,
+      reactComponentPropsSource: reactComponent ? reactComponent.getAttribute("data-r4-react-component-props-source") : null,
+      reactComponentPageVm: reactComponent ? reactComponent.getAttribute("data-r4-react-component-page-vm") : null,
+      reactComponentLocale: reactComponent ? reactComponent.getAttribute("data-r4-react-component-locale") : null,
+      reactComponentHtmlFallback: reactComponent ? reactComponent.getAttribute("data-r4-react-component-html-fallback") === "true" : false,
+      reactComponentAdapter: reactComponent ? reactComponent.getAttribute("data-r4-react-component-adapter") : null,
+      reactComponentActionCount: reactComponent ? reactComponent.getAttribute("data-r4-react-component-action-count") : null,
+      reactComponentFingerprint: reactComponent ? reactComponent.getAttribute("data-r4-react-component-props-fingerprint") : null,
       routeSpecificMarker,
       routeData,
       notice,
@@ -1485,6 +1528,24 @@ async function captureStep(
     }
     if (audit.hydrationPanelCount !== 1) {
       throw new Error(`${input.id} expected one hydration panel, got ${audit.hydrationPanelCount}`);
+    }
+    const expectedReactComponent = r4ReactComponentByRoute[input.expectedRouteComponent];
+    if (expectedReactComponent) {
+      if (audit.reactComponentName !== expectedReactComponent || audit.reactComponentRoute !== input.expectedRouteComponent) {
+        throw new Error(`${input.id} is missing R4.17 React-compatible component markers`);
+      }
+      if (audit.reactComponentMode !== "html-fallback" || !audit.reactComponentHtmlFallback || audit.reactComponentPropsSource !== "typed-page-vm") {
+        throw new Error(`${input.id} has invalid R4.17 React-compatible fallback props markers`);
+      }
+      if (audit.hydrationReactComponent !== expectedReactComponent || audit.hydrationReactComponentRoute !== input.expectedRouteComponent) {
+        throw new Error(`${input.id} is missing R4.17 hydration component markers`);
+      }
+      if (audit.routeTreeReactComponent !== expectedReactComponent || !audit.routeTreeReactComponentFallback) {
+        throw new Error(`${input.id} is missing R4.17 route tree component markers`);
+      }
+      if (audit.reactComponentActionCount !== audit.hydrationActionCount) {
+        throw new Error(`${input.id} expected React-compatible action count to match hydration action count`);
+      }
     }
   }
   if (audit.productShell && audit.status === "ready" && (audit.panelCount !== 1 || audit.visiblePanelCount !== 1)) {
@@ -1925,6 +1986,7 @@ async function main() {
       knowledge: "evidence",
       settings: "settings"
     };
+    const migratedReactSteps = readyProductSteps.filter((step) => Boolean(step.audit.routeComponent && r4ReactComponentByRoute[step.audit.routeComponent]));
     const gates = {
       dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
@@ -2207,6 +2269,60 @@ async function main() {
         step.audit.hydrationPanelCount === 1 &&
         step.audit.routeComponentActive
       ),
+      r4_17_react_component_marker:
+        migratedReactSteps.some((step) => step.audit.routeComponent === "home" && step.audit.reactComponentName === "HomeRouteComponent") &&
+        migratedReactSteps.some((step) => step.audit.routeComponent === "settings" && step.audit.reactComponentName === "SettingsRouteComponent") &&
+        migratedReactSteps.every((step) =>
+          step.audit.routeComponent !== null &&
+          step.audit.reactComponentName === r4ReactComponentByRoute[step.audit.routeComponent] &&
+          step.audit.reactComponentRoute === step.audit.routeComponent &&
+          step.audit.routeTreeReactComponent === r4ReactComponentByRoute[step.audit.routeComponent] &&
+          step.audit.hydrationReactComponent === r4ReactComponentByRoute[step.audit.routeComponent] &&
+          step.audit.reactComponentAdapter === "react-compatible-route-component-v1" &&
+          step.audit.routeTreeReactComponentAdapter === "react-compatible-route-component-v1" &&
+          step.audit.hydrationReactComponentAdapter === "react-compatible-route-component-v1"
+        ),
+      r4_17_html_fallback_parity: migratedReactSteps.every((step) =>
+        step.audit.reactComponentMode === "html-fallback" &&
+        step.audit.reactComponentHtmlFallback &&
+        step.audit.reactComponentPropsSource === "typed-page-vm" &&
+        step.audit.hydrationReactComponentMode === "html-fallback" &&
+        step.audit.hydrationReactComponentFallback &&
+        step.audit.hydrationReactComponentPropsSource === "typed-page-vm" &&
+        step.audit.routeTreeReactComponentFallback
+      ),
+      r4_17_action_dispatcher_single_path: migratedReactSteps.every((step) =>
+        step.audit.reactComponentActionCount !== null &&
+        step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
+        step.audit.reactComponentActionCount === step.audit.hydrationPanelActionCount
+      ),
+      r4_17_settings_boundary_regression:
+        steps.some((step) =>
+          step.id === "13-settings-en-desktop-route-component" &&
+          step.audit.reactComponentName === "SettingsRouteComponent" &&
+          step.audit.reactComponentPageVm === "settings" &&
+          step.audit.reactComponentLocale === "en-US" &&
+          step.audit.routeData.settingsSecretSafe === "true" &&
+          step.audit.routeData.settingsPetModelInWeb === "false" &&
+          step.audit.routeData.settingsRestoreRequiresDesktop === "true" &&
+          step.audit.routeData.settingsWebLocalActions === "false" &&
+          !step.audit.secretLeak
+        ) &&
+        steps.some((step) =>
+          step.id === "14a-settings-en-mobile-boundary-no-overflow" &&
+          step.audit.reactComponentName === "SettingsRouteComponent" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
+        Boolean(step.audit.hydrationBoundary) &&
+        step.audit.hydrationRoute === step.audit.routeComponent &&
+        step.audit.hydrationMode === "html-fallback" &&
+        step.audit.hydrationAdapter === "route-component-v1" &&
+        step.audit.panelCount === 1 &&
+        step.audit.visiblePanelCount === 1 &&
+        step.audit.hydrationPanelCount === 1
+      ),
       r4_15_settings_boundary_regression:
         steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.routeData.settingsRestoreRequiresDesktop === "true" && step.audit.routeData.settingsWebLocalActions === "false") &&
         steps.some((step) => step.id === "14a-settings-en-mobile-boundary-no-overflow" && step.audit.routeComponent === "settings" && !step.audit.horizontalOverflow),
@@ -2305,6 +2421,11 @@ async function main() {
         `- R4.16 action dispatcher parity: ${String(gates.r4_16_action_dispatcher_parity)}`,
         `- R4.16 locale/settings regression: ${String(gates.r4_16_locale_settings_regression)}`,
         `- R4.16 active-only regression: ${String(gates.r4_16_active_only_regression)}`,
+        `- R4.17 React component marker: ${String(gates.r4_17_react_component_marker)}`,
+        `- R4.17 HTML fallback parity: ${String(gates.r4_17_html_fallback_parity)}`,
+        `- R4.17 action dispatcher single path: ${String(gates.r4_17_action_dispatcher_single_path)}`,
+        `- R4.17 settings boundary regression: ${String(gates.r4_17_settings_boundary_regression)}`,
+        `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,

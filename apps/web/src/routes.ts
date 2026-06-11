@@ -17,6 +17,7 @@ import {
   renderWebRouteComponents,
   renderWebProductShell,
   type GoldPathAppShell,
+  type WebReactRouteComponentName,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import {
@@ -163,6 +164,13 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
     adapter: "route-component-v1";
     pageVm: WebRouteTreePageVm;
     activeOnly: true;
+    reactComponent?: {
+      componentName: WebReactRouteComponentName;
+      adapter: "react-compatible-route-component-v1";
+      propsSource: "typed-page-vm";
+      htmlFallback: true;
+      mode: "html-fallback";
+    };
   };
 };
 
@@ -178,16 +186,35 @@ const routeTreePageVmByKey = {
   settings: "settings"
 } satisfies Record<R4WebRouteKey, WebRouteTreePageVm>;
 
-export const webReactRouteTree: readonly WebReactRouteTreeNode[] = webRouteRegistry.map((route) => ({
-  ...route,
-  hydration: {
-    enabled: true,
-    mode: "html-fallback",
-    adapter: "route-component-v1",
-    pageVm: routeTreePageVmByKey[route.key],
-    activeOnly: true
-  }
-}));
+const routeTreeReactComponentByKey: Partial<Record<R4WebRouteKey, WebReactRouteComponentName>> = {
+  home: "HomeRouteComponent",
+  settings: "SettingsRouteComponent"
+};
+
+export const webReactRouteTree: readonly WebReactRouteTreeNode[] = webRouteRegistry.map((route) => {
+  const componentName = routeTreeReactComponentByKey[route.key];
+  return {
+    ...route,
+    hydration: {
+      enabled: true,
+      mode: "html-fallback",
+      adapter: "route-component-v1",
+      pageVm: routeTreePageVmByKey[route.key],
+      activeOnly: true,
+      ...(componentName
+        ? {
+          reactComponent: {
+            componentName,
+            adapter: "react-compatible-route-component-v1",
+            propsSource: "typed-page-vm",
+            htmlFallback: true,
+            mode: "html-fallback"
+          }
+        }
+        : {})
+    }
+  };
+});
 
 const webRouteStateScreenCss = [
   "body{margin:0;background:#f6f9fd;color:#172033;overflow-x:hidden}",
@@ -578,7 +605,7 @@ function renderReadyRoute(
     match,
     shell,
     surface,
-    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}">${shell.html}</div>`
+    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}" data-r4-route-tree-react-component="${escapeHtml(routeTreeNode?.hydration.reactComponent?.componentName ?? "")}" data-r4-route-tree-react-component-adapter="${escapeHtml(routeTreeNode?.hydration.reactComponent?.adapter ?? "")}" data-r4-route-tree-react-component-fallback="${escapeHtml(String(routeTreeNode?.hydration.reactComponent?.htmlFallback ?? false))}">${shell.html}</div>`
   };
 }
 

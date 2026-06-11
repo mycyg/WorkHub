@@ -368,6 +368,20 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
   assert.equal(webReactRouteTree.every((route) => route.hydration.activeOnly), true);
 });
 
+test("R4.17 web route tree marks first migrated React-compatible route components", () => {
+  const migrated = webReactRouteTree
+    .filter((route) => route.hydration.reactComponent)
+    .map((route) => [route.key, route.hydration.reactComponent?.componentName, route.hydration.reactComponent?.propsSource]);
+
+  assert.deepEqual(migrated, [
+    ["home", "HomeRouteComponent", "typed-page-vm"],
+    ["settings", "SettingsRouteComponent", "typed-page-vm"]
+  ]);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.reactComponent?.mode === "html-fallback" || !route.hydration.reactComponent), true);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.reactComponent?.htmlFallback === true || !route.hydration.reactComponent), true);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.reactComponent?.adapter === "react-compatible-route-component-v1" || !route.hydration.reactComponent), true);
+});
+
 test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
   const surface = goldPathSurfaceVm();
   const session = routeSession();
@@ -520,6 +534,17 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     assert.equal(result.html.includes(`data-r4-route-tree-route-count="${webReactRouteTree.length}"`), true);
     assert.equal(result.html.includes(`data-r4-hydration-route="${routeComponent}"`), true);
     assert.equal(result.html.match(/data-r4-hydration-boundary="true"/gu)?.length, 1);
+    const expectedReactComponent = routeComponent === "home"
+      ? "HomeRouteComponent"
+      : routeComponent === "settings"
+        ? "SettingsRouteComponent"
+        : "";
+    assert.equal(result.html.includes(`data-r4-route-tree-react-component="${expectedReactComponent}"`), true);
+    if (expectedReactComponent) {
+      assert.equal(result.html.includes(`data-r4-react-component="${expectedReactComponent}"`), true);
+      assert.equal(result.html.includes('data-r4-react-component-html-fallback="true"'), true);
+      assert.equal(result.html.includes('data-r4-hydration-react-component-fallback="true"'), true);
+    }
     assert.equal(result.html.includes("weekly_report_manifest_doc"), false);
     assert.equal(result.html.includes('href="#/'), false);
     assert.equal(result.html.includes("data-cuu"), false);
