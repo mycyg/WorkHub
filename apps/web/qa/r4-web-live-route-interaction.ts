@@ -53,6 +53,31 @@ type BrowserAudit = {
     settingsPetModelInWeb: string | null;
     settingsWorkerCount: string | null;
   };
+  notice: {
+    visible: boolean;
+    kind: string | null;
+    tone: string | null;
+    source: string | null;
+    locale: string | null;
+    actionId: string | null;
+    eventType: string | null;
+    stream: string | null;
+    title: string;
+    body: string;
+    reasonButtonCount: number;
+  };
+  live: {
+    streamCount: string | null;
+    connectedCount: string | null;
+    eventCount: string | null;
+    refreshCount: string | null;
+    lastEvent: string | null;
+    lastStream: string | null;
+  };
+  routeState: {
+    kind: string | null;
+    actionText: string | null;
+  };
   panelCount: number;
   visiblePanelCount: number;
   activeLocale: string | null;
@@ -255,6 +280,21 @@ function sendApiError(response: ServerResponse, status: number, code: string, me
 
 function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestRecord[]) {
   let currentLocale: WorkHubLocale = "zh-CN";
+  const sseClients = new Map<ServerResponse, string>();
+  const sseStreamKey = (pathname: string) => {
+    if (pathname === "/api/push/stream") {
+      return "all";
+    }
+    if (pathname === "/api/push/stream/me") {
+      return "me";
+    }
+    const match = /^\/api\/push\/stream\/([^/]+)/u.exec(pathname);
+    return match?.[1] ?? "unknown";
+  };
+  const writeSseEvent = (response: ServerResponse, event: string, payload: Record<string, unknown>) => {
+    response.write(`event: ${event}\n`);
+    response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
   const server = createHttpServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     requestLog.push({
@@ -265,6 +305,34 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       referer: typeof request.headers.referer === "string" ? request.headers.referer : null
     });
 
+    if (request.method === "GET" && (url.pathname === "/api/push/stream" || url.pathname.startsWith("/api/push/stream/"))) {
+      const streamKey = sseStreamKey(url.pathname);
+      response.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store, no-transform",
+        connection: "keep-alive"
+      });
+      writeSseEvent(response, "connected", { stream: streamKey });
+      sseClients.set(response, streamKey);
+      request.on("close", () => {
+        sseClients.delete(response);
+      });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/__qa/emit") {
+      const event = url.searchParams.get("event") ?? "proposal.merged";
+      const stream = url.searchParams.get("stream") ?? "proposal";
+      let emitted = 0;
+      for (const [client, streamKey] of Array.from(sseClients.entries())) {
+        if (streamKey !== stream) {
+          continue;
+        }
+        writeSseEvent(client, event, { stream, event_type: event, source: "r4-smoke" });
+        emitted += 1;
+      }
+      sendJson(response, 200, { ok: true, event, stream, emitted });
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
       sendJson(response, 200, identity(currentLocale));
       return;
@@ -308,6 +376,23 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, surface);
       return;
     }
+    const approvalRespondMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(url.pathname);
+    if (request.method === "POST" && approvalRespondMatch?.[1]) {
+      const body = JSON.parse(await requestBody(request) || "{}") as { decision?: string };
+      sendJson(response, 200, {
+        approval: { id: approvalRespondMatch[1], status: body.decision === "deny" ? "denied" : "allowed" },
+        attention: {
+          summary_text: currentLocale === "en-US"
+            ? body.decision === "deny"
+              ? "Approval sent back to AI with your reason."
+              : "Approval recorded. AI can continue."
+            : body.decision === "deny"
+              ? "已带着原因打回审批。"
+              : "已记录审批，AI 可以继续。"
+        }
+      });
+      return;
+    }
     const workItemMatch = /^\/api\/pages\/workitems\/([^/]+)$/u.exec(url.pathname);
     if (request.method === "GET" && workItemMatch?.[1]) {
       if (workItemMatch[1] === "r4-live-forbidden") {
@@ -324,6 +409,30 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         return;
       }
       sendJson(response, 200, surface.page_vms.proposal);
+      return;
+    }
+    const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(url.pathname);
+    if (request.method === "POST" && proposalReviewMatch?.[1]) {
+      await requestBody(request);
+      sendJson(response, 200, {
+        attention: {
+          summary_text: currentLocale === "en-US"
+            ? "Change request sent back to AI with your reason."
+            : "已带着原因打回给 AI。"
+        }
+      });
+      return;
+    }
+    const proposalMergeMatch = /^\/api\/proposals\/([^/]+)\/merge$/u.exec(url.pathname);
+    if (request.method === "POST" && proposalMergeMatch?.[1]) {
+      await requestBody(request);
+      sendJson(response, 200, {
+        attention: {
+          summary_text: currentLocale === "en-US"
+            ? "Accepted into the official version."
+            : "已合入正式版本。"
+        }
+      });
       return;
     }
     const replayMatch = /^\/api\/agent-runs\/([^/]+)\/replay$/u.exec(url.pathname);
@@ -568,6 +677,34 @@ async function clickAndWait(cdp: CdpClient, selector: string, pathname: string, 
   );
 }
 
+async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
+  const clicked = await cdp.evaluate<boolean>(`(() => {
+    const target = document.querySelector(${JSON.stringify(selector)});
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`);
+  if (!clicked) {
+    throw new Error(`Could not click selector: ${selector}`);
+  }
+  await waitFor<BrowserAudit>(
+    cdp,
+    `${selector} -> notice ${kind}`,
+    auditExpression(),
+    (audit) =>
+      audit.notice.visible &&
+      audit.notice.kind === kind &&
+      (actionId === undefined || audit.notice.actionId === actionId)
+  );
+}
+
+async function emitQaSseEvent(cdp: CdpClient, event: string, stream = "proposal") {
+  const ok = await cdp.evaluate<boolean>(`fetch(${JSON.stringify(`/api/__qa/emit?event=${encodeURIComponent(event)}&stream=${encodeURIComponent(stream)}`)}).then((response) => response.ok)`);
+  if (!ok) {
+    throw new Error(`QA SSE emit failed for ${stream}:${event}`);
+  }
+}
+
 async function historyAndWait(cdp: CdpClient, direction: "back" | "forward", pathname: string) {
   await cdp.evaluate(`history.${direction}(); true`);
   await waitFor<{ pathname: string; status: string }>(
@@ -676,6 +813,34 @@ function auditExpression() {
       settingsPetModelInWeb: routeComponent?.getAttribute("data-r4-settings-pet-model-in-web") || null,
       settingsWorkerCount: routeComponent?.getAttribute("data-r4-settings-worker-count") || null
     };
+    const noticeElement = document.querySelector("[data-wh-app-notice]");
+    const noticeVisible = Boolean(noticeElement && !noticeElement.hasAttribute("hidden"));
+    const notice = {
+      visible: noticeVisible,
+      kind: noticeElement?.getAttribute("data-r4-notice-kind") || null,
+      tone: noticeElement?.getAttribute("data-r4-notice-tone") || null,
+      source: noticeElement?.getAttribute("data-r4-notice-source") || null,
+      locale: noticeElement?.getAttribute("data-r4-notice-locale") || null,
+      actionId: noticeElement?.getAttribute("data-r4-notice-action-id") || null,
+      eventType: noticeElement?.getAttribute("data-r4-notice-event-type") || null,
+      stream: noticeElement?.getAttribute("data-r4-notice-stream") || null,
+      title: noticeElement?.querySelector(".wh-app-notice-title")?.textContent?.trim() || "",
+      body: noticeElement?.querySelector(".wh-app-notice-body")?.textContent?.trim() || "",
+      reasonButtonCount: noticeVisible ? document.querySelectorAll("[data-review-reason]").length : 0
+    };
+    const live = {
+      streamCount: document.documentElement.dataset.r4LiveStreamCount || null,
+      connectedCount: document.documentElement.dataset.r4LiveConnectedCount || null,
+      eventCount: document.documentElement.dataset.r4LiveEventCount || null,
+      refreshCount: document.documentElement.dataset.r4LiveRefreshCount || null,
+      lastEvent: document.documentElement.dataset.r4LiveLastEvent || null,
+      lastStream: document.documentElement.dataset.r4LiveLastStream || null
+    };
+    const routeStateCard = document.querySelector("[data-route-state]");
+    const routeState = {
+      kind: routeStateCard?.getAttribute("data-route-state") || null,
+      actionText: routeStateCard?.querySelector("a")?.textContent?.trim() || null
+    };
     const routeSpecificMarker =
       routeComponentKey === "workitem"
         ? Boolean(document.querySelector("[data-r4-workitem-context]") && document.querySelector("[data-r4-workitem-trace]") && document.querySelector("[data-r4-workitem-evidence]"))
@@ -702,6 +867,9 @@ function auditExpression() {
       routeComponentActive: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-active") === "true" : false,
       routeSpecificMarker,
       routeData,
+      notice,
+      live,
+      routeState,
       panelCount: panels.length,
       visiblePanelCount: visiblePanels.length,
       activeLocale: document.querySelector("[data-wh-locale][aria-pressed='true']")?.getAttribute("data-wh-locale") || null,
@@ -838,6 +1006,15 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWait(cdp, 'a[href="/approvals"]', "/approvals");
   steps.push(await captureStep(cdp, { id: "02-approvals-click-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
 
+  await clickAndWaitForNotice(cdp, '[data-action-id="deny"]', "reason_required", "deny");
+  steps.push(await captureStep(cdp, { id: "02a-approval-deny-reason-gate-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
+
+  await clickAndWaitForNotice(cdp, "[data-review-reason]", "action_success", "deny");
+  steps.push(await captureStep(cdp, { id: "02b-approval-deny-success-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="approve"]', "action_success", "approve");
+  steps.push(await captureStep(cdp, { id: "02c-approval-approve-success-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
+
   await clickAndWait(cdp, 'a[href="/workitems/r4-live-workitem"]', "/workitems/r4-live-workitem");
   steps.push(await captureStep(cdp, { id: "03-workitem-click-zh-desktop-route-component", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
@@ -856,32 +1033,74 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   );
   steps.push(await captureStep(cdp, { id: "06-locale-toggle-en-workitem-route-component", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
-  await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/proposals/r4-live-proposal`, "ready");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "proposal SSE stream connected",
+    auditExpression(),
+    (audit) => Number(audit.live.connectedCount ?? "0") > 0 && Number(audit.live.streamCount ?? "0") >= 3
+  );
+  await clickAndWaitForNotice(cdp, '[data-action-id="request_changes"]', "reason_required", "request_changes");
+  steps.push(await captureStep(cdp, { id: "07-proposal-reason-gate-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, "[data-review-reason]", "action_success", "request_changes");
+  steps.push(await captureStep(cdp, { id: "08-proposal-request-changes-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="merge"]', "action_success", "merge");
+  steps.push(await captureStep(cdp, { id: "09-proposal-merge-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await emitQaSseEvent(cdp, "proposal.merged", "proposal");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "proposal SSE refresh notice",
+    auditExpression(),
+    (audit) => audit.notice.visible && audit.notice.kind === "sse_refresh" && audit.notice.eventType === "proposal.merged" && Number(audit.live.refreshCount ?? "0") > 0
+  );
+  steps.push(await captureStep(cdp, { id: "10-proposal-sse-refresh-notice-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
+  await setViewport(cdp, mobile);
   await cdp.evaluate("window.scrollTo(0, 680); true");
   await new Promise((resolve) => setTimeout(resolve, 250));
-  steps.push(await captureStep(cdp, { id: "07-proposal-en-mobile-scrolled-route-component", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+  steps.push(await captureStep(cdp, { id: "11-proposal-en-mobile-scrolled-notice-route-component", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
   await navigate(cdp, `${baseUrl}/dashboard/cost`, "ready");
-  steps.push(await captureStep(cdp, { id: "08-cost-en-mobile-route-component", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
+  steps.push(await captureStep(cdp, { id: "12-cost-en-mobile-route-component", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
+
+  await waitFor<BrowserAudit>(
+    cdp,
+    "cost SSE stream connected",
+    auditExpression(),
+    (audit) => Number(audit.live.connectedCount ?? "0") > 0 && audit.live.streamCount === "1"
+  );
+  await emitQaSseEvent(cdp, "budget.warning", "me");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "budget warning notice",
+    auditExpression(),
+    (audit) => audit.notice.visible && audit.notice.kind === "budget_warning" && audit.notice.eventType === "budget.warning" && Number(audit.live.refreshCount ?? "0") > 0
+  );
+  steps.push(await captureStep(cdp, { id: "12a-cost-budget-warning-notice-en-mobile", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
 
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/settings`, "ready");
-  steps.push(await captureStep(cdp, { id: "09-settings-en-desktop-route-component", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+  steps.push(await captureStep(cdp, { id: "13-settings-en-desktop-route-component", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="open_desktop_settings"]', "desktop_required", "open_desktop_settings");
+  steps.push(await captureStep(cdp, { id: "14-settings-desktop-gate-en-desktop", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
 
   await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
-  steps.push(await captureStep(cdp, { id: "10-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
+  steps.push(await captureStep(cdp, { id: "15-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
 
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
-  steps.push(await captureStep(cdp, { id: "11-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
+  steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
 
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
-  steps.push(await captureStep(cdp, { id: "12-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
+  steps.push(await captureStep(cdp, { id: "17-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
 
   await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
-  steps.push(await captureStep(cdp, { id: "13-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
+  steps.push(await captureStep(cdp, { id: "18-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
 
   return steps;
 }
@@ -889,6 +1108,8 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
 function requestProof(requests: ApiRequestRecord[]) {
   const count = (pathname: string, method = "GET") =>
     requests.filter((request) => request.method === method && request.pathname === pathname).length;
+  const countMatch = (pattern: RegExp, method = "GET") =>
+    requests.filter((request) => request.method === method && pattern.test(request.pathname)).length;
   return {
     attention: requests.some((request) => request.pathname === "/api/pages/attention" && request.locale === "zh-CN"),
     approvals: requests.some((request) => request.pathname === "/api/pages/approvals"),
@@ -907,9 +1128,14 @@ function requestProof(requests: ApiRequestRecord[]) {
       workitem: count("/api/pages/workitems/r4-live-workitem"),
       workitemForbidden: count("/api/pages/workitems/r4-live-forbidden"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
+      approvalRespond: countMatch(/^\/api\/approvals\/[^/]+\/respond$/u, "POST"),
+      proposalReview: countMatch(/^\/api\/proposals\/[^/]+\/review$/u, "POST"),
+      proposalMerge: countMatch(/^\/api\/proposals\/[^/]+\/merge$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
+      qaEmit: count("/api/__qa/emit"),
+      sseProposal: count("/api/push/stream/proposal/r4-live-proposal"),
       goldPath: count("/api/pages/gold-path"),
       preferencePatch: count("/api/auth/preferences", "PATCH")
     }
@@ -929,9 +1155,9 @@ function hasActiveComponent(steps: StepReport[], id: string, key: string) {
 function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
   const byId = new Map(steps.map((step) => [step.id, step]));
   const workitem = byId.get("03-workitem-click-zh-desktop-route-component")?.audit.routeData;
-  const proposal = byId.get("07-proposal-en-mobile-scrolled-route-component")?.audit.routeData;
-  const cost = byId.get("08-cost-en-mobile-route-component")?.audit.routeData;
-  const settings = byId.get("09-settings-en-desktop-route-component")?.audit.routeData;
+  const proposal = byId.get("11-proposal-en-mobile-scrolled-notice-route-component")?.audit.routeData;
+  const cost = byId.get("12-cost-en-mobile-route-component")?.audit.routeData;
+  const settings = byId.get("13-settings-en-desktop-route-component")?.audit.routeData;
   return Boolean(
     workitem &&
       workitem.workitemTraceCount === String(surface.page_vms.workitem.agent_trace_preview.length) &&
@@ -1009,12 +1235,12 @@ async function main() {
       r4_10_home_approvals_replay_route_components:
         steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
         steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
-        steps.some((step) => step.id === "10-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
+        steps.some((step) => step.id === "15-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
       r4_11_workitem_proposal_cost_settings_route_components:
         hasActiveComponent(steps, "03-workitem-click-zh-desktop-route-component", "workitem") &&
-        hasActiveComponent(steps, "07-proposal-en-mobile-scrolled-route-component", "proposal") &&
-        hasActiveComponent(steps, "08-cost-en-mobile-route-component", "cost") &&
-        hasActiveComponent(steps, "09-settings-en-desktop-route-component", "settings"),
+        hasActiveComponent(steps, "11-proposal-en-mobile-scrolled-notice-route-component", "proposal") &&
+        hasActiveComponent(steps, "12-cost-en-mobile-route-component", "cost") &&
+        hasActiveComponent(steps, "13-settings-en-desktop-route-component", "settings"),
       r4_11_route_component_source_truth: steps
         .filter((step) => step.audit.productShell && step.audit.status === "ready")
         .every((step) => step.audit.routeComponentSource === "page-vm"),
@@ -1022,6 +1248,31 @@ async function main() {
         .filter((step) => step.audit.productShell && step.audit.status === "ready")
         .every((step) => step.audit.routeSpecificMarker),
       r4_11_vm_dom_value_match: vmDomValueMatches(steps, surface),
+      r4_12_approval_response_notice:
+        steps.some((step) => step.id === "02a-approval-deny-reason-gate-zh-desktop" && step.audit.notice.kind === "reason_required" && step.audit.notice.actionId === "deny" && step.audit.notice.locale === "zh-CN" && step.audit.notice.reasonButtonCount >= 3) &&
+        steps.some((step) => step.id === "02b-approval-deny-success-zh-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "deny" && step.audit.notice.locale === "zh-CN") &&
+        steps.some((step) => step.id === "02c-approval-approve-success-zh-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "approve" && step.audit.notice.locale === "zh-CN") &&
+        proof.counts.approvalRespond === 2,
+      r4_12_reason_gate_blocks_without_reason:
+        steps.some((step) => step.id === "07-proposal-reason-gate-en-desktop" && step.audit.notice.kind === "reason_required" && step.audit.notice.reasonButtonCount >= 3) &&
+        proof.counts.proposalReview === 1,
+      r4_12_request_changes_success_notice:
+        steps.some((step) => step.id === "08-proposal-request-changes-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "request_changes" && step.audit.notice.locale === "en-US"),
+      r4_12_merge_success_notice:
+        steps.some((step) => step.id === "09-proposal-merge-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "merge" && step.audit.notice.tone === "success") &&
+        proof.counts.proposalMerge === 1,
+      r4_12_sse_refresh_notice:
+        steps.some((step) => step.id === "10-proposal-sse-refresh-notice-en-desktop" && step.audit.notice.kind === "sse_refresh" && step.audit.notice.source === "sse" && step.audit.notice.eventType === "proposal.merged" && step.audit.notice.stream === "proposal" && Number(step.audit.live.refreshCount ?? "0") >= 1) &&
+        proof.counts.qaEmit === 2,
+      r4_12_budget_warning_notice:
+        steps.some((step) => step.id === "12a-cost-budget-warning-notice-en-mobile" && step.audit.notice.kind === "budget_warning" && step.audit.notice.source === "sse" && step.audit.notice.eventType === "budget.warning" && step.audit.notice.tone === "warning" && !step.audit.horizontalOverflow),
+      r4_12_desktop_gate_fail_closed:
+        steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.pathname === "/settings" && step.audit.search === "" && step.audit.notice.kind === "desktop_required" && step.audit.notice.actionId === "open_desktop_settings"),
+      r4_12_retry_access_route_states:
+        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
+        steps.some((step) => step.id === "18-unknown-route-error" && step.audit.routeState.kind === "error" && step.audit.routeState.actionText === "Retry"),
+      r4_12_mobile_notice_no_overflow:
+        steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.notice.kind === "sse_refresh" && !step.audit.horizontalOverflow && step.audit.textOverflowCount === 0),
       active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
@@ -1029,12 +1280,17 @@ async function main() {
         proof.counts.approvals === 3 &&
         proof.counts.workitem === 3 &&
         proof.counts.workitemForbidden === 1 &&
-        proof.counts.proposal === 1 &&
-        proof.counts.cost === 1 &&
+        proof.counts.proposal === 2 &&
+        proof.counts.approvalRespond === 2 &&
+        proof.counts.proposalReview === 1 &&
+        proof.counts.proposalMerge === 1 &&
+        proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
-        proof.counts.preferencePatch === 1,
-      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "07-proposal-en-mobile-scrolled-route-component" && !step.audit.topbarNavOverlap),
+        proof.counts.preferencePatch === 1 &&
+        proof.counts.qaEmit === 2 &&
+        proof.counts.sseProposal >= 2,
+      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
       no_default_kanban: steps.every((step) => !step.audit.kanbanLeak),
       no_old_preview_shell: steps.every((step) => !step.audit.oldShellLeak),
@@ -1071,6 +1327,14 @@ async function main() {
         `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
+        `- R4.12 approval response notice: ${String(gates.r4_12_approval_response_notice)}`,
+        `- R4.12 reason gate: ${String(gates.r4_12_reason_gate_blocks_without_reason)}`,
+        `- R4.12 request changes notice: ${String(gates.r4_12_request_changes_success_notice)}`,
+        `- R4.12 merge notice: ${String(gates.r4_12_merge_success_notice)}`,
+        `- R4.12 SSE refresh notice: ${String(gates.r4_12_sse_refresh_notice)}`,
+        `- R4.12 budget warning notice: ${String(gates.r4_12_budget_warning_notice)}`,
+        `- R4.12 desktop gate: ${String(gates.r4_12_desktop_gate_fail_closed)}`,
+        `- R4.12 route-state actions: ${String(gates.r4_12_retry_access_route_states)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""
@@ -1078,7 +1342,7 @@ async function main() {
       "utf8"
     );
     if (!Object.values(gates).every(Boolean)) {
-      throw new Error(`R4.5 live route interaction smoke failed: ${JSON.stringify(gates)}`);
+      throw new Error(`${smokeTitle} failed: ${JSON.stringify(gates)}`);
     }
     console.log(JSON.stringify({ ok: true, output_dir: report.output_dir, steps: steps.length }, null, 2));
   } finally {

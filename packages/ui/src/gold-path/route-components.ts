@@ -750,7 +750,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.local_execution_boundary))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(String(vm.device.independent_pet_window))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!vm.device.pet_model_settings_in_web))}</span></div>
-          <a class="wh-btn" href="${escapeHtml(vm.device.restore_href)}" data-action-id="open_desktop_settings" data-method="GET">${escapeHtml(routeT(locale, "settings.restore"))}</a>
+          <a class="wh-btn" href="${escapeHtml(vm.device.restore_href)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
     </section>`

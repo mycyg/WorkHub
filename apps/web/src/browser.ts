@@ -26,6 +26,29 @@ import {
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+type RouteNoticeKind =
+  | "action_success"
+  | "action_error"
+  | "selection"
+  | "reason_required"
+  | "action_pending"
+  | "desktop_required"
+  | "merge_conflict"
+  | "sse_refresh"
+  | "budget_warning";
+type RouteNoticeTone = "info" | "success" | "warning" | "danger";
+type RouteNoticeSource = "client" | "rest" | "sse";
+type RouteNoticeVM = {
+  kind: RouteNoticeKind;
+  tone: RouteNoticeTone;
+  source: RouteNoticeSource;
+  locale: WorkHubLocale;
+  title: string;
+  body: string;
+  actionId?: string | undefined;
+  eventType?: string | undefined;
+  stream?: string | undefined;
+};
 type LiveStreamTarget = {
   key: string;
   url: string;
@@ -148,7 +171,13 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
   }, eventListenerOptions(signal));
 }
 
-function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string, timeoutMs = 4600) {
+function resetNoticeDataset(notice: HTMLElement) {
+  delete notice.dataset.r4NoticeActionId;
+  delete notice.dataset.r4NoticeEventType;
+  delete notice.dataset.r4NoticeStream;
+}
+
+function showRouteNotice(shellRoot: HTMLElement, vm: RouteNoticeVM, extraHtml?: string, timeoutMs = 4600) {
   const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
   if (!notice) {
     return;
@@ -157,7 +186,22 @@ function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string,
     window.clearTimeout(noticeTimer);
     noticeTimer = undefined;
   }
-  notice.textContent = message;
+  resetNoticeDataset(notice);
+  notice.dataset.r4RouteNotice = "true";
+  notice.dataset.r4NoticeKind = vm.kind;
+  notice.dataset.r4NoticeTone = vm.tone;
+  notice.dataset.r4NoticeSource = vm.source;
+  notice.dataset.r4NoticeLocale = vm.locale;
+  if (vm.actionId) {
+    notice.dataset.r4NoticeActionId = vm.actionId;
+  }
+  if (vm.eventType) {
+    notice.dataset.r4NoticeEventType = vm.eventType;
+  }
+  if (vm.stream) {
+    notice.dataset.r4NoticeStream = vm.stream;
+  }
+  notice.innerHTML = `<strong class="wh-app-notice-title">${escapeHtml(vm.title)}</strong><span class="wh-app-notice-body">${escapeHtml(vm.body)}</span>`;
   if (extraHtml) {
     notice.insertAdjacentHTML("beforeend", extraHtml);
   }
@@ -168,6 +212,115 @@ function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string,
       noticeTimer = undefined;
     }, timeoutMs);
   }
+}
+
+function actionSuccessNotice(locale: WorkHubLocale, body: string, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_success",
+    tone: "success",
+    source: "rest",
+    locale,
+    title: goldPathT(locale, "runtime.notice.actionSuccessTitle"),
+    body,
+    actionId
+  };
+}
+
+function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_error",
+    tone: "danger",
+    source: "rest",
+    locale,
+    title: goldPathT(locale, "runtime.notice.actionErrorTitle"),
+    body: actionMessage(error, locale),
+    actionId
+  };
+}
+
+function actionPendingNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_pending",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.pendingTitle"),
+    body: goldPathT(locale, "runtime.actionPending"),
+    actionId
+  };
+}
+
+function desktopRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "desktop_required",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.desktopRequiredTitle"),
+    body: goldPathT(locale, "runtime.notice.desktopRequiredBody"),
+    actionId
+  };
+}
+
+function reasonRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "reason_required",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.reasonRequiredTitle"),
+    body: goldPathT(locale, "runtime.rejectNeedsReason"),
+    actionId
+  };
+}
+
+function selectionNotice(locale: WorkHubLocale, label: string): RouteNoticeVM {
+  return {
+    kind: "selection",
+    tone: "info",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.selectionTitle"),
+    body: `${goldPathT(locale, "runtime.optionSelectedPrefix")}${label}${goldPathT(locale, "runtime.optionSelectedSuffix")}`,
+    actionId: "select_option"
+  };
+}
+
+function mergeConflictNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "merge_conflict",
+    tone: "warning",
+    source: "rest",
+    locale,
+    title: goldPathT(locale, "runtime.notice.mergeConflictTitle"),
+    body: goldPathT(locale, "runtime.notice.mergeConflictBody"),
+    actionId
+  };
+}
+
+function sseRefreshNotice(locale: WorkHubLocale, eventType: string, stream: string): RouteNoticeVM {
+  if (eventType === eventTypes.budgetWarning) {
+    return {
+      kind: "budget_warning",
+      tone: "warning",
+      source: "sse",
+      locale,
+      title: goldPathT(locale, "runtime.notice.budgetWarningTitle"),
+      body: goldPathT(locale, "runtime.notice.budgetWarningBody"),
+      eventType,
+      stream
+    };
+  }
+  return {
+    kind: "sse_refresh",
+    tone: "info",
+    source: "sse",
+    locale,
+    title: goldPathT(locale, "runtime.notice.sseRefreshTitle"),
+    body: goldPathT(locale, "runtime.notice.sseRefreshBody"),
+    eventType,
+    stream
+  };
 }
 
 function escapeHtml(value: unknown) {
@@ -198,6 +351,12 @@ function proposalActionFromHref(href: string) {
     return undefined;
   }
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
+}
+
+function approvalRespondIdFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
 function mergeProposalCandidateApplyIdFromHref(href: string) {
@@ -250,19 +409,13 @@ function conflictsFromMergeError(error: unknown): ProposalConflict[] {
   return [];
 }
 
-function mergeConflictMessage(locale: WorkHubLocale) {
-  return locale === "zh-CN"
-    ? "这次变更和正式版本撞车了，先选一个处理方式。"
-    : "This change conflicts with the current version. Choose how to continue.";
-}
-
-function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale: WorkHubLocale) {
+function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale: WorkHubLocale, actionId?: string) {
   const conflicts = conflictsFromMergeError(error);
   if (conflicts.length === 0) {
     return false;
   }
   const rendered = renderProposalConflictCards(conflicts, { locale });
-  showNotice(shellRoot, mergeConflictMessage(locale), rendered.html, 0);
+  showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId), rendered.html, 0);
   return true;
 }
 
@@ -279,6 +432,19 @@ function reviewReasonButtons(locale: WorkHubLocale) {
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {
   return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
+}
+
+function actionSummary(result: unknown, locale: WorkHubLocale) {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const attention = (result as Record<string, unknown>)["attention"];
+    if (attention && typeof attention === "object" && !Array.isArray(attention)) {
+      const summaryText = (attention as Record<string, unknown>)["summary_text"];
+      if (typeof summaryText === "string" && summaryText.trim().length > 0) {
+        return summaryText;
+      }
+    }
+  }
+  return goldPathT(locale, "runtime.notice.actionSuccessTitle");
 }
 
 function datasetInt(element: HTMLElement, key: string) {
@@ -411,6 +577,9 @@ function bindGoldPathNavigation(
   signal?: AbortSignal
 ) {
   let pendingReviewHref: string | undefined;
+  let pendingReviewActionId: string | undefined;
+  let pendingApprovalId: string | undefined;
+  let pendingApprovalActionId: string | undefined;
 
   const activateFromHash = () => {
     const hashRoute = window.location.hash.slice(1) || "/";
@@ -422,18 +591,36 @@ function bindGoldPathNavigation(
 
   shellRoot.addEventListener("click", async (event) => {
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
-    if (reasonButton && pendingReviewHref) {
-      const proposalAction = proposalActionFromHref(pendingReviewHref);
+    if (reasonButton && (pendingReviewHref || pendingApprovalId)) {
+      event.preventDefault();
+      const reasonMd = reasonButton.dataset.reviewReason ?? goldPathT(locale, "runtime.reason.format");
+      const proposalAction = pendingReviewHref ? proposalActionFromHref(pendingReviewHref) : undefined;
       if (proposalAction?.action === "review") {
         try {
           const result = await client.reviewProposal(proposalAction.proposalId, {
             decision: "request_changes",
-            reason_md: reasonButton.dataset.reviewReason ?? "需要调整",
+            reason_md: reasonMd,
             remember: "once"
           });
-          showNotice(shellRoot, result.attention.summary_text);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
+          pendingReviewHref = undefined;
+          pendingReviewActionId = undefined;
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error, locale));
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingReviewActionId ?? "request_changes"));
+        }
+      }
+      if (pendingApprovalId) {
+        try {
+          const result = await client.respondApproval(pendingApprovalId, {
+            decision: "deny",
+            reason_md: reasonMd,
+            remember: "once"
+          });
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), pendingApprovalActionId ?? "deny"));
+          pendingApprovalId = undefined;
+          pendingApprovalActionId = undefined;
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
         }
       }
       return;
@@ -441,7 +628,8 @@ function bindGoldPathNavigation(
 
     const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-option-id]") : null;
     if (option) {
-      showNotice(shellRoot, `${goldPathT(locale, "runtime.optionSelectedPrefix")}${option.querySelector("strong")?.textContent ?? option.dataset.optionId}${goldPathT(locale, "runtime.optionSelectedSuffix")}`);
+      event.preventDefault();
+      showRouteNotice(shellRoot, selectionNotice(locale, option.querySelector("strong")?.textContent ?? option.dataset.optionId ?? ""));
       return;
     }
 
@@ -450,6 +638,12 @@ function bindGoldPathNavigation(
       return;
     }
     const href = anchor.getAttribute("href") ?? "";
+    const actionId = anchor.dataset.actionId;
+    if (anchor.dataset.requiresDesktop === "true") {
+      event.preventDefault();
+      showRouteNotice(shellRoot, desktopRequiredNotice(locale, actionId));
+      return;
+    }
     const action = classifyGoldPathHref(shell.routeMap, href, {
       requiresReason: anchor.dataset.requiresReason === "true",
       method: anchor.dataset.method
@@ -469,9 +663,25 @@ function bindGoldPathNavigation(
       if (mergeProposalCandidateApplyId) {
         try {
           const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, anchorApplyPayload(anchor));
-          showNotice(shellRoot, merge.attention.summary_text);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
-          showNotice(shellRoot, actionMessage(error, locale));
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const approvalRespondId = approvalRespondIdFromHref(href);
+      if (approvalRespondId) {
+        if (action.requiresReason || actionId === "deny") {
+          pendingApprovalId = approvalRespondId;
+          pendingApprovalActionId = actionId ?? "deny";
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale));
+          return;
+        }
+        try {
+          const result = await client.respondApproval(approvalRespondId, { decision: "allow", remember: "once" });
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "approve"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "approve"));
         }
         return;
       }
@@ -479,16 +689,17 @@ function bindGoldPathNavigation(
       if (proposalAction?.action === "review") {
         if (action.requiresReason) {
           pendingReviewHref = href;
-          showNotice(shellRoot, goldPathT(locale, "runtime.rejectNeedsReason"), reviewReasonButtons(locale));
+          pendingReviewActionId = actionId ?? "request_changes";
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale));
           return;
         }
         try {
           const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
           const merge = await client.mergeProposal(proposalAction.proposalId);
-          showNotice(shellRoot, `${review.attention.summary_text} ${merge.attention.summary_text}`);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, `${review.attention.summary_text} ${merge.attention.summary_text}`, actionId));
         } catch (error) {
-          if (!showMergeConflictNotice(shellRoot, error, locale)) {
-            showNotice(shellRoot, actionMessage(error, locale));
+          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
         }
         return;
@@ -496,15 +707,15 @@ function bindGoldPathNavigation(
       if (proposalAction?.action === "merge") {
         try {
           const merge = await client.mergeProposal(proposalAction.proposalId, anchorMergePayload(anchor));
-          showNotice(shellRoot, merge.attention.summary_text);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
-          if (!showMergeConflictNotice(shellRoot, error, locale)) {
-            showNotice(shellRoot, actionMessage(error, locale));
+          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
         }
         return;
       }
-      showNotice(shellRoot, goldPathT(locale, "runtime.actionPending"));
+      showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
     }
   }, eventListenerOptions(signal));
 
@@ -549,7 +760,13 @@ function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocal
     liveRefreshTimer = undefined;
     liveRefreshCount += 1;
     setLiveMetric("r4LiveRefreshCount", liveRefreshCount);
-    void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
+    void renderCurrentRoute(client, locale)
+      .then(() => {
+        if (root) {
+          showRouteNotice(root, sseRefreshNotice(locale, eventType, targetKey), undefined, 3600);
+        }
+      })
+      .catch((error) => renderFatalRouteError(locale, error));
   }, liveRefreshDebounceMs);
 }
 

@@ -2834,10 +2834,22 @@ R4 验收：
 9. 验证通过：`pnpm --filter @workhub/web test`、`pnpm --filter @workhub/api-client test`、`pnpm --filter @workhub/ui test`、`pnpm --filter @workhub/api test -- pages-i18n`、`pnpm typecheck`、R4.11 browser smoke、`git diff --check`。
 10. 边界：R4.11 完成 ready route componentization 第二刀，但不是完整 React SPA。Proposal 的高级 conflict workbench、field editor、line editor、subrecord editor 仍待 R4.13+ route UX 收敛；action/notice locale feedback 进入 R4.12。
 
+### R4.12 已落：Web action / notice locale route UX
+
+1. 已阅读 [`r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](./r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)、R4.11 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-approval-center.png`、`web-ai-first-home.png`。
+2. 已改 `apps/web/src/browser.ts`：新增 `RouteNoticeVM` 与统一 `showRouteNotice()`，所有 notice DOM 都带 `kind/tone/source/locale/actionId/eventType/stream` 审计字段。
+3. 已接 action dataflow：Approval allow/deny、Proposal request changes/merge、merge conflict、desktop-only action、unknown API pending、option selection 与 SSE refresh 均复用同一 notice contract。
+4. 已保留 reason gate：Approval deny 与 Proposal request changes 没有 reason 时不发 mutation；reason button 提交后才调用 typed API client。
+5. 已改 `packages/ui/src/gold-path/i18n.ts` 与 `product-shell.ts`：新增 notice 双语固定文案、title/body 结构和 tone 样式；Settings 桌面恢复入口带 `data-requires-desktop="true"`。
+6. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：mock approval/proposal mutations、mock SSE stream、22 步 Chrome smoke 覆盖 approval zh、proposal en、budget warning、desktop gate、route-state request access/retry 与 mobile no-overflow。
+7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-12-web-action-notice-locale-route-ux-browser-smoke/`；report gates 全部为 true：`r4_12_approval_response_notice`、`r4_12_reason_gate_blocks_without_reason`、`r4_12_request_changes_success_notice`、`r4_12_merge_success_notice`、`r4_12_sse_refresh_notice`、`r4_12_budget_warning_notice`、`r4_12_desktop_gate_fail_closed`、`r4_12_retry_access_route_states`、`r4_12_mobile_notice_no_overflow`、`no_duplicate_route_loader_calls`、`no_text_box_overflow`。
+8. 验证通过：`pnpm --filter @workhub/web test`、`pnpm --filter @workhub/ui test`、`pnpm typecheck`、R4.12 browser smoke。提交前继续跑全量 `pnpm test`、`git diff --check` 与 secret/reference scan。
+9. 边界：R4.12 完成 action/notice locale route UX 第一层，不等同于所有业务 mutation 都已真实接线。未接线动作继续 fail-closed；SSE 只触发 REST Page VM refresh。
+
 下一施工顺序：
 
-1. **R4.12 Web action / notice locale route UX**：把 proposal opened/merged、budget warning、approval response、reason gate、retry/request access、SSE refresh notice 等动作反馈纳入同一 locale contract。
-2. **R4.13 Proposal advanced route UX convergence**：把 R1 已有 conflict workbench、field editor、line editor、subrecord editor 收敛到 Proposal route component 的 active-only detail。
+1. **R4.13 Proposal advanced route UX convergence**：把 R1 已有 conflict workbench、field editor、line editor、subrecord editor 收敛到 Proposal route component 的 active-only detail。
+2. **R4.14 Option Intake / Knowledge fallback route componentization**：把 option-first intake、knowledge search fallback 和 workitem creation 串成真实 route dataflow。
 3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单

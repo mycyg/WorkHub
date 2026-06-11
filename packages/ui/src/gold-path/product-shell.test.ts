@@ -57,6 +57,8 @@ test("R4 product shell preserves browser hooks while replacing the preview chrom
   assert.equal(shell.html.toLowerCase().includes("kanban"), false);
   assert.equal(shell.html.includes("data-cuu"), false);
   assert.equal(shell.css.includes("@media (max-width:780px)"), true);
+  assert.equal(shell.css.includes(".wh-app-notice-title"), true);
+  assert.equal(shell.css.includes("data-r4-notice-tone=success"), true);
 });
 
 test("R4 product shell localizes fixed product chrome", () => {

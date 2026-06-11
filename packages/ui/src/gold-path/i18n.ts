@@ -160,7 +160,20 @@ export type GoldPathCopyKey =
   | "runtime.reason.format"
   | "runtime.rejectNeedsReason"
   | "runtime.rejectReasonFirst"
-  | "runtime.actionPending";
+  | "runtime.actionPending"
+  | "runtime.notice.actionSuccessTitle"
+  | "runtime.notice.actionErrorTitle"
+  | "runtime.notice.selectionTitle"
+  | "runtime.notice.reasonRequiredTitle"
+  | "runtime.notice.pendingTitle"
+  | "runtime.notice.desktopRequiredTitle"
+  | "runtime.notice.desktopRequiredBody"
+  | "runtime.notice.mergeConflictTitle"
+  | "runtime.notice.mergeConflictBody"
+  | "runtime.notice.sseRefreshTitle"
+  | "runtime.notice.sseRefreshBody"
+  | "runtime.notice.budgetWarningTitle"
+  | "runtime.notice.budgetWarningBody";
 
 const goldPathCopy = {
   "zh-CN": {
@@ -301,7 +314,20 @@ const goldPathCopy = {
     "runtime.reason.format": "交付格式要改",
     "runtime.rejectNeedsReason": "打回必须说明原因。先点一个原因，AI 会带着它继续改。",
     "runtime.rejectReasonFirst": "先点一个打回原因，AI 会把它放进下一轮修改。",
-    "runtime.actionPending": "这个动作还在等待对应服务接线。"
+    "runtime.actionPending": "这个动作还在等待对应服务接线。",
+    "runtime.notice.actionSuccessTitle": "已提交",
+    "runtime.notice.actionErrorTitle": "提交失败",
+    "runtime.notice.selectionTitle": "已记录选择",
+    "runtime.notice.reasonRequiredTitle": "需要打回原因",
+    "runtime.notice.pendingTitle": "暂不可用",
+    "runtime.notice.desktopRequiredTitle": "请在桌面端继续",
+    "runtime.notice.desktopRequiredBody": "这个动作需要本地权限或独立窗口，Web 主窗只保留入口和状态。",
+    "runtime.notice.mergeConflictTitle": "需要处理冲突",
+    "runtime.notice.mergeConflictBody": "这次变更和正式版本撞车了，先选一个处理方式。",
+    "runtime.notice.sseRefreshTitle": "页面已刷新",
+    "runtime.notice.sseRefreshBody": "后台有新事件，当前页面已重新读取最新数据。",
+    "runtime.notice.budgetWarningTitle": "预算需要留意",
+    "runtime.notice.budgetWarningBody": "成本状态有新变化，页面已重新读取最新预算数据。"
   },
   "en-US": {
     "state.idle": "Idle",
@@ -441,7 +467,20 @@ const goldPathCopy = {
     "runtime.reason.format": "Delivery format needs work",
     "runtime.rejectNeedsReason": "Choose a rejection reason first. AI will use it in the next revision.",
     "runtime.rejectReasonFirst": "Choose a rejection reason first. AI will carry it into the next revision.",
-    "runtime.actionPending": "This action is still waiting for its service wiring."
+    "runtime.actionPending": "This action is still waiting for its service wiring.",
+    "runtime.notice.actionSuccessTitle": "Submitted",
+    "runtime.notice.actionErrorTitle": "Submission failed",
+    "runtime.notice.selectionTitle": "Selection saved",
+    "runtime.notice.reasonRequiredTitle": "Reason required",
+    "runtime.notice.pendingTitle": "Not available yet",
+    "runtime.notice.desktopRequiredTitle": "Continue in Desktop",
+    "runtime.notice.desktopRequiredBody": "This action needs local permissions or a separate window, so Web keeps only the entry point and status.",
+    "runtime.notice.mergeConflictTitle": "Resolve the conflict",
+    "runtime.notice.mergeConflictBody": "This change conflicts with the current version. Choose how to continue.",
+    "runtime.notice.sseRefreshTitle": "Page refreshed",
+    "runtime.notice.sseRefreshBody": "A background event arrived, and this page has reloaded the latest data.",
+    "runtime.notice.budgetWarningTitle": "Budget needs attention",
+    "runtime.notice.budgetWarningBody": "Cost status changed, and this page has reloaded the latest budget data."
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 

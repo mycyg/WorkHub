@@ -21,6 +21,7 @@ date: 2026-06-08
 | 交付物多样 | 变更申请像 GitHub PR，但对象可以是文档、表格、PPT、图片、文件夹 |
 | 三端同源 | Web、desktop 主窗、Cuu 气泡都消费同一 Page VM / payload contract |
 | 中英双语 | 概念落地时必须同步 zh-CN / en-US 固定文案 |
+| 上下文反馈 | R4.12 起 Web action notice 只说明当前点击、SSE refresh 或 fail-closed 状态，不堆通知流 |
 
 落地契约：
 

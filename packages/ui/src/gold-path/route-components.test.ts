@@ -189,6 +189,8 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.equal(settings.html.includes("deepseek-v4-flash"), true);
   assert.equal(settings.html.includes("workhub.locale"), true);
   assert.equal(settings.html.includes("Pet look is not configured in the Web main window"), true);
+  assert.equal(settings.html.includes('data-action-id="open_desktop_settings"'), true);
+  assert.equal(settings.html.includes('data-requires-desktop="true"'), true);
   const blockedBaseUrl = "https://api." + "deepseek.com";
   assert.equal(settings.html.includes(blockedBaseUrl), false);
   assert.equal(settings.html.includes("sk-"), false);

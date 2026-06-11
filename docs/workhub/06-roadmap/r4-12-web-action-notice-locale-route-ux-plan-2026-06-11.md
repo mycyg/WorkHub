@@ -1,7 +1,7 @@
 ---
 module: R4-web-action-notice-locale-route-ux
 layer: C-WEB / C-UI / C-API / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -80,11 +80,13 @@ flowchart LR
 - Typecheck：`pnpm typecheck`
 - Browser：R4.12 action/notice smoke 输出 report/contact sheet
 - Product gates：
-  - `r4_12_action_notice_locale=true`
+  - `r4_12_approval_response_notice=true`
   - `r4_12_reason_gate_blocks_without_reason=true`
   - `r4_12_desktop_gate_fail_closed=true`
   - `r4_12_sse_refresh_notice=true`
-  - `r4_12_action_vm_dom_match=true`
+  - `r4_12_budget_warning_notice=true`
+  - `r4_12_request_changes_success_notice=true`
+  - `r4_12_merge_success_notice=true`
   - `active_only_product_panels=true`
   - `ready_routes_use_page_vm_endpoints=true`
 - Regression gates：
@@ -125,6 +127,97 @@ flowchart LR
 - `web-ai-first-home.png`：首页 notice 应只提示最需要处理的事件，不堆通知流。
 - Web 主窗仍然严肃无 Cuu；Cuu 只在独立 pet window 消费轻提醒。
 
-## 9. R4.13 候选
+## 9. 竣工范围
 
-R4.12 通过后进入 R4.13：Proposal advanced route UX convergence。优先把 R1 已有 conflict workbench、field editor、line editor、subrecord editor 的严肃交互能力从 shared rich helper 收敛到 route component 下的 active-only proposal detail，并保留 mobile overflow 与 action feedback gates。
+R4.12 已完成 Web route action / notice 的第一层统一合同：
+
+- `apps/web/src/browser.ts` 新增轻量 `RouteNoticeVM`，统一输出 `kind`、`tone`、`source`、`locale`、`actionId`、`eventType`、`stream` 等 DOM 可审计字段。
+- Proposal review / merge、approval allow / deny、option selection、desktop-only action、unknown API action、merge conflict、SSE refresh 均走同一 notice 渲染路径。
+- Approval deny 与 Proposal request changes 均先弹 reason gate；没有 reason 时不发 mutation。
+- Settings 桌面恢复入口新增 `data-requires-desktop="true"`，Web 主窗 fail-closed，显示本地化 desktop notice，不跳转也不假执行。
+- SSE 收到 contract event 后仍按 REST Page VM 重拉页面；notice 在新 DOM 渲染后重新写入，避免被 refresh 清掉。
+- Product shell notice 样式支持 title/body 与 success/warning/danger/info tone，并纳入移动端无文本溢出 gate。
+
+## 10. 数据流审查
+
+```mermaid
+flowchart LR
+  A["route component anchor"] --> B["browser dispatcher"]
+  B --> C{"reason or desktop gate?"}
+  C -->|reason required| D["localized reason notice"]
+  C -->|desktop only| E["localized fail-closed notice"]
+  C -->|ready mutation| F["typed API client"]
+  F --> G["REST mutation result"]
+  G --> H["localized success/error notice"]
+  I["EventSource contract event"] --> J["REST Page VM reload"]
+  J --> K["SSE refresh notice"]
+```
+
+审查结论：
+
+- REST 仍是真相源；SSE 只触发 refresh 和提示。
+- action handler 仍通过 `readyRouteBindings` 生命周期绑定，没有新增第二套全局 listener。
+- Notice 不承载 raw API key/base URL，也不翻译用户输入、证据摘录、manifest 或 LLM 正文。
+- Approval / Proposal reason gate 的请求数由 browser smoke 证明：approval respond 正好 2 次，proposal review 正好 1 次，点击 reason gate 本身不发 mutation。
+
+## 11. PRD / 概念图复核
+
+- `web-approval-center.png`：审批页仍是阻塞收件箱；approve / deny 后用户立刻看到中文普通语言反馈，deny 必须先给原因。
+- `web-deliverable-change-request.png`：Proposal 仍像变更申请，merge/request changes 不变成技术日志；notice 只说明提交结果。
+- `web-workitem-detail.png`：WorkItem detail 没有新增聊天或 Cuu 表现，action feedback 仍围绕任务/交付物上下文。
+- `web-ai-first-home.png`：notice 是短暂上下文反馈，不形成通知流。
+- Web 主窗继续无 Cuu 本体、无 Kanban 默认页、无 weekly fixture copy、无 hash navigation。
+
+## 12. 验收证据
+
+证据目录：
+
+`docs/workhub/05-clients/assets/audit/2026-06-11-r4-12-web-action-notice-locale-route-ux-browser-smoke/`
+
+关键文件：
+
+- `action-notice-locale-route-ux-report.json`
+- `smoke-summary.md`
+- `contact-sheet.html`
+- `contact-sheet.png`
+- `02a-approval-deny-reason-gate-zh-desktop.png`
+- `02b-approval-deny-success-zh-desktop.png`
+- `02c-approval-approve-success-zh-desktop.png`
+- `07-proposal-reason-gate-en-desktop.png`
+- `08-proposal-request-changes-success-en-desktop.png`
+- `09-proposal-merge-success-en-desktop.png`
+- `10-proposal-sse-refresh-notice-en-desktop.png`
+- `11-proposal-en-mobile-scrolled-notice-route-component.png`
+- `12a-cost-budget-warning-notice-en-mobile.png`
+- `14-settings-desktop-gate-en-desktop.png`
+
+Browser smoke 22 步通过，核心 gates 全部为 true：
+
+- `r4_12_approval_response_notice`
+- `r4_12_reason_gate_blocks_without_reason`
+- `r4_12_request_changes_success_notice`
+- `r4_12_merge_success_notice`
+- `r4_12_sse_refresh_notice`
+- `r4_12_budget_warning_notice`
+- `r4_12_desktop_gate_fail_closed`
+- `r4_12_retry_access_route_states`
+- `r4_12_mobile_notice_no_overflow`
+- `no_duplicate_route_loader_calls`
+- `no_text_box_overflow`
+
+## 13. 验证命令
+
+已通过：
+
+- `pnpm --filter @workhub/web test`
+- `pnpm --filter @workhub/ui test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm typecheck`
+- `pnpm qa:r4-web-live-route-interaction` with R4.12 env
+- `pnpm test`
+
+提交前继续执行 `git diff --check`、reference 目录扫描与 secret scan。
+
+## 14. R4.13 后续计划
+
+R4.12 通过后进入 R4.13：Proposal advanced route UX convergence。详细计划见 [`r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](./r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)。优先把 R1 已有 conflict workbench、field editor、line editor、subrecord editor 的严肃交互能力从 shared rich helper 收敛到 route component 下的 active-only proposal detail，并保留 R4.12 action feedback、mobile overflow 与 REST truth gates。

@@ -1,0 +1,21 @@
+# R4.12 Web Action Notice Locale Route UX Smoke
+
+- ok: true
+- steps: 22
+- path nav clicks: true
+- history back/forward: true
+- locale toggle reload: true
+- R4.10 route components: true
+- R4.11 route components: true
+- R4.11 source truth: true
+- R4.11 VM/DOM match: true
+- R4.12 approval response notice: true
+- R4.12 reason gate: true
+- R4.12 request changes notice: true
+- R4.12 merge notice: true
+- R4.12 SSE refresh notice: true
+- R4.12 budget warning notice: true
+- R4.12 desktop gate: true
+- R4.12 route-state actions: true
+- active-only product panels: true
+- no text box overflow: true
