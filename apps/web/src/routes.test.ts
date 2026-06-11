@@ -7,9 +7,11 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  EvidenceBubble,
   GoldPathSurfaceVM,
   ProposalConflict,
   ReplayTraceVM,
+  SessionVM,
   SettingsPageVM
 } from "@workhub/contracts";
 
@@ -26,6 +28,8 @@ type RouteClientOverrides = {
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
   replay?: ReplayTraceVM;
+  session?: SessionVM;
+  knowledge?: EvidenceBubble;
   settings?: SettingsPageVM;
   conflicts?: ProposalConflict[];
   attentionError?: Error;
@@ -78,6 +82,66 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
   };
 }
 
+function routeSession(): SessionVM {
+  return {
+    session_id: "10000000-0000-4000-8000-000000000931",
+    work_item_id: "10000000-0000-4000-8000-000000000932",
+    topic: "整理区域周报",
+    stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000931",
+    next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000931/next-question",
+    question: {
+      id: "10000000-0000-4000-8000-000000000933",
+      title: "这次先按哪个方向澄清？",
+      body: "先选一个方向，避免空提交。",
+      input_mode: "single_choice",
+      options: [
+        { id: "risk-first", label: "先看风险", description: "聚焦阻塞和异常。" },
+        { id: "metric-first", label: "先看指标", description: "聚焦达成率。" }
+      ],
+      recommended_option_ids: ["risk-first"],
+      free_text: {
+        enabled: true,
+        collapsed_by_default: true,
+        placeholder: "只有选项不够时再补充。",
+        max_length: 120
+      },
+      progress: [
+        { key: "goal", label: "目标", state: "done" },
+        { key: "scope", label: "范围", state: "active" }
+      ],
+      evidence_refs: [],
+      submit: { method: "POST", href: "/api/sessions/10000000-0000-4000-8000-000000000931/next-question" }
+    }
+  };
+}
+
+function routeEvidenceBubble(): EvidenceBubble {
+  return {
+    id: "10000000-0000-4000-8000-000000000941",
+    query_text: "regional",
+    summary_text: "Found cited regional evidence.",
+    missing_evidence_note: "CRM source is missing; no synthetic evidence was generated.",
+    evidence_refs: [
+      {
+        id: "10000000-0000-4000-8000-000000000942",
+        source_type: "meeting",
+        source_id: "weekly-sync",
+        title: "Regional weekly sync",
+        excerpt: "Supply delay was called out as the main risk.",
+        href: "/knowledge/sources/weekly-sync"
+      }
+    ],
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: "Use in current task",
+        method: "POST",
+        href: "/api/workitems/10000000-0000-4000-8000-000000000932/evidence-bindings"
+      }
+    ]
+  };
+}
+
 function goldPathSurfaceVm(): GoldPathSurfaceVM {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
   return {
@@ -89,7 +153,8 @@ function goldPathSurfaceVm(): GoldPathSurfaceVM {
       workitem: "/workitems/r4-route-registry-workitem",
       proposal: "/proposals/r4-route-registry-proposal",
       replay: "/agent-runs/r4-route-registry-run/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,
@@ -155,6 +220,14 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       localeCall(`conflicts:${workItemId}`);
       const conflicts = (overrides.conflicts ?? []).filter((conflict) => conflict.work_item_id === workItemId);
       return conflicts.length > 0 ? { conflicts } : { conflicts, empty_state: "no_conflicts" as const };
+    },
+    async getSession(sessionId: string, options?: { locale?: string }) {
+      localeCall(`session:${sessionId}`, options);
+      return overrides.session ?? routeSession();
+    },
+    async searchKnowledge(payload: unknown, options?: { locale?: string }) {
+      localeCall(`knowledge:${JSON.stringify(payload)}`, options);
+      return overrides.knowledge ?? routeEvidenceBubble();
     },
     async replayAgentRun(id: string, options?: { locale?: string }) {
       localeCall(`replayAgentRun:${id}`, options);
@@ -248,17 +321,63 @@ test("R4 web route registry resolves product URL routes", () => {
     "proposal",
     "replay",
     "cost",
+    "knowledge",
     "settings"
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
+  assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
+  assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
   assert.equal(resolveWebRoute("/#/approvals")?.key, "approvals");
   assert.equal(resolveWebRoute("/unknown"), undefined);
   assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff#top");
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
+});
+
+test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
+  const surface = goldPathSurfaceVm();
+  const session = routeSession();
+  const { client, calls } = fakeRouteClient(surface, { session });
+  const match = resolveWebRoute("/intake/r4-route-registry-session");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls.slice(0, 2), ["session:r4-route-registry-session:en-US", "goldPath:en-US"]);
+  assert.equal(result.html.includes('data-r4-route-component="intake"'), true);
+  assert.equal(result.html.includes('data-r4-route-component-source="session-vm"'), true);
+  assert.equal(result.html.includes('data-r4-intake-option-count="2"'), true);
+  assert.equal(result.html.includes('data-r4-intake-free-text-collapsed="true"'), true);
+  assert.equal(result.html.includes('data-r4-intake-option-first="true"'), true);
+  assert.equal(result.html.includes('data-intake-submit="next-question"'), true);
+  assert.equal(result.html.includes("<textarea"), false);
+  assert.equal(result.html.includes("message-list"), false);
+});
+
+test("R4.14 knowledge route loader carries search payload into a cited fallback route component", async () => {
+  const surface = goldPathSurfaceVm();
+  const knowledge = routeEvidenceBubble();
+  const { client, calls } = fakeRouteClient(surface, { knowledge });
+  const match = resolveWebRoute("/knowledge/search?q=regional&workItemId=10000000-0000-4000-8000-000000000932");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls.slice(0, 2), [
+    'knowledge:{"q":"regional","work_item_id":"10000000-0000-4000-8000-000000000932","limit":6}:en-US',
+    "goldPath:en-US"
+  ]);
+  assert.equal(result.html.includes('data-r4-route-component="knowledge"'), true);
+  assert.equal(result.html.includes('data-r4-route-component-source="evidence-bubble"'), true);
+  assert.equal(result.html.includes('data-r4-knowledge-query="regional"'), true);
+  assert.equal(result.html.includes('data-r4-knowledge-evidence-count="1"'), true);
+  assert.equal(result.html.includes('data-r4-knowledge-action-count="1"'), true);
+  assert.equal(result.html.includes('data-action-id="use_for_current_task"'), true);
 });
 
 test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {

@@ -287,6 +287,20 @@ R4.13 已把 Proposal 的 conflict workbench、line editor、structured field ed
 - 数据流保持 REST 真相源：`/proposals/:id` 读取 Proposal Page VM，另读 `/api/workitems/:id/conflicts` 注入 route surface；SSE 只触发 refresh notice 与 REST reconcile。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo 文案；`r4_13_proposal_advanced_route_sections`、`r4_13_advanced_apply_payloads`、`r4_13_custom_field_fail_closed`、`r4_13_structured_editor_visual_no_overflow` 全部通过。
 
+### 6.9 R4.14 Option Intake / Knowledge route UX
+
+![R4.14 Intake Knowledge route UX contact sheet](./assets/audit/2026-06-11-r4-14-intake-knowledge-route-ux-browser-smoke/contact-sheet.png)
+
+R4.14 已把 Option Intake 与 Knowledge fallback 收敛到 Web active-only route component，并用本机 Chrome browser smoke 生成 36 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-14-intake-knowledge-route-ux-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- Intake 对齐 `web-option-first-intake-wizard.png`：首屏是 option cards、progress stack 与 collapsed free text；空选项 submit 显示 warning notice 且不发 mutation。
+- WorkItem creation 对齐 `requirements-workitem.md` 主轴：`nextQuestion -> confirm -> createWorkItem -> WorkItem route` 走 typed REST dataflow，browser 不模拟 AI 推理。
+- Knowledge 对齐 `web-project-drive-meetings-knowledge.png`：fallback route 展示 evidence refs、source type、open evidence link 与 missing evidence note，不输出无来源答案。
+- Attention workspace 边界继续成立：Intake / Knowledge 作为 active-only route panel，不把 Home 变回多列 Kanban；主窗仍无 Cuu 本体。
+- 双语固定 chrome、R4.13 Proposal regression、no hash、no weekly fixture、no horizontal/text overflow gates 全部通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

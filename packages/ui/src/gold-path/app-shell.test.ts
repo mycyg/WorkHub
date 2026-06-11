@@ -19,7 +19,8 @@ function surfaceVm(): GoldPathSurfaceVM {
       workitem: "/workitems/demo",
       proposal: "/proposals/demo",
       replay: "/agent-runs/demo/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,
@@ -44,6 +45,7 @@ test("gold path app shell renders navigable panels around the shared pages", () 
 
   assert.equal(Object.keys(shell.routeMap).includes("/proposals/demo"), true);
   assert.equal(Object.keys(shell.routeMap).includes("/approvals"), true);
+  assert.equal(Object.keys(shell.routeMap).includes("/knowledge/search"), true);
   assert.equal(Object.keys(shell.routeMap).includes("/settings"), true);
   assert.equal(shell.html.includes("data-wh-panel=\"proposal\""), true);
   assert.equal(shell.html.includes("data-wh-panel=\"approvals\""), true);
@@ -60,6 +62,7 @@ test("gold path app shell resolves routes and keeps API actions separate from pa
 
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/agent-runs/demo/replay?from=proposal"), "replay");
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/approvals?status=pending"), "approvals");
+  assert.equal(resolveGoldPathPageKey(shell.routeMap, "/knowledge/search?q=weekly"), "knowledge");
   assert.equal(resolveGoldPathPageKey(shell.routeMap, "/settings?panel=runtime"), "settings");
   assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/proposals/demo"), {
     kind: "navigate",
@@ -77,6 +80,11 @@ test("gold path app shell resolves routes and keeps API actions separate from pa
     kind: "api-action",
     requiresReason: true,
     method: "POST"
+  });
+  assert.deepEqual(classifyGoldPathHref(shell.routeMap, "/api/sessions/demo/next-question", { method: "POST" }), {
+    kind: "api-action",
+    method: "POST",
+    requiresReason: false
   });
 });
 

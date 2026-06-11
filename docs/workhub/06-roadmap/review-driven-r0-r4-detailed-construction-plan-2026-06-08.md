@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence；下一步进入 R4.14 Option Intake / Knowledge route componentization。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization；下一步进入 R4.15 Settings / locale / device boundary hardening。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2858,10 +2858,22 @@ R4 验收：
 8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-13-proposal-advanced-route-ux-browser-smoke/`；report gates 全部为 true：`r4_13_proposal_advanced_route_dom`、`r4_13_proposal_advanced_route_sections`、`r4_13_advanced_apply_payloads`、`r4_13_custom_field_fail_closed`、`r4_13_conflict_api_source_truth`、`r4_13_structured_editor_visual_no_overflow`、`no_duplicate_route_loader_calls`、`no_text_box_overflow`。
 9. 边界：R4.13 不是完整 React SPA，不改变真实 merge 后端语义，也不把 WorkItem/Approval 变成高级编辑工作台。REST mutation + Page VM refresh 仍是真相源；SSE 只触发 refresh notice。
 
+### R4.14 已落：Option Intake / Knowledge route componentization
+
+1. 已阅读 [`r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](./r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`knowledge-base.md`、`requirements-workitem.md` 与概念图：`web-option-first-intake-wizard.png`、`web-project-drive-meetings-knowledge.png`、`web-project-attention-workspace.png`。
+2. 已新增 `GET /api/sessions/:id` 与 typed `client.getSession()`，Web `/intake/:sessionId` loader 先读 `SessionVM` 再注入 `intake_session` route surface。
+3. 已新增 Intake route component：`data-r4-route-component="intake"`、`source=session-vm`、option count、progress count、collapsed free text、confirm/create action payload marker；空选项不发 mutation。
+4. 已新增 Knowledge route：`/knowledge/search` 解析 query/project/work item filter，调用 typed `searchKnowledge()` 并注入 `knowledge_evidence`；component 显示 evidence refs、open links、missing evidence note 与 bind payload。
+5. 已改 `apps/web/src/browser.ts`：`nextQuestion()`、`createWorkItem()`、`useEvidenceForWorkItem()` 进入 action dispatcher；失败走 R4.12 warning notice，成功走 `action_success`。
+6. 已扩展 tests：UI route component tests 覆盖 intake/knowledge markers；Web route tests 覆盖 session/evidence loader；API client tests 覆盖 `getSession` 与 knowledge locale；`pnpm --filter @workhub/ui test` 48/48、`pnpm --filter @workhub/web test` 15/15、`pnpm --filter @workhub/api-client test` 9/9、`pnpm typecheck` 通过。
+7. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：36 步 browser smoke 覆盖 intake desktop/mobile、empty fail-closed、submit/create、knowledge fallback/bind、R4.13 regression、active-only panels、no-overflow 与 no secret/reference regression。
+8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-14-intake-knowledge-route-ux-browser-smoke/`；report gates 全部为 true：`r4_14_intake_route_component`、`r4_14_option_first_no_chat_wall`、`r4_14_intake_fail_closed`、`r4_14_intake_submit_success`、`r4_14_intake_create_workitem_success`、`r4_14_knowledge_fallback_route`、`r4_14_knowledge_bind_success`、`r4_14_mobile_no_overflow`、`r4_13_proposal_advanced_regression`。
+9. 边界：R4.14 不是完整搜索产品，也不是 React route tree 终局。Knowledge 只做 cited fallback，不编造答案；Intake 继续 option-first，free text 只是 collapsed fallback。
+
 下一施工顺序：
 
-1. **R4.14 Option Intake / Knowledge fallback route componentization**：把 option-first intake、knowledge search fallback 和 workitem creation 串成真实 route dataflow。
-2. **R4.15 Settings / locale persistence / device boundary hardening**：把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface。
+1. **R4.15 Settings / locale persistence / device boundary hardening**：把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface。
+2. **R4.16 React route tree migration / hydration boundary**：在不降低 typed Page VM 与 active-only QA gates 的前提下，逐步把 HTML render helpers 迁到可复用前端组件。
 3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单

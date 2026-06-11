@@ -306,7 +306,8 @@ export const goldPathSurfaceVmSchema = z.object({
     workitem: z.string().min(1),
     proposal: z.string().min(1),
     replay: z.string().min(1),
-    cost: z.string().min(1)
+    cost: z.string().min(1),
+    knowledge: z.string().min(1)
   }),
   page_vms: z.object({
     attention: attentionHomeVmSchema,

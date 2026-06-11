@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM, ProposalConflict, SettingsPageVM, WorkHubLocale } from "@workhub/contracts";
+import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -56,6 +56,15 @@ type BrowserAudit = {
     proposalAdvancedLineEditor: string | null;
     proposalAdvancedFieldEditor: string | null;
     proposalAdvancedSubrecordEditor: string | null;
+    intakeOptionCount: string | null;
+    intakeProgressCount: string | null;
+    intakeFreeTextCollapsed: string | null;
+    intakeInputMode: string | null;
+    intakeOptionFirst: string | null;
+    intakeSelectedCount: string | null;
+    knowledgeEvidenceCount: string | null;
+    knowledgeMissing: string | null;
+    knowledgeActionCount: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -454,7 +463,8 @@ function productSurface(): GoldPathSurfaceVM {
       workitem: "/workitems/r4-live-workitem",
       proposal: "/proposals/r4-live-proposal",
       replay: "/agent-runs/r4-live-run/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,
@@ -474,6 +484,123 @@ function productSurface(): GoldPathSurfaceVM {
     ...surface,
     proposal_conflicts: r4AdvancedProposalConflicts(surface)
   });
+}
+
+function qaWorkItemDetail(surface: GoldPathSurfaceVM): WorkItemDetailVM {
+  return {
+    ...surface.page_vms.workitem,
+    workitem: {
+      ...surface.page_vms.workitem.workitem,
+      id: "r4-live-workitem",
+      code: "WH-R4-14",
+      title: "区域发布复盘包"
+    }
+  };
+}
+
+function r4LiveSession(stage: "scope" | "confirm", surface: GoldPathSurfaceVM, locale: WorkHubLocale): SessionVM {
+  const sessionId = "10000000-0000-4000-8000-000000001414";
+  const workItemId = "r4-live-workitem";
+  const english = locale === "en-US";
+  return {
+    session_id: sessionId,
+    work_item_id: workItemId,
+    topic: english
+      ? stage === "confirm" ? "Confirm regional launch review" : "Scope regional launch review"
+      : stage === "confirm" ? "确认区域发布复盘包" : "整理区域发布复盘包",
+    stream_href: `/api/push/stream/session/${sessionId}`,
+    next_question_href: `/api/sessions/${sessionId}/next-question`,
+    question: {
+      id: stage === "confirm" ? "10000000-0000-4000-8000-000000001416" : "10000000-0000-4000-8000-000000001415",
+      session_id: sessionId,
+      work_item_id: workItemId,
+      title: english
+        ? stage === "confirm" ? "Create this work item?" : "Which direction should this review take first?"
+        : stage === "confirm" ? "确认创建这个工作项？" : "这次复盘先按哪个方向推进？",
+      body: english
+        ? stage === "confirm" ? "Confirming creates a structured work item." : "Choose one direction first; add text only if needed."
+        : stage === "confirm" ? "确认后会创建结构化工作项。" : "先选一个方向，必要时再补充一句。",
+      input_mode: stage === "confirm" ? "confirm" : "single_choice",
+      options: stage === "confirm"
+        ? [
+          {
+            id: "create-worker",
+            label: english ? "Create and prepare AI run" : "创建并进入 AI 执行",
+            description: english ? "Create the work item and prepare the next execution." : "生成工作项并准备后续执行。"
+          },
+          {
+            id: "keep-scoping",
+            label: english ? "Keep clarifying" : "继续澄清",
+            description: english ? "Collect one more constraint." : "再收集一个约束。"
+          }
+        ]
+        : [
+          {
+            id: "risk-first",
+            label: english ? "Risk first" : "先看风险",
+            description: english ? "Focus on blockers, delays, and abnormal regions." : "聚焦阻塞、延期和异常区域。"
+          },
+          {
+            id: "metric-first",
+            label: english ? "Metrics first" : "先看指标",
+            description: english ? "Focus on attainment and trend." : "聚焦达成率与趋势。"
+          }
+        ],
+      recommended_option_ids: stage === "confirm" ? ["create-worker"] : ["risk-first"],
+      free_text: {
+        enabled: true,
+        collapsed_by_default: true,
+        placeholder: english ? "Add one sentence only when options are not enough." : "选项不够时再补充一句。",
+        max_length: 120
+      },
+      progress: [
+        { key: "intent", label: english ? "Intent" : "意图", state: "done" },
+        { key: "scope", label: english ? "Scope" : "范围", state: stage === "confirm" ? "done" : "active" },
+        { key: "confirm", label: english ? "Confirm" : "确认", state: stage === "confirm" ? "active" : "pending" }
+      ],
+      evidence_refs: surface.page_vms.workitem.evidence_refs.slice(0, 1),
+      submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+    }
+  };
+}
+
+function r4LiveEvidence(locale: WorkHubLocale): EvidenceBubble {
+  const english = locale === "en-US";
+  return {
+    id: "10000000-0000-4000-8000-000000001424",
+    query_text: "regional",
+    summary_text: english
+      ? "Cited regional launch review evidence is available; missing CRM detail is marked explicitly."
+      : "找到可引用的区域发布复盘证据，未命中的 CRM 明细会明确标注为缺失。",
+    missing_evidence_note: english ? "CRM source detail is missing; no conclusion is invented." : "CRM 原始明细暂缺，不会编造结论。",
+    evidence_refs: [
+      {
+        id: "10000000-0000-4000-8000-000000001425",
+        source_type: "meeting",
+        source_id: "regional-sync",
+        title: english ? "Regional launch sync" : "区域发布同步会",
+        excerpt: english ? "Supply delay is the blocker that needs the closest follow-up." : "供应延迟是本周最需要跟进的阻塞。",
+        href: "/knowledge/sources/regional-sync"
+      },
+      {
+        id: "10000000-0000-4000-8000-000000001426",
+        source_type: "drive_file",
+        source_id: "drive:regional-launch-review",
+        title: english ? "Regional launch review draft" : "区域发布复盘草稿",
+        excerpt: english ? "The draft records metrics, risks, and next actions." : "草稿记录了指标、风险与下一步行动。",
+        href: "/knowledge/sources/regional-launch-review"
+      }
+    ],
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: english ? "Use for current task" : "用于当前任务",
+        method: "POST",
+        href: "/api/workitems/r4-live-workitem/evidence-bindings"
+      },
+      { id: "open_full_search", label: english ? "Open full search" : "打开完整检索", method: "GET", href: "/knowledge/search?q=regional" }
+    ]
+  };
 }
 
 function proposalConflictsFromSurface(surface: GoldPathSurfaceVM) {
@@ -523,6 +650,7 @@ function sendApiError(response: ServerResponse, status: number, code: string, me
 
 function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestRecord[]) {
   let currentLocale: WorkHubLocale = "zh-CN";
+  let sessionStage: "scope" | "confirm" = "scope";
   const sseClients = new Map<ServerResponse, string>();
   const sseStreamKey = (pathname: string) => {
     if (pathname === "/api/push/stream") {
@@ -622,6 +750,28 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, surface);
       return;
     }
+    const sessionMatch = /^\/api\/sessions\/([^/]+)$/u.exec(url.pathname);
+    if (request.method === "GET" && sessionMatch?.[1]) {
+      sendJson(response, 200, r4LiveSession(sessionStage, surface, currentLocale));
+      return;
+    }
+    const nextQuestionMatch = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(url.pathname);
+    if (request.method === "POST" && nextQuestionMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      sessionStage = "confirm";
+      sendJson(response, 200, r4LiveSession(sessionStage, surface, currentLocale));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/workitems") {
+      requestRecord.body = await requestBody(request);
+      sendJson(response, 200, qaWorkItemDetail(surface));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/knowledge/search") {
+      requestRecord.body = await requestBody(request);
+      sendJson(response, 200, r4LiveEvidence(currentLocale));
+      return;
+    }
     const approvalRespondMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(url.pathname);
     if (request.method === "POST" && approvalRespondMatch?.[1]) {
       requestRecord.body = await requestBody(request);
@@ -646,7 +796,13 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         sendApiError(response, 403, "forbidden", "Needs owner approval");
         return;
       }
-      sendJson(response, 200, surface.page_vms.workitem);
+      sendJson(response, 200, qaWorkItemDetail(surface));
+      return;
+    }
+    const evidenceBindingMatch = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(url.pathname);
+    if (request.method === "POST" && evidenceBindingMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      sendJson(response, 200, qaWorkItemDetail(surface));
       return;
     }
     const conflictsMatch = /^\/api\/workitems\/([^/]+)\/conflicts$/u.exec(url.pathname);
@@ -946,6 +1102,19 @@ async function clickAndWait(cdp: CdpClient, selector: string, pathname: string, 
   );
 }
 
+async function clickSelector(cdp: CdpClient, selector: string) {
+  const clicked = await cdp.evaluate<boolean>(`(() => {
+    const target = document.querySelector(${JSON.stringify(selector)});
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`);
+  if (!clicked) {
+    throw new Error(`Could not click selector: ${selector}`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 160));
+}
+
 async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
   const clicked = await cdp.evaluate<boolean>(`(() => {
     const target = document.querySelector(${JSON.stringify(selector)});
@@ -1108,6 +1277,15 @@ function auditExpression() {
       proposalAdvancedLineEditor: proposalAdvanced?.getAttribute("data-r4-proposal-line-editor") || null,
       proposalAdvancedFieldEditor: proposalAdvanced?.getAttribute("data-r4-proposal-field-editor") || null,
       proposalAdvancedSubrecordEditor: proposalAdvanced?.getAttribute("data-r4-proposal-subrecord-editor") || null,
+      intakeOptionCount: routeComponent?.getAttribute("data-r4-intake-option-count") || null,
+      intakeProgressCount: routeComponent?.getAttribute("data-r4-intake-progress-count") || null,
+      intakeFreeTextCollapsed: routeComponent?.getAttribute("data-r4-intake-free-text-collapsed") || null,
+      intakeInputMode: routeComponent?.getAttribute("data-r4-intake-input-mode") || null,
+      intakeOptionFirst: routeComponent?.getAttribute("data-r4-intake-option-first") || null,
+      intakeSelectedCount: String(document.querySelectorAll("[data-intake-option-selected='true']").length),
+      knowledgeEvidenceCount: routeComponent?.getAttribute("data-r4-knowledge-evidence-count") || null,
+      knowledgeMissing: routeComponent?.getAttribute("data-r4-knowledge-missing") || null,
+      knowledgeActionCount: routeComponent?.getAttribute("data-r4-knowledge-action-count") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -1150,9 +1328,13 @@ function auditExpression() {
           ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']"))
           : routeComponentKey === "cost"
             ? Boolean(document.querySelector("[data-r4-cost-metrics]") && document.querySelector("[data-r4-cost-budget]") && document.querySelector("[data-r4-cost-models]"))
-            : routeComponentKey === "settings"
-              ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
-              : Boolean(routeComponentKey);
+            : routeComponentKey === "intake"
+              ? Boolean(document.querySelector("[data-r4-intake-options]") && document.querySelector("[data-r4-intake-progress]") && document.querySelector("[data-intake-submit='next-question']"))
+              : routeComponentKey === "knowledge"
+                ? Boolean(document.querySelector("[data-r4-knowledge-fallback]") && document.querySelector("[data-r4-knowledge-evidence-ref]") && document.querySelector("[data-action-id='use_for_current_task']"))
+                : routeComponentKey === "settings"
+                  ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
+                  : Boolean(routeComponentKey);
     return {
       pathname: location.pathname,
       search: location.search,
@@ -1305,6 +1487,26 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/`, "ready");
   steps.push(await captureStep(cdp, { id: "01-home-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
+  await navigate(cdp, `${baseUrl}/intake/r4-live-session`, "ready");
+  steps.push(await captureStep(cdp, { id: "01a-intake-zh-desktop-route-component", url: `${baseUrl}/intake/r4-live-session`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "intake" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="intake_continue"]', "intake_option_required", "intake_continue");
+  steps.push(await captureStep(cdp, { id: "01b-intake-empty-fail-closed-zh-desktop", url: `${baseUrl}/intake/r4-live-session`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "intake" }));
+
+  await clickSelector(cdp, '[data-intake-option-id="risk-first"]');
+  await clickAndWaitForNotice(cdp, '[data-action-id="intake_continue"]', "action_success", "intake_continue");
+  steps.push(await captureStep(cdp, { id: "01c-intake-next-question-success-zh-desktop", url: `${baseUrl}/intake/r4-live-session`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "intake" }));
+
+  await clickSelector(cdp, '[data-intake-option-id="create-worker"]');
+  await clickAndWait(cdp, '[data-action-id="create_workitem"]', "/workitems/r4-live-workitem");
+  await waitFor<BrowserAudit>(
+    cdp,
+    "create work item notice",
+    auditExpression(),
+    (audit) => audit.notice.visible && audit.notice.kind === "action_success" && audit.notice.actionId === "create_workitem"
+  );
+  steps.push(await captureStep(cdp, { id: "01d-intake-create-workitem-success-zh-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
   await clickAndWait(cdp, 'a[href="/approvals"]', "/approvals");
   steps.push(await captureStep(cdp, { id: "02-approvals-click-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
 
@@ -1410,6 +1612,17 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "12a-cost-budget-warning-notice-en-mobile", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
 
   await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/knowledge/search?q=regional&workItemId=r4-live-workitem`, "ready");
+  steps.push(await captureStep(cdp, { id: "12b-knowledge-fallback-en-desktop-route-component", url: `${baseUrl}/knowledge/search?q=regional&workItemId=r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="use_for_current_task"]', "action_success", "use_for_current_task");
+  steps.push(await captureStep(cdp, { id: "12c-knowledge-bind-success-en-desktop", url: `${baseUrl}/knowledge/search?q=regional&workItemId=r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/intake/r4-live-session`, "ready");
+  steps.push(await captureStep(cdp, { id: "12d-intake-en-mobile-no-overflow", url: `${baseUrl}/intake/r4-live-session`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "intake" }));
+
+  await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/settings`, "ready");
   steps.push(await captureStep(cdp, { id: "13-settings-en-desktop-route-component", url: `${baseUrl}/settings`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "settings" }));
 
@@ -1450,6 +1663,12 @@ function requestProof(requests: ApiRequestRecord[]) {
     approvals: requests.some((request) => request.pathname === "/api/pages/approvals"),
     workitem: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem"),
     workitemEn: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem" && request.locale === "en-US"),
+    session: requests.some((request) => request.pathname === "/api/sessions/r4-live-session" && request.locale === "zh-CN"),
+    sessionEn: requests.some((request) => request.pathname === "/api/sessions/r4-live-session" && request.locale === "en-US"),
+    nextQuestion: requests.some((request) => request.method === "POST" && /^\/api\/sessions\/[^/]+\/next-question$/u.test(request.pathname)),
+    createWorkItem: requests.some((request) => request.method === "POST" && request.pathname === "/api/workitems"),
+    knowledge: requests.some((request) => request.method === "POST" && request.pathname === "/api/knowledge/search" && request.locale === "en-US"),
+    evidenceBinding: requests.some((request) => request.method === "POST" && /^\/api\/workitems\/[^/]+\/evidence-bindings$/u.test(request.pathname)),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
     conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
@@ -1463,6 +1682,11 @@ function requestProof(requests: ApiRequestRecord[]) {
       approvals: count("/api/pages/approvals"),
       workitem: count("/api/pages/workitems/r4-live-workitem"),
       workitemForbidden: count("/api/pages/workitems/r4-live-forbidden"),
+      session: count("/api/sessions/r4-live-session"),
+      nextQuestion: countMatch(/^\/api\/sessions\/[^/]+\/next-question$/u, "POST"),
+      createWorkItem: count("/api/workitems", "POST"),
+      knowledgeSearch: count("/api/knowledge/search", "POST"),
+      evidenceBinding: countMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
       proposalConflicts: countMatch(/^\/api\/workitems\/[^/]+\/conflicts$/u),
       approvalRespond: countMatch(/^\/api\/approvals\/[^/]+\/respond$/u, "POST"),
@@ -1478,6 +1702,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       preferencePatch: count("/api/auth/preferences", "PATCH")
     },
     advancedPayloads: {
+      nextQuestionSelection: bodyMatch(/^\/api\/sessions\/[^/]+\/next-question$/u, "POST", "risk-first"),
+      createWorkItemSelection: bodyMatch(/^\/api\/workitems$/u, "POST", "create-worker"),
+      knowledgeWorkItemFilter: bodyMatch(/^\/api\/knowledge\/search$/u, "POST", "r4-live-workitem"),
+      evidenceBindingRefs: bodyMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST", "evidence_bubble_id"),
       textHunkOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "text_hunk_overrides"),
       taskPlanScope: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "task_plan_scope"),
       structuredItemOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_item_overrides"),
@@ -1578,6 +1806,13 @@ async function main() {
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
       ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.cost && proof.settings && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      r4_14_ready_routes_use_session_knowledge_endpoints:
+        proof.session &&
+        proof.sessionEn &&
+        proof.nextQuestion &&
+        proof.createWorkItem &&
+        proof.knowledge &&
+        proof.evidenceBinding,
       r4_10_home_approvals_replay_route_components:
         steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
         steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
@@ -1588,7 +1823,7 @@ async function main() {
         hasActiveComponent(steps, "12-cost-en-mobile-route-component", "cost") &&
         hasActiveComponent(steps, "13-settings-en-desktop-route-component", "settings"),
       r4_11_route_component_source_truth: steps
-        .filter((step) => step.audit.productShell && step.audit.status === "ready")
+        .filter((step) => step.audit.productShell && step.audit.status === "ready" && !["intake", "knowledge"].includes(step.audit.routeComponent ?? ""))
         .every((step) => step.audit.routeComponentSource === "page-vm"),
       r4_11_route_specific_markers: steps
         .filter((step) => step.audit.productShell && step.audit.status === "ready")
@@ -1668,13 +1903,96 @@ async function main() {
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
+      r4_13_proposal_advanced_regression:
+        steps.some((step) => step.id === "06a-proposal-advanced-review-en-desktop" && step.audit.routeData.proposalAdvancedConflicts === "2") &&
+        proof.counts.mergeApply === 4 &&
+        proof.advancedPayloads.structuredFieldOverrides,
+      r4_14_route_component_source_truth:
+        steps.some((step) => step.id === "01a-intake-zh-desktop-route-component" && step.audit.routeComponentSource === "session-vm") &&
+        steps.some((step) => step.id === "12b-knowledge-fallback-en-desktop-route-component" && step.audit.routeComponentSource === "evidence-bubble"),
+      r4_14_intake_route_component:
+        steps.some((step) =>
+          step.id === "01a-intake-zh-desktop-route-component" &&
+          step.audit.routeComponent === "intake" &&
+          step.audit.routeData.intakeOptionCount === "2" &&
+          step.audit.routeData.intakeProgressCount === "3" &&
+          step.audit.routeData.intakeFreeTextCollapsed === "true" &&
+          step.audit.routeData.intakeInputMode === "single_choice" &&
+          step.audit.routeData.intakeOptionFirst === "true"
+        ),
+      r4_14_option_first_no_chat_wall:
+        steps.some((step) =>
+          step.id === "01a-intake-zh-desktop-route-component" &&
+          step.audit.routeSpecificMarker &&
+          step.audit.routeData.intakeSelectedCount === "0" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r4_14_intake_fail_closed:
+        steps.some((step) =>
+          step.id === "01b-intake-empty-fail-closed-zh-desktop" &&
+          step.audit.notice.kind === "intake_option_required" &&
+          step.audit.notice.tone === "warning" &&
+          step.audit.notice.source === "client" &&
+          step.audit.notice.actionId === "intake_continue"
+        ) &&
+        proof.counts.nextQuestion === 1,
+      r4_14_intake_submit_success:
+        steps.some((step) =>
+          step.id === "01c-intake-next-question-success-zh-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "intake_continue" &&
+          step.audit.routeData.intakeInputMode === "confirm"
+        ) &&
+        proof.advancedPayloads.nextQuestionSelection,
+      r4_14_intake_create_workitem_success:
+        steps.some((step) =>
+          step.id === "01d-intake-create-workitem-success-zh-desktop" &&
+          step.audit.routeComponent === "workitem" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "create_workitem"
+        ) &&
+        proof.counts.createWorkItem === 1 &&
+        proof.advancedPayloads.createWorkItemSelection,
+      r4_14_knowledge_fallback_route:
+        steps.some((step) =>
+          step.id === "12b-knowledge-fallback-en-desktop-route-component" &&
+          step.audit.routeComponent === "knowledge" &&
+          step.audit.routeData.knowledgeEvidenceCount === "2" &&
+          step.audit.routeData.knowledgeActionCount === "2" &&
+          step.audit.routeData.knowledgeMissing === "false"
+        ) &&
+        proof.counts.knowledgeSearch === 1 &&
+        proof.advancedPayloads.knowledgeWorkItemFilter,
+      r4_14_knowledge_bind_success:
+        steps.some((step) =>
+          step.id === "12c-knowledge-bind-success-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "use_for_current_task"
+        ) &&
+        proof.counts.evidenceBinding === 1 &&
+        proof.advancedPayloads.evidenceBindingRefs,
+      r4_14_mobile_no_overflow:
+        steps.some((step) =>
+          step.id === "12d-intake-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "intake" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0 &&
+          !step.audit.topbarNavOverlap
+        ),
       active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
         proof.counts.approvals === 3 &&
-        proof.counts.workitem === 3 &&
+        proof.counts.workitem === 4 &&
         proof.counts.workitemForbidden === 1 &&
+        proof.counts.session === 3 &&
+        proof.counts.nextQuestion === 1 &&
+        proof.counts.createWorkItem === 1 &&
+        proof.counts.knowledgeSearch === 1 &&
+        proof.counts.evidenceBinding === 1 &&
         proof.counts.proposal === 2 &&
         proof.counts.proposalConflicts === 2 &&
         proof.counts.approvalRespond === 2 &&
@@ -1724,6 +2042,7 @@ async function main() {
         `- R4.11 route components: ${String(gates.r4_11_workitem_proposal_cost_settings_route_components)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
+        `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,
         `- R4.12 approval response notice: ${String(gates.r4_12_approval_response_notice)}`,
         `- R4.12 reason gate: ${String(gates.r4_12_reason_gate_blocks_without_reason)}`,
         `- R4.12 request changes notice: ${String(gates.r4_12_request_changes_success_notice)}`,
@@ -1738,6 +2057,13 @@ async function main() {
         `- R4.13 custom field fail-closed: ${String(gates.r4_13_custom_field_fail_closed)}`,
         `- R4.13 conflict API source truth: ${String(gates.r4_13_conflict_api_source_truth)}`,
         `- R4.13 structured editor visual: ${String(gates.r4_13_structured_editor_visual_no_overflow)}`,
+        `- R4.13 proposal regression: ${String(gates.r4_13_proposal_advanced_regression)}`,
+        `- R4.14 route component source truth: ${String(gates.r4_14_route_component_source_truth)}`,
+        `- R4.14 intake route: ${String(gates.r4_14_intake_route_component)}`,
+        `- R4.14 option-first fail-closed: ${String(gates.r4_14_intake_fail_closed)}`,
+        `- R4.14 intake submit/create: ${String(gates.r4_14_intake_submit_success && gates.r4_14_intake_create_workitem_success)}`,
+        `- R4.14 knowledge fallback/bind: ${String(gates.r4_14_knowledge_fallback_route && gates.r4_14_knowledge_bind_success)}`,
+        `- R4.14 mobile no overflow: ${String(gates.r4_14_mobile_no_overflow)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""

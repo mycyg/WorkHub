@@ -1,7 +1,7 @@
 ---
 module: R4-option-intake-knowledge-route-componentization
 layer: C-WEB / C-UI / C-API / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -95,6 +95,55 @@ Browser gates 建议新增：
 - `web-project-drive-meetings-knowledge.png`：Knowledge fallback 展示来源和可打开链接，不做无来源回答。
 - `web-project-attention-workspace.png`：Intake / Knowledge 不能把默认首页带回多列 Kanban；Home 仍是一件最需要判断的事。
 
-## 8. 后续候选
+## 8. 竣工记录（2026-06-11）
 
-R4.14 通过后进入 R4.15：Web settings / locale persistence / device boundary hardening。目标是把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface，并继续保留主窗无 Cuu、本地能力不在 Web 执行的边界。
+本轮已完成 Option Intake / Knowledge fallback 的 Web route componentization，并把两条数据流接到真实 typed client / browser action dispatcher：
+
+| Area | 已落内容 | 证据 |
+|---|---|---|
+| Intake route dataflow | `GET /api/sessions/:id`、`client.getSession()`、`/intake/:sessionId` loader 接入 `SessionVM`，route surface 注入 `intake_session` | `apps/api/src/routes/sessions.ts`、`apps/web/src/routes.ts`、`packages/api-client/src/client.ts` |
+| Option-first component | `data-r4-route-component="intake"`，`source=session-vm`，option count、progress count、collapsed free text、confirm/create action marker 完整可审计 | `packages/ui/src/gold-path/route-components.ts`、`route-components.test.ts` |
+| Intake actions | 空选项 fail-closed，显示 `intake_option_required` notice；选择后 `nextQuestion()` 刷新 confirm；confirm 后 `createWorkItem()` 导航到 WorkItem | `apps/web/src/browser.ts`、R4.14 browser smoke |
+| Knowledge route dataflow | 新增 `/knowledge/search` route 和 gold path page key；loader 调 `client.searchKnowledge({ q, project_id, work_item_id, limit: 6 }, { locale })` | `apps/web/src/routes.ts`、`packages/ui/src/route-state.ts`、`packages/contracts/src/pages.ts` |
+| Knowledge component | `data-r4-route-component="knowledge"`，`source=evidence-bubble`，展示 cited evidence refs、open links、missing evidence note 与 `use_for_current_task` payload | `packages/ui/src/gold-path/route-components.ts` |
+| Browser QA | 本机 Chrome/Vite 36 步 smoke，覆盖 intake desktop/mobile、empty fail-closed、submit/create、knowledge fallback/bind、R4.13 regression、no overflow | `../05-clients/assets/audit/2026-06-11-r4-14-intake-knowledge-route-ux-browser-smoke/` |
+
+### 8.1 验证通过
+
+- `pnpm --filter @workhub/ui test`：48/48。
+- `pnpm --filter @workhub/web test`：15/15。
+- `pnpm --filter @workhub/api-client test`：9/9。
+- `pnpm typecheck`：15 个 workspace project 通过。
+- `pnpm qa:r4-web-live-route-interaction` with R4.14 env：36 steps，所有 gates 为 true。
+
+R4.14 browser smoke 关键 gates：
+
+- `r4_14_ready_routes_use_session_knowledge_endpoints=true`
+- `r4_14_route_component_source_truth=true`
+- `r4_14_intake_route_component=true`
+- `r4_14_option_first_no_chat_wall=true`
+- `r4_14_intake_fail_closed=true`
+- `r4_14_intake_submit_success=true`
+- `r4_14_intake_create_workitem_success=true`
+- `r4_14_knowledge_fallback_route=true`
+- `r4_14_knowledge_bind_success=true`
+- `r4_14_mobile_no_overflow=true`
+- `r4_13_proposal_advanced_regression=true`
+
+### 8.2 Bug / 数据流审查
+
+- 数据流符合 REST truth：Intake route 先读 `SessionVM`，submit/create mutation 后重拉 route 或进入 WorkItem；Knowledge route 先走 typed search，evidence binding mutation 只显示 success notice，不伪造新结果。
+- Fail-closed 符合 R4.12：空选项不会发 `next-question`，custom evidence 绑定 payload 来自 DOM `data-request-json`，invalid/empty payload 走 warning notice。
+- 视觉修复：浏览器 smoke 抓到 closed `<details>` 内 free-text 段落仍被文本盒 gate 计入容器外，已在 route component CSS 中让 closed details 只显示 summary。
+- 边界无泄漏：R4.14 smoke 继续通过 `no_main_window_cuu`、`no_default_kanban`、`no_hash_navigation`、`no_weekly_fixture_copy`、`no_horizontal_overflow`、`no_text_box_overflow`。
+
+### 8.3 PRD / 概念图复核
+
+- `web-option-first-intake-wizard.png`：首屏是 option cards + progress + collapsed free text；空提交 fail-closed，不退回聊天墙。
+- `web-project-drive-meetings-knowledge.png`：Knowledge fallback 展示 evidence refs、source type、open evidence link 和 missing evidence note；没有无来源回答。
+- `web-project-attention-workspace.png`：Home 仍是单一优先事项，Intake / Knowledge 作为 route components 进入 active-only product shell；没有把默认首页变回多列 Kanban。
+- 双语：route chrome、固定 helper、notice、QA mock Page VM 已覆盖 zh-CN/en-US；动态用户/证据正文仍按 API VM 原文呈现。
+
+## 9. R4.15 后续计划
+
+下一步进入 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)：Web settings / locale persistence / device boundary hardening。目标是把语言偏好、桌面能力门、运行时状态和错误恢复统一到 typed settings surface，并继续保留主窗无 Cuu、本地能力不在 Web 执行的边界。

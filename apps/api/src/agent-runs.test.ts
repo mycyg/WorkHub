@@ -602,6 +602,9 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
     async createSession() {
       throw new Error("not needed");
     },
+    async getSession() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },

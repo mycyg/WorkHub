@@ -383,6 +383,10 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
       calls.push({ step: "createSession", payload: cloneHarnessPayload(payload) });
       return petHarnessSession("scope");
     },
+    async getSession(sessionId: string): Promise<SessionVM> {
+      calls.push({ step: "getSession", sessionId });
+      return petHarnessSession("scope");
+    },
     async nextQuestion(sessionId: string, payload: unknown): Promise<SessionVM> {
       calls.push({ step: "nextQuestion", sessionId, payload: cloneHarnessPayload(payload) });
       return petHarnessSession("confirm");

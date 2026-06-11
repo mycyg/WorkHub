@@ -7,9 +7,11 @@ import type {
   CostDashboardVM,
   DeliverableChange,
   DeliverableCheck,
+  EvidenceBubble,
   EvidenceRef,
   ProposalConflict,
   ProposalDetailVM,
+  SessionVM,
   SettingsPageVM,
   GoldPathSurfaceVM,
   WorkItemDetailVM
@@ -30,7 +32,7 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "approvals" | "workitem" | "proposal" | "replay" | "cost" | "settings">;
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost" | "knowledge" | "settings">;
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -50,6 +52,11 @@ type ProposalConflictSurface = GoldPathSurfaceVM & {
   proposal_conflicts?: ProposalConflict[];
 };
 
+type R4RouteSurface = ProposalConflictSurface & {
+  intake_session?: SessionVM;
+  knowledge_evidence?: EvidenceBubble;
+};
+
 export const webRouteComponentCss = [
   ".wh-r4-route{display:grid;gap:16px;min-width:0;max-width:100%;overflow:hidden}",
   ".wh-r4-route,.wh-r4-route *{box-sizing:border-box;min-width:0}",
@@ -67,10 +74,12 @@ export const webRouteComponentCss = [
   ".wh-r4-route-card h3{margin:0;font-size:16px;line-height:1.25;overflow-wrap:anywhere}",
   ".wh-r4-route-card p{margin:0;color:var(--wh-product-muted,#66728c);line-height:1.5;overflow-wrap:anywhere}",
   ".wh-r4-route-card--accent{border-color:rgba(53,92,255,.22);box-shadow:0 12px 28px rgba(37,51,79,.06)}",
+  ".wh-r4-route-card[data-intake-option-selected=true]{border-color:var(--wh-product-blue,#355cff);box-shadow:0 0 0 1px rgba(53,92,255,.22),0 12px 28px rgba(37,51,79,.08)}",
   ".wh-r4-route-table{display:grid;gap:8px;min-width:0}",
   ".wh-r4-route-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-start}",
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
+  ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
@@ -84,6 +93,15 @@ type RouteCopyKey =
   | "workitem.openProposal"
   | "workitem.openReplay"
   | "workitem.startRun"
+  | "intake.summary"
+  | "intake.progress"
+  | "intake.freeText"
+  | "intake.createWorkItem"
+  | "intake.continue"
+  | "knowledge.kicker"
+  | "knowledge.sources"
+  | "knowledge.missing"
+  | "knowledge.open"
   | "proposal.summary"
   | "proposal.review"
   | "proposal.rollback"
@@ -126,6 +144,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
     "workitem.startRun": "开始 AI 执行",
+    "intake.summary": "接入摘要",
+    "intake.progress": "澄清进度",
+    "intake.freeText": "打字只是折叠兜底",
+    "intake.createWorkItem": "创建工作项",
+    "intake.continue": "继续澄清",
+    "knowledge.kicker": "证据兜底",
+    "knowledge.sources": "证据来源",
+    "knowledge.missing": "没有可靠证据，不会编造来源。",
+    "knowledge.open": "打开证据",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
     "proposal.rollback": "回滚路径",
@@ -167,6 +194,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
     "workitem.startRun": "Start AI run",
+    "intake.summary": "Intake summary",
+    "intake.progress": "Clarification progress",
+    "intake.freeText": "Typing stays a collapsed fallback",
+    "intake.createWorkItem": "Create work item",
+    "intake.continue": "Continue intake",
+    "knowledge.kicker": "Knowledge fallback",
+    "knowledge.sources": "Evidence sources",
+    "knowledge.missing": "No reliable evidence found. WorkHub will not invent sources.",
+    "knowledge.open": "Open evidence",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
     "proposal.rollback": "Rollback path",
@@ -242,6 +278,10 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
       return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
+}
+
+function jsonAttr(value: unknown) {
+  return escapeHtml(JSON.stringify(value));
 }
 
 function renderAttentionRows(items: AttentionItem[], emptyCopy: string) {
@@ -322,6 +362,86 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
           <h3>${escapeHtml(goldPathT(locale, "empty.evidence"))}</h3>
           ${evidenceRows}
         </section>
+      </div>
+    </section>`
+  };
+}
+
+function intakeProgressRows(vm: SessionVM) {
+  return vm.question.progress
+    .map((step) => `<div class="wh-r4-route-row" data-r4-intake-progress-step="${escapeHtml(step.key)}" data-r4-intake-progress-state="${escapeHtml(step.state)}">
+      <strong>${escapeHtml(step.label)}</strong>
+      <span class="wh-pill">${escapeHtml(step.state)}</span>
+    </div>`)
+    .join("");
+}
+
+function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRouteComponent {
+  const question = {
+    ...vm.question,
+    session_id: vm.question.session_id ?? vm.session_id,
+    work_item_id: vm.question.work_item_id ?? vm.work_item_id
+  };
+  const recommended = new Set(question.recommended_option_ids ?? []);
+  const allowMulti = question.input_mode === "multi_choice" || question.input_mode === "rank";
+  const optionCards = question.options
+    .map((option) => {
+      const description = option.description ?? option.impact ?? "";
+      return `<button class="wh-card wh-r4-route-card" type="button" data-option-id="${escapeHtml(option.id)}" data-intake-option-id="${escapeHtml(option.id)}" data-intake-option-selected="false" data-intake-option-mode="${escapeHtml(question.input_mode)}" data-intake-option-multi="${escapeHtml(String(allowMulti))}" data-recommended="${escapeHtml(String(recommended.has(option.id)))}">
+        <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(recommended.has(option.id) ? goldPathT(locale, "intake.recommended") : option.risk_hint ?? question.input_mode)}</span></div>
+        <h3>${escapeHtml(option.label)}</h3>
+        <p>${escapeHtml(description)}</p>
+      </button>`;
+    })
+    .join("");
+  const freeText = question.free_text.enabled
+    ? `<details class="wh-card wh-r4-route-card" data-r4-intake-free-text="true" ${question.free_text.collapsed_by_default ? "" : "open"}>
+      <summary>${escapeHtml(routeT(locale, "intake.freeText"))}</summary>
+      <p>${escapeHtml(question.free_text.placeholder ?? goldPathT(locale, "intake.freeTextFallback"))}</p>
+    </details>`
+    : "";
+  const continuePayload = { selected_option_ids: [] as string[] };
+  const createPayload = { session_id: vm.session_id, selected_option_ids: [] as string[] };
+  const createAction = question.input_mode === "confirm"
+    ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
+    : "";
+
+  return {
+    key: "intake",
+    css: webRouteComponentCss,
+    primaryHrefs: [question.submit.href, ...(question.input_mode === "confirm" ? ["/api/workitems"] : [])],
+    html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="session-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-intake-session-id="${escapeHtml(vm.session_id)}" data-r4-intake-workitem-id="${escapeHtml(vm.work_item_id ?? "")}" data-r4-intake-option-count="${escapeHtml(String(question.options.length))}" data-r4-intake-progress-count="${escapeHtml(String(question.progress.length))}" data-r4-intake-free-text-collapsed="${escapeHtml(String(question.free_text.collapsed_by_default))}" data-r4-intake-input-mode="${escapeHtml(question.input_mode)}" data-r4-intake-option-first="true">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "intake.kicker"))}</span>
+          <h2>${escapeHtml(question.title)}</h2>
+          <p>${escapeHtml(question.body ?? goldPathT(locale, "intake.bodyFallback"))}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(question.options.length))}</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-r4-route-stack" data-r4-intake-options="true" data-r4-intake-allow-multi="${escapeHtml(String(allowMulti))}">
+          ${optionCards}
+        </section>
+        <aside class="wh-r4-route-stack">
+          <section class="wh-card wh-r4-route-card" data-r4-intake-summary="true">
+            <h3>${escapeHtml(routeT(locale, "intake.summary"))}</h3>
+            <div class="wh-r4-route-meta">
+              <span class="wh-pill">${escapeHtml(vm.topic)}</span>
+              <span class="wh-pill">${escapeHtml(vm.stream_href)}</span>
+            </div>
+            <p>${escapeHtml(routeT(locale, "intake.freeText"))}</p>
+          </section>
+          <section class="wh-card wh-r4-route-card" data-r4-intake-progress="true">
+            <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
+            <div class="wh-r4-route-timeline">${intakeProgressRows(vm)}</div>
+          </section>
+        </aside>
+      </div>
+      ${freeText}
+      <div class="wh-r4-route-actions">
+        <a class="wh-btn" href="${escapeHtml(question.submit.href)}" data-action-id="intake_continue" data-method="${escapeHtml(question.submit.method)}" data-intake-submit="next-question" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(continuePayload)}">${escapeHtml(routeT(locale, "intake.continue"))}</a>
+        ${createAction}
       </div>
     </section>`
   };
@@ -732,6 +852,51 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   };
 }
 
+function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: EvidenceBubble) {
+  if (!action.href) {
+    return "";
+  }
+  const payload = action.id === "use_for_current_task"
+    ? { evidence_bubble_id: vm.id, evidence_refs: vm.evidence_refs }
+    : undefined;
+  return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
+}
+
+function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale): WebRouteComponent {
+  const refs = vm.evidence_refs;
+  const sourceRows = refs.length
+    ? refs.slice(0, 6).map((ref) => `<div class="wh-r4-route-row" data-r4-knowledge-evidence-ref="${escapeHtml(ref.id)}" data-r4-knowledge-source-type="${escapeHtml(ref.source_type)}">
+      <div>
+        <strong>${escapeHtml(ref.title)}</strong>
+        <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
+      </div>
+      ${ref.href ? `<a class="wh-pill" href="${escapeHtml(ref.href)}">${escapeHtml(routeT(locale, "knowledge.open"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}
+    </div>`).join("")
+    : `<p class="wh-subtle" data-r4-knowledge-missing-note="true">${escapeHtml(vm.missing_evidence_note ?? routeT(locale, "knowledge.missing"))}</p>`;
+  const actions = vm.actions.map((action) => renderKnowledgeAction(action, vm)).join("");
+
+  return {
+    key: "knowledge",
+    css: webRouteComponentCss,
+    primaryHrefs: vm.actions.map((action) => action.href).filter((value): value is string => Boolean(value)),
+    html: `<section class="wh-r4-route" data-r4-route-component="knowledge" data-r4-route-component-source="evidence-bubble" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-knowledge-bubble-id="${escapeHtml(vm.id)}" data-r4-knowledge-query="${escapeHtml(vm.query_text ?? "")}" data-r4-knowledge-evidence-count="${escapeHtml(String(refs.length))}" data-r4-knowledge-missing="${escapeHtml(String(refs.length === 0))}" data-r4-knowledge-action-count="${escapeHtml(String(vm.actions.length))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "knowledge.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "knowledge.sources"))}</h2>
+          <p>${escapeHtml(vm.summary_text)}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
+      </header>
+      <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-knowledge-fallback="true">
+        <h3>${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
+        <div class="wh-r4-route-timeline">${sourceRows}</div>
+        <div class="wh-r4-route-actions">${actions}</div>
+      </section>
+    </section>`
+  };
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
   return {
     key: "settings",
@@ -796,14 +961,16 @@ export function renderWebRouteComponents(
   options: RouteComponentOptions = {}
 ): WebRouteComponentMap {
   const locale = normalizeWorkHubLocale(options.locale);
-  const conflictSurface = vm as ProposalConflictSurface;
+  const routeSurface = vm as R4RouteSurface;
   return {
     home: renderHomeRouteComponent(vm.page_vms.attention, locale),
+    ...(routeSurface.intake_session ? { intake: renderIntakeRouteComponent(routeSurface.intake_session, locale) } : {}),
     approvals: renderApprovalsRouteComponent(vm.page_vms.approvals, locale),
     workitem: renderWorkItemRouteComponent(vm.page_vms.workitem, locale),
-    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(conflictSurface)),
+    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(routeSurface)),
     replay: renderReplayRouteComponent(vm, locale),
     cost: renderCostRouteComponent(vm.page_vms.cost, locale),
+    ...(routeSurface.knowledge_evidence ? { knowledge: renderKnowledgeRouteComponent(routeSurface.knowledge_evidence, locale) } : {}),
     ...(vm.page_vms.settings ? { settings: renderSettingsRouteComponent(vm.page_vms.settings, locale) } : {})
   };
 }

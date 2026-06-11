@@ -67,6 +67,11 @@ export type WorkItemService = {
     actor: AuthActor;
     locale?: WorkHubLocale;
   }) => Promise<SessionVM>;
+  getSession: (input: {
+    sessionId: string;
+    actor: AuthActor;
+    locale?: WorkHubLocale;
+  }) => Promise<SessionVM>;
   nextQuestion: (input: {
     sessionId: string;
     payload: NextQuestionRequest;
@@ -761,6 +766,12 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       return sessionVmFor(workItem, "scope", input.locale);
     },
 
+    async getSession(input) {
+      const rows = await requireDetail(input.sessionId, input.actor);
+      const selectedOptionIds = await repository.listSessionSelectedOptionIds(rows.workItem.id);
+      return sessionVmFor(rows.workItem, selectedOptionIds.length > 0 ? "confirm" : "scope", input.locale);
+    },
+
     async nextQuestion(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
       const selectedOptionIds = input.payload.selected_option_ids ?? [];
@@ -1071,8 +1082,14 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             ...(input.payload.intent_text ? { rawDescription: input.payload.intent_text } : {}),
             actor: input.actor,
             status: "ai_clarifying"
-          });
+      });
       return sessionVmFor(memoryRow(workItem), "scope", input.locale);
+    },
+
+    async getSession(input) {
+      const workItem = requireWorkItem(input.sessionId);
+      const hasAnswers = (answers.get(input.sessionId) ?? []).length > 0;
+      return sessionVmFor(memoryRow(workItem), hasAnswers ? "confirm" : "scope", input.locale);
     },
 
     async nextQuestion(input) {

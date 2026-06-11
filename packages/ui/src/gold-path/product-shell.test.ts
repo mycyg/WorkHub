@@ -18,7 +18,8 @@ function renderedSurface(locale: "zh-CN" | "en-US" = "en-US") {
       workitem: "/workitems/r4-product-shell-workitem",
       proposal: "/proposals/r4-product-shell-proposal",
       replay: "/agent-runs/r4-product-shell-run/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,

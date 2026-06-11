@@ -85,6 +85,10 @@ function pageAliases(page: GoldPathRenderedPage) {
   if (page.key === "cost") {
     aliases.add("/dashboard/cost");
   }
+  if (page.key === "knowledge") {
+    aliases.add("/knowledge");
+    aliases.add("/knowledge/search");
+  }
   if (page.key === "settings") {
     aliases.add("/settings");
   }
@@ -130,11 +134,11 @@ export function resolveGoldPathPageKey(routeMap: Record<string, PageKey>, href: 
   if (route.startsWith("/agent-runs/")) {
     return "replay";
   }
+  if (route.startsWith("/knowledge")) {
+    return "knowledge";
+  }
   if (route.startsWith("/settings")) {
     return "settings";
-  }
-  if (route.startsWith("/api/sessions/")) {
-    return "workitem";
   }
   return undefined;
 }

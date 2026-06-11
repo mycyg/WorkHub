@@ -162,6 +162,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    getSession: (id, options) => request(withPageLocale(`/api/sessions/${encodeURIComponent(id)}`, options)),
     createWorkItem: (payload) =>
       request("/api/workitems", {
         method: "POST",
@@ -220,8 +221,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    searchKnowledge: (payload = {}) =>
-      request("/api/knowledge/search", {
+    searchKnowledge: (payload = {}, options) =>
+      request(withPageLocale("/api/knowledge/search", options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),

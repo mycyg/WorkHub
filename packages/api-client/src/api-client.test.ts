@@ -82,6 +82,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.workItem("work-1");
   await client.pages.proposal("proposal-1");
   await client.createSession({ intent_text: "帮我整理客户周报模板。" });
+  await client.getSession("session-1");
   await client.createWorkItem({ session_id: "session-1", selected_option_ids: ["risk-first"] });
   await client.startAgentRun("work-1", { title: "AI 开始整理周报" });
   await client.getAgentRun("run-1");
@@ -122,6 +123,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/workitems/work-1",
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions",
+    "GET /api/sessions/session-1",
     "POST /api/workitems",
     "POST /api/workitems/work-1/agent-runs",
     "GET /api/agent-runs/run-1",
@@ -167,6 +169,8 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
   await client.replayAgentRun("run/1", { locale: "en-US" });
+  await client.getSession("session 1", { locale: "en-US" });
+  await client.searchKnowledge({ q: "weekly" }, { locale: "zh-CN" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -176,7 +180,9 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/settings?locale=en-US",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
     "/api/pages/proposals/proposal%201?locale=en-US",
-    "/api/agent-runs/run%2F1/replay?locale=en-US"
+    "/api/agent-runs/run%2F1/replay?locale=en-US",
+    "/api/sessions/session%201?locale=en-US",
+    "/api/knowledge/search?locale=zh-CN"
   ]);
 });
 

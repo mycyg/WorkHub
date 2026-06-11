@@ -46,6 +46,20 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
     }
   });
 
+  routes.get("/sessions/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const data = await workItems.getSession({
+        sessionId: c.req.param("id"),
+        actor: c.var.actor,
+        locale
+      });
+      return c.json({ ok: true, data, meta: { locale } });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
   routes.post("/sessions/:id/next-question", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = nextQuestionRequestSchema.parse(await optionalJson(c.req));
     const locale = requestLocale(c);

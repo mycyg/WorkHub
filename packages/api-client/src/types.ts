@@ -126,6 +126,7 @@ export type WorkHubApiClient = {
   updatePreferences: (payload: UpdateUserPreferencesRequest) => Promise<IdentityResponse>;
   notifications: () => Promise<NotificationList>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
+  getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
   startAgentRun: (workItemId: string, payload?: StartAgentRunRequest) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
@@ -148,7 +149,7 @@ export type WorkHubApiClient = {
     payload?: ApplyMergeProposalCandidateRequest
   ) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<SessionVM>;
-  searchKnowledge: (payload?: unknown) => Promise<EvidenceBubble>;
+  searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (
     workItemId: string,

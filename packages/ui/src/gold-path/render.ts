@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost" | "settings";
+  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "replay" | "cost" | "knowledge" | "settings";
   route: string;
   title: string;
   html: string;
@@ -88,6 +88,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     proposal: "变更申请",
     replay: "执行回放",
     cost: "成本看板",
+    knowledge: "证据检索",
     settings: "设置"
   },
   "en-US": {
@@ -98,6 +99,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     proposal: "Proposal Detail",
     replay: "Replay Work",
     cost: "Cost Dashboard",
+    knowledge: "Evidence Search",
     settings: "Settings"
   }
 };
@@ -624,6 +626,39 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
   };
 }
 
+function renderKnowledge(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
+  const evidence = vm.page_vms.evidence;
+  const refs = evidence.evidence_refs ?? [];
+  const actions = evidence.actions ?? [];
+  const title = locale === "zh-CN" ? "证据检索" : "Evidence search";
+  const summary = evidence.summary_text;
+  const rows = refs.length
+    ? refs.slice(0, 5).map((ref) => `<div class="wh-row">
+      <div>
+        <strong>${escapeHtml(ref.title)}</strong>
+        <p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(ref.source_type)}</span>
+    </div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(evidence.missing_evidence_note ?? (locale === "zh-CN" ? "没有找到可靠证据。" : "No reliable evidence found."))}</p>`;
+  const actionButtons = actions
+    .map((action) => action.href ? `<a class="wh-btn" href="${href(action.href)}">${escapeHtml(action.label)}</a>` : "")
+    .join("");
+  const main = `<span class="wh-kicker">${escapeHtml(locale === "zh-CN" ? "证据兜底" : "Knowledge fallback")}</span>
+    <h1 class="wh-title">${escapeHtml(title)}</h1>
+    <p class="wh-subtle">${escapeHtml(summary)}</p>
+    <div class="wh-list">${rows}</div>
+    <div class="wh-actions">${actionButtons}</div>`;
+  return {
+    key: "knowledge",
+    route: vm.routes.knowledge,
+    title: pageTitle(locale, "knowledge"),
+    html: pageShell(surface, pageTitle(locale, "knowledge"), main),
+    primaryHrefs: actions.map((action) => action.href).filter((value): value is string => Boolean(value)),
+    cuuState: "searching_evidence"
+  };
+}
+
 function renderSettings(surface: GoldPathRenderSurface, locale: WorkHubLocale): GoldPathRenderedPage {
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "settings.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "settings.title"))}</h1>
@@ -663,6 +698,7 @@ export function renderGoldPathSurface(
       renderProposal(surface, vm, locale),
       renderReplay(surface, vm, locale),
       renderCost(surface, vm, locale),
+      renderKnowledge(surface, vm, locale),
       renderSettings(surface, locale)
     ]
   };

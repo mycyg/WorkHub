@@ -18,7 +18,8 @@ function surfaceVm() {
       workitem: "/workitems/demo",
       proposal: "/proposals/demo",
       replay: "/agent-runs/demo/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,
@@ -47,6 +48,7 @@ test("gold path renderer creates the P0.5 pages plus app settings from one share
     "proposal",
     "replay",
     "cost",
+    "knowledge",
     "settings"
   ]);
   assert.equal(rendered.pages.every((page) => page.html.includes("wh-shell")), true);

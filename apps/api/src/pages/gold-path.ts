@@ -156,7 +156,8 @@ export function buildP05GoldPathSurfacePage(locale: WorkHubLocale = "zh-CN"): Go
       workitem: `/workitems/${p05GoldPathIds.workItem}`,
       proposal: `/proposals/${p05GoldPathIds.proposal}`,
       replay: `/agent-runs/${p05GoldPathIds.run}/replay`,
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: fixture.attentionHome,

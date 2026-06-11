@@ -115,6 +115,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createSession() {
       return session;
     },
+    async getSession() {
+      return session;
+    },
     async createWorkItem() {
       return surface.page_vms.workitem;
     },
@@ -289,7 +292,8 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
       workitem: "/workitems/work",
       proposal: "/proposals/proposal",
       replay: "/agent-runs/run/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: {
@@ -493,7 +497,10 @@ test("web surface starts option-first intake sessions through the typed client",
   const rendered = await renderWebIntakeSession(client, { intent_text: "帮我整理客户周报" });
 
   assert.equal(webSurface.pages.includes("/api/sessions"), true);
+  assert.equal(webSurface.pages.includes("/api/sessions/:id"), true);
   assert.equal(webSurface.pages.includes("/intake/:sessionId"), true);
+  assert.equal(webSurface.pages.includes("/api/knowledge/search"), true);
+  assert.equal(webSurface.pages.includes("/knowledge/search"), true);
   assert.equal(session.session_id, intakeSession.session_id);
   assert.equal(rendered.surface, "web");
   assert.equal(rendered.route, `/intake/${intakeSession.session_id}`);

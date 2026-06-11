@@ -145,4 +145,4 @@ Browser gates 建议新增：
 
 ## 10. 后续候选
 
-R4.13 通过后进入 R4.14：Option Intake / Knowledge fallback route componentization。目标是把 option-first intake、knowledge search fallback 和 workitem creation 串成真实 route dataflow，同时保留 R4.12/R4.13 的 action feedback 与 no-overflow gates。详细计划见 [`r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](./r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)。
+R4.14 已完成 Option Intake / Knowledge fallback route componentization：option-first intake、knowledge search fallback 和 workitem creation 已串成真实 route dataflow，同时保留 R4.12/R4.13 的 action feedback 与 no-overflow gates。后续进入 R4.15 Settings / locale / device boundary hardening，详细计划见 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)。

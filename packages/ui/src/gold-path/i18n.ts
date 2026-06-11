@@ -175,7 +175,9 @@ export type GoldPathCopyKey =
   | "runtime.notice.budgetWarningTitle"
   | "runtime.notice.budgetWarningBody"
   | "runtime.notice.fieldValueRequiredTitle"
-  | "runtime.notice.fieldValueRequiredBody";
+  | "runtime.notice.fieldValueRequiredBody"
+  | "runtime.notice.intakeOptionRequiredTitle"
+  | "runtime.notice.intakeOptionRequiredBody";
 
 const goldPathCopy = {
   "zh-CN": {
@@ -331,7 +333,9 @@ const goldPathCopy = {
     "runtime.notice.budgetWarningTitle": "预算需要留意",
     "runtime.notice.budgetWarningBody": "成本状态有新变化，页面已重新读取最新预算数据。",
     "runtime.notice.fieldValueRequiredTitle": "需要字段值",
-    "runtime.notice.fieldValueRequiredBody": "请先填写自定义字段值，Web 不会提交空的高级编辑。"
+    "runtime.notice.fieldValueRequiredBody": "请先填写自定义字段值，Web 不会提交空的高级编辑。",
+    "runtime.notice.intakeOptionRequiredTitle": "请先选择一个选项",
+    "runtime.notice.intakeOptionRequiredBody": "Intake 保持选项优先，未选择时不会提交空澄清。"
   },
   "en-US": {
     "state.idle": "Idle",
@@ -486,7 +490,9 @@ const goldPathCopy = {
     "runtime.notice.budgetWarningTitle": "Budget needs attention",
     "runtime.notice.budgetWarningBody": "Cost status changed, and this page has reloaded the latest budget data.",
     "runtime.notice.fieldValueRequiredTitle": "Field value required",
-    "runtime.notice.fieldValueRequiredBody": "Enter a custom field value first. Web will not submit an empty advanced edit."
+    "runtime.notice.fieldValueRequiredBody": "Enter a custom field value first. Web will not submit an empty advanced edit.",
+    "runtime.notice.intakeOptionRequiredTitle": "Choose an option first",
+    "runtime.notice.intakeOptionRequiredBody": "Intake stays option-first, so Web will not submit an empty clarification."
   }
 } as const satisfies Record<WorkHubLocale, Record<GoldPathCopyKey, string>>;
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { GoldPathSurfaceVM, ProposalConflict, SettingsPageVM } from "@workhub/contracts";
+import type { EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM } from "@workhub/contracts";
 
 import { renderWebRouteComponents } from "./route-components.js";
 
@@ -62,7 +62,8 @@ function surfaceVm(): GoldPathSurfaceVM {
       workitem: "/workitems/r4-route-component-workitem",
       proposal: "/proposals/r4-route-component-proposal",
       replay: "/agent-runs/r4-route-component-run/replay",
-      cost: "/dashboard/cost"
+      cost: "/dashboard/cost",
+      knowledge: "/knowledge/search"
     },
     page_vms: {
       attention: {
@@ -219,6 +220,75 @@ function structuredProposalConflict(vm: GoldPathSurfaceVM): ProposalConflict {
   };
 }
 
+function routeSession(inputMode: SessionVM["question"]["input_mode"] = "single_choice"): SessionVM {
+  return {
+    session_id: "10000000-0000-4000-8000-000000000901",
+    work_item_id: "10000000-0000-4000-8000-000000000902",
+    topic: "整理区域周报",
+    stream_href: "/api/push/stream/session/10000000-0000-4000-8000-000000000901",
+    next_question_href: "/api/sessions/10000000-0000-4000-8000-000000000901/next-question",
+    question: {
+      id: "10000000-0000-4000-8000-000000000903",
+      title: "这次周报先按哪个方向推进？",
+      body: "先选一个方向，必要时再补充一句。",
+      input_mode: inputMode,
+      options: [
+        { id: "risk-first", label: "先看风险", description: "聚焦异常区域和阻塞项。" },
+        { id: "metric-first", label: "先看指标", description: "聚焦达成率与趋势。" }
+      ],
+      recommended_option_ids: ["risk-first"],
+      free_text: {
+        enabled: true,
+        collapsed_by_default: true,
+        placeholder: "只有选项不够时再补充。",
+        max_length: 120
+      },
+      progress: [
+        { key: "goal", label: "目标", state: "done" },
+        { key: "scope", label: "范围", state: "active" }
+      ],
+      evidence_refs: [],
+      submit: { method: "POST", href: "/api/sessions/10000000-0000-4000-8000-000000000901/next-question" }
+    }
+  };
+}
+
+function routeEvidenceBubble(): EvidenceBubble {
+  return {
+    id: "10000000-0000-4000-8000-000000000911",
+    query_text: "区域周报",
+    summary_text: "找到两条可引用证据，优先使用会议纪要与 Drive 文档。",
+    missing_evidence_note: "未找到 CRM 原始明细，不会补造。",
+    evidence_refs: [
+      {
+        id: "10000000-0000-4000-8000-000000000912",
+        source_type: "meeting",
+        source_id: "weekly-sync",
+        title: "区域周会纪要",
+        excerpt: "华东区本周主要风险来自供应延迟。",
+        href: "/knowledge/sources/weekly-sync"
+      },
+      {
+        id: "10000000-0000-4000-8000-000000000913",
+        source_type: "drive_file",
+        source_id: "drive:regional-report",
+        title: "区域周报草稿",
+        excerpt: "指标页包含达成率与重点客户变动。",
+        href: "/knowledge/sources/regional-report"
+      }
+    ],
+    actions: [
+      {
+        id: "use_for_current_task",
+        label: "Use in current task",
+        method: "POST",
+        href: "/api/workitems/10000000-0000-4000-8000-000000000902/evidence-bindings"
+      },
+      { id: "open_full_search", label: "Open full search", method: "GET", href: "/knowledge/search?q=regional" }
+    ]
+  };
+}
+
 test("R4.10 Home route component renders directly from Attention Page VM with bilingual fixed copy", () => {
   const zh = renderWebRouteComponents(surfaceVm(), { locale: "zh-CN" }).home;
   const en = renderWebRouteComponents(surfaceVm(), { locale: "en-US" }).home;
@@ -301,6 +371,68 @@ test("R4.13 Proposal route component exposes advanced structured conflict editor
   assert.equal(proposal.html.includes("Advanced item editor"), true);
   assert.equal(proposal.primaryHrefs.includes("/api/merge-proposals/10000000-0000-4000-8000-000000000813/apply"), true);
   assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R4.14 Intake route component renders a typed option-first session without chat-wall fallback", () => {
+  const vm = {
+    ...surfaceVm(),
+    intake_session: routeSession()
+  };
+  const intake = renderWebRouteComponents(vm, { locale: "en-US" }).intake;
+
+  assert.ok(intake);
+  assert.equal(intake.html.includes('data-r4-route-component="intake"'), true);
+  assert.equal(intake.html.includes('data-r4-route-component-source="session-vm"'), true);
+  assert.equal(intake.html.includes('data-r4-intake-option-count="2"'), true);
+  assert.equal(intake.html.includes('data-r4-intake-progress-count="2"'), true);
+  assert.equal(intake.html.includes('data-r4-intake-free-text-collapsed="true"'), true);
+  assert.equal(intake.html.includes('data-r4-intake-option-first="true"'), true);
+  assert.equal(intake.html.includes('data-intake-submit="next-question"'), true);
+  assert.equal(intake.html.includes('data-action-id="intake_continue"'), true);
+  assert.equal(intake.html.includes('data-request-json="{&quot;selected_option_ids&quot;:[]}"'), true);
+  assert.equal(intake.html.includes("<textarea"), false);
+  assert.equal(intake.html.includes("message-list"), false);
+  assert.deepEqual(intake.primaryHrefs, ["/api/sessions/10000000-0000-4000-8000-000000000901/next-question"]);
+  assertNoMainWindowBoundaryLeak(intake.html);
+});
+
+test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
+  const vm = {
+    ...surfaceVm(),
+    intake_session: routeSession("confirm")
+  };
+  const intake = renderWebRouteComponents(vm, { locale: "zh-CN" }).intake;
+
+  assert.ok(intake);
+  assert.equal(intake.html.includes('data-r4-intake-input-mode="confirm"'), true);
+  assert.equal(intake.html.includes('data-intake-create-workitem="true"'), true);
+  assert.equal(intake.html.includes('data-action-id="create_workitem"'), true);
+  assert.equal(intake.html.includes("创建工作项"), true);
+  assert.equal(intake.primaryHrefs.includes("/api/workitems"), true);
+  assertNoMainWindowBoundaryLeak(intake.html);
+});
+
+test("R4.14 Knowledge route component renders cited fallback evidence and binding payloads", () => {
+  const vm = {
+    ...surfaceVm(),
+    knowledge_evidence: routeEvidenceBubble()
+  };
+  const knowledge = renderWebRouteComponents(vm, { locale: "en-US" }).knowledge;
+
+  assert.ok(knowledge);
+  assert.equal(knowledge.html.includes('data-r4-route-component="knowledge"'), true);
+  assert.equal(knowledge.html.includes('data-r4-route-component-source="evidence-bubble"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-query="区域周报"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-evidence-count="2"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-action-count="2"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-missing="false"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-evidence-ref="10000000-0000-4000-8000-000000000912"'), true);
+  assert.equal(knowledge.html.includes('data-r4-knowledge-source-type="meeting"'), true);
+  assert.equal(knowledge.html.includes('data-action-id="use_for_current_task"'), true);
+  assert.equal(knowledge.html.includes("&quot;evidence_bubble_id&quot;:&quot;10000000-0000-4000-8000-000000000911&quot;"), true);
+  assert.equal(knowledge.html.includes("&quot;evidence_refs&quot;"), true);
+  assert.equal(knowledge.primaryHrefs.includes("/api/workitems/10000000-0000-4000-8000-000000000902/evidence-bindings"), true);
+  assertNoMainWindowBoundaryLeak(knowledge.html);
 });
 
 test("R4.11 Cost route component renders dashboard values directly from Cost Page VM", () => {

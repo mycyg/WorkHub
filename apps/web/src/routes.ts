@@ -3,10 +3,12 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
+  EvidenceBubble,
   GoldPathSurfaceVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
+  SessionVM,
   SettingsPageVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
@@ -30,6 +32,7 @@ export type WebRouteMatch = {
   key: R4WebRouteKey;
   pattern: string;
   pathname: string;
+  search: string;
   params: Record<string, string>;
   notFound?: boolean;
 };
@@ -63,6 +66,11 @@ export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 
 type GoldPathSurfaceWithProposalConflicts = GoldPathSurfaceVM & {
   proposal_conflicts?: ProposalConflict[];
+};
+
+type R4RouteSurface = GoldPathSurfaceWithProposalConflicts & {
+  intake_session?: SessionVM;
+  knowledge_evidence?: EvidenceBubble;
 };
 
 const routeMatchers = [
@@ -116,6 +124,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "knowledge",
+    pattern: "/knowledge/search",
+    apiBaseLabel: "/api/knowledge/search",
+    regex: /^\/knowledge(?:\/search)?$/u,
+    paramNames: []
+  },
+  {
     key: "settings",
     pattern: "/settings",
     apiBaseLabel: "/settings",
@@ -157,6 +172,14 @@ function normalizePathname(input: string) {
   return pathname;
 }
 
+function normalizeSearch(input: string) {
+  const parsed = new URL(input || "/", "https://workhub.local");
+  if (parsed.hash.startsWith("#/")) {
+    return new URL(parsed.hash.slice(1), "https://workhub.local").search;
+  }
+  return parsed.search;
+}
+
 function decodeParam(value: string | undefined) {
   if (!value) {
     return "";
@@ -182,6 +205,7 @@ export function resolveWebRoute(input: string): WebRouteMatch | undefined {
       key: route.key,
       pattern: route.pattern,
       pathname,
+      search: normalizeSearch(input),
       params
     };
   }
@@ -193,6 +217,7 @@ export function createUnknownWebRouteMatch(input: string): WebRouteMatch {
     key: "home",
     pattern: "*",
     pathname: normalizePathname(input),
+    search: normalizeSearch(input),
     params: {},
     notFound: true
   };
@@ -235,8 +260,21 @@ function withCurrentRoute(surface: GoldPathSurfaceVM, match: WebRouteMatch): Gol
     routes.replay = match.pathname;
   } else if (match.key === "cost") {
     routes.cost = match.pathname;
+  } else if (match.key === "knowledge") {
+    routes.knowledge = match.pathname;
   }
   return { ...surface, routes };
+}
+
+function withIntake(surface: GoldPathSurfaceVM, match: WebRouteMatch, session: SessionVM): R4RouteSurface {
+  return {
+    ...withCurrentRoute(surface, match),
+    intake_session: session,
+    page_vms: {
+      ...surface.page_vms,
+      question: session.question
+    }
+  };
 }
 
 function withAttention(surface: GoldPathSurfaceVM, match: WebRouteMatch, attention: AttentionHomeVM) {
@@ -315,6 +353,17 @@ function withSettings(surface: GoldPathSurfaceVM, match: WebRouteMatch, settings
   };
 }
 
+function withKnowledge(surface: GoldPathSurfaceVM, match: WebRouteMatch, evidence: EvidenceBubble): R4RouteSurface {
+  return {
+    ...withCurrentRoute(surface, match),
+    knowledge_evidence: evidence,
+    page_vms: {
+      ...surface.page_vms,
+      evidence
+    }
+  };
+}
+
 function isAttentionEmpty(data: AttentionHomeVM) {
   return !data.primary && data.background_runs.length === 0;
 }
@@ -342,6 +391,14 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     }
     return withAttention(await loadGoldPathTemplate(client, locale), match, attention);
   }
+  if (match.key === "intake") {
+    const sessionId = match.params["sessionId"] ?? "";
+    if (!sessionId) {
+      return "empty" as const;
+    }
+    const session = await client.getSession(sessionId, withLocale(locale));
+    return withIntake(await loadGoldPathTemplate(client, locale), match, session);
+  }
   if (match.key === "approvals") {
     const approvals = await client.pages.approvals(withLocale(locale));
     if (isApprovalCenterEmpty(approvals)) {
@@ -355,6 +412,19 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     return withCost(await loadGoldPathTemplate(client, locale), match, cost);
+  }
+  if (match.key === "knowledge") {
+    const params = new URLSearchParams(match.search);
+    const q = params.get("q") ?? params.get("query") ?? undefined;
+    const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
+    const workItemId = params.get("work_item_id") ?? params.get("workItemId") ?? undefined;
+    const evidence = await client.searchKnowledge({
+      ...(q ? { q } : {}),
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(workItemId ? { work_item_id: workItemId } : {}),
+      limit: 6
+    }, withLocale(locale));
+    return withKnowledge(await loadGoldPathTemplate(client, locale), match, evidence);
   }
   if (match.key === "workitem") {
     const workitem = await client.pages.workItem(match.params["id"] ?? "", withLocale(locale));

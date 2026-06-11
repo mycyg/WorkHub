@@ -10,6 +10,7 @@ export type R4WebRouteKey =
   | "proposal"
   | "replay"
   | "cost"
+  | "knowledge"
   | "settings";
 
 export type RouteStateCardInput = {
@@ -30,6 +31,7 @@ export const r4WebRouteKeys = [
   "proposal",
   "replay",
   "cost",
+  "knowledge",
   "settings"
 ] as const satisfies readonly R4WebRouteKey[];
 
@@ -62,6 +64,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     proposal: { label: "变更申请", route: "/proposals/:id" },
     replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
+    knowledge: { label: "证据检索", route: "/knowledge/search" },
     settings: { label: "设置", route: "/settings" }
   },
   "en-US": {
@@ -72,6 +75,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     proposal: { label: "Change request", route: "/proposals/:id" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
+    knowledge: { label: "Evidence search", route: "/knowledge/search" },
     settings: { label: "Settings", route: "/settings" }
   }
 };

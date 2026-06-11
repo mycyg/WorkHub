@@ -2,8 +2,11 @@ import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
 import {
   eventTypes,
   type ApplyMergeProposalCandidateRequest,
+  type CreateWorkItemRequest,
   type MergeProposalRequest,
-  type ProposalConflict
+  type NextQuestionRequest,
+  type ProposalConflict,
+  type UseEvidenceForTaskRequest
 } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
@@ -36,7 +39,8 @@ type RouteNoticeKind =
   | "merge_conflict"
   | "sse_refresh"
   | "budget_warning"
-  | "field_value_required";
+  | "field_value_required"
+  | "intake_option_required";
 type RouteNoticeTone = "info" | "success" | "warning" | "danger";
 type RouteNoticeSource = "client" | "rest" | "sse";
 type RouteNoticeVM = {
@@ -123,7 +127,12 @@ function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubL
 
 function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserApiClient): LiveStreamTarget[] {
   const targets: LiveStreamTarget[] = [{ key: "me", url: client.streams.me() }];
-  if (result.match.key === "workitem") {
+  if (result.match.key === "intake") {
+    const sessionId = result.match.params["sessionId"];
+    if (sessionId) {
+      targets.push({ key: "session", url: client.streams.session(sessionId) });
+    }
+  } else if (result.match.key === "workitem") {
     const workItemId = result.match.params["id"];
     if (workItemId) {
       targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
@@ -287,6 +296,18 @@ function fieldValueRequiredNotice(locale: WorkHubLocale, actionId?: string): Rou
   };
 }
 
+function intakeOptionRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "intake_option_required",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.intakeOptionRequiredTitle"),
+    body: goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
+    actionId
+  };
+}
+
 function selectionNotice(locale: WorkHubLocale, label: string): RouteNoticeVM {
   return {
     kind: "selection",
@@ -378,6 +399,23 @@ function mergeProposalCandidateApplyIdFromHref(href: string) {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
+function sessionNextQuestionIdFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
+function createWorkItemActionFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  return path === "/api/workitems";
+}
+
+function evidenceBindingWorkItemIdFromHref(href: string) {
+  const path = new URL(href, window.location.origin).pathname;
+  const match = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
 function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";
@@ -426,7 +464,7 @@ function customFieldValueForElement(element: HTMLElement) {
 
 type ActionPayloadResult<T> =
   | { ok: true; payload?: T }
-  | { ok: false; reason: "field_value_required" | "invalid_json" };
+  | { ok: false; reason: "field_value_required" | "intake_option_required" | "invalid_json" };
 
 function actionElementJsonPayload<T>(element: HTMLElement): ActionPayloadResult<T> {
   const raw = element.dataset.requestJson ?? element.dataset.requestJsonTemplate;
@@ -458,6 +496,54 @@ function actionElementApplyPayload(element: HTMLElement): ActionPayloadResult<Ap
   return actionElementJsonPayload<ApplyMergeProposalCandidateRequest>(element);
 }
 
+function selectedIntakeOptionIds(scope: ParentNode) {
+  return Array.from(scope.querySelectorAll<HTMLElement>("[data-intake-option-selected=\"true\"]"))
+    .map((option) => option.dataset.intakeOptionId ?? option.dataset.optionId ?? "")
+    .filter((value) => value.length > 0);
+}
+
+function updateIntakeActionPayloads(route: HTMLElement) {
+  const selected = selectedIntakeOptionIds(route);
+  route.dataset.r4IntakeSelectedCount = String(selected.length);
+  for (const action of route.querySelectorAll<HTMLElement>("[data-intake-submit],[data-intake-create-workitem]")) {
+    const base = actionElementJsonPayload<Record<string, unknown>>(action);
+    const payload = base.ok && base.payload && typeof base.payload === "object" ? { ...base.payload } : {};
+    payload["selected_option_ids"] = selected;
+    if (action.dataset.intakeCreateWorkitem === "true") {
+      payload["session_id"] = action.dataset.sessionId;
+    }
+    const raw = JSON.stringify(payload);
+    action.dataset.requestJson = raw;
+    action.setAttribute("data-request-json", raw);
+  }
+}
+
+function materializeIntakePayload<T>(element: HTMLElement): ActionPayloadResult<T> {
+  const route = element.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
+  if (!route) {
+    return actionElementJsonPayload<T>(element);
+  }
+  updateIntakeActionPayloads(route);
+  const selected = selectedIntakeOptionIds(route);
+  const optionCount = Number.parseInt(route.dataset.r4IntakeOptionCount ?? "0", 10);
+  if (optionCount > 0 && selected.length === 0) {
+    return { ok: false, reason: "intake_option_required" };
+  }
+  return actionElementJsonPayload<T>(element);
+}
+
+function actionElementNextQuestionPayload(element: HTMLElement): ActionPayloadResult<NextQuestionRequest> {
+  return materializeIntakePayload<NextQuestionRequest>(element);
+}
+
+function actionElementCreateWorkItemPayload(element: HTMLElement): ActionPayloadResult<CreateWorkItemRequest> {
+  return materializeIntakePayload<CreateWorkItemRequest>(element);
+}
+
+function actionElementEvidenceBindingPayload(element: HTMLElement): ActionPayloadResult<UseEvidenceForTaskRequest> {
+  return actionElementJsonPayload<UseEvidenceForTaskRequest>(element);
+}
+
 function showPayloadFailureNotice(
   shellRoot: HTMLElement,
   locale: WorkHubLocale,
@@ -469,6 +555,8 @@ function showPayloadFailureNotice(
   }
   if (payload.reason === "field_value_required") {
     showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
+  } else if (payload.reason === "intake_option_required") {
+    showRouteNotice(shellRoot, intakeOptionRequiredNotice(locale, actionId));
   } else {
     showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(goldPathT(locale, "runtime.actionFail")), actionId));
   }
@@ -719,6 +807,22 @@ function bindGoldPathNavigation(
     const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-option-id]") : null;
     if (option) {
       event.preventDefault();
+      const intakeRoute = option.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
+      if (intakeRoute && option.dataset.intakeOptionId) {
+        const allowMulti = option.dataset.intakeOptionMulti === "true";
+        if (!allowMulti) {
+          for (const sibling of intakeRoute.querySelectorAll<HTMLElement>("[data-intake-option-id]")) {
+            const selected = sibling === option;
+            sibling.dataset.intakeOptionSelected = String(selected);
+            sibling.setAttribute("aria-pressed", String(selected));
+          }
+        } else {
+          const selected = option.dataset.intakeOptionSelected !== "true";
+          option.dataset.intakeOptionSelected = String(selected);
+          option.setAttribute("aria-pressed", String(selected));
+        }
+        updateIntakeActionPayloads(intakeRoute);
+      }
       showRouteNotice(shellRoot, selectionNotice(locale, option.querySelector("strong")?.textContent ?? option.dataset.optionId ?? ""));
       return;
     }
@@ -754,6 +858,56 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      const sessionId = sessionNextQuestionIdFromHref(href);
+      if (sessionId) {
+        const payload = actionElementNextQuestionPayload(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          await client.nextQuestion(sessionId, payload.payload);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, goldPathT(locale, "runtime.notice.actionSuccessTitle"), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (createWorkItemActionFromHref(href) && actionTarget.dataset.intakeCreateWorkitem === "true") {
+        const payload = actionElementCreateWorkItemPayload(actionTarget);
+        if (!payload.ok || !payload.payload) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "invalid_json" } : payload, actionId);
+          return;
+        }
+        try {
+          const created = await client.createWorkItem(payload.payload);
+          await navigateWebRoute(`/workitems/${created.workitem.id}`, client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(created, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const evidenceWorkItemId = evidenceBindingWorkItemIdFromHref(href);
+      if (evidenceWorkItemId) {
+        const payload = actionElementEvidenceBindingPayload(actionTarget);
+        if (!payload.ok || !payload.payload) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "invalid_json" } : payload, actionId);
+          return;
+        }
+        try {
+          const result = await client.useEvidenceForWorkItem(evidenceWorkItemId, payload.payload);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
       if (mergeProposalCandidateApplyId) {
         const payload = actionElementApplyPayload(actionTarget);
@@ -833,7 +987,8 @@ function bindGoldPathNavigation(
 let activeRouteRenderId = 0;
 
 function currentRouteMatch() {
-  return resolveWebRoute(window.location.pathname) ?? createUnknownWebRouteMatch(window.location.pathname);
+  const route = `${window.location.pathname}${window.location.search}`;
+  return resolveWebRoute(route) ?? createUnknownWebRouteMatch(route);
 }
 
 function routeErrorTrace(error: unknown) {
