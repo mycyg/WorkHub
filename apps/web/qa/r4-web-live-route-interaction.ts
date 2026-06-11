@@ -39,6 +39,26 @@ type BrowserAudit = {
   routeComponentSource: string | null;
   routeComponentPanel: string | null;
   routeComponentActive: boolean;
+  hydrationBoundary: boolean;
+  hydrationRoute: string | null;
+  hydrationSource: string | null;
+  hydrationMode: string | null;
+  hydrationPageVm: string | null;
+  hydrationActionCount: string | null;
+  hydrationAdapter: string | null;
+  hydrationPanel: boolean;
+  hydrationPanelRoute: string | null;
+  hydrationPanelMode: string | null;
+  hydrationPanelPageVm: string | null;
+  hydrationPanelActionCount: string | null;
+  hydrationPanelCount: number;
+  reactRouteTree: boolean;
+  routeTreeKey: string | null;
+  routeTreePageVm: string | null;
+  routeTreeMode: string | null;
+  routeTreeAdapter: string | null;
+  routeTreeActiveOnly: boolean;
+  routeTreeRouteCount: string | null;
   routeSpecificMarker: boolean;
   routeData: {
     workitemTraceCount: string | null;
@@ -1287,6 +1307,10 @@ function auditExpression() {
     const routeComponent = document.querySelector("[data-r4-route-component]");
     const proposalAdvanced = document.querySelector("[data-r4-proposal-advanced-review]");
     const routeComponentPanel = document.querySelector("[data-r4-route-component-panel]");
+    const hydrationBoundary = document.querySelector("[data-r4-hydration-boundary]");
+    const hydrationPanel = document.querySelector("[data-r4-hydration-panel]");
+    const hydrationPanels = Array.from(document.querySelectorAll("[data-r4-hydration-panel]"));
+    const routeTreeRoot = document.querySelector("[data-r4-react-route-tree]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1387,6 +1411,26 @@ function auditExpression() {
       routeComponentSource: routeComponent ? routeComponent.getAttribute("data-r4-route-component-source") : null,
       routeComponentPanel: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-panel") : null,
       routeComponentActive: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-active") === "true" : false,
+      hydrationBoundary: Boolean(hydrationBoundary),
+      hydrationRoute: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-route") : null,
+      hydrationSource: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-source") : null,
+      hydrationMode: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-mode") : null,
+      hydrationPageVm: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-page-vm") : null,
+      hydrationActionCount: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-action-count") : null,
+      hydrationAdapter: hydrationBoundary ? hydrationBoundary.getAttribute("data-r4-hydration-adapter") : null,
+      hydrationPanel: Boolean(hydrationPanel),
+      hydrationPanelRoute: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-route") : null,
+      hydrationPanelMode: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-mode") : null,
+      hydrationPanelPageVm: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-page-vm") : null,
+      hydrationPanelActionCount: hydrationPanel ? hydrationPanel.getAttribute("data-r4-hydration-action-count") : null,
+      hydrationPanelCount: hydrationPanels.length,
+      reactRouteTree: Boolean(routeTreeRoot),
+      routeTreeKey: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-key") : null,
+      routeTreePageVm: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-page-vm") : null,
+      routeTreeMode: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-mode") : null,
+      routeTreeAdapter: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-adapter") : null,
+      routeTreeActiveOnly: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-active-only") === "true" : false,
+      routeTreeRouteCount: routeTreeRoot ? routeTreeRoot.getAttribute("data-r4-route-tree-route-count") : null,
       routeSpecificMarker,
       routeData,
       notice,
@@ -1428,6 +1472,20 @@ async function captureStep(
   }
   if (input.expectedRouteComponent && !audit.routeSpecificMarker) {
     throw new Error(`${input.id} is missing route-specific R4.11 markers`);
+  }
+  if (input.expectedRouteComponent) {
+    if (!audit.reactRouteTree || audit.routeTreeKey !== input.expectedRouteComponent || audit.routeTreeMode !== "html-fallback") {
+      throw new Error(`${input.id} is missing R4.16 route tree markers`);
+    }
+    if (!audit.hydrationBoundary || audit.hydrationRoute !== input.expectedRouteComponent || audit.hydrationMode !== "html-fallback") {
+      throw new Error(`${input.id} is missing R4.16 hydration boundary markers`);
+    }
+    if (!audit.hydrationPanel || audit.hydrationPanelRoute !== input.expectedRouteComponent || audit.hydrationPanelMode !== "html-fallback") {
+      throw new Error(`${input.id} is missing R4.16 active hydration panel markers`);
+    }
+    if (audit.hydrationPanelCount !== 1) {
+      throw new Error(`${input.id} expected one hydration panel, got ${audit.hydrationPanelCount}`);
+    }
   }
   if (audit.productShell && audit.status === "ready" && (audit.panelCount !== 1 || audit.visiblePanelCount !== 1)) {
     throw new Error(`${input.id} expected one active product panel, got ${audit.visiblePanelCount}/${audit.panelCount}`);
@@ -1855,6 +1913,18 @@ async function main() {
     const steps = await runScenario(chrome.cdp, baseUrl);
     await navigateFileAndCaptureContactSheet(chrome.cdp, steps);
     const proof = requestProof(requests);
+    const readyProductSteps = steps.filter((step) => step.audit.productShell && step.audit.status === "ready");
+    const routePageVmByComponent: Record<string, string> = {
+      home: "attention",
+      intake: "session",
+      approvals: "approvals",
+      workitem: "workitem",
+      proposal: "proposal",
+      replay: "replay",
+      cost: "cost",
+      knowledge: "evidence",
+      settings: "settings"
+    };
     const gates = {
       dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
@@ -2093,6 +2163,53 @@ async function main() {
         steps.some((step) => step.id === "12b-knowledge-fallback-en-desktop-route-component" && step.audit.routeComponent === "knowledge") &&
         proof.counts.nextQuestion === 1 &&
         proof.counts.evidenceBinding === 1,
+      r4_16_hydration_boundary_marker: readyProductSteps.every((step) =>
+        Boolean(step.audit.hydrationBoundary) &&
+        step.audit.hydrationRoute === step.audit.routeComponent &&
+        step.audit.hydrationPanelRoute === step.audit.routeComponent &&
+        step.audit.hydrationMode === "html-fallback" &&
+        step.audit.hydrationPanelMode === "html-fallback" &&
+        step.audit.hydrationAdapter === "route-component-v1"
+      ),
+      r4_16_route_adapter_page_vm_truth: readyProductSteps.every((step) =>
+        Boolean(step.audit.reactRouteTree) &&
+        step.audit.routeTreeKey === step.audit.routeComponent &&
+        step.audit.routeTreeMode === "html-fallback" &&
+        step.audit.routeTreeAdapter === "route-component-v1" &&
+        step.audit.routeTreeActiveOnly &&
+        step.audit.routeTreeRouteCount === "9" &&
+        step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
+        step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
+        step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
+      ),
+      r4_16_action_dispatcher_parity: readyProductSteps.every((step) =>
+        step.audit.hydrationActionCount !== null &&
+        step.audit.hydrationActionCount === step.audit.hydrationPanelActionCount
+      ),
+      r4_16_locale_settings_regression:
+        steps.some((step) =>
+          step.id === "13-settings-en-desktop-route-component" &&
+          step.audit.hydrationRoute === "settings" &&
+          step.audit.hydrationSource === "page-vm" &&
+          step.audit.hydrationPageVm === "settings" &&
+          step.audit.hydrationMode === "html-fallback" &&
+          step.audit.routeData.settingsActiveLocale === "en-US" &&
+          step.audit.routeData.settingsPreferenceSynced === "true"
+        ) &&
+        steps.some((step) =>
+          step.id === "13a-settings-locale-persistence-fail-closed-en-desktop" &&
+          step.audit.notice.kind === "locale_persistence_failed" &&
+          step.audit.hydrationRoute === "settings"
+        ),
+      r4_16_active_only_regression: readyProductSteps.every((step) =>
+        step.audit.panelCount === 1 &&
+        step.audit.visiblePanelCount === 1 &&
+        step.audit.hydrationPanelCount === 1 &&
+        step.audit.routeComponentActive
+      ),
+      r4_15_settings_boundary_regression:
+        steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.routeData.settingsRestoreRequiresDesktop === "true" && step.audit.routeData.settingsWebLocalActions === "false") &&
+        steps.some((step) => step.id === "14a-settings-en-mobile-boundary-no-overflow" && step.audit.routeComponent === "settings" && !step.audit.horizontalOverflow),
       active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
@@ -2183,6 +2300,12 @@ async function main() {
         `- R4.15 route recovery actions: ${String(gates.r4_15_route_recovery_actions)}`,
         `- R4.15 settings mobile no overflow: ${String(gates.r4_15_settings_mobile_no_overflow)}`,
         `- R4.14 intake/knowledge regression: ${String(gates.r4_14_intake_knowledge_regression)}`,
+        `- R4.16 hydration boundary marker: ${String(gates.r4_16_hydration_boundary_marker)}`,
+        `- R4.16 route adapter Page VM truth: ${String(gates.r4_16_route_adapter_page_vm_truth)}`,
+        `- R4.16 action dispatcher parity: ${String(gates.r4_16_action_dispatcher_parity)}`,
+        `- R4.16 locale/settings regression: ${String(gates.r4_16_locale_settings_regression)}`,
+        `- R4.16 active-only regression: ${String(gates.r4_16_active_only_regression)}`,
+        `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""

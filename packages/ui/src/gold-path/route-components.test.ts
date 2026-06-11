@@ -492,6 +492,44 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assertNoMainWindowBoundaryLeak(settings.html);
 });
 
+test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {
+  const vm = {
+    ...surfaceVm(),
+    intake_session: routeSession(),
+    knowledge_evidence: routeEvidenceBubble()
+  };
+  const components = renderWebRouteComponents(vm, { locale: "en-US" });
+  const expected = {
+    home: { source: "page-vm", pageVm: "attention" },
+    intake: { source: "session-vm", pageVm: "session" },
+    approvals: { source: "page-vm", pageVm: "approvals" },
+    workitem: { source: "page-vm", pageVm: "workitem" },
+    proposal: { source: "page-vm", pageVm: "proposal" },
+    replay: { source: "page-vm", pageVm: "replay" },
+    cost: { source: "page-vm", pageVm: "cost" },
+    knowledge: { source: "evidence-bubble", pageVm: "evidence" },
+    settings: { source: "page-vm", pageVm: "settings" }
+  } as const;
+
+  for (const [key, expectation] of Object.entries(expected)) {
+    const component = components[key as keyof typeof expected];
+    assert.ok(component, `${key} component should exist`);
+    assert.equal(component.hydration.routeKey, key);
+    assert.equal(component.hydration.mode, "html-fallback");
+    assert.equal(component.hydration.adapter, "route-component-v1");
+    assert.equal(component.hydration.locale, "en-US");
+    assert.equal(component.hydration.source, expectation.source);
+    assert.equal(component.hydration.pageVm, expectation.pageVm);
+    assert.equal(component.hydration.actionHrefCount, component.primaryHrefs.length);
+    assert.equal(component.html.includes('data-r4-hydration-boundary="true"'), true);
+    assert.equal(component.html.includes(`data-r4-hydration-route="${key}"`), true);
+    assert.equal(component.html.includes(`data-r4-hydration-page-vm="${expectation.pageVm}"`), true);
+    assert.equal(component.html.includes(`data-r4-hydration-action-count="${component.primaryHrefs.length}"`), true);
+    assert.equal(component.html.includes(`data-r4-route-component="${key}"`), true);
+    assertNoMainWindowBoundaryLeak(component.html);
+  }
+});
+
 test("R4.10 Approvals route component keeps action reasons and Page VM counts visible", () => {
   const vm = surfaceVm();
   const approvals = renderWebRouteComponents(vm, { locale: "en-US" }).approvals;

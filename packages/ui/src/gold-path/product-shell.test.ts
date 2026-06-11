@@ -157,6 +157,11 @@ test("R4.10 product shell can render only the active route component panel", () 
   assert.equal(shell.html.includes('data-r4-product-route-key="approvals"'), true);
   assert.equal(shell.html.includes('data-r4-route-component-panel="approvals"'), true);
   assert.equal(shell.html.includes('data-r4-route-component="approvals"'), true);
+  assert.equal(shell.html.includes('data-r4-hydration-panel="true"'), true);
+  assert.equal(shell.html.includes('data-r4-hydration-route="approvals"'), true);
+  assert.equal(shell.html.includes('data-r4-hydration-mode="html-fallback"'), true);
+  assert.equal(shell.html.includes('data-r4-hydration-page-vm="approvals"'), true);
+  assert.equal(shell.html.match(/data-r4-hydration-boundary="true"/gu)?.length, 1);
   assert.equal(shell.html.match(/data-wh-panel=/gu)?.length, 1);
   assert.equal(shell.html.includes('data-wh-panel="home"'), false);
   assert.equal(shell.html.includes('data-wh-panel="replay"'), false);

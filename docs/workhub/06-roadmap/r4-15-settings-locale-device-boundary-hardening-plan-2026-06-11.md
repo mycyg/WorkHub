@@ -132,4 +132,4 @@ R4.15 gates 全部为 true：`r4_15_settings_locale_persistence`、`r4_15_settin
 
 ## 9. 后续候选
 
-R4.15 已通过，后续进入 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)：真实 React route tree migration / route component hydration boundary。目标是在保持当前 typed Page VM、active-only shell、QA gates 的前提下，把 HTML render helpers 逐步迁移到可复用前端组件结构。
+R4.15 已通过，且 R4.16 已完成 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)：React route tree / route component hydration boundary 已落到 active-only shell 与 browser QA gates。后续进入 [`r4-17-react-route-component-first-migration-plan-2026-06-11.md`](./r4-17-react-route-component-first-migration-plan-2026-06-11.md)：在保持 typed Page VM、REST-as-truth、path navigation、locale reload 与 no-overflow gates 的前提下，迁移首个真实 React-compatible route component。

@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization，R4.15 已落 Settings / locale / device boundary hardening；下一步进入 R4.16 React route tree / hydration boundary。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，R4.8 已通过远端 Linux Redis/SSE production browser smoke，R4.9 已通过远端 Linux locale metrics browser smoke，R4.10 已落 Home/Approvals/Replay route componentization first slice，R4.11 已落 WorkItem/Proposal/Cost/Settings route componentization second slice，R4.12 已落 Web action/notice locale route UX，R4.13 已落 Proposal advanced route UX convergence，R4.14 已落 Option Intake / Knowledge route componentization，R4.15 已落 Settings / locale / device boundary hardening，R4.16 已落 React route tree / hydration boundary；下一步进入 R4.17 React route component first migration。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2885,11 +2885,24 @@ R4 验收：
 11. Bug / 数据流审查：修复 locale PATCH 失败被吞的问题；Settings markers 从可见文案升级为机器审计；surface catalog 补齐 auth preference/settings endpoints；后续 R4.16 继续审查 Tauri allowlist drift 风险。
 12. 边界：R4.15 不是完整 React route tree，也不让 Web 执行本地能力。Settings 只展示配置状态、secret-safe、恢复入口和桌面能力门；API key、base URL、token、本地路径和 Cuu 外观设置均不能泄漏到主窗。
 
+### R4.16 已落：React route tree / hydration boundary
+
+1. 已阅读 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)、R4.15 竣工记录、`web-app.md`、`page-concepts.md`、`i18n-locale-contract-p1-1.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.15 settings/browser smoke contact sheet。
+2. 已复用现有 active-only route component 架构，不引入 React runtime、不调用 `hydrateRoot()`，先建立 React-compatible route tree / hydration boundary，避免非 React SSR HTML 的 hydration mismatch。
+3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：`WebRouteComponent` 增加 `hydration` 元数据，统一 wrapper 输出 `data-r4-hydration-boundary/route/source/locale/page-vm/action-count/adapter`，并保留原 `data-r4-route-component` markers。
+4. 已扩展 `packages/ui/src/gold-path/product-shell.ts`：active panel 暴露 `data-r4-hydration-panel`、root id、route、mode、Page VM、action count；ready route 仍只渲染一个 active panel。
+5. 已扩展 `apps/web/src/routes.ts`：新增 `webReactRouteTree`，ready route root 暴露 `data-r4-react-route-tree`、route-tree key、Page VM、mode、adapter、active-only 与 route count。
+6. 已扩展 tests：UI route component hydration metadata、product shell active hydration panel、Web route tree registry、ready root hydration markers；`@workhub/ui` 49/49、`@workhub/web` 18/18、`pnpm typecheck` 通过。
+7. 已扩展 `apps/web/qa/r4-web-live-route-interaction.ts`：browser audit 读取 route tree / hydration markers，并新增 R4.16 gates：`r4_16_hydration_boundary_marker`、`r4_16_route_adapter_page_vm_truth`、`r4_16_action_dispatcher_parity`、`r4_16_locale_settings_regression`、`r4_16_active_only_regression`、`r4_15_settings_boundary_regression`。
+8. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-16-route-adapter-hydration-boundary-browser-smoke/`；38 步 Chrome smoke 与 contact sheet 通过，R4.10-R4.15 regression gates 继续全 true。
+9. Bug / 数据流审查：动作仍走 delegated browser dispatcher，没有新增第二套 mutation 事件系统；typed Page VM loader 仍是真相源；Settings locale/device/secret boundary 作为 R4.16 regression 通过。
+10. 边界：R4.16 不是完整 React component migration。它只是为 R4.17 真实 React-compatible route components 建立可测试边界，视觉、文案、路由和桌面能力边界均不改变。
+
 下一施工顺序：
 
-1. **R4.16 React route tree migration / hydration boundary**：在不降低 typed Page VM、active-only product shell、Settings boundary 与 QA gates 的前提下，逐步把 HTML render helpers 迁到可复用前端组件。
-2. **R4.17 真实 React route component migration**：R4.16 boundary 通过后，按低风险 route 优先把 Home / Approvals / Settings 等页面迁到真实 React components。
-3. **后续门禁**：继续保留 R4.8/R4.9/R4.10/R4.11/R4.12/R4.13/R4.14/R4.15 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、action notice、desktop boundary、secret-safe、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.17 React route component first migration**：按低风险 route 优先，把 Home / Approvals / Settings 中 1-2 个页面迁到真实 React-compatible component source，同时保留 HTML fallback 与 delegated action contract。
+2. **R4.18 React route migration expansion**：R4.17 通过后扩到 Cost / Replay 等中等复杂 route，再评估 Proposal advanced 的拆分迁移。
+3. **后续门禁**：继续保留 R4.8-R4.16 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、action notice、desktop boundary、secret-safe、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

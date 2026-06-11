@@ -39,12 +39,38 @@ export type WebRouteComponent = {
   html: string;
   css: string;
   primaryHrefs: string[];
+  hydration: WebRouteHydrationBoundary;
 };
 
 export type WebRouteComponentMap = Partial<Record<GoldPathRenderedPage["key"], WebRouteComponent>>;
 
 type RouteComponentOptions = {
   locale?: WorkHubLocale | undefined;
+};
+
+export type WebRouteHydrationMode = "html-fallback";
+
+export type WebRouteComponentSource = "page-vm" | "session-vm" | "evidence-bubble";
+
+export type WebRouteHydrationBoundary = {
+  rootId: string;
+  routeKey: WebRouteComponentKey;
+  mode: WebRouteHydrationMode;
+  source: WebRouteComponentSource;
+  locale: WorkHubLocale;
+  pageVm: string;
+  actionHrefCount: number;
+  adapter: "route-component-v1";
+};
+
+type CreateWebRouteComponentInput = {
+  key: WebRouteComponentKey;
+  css: string;
+  primaryHrefs: string[];
+  html: string;
+  source: WebRouteComponentSource;
+  locale: WorkHubLocale;
+  pageVm: string;
 };
 
 type ProposalConflictSurface = GoldPathSurfaceVM & {
@@ -286,6 +312,27 @@ function escapeHtml(value: unknown) {
     .replace(/"/gu, "&quot;");
 }
 
+function createWebRouteComponent(input: CreateWebRouteComponentInput): WebRouteComponent {
+  const hydration: WebRouteHydrationBoundary = {
+    rootId: `wh-r4-hydration-${input.key}`,
+    routeKey: input.key,
+    mode: "html-fallback",
+    source: input.source,
+    locale: input.locale,
+    pageVm: input.pageVm,
+    actionHrefCount: input.primaryHrefs.length,
+    adapter: "route-component-v1"
+  };
+  const html = `<div class="wh-r4-hydration-root" id="${escapeHtml(hydration.rootId)}" data-r4-hydration-boundary="true" data-r4-hydration-route="${escapeHtml(hydration.routeKey)}" data-r4-hydration-mode="${escapeHtml(hydration.mode)}" data-r4-hydration-source="${escapeHtml(hydration.source)}" data-r4-hydration-locale="${escapeHtml(hydration.locale)}" data-r4-hydration-page-vm="${escapeHtml(hydration.pageVm)}" data-r4-hydration-action-count="${escapeHtml(String(hydration.actionHrefCount))}" data-r4-hydration-adapter="${escapeHtml(hydration.adapter)}">${input.html}</div>`;
+  return {
+    key: input.key,
+    css: input.css,
+    primaryHrefs: input.primaryHrefs,
+    hydration,
+    html
+  };
+}
+
 function routeT(locale: WorkHubLocale, key: RouteCopyKey) {
   return routeCopy[locale][key];
 }
@@ -376,10 +423,13 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "empty.evidence"))}</p>`;
 
-  return {
+  return createWebRouteComponent({
     key: "home",
     css: webRouteComponentCss,
     primaryHrefs: primaryActions.map((action) => action.href),
+    source: "page-vm",
+    locale,
+    pageVm: "attention",
     html: `<section class="wh-r4-route" data-r4-route-component="home" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-home-primary="${escapeHtml(String(Boolean(primary)))}">
       <header class="wh-r4-route-head">
         <div>
@@ -411,7 +461,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
         </section>
       </div>
     </section>`
-  };
+  });
 }
 
 function intakeProgressRows(vm: SessionVM) {
@@ -453,10 +503,13 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
     ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
     : "";
 
-  return {
+  return createWebRouteComponent({
     key: "intake",
     css: webRouteComponentCss,
     primaryHrefs: [question.submit.href, ...(question.input_mode === "confirm" ? ["/api/workitems"] : [])],
+    source: "session-vm",
+    locale,
+    pageVm: "session",
     html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="session-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-intake-session-id="${escapeHtml(vm.session_id)}" data-r4-intake-workitem-id="${escapeHtml(vm.work_item_id ?? "")}" data-r4-intake-option-count="${escapeHtml(String(question.options.length))}" data-r4-intake-progress-count="${escapeHtml(String(question.progress.length))}" data-r4-intake-free-text-collapsed="${escapeHtml(String(question.free_text.collapsed_by_default))}" data-r4-intake-input-mode="${escapeHtml(question.input_mode)}" data-r4-intake-option-first="true">
       <header class="wh-r4-route-head">
         <div>
@@ -491,7 +544,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
         ${createAction}
       </div>
     </section>`
-  };
+  });
 }
 
 function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
@@ -516,10 +569,13 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     </div>`)
     .join("");
 
-  return {
+  return createWebRouteComponent({
     key: "approvals",
     css: webRouteComponentCss,
     primaryHrefs: primary?.actions.map((action) => action.href) ?? [],
+    source: "page-vm",
+    locale,
+    pageVm: "approvals",
     html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="${escapeHtml(String(pendingCount))}">
       <header class="wh-r4-route-head">
         <div>
@@ -549,7 +605,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         </aside>
       </div>
     </section>`
-  };
+  });
 }
 
 function acceptanceRows(items: WorkItemDetailVM["acceptance"], locale: WorkHubLocale) {
@@ -646,10 +702,13 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(uiT(locale, "workitem.willReadEvidence"))}</p>`;
 
-  return {
+  return createWebRouteComponent({
     key: "workitem",
     css: webRouteComponentCss,
     primaryHrefs: actions.map((action) => action.href),
+    source: "page-vm",
+    locale,
+    pageVm: "workitem",
     html: `<section class="wh-r4-route" data-r4-route-component="workitem" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-workitem-id="${escapeHtml(vm.workitem.id)}" data-r4-workitem-trace-count="${escapeHtml(String(vm.agent_trace_preview.length))}" data-r4-workitem-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-workitem-acceptance-count="${escapeHtml(String(vm.acceptance.length))}" data-r4-workitem-deliverable-count="${escapeHtml(String(vm.accepted_deliverables.length + (latestProposal?.changes.length ?? 0)))}">
       <header class="wh-r4-route-head">
         <div>
@@ -690,7 +749,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
         <div class="wh-r4-route-timeline">${evidenceRows(vm.evidence_refs, locale, "r4-workitem-evidence-ref")}</div>
       </section>
     </section>`
-  };
+  });
 }
 
 function renderChange(change: DeliverableChange, locale: WorkHubLocale) {
@@ -754,10 +813,13 @@ function renderProposalRouteComponent(
     ? `<section class="wh-r4-route-card" data-r4-proposal-advanced-review="true" data-r4-proposal-advanced-source="workitem-conflicts" data-r4-proposal-conflicts="${escapeHtml(String(conflictCards.conflictCount))}" data-r4-proposal-line-editor="${escapeHtml(String(hasLineEditor))}" data-r4-proposal-field-editor="${escapeHtml(String(hasFieldEditor))}" data-r4-proposal-subrecord-editor="${escapeHtml(String(hasSubrecordEditor))}">${conflictCards.html}</section>`
     : "";
 
-  return {
+  return createWebRouteComponent({
     key: "proposal",
     css: `${webRouteComponentCss}${proposalCss}`,
     primaryHrefs: [...actions.map((action) => action.href), ...conflictCards.actionHrefs],
+    source: "page-vm",
+    locale,
+    pageVm: "proposal",
     html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-proposal-id="${escapeHtml(vm.proposal_id)}" data-r4-proposal-workitem-id="${escapeHtml(vm.work_item_id)}" data-r4-proposal-change-count="${escapeHtml(String(vm.manifest.changes.length))}" data-r4-proposal-check-count="${escapeHtml(String(vm.manifest.checks.length))}" data-r4-proposal-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(vm.comments.length))}" data-r4-proposal-conflict-count="${escapeHtml(String(conflictCards.conflictCount))}">
       <header class="wh-r4-route-head">
         <div>
@@ -798,7 +860,7 @@ function renderProposalRouteComponent(
         </section>
       </div>
     </section>`
-  };
+  });
 }
 
 function proposalConflictsFromSurface(vm: ProposalConflictSurface) {
@@ -857,10 +919,13 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     </div>`)
     .join("");
 
-  return {
+  return createWebRouteComponent({
     key: "cost",
     css: webRouteComponentCss,
     primaryHrefs: vm.notices.map((notice) => notice.action_href).filter((href): href is string => Boolean(href)),
+    source: "page-vm",
+    locale,
+    pageVm: "cost",
     html: `<section class="wh-r4-route" data-r4-route-component="cost" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-cost-total-tokens="${escapeHtml(String(totalTokens))}" data-r4-cost-total-cny="${escapeHtml(vm.total_cost_cny)}" data-r4-cost-budget-count="${escapeHtml(String(vm.budget.length))}" data-r4-cost-risk-count="${escapeHtml(String(vm.top_exhaustion_risks.length))}" data-r4-cost-model-count="${escapeHtml(String(vm.model_breakdown.length))}" data-r4-cost-trend-count="${escapeHtml(String(vm.trend.length))}">
       <header class="wh-r4-route-head">
         <div>
@@ -896,7 +961,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </section>
       </div>
     </section>`
-  };
+  });
 }
 
 function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: EvidenceBubble) {
@@ -922,10 +987,13 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
     : `<p class="wh-subtle" data-r4-knowledge-missing-note="true">${escapeHtml(vm.missing_evidence_note ?? routeT(locale, "knowledge.missing"))}</p>`;
   const actions = vm.actions.map((action) => renderKnowledgeAction(action, vm)).join("");
 
-  return {
+  return createWebRouteComponent({
     key: "knowledge",
     css: webRouteComponentCss,
     primaryHrefs: vm.actions.map((action) => action.href).filter((value): value is string => Boolean(value)),
+    source: "evidence-bubble",
+    locale,
+    pageVm: "evidence",
     html: `<section class="wh-r4-route" data-r4-route-component="knowledge" data-r4-route-component-source="evidence-bubble" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-knowledge-bubble-id="${escapeHtml(vm.id)}" data-r4-knowledge-query="${escapeHtml(vm.query_text ?? "")}" data-r4-knowledge-evidence-count="${escapeHtml(String(refs.length))}" data-r4-knowledge-missing="${escapeHtml(String(refs.length === 0))}" data-r4-knowledge-action-count="${escapeHtml(String(vm.actions.length))}">
       <header class="wh-r4-route-head">
         <div>
@@ -941,14 +1009,17 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         <div class="wh-r4-route-actions">${actions}</div>
       </section>
     </section>`
-  };
+  });
 }
 
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
-  return {
+  return createWebRouteComponent({
     key: "settings",
     css: webRouteComponentCss,
     primaryHrefs: [vm.device.restore_href],
+    source: "page-vm",
+    locale,
+    pageVm: "settings",
     html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-settings-generated-at="${escapeHtml(vm.generated_at)}" data-r4-settings-runtime-status="${escapeHtml(vm.runtime.runtime_status)}" data-r4-settings-broker="${escapeHtml(vm.runtime.broker_backend)}" data-r4-settings-worker-count="${escapeHtml(String(vm.runtime.worker_count))}" data-r4-settings-active-locale="${escapeHtml(vm.language.active_locale)}" data-r4-settings-preference-locale="${escapeHtml(vm.language.preference_locale)}" data-r4-settings-preference-source="${escapeHtml(vm.language.preference_source)}" data-r4-settings-preference-synced="${escapeHtml(String(vm.language.preference_synced))}" data-r4-settings-secret-safe="${escapeHtml(String(vm.llm_runtime.secret_safe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(vm.device.pet_model_settings_in_web))}" data-r4-settings-desktop-client="${escapeHtml(vm.device.desktop_client)}" data-r4-settings-local-boundary="${escapeHtml(String(vm.device.local_execution_boundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(vm.device.restore_requires_desktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(vm.device.web_local_actions_enabled))}">
       <header class="wh-r4-route-head">
         <div>
@@ -999,17 +1070,20 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
         </section>
       </div>
     </section>`
-  };
+  });
 }
 
 function renderReplayRouteComponent(vm: GoldPathSurfaceVM, locale: WorkHubLocale): WebRouteComponent {
   const rendered = renderAgentRunReplay(vm.page_vms.replay, "web", { locale });
-  return {
+  return createWebRouteComponent({
     key: "replay",
     css: `${webRouteComponentCss}${rendered.css}`,
     primaryHrefs: rendered.primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "replay",
     html: `<section class="wh-r4-route" data-r4-route-component="replay" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-replay-run-id="${escapeHtml(rendered.runId)}" data-r4-replay-step-count="${escapeHtml(String(rendered.stepCount))}">${rendered.html}</section>`
-  };
+  });
 }
 
 export function renderWebRouteComponents(

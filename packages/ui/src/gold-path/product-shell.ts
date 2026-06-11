@@ -301,7 +301,10 @@ function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComp
   const componentMarker = routeComponent
     ? ` data-r4-route-component-panel="${page.key}" data-r4-route-component-active="${active ? "true" : "false"}"`
     : "";
-  return `<section class="wh-route-panel" data-wh-panel="${page.key}"${componentMarker} ${active ? "" : "hidden"}>${routeComponent?.html ?? page.html}</section>`;
+  const hydrationMarker = routeComponent
+    ? ` data-r4-hydration-panel="true" data-r4-hydration-root-id="${escapeHtml(routeComponent.hydration.rootId)}" data-r4-hydration-route="${escapeHtml(routeComponent.hydration.routeKey)}" data-r4-hydration-mode="${escapeHtml(routeComponent.hydration.mode)}" data-r4-hydration-page-vm="${escapeHtml(routeComponent.hydration.pageVm)}" data-r4-hydration-action-count="${escapeHtml(String(routeComponent.hydration.actionHrefCount))}"`
+    : "";
+  return `<section class="wh-route-panel" data-wh-panel="${page.key}"${componentMarker}${hydrationMarker} ${active ? "" : "hidden"}>${routeComponent?.html ?? page.html}</section>`;
 }
 
 export function renderWebProductShell(

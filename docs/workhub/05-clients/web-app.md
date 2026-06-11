@@ -40,17 +40,18 @@ owner: workflow
 | R4 Proposal advanced route UX | `packages/ui/src/gold-path/route-components.ts`、`apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.13 已把 conflict workbench、line editor、structured field editor、subrecord editor 收敛到 Proposal active-only route component；本机 Chrome smoke 29 步通过，advanced payload、fail-closed 与 no-overflow gates 均通过 |
 | R4 Option Intake / Knowledge route UX | `apps/api/src/routes/sessions.ts`、`packages/api-client/src/client.ts`、`apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.14 已把 `/intake/:sessionId` 和 `/knowledge/search` 接成真实 route dataflow；本机 Chrome smoke 36 步通过，option-first fail-closed、submit/create、knowledge bind、mobile no-overflow gates 均通过 |
 | R4 Settings / locale / device boundary | `packages/contracts/src/pages.ts`、`apps/api/src/pages/settings.ts`、`apps/web/src/browser.ts`、`packages/ui/src/gold-path/route-components.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.15 已把 Settings typed Page VM、locale preference persistence fail-closed、secret-safe runtime status、desktop capability boundary 和 recovery notices 做成可审计 route surface；本机 Chrome smoke 38 步通过 |
+| R4 route tree / hydration boundary | `packages/ui/src/gold-path/route-components.ts`、`packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.16 已给所有 active route components 建立 `data-r4-hydration-*` boundary、`webReactRouteTree` Page VM truth registry 和 active-only/action parity browser gates；本机 Chrome smoke 38 步通过 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，R4.14 已把 Option Intake / Knowledge fallback 串成真实 route dataflow，R4.15 已硬化 Settings / locale persistence / device boundary，剩余重点转向真实 React route tree / hydration boundary。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10/R4.11 已把 Home / Approvals / WorkItem / Proposal / Replay / Cost / Settings 做成显式 route component，R4.12 已把 action/notice feedback 接到统一 locale contract，R4.13 已把 Proposal advanced UX 收敛到 active-only route component，R4.14 已把 Option Intake / Knowledge fallback 串成真实 route dataflow，R4.15 已硬化 Settings / locale persistence / device boundary，R4.16 已建立 route tree / hydration boundary，剩余重点转向 R4.17 真实 React route component first migration。
 - 现有产品壳已脱离 P0.5 preview 外观，并支持 active-only panel；R4.12 已把 approval/proposal action、reason gate、desktop gate、retry/request access route-state、SSE refresh notice 纳入统一中英 action feedback contract。
-- `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings`、`Option Intake`、`Knowledge fallback` 已有第一版 ready route component；Proposal 高级冲突/字段/逐行编辑器已在 R4.13 收敛，Intake/Knowledge 真实 dataflow 已在 R4.14 收敛，Settings locale/device boundary 已在 R4.15 收敛。
+- `AI-first Home`、`Approval Center`、`WorkItem Detail`、`Proposal Detail`、`Replay Work`、`Cost Dashboard`、`Settings`、`Option Intake`、`Knowledge fallback` 已有第一版 ready route component；Proposal 高级冲突/字段/逐行编辑器已在 R4.13 收敛，Intake/Knowledge 真实 dataflow 已在 R4.14 收敛，Settings locale/device boundary 已在 R4.15 收敛，R4.16 已为这些 route 建立可迁移的 hydration boundary。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence；R4.14 已补 Option Intake / Knowledge fallback route componentization；R4.15 已补 Settings / locale persistence / device boundary hardening。下一步 R4.16 进入 React route tree / hydration boundary。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice；R4.11 已补 WorkItem/Proposal/Cost/Settings route component second slice；R4.12 已补 action/notice locale feedback；R4.13 已补 Proposal advanced route UX convergence；R4.14 已补 Option Intake / Knowledge fallback route componentization；R4.15 已补 Settings / locale persistence / device boundary hardening；R4.16 已补 React route tree / hydration boundary。下一步 R4.17 进入 React route component first migration。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -322,6 +323,19 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | Visual QA | 本机 Chrome 38 步 smoke 覆盖 Settings desktop/mobile、locale persistence fail-closed、desktop gate、secret scan、R4.14 regression | R4.16 继续保留 Settings boundary regression gate |
 
 边界：R4.15 不把 Cuu 外观、模型预览、API key、base URL 或 token 放回 Web/desktop 主窗；`desktop-device-setup-update.png` 中旧橘猫只作为设备/setup 信息架构参考，不作为当前视觉真相。
+
+### 0.21 R4.16 React route tree / hydration boundary（2026-06-11 已落）
+
+本轮没有引入真实 React runtime，也没有改视觉；它先把当前 HTML route components 包进可审计的 route adapter / hydration boundary，为 R4.17 真组件迁移铺轨。详细计划与验收状态见 [`../06-roadmap/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](../06-roadmap/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Hydration boundary | 每个 `WebRouteComponent` 带 `hydration` 元数据，HTML 输出 `data-r4-hydration-boundary/route/source/locale/page-vm/action-count/adapter` | R4.17 用同一边界承载首批真实 React-compatible route components |
+| Route tree registry | `apps/web/src/routes.ts` 暴露 `webReactRouteTree`，ready root 带 route-tree key、Page VM、mode、adapter、active-only 和 route count | 后续迁移时保持 typed loader truth，不让 component 自行 fetch |
+| Active panel | `product-shell.ts` 在 active panel 暴露 `data-r4-hydration-panel`，browser smoke 证明 ready route 只有一个 panel 和一个 hydration panel | 真实 component mount/unmount 也必须遵守单 active route lifecycle |
+| Visual QA | 本机 Chrome 38 步 smoke 覆盖 hydration boundary、Page VM truth、action parity、locale/settings regression、active-only regression 与 R4.15 Settings boundary regression | R4.17 增加 React component marker 与 HTML fallback parity |
+
+边界：R4.16 不是完整 React component migration；它只建立可验证的迁移边界。所有 mutation 仍走现有 delegated browser action dispatcher，Settings / desktop boundary 和 no Cuu/no secret/no overflow gates 均不降级。
 
 ---
 

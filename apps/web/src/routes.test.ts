@@ -19,6 +19,7 @@ import {
   createUnknownWebRouteMatch,
   loadWebRoute,
   resolveWebRoute,
+  webReactRouteTree,
   webRouteHref,
   webRouteRegistry
 } from "./routes.js";
@@ -345,6 +346,28 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
 });
 
+test("R4.16 web route tree declares hydration fallback boundaries for every product route", () => {
+  assert.deepEqual(webReactRouteTree.map((route) => route.key), webRouteRegistry.map((route) => route.key));
+  assert.deepEqual(
+    webReactRouteTree.map((route) => [route.key, route.hydration.pageVm]),
+    [
+      ["home", "attention"],
+      ["intake", "session"],
+      ["approvals", "approvals"],
+      ["workitem", "workitem"],
+      ["proposal", "proposal"],
+      ["replay", "replay"],
+      ["cost", "cost"],
+      ["knowledge", "evidence"],
+      ["settings", "settings"]
+    ]
+  );
+  assert.equal(webReactRouteTree.every((route) => route.hydration.enabled), true);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.mode === "html-fallback"), true);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.adapter === "route-component-v1"), true);
+  assert.equal(webReactRouteTree.every((route) => route.hydration.activeOnly), true);
+});
+
 test("R4.14 intake route loader carries Session VM data into an option-first route component", async () => {
   const surface = goldPathSurfaceVm();
   const session = routeSession();
@@ -490,6 +513,13 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     assert.equal(result.html.includes(`data-r4-route-component="${routeComponent}"`), true);
     assert.equal(result.html.includes('data-r4-route-component-source="page-vm"'), true);
     assert.equal(result.html.includes('data-r4-route-component-locale="en-US"'), true);
+    assert.equal(result.html.includes('data-r4-react-route-tree="true"'), true);
+    assert.equal(result.html.includes(`data-r4-route-tree-key="${routeComponent}"`), true);
+    assert.equal(result.html.includes('data-r4-route-tree-mode="html-fallback"'), true);
+    assert.equal(result.html.includes('data-r4-route-tree-active-only="true"'), true);
+    assert.equal(result.html.includes(`data-r4-route-tree-route-count="${webReactRouteTree.length}"`), true);
+    assert.equal(result.html.includes(`data-r4-hydration-route="${routeComponent}"`), true);
+    assert.equal(result.html.match(/data-r4-hydration-boundary="true"/gu)?.length, 1);
     assert.equal(result.html.includes("weekly_report_manifest_doc"), false);
     assert.equal(result.html.includes('href="#/'), false);
     assert.equal(result.html.includes("data-cuu"), false);

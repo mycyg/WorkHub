@@ -145,6 +145,50 @@ export const webRouteRegistry: readonly WebRouteDefinition[] = routeMatchers.map
   apiBaseLabel: route.apiBaseLabel
 }));
 
+type WebRouteTreePageVm =
+  | "attention"
+  | "session"
+  | "approvals"
+  | "workitem"
+  | "proposal"
+  | "replay"
+  | "cost"
+  | "evidence"
+  | "settings";
+
+export type WebReactRouteTreeNode = WebRouteDefinition & {
+  hydration: {
+    enabled: true;
+    mode: "html-fallback";
+    adapter: "route-component-v1";
+    pageVm: WebRouteTreePageVm;
+    activeOnly: true;
+  };
+};
+
+const routeTreePageVmByKey = {
+  home: "attention",
+  intake: "session",
+  approvals: "approvals",
+  workitem: "workitem",
+  proposal: "proposal",
+  replay: "replay",
+  cost: "cost",
+  knowledge: "evidence",
+  settings: "settings"
+} satisfies Record<R4WebRouteKey, WebRouteTreePageVm>;
+
+export const webReactRouteTree: readonly WebReactRouteTreeNode[] = webRouteRegistry.map((route) => ({
+  ...route,
+  hydration: {
+    enabled: true,
+    mode: "html-fallback",
+    adapter: "route-component-v1",
+    pageVm: routeTreePageVmByKey[route.key],
+    activeOnly: true
+  }
+}));
+
 const webRouteStateScreenCss = [
   "body{margin:0;background:#f6f9fd;color:#172033;overflow-x:hidden}",
   ".wh-web-route-state-screen{min-height:100vh;display:grid;place-items:center;padding:24px;font-family:\"Aptos\",\"Segoe UI\",sans-serif;background:linear-gradient(180deg,#fbfdff 0%,#edf4fb 100%);box-sizing:border-box}",
@@ -234,6 +278,10 @@ export function webRouteHref(input: string) {
 
 function apiLabelFor(match: WebRouteMatch) {
   return routeMatchers.find((route) => route.key === match.key)?.apiBaseLabel ?? match.pattern;
+}
+
+function routeTreeNodeFor(match: WebRouteMatch) {
+  return webReactRouteTree.find((route) => route.key === match.key);
 }
 
 function withLocale(locale: WorkHubLocale) {
@@ -524,12 +572,13 @@ function renderReadyRoute(
     routeComponents,
     renderActivePanelOnly: true
   });
+  const routeTreeNode = routeTreeNodeFor(match);
   return {
     status: "ready",
     match,
     shell,
     surface,
-    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">${shell.html}</div>`
+    html: `<style>${shell.css}</style><div data-r4-web-route-status="ready" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-react-route-tree="true" data-r4-route-tree-key="${escapeHtml(routeTreeNode?.key ?? match.key)}" data-r4-route-tree-page-vm="${escapeHtml(routeTreeNode?.hydration.pageVm ?? "")}" data-r4-route-tree-mode="${escapeHtml(routeTreeNode?.hydration.mode ?? "html-fallback")}" data-r4-route-tree-adapter="${escapeHtml(routeTreeNode?.hydration.adapter ?? "route-component-v1")}" data-r4-route-tree-active-only="${escapeHtml(String(routeTreeNode?.hydration.activeOnly ?? true))}" data-r4-route-tree-route-count="${escapeHtml(String(webReactRouteTree.length))}">${shell.html}</div>`
   };
 }
 

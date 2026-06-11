@@ -315,6 +315,20 @@ R4.15 已把 Settings / locale persistence / desktop boundary 收敛到 Web acti
 - Locale persistence 走 typed preference API；PATCH 失败会保留旧语言并显示 fail-closed notice，不假装已跨设备保存。
 - 本轮 gates 覆盖 `r4_15_settings_locale_persistence`、`r4_15_settings_secret_safe`、`r4_15_desktop_boundary_gate`、`r4_15_route_recovery_actions`、`r4_15_settings_mobile_no_overflow` 与 R4.14 regression。
 
+### 6.11 R4.16 React Route Tree / Hydration Boundary
+
+![R4.16 Route adapter hydration boundary contact sheet](./assets/audit/2026-06-11-r4-16-route-adapter-hydration-boundary-browser-smoke/contact-sheet.png)
+
+R4.16 已把 Web active-only route components 包进可审计的 route adapter / hydration boundary，并用本机 Chrome browser smoke 生成 38 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-16-route-adapter-hydration-boundary-browser-smoke/`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-operations-pages-atlas.png`：本轮不重做视觉、不新增 hero 或装饰元素，只让现有严肃工作台具备可迁移实现边界。
+- Active-only 边界继续成立：browser report 证明每个 ready route 只有一个 product panel 和一个 hydration panel，没有 hidden panels 回流到主窗。
+- Page VM truth 继续成立：`webReactRouteTree` 和 `data-r4-hydration-page-vm` 指向 attention/session/approvals/workitem/proposal/replay/cost/evidence/settings，不从 DOM 文案反推数据。
+- Action boundary 继续成立：R4.12-R4.15 的 delegated action dispatcher、reason gate、desktop gate、locale persistence fail-closed 和 Settings secret/device gates 均作为 R4.16 regression 通过。
+- 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |
