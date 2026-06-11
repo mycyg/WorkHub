@@ -34,17 +34,18 @@ owner: workflow
 | R4 live API + PG seed | `packages/db/src/r4-web-seed.ts`、`apps/web/qa/r4-web-live-api-pg-seed.ts` | R4.7 已在远端 Linux PostgreSQL/Chrome 环境通过真实 API daemon + deterministic PG seed browser smoke，覆盖 13 步 path route |
 | R4 Redis/SSE production smoke | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-redis-sse-browser-smoke.ts`、`apps/api/src/workers/agent-runner.ts` | R4.8 已在远端 Linux PG + Redis + Chrome 环境通过 15 步 production browser smoke：`stream/me`、run/workitem topic、topic auth、跨 worker event、REST reconcile 与文本溢出 gate |
 | R4 locale Page VM + shell metrics | `apps/api/src/pages/i18n.ts`、`apps/web/qa/r4-web-locale-metrics-browser-smoke.ts`、`packages/ui/src/gold-path/product-shell.ts` | R4.9 已在远端 Linux PG + Redis + Chrome 环境通过 locale metrics browser smoke：系统生成 Page VM 标签双语、Replay/Cost 顶部指标与 VM 一致、无 hash 导航与文本越框 |
+| R4 route componentization first slice | `packages/ui/src/gold-path/route-components.ts`、`packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | R4.10 已把 Home / Approvals / Replay 接为显式 route components，Web 产品壳在 route component 模式下只渲染 active panel；本机 Chrome smoke 11 步通过 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
 当前缺口：
 
-- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4.4 产品壳 baseline，但还不是完整 React component route tree。
-- 现有产品壳已脱离 P0.5 preview 外观；后续仍需把 shared HTML render helpers 迁到真实 Web component route tree。
-- `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
+- 真实 route registry 与 loader 已落到 `apps/web/src/routes.ts`，ready route 已换成 R4 产品壳；R4.10 已先把 Home / Approvals / Replay 做成显式 route component，但 WorkItem / Proposal / Cost / Settings 仍待 R4.11 继续拆。
+- 现有产品壳已脱离 P0.5 preview 外观，并支持 active-only panel；后续仍需把剩余 shared HTML render helpers 迁到真实 Web component route tree。
+- `AI-first Home`、`Approval Center`、`Replay Work` 已有第一版 ready route component；`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态深化。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`；R4.9 已把系统生成的 action、fallback、budget、handoff、acceptance、knowledge action 等标签纳入服务端 locale。用户输入、证据摘录、proposal manifest、LLM 产物正文仍由 daemon 原文决定，后续继续按“源文本可审计，不在客户端硬翻译”推进。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性。真实 component route tree 仍待后续。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke；R4.8 已在远端 Linux PG + Redis 环境通过 production browser SSE smoke；R4.9 已补 Page VM 系统生成双语与 shell 指标语义一致性；R4.10 已补 Home/Approvals/Replay route component first slice。完整 component route tree 仍待 R4.11+。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -236,6 +237,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | 远端验收 | `pnpm qa:r4-web-locale-metrics-browser-smoke` 在远端 Linux PG + Redis + Chrome 通过，report gates 包括 `proposal_actions_english`、`replay_handoff_english`、`replay_metric_matches_vm`、`cost_metric_matches_vm`、`no_hash_navigation`、`no_text_box_overflow` | R4.10 继续保留 Redis/SSE、locale、overflow、no Cuu/no Kanban/no weekly 门禁 |
 
 边界：R4.9 不是完整 React component route tree，也不宣称所有业务正文双语；它解决的是 Page VM 系统生成文本和产品壳指标的可靠性。
+
+### 0.15 R4.10 Web route componentization first slice（2026-06-11 已落）
+
+本轮把 R4.9 仍依赖全量 shared HTML renderer panels 的高频 ready route，推进到显式 route component。详细计划与验收状态见 [`../06-roadmap/r4-10-web-route-componentization-plan-2026-06-11.md`](../06-roadmap/r4-10-web-route-componentization-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Route components | `packages/ui/src/gold-path/route-components.ts` 输出 Home / Approvals / Replay 三个 Web route component，带 `data-r4-route-component`、`source=page-vm`、locale marker | R4.11 扩展 WorkItem / Proposal / Cost / Settings |
+| Active-only product panel | `renderWebProductShell()` 接受 `routeComponents` 与 `renderActivePanelOnly`；Web ready route 不再把非当前页 shared HTML hidden panels 塞进主窗口 | 后续 React route tree 迁移时继续保持单 active route source |
+| Data truth | Home 读 `AttentionHomeVM`，Approvals 读 `ApprovalCenterVM`，Replay 读 `ReplayTraceVM`；`/api/pages/gold-path` 仅作为 shell/template/nav metadata | 逐步减少 gold-path template 对剩余 ready route 的依赖 |
+| 视觉修复 | Chrome smoke 抓到中文标题行高裁切与审批 UUID 竖排；已统一标题 line-height，并把审批路由状态可见文本改为“已路由/Routed” | 所有新增组件继续让截图和文本盒 gate 阻塞视觉问题 |
+| QA gate | 本机 `pnpm qa:r4-web-live-route-interaction` 以 R4.10 env 输出 11 步 report/contact sheet，`r4_10_home_approvals_replay_route_components=true`、`r4_10_active_only_product_panels=true`、`no_text_box_overflow=true` | R4.11 增加 `r4_11_workitem_proposal_cost_settings_route_components` |
+
+边界：R4.10 不是完整 React SPA，也不宣称 WorkItem / Proposal / Cost / Settings 已完成组件化。用户输入、证据摘录、manifest、LLM 正文仍保持 VM 原文，不在客户端硬翻译。
 
 ---
 

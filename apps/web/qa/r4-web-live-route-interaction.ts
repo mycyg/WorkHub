@@ -34,6 +34,12 @@ type BrowserAudit = {
   productShell: boolean;
   linkModePath: boolean;
   masthead: boolean;
+  routeComponent: string | null;
+  routeComponentSource: string | null;
+  routeComponentPanel: string | null;
+  routeComponentActive: boolean;
+  panelCount: number;
+  visiblePanelCount: number;
   activeLocale: string | null;
   pathNavigation: boolean;
   hashNavigationLeak: boolean;
@@ -72,7 +78,7 @@ type CdpMessage = {
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../../..");
 const webRoot = path.join(repoRoot, "apps", "web");
-const outputDir = path.join(
+const defaultOutputDir = path.join(
   repoRoot,
   "docs",
   "workhub",
@@ -81,6 +87,10 @@ const outputDir = path.join(
   "audit",
   "2026-06-11-r4-web-live-route-interaction"
 );
+const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
+  ? path.resolve(repoRoot, process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"])
+  : defaultOutputDir;
+const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -581,6 +591,10 @@ function auditExpression() {
     );
     const statusRoot = document.querySelector("[data-r4-web-route-status]");
     const routeRoot = document.querySelector("[data-r4-product-shell]");
+    const routeComponent = document.querySelector("[data-r4-route-component]");
+    const routeComponentPanel = document.querySelector("[data-r4-route-component-panel]");
+    const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
+    const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     return {
       pathname: location.pathname,
       search: location.search,
@@ -591,6 +605,12 @@ function auditExpression() {
       productShell: Boolean(routeRoot),
       linkModePath: routeRoot ? routeRoot.getAttribute("data-r4-product-link-mode") === "path" : false,
       masthead: Boolean(document.querySelector("[data-r4-product-masthead]")),
+      routeComponent: routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null,
+      routeComponentSource: routeComponent ? routeComponent.getAttribute("data-r4-route-component-source") : null,
+      routeComponentPanel: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-panel") : null,
+      routeComponentActive: routeComponentPanel ? routeComponentPanel.getAttribute("data-r4-route-component-active") === "true" : false,
+      panelCount: panels.length,
+      visiblePanelCount: visiblePanels.length,
       activeLocale: document.querySelector("[data-wh-locale][aria-pressed='true']")?.getAttribute("data-wh-locale") || null,
       pathNavigation: Array.from(document.querySelectorAll("a[href]")).some((anchor) => (anchor.getAttribute("href") || "").startsWith("/")),
       hashNavigationLeak: Array.from(document.querySelectorAll("a[href]")).some((anchor) => (anchor.getAttribute("href") || "").startsWith("#/")),
@@ -613,11 +633,17 @@ function auditExpression() {
 
 async function captureStep(
   cdp: CdpClient,
-  input: { id: string; url: string; viewport: Viewport; expectedStatus: string }
+  input: { id: string; url: string; viewport: Viewport; expectedStatus: string; expectedRouteComponent?: string }
 ): Promise<StepReport> {
   const audit = await cdp.evaluate<BrowserAudit>(auditExpression());
   if (audit.status !== input.expectedStatus) {
     throw new Error(`${input.id} expected status ${input.expectedStatus}, got ${audit.status}`);
+  }
+  if (input.expectedRouteComponent && audit.routeComponent !== input.expectedRouteComponent) {
+    throw new Error(`${input.id} expected route component ${input.expectedRouteComponent}, got ${audit.routeComponent ?? "missing"}`);
+  }
+  if (audit.productShell && audit.status === "ready" && (audit.panelCount !== 1 || audit.visiblePanelCount !== 1)) {
+    throw new Error(`${input.id} expected one active product panel, got ${audit.visiblePanelCount}/${audit.panelCount}`);
   }
   if (audit.cuuLeak) {
     throw new Error(`${input.id} leaked Cuu main-window markers`);
@@ -674,7 +700,7 @@ function contactSheetDocument(steps: StepReport[]) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>R4.5 Web Live Route Interaction Contact Sheet</title>
+  <title>${escapeHtml(smokeTitle)} Contact Sheet</title>
   <style>
     body{margin:0;background:#eef4fb;color:#172033;font-family:Aptos,Segoe UI,sans-serif}
     main{padding:18px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
@@ -711,10 +737,10 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
 
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/`, "ready");
-  steps.push(await captureStep(cdp, { id: "01-home-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "01-home-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
   await clickAndWait(cdp, 'a[href="/approvals"]', "/approvals");
-  steps.push(await captureStep(cdp, { id: "02-approvals-click-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "02-approvals-click-zh-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
 
   await clickAndWait(cdp, 'a[href="/workitems/r4-live-workitem"]', "/workitems/r4-live-workitem");
   steps.push(await captureStep(cdp, { id: "03-workitem-click-zh-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready" }));
@@ -734,22 +760,25 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   );
   steps.push(await captureStep(cdp, { id: "06-locale-toggle-en-reload", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready" }));
 
+  await navigate(cdp, `${baseUrl}/agent-runs/r4-live-run/replay`, "ready");
+  steps.push(await captureStep(cdp, { id: "07-replay-en-desktop-route-component", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
-  steps.push(await captureStep(cdp, { id: "07-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
+  steps.push(await captureStep(cdp, { id: "08-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
 
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
-  steps.push(await captureStep(cdp, { id: "08-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
+  steps.push(await captureStep(cdp, { id: "09-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
 
   await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
-  steps.push(await captureStep(cdp, { id: "09-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
+  steps.push(await captureStep(cdp, { id: "10-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
 
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/proposals/r4-live-proposal`, "ready");
   await cdp.evaluate("window.scrollTo(0, 680); true");
   await new Promise((resolve) => setTimeout(resolve, 250));
-  steps.push(await captureStep(cdp, { id: "10-proposal-mobile-scrolled", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready" }));
+  steps.push(await captureStep(cdp, { id: "11-proposal-mobile-scrolled", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: mobile, expectedStatus: "ready" }));
 
   return steps;
 }
@@ -763,6 +792,7 @@ function requestProof(requests: ApiRequestRecord[]) {
     workitem: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem"),
     workitemEn: requests.some((request) => request.pathname === "/api/pages/workitems/r4-live-workitem" && request.locale === "en-US"),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
+    replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
     goldPath: requests.filter((request) => request.pathname === "/api/pages/gold-path").length >= 4,
     goldPathEn: requests.some((request) => request.pathname === "/api/pages/gold-path" && request.locale === "en-US"),
     localePatch: requests.some((request) => request.method === "PATCH" && request.pathname === "/api/auth/preferences"),
@@ -772,6 +802,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       workitem: count("/api/pages/workitems/r4-live-workitem"),
       workitemForbidden: count("/api/pages/workitems/r4-live-forbidden"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
+      replay: count("/api/agent-runs/r4-live-run/replay"),
       goldPath: count("/api/pages/gold-path"),
       preferencePatch: count("/api/auth/preferences", "PATCH")
     }
@@ -827,15 +858,21 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-reload" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      r4_10_home_approvals_replay_route_components:
+        steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
+        steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
+        steps.some((step) => step.id === "07-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
+      r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
         proof.counts.approvals === 3 &&
         proof.counts.workitem === 3 &&
         proof.counts.workitemForbidden === 1 &&
         proof.counts.proposal === 1 &&
+        proof.counts.replay === 1 &&
         proof.counts.preferencePatch === 1,
-      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "10-proposal-mobile-scrolled" && !step.audit.topbarNavOverlap),
+      mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-mobile-scrolled" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
       no_default_kanban: steps.every((step) => !step.audit.kanbanLeak),
       no_old_preview_shell: steps.every((step) => !step.audit.oldShellLeak),
@@ -846,7 +883,7 @@ async function main() {
     };
     const report = {
       generated_at: new Date().toISOString(),
-      module: "R4.5 Web live route interaction smoke",
+      module: smokeTitle,
       chrome_path: chromePath,
       vite_url: baseUrl,
       api_target: apiTarget,
@@ -861,13 +898,15 @@ async function main() {
     await writeFile(
       path.join(outputDir, "smoke-summary.md"),
       [
-        "# R4.5 Web Live Route Interaction Smoke",
+        `# ${smokeTitle}`,
         "",
         `- ok: ${String(Object.values(gates).every(Boolean))}`,
         `- steps: ${String(steps.length)}`,
         `- path nav clicks: ${String(gates.path_nav_clicks)}`,
         `- history back/forward: ${String(gates.history_back_forward)}`,
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,
+        `- R4.10 route components: ${String(gates.r4_10_home_approvals_replay_route_components)}`,
+        `- active-only product panels: ${String(gates.r4_10_active_only_product_panels)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""
       ].join("\n"),

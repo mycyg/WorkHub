@@ -10,6 +10,7 @@ import type {
 } from "@workhub/contracts";
 import {
   renderGoldPathSurface,
+  renderWebRouteComponents,
   renderWebProductShell,
   type GoldPathAppShell,
   type WorkHubLocale
@@ -414,13 +415,16 @@ function renderReadyRoute(
   locale: WorkHubLocale
 ): WebRouteReadyResult {
   const rendered = renderGoldPathSurface(surface, "web", { locale });
+  const routeComponents = renderWebRouteComponents(surface, { locale });
   const shell = renderWebProductShell(rendered, {
     appName: "WorkHub",
     surfaceLabel: "Web R4",
     apiBaseLabel: apiLabelFor(match),
     currentRoute: match.pathname,
     locale,
-    linkMode: "path"
+    linkMode: "path",
+    routeComponents,
+    renderActivePanelOnly: true
   });
   return {
     status: "ready",

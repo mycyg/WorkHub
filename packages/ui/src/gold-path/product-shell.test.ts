@@ -5,6 +5,7 @@ import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/a
 
 import { renderGoldPathSurface } from "./render.js";
 import { renderWebProductShell } from "./product-shell.js";
+import { renderWebRouteComponents } from "./route-components.js";
 
 function renderedSurface(locale: "zh-CN" | "en-US" = "en-US") {
   const fixture = validateP05GoldPathFixture(createP05GoldPathFixture());
@@ -136,4 +137,29 @@ test("R4 product shell metrics come from Page VM data instead of HTML probes", (
     ),
     true
   );
+});
+
+test("R4.10 product shell can render only the active route component panel", () => {
+  const rendered = renderedSurface("en-US");
+  const shell = renderWebProductShell(rendered, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/approvals",
+    locale: "en-US",
+    linkMode: "path",
+    routeComponents: renderWebRouteComponents(rendered.vm, { locale: "en-US" }),
+    renderActivePanelOnly: true
+  });
+
+  assert.equal(shell.html.includes('data-r4-product-route-key="approvals"'), true);
+  assert.equal(shell.html.includes('data-r4-route-component-panel="approvals"'), true);
+  assert.equal(shell.html.includes('data-r4-route-component="approvals"'), true);
+  assert.equal(shell.html.match(/data-wh-panel=/gu)?.length, 1);
+  assert.equal(shell.html.includes('data-wh-panel="home"'), false);
+  assert.equal(shell.html.includes('data-wh-panel="replay"'), false);
+  assert.equal(shell.html.includes("weekly_report_manifest_doc"), false);
+  assert.equal(shell.html.includes('href="#/'), false);
+  assert.equal(shell.html.includes("data-cuu"), false);
+  assert.equal(shell.html.toLowerCase().includes("kanban"), false);
+  assert.match(shell.css, /\.wh-r4-route\{display:grid;gap:16px/u);
 });

@@ -7,7 +7,8 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CostDashboardVM,
-  GoldPathSurfaceVM
+  GoldPathSurfaceVM,
+  ReplayTraceVM
 } from "@workhub/contracts";
 
 import {
@@ -22,6 +23,7 @@ type RouteClientOverrides = {
   attention?: AttentionHomeVM;
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
+  replay?: ReplayTraceVM;
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
@@ -98,7 +100,7 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
     },
     async replayAgentRun(id: string, options?: { locale?: string }) {
       localeCall(`replayAgentRun:${id}`, options);
-      return surface.page_vms.replay;
+      return overrides.replay ?? surface.page_vms.replay;
     }
   } as unknown as WorkHubApiClient;
   return { client, calls };
@@ -143,6 +145,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
     assert.equal(result.html.includes('data-r4-product-masthead="true"'), true);
+    assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
     assert.equal(result.html.includes('href="#/approvals"'), false);
     assert.equal(result.html.includes('href="/approvals"'), true);
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
@@ -165,8 +168,34 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
     assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
+    assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
     assert.equal(result.html.includes(`href="${path}"`) || result.html.includes('href="/approvals"'), true);
     assert.equal(result.html.toLowerCase().includes("kanban"), false);
+  }
+});
+
+test("R4.10 web loader marks Home, Approvals, and Replay as route components", async () => {
+  const surface = goldPathSurfaceVm();
+
+  for (const [path, endpointCall, routeComponent] of [
+    ["/", "attention:en-US", "home"],
+    ["/approvals", "approvals:en-US", "approvals"],
+    ["/agent-runs/run-42/replay", "replayAgentRun:run-42:en-US", "replay"]
+  ] as const) {
+    const { client, calls } = fakeRouteClient(surface);
+    const match = resolveWebRoute(path);
+    assert.ok(match);
+    const result = await loadWebRoute(client, match, "en-US");
+    assert.equal(result.status, "ready");
+    assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
+    assert.equal(result.html.includes(`data-r4-route-component="${routeComponent}"`), true);
+    assert.equal(result.html.includes('data-r4-route-component-source="page-vm"'), true);
+    assert.equal(result.html.includes('data-r4-route-component-locale="en-US"'), true);
+    assert.equal(result.html.includes("weekly_report_manifest_doc"), false);
+    assert.equal(result.html.includes('href="#/'), false);
+    assert.equal(result.html.includes("data-cuu"), false);
+    assert.equal(result.html.toLowerCase().includes("kanban"), false);
+    assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
   }
 });
 

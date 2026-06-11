@@ -2,6 +2,12 @@ import type { GoldPathAppShell, GoldPathAppShellOptions } from "./app-shell.js";
 import { buildGoldPathRouteMap, resolveGoldPathPageKey } from "./app-shell.js";
 import { goldPathT, normalizeWorkHubLocale, workHubLocaleOptions, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage, GoldPathRenderedSurface } from "./render.js";
+import type { WebRouteComponentMap } from "./route-components.js";
+
+export type WebProductShellOptions = GoldPathAppShellOptions & {
+  routeComponents?: WebRouteComponentMap | undefined;
+  renderActivePanelOnly?: boolean | undefined;
+};
 
 type ProductShellCopyKey =
   | "nav.title"
@@ -166,7 +172,7 @@ const productShellCss = [
   ".wh-product-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;flex:1 1 auto}.wh-product-runtime{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;max-width:100%;overflow:hidden;color:var(--wh-product-muted);font-size:12px;font-weight:800}.wh-product-runtime span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wh-product-runtime-dot{width:8px;height:8px;border-radius:999px;background:var(--wh-product-green);box-shadow:0 0 0 4px rgba(36,166,106,.12);flex:0 0 auto}",
   ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:#eef3f9;padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
   ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{border-right:1px solid var(--wh-product-line);background:rgba(247,250,254,.78);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-title{margin:2px 10px 12px;color:var(--wh-product-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-nav-list{display:grid;gap:6px}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:8px;padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:#fff}.wh-product-nav a[aria-current=page]{background:#fff;color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(53,92,255,.18),0 10px 24px rgba(37,51,79,.06)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}",
-  ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;max-width:1120px;margin:0 auto 18px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.18;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
+  ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;max-width:1120px;margin:0 auto 18px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.24;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
   ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.05)}.wh-product-metric strong{font-size:17px;line-height:1.1;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.15;overflow-wrap:anywhere}",
   ".wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}",
   ".wh-product-rail{border-left:1px solid var(--wh-product-line);background:rgba(247,250,254,.68);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.2}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
@@ -290,21 +296,29 @@ function renderProductNav(
     .join("");
 }
 
+function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComponents?: WebRouteComponentMap) {
+  const routeComponent = routeComponents?.[page.key];
+  const componentMarker = routeComponent
+    ? ` data-r4-route-component-panel="${page.key}" data-r4-route-component-active="${active ? "true" : "false"}"`
+    : "";
+  return `<section class="wh-route-panel" data-wh-panel="${page.key}"${componentMarker} ${active ? "" : "hidden"}>${routeComponent?.html ?? page.html}</section>`;
+}
+
 export function renderWebProductShell(
   rendered: GoldPathRenderedSurface,
-  options: GoldPathAppShellOptions
+  options: WebProductShellOptions
 ): GoldPathAppShell {
   const locale = normalizeWorkHubLocale(options.locale);
   const routeMap = buildGoldPathRouteMap(rendered.pages);
   const activeKey = resolveGoldPathPageKey(routeMap, options.currentRoute ?? "") ?? rendered.pages[0]?.key ?? "home";
   const activePage = rendered.pages.find((page) => page.key === activeKey) ?? rendered.pages[0];
   const nav = renderProductNav(rendered.pages, activeKey, locale);
-  const panels = rendered.pages
-    .map(
-      (page) =>
-        `<section class="wh-route-panel" data-wh-panel="${page.key}" ${page.key === activeKey ? "" : "hidden"}>${page.html}</section>`
-    )
+  const routeComponentCss = [...new Set(Object.values(options.routeComponents ?? {})
+    .map((component) => component.css)
+    .filter(Boolean))]
     .join("");
+  const panelPages = options.renderActivePanelOnly && activePage ? [activePage] : rendered.pages;
+  const panels = panelPages.map((page) => renderRoutePanel(page, page.key === activeKey, options.routeComponents)).join("");
   const metrics = activePage ? renderProductMetrics(activePage, rendered, locale) : "";
   const activeTitle = activePage?.title ?? options.appName;
   const activeSubtitle = activePage ? subtitleForPage(activePage.key, locale) : "";
@@ -312,7 +326,7 @@ export function renderWebProductShell(
 
   return {
     routeMap,
-    css: `${productShellCss}${rendered.css}`,
+    css: `${productShellCss}${rendered.css}${routeComponentCss}`,
     html: `<div class="wh-product-root" data-wh-surface="${rendered.surface}" data-r4-product-shell="true" data-r4-product-route-key="${escapeHtml(activeKey)}" data-r4-product-link-mode="path">
       <header class="wh-product-topbar">
         <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></a>
