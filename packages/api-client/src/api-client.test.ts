@@ -78,6 +78,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.goldPath();
   await client.pages.settings();
   await client.pages.drive();
+  await client.pages.meetings({ projectId: "project-1", meetingId: "meeting-1" });
   await client.me();
   await client.updatePreferences({ locale: "en-US" });
   await client.pages.workItem("work-1");
@@ -112,6 +113,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.restoreDriveItem("project-1", "drive-item-1");
   await client.createDriveCommentDraft("project-1", "comment-1");
   await client.createDriveDraftProposal("work-1");
+  await client.createMeetingInsightDraft("project-1", "insight-1");
+  await client.dismissMeetingInsight("project-1", "insight-1");
+  await client.createMeetingDraftProposal("work-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -125,6 +129,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/gold-path",
     "GET /api/pages/settings",
     "GET /api/pages/drive",
+    "GET /api/pages/meetings?project_id=project-1&m=meeting-1",
     "GET /api/auth/me",
     'PATCH /api/auth/preferences {"locale":"en-US"}',
     "GET /api/pages/workitems/work-1",
@@ -150,6 +155,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/drive/projects/project-1/items/drive-item-1/restore",
     "POST /api/drive/projects/project-1/comments/comment-1/draft",
     "POST /api/drive/workitems/work-1/proposal-draft",
+    "POST /api/meetings/projects/project-1/insights/insight-1/draft",
+    "POST /api/meetings/projects/project-1/insights/insight-1/dismiss",
+    "POST /api/meetings/workitems/work-1/proposal-draft",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",
@@ -179,6 +187,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.cost({ locale: "en-US" });
   await client.pages.settings({ locale: "en-US" });
   await client.pages.drive({ locale: "en-US", projectId: "project 1" });
+  await client.pages.meetings({ locale: "en-US", project_id: "project 1", meeting_id: "meeting 1" });
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
   await client.replayAgentRun("run/1", { locale: "en-US" });
@@ -189,6 +198,9 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.restoreDriveItem("project 1", "item 1", { locale: "en-US" });
   await client.createDriveCommentDraft("project 1", "comment 1", { locale: "zh-CN" });
   await client.createDriveDraftProposal("work 1", { locale: "en-US" });
+  await client.createMeetingInsightDraft("project 1", "insight 1", { locale: "zh-CN" });
+  await client.dismissMeetingInsight("project 1", "insight 1", { locale: "en-US" });
+  await client.createMeetingDraftProposal("work 1", { locale: "zh-CN" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -197,6 +209,7 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/cost?locale=en-US",
     "/api/pages/settings?locale=en-US",
     "/api/pages/drive?locale=en-US&project_id=project+1",
+    "/api/pages/meetings?locale=en-US&project_id=project+1&m=meeting+1",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
     "/api/pages/proposals/proposal%201?locale=en-US",
     "/api/agent-runs/run%2F1/replay?locale=en-US",
@@ -206,7 +219,10 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/drive/projects/project%201/items/item%201/delete?locale=zh-CN",
     "/api/drive/projects/project%201/items/item%201/restore?locale=en-US",
     "/api/drive/projects/project%201/comments/comment%201/draft?locale=zh-CN",
-    "/api/drive/workitems/work%201/proposal-draft?locale=en-US"
+    "/api/drive/workitems/work%201/proposal-draft?locale=en-US",
+    "/api/meetings/projects/project%201/insights/insight%201/draft?locale=zh-CN",
+    "/api/meetings/projects/project%201/insights/insight%201/dismiss?locale=en-US",
+    "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN"
   ]);
 });
 

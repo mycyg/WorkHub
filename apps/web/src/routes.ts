@@ -5,6 +5,7 @@ import type {
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
+  MeetingPageVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -78,6 +79,7 @@ export type WebRouteSurface =
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
   | { key: "drive"; drive: DrivePageVM }
+  | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -127,6 +129,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "meetings",
+    pattern: "/meetings",
+    apiBaseLabel: "/api/pages/meetings",
+    regex: /^\/meetings$/u,
+    paramNames: []
+  },
+  {
     key: "replay",
     pattern: "/agent-runs/:id/replay",
     apiBaseLabel: "/api/agent-runs/:id/replay",
@@ -169,6 +178,7 @@ type WebRouteTreePageVm =
   | "workitem"
   | "proposal"
   | "drive"
+  | "meetings"
   | "replay"
   | "cost"
   | "evidence"
@@ -209,6 +219,7 @@ const routeTreePageVmByKey = {
   workitem: "workitem",
   proposal: "proposal",
   drive: "drive",
+  meetings: "meetings",
   replay: "replay",
   cost: "cost",
   knowledge: "evidence",
@@ -375,6 +386,7 @@ const shellPageOrder = [
   "workitem",
   "proposal",
   "drive",
+  "meetings",
   "replay",
   "cost",
   "knowledge",
@@ -388,6 +400,7 @@ const shellDefaultRoutes = {
   workitem: "/workitems/r4-live-workitem",
   proposal: "/proposals/r4-live-proposal",
   drive: "/drive",
+  meetings: "/meetings",
   replay: "/agent-runs/r4-live-run/replay",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
@@ -402,6 +415,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     workitem: "任务详情",
     proposal: "变更申请",
     drive: "项目网盘",
+    meetings: "会议洞察",
     replay: "执行回放",
     cost: "成本",
     knowledge: "知识证据",
@@ -414,6 +428,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     workitem: "Task detail",
     proposal: "Change request",
     drive: "Project drive",
+    meetings: "Meeting insights",
     replay: "Execution replay",
     cost: "Cost",
     knowledge: "Knowledge evidence",
@@ -431,6 +446,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     trace: "轨迹",
     deliverables: "交付物",
     files: "文件",
+    meetings: "会议",
+    insights: "洞察",
     folders: "文件夹",
     versions: "版本",
     evidence: "证据",
@@ -455,6 +472,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     trace: "Trace",
     deliverables: "Deliverables",
     files: "Files",
+    meetings: "Meetings",
+    insights: "Insights",
     folders: "Folders",
     versions: "Versions",
     evidence: "Evidence",
@@ -539,6 +558,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "deliverables", String(surface.drive.summary.accepted_deliverable_count))
     ];
   }
+  if (surface.key === "meetings") {
+    return [
+      metric(locale, "meetings", String(surface.meetings.summary.meeting_count)),
+      metric(locale, "pending", String(surface.meetings.summary.pending_insight_count)),
+      metric(locale, "insights", String(surface.meetings.summary.confirmed_insight_count + surface.meetings.summary.dismissed_insight_count))
+    ];
+  }
   if (surface.key === "replay") {
     return [
       metric(locale, "steps", String(surface.replay.steps.length)),
@@ -590,6 +616,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "drive") {
     return renderWebRouteComponent({ key: "drive", drive: surface.drive }, { locale });
+  }
+  if (surface.key === "meetings") {
+    return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings }, { locale });
   }
   if (surface.key === "replay") {
     return renderWebRouteComponent({ key: "replay", replay: surface.replay }, { locale });
@@ -701,6 +730,20 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     return { key: "drive", drive } satisfies WebRouteSurface;
+  }
+  if (match.key === "meetings") {
+    const params = new URLSearchParams(match.search);
+    const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
+    const meetingId = params.get("m") ?? params.get("meeting_id") ?? params.get("meetingId") ?? undefined;
+    const meetings = await client.pages.meetings({
+      ...withLocale(locale),
+      ...(projectId ? { projectId } : {}),
+      ...(meetingId ? { meetingId } : {})
+    });
+    if (meetings.empty_state === "no_project") {
+      return "empty" as const;
+    }
+    return { key: "meetings", meetings } satisfies WebRouteSurface;
   }
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));

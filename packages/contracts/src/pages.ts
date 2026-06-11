@@ -181,6 +181,74 @@ export const drivePageVmSchema = z.object({
 });
 export type DrivePageVM = z.infer<typeof drivePageVmSchema>;
 
+export const meetingInsightVmSchema = z.object({
+  id: idSchema,
+  meeting_id: idSchema,
+  kind: z.enum(["new_requirement", "requirement_change", "normal_note"]),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  confidence_reason: z.string().min(1),
+  status: z.enum(["pending", "creating_requirement", "confirmed", "dismissed"]),
+  target_work_item_id: idSchema.optional(),
+  created_work_item_id: idSchema.optional(),
+  draft_href: z.string().min(1).optional(),
+  proposal_id: idSchema.optional(),
+  proposal_href: z.string().min(1).optional(),
+  proposal_status: z.string().min(1).optional(),
+  confirmed_by_user_id: idSchema.optional(),
+  confirmed_at: isoDateTimeSchema.optional(),
+  created_at: isoDateTimeSchema,
+  evidence_refs: z.array(evidenceRefSchema).default([]),
+  actions: z.object({
+    create_draft: actionSpecSchema.optional(),
+    dismiss: actionSpecSchema.optional()
+  }).default({})
+});
+export type MeetingInsightVM = z.infer<typeof meetingInsightVmSchema>;
+
+export const meetingRecordVmSchema = z.object({
+  id: idSchema,
+  project_id: idSchema,
+  work_item_id: idSchema.optional(),
+  uploaded_by_user_id: idSchema,
+  uploaded_by_label: z.string().min(1),
+  title: z.string().min(1),
+  audio_filename: z.string().min(1),
+  audio_mime: z.string().min(1).optional(),
+  audio_size_bytes: z.number().int().nonnegative(),
+  transcript_text: z.string().optional(),
+  minutes_md: z.string().optional(),
+  status: z.enum(["processing", "ready", "failed"]),
+  job_id: idSchema.optional(),
+  created_at: isoDateTimeSchema,
+  updated_at: isoDateTimeSchema,
+  insights: z.array(meetingInsightVmSchema).default([])
+});
+export type MeetingRecordVM = z.infer<typeof meetingRecordVmSchema>;
+
+export const meetingPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  project: z.object({
+    id: idSchema,
+    name: z.string().min(1),
+    slug: z.string().min(1),
+    owner_label: z.string().min(1).optional(),
+    status: z.enum(["active", "archived"])
+  }).optional(),
+  summary: z.object({
+    meeting_count: z.number().int().nonnegative(),
+    ready_count: z.number().int().nonnegative(),
+    pending_insight_count: z.number().int().nonnegative(),
+    confirmed_insight_count: z.number().int().nonnegative(),
+    dismissed_insight_count: z.number().int().nonnegative()
+  }),
+  can_manage: z.boolean().default(false),
+  selected_meeting_id: idSchema.optional(),
+  meetings: z.array(meetingRecordVmSchema),
+  empty_state: z.enum(["no_project", "no_meetings"]).optional()
+});
+export type MeetingPageVM = z.infer<typeof meetingPageVmSchema>;
+
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),
@@ -246,7 +314,7 @@ export const replayMergeAttemptVmSchema = z.object({
 });
 export type ReplayMergeAttemptVM = z.infer<typeof replayMergeAttemptVmSchema>;
 
-export const workItemSourceContextVmSchema = z.object({
+export const driveWorkItemSourceContextVmSchema = z.object({
   source_type: z.literal("drive_comment"),
   project_id: idSchema,
   comment_id: idSchema,
@@ -260,6 +328,29 @@ export const workItemSourceContextVmSchema = z.object({
   proposal_href: z.string().min(1).optional(),
   proposal_status: z.string().min(1).optional()
 });
+export const meetingWorkItemSourceContextVmSchema = z.object({
+  source_type: z.literal("meeting_insight"),
+  project_id: idSchema,
+  meeting_id: idSchema,
+  insight_id: idSchema,
+  meeting_title: z.string().min(1),
+  insight_kind: z.enum(["new_requirement", "requirement_change", "normal_note"]),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  confidence_reason: z.string().min(1),
+  status: z.enum(["pending", "creating_requirement", "confirmed", "dismissed"]),
+  transcript_excerpt: z.string().min(1).optional(),
+  minutes_excerpt: z.string().min(1).optional(),
+  evidence_refs: z.array(evidenceRefSchema).default([]),
+  created_at: isoDateTimeSchema,
+  proposal_id: idSchema.optional(),
+  proposal_href: z.string().min(1).optional(),
+  proposal_status: z.string().min(1).optional()
+});
+export const workItemSourceContextVmSchema = z.discriminatedUnion("source_type", [
+  driveWorkItemSourceContextVmSchema,
+  meetingWorkItemSourceContextVmSchema
+]);
 export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSchema>;
 
 export const workItemDetailVmSchema = z.object({

@@ -6,6 +6,7 @@ import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@
 import {
   normalizeWorkHubLocale,
   type ApprovalCenterVM,
+  type MeetingPageVM,
   type ApprovalRequest,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -28,6 +29,11 @@ import {
   getDefaultDrivePageService,
   type DrivePageService
 } from "../services/drive-pages.js";
+import {
+  getDefaultMeetingPageService,
+  MeetingPageServiceError,
+  type MeetingPageService
+} from "../services/meeting-pages.js";
 import {
   createApprovalService,
   type ApprovalService
@@ -57,6 +63,7 @@ export type PageRoutesDependencies = {
   ledgerStore?: CostLedgerStore;
   workItems?: WorkItemService;
   drivePages?: DrivePageService;
+  meetingPages?: MeetingPageService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -132,6 +139,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
   const workItems = deps.workItems ?? getDefaultWorkItemService();
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
+  const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -198,6 +206,26 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof DrivePageServiceError) {
+        throw new HTTPException(error.status, { message: error.message });
+      }
+      throw error;
+    }
+  });
+
+  routes.get("/meetings", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const projectId = c.req.query("project_id");
+    const meetingId = c.req.query("m") ?? c.req.query("meeting_id");
+    try {
+      const data: MeetingPageVM = await meetingPages.page({
+        actor: c.var.actor,
+        locale,
+        ...(projectId ? { projectId } : {}),
+        ...(meetingId ? { meetingId } : {})
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof MeetingPageServiceError) {
         throw new HTTPException(error.status, { message: error.message });
       }
       throw error;

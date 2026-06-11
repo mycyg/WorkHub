@@ -630,8 +630,15 @@ test("drive page service creates a deterministic proposal from a drive comment d
   const records: Array<{ workItemId: string; proposalId: string; actorUserId: string }> = [];
   const refreshed = workItemDetail({
     source_context: {
-      ...workItemDetail().source_context!,
+      source_type: "drive_comment",
+      project_id: projectId,
+      comment_id: "91000000-0000-4000-8000-000000000012",
+      folder_id: folderId,
+      folder_path: "/复盘包",
+      author_label: "PM",
+      body: "把这条评论转成后续行动草稿。",
       status: "proposal_created",
+      created_at: now.toISOString(),
       proposal_id: proposalId,
       proposal_href: `/proposals/${proposalId}`,
       proposal_status: "opened"
@@ -1064,8 +1071,15 @@ test("drive draft proposal route authenticates and returns a refreshed work item
       });
       return workItemDetail({
         source_context: {
-          ...workItemDetail().source_context!,
+          source_type: "drive_comment",
+          project_id: projectId,
+          comment_id: "91000000-0000-4000-8000-000000000012",
+          folder_id: folderId,
+          folder_path: "/复盘包",
+          author_label: "PM",
+          body: "把这条评论转成后续行动草稿。",
           status: "proposal_created",
+          created_at: now.toISOString(),
           proposal_id: proposalId,
           proposal_href: `/proposals/${proposalId}`,
           proposal_status: "opened"

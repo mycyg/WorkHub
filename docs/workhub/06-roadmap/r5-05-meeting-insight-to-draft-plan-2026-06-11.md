@@ -1,7 +1,7 @@
 ---
 module: R5-meeting-insight-to-draft
 layer: M-MEETING / M-WORKITEM / M-DRIVE / P-AI / P-COLLAB / C-WEB
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -83,6 +83,40 @@ Meeting Page
 - Browser smoke：进入 meeting route，创建 draft，打开 WorkItem source context，再触发 R5.4 proposal draft 复用链路。
 - Final：`pnpm typecheck`、`pnpm test`、browser smoke、`git diff --check`、secret scan、no `reference/`。
 
-## 5. R5.6 Handoff
+## 5. 竣工记录
+
+状态：✅ completed（2026-06-11）
+
+落地范围：
+
+- Contracts：新增 `MeetingPageVM`、`MeetingRecordVM`、`MeetingInsightVM`，并把 `WorkItem.source_context` 扩展为 `drive_comment | meeting_insight` 判别联合。
+- DB/API：新增 meetings repository、Meeting Page service 与 `/api/pages/meetings`、`/api/meetings/projects/:projectId/insights/:insightId/{draft,dismiss}`、`/api/meetings/workitems/:workItemId/proposal-draft`，权限沿用 project view / uploader-admin manage 门，REST 仍是真相源。
+- Web/UI：新增 `/meetings` route、bilingual product chrome、meeting route component、meeting source context card、shared runtime action parser/dispatcher，并修复 confirmed/dismissed insight 缺省 `actions` 时的 UI 崩溃。
+- Proposal 复用：meeting-created WorkItem draft 暴露 `meeting_draft_to_proposal`，proposal 创建后 source context 与 meeting page 都回写 proposal link/status。
+- QA：live browser smoke 从 50 步扩到 55 步，新增 `r5_5_meeting_insight_to_draft` gate；request proof 固定为 meetings GET 3、meeting WorkItem GET 2、draft mutation 1、proposal mutation 1、dismiss 0。
+
+验收证据：
+
+- `pnpm --filter @workhub/contracts test`
+- `pnpm --filter @workhub/api-client test`
+- `pnpm --filter @workhub/web-runtime test`
+- `pnpm --filter @workhub/ui test -- route-components`（56/56）
+- `pnpm --filter @workhub/api test -- meeting-pages app`
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：55 步，`r5_5_meeting_insight_to_draft=true`、`no_duplicate_route_loader_calls=true`、`no_horizontal_overflow=true`
+- 截图：`../05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/15f-meetings-insight-en-desktop.png`、`15g-meeting-insight-draft-en-desktop.png`、`15h-meeting-workitem-source-en-desktop.png`、`15i-meeting-draft-proposal-en-desktop.png`、`15j-meetings-en-mobile-no-overflow.png`
+
+PRD / 概念图审视：
+
+- 符合 `web-meeting-insight-to-draft.png`：会议页保留会议列表、洞察卡、转写、纪要和 approval-safe 文案；pending insight 只有人工确认后才创建 draft。
+- 符合 `web-project-drive-meetings-knowledge.png`：meeting source context 与 Drive evidence / WorkItem / proposal 主线共享项目上下文，没有把会议内容揉成不可追溯自由文本。
+- 符合多语言硬门：固定 UI 和 status labels 中英双语；会议转写、纪要、洞察正文、AI rationale 等用户/AI 内容不翻译。
+- 符合数据流硬门：confirmed insight 不直接改正式 Drive/accepted deliverable；正式资料写回仍走 proposal review/merge。
+
+后续遗留：
+
+- 真实音频上传/ASR 分片链路仍按计划留到后续会议 ingestion 模块。
+- 桌宠主动提醒不进入 Web 主窗口；R5.6 只接通知/日程 Page VM 与 Web 运营页，Cuu 气泡动作另走独立 pet surface。
+
+## 6. R5.6 Handoff
 
 R5.5 完成后，优先推进 Schedule/Notify：把 Drive 与 Meeting 产生的真实 WorkItem、proposal 与待确认洞察接入提醒/通知中心，补齐 R4 中期审查提到的 schedule/notify 业务断档，并把桌宠主动提醒留给独立 Cuu/pet surface。

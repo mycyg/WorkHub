@@ -12,6 +12,8 @@ import {
   auditLogs,
   chatMessages,
   knowledgeDocuments,
+  meetingInsights,
+  meetingRecords,
   projectDriveComments,
   projectDriveItems,
   projectDriveOperations,
@@ -78,6 +80,10 @@ export type WorkItemDriveSourceCommentRow = {
   comment: typeof projectDriveComments.$inferSelect;
   folder: typeof projectDriveItems.$inferSelect | null;
   folderPath: string | null;
+};
+export type WorkItemMeetingSourceInsightRow = {
+  insight: typeof meetingInsights.$inferSelect;
+  meeting: typeof meetingRecords.$inferSelect;
 };
 export type WorkItemAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
@@ -155,6 +161,7 @@ export type StoredWorkItemDetailRows = {
   acceptedDeliverables: WorkItemAcceptedDeliverableRow[];
   evidenceBindings: WorkItemChatMessageRow[];
   driveSourceComment: WorkItemDriveSourceCommentRow | null;
+  meetingSourceInsight: WorkItemMeetingSourceInsightRow | null;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -511,7 +518,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments] = await Promise.all([
+      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights] = await Promise.all([
         db
           .select()
           .from(workItemAcceptanceItems)
@@ -540,6 +547,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .leftJoin(projectDriveItems, eq(projectDriveComments.folderId, projectDriveItems.id))
           .where(eq(projectDriveComments.draftWorkItemId, workItemId))
           .orderBy(desc(projectDriveComments.updatedAt), desc(projectDriveComments.createdAt))
+          .limit(1),
+        db
+          .select({
+            insight: meetingInsights,
+            meeting: meetingRecords
+          })
+          .from(meetingInsights)
+          .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+          .where(eq(meetingInsights.createdWorkItemId, workItemId))
+          .orderBy(desc(meetingInsights.updatedAt), desc(meetingInsights.createdAt))
           .limit(1)
       ]);
 
@@ -571,7 +588,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         latestProposal: latestProposals[0] ?? null,
         acceptedDeliverables,
         evidenceBindings,
-        driveSourceComment: driveSourceCommentWithPath
+        driveSourceComment: driveSourceCommentWithPath,
+        meetingSourceInsight: meetingSourceInsights[0] ?? null
       };
     },
 

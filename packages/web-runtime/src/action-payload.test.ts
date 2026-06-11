@@ -16,6 +16,8 @@ import {
   evidenceBindingWorkItemIdFromHref,
   hasCustomFieldPlaceholder,
   mergeProposalCandidateApplyIdFromHref,
+  meetingDraftProposalFromHref,
+  meetingInsightActionFromHref,
   proposalActionFromHref,
   replaceCustomFieldPlaceholder,
   sessionNextQuestionIdFromHref
@@ -39,6 +41,19 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     commentId: "c-1"
   });
   assert.deepEqual(driveDraftProposalFromHref("/api/drive/workitems/w%201/proposal-draft"), {
+    workItemId: "w 1"
+  });
+  assert.deepEqual(meetingInsightActionFromHref("/api/meetings/projects/p-1/insights/i%201/draft"), {
+    projectId: "p-1",
+    insightId: "i 1",
+    action: "draft"
+  });
+  assert.deepEqual(meetingInsightActionFromHref("/api/meetings/projects/p-1/insights/i-1/dismiss"), {
+    projectId: "p-1",
+    insightId: "i-1",
+    action: "dismiss"
+  });
+  assert.deepEqual(meetingDraftProposalFromHref("/api/meetings/workitems/w%201/proposal-draft"), {
     workItemId: "w 1"
   });
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {

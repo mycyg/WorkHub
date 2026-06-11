@@ -10,6 +10,7 @@ import type {
   DrivePageVM,
   EvidenceBubble,
   GoldPathSurfaceVM,
+  MeetingPageVM,
   ProposalConflict,
   ReplayTraceVM,
   SessionVM,
@@ -30,6 +31,7 @@ type RouteClientOverrides = {
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
   drive?: DrivePageVM;
+  meetings?: MeetingPageVM;
   replay?: ReplayTraceVM;
   session?: SessionVM;
   knowledge?: EvidenceBubble;
@@ -39,6 +41,81 @@ type RouteClientOverrides = {
   approvalsError?: Error;
   costError?: Error;
 };
+
+function meetingVm(): MeetingPageVM {
+  return {
+    generated_at: "2026-06-11T09:30:00.000Z",
+    project: {
+      id: "95000000-0000-4000-8000-000000000001",
+      name: "R5 Meeting Workspace",
+      slug: "r5-meeting-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      meeting_count: 1,
+      ready_count: 1,
+      pending_insight_count: 1,
+      confirmed_insight_count: 0,
+      dismissed_insight_count: 0
+    },
+    can_manage: true,
+    selected_meeting_id: "95000000-0000-4000-8000-000000000002",
+    meetings: [
+      {
+        id: "95000000-0000-4000-8000-000000000002",
+        project_id: "95000000-0000-4000-8000-000000000001",
+        uploaded_by_user_id: "95000000-0000-4000-8000-000000000003",
+        uploaded_by_label: "PM",
+        title: "Q2 Client Proposal Review",
+        audio_filename: "q2-review.txt",
+        audio_mime: "text/plain",
+        audio_size_bytes: 2048,
+        transcript_text: "Priya Shah: Update proposal pricing model with tiered usage.",
+        minutes_md: "## Summary\n\nPricing and timeline changes need review.",
+        status: "ready",
+        created_at: "2026-06-11T09:00:00.000Z",
+        updated_at: "2026-06-11T09:10:00.000Z",
+        insights: [
+          {
+            id: "95000000-0000-4000-8000-000000000004",
+            meeting_id: "95000000-0000-4000-8000-000000000002",
+            kind: "requirement_change",
+            title: "Update proposal pricing model",
+            description: "Create a draft update to the pricing section with tiered usage.",
+            confidence_reason: "The meeting explicitly asks Finance to update the model before review.",
+            status: "pending",
+            created_at: "2026-06-11T09:10:00.000Z",
+            evidence_refs: [
+              {
+                id: "95000000-0000-4000-8000-000000000005",
+                source_type: "meeting",
+                source_id: "95000000-0000-4000-8000-000000000002",
+                title: "Q2 Client Proposal Review",
+                excerpt: "Update proposal pricing model with tiered usage.",
+                href: "/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002"
+              }
+            ],
+            actions: {
+              create_draft: {
+                id: "meeting_insight_to_draft",
+                label: "Create draft",
+                method: "POST",
+                href: "/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/draft"
+              },
+              dismiss: {
+                id: "meeting_insight_dismiss",
+                label: "Dismiss",
+                method: "POST",
+                href: "/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/dismiss"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  };
+}
 
 function driveVm(): DrivePageVM {
   return {
@@ -344,6 +421,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         calls.push(`drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
         return overrides.drive ?? driveVm();
       },
+      async meetings(options?: { locale?: string; projectId?: string; meetingId?: string }) {
+        calls.push(`meetings:${options?.locale ?? "none"}:${options?.projectId ?? "none"}:${options?.meetingId ?? "none"}`);
+        return overrides.meetings ?? meetingVm();
+      },
       async workItem(id: string, options?: { locale?: string }) {
         localeCall(`workItem:${id}`, options);
         return surface.page_vms.workitem;
@@ -545,6 +626,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "workitem",
     "proposal",
     "drive",
+    "meetings",
     "replay",
     "cost",
     "knowledge",
@@ -554,6 +636,7 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
   assert.equal(resolveWebRoute("/drive")?.key, "drive");
+  assert.equal(resolveWebRoute("/meetings?project_id=95000000-0000-4000-8000-000000000001")?.key, "meetings");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
@@ -583,6 +666,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["workitem", "workitem"],
       ["proposal", "proposal"],
       ["drive", "drive"],
+      ["meetings", "meetings"],
       ["replay", "replay"],
       ["cost", "cost"],
       ["knowledge", "evidence"],
@@ -733,6 +817,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     ["/", "attention:en-US"],
     ["/approvals", "approvals:en-US"],
     ["/drive", "drive:en-US:none"],
+    ["/meetings", "meetings:en-US:none:none"],
     ["/dashboard/cost", "cost:en-US"],
     ["/settings", "settings:en-US"]
   ] as const) {
@@ -762,6 +847,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ]],
     ["/drive", ["drive:en-US:none"]],
+    ["/meetings", ["meetings:en-US:none:none"]],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
@@ -790,6 +876,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
       `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ], "proposal"],
     ["/drive", ["drive:en-US:none"], "drive"],
+    ["/meetings", ["meetings:en-US:none:none"], "meetings"],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"], "replay"],
     ["/dashboard/cost", ["cost:en-US"], "cost"],
     ["/settings", ["settings:en-US"], "settings"]
@@ -866,6 +953,25 @@ test("R5.2 drive route loader forwards project id query to the Page VM client", 
 
   assert.equal(result.status, "ready");
   assert.deepEqual(calls, ["drive:en-US:93000000-0000-4000-8000-000000000001"]);
+});
+
+test("R5.5 meetings route loader forwards project and meeting ids to the Page VM client", async () => {
+  const surface = goldPathSurfaceVm();
+  const meetings = meetingVm();
+  const { client, calls } = fakeRouteClient(surface, { meetings });
+  const match = resolveWebRoute("/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["meetings:en-US:95000000-0000-4000-8000-000000000001:95000000-0000-4000-8000-000000000002"]);
+  assert.equal(result.html.includes('data-r4-route-component="meetings"'), true);
+  assert.equal(result.html.includes('data-r5-meetings-route="true"'), true);
+  assert.equal(result.html.includes('data-r5-meeting-count="1"'), true);
+  assert.equal(result.html.includes('data-r5-meeting-pending-insights="1"'), true);
+  assert.equal(result.html.includes('data-action-id="meeting_insight_to_draft"'), true);
+  assert.equal(result.html.includes('data-r4-product-metric="meetings"'), true);
 });
 
 test("R4.15 settings route keeps locale preference and device boundary markers auditable", async () => {

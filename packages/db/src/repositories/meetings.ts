@@ -1,0 +1,477 @@
+import { randomUUID } from "node:crypto";
+
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+
+import type { WorkHubDb } from "../client.js";
+import { allocateProjectCode } from "../sequences.js";
+import {
+  auditLogs,
+  chatMessages,
+  meetingInsights,
+  meetingRecords,
+  projects,
+  proposals,
+  users,
+  workItems
+} from "../schema/index.js";
+
+export type MeetingProjectRow = typeof projects.$inferSelect;
+export type MeetingRecordRow = typeof meetingRecords.$inferSelect;
+export type MeetingInsightRow = typeof meetingInsights.$inferSelect;
+export type MeetingUploadedByRow = typeof users.$inferSelect;
+export type MeetingWorkItemRow = typeof workItems.$inferSelect;
+export type MeetingProposalRow = typeof proposals.$inferSelect;
+
+export type MeetingRecordWithUserRow = {
+  meeting: MeetingRecordRow;
+  uploadedBy: MeetingUploadedByRow;
+};
+
+export type MeetingPageRows = {
+  project: MeetingProjectRow | null;
+  meetings: MeetingRecordWithUserRow[];
+  insights: MeetingInsightRow[];
+  insightProposals: MeetingProposalRow[];
+};
+
+export type MeetingInsightDraftRows = {
+  insight: MeetingInsightRow;
+  meeting: MeetingRecordRow;
+  workItem: MeetingWorkItemRow | null;
+  created: boolean;
+};
+
+export type MeetingRepositoryActor = {
+  actorKind: "human" | "ai" | "system" | string;
+  actorUserId: string;
+};
+
+export class MeetingRepositoryConflictError extends Error {
+  constructor(
+    public readonly code:
+      | "meeting_insight_not_pending"
+      | "meeting_insight_draft_missing"
+      | "meeting_insight_rationale_missing",
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+export type MeetingRepository = {
+  readPage: (input?: {
+    projectId?: string;
+    limit?: number;
+  }) => Promise<MeetingPageRows>;
+  insightToDraft: (input: MeetingRepositoryActor & {
+    projectId: string;
+    insightId: string;
+    at?: Date;
+  }) => Promise<MeetingInsightDraftRows | null>;
+  dismissInsight: (input: MeetingRepositoryActor & {
+    projectId: string;
+    insightId: string;
+    at?: Date;
+  }) => Promise<MeetingInsightDraftRows | null>;
+  recordDraftProposal: (input: MeetingRepositoryActor & {
+    workItemId: string;
+    proposalId: string;
+    at?: Date;
+  }) => Promise<MeetingInsightDraftRows | null>;
+};
+
+function clampLimit(limit: number | undefined) {
+  return Math.max(1, Math.min(limit ?? 100, 300));
+}
+
+async function findProject(db: WorkHubDb, projectId?: string) {
+  const conditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(and(...(projectId ? [...conditions, eq(projects.id, projectId)] : conditions)))
+    .orderBy(asc(projects.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+function draftTitleFromInsight(insight: MeetingInsightRow) {
+  const title = insight.title.replace(/\s+/gu, " ").trim();
+  if (title) {
+    return title.length > 80 ? `${title.slice(0, 77)}...` : title;
+  }
+  const description = insight.description.replace(/\s+/gu, " ").trim();
+  return description.length > 80 ? `${description.slice(0, 77)}...` : description || "Meeting insight draft";
+}
+
+function previewText(value: string | null | undefined, max = 260) {
+  const text = value?.replace(/\s+/gu, " ").trim();
+  if (!text) {
+    return undefined;
+  }
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+async function insertMeetingAudit(
+  db: WorkHubDb,
+  input: MeetingRepositoryActor & {
+    project: MeetingProjectRow;
+    entityType: string;
+    entityId: string;
+    action: string;
+    detailJson: Record<string, unknown>;
+    at: Date;
+  }
+) {
+  await db.insert(auditLogs).values({
+    id: randomUUID(),
+    orgId: null,
+    workspaceId: input.project.workspaceId,
+    actorKind: input.actorKind,
+    actorUserId: input.actorUserId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    detailJson: input.detailJson,
+    createdAt: input.at
+  });
+}
+
+export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
+  return {
+    async readPage(input = {}) {
+      const project = await findProject(db, input.projectId);
+      if (!project) {
+        return {
+          project: null,
+          meetings: [],
+          insights: [],
+          insightProposals: []
+        };
+      }
+      const limit = clampLimit(input.limit);
+      const meetingRows = await db
+        .select({
+          meeting: meetingRecords,
+          uploadedBy: users
+        })
+        .from(meetingRecords)
+        .innerJoin(users, eq(meetingRecords.uploadedByUserId, users.id))
+        .where(eq(meetingRecords.projectId, project.id))
+        .orderBy(desc(meetingRecords.createdAt))
+        .limit(limit);
+      const meetingIds = meetingRows.map((row) => row.meeting.id);
+      const insightRows = meetingIds.length
+        ? await db
+          .select()
+          .from(meetingInsights)
+          .where(inArray(meetingInsights.meetingId, meetingIds))
+          .orderBy(desc(meetingInsights.createdAt))
+          .limit(limit * 5)
+        : [];
+      const filteredInsights = insightRows;
+      const draftWorkItemIds = [...new Set(filteredInsights.map((insight) => insight.createdWorkItemId).filter((id): id is string => Boolean(id)))];
+      const insightProposals = draftWorkItemIds.length
+        ? await db
+          .select()
+          .from(proposals)
+          .where(inArray(proposals.workItemId, draftWorkItemIds))
+          .orderBy(desc(proposals.createdAt))
+          .limit(100)
+        : [];
+      return {
+        project,
+        meetings: meetingRows,
+        insights: filteredInsights,
+        insightProposals
+      };
+    },
+
+    async insightToDraft(input) {
+      const at = input.at ?? new Date();
+      let result: MeetingInsightDraftRows | null = null;
+      await db.transaction(async (tx) => {
+        const project = await findProject(tx, input.projectId);
+        if (!project) {
+          return;
+        }
+        const rows = await tx
+          .select({
+            insight: meetingInsights,
+            meeting: meetingRecords
+          })
+          .from(meetingInsights)
+          .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+          .where(and(
+            eq(meetingInsights.id, input.insightId),
+            eq(meetingRecords.projectId, input.projectId)
+          ))
+          .limit(1);
+        const source = rows[0];
+        if (!source) {
+          return;
+        }
+        if (source.insight.createdWorkItemId) {
+          const existingRows = await tx
+            .select()
+            .from(workItems)
+            .where(eq(workItems.id, source.insight.createdWorkItemId))
+            .limit(1);
+          if (!existingRows[0] || existingRows[0].deletedAt) {
+            throw new MeetingRepositoryConflictError("meeting_insight_draft_missing", "这条会议洞察关联的草稿已经不可用，请刷新后联系项目负责人。");
+          }
+          result = {
+            insight: source.insight,
+            meeting: source.meeting,
+            workItem: existingRows[0],
+            created: false
+          };
+          return;
+        }
+        if (source.insight.status !== "pending") {
+          throw new MeetingRepositoryConflictError("meeting_insight_not_pending", "只有待确认的会议洞察可以生成草稿。");
+        }
+        if (!previewText(source.insight.confidenceReason)) {
+          throw new MeetingRepositoryConflictError("meeting_insight_rationale_missing", "会议洞察缺少判断理由，不能生成草稿。");
+        }
+
+        const allocation = await allocateProjectCode(tx, input.projectId);
+        const workItemId = randomUUID();
+        const title = draftTitleFromInsight(source.insight);
+        const summaryMd = [
+          source.insight.description,
+          "",
+          `Meeting: ${source.meeting.title}`,
+          `Reason: ${previewText(source.insight.confidenceReason)}`
+        ].join("\n");
+        const workItemRows = await tx
+          .insert(workItems)
+          .values({
+            id: workItemId,
+            code: allocation.code,
+            projectId: input.projectId,
+            workspaceId: project.workspaceId,
+            submitterUserId: input.actorUserId,
+            title,
+            rawDescription: source.insight.description,
+            summaryMd,
+            status: "ai_clarifying",
+            priority: "normal",
+            mode: "worker",
+            humanReserved: false,
+            sourceMeetingId: source.meeting.id,
+            planningNote: `source=meeting_insight meeting_id=${source.meeting.id} insight_id=${source.insight.id}`,
+            createdAt: at,
+            updatedAt: at
+          })
+          .returning();
+        const workItem = workItemRows[0] as MeetingWorkItemRow | undefined;
+        if (!workItem) {
+          throw new Error("Failed to create work item draft from meeting insight");
+        }
+        await tx.insert(chatMessages).values({
+          id: randomUUID(),
+          workItemId,
+          role: "user",
+          kind: "intent",
+          contentJson: {
+            source: "meeting_insight",
+            meeting_id: source.meeting.id,
+            insight_id: source.insight.id,
+            project_id: input.projectId,
+            kind: source.insight.kind,
+            confidence_reason: source.insight.confidenceReason,
+            transcript_excerpt: previewText(source.meeting.transcriptText, 360) ?? null,
+            minutes_excerpt: previewText(source.meeting.minutesMd, 360) ?? null
+          },
+          userOtherText: source.insight.description,
+          createdAt: at,
+          updatedAt: at
+        });
+        const updatedInsights = await tx
+          .update(meetingInsights)
+          .set({
+            status: "confirmed",
+            createdWorkItemId: workItemId,
+            confirmedByUserId: input.actorUserId,
+            confirmedAt: at,
+            updatedAt: at
+          })
+          .where(and(
+            eq(meetingInsights.id, source.insight.id),
+            eq(meetingInsights.status, "pending")
+          ))
+          .returning();
+        const updatedInsight = updatedInsights[0] as MeetingInsightRow | undefined;
+        if (!updatedInsight) {
+          throw new MeetingRepositoryConflictError("meeting_insight_not_pending", "这条会议洞察已经被处理，请刷新后查看最新状态。");
+        }
+        const detailJson = {
+          meeting_id: source.meeting.id,
+          insight_id: source.insight.id,
+          work_item_id: workItemId,
+          insight_kind: source.insight.kind,
+          confidence_reason: previewText(source.insight.confidenceReason)
+        };
+        await insertMeetingAudit(tx, {
+          ...input,
+          project,
+          entityType: "work_item",
+          entityId: workItemId,
+          action: "work_item.created_from_meeting_insight",
+          detailJson,
+          at
+        });
+        await insertMeetingAudit(tx, {
+          ...input,
+          project,
+          entityType: "meeting_insight",
+          entityId: source.insight.id,
+          action: "meeting.insight.confirmed",
+          detailJson,
+          at
+        });
+        result = {
+          insight: updatedInsight,
+          meeting: source.meeting,
+          workItem,
+          created: true
+        };
+      });
+      return result;
+    },
+
+    async dismissInsight(input) {
+      const at = input.at ?? new Date();
+      let result: MeetingInsightDraftRows | null = null;
+      await db.transaction(async (tx) => {
+        const project = await findProject(tx, input.projectId);
+        if (!project) {
+          return;
+        }
+        const rows = await tx
+          .select({
+            insight: meetingInsights,
+            meeting: meetingRecords
+          })
+          .from(meetingInsights)
+          .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+          .where(and(
+            eq(meetingInsights.id, input.insightId),
+            eq(meetingRecords.projectId, input.projectId)
+          ))
+          .limit(1);
+        const source = rows[0];
+        if (!source) {
+          return;
+        }
+        if (source.insight.status === "confirmed" || source.insight.createdWorkItemId) {
+          throw new MeetingRepositoryConflictError("meeting_insight_not_pending", "已确认的会议洞察不能再忽略。");
+        }
+        if (source.insight.status === "dismissed") {
+          result = {
+            insight: source.insight,
+            meeting: source.meeting,
+            workItem: null,
+            created: false
+          };
+          return;
+        }
+        const updatedRows = await tx
+          .update(meetingInsights)
+          .set({
+            status: "dismissed",
+            confirmedByUserId: input.actorUserId,
+            confirmedAt: at,
+            updatedAt: at
+          })
+          .where(and(
+            eq(meetingInsights.id, source.insight.id),
+            eq(meetingInsights.status, "pending")
+          ))
+          .returning();
+        const updatedInsight = updatedRows[0] as MeetingInsightRow | undefined;
+        if (!updatedInsight) {
+          throw new MeetingRepositoryConflictError("meeting_insight_not_pending", "这条会议洞察已经被处理，请刷新后查看最新状态。");
+        }
+        await insertMeetingAudit(tx, {
+          ...input,
+          project,
+          entityType: "meeting_insight",
+          entityId: source.insight.id,
+          action: "meeting.insight.dismissed",
+          detailJson: {
+            meeting_id: source.meeting.id,
+            insight_id: source.insight.id,
+            insight_kind: source.insight.kind
+          },
+          at
+        });
+        result = {
+          insight: updatedInsight,
+          meeting: source.meeting,
+          workItem: null,
+          created: true
+        };
+      });
+      return result;
+    },
+
+    async recordDraftProposal(input) {
+      const at = input.at ?? new Date();
+      let result: MeetingInsightDraftRows | null = null;
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .select({
+            insight: meetingInsights,
+            meeting: meetingRecords
+          })
+          .from(meetingInsights)
+          .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+          .where(eq(meetingInsights.createdWorkItemId, input.workItemId))
+          .orderBy(desc(meetingInsights.updatedAt), desc(meetingInsights.createdAt))
+          .limit(1);
+        const source = rows[0];
+        if (!source) {
+          return;
+        }
+        const project = await findProject(tx, source.meeting.projectId);
+        if (!project) {
+          return;
+        }
+        const detailJson = {
+          meeting_id: source.meeting.id,
+          insight_id: source.insight.id,
+          work_item_id: input.workItemId,
+          proposal_id: input.proposalId,
+          proposal_href: `/proposals/${input.proposalId}`
+        };
+        await insertMeetingAudit(tx, {
+          ...input,
+          project,
+          entityType: "proposal",
+          entityId: input.proposalId,
+          action: "proposal.created_from_meeting_draft",
+          detailJson,
+          at
+        });
+        await insertMeetingAudit(tx, {
+          ...input,
+          project,
+          entityType: "meeting_insight",
+          entityId: source.insight.id,
+          action: "meeting.insight.proposal_created",
+          detailJson,
+          at
+        });
+        result = {
+          insight: source.insight,
+          meeting: source.meeting,
+          workItem: null,
+          created: true
+        };
+      });
+      return result;
+    }
+  };
+}

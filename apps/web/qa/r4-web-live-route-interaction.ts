@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -117,6 +117,8 @@ type BrowserAudit = {
     workitemAcceptanceCount: string | null;
     workitemSourceContext: string | null;
     workitemSourceCommentId: string | null;
+    workitemSourceMeetingId: string | null;
+    workitemSourceInsightId: string | null;
     workitemSourceProposalId: string | null;
     workitemCreateProposalAction: string | null;
     proposalChangeCount: string | null;
@@ -171,6 +173,20 @@ type BrowserAudit = {
     driveProposalLink: string | null;
     driveProposalHref: string | null;
     driveProposalStatus: string | null;
+    meetingProjectId: string | null;
+    meetingSelectedId: string | null;
+    meetingCount: string | null;
+    meetingPendingInsights: string | null;
+    meetingConfirmedInsights: string | null;
+    meetingDismissedInsights: string | null;
+    meetingCanManage: string | null;
+    meetingInsightId: string | null;
+    meetingInsightStatus: string | null;
+    meetingDraftLink: string | null;
+    meetingDraftHref: string | null;
+    meetingProposalLink: string | null;
+    meetingProposalHref: string | null;
+    meetingProposalStatus: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -660,6 +676,11 @@ function productSurface(): GoldPathSurfaceVM {
 }
 
 const driveDraftProposalId = "10000000-0000-4000-8000-000000001631";
+const meetingProjectId = "10000000-0000-4000-8000-000000001600";
+const meetingId = "10000000-0000-4000-8000-000000001700";
+const meetingInsightId = "10000000-0000-4000-8000-000000001701";
+const meetingWorkItemId = "10000000-0000-4000-8000-000000001730";
+const meetingDraftProposalId = "10000000-0000-4000-8000-000000001731";
 
 function qaWorkItemDetail(
   surface: GoldPathSurfaceVM,
@@ -714,6 +735,168 @@ function qaWorkItemDetail(
         }
       } : {})
     }
+  };
+}
+
+function qaMeetingWorkItemDetail(
+  surface: GoldPathSurfaceVM,
+  meetingDraftProposalCreated = false
+): WorkItemDetailVM {
+  const latestProposal = meetingDraftProposalCreated
+    ? {
+      ...surface.page_vms.proposal.manifest,
+      proposal_id: meetingDraftProposalId,
+      work_item_id: meetingWorkItemId,
+      branch_id: "10000000-0000-4000-8000-000000001732",
+      title: "Meeting insight proposal",
+      summary_md: "Reviewable proposal generated from the confirmed meeting insight."
+    }
+    : undefined;
+  return {
+    ...surface.page_vms.workitem,
+    workitem: {
+      ...surface.page_vms.workitem.workitem,
+      id: meetingWorkItemId,
+      code: "WH-R5-5",
+      title: "Update proposal pricing model",
+      raw_description: "Create a draft update to the pricing section with tiered usage.",
+      summary_md: "Create a draft update to the pricing section with tiered usage."
+    },
+    ...(latestProposal ? { latest_proposal: latestProposal } : {}),
+    source_context: {
+      source_type: "meeting_insight",
+      project_id: meetingProjectId,
+      meeting_id: meetingId,
+      insight_id: meetingInsightId,
+      meeting_title: "Q2 Client Proposal Review",
+      insight_kind: "requirement_change",
+      title: "Update proposal pricing model",
+      description: "Create a draft update to the pricing section with tiered usage.",
+      confidence_reason: "The meeting explicitly asks Finance to update the model before review.",
+      status: "confirmed",
+      transcript_excerpt: "Priya Shah: Update proposal pricing model with tiered usage before review.",
+      minutes_excerpt: "Pricing and timeline changes need review before Finance sign-off.",
+      evidence_refs: [
+        {
+          id: "10000000-0000-4000-8000-000000001702",
+          source_type: "meeting",
+          source_id: meetingId,
+          title: "Q2 Client Proposal Review",
+          excerpt: "Update proposal pricing model with tiered usage.",
+          href: `/meetings?project_id=${meetingProjectId}&m=${meetingId}`
+        }
+      ],
+      created_at: "2026-06-11T09:34:00.000Z",
+      ...(meetingDraftProposalCreated ? {
+        proposal_id: meetingDraftProposalId,
+        proposal_href: `/proposals/${meetingDraftProposalId}`,
+        proposal_status: "opened"
+      } : {})
+    },
+    actions: {
+      ...(!meetingDraftProposalCreated ? {
+        create_proposal_draft: {
+          id: "meeting_draft_to_proposal",
+          label: "Create proposal draft",
+          method: "POST" as const,
+          href: `/api/meetings/workitems/${meetingWorkItemId}/proposal-draft`
+        }
+      } : {})
+    }
+  };
+}
+
+function meetingPage(
+  draftCreated = false,
+  proposalCreated = false,
+  dismissed = false
+): MeetingPageVM {
+  const status = dismissed ? "dismissed" as const : draftCreated ? "confirmed" as const : "pending" as const;
+  return {
+    generated_at: "2026-06-11T09:33:00.000Z",
+    project: {
+      id: meetingProjectId,
+      name: "区域发布资料库",
+      slug: "regional-launch",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      meeting_count: 1,
+      ready_count: 1,
+      pending_insight_count: status === "pending" ? 1 : 0,
+      confirmed_insight_count: status === "confirmed" ? 1 : 0,
+      dismissed_insight_count: status === "dismissed" ? 1 : 0
+    },
+    can_manage: true,
+    selected_meeting_id: meetingId,
+    meetings: [
+      {
+        id: meetingId,
+        project_id: meetingProjectId,
+        uploaded_by_user_id: "10000000-0000-4000-8000-000000001703",
+        uploaded_by_label: "PM",
+        title: "Q2 Client Proposal Review",
+        audio_filename: "q2-client-proposal-review.txt",
+        audio_mime: "text/plain",
+        audio_size_bytes: 4096,
+        transcript_text: "Priya Shah: Update proposal pricing model with tiered usage before review. Finance needs a draft by Friday.",
+        minutes_md: "## Summary\n\nPricing and timeline changes need review before Finance sign-off.\n\n## Action\n\nCreate a pricing model update draft and keep source context attached.",
+        status: "ready",
+        created_at: "2026-06-11T09:20:00.000Z",
+        updated_at: "2026-06-11T09:32:00.000Z",
+        insights: [
+          {
+            id: meetingInsightId,
+            meeting_id: meetingId,
+            kind: "requirement_change",
+            title: "Update proposal pricing model",
+            description: "Create a draft update to the pricing section with tiered usage.",
+            confidence_reason: "The meeting explicitly asks Finance to update the model before review.",
+            status,
+            created_at: "2026-06-11T09:32:00.000Z",
+            evidence_refs: [
+              {
+                id: "10000000-0000-4000-8000-000000001702",
+                source_type: "meeting",
+                source_id: meetingId,
+                title: "Q2 Client Proposal Review",
+                excerpt: "Update proposal pricing model with tiered usage.",
+                href: `/meetings?project_id=${meetingProjectId}&m=${meetingId}`
+              }
+            ],
+            ...(draftCreated && !dismissed ? {
+              target_work_item_id: meetingWorkItemId,
+              created_work_item_id: meetingWorkItemId,
+              draft_href: `/workitems/${meetingWorkItemId}`,
+              confirmed_by_user_id: "10000000-0000-4000-8000-000000001703",
+              confirmed_at: "2026-06-11T09:34:00.000Z",
+              ...(proposalCreated ? {
+                proposal_id: meetingDraftProposalId,
+                proposal_href: `/proposals/${meetingDraftProposalId}`,
+                proposal_status: "opened"
+              } : {})
+            } : {}),
+            ...(!draftCreated && !dismissed ? {
+              actions: {
+                create_draft: {
+                  id: "meeting_insight_to_draft",
+                  label: "Create draft",
+                  method: "POST" as const,
+                  href: `/api/meetings/projects/${meetingProjectId}/insights/${meetingInsightId}/draft`
+                },
+                dismiss: {
+                  id: "meeting_insight_dismiss",
+                  label: "Dismiss",
+                  method: "POST" as const,
+                  href: `/api/meetings/projects/${meetingProjectId}/insights/${meetingInsightId}/dismiss`
+                }
+              }
+            } : {})
+          }
+        ]
+      }
+    ]
   };
 }
 
@@ -1165,6 +1348,9 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let driveQaState: DriveQaState = "initial";
   let driveCommentDraftCreated = false;
   let driveDraftProposalCreated = false;
+  let meetingInsightDraftCreated = false;
+  let meetingDraftProposalCreated = false;
+  let meetingInsightDismissed = false;
   let failNextPreferencePatch = false;
   let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
@@ -1285,6 +1471,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/pages/meetings") {
+      sendJson(response, 200, meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed));
+      return;
+    }
     const driveUploadMatch = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(url.pathname);
     if (request.method === "POST" && driveUploadMatch?.[1]) {
       requestRecord.body = await requestBody(request);
@@ -1323,6 +1513,32 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       requestRecord.body = await requestBody(request);
       driveQaState = "restored";
       sendJson(response, 200, { ok: true, data: drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), meta: { locale: currentLocale } });
+      return;
+    }
+    const meetingInsightDraftMatch = /^\/api\/meetings\/projects\/([^/]+)\/insights\/([^/]+)\/draft$/u.exec(url.pathname);
+    if (request.method === "POST" && meetingInsightDraftMatch?.[1] && meetingInsightDraftMatch?.[2]) {
+      requestRecord.body = await requestBody(request);
+      meetingInsightDismissed = false;
+      meetingInsightDraftCreated = true;
+      sendJson(response, 200, { ok: true, data: meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed), meta: { locale: currentLocale } });
+      return;
+    }
+    const meetingInsightDismissMatch = /^\/api\/meetings\/projects\/([^/]+)\/insights\/([^/]+)\/dismiss$/u.exec(url.pathname);
+    if (request.method === "POST" && meetingInsightDismissMatch?.[1] && meetingInsightDismissMatch?.[2]) {
+      requestRecord.body = await requestBody(request);
+      meetingInsightDismissed = true;
+      meetingInsightDraftCreated = false;
+      meetingDraftProposalCreated = false;
+      sendJson(response, 200, { ok: true, data: meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed), meta: { locale: currentLocale } });
+      return;
+    }
+    const meetingDraftProposalMatch = /^\/api\/meetings\/workitems\/([^/]+)\/proposal-draft$/u.exec(url.pathname);
+    if (request.method === "POST" && meetingDraftProposalMatch?.[1]) {
+      requestRecord.body = await requestBody(request);
+      meetingInsightDismissed = false;
+      meetingInsightDraftCreated = true;
+      meetingDraftProposalCreated = true;
+      sendJson(response, 200, { ok: true, data: qaMeetingWorkItemDetail(surface, meetingDraftProposalCreated), meta: { locale: currentLocale } });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
@@ -1373,6 +1589,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     if (request.method === "GET" && workItemMatch?.[1]) {
       if (workItemMatch[1] === "r4-live-forbidden") {
         sendApiError(response, 403, "forbidden", "Needs owner approval");
+        return;
+      }
+      if (workItemMatch[1] === meetingWorkItemId) {
+        sendJson(response, 200, qaMeetingWorkItemDetail(surface, meetingDraftProposalCreated));
         return;
       }
       sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
@@ -1877,6 +2097,10 @@ function auditExpression() {
     const reactMutationEditor = document.querySelector("[data-r4-proposal-react-mutation-editor]");
     const reactMutationInput = document.querySelector("[data-r4-react-controlled-input]");
     const reactLineEditor = document.querySelector("[data-r4-proposal-react-line-editor]");
+    const workitemSourceContext = document.querySelector("[data-r5-workitem-source-context]");
+    const meetingInsight = document.querySelector("[data-r5-meeting-insight]");
+    const meetingDraftLink = document.querySelector("[data-r5-meeting-draft-link]");
+    const meetingProposalLink = document.querySelector("[data-r5-meeting-proposal-link]");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -1884,10 +2108,12 @@ function auditExpression() {
       workitemTraceCount: routeComponent?.getAttribute("data-r4-workitem-trace-count") || null,
       workitemEvidenceCount: routeComponent?.getAttribute("data-r4-workitem-evidence-count") || null,
       workitemAcceptanceCount: routeComponent?.getAttribute("data-r4-workitem-acceptance-count") || null,
-      workitemSourceContext: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-context") || null,
-      workitemSourceCommentId: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-comment-id") || null,
-      workitemSourceProposalId: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-source-proposal-id") || null,
-      workitemCreateProposalAction: document.querySelector("[data-r5-workitem-source-context]")?.getAttribute("data-r5-workitem-create-proposal-action") || null,
+      workitemSourceContext: workitemSourceContext?.getAttribute("data-r5-workitem-source-context") || null,
+      workitemSourceCommentId: workitemSourceContext?.getAttribute("data-r5-workitem-source-comment-id") || null,
+      workitemSourceMeetingId: workitemSourceContext?.getAttribute("data-r5-workitem-source-meeting-id") || null,
+      workitemSourceInsightId: workitemSourceContext?.getAttribute("data-r5-workitem-source-insight-id") || null,
+      workitemSourceProposalId: workitemSourceContext?.getAttribute("data-r5-workitem-source-proposal-id") || null,
+      workitemCreateProposalAction: workitemSourceContext?.getAttribute("data-r5-workitem-create-proposal-action") || null,
       proposalChangeCount: routeComponent?.getAttribute("data-r4-proposal-change-count") || null,
       proposalActionCount: routeComponent?.getAttribute("data-r4-proposal-action-count") || null,
       proposalEvidenceCount: routeComponent?.getAttribute("data-r4-proposal-evidence-count") || null,
@@ -1940,6 +2166,20 @@ function auditExpression() {
       driveProposalLink: document.querySelector("[data-r5-drive-proposal-link]") ? "true" : "false",
       driveProposalHref: document.querySelector("[data-r5-drive-proposal-link]")?.getAttribute("href") || null,
       driveProposalStatus: document.querySelector("[data-r5-drive-proposal-link]")?.getAttribute("data-r5-drive-proposal-status") || null,
+      meetingProjectId: routeComponent?.getAttribute("data-r5-meetings-project-id") || null,
+      meetingSelectedId: routeComponent?.getAttribute("data-r5-meeting-selected-id") || null,
+      meetingCount: routeComponent?.getAttribute("data-r5-meeting-count") || null,
+      meetingPendingInsights: routeComponent?.getAttribute("data-r5-meeting-pending-insights") || null,
+      meetingConfirmedInsights: routeComponent?.getAttribute("data-r5-meeting-confirmed-insights") || null,
+      meetingDismissedInsights: routeComponent?.getAttribute("data-r5-meeting-dismissed-insights") || null,
+      meetingCanManage: routeComponent?.getAttribute("data-r5-meeting-can-manage") || null,
+      meetingInsightId: meetingInsight?.getAttribute("data-r5-meeting-insight") || null,
+      meetingInsightStatus: meetingInsight?.getAttribute("data-r5-meeting-insight-status") || null,
+      meetingDraftLink: meetingDraftLink ? "true" : "false",
+      meetingDraftHref: meetingDraftLink?.getAttribute("href") || null,
+      meetingProposalLink: meetingProposalLink ? "true" : "false",
+      meetingProposalHref: meetingProposalLink?.getAttribute("href") || null,
+      meetingProposalStatus: meetingProposalLink?.getAttribute("data-r5-meeting-proposal-status") || null,
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -2020,9 +2260,22 @@ function auditExpression() {
                 ? Boolean(document.querySelector("[data-r4-knowledge-fallback]") && document.querySelector("[data-r4-knowledge-evidence-ref]") && document.querySelector("[data-action-id='use_for_current_task']"))
                 : routeComponentKey === "drive"
                   ? Boolean(document.querySelector("[data-r4-drive-files]") && document.querySelector("[data-r4-drive-versions]") && document.querySelector("[data-r4-drive-accepted]") && document.querySelector("[data-r5-drive-recycle]") && document.querySelector("[data-r5-drive-operations]") && document.querySelector("[data-action-id='drive_preview']") && document.querySelector("[data-action-id='drive_download']") && document.querySelector("[data-action-id='drive_restore'][data-method='POST']"))
-                : routeComponentKey === "settings"
-                  ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
-                  : Boolean(routeComponentKey);
+                  : routeComponentKey === "meetings"
+                    ? Boolean(
+                      document.querySelector("[data-r5-meetings-route]") &&
+                        document.querySelector("[data-r5-meeting-list]") &&
+                        document.querySelector("[data-r5-meeting-insight-panel]") &&
+                        document.querySelector("[data-r5-meeting-transcript]") &&
+                        document.querySelector("[data-r5-meeting-minutes]") &&
+                        (
+                          document.querySelector("[data-action-id='meeting_insight_to_draft']") ||
+                          document.querySelector("[data-r5-meeting-draft-link]") ||
+                          document.querySelector("[data-r5-meeting-proposal-link]")
+                        )
+                    )
+                    : routeComponentKey === "settings"
+                      ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
+                      : Boolean(routeComponentKey);
     return {
       pathname: location.pathname,
       search: location.search,
@@ -2541,6 +2794,22 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_restore_item"]', "action_success", "drive_restore_item");
   steps.push(await captureStep(cdp, { id: "15e-drive-restore-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
+  await navigate(cdp, `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, "ready");
+  steps.push(await captureStep(cdp, { id: "15f-meetings-insight-en-desktop", url: `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "meetings" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="meeting_insight_to_draft"]', "action_success", "meeting_insight_to_draft");
+  steps.push(await captureStep(cdp, { id: "15g-meeting-insight-draft-en-desktop", url: `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "meetings" }));
+
+  await clickAndWait(cdp, `a[href="/workitems/${meetingWorkItemId}"]`, `/workitems/${meetingWorkItemId}`);
+  steps.push(await captureStep(cdp, { id: "15h-meeting-workitem-source-en-desktop", url: `${baseUrl}/workitems/${meetingWorkItemId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
+  await clickAndWaitForNotice(cdp, '[data-action-id="meeting_draft_to_proposal"]', "action_success", "meeting_draft_to_proposal");
+  steps.push(await captureStep(cdp, { id: "15i-meeting-draft-proposal-en-desktop", url: `${baseUrl}/workitems/${meetingWorkItemId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, "ready");
+  steps.push(await captureStep(cdp, { id: "15j-meetings-en-mobile-no-overflow", url: `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "meetings" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
   steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
@@ -2584,6 +2853,12 @@ function requestProof(requests: ApiRequestRecord[]) {
     driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes("project_id=10000000-0000-4000-8000-000000001600")),
     driveCommentDraft: requests.some((request) => request.method === "POST" && /^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u.test(request.pathname)),
     driveDraftProposal: requests.some((request) => request.method === "POST" && /^\/api\/drive\/workitems\/[^/]+\/proposal-draft$/u.test(request.pathname)),
+    meetings: requests.some((request) => request.pathname === "/api/pages/meetings" && request.locale === "en-US"),
+    meetingsProjectParam: requests.some((request) => request.pathname === "/api/pages/meetings" && request.search.includes(`project_id=${meetingProjectId}`)),
+    meetingWorkitem: requests.some((request) => request.pathname === `/api/pages/workitems/${meetingWorkItemId}` && request.locale === "en-US"),
+    meetingInsightDraft: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/draft$/u.test(request.pathname)),
+    meetingInsightDismiss: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/dismiss$/u.test(request.pathname)),
+    meetingDraftProposal: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/workitems\/[^/]+\/proposal-draft$/u.test(request.pathname)),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2614,6 +2889,11 @@ function requestProof(requests: ApiRequestRecord[]) {
       driveDraftProposal: countMatch(/^\/api\/drive\/workitems\/[^/]+\/proposal-draft$/u, "POST"),
       driveDelete: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST"),
       driveRestore: countMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/restore$/u, "POST"),
+      meetings: count("/api/pages/meetings"),
+      meetingWorkitem: count(`/api/pages/workitems/${meetingWorkItemId}`),
+      meetingInsightDraft: countMatch(/^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/draft$/u, "POST"),
+      meetingInsightDismiss: countMatch(/^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/dismiss$/u, "POST"),
+      meetingDraftProposal: countMatch(/^\/api\/meetings\/workitems\/[^/]+\/proposal-draft$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -2646,6 +2926,14 @@ function requestProof(requests: ApiRequestRecord[]) {
       driveDraftProposalRequest: requests.some((request) =>
         request.method === "POST" &&
         /^\/api\/drive\/workitems\/r4-live-workitem\/proposal-draft$/u.test(request.pathname)
+      ),
+      meetingInsightDraftRequest: requests.some((request) =>
+        request.method === "POST" &&
+        new RegExp(`^/api/meetings/projects/${meetingProjectId}/insights/${meetingInsightId}/draft$`, "u").test(request.pathname)
+      ),
+      meetingDraftProposalRequest: requests.some((request) =>
+        request.method === "POST" &&
+        new RegExp(`^/api/meetings/workitems/${meetingWorkItemId}/proposal-draft$`, "u").test(request.pathname)
       ),
       driveDeleteExpectedCurrent: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "expected_current_version_id") &&
         bodyMatch(/^\/api\/drive\/projects\/[^/]+\/items\/[^/]+\/delete$/u, "POST", "10000000-0000-4000-8000-000000001625")
@@ -2749,6 +3037,7 @@ async function main() {
       workitem: "workitem",
       proposal: "proposal",
       drive: "drive",
+      meetings: "meetings",
       replay: "replay",
       cost: "cost",
       knowledge: "evidence",
@@ -2764,7 +3053,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.cost && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.cost && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -2887,6 +3176,83 @@ async function main() {
           step.audit.routeData.driveProposalStatus === "opened" &&
           step.audit.routeData.driveOperationCount === "3" &&
           !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_5_meeting_insight_to_draft:
+        proof.meetings &&
+        proof.meetingsProjectParam &&
+        proof.meetingWorkitem &&
+        proof.meetingInsightDraft &&
+        proof.meetingDraftProposal &&
+        proof.counts.meetings === 3 &&
+        proof.counts.meetingWorkitem === 2 &&
+        proof.counts.meetingInsightDraft === 1 &&
+        proof.counts.meetingInsightDismiss === 0 &&
+        proof.counts.meetingDraftProposal === 1 &&
+        proof.advancedPayloads.meetingInsightDraftRequest &&
+        proof.advancedPayloads.meetingDraftProposalRequest &&
+        steps.some((step) =>
+          step.id === "15f-meetings-insight-en-desktop" &&
+          step.audit.routeComponent === "meetings" &&
+          step.audit.routeData.meetingProjectId === meetingProjectId &&
+          step.audit.routeData.meetingSelectedId === meetingId &&
+          step.audit.routeData.meetingCount === "1" &&
+          step.audit.routeData.meetingPendingInsights === "1" &&
+          step.audit.routeData.meetingConfirmedInsights === "0" &&
+          step.audit.routeData.meetingDismissedInsights === "0" &&
+          step.audit.routeData.meetingCanManage === "true" &&
+          step.audit.routeData.meetingInsightId === meetingInsightId &&
+          step.audit.routeData.meetingInsightStatus === "pending" &&
+          step.audit.routeData.meetingDraftLink === "false" &&
+          step.audit.routeData.meetingProposalLink === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15g-meeting-insight-draft-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "meeting_insight_to_draft" &&
+          step.audit.routeData.meetingPendingInsights === "0" &&
+          step.audit.routeData.meetingConfirmedInsights === "1" &&
+          step.audit.routeData.meetingInsightStatus === "confirmed" &&
+          step.audit.routeData.meetingDraftLink === "true" &&
+          step.audit.routeData.meetingDraftHref === `/workitems/${meetingWorkItemId}` &&
+          step.audit.routeData.meetingProposalLink === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15h-meeting-workitem-source-en-desktop" &&
+          step.audit.routeComponent === "workitem" &&
+          step.audit.routeData.workitemSourceContext === "meeting_insight" &&
+          step.audit.routeData.workitemSourceMeetingId === meetingId &&
+          step.audit.routeData.workitemSourceInsightId === meetingInsightId &&
+          step.audit.routeData.workitemCreateProposalAction === "true" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15i-meeting-draft-proposal-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "meeting_draft_to_proposal" &&
+          step.audit.routeData.workitemSourceContext === "meeting_insight" &&
+          step.audit.routeData.workitemSourceProposalId === meetingDraftProposalId &&
+          step.audit.routeData.workitemCreateProposalAction === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15j-meetings-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "meetings" &&
+          step.audit.routeData.meetingPendingInsights === "0" &&
+          step.audit.routeData.meetingConfirmedInsights === "1" &&
+          step.audit.routeData.meetingInsightStatus === "confirmed" &&
+          step.audit.routeData.meetingDraftLink === "true" &&
+          step.audit.routeData.meetingProposalLink === "true" &&
+          step.audit.routeData.meetingProposalHref === `/proposals/${meetingDraftProposalId}` &&
+          step.audit.routeData.meetingProposalStatus === "opened" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
       r4_11_route_component_source_truth: steps
@@ -3115,7 +3481,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "10" &&
+        step.audit.routeTreeRouteCount === "11" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
@@ -3449,7 +3815,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 50,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 55,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3501,7 +3867,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 50,
+      r4_22_no_new_smoke_sprawl: steps.length === 55,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3550,9 +3916,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 50,
+      r4_23_no_new_smoke_sprawl: steps.length === 55,
       r4_24_no_hash_write:
-        steps.length === 50 &&
+        steps.length === 55 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3593,6 +3959,11 @@ async function main() {
         proof.counts.workitemForbidden === 1 &&
         proof.counts.drive === 6 &&
         proof.counts.driveDraftProposal === 1 &&
+        proof.counts.meetings === 3 &&
+        proof.counts.meetingWorkitem === 2 &&
+        proof.counts.meetingInsightDraft === 1 &&
+        proof.counts.meetingInsightDismiss === 0 &&
+        proof.counts.meetingDraftProposal === 1 &&
         proof.counts.session === 3 &&
         proof.counts.nextQuestion === 1 &&
         proof.counts.createWorkItem === 1 &&
@@ -3652,6 +4023,7 @@ async function main() {
         `- R5.2 Drive upload/recycle/operation log: ${String(gates.r5_2_drive_upload_recycle_operation_log)}`,
         `- R5.3 Drive comment to draft: ${String(gates.r5_3_drive_comment_to_draft)}`,
         `- R5.4 Drive draft to proposal: ${String(gates.r5_4_drive_draft_to_proposal)}`,
+        `- R5.5 Meeting insight to draft: ${String(gates.r5_5_meeting_insight_to_draft)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

@@ -6,6 +6,7 @@ import type {
   IdentityResponse,
   DrivePageRequestOptions,
   PageRequestOptions,
+  MeetingPageRequestOptions,
   WorkHubApiClient,
   WorkHubApiClientOptions
 } from "./types.js";
@@ -58,6 +59,23 @@ function withDrivePageOptions(path: string, options?: DrivePageRequestOptions) {
   const projectId = options?.projectId ?? options?.project_id;
   if (projectId) {
     params.set("project_id", projectId);
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function withMeetingPageOptions(path: string, options?: MeetingPageRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.locale) {
+    params.set("locale", options.locale);
+  }
+  const projectId = options?.projectId ?? options?.project_id;
+  if (projectId) {
+    params.set("project_id", projectId);
+  }
+  const meetingId = options?.meetingId ?? options?.meeting_id;
+  if (meetingId) {
+    params.set("m", meetingId);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
@@ -272,6 +290,18 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
         method: "POST"
       }),
+    createMeetingInsightDraft: (projectId, insightId, options) =>
+      request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/draft`, options), {
+        method: "POST"
+      }),
+    dismissMeetingInsight: (projectId, insightId, options) =>
+      request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/dismiss`, options), {
+        method: "POST"
+      }),
+    createMeetingDraftProposal: (workItemId, options) =>
+      request(withPageLocale(`/api/meetings/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
+        method: "POST"
+      }),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>
@@ -287,6 +317,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       settings: (options) => request(withPageLocale("/api/pages/settings", options)),
       goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),
       drive: (options) => request(withDrivePageOptions("/api/pages/drive", options)),
+      meetings: (options) => request(withMeetingPageOptions("/api/pages/meetings", options)),
       workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
       proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options))
     }

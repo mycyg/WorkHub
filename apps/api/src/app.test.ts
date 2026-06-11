@@ -34,11 +34,15 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   assert.equal(body.openapi, "3.1.0");
   assert.equal(Boolean(body.paths["/api/pages/attention"]), true);
   assert.equal(Boolean(body.paths["/api/pages/drive"]), true);
+  assert.equal(Boolean(body.paths["/api/pages/meetings"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/files"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/items/{itemId}/delete"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/items/{itemId}/restore"]), true);
   assert.equal(Boolean(body.paths["/api/drive/projects/{projectId}/comments/{commentId}/draft"]), true);
   assert.equal(Boolean(body.paths["/api/drive/workitems/{workItemId}/proposal-draft"]), true);
+  assert.equal(Boolean(body.paths["/api/meetings/projects/{projectId}/insights/{insightId}/draft"]), true);
+  assert.equal(Boolean(body.paths["/api/meetings/projects/{projectId}/insights/{insightId}/dismiss"]), true);
+  assert.equal(Boolean(body.paths["/api/meetings/workitems/{workItemId}/proposal-draft"]), true);
   assert.equal(Boolean(body.paths["/api/cost/usage"]), true);
   assert.equal(Boolean(body.paths["/api/cost/policies"]), true);
   assert.equal(Boolean(body.paths["/api/cost/policies/{scope}/{id}"]), true);

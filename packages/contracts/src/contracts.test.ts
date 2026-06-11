@@ -21,6 +21,7 @@ import {
   confidenceGrades,
   drivePageVmSchema,
   identifyRequestSchema,
+  meetingPageVmSchema,
   normalizeWorkHubLocale,
   mergeProposalRequestSchema,
   mergeProposalCandidateChoiceResultSchema,
@@ -478,6 +479,136 @@ test("work item detail VM carries Drive source context and proposal draft action
 
   assert.equal(parsed.source_context?.source_type, "drive_comment");
   assert.equal(parsed.actions.create_proposal_draft?.method, "POST");
+});
+
+test("meeting page VM carries insight actions, evidence, and proposal links", () => {
+  const parsed = meetingPageVmSchema.parse({
+    generated_at: "2026-06-11T01:10:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      meeting_count: 1,
+      ready_count: 1,
+      pending_insight_count: 1,
+      confirmed_insight_count: 0,
+      dismissed_insight_count: 0
+    },
+    can_manage: true,
+    selected_meeting_id: "93000000-0000-4000-8000-000000000002",
+    meetings: [
+      {
+        id: "93000000-0000-4000-8000-000000000002",
+        project_id: "93000000-0000-4000-8000-000000000001",
+        uploaded_by_user_id: "93000000-0000-4000-8000-000000000003",
+        uploaded_by_label: "PM",
+        title: "客户方案评审",
+        audio_filename: "review.txt",
+        audio_size_bytes: 512,
+        transcript_text: "需要更新报价模型。",
+        minutes_md: "## 纪要\n\n报价模型需要更新。",
+        status: "ready",
+        created_at: "2026-06-11T01:00:00.000Z",
+        updated_at: "2026-06-11T01:05:00.000Z",
+        insights: [
+          {
+            id: "93000000-0000-4000-8000-000000000004",
+            meeting_id: "93000000-0000-4000-8000-000000000002",
+            kind: "requirement_change",
+            title: "更新报价模型",
+            description: "把阶梯报价模型写入方案草稿。",
+            confidence_reason: "会上明确要求财务更新模型。",
+            status: "pending",
+            created_at: "2026-06-11T01:05:00.000Z",
+            evidence_refs: [
+              {
+                id: "93000000-0000-4000-8000-000000000005",
+                source_type: "meeting",
+                source_id: "93000000-0000-4000-8000-000000000002",
+                title: "客户方案评审"
+              }
+            ],
+            actions: {
+              create_draft: {
+                id: "meeting_insight_to_draft",
+                label: "生成草稿",
+                method: "POST",
+                href: "/api/meetings/projects/93000000-0000-4000-8000-000000000001/insights/93000000-0000-4000-8000-000000000004/draft"
+              },
+              dismiss: {
+                id: "meeting_insight_dismiss",
+                label: "忽略",
+                method: "POST",
+                href: "/api/meetings/projects/93000000-0000-4000-8000-000000000001/insights/93000000-0000-4000-8000-000000000004/dismiss"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(parsed.meetings[0]?.insights[0]?.actions.create_draft?.method, "POST");
+  assert.equal(parsed.meetings[0]?.insights[0]?.evidence_refs[0]?.source_type, "meeting");
+});
+
+test("work item detail VM carries Meeting source context and proposal draft action", () => {
+  const parsed = workItemDetailVmSchema.parse({
+    workitem: {
+      id: "93000000-0000-4000-8000-000000000006",
+      code: "R5-8",
+      project_id: "93000000-0000-4000-8000-000000000001",
+      submitter_user_id: "93000000-0000-4000-8000-000000000003",
+      status: "ai_clarifying",
+      priority: "normal",
+      sync_state: "synced",
+      version: 1,
+      mode: "worker",
+      human_reserved: false,
+      created_at: "2026-06-11T01:10:00.000Z",
+      updated_at: "2026-06-11T01:10:00.000Z"
+    },
+    acceptance: [],
+    agent_trace_preview: [],
+    evidence_refs: [],
+    source_context: {
+      source_type: "meeting_insight",
+      project_id: "93000000-0000-4000-8000-000000000001",
+      meeting_id: "93000000-0000-4000-8000-000000000002",
+      insight_id: "93000000-0000-4000-8000-000000000004",
+      meeting_title: "客户方案评审",
+      insight_kind: "requirement_change",
+      title: "更新报价模型",
+      description: "把阶梯报价模型写入方案草稿。",
+      confidence_reason: "会上明确要求财务更新模型。",
+      status: "confirmed",
+      transcript_excerpt: "需要更新报价模型。",
+      evidence_refs: [
+        {
+          id: "93000000-0000-4000-8000-000000000005",
+          source_type: "meeting",
+          source_id: "93000000-0000-4000-8000-000000000002",
+          title: "客户方案评审"
+        }
+      ],
+      created_at: "2026-06-11T01:05:00.000Z"
+    },
+    actions: {
+      create_proposal_draft: {
+        id: "meeting_draft_to_proposal",
+        label: "生成变更提议",
+        method: "POST",
+        href: "/api/meetings/workitems/93000000-0000-4000-8000-000000000006/proposal-draft"
+      }
+    }
+  });
+
+  assert.equal(parsed.source_context?.source_type, "meeting_insight");
+  assert.equal(parsed.actions.create_proposal_draft?.href.includes("/api/meetings/"), true);
 });
 
 test("auth contracts expose F04 identity and device shapes", () => {

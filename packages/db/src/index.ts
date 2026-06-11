@@ -17,6 +17,7 @@ export * from "./repositories/confidence.js";
 export * from "./repositories/work-items.js";
 export * from "./repositories/proposals.js";
 export * from "./repositories/drive.js";
+export * from "./repositories/meetings.js";
 export * from "./repositories/agent-runs.js";
 export * from "./repositories/cost-ledger.js";
 export * from "./repositories/budget-policies.js";

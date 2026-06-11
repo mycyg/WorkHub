@@ -12,6 +12,7 @@ import type {
   EvidenceRef,
   ProposalConflict,
   ProposalDetailVM,
+  MeetingPageVM,
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
@@ -43,7 +44,7 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "replay" | "cost" | "knowledge" | "settings">;
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "replay" | "cost" | "knowledge" | "settings">;
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -123,6 +124,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
+  ".wh-r5-meeting-text{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;color:var(--wh-product-muted,#66728c);font-family:\"Aptos\",\"Segoe UI\",sans-serif;font-size:13px;line-height:1.55;overflow-wrap:anywhere}",
   "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}"
 ].join("");
 
@@ -131,6 +133,7 @@ type RouteCopyKey =
   | "workitem.trace"
   | "workitem.deliverables"
   | "workitem.driveSource"
+  | "workitem.meetingSource"
   | "workitem.openProposal"
   | "workitem.openReplay"
   | "workitem.startRun"
@@ -169,6 +172,25 @@ type RouteCopyKey =
   | "drive.status.draft_created"
   | "drive.status.proposal_created"
   | "drive.status.dismissed"
+  | "meeting.kicker"
+  | "meeting.transcript"
+  | "meeting.minutes"
+  | "meeting.insights"
+  | "meeting.evidence"
+  | "meeting.createDraft"
+  | "meeting.dismiss"
+  | "meeting.openDraft"
+  | "meeting.openProposal"
+  | "meeting.reason"
+  | "meeting.approvalSafe"
+  | "meeting.empty"
+  | "meeting.status.ready"
+  | "meeting.status.processing"
+  | "meeting.status.failed"
+  | "meeting.status.pending"
+  | "meeting.status.creating_requirement"
+  | "meeting.status.confirmed"
+  | "meeting.status.dismissed"
   | "cost.scopes"
   | "cost.risks"
   | "cost.models"
@@ -218,6 +240,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.trace": "AI 执行轨迹",
     "workitem.deliverables": "交付物入口",
     "workitem.driveSource": "网盘评论来源",
+    "workitem.meetingSource": "会议洞察来源",
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
     "workitem.startRun": "开始 AI 执行",
@@ -256,6 +279,25 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.status.draft_created": "已生成草稿",
     "drive.status.proposal_created": "已生成提议",
     "drive.status.dismissed": "已忽略",
+    "meeting.kicker": "会议洞察",
+    "meeting.transcript": "转写",
+    "meeting.minutes": "纪要",
+    "meeting.insights": "洞察",
+    "meeting.evidence": "会议证据",
+    "meeting.createDraft": "生成草稿",
+    "meeting.dismiss": "忽略",
+    "meeting.openDraft": "打开草稿",
+    "meeting.openProposal": "打开提议",
+    "meeting.reason": "AI 判断理由",
+    "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
+    "meeting.empty": "这个项目还没有会议洞察。",
+    "meeting.status.ready": "已生成",
+    "meeting.status.processing": "处理中",
+    "meeting.status.failed": "处理失败",
+    "meeting.status.pending": "待确认",
+    "meeting.status.creating_requirement": "创建中",
+    "meeting.status.confirmed": "已确认",
+    "meeting.status.dismissed": "已忽略",
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
     "cost.models": "模型拆解",
@@ -304,6 +346,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.trace": "AI execution trace",
     "workitem.deliverables": "Deliverable entry",
     "workitem.driveSource": "Drive comment source",
+    "workitem.meetingSource": "Meeting insight source",
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
     "workitem.startRun": "Start AI run",
@@ -342,6 +385,25 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.status.draft_created": "Draft created",
     "drive.status.proposal_created": "Proposal created",
     "drive.status.dismissed": "Dismissed",
+    "meeting.kicker": "Meeting insights",
+    "meeting.transcript": "Transcript",
+    "meeting.minutes": "Minutes",
+    "meeting.insights": "Insights",
+    "meeting.evidence": "Meeting evidence",
+    "meeting.createDraft": "Create draft",
+    "meeting.dismiss": "Dismiss",
+    "meeting.openDraft": "Open draft",
+    "meeting.openProposal": "Open proposal",
+    "meeting.reason": "AI rationale",
+    "meeting.approvalSafe": "Approval-safe: official project state will not change until you confirm.",
+    "meeting.empty": "This project does not have meeting insights yet.",
+    "meeting.status.ready": "Ready",
+    "meeting.status.processing": "Processing",
+    "meeting.status.failed": "Failed",
+    "meeting.status.pending": "Pending",
+    "meeting.status.creating_requirement": "Creating",
+    "meeting.status.confirmed": "Confirmed",
+    "meeting.status.dismissed": "Dismissed",
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
     "cost.models": "Model breakdown",
@@ -797,19 +859,40 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
   if (!source) {
     return "";
   }
-  const folder = source.folder_path ? `<span class="wh-pill">${escapeHtml(source.folder_path)}</span>` : "";
+  if (source.source_type === "drive_comment") {
+    const folder = source.folder_path ? `<span class="wh-pill">${escapeHtml(source.folder_path)}</span>` : "";
+    const proposal = source.proposal_href
+      ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
+      : "";
+    return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
+      <div>
+        <strong>${escapeHtml(routeT(locale, "workitem.driveSource"))}</strong>
+        <p>${escapeHtml(source.body)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(source.author_label)}</span>
+        <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(source.status, locale))}</span>
+        ${folder}
+        ${proposal}
+      </div>
+    </div>`;
+  }
   const proposal = source.proposal_href
-    ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
+    ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-source-proposal-status="${escapeHtml(source.proposal_status ?? "")}">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
     : "";
-  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
+  const evidence = source.evidence_refs.length
+    ? source.evidence_refs.slice(0, 3).map((ref) => `<span class="wh-pill" data-r5-workitem-source-evidence="${escapeHtml(ref.id)}">${escapeHtml(ref.title)}</span>`).join("")
+    : "";
+  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-meeting-id="${escapeHtml(source.meeting_id)}" data-r5-workitem-source-insight-id="${escapeHtml(source.insight_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
     <div>
-      <strong>${escapeHtml(routeT(locale, "workitem.driveSource"))}</strong>
-      <p>${escapeHtml(source.body)}</p>
+      <strong>${escapeHtml(routeT(locale, "workitem.meetingSource"))}</strong>
+      <p>${escapeHtml(`${source.meeting_title}: ${source.description}`)}</p>
+      <p>${escapeHtml(routeT(locale, "meeting.reason"))}: ${escapeHtml(source.confidence_reason)}</p>
     </div>
     <div class="wh-r4-route-meta">
-      <span class="wh-pill">${escapeHtml(source.author_label)}</span>
-      <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(source.status, locale))}</span>
-      ${folder}
+      <span class="wh-pill">${escapeHtml(meetingInsightStatusLabel(source.status, locale))}</span>
+      <span class="wh-pill">${escapeHtml(source.insight_kind)}</span>
+      ${evidence}
       ${proposal}
     </div>
   </div>`;
@@ -1062,6 +1145,14 @@ function driveCommentStatusLabel(status: DrivePageVM["comments"][number]["status
   return routeT(locale, "drive.status.pending_llm");
 }
 
+function meetingRecordStatusLabel(status: MeetingPageVM["meetings"][number]["status"], locale: WorkHubLocale) {
+  return routeT(locale, `meeting.status.${status}` as RouteCopyKey);
+}
+
+function meetingInsightStatusLabel(status: MeetingPageVM["meetings"][number]["insights"][number]["status"], locale: WorkHubLocale) {
+  return routeT(locale, `meeting.status.${status}` as RouteCopyKey);
+}
+
 function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
   const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
@@ -1216,6 +1307,106 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
           <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>
           <div class="wh-r4-route-timeline">${operationRows}</div>
+        </section>
+      </div>
+    </section>`
+  });
+}
+
+function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "会议洞察" : "Meeting insights");
+  const selectedMeeting = vm.meetings.find((meeting) => meeting.id === vm.selected_meeting_id) ?? vm.meetings[0];
+  const meetingRows = vm.meetings.length
+    ? vm.meetings.slice(0, 10).map((meeting) => `<a class="wh-r4-route-row" href="/meetings?project_id=${escapeHtml(meeting.project_id)}&m=${escapeHtml(meeting.id)}" data-r5-meeting-id="${escapeHtml(meeting.id)}" data-r5-meeting-status="${escapeHtml(meeting.status)}" data-r5-meeting-selected="${escapeHtml(String(meeting.id === selectedMeeting?.id))}">
+      <div>
+        <strong>${escapeHtml(meeting.title)}</strong>
+        <p>${escapeHtml(`${meeting.created_at} · ${meeting.uploaded_by_label}`)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
+    </a>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "meeting.empty"))}</p>`;
+  const transcript = selectedMeeting?.transcript_text?.trim() || routeT(locale, "meeting.empty");
+  const minutes = selectedMeeting?.minutes_md?.trim() || routeT(locale, "meeting.empty");
+  const insightRows = selectedMeeting?.insights.length
+    ? selectedMeeting.insights.map((insight) => {
+      const createDraftAction = insight.actions?.create_draft;
+      const dismissInsightAction = insight.actions?.dismiss;
+      const createAction = createDraftAction
+        ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(createDraftAction.href)}" data-action-id="${escapeHtml(createDraftAction.id)}" data-method="${escapeHtml(createDraftAction.method)}" data-r5-meeting-insight-create-draft="true">${escapeHtml(createDraftAction.label ?? routeT(locale, "meeting.createDraft"))}</a>`
+        : "";
+      const dismissAction = dismissInsightAction
+        ? `<a class="wh-btn" href="${escapeHtml(dismissInsightAction.href)}" data-action-id="${escapeHtml(dismissInsightAction.id)}" data-method="${escapeHtml(dismissInsightAction.method)}" data-r5-meeting-insight-dismiss="true">${escapeHtml(dismissInsightAction.label ?? routeT(locale, "meeting.dismiss"))}</a>`
+        : "";
+      const draftLink = insight.draft_href
+        ? `<a class="wh-pill" href="${escapeHtml(insight.draft_href)}" data-r5-meeting-draft-link="true">${escapeHtml(routeT(locale, "meeting.openDraft"))}</a>`
+        : "";
+      const proposalLink = insight.proposal_href
+        ? `<a class="wh-pill" href="${escapeHtml(insight.proposal_href)}" data-r5-meeting-proposal-link="true" data-r5-meeting-proposal-id="${escapeHtml(insight.proposal_id ?? "")}" data-r5-meeting-proposal-status="${escapeHtml(insight.proposal_status ?? "")}">${escapeHtml(routeT(locale, "meeting.openProposal"))}</a>`
+        : "";
+      const evidence = insight.evidence_refs.length
+        ? insight.evidence_refs.slice(0, 3).map((ref) => `<span class="wh-pill" data-r5-meeting-evidence-ref="${escapeHtml(ref.id)}">${escapeHtml(ref.title)}</span>`).join("")
+        : "";
+      return `<article class="wh-card wh-r4-route-card" data-r5-meeting-insight="${escapeHtml(insight.id)}" data-r5-meeting-insight-status="${escapeHtml(insight.status)}" data-r5-meeting-insight-kind="${escapeHtml(insight.kind)}">
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(insight.kind)}</span>
+          <span class="wh-pill">${escapeHtml(meetingInsightStatusLabel(insight.status, locale))}</span>
+          ${draftLink}
+          ${proposalLink}
+        </div>
+        <h3>${escapeHtml(insight.title)}</h3>
+        <p>${escapeHtml(insight.description)}</p>
+        <p>${escapeHtml(routeT(locale, "meeting.reason"))}: ${escapeHtml(insight.confidence_reason)}</p>
+        <div class="wh-r4-route-meta">${evidence}</div>
+        <div class="wh-r4-route-actions">${createAction}${dismissAction}</div>
+      </article>`;
+    }).join("")
+    : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "meeting.empty"))}</p></article>`;
+  const primaryHrefs = [
+    ...vm.meetings.flatMap((meeting) => meeting.insights.flatMap((insight) => [
+      insight.actions?.create_draft?.href,
+      insight.actions?.dismiss?.href,
+      insight.draft_href,
+      insight.proposal_href
+    ]))
+  ].filter((value): value is string => Boolean(value));
+
+  return createWebRouteComponent({
+    key: "meetings",
+    css: webRouteComponentCss,
+    primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "meetings",
+    html: `<section class="wh-r4-route" data-r4-route-component="meetings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r5-meetings-route="true" data-r5-meetings-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r5-meeting-selected-id="${escapeHtml(selectedMeeting?.id ?? "")}" data-r5-meeting-count="${escapeHtml(String(vm.summary.meeting_count))}" data-r5-meeting-pending-insights="${escapeHtml(String(vm.summary.pending_insight_count))}" data-r5-meeting-confirmed-insights="${escapeHtml(String(vm.summary.confirmed_insight_count))}" data-r5-meeting-dismissed-insights="${escapeHtml(String(vm.summary.dismissed_insight_count))}" data-r5-meeting-can-manage="${escapeHtml(String(vm.can_manage))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
+          <h2>${escapeHtml(projectTitle)}</h2>
+          <p>${escapeHtml(selectedMeeting?.title ?? routeT(locale, "meeting.empty"))}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.pending_insight_count))}</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-meeting-list="true">
+          <h3>${escapeHtml(routeT(locale, "meeting.kicker"))}</h3>
+          <div class="wh-r4-route-timeline">${meetingRows}</div>
+        </section>
+        <aside class="wh-r4-route-stack" data-r5-meeting-insight-panel="true">
+          <section class="wh-card wh-r4-route-card">
+            <h3>${escapeHtml(routeT(locale, "meeting.insights"))}</h3>
+            <div class="wh-r4-route-stack">${insightRows}</div>
+            <p>${escapeHtml(routeT(locale, "meeting.approvalSafe"))}</p>
+          </section>
+        </aside>
+      </div>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card" data-r5-meeting-transcript="true">
+          <h3>${escapeHtml(routeT(locale, "meeting.transcript"))}</h3>
+          <pre class="wh-r5-meeting-text">${escapeHtml(transcript)}</pre>
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r5-meeting-minutes="true">
+          <h3>${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
+          <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
         </section>
       </div>
     </section>`
@@ -1457,6 +1648,7 @@ export type WebRouteComponentInput =
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
   | { key: "drive"; drive: DrivePageVM }
+  | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -1480,6 +1672,8 @@ export function renderWebRouteComponent(
       return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? []);
     case "drive":
       return renderDriveRouteComponent(input.drive, locale);
+    case "meetings":
+      return renderMeetingRouteComponent(input.meetings, locale);
     case "replay":
       return renderReplayRouteComponent(input.replay, locale);
     case "cost":

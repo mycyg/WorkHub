@@ -491,8 +491,9 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
     : undefined;
   const sourceComment = rows.driveSourceComment;
+  const sourceInsight = rows.meetingSourceInsight;
   const latestProposalId = latestProposal?.success ? latestProposal.data.proposal_id : rows.latestProposal?.id;
-  const sourceContext = sourceComment
+  const driveSourceContext = sourceComment
     ? {
       source_type: "drive_comment" as const,
       project_id: sourceComment.comment.projectId,
@@ -513,12 +514,54 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
       ...(rows.latestProposal?.status ? { proposal_status: rows.latestProposal.status } : {})
     }
     : undefined;
+  const meetingSourceContext = sourceInsight
+    ? {
+      source_type: "meeting_insight" as const,
+      project_id: sourceInsight.meeting.projectId,
+      meeting_id: sourceInsight.meeting.id,
+      insight_id: sourceInsight.insight.id,
+      meeting_title: sourceInsight.meeting.title,
+      insight_kind: sourceInsight.insight.kind === "requirement_change" || sourceInsight.insight.kind === "normal_note"
+        ? sourceInsight.insight.kind
+        : "new_requirement" as const,
+      title: sourceInsight.insight.title,
+      description: sourceInsight.insight.description,
+      confidence_reason: compactText(sourceInsight.insight.confidenceReason, 420) ?? "Meeting insight was confirmed by a project owner.",
+      status: sourceInsight.insight.status === "creating_requirement"
+        ? "creating_requirement"
+        : sourceInsight.insight.status === "confirmed"
+          ? "confirmed"
+          : sourceInsight.insight.status === "dismissed"
+            ? "dismissed"
+            : "pending",
+      ...(sourceInsight.meeting.transcriptText ? { transcript_excerpt: compactText(sourceInsight.meeting.transcriptText, 420) } : {}),
+      ...(sourceInsight.meeting.minutesMd ? { minutes_excerpt: compactText(sourceInsight.meeting.minutesMd, 420) } : {}),
+      evidence_refs: [{
+        id: stableUuid(`meeting-source-evidence:${sourceInsight.insight.id}`),
+        source_type: "meeting" as const,
+        source_id: sourceInsight.meeting.id,
+        title: sourceInsight.meeting.title,
+        excerpt: compactText(sourceInsight.meeting.minutesMd ?? sourceInsight.meeting.transcriptText ?? sourceInsight.insight.description, 260) ?? sourceInsight.insight.description,
+        locator: {
+          path: `/meetings/${sourceInsight.meeting.id}`
+        },
+        confidence_hint: "found" as const,
+        href: `/meetings?project_id=${sourceInsight.meeting.projectId}`
+      }],
+      created_at: sourceInsight.insight.createdAt.toISOString(),
+      ...(latestProposalId ? { proposal_id: latestProposalId, proposal_href: `/proposals/${latestProposalId}` } : {}),
+      ...(rows.latestProposal?.status ? { proposal_status: rows.latestProposal.status } : {})
+    }
+    : undefined;
+  const sourceContext = driveSourceContext ?? meetingSourceContext;
   const createProposalAction = sourceContext && !latestProposalId
     ? {
-      id: "drive_draft_to_proposal",
+      id: sourceContext.source_type === "drive_comment" ? "drive_draft_to_proposal" : "meeting_draft_to_proposal",
       label: workItemT(locale, "proposalDraft.create.label"),
       method: "POST" as const,
-      href: `/api/drive/workitems/${rows.workItem.id}/proposal-draft`
+      href: sourceContext.source_type === "drive_comment"
+        ? `/api/drive/workitems/${rows.workItem.id}/proposal-draft`
+        : `/api/meetings/workitems/${rows.workItem.id}/proposal-draft`
     }
     : undefined;
   return workItemDetailVmSchema.parse({

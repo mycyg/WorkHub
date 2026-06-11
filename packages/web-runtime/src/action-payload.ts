@@ -106,6 +106,25 @@ export function driveDraftProposalFromHref(href: string) {
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
+export function meetingInsightActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/meetings\/projects\/([^/]+)\/insights\/([^/]+)\/(draft|dismiss)$/u.exec(path);
+  if (!match?.[1] || !match[2] || !match[3]) {
+    return undefined;
+  }
+  return {
+    projectId: decodeURIComponent(match[1]),
+    insightId: decodeURIComponent(match[2]),
+    action: match[3] as "draft" | "dismiss"
+  };
+}
+
+export function meetingDraftProposalFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/meetings\/workitems\/([^/]+)\/proposal-draft$/u.exec(path);
+  return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

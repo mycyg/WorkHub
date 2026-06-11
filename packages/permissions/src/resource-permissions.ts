@@ -89,6 +89,31 @@ export function canManageProjectDrive(
   return canViewProjectDrive(project, actor);
 }
 
+export function canViewProjectMeetings(
+  project: ProjectAccessRecord,
+  actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
+): boolean {
+  return canViewProjectDrive(project, actor);
+}
+
+export function canManageProjectMeeting(
+  project: ProjectAccessRecord,
+  meeting: { uploadedByUserId: string },
+  actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
+): boolean {
+  if (actor.isAdmin === true) {
+    return projectIsActive(project);
+  }
+  if (!projectIsActive(project)) {
+    return false;
+  }
+  const actorUserId = projectActorUserId(actor);
+  if (!actorUserId) {
+    return false;
+  }
+  return project.ownerUserId === actorUserId || meeting.uploadedByUserId === actorUserId;
+}
+
 export function canViewWorkItemRecord(
   workItem: WorkItemAccessRecord,
   user: UserAccessRecord,

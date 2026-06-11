@@ -48,6 +48,12 @@ export function getOpenApiDocument() {
           summary: "Project drive page VM"
         }
       },
+      "/api/pages/meetings": {
+        get: {
+          tags: ["pages"],
+          summary: "Meeting insights page VM"
+        }
+      },
       "/api/drive/projects/{projectId}/files": {
         post: {
           tags: ["drive"],
@@ -76,6 +82,24 @@ export function getOpenApiDocument() {
         post: {
           tags: ["drive"],
           summary: "Create or return a deterministic proposal from a Drive comment work item draft"
+        }
+      },
+      "/api/meetings/projects/{projectId}/insights/{insightId}/draft": {
+        post: {
+          tags: ["meetings"],
+          summary: "Create or return a work item draft from a meeting insight"
+        }
+      },
+      "/api/meetings/projects/{projectId}/insights/{insightId}/dismiss": {
+        post: {
+          tags: ["meetings"],
+          summary: "Dismiss a pending meeting insight"
+        }
+      },
+      "/api/meetings/workitems/{workItemId}/proposal-draft": {
+        post: {
+          tags: ["meetings"],
+          summary: "Create or return a deterministic proposal from a meeting-created work item draft"
         }
       },
       "/api/workitems/{id}/proposals": {

@@ -12,6 +12,7 @@ import type {
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
   DrivePageVM,
+  MeetingPageVM,
   ApplyMergeProposalCandidateRequest,
   ChooseMergeProposalCandidateRequest,
   EvidenceBubble,
@@ -80,6 +81,13 @@ export type DrivePageRequestOptions = PageRequestOptions & {
   project_id?: string;
 };
 
+export type MeetingPageRequestOptions = PageRequestOptions & {
+  projectId?: string;
+  project_id?: string;
+  meetingId?: string;
+  meeting_id?: string;
+};
+
 export type DriveUploadFileRequest = {
   filename: string;
   mime?: string;
@@ -124,6 +132,7 @@ export type PageClient = {
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
   drive: (options?: DrivePageRequestOptions) => Promise<DrivePageVM>;
+  meetings: (options?: MeetingPageRequestOptions) => Promise<MeetingPageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
@@ -179,6 +188,9 @@ export type WorkHubApiClient = {
   restoreDriveItem: (projectId: string, itemId: string, options?: PageRequestOptions) => Promise<DrivePageVM>;
   createDriveCommentDraft: (projectId: string, commentId: string, options?: PageRequestOptions) => Promise<DrivePageVM>;
   createDriveDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
+  createMeetingInsightDraft: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
+  dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
+  createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;

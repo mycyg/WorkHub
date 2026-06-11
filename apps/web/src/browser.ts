@@ -45,6 +45,8 @@ import {
   markActiveRouteDirty as sharedMarkActiveRouteDirty,
   mergeConflictNotice,
   mergeProposalCandidateApplyIdFromHref,
+  meetingDraftProposalFromHref,
+  meetingInsightActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
   reasonRequiredNotice,
@@ -460,6 +462,44 @@ function bindGoldPathNavigation(
       if (driveDraftProposal) {
         try {
           const result = await client.createDriveDraftProposal(driveDraftProposal.workItemId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const meetingInsightAction = meetingInsightActionFromHref(href);
+      if (meetingInsightAction?.action === "draft") {
+        try {
+          const result = await client.createMeetingInsightDraft(meetingInsightAction.projectId, meetingInsightAction.insightId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (meetingInsightAction?.action === "dismiss") {
+        try {
+          const result = await client.dismissMeetingInsight(meetingInsightAction.projectId, meetingInsightAction.insightId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const meetingDraftProposal = meetingDraftProposalFromHref(href);
+      if (meetingDraftProposal) {
+        try {
+          const result = await client.createMeetingDraftProposal(meetingDraftProposal.workItemId, { locale });
           await renderCurrentRoute(client, locale);
           if (root) {
             showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));

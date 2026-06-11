@@ -15,6 +15,7 @@ import { createNotificationRoutes } from "./routes/notifications.js";
 import { createAuditRoutes } from "./routes/audit.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createDriveRoutes } from "./routes/drive.js";
+import { createMeetingRoutes } from "./routes/meetings.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
@@ -63,6 +64,7 @@ app.route("/api/proposals", createProposalRoutes());
 app.route("/api/cost", createCostRoutes());
 app.route("/api/pages", createPageRoutes());
 app.route("/api/drive", createDriveRoutes());
+app.route("/api/meetings", createMeetingRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {

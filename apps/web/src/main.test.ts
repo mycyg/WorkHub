@@ -184,6 +184,15 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createDriveDraftProposal() {
       throw new Error("not needed");
     },
+    async createMeetingInsightDraft() {
+      throw new Error("not needed");
+    },
+    async dismissMeetingInsight() {
+      throw new Error("not needed");
+    },
+    async createMeetingDraftProposal() {
+      throw new Error("not needed");
+    },
     async nextQuestion() {
       throw new Error("not needed");
     },
@@ -222,6 +231,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         return surface;
       },
       async drive() {
+        throw new Error("not needed");
+      },
+      async meetings() {
         throw new Error("not needed");
       },
       async workItem() {

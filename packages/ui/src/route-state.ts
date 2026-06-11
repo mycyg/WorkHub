@@ -9,6 +9,7 @@ export type R4WebRouteKey =
   | "workitem"
   | "proposal"
   | "drive"
+  | "meetings"
   | "replay"
   | "cost"
   | "knowledge"
@@ -31,6 +32,7 @@ export const r4WebRouteKeys = [
   "workitem",
   "proposal",
   "drive",
+  "meetings",
   "replay",
   "cost",
   "knowledge",
@@ -65,6 +67,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     workitem: { label: "工作项详情", route: "/workitems/:id" },
     proposal: { label: "变更申请", route: "/proposals/:id" },
     drive: { label: "项目网盘", route: "/drive" },
+    meetings: { label: "会议洞察", route: "/meetings" },
     replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
     knowledge: { label: "证据检索", route: "/knowledge/search" },
@@ -77,6 +80,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     workitem: { label: "Work item detail", route: "/workitems/:id" },
     proposal: { label: "Change request", route: "/proposals/:id" },
     drive: { label: "Project drive", route: "/drive" },
+    meetings: { label: "Meeting insights", route: "/meetings" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },

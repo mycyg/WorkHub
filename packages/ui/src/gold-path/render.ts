@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "replay" | "cost" | "knowledge" | "settings";
+  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "replay" | "cost" | "knowledge" | "settings";
   route: string;
   title: string;
   html: string;
@@ -87,6 +87,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     workitem: "任务详情",
     proposal: "变更申请",
     drive: "项目网盘",
+    meetings: "会议洞察",
     replay: "执行回放",
     cost: "成本看板",
     knowledge: "证据检索",
@@ -99,6 +100,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     workitem: "WorkItem Detail",
     proposal: "Proposal Detail",
     drive: "Project Drive",
+    meetings: "Meeting Insights",
     replay: "Replay Work",
     cost: "Cost Dashboard",
     knowledge: "Evidence Search",

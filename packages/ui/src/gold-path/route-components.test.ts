@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -187,6 +187,81 @@ function drivePageVm(): DrivePageVM {
         href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000011/restore"
       }
     }
+  };
+}
+
+function meetingPageVm(): MeetingPageVM {
+  return {
+    generated_at: "2026-06-11T09:30:00.000Z",
+    project: {
+      id: "95000000-0000-4000-8000-000000000001",
+      name: "R5 Meeting Workspace",
+      slug: "r5-meeting-workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      meeting_count: 1,
+      ready_count: 1,
+      pending_insight_count: 1,
+      confirmed_insight_count: 0,
+      dismissed_insight_count: 0
+    },
+    can_manage: true,
+    selected_meeting_id: "95000000-0000-4000-8000-000000000002",
+    meetings: [
+      {
+        id: "95000000-0000-4000-8000-000000000002",
+        project_id: "95000000-0000-4000-8000-000000000001",
+        uploaded_by_user_id: "95000000-0000-4000-8000-000000000003",
+        uploaded_by_label: "PM",
+        title: "Q2 Client Proposal Review",
+        audio_filename: "q2-review.txt",
+        audio_mime: "text/plain",
+        audio_size_bytes: 2048,
+        transcript_text: "Priya Shah: Update proposal pricing model with tiered usage.",
+        minutes_md: "## Summary\n\nPricing and timeline changes need review.",
+        status: "ready",
+        created_at: "2026-06-11T09:00:00.000Z",
+        updated_at: "2026-06-11T09:10:00.000Z",
+        insights: [
+          {
+            id: "95000000-0000-4000-8000-000000000004",
+            meeting_id: "95000000-0000-4000-8000-000000000002",
+            kind: "requirement_change",
+            title: "Update proposal pricing model",
+            description: "Create a draft update to the pricing section with tiered usage.",
+            confidence_reason: "The meeting explicitly asks Finance to update the model before review.",
+            status: "pending",
+            created_at: "2026-06-11T09:10:00.000Z",
+            evidence_refs: [
+              {
+                id: "95000000-0000-4000-8000-000000000005",
+                source_type: "meeting",
+                source_id: "95000000-0000-4000-8000-000000000002",
+                title: "Q2 Client Proposal Review",
+                excerpt: "Update proposal pricing model with tiered usage.",
+                href: "/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002"
+              }
+            ],
+            actions: {
+              create_draft: {
+                id: "meeting_insight_to_draft",
+                label: "Create draft",
+                method: "POST",
+                href: "/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/draft"
+              },
+              dismiss: {
+                id: "meeting_insight_dismiss",
+                label: "Dismiss",
+                method: "POST",
+                href: "/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/dismiss"
+              }
+            }
+          }
+        ]
+      }
+    ]
   };
 }
 
@@ -545,6 +620,52 @@ test("R5.4 WorkItem route component exposes Drive source context and proposal dr
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
   assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
+});
+
+test("R5.5 WorkItem route component exposes Meeting source context and proposal draft action", () => {
+  const vm = surfaceVm();
+  const draftVm: WorkItemDetailVM = {
+    ...vm.page_vms.workitem,
+    source_context: {
+      source_type: "meeting_insight",
+      project_id: "95000000-0000-4000-8000-000000000001",
+      meeting_id: "95000000-0000-4000-8000-000000000002",
+      insight_id: "95000000-0000-4000-8000-000000000004",
+      meeting_title: "Q2 Client Proposal Review",
+      insight_kind: "requirement_change",
+      title: "Update proposal pricing model",
+      description: "Create a draft update to the pricing section with tiered usage.",
+      confidence_reason: "The meeting explicitly asks Finance to update the model before review.",
+      status: "confirmed",
+      transcript_excerpt: "Update proposal pricing model with tiered usage.",
+      evidence_refs: [
+        {
+          id: "95000000-0000-4000-8000-000000000005",
+          source_type: "meeting",
+          source_id: "95000000-0000-4000-8000-000000000002",
+          title: "Q2 Client Proposal Review"
+        }
+      ],
+      created_at: "2026-06-11T09:10:00.000Z"
+    },
+    actions: {
+      create_proposal_draft: {
+        id: "meeting_draft_to_proposal",
+        label: "Create proposal draft",
+        method: "POST",
+        href: "/api/meetings/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"
+      }
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: draftVm }, { locale: "en-US" });
+
+  assert.equal(workitem.html.includes('data-r5-workitem-source-context="meeting_insight"'), true);
+  assert.equal(workitem.html.includes('data-r5-workitem-source-meeting-id="95000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(workitem.html.includes('data-r5-workitem-source-insight-id="95000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(workitem.html.includes("Meeting insight source"), true);
+  assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
+  assert.equal(workitem.html.includes('data-action-id="meeting_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.primaryHrefs.includes("/api/meetings/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
 test("R4.11 Proposal route component preserves review actions, rollback, changes, checks, evidence, and comments", () => {
@@ -956,6 +1077,25 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.hydration.pageVm, "drive");
   assert.equal(drive.primaryHrefs.length, 9);
   assertNoMainWindowBoundaryLeak(drive.html);
+});
+
+test("R5.5 Meeting route component exposes meetings, insights, actions, and approval-safe copy", () => {
+  const meetings = renderWebRouteComponent({ key: "meetings", meetings: meetingPageVm() }, { locale: "en-US" });
+
+  assert.equal(meetings.key, "meetings");
+  assert.equal(meetings.html.includes('data-r4-route-component="meetings"'), true);
+  assert.equal(meetings.html.includes('data-r5-meetings-route="true"'), true);
+  assert.equal(meetings.html.includes('data-r5-meeting-count="1"'), true);
+  assert.equal(meetings.html.includes('data-r5-meeting-pending-insights="1"'), true);
+  assert.equal(meetings.html.includes('data-r5-meeting-id="95000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(meetings.html.includes('data-r5-meeting-insight="95000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(meetings.html.includes('data-action-id="meeting_insight_to_draft" data-method="POST"'), true);
+  assert.equal(meetings.html.includes('data-action-id="meeting_insight_dismiss" data-method="POST"'), true);
+  assert.equal(meetings.html.includes("Approval-safe"), true);
+  assert.equal(meetings.html.includes("Update proposal pricing model"), true);
+  assert.equal(meetings.hydration.pageVm, "meetings");
+  assert.equal(meetings.primaryHrefs.includes("/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/draft"), true);
+  assertNoMainWindowBoundaryLeak(meetings.html);
 });
 
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {
