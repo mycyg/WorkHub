@@ -19,8 +19,20 @@ type LayoutMetric = {
   scrollHeight: number;
   clientWidth: number;
   scrollWidth: number;
+  overflowY: string;
   horizontalOverflow: boolean;
   verticalOverflow: boolean;
+};
+
+type TextClippingOffender = {
+  selector: string;
+  text: string;
+  top: number;
+  bottom: number;
+  bubbleTop: number;
+  bubbleBottom: number;
+  clippedTop: boolean;
+  clippedBottom: boolean;
 };
 
 type QaReport = {
@@ -36,6 +48,7 @@ type QaReport = {
     bubbleGapToLive2d: number;
     statusVisible: boolean;
     budgetVisible: boolean;
+    textClippingOffenders: TextClippingOffender[];
   };
   gates: Record<string, boolean>;
 };
@@ -163,17 +176,26 @@ function failedRunDocument() {
   ${surface.html}
   <script>
     (() => {
-      const layout = (el) => ({
-        clientHeight: Math.round(el.clientHeight),
-        scrollHeight: Math.round(el.scrollHeight),
-        clientWidth: Math.round(el.clientWidth),
-        scrollWidth: Math.round(el.scrollWidth),
-        horizontalOverflow: el.scrollWidth > el.clientWidth + 2,
-        verticalOverflow: el.scrollHeight > el.clientHeight + 2
-      });
+      const layout = (el) => {
+        const style = getComputedStyle(el);
+        return {
+          clientHeight: Math.round(el.clientHeight),
+          scrollHeight: Math.round(el.scrollHeight),
+          clientWidth: Math.round(el.clientWidth),
+          scrollWidth: Math.round(el.scrollWidth),
+          overflowY: style.overflowY,
+          horizontalOverflow: el.scrollWidth > el.clientWidth + 2,
+          verticalOverflow: el.scrollHeight > el.clientHeight + 2
+        };
+      };
       const rect = (el) => {
         const r = el.getBoundingClientRect();
         return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
+      };
+      const selectorName = (el) => {
+        const tag = el.tagName.toLowerCase();
+        const cls = (el.getAttribute("class") || "").trim().split(/\\s+/).filter(Boolean).slice(0, 2).join(".");
+        return cls ? tag + "." + cls : tag;
       };
       const surface = document.querySelector(".wh-pet-surface");
       const bubble = document.querySelector(".wh-pet-bubble");
@@ -182,13 +204,42 @@ function failedRunDocument() {
       const bubbleRect = rect(bubble);
       const budgetRect = rect(budget);
       const live2dRect = rect(live2d);
+      const clippingSelectors = [
+        ".wh-pet-kicker",
+        ".wh-pet-title",
+        ".wh-pet-message",
+        ".wh-pet-status",
+        ".wh-pet-action",
+        ".wh-pet-section-title",
+        ".wh-pet-section-line",
+        ".wh-pet-progress-label"
+      ].join(",");
+      const textClippingOffenders = Array.from(document.querySelectorAll(clippingSelectors))
+        .map((el) => {
+          const r = rect(el);
+          const text = (el.textContent || "").replace(/\\s+/g, " ").trim();
+          const clippedTop = r.y < bubbleRect.y - 1;
+          const clippedBottom = r.bottom > bubbleRect.bottom + 1;
+          return {
+            selector: selectorName(el),
+            text: text.slice(0, 120),
+            top: Math.round(r.y * 100) / 100,
+            bottom: Math.round(r.bottom * 100) / 100,
+            bubbleTop: Math.round(bubbleRect.y * 100) / 100,
+            bubbleBottom: Math.round(bubbleRect.bottom * 100) / 100,
+            clippedTop,
+            clippedBottom
+          };
+        })
+        .filter((entry) => entry.text && (entry.clippedTop || entry.clippedBottom));
       const report = {
         bubble: layout(bubble),
         surface: layout(surface),
         budgetBottomClearance: Math.round((bubbleRect.bottom - budgetRect.bottom) * 100) / 100,
         bubbleGapToLive2d: Math.round((live2dRect.y - bubbleRect.bottom) * 100) / 100,
         statusVisible: (bubble.textContent || "").includes("Cuu updated progress"),
-        budgetVisible: (bubble.textContent || "").includes("Budget") && budgetRect.bottom <= bubbleRect.bottom - 4
+        budgetVisible: (bubble.textContent || "").includes("Budget") && budgetRect.bottom <= bubbleRect.bottom - 4,
+        textClippingOffenders
       };
       document.body.setAttribute("data-cuu-layout-report", JSON.stringify(report));
     })();
@@ -277,6 +328,7 @@ async function main() {
   const gates = {
     bubble_no_horizontal_overflow: !metrics.bubble.horizontalOverflow,
     bubble_no_vertical_overflow: !metrics.bubble.verticalOverflow,
+    no_text_clipped_by_bubble: metrics.textClippingOffenders.length === 0,
     surface_no_horizontal_overflow: !metrics.surface.horizontalOverflow,
     surface_no_vertical_overflow: !metrics.surface.verticalOverflow,
     status_suppressed_for_failed_trace: !metrics.statusVisible,
@@ -302,6 +354,7 @@ async function main() {
       `- ok: ${String(ok)}`,
       `- screenshot: ${escapeHtml(path.basename(pngPath))}`,
       `- bubble vertical overflow: ${String(metrics.bubble.verticalOverflow)}`,
+      `- text clipping offenders: ${String(metrics.textClippingOffenders.length)}`,
       `- budget bottom clearance: ${String(metrics.budgetBottomClearance)}px`,
       `- bubble gap to Live2D: ${String(metrics.bubbleGapToLive2d)}px`,
       `- transient status visible: ${String(metrics.statusVisible)}`,

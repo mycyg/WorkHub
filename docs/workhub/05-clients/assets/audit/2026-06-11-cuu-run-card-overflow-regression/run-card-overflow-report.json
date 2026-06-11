@@ -6,10 +6,11 @@
   "html": "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-11-cuu-run-card-overflow-regression\\failed-run-card.html",
   "metrics": {
     "bubble": {
-      "clientHeight": 266,
-      "scrollHeight": 266,
-      "clientWidth": 298,
-      "scrollWidth": 298,
+      "clientHeight": 220,
+      "scrollHeight": 220,
+      "clientWidth": 288,
+      "scrollWidth": 288,
+      "overflowY": "auto",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
@@ -18,17 +19,20 @@
       "scrollHeight": 720,
       "clientWidth": 520,
       "scrollWidth": 520,
+      "overflowY": "hidden",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
-    "budgetBottomClearance": 11,
+    "budgetBottomClearance": 13,
     "bubbleGapToLive2d": 22.04,
     "statusVisible": false,
-    "budgetVisible": true
+    "budgetVisible": true,
+    "textClippingOffenders": []
   },
   "gates": {
     "bubble_no_horizontal_overflow": true,
     "bubble_no_vertical_overflow": true,
+    "no_text_clipped_by_bubble": true,
     "surface_no_horizontal_overflow": true,
     "surface_no_vertical_overflow": true,
     "status_suppressed_for_failed_trace": true,

@@ -28,6 +28,7 @@ type IdentityLocaleCarrier = {
   };
 } | null | undefined;
 let noticeTimer: number | undefined;
+let readyRouteBindings: AbortController | undefined;
 
 function browserLocale(): WorkHubLocale {
   return normalizeWorkHubLocale(window.localStorage.getItem(workHubLocaleStorageKey) ?? window.navigator.language);
@@ -51,6 +52,10 @@ function persistBrowserLocale(locale: WorkHubLocale) {
   setDocumentLocale(locale);
 }
 
+function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | undefined {
+  return signal ? { signal } : undefined;
+}
+
 function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {
   const locale = identityLocale(identity) ?? fallback;
   persistBrowserLocale(locale);
@@ -62,7 +67,7 @@ async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLoca
   return applyIdentityLocale(me, fallback);
 }
 
-function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client: BrowserApiClient) {
+function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client: BrowserApiClient, signal?: AbortSignal) {
   shellRoot.addEventListener("click", (event) => {
     const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-locale]") : null;
     if (!button) {
@@ -76,7 +81,7 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
     void client.updatePreferences({ locale: nextLocale }).catch(() => undefined).finally(() => {
       window.location.reload();
     });
-  });
+  }, eventListenerOptions(signal));
 }
 
 function showNotice(shellRoot: HTMLElement, message: string, extraHtml?: string, timeoutMs = 4600) {
@@ -281,7 +286,7 @@ function applyLineEditorSearch(input: HTMLInputElement) {
   }
 }
 
-function bindRouteLineEditor(shellRoot: HTMLElement) {
+function bindRouteLineEditor(shellRoot: HTMLElement, signal?: AbortSignal) {
   shellRoot.addEventListener("click", (event) => {
     const tab = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-line-editor-tab]") : null;
     if (tab) {
@@ -304,14 +309,14 @@ function bindRouteLineEditor(shellRoot: HTMLElement) {
       sibling.setAttribute("aria-pressed", String(selected));
     }
     updateLineEditorPanelPayload(panel);
-  });
+  }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("input", (event) => {
     const input = event.target instanceof Element ? event.target.closest<HTMLInputElement>("[data-line-editor-search]") : null;
     if (input) {
       applyLineEditorSearch(input);
     }
-  });
+  }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
@@ -330,7 +335,7 @@ function bindRouteLineEditor(shellRoot: HTMLElement) {
       event.preventDefault();
       next.focus();
     }
-  });
+  }, eventListenerOptions(signal));
 }
 
 function bindGoldPathNavigation(
@@ -338,7 +343,8 @@ function bindGoldPathNavigation(
   shell: GoldPathAppShell,
   client: BrowserApiClient,
   locale: WorkHubLocale,
-  onNavigate?: (href: string, pageKey: string) => void | Promise<void>
+  onNavigate?: (href: string, pageKey: string) => void | Promise<void>,
+  signal?: AbortSignal
 ) {
   let pendingReviewHref: string | undefined;
 
@@ -436,10 +442,10 @@ function bindGoldPathNavigation(
       }
       showNotice(shellRoot, goldPathT(locale, "runtime.actionPending"));
     }
-  });
+  }, eventListenerOptions(signal));
 
   if (!onNavigate) {
-    window.addEventListener("hashchange", activateFromHash);
+    window.addEventListener("hashchange", activateFromHash, eventListenerOptions(signal));
     activateFromHash();
   }
 }
@@ -461,6 +467,7 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
   if (!root) {
     return;
   }
+  clearReadyRouteBindings();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
     traceId: routeErrorTrace(error)
   }).html;
@@ -479,9 +486,12 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   if (!root) {
     return;
   }
-  bindLocaleSwitch(root, locale, client);
-  bindRouteLineEditor(root);
-  bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale));
+  clearReadyRouteBindings();
+  readyRouteBindings = new AbortController();
+  const { signal } = readyRouteBindings;
+  bindLocaleSwitch(root, locale, client, signal);
+  bindRouteLineEditor(root, signal);
+  bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {
@@ -490,6 +500,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   }
   const renderId = ++activeRouteRenderId;
   const match = currentRouteMatch();
+  clearReadyRouteBindings();
   root.innerHTML = renderWebRouteState(match, "loading", locale).html;
   const result = await loadWebRoute(client, match, locale);
   if (renderId !== activeRouteRenderId) {
@@ -499,6 +510,11 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   if (result.status === "ready") {
     bindReadyRoute(result, client, locale);
   }
+}
+
+function clearReadyRouteBindings() {
+  readyRouteBindings?.abort();
+  readyRouteBindings = undefined;
 }
 
 async function boot() {

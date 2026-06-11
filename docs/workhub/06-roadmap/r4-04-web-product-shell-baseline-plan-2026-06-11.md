@@ -124,20 +124,13 @@ R4.4 是 Web 产品壳 baseline，不是完整 React route tree 迁移：
 
 ## 6. 后续详细计划
 
-下一刀 R4.5：live browser / route interaction smoke。
+后续状态：R4.5 live browser / route interaction smoke 已落，详见 [`r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](./r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)。
 
-1. 启动真实 Web dev server，跑浏览器级 route interaction：
-   - path nav click / back / forward。
-   - locale toggle 后重进 loader。
-   - notice / action hooks 不破坏 route panel。
-2. 覆盖 ready + 状态页混合流：
-   - ready Home -> Approval -> WorkItem -> Proposal。
-   - forbidden / empty / error 回到 ready route。
-   - mobile viewport 再查 `no_horizontal_overflow` 与 `no_text_box_overflow`。
-3. 数据流门：
-   - browser boot 只用 typed client。
-   - REST Page VM 仍是真相；SSE 只触发 refresh。
-   - Web 主窗继续不暴露 worker-only claim/receive-work 能力。
-4. R4.6 再收 Rust system-string i18n：
-   - Tauri tray、通知、错误、settings 系统串进入 locale contract。
-   - Windows/Linux/macOS 做中英文案 smoke。
+下一刀 R4.6：Rust system-string i18n。
+
+1. Tauri tray、通知、错误、settings 系统串进入 locale contract。
+2. Windows/Linux smoke 覆盖：
+   - tray/menu 恢复文案。
+   - settings/pass-through/hide-on-hover 系统提示。
+   - system notification plan 中英文案。
+3. 若 macOS 环境不可自动化，保留 macOS 实机待验边界，但代码合同和可跑 mock smoke 必须先落。

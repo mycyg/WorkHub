@@ -118,7 +118,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;gap:6px;padding:10px 12px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));min-height:0;max-height:min(calc(320px * var(--wh-pet-scale,1)),calc(100% - calc(400px * var(--wh-pet-scale,1))));overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable;gap:6px;padding:10px 12px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
@@ -1354,12 +1354,7 @@ function renderDesktopPetBubble(input: {
   const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs, locale) : "";
   const inputHint = !compact && card?.input ? renderPetInputHint(card.input, locale) : "";
   const context = [progress, sections, evidence, inputHint].filter(Boolean).join("");
-  const suppressStatusForContext = Boolean(
-    card &&
-    !compact &&
-    context &&
-    (card.kind === "budget" || (card.kind === "trace" && card.state === "worried"))
-  );
+  const suppressStatusForContext = shouldSuppressPetStatusForContext(card, compact, context);
   const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
   const payloadAttrs = card?.payload_ref
     ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
@@ -1380,6 +1375,15 @@ function renderDesktopPetBubble(input: {
 
 function petCardHasContext(card: CuuCard) {
   return Boolean(card.sections?.length || card.progress?.length || card.input || card.evidence_refs?.length);
+}
+
+function shouldSuppressPetStatusForContext(card: CuuCard | undefined, compact: boolean, context: string) {
+  return Boolean(
+    card &&
+    !compact &&
+    context &&
+    (card.kind === "budget" || (card.kind === "trace" && card.state === "worried"))
+  );
 }
 
 function renderPetChip(chip: NonNullable<CuuCard["chips"]>[number], card?: CuuCard | undefined) {

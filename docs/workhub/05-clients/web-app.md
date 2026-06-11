@@ -29,6 +29,7 @@ owner: workflow
 | R4 route-state foundation | `packages/ui/src/route-state.ts`、`scripts/qa/r4-web-route-state-matrix.ts` | 已覆盖 home/intake/approvals/workitem/proposal/replay/cost/settings 的中英 loading/empty/error/forbidden 状态卡、desktop/mobile Chrome 截图与无横向溢出 gate |
 | R4 route registry + loader | `apps/web/src/routes.ts`、`apps/web/src/browser.ts`、`scripts/qa/r4-web-route-registry-loader.ts` | 已把 URL route registry、`idle/loading/ready/empty/error/forbidden` 状态机、真实 path 导航和前三个 Page VM endpoint 接入浏览器 boot |
 | R4 product shell baseline | `packages/ui/src/gold-path/product-shell.ts`、`apps/web/src/routes.ts`、`scripts/qa/r4-web-product-shell-baseline.ts` | Web ready route 已切到产品壳 baseline，覆盖 Home / Approvals / WorkItem / Proposal 的 desktop/mobile 截图、双语固定 chrome、path nav、无 Cuu/无 Kanban、无横向与文本盒溢出 |
+| R4 live route interaction | `apps/web/src/browser.ts`、`apps/web/qa/r4-web-live-route-interaction.ts` | 已用 Vite dev server + mock API + Chrome CDP 跑 path nav、back/forward、locale reload、ready/empty/forbidden/error、mobile scroll，并 gate 重复 listener、文本越框和导航遮挡 |
 | API client | `packages/api-client/src/*` | Web / desktop-webview 共用 typed client；Page VM 请求可带 `PageRequestOptions.locale` |
 | Contracts | `packages/contracts/src/*` | Page VM、event、Cuu card、proposal、cost、replay、locale 同源 |
 
@@ -39,7 +40,7 @@ owner: workflow
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁。真实 component route tree、live browser interaction 与完整服务端动态本地化仍待后续。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke。真实 component route tree、真实 PG live daemon 浏览器联调与完整服务端动态本地化仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -160,6 +161,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | 产品边界 | 主窗无 Cuu、无 Cuu settings、无 default Kanban；path 导航无 `#/` 泄漏 | Web 只保留派活/审批/管理，接活/干活继续留在桌宠端 |
 
 边界：R4.4 不是完整 React SPA，也不是 live PostgreSQL 多记录实机联调；英文 shell 下的动态任务内容仍来自 API VM 原文，不能当作服务端动态本地化完成。
+
+### 0.10 R4.5 Web live route interaction smoke（2026-06-11 已落）
+
+本轮把 R4.4 的截图基线推进到真实浏览器事件链路。详细计划与验收见 [`../06-roadmap/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](../06-roadmap/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| Listener 生命周期 | `apps/web/src/browser.ts` 用 `AbortController` 管理 ready route bindings，进入 loading/error 或重新 ready 前先 abort | 后续 React route tree 迁移时保持单一事件边界 |
+| Live smoke | `pnpm qa:r4-web-live-route-interaction` 启动 Vite dev server、mock API 和 Chrome CDP | 接真实 API/PG seed 与 SSE refresh |
+| 交互覆盖 | path nav click、history back/forward、locale toggle reload、ready/empty/forbidden/error、mobile proposal scroll | 增加 action/notice、retry/request access、SSE-driven refresh |
+| 数据流门 | report 记录 Page VM endpoint count：`approvals=3`、`workitem=3`、`preferencePatch=1`，防重复 listener 回归 | 后续 live daemon 下继续保留 endpoint call count |
+| 视觉边界 | `no_main_window_cuu`、`no_default_kanban`、`no_old_preview_shell`、`no_weekly_fixture_copy`、`no_horizontal_overflow`、`no_text_box_overflow`、`mobile_scroll_no_topbar_nav_overlap` 全为 true；mobile proposal change pill 已由 raw `text_doc` 改为 `Text document` 并换行落位 | 所有新增 Web route 继续用同一门禁 |
+
+边界：R4.5 仍是 mock API live-browser smoke，不等同于真实 PostgreSQL / Redis / SSE production 浏览器验收；动态 VM 内容仍未完成服务端双语生成。
 
 ---
 

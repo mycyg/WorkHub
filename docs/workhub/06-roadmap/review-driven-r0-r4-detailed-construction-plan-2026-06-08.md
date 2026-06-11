@@ -2651,9 +2651,19 @@ Bug / 数据流审查：
 6. 验收通过：`@workhub/desktop-webview test`、Tauri Rust tests、物理 tray restore zh-CN/en-US capture、run-failure zh-CN/en-US capture、run-stream zh-CN/en-US capture 均通过。
 7. 限制：Windows 物理托盘恢复已闭环；Linux/macOS transparent window + tray/menu bar smoke 仍是下一刀。
 
+### R3.20c 已落：run-card bottom text clipping hard gate
+
+1. 已阅读 `desktop-pet-tauri.md`、`cuu-desktop-pet-concept.md`、`cuu-r3-agent-entry.md` 与用户截图，确认本轮只补 Cuu run-failure 气泡文本裁切回归，不新增外观、动效或主窗 Cuu。
+2. 已收窄 `pet-surface.ts`：失败 trace / budget 重卡继续压掉瞬时 status 行；completion / active restore 提示保留，避免恢复语义丢失。
+3. 已调整 card mode 上下文气泡 CSS：长卡保持 `left:88px; bottom:392px; width:300px` 的概念图锚点，但用窗口内 `max-height:min(...)`、`overflow-y:auto`、`scrollbar-gutter:stable` 和底部 padding 防止底部文字被气泡裁切。
+4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
+5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
+6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 仍按原顺序推进 Rust system-string i18n，R4.7 接真实 API/PG seed smoke。
+
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
-1. 保留 R3.12-R3.20b 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate、pass-through 主窗恢复、tray handler 恢复、hover sync、physical tray restore 和 card overflow gate 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
+1. 保留 R3.12-R3.20c 回归：run-stream、run-failure、401/403/offline、reload session/active/terminal、业务状态矩阵、settings matrix、右键菜单 gate、pass-through 主窗恢复、tray handler 恢复、hover sync、physical tray restore 和 card overflow/text clipping gate 必须继续通过 DOM report、motion diff report、contact sheet/GIF/MP4 与对应边界 gate。
 2. Linux 测试机优先：在 `192.168.5.53` 记录 X11/Wayland、透明 pet window、tray/menu 恢复、截图权限和可复现命令；若桌面环境不提供系统 tray，必须记录 fallback 路径和限制。
 3. macOS 先做策略：定义 menu bar restore 的 UIA/AppleScript/截图权限方案，避免套用 Windows 坐标门。
 4. 验收命令：desktop-webview typecheck/test/build、目标 capture 脚本、Tauri Rust tests、root `pnpm verify`、R2 release gate、reference path hygiene。
@@ -2742,10 +2752,21 @@ R4 验收：
 7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-product-shell-baseline/`；report gates 全部为 true：`screenshots_captured`、`product_shell_present`、`four_product_screens_covered`、`ready_routes_use_page_vm_endpoints`、`fixed_chrome_bilingual`、`path_navigation_without_hash`、`no_old_preview_shell`、`no_weekly_fixture_copy_in_ready`、`no_main_window_cuu`、`no_default_kanban`、`no_horizontal_overflow`、`no_text_box_overflow`。
 8. 边界：R4.4 不是完整 React SPA component route tree，也不是真实 PostgreSQL live daemon 多记录实机联调；英文 shell 下动态任务内容仍可能来自 API VM 原文。
 
+### R4.5 已落：Web live route interaction smoke
+
+1. 已阅读 [`r4-04-web-product-shell-baseline-plan-2026-06-11.md`](./r4-04-web-product-shell-baseline-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、本篇 R4 与 Web 概念图。
+2. 已修 `apps/web/src/browser.ts` ready route listener 生命周期：用 `AbortController` 管理 locale / line editor / navigation listener，进入 loading/error 或重新 ready 前先 abort，防止连续跳转后重复 loader 或重复 POST。
+3. 已新增 `apps/web/qa/r4-web-live-route-interaction.ts`，用 Vite dev server + mock API + Chrome CDP 跑真实浏览器交互。
+4. 已新增 root `pnpm qa:r4-web-live-route-interaction`，由 `@workhub/web` 包持有 Vite 依赖和 QA 执行入口。
+5. 交互截图覆盖 path nav click、history back/forward、locale toggle reload、empty approvals mobile、forbidden workitem、unknown route error、mobile scrolled proposal。
+6. 已补移动端 proposal change row 文本边界：R4 shell 不再把 raw `text_doc` 塞进窄 pill；改用 `deliverableTargetLabel()` 显示 `文档` / `Text document`，并让 `.wh-row-meta` 在移动端换行到下一行。
+7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/`；report gates 全部为 true：`dev_server_started`、`screenshots_captured`、`path_nav_clicks`、`history_back_forward`、`locale_toggle_reload`、`ready_empty_forbidden_error_routes`、`ready_routes_use_page_vm_endpoints`、`product_shell_stays_path_mode`、`no_duplicate_route_loader_calls`、`mobile_scroll_no_topbar_nav_overlap`、`no_main_window_cuu`、`no_default_kanban`、`no_old_preview_shell`、`no_weekly_fixture_copy`、`no_hash_navigation`、`no_horizontal_overflow`、`no_text_box_overflow`。
+8. 边界：R4.5 是 mock API live-browser smoke，不是完整 React component route tree，也不是真实 PG/Redis/SSE production 浏览器验收。
+
 下一施工顺序：
 
-1. **R4.5 live browser / route interaction smoke**：启动真实 Web dev server，覆盖 path nav click、back/forward、locale toggle、ready 与四态之间跳转，继续 gate 文本不越框。
-2. **R4.6 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
+1. **R4.6 Rust system-string i18n**：把 Tauri tray、通知、错误、settings 系统串纳入 locale contract，并做 Windows/Linux/macOS 文案 smoke。
+2. **R4.7 Web live API/PG seed smoke**：在 R4.5 交互 smoke 基础上接真实 API/PG seed 与 SSE refresh，继续保留 endpoint count、文本越框和无 Cuu 主窗门。
 
 ## 8. 模块开工前阅读清单
 

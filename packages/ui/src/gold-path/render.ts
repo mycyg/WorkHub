@@ -13,6 +13,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
+import { deliverableTargetLabel } from "../i18n.js";
 import { goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
   renderStructuredFieldAuditDetails,
@@ -49,7 +50,7 @@ export const goldPathCss = [
   ".wh-title{font-size:30px;line-height:1.12;margin:8px 0 8px;overflow-wrap:anywhere}.wh-subtle{color:var(--muted);line-height:1.55;overflow-wrap:anywhere}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;margin-top:18px;min-width:0;max-width:100%}",
   ".wh-settings-grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}",
   ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}",
-  ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}",
+  ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0;min-width:0}.wh-row:first-child{border-top:0}.wh-row>div{min-width:0}.wh-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start;min-width:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted);max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
   ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
@@ -58,7 +59,7 @@ export const goldPathCss = [
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:660px;margin:0;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
-  "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}}"
+  "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}.wh-row{flex-direction:column;align-items:flex-start}.wh-row-meta{justify-content:flex-start}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -451,8 +452,8 @@ function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
   };
 }
 
-function changeRow(change: DeliverableChange) {
-  return `<div class="wh-row"><div><strong>${escapeHtml(change.human_summary)}</strong><p class="wh-subtle">${escapeHtml(change.target_ref.path ?? change.target_kind)}</p></div><span class="wh-pill">${escapeHtml(change.target_kind)}</span></div>`;
+function changeRow(change: DeliverableChange, locale: WorkHubLocale) {
+  return `<div class="wh-row"><div><strong>${escapeHtml(change.human_summary)}</strong><p class="wh-subtle">${escapeHtml(change.target_ref.path ?? change.target_kind)}</p></div><div class="wh-row-meta"><span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span></div></div>`;
 }
 
 function checkRow(check: DeliverableCheck) {
@@ -476,7 +477,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.rollbackTitle"))}</strong><p class="wh-subtle">${escapeHtml(manifest.rollback.description)}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.evidenceTitle"))}</strong><p class="wh-subtle">${manifest.evidence_refs.length}${escapeHtml(t(locale, "proposal.evidenceUnit"))}</p></article>
     </div>
-    <h2>${escapeHtml(t(locale, "proposal.changedTitle"))}</h2><div class="wh-card">${manifest.changes.map(changeRow).join("")}</div>
+    <h2>${escapeHtml(t(locale, "proposal.changedTitle"))}</h2><div class="wh-card">${manifest.changes.map((change) => changeRow(change, locale)).join("")}</div>
     <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
     ${actions(proposalActions)}`;
   return {

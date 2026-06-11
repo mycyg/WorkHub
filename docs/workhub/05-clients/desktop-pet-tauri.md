@@ -38,7 +38,7 @@ visuals:
 | `client-tauri/src-tauri/src/deep_link.rs` | `workhub://` / legacy scheme 安全路由 |
 | `client-tauri/src-tauri/src/sse_worker.rs` | 后台 SSE 连接、重连、事件广播 |
 | `apps/desktop-webview/src/browser.ts` | 根据 Rust 注入 surface 分流主窗或 pet surface |
-| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate；2026-06-11 追加用户截图回归，失败 trace/budget 重卡会压缩密度并隐藏瞬时 status 行，确保 `Run progress` / `Budget` 完整留在气泡内 |
+| `apps/desktop-webview/src/pet-surface.ts` | 独立 Cuu pet surface，只渲染 Live2D cat + 轻气泡；R3.13.3 已补 session/run card 的 webview boot 恢复，R3.15 已补真实 reload capture seed gate，R3.20b 起 run failure / run stream 卡片有自动文本 overflow gate，R3.22 起 failed/permission/offline/generic 卡进入 frame `spatial_safety` hardgate；2026-06-11 追加用户截图回归，失败 trace/budget 重卡会压缩密度并隐藏瞬时 status 行，QA 同时检测 key text rect 是否越过 bubble 边界，确保 `Run progress` / `Budget` 完整留在气泡内 |
 | `apps/desktop-webview/src/desktop-cuu-runtime.ts` | Cuu 卡片 action runtime；R3.1 已新增 `cuu-agent-launcher` 与 `cuu-start-agent` 三段真实 API 组合；R3.2 已补启动 helper、run stream 订阅和错误卡；R3.12 已补 WebView fetch SSE + active-run fallback refresh；R3.14 已补 launcher chip metadata -> WorkItem spec；R3.22 已补主窗 notice 长文案 overflow clamp |
 | `apps/desktop-webview/src/pet-window-bridge.ts` | TS 调用 Rust window commands，整合 pointer/drag/cursor sample |
 | `apps/desktop-webview/src/cuu-cat-live2d-runtime.ts` | 黑猫/白猫 Live2D iframe/runtime 适配 |
@@ -68,7 +68,7 @@ visuals:
 | 默认位置 | 当前屏幕 work area 右下角 |
 | body-only 尺寸 | `260x340` logical px，作为透明全身舞台，不是白色卡片 |
 | card 尺寸 | `520x720` logical px，从 body anchor 向左上展开轻气泡；2026-06-11 起为长失败/预算卡预留纵向安全区，R3.22 起 DOM report 证明 bubble / Live2D / surface 空间关系 |
-| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:392px; width:300px; max-width:calc(100% - 128px)`，非 completion 卡最小高度为 `268px * scale`，避免高 DPI/PrintWindow 右缘裁切、旧帧残影和长文本压住 Cuu 本体 |
+| 内容 | Cuu Live2D + 一张轻气泡；card mode 时展开操作卡，full bubble 必须在透明窗口安全区内围绕 Cuu，当前 CSS gate 为 `left:88px; bottom:392px; width:300px; max-width:calc(100% - 128px)`，非 completion 卡最小高度为 `268px * scale`，上下文重卡使用窗口内 `max-height:min(...)` 和 `overflow-y:auto`，避免高 DPI/PrintWindow 右缘裁切、旧帧残影、长文本压住 Cuu 本体或 Budget 底部被气泡裁切 |
 | 模型 | 黑猫默认，白猫可选 |
 | hover | 鼠标靠近不移动窗口和全身锚点，只更新指针状态、表情/动作和视觉强调 |
 | R3 launcher | 点击 Cuu body 且当前无业务卡片时，webview 展开 option-first Agent 启动卡；启动后 TS 订阅 run stream 并刷新 Cuu card；Rust 只负责窗口模式，不解析业务 intent |

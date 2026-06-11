@@ -115,16 +115,24 @@ test("gold path page css keeps settings cards and long copy inside the frame", (
   assert.match(rendered.css, /\.wh-settings-grid\{grid-template-columns:repeat\(auto-fit,minmax\(min\(360px,100%\),1fr\)\)\}/u);
   assert.match(rendered.css, /\.wh-card\{[^}]*min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(rendered.css, /\.wh-subtle\{[^}]*overflow-wrap:anywhere/u);
+  assert.match(rendered.css, /\.wh-row\{[^}]*min-width:0/u);
+  assert.match(rendered.css, /\.wh-row-meta\{[^}]*flex-wrap:wrap/u);
+  assert.match(rendered.css, /\.wh-pill\{[^}]*max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(rendered.css, /\.wh-row\{flex-direction:column;align-items:flex-start\}/u);
 });
 
 test("proposal and replay pages expose review actions, rollback, cost, and at least five replay steps", () => {
   const rendered = renderGoldPathSurface(surfaceVm(), "web");
   const proposal = rendered.pages.find((page) => page.key === "proposal");
+  const englishProposal = renderGoldPathSurface(surfaceVm(), "web", { locale: "en-US" }).pages.find((page) => page.key === "proposal");
   const replay = rendered.pages.find((page) => page.key === "replay");
 
   assert.equal(proposal?.html.includes("回滚"), true);
   assert.equal(proposal?.html.includes("data-requires-reason=\"true\""), true);
   assert.equal(proposal?.html.includes("data-action-id=\"merge\""), true);
+  assert.equal(proposal?.html.includes("<span class=\"wh-pill\">文档</span>"), true);
+  assert.equal(proposal?.html.includes("<span class=\"wh-pill\">text_doc</span>"), false);
+  assert.equal(englishProposal?.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
   assert.equal(replay?.html.includes("估算成本"), true);
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
 });

@@ -126,7 +126,8 @@ export function createDesktopPetVisualQaReport(input: {
         "max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)))",
         ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto",
         "width:calc(300px * var(--wh-pet-scale,1))",
-        "max-height:calc(320px * var(--wh-pet-scale,1));overflow:auto;overflow-x:hidden",
+        "min-height:0;max-height:min(calc(320px * var(--wh-pet-scale,1)),calc(100% - calc(400px * var(--wh-pet-scale,1))));overflow-y:auto;overflow-x:hidden",
+        "scrollbar-gutter:stable",
         "gap:6px;padding:10px 12px",
         ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2",
         ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1"
