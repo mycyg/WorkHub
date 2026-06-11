@@ -183,7 +183,8 @@ R3 禁止项：不新增模型、改色、动效；settings matrix 只验证现�
 | R4-18 React route migration expansion | **已落 R4.18**：Cost / Replay 接入 React-compatible component adapter，Replay accepted deliverable restore single dispatcher、R4.17 regression 与 39 步 Chrome smoke 通过。 | `pnpm qa:r4-web-live-route-interaction` with R4.18 env；[`r4-18-react-route-migration-expansion-plan-2026-06-11.md`](./r4-18-react-route-migration-expansion-plan-2026-06-11.md) |
 | R4-19-pre true React mount spike | **已落 R4.19-pre**：Home hydration root 真 `createRoot` mount、React probe 进入 delegated dispatcher、Home SSE 走 `react-props` update；41 步 Chrome smoke 通过。 | [`r4-19-pre-true-react-mount-spike-plan-2026-06-11.md`](./r4-19-pre-true-react-mount-spike-plan-2026-06-11.md) |
 | R4-19 Proposal advanced split migration | **已落 R4.19**：Proposal readonly split adapter、advanced fallback boundary、dirty edit SSE guard、no-new-fixture-chrome gate 与 42 步 Chrome smoke 通过。 | [`r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](./r4-19-proposal-advanced-split-migration-plan-2026-06-11.md) |
-| R4-20 dataflow foundation | **下一步**：app 级 SSE 长连接、Page VM 局部 refetch、Last-Event-ID/事件 cursor 与 fixture chrome 退役。 | [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md) |
+| R4-20 dataflow foundation | **已落 R4.20**：ready route 退役 `/api/pages/gold-path` fixture chrome，app-level SSE runtime 复用 EventSource，事件后只重拉当前 Page VM 或 Home React props；SSE `id:` / `last_event_id` cursor 合同与 42 步 Chrome smoke 通过。 | [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md) |
+| R4-21 shared web runtime | **下一步**：收敛 Web 与 desktop-webview dispatcher/notice/locale/dirty guard/SSE refresh runtime 分叉，先做无行为改变共享 runtime，再进入 R4.22 Proposal mutation editor migration。 | [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md) |
 
 ## 6. 已完成但降级为“冻结前证据”的 Cuu QA
 

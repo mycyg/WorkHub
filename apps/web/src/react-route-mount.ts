@@ -170,7 +170,17 @@ export function mountReactRouteIsland(
     activeMount.propsUpdateCount += 1;
   }
 
-  const adapter = createHomeReactRouteComponent(result.surface.page_vms.attention, locale);
+  if (result.surface.key !== "home") {
+    resetRuntimeMetrics();
+    return {
+      mounted: false,
+      routeKey: "home",
+      mountCount: totalMountCount,
+      propsUpdateCount: activeMount?.propsUpdateCount ?? 0
+    };
+  }
+
+  const adapter = createHomeReactRouteComponent(result.surface.attention, locale);
   syncRuntimeMetrics(boundary, host, {
     fingerprint: adapter.propsFingerprint,
     reason,

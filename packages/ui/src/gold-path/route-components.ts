@@ -11,6 +11,7 @@ import type {
   EvidenceRef,
   ProposalConflict,
   ProposalDetailVM,
+  ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
   GoldPathSurfaceVM,
@@ -1121,8 +1122,8 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
   });
 }
 
-function renderReplayRouteComponent(vm: GoldPathSurfaceVM, locale: WorkHubLocale): WebRouteComponent {
-  const rendered = renderAgentRunReplay(vm.page_vms.replay, "web", { locale });
+function renderReplayRouteComponent(vm: ReplayTraceVM, locale: WorkHubLocale): WebRouteComponent {
+  const rendered = renderAgentRunReplay(vm, "web", { locale });
   const reactComponent = createReplayReactRouteComponent(rendered, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   return createWebRouteComponent({
@@ -1137,6 +1138,44 @@ function renderReplayRouteComponent(vm: GoldPathSurfaceVM, locale: WorkHubLocale
   });
 }
 
+export type WebRouteComponentInput =
+  | { key: "home"; attention: AttentionHomeVM }
+  | { key: "intake"; session: SessionVM }
+  | { key: "approvals"; approvals: ApprovalCenterVM }
+  | { key: "workitem"; workitem: WorkItemDetailVM }
+  | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
+  | { key: "replay"; replay: ReplayTraceVM }
+  | { key: "cost"; cost: CostDashboardVM }
+  | { key: "knowledge"; evidence: EvidenceBubble }
+  | { key: "settings"; settings: SettingsPageVM };
+
+export function renderWebRouteComponent(
+  input: WebRouteComponentInput,
+  options: RouteComponentOptions = {}
+): WebRouteComponent {
+  const locale = normalizeWorkHubLocale(options.locale);
+  switch (input.key) {
+    case "home":
+      return renderHomeRouteComponent(input.attention, locale);
+    case "intake":
+      return renderIntakeRouteComponent(input.session, locale);
+    case "approvals":
+      return renderApprovalsRouteComponent(input.approvals, locale);
+    case "workitem":
+      return renderWorkItemRouteComponent(input.workitem, locale);
+    case "proposal":
+      return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? []);
+    case "replay":
+      return renderReplayRouteComponent(input.replay, locale);
+    case "cost":
+      return renderCostRouteComponent(input.cost, locale);
+    case "knowledge":
+      return renderKnowledgeRouteComponent(input.evidence, locale);
+    case "settings":
+      return renderSettingsRouteComponent(input.settings, locale);
+  }
+}
+
 export function renderWebRouteComponents(
   vm: GoldPathSurfaceVM,
   options: RouteComponentOptions = {}
@@ -1149,7 +1188,7 @@ export function renderWebRouteComponents(
     approvals: renderApprovalsRouteComponent(vm.page_vms.approvals, locale),
     workitem: renderWorkItemRouteComponent(vm.page_vms.workitem, locale),
     proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(routeSurface)),
-    replay: renderReplayRouteComponent(vm, locale),
+    replay: renderReplayRouteComponent(vm.page_vms.replay, locale),
     cost: renderCostRouteComponent(vm.page_vms.cost, locale),
     ...(routeSurface.knowledge_evidence ? { knowledge: renderKnowledgeRouteComponent(routeSurface.knowledge_evidence, locale) } : {}),
     ...(vm.page_vms.settings ? { settings: renderSettingsRouteComponent(vm.page_vms.settings, locale) } : {})

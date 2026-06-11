@@ -12,7 +12,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 
 本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。规格已细化到屏级 / 接口级 / 功能级，R1/R2/R3/R4 正在按真实链路、桌宠入口与 Web 产品化持续推进。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 112 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 113 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -32,7 +32,7 @@ pnpm dev
 - Tauri webview 规划端口: `1420`。
 - 默认配置来自 [`packages/config`](packages/config);复制 [`.env.example`](.env.example) 到 `.env` 后填入本地密钥。
 - PostgreSQL/Redis 可用 `docker compose up -d postgres redis` 启动;Drizzle 迁移命令为 `pnpm db:generate`、`pnpm db:check`、`pnpm db:migrate`。后续数据库验收优先本地构建/本地 PG+Redis 复跑。
-- 生产沙箱与 Agent 执行后续要求 Linux；桌面端已补 Windows 物理托盘、Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 中英 smoke；Web R4.19 已补 Proposal readonly split adapter、advanced editor fallback boundary、编辑态 SSE dirty guard 与 no-new-fixture-chrome gate，R4.19 Chrome smoke 42 步通过；下一步推进 R4.20 app 级 SSE / Page VM 局部 refetch / Last-Event-ID / fixture chrome 退役。数据库验收优先本地构建/本地 PG+Redis 复跑。
+- 生产沙箱与 Agent 执行后续要求 Linux；桌面端已补 Windows 物理托盘、Linux GNOME StatusNotifier/AppIndicator 与 macOS menu bar 中英 smoke；Web R4.20 已补 app-level SSE runtime、Page VM local refetch、Last-Event-ID/cursor、Proposal dirty guard regression 与 `/api/pages/gold-path` fixture chrome 退役，Chrome smoke 42 步通过且 `goldPath=0`；下一步推进 R4.21 Web/desktop-webview shared runtime。数据库验收优先本地构建/本地 PG+Redis 复跑。
 
 ## 许可证与商业授权 ⚖️
 

@@ -4,7 +4,6 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   EvidenceBubble,
-  GoldPathSurfaceVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -13,10 +12,16 @@ import type {
   WorkItemDetailVM
 } from "@workhub/contracts";
 import {
-  renderGoldPathSurface,
-  renderWebRouteComponents,
+  goldPathCss,
+  renderWebRouteComponent,
   renderWebProductShell,
   type GoldPathAppShell,
+  type GoldPathRenderedPage,
+  type WebProductMetric,
+  type WebProductShellPage,
+  type WebProductShellSurface,
+  type WebRouteComponent,
+  type WebRouteComponentMap,
   type WebReactRouteComponentName,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
@@ -54,7 +59,7 @@ export type WebRouteReadyResult = {
   match: WebRouteMatch;
   html: string;
   shell: GoldPathAppShell;
-  surface: GoldPathSurfaceVM;
+  surface: WebRouteSurface;
 };
 
 export type WebRouteStateResult = {
@@ -65,14 +70,16 @@ export type WebRouteStateResult = {
 
 export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 
-type GoldPathSurfaceWithProposalConflicts = GoldPathSurfaceVM & {
-  proposal_conflicts?: ProposalConflict[];
-};
-
-type R4RouteSurface = GoldPathSurfaceWithProposalConflicts & {
-  intake_session?: SessionVM;
-  knowledge_evidence?: EvidenceBubble;
-};
+export type WebRouteSurface =
+  | { key: "home"; attention: AttentionHomeVM }
+  | { key: "intake"; session: SessionVM }
+  | { key: "approvals"; approvals: ApprovalCenterVM }
+  | { key: "workitem"; workitem: WorkItemDetailVM }
+  | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
+  | { key: "replay"; replay: ReplayTraceVM }
+  | { key: "cost"; cost: CostDashboardVM }
+  | { key: "knowledge"; evidence: EvidenceBubble }
+  | { key: "settings"; settings: SettingsPageVM };
 
 const routeMatchers = [
   {
@@ -341,127 +348,233 @@ function withLocale(locale: WorkHubLocale) {
   return { locale };
 }
 
-async function loadGoldPathTemplate(client: WorkHubApiClient, locale: WorkHubLocale) {
-  return client.pages.goldPath(withLocale(locale));
-}
+const shellPageOrder = [
+  "home",
+  "intake",
+  "approvals",
+  "workitem",
+  "proposal",
+  "replay",
+  "cost",
+  "knowledge",
+  "settings"
+] as const satisfies readonly GoldPathRenderedPage["key"][];
 
-function withCurrentRoute(surface: GoldPathSurfaceVM, match: WebRouteMatch): GoldPathSurfaceVM {
-  const routes = { ...surface.routes };
-  if (match.key === "home") {
-    routes.home = match.pathname;
-  } else if (match.key === "intake") {
-    routes.intake = match.pathname;
-  } else if (match.key === "approvals") {
-    routes.approvals = match.pathname;
-  } else if (match.key === "workitem") {
-    routes.workitem = match.pathname;
-  } else if (match.key === "proposal") {
-    routes.proposal = match.pathname;
-  } else if (match.key === "replay") {
-    routes.replay = match.pathname;
-  } else if (match.key === "cost") {
-    routes.cost = match.pathname;
-  } else if (match.key === "knowledge") {
-    routes.knowledge = match.pathname;
+const shellDefaultRoutes = {
+  home: "/",
+  intake: "/intake/r4-live-session",
+  approvals: "/approvals",
+  workitem: "/workitems/r4-live-workitem",
+  proposal: "/proposals/r4-live-proposal",
+  replay: "/agent-runs/r4-live-run/replay",
+  cost: "/dashboard/cost",
+  knowledge: "/knowledge/search",
+  settings: "/settings"
+} satisfies Record<GoldPathRenderedPage["key"], string>;
+
+const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
+  "zh-CN": {
+    home: "总览",
+    intake: "接入",
+    approvals: "审批",
+    workitem: "任务详情",
+    proposal: "变更申请",
+    replay: "执行回放",
+    cost: "成本",
+    knowledge: "知识证据",
+    settings: "设置"
+  },
+  "en-US": {
+    home: "Overview",
+    intake: "Intake",
+    approvals: "Approvals",
+    workitem: "Task detail",
+    proposal: "Change request",
+    replay: "Execution replay",
+    cost: "Cost",
+    knowledge: "Knowledge evidence",
+    settings: "Settings"
   }
-  return { ...surface, routes };
-}
+};
 
-function withIntake(surface: GoldPathSurfaceVM, match: WebRouteMatch, session: SessionVM): R4RouteSurface {
+const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
+  "zh-CN": {
+    primary: "当前焦点",
+    queue: "队列",
+    running: "后台运行",
+    pending: "待处理",
+    requests: "请求",
+    trace: "轨迹",
+    deliverables: "交付物",
+    evidence: "证据",
+    checks: "检查",
+    comments: "评论",
+    steps: "步骤",
+    decisions: "决策",
+    snapshots: "快照",
+    tokens: "Tokens",
+    cost: "成本",
+    budget: "预算",
+    options: "选项",
+    refs: "来源",
+    runtime: "运行时"
+  },
+  "en-US": {
+    primary: "Focus",
+    queue: "Queue",
+    running: "Background",
+    pending: "Pending",
+    requests: "Requests",
+    trace: "Trace",
+    deliverables: "Deliverables",
+    evidence: "Evidence",
+    checks: "Checks",
+    comments: "Comments",
+    steps: "Steps",
+    decisions: "Decisions",
+    snapshots: "Snapshots",
+    tokens: "Tokens",
+    cost: "Cost",
+    budget: "Budget",
+    options: "Options",
+    refs: "Sources",
+    runtime: "Runtime"
+  }
+};
+
+function metric(locale: WorkHubLocale, id: string, value: string): WebProductMetric {
   return {
-    ...withCurrentRoute(surface, match),
-    intake_session: session,
-    page_vms: {
-      ...surface.page_vms,
-      question: session.question
-    }
+    id,
+    label: metricLabels[locale][id] ?? id,
+    value
   };
 }
 
-function withAttention(surface: GoldPathSurfaceVM, match: WebRouteMatch, attention: AttentionHomeVM) {
+function routeForShellPage(key: GoldPathRenderedPage["key"], match: WebRouteMatch) {
+  return key === match.key ? match.pathname : shellDefaultRoutes[key];
+}
+
+function shellPagesFor(match: WebRouteMatch, locale: WorkHubLocale, activeMetrics: WebProductMetric[]): WebProductShellPage[] {
+  return shellPageOrder.map((key) => ({
+    key,
+    route: routeForShellPage(key, match),
+    title: shellPageTitles[locale][key],
+    html: "",
+    primaryHrefs: [],
+    cuuState: key === "knowledge" ? "searching_evidence" : "idle",
+    ...(key === match.key ? { metrics: activeMetrics } : {})
+  }));
+}
+
+function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebProductMetric[] {
+  if (surface.key === "home") {
+    return [
+      metric(locale, "primary", surface.attention.primary ? "1" : "0"),
+      metric(locale, "queue", String(surface.attention.queue.length)),
+      metric(locale, "running", String(surface.attention.background_runs.length))
+    ];
+  }
+  if (surface.key === "intake") {
+    return [
+      metric(locale, "options", String(surface.session.question.options.length)),
+      metric(locale, "queue", surface.session.question.input_mode),
+      metric(locale, "runtime", surface.session.session_id)
+    ];
+  }
+  if (surface.key === "approvals") {
+    return [
+      metric(locale, "pending", String(surface.approvals.counts.pending ?? surface.approvals.items.length)),
+      metric(locale, "requests", String(surface.approvals.requests.length)),
+      metric(locale, "queue", String(surface.approvals.items.length))
+    ];
+  }
+  if (surface.key === "workitem") {
+    return [
+      metric(locale, "trace", String(surface.workitem.agent_trace_preview.length)),
+      metric(locale, "deliverables", String(surface.workitem.accepted_deliverables.length)),
+      metric(locale, "evidence", String(surface.workitem.evidence_refs.length))
+    ];
+  }
+  if (surface.key === "proposal") {
+    return [
+      metric(locale, "checks", String(surface.proposal.manifest.checks.length)),
+      metric(locale, "evidence", String(surface.proposal.evidence_refs.length)),
+      metric(locale, "comments", String(surface.proposal.comments.length))
+    ];
+  }
+  if (surface.key === "replay") {
+    return [
+      metric(locale, "steps", String(surface.replay.steps.length)),
+      metric(locale, "decisions", String(surface.replay.merge_timeline.length)),
+      metric(locale, "snapshots", String(surface.replay.snapshots.length))
+    ];
+  }
+  if (surface.key === "cost") {
+    const tokens = surface.cost.token_in + surface.cost.token_out;
+    return [
+      metric(locale, "tokens", String(tokens)),
+      metric(locale, "cost", surface.cost.currency === "CNY" ? `¥${surface.cost.total_cost_cny}` : surface.cost.total_cost_cny),
+      metric(locale, "budget", String(surface.cost.budget.length))
+    ];
+  }
+  if (surface.key === "knowledge") {
+    return [
+      metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
+      metric(locale, "evidence", surface.evidence.missing_evidence_note ? "missing" : "found"),
+      metric(locale, "runtime", "REST")
+    ];
+  }
+  return [
+    metric(locale, "runtime", surface.settings.runtime.app_env),
+    metric(locale, "queue", surface.settings.runtime.broker_backend),
+    metric(locale, "primary", surface.settings.locale)
+  ];
+}
+
+function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebRouteComponent {
+  if (surface.key === "home") {
+    return renderWebRouteComponent({ key: "home", attention: surface.attention }, { locale });
+  }
+  if (surface.key === "intake") {
+    return renderWebRouteComponent({ key: "intake", session: surface.session }, { locale });
+  }
+  if (surface.key === "approvals") {
+    return renderWebRouteComponent({ key: "approvals", approvals: surface.approvals }, { locale });
+  }
+  if (surface.key === "workitem") {
+    return renderWebRouteComponent({ key: "workitem", workitem: surface.workitem }, { locale });
+  }
+  if (surface.key === "proposal") {
+    return renderWebRouteComponent({
+      key: "proposal",
+      proposal: surface.proposal,
+      proposalConflicts: surface.proposal_conflicts
+    }, { locale });
+  }
+  if (surface.key === "replay") {
+    return renderWebRouteComponent({ key: "replay", replay: surface.replay }, { locale });
+  }
+  if (surface.key === "cost") {
+    return renderWebRouteComponent({ key: "cost", cost: surface.cost }, { locale });
+  }
+  if (surface.key === "knowledge") {
+    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence }, { locale });
+  }
+  return renderWebRouteComponent({ key: "settings", settings: surface.settings }, { locale });
+}
+
+function routeComponentsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebRouteComponentMap {
   return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      attention
-    }
+    [surface.key]: routeComponentForSurface(surface, locale)
   };
 }
 
-function withApprovals(surface: GoldPathSurfaceVM, match: WebRouteMatch, approvals: ApprovalCenterVM) {
+function shellSurfaceFor(surface: WebRouteSurface, match: WebRouteMatch, locale: WorkHubLocale): WebProductShellSurface {
   return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      approvals
-    }
-  };
-}
-
-function withCost(surface: GoldPathSurfaceVM, match: WebRouteMatch, cost: CostDashboardVM) {
-  return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      cost
-    }
-  };
-}
-
-function withWorkItem(surface: GoldPathSurfaceVM, match: WebRouteMatch, workitem: WorkItemDetailVM) {
-  return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      workitem
-    }
-  };
-}
-
-function withProposal(
-  surface: GoldPathSurfaceVM,
-  match: WebRouteMatch,
-  proposal: ProposalDetailVM,
-  conflicts: ProposalConflict[] = []
-): GoldPathSurfaceWithProposalConflicts {
-  return {
-    ...withCurrentRoute(surface, match),
-    proposal_conflicts: conflicts,
-    page_vms: {
-      ...surface.page_vms,
-      proposal
-    }
-  };
-}
-
-function withReplay(surface: GoldPathSurfaceVM, match: WebRouteMatch, replay: ReplayTraceVM) {
-  return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      replay
-    }
-  };
-}
-
-function withSettings(surface: GoldPathSurfaceVM, match: WebRouteMatch, settings: SettingsPageVM) {
-  return {
-    ...withCurrentRoute(surface, match),
-    page_vms: {
-      ...surface.page_vms,
-      settings
-    }
-  };
-}
-
-function withKnowledge(surface: GoldPathSurfaceVM, match: WebRouteMatch, evidence: EvidenceBubble): R4RouteSurface {
-  return {
-    ...withCurrentRoute(surface, match),
-    knowledge_evidence: evidence,
-    page_vms: {
-      ...surface.page_vms,
-      evidence
-    }
+    surface: "web",
+    fixtureId: "web-route-shell-v1",
+    css: goldPathCss,
+    pages: shellPagesFor(match, locale, metricsForSurface(surface, locale))
   };
 }
 
@@ -490,7 +603,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     if (isAttentionEmpty(attention)) {
       return "empty" as const;
     }
-    return withAttention(await loadGoldPathTemplate(client, locale), match, attention);
+    return { key: "home", attention } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
@@ -498,21 +611,21 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     const session = await client.getSession(sessionId, withLocale(locale));
-    return withIntake(await loadGoldPathTemplate(client, locale), match, session);
+    return { key: "intake", session } satisfies WebRouteSurface;
   }
   if (match.key === "approvals") {
     const approvals = await client.pages.approvals(withLocale(locale));
     if (isApprovalCenterEmpty(approvals)) {
       return "empty" as const;
     }
-    return withApprovals(await loadGoldPathTemplate(client, locale), match, approvals);
+    return { key: "approvals", approvals } satisfies WebRouteSurface;
   }
   if (match.key === "cost") {
     const cost = await client.pages.cost(withLocale(locale));
     if (isCostDashboardEmpty(cost)) {
       return "empty" as const;
     }
-    return withCost(await loadGoldPathTemplate(client, locale), match, cost);
+    return { key: "cost", cost } satisfies WebRouteSurface;
   }
   if (match.key === "knowledge") {
     const params = new URLSearchParams(match.search);
@@ -525,30 +638,30 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       ...(workItemId ? { work_item_id: workItemId } : {}),
       limit: 6
     }, withLocale(locale));
-    return withKnowledge(await loadGoldPathTemplate(client, locale), match, evidence);
+    return { key: "knowledge", evidence } satisfies WebRouteSurface;
   }
   if (match.key === "workitem") {
     const workitem = await client.pages.workItem(match.params["id"] ?? "", withLocale(locale));
-    return withWorkItem(await loadGoldPathTemplate(client, locale), match, workitem);
+    return { key: "workitem", workitem } satisfies WebRouteSurface;
   }
   if (match.key === "proposal") {
     const proposal = await client.pages.proposal(match.params["id"] ?? "", withLocale(locale));
     const result = await client.listWorkItemConflicts(proposal.work_item_id);
     const conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
-    return withProposal(await loadGoldPathTemplate(client, locale), match, proposal, conflicts);
+    return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
   }
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));
     if (isReplayEmpty(replay)) {
       return "empty" as const;
     }
-    return withReplay(await loadGoldPathTemplate(client, locale), match, replay);
+    return { key: "replay", replay } satisfies WebRouteSurface;
   }
   if (match.key === "settings") {
     const settings = await client.pages.settings(withLocale(locale));
-    return withSettings(await loadGoldPathTemplate(client, locale), match, settings);
+    return { key: "settings", settings } satisfies WebRouteSurface;
   }
-  return withCurrentRoute(await loadGoldPathTemplate(client, locale), match);
+  return "error" as const;
 }
 
 function routeStateFromStatus(status: Exclude<WebRouteLoadStatus, "ready">): RouteStateKind {
@@ -609,12 +722,12 @@ export function renderWebRouteState(
 }
 
 function renderReadyRoute(
-  surface: GoldPathSurfaceVM,
+  surface: WebRouteSurface,
   match: WebRouteMatch,
   locale: WorkHubLocale
 ): WebRouteReadyResult {
-  const rendered = renderGoldPathSurface(surface, "web", { locale });
-  const routeComponents = renderWebRouteComponents(surface, { locale });
+  const rendered = shellSurfaceFor(surface, match, locale);
+  const routeComponents = routeComponentsForSurface(surface, locale);
   const shell = renderWebProductShell(rendered, {
     appName: "WorkHub",
     surfaceLabel: "Web R4",

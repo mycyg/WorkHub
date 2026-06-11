@@ -409,7 +409,7 @@ test("R4.14 intake route loader carries Session VM data into an option-first rou
   const result = await loadWebRoute(client, match, "en-US");
 
   assert.equal(result.status, "ready");
-  assert.deepEqual(calls.slice(0, 2), ["session:r4-route-registry-session:en-US", "goldPath:en-US"]);
+  assert.deepEqual(calls, ["session:r4-route-registry-session:en-US"]);
   assert.equal(result.html.includes('data-r4-route-component="intake"'), true);
   assert.equal(result.html.includes('data-r4-route-component-source="session-vm"'), true);
   assert.equal(result.html.includes('data-r4-intake-option-count="2"'), true);
@@ -430,10 +430,7 @@ test("R4.14 knowledge route loader carries search payload into a cited fallback 
   const result = await loadWebRoute(client, match, "en-US");
 
   assert.equal(result.status, "ready");
-  assert.deepEqual(calls.slice(0, 2), [
-    'knowledge:{"q":"regional","work_item_id":"10000000-0000-4000-8000-000000000932","limit":6}:en-US',
-    "goldPath:en-US"
-  ]);
+  assert.deepEqual(calls, ['knowledge:{"q":"regional","work_item_id":"10000000-0000-4000-8000-000000000932","limit":6}:en-US']);
   assert.equal(result.html.includes('data-r4-route-component="knowledge"'), true);
   assert.equal(result.html.includes('data-r4-route-component-source="evidence-bubble"'), true);
   assert.equal(result.html.includes('data-r4-knowledge-query="regional"'), true);
@@ -452,10 +449,9 @@ test("R4.13 proposal route loader carries conflict API data into advanced route 
   const result = await loadWebRoute(client, match, "en-US");
 
   assert.equal(result.status, "ready");
-  assert.deepEqual(calls.slice(0, 3), [
+  assert.deepEqual(calls, [
     "proposal:proposal-42:en-US",
-    `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
-    "goldPath:en-US"
+    `conflicts:${surface.page_vms.proposal.work_item_id}:none`
   ]);
   assert.equal(result.html.includes('data-r4-route-component="proposal"'), true);
   assert.equal(result.html.includes('data-r4-proposal-conflict-count="1"'), true);
@@ -482,7 +478,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     assert.ok(match);
     const result = await loadWebRoute(client, match, "en-US");
     assert.equal(result.status, "ready");
-    assert.deepEqual(calls.slice(0, 2), [endpointCall, "goldPath:en-US"]);
+    assert.deepEqual(calls, [endpointCall]);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
     assert.equal(result.html.includes('data-r4-product-masthead="true"'), true);
@@ -497,13 +493,12 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
   const surface = goldPathSurfaceVm();
 
   for (const [path, endpointCalls] of [
-    ["/workitems/work-42", ["workItem:work-42:en-US", "goldPath:en-US"]],
+    ["/workitems/work-42", ["workItem:work-42:en-US"]],
     ["/proposals/proposal-42", [
       "proposal:proposal-42:en-US",
-      `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
-      "goldPath:en-US"
+      `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ]],
-    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US", "goldPath:en-US"]]
+    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);
@@ -523,17 +518,16 @@ test("R4.11 web loader marks ready routes as route components", async () => {
   const surface = goldPathSurfaceVm();
 
   for (const [path, endpointCalls, routeComponent] of [
-    ["/", ["attention:en-US", "goldPath:en-US"], "home"],
-    ["/approvals", ["approvals:en-US", "goldPath:en-US"], "approvals"],
-    ["/workitems/work-42", ["workItem:work-42:en-US", "goldPath:en-US"], "workitem"],
+    ["/", ["attention:en-US"], "home"],
+    ["/approvals", ["approvals:en-US"], "approvals"],
+    ["/workitems/work-42", ["workItem:work-42:en-US"], "workitem"],
     ["/proposals/proposal-42", [
       "proposal:proposal-42:en-US",
-      `conflicts:${surface.page_vms.proposal.work_item_id}:none`,
-      "goldPath:en-US"
+      `conflicts:${surface.page_vms.proposal.work_item_id}:none`
     ], "proposal"],
-    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US", "goldPath:en-US"], "replay"],
-    ["/dashboard/cost", ["cost:en-US", "goldPath:en-US"], "cost"],
-    ["/settings", ["settings:en-US", "goldPath:en-US"], "settings"]
+    ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"], "replay"],
+    ["/dashboard/cost", ["cost:en-US"], "cost"],
+    ["/settings", ["settings:en-US"], "settings"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
     const match = resolveWebRoute(path);

@@ -139,3 +139,10 @@ test("SSE formatting prefixes every data line and round-trips multiline payloads
   assert.equal(frame, "event: agent_run.step\ndata: line 1\ndata: line 2\n\n");
   assert.deepEqual(parseSseFrames(frame), [{ event: "agent_run.step", data: "line 1\nline 2" }]);
 });
+
+test("SSE formatting carries optional event ids for browser resume cursors", () => {
+  const frame = formatSseEvent("proposal.merged", { ok: true }, { id: "evt_r4_20_cursor" });
+
+  assert.equal(frame, 'id: evt_r4_20_cursor\nevent: proposal.merged\ndata: {"ok":true}\n\n');
+  assert.deepEqual(parseSseFrames(frame), [{ id: "evt_r4_20_cursor", event: "proposal.merged", data: '{"ok":true}' }]);
+});

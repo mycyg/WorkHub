@@ -385,6 +385,20 @@ R4.19 已把 Proposal readonly summary / review metadata 接入 split adapter，
 - React split 只推进实现边界：readonly props 来自 typed Page VM 与 conflicts API，不从 DOM 文案反推数据；mutation 行为仍走同一 delegated dispatcher。
 - 主窗仍无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.19 no-new-fixture-chrome gate 通过。
 
+### 6.16 R4.20 Dataflow Foundation
+
+![R4.20 dataflow foundation contact sheet](./assets/audit/2026-06-11-r4-web-live-route-interaction/contact-sheet.png)
+
+R4.20 已把 Web ready route 从 P0.5 `/api/pages/gold-path` fixture chrome 剥离，改成 active Page VM + product shell source，并用本机 Chrome browser smoke 生成 42 步截图证据。证据目录：`./assets/audit/2026-06-11-r4-web-live-route-interaction/`。
+
+本轮对概念图的符合点：
+
+- 对齐 `web-operations-pages-atlas.png`：主窗仍是严肃工作界面，product shell、active route panel、right rail 与 metrics 没有变成营销 hero、装饰 dashboard 或默认 Kanban。
+- 数据流边界更接近 PRD：SSE 只提示和触发 REST reconcile；Page VM 仍是真相源，事件 payload 不直接驱动业务 UI。
+- Shell chrome 不再来自 P0.5 fixture：browser report 证明 `/api/pages/gold-path=0`，双语 fixed chrome 来自 product shell locale copy 与 route registry。
+- App-level SSE 与 cursor 可审计：report 暴露 `runtime=app-level`、`sseProposal=1`、`lastEventId=evt_r4_20_*`、`lastOpenHadCursor=true`，route switch 不再整建整拆所有 EventSource。
+- R4.19 风险门继续成立：Proposal dirty edit SSE guard、Home React `react-props` update、active-only panel、no hash、no weekly fixture、no horizontal/text overflow 均作为 R4.20 regression 通过。
+
 ## 7. 后续补图计划
 
 | 编号 | 概念图 / 截图 | 目的 |

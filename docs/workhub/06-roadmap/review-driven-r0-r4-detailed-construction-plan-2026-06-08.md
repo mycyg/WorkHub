@@ -2956,12 +2956,25 @@ R4 验收：
 8. Bug / 数据流审查：Proposal mutation editors 继续走现有 delegated dispatcher；dirty guard 证明 line decision/search/custom field 在 `proposal.merged` SSE 后不丢；gold-path fixture 请求次数被锁定，R4.19 不新增 chrome fixture 依赖。
 9. 边界：R4.19 不是 Proposal mutation editor 真迁移，不解决 app 级 SSE 长连接、Last-Event-ID 或 fixture chrome 退役；这些进入 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)。
 
+### R4.20 已落：dataflow foundation
+
+1. 已阅读 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)、R4.19 竣工记录、R4.19-pre true React mount spike、R4 中期审查、R4.8 Redis/SSE plan、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.19 contact sheet、R4.8 Redis/SSE contact sheet。
+2. 已改 `apps/web/src/routes.ts`：ready route 不再请求 `/api/pages/gold-path`；每个 route 只读取自身 typed Page VM（Proposal 额外读 conflicts），再用 product shell locale copy、route registry 和 active metrics 组装真实 chrome。
+3. 已改 `packages/ui/src/gold-path/product-shell.ts` 与 `route-components.ts`：product shell 可消费不带完整 fixture VM 的 shell surface；route component renderer 增加 active-only API，Replay 不再需要完整 demo surface。
+4. 已改 `apps/web/src/browser.ts`：SSE runtime 从 ready route AbortController 拆出，按 URL 复用 EventSource，route switch 只同步 target set；dirty guard 与 Home React `react-props` update 继续作为特殊刷新路径。
+5. 已改 `packages/events/src/sse.ts` 与 `apps/api/src/sse/stream.ts`：SSE frame 支持 `id:`，服务端读取 `Last-Event-ID` / `last_event_id`，connected frame 回显 `resume_mode=fresh|reconcile`。
+6. 已改 Web cursor：浏览器记录 `MessageEvent.lastEventId` 或 payload `event_id`，写入 sessionStorage，硬导航/locale reload 后打开新 stream 会携带 `last_event_id` query。
+7. 已扩展 R4 live browser smoke：新增 `r4_20_app_level_sse_runtime`、`r4_20_route_switch_does_not_rebuild_all_event_sources`、`r4_20_page_vm_local_refetch`、`r4_20_shell_chrome_no_gold_path_fixture_dependency`、`r4_20_last_event_id_or_cursor_contract`、`r4_20_dirty_guard_regression`、`r4_20_home_react_props_update_regression`、`r4_20_no_new_fixture_chrome`。
+8. 验收：`@workhub/events test` 13/13、`@workhub/ui typecheck`、`@workhub/web typecheck`、`@workhub/web test` 20/20、`@workhub/api typecheck`、`@workhub/api test` 105/105、`pnpm typecheck` 与 42 步 Chrome smoke 通过；report 关键计数 `goldPath=0`、`sseProposal=1`、`proposal=2`、`proposalConflicts=2`、`qaEmit=4`。
+9. Bug / 数据流审查：P0-3 fixture chrome 已退役第一段；P0-4 EventSource 整建整拆已退役第一段；SSE 仍只触发 REST/Page VM reconcile，不承诺历史 replay；Proposal dirty edit 和 Home React props 回归均通过。
+10. 边界：R4.20 不迁 Proposal mutation editor，不抽 Web/desktop shared runtime；desktop-webview dispatcher drift 与单体 smoke 膨胀进入 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md)。
+
 下一施工顺序：
 
-1. **R4.20 dataflow foundation**：集中修 app 级 SSE 长连接、Page VM 局部 refetch、Last-Event-ID/断连续传与 fixture chrome 退役。
-2. **R4.21 shared web runtime**：收敛 Web 与 desktop-webview dispatcher/runtime 分叉，抽共享事件分发、locale、notice、SSE refresh guard。
-3. **R4.22 Proposal mutation editor migration**：在 R4.20/R4.21 稳定后，选择 Proposal mutation-heavy editor 的最低风险一段做真实迁移。
-4. **后续门禁**：继续保留 R4.8-R4.19 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、React-compatible adapter、true React mount probe、dirty guard、action notice、desktop boundary、secret-safe、Replay restore、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
+1. **R4.21 shared web runtime**：收敛 Web 与 desktop-webview dispatcher/runtime 分叉，抽共享事件分发、locale、notice、dirty guard、SSE refresh guard。
+2. **R4.22 Proposal mutation editor migration**：在 R4.20/R4.21 稳定后，选择 Proposal mutation-heavy editor 的最低风险一段做真实迁移。
+3. **R4 收尾门**：清理 hash route 兼容口径、治理 README 状态行、把 browser smoke 拆向 CI Playwright spec。
+4. **后续门禁**：继续保留 R4.8-R4.20 的 Redis/SSE、topic auth、REST reconcile、path navigation、locale reload、active-only panel、hydration boundary、React-compatible adapter、true React mount probe、app-level SSE、cursor、dirty guard、action notice、desktop boundary、secret-safe、Replay restore、no Cuu/no Kanban/no weekly、no hash、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

@@ -172,12 +172,21 @@ type BrowserAudit = {
     reasonButtonCount: number;
   };
   live: {
+    runtime: string | null;
     streamCount: string | null;
+    activeSourceCount: string | null;
+    openCount: string | null;
+    closeCount: string | null;
+    reuseCount: string | null;
     connectedCount: string | null;
     eventCount: string | null;
     refreshCount: string | null;
     lastEvent: string | null;
     lastStream: string | null;
+    lastEventId: string | null;
+    lastEventIdSource: string | null;
+    cursorStrategy: string | null;
+    lastOpenHadCursor: string | null;
     refreshMode: string | null;
     reactPropsEvent: string | null;
     reactPropsStream: string | null;
@@ -786,6 +795,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let currentLocale: WorkHubLocale = "zh-CN";
   let sessionStage: "scope" | "confirm" = "scope";
   let failNextPreferencePatch = false;
+  let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
   const sseStreamKey = (pathname: string) => {
     if (pathname === "/api/push/stream") {
@@ -797,7 +807,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     const match = /^\/api\/push\/stream\/([^/]+)/u.exec(pathname);
     return match?.[1] ?? "unknown";
   };
-  const writeSseEvent = (response: ServerResponse, event: string, payload: Record<string, unknown>) => {
+  const writeSseEvent = (response: ServerResponse, event: string, payload: Record<string, unknown>, id?: string) => {
+    if (id) {
+      response.write(`id: ${id}\n`);
+    }
     response.write(`event: ${event}\n`);
     response.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
@@ -820,7 +833,11 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         "cache-control": "no-store, no-transform",
         connection: "keep-alive"
       });
-      writeSseEvent(response, "connected", { stream: streamKey });
+      writeSseEvent(response, "connected", {
+        stream: streamKey,
+        last_event_id: url.searchParams.get("last_event_id") ?? undefined,
+        resume_mode: url.searchParams.has("last_event_id") ? "reconcile" : "fresh"
+      });
       sseClients.set(response, streamKey);
       request.on("close", () => {
         sseClients.delete(response);
@@ -835,7 +852,9 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         if (streamKey !== stream) {
           continue;
         }
-        writeSseEvent(client, event, { stream, event_type: event, source: "r4-smoke" });
+        sseEventSeq += 1;
+        const eventId = `evt_r4_20_${sseEventSeq}`;
+        writeSseEvent(client, event, { stream, event_type: event, source: "r4-smoke", event_id: eventId }, eventId);
         emitted += 1;
       }
       sendJson(response, 200, { ok: true, event, stream, emitted });
@@ -1504,12 +1523,21 @@ function auditExpression() {
       reasonButtonCount: noticeVisible ? document.querySelectorAll("[data-review-reason]").length : 0
     };
     const live = {
+      runtime: document.documentElement.dataset.r4LiveRuntime || null,
       streamCount: document.documentElement.dataset.r4LiveStreamCount || null,
+      activeSourceCount: document.documentElement.dataset.r4LiveActiveSourceCount || null,
+      openCount: document.documentElement.dataset.r4LiveSseOpenCount || null,
+      closeCount: document.documentElement.dataset.r4LiveSseCloseCount || null,
+      reuseCount: document.documentElement.dataset.r4LiveSseReuseCount || null,
       connectedCount: document.documentElement.dataset.r4LiveConnectedCount || null,
       eventCount: document.documentElement.dataset.r4LiveEventCount || null,
       refreshCount: document.documentElement.dataset.r4LiveRefreshCount || null,
       lastEvent: document.documentElement.dataset.r4LiveLastEvent || null,
       lastStream: document.documentElement.dataset.r4LiveLastStream || null,
+      lastEventId: document.documentElement.dataset.r4LiveLastEventId || null,
+      lastEventIdSource: document.documentElement.dataset.r4LiveLastEventIdSource || null,
+      cursorStrategy: document.documentElement.dataset.r4LiveCursorStrategy || null,
+      lastOpenHadCursor: document.documentElement.dataset.r4LiveLastOpenHadCursor || null,
       refreshMode: document.documentElement.dataset.r4LiveRefreshMode || null,
       reactPropsEvent: document.documentElement.dataset.r4LiveReactPropsEvent || null,
       reactPropsStream: document.documentElement.dataset.r4LiveReactPropsStream || null,
@@ -2068,8 +2096,8 @@ function requestProof(requests: ApiRequestRecord[]) {
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
-    goldPath: requests.filter((request) => request.pathname === "/api/pages/gold-path").length >= 4,
-    goldPathEn: requests.some((request) => request.pathname === "/api/pages/gold-path" && request.locale === "en-US"),
+    goldPath: requests.filter((request) => request.pathname === "/api/pages/gold-path").length === 0,
+    goldPathEn: requests.every((request) => request.pathname !== "/api/pages/gold-path" || request.locale !== "en-US"),
     localePatch: requests.some((request) => request.method === "PATCH" && request.pathname === "/api/auth/preferences"),
     localePatchFailureArmed: requests.some((request) => request.method === "POST" && request.pathname === "/api/__qa/fail-next-preference-patch"),
     counts: {
@@ -2222,7 +2250,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.cost && proof.settings && proof.replay && proof.goldPath && proof.goldPathEn && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.cost && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -2709,9 +2737,78 @@ async function main() {
         proof.counts.proposal === 2 &&
         proof.counts.proposalConflicts === 2,
       r4_19_no_new_fixture_chrome:
-        proof.counts.goldPath === 18 &&
+        proof.counts.goldPath === 0 &&
         proof.counts.proposal === 2 &&
         proof.counts.proposalConflicts === 2 &&
+        steps.every((step) => !step.audit.weeklyFixtureLeak),
+      r4_20_app_level_sse_runtime:
+        steps.some((step) =>
+          step.id === "01-home-zh-desktop" &&
+          step.audit.live.runtime === "app-level" &&
+          step.audit.live.activeSourceCount === "1" &&
+          Number(step.audit.live.openCount ?? "0") >= 1
+        ),
+      r4_20_route_switch_does_not_rebuild_all_event_sources:
+        (() => {
+          const workitem = steps.find((step) => step.id === "01d-intake-create-workitem-success-zh-desktop");
+          const approvals = steps.find((step) => step.id === "02-approvals-click-zh-desktop");
+          const workitemAgain = steps.find((step) => step.id === "03-workitem-click-zh-desktop-route-component");
+          return Boolean(
+            workitem &&
+              approvals &&
+              workitemAgain &&
+              workitem.audit.live.runtime === "app-level" &&
+              approvals.audit.live.runtime === "app-level" &&
+              workitemAgain.audit.live.runtime === "app-level" &&
+              workitem.audit.live.activeSourceCount === "2" &&
+              approvals.audit.live.activeSourceCount === "1" &&
+              workitemAgain.audit.live.activeSourceCount === "2" &&
+              approvals.audit.live.openCount === workitem.audit.live.openCount &&
+              Number(approvals.audit.live.reuseCount ?? "0") > Number(workitem.audit.live.reuseCount ?? "0") &&
+              Number(workitemAgain.audit.live.reuseCount ?? "0") > Number(approvals.audit.live.reuseCount ?? "0")
+          );
+        })() &&
+        proof.counts.sseProposal === 1,
+      r4_20_page_vm_local_refetch:
+        steps.some((step) =>
+          step.id === "10-proposal-sse-refresh-notice-en-desktop" &&
+          step.audit.live.refreshMode === "page-vm-render" &&
+          step.audit.notice.kind === "sse_refresh"
+        ) &&
+        proof.counts.goldPath === 0,
+      r4_20_shell_chrome_no_gold_path_fixture_dependency:
+        proof.goldPath &&
+        proof.goldPathEn &&
+        proof.counts.goldPath === 0 &&
+        steps.every((step) => step.audit.productShell ? (step.audit.zhChrome || step.audit.enChrome) : true) &&
+        steps.every((step) => !step.audit.weeklyFixtureLeak),
+      r4_20_last_event_id_or_cursor_contract:
+        steps.some((step) =>
+          step.id === "01s-home-react-sse-props-update-zh-desktop" &&
+          /^evt_r4_20_/u.test(step.audit.live.lastEventId ?? "") &&
+          step.audit.live.cursorStrategy === "sse-id-and-query-last_event_id"
+        ) &&
+        steps.some((step) =>
+          step.id === "01a-intake-zh-desktop-route-component" &&
+          step.audit.live.lastOpenHadCursor === "true"
+        ),
+      r4_20_dirty_guard_regression:
+        steps.some((step) =>
+          step.id === "06aa-proposal-dirty-edit-sse-guard-en-desktop" &&
+          step.audit.notice.kind === "sse_dirty_guard" &&
+          step.audit.live.refreshMode === "dirty-deferred" &&
+          step.audit.routeData.proposalLineEditorSearchValue === "scope" &&
+          step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
+        ),
+      r4_20_home_react_props_update_regression:
+        steps.some((step) =>
+          step.id === "01s-home-react-sse-props-update-zh-desktop" &&
+          step.audit.live.refreshMode === "react-props" &&
+          step.audit.reactRuntimeLastUpdateReason === "sse-props" &&
+          step.audit.reactRuntimeMountCount === "1"
+        ),
+      r4_20_no_new_fixture_chrome:
+        proof.counts.goldPath === 0 &&
         steps.every((step) => !step.audit.weeklyFixtureLeak),
       r4_16_hydration_boundary_regression: readyProductSteps.every((step) =>
         Boolean(step.audit.hydrationBoundary) &&
@@ -2750,7 +2847,8 @@ async function main() {
         proof.counts.preferencePatch === 2 &&
         proof.counts.preferenceFailureArmed === 1 &&
         proof.counts.qaEmit === 4 &&
-        proof.counts.sseProposal >= 2,
+        proof.counts.sseProposal === 1 &&
+        proof.counts.goldPath === 0,
       mobile_scroll_no_topbar_nav_overlap: steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && !step.audit.topbarNavOverlap),
       no_main_window_cuu: steps.every((step) => !step.audit.cuuLeak),
       no_default_kanban: steps.every((step) => !step.audit.kanbanLeak),
@@ -2839,6 +2937,14 @@ async function main() {
         `- R4.19 Proposal readonly props parity: ${String(gates.r4_19_proposal_readonly_props_parity)}`,
         `- R4.19 dirty edit SSE guard: ${String(gates.r4_19_dirty_edit_sse_guard)}`,
         `- R4.19 no-new-fixture chrome: ${String(gates.r4_19_no_new_fixture_chrome)}`,
+        `- R4.20 app-level SSE runtime: ${String(gates.r4_20_app_level_sse_runtime)}`,
+        `- R4.20 route switch stable EventSource: ${String(gates.r4_20_route_switch_does_not_rebuild_all_event_sources)}`,
+        `- R4.20 page VM local refetch: ${String(gates.r4_20_page_vm_local_refetch)}`,
+        `- R4.20 shell chrome no fixture dependency: ${String(gates.r4_20_shell_chrome_no_gold_path_fixture_dependency)}`,
+        `- R4.20 Last-Event-ID cursor: ${String(gates.r4_20_last_event_id_or_cursor_contract)}`,
+        `- R4.20 dirty guard regression: ${String(gates.r4_20_dirty_guard_regression)}`,
+        `- R4.20 Home React props regression: ${String(gates.r4_20_home_react_props_update_regression)}`,
+        `- R4.20 no-new-fixture chrome: ${String(gates.r4_20_no_new_fixture_chrome)}`,
         `- R4.16 hydration boundary regression: ${String(gates.r4_16_hydration_boundary_regression)}`,
         `- R4.15 settings boundary regression: ${String(gates.r4_15_settings_boundary_regression)}`,
         `- active-only product panels: ${String(gates.active_only_product_panels)}`,

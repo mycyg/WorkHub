@@ -33,6 +33,7 @@ import {
 } from "./react-route-mount.js";
 
 const root = document.getElementById("root");
+const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
 type RouteNoticeKind =
   | "action_success"
@@ -77,6 +78,16 @@ let liveRefreshTimer: number | undefined;
 let liveEventCount = 0;
 let liveRefreshCount = 0;
 let liveDirtyGuardCount = 0;
+let liveEventSourceOpenCount = 0;
+let liveEventSourceCloseCount = 0;
+let liveEventSourceReuseCount = 0;
+let liveLastEventId = readStoredLiveLastEventId();
+
+const liveEventSources = new Map<string, {
+  source: EventSource;
+  target: LiveStreamTarget;
+  openedUrl: string;
+}>();
 
 const liveRefreshDebounceMs = 220;
 const liveEventTypes = Object.values(eventTypes);
@@ -109,6 +120,24 @@ function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | u
 
 function setLiveMetric(key: string, value: unknown) {
   document.documentElement.dataset[key] = String(value);
+}
+
+function readStoredLiveLastEventId() {
+  try {
+    return window.sessionStorage.getItem(liveLastEventIdStorageKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function persistLiveLastEventId(eventId: string) {
+  try {
+    window.sessionStorage.setItem(liveLastEventIdStorageKey, eventId);
+  } catch {
+    setLiveMetric("r4LiveLastEventIdPersisted", false);
+    return;
+  }
+  setLiveMetric("r4LiveLastEventIdPersisted", true);
 }
 
 function clearLiveDirtyMetrics() {
@@ -151,6 +180,13 @@ function activeRouteHasDirtyEdits() {
 function noteLiveStreamTargets(targets: LiveStreamTarget[]) {
   setLiveMetric("r4LiveStreams", targets.map((target) => target.key).join(","));
   setLiveMetric("r4LiveStreamCount", targets.length);
+  setLiveMetric("r4LiveRuntime", "app-level");
+  setLiveMetric("r4LiveActiveSourceCount", liveEventSources.size);
+  setLiveMetric("r4LiveSseOpenCount", liveEventSourceOpenCount);
+  setLiveMetric("r4LiveSseCloseCount", liveEventSourceCloseCount);
+  setLiveMetric("r4LiveSseReuseCount", liveEventSourceReuseCount);
+  setLiveMetric("r4LiveCursorStrategy", "sse-id-and-query-last_event_id");
+  setLiveMetric("r4LiveLastEventId", liveLastEventId);
 }
 
 function uniqueLiveStreamTargets(targets: LiveStreamTarget[]) {
@@ -162,6 +198,89 @@ function uniqueLiveStreamTargets(targets: LiveStreamTarget[]) {
     seen.add(target.url);
     return true;
   });
+}
+
+function updateLiveRuntimeMetrics() {
+  setLiveMetric("r4LiveRuntime", "app-level");
+  setLiveMetric("r4LiveActiveSourceCount", liveEventSources.size);
+  setLiveMetric("r4LiveSseOpenCount", liveEventSourceOpenCount);
+  setLiveMetric("r4LiveSseCloseCount", liveEventSourceCloseCount);
+  setLiveMetric("r4LiveSseReuseCount", liveEventSourceReuseCount);
+  setLiveMetric("r4LiveCursorStrategy", "sse-id-and-query-last_event_id");
+  setLiveMetric("r4LiveLastEventId", liveLastEventId);
+}
+
+function streamUrlWithCursor(url: string) {
+  if (!liveLastEventId) {
+    setLiveMetric("r4LiveLastOpenHadCursor", false);
+    return url;
+  }
+  const parsed = new URL(url, window.location.href);
+  parsed.searchParams.set("last_event_id", liveLastEventId);
+  setLiveMetric("r4LiveLastOpenHadCursor", true);
+  return /^https?:\/\//u.test(url) ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
+function eventIdFromPayload(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record["event_id"] === "string" && record["event_id"].length > 0) {
+    return record["event_id"];
+  }
+  const nested = record["event"];
+  if (nested && typeof nested === "object") {
+    const nestedRecord = nested as Record<string, unknown>;
+    if (typeof nestedRecord["event_id"] === "string" && nestedRecord["event_id"].length > 0) {
+      return nestedRecord["event_id"];
+    }
+  }
+  return undefined;
+}
+
+function noteLiveEventCursor(event: Event, source: "sse-id" | "payload" | "connected") {
+  if (!(event instanceof MessageEvent)) {
+    return;
+  }
+  const sseId = event.lastEventId;
+  if (sseId) {
+    liveLastEventId = sseId;
+    persistLiveLastEventId(liveLastEventId);
+    setLiveMetric("r4LiveLastEventIdSource", "sse-id");
+    updateLiveRuntimeMetrics();
+    return;
+  }
+  try {
+    const payload = JSON.parse(String(event.data ?? "")) as unknown;
+    const payloadEventId = eventIdFromPayload(payload);
+    if (payloadEventId) {
+      liveLastEventId = payloadEventId;
+      persistLiveLastEventId(liveLastEventId);
+      setLiveMetric("r4LiveLastEventIdSource", source === "connected" ? "connected-payload" : "payload");
+      updateLiveRuntimeMetrics();
+    }
+  } catch {
+    setLiveMetric("r4LiveLastEventIdSource", "unparseable");
+  }
+}
+
+function closeLiveEventSource(url: string) {
+  const entry = liveEventSources.get(url);
+  if (!entry) {
+    return;
+  }
+  entry.source.close();
+  liveEventSources.delete(url);
+  liveEventSourceCloseCount += 1;
+  setLiveMetric("r4LiveLastClosedStream", entry.target.key);
+  updateLiveRuntimeMetrics();
+}
+
+function closeAllLiveEventSources() {
+  for (const url of Array.from(liveEventSources.keys())) {
+    closeLiveEventSource(url);
+  }
 }
 
 function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {
@@ -184,7 +303,7 @@ function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserA
     }
   } else if (result.match.key === "proposal") {
     const proposalId = result.match.params["id"];
-    const workItemId = result.surface.page_vms.proposal.work_item_id;
+    const workItemId = result.surface.key === "proposal" ? result.surface.proposal.work_item_id : undefined;
     if (proposalId) {
       targets.push({ key: "proposal", url: client.streams.proposal(proposalId) });
     }
@@ -193,7 +312,7 @@ function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserA
     }
   } else if (result.match.key === "replay") {
     const runId = result.match.params["id"];
-    const workItemId = result.surface.page_vms.replay.run.work_item_id;
+    const workItemId = result.surface.key === "replay" ? result.surface.replay.run.work_item_id : undefined;
     if (runId) {
       targets.push({ key: "run", url: client.streams.run(runId) });
     }
@@ -1123,6 +1242,7 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
     return;
   }
   clearReadyRouteBindings();
+  closeAllLiveEventSources();
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
@@ -1158,7 +1278,7 @@ async function refreshCurrentRouteFromLiveEvent(
     setLiveMetric("r4LiveDirtyPendingStream", targetKey);
     return "dirty-deferred";
   }
-  setLiveMetric("r4LiveRefreshMode", "full-render");
+  setLiveMetric("r4LiveRefreshMode", "page-vm-render");
   await renderCurrentRoute(client, locale);
   return "refreshed";
 }
@@ -1195,17 +1315,30 @@ function scheduleLiveRouteRefresh(client: BrowserApiClient, locale: WorkHubLocal
 function bindLiveEventSource(
   target: LiveStreamTarget,
   client: BrowserApiClient,
-  locale: WorkHubLocale,
-  signal: AbortSignal
+  locale: WorkHubLocale
 ) {
   if (typeof EventSource === "undefined") {
     setLiveMetric("r4LiveSseSupported", false);
     return;
   }
   setLiveMetric("r4LiveSseSupported", true);
-  const source = new EventSource(target.url, { withCredentials: true });
-  signal.addEventListener("abort", () => source.close(), { once: true });
-  source.addEventListener("connected", () => {
+  const existing = liveEventSources.get(target.url);
+  if (existing) {
+    existing.target = target;
+    liveEventSourceReuseCount += 1;
+    setLiveMetric("r4LiveLastReusedStream", target.key);
+    updateLiveRuntimeMetrics();
+    return;
+  }
+  const openedUrl = streamUrlWithCursor(target.url);
+  const source = new EventSource(openedUrl, { withCredentials: true });
+  liveEventSources.set(target.url, { source, target, openedUrl });
+  liveEventSourceOpenCount += 1;
+  setLiveMetric("r4LiveLastOpenedStream", target.key);
+  setLiveMetric("r4LiveLastOpenedUrl", openedUrl);
+  updateLiveRuntimeMetrics();
+  source.addEventListener("connected", (event) => {
+    noteLiveEventCursor(event, "connected");
     const connected = Number(document.documentElement.dataset.r4LiveConnectedCount ?? "0") + 1;
     setLiveMetric("r4LiveConnectedCount", connected);
     setLiveMetric("r4LiveLastConnectedStream", target.key);
@@ -1214,16 +1347,26 @@ function bindLiveEventSource(
     setLiveMetric("r4LiveLastErrorStream", target.key);
   });
   for (const eventType of liveEventTypes) {
-    source.addEventListener(eventType, () => scheduleLiveRouteRefresh(client, locale, eventType, target.key));
+    source.addEventListener(eventType, (event) => {
+      noteLiveEventCursor(event, "payload");
+      scheduleLiveRouteRefresh(client, locale, eventType, target.key);
+    });
   }
 }
 
-function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale, signal: AbortSignal) {
+function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
   const targets = liveStreamTargetsForRoute(result, client);
   noteLiveStreamTargets(targets);
-  for (const target of targets) {
-    bindLiveEventSource(target, client, locale, signal);
+  const nextUrls = new Set(targets.map((target) => target.url));
+  for (const url of Array.from(liveEventSources.keys())) {
+    if (!nextUrls.has(url)) {
+      closeLiveEventSource(url);
+    }
   }
+  for (const target of targets) {
+    bindLiveEventSource(target, client, locale);
+  }
+  updateLiveRuntimeMetrics();
 }
 
 async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
@@ -1245,7 +1388,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindLocaleSwitch(root, locale, client, signal);
   bindRouteLineEditor(root, signal);
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
-  bindLiveRouteStreams(result, client, locale, signal);
+  bindLiveRouteStreams(result, client, locale);
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {
@@ -1301,6 +1444,7 @@ async function boot() {
     window.addEventListener("popstate", () => {
       void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
     });
+    window.addEventListener("beforeunload", closeAllLiveEventSources);
   } catch (error) {
     renderFatalRouteError(locale, error);
   }

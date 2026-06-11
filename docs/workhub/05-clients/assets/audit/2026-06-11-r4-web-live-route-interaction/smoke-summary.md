@@ -1,8 +1,74 @@
 # R4.5 Web Live Route Interaction Smoke
 
 - ok: true
-- steps: 10
+- steps: 42
 - path nav clicks: true
 - history back/forward: true
 - locale toggle reload: true
+- R4.10 route components: true
+- R4.11 route components: true
+- R4.11 source truth: true
+- R4.11 VM/DOM match: true
+- R4.14 session/knowledge endpoints: true
+- R4.12 approval response notice: true
+- R4.12 reason gate: true
+- R4.12 request changes notice: true
+- R4.12 merge notice: true
+- R4.12 SSE refresh notice: true
+- R4.12 budget warning notice: true
+- R4.12 desktop gate: true
+- R4.12 route-state actions: true
+- R4.13 proposal advanced route DOM: true
+- R4.13 proposal advanced route sections: true
+- R4.13 advanced apply payloads: true
+- R4.13 custom field fail-closed: true
+- R4.13 conflict API source truth: true
+- R4.13 structured editor visual: true
+- R4.13 proposal regression: true
+- R4.14 route component source truth: true
+- R4.14 intake route: true
+- R4.14 option-first fail-closed: true
+- R4.14 intake submit/create: true
+- R4.14 knowledge fallback/bind: true
+- R4.14 mobile no overflow: true
+- R4.15 settings locale persistence: true
+- R4.15 settings secret safe: true
+- R4.15 desktop boundary gate: true
+- R4.15 route recovery actions: true
+- R4.15 settings mobile no overflow: true
+- R4.14 intake/knowledge regression: true
+- R4.16 hydration boundary marker: true
+- R4.16 route adapter Page VM truth: true
+- R4.16 action dispatcher parity: true
+- R4.16 locale/settings regression: true
+- R4.16 active-only regression: true
+- R4.17 React component marker: true
+- R4.17 HTML fallback parity: true
+- R4.17 action dispatcher single path: true
+- R4.17 settings boundary regression: true
+- R4.18 Cost React component marker: true
+- R4.18 Replay React component marker: true
+- R4.18 Cost/Replay fallback parity: true
+- R4.18 action dispatcher single path: true
+- R4.18 Replay nonzero deliverable action parity: true
+- R4.17 first migration regression: true
+- R4.19-pre true React mount: true
+- R4.19-pre dispatcher coexistence: true
+- R4.19-pre SSE props update without full render: true
+- R4.19 Proposal split component marker: true
+- R4.19 Proposal advanced fallback boundary: true
+- R4.19 Proposal readonly props parity: true
+- R4.19 dirty edit SSE guard: true
+- R4.19 no-new-fixture chrome: true
+- R4.20 app-level SSE runtime: true
+- R4.20 route switch stable EventSource: true
+- R4.20 page VM local refetch: true
+- R4.20 shell chrome no fixture dependency: true
+- R4.20 Last-Event-ID cursor: true
+- R4.20 dirty guard regression: true
+- R4.20 Home React props regression: true
+- R4.20 no-new-fixture chrome: true
+- R4.16 hydration boundary regression: true
+- R4.15 settings boundary regression: true
+- active-only product panels: true
 - no text box overflow: true

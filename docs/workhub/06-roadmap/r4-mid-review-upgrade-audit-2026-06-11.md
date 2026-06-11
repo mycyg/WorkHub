@@ -77,6 +77,8 @@ depends_on:
 
 **回写状态（2026-06-11 R4.19）**：R4.19 未退役 fixture chrome，但已新增冻结门 `r4_19_no_new_fixture_chrome=true`，锁定本轮 browser smoke 中 `goldPath=18`、`proposal=2`、`proposalConflicts=2`，避免继续扩大 `/api/pages/gold-path` 依赖。退役计划已独立写入 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)。
 
+**回写状态（2026-06-11 R4.20）**：已完成 fixture chrome 退役第一段。`apps/web/src/routes.ts` ready route 不再调用 `/api/pages/gold-path`，生产 Web route 由 active typed Page VM + product shell locale copy + route registry source 组装；R4.20 browser smoke 证明 `goldPath=0`、`r4_20_shell_chrome_no_gold_path_fixture_dependency=true`、无 weekly fixture 文案。
+
 ### P0-4 SSE 连接随每次渲染整建整拆 + 事件触发全量 refetch
 
 **现状**：`bindReadyRoute` 在**每次**路由渲染后重建所有 EventSource（1–3 条），上一轮全部 abort 关闭（`apps/web/src/browser.ts:1119-1130`、`1087`）；每个事件的处理是整页双请求 refetch（gold-path template + page VM）再 `innerHTML` 重渲。即：**收到一个事件 → 拆掉所有连接 → 重连 → 很快又收到事件**，连接抖动随事件频率放大，断连窗口内的事件直接丢失（无 last-event-id 续传）。
@@ -84,6 +86,8 @@ depends_on:
 **为什么是 P0**：这是数据流的地基模式，R2 辛苦做的 Redis broker/topic 边界在客户端被"全量重渲"模式抵消；活跃 run 场景（agent 心跳/步进事件密集）下服务端 SSE 握手压力与客户端闪烁都会随用户数线性恶化。推完再改 = 改掉整个前端刷新模型。
 
 **建议**：与 P0-1 spike 同窗拍板目标模型——**app 级长连接**（boot 建一次，按路由订/退 topic），事件只触发**当前路由 page VM 的局部 refetch**（shell 不动），并补 `Last-Event-ID` 续传语义（服务端 `apps/api/src/sse/stream.ts` 一并收口）。
+
+**回写状态（2026-06-11 R4.20）**：已完成 app-level SSE 第一段。`apps/web/src/browser.ts` 维护 EventSource map 并按 URL 复用，route switch 只同步 target set；Proposal stream 在 42 步 smoke 中只打开 1 次，clean SSE refresh mode 为 `page-vm-render`，dirty route 仍为 `dirty-deferred`，Home 仍为 `react-props`。`packages/events/src/sse.ts` 支持 `id:`，`apps/api/src/sse/stream.ts` 读取 `Last-Event-ID` / `last_event_id` 并回显 `resume_mode`。当前语义是 cursor + REST reconcile，不承诺 broker 历史 replay。
 
 ---
 

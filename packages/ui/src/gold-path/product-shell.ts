@@ -4,6 +4,21 @@ import { goldPathT, normalizeWorkHubLocale, workHubLocaleOptions, type WorkHubLo
 import type { GoldPathRenderedPage, GoldPathRenderedSurface } from "./render.js";
 import type { WebRouteComponentMap } from "./route-components.js";
 
+export type WebProductMetric = {
+  id: string;
+  label: string;
+  value: string;
+};
+
+export type WebProductShellPage = GoldPathRenderedPage & {
+  metrics?: WebProductMetric[] | undefined;
+};
+
+export type WebProductShellSurface = Omit<GoldPathRenderedSurface, "pages" | "vm"> & {
+  vm?: GoldPathRenderedSurface["vm"] | undefined;
+  pages: WebProductShellPage[];
+};
+
 export type WebProductShellOptions = GoldPathAppShellOptions & {
   routeComponents?: WebRouteComponentMap | undefined;
   renderActivePanelOnly?: boolean | undefined;
@@ -217,7 +232,7 @@ function renderLocaleToggle(locale: WorkHubLocale) {
     .join("")}</div>`;
 }
 
-function renderProductMetrics(page: GoldPathRenderedPage, rendered: GoldPathRenderedSurface, locale: WorkHubLocale) {
+function renderProductMetrics(page: WebProductShellPage, rendered: WebProductShellSurface, locale: WorkHubLocale) {
   const metrics = pageMetrics(page, rendered, locale).slice(0, 4);
   return `<div class="wh-product-metrics" data-r4-product-metrics="true">${metrics
     .map(
@@ -227,9 +242,15 @@ function renderProductMetrics(page: GoldPathRenderedPage, rendered: GoldPathRend
     .join("")}</div>`;
 }
 
-function pageMetrics(page: GoldPathRenderedPage, rendered: GoldPathRenderedSurface, locale: WorkHubLocale) {
+function pageMetrics(page: WebProductShellPage, rendered: WebProductShellSurface, locale: WorkHubLocale): WebProductMetric[] {
+  if (page.metrics) {
+    return page.metrics;
+  }
   const fallback = [{ id: "locale", label: productT(locale, "metric.locale"), value: locale }];
-  const vm = rendered.vm.page_vms;
+  const vm = rendered.vm?.page_vms;
+  if (!vm) {
+    return fallback;
+  }
   if (page.key === "home") {
     const attention = vm.attention;
     return [
@@ -308,7 +329,7 @@ function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComp
 }
 
 export function renderWebProductShell(
-  rendered: GoldPathRenderedSurface,
+  rendered: WebProductShellSurface,
   options: WebProductShellOptions
 ): GoldPathAppShell {
   const locale = normalizeWorkHubLocale(options.locale);
