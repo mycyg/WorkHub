@@ -1,0 +1,811 @@
+{
+  "generated_at": "2026-06-11T01:51:20.816Z",
+  "module": "R4.7 Web live API + Postgres seed smoke",
+  "chrome_path": "/usr/bin/google-chrome",
+  "vite_url": "http://127.0.0.1:46661",
+  "api_target": "http://127.0.0.1:42667",
+  "seed": {
+    "ids": {
+      "userId": "00000000-0000-4000-8000-000000000102",
+      "forbiddenUserId": "00000000-0000-4000-8000-000000000471",
+      "projectId": "00000000-0000-4000-8000-000000000004",
+      "workspaceId": "00000000-0000-4000-8000-000000000002",
+      "teamId": "00000000-0000-4000-8000-000000000002",
+      "workItemId": "00000000-0000-4000-8000-000000000104",
+      "forbiddenWorkItemId": "00000000-0000-4000-8000-000000000472",
+      "missingProposalId": "00000000-0000-4000-8000-000000000473",
+      "branchId": "00000000-0000-4000-8000-000000000106",
+      "runId": "00000000-0000-4000-8000-000000000107",
+      "proposalId": "00000000-0000-4000-8000-000000000108",
+      "baseSnapshotId": "00000000-0000-4000-8000-000000000109",
+      "draftSnapshotId": "00000000-0000-4000-8000-00000000010a",
+      "auditSnapshotId": "00000000-0000-4000-8000-000000000501",
+      "auditProposalId": "00000000-0000-4000-8000-000000000502",
+      "acceptanceFitId": "00000000-0000-4000-8000-000000000474",
+      "acceptanceEvidenceId": "00000000-0000-4000-8000-000000000475",
+      "evidenceMessageId": "00000000-0000-4000-8000-000000000476",
+      "stepPlanId": "00000000-0000-4000-8000-000000000701",
+      "stepEvidenceId": "00000000-0000-4000-8000-000000000702",
+      "stepFinalId": "00000000-0000-4000-8000-000000000705",
+      "reviewId": "00000000-0000-4000-8000-000000000801",
+      "approvalId": "00000000-0000-4000-8000-000000000802",
+      "usageRecordId": "r4-web-live-api-pg-seed:deepseek-v4-flash:2026-06-11",
+      "costLedgerUserId": "00000000-0000-4000-8000-000000000901",
+      "costLedgerTeamId": "00000000-0000-4000-8000-000000000902",
+      "costLedgerWorkItemId": "00000000-0000-4000-8000-000000000903",
+      "changeMarkdownId": "00000000-0000-4000-8000-000000000401",
+      "changePreviewId": "00000000-0000-4000-8000-000000000402",
+      "currentUserId": "00000000-0000-4000-8000-000000000102",
+      "forbiddenActorUserId": "00000000-0000-4000-8000-000000000471"
+    },
+    "seededAt": "2026-06-11T08:00:00.000Z"
+  },
+  "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-api-pg-seed",
+  "contact_sheet": "contact-sheet.png",
+  "gates": {
+    "pg_seed_applied": true,
+    "api_server_started": true,
+    "vite_dev_server_started": true,
+    "screenshots_captured": true,
+    "route_coverage_ready_empty_forbidden_error": true,
+    "required_routes_ready": true,
+    "ready_routes_use_live_api_endpoints": true,
+    "locale_toggle_reload": true,
+    "path_nav_clicks": true,
+    "history_back_forward": true,
+    "empty_and_forbidden_from_real_api": true,
+    "product_shell_stays_path_mode": true,
+    "no_main_window_cuu": true,
+    "no_default_kanban": true,
+    "no_old_preview_shell": true,
+    "no_weekly_fixture_copy": true,
+    "no_hash_navigation": true,
+    "no_horizontal_overflow": true,
+    "no_text_box_overflow": true,
+    "mobile_scroll_no_topbar_nav_overlap": true
+  },
+  "request_proof": {
+    "authMe": true,
+    "identify": true,
+    "localePatch": true,
+    "attentionZh": true,
+    "approvals": true,
+    "workitemZh": true,
+    "workitemEn": true,
+    "proposal": true,
+    "replay": true,
+    "cost": true,
+    "settingsGoldPath": true,
+    "missingProposalEmpty": true,
+    "forbiddenWorkItem": true,
+    "counts": {
+      "authMe": 9,
+      "goldPath": 10,
+      "attention": 2,
+      "approvals": 2,
+      "workitem": 3,
+      "proposal": 1,
+      "replay": 1,
+      "cost": 1
+    }
+  },
+  "api_requests": [
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/attention",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/attention?locale=zh-CN"
+    },
+    {
+      "method": "POST",
+      "pathname": "/api/auth/identify",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/identify"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/attention",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/attention?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/approvals",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/approvals?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/approvals",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/approvals?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=zh-CN"
+    },
+    {
+      "method": "PATCH",
+      "pathname": "/api/auth/preferences",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/preferences"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/proposals/00000000-0000-4000-8000-000000000108",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/proposals/00000000-0000-4000-8000-000000000108?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/agent-runs/00000000-0000-4000-8000-000000000107/replay"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/cost",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/cost?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/gold-path",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/gold-path?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/proposals/00000000-0000-4000-8000-000000000473",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/proposals/00000000-0000-4000-8000-000000000473?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000472",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:46661/api/pages/workitems/00000000-0000-4000-8000-000000000472?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:46661/api/auth/me"
+    }
+  ],
+  "api_log_tail": [
+    "WorkHub API daemon listening on http://127.0.0.1:42667"
+  ],
+  "steps": [
+    {
+      "id": "01-home-zh-desktop-real-api",
+      "url": "http://127.0.0.1:46661/",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "01-home-zh-desktop-real-api.png",
+      "audit": {
+        "pathname": "/",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "home",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "02-approvals-click-zh-desktop-real-api",
+      "url": "http://127.0.0.1:46661/approvals",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "02-approvals-click-zh-desktop-real-api.png",
+      "audit": {
+        "pathname": "/approvals",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "approvals",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "03-workitem-click-zh-desktop-real-api",
+      "url": "http://127.0.0.1:46661/workitems/00000000-0000-4000-8000-000000000104",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "03-workitem-click-zh-desktop-real-api.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "workitem",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "04-history-back-approvals-real-api",
+      "url": "http://127.0.0.1:46661/approvals",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "04-history-back-approvals-real-api.png",
+      "audit": {
+        "pathname": "/approvals",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "approvals",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "05-history-forward-workitem-real-api",
+      "url": "http://127.0.0.1:46661/workitems/00000000-0000-4000-8000-000000000104",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "05-history-forward-workitem-real-api.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "workitem",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "06-locale-toggle-en-workitem-real-api",
+      "url": "http://127.0.0.1:46661/workitems/00000000-0000-4000-8000-000000000104",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "06-locale-toggle-en-workitem-real-api.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "workitem",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "07-proposal-mobile-scrolled-real-api",
+      "url": "http://127.0.0.1:46661/proposals/00000000-0000-4000-8000-000000000108",
+      "viewport": {
+        "width": 390,
+        "height": 1180
+      },
+      "expectedStatus": "ready",
+      "screenshot": "07-proposal-mobile-scrolled-real-api.png",
+      "audit": {
+        "pathname": "/proposals/00000000-0000-4000-8000-000000000108",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "proposal",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "08-replay-desktop-real-api",
+      "url": "http://127.0.0.1:46661/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "08-replay-desktop-real-api.png",
+      "audit": {
+        "pathname": "/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "replay",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "09-cost-desktop-real-api",
+      "url": "http://127.0.0.1:46661/dashboard/cost",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "09-cost-desktop-real-api.png",
+      "audit": {
+        "pathname": "/dashboard/cost",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "cost",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "10-settings-mobile-route-fallback",
+      "url": "http://127.0.0.1:46661/settings",
+      "viewport": {
+        "width": 390,
+        "height": 1180
+      },
+      "expectedStatus": "ready",
+      "screenshot": "10-settings-mobile-route-fallback.png",
+      "audit": {
+        "pathname": "/settings",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "settings",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "11-missing-proposal-empty-real-api",
+      "url": "http://127.0.0.1:46661/proposals/00000000-0000-4000-8000-000000000473",
+      "viewport": {
+        "width": 390,
+        "height": 1180
+      },
+      "expectedStatus": "empty",
+      "screenshot": "11-missing-proposal-empty-real-api.png",
+      "audit": {
+        "pathname": "/proposals/00000000-0000-4000-8000-000000000473",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "empty",
+        "routeKey": "proposal",
+        "productShell": false,
+        "linkModePath": false,
+        "masthead": false,
+        "activeLocale": null,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "12-forbidden-workitem-real-api",
+      "url": "http://127.0.0.1:46661/workitems/00000000-0000-4000-8000-000000000472",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "forbidden",
+      "screenshot": "12-forbidden-workitem-real-api.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000472",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "forbidden",
+        "routeKey": "workitem",
+        "productShell": false,
+        "linkModePath": false,
+        "masthead": false,
+        "activeLocale": null,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": false
+      }
+    },
+    {
+      "id": "13-unknown-route-error",
+      "url": "http://127.0.0.1:46661/missing-r4-live-api-pg-route",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "error",
+      "screenshot": "13-unknown-route-error.png",
+      "audit": {
+        "pathname": "/missing-r4-live-api-pg-route",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "error",
+        "routeKey": "home",
+        "productShell": false,
+        "linkModePath": false,
+        "masthead": false,
+        "activeLocale": null,
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": false
+      }
+    }
+  ]
+}

@@ -12,7 +12,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 
 本仓库目前是 **产品规格文档树 + TS-first 地基脚手架**。规格已细化到屏级 / 接口级 / 功能级,实现代码会按 F01–F11 逐步加入。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 63 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 84 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 

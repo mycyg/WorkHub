@@ -5,6 +5,7 @@ export * from "./locks.js";
 export * from "./migrate.js";
 export * from "./sequences.js";
 export * from "./seed.js";
+export * from "./r4-web-seed.js";
 export * from "./types.js";
 export * from "./repositories/users.js";
 export * from "./repositories/devices.js";

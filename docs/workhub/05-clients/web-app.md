@@ -41,7 +41,7 @@ owner: workflow
 - `AI-first Home`、`Option Intake`、`WorkItem Detail`、`Proposal Detail`、`Approval Center`、`Replay Work`、`Cost Dashboard`、`Knowledge fallback` 仍需要真实页面组件和四态。
 - Cuu 不应进入 Web 主界面；主力 Cuu 归独立桌宠窗口，Web 只展示严肃页面、审批、证据、成本和 trace。
 - Page VM 请求已带 `locale` 并回显 `meta.locale`，但动态任务标题、摘要、证据、proposal manifest 仍由 daemon 原文决定；后续要让服务端按 locale 生成可本地化摘要，而不是在客户端临时硬翻译。
-- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n。真实 component route tree、真实 API/PG seed 浏览器 smoke、Redis/SSE production 浏览器联调与完整服务端动态本地化仍待后续。
+- R4.1 已形成第一版 route-state matrix 门禁；R4.2 已把状态接入真实 route loader，并让 `/`、`/approvals`、`/dashboard/cost` 先读 typed Page VM endpoint；R4.3 已补多记录 ready/detail route 截图；R4.4 已补产品 shell baseline 与文本盒溢出门禁；R4.5 已补 Vite live browser route interaction smoke；R4.6 已补 Rust system-string i18n；R4.7 已在远端 Linux PostgreSQL 环境通过真实 API/PG seed browser smoke。真实 component route tree、Redis/SSE production 浏览器联调与完整服务端动态本地化仍待后续。
 
 完整差距和后续施工顺序见 [`prd-concept-reproduction-gap-audit.md`](./prd-concept-reproduction-gap-audit.md)。
 
@@ -190,6 +190,20 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 | QA gate | `pnpm qa:r4-rust-system-i18n` 跑 cargo tests 并静态检查系统串合同，已接入 `pnpm verify` | 后续 R4.7/R4.8 保留 R2 release gate 与 no-reference discipline |
 
 边界：R4.6 不等同于完整 Web route tree 或服务端动态本地化；它解决的是 Rust shell 固定系统串单语风险。
+
+### 0.12 R4.7 Web live API / PG seed smoke（2026-06-11 已通过远端 PG gate）
+
+本轮把 R4.5 的 mock API live-browser smoke 推进到真实 API daemon + Postgres seed 的可复跑脚本。详细计划与验收状态见 [`../06-roadmap/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](../06-roadmap/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md)。
+
+| 项 | 当前实现 | 后续目标 |
+|---|---|---|
+| PG seed | `packages/db/src/r4-web-seed.ts` 写入 work item / branch / agent run / proposal / approval / evidence / cost ledger | R4.8 复用该 seed 接 Redis/SSE production refresh |
+| Live smoke | `apps/web/qa/r4-web-live-api-pg-seed.ts` 启动真实 API daemon、Vite、Chrome CDP；远端 Linux `pnpm qa:r4-web-live-api-pg-seed` 已通过 13 步 | 后续纳入 CI 或稳定远端 smoke |
+| 路由覆盖 | 脚本覆盖 `/`、`/approvals`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay`、`/dashboard/cost`、`/settings` | 接 Redis/SSE production refresh |
+| 文案边界 | API gold-path shell 清洗 `Cuu` / `周报` / `weekly` 旧 demo 可见文案；可见正文漏词检查 `leak=false`，API 101/101 通过 | 动态 Page VM 摘要由服务端按 locale 生成 |
+| 溢出门 | 继承 R4.5 `no_horizontal_overflow` / `no_text_box_overflow`，并复跑桌宠 failed run card overflow gate；R4.7 report `no_text_box_overflow=true`、`no_horizontal_overflow=true` | 所有后续 Web 和桌宠视觉 QA 持续保留文本矩形裁切门 |
+
+边界：R4.7 已通过远端 Linux 真实 PostgreSQL 浏览器验收；本机 Windows 仍没有 PostgreSQL、Docker、psql/pg_ctl/postgres 或 WSL 发行版，本机复跑不是 R4.8 前置。
 
 ---
 

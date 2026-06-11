@@ -2659,7 +2659,7 @@ Bug / 数据流审查：
 4. 已增强 `scripts/qa/cuu-pet-run-card-overflow-qa.ts`：除了 client/scroll overflow，还逐项检测 `.wh-pet-title`、message、status、actions、progress/budget 文本矩形是否越过 bubble 边界；用户截图里的 Budget 底部裁切会触发 `no_text_clipped_by_bubble=false`。
 5. 验收证据：`../05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/`；本轮 report 为 `textClippingOffenders=[]`、`budgetVisible=true`、`transient status visible=false`、`bubbleGapToLive2d=22.04px`。
 6. 已复核数据流：`cardFromAgentRunLive(failed)` 仍产出 `kind=trace/state=worried`，pet surface 只改变展示密度和 QA gate，不改变 AgentRun、budget、replay 或 action 数据。
-7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 仍按原顺序推进 Rust system-string i18n，R4.7 接真实 API/PG seed smoke。
+7. 后续计划：R3/R4 后续所有视觉 QA 继续保留文本矩形裁切门；R4.6 已落 Rust system-string i18n，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke，下一步进入 R4.8 Redis/SSE production browser smoke。
 
 ### R3.21 下一刀：cross-platform tray/menu smoke
 
@@ -2774,10 +2774,21 @@ R4 验收：
 7. 验收证据：`../05-clients/assets/audit/2026-06-11-r4-rust-system-i18n/`；report gates 全部为 true：`cargo_tests_passed`、`locale_contract_has_two_values`、`shell_config_consumes_locale`、`tray_labels_and_tooltip_bilingual`、`main_installs_tray_with_shell_locale`、`notification_fallbacks_bilingual`、`dynamic_notification_payload_preserved`、`sse_worker_passes_locale_to_notification_plan`、`deep_link_diagnostics_bilingual`、`single_instance_rejections_bilingual`。
 8. 边界：R4.6 是 Rust 代码合同和可复跑 QA gate，不替代 Windows/Linux/macOS 原生菜单视觉截图；WebView runtime locale 热更新 OS tray label 仍属后续。
 
+### R4.7 已落：Web live API/PG seed smoke
+
+1. 已阅读 `web-app.md`、`page-concepts.md`、`api-contract.md`、`r2-release-gate.md`、R4.6 计划与 Web 概念图：`web-ai-first-home.png`、`web-approval-center.png`、`web-workitem-detail.png`、`web-deliverable-change-request.png`。
+2. 已新增 `packages/db/src/r4-web-seed.ts`：seed work item / branch / agent run / proposal / approval / evidence / cost ledger，并让默认浏览器用户 `P0.5 Reviewer` 与真实权限门对齐。
+3. 已新增 `apps/web/qa/r4-web-live-api-pg-seed.ts` 和 root `pnpm qa:r4-web-live-api-pg-seed`：迁移 + seed + 真实 API daemon + Vite + Chrome CDP，覆盖 Home/Approvals/WorkItem/Proposal/Replay/Cost/Settings。
+4. 已改 API gold-path Web shell 输出：清洗旧 demo 的 `Cuu`、`客户周报/周报`、`weekly` 可见文案，避免主 Web 泄漏桌宠/旧 fixture；可见正文漏词检查为 `leak=false`。
+5. 已改 Vite config：支持 `WORKHUB_WEB_API_PROXY_TARGET`，真实 API 端口可隔离。
+6. 已通过：DB/Web package typecheck、显式 `tsc` 编译新增 QA/seed 文件、`@workhub/api test` 101/101、`pnpm qa:cuu-pet-run-card-overflow`、`pnpm qa:r4-web-live-route-interaction`、`pnpm verify`；R2 release gate 同步 PASS。
+7. 已通过远端真实 PG browser smoke：`192.168.5.53` / Ubuntu 26.04 / PostgreSQL 18.4 / Node 22.22.1 / Chrome，`pnpm qa:r4-web-live-api-pg-seed` 13 步通过，生成 `../05-clients/assets/audit/2026-06-11-r4-web-live-api-pg-seed/` report/contact sheet。
+8. 边界：本机 Windows 仍无 PostgreSQL/Docker/psql/WSL，无法本机复跑 PG smoke；R4.7 竣工证据以远端 Linux 真实验收为准。R4.7 不等同于 Redis/SSE production browser refresh，也不等同于完整 React component route tree。
+
 下一施工顺序：
 
-1. **R4.7 Web live API/PG seed smoke**：在 R4.5 交互 smoke 基础上接真实 API server + deterministic PG seed，覆盖 Home/Approvals/WorkItem/Proposal/Replay/Cost/Settings，继续保留 endpoint count、文本越框和无 Cuu 主窗门。
-2. **R4.8 Redis/SSE production browser smoke**：在 R4.7 的真实 API/PG 基础上接 Redis broker/SSE refresh，验证多 worker 推送、notification 与页面刷新不脑裂。
+1. **R4.8 Redis/SSE production browser smoke**：在 R4.7 的真实 API/PG gate 基础上接 Redis broker/SSE refresh，验证多 worker 推送、notification 与页面刷新不脑裂。
+2. **R4.8 后续**：继续保留 R4.7 的 path navigation、locale reload、no Cuu/no Kanban/no weekly、no horizontal/text overflow、ready/empty/forbidden/error gates。
 
 ## 8. 模块开工前阅读清单
 

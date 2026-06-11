@@ -106,7 +106,9 @@ corepack pnpm qa:r4-rust-system-i18n
 
 ## 6. 后续详细计划
 
-下一刀 R4.7：Web live API / PG seed smoke。
+下一刀进入 R4.8：Redis/SSE production browser smoke。
+
+2026-06-11 已补 R4.7 的 DB seed helper、真实 API/Vite/Chrome smoke 脚本、gold-path Web 文案产品化清洗、Vite 动态 API proxy 与 API 子进程绝对 `TSX_TSCONFIG_PATH`；远端 Linux `192.168.5.53` 已用 PostgreSQL 18.4 + Chrome 跑通 `pnpm qa:r4-web-live-api-pg-seed`，生成 [`r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](./r4-07-web-live-api-pg-seed-smoke-2026-06-11.md) 记录的 report/contact sheet。本机 Windows 仍无 PG runtime，但不再阻塞 R4.8。
 
 1. 开工前复读：
    - [`../05-clients/web-app.md`](../05-clients/web-app.md)
@@ -121,4 +123,4 @@ corepack pnpm qa:r4-rust-system-i18n
    - locale query/meta。
    - no Cuu / no Kanban / no old preview shell。
    - text box overflow 和 horizontal overflow hard gate。
-5. 真实 Redis/SSE production 浏览器联调若依赖外部服务不可稳定复现，先落 PG seed + API runtime gate，再把 Redis/SSE 留到 R4.8。
+5. R4.8 真实 Redis/SSE production 浏览器联调沿用 R4.7 PG seed + API runtime gate，新增 broker/stream/notification 刷新证明。

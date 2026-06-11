@@ -10,7 +10,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test src/*.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "qa:r4-live-route-interaction": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-live-route-interaction.ts"
+    "qa:r4-live-route-interaction": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-live-route-interaction.ts",
+    "qa:r4-live-api-pg-seed": "tsx --tsconfig ../../tsconfig.base.json qa/r4-web-live-api-pg-seed.ts"
   },
   "dependencies": {
     "@workhub/api-client": "workspace:*",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@workhub/agent": "workspace:*",
+    "@workhub/db": "workspace:*",
     "vite": "^8.0.16"
   }
 }

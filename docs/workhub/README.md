@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**82 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action，用户截图暴露的 failed run card 文本越框已补 Chrome 直渲染回归门，macOS menu bar 仍待实机；R4.1 已补 Web 高频页四态/双语/无溢出 route-state matrix foundation，R4.2 已补真实 URL route registry、loader 状态机与 typed Page VM endpoint proof，R4.3 已补多记录 Page VM ready/detail route 视觉 QA，R4.4 已补 Web product shell baseline、导航内部溢出与文本盒溢出门禁，R4.5 已补 Vite live browser route interaction smoke、重复 listener guard 与移动端滚动遮挡门，R4.6 已补 Rust system-string i18n、tray/notification/deep-link diagnostics 双语系统串，下一步 R4.7 做 Web live API/PG seed smoke。
+> 状态(2026-06-11):**84 篇文档已落盘**。最新权威施工顺序见 [`06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md`](./06-roadmap/recovery-r0-r4-roadmap-2026-06-08.md),详细领取计划见 [`06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md`](./06-roadmap/review-driven-r0-r4-detailed-construction-plan-2026-06-08.md):R0 止血对账 -> R1 真实纵切 -> R2 多 worker -> R3 Cuu Agent 入口 -> R4 Web 产品化。Cuu 当前只保留独立桌宠窗口中的黑猫/白猫 Live2D 二选项；R3.23 已补真实 Linux GNOME StatusNotifier/AppIndicator DBusMenu action，用户截图暴露的 failed run card 文本越框已补 Chrome 直渲染回归门，macOS menu bar 仍待实机；R4.1 已补 Web 高频页四态/双语/无溢出 route-state matrix foundation，R4.2 已补真实 URL route registry、loader 状态机与 typed Page VM endpoint proof，R4.3 已补多记录 Page VM ready/detail route 视觉 QA，R4.4 已补 Web product shell baseline、导航内部溢出与文本盒溢出门禁，R4.5 已补 Vite live browser route interaction smoke、重复 listener guard 与移动端滚动遮挡门，R4.6 已补 Rust system-string i18n、tray/notification/deep-link diagnostics 双语系统串，R4.7 已通过远端 Linux 真实 API/PG seed browser smoke；下一步 R4.8 接 Redis/SSE production browser smoke。
 
 ---
 
@@ -155,6 +155,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r4-04-web-product-shell-baseline-plan-2026-06-11.md` | **R4.4**:Web product shell baseline、Home/Approvals/WorkItem/Proposal 四屏截图、path nav、双语 chrome、无 Cuu/无 Kanban、无横向与文本盒溢出 gate | current |
 | `r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md` | **R4.5**:Vite live browser route interaction smoke、path nav/back/forward、locale reload、ready/empty/forbidden/error、重复 listener guard、mobile scroll 文本/遮挡门 | current |
 | `r4-06-rust-system-string-i18n-plan-2026-06-11.md` | **R4.6**:Rust shell locale contract、tray/menu/tooltip、system notification fallback、deep-link/single-instance diagnostics 双语系统串与 cargo/QA gate | current |
+| `r4-07-web-live-api-pg-seed-smoke-2026-06-11.md` | **R4.7**:真实 API daemon + deterministic PG seed 浏览器 smoke；远端 Linux PostgreSQL/Chrome 13 步验收通过 | ✅ |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级
