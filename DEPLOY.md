@@ -22,14 +22,14 @@ $EDITOR .env.pilot
 ## 2. 起栈（首次构建约 3–5 分钟）
 
 ```bash
-docker compose -f docker-compose.pilot.yml up -d --build
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build
 # 看到 workhub 容器 healthy 即就绪：
-docker compose -f docker-compose.pilot.yml ps
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps
 # 跟日志（JSON Lines）：
-docker compose -f docker-compose.pilot.yml logs -f workhub
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 ```
 
-数据库迁移在容器启动时自动执行（`pnpm db:migrate`），无需手工步骤。
+数据库迁移在容器启动时自动执行（`pnpm db:migrate`），无需手工步骤。`--env-file .env.pilot` 同时给容器环境与 compose 变量插值使用，确保 `POSTGRES_PASSWORD` / `WORKHUB_PORT` 与 `.env.pilot` 一致。
 
 ## 3. 首次使用
 
@@ -45,29 +45,35 @@ docker compose -f docker-compose.pilot.yml logs -f workhub
 ## 4. 备份与恢复
 
 ```bash
-# 备份（默认写 ./backups/，保留 14 份；建议加进 cron）
+# 备份（默认写 ../workhub-backups/，保留 14 份；建议加进 cron）
 bash scripts/ops/backup-pg.sh
 
-# 恢复（目标栈须先起好；会覆盖现库，先确认！）
-gunzip -c backups/workhub-<时间戳>.sql.gz | \
-  docker compose -f docker-compose.pilot.yml exec -T postgres psql -U workhub -d workhub
+# 恢复到当前栈（会覆盖现库，先确认！）
+gunzip -c ../workhub-backups/workhub-<时间戳>.sql.gz | \
+  docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T postgres psql -U workhub -d workhub
+
+# 恢复 dry check：用独立 compose project，避免覆盖当前 pilot 数据。
+docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml up -d postgres
+gunzip -c ../workhub-backups/workhub-<时间戳>.sql.gz | \
+  docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml exec -T postgres psql -U workhub -d workhub
+docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml down -v
 ```
 
 ## 5. 升级
 
 ```bash
 git pull
-docker compose -f docker-compose.pilot.yml up -d --build   # 迁移随启动自动跑
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build   # 迁移随启动自动跑
 ```
 
 ## 6. 故障排查
 
 | 症状 | 排查 |
 |---|---|
-| 页面打不开 | `docker compose -f docker-compose.pilot.yml ps` 看 workhub 是否 healthy；`logs workhub` 找 `server_started` 事件 |
+| 页面打不开 | `docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps` 看 workhub 是否 healthy；`logs workhub` 找 `server_started` 事件 |
 | 一直停在注册屏提交失败 | 日志找 `http_request` 中 `/api/auth/identify` 的 status；403 = 管理员口令不对 |
-| 起不来且日志含 migrate 错误 | 确认 postgres healthy 后 `docker compose -f docker-compose.pilot.yml restart workhub` |
-| 想清库重来 | `docker compose -f docker-compose.pilot.yml down -v`（**删除全部数据**，慎用） |
+| 起不来且日志含 migrate 错误 | 确认 postgres healthy 后 `docker compose --env-file .env.pilot -f docker-compose.pilot.yml restart workhub` |
+| 想清库重来 | `docker compose --env-file .env.pilot -f docker-compose.pilot.yml down -v`（**删除全部数据**，慎用） |
 | AI 工人不可用 | `.env.pilot` 填 `LLM_API_KEY` 后 `up -d` 重建；无 key 时其余功能（注册/事项/审批/看板）不受影响 |
 
 ## 7. 安全口径（必读）

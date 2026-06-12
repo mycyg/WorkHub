@@ -15,7 +15,8 @@ depends_on:
 
 > **北极星**：让一个真实团队（单人或三人皆可）用核心闭环——**提需求 → AI 干 → 升级 → 审批 → 合并 → 回放**——真干一周的活。这一周跑通的那天，WorkHub 的价值从文档变成事实。
 > **定位**：R5.8 之后的权威施工顺序。它把 R4 中期审查总评指出的四个战略风险（面太宽 / 桌宠占比失衡 / 护城河推迟 / 给谁用最薄）转成一条可执行的验证路径：**所有工期优先服务"核心反转被真实使用验证"这一件事**。
-> **三个已拍板的决策（2026-06-12）**：① pilot 不依赖特定人员，目标是"系统 pilot-ready"，人到位即可启动；② C-PET/Cuu **不冻结**，按原节奏并行，但不在 pilot 关键路径上；③ OQ-4 护城河走 **pilot 数据驱动**——先收集真实冲突数据，再开深化。
+> **三个已拍板的决策（2026-06-12）**：① pilot 不依赖特定人员，目标是"系统 pilot-ready"，但仍必须通过 S1 Launch Gate 后才能开周；② C-PET/Cuu **不冻结**，按原节奏并行，但不在 pilot 关键路径上；③ OQ-4 护城河走 **pilot 数据驱动**——先收集真实冲突数据，再开深化。
+> **2026-06-13 补充**：S1 Launch Gate 首轮执行为 **NO-GO**。本机等价 dry/real、单源 Web/API 与双语 UI 审查通过，但真实 Docker compose、backup/restore、compose operator loop 被部署环境阻断（本机无 Docker，远端 SSH 在 KEX 前断开）。Pilot Week 仍需等 [`s1-pilot-launch-gate-plan-2026-06-13.md`](./s1-pilot-launch-gate-plan-2026-06-13.md) 全绿。
 
 ---
 
@@ -68,7 +69,8 @@ R5.10-pre Agent 能力强化                    ← ✅ 已竣工（2026-06-12�
 R5.10  真实 LLM 端到端验证与评估报告        ← ✅ 已竣工（2026-06-13）：dry + 真 key 6-run 质量-成本-时延报告
 R5.11  Pilot 部署包 + 最小可观测            ← ✅ 已竣工（2026-06-12，CI pilot-stack-smoke 全绿）
 R5.12  权限矩阵审计（P1-4）                ← ✅ 已竣工（2026-06-12）：修 2 洞 + 常驻 fail-closed 门 → 系统 pilot-ready
-S1     Pilot Week（人到位即启动；turnkey 运营手册已立 s1-pilot-week-runbook）
+S1-Gate Pilot Launch Gate                  ← ⚠️ 首轮 NO-GO（2026-06-13）：本机等价门过；Docker/SSH 部署环境未就绪
+S1     Pilot Week（Launch Gate 全绿后启动；turnkey 运营手册已立 s1-pilot-week-runbook）
 S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）、OQ-2/3 阈值校准、pilot 报告决定 S2
 ```
 
@@ -80,7 +82,8 @@ S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）
 | **R5.10** | ✅ dry 自检脚本已落；✅ 真 key 全链跑通并留证据：6 个真实 AgentRun、T1–T4 质量全达标、T5 不编造升级、B1 预算护栏触发、成本计量入 ledger、置信度落库，产出质量-成本-时延评估报告 | 不扩工具面、不调模型路由策略（只记录数据） |
 | **R5.11** | docker-compose 全栈（api + web 静态 + pg + redis）、迁移编排、.env 模板、备份脚本、十分钟 DEPLOY 文档、pino 级结构化日志 | 不做云部署/多租户（P5 不变）、不做 APM |
 | **R5.12** | "角色 × 路由"审计表（对照 security-and-permissions §4.2），写路径统一收口，fail-closed 缺省验证 | 不重写 permission 引擎，只接线与补洞 |
-| **S1** | 每日反馈回灌（issue 化）、周末 pilot 报告（§3 六指标 + 定性结论） | 不在 pilot 周内并行开新功能面 |
+| **S1 Launch Gate** | 部署现场 compose 起栈、dry/real smoke、backup/restore、secret hygiene、主持人 operator loop | 不新增功能；不把本机等价门误记为现场可启动 |
+| **S1 Pilot Week** | 每日反馈回灌（issue 化）、周末 pilot 报告（§3 六指标 + 定性结论） | 不在 pilot 周内并行开新功能面 |
 
 ## 5. 双轨说明
 

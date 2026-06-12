@@ -101,6 +101,35 @@ test("Page VM builders localize generated English copy without translating user/
   });
   assert.equal(cost.budget[0]?.scope_label, "My AI budget today");
   assert.equal(cost.budget[1]?.scope_label, "Team AI budget today");
+  const monthCost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId,
+    locale: "en-US",
+    generatedAt: new Date(at),
+    budgetUsages: [
+      {
+        scope: { kind: "team", teamId: settings.auth.defaultWorkspaceId },
+        scopeLabel: "团队 AI 预算",
+        policyId: "pcost-team-month-v0",
+        period: "month",
+        periodStart: at,
+        periodEnd: at,
+        tokenIn: 1,
+        tokenOut: 2,
+        totalTokens: 3,
+        maxTokens: 100,
+        remainingTokens: 97,
+        estimatedCostCny: "0.1",
+        maxCostCny: "1",
+        remainingCostCny: "0.9",
+        warningRatio: 0.1,
+        status: "ok"
+      }
+    ],
+    ledgerEntries: []
+  });
+  assert.equal(monthCost.budget[0]?.scope_label, "Team AI budget this month");
   const customCost = buildCostDashboardPage({
     settings,
     isAdmin: true,

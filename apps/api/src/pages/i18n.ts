@@ -5,6 +5,7 @@ type PageCopyKey =
   | "attention.queued"
   | "cost.scope.me"
   | "cost.scope.team"
+  | "cost.scope.teamMonth"
   | "cost.label.currentUser"
   | "cost.label.teamBudget"
   | "cost.notice.warning"
@@ -32,6 +33,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "attention.queued": "AI 已排队等待开始。",
     "cost.scope.me": "我的今日 AI 预算",
     "cost.scope.team": "团队今日 AI 预算",
+    "cost.scope.teamMonth": "团队本月 AI 预算",
     "cost.label.currentUser": "当前用户",
     "cost.label.teamBudget": "团队预算",
     "cost.notice.warning": "AI 预算快用完了，建议先选择更省的执行方式。",
@@ -58,6 +60,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "attention.queued": "AI is queued and waiting to start.",
     "cost.scope.me": "My AI budget today",
     "cost.scope.team": "Team AI budget today",
+    "cost.scope.teamMonth": "Team AI budget this month",
     "cost.label.currentUser": "Current user",
     "cost.label.teamBudget": "Team budget",
     "cost.notice.warning": "AI budget is nearly used up. Choose a cheaper run mode first.",

@@ -8,11 +8,11 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:S1 pilot-ready，R5.10 真 key 评估已通过 ✅
+## 现状:S1 代码 pilot-ready，Launch Gate 首轮 NO-GO ⚠️
 
-本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已在本机 PostgreSQL 16 证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。下一步是 S1 Pilot Launch Gate，然后人到位即可启动 Pilot Week。
+本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已在本机 PostgreSQL 16 证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。S1 Pilot Launch Gate 首轮审查已完成：本机等价门通过，但真实 Docker compose / backup / operator loop 被部署环境阻断；Pilot Week 暂不启动。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 136 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 137 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -34,6 +34,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 | R5.9-R5.12 | ✅ | Onboarding、Agent 能力强化、pilot deploy package、sandbox libraries/skills、permission matrix audit 已落；系统 pilot-ready。 |
 | R5.10-dry | ✅ | `pnpm qa:r5-10-dry` 在本机 PG16 跑通：17 段 REST evidence、proposal merge、accepted deliverable download、usage/ledger/confidence。 |
 | R5.10 real | ✅ | `pnpm qa:r5-10-real` 用 DeepSeek 真 provider 跑通 T1–T5+B1：T1–T4 质量全达标，T5 正确升级，B1 预算护栏，真实成本 `0.142346 CNY`。 |
+| S1 Launch Gate | ⚠️ | 首轮 NO-GO：本机等价 dry/real、单源 API+Web、双语 UI 审查通过；真实 Docker compose、backup/restore、compose operator loop 需等 Docker 或远端 SSH 环境修复后复跑。 |
 
 ## 本地开发
 

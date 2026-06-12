@@ -163,6 +163,9 @@ function localizedScopeLabel(usage: InternalBudgetUsage, locale: WorkHubLocale) 
   if (usage.scope.kind === "team" && usage.period === "day" && isDefaultTeamDayScopeLabel(usage.scopeLabel)) {
     return pageT(locale, "cost.scope.team");
   }
+  if (usage.scope.kind === "team" && usage.period === "month" && isDefaultTeamMonthScopeLabel(usage.scopeLabel)) {
+    return pageT(locale, "cost.scope.teamMonth");
+  }
   return usage.scopeLabel;
 }
 
@@ -172,6 +175,10 @@ function isDefaultUserDayScopeLabel(label: string) {
 
 function isDefaultTeamDayScopeLabel(label: string) {
   return label === "团队 AI 预算" || label === pageT("zh-CN", "cost.scope.team") || label === pageT("en-US", "cost.scope.team");
+}
+
+function isDefaultTeamMonthScopeLabel(label: string) {
+  return label === "团队 AI 预算" || label === pageT("zh-CN", "cost.scope.teamMonth") || label === pageT("en-US", "cost.scope.teamMonth");
 }
 
 function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
