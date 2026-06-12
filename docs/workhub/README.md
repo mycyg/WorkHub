@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**123 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），下一步 R5.8 优先做 browser smoke CI 化（中期审查 P1-5）。权威路线见 [`06-roadmap/r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md`](./06-roadmap/r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md)。
+> 状态(2026-06-11):**124 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化（中期审查 P1-5）施工中。权威路线见 [`06-roadmap/r5-08-browser-smoke-ci-plan-2026-06-12.md`](./06-roadmap/r5-08-browser-smoke-ci-plan-2026-06-12.md)。
 
 ---
 
@@ -29,7 +29,7 @@
 | R5.5 | ✅ | Meeting insight-to-draft 已落，55 步 browser gate 覆盖 meeting page、draft、source context、proposal action/link 与移动端无溢出。 |
 | R5.6 | ✅ | Schedule / Notify 已落，`/notifications` 收件箱分组、`/calendar` 周视图、mark read/dismiss/complete + audit，63 步 browser gate 与 request proof 全过。 |
 | R5.7 | ✅ | Knowledge grounding / dashboard health 已落，`/dashboard/health` admin 数值 / member 档位分层、通知 grounding 与 `source_ref` 证据回链，66 步 browser gate 全过。 |
-| R5.8 | planned | 优先 browser smoke CI 化第一段（中期审查 P1-5）：按路由拆 headless spec 进 CI，收口 66 步单体曲线；候选还有 onboarding（P1-6）与桌宠 OS 通知 surface。 |
+| R5.8 | 🚧 | Browser smoke CI 化第一段：66 步单体 smoke 原样进 GitHub Actions（headless Chrome + CJK 字体 + artifact 证据），等待 CI 首跑验证。 |
 
 ---
 
@@ -199,6 +199,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-05-meeting-insight-to-draft-plan-2026-06-11.md` | **R5.5**:Meeting insight-to-draft，把会议洞察生成可追溯 WorkItem 草稿并复用 proposal writeback 主线；55 步 browser gate 已落 | ✅ |
 | `r5-06-schedule-notify-plan-2026-06-11.md` | **R5.6**:Schedule / Notify，`/notifications` 收件箱与 `/calendar` 周视图接入 Page VM、shared runtime，mark read/dismiss/complete + audit；63 步 browser gate 已落 | ✅ |
 | `r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md` | **R5.7**:Knowledge grounding / dashboard health，`/dashboard/health` 健康档位分层、通知 grounding、knowledge `source_ref` 上下文条；66 步 browser gate 已落 | ✅ |
+| `r5-08-browser-smoke-ci-plan-2026-06-12.md` | **R5.8**:Browser smoke CI 化第一段，66 步单体 smoke 进 GitHub Actions（`WORKHUB_QA_CHROME_EXTRA_ARGS`、CJK 字体、artifact 证据），第二段按 R4.24 五组拆分另排 | current |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

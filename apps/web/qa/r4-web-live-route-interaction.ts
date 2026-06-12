@@ -2202,11 +2202,19 @@ class CdpClient {
   }
 }
 
+function chromeExtraArgs() {
+  // CI（GitHub Actions ubuntu runner）需要 --no-sandbox --disable-dev-shm-usage；本地默认为空。
+  return (process.env["WORKHUB_QA_CHROME_EXTRA_ARGS"] ?? "")
+    .split(/\s+/u)
+    .filter((arg) => arg.startsWith("--"));
+}
+
 async function launchChrome(chromePath: string, debugPort: number, userDataDir: string) {
   await rm(userDataDir, { recursive: true, force: true });
   await mkdir(userDataDir, { recursive: true });
   const child = spawn(chromePath, [
     "--headless=new",
+    ...chromeExtraArgs(),
     "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",

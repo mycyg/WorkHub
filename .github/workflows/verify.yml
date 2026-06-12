@@ -23,6 +23,35 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
 
+  web-live-route-smoke:
+    runs-on: ubuntu-latest
+    env:
+      WORKHUB_QA_CHROME_EXTRA_ARGS: "--no-sandbox --disable-dev-shm-usage"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CJK fonts for deterministic zh-CN text metrics
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm qa:r4-web-live-route-interaction
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-live-route-smoke-evidence
+          path: |
+            docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/contact-sheet.png
+            docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/live-route-interaction-report.json
+            docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction/smoke-summary.md
+          retention-days: 14
+
   rust-system-i18n:
     runs-on: ubuntu-latest
     steps:
