@@ -118,3 +118,11 @@ corepack pnpm qa:r4-rust-system-i18n
 2. 优先 Home / Approvals / Replay，从 shared HTML renderer 拆成真实 route component 或更细粒度 shared component。
 3. 把 proposal opened/merged、budget warning、approval response toast、retry/request access 等动作反馈继续接入 locale contract。
 4. 继续保留 endpoint-first Page VM proof、Redis/SSE topic auth、REST reconcile、path nav/back/forward、locale query/meta、no Cuu/no Kanban/no old shell、text box overflow 与 horizontal overflow hard gate。
+
+## 7. CI 执行口径修订（2026-06-12）
+
+`pnpm lint` 链中的 `qa:r4-rust-system-i18n` 自 R4.23 起在 GitHub Actions `workspace` job 上持续失败：runner 缺 Tauri 的 GTK/WebKit 系统依赖，`cargo test` 编译即败，连续 5 次把 main 染红。修订后口径：
+
+- 脚本支持 `WORKHUB_RUST_I18N_CARGO=skip`：跳过 cargo（报告与 smoke-summary 落 `cargo_mode: skipped-by-env`），9 个静态双语文案门照常 fail-closed；默认（本地与专属 job）仍执行 cargo。
+- `verify.yml` 新增 `rust-system-i18n` job：安装 `libwebkit2gtk-4.1-dev` 等 Tauri Linux 依赖 + `Swatinem/rust-cache`，全量执行本门；`workspace` job 设 `WORKHUB_RUST_I18N_CARGO=skip`。
+- cargo 失败时脚本现在回显 stderr tail，并处理 spawn `error` 事件（此前 cargo 缺失会挂起且无诊断输出）。
