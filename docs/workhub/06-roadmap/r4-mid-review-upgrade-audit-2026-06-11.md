@@ -141,6 +141,9 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Reviewer" })`（`apps/web/src/browser.ts:1176`）。LAN-first 可接受，但它绕过了 onboarding/画像（PJ-1）且写死英文昵称。R5 前需要最小 identify/onboarding 闭环（昵称 + locale + 角色），并把 demo 自动注册移除。
 
+
+**回写状态（2026-06-12 S1）**：已立 [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./r5-09-onboarding-minimal-plan-2026-06-12.md)（S1 北极星序列第一刀）：注册屏 + 登出 + 删自动 identify，QA smoke 走脚本化注册；不做密码/OAuth（LAN-first 信任模型不变）。
+
 ### P1-7 locale 切换 = 全页 reload
 
 `bindLocaleSwitch` 成功后 `window.location.reload()`（`apps/web/src/browser.ts:179-187`）。配合 P0-4 的连接重建，切语言的成本是全站冷启。React 化后应是 state 切换；短期可接受，但不要再往 reload 语义上挂新 gate。

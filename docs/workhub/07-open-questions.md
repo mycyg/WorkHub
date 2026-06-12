@@ -99,7 +99,7 @@ owner: workflow
 | **可自动消解特例（已定，降打扰）** | `summary_md` 退化为 DOC 文本合并；`progress_percent` 取 `max`；**`status` 主状态永不自动合并**（只由唯一权威单写路径写，§5.5）；标量字段三方规则 + 冲突交人。 |
 | **AI 调解（护城河）** | 冲突 → 逐 `ConflictItem` 生成 `MergeProposal`，复用 `auto_agent` 的 `AsyncAnthropic` 客户端出"候选 + 人话理由"，**禁输出 git 标记**；人择一/微调（FR-COLLAB-003）。AI 不可用 → 降级为纯枚举候选（保留 main / 采纳提议 / 都留），**绝不阻塞**。 |
 | **待落定项（🟠）** | （a）结构化字段"真冲突"的呈现粒度与去黑话措辞如何不让小白懵；（b）文本三方合并的相等性规整规则（行尾/空白）边界；（c）"提议过时 superseded"判定（§6.5）在高并发下的实测稳健性——均列为 **P3 深设计专题**，需真实并发数据。同步层的冲突**检测**已在 [`sync-and-spec.md §3.1 三路真值表`](./03-collaboration/sync-and-spec.md) 落定（检测归同步层、解法归协作层，两篇在"冲突 Proposal"对接）。 |
-| **建议** | MVP（P1）AI 工人多为单分支产出，冲突低发；**P3 协作铺开前**先把 STRUCT 字段级三方合并 + DOC 二进制指针择一这两条最确定的路径做实，文本三方合并与 AI 调解作为同期专题，留足实测调参窗口。 |
+| **建议** | MVP（P1）AI 工人多为单分支产出，冲突低发；**P3 协作铺开前**先把 STRUCT 字段级三方合并 + DOC 二进制指针择一这两条最确定的路径做实，文本三方合并与 AI 调解作为同期专题，留足实测调参窗口。**2026-06-12 收敛节奏更新**：按 [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)，OQ-4 深化改为 **S1 pilot 数据驱动**——pilot 报告中的真实冲突发生数与形态是开工输入，避免无真实并发时空转设计。 |
 | **已挂可追溯 FR（更新）** | [`functional-requirements.md`](./06-roadmap/functional-requirements.md) 已新增 `FR-COLLAB-006`（"业务对象合并语义按内容类型分派：文档类 vs 结构化记录类，各自 diff/merge"，P1 提出 / P3 落地），并显式回链本篇开放问题 4——本开放问题已有可追溯需求锚点，剩余仍是下方"待落定项"的实战收口。 |
 | **归属篇** | [`03-collaboration/branch-proposal-merge.md §5/§6`](./03-collaboration/branch-proposal-merge.md)（合并语义/算法）；冲突检测 [`sync-and-spec.md §3`](./03-collaboration/sync-and-spec.md)；字段收口 [`data-model.md §6`](./01-architecture/data-model.md)；可追溯 FR [`functional-requirements.md FR-COLLAB-006`](./06-roadmap/functional-requirements.md)。 |
 

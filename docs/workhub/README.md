@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**124 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化已落：`web-live-route-smoke` job 在 GitHub Actions headless Chrome 真实跑 66 步（64 秒），main 从此有浏览器级回归门；首跑即抓出并修复 Linux CJK 行高裁切。下一步 R5.9 建议 onboarding 最小闭环（P1-6）。权威路线见 [`06-roadmap/r5-08-browser-smoke-ci-plan-2026-06-12.md`](./06-roadmap/r5-08-browser-smoke-ci-plan-2026-06-12.md)。
+> 状态(2026-06-11):**126 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化已落（66 步进 GitHub Actions，64 秒）。**权威施工顺序已切换到 [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**：北极星 = 真实团队用核心闭环干一周活；序列 R5.9 onboarding → R5.10 真实 LLM 端到端 → R5.11 部署包 → R5.12 权限审计 → S1 Pilot Week；C-PET 双轨并行不冻结。下一刀 R5.9 见 [`06-roadmap/r5-09-onboarding-minimal-plan-2026-06-12.md`](./06-roadmap/r5-09-onboarding-minimal-plan-2026-06-12.md)。
 
 ---
 
@@ -30,7 +30,8 @@
 | R5.6 | ✅ | Schedule / Notify 已落，`/notifications` 收件箱分组、`/calendar` 周视图、mark read/dismiss/complete + audit，63 步 browser gate 与 request proof 全过。 |
 | R5.7 | ✅ | Knowledge grounding / dashboard health 已落，`/dashboard/health` admin 数值 / member 档位分层、通知 grounding 与 `source_ref` 证据回链，66 步 browser gate 全过。 |
 | R5.8 | ✅ | Browser smoke 已进 CI：`web-live-route-smoke` job 64 秒跑完 66 步 / 114 gates；首跑抓出 Linux CJK 行高裁切并修复（16 处行高 → 1.35）。 |
-| R5.9 | planned | Onboarding 最小闭环（中期审查 P1-6）：替换 "P0.5 Reviewer" 自动注册，昵称 + locale + 角色最小注册流。 |
+| S1 序列 | active | **北极星迭代计划已立**：[s1-pilot-readiness-roadmap](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)，R5.9–R5.12 消三大差距（注册流/真实 LLM 验证/部署包 + 权限审计）后启动 Pilot Week；OQ-4 护城河走 pilot 数据驱动。 |
+| R5.9 | planned | Onboarding 最小闭环（S1 第一刀，P1-6）：注册屏 + 登出 + 替换 "P0.5 Reviewer" 自动注册，QA smoke 走脚本化注册。 |
 
 ---
 
@@ -201,6 +202,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-06-schedule-notify-plan-2026-06-11.md` | **R5.6**:Schedule / Notify，`/notifications` 收件箱与 `/calendar` 周视图接入 Page VM、shared runtime，mark read/dismiss/complete + audit；63 步 browser gate 已落 | ✅ |
 | `r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md` | **R5.7**:Knowledge grounding / dashboard health，`/dashboard/health` 健康档位分层、通知 grounding、knowledge `source_ref` 上下文条；66 步 browser gate 已落 | ✅ |
 | `r5-08-browser-smoke-ci-plan-2026-06-12.md` | **R5.8**:Browser smoke CI 化第一段，`web-live-route-smoke` job 64 秒跑 66 步并上传证据 artifact；首跑修复 Linux CJK 行高；五组拆分降级为维护性重构 | ✅ |
+| `s1-pilot-readiness-roadmap-2026-06-12.md` | **S1 北极星路线**:真实团队用核心闭环干一周活；现状盘点（闭环已真实现 + 三大差距）、六项成功指标、R5.9–R5.12+Pilot 序列、桌宠双轨、pilot 要回答的四个战略问题 | active |
+| `r5-09-onboarding-minimal-plan-2026-06-12.md` | **R5.9**:Onboarding 最小闭环，注册屏（昵称+locale+可选 admin secret）、登出、删自动 identify、smoke 脚本化注册；不做密码/OAuth | planned |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级
