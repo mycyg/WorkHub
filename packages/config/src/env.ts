@@ -38,6 +38,7 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8787),
   API_HOST: z.string().min(1).default("127.0.0.1"),
   WORKER_COUNT: z.coerce.number().int().positive().default(1),
+  LOG_FORMAT: z.enum(["json", "pretty"]).default("json"),
 
   DATABASE_URL: z
     .string()
@@ -93,6 +94,7 @@ export type Settings = {
   appEnv: ParsedEnv["APP_ENV"];
   port: number;
   apiHost: string;
+  logFormat: "json" | "pretty";
   workerCount: number;
   databaseUrl: string;
   dataDir: string;
@@ -160,6 +162,7 @@ export function loadSettings(env: EnvInput = process.env): Settings {
     appEnv: parsed.APP_ENV,
     port: parsed.PORT,
     apiHost: parsed.API_HOST,
+    logFormat: parsed.LOG_FORMAT,
     workerCount: parsed.WORKER_COUNT,
     databaseUrl: parsed.DATABASE_URL,
     dataDir: parsed.DATA_DIR,

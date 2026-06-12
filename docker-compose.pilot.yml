@@ -1,0 +1,56 @@
+# WorkHub pilot 全栈编排：postgres + redis + workhub(API+Web 单源)。
+# 用法见根目录 DEPLOY.md。开发用依赖编排仍是 docker-compose.yml（仅 PG/Redis）。
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: workhub
+      POSTGRES_USER: workhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workhub}
+    volumes:
+      - workhub-pilot-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workhub -d workhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  workhub:
+    build: .
+    env_file:
+      - .env.pilot
+    environment:
+      # LAN-first pilot 默认 development（信任模型见 DEPLOY.md §安全口径）；公网部署切 production + HTTPS。
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql://workhub:${POSTGRES_PASSWORD:-workhub}@postgres:5432/workhub
+      BROKER_BACKEND: redis
+      BROKER_URL: redis://redis:6379
+      DATA_DIR: /app/data
+    volumes:
+      - workhub-pilot-data:/app/data
+    ports:
+      - "${WORKHUB_PORT:-8787}:8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "pnpm db:migrate && pnpm --filter @workhub/api start"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+volumes:
+  workhub-pilot-postgres:
+  workhub-pilot-data:

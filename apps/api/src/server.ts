@@ -1,8 +1,12 @@
 import { serve } from "@hono/node-server";
 
-import app from "./app.js";
+import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
+
+if (settings.webDistDir) {
+  attachWebStatic(app, settings.webDistDir);
+}
 
 const recoveryScheduler = getDefaultAgentRunRecoveryScheduler();
 recoveryScheduler.start();
@@ -14,11 +18,17 @@ const server = serve(
     port: settings.port
   },
   (info) => {
-    console.log(`WorkHub API daemon listening on http://${settings.apiHost}:${info.port}`);
+    logger.info("server_started", {
+      host: settings.apiHost,
+      port: info.port,
+      app_env: settings.appEnv,
+      web_dist: settings.webDistDir || null
+    });
   }
 );
 
 function shutdown(exitCode: number) {
+  logger.info("server_stopping", { exit_code: exitCode });
   recoveryScheduler.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
   forceExit.unref?.();

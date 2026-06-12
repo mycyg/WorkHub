@@ -158,6 +158,54 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm qa:r2-pg-redis-smoke
 
+  pilot-stack-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pilot env from template
+        run: |
+          cp .env.pilot.example .env.pilot
+          sed -i 's/^COOKIE_SECRET=.*/COOKIE_SECRET=ci-pilot-cookie-secret-0123456789abcdef/' .env.pilot
+          sed -i 's/^ADMIN_CLAIM_SECRET=.*/ADMIN_CLAIM_SECRET=ci-admin-pass/' .env.pilot
+      - name: Build and start the pilot stack
+        run: docker compose -f docker-compose.pilot.yml up -d --build
+      - name: Wait for workhub container health
+        run: |
+          for i in $(seq 1 36); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose -f docker-compose.pilot.yml ps -q workhub)" 2>/dev/null || echo starting)
+            echo "workhub health: $status"
+            [ "$status" = "healthy" ] && exit 0
+            sleep 5
+          done
+          echo "workhub did not become healthy" >&2
+          exit 1
+      - name: Smoke the deployed stack
+        run: |
+          set -euxo pipefail
+          curl -fsS http://127.0.0.1:8787/api/health | grep -q '"ok":true'
+          # 注册屏 SPA：根路径与 deep link 都应返回应用外壳
+          curl -fsS http://127.0.0.1:8787/ | grep -q 'id="root"'
+          curl -fsS http://127.0.0.1:8787/approvals | grep -q 'id="root"'
+          # 管理员注册（admin secret 提权）→ 鉴权后 Page VM 可达
+          cookie=$(curl -fsS -D - -o /dev/null -X POST -H 'Content-Type: application/json' \
+            -d '{"nickname":"Pilot Admin","admin_secret":"ci-admin-pass"}' \
+            http://127.0.0.1:8787/api/auth/identify | grep -i '^set-cookie' | head -1 | sed 's/^[Ss]et-[Cc]ookie: //' | cut -d';' -f1)
+          test -n "$cookie"
+          curl -fsS -H "Cookie: $cookie" http://127.0.0.1:8787/api/auth/me | grep -q '"is_admin":true'
+          curl -fsS -H "Cookie: $cookie" http://127.0.0.1:8787/api/pages/attention >/dev/null
+          # 未鉴权 Page VM 必须 fail-closed
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/pages/attention)
+          test "$code" = "401" -o "$code" = "403"
+      - name: Dump stack logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.pilot.yml logs --no-color > pilot-stack-logs.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pilot-stack-logs
+          path: pilot-stack-logs.txt
+          retention-days: 7
+
   migration-placeholder:
     runs-on: ubuntu-latest
     steps:

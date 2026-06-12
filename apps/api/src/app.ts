@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
@@ -24,7 +27,13 @@ import { createCostRoutes } from "./routes/cost.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 
+import { createRequestLogMiddleware, createStructuredLogger } from "./logging.js";
+
+export const logger = createStructuredLogger({ format: settings.logFormat });
+
 export const app = new Hono();
+
+app.use("*", createRequestLogMiddleware(logger));
 
 app.get("/", (c) =>
   c.json({
@@ -140,7 +149,7 @@ app.onError((error, c) => {
     );
   }
 
-  console.error(error);
+  logger.error("unhandled_error", { path: new URL(c.req.url).pathname, error });
   return c.json(
     {
       ok: false,
@@ -165,5 +174,47 @@ app.notFound((c) =>
     404
   )
 );
+
+/**
+ * Pilot 单源部署：API 进程直接服务 Web 构建产物。
+ * 非 /api、/openapi 路径返回静态文件；未命中文件回 index.html（SPA fallback）。
+ */
+export function attachWebStatic(target: Hono, distDir: string, log = logger) {
+  const indexPath = path.join(distDir, "index.html");
+  if (!existsSync(indexPath)) {
+    log.warn("web_dist_missing", { dist_dir: distDir });
+    return false;
+  }
+  const indexHtml = readFileSync(indexPath, "utf8");
+  target.get("*", async (c, next) => {
+    const pathname = new URL(c.req.url).pathname;
+    if (pathname.startsWith("/api") || pathname.startsWith("/openapi")) {
+      await next();
+      return;
+    }
+    const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+    const resolved = path.resolve(distDir, relative);
+    const distRoot = path.resolve(distDir) + path.sep;
+    if (resolved.startsWith(distRoot) && resolved !== path.resolve(indexPath) && existsSync(resolved)) {
+      const body = readFileSync(resolved);
+      const types: Record<string, string> = {
+        ".js": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".ico": "image/x-icon",
+        ".json": "application/json; charset=utf-8",
+        ".map": "application/json; charset=utf-8",
+        ".woff2": "font/woff2",
+        ".html": "text/html; charset=utf-8"
+      };
+      const type = types[path.extname(resolved)] ?? "application/octet-stream";
+      return c.body(new Uint8Array(body), 200, { "Content-Type": type });
+    }
+    return c.html(indexHtml);
+  });
+  log.info("web_static_attached", { dist_dir: distDir });
+  return true;
+}
 
 export default app;
