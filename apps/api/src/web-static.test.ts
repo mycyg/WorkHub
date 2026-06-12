@@ -75,3 +75,20 @@ test("structured logger emits parseable json lines and pretty mode", () => {
   assert.equal(prettyLines[0]?.includes("WARN"), true);
   assert.equal(prettyLines[0]?.includes("exit_code=130"), true);
 });
+
+test("attachWebStatic makes the real app root serve the SPA instead of the API banner", async () => {
+  const dist = await tempDist();
+  const { app: realApp } = await import("./app.js");
+  // Hono 路由器在首个请求后冻结；与生产一致，先挂载再请求。
+  attachWebStatic(realApp, dist, createStructuredLogger({ write: () => undefined }));
+
+  const root = await realApp.request("/");
+  assert.equal(root.headers.get("content-type")?.includes("text/html"), true);
+  assert.equal((await root.text()).includes("onboarding"), true);
+
+  const deepLink = await realApp.request("/calendar");
+  assert.equal((await deepLink.text()).includes("onboarding"), true);
+
+  const health = await realApp.request("/api/health");
+  assert.equal((await health.json() as { ok: boolean }).ok, true);
+});

@@ -35,14 +35,20 @@ export const app = new Hono();
 
 app.use("*", createRequestLogMiddleware(logger));
 
-app.get("/", (c) =>
-  c.json({
+// attachWebStatic() 之后根路径服务 SPA；未挂载 web dist 时保留 API banner。
+let webIndexHtml: string | undefined;
+
+app.get("/", (c) => {
+  if (webIndexHtml) {
+    return c.html(webIndexHtml);
+  }
+  return c.json({
     ok: true,
     service: "workhub-api",
     message: "WorkHub API daemon is running",
     health: "/api/health"
-  })
-);
+  });
+});
 
 app.get("/api/health", (c) =>
   c.json({
@@ -186,6 +192,9 @@ export function attachWebStatic(target: Hono, distDir: string, log = logger) {
     return false;
   }
   const indexHtml = readFileSync(indexPath, "utf8");
+  if (target === app) {
+    webIndexHtml = indexHtml;
+  }
   target.get("*", async (c, next) => {
     const pathname = new URL(c.req.url).pathname;
     if (pathname.startsWith("/api") || pathname.startsWith("/openapi")) {
