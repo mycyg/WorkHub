@@ -1,7 +1,7 @@
 ---
 module: R5-sandbox-libraries-and-skills
 layer: P-AI / packages-tools / 部署 / CI
-status: current
+status: completed
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -62,6 +62,22 @@ R5.11 竣工后确认：交付管线完整，但富格式交付物（docx/xlsx/p
 
 `pnpm --filter @workhub/tools test`、`pnpm --filter @workhub/api test`（prompt 注入断言）、CI `pilot-stack-smoke` 新增库冒烟段全绿、`pnpm typecheck`/`test`/release gate、`git diff --check`。
 
-## 4. Handoff
+## 4. 竣工记录
 
-技能与库就绪后，R5.10 真 key 验证的任务集可直接覆盖富格式（如"生成周度统计图表 PPT"），让评估报告反映真实业务交付面。后续技能扩展按 pilot 反馈增补（技能目录是开放格式，社区 SKILL.md 可直接放入）。
+状态：✅ completed（2026-06-12）
+
+落地范围（L1–L3 全部完成）：
+
+- **L1 镜像库**：Dockerfile 预装 `python-docx==1.1.2 / openpyxl==3.1.5 / python-pptx==1.0.2 / matplotlib==3.9.4 / pandas==2.2.3 / numpy==2.1.3` + `fonts-noto-cjk`；pip 不入命令白名单，能力面由镜像声明、工人不可扩。
+- **L2 技能系统**：`packages/tools/skills/` 七个 SKILL.md（docx/xlsx/pptx/stat-charts/data-analysis/markdown-report/code-script），每个含验证过的代码模板、输出约定（如图表必配源数据 CSV、docx 配 md 镜像）、自验步骤与常见坑；`packages/tools/src/skills.ts` 提供注册表/`load_skill` 工具（未知 id fail-closed 列清单、id 正则防路径穿越）/`skillCatalogForPrompt()`；runner 默认工具集加入 `load_skill`，工人 system prompt 注入技能目录与硬纪律（先加载再动手、不得凭记忆臆写 API）。
+- **L3 验证**：CI `pilot-stack-smoke` 新增库冒烟段——在部署容器内真实生成 docx（重开校验）、xlsx、中文标签柱状图 PNG（字节数校验）、pptx，并跑 pandas 分组聚合断言。
+
+验收证据：
+
+- CI run `27423950012`（commit `c6908d87`）七 job 全绿，库冒烟段通过——中文字体在容器内真实可渲染。
+- 本机：`@workhub/tools` 7 测全过（注册表完整性/加载/fail-closed/防穿越）；typecheck、全包 test、`pnpm lint` 全链（cuu-r3 真实进程 smokes 已运行新 prompt 与工具注册）、release gate 全绿。
+- DEPLOY.md 新增 §3.1 交付能力面说明。
+
+## 5. Handoff
+
+技能与库已就绪，R5.10 真 key 验证的任务集可直接覆盖富格式（如"生成周度统计图表 PPT"），让评估报告反映真实业务交付面。后续技能扩展按 pilot 反馈增补（技能目录是开放 SKILL.md 格式，社区技能可直接放入）。下一刀回到 S1 主线：R5.12 权限矩阵审计。

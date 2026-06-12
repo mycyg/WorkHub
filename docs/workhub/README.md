@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**129 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化已落（66 步进 GitHub Actions，64 秒）。**权威施工顺序已切换到 [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**：北极星 = 真实团队用核心闭环干一周活；序列 R5.9 onboarding → R5.10 真实 LLM 端到端 → R5.11 部署包 → R5.12 权限审计 → S1 Pilot Week；C-PET 双轨并行不冻结。R5.9 onboarding、R5.10-pre agent 强化、R5.11 部署包（十分钟 LAN 部署 + CI `pilot-stack-smoke` 真实部署门 + admin 认领自举）均已竣工；下一刀 R5.12 权限矩阵审计，R5.10 真 key 验证待 `LLM_API_KEY`。
+> 状态(2026-06-11):**129 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化已落（66 步进 GitHub Actions，64 秒）。**权威施工顺序已切换到 [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**：北极星 = 真实团队用核心闭环干一周活；序列 R5.9 onboarding → R5.10 真实 LLM 端到端 → R5.11 部署包 → R5.12 权限审计 → S1 Pilot Week；C-PET 双轨并行不冻结。R5.9 onboarding、R5.10-pre agent 强化、R5.11 部署包、R5.11.1 沙箱能力库+预设技能（Word/Excel/PPT/中文图表/数据分析直接可交付）均已竣工；下一刀 R5.12 权限矩阵审计，R5.10 真 key 验证待 `LLM_API_KEY`。
 
 ---
 
@@ -35,6 +35,7 @@
 | R5.10-pre | ✅ | Agent 能力强化已落：真·上下文压缩、tool_result 截断、工人合同 prompt、瞬态重试、`LLM_MAX_TOKENS_PER_STEP`、llm_review 五档接入 R0 置信度权重；agent 29 测全过。 |
 | R5.10 | planned | 真实 LLM 端到端验证（S1 第二刀）：真 key 跑全链，实测预算护栏/成本计量/置信度与 llm_review，产出质量-成本-时延评估报告。待 `LLM_API_KEY`。 |
 | R5.11 | ✅ | Pilot 部署包已落：单镜像（API+Web 单源）+ compose 全栈自动迁移 + JSON 结构化日志 + DEPLOY.md + 备份脚本；CI `pilot-stack-smoke` 全绿，admin 认领自举（口令错误 403 fail-closed）。 |
+| R5.11.1 | ✅ | 沙箱能力库 + 预设技能：AI 工人可直接交付 Word/Excel/PPT/中文统计图表/数据分析/自验脚本；七技能合同防 API 幻觉，CI 容器内生成冒烟全过。 |
 | R5.12 | planned | 权限矩阵审计（S1 第四刀，中期审查 P1-4）："角色×路由"审计表 + 写路径收口 + fail-closed 缺省验证，多用户同实例前的安全收口。 |
 
 ---
@@ -210,7 +211,7 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-09-onboarding-minimal-plan-2026-06-12.md` | **R5.9**:Onboarding 最小闭环，注册屏/登出/deep link 保持/第二用户切换，自动注册删除；70 步 smoke 与 `r5_9_onboarding_routes` gate 已落 | ✅ |
 | `r5-10-pre-agent-capability-hardening-plan-2026-06-12.md` | **R5.10-pre**:Agent 能力强化，5 处引擎短板全部补强（压缩/截断/工人 prompt/重试/llm_review 五档进 R0 置信度），agent 29 测与全链 lint 回归 | ✅ |
 | `r5-11-pilot-deploy-package-plan-2026-06-12.md` | **R5.11**:Pilot 部署包已落，CI `pilot-stack-smoke` 三跑抓三真 bug（env 模板被 gitignore 吞/根路由 banner/admin 无法自举）后全绿；DEPLOY.md 十分钟部署 + 安全口径专节 | ✅ |
-| `r5-11-1-sandbox-libraries-and-skills-plan-2026-06-12.md` | **R5.11.1**:沙箱能力库 + 预设技能，镜像预装 pandas/numpy/matplotlib/docx/xlsx/pptx 库与 CJK 字体，七个 SKILL.md + `load_skill` 工具 + prompt 技能纪律防 API 幻觉 | current |
+| `r5-11-1-sandbox-libraries-and-skills-plan-2026-06-12.md` | **R5.11.1**:沙箱能力库 + 预设技能已落，镜像预装六库与 CJK 字体（pip 仍禁），七个 SKILL.md + `load_skill` fail-closed；CI 容器内真实生成 docx/xlsx/中文图表/pptx 冒烟通过 | ✅ |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级
