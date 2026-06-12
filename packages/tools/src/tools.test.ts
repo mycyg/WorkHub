@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createBuiltInFileTools, createToolRegistry, ensureCommandAllowed, safeResolvePath } from "./index.js";
+import {
+  createSkillTool,
+  listSkills,
+  skillCatalogForPrompt, createBuiltInFileTools, createToolRegistry, ensureCommandAllowed, safeResolvePath } from "./index.js";
 
 async function tempWorkdir() {
   return mkdtemp(path.join(os.tmpdir(), "workhub-tools-"));
@@ -71,4 +74,46 @@ test("zip_path writes a real zip archive after snapshot succeeds", async () => {
   assert.equal(archive.includes(Buffer.from("a.txt", "utf8")), true);
   assert.equal(archive.includes(Buffer.from("nested/b.txt", "utf8")), true);
   assert.equal(archive.includes(Buffer.from("archive_manifest", "utf8")), false);
+});
+
+test("skill registry lists the seven preset skills with frontmatter", () => {
+  const skills = listSkills();
+  assert.deepEqual(skills.map((skill) => skill.id), [
+    "code-script",
+    "data-analysis",
+    "docx-document",
+    "markdown-report",
+    "pptx-deck",
+    "stat-charts",
+    "xlsx-spreadsheet"
+  ]);
+  for (const skill of skills) {
+    assert.equal(skill.name, skill.id);
+    assert.equal(skill.description.length > 10, true);
+    assert.equal(skill.whenToUse.length > 5, true);
+  }
+  const catalog = skillCatalogForPrompt();
+  assert.equal(catalog.split("\n").length, 7);
+  assert.equal(catalog.includes("docx-document"), true);
+});
+
+test("load_skill returns skill content and fails closed on unknown ids", async () => {
+  const tool = createSkillTool();
+  const ctx = { workdir: "/tmp" };
+
+  const loaded = await tool.execute({ id: "stat-charts" }, ctx);
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.content.includes("matplotlib.use(\"Agg\")"), true);
+  assert.equal(loaded.content.includes("Noto Sans CJK"), true);
+
+  const docx = await tool.execute({ id: "docx-document" }, ctx);
+  assert.equal(docx.content.includes("from docx import Document"), true);
+
+  const unknown = await tool.execute({ id: "no-such-skill" }, ctx);
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.isError, true);
+  assert.equal(unknown.content.includes("docx-document"), true);
+
+  const traversal = await tool.execute({ id: "../secrets" }, ctx);
+  assert.equal(traversal.ok, false);
 });

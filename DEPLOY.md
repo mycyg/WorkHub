@@ -38,6 +38,10 @@ docker compose -f docker-compose.pilot.yml logs -f workhub
 3. 其他成员：直接填昵称进入（LAN 信任模式，无密码）。
 4. 顶栏右侧可见当前用户与"退出"。
 
+## 3.1 AI 工人的交付能力面
+
+镜像预装（工人沙箱白名单库，R5.11.1）：`pandas / numpy / matplotlib / python-docx / openpyxl / python-pptx` + Noto CJK 字体。即 AI 工人可直接交付 **Word、Excel、PPT、统计图表（中文标签）、数据分析报告、可运行脚本**。工人内置七个预设技能（docx/xlsx/pptx/图表/分析/报告/脚本），涉及对应交付物时会先加载技能合同再动手，避免库 API 误用。沙箱仍禁网、禁装包。
+
 ## 4. 备份与恢复
 
 ```bash

@@ -2,6 +2,19 @@
 # LAN-first 试运行用；多租户/云部署见 docs/workhub/06-roadmap/phasing-p0-p5.md（P5）。
 FROM node:22-slim
 
+# 沙箱白名单库（R5.11.1）：Office/图表/统计能力 + 中文字体。
+# 工人不能自行装包（pip 不在命令白名单），能力面由镜像声明。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip fonts-noto-cjk \
+    && pip3 install --break-system-packages --no-cache-dir \
+      python-docx==1.1.2 \
+      openpyxl==3.1.5 \
+      python-pptx==1.0.2 \
+      matplotlib==3.9.4 \
+      pandas==2.2.3 \
+      numpy==2.1.3 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 
 WORKDIR /app

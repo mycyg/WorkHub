@@ -1,0 +1,67 @@
+---
+module: R5-sandbox-libraries-and-skills
+layer: P-AI / packages-tools / 部署 / CI
+status: current
+owner: workflow
+date: 2026-06-12
+depends_on:
+  - r5-11-pilot-deploy-package-plan-2026-06-12.md
+  - r5-10-pre-agent-capability-hardening-plan-2026-06-12.md
+  - ../02-ai-engine/agent-loop-and-tools.md
+  - ../06-roadmap/functional-requirements.md
+---
+
+# R5.11.1 沙箱能力库 + 预设技能 Plan
+
+## 1. 背景
+
+R5.11 竣工后确认：交付管线完整，但富格式交付物（docx/xlsx/pptx/统计图表）受限于沙箱"禁装包/禁网"——python 标准库写不出 Office 文件。约束在镜像内容，不在 agent 框架。同时，给了库不等于会用：LLM 凭记忆写库代码容易"胡乱调用"（API 幻觉、版本错位、中文字体缺失）。
+
+两件事一刀做：**镜像预装白名单库** + **预设技能（SKILL.md 格式）锁定每类交付物的正确做法**。安全模型不变：沙箱仍禁网、命令白名单不扩（pip 不在白名单内，工人无法自行装包）。
+
+## 2. 目标
+
+### L1 镜像库预装（Dockerfile）
+
+| 能力 | 库（pin 版本） |
+|---|---|
+| Word 文档 | python-docx |
+| Excel 表格 | openpyxl |
+| PPT 演示 | python-pptx |
+| 统计图表 | matplotlib（+ `fonts-noto-cjk` 保中文标签） |
+| 数据/数学统计 | pandas、numpy |
+
+- Debian bookworm `pip install --break-system-packages`，版本 pin；
+- 本机 dev 无这些库属正常——技能文档明确"完整库集合以 pilot 镜像为准"，工人遇 ImportError 按 blocker 上报而不是硬编。
+
+### L2 预设技能系统（packages/tools）
+
+- **格式**：`packages/tools/skills/<id>/SKILL.md`（开放的 Agent Skills 风格：frontmatter `name/description/when_to_use` + 正文为该交付物的库用法合同、代码模板、输出约定、自验步骤、常见坑）。
+- **首发 7 个技能**：
+  1. `docx-document` — Word（标题层级/段落/表格/页眉），python-docx 模板
+  2. `xlsx-spreadsheet` — Excel（多 sheet/公式/列宽/数字格式），openpyxl 模板
+  3. `pptx-deck` — PPT（版式选择/标题页/要点页/图片页），python-pptx 模板
+  4. `stat-charts` — 统计图表（matplotlib 中文字体设置/折线/柱状/饼图/导出 PNG+源数据 CSV）
+  5. `data-analysis` — pandas/numpy 分析（描述统计/分组聚合/相关性，产出 CSV+结论 md）
+  6. `markdown-report` — 结构化文档报告约定（结论先行/数据引用/未尽事项）
+  7. `code-script` — 代码脚本交付约定（入口注释/无网络假设/用 run_command 自验后交付）
+- **运行时接入（防胡乱调用）**：
+  - 新工具 `load_skill`（id → 返回 SKILL.md 全文；未知 id fail-closed 列出可用清单）；
+  - 工人 system prompt 追加技能纪律："涉及下列交付物类型时，必须先 `load_skill` 对应技能再动手；库用法以技能为准，不得凭记忆臆写 API"+ 技能目录（id + 一句 when_to_use）；
+  - 技能内容只进当次对话上下文，不改工具白名单、不动沙箱边界。
+
+### L3 验证
+
+- 单测：技能注册表完整性（7 个 id、frontmatter 合法）、`load_skill` 返回正文、未知 id fail-closed、目录注入 prompt；
+- **CI `pilot-stack-smoke` 扩展**：容器内 `python3 -c "import pandas, numpy, matplotlib, docx, openpyxl, pptx"` + 实际生成一个 docx/xlsx/png 冒烟（证明库可用且字体在）；
+- 全量回归（typecheck/test/lint/browser smoke/release gate）。
+
+不做：pip 进命令白名单（禁装包不变）、联网类库（requests 等）、PDF 排版（reportlab 留待需求出现）、技能热加载/版本管理（v1 随仓库走）。
+
+## 3. QA Gate
+
+`pnpm --filter @workhub/tools test`、`pnpm --filter @workhub/api test`（prompt 注入断言）、CI `pilot-stack-smoke` 新增库冒烟段全绿、`pnpm typecheck`/`test`/release gate、`git diff --check`。
+
+## 4. Handoff
+
+技能与库就绪后，R5.10 真 key 验证的任务集可直接覆盖富格式（如"生成周度统计图表 PPT"），让评估报告反映真实业务交付面。后续技能扩展按 pilot 反馈增补（技能目录是开放格式，社区 SKILL.md 可直接放入）。

@@ -198,6 +198,47 @@ jobs:
           # 未鉴权 Page VM 必须 fail-closed
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/pages/attention)
           test "$code" = "401" -o "$code" = "403"
+      - name: Smoke the sandbox deliverable libraries (R5.11.1)
+        run: |
+          set -euxo pipefail
+          docker compose -f docker-compose.pilot.yml exec -T workhub python3 - << 'PYCHECK'
+          import matplotlib
+          matplotlib.use("Agg")
+          import matplotlib.pyplot as plt
+          import pandas as pd
+          import numpy as np
+          from docx import Document
+          from openpyxl import Workbook
+          from pptx import Presentation
+          from pptx.util import Inches
+
+          # docx
+          doc = Document(); doc.add_heading("冒烟", level=0); doc.add_paragraph("中文段落")
+          doc.save("/tmp/smoke.docx")
+          assert len(Document("/tmp/smoke.docx").paragraphs) >= 1
+
+          # xlsx
+          wb = Workbook(); ws = wb.active; ws.append(["项", "值"]); ws.append(["甲", 1])
+          wb.save("/tmp/smoke.xlsx")
+
+          # chart with CJK labels
+          plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "sans-serif"]
+          fig, ax = plt.subplots(figsize=(4, 3))
+          ax.bar(["一月", "二月"], [3, 5]); ax.set_title("中文标题")
+          fig.savefig("/tmp/smoke.png")
+          import os; assert os.path.getsize("/tmp/smoke.png") > 1000
+
+          # pptx
+          prs = Presentation(); s0 = prs.slides.add_slide(prs.slide_layouts[0])
+          s0.shapes.title.text = "冒烟"
+          prs.save("/tmp/smoke.pptx")
+
+          # stats
+          df = pd.DataFrame({"g": ["a", "a", "b"], "v": [1.0, 2.0, 4.0]})
+          out = df.groupby("g").agg(均值=("v", "mean"))
+          assert float(np.round(out.loc["a", "均值"], 2)) == 1.5
+          print("sandbox deliverable libraries OK")
+          PYCHECK
       - name: Dump stack logs on failure
         if: failure()
         run: docker compose -f docker-compose.pilot.yml logs --no-color > pilot-stack-logs.txt 2>&1 || true

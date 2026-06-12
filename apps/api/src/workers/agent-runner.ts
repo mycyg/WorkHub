@@ -28,6 +28,8 @@ import {
   type RunBudget
 } from "@workhub/cost";
 import {
+  createSkillTool,
+  skillCatalogForPrompt,
   createBuiltInFileTools,
   createToolRegistry,
   errorToolResult,
@@ -240,7 +242,7 @@ export function createInMemoryAgentRunQueue(options: {
     teamId: settings.auth.defaultWorkspaceId,
     evalSuite: "nightly"
   });
-  const defaultTools = createToolRegistry(createBuiltInFileTools());
+  const defaultTools = createToolRegistry([...createBuiltInFileTools(), createSkillTool()]);
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
@@ -336,7 +338,10 @@ export function createInMemoryAgentRunQueue(options: {
       "3. 完成判定：当你不再需要任何工具调用时自然结束。结束前用简短人话总结：做了什么、产出文件在哪、还有什么没做。",
       "4. 信息不足、权限不够或同一动作反复失败时：停止尝试，明确列出 blockers（缺什么、建议谁来定），不要猜测或编造内容。",
       "5. 工具结果可能被截断（标注\"完整内容见 trace\"）；需要完整内容时分段读取。",
-      "6. 输出语言跟随任务描述的语言；交付物命名用清晰的小写连字符文件名。"
+      "6. 输出语言跟随任务描述的语言；交付物命名用清晰的小写连字符文件名。",
+      "",
+      "技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手；库用法、模板与自验步骤以技能内容为准，不得凭记忆臆写 API。",
+      skillCatalogForPrompt()
     ].join("\n");
   }
 
