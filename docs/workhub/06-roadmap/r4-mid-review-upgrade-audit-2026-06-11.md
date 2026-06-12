@@ -115,6 +115,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **回写状态（2026-06-11 R5.6）**：断档已大幅收口。R5.1–R5.4 落地 M-DRIVE（page/upload/recycle/operation log/comment-to-draft/draft-to-proposal），R5.5 落地 M-MEETING（insight-to-draft），R5.6 落地 M-NOTIFY（`/notifications` 收件箱 + `/calendar` 周视图 + mark read/dismiss/complete + audit）。六模块中仅 M-DASHBOARD 经营面（项目健康/自治率）未有页面，已排入 [`r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md`](./r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md)。
 
+**回写状态（2026-06-12 R5.7）**：P1-2 关闭。R5.7 落地 `/dashboard/health`（项目健康分层呈现）与通知 grounding/evidence 回链，六业务模块全部具备 API + Web 页面；自治率/升级精准度等深度看板指标仍按 OQ-DASH 路线随真实数据推进。
+
 ### P1-3 每路由双请求模式
 
 每次 `loadRouteSurface` 都 `await loadGoldPathTemplate()` + page VM 两次串行请求（`apps/web/src/routes.ts:469/477/484/491/504/508/514/521/525`）。随 P0-3 fixture 退役一并消掉；若 shell 改为前端常量，导航只剩一次 VM 请求。

@@ -352,6 +352,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       meetings: (options) => request(withMeetingPageOptions("/api/pages/meetings", options)),
       notifications: (options) => request(withPageLocale("/api/pages/notifications", options)),
       calendar: (options) => request(withCalendarPageOptions("/api/pages/calendar", options)),
+      projectHealth: (options) => request(withPageLocale("/api/pages/health", options)),
       workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
       proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options))
     }

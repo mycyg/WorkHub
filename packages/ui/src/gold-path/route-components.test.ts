@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -1314,4 +1314,79 @@ test("R4.10 Replay route component uses replay renderer while preserving route c
   assert.equal(replay.primaryHrefs.length, (vm.page_vms.replay.accepted_deliverables ?? []).flatMap((item) => [item.preview_href, item.download_href, item.restore_href]).filter(Boolean).length);
   assertNoMainWindowBoundaryLeak(replay.html);
   assert.match(replay.css, /@media \(max-width:860px\)/u);
+});
+
+function projectHealthPageVm(viewerScope: "admin" | "member" = "member"): ProjectHealthPageVM {
+  return {
+    generated_at: "2026-06-11T10:00:00.000Z",
+    actor_user_id: "98000000-0000-4000-8000-000000000001",
+    viewer_scope: viewerScope,
+    summary: { project_count: 1, healthy_count: 0, attention_count: 1, critical_count: 0 },
+    cards: [{
+      project_id: "98000000-0000-4000-8000-000000000002",
+      project_name: "Southwest launch",
+      band: "attention",
+      numbers_visible: viewerScope === "admin",
+      target_href: "/drive?project_id=98000000-0000-4000-8000-000000000002",
+      signals: [
+        { key: "open_work_items", count: 7, band: "attention", target_href: "/" },
+        { key: "overdue_work_items", count: 1, band: "attention", target_href: "/calendar" },
+        { key: "pending_approvals", count: 0, band: "healthy", target_href: "/approvals" }
+      ]
+    }]
+  };
+}
+
+test("R5.7 health route component renders banded project cards with product-route targets", () => {
+  const member = renderWebRouteComponent({ key: "health", health: projectHealthPageVm() }, { locale: "en-US" });
+  const admin = renderWebRouteComponent({ key: "health", health: projectHealthPageVm("admin") }, { locale: "zh-CN" });
+
+  assert.equal(member.key, "health");
+  assert.equal(member.html.includes('data-r5-7-health-route="true"'), true);
+  assert.equal(member.html.includes('data-r5-7-health-viewer-scope="member"'), true);
+  assert.equal(member.html.includes('data-r5-7-health-bands-only="true"'), true);
+  assert.equal(member.html.includes("Open items: Needs attention"), true);
+  assert.equal(member.html.includes("Open items: 7"), false);
+  assert.equal(member.primaryHrefs.includes("/drive?project_id=98000000-0000-4000-8000-000000000002"), true);
+  assert.equal(member.primaryHrefs.some((href) => href.startsWith("/api/")), false);
+
+  assert.equal(admin.html.includes('data-r5-7-health-viewer-scope="admin"'), true);
+  assert.equal(admin.html.includes("进行中事项: 7"), true);
+  assert.equal(admin.html.includes('data-r5-7-health-bands-only="true"'), false);
+  assert.equal(admin.html.includes("项目健康"), true);
+  assertNoMainWindowBoundaryLeak(member.html);
+});
+
+test("R5.7 notification grounding renders reason and evidence refs into the inbox rows", () => {
+  const vm = notificationPageVm();
+  const first = vm.buckets.needs_decision[0]!;
+  first.grounding = {
+    reason_text: "This item is waiting for your decision.",
+    evidence_refs: [
+      { kind: "knowledge_search", label: "Find related evidence", href: `/knowledge/search?q=pricing&source_ref=notification:${first.id}` },
+      { kind: "agent_run_replay", label: "Open execution replay", href: "/agent-runs/98000000-0000-4000-8000-000000000009/replay" }
+    ]
+  };
+  const rendered = renderWebRouteComponent({ key: "notifications", notifications: vm }, { locale: "en-US" });
+
+  assert.equal(rendered.html.includes('data-r5-7-notification-grounding="true"'), true);
+  assert.equal(rendered.html.includes('data-r5-7-notification-evidence-ref="knowledge_search"'), true);
+  assert.equal(rendered.html.includes('data-r5-7-notification-evidence-ref="agent_run_replay"'), true);
+  assert.equal(rendered.html.includes("Why am I seeing this"), true);
+  assert.equal(rendered.html.includes("source_ref=notification:"), true);
+  assertNoMainWindowBoundaryLeak(rendered.html);
+});
+
+test("R5.7 knowledge route component shows the notification search context strip", () => {
+  const vm = surfaceVm();
+  const withRef = renderWebRouteComponent({
+    key: "knowledge",
+    evidence: vm.page_vms.evidence,
+    sourceRef: "notification:98000000-0000-4000-8000-000000000010"
+  }, { locale: "zh-CN" });
+  const withoutRef = renderWebRouteComponent({ key: "knowledge", evidence: vm.page_vms.evidence }, { locale: "zh-CN" });
+
+  assert.equal(withRef.html.includes('data-r5-7-knowledge-source-ref="notification:98000000-0000-4000-8000-000000000010"'), true);
+  assert.equal(withRef.html.includes("来自通知的检索上下文"), true);
+  assert.equal(withoutRef.html.includes("data-r5-7-knowledge-source-ref"), false);
 });

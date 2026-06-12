@@ -1,6 +1,8 @@
 import {
   type ActionSpec,
   type CalendarPageVM,
+  type NotificationEvidenceRefVM,
+  type NotificationGroundingVM,
   type NotificationInboxBucket,
   type NotificationItemVM,
   type NotificationPageVM,
@@ -72,7 +74,12 @@ const notificationCopy = {
     meetingPendingTitle: "会议建议等待确认",
     meetingPendingBody: (title: string, meeting: string) => `${meeting} 里提到「${title}」，需要你决定是否生成工作草稿。`,
     meetingConfirmedTitle: "会议建议已生成草稿",
-    meetingConfirmedBody: (title: string, meeting: string) => `${meeting} 里的「${title}」已经进入草稿/审阅链路。`
+    meetingConfirmedBody: (title: string, meeting: string) => `${meeting} 里的「${title}」已经进入草稿/审阅链路。`,
+    groundingNeedsDecision: "这件事在等你拍板，处理前可以先看相关证据。",
+    groundingFyi: "这是给你的进展同步，不需要立即操作。",
+    groundingDone: "这件事已经处理完，仅供回溯。",
+    groundingSearch: "查相关证据",
+    groundingReplay: "看执行回放"
   },
   "en-US": {
     open: "Open",
@@ -83,7 +90,12 @@ const notificationCopy = {
     meetingPendingTitle: "Meeting insight needs review",
     meetingPendingBody: (title: string, meeting: string) => `${meeting} mentions "${title}". Decide whether to create a work draft.`,
     meetingConfirmedTitle: "Meeting insight draft created",
-    meetingConfirmedBody: (title: string, meeting: string) => `${meeting}'s "${title}" is now in the draft/review flow.`
+    meetingConfirmedBody: (title: string, meeting: string) => `${meeting}'s "${title}" is now in the draft/review flow.`,
+    groundingNeedsDecision: "This item is waiting for your decision. Check the evidence first if needed.",
+    groundingFyi: "This is a progress update. No action needed right now.",
+    groundingDone: "This item is finished and kept for reference.",
+    groundingSearch: "Find related evidence",
+    groundingReplay: "Open execution replay"
   }
 } satisfies Record<WorkHubLocale, Record<string, string | ((title: string, meeting: string) => string)>>;
 
@@ -221,6 +233,36 @@ function sourceContextForNotification(
   return { source_type: "system", label: row.type };
 }
 
+function groundingFor(row: NotificationRow, bucket: NotificationInboxBucket, locale: WorkHubLocale): NotificationGroundingVM {
+  const labels = copy(locale);
+  const reason = bucket === "needs_decision"
+    ? labels.groundingNeedsDecision as string
+    : bucket === "done"
+      ? labels.groundingDone as string
+      : labels.groundingFyi as string;
+  const searchParams = new URLSearchParams({ q: row.title, source_ref: `notification:${row.id}` });
+  if (row.workItemId) {
+    searchParams.set("work_item_id", row.workItemId);
+  }
+  if (row.projectId) {
+    searchParams.set("project_id", row.projectId);
+  }
+  const refs: NotificationEvidenceRefVM[] = [{
+    kind: "knowledge_search",
+    label: labels.groundingSearch as string,
+    href: `/knowledge/search?${searchParams.toString()}`
+  }];
+  const replayHref = safeTargetHref(row.targetUrl);
+  if (replayHref && /^\/agent-runs\/[^/]+\/replay/u.test(replayHref)) {
+    refs.push({
+      kind: "agent_run_replay",
+      label: labels.groundingReplay as string,
+      href: replayHref
+    });
+  }
+  return { reason_text: reason, evidence_refs: refs };
+}
+
 function notificationItem(
   row: NotificationRow,
   locale: WorkHubLocale,
@@ -239,13 +281,15 @@ function notificationItem(
     actions.dismiss = action("notification_dismiss", labels.dismiss as string, "POST", `/api/notifications/${row.id}/dismiss`);
     actions.complete = action("notification_complete", labels.complete as string, "POST", `/api/notifications/${row.id}/complete`);
   }
+  const bucket = bucketFor(row);
   return {
     id: row.id,
     type: row.type,
     severity: row.severity as NotificationItemVM["severity"],
     status: statusFor(row),
-    inbox_bucket: bucketFor(row),
+    inbox_bucket: bucket,
     title: row.title,
+    grounding: groundingFor(row, bucket, locale),
     target_href: targetHref,
     project_id: row.projectId ?? undefined,
     work_item_id: row.workItemId ?? undefined,
@@ -321,7 +365,7 @@ function severityForSchedule(status: ScheduleBlockVM["status"]): ScheduleBlockVM
 }
 
 function isDoneWorkItem(status: string) {
-  return status === "merged" || status === "accepted" || status === "cancelled";
+  return status === "merged" || status === "done" || status === "cancelled";
 }
 
 function blockFromEvent(row: ScheduleEventSourceRow, now: Date): ScheduleBlockVM {

@@ -289,6 +289,19 @@ export type NotificationSourceContextVM = z.infer<typeof notificationSourceConte
 export const notificationInboxBucketSchema = z.enum(["needs_decision", "fyi", "done"]);
 export type NotificationInboxBucket = z.infer<typeof notificationInboxBucketSchema>;
 
+export const notificationEvidenceRefVmSchema = z.object({
+  kind: z.enum(["knowledge_search", "agent_run_replay", "work_item", "meeting", "drive"]),
+  label: z.string().min(1),
+  href: z.string().min(1)
+});
+export type NotificationEvidenceRefVM = z.infer<typeof notificationEvidenceRefVmSchema>;
+
+export const notificationGroundingVmSchema = z.object({
+  reason_text: z.string().min(1),
+  evidence_refs: z.array(notificationEvidenceRefVmSchema).default([])
+});
+export type NotificationGroundingVM = z.infer<typeof notificationGroundingVmSchema>;
+
 export const notificationItemVmSchema = z.object({
   id: idSchema,
   type: z.string().min(1),
@@ -297,6 +310,7 @@ export const notificationItemVmSchema = z.object({
   inbox_bucket: notificationInboxBucketSchema,
   title: z.string().min(1),
   body: z.string().optional(),
+  grounding: notificationGroundingVmSchema.optional(),
   target_href: z.string().min(1).optional(),
   project_id: idSchema.optional(),
   work_item_id: idSchema.optional(),
@@ -379,6 +393,81 @@ export const calendarPageVmSchema = z.object({
   empty_state: z.enum(["no_schedule_blocks"]).optional()
 });
 export type CalendarPageVM = z.infer<typeof calendarPageVmSchema>;
+
+export const projectHealthBandSchema = z.enum(["healthy", "attention", "critical"]);
+export type ProjectHealthBand = z.infer<typeof projectHealthBandSchema>;
+
+export const projectHealthSignalKeySchema = z.enum([
+  "open_work_items",
+  "overdue_work_items",
+  "pending_approvals",
+  "failed_runs",
+  "pending_insights"
+]);
+export type ProjectHealthSignalKey = z.infer<typeof projectHealthSignalKeySchema>;
+
+// 健康档位映射规则收在 contracts：UI/服务端共用同一阈值，禁止 UI 层自行算档。
+const projectHealthSignalThresholds: Record<ProjectHealthSignalKey, { attention: number; critical: number }> = {
+  open_work_items: { attention: 6, critical: 16 },
+  overdue_work_items: { attention: 1, critical: 3 },
+  pending_approvals: { attention: 3, critical: 6 },
+  failed_runs: { attention: 1, critical: 2 },
+  pending_insights: { attention: 2, critical: 5 }
+};
+
+export function projectHealthSignalBand(key: ProjectHealthSignalKey, count: number): ProjectHealthBand {
+  const thresholds = projectHealthSignalThresholds[key];
+  if (count >= thresholds.critical) {
+    return "critical";
+  }
+  if (count >= thresholds.attention) {
+    return "attention";
+  }
+  return "healthy";
+}
+
+export function resolveProjectHealthBand(signals: readonly { band: ProjectHealthBand }[]): ProjectHealthBand {
+  if (signals.some((signal) => signal.band === "critical")) {
+    return "critical";
+  }
+  if (signals.some((signal) => signal.band === "attention")) {
+    return "attention";
+  }
+  return "healthy";
+}
+
+export const projectHealthSignalVmSchema = z.object({
+  key: projectHealthSignalKeySchema,
+  count: z.number().int().nonnegative(),
+  band: projectHealthBandSchema,
+  target_href: z.string().min(1).optional()
+});
+export type ProjectHealthSignalVM = z.infer<typeof projectHealthSignalVmSchema>;
+
+export const projectHealthCardVmSchema = z.object({
+  project_id: idSchema,
+  project_name: z.string().min(1),
+  band: projectHealthBandSchema,
+  signals: z.array(projectHealthSignalVmSchema),
+  numbers_visible: z.boolean().default(false),
+  target_href: z.string().min(1).optional()
+});
+export type ProjectHealthCardVM = z.infer<typeof projectHealthCardVmSchema>;
+
+export const projectHealthPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  actor_user_id: idSchema,
+  viewer_scope: z.enum(["admin", "member"]),
+  summary: z.object({
+    project_count: z.number().int().nonnegative(),
+    healthy_count: z.number().int().nonnegative(),
+    attention_count: z.number().int().nonnegative(),
+    critical_count: z.number().int().nonnegative()
+  }),
+  cards: z.array(projectHealthCardVmSchema),
+  empty_state: z.enum(["no_projects"]).optional()
+});
+export type ProjectHealthPageVM = z.infer<typeof projectHealthPageVmSchema>;
 
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),

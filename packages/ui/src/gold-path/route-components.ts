@@ -15,6 +15,7 @@ import type {
   ProposalDetailVM,
   MeetingPageVM,
   NotificationPageVM,
+  ProjectHealthPageVM,
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
@@ -46,7 +47,7 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "replay" | "cost" | "knowledge" | "settings">;
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings">;
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -204,6 +205,21 @@ type RouteCopyKey =
   | "notifications.read"
   | "notifications.completed"
   | "notifications.source"
+  | "notifications.groundingWhy"
+  | "knowledge.fromNotice"
+  | "health.kicker"
+  | "health.summary"
+  | "health.healthy"
+  | "health.attention"
+  | "health.critical"
+  | "health.empty"
+  | "health.bandsOnly"
+  | "health.openProject"
+  | "health.signal.open_work_items"
+  | "health.signal.overdue_work_items"
+  | "health.signal.pending_approvals"
+  | "health.signal.failed_runs"
+  | "health.signal.pending_insights"
   | "calendar.kicker"
   | "calendar.today"
   | "calendar.week"
@@ -334,6 +350,21 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.read": "已读",
     "notifications.completed": "已处理",
     "notifications.source": "来源",
+    "notifications.groundingWhy": "为什么提醒我",
+    "knowledge.fromNotice": "来自通知的检索上下文",
+    "health.kicker": "项目健康",
+    "health.summary": "项目",
+    "health.healthy": "健康",
+    "health.attention": "需要关注",
+    "health.critical": "告急",
+    "health.empty": "还没有可见的项目。",
+    "health.bandsOnly": "你看到的是档位视图；数值仅管理员可见。",
+    "health.openProject": "打开项目",
+    "health.signal.open_work_items": "进行中事项",
+    "health.signal.overdue_work_items": "逾期事项",
+    "health.signal.pending_approvals": "待审批",
+    "health.signal.failed_runs": "失败运行",
+    "health.signal.pending_insights": "待确认洞察",
     "calendar.kicker": "日程",
     "calendar.today": "今天",
     "calendar.week": "本周",
@@ -463,6 +494,21 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.read": "Read",
     "notifications.completed": "Done",
     "notifications.source": "Source",
+    "notifications.groundingWhy": "Why am I seeing this",
+    "knowledge.fromNotice": "Search context from a notification",
+    "health.kicker": "Project health",
+    "health.summary": "Projects",
+    "health.healthy": "Healthy",
+    "health.attention": "Needs attention",
+    "health.critical": "Critical",
+    "health.empty": "No visible projects yet.",
+    "health.bandsOnly": "You see band labels; numbers are admin-only.",
+    "health.openProject": "Open project",
+    "health.signal.open_work_items": "Open items",
+    "health.signal.overdue_work_items": "Overdue items",
+    "health.signal.pending_approvals": "Pending approvals",
+    "health.signal.failed_runs": "Failed runs",
+    "health.signal.pending_insights": "Pending insights",
     "calendar.kicker": "Calendar",
     "calendar.today": "Today",
     "calendar.week": "This week",
@@ -1530,6 +1576,20 @@ function notificationActionLinks(item: NotificationPageVM["items"][number], loca
   return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
 }
 
+function renderNotificationGrounding(item: NotificationPageVM["items"][number], locale: WorkHubLocale) {
+  const grounding = item.grounding;
+  if (!grounding) {
+    return "";
+  }
+  const refs = grounding.evidence_refs.map((ref) =>
+    `<a class="wh-btn" href="${escapeHtml(ref.href)}" data-action-id="notification_evidence_${escapeHtml(ref.kind)}" data-r5-7-notification-evidence-ref="${escapeHtml(ref.kind)}">${escapeHtml(ref.label)}</a>`
+  ).join("");
+  return `<div class="wh-r4-route-meta" data-r5-7-notification-grounding="true" data-r5-7-notification-evidence-count="${escapeHtml(String(grounding.evidence_refs.length))}">
+    <span class="wh-pill">${escapeHtml(routeT(locale, "notifications.groundingWhy"))}: ${escapeHtml(grounding.reason_text)}</span>
+    ${refs}
+  </div>`;
+}
+
 function renderNotificationBucket(
   bucket: NotificationPageVM["items"][number]["inbox_bucket"],
   items: NotificationPageVM["items"],
@@ -1546,6 +1606,7 @@ function renderNotificationBucket(
         <strong>${escapeHtml(item.title)}</strong>
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         <p>${escapeHtml(routeT(locale, "notifications.source"))}: ${escapeHtml(sourceContextLabel(item.source_context, locale))}</p>
+        ${renderNotificationGrounding(item, locale)}
         <p>${escapeHtml(item.created_at)}</p>
       </div>
       ${notificationActionLinks(item, locale)}
@@ -1592,6 +1653,76 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
         ${renderNotificationBucket("fyi", vm.buckets.fyi, locale)}
       </div>
       ${renderNotificationBucket("done", vm.buckets.done, locale)}
+    </section>`
+  });
+}
+
+function healthBandLabel(band: ProjectHealthPageVM["cards"][number]["band"], locale: WorkHubLocale) {
+  if (band === "critical") {
+    return routeT(locale, "health.critical");
+  }
+  if (band === "attention") {
+    return routeT(locale, "health.attention");
+  }
+  return routeT(locale, "health.healthy");
+}
+
+function renderHealthSignal(
+  signal: ProjectHealthPageVM["cards"][number]["signals"][number],
+  numbersVisible: boolean,
+  locale: WorkHubLocale
+) {
+  const label = routeT(locale, `health.signal.${signal.key}` as RouteCopyKey);
+  const value = numbersVisible ? `${label}: ${signal.count}` : `${label}: ${healthBandLabel(signal.band, locale)}`;
+  const inner = `<span class="wh-pill" data-r5-7-health-signal="${escapeHtml(signal.key)}" data-r5-7-health-signal-band="${escapeHtml(signal.band)}">${escapeHtml(value)}</span>`;
+  return signal.target_href
+    ? `<a href="${escapeHtml(signal.target_href)}" data-action-id="health_signal_${escapeHtml(signal.key)}">${inner}</a>`
+    : inner;
+}
+
+function renderHealthCard(card: ProjectHealthPageVM["cards"][number], locale: WorkHubLocale) {
+  const open = card.target_href
+    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(card.target_href)}" data-action-id="health_open_project" data-r5-7-health-open-project="true">${escapeHtml(routeT(locale, "health.openProject"))}</a>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r5-7-health-card="${escapeHtml(card.project_id)}" data-r5-7-health-card-band="${escapeHtml(card.band)}" data-r5-7-health-numbers-visible="${escapeHtml(String(card.numbers_visible))}">
+    <div class="wh-r4-route-meta">
+      <span class="wh-pill">${escapeHtml(healthBandLabel(card.band, locale))}</span>
+    </div>
+    <h3>${escapeHtml(card.project_name)}</h3>
+    <div class="wh-r4-route-meta">${card.signals.map((signal) => renderHealthSignal(signal, card.numbers_visible, locale)).join("")}</div>
+    ${open ? `<div class="wh-r4-route-actions">${open}</div>` : ""}
+  </section>`;
+}
+
+function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const primaryHrefs = [
+    ...vm.cards.map((card) => card.target_href),
+    ...vm.cards.flatMap((card) => card.signals.map((signal) => signal.target_href))
+  ].filter((value): value is string => Boolean(value));
+  const cards = vm.cards.length
+    ? vm.cards.map((card) => renderHealthCard(card, locale)).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "health.empty"))}</p>`;
+  const memberNote = vm.viewer_scope === "member"
+    ? `<p class="wh-subtle" data-r5-7-health-bands-only="true">${escapeHtml(routeT(locale, "health.bandsOnly"))}</p>`
+    : "";
+  return createWebRouteComponent({
+    key: "health",
+    css: webRouteComponentCss,
+    primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "health",
+    html: `<section class="wh-r4-route" data-r4-route-component="health" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r5-7-health-route="true" data-r5-7-health-viewer-scope="${escapeHtml(vm.viewer_scope)}" data-r5-7-health-project-count="${escapeHtml(String(vm.summary.project_count))}" data-r5-7-health-attention-count="${escapeHtml(String(vm.summary.attention_count))}" data-r5-7-health-critical-count="${escapeHtml(String(vm.summary.critical_count))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "health.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "health.kicker"))}</h2>
+          <p>${escapeHtml(`${routeT(locale, "health.summary")} ${vm.summary.project_count} · ${routeT(locale, "health.attention")} ${vm.summary.attention_count} · ${routeT(locale, "health.critical")} ${vm.summary.critical_count}`)}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.project_count))}</span>
+      </header>
+      ${memberNote}
+      <div class="wh-r4-route-grid">${cards}</div>
     </section>`
   });
 }
@@ -1786,7 +1917,7 @@ function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: Ev
   return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
 }
 
-function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale): WebRouteComponent {
+function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string): WebRouteComponent {
   const refs = vm.evidence_refs;
   const sourceRows = refs.length
     ? refs.slice(0, 6).map((ref) => `<div class="wh-r4-route-row" data-r4-knowledge-evidence-ref="${escapeHtml(ref.id)}" data-r4-knowledge-source-type="${escapeHtml(ref.source_type)}">
@@ -1815,6 +1946,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
       </header>
+      ${sourceRef ? `<p class="wh-subtle" data-r5-7-knowledge-source-ref="${escapeHtml(sourceRef)}">${escapeHtml(routeT(locale, "knowledge.fromNotice"))}: ${escapeHtml(sourceRef)}</p>` : ""}
       <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-knowledge-fallback="true">
         <h3>${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
         <div class="wh-r4-route-timeline">${sourceRows}</div>
@@ -1915,9 +2047,10 @@ export type WebRouteComponentInput =
   | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
+  | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble }
+  | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined }
   | { key: "settings"; settings: SettingsPageVM };
 
 export function renderWebRouteComponent(
@@ -1944,12 +2077,14 @@ export function renderWebRouteComponent(
       return renderNotificationsRouteComponent(input.notifications, locale);
     case "calendar":
       return renderCalendarRouteComponent(input.calendar, locale);
+    case "health":
+      return renderHealthRouteComponent(input.health, locale);
     case "replay":
       return renderReplayRouteComponent(input.replay, locale);
     case "cost":
       return renderCostRouteComponent(input.cost, locale);
     case "knowledge":
-      return renderKnowledgeRouteComponent(input.evidence, locale);
+      return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef);
     case "settings":
       return renderSettingsRouteComponent(input.settings, locale);
   }

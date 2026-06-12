@@ -729,12 +729,14 @@ test("R4 web route registry resolves product URL routes", () => {
     "meetings",
     "notifications",
     "calendar",
+    "health",
     "replay",
     "cost",
     "knowledge",
     "settings"
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
+  assert.equal(resolveWebRoute("/dashboard/health")?.key, "health");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
   assert.equal(resolveWebRoute("/drive")?.key, "drive");
@@ -774,6 +776,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["meetings", "meetings"],
       ["notifications", "notifications"],
       ["calendar", "calendar"],
+      ["health", "health"],
       ["replay", "replay"],
       ["cost", "cost"],
       ["knowledge", "evidence"],

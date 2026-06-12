@@ -12,6 +12,7 @@ export type R4WebRouteKey =
   | "meetings"
   | "notifications"
   | "calendar"
+  | "health"
   | "replay"
   | "cost"
   | "knowledge"
@@ -37,6 +38,7 @@ export const r4WebRouteKeys = [
   "meetings",
   "notifications",
   "calendar",
+  "health",
   "replay",
   "cost",
   "knowledge",
@@ -74,6 +76,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     meetings: { label: "会议洞察", route: "/meetings" },
     notifications: { label: "通知中心", route: "/notifications" },
     calendar: { label: "日程", route: "/calendar" },
+    health: { label: "项目健康", route: "/dashboard/health" },
     replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
     knowledge: { label: "证据检索", route: "/knowledge/search" },
@@ -89,6 +92,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     meetings: { label: "Meeting insights", route: "/meetings" },
     notifications: { label: "Notifications", route: "/notifications" },
     calendar: { label: "Calendar", route: "/calendar" },
+    health: { label: "Project health", route: "/dashboard/health" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },

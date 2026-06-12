@@ -87,7 +87,8 @@ function trackedReferencePaths() {
 function secretLikeDiffCount() {
   const unstaged = git(["diff", "-U0", "--", ".", ":(exclude)reference/**", ":(exclude)references/**"]);
   const staged = git(["diff", "--cached", "-U0", "--", ".", ":(exclude)reference/**", ":(exclude)references/**"]);
-  const matches = `${unstaged.stdout}\n${staged.stdout}`.match(/sk-[A-Za-z0-9_-]{20,}/gu);
+  // 词界前置：避免 "task-plan-…" 这类文件名里的 "sk-" 误报；真实 key（独立 token 开头的 sk-）仍命中。
+  const matches = `${unstaged.stdout}\n${staged.stdout}`.match(/(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}/gu);
   return matches?.length ?? 0;
 }
 

@@ -66,6 +66,12 @@ export function getOpenApiDocument() {
           summary: "Calendar page VM with schedule events, work item due dates, and meeting follow-ups"
         }
       },
+      "/api/pages/health": {
+        get: {
+          tags: ["pages"],
+          summary: "Project health page VM with permission-filtered signal bands per project"
+        }
+      },
       "/api/drive/projects/{projectId}/files": {
         post: {
           tags: ["drive"],

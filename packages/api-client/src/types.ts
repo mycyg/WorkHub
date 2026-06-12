@@ -20,6 +20,7 @@ import type {
   GoldPathSurfaceVM,
   Notification,
   NotificationPageVM,
+  ProjectHealthPageVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
@@ -143,6 +144,7 @@ export type PageClient = {
   meetings: (options?: MeetingPageRequestOptions) => Promise<MeetingPageVM>;
   notifications: (options?: PageRequestOptions) => Promise<NotificationPageVM>;
   calendar: (options?: CalendarPageRequestOptions) => Promise<CalendarPageVM>;
+  projectHealth: (options?: PageRequestOptions) => Promise<ProjectHealthPageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };

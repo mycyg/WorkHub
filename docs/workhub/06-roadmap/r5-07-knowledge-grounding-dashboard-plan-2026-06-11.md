@@ -1,7 +1,7 @@
 ---
 module: R5-knowledge-grounding-dashboard
 layer: M-KNOWLEDGE / M-DASHBOARD / M-NOTIFY / P-AI / P-PERM / C-WEB
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -89,6 +89,31 @@ Project facts (workitems / approvals / schedule / runs / cost ledger)
 - Browser smoke：进入 `/dashboard/health`，从一条通知跳到预填 knowledge search 与 replay，验证 request proof 与 no duplicate route loader calls。
 - Final：`pnpm typecheck`、`pnpm test`、browser smoke、`git diff --check`、secret scan、no `reference/`。
 
-## 6. R5.8 Handoff
+## 6. 竣工记录
 
-R5.7 完成后，候选方向按价值排序：① **R4 中期审查 P1-5 的 CI 化第一段**（把 browser smoke 拆 headless Playwright 进 CI，步数已到 63，曲线必须收口）；② Identity/onboarding 最小闭环（P1-6，替换 "P0.5 Reviewer" 自动注册）；③ 桌宠 OS 通知 surface（复用 R5.6/R5.7 API 合同）。建议 ①，因为它保护此后所有纵切的回归安全。
+状态：✅ completed（2026-06-12）
+
+落地范围：
+
+- Contracts：`projectHealthPageVmSchema` / `projectHealthCardVmSchema` / `projectHealthSignalVmSchema`，健康档位映射 `projectHealthSignalBand()` / `resolveProjectHealthBand()` 收在 contracts 共用（UI/服务端同阈值）；`NotificationItemVM` 新增 `grounding`（`reason_text` + `evidence_refs`，kind = knowledge_search / agent_run_replay 等）。
+- DB：新增 `packages/db/src/repositories/project-health.ts` 只读聚合源（active projects、open work items、pending approvals、近 30 天 failed/escalated runs、pending insights），open 口径 = 非 `merged/done/cancelled`。
+- Services/API：新增 `apps/api/src/services/project-health-pages.ts`（逐项目信号计数 + 档位 + 排序，权限沿用 `canViewProjectDrive` / `canViewWorkItemRecord` / `canViewProjectMeetings` fail-closed）；`/api/pages/health` 已接 `routes/pages.ts` 并登记 OpenAPI；`schedule-notify-pages` 为每条通知生成 grounding（按 inbox bucket 的双语 reason + 预填 `/knowledge/search?q=…&source_ref=notification:<id>` 证据链接，target 为 replay 时追加回放链接）；`knowledgeSearchRequestSchema` 接受 `source_ref`。
+- Web/UI：route registry 扩到 14 条（`/dashboard/health`），health route component（admin 显数值 / member 只显档位文案 + `data-r5-7-health-bands-only` 标记），通知行内 grounding 区（`data-r5-7-notification-grounding`），knowledge route 顶部"来自通知的检索上下文"条（`data-r5-7-knowledge-source-ref`）。
+- 偏差说明：计划草案中的 `budget_burn` 信号未纳入 v0（成本预算仍以 `/dashboard/cost` 为唯一呈现，避免双真相源），以 `pending_insights` 替代；后续若需要项目级成本信号，由 P-COST ledger 出 per-project 聚合后再接。
+- 顺手修复：`schedule-notify-pages` 的 `isDoneWorkItem` 此前使用不存在的状态 `accepted`，已纠正为 `merged/done/cancelled` 终态口径。
+
+验收证据：
+
+- `pnpm typecheck`（17 包全绿）、`pnpm test`（全包 0 fail，contracts 26 / api 127 / ui 61 / web 26 / desktop 85）
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：**66 步、114 gates 全 true**，新增 `r5_7_health_grounding_routes=true`；request proof：`health=true`（GET `/api/pages/health` ×2 desktop/mobile）、`knowledgeSourceRef=true`（POST `/api/knowledge/search` body 含 `source_ref=notification:<id>`）
+- 截图：`15s-health-en-desktop.png`、`15t-health-en-mobile-no-overflow.png`、`15u-notification-evidence-jump-en-desktop.png`
+
+PRD / 概念图审视：
+
+- 符合 `web-operations-pages-atlas.png` P12：健康页是操作入口（卡片/信号 action 全部指向 approvals/calendar/meetings/drive 产品 route），不是图表墙。
+- 符合宪法 4 / EX-3 分层：member 只见人话档位，数值仅 admin；档位映射规则单测锁定在 contracts，UI 不自行算分。
+- 通知 grounding 回答"为什么提醒我、先看什么证据"，evidence href 全为产品 route，无 raw API 暴露。
+
+## 7. R5.8 Handoff
+
+R5.7 完成后，候选方向按价值排序：① **R4 中期审查 P1-5 的 CI 化第一段**（把 browser smoke 拆 headless Playwright 进 CI，步数已到 66，曲线必须收口）；② Identity/onboarding 最小闭环（P1-6，替换 "P0.5 Reviewer" 自动注册）；③ 桌宠 OS 通知 surface（复用 R5.6/R5.7 API 合同）。建议 ①，因为它保护此后所有纵切的回归安全。

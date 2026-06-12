@@ -9,6 +9,7 @@ import {
   type CalendarPageVM,
   type MeetingPageVM,
   type NotificationPageVM,
+  type ProjectHealthPageVM,
   type ApprovalRequest,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -42,6 +43,10 @@ import {
   type ScheduleNotifyPageService
 } from "../services/schedule-notify-pages.js";
 import {
+  createProjectHealthPageService,
+  type ProjectHealthPageService
+} from "../services/project-health-pages.js";
+import {
   createApprovalService,
   type ApprovalService
 } from "../services/approvals.js";
@@ -72,6 +77,7 @@ export type PageRoutesDependencies = {
   drivePages?: DrivePageService;
   meetingPages?: MeetingPageService;
   scheduleNotifyPages?: ScheduleNotifyPageService;
+  projectHealthPages?: ProjectHealthPageService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -149,6 +155,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
+  const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -275,6 +282,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       }
       throw error;
     }
+  });
+
+  routes.get("/health", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const data: ProjectHealthPageVM = await projectHealthPages.healthPage({
+      actor: c.var.actor,
+      locale
+    });
+    return c.json(pageEnvelope(data, locale));
   });
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {

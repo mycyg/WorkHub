@@ -9,7 +9,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
+  ProjectHealthPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -230,6 +231,16 @@ type BrowserAudit = {
     settingsRestoreRequiresDesktop: string | null;
     settingsWebLocalActions: string | null;
     settingsLocalBoundary: string | null;
+    healthViewerScope: string | null;
+    healthProjectCount: string | null;
+    healthAttentionCount: string | null;
+    healthCardBand: string | null;
+    healthBandsOnly: string | null;
+    healthOpenProject: string | null;
+    healthSignalCount: string | null;
+    notificationGrounding: string | null;
+    notificationEvidenceSearchRef: string | null;
+    knowledgeSourceRef: string | null;
   };
   notice: {
     visible: boolean;
@@ -991,6 +1002,13 @@ function notificationPage(
       project_id: meetingProjectId,
       project_name: "区域发布资料库"
     },
+    grounding: {
+      reason_text: locale === "zh-CN" ? "这件事在等你拍板，处理前可以先看相关证据。" : "This item is waiting for your decision. Check the evidence first if needed.",
+      evidence_refs: [
+        { kind: "knowledge_search", label: locale === "zh-CN" ? "查相关证据" : "Find related evidence", href: `/knowledge/search?q=regional%20launch&work_item_id=${meetingWorkItemId}&source_ref=notification:${notificationMeetingId}` },
+        { kind: "agent_run_replay", label: locale === "zh-CN" ? "看执行回放" : "Open execution replay", href: "/agent-runs/r4-live-run/replay" }
+      ]
+    },
     ...(meetingStatus !== "unread" ? { read_at: "2026-06-11T09:45:00.000Z" } : {}),
     ...(state.meetingDone ? { archived_at: "2026-06-11T09:46:00.000Z" } : {}),
     created_at: "2026-06-11T09:36:00.000Z",
@@ -1027,6 +1045,12 @@ function notificationPage(
       project_id: "10000000-0000-4000-8000-000000001600",
       project_name: "区域发布资料库",
       due_at: "2026-06-11T15:00:00.000Z"
+    },
+    grounding: {
+      reason_text: locale === "zh-CN" ? "这是给你的进展同步，不需要立即操作。" : "This is a progress update. No action needed right now.",
+      evidence_refs: [
+        { kind: "knowledge_search", label: locale === "zh-CN" ? "查相关证据" : "Find related evidence", href: `/knowledge/search?q=drive%20draft&source_ref=notification:${notificationDriveId}` }
+      ]
     },
     ...(driveStatus !== "unread" ? { read_at: "2026-06-11T09:45:00.000Z" } : {}),
     ...(state.driveDone ? { archived_at: "2026-06-11T09:47:00.000Z" } : {}),
@@ -1070,6 +1094,30 @@ function notificationPage(
         href: "/api/notifications/read-all"
       }
     }
+  };
+}
+
+function projectHealthPage(locale: WorkHubLocale): ProjectHealthPageVM {
+  void locale;
+  return {
+    generated_at: "2026-06-11T09:48:00.000Z",
+    actor_user_id: "r4-live-user",
+    viewer_scope: "member",
+    summary: { project_count: 1, healthy_count: 0, attention_count: 1, critical_count: 0 },
+    cards: [{
+      project_id: meetingProjectId,
+      project_name: "区域发布资料库",
+      band: "attention",
+      numbers_visible: false,
+      target_href: `/drive?project_id=${meetingProjectId}`,
+      signals: [
+        { key: "open_work_items", count: 3, band: "healthy", target_href: "/" },
+        { key: "overdue_work_items", count: 1, band: "attention", target_href: "/calendar" },
+        { key: "pending_approvals", count: 1, band: "healthy", target_href: "/approvals" },
+        { key: "failed_runs", count: 0, band: "healthy", target_href: "/" },
+        { key: "pending_insights", count: 1, band: "healthy", target_href: `/meetings?project_id=${meetingProjectId}` }
+      ]
+    }]
   };
 }
 
@@ -1731,6 +1779,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         meetingDone: notificationMeetingDone,
         driveDone: notificationDriveDone
       }));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/pages/health") {
+      sendJson(response, 200, projectHealthPage(currentLocale));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/calendar") {
@@ -2546,7 +2598,17 @@ function auditExpression() {
       settingsSecretSafe: routeComponent?.getAttribute("data-r4-settings-secret-safe") || null,
       settingsRestoreRequiresDesktop: routeComponent?.getAttribute("data-r4-settings-restore-requires-desktop") || null,
       settingsWebLocalActions: routeComponent?.getAttribute("data-r4-settings-web-local-actions") || null,
-      settingsLocalBoundary: routeComponent?.getAttribute("data-r4-settings-local-boundary") || null
+      settingsLocalBoundary: routeComponent?.getAttribute("data-r4-settings-local-boundary") || null,
+      healthViewerScope: routeComponent?.getAttribute("data-r5-7-health-viewer-scope") || null,
+      healthProjectCount: routeComponent?.getAttribute("data-r5-7-health-project-count") || null,
+      healthAttentionCount: routeComponent?.getAttribute("data-r5-7-health-attention-count") || null,
+      healthCardBand: document.querySelector("[data-r5-7-health-card]")?.getAttribute("data-r5-7-health-card-band") || null,
+      healthBandsOnly: document.querySelector("[data-r5-7-health-bands-only]") ? "true" : "false",
+      healthOpenProject: document.querySelector("[data-r5-7-health-open-project]") ? "true" : "false",
+      healthSignalCount: String(document.querySelectorAll("[data-r5-7-health-signal]").length),
+      notificationGrounding: document.querySelector("[data-r5-7-notification-grounding]") ? "true" : "false",
+      notificationEvidenceSearchRef: document.querySelector("[data-r5-7-notification-evidence-ref='knowledge_search']")?.getAttribute("href") || null,
+      knowledgeSourceRef: document.querySelector("[data-r5-7-knowledge-source-ref]")?.getAttribute("data-r5-7-knowledge-source-ref") || null
     };
     const noticeElement = document.querySelector("[data-wh-app-notice]");
     const noticeVisible = Boolean(noticeElement && !noticeElement.hasAttribute("hidden"));
@@ -3207,6 +3269,19 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/calendar?date=2026-06-11&view=week`, "ready");
   steps.push(await captureStep(cdp, { id: "15r-calendar-en-mobile-no-overflow", url: `${baseUrl}/calendar?date=2026-06-11&view=week`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "calendar" }));
 
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/dashboard/health`, "ready");
+  steps.push(await captureStep(cdp, { id: "15s-health-en-desktop", url: `${baseUrl}/dashboard/health`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "health" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/dashboard/health`, "ready");
+  steps.push(await captureStep(cdp, { id: "15t-health-en-mobile-no-overflow", url: `${baseUrl}/dashboard/health`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "health" }));
+
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/notifications`, "ready");
+  await clickAndWait(cdp, `[data-r5-notification-item="${notificationMeetingId}"] [data-r5-7-notification-evidence-ref="knowledge_search"]`, "/knowledge/search");
+  steps.push(await captureStep(cdp, { id: "15u-notification-evidence-jump-en-desktop", url: `${baseUrl}/knowledge/search`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
   steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
@@ -3263,6 +3338,13 @@ function requestProof(requests: ApiRequestRecord[]) {
     notificationMarkAllRead: requests.some((request) => request.method === "POST" && request.pathname === "/api/notifications/read-all"),
     notificationDismiss: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationMeetingId}/dismiss`),
     notificationComplete: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationDriveId}/complete`),
+    health: requests.some((request) => request.pathname === "/api/pages/health" && request.locale === "en-US"),
+    knowledgeSourceRef: requests.some((request) =>
+      request.method === "POST" &&
+      request.pathname === "/api/knowledge/search" &&
+      typeof request.body === "string" &&
+      request.body.includes(`notification:${notificationMeetingId}`)
+    ),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -3304,6 +3386,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       notificationMarkAllRead: count("/api/notifications/read-all", "POST"),
       notificationDismiss: countMatch(/^\/api\/notifications\/[^/]+\/dismiss$/u, "POST"),
       notificationComplete: countMatch(/^\/api\/notifications\/[^/]+\/complete$/u, "POST"),
+      health: count("/api/pages/health"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -3450,6 +3533,7 @@ async function main() {
       meetings: "meetings",
       notifications: "notifications",
       calendar: "calendar",
+      health: "health",
       replay: "replay",
       cost: "cost",
       knowledge: "evidence",
@@ -3675,7 +3759,7 @@ async function main() {
         proof.notificationDismiss &&
         proof.notificationMarkAllRead &&
         proof.notificationComplete &&
-        proof.counts.notifications === 6 &&
+        proof.counts.notifications === 7 &&
         proof.counts.calendar === 2 &&
         proof.counts.notificationMarkRead === 1 &&
         proof.counts.notificationDismiss === 1 &&
@@ -3755,6 +3839,42 @@ async function main() {
           step.audit.routeComponent === "calendar" &&
           !step.audit.horizontalOverflow &&
           !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_7_health_grounding_routes:
+        proof.health &&
+        proof.knowledgeSourceRef &&
+        proof.counts.health === 2 &&
+        steps.some((step) =>
+          step.id === "15s-health-en-desktop" &&
+          step.audit.routeComponent === "health" &&
+          step.audit.routeData.healthViewerScope === "member" &&
+          step.audit.routeData.healthProjectCount === "1" &&
+          step.audit.routeData.healthAttentionCount === "1" &&
+          step.audit.routeData.healthCardBand === "attention" &&
+          step.audit.routeData.healthBandsOnly === "true" &&
+          step.audit.routeData.healthOpenProject === "true" &&
+          step.audit.routeData.healthSignalCount === "5" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15t-health-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "health" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15k-notifications-en-desktop" &&
+          step.audit.routeData.notificationGrounding === "true" &&
+          (step.audit.routeData.notificationEvidenceSearchRef ?? "").includes(`source_ref=notification:${notificationMeetingId}`)
+        ) &&
+        steps.some((step) =>
+          step.id === "15u-notification-evidence-jump-en-desktop" &&
+          step.audit.routeComponent === "knowledge" &&
+          step.audit.routeData.knowledgeSourceRef === `notification:${notificationMeetingId}` &&
+          !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
       r4_11_route_component_source_truth: steps
@@ -3897,7 +4017,7 @@ async function main() {
           step.audit.routeData.knowledgeActionCount === "2" &&
           step.audit.routeData.knowledgeMissing === "false"
         ) &&
-        proof.counts.knowledgeSearch === 1 &&
+        proof.counts.knowledgeSearch === 2 &&
         proof.advancedPayloads.knowledgeWorkItemFilter,
       r4_14_knowledge_bind_success:
         steps.some((step) =>
@@ -3983,7 +4103,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "13" &&
+        step.audit.routeTreeRouteCount === "14" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
@@ -4317,7 +4437,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 63,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 66,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4369,7 +4489,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 63,
+      r4_22_no_new_smoke_sprawl: steps.length === 66,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4418,9 +4538,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 63,
+      r4_23_no_new_smoke_sprawl: steps.length === 66,
       r4_24_no_hash_write:
-        steps.length === 63 &&
+        steps.length === 66 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -4466,7 +4586,7 @@ async function main() {
         proof.counts.meetingInsightDraft === 1 &&
         proof.counts.meetingInsightDismiss === 0 &&
         proof.counts.meetingDraftProposal === 1 &&
-        proof.counts.notifications === 6 &&
+        proof.counts.notifications === 7 &&
         proof.counts.calendar === 2 &&
         proof.counts.notificationMarkRead === 1 &&
         proof.counts.notificationMarkAllRead === 1 &&
@@ -4475,7 +4595,7 @@ async function main() {
         proof.counts.session === 3 &&
         proof.counts.nextQuestion === 1 &&
         proof.counts.createWorkItem === 1 &&
-        proof.counts.knowledgeSearch === 1 &&
+        proof.counts.knowledgeSearch === 2 &&
         proof.counts.evidenceBinding === 1 &&
         proof.counts.proposal === 2 &&
         proof.counts.proposalConflicts === 2 &&
@@ -4533,6 +4653,7 @@ async function main() {
         `- R5.4 Drive draft to proposal: ${String(gates.r5_4_drive_draft_to_proposal)}`,
         `- R5.5 Meeting insight to draft: ${String(gates.r5_5_meeting_insight_to_draft)}`,
         `- R5.6 Schedule/Notify routes: ${String(gates.r5_6_schedule_notify_routes)}`,
+        `- R5.7 Health/Grounding routes: ${String(gates.r5_7_health_grounding_routes)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

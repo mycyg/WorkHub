@@ -47,6 +47,7 @@ export const knowledgeSearchRequestSchema = z.object({
   work_item_id: z.string().uuid().optional(),
   run: z.string().min(1).max(128).optional(),
   scope: z.string().min(1).max(64).optional(),
+  source_ref: z.string().min(1).max(200).optional(),
   limit: z.number().int().min(1).max(80).optional()
 });
 export type KnowledgeSearchRequest = z.infer<typeof knowledgeSearchRequestSchema>;

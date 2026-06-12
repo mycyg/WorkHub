@@ -8,6 +8,7 @@ import type {
   EvidenceBubble,
   MeetingPageVM,
   NotificationPageVM,
+  ProjectHealthPageVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -84,9 +85,10 @@ export type WebRouteSurface =
   | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
+  | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble }
+  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined }
   | { key: "settings"; settings: SettingsPageVM };
 
 const routeMatchers = [
@@ -154,6 +156,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "health",
+    pattern: "/dashboard/health",
+    apiBaseLabel: "/api/pages/health",
+    regex: /^\/dashboard\/health$/u,
+    paramNames: []
+  },
+  {
     key: "replay",
     pattern: "/agent-runs/:id/replay",
     apiBaseLabel: "/api/agent-runs/:id/replay",
@@ -199,6 +208,7 @@ type WebRouteTreePageVm =
   | "meetings"
   | "notifications"
   | "calendar"
+  | "health"
   | "replay"
   | "cost"
   | "evidence"
@@ -242,6 +252,7 @@ const routeTreePageVmByKey = {
   meetings: "meetings",
   notifications: "notifications",
   calendar: "calendar",
+  health: "health",
   replay: "replay",
   cost: "cost",
   knowledge: "evidence",
@@ -411,6 +422,7 @@ const shellPageOrder = [
   "meetings",
   "notifications",
   "calendar",
+  "health",
   "replay",
   "cost",
   "knowledge",
@@ -427,6 +439,7 @@ const shellDefaultRoutes = {
   meetings: "/meetings",
   notifications: "/notifications",
   calendar: "/calendar",
+  health: "/dashboard/health",
   replay: "/agent-runs/r4-live-run/replay",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
@@ -444,6 +457,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     meetings: "会议洞察",
     notifications: "通知中心",
     calendar: "日程",
+    health: "项目健康",
     replay: "执行回放",
     cost: "成本",
     knowledge: "知识证据",
@@ -459,6 +473,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     meetings: "Meeting insights",
     notifications: "Notifications",
     calendar: "Calendar",
+    health: "Project health",
     replay: "Execution replay",
     cost: "Cost",
     knowledge: "Knowledge evidence",
@@ -495,7 +510,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     budget: "预算",
     options: "选项",
     refs: "来源",
-    runtime: "运行时"
+    runtime: "运行时",
+    projects: "项目",
+    attention: "需要关注",
+    critical: "告急"
   },
   "en-US": {
     primary: "Focus",
@@ -525,7 +543,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     budget: "Budget",
     options: "Options",
     refs: "Sources",
-    runtime: "Runtime"
+    runtime: "Runtime",
+    projects: "Projects",
+    attention: "Attention",
+    critical: "Critical"
   }
 };
 
@@ -617,6 +638,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "queue", String(surface.calendar.summary.block_count))
     ];
   }
+  if (surface.key === "health") {
+    return [
+      metric(locale, "projects", String(surface.health.summary.project_count)),
+      metric(locale, "attention", String(surface.health.summary.attention_count)),
+      metric(locale, "critical", String(surface.health.summary.critical_count))
+    ];
+  }
   if (surface.key === "replay") {
     return [
       metric(locale, "steps", String(surface.replay.steps.length)),
@@ -678,6 +706,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "calendar") {
     return renderWebRouteComponent({ key: "calendar", calendar: surface.calendar }, { locale });
   }
+  if (surface.key === "health") {
+    return renderWebRouteComponent({ key: "health", health: surface.health }, { locale });
+  }
   if (surface.key === "replay") {
     return renderWebRouteComponent({ key: "replay", replay: surface.replay }, { locale });
   }
@@ -685,7 +716,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "cost", cost: surface.cost }, { locale });
   }
   if (surface.key === "knowledge") {
-    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence }, { locale });
+    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref }, { locale });
   }
   return renderWebRouteComponent({ key: "settings", settings: surface.settings }, { locale });
 }
@@ -754,18 +785,27 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     }
     return { key: "cost", cost } satisfies WebRouteSurface;
   }
+  if (match.key === "health") {
+    const health = await client.pages.projectHealth(withLocale(locale));
+    if (health.cards.length === 0) {
+      return "empty" as const;
+    }
+    return { key: "health", health } satisfies WebRouteSurface;
+  }
   if (match.key === "knowledge") {
     const params = new URLSearchParams(match.search);
     const q = params.get("q") ?? params.get("query") ?? undefined;
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     const workItemId = params.get("work_item_id") ?? params.get("workItemId") ?? undefined;
+    const sourceRef = params.get("source_ref") ?? undefined;
     const evidence = await client.searchKnowledge({
       ...(q ? { q } : {}),
       ...(projectId ? { project_id: projectId } : {}),
       ...(workItemId ? { work_item_id: workItemId } : {}),
+      ...(sourceRef ? { source_ref: sourceRef } : {}),
       limit: 6
     }, withLocale(locale));
-    return { key: "knowledge", evidence } satisfies WebRouteSurface;
+    return { key: "knowledge", evidence, source_ref: sourceRef } satisfies WebRouteSurface;
   }
   if (match.key === "workitem") {
     const workitem = await client.pages.workItem(match.params["id"] ?? "", withLocale(locale));

@@ -23,8 +23,13 @@ import {
   drivePageVmSchema,
   identifyRequestSchema,
   meetingPageVmSchema,
+  notificationGroundingVmSchema,
+  notificationItemVmSchema,
   notificationPageVmSchema,
   normalizeWorkHubLocale,
+  projectHealthPageVmSchema,
+  projectHealthSignalBand,
+  resolveProjectHealthBand,
   mergeProposalRequestSchema,
   mergeProposalCandidateChoiceResultSchema,
   nextQuestionRequestSchema,
@@ -1316,4 +1321,63 @@ test("R5.6 notification and calendar page VMs keep source context typed", () => 
     ...notification,
     buckets: { needs_decision: [{ ...notification.buckets.needs_decision[0], inbox_bucket: "later" }], fyi: [], done: [] }
   }));
+});
+
+test("R5.7 project health page VM bands are deterministic and shared", () => {
+  assert.equal(projectHealthSignalBand("overdue_work_items", 0), "healthy");
+  assert.equal(projectHealthSignalBand("overdue_work_items", 1), "attention");
+  assert.equal(projectHealthSignalBand("overdue_work_items", 3), "critical");
+  assert.equal(projectHealthSignalBand("failed_runs", 2), "critical");
+  assert.equal(projectHealthSignalBand("pending_approvals", 4), "attention");
+  assert.equal(resolveProjectHealthBand([{ band: "healthy" }, { band: "attention" }]), "attention");
+  assert.equal(resolveProjectHealthBand([{ band: "critical" }, { band: "healthy" }]), "critical");
+  assert.equal(resolveProjectHealthBand([]), "healthy");
+
+  const page = projectHealthPageVmSchema.parse({
+    generated_at: "2026-06-11T00:00:00.000Z",
+    actor_user_id: "81000000-0000-4000-8000-000000000001",
+    viewer_scope: "member",
+    summary: { project_count: 1, healthy_count: 0, attention_count: 1, critical_count: 0 },
+    cards: [{
+      project_id: "82000000-0000-4000-8000-000000000001",
+      project_name: "西南区发布",
+      band: "attention",
+      numbers_visible: false,
+      target_href: "/drive?project_id=82000000-0000-4000-8000-000000000001",
+      signals: [{
+        key: "overdue_work_items",
+        count: 1,
+        band: projectHealthSignalBand("overdue_work_items", 1),
+        target_href: "/calendar"
+      }]
+    }]
+  });
+  assert.equal(page.cards[0]?.band, "attention");
+  assert.throws(() => projectHealthPageVmSchema.parse({
+    ...page,
+    cards: [{ ...page.cards[0], band: "broken" }]
+  }));
+});
+
+test("R5.7 notification grounding carries reason and product-route evidence refs", () => {
+  const grounded = notificationItemVmSchema.parse({
+    id: "83000000-0000-4000-8000-000000000001",
+    type: "meeting.insight.pending",
+    severity: "high",
+    status: "unread",
+    inbox_bucket: "needs_decision",
+    title: "会议建议等待确认",
+    created_at: "2026-06-11T00:00:00.000Z",
+    updated_at: "2026-06-11T00:00:00.000Z",
+    actions: {},
+    grounding: {
+      reason_text: "会议里出现了一个还没人确认的建议。",
+      evidence_refs: [
+        { kind: "knowledge_search", label: "查相关证据", href: "/knowledge/search?q=发布&source_ref=notification:83000000-0000-4000-8000-000000000001" },
+        { kind: "agent_run_replay", label: "看执行回放", href: "/agent-runs/84000000-0000-4000-8000-000000000001/replay" }
+      ]
+    }
+  });
+  assert.equal(grounded.grounding?.evidence_refs.length, 2);
+  assert.throws(() => notificationGroundingVmSchema.parse({ reason_text: "", evidence_refs: [] }));
 });
