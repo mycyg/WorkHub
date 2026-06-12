@@ -8,11 +8,11 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:S1 pilot-ready，R5.10 真 key 评估待外部输入 🚧
+## 现状:S1 pilot-ready，R5.10 真 key 评估已通过 ✅
 
-本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 已在本机 PostgreSQL 16 证明需求到交付下载的管线。下一步是用真 `LLM_API_KEY` 跑 R5.10 质量-成本-时延评估，然后人到位即可启动 Pilot Week。
+本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已在本机 PostgreSQL 16 证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。下一步是 S1 Pilot Launch Gate，然后人到位即可启动 Pilot Week。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 134 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 136 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -33,7 +33,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 | R5.6-R5.8 | ✅ | Schedule/Notify、Knowledge grounding/dashboard health、66 步 browser smoke CI 化已落。 |
 | R5.9-R5.12 | ✅ | Onboarding、Agent 能力强化、pilot deploy package、sandbox libraries/skills、permission matrix audit 已落；系统 pilot-ready。 |
 | R5.10-dry | ✅ | `pnpm qa:r5-10-dry` 在本机 PG16 跑通：17 段 REST evidence、proposal merge、accepted deliverable download、usage/ledger/confidence。 |
-| R5.10 real | planned | 真 `LLM_API_KEY` 任务集评估：≥5 个真实任务、预算护栏、质量-成本-时延报告与 OQ-2/3/7 校准。 |
+| R5.10 real | ✅ | `pnpm qa:r5-10-real` 用 DeepSeek 真 provider 跑通 T1–T5+B1：T1–T4 质量全达标，T5 正确升级，B1 预算护栏，真实成本 `0.142346 CNY`。 |
 
 ## 本地开发
 
@@ -49,7 +49,7 @@ pnpm dev
 - Tauri webview 规划端口: `1420`。
 - 默认配置来自 [`packages/config`](packages/config);复制 [`.env.example`](.env.example) 到 `.env` 后填入本地密钥。
 - PostgreSQL/Redis 可用 `docker compose up -d postgres redis` 启动;Drizzle 迁移命令为 `pnpm db:generate`、`pnpm db:check`、`pnpm db:migrate`。后续数据库验收优先本地构建/本地 PG+Redis 复跑。
-- 当前 macOS 本机已可用免 sudo Postgres.app 16.14 runtime（放在项目父目录 `.runtime/`，不属于仓库）；R5.10-dry 使用本地 PG16 验收通过。
+- 当前 macOS 本机已可用免 sudo Postgres.app 16.14 runtime（放在项目父目录 `.runtime/`，不属于仓库）；R5.10-dry 与 R5.10-real 使用本地 PG16 验收通过。
 - 生产沙箱与 Agent 执行后续要求 Linux；数据库验收优先本地构建/本地 PG+Redis 复跑。R4 最新状态见上方里程碑表。
 
 ## 许可证与商业授权 ⚖️

@@ -46,7 +46,7 @@ depends_on:
 | # | 差距 | 现状证据 | 消除于 |
 |---|---|---|---|
 | G1 | ~~**Web 端无注册流**~~ **已消除（R5.9）**：注册屏 + 登出 + deep link 保持，自动注册已删除 | [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./r5-09-onboarding-minimal-plan-2026-06-12.md) 竣工记录 | ✅ |
-| G2 | **真实 LLM 质量/成本/时延仍待真 key 验证**：R5.10-dry 已证明管线（fake transport + 正式 measured client）可走到 merge/download/ledger/confidence；但真模型任务集、预算护栏和人工质量分布还未留证 | [`r5-10-dry-agent-pipeline-report.json`](../05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/r5-10-dry-agent-pipeline-report.json) + 真 key 报告待产出 | R5.10 |
+| G2 | ~~**真实 LLM 质量/成本/时延仍待真 key 验证**~~ **已消除（R5.10）**：R5.10-dry 证明管线；R5.10-real 使用 DeepSeek 真 provider 跑完 T1–T5 + B1，T1–T4 人工质量 `4/4 >= 4`，T5 结构化升级，B1 预算护栏升级，真实成本 `0.142346 CNY / 30103 tokens / 6 runs` | [`r5-10-dry-agent-pipeline-report.json`](../05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/r5-10-dry-agent-pipeline-report.json) + [`r5-10-real-llm-validation-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-13.md) | ✅ |
 | G3 | ~~**部署包不存在**~~ **已消除（R5.11）**：单镜像 + compose 全栈 + DEPLOY.md + 结构化日志 + CI `pilot-stack-smoke` 真实部署门（三跑抓出三个冷启动真 bug 含 admin 自举缺口） | [`r5-11-pilot-deploy-package-plan-2026-06-12.md`](./r5-11-pilot-deploy-package-plan-2026-06-12.md) 竣工记录 | ✅ |
 
 ## 3. 北极星成功指标（pilot 报告的骨架）
@@ -65,7 +65,7 @@ depends_on:
 ```
 R5.9   Onboarding 最小闭环（P1-6）          ← ✅ 已竣工（2026-06-12，70 步 smoke 全过）
 R5.10-pre Agent 能力强化                    ← ✅ 已竣工（2026-06-12）：压缩/截断/工人 prompt/重试/llm_review
-R5.10  真实 LLM 端到端验证与评估报告        ← R5.10-dry ✅；真 key 质量-成本-时延报告待 LLM_API_KEY
+R5.10  真实 LLM 端到端验证与评估报告        ← ✅ 已竣工（2026-06-13）：dry + 真 key 6-run 质量-成本-时延报告
 R5.11  Pilot 部署包 + 最小可观测            ← ✅ 已竣工（2026-06-12，CI pilot-stack-smoke 全绿）
 R5.12  权限矩阵审计（P1-4）                ← ✅ 已竣工（2026-06-12）：修 2 洞 + 常驻 fail-closed 门 → 系统 pilot-ready
 S1     Pilot Week（人到位即启动；turnkey 运营手册已立 s1-pilot-week-runbook）
@@ -77,7 +77,7 @@ S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）
 | 步 | 必须完成 | 明确不做 |
 |---|---|---|
 | **R5.9** | Web 注册/切换用户（昵称+locale+可选 admin secret）、登出；替换自动 identify；QA smoke 改走脚本化注册 | 不做密码/OAuth/SSO（LAN-first 信任模型不变，D-3） |
-| **R5.10** | ✅ dry 自检脚本已落：`pnpm qa:r5-10-dry` 覆盖 REST/PG/ledger/download/confidence；下一步真 key 全链跑通并留证据：≥5 个真实任务、预算护栏触发、成本计量入 ledger、置信度落库，产出质量-成本-时延评估报告 | 不扩工具面、不调模型路由策略（只记录数据） |
+| **R5.10** | ✅ dry 自检脚本已落；✅ 真 key 全链跑通并留证据：6 个真实 AgentRun、T1–T4 质量全达标、T5 不编造升级、B1 预算护栏触发、成本计量入 ledger、置信度落库，产出质量-成本-时延评估报告 | 不扩工具面、不调模型路由策略（只记录数据） |
 | **R5.11** | docker-compose 全栈（api + web 静态 + pg + redis）、迁移编排、.env 模板、备份脚本、十分钟 DEPLOY 文档、pino 级结构化日志 | 不做云部署/多租户（P5 不变）、不做 APM |
 | **R5.12** | "角色 × 路由"审计表（对照 security-and-permissions §4.2），写路径统一收口，fail-closed 缺省验证 | 不重写 permission 引擎，只接线与补洞 |
 | **S1** | 每日反馈回灌（issue 化）、周末 pilot 报告（§3 六指标 + 定性结论） | 不在 pilot 周内并行开新功能面 |

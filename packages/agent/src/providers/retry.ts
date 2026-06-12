@@ -20,7 +20,7 @@ export function parseRetryAfterMs(value: string | null | undefined, now = new Da
 }
 
 export function nextRetryDecision(
-  error: { status?: number; headers?: { get: (name: string) => string | null } },
+  error: { status?: number; headers?: { get: (name: string) => string | null }; message?: string; code?: string; cause?: unknown },
   attempt: number,
   options: { maxAttempts?: number; baseDelayMs?: number; now?: Date } = {}
 ): RetryDecision {
@@ -36,6 +36,22 @@ export function nextRetryDecision(
   }
 
   if (status === 429 || status >= 500) {
+    return {
+      retry: true,
+      delayMs: (options.baseDelayMs ?? 500) * 2 ** Math.max(0, attempt - 1),
+      reason: "transient"
+    };
+  }
+
+  const networkMessage = [
+    error.message,
+    error.code,
+    error.cause instanceof Error ? error.cause.message : undefined
+  ].filter(Boolean).join(" ");
+  if (
+    status === 0
+    && /\b(fetch failed|terminated|econnreset|econnrefused|etimedout|enotfound|network)\b/iu.test(networkMessage)
+  ) {
     return {
       retry: true,
       delayMs: (options.baseDelayMs ?? 500) * 2 ** Math.max(0, attempt - 1),

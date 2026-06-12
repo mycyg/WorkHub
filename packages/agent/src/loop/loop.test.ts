@@ -425,6 +425,51 @@ test("AgentLoop retries transient provider errors with backoff and then succeeds
   assert.equal(events.filter((event) => event.data.kind === "provider_retry").length, 2);
 });
 
+test("AgentLoop retries fetch-level network provider errors", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  let calls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create() {
+        calls += 1;
+        if (calls === 1) {
+          throw Object.assign(new Error("fetch failed"), {
+            cause: new Error("terminated")
+          });
+        }
+        return {
+          id: "m1",
+          stopReason: "end_turn",
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000018",
+    workItemId: "50000000-0000-4000-8000-000000000018",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "say done",
+    client,
+    tools,
+    budget: { ...budget, providerRetryBaseDelayMs: 1 },
+    requireDeliverable: false,
+    reviewDeliverable: false,
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(calls, 2);
+  assert.equal(events.filter((event) => event.data.kind === "provider_retry").length, 1);
+});
+
 test("AgentLoop does not retry non-transient provider errors", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());

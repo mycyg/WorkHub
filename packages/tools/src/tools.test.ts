@@ -50,6 +50,32 @@ test("write_file executes only after snapshot succeeds", async () => {
   assert.equal(await readFile(path.join(workdir, "outputs", "a.txt"), "utf8"), "hello");
 });
 
+test("read_file can infer the only input file when providers send a description", async () => {
+  const workdir = await tempWorkdir();
+  await mkdir(path.join(workdir, "inputs"), { recursive: true });
+  await writeFile(path.join(workdir, "inputs", "meeting-notes.md"), "one input", "utf8");
+  const registry = createToolRegistry(createBuiltInFileTools());
+
+  const result = await registry.execute("read_file", { description: "Read the meeting notes" }, { workdir });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.content, "one input");
+});
+
+test("toModelTools exposes concrete JSON schema for provider tool calling", async () => {
+  const workdir = await tempWorkdir();
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const tools = await registry.toModelTools({ workdir });
+  const writeFile = tools.find((tool) => tool.name === "write_file") as
+    | { input_schema?: { properties?: Record<string, unknown>; required?: string[] } }
+    | undefined;
+
+  assert.ok(writeFile);
+  assert.ok(writeFile.input_schema?.properties?.["path"]);
+  assert.ok(writeFile.input_schema?.properties?.["content"]);
+  assert.deepEqual(writeFile.input_schema?.required?.sort(), ["content", "path"]);
+});
+
 test("zip_path writes a real zip archive after snapshot succeeds", async () => {
   const workdir = await tempWorkdir();
   await mkdir(path.join(workdir, "outputs", "bundle"), { recursive: true });

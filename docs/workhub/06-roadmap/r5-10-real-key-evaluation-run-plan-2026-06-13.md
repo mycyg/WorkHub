@@ -1,7 +1,7 @@
 ---
 module: R5.10-real-key-evaluation-run
 layer: P-AI / P-COST / QA / Pilot readiness
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -26,6 +26,23 @@ R5.10-dry 已在 2026-06-13 本机 PostgreSQL 16 上通过：
 - 覆盖：17 段 REST evidence、AgentRun succeeded、proposal review/merge、accepted deliverable preview/download、replay、3 条 usage_records、9 条 cost_ledger_entries、`agent_step` + `review` source、llm_review grade=4 进入 confidence。
 
 真 key 评估开工前必须保持 dry 脚本绿；若 dry 失败，先修管线，不消耗真模型预算。
+
+## 1.1 竣工记录（2026-06-13）
+
+状态：✅ completed。
+
+新增并通过 `pnpm qa:r5-10-real`：
+
+- 使用真实 DeepSeek Anthropic-compatible provider（`deepseek-v4-flash`），无 fake transport。
+- 覆盖 T1–T5 + B1 共 6 个真实 AgentRun：T1 周报、T2 CSV 聚合、T3 PPT+PNG、T4 Python 清洗脚本自验、T5 信息不足 handoff、B1 低预算护栏。
+- 质量：T1–T4 人工质量 `4/4 >= 4`；T5 输出 blocker/handoff 且不编造税务结论；B1 `agent_runs.status=escalated` 且 `escalation_events.trigger=budget_exhausted`。
+- 成本：本轮 cost page delta `0.142346 CNY`，token delta `30103`；每个成功 run 记录 `agent_step + review` usage，B1 记录 `agent_step` usage；ledger 覆盖 workitem/user/team。
+- 证据：[`../05-clients/assets/audit/2026-06-13-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-13.md) 与同目录 JSON 报告。
+
+真 provider 首跑暴露并修复了两个系统性问题：
+
+- 工具注册表此前只暴露 `input_schema: {type:"object"}`，DeepSeek 无法看到 `write_file.path/content` 等必填字段；现已改为由 Zod schema 生成真实 JSON Schema，并补 `@workhub/tools` 回归门。
+- provider retry 此前只覆盖 HTTP 429/5xx，`fetch failed` / `terminated` 这类 fetch-level 网络异常不重试；现已纳入 transient retry，并补 AgentLoop 回归门。
 
 ## 2. 执行环境
 
@@ -67,3 +84,7 @@ R5.10-dry 已在 2026-06-13 本机 PostgreSQL 16 上通过：
 3. 每个任务保存 proposal/replay/cost/confidence 证据与人工评分。
 4. 汇总质量-成本-时延报告，给出 OQ-2/OQ-3/OQ-7 校准建议。
 5. 更新 S1 roadmap、Pilot Week runbook 与 `07-open-questions.md`，再提交 main。
+
+## 6. Handoff
+
+R5.10 已从“key 待输入”转为真实证据闭环。S1 关键路径不再卡模型质量/成本/时延基线；下一步按 [`s1-pilot-launch-gate-plan-2026-06-13.md`](./s1-pilot-launch-gate-plan-2026-06-13.md) 做 Pilot Week 启动前最后核验：用部署栈复跑 dry/real gate 的最小组合、确认 operator 手册与备份恢复、再进入真实使用者 pilot。

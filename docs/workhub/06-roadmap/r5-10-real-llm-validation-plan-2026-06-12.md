@@ -1,7 +1,7 @@
 ---
 module: R5-real-llm-validation
 layer: P-AI / P-COST / QA / 验证报告
-status: dry-completed / real-key-planned
+status: completed
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -14,7 +14,7 @@ depends_on:
 
 # R5.10 真实 LLM 端到端验证 Plan（S1 第二刀 · "证明劳动力"）
 
-> **唯一外部依赖**：`LLM_API_KEY`（DeepSeek 默认端点 `https://api.deepseek.com/anthropic` 或任何 Anthropic 协议兼容端点）。`R5.10-dry` 已在 2026-06-13 本机 PostgreSQL 16 上通过；真 key 评估按后续详细计划 [`r5-10-real-key-evaluation-run-plan-2026-06-13.md`](./r5-10-real-key-evaluation-run-plan-2026-06-13.md) 执行。
+> `R5.10-dry` 与真 key 评估均已在 2026-06-13 本机 PostgreSQL 16 上通过。真 key 评估详见 [`r5-10-real-key-evaluation-run-plan-2026-06-13.md`](./r5-10-real-key-evaluation-run-plan-2026-06-13.md) 与审计证据目录 `2026-06-13-r5-10-real-key-evaluation`。
 
 ## 1. 目标与边界
 
@@ -84,4 +84,12 @@ provider / model / 端点 / 日期 / RunBudget 默认值
 
 ## 6. Handoff
 
-报告产出后回写 S1 roadmap §3 六指标的"成本/升级精准度"两栏初值，并把校准建议挂到 07-open-questions 对应 OQ。R5.10 完成 + S1 Pilot Week 完成 = S1 闭环，由 pilot 报告决定 S2（最可能是 OQ-4 护城河，视真实冲突数据）。下一步执行清单见 [`r5-10-real-key-evaluation-run-plan-2026-06-13.md`](./r5-10-real-key-evaluation-run-plan-2026-06-13.md)。
+报告已产出并回写 S1 roadmap / Pilot runbook / OQ。R5.10 结论：
+
+- `pnpm qa:r5-10-dry` 仍通过。
+- `pnpm qa:r5-10-real` 使用真实 DeepSeek provider 跑完 T1–T5 + B1。
+- T1–T4 人工质量 `4/4 >= 4`；T5 正确升级；B1 预算护栏升级。
+- 本轮真实成本 `0.142346 CNY / 30103 tokens / 6 runs`，成为 OQ-7 初始样本。
+- llm_review 与人工评分都已进入 JSON 证据，可供 OQ-2 后续相关性校准。
+
+R5.10 完成 + S1 Pilot Week 完成 = S1 闭环，由 pilot 报告决定 S2（最可能是 OQ-4 护城河，视真实冲突数据）。下一步执行清单见 [`s1-pilot-launch-gate-plan-2026-06-13.md`](./s1-pilot-launch-gate-plan-2026-06-13.md)。

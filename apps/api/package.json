@@ -11,6 +11,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node --import tsx src/server.ts",
     "qa:r5-10-dry": "tsx --tsconfig ../../tsconfig.base.json src/qa/r5-10-dry-agent-pipeline.ts",
+    "qa:r5-10-real": "tsx --tsconfig ../../tsconfig.base.json src/qa/r5-10-real-key-evaluation.ts",
     "qa:r1-pg-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-agent-run-smoke.ts",
     "qa:r2-pg-redis-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r2-pg-redis-smoke.ts",
     "qa:cuu-r3-launcher-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-launcher-to-run-smoke.ts",

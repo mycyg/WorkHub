@@ -1,11 +1,22 @@
 import type { AnyToolSpec, ToolExecutionContext } from "./types.js";
 import { errorToolResult } from "./types.js";
+import { toJSONSchema } from "zod";
 
 export type ToolVisibilityCheck = (spec: AnyToolSpec, ctx: ToolExecutionContext) => boolean | Promise<boolean>;
 
 export type ToolRegistryOptions = {
   canUse?: ToolVisibilityCheck;
 };
+
+function modelInputSchema(spec: AnyToolSpec): Record<string, unknown> {
+  try {
+    const schema = toJSONSchema(spec.schema) as Record<string, unknown>;
+    delete schema["$schema"];
+    return schema;
+  } catch {
+    return { type: "object" };
+  }
+}
 
 export class ToolRegistry {
   private readonly specs = new Map<string, AnyToolSpec>();
@@ -47,7 +58,7 @@ export class ToolRegistry {
     return visible.map((spec) => ({
       name: spec.id,
       description: spec.description,
-      input_schema: { type: "object" },
+      input_schema: modelInputSchema(spec),
       side_effect: spec.sideEffect
     }));
   }

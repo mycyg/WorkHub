@@ -68,6 +68,10 @@ depends_on:
 - `pnpm typecheck` 全绿、`pnpm test` 全包 0 fail、`pnpm lint` 全链 OK（含 6 个 cuu-r3 真实 launcher/run-stream smokes 回归——新 prompt 与 review 路径在真实 API 进程中跑通）、browser smoke 70 步回归通过
 - 测试中顺带验证了工具层 fail-closed 设计（side-effect 工具无 snapshot hook 即拒绝），未发现需修复项
 
+### 4.1 R5.10-real 回灌修正（2026-06-13）
+
+真 key 评估首跑暴露 `fetch failed` / `terminated` 这类 fetch-level 网络异常不会进入 H4 重试，因为它们没有 HTTP `status`。现已扩展 `nextRetryDecision()`：仅对 `fetch failed`、`terminated`、`ECONN*`、`ETIMEDOUT`、`ENOTFOUND`、`network` 等瞬态网络形态重试，400 等业务错误仍不重试；新增 AgentLoop 回归测试 `AgentLoop retries fetch-level network provider errors`。H4 口径由“429/5xx 重试”升级为“HTTP 瞬态 + fetch-level 网络瞬态重试”。
+
 ## 5. Handoff
 
 H1–H6 已全部落地，**R5.10 真 key 端到端验证**随时可开：需要 `LLM_API_KEY`（DeepSeek 默认端点或任何 Anthropic 协议兼容端点）。此时测得的质量-成本-时延数据反映补强后的引擎，且 llm_review 让升级精准度（OQ-2 校准）第一次有真实主信号——评审调用的成本也会如实进入 ledger（`source:"review"` 口径早已在 cost-governance 预留）。

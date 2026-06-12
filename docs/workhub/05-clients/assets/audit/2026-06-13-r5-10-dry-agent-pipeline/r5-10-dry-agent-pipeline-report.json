@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-06-12T16:38:51.249Z",
+  "generated_at": "2026-06-12T17:20:59.760Z",
   "module": "R5.10-dry",
   "keyless": true,
   "provider": {
@@ -32,20 +32,20 @@
     ]
   },
   "entities": {
-    "session_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
-    "work_item_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
-    "agent_run_id": "1de84abb-046a-4ef4-a489-f5041c51cad2",
-    "proposal_id": "61c28d5d-a246-45a2-90ea-be005c20d378",
-    "merge_snapshot_id": "f78c842d-101a-4394-b210-c1575669241a",
-    "accepted_change_id": "e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd",
-    "drive_version_id": "2243a491-7d08-4053-b6f3-28107de37c64"
+    "session_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+    "work_item_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+    "agent_run_id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a",
+    "proposal_id": "6d281e40-1e6e-4525-9bda-ab73cce2bf30",
+    "merge_snapshot_id": "c5188178-ea37-48ec-b350-3d180ac57d3d",
+    "accepted_change_id": "5ffcebe4-f390-4dae-845c-9feb7eda359a",
+    "drive_version_id": "d3861093-01dd-4c9d-b4c9-7a21d4541aca"
   },
   "rest_evidence": [
     {
       "method": "GET",
       "path": "/api/pages/cost?locale=en-US",
       "status": 200,
-      "response_bytes": 2316
+      "response_bytes": 4088
     },
     {
       "method": "POST",
@@ -55,7 +55,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/sessions/daedaabe-38a1-4508-bca0-1a6a60796738/next-question",
+      "path": "/api/sessions/71037fbb-b853-426a-9734-59b5660b5bee/next-question",
       "status": 200,
       "response_bytes": 1599
     },
@@ -73,73 +73,73 @@
     },
     {
       "method": "POST",
-      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/evidence-bindings",
+      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/evidence-bindings",
       "status": 200,
       "response_bytes": 2558
     },
     {
       "method": "GET",
-      "path": "/api/pages/workitems/daedaabe-38a1-4508-bca0-1a6a60796738?locale=zh-CN",
+      "path": "/api/pages/workitems/71037fbb-b853-426a-9734-59b5660b5bee?locale=zh-CN",
       "status": 200,
       "response_bytes": 2558
     },
     {
       "method": "POST",
-      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/agent-runs",
+      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/agent-runs",
       "status": 202,
       "response_bytes": 1026
     },
     {
       "method": "GET",
-      "path": "/api/agent-runs/1de84abb-046a-4ef4-a489-f5041c51cad2",
+      "path": "/api/agent-runs/065d4aba-2e0b-440b-aa33-5d2d16abc06a",
       "status": 200,
       "response_bytes": 2626
     },
     {
       "method": "GET",
-      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/proposals",
+      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/proposals",
       "status": 200,
       "response_bytes": 2785
     },
     {
       "method": "GET",
-      "path": "/api/pages/proposals/61c28d5d-a246-45a2-90ea-be005c20d378?locale=en-US",
+      "path": "/api/pages/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30?locale=en-US",
       "status": 200,
       "response_bytes": 3021
     },
     {
       "method": "POST",
-      "path": "/api/proposals/61c28d5d-a246-45a2-90ea-be005c20d378/review",
+      "path": "/api/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30/review",
       "status": 200,
       "response_bytes": 2353
     },
     {
       "method": "POST",
-      "path": "/api/proposals/61c28d5d-a246-45a2-90ea-be005c20d378/merge",
+      "path": "/api/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30/merge",
       "status": 200,
       "response_bytes": 4765
     },
     {
       "method": "GET",
-      "path": "/api/pages/workitems/daedaabe-38a1-4508-bca0-1a6a60796738?locale=zh-CN",
+      "path": "/api/pages/workitems/71037fbb-b853-426a-9734-59b5660b5bee?locale=zh-CN",
       "status": 200,
       "response_bytes": 7459
     },
     {
       "method": "GET",
-      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/preview",
+      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/preview",
       "status": 200,
       "response_bytes": 976
     },
     {
       "method": "GET",
-      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/download",
+      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/download",
       "status": 200,
       "response_bytes": 638
     },
     {
       "method": "GET",
-      "path": "/api/agent-runs/1de84abb-046a-4ef4-a489-f5041c51cad2/replay?locale=en-US",
+      "path": "/api/agent-runs/065d4aba-2e0b-440b-aa33-5d2d16abc06a/replay?locale=en-US",
       "status": 200,
       "response_bytes": 8017
     },
@@ -147,7 +147,7 @@
       "method": "GET",
       "path": "/api/pages/cost?locale=en-US",
       "status": 200,
-      "response_bytes": 2457
+      "response_bytes": 4220
     }
   ],
   "db_rows": {
@@ -175,21 +175,21 @@
     ],
     "usage_records": [
       {
-        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T16:38:51.130Z",
+        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T17:20:59.615Z",
         "source": "agent_step",
         "input_tokens": 120,
         "output_tokens": 45,
         "estimated_cost_cny": "0.000600"
       },
       {
-        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T16:38:51.138Z",
+        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T17:20:59.625Z",
         "source": "agent_step",
         "input_tokens": 90,
         "output_tokens": 35,
         "estimated_cost_cny": "0.000460"
       },
       {
-        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:review:2026-06-12T16:38:51.146Z",
+        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:review:2026-06-12T17:20:59.633Z",
         "source": "review",
         "input_tokens": 140,
         "output_tokens": 30,
@@ -197,153 +197,33 @@
       }
     ],
     "cost_page_before": {
-      "generated_at": "2026-06-12T16:38:51.046Z",
+      "generated_at": "2026-06-12T17:20:59.517Z",
       "currency": "CNY",
-      "total_cost_cny": "0.00316",
-      "token_in": 700,
-      "token_out": 220,
-      "unit_cost_cny": "0.000003",
+      "total_cost_cny": "0.208538",
+      "token_in": 24241,
+      "token_out": 20007,
+      "unit_cost_cny": "0.000005",
       "trend": [
         {
           "date": "2026-06-12",
-          "cost_cny": "0.00316",
-          "tokens": 920
+          "cost_cny": "0.208538",
+          "tokens": 44248
         }
       ],
       "by_user": [
         {
           "user_id": "00000000-0000-4000-8000-000000000003",
           "label": "Current user",
-          "cost_cny": "0.00948",
-          "tokens": 2760
+          "cost_cny": "0.625614",
+          "tokens": 132744
         }
       ],
       "by_team": [
         {
           "team_id": "00000000-0000-4000-8000-000000000002",
           "label": "Team budget",
-          "cost_cny": "0.00316",
-          "tokens": 920
-        }
-      ],
-      "by_workitem": [
-        {
-          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
-          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
-          "cost_cny": "0.00474",
-          "turns": 6
-        },
-        {
-          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
-          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
-          "cost_cny": "0.00474",
-          "turns": 6
-        }
-      ],
-      "model_breakdown": [
-        {
-          "provider": "deepseek",
-          "model": "deepseek-v4-flash",
-          "count": 6,
-          "cost_cny": "0.00316"
-        }
-      ],
-      "budget": [
-        {
-          "scope": {
-            "kind": "user",
-            "user_id": "00000000-0000-4000-8000-000000000003"
-          },
-          "scope_label": "My AI budget today",
-          "policy_id": "pcost-user-day-v0",
-          "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 700,
-          "token_out": 220,
-          "total_tokens": 920,
-          "max_tokens": 500000,
-          "remaining_tokens": 499080,
-          "estimated_cost_cny": "0.00316",
-          "max_cost_cny": "20",
-          "remaining_cost_cny": "19.99684",
-          "warning_ratio": 0.00184,
-          "status": "ok"
-        },
-        {
-          "scope": {
-            "kind": "team",
-            "team_id": "00000000-0000-4000-8000-000000000002"
-          },
-          "scope_label": "Team AI budget today",
-          "policy_id": "pcost-team-day-v0",
-          "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 700,
-          "token_out": 220,
-          "total_tokens": 920,
-          "max_tokens": 5000000,
-          "remaining_tokens": 4999080,
-          "estimated_cost_cny": "0.00316",
-          "max_cost_cny": "200",
-          "remaining_cost_cny": "199.99684",
-          "warning_ratio": 0.000184,
-          "status": "ok"
-        },
-        {
-          "scope": {
-            "kind": "team",
-            "team_id": "00000000-0000-4000-8000-000000000002"
-          },
-          "scope_label": "团队 AI 预算",
-          "policy_id": "pcost-team-month-v0",
-          "period": "month",
-          "period_start": "2026-06-01T00:00:00.000Z",
-          "period_end": "2026-07-01T00:00:00.000Z",
-          "token_in": 700,
-          "token_out": 220,
-          "total_tokens": 920,
-          "max_tokens": 50000000,
-          "remaining_tokens": 49999080,
-          "estimated_cost_cny": "0.00316",
-          "max_cost_cny": "2000",
-          "remaining_cost_cny": "1999.99684",
-          "warning_ratio": 0.0000184,
-          "status": "ok"
-        }
-      ],
-      "notices": [],
-      "top_exhaustion_risks": []
-    },
-    "cost_page_after": {
-      "generated_at": "2026-06-12T16:38:51.240Z",
-      "currency": "CNY",
-      "total_cost_cny": "0.00474",
-      "token_in": 1050,
-      "token_out": 330,
-      "unit_cost_cny": "0.000003",
-      "trend": [
-        {
-          "date": "2026-06-12",
-          "cost_cny": "0.00474",
-          "tokens": 1380
-        }
-      ],
-      "by_user": [
-        {
-          "user_id": "00000000-0000-4000-8000-000000000003",
-          "label": "Current user",
-          "cost_cny": "0.01422",
-          "tokens": 4140
-        }
-      ],
-      "by_team": [
-        {
-          "team_id": "00000000-0000-4000-8000-000000000002",
-          "label": "Team budget",
-          "cost_cny": "0.00474",
-          "tokens": 1380
+          "cost_cny": "0.208538",
+          "tokens": 44248
         }
       ],
       "by_workitem": [
@@ -364,14 +244,86 @@
           "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
           "cost_cny": "0.00474",
           "turns": 6
+        },
+        {
+          "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "cost_cny": "0.010476",
+          "turns": 3
+        },
+        {
+          "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "code": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "cost_cny": "0.14193",
+          "turns": 33
+        },
+        {
+          "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "cost_cny": "0.004662",
+          "turns": 6
+        },
+        {
+          "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "cost_cny": "0.00819",
+          "turns": 6
+        },
+        {
+          "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "cost_cny": "0.014358",
+          "turns": 12
+        },
+        {
+          "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "cost_cny": "0.06765",
+          "turns": 21
+        },
+        {
+          "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "cost_cny": "0.06588",
+          "turns": 24
+        },
+        {
+          "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
+          "code": "46d27105-fb63-4543-98af-d361886ada90",
+          "cost_cny": "0.097632",
+          "turns": 24
+        },
+        {
+          "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "cost_cny": "0.11289",
+          "turns": 33
+        },
+        {
+          "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "cost_cny": "0.077442",
+          "turns": 18
+        },
+        {
+          "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "cost_cny": "0.005544",
+          "turns": 3
         }
       ],
       "model_breakdown": [
         {
           "provider": "deepseek",
           "model": "deepseek-v4-flash",
-          "count": 9,
-          "cost_cny": "0.00474"
+          "count": 79,
+          "cost_cny": "0.208538"
         }
       ],
       "budget": [
@@ -385,15 +337,15 @@
           "period": "day",
           "period_start": "2026-06-12T00:00:00.000Z",
           "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 1050,
-          "token_out": 330,
-          "total_tokens": 1380,
+          "token_in": 24241,
+          "token_out": 20007,
+          "total_tokens": 44248,
           "max_tokens": 500000,
-          "remaining_tokens": 498620,
-          "estimated_cost_cny": "0.00474",
+          "remaining_tokens": 455752,
+          "estimated_cost_cny": "0.208538",
           "max_cost_cny": "20",
-          "remaining_cost_cny": "19.99526",
-          "warning_ratio": 0.00276,
+          "remaining_cost_cny": "19.791462",
+          "warning_ratio": 0.088496,
           "status": "ok"
         },
         {
@@ -406,15 +358,15 @@
           "period": "day",
           "period_start": "2026-06-12T00:00:00.000Z",
           "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 1050,
-          "token_out": 330,
-          "total_tokens": 1380,
+          "token_in": 24241,
+          "token_out": 20007,
+          "total_tokens": 44248,
           "max_tokens": 5000000,
-          "remaining_tokens": 4998620,
-          "estimated_cost_cny": "0.00474",
+          "remaining_tokens": 4955752,
+          "estimated_cost_cny": "0.208538",
           "max_cost_cny": "200",
-          "remaining_cost_cny": "199.99526",
-          "warning_ratio": 0.000276,
+          "remaining_cost_cny": "199.791462",
+          "warning_ratio": 0.0088496,
           "status": "ok"
         },
         {
@@ -427,15 +379,219 @@
           "period": "month",
           "period_start": "2026-06-01T00:00:00.000Z",
           "period_end": "2026-07-01T00:00:00.000Z",
-          "token_in": 1050,
-          "token_out": 330,
-          "total_tokens": 1380,
+          "token_in": 24241,
+          "token_out": 20007,
+          "total_tokens": 44248,
           "max_tokens": 50000000,
-          "remaining_tokens": 49998620,
-          "estimated_cost_cny": "0.00474",
+          "remaining_tokens": 49955752,
+          "estimated_cost_cny": "0.208538",
           "max_cost_cny": "2000",
-          "remaining_cost_cny": "1999.99526",
-          "warning_ratio": 0.0000276,
+          "remaining_cost_cny": "1999.791462",
+          "warning_ratio": 0.00088496,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    },
+    "cost_page_after": {
+      "generated_at": "2026-06-12T17:20:59.747Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.210118",
+      "token_in": 24591,
+      "token_out": 20117,
+      "unit_cost_cny": "0.000005",
+      "trend": [
+        {
+          "date": "2026-06-12",
+          "cost_cny": "0.210118",
+          "tokens": 44708
+        }
+      ],
+      "by_user": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000003",
+          "label": "Current user",
+          "cost_cny": "0.630354",
+          "tokens": 134124
+        }
+      ],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.210118",
+          "tokens": 44708
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "cost_cny": "0.010476",
+          "turns": 3
+        },
+        {
+          "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "code": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "cost_cny": "0.14193",
+          "turns": 33
+        },
+        {
+          "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "cost_cny": "0.004662",
+          "turns": 6
+        },
+        {
+          "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "cost_cny": "0.00819",
+          "turns": 6
+        },
+        {
+          "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "cost_cny": "0.014358",
+          "turns": 12
+        },
+        {
+          "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "cost_cny": "0.06765",
+          "turns": 21
+        },
+        {
+          "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "cost_cny": "0.06588",
+          "turns": 24
+        },
+        {
+          "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
+          "code": "46d27105-fb63-4543-98af-d361886ada90",
+          "cost_cny": "0.097632",
+          "turns": 24
+        },
+        {
+          "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "cost_cny": "0.11289",
+          "turns": 33
+        },
+        {
+          "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "cost_cny": "0.077442",
+          "turns": 18
+        },
+        {
+          "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "cost_cny": "0.005544",
+          "turns": 3
+        },
+        {
+          "workitem_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "code": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "cost_cny": "0.00474",
+          "turns": 6
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 82,
+          "cost_cny": "0.210118"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 24591,
+          "token_out": 20117,
+          "total_tokens": 44708,
+          "max_tokens": 500000,
+          "remaining_tokens": 455292,
+          "estimated_cost_cny": "0.210118",
+          "max_cost_cny": "20",
+          "remaining_cost_cny": "19.789882",
+          "warning_ratio": 0.089416,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 24591,
+          "token_out": 20117,
+          "total_tokens": 44708,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4955292,
+          "estimated_cost_cny": "0.210118",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.789882",
+          "warning_ratio": 0.0089416,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "团队 AI 预算",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 24591,
+          "token_out": 20117,
+          "total_tokens": 44708,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49955292,
+          "estimated_cost_cny": "0.210118",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.789882",
+          "warning_ratio": 0.00089416,
           "status": "ok"
         }
       ],
@@ -457,8 +613,8 @@
   },
   "artifact": {
     "filename": "r5-10-dry-weekly-report.md",
-    "preview_href": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/preview",
-    "download_href": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/download",
+    "preview_href": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/preview",
+    "download_href": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/download",
     "preview_type": "text",
     "downloaded_bytes": 638,
     "downloaded_sha256": "c5f6a61f0dd9d8dd1ca366aa1eb06d6403897aba4a09065aa09955eb110ccf12",

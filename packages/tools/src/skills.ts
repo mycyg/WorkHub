@@ -90,16 +90,20 @@ export function createSkillTool(root = skillsRoot): AnyToolSpec {
     description:
       "加载一个预设技能（交付物类型的库用法合同与模板）。涉及对应交付物时必须先加载再动手，库用法以技能内容为准。",
     schema: z.object({
-      id: z.string().min(1).describe("技能 id，如 docx-document / stat-charts")
+      id: z.string().min(1).optional().describe("技能 id，如 docx-document / stat-charts"),
+      skill: z.string().min(1).optional().describe("技能 id 的兼容别名")
+    }).refine((input) => Boolean(input.id ?? input.skill), {
+      message: "id is required"
     }),
     sideEffect: "none",
-    async execute(input: { id: string }) {
-      const content = loadSkillContent(input.id, root);
+    async execute(input: { id?: string; skill?: string }) {
+      const id = input.id ?? input.skill ?? "";
+      const content = loadSkillContent(id, root);
       if (!content) {
         const available = listSkills(root).map((skill) => skill.id).join(", ");
-        return errorToolResult(`未知技能 id: ${input.id}。可用技能: ${available || "(无)"}`);
+        return errorToolResult(`未知技能 id: ${id}。可用技能: ${available || "(无)"}`);
       }
-      return okToolResult(content, { data: { id: input.id } });
+      return okToolResult(content, { data: { id } });
     }
   } as AnyToolSpec;
 }

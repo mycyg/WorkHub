@@ -17,8 +17,9 @@ import {
   safeResolvePath
 } from "./sandbox.js";
 
-const pathInput = z.object({ path: z.string().default(".") });
+const pathInput = z.object({ path: z.string().default("."), description: z.string().optional() });
 const requiredPathInput = z.object({ path: z.string().min(1) });
+const readablePathInput = z.object({ path: z.string().min(1).optional(), description: z.string().optional() });
 
 function tool<TInput>(spec: ToolSpec<TInput>) {
   return spec;
@@ -45,6 +46,17 @@ async function listRelativeFiles(root: string, start: string, limit: number, acc
     }
   }
   return acc;
+}
+
+async function inferSingleInputFile(workdir: string) {
+  const inputs = safeResolvePath(workdir, "inputs");
+  try {
+    const files = (await listRelativeFiles(safeResolvePath(workdir), inputs, 10))
+      .filter((item) => !item.endsWith("/"));
+    return files.length === 1 ? files[0] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function crc32(buffer: Buffer) {
@@ -171,10 +183,14 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     tool({
       id: "read_file",
       description: "Read a UTF-8 text file inside the sandbox.",
-      schema: requiredPathInput,
+      schema: readablePathInput,
       sideEffect: "none",
       async execute(input, ctx) {
-        const target = safeResolvePath(ctx.workdir, input.path);
+        const requestedPath = input.path ?? await inferSingleInputFile(ctx.workdir);
+        if (!requestedPath) {
+          return errorToolResult("read_file requires path. Example: {\"path\":\"inputs/meeting-notes.md\"}");
+        }
+        const target = safeResolvePath(ctx.workdir, requestedPath);
         return okToolResult(await readFile(target, "utf8"));
       }
     }),

@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-13):**134 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统已 pilot-ready**；**R5.10-dry 已通过**：`pnpm qa:r5-10-dry` 在本机 PostgreSQL 16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download，并留 17 段 REST evidence / usage / ledger / confidence 证据。关键路径现卡在两个外部输入：`LLM_API_KEY`（开 R5.10 真 key 评估）与试运行人员（开 S1 Pilot Week）。
+> 状态(2026-06-13):**136 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统已 pilot-ready**；**R5.10-dry + R5.10-real 已通过**：dry 在本机 PG16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download；real 用 DeepSeek 真 provider 跑完 6 个 AgentRun，T1–T4 质量全达标、T5 升级、B1 预算护栏，真实成本 `0.142346 CNY`。关键路径现只剩试运行人员与 S1 Pilot Launch Gate。
 
 ---
 
@@ -32,8 +32,8 @@
 | R5.8 | ✅ | Browser smoke 已进 CI：`web-live-route-smoke` job 64 秒跑完 66 步 / 114 gates；首跑抓出 Linux CJK 行高裁切并修复（16 处行高 → 1.35）。 |
 | S1 序列 | active | **北极星迭代计划已立**：[s1-pilot-readiness-roadmap](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)，R5.9–R5.12 消三大差距（注册流/真实 LLM 验证/部署包 + 权限审计）后启动 Pilot Week；OQ-4 护城河走 pilot 数据驱动。 |
 | R5.9 | ✅ | Onboarding 已落：注册屏（昵称+locale+admin 口令）、登出、deep link 保持、第二用户切换；自动注册已删除；70 步 smoke 全过（P1-6 关闭）。 |
-| R5.10-pre | ✅ | Agent 能力强化已落：真·上下文压缩、tool_result 截断、工人合同 prompt、瞬态重试、`LLM_MAX_TOKENS_PER_STEP`、llm_review 五档接入 R0 置信度权重；agent 29 测全过。 |
-| R5.10 | dry ✅ / real planned | R5.10-dry 已落：正式 measured client + fake transport 写 usage/ledger，download SHA 与 drive version SHA 一致；真 key 评估待 `LLM_API_KEY`，详见后续 run plan。 |
+| R5.10-pre | ✅ | Agent 能力强化已落：真·上下文压缩、tool_result 截断、工人合同 prompt、HTTP/fetch-level 瞬态重试、`LLM_MAX_TOKENS_PER_STEP`、llm_review 五档接入 R0 置信度权重；agent 30 测全过。 |
+| R5.10 | ✅ | dry + true-key 全过：6 个真实 AgentRun，T1–T4 人工质量 4/4 达标，T5 信息不足不编造，B1 预算护栏升级，成本/ledger/confidence 全留证。 |
 | R5.11 | ✅ | Pilot 部署包已落：单镜像（API+Web 单源）+ compose 全栈自动迁移 + JSON 结构化日志 + DEPLOY.md + 备份脚本；CI `pilot-stack-smoke` 全绿，admin 认领自举（口令错误 403 fail-closed）。 |
 | R5.11.1 | ✅ | 沙箱能力库 + 预设技能：AI 工人可直接交付 Word/Excel/PPT/中文统计图表/数据分析/自验脚本；七技能合同防 API 幻觉，CI 容器内生成冒烟全过。 |
 | R5.12 | ✅ | 权限矩阵审计完成（P1-4 关闭）：79 路由全清点（业务路由已全 401 fail-closed），修复 audit 跨用户读 + permissions 治理面越权两洞，新增常驻路由 fail-closed 门。**S1 pilot-ready**。 |
@@ -209,12 +209,13 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-08-browser-smoke-ci-plan-2026-06-12.md` | **R5.8**:Browser smoke CI 化第一段，`web-live-route-smoke` job 64 秒跑 66 步并上传证据 artifact；首跑修复 Linux CJK 行高；五组拆分降级为维护性重构 | ✅ |
 | `s1-pilot-readiness-roadmap-2026-06-12.md` | **S1 北极星路线**:真实团队用核心闭环干一周活；现状盘点（闭环已真实现 + 三大差距）、六项成功指标、R5.9–R5.12+Pilot 序列、桌宠双轨、pilot 要回答的四个战略问题 | active |
 | `r5-09-onboarding-minimal-plan-2026-06-12.md` | **R5.9**:Onboarding 最小闭环，注册屏/登出/deep link 保持/第二用户切换，自动注册删除；70 步 smoke 与 `r5_9_onboarding_routes` gate 已落 | ✅ |
-| `r5-10-pre-agent-capability-hardening-plan-2026-06-12.md` | **R5.10-pre**:Agent 能力强化，5 处引擎短板全部补强（压缩/截断/工人 prompt/重试/llm_review 五档进 R0 置信度），agent 29 测与全链 lint 回归 | ✅ |
-| `r5-10-real-key-evaluation-run-plan-2026-06-13.md` | **R5.10 真 key 下一步**:R5.10-dry 之后的真实任务评估详细计划，锁定 T1-T5、secret 口径、ledger/confidence/预算护栏 gates 与报告回写动作 | planned |
+| `r5-10-pre-agent-capability-hardening-plan-2026-06-12.md` | **R5.10-pre**:Agent 能力强化，5 处引擎短板全部补强（压缩/截断/工人 prompt/HTTP+fetch-level 重试/llm_review 五档进 R0 置信度），agent 30 测与全链回归 | ✅ |
+| `r5-10-real-key-evaluation-run-plan-2026-06-13.md` | **R5.10 真 key 评估**:R5.10-dry 之后的真实任务评估已完成，T1-T5+B1、secret 口径、ledger/confidence/预算护栏 gates 与报告回写均落证 | ✅ |
 | `r5-11-pilot-deploy-package-plan-2026-06-12.md` | **R5.11**:Pilot 部署包已落，CI `pilot-stack-smoke` 三跑抓三真 bug（env 模板被 gitignore 吞/根路由 banner/admin 无法自举）后全绿；DEPLOY.md 十分钟部署 + 安全口径专节 | ✅ |
 | `r5-11-1-sandbox-libraries-and-skills-plan-2026-06-12.md` | **R5.11.1**:沙箱能力库 + 预设技能已落，镜像预装六库与 CJK 字体（pip 仍禁），七个 SKILL.md + `load_skill` fail-closed；CI 容器内真实生成 docx/xlsx/中文图表/pptx 冒烟通过 | ✅ |
 | `r5-12-permission-matrix-audit-plan-2026-06-12.md` | **R5.12**:权限矩阵审计（P1-4），79 路由全清点 + 修复 audit 跨用户读/permissions 越权两洞 + 常驻 fail-closed 路由门；S1 pilot-ready | ✅ |
-| `r5-10-real-llm-validation-plan-2026-06-12.md` | **R5.10**:真实 LLM 验证，R5.10-dry 已完成并留证；真 key 5 任务集、质量-成本-时延报告模板、OQ-2/3/7 校准仍待执行 | dry ✅ / real planned |
+| `r5-10-real-llm-validation-plan-2026-06-12.md` | **R5.10**:真实 LLM 验证已完成：dry + true-key 6-run 质量-成本-时延报告，OQ-2/3/7 已回写首批样本 | ✅ |
+| `s1-pilot-launch-gate-plan-2026-06-13.md` | **S1 Pilot Launch Gate**:R5.10-real 之后的启动前核验计划，锁定 deploy stack、dry/real smoke、backup、secret hygiene 与 operator loop | planned |
 | `s1-pilot-week-runbook-2026-06-12.md` | **S1 运营**:Pilot Week turnkey 手册，起飞前检查 / day-0 seed / 每日反馈回灌 / 六指标采集 / 周末报告模板 / S2 决策口径 | ready |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 

@@ -78,6 +78,15 @@ R5.11 竣工后确认：交付管线完整，但富格式交付物（docx/xlsx/p
 - 本机：`@workhub/tools` 7 测全过（注册表完整性/加载/fail-closed/防穿越）；typecheck、全包 test、`pnpm lint` 全链（cuu-r3 真实进程 smokes 已运行新 prompt 与工具注册）、release gate 全绿。
 - DEPLOY.md 新增 §3.1 交付能力面说明。
 
+### 4.1 R5.10-real 回灌修正（2026-06-13）
+
+真 provider 首跑暴露两个工具调用契约问题：
+
+- 工具注册表此前暴露给模型的 `input_schema` 只有 `{type:"object"}`，导致 DeepSeek 看不到 `write_file.path/content`、`read_file.path`、`load_skill.id` 等必填字段；现改为从 Zod schema 生成真实 JSON Schema，并新增回归门确认 `write_file` 的 required 字段会出现在 provider schema。
+- DeepSeek 偶尔把 `load_skill` 参数写成 `{skill:"markdown-report"}`，或在只有一个 `inputs/` 文件时给 `read_file` 传自然语言 description；现 `load_skill.skill` 作为 `id` 的安全别名，`read_file` 仅在 `inputs/` 恰好一个文件时安全推断，否则继续 fail-closed 要求显式 path。
+
+这些修正不扩大工具白名单、不允许路径逃逸、不允许依赖安装，只提升真模型遵循工具契约的成功率。
+
 ## 5. Handoff
 
 技能与库已就绪，R5.10 真 key 验证的任务集可直接覆盖富格式（如"生成周度统计图表 PPT"），让评估报告反映真实业务交付面。后续技能扩展按 pilot 反馈增补（技能目录是开放 SKILL.md 格式，社区技能可直接放入）。下一刀回到 S1 主线：R5.12 权限矩阵审计。

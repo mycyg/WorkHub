@@ -38,7 +38,7 @@ owner: workflow
 ### 0.3 一句话总览（截至本篇撰写）
 
 - **地基三决策已落定**（D-1 = 参考既有 Python/FastAPI 行为的 **TS-first 重写与演进** / D-2 PostgreSQL / D-3 LAN-first），原 PRD `[建议·待确认]` / `[开放]` 现已转 `[决策]`——OQ-1 关闭。
-- **命门级机制（置信度/风险/升级、对象合并、审批路由）的 R0 施工口径已完成**：OQ-2/OQ-3 v1 默认策略与责任人已落到 [`confidence-risk-escalation.md §0.1`](./02-ai-engine/confidence-risk-escalation.md#01-r0-v1-默认策略先施工后校准)，不再阻塞 R1；剩余是 R1 后基于真实 replay/eval 的校准与字段收口。
+- **命门级机制（置信度/风险/升级、对象合并、审批路由）的 R0 施工口径已完成**：OQ-2/OQ-3 v1 默认策略与责任人已落到 [`confidence-risk-escalation.md §0.1`](./02-ai-engine/confidence-risk-escalation.md#01-r0-v1-默认策略先施工后校准)，不再阻塞 R1；R5.10-real 已提供首批真实校准样本（T1–T4 人工质量 `4/4 >= 4`，T5 信息不足正确升级，B1 预算耗尽升级）。
 - **真正还要"拍板"的产品级问题集中在 OQ-5（桌宠人格/打扰边界）**；OQ-6 的 L2 首发 file-only 子类已落到 `FR-WORKER-008`，OQ-7 的 v0 默认配额已落到 `cost-governance.md`。
 - **文档落点复核（本次修订重点）**：原列为"待写"的 `05-clients/*`、`06-roadmap/*`、`dashboards-and-metrics.md` 与 P-COST 专篇**均已落盘**，相关开放问题的"无处落定"障碍解除。
 
@@ -68,7 +68,8 @@ owner: workflow
 | **机制已定（信号与算法）** | 四来源已锁，落在 [`confidence-risk-escalation.md §3`](./02-ai-engine/confidence-risk-escalation.md)：① AI 自评（辅，**只降不升**防过度自信）② `llm_review` 判分（主，现成零件 `auto_agent.py:544`，由二值升级为五档量表）③ 验收清单逐条命中率（主，`RequirementAcceptanceItem.status`，`models.py:464`）④ 历史校准（随数据，`CollaborationGraph.hit_rate` 的切片，Laplace 平滑）。PRD §8.2 建议"v1 以 ②③ 为主、① 为辅、④ 随数据积累接入"已被采纳。 |
 | **R0 默认（已落）** | `policy_version = confidence-risk-v0.1-r0-2026-06-08`；owner = WorkHub product owner（mycyg）+ workflow implementation steward；四来源权重 `review=0.50 / acceptance=0.35 / self=0.15`；置信档 `high≥0.85`、`medium∈[0.60,0.85)`、`low<0.60`；历史校准最小样本 `N=20`。 |
 | **现状基线（诚实标注）** | 今天 `auto_agent.py` 只有 `llm_review` 一个**二值**判分，失败一律 `status→ready` 转人工（`app/routers/auto.py:244`，`r.status = "ready"`），**没有连续置信度、没有风险维度、没有分级裁决**。这是 P1 旗舰的核心新增，非复述。 |
-| **建议** | R1 先按 R0 默认施工，不再等待“谁标定”拍板；R1 后用"升级精准度"度量（[PRD §13](../prd/2026-06-04-workhub-prd.md)）和 replay/eval 回测调参。任何调参必须新建 `policy_version` 并留审计。 |
+| **R5.10 首批样本** | 2026-06-13 R5.10-real 使用 DeepSeek 真 provider 跑完 T1–T5 + B1；T1–T4 人工质量 `4/4 >= 4`，均有 `llm_review` usage 与 `confidence_records`；B1 的 confidence verdict 为 `escalate`。证据见 [`r5-10-real-llm-validation-report-2026-06-13.md`](./05-clients/assets/audit/2026-06-13-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-13.md)。 |
+| **建议** | R1 先按 R0 默认施工，不再等待“谁标定”拍板；R5.10 首批样本支持继续沿用当前阈值进入 pilot，但样本量仍小，需用 Pilot Week 的真实 replay/eval 继续校准。任何调参必须新建 `policy_version` 并留审计。 |
 | **归属篇** | [`02-ai-engine/confidence-risk-escalation.md`](./02-ai-engine/confidence-risk-escalation.md)（算法）；字段收口到 [`data-model.md §7.3 ConfidenceRecord`](./01-architecture/data-model.md)。 |
 
 ---
@@ -82,7 +83,8 @@ owner: workflow
 | **机制已定（五维度 + 硬升档）** | 落在 [`confidence-risk-escalation.md §5`](./02-ai-engine/confidence-risk-escalation.md)：`reversibility`（可逆性，**有执行前快照 → 封顶 0.4**，与 §8 快照耦合）、`external`（对外性）、`monetary`（金额/合规）、`blast_radius`（影响人数/范围）、`domain_gate`（需专业资质判断——对应 [非目标"不做需资质的事"](./00-overview/vision-and-principles.md#6-非目标non-goals--v1-明确不做)，命中即强制升级）。聚合 `risk_score = 0.6·max + 0.4·mean`；`external/monetary/domain_gate` 任一为 1 → `risk_level` 直接 `high`（红线"必须人来拍板"）。 |
 | **风险与置信度正交** | 已确立：一件 AI 很有把握的事若高风险，**仍不能自动合并**（[PRD §14](../prd/2026-06-04-workhub-prd.md) / 宪法 5）。安全语义另见 [`security-and-permissions.md §6.3 风险门`](./01-architecture/security-and-permissions.md)（第二道闸，叠加在分层 permission 之上）。 |
 | **R0 默认（已落）** | 风险档 `low<0.30`、`medium∈[0.30,0.60)`、`high≥0.60`；`external=1` / `monetary=1` / `domain_gate=1` 直接 `high`。五维先等权输入，由 `max/mean` 聚合体现“单红线优先”。 |
-| **建议** | R1 先按 R0 默认施工；业务方后续只需要补“哪些动作必须人审”的黑名单与金额/合规关键词清单，作为 `domain_gate`/`monetary` 硬升档的配置输入。 |
+| **R5.10 首批样本** | T5 故意缺少国家/地区、公司类型、税期、币种、账册和授权；真实模型输出 blocker/handoff，没有编造税务结论。B1 低预算任务触发 `budget_exhausted` escalation，证明“不做不了还硬做”的风险路径可升级。 |
+| **建议** | R1 先按 R0 默认施工；业务方后续只需要补“哪些动作必须人审”的黑名单与金额/合规关键词清单，作为 `domain_gate`/`monetary` 硬升档的配置输入。Pilot Week 继续记录“确实该升级/误升级”的人工判定。 |
 | **归属篇** | [`02-ai-engine/confidence-risk-escalation.md §5`](./02-ai-engine/confidence-risk-escalation.md)；安全语义 [`security-and-permissions.md §6.3`](./01-architecture/security-and-permissions.md)。 |
 
 ---
@@ -144,7 +146,8 @@ owner: workflow
 | **机制已定** | ① **每个 AgentRun 必有硬预算上限**（[决策]，[PRD §8.1](../prd/2026-06-04-workhub-prd.md)）：现状常量 `MAX_TURNS=15`（`auto_agent.py:36`）/ `TOTAL_TIMEOUT_DEFAULT=5min`（`:37`）已是雏形，WorkHub 泛化为 `RunBudget`，新增 `max_tokens`/`max_cost`（[`agent-loop-and-tools.md §4.1`](./02-ai-engine/agent-loop-and-tools.md)）。② **provider 注册表**支持低风险任务路由更便宜模型（[`tech-stack-and-migration.md §4`](./01-architecture/tech-stack-and-migration.md)，现状 DeepSeek-via-Anthropic 硬编码两处 `AsyncAnthropic`，收进注册表）。③ 超预算→**结构化交接件 + 升级**（FR-WORKER-003），非静默截断。 |
 | **配额规则已补（更新）** | [`cost-governance.md`](./02-ai-engine/cost-governance.md) 已给 v0 默认：单 run `15 steps / 300s / 120k tokens / 5 CNY`，用户日 `500k tokens / 20 CNY`，团队日 `5M tokens / 200 CNY`，团队月 `50M tokens / 2000 CNY`。 |
 | **计入口径（已定）** | 正常 step、review、retry、compact、schema repair 均计入真实 run 成本；nightly eval 单独进 `scope.kind="eval"`，不污染用户/team 配额。 |
-| **建议** | v0 数值先作为可配置默认值上线，成本看板沉淀真实「每条已交付需求 token 成本」后再调参；调参只改 `BudgetPolicy`，不改 AgentLoop。 |
+| **R5.10 首批样本** | 2026-06-13 R5.10-real：6 个真实 run 共 `30103 tokens / 0.142346 CNY`；T1–T4 平均成功交付成本约 `0.028671 CNY`，远低于单 run v0 `5 CNY` 上限。该样本只覆盖短 file-only / 富格式任务，不能外推长任务。 |
+| **建议** | v0 数值先作为可配置默认值进入 pilot，不急于下调；成本看板沉淀真实「每条已交付需求 token 成本」后再调参。调参只改 `BudgetPolicy`，不改 AgentLoop。 |
 | **归属篇** | 预算裁决 [`cost-governance.md`](./02-ai-engine/cost-governance.md)；Agent 消费 [`agent-loop-and-tools.md §4`](./02-ai-engine/agent-loop-and-tools.md)；provider/路由 [`tech-stack-and-migration.md §4`](./01-architecture/tech-stack-and-migration.md)；看板呈现 [`dashboards-and-metrics.md`](./04-modules/dashboards-and-metrics.md)。 |
 
 ---
