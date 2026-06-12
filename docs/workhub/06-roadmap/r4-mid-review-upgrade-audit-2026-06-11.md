@@ -135,6 +135,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **回写状态（2026-06-11 R4.24）**：R4.24 已在 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md) 登记五组拆分目标：`nav-locale`、`intake-knowledge`、`proposal-actions`、`settings-cost-replay`、`route-states`。单体 42 步 smoke 暂保留 contact sheet 与 R4.24 gates；CI 化实现仍是 R5 前置项。
 
+**回写状态（2026-06-12 R5.8）**：P1-5 第一段关闭。`web-live-route-smoke` job 已进 `verify.yml`：GitHub Actions headless Chrome 真实跑 66 步 / 114 gates，端到端 64 秒，证据 artifact 上传；main 从此每次 push/PR 都有浏览器级回归门。首跑即抓出 Linux CJK 行高裁切缺陷（本机验收发现不了的类型）并修复。五组拆分（第二段）因单体 job 仅 64 秒，降级为维护性重构。详见 [`r5-08-browser-smoke-ci-plan-2026-06-12.md`](./r5-08-browser-smoke-ci-plan-2026-06-12.md)。
+
 ### P1-6 身份是 demo 残留：自动注册 "P0.5 Reviewer"
 
 Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Reviewer" })`（`apps/web/src/browser.ts:1176`）。LAN-first 可接受，但它绕过了 onboarding/画像（PJ-1）且写死英文昵称。R5 前需要最小 identify/onboarding 闭环（昵称 + locale + 角色），并把 demo 自动注册移除。
