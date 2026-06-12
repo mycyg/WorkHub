@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**130 篇文档已落盘**。R5.7 Knowledge grounding / dashboard health 已落（`/dashboard/health` 分层健康档位、通知 grounding 回链 knowledge search 与 replay、66 步 browser gate），R5.8 browser smoke CI 化已落（66 步进 GitHub Actions，64 秒）。**权威施工顺序已切换到 [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**：北极星 = 真实团队用核心闭环干一周活；序列 R5.9 onboarding → R5.10 真实 LLM 端到端 → R5.11 部署包 → R5.12 权限审计 → S1 Pilot Week；C-PET 双轨并行不冻结。R5.9–R5.12 全部竣工：onboarding、agent 强化、部署包、沙箱能力库+预设技能、**权限矩阵审计（修 2 个跨用户/越权洞 + 常驻 fail-closed 门）**。**系统已 pilot-ready**，剩余仅外部输入：`LLM_API_KEY`（开 R5.10 评估）与试运行人员（开 S1 Pilot Week）。
+> 状态(2026-06-12):**132 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统已 pilot-ready**：onboarding / agent 能力强化 / 部署包 / 沙箱能力库+预设技能 / 权限矩阵审计。关键路径现卡在两个外部输入：`LLM_API_KEY`（开 R5.10 真 key 评估，详见 [`r5-10-real-llm-validation-plan`](./06-roadmap/r5-10-real-llm-validation-plan-2026-06-12.md)）与试运行人员（开 S1 Pilot Week，turnkey 手册见 [`s1-pilot-week-runbook`](./06-roadmap/s1-pilot-week-runbook-2026-06-12.md)）。等待期可立即推进的 key 无关工作：R5.10-dry 全链彩排（证明管线，与质量解耦）。
 
 ---
 
@@ -213,6 +213,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-11-pilot-deploy-package-plan-2026-06-12.md` | **R5.11**:Pilot 部署包已落，CI `pilot-stack-smoke` 三跑抓三真 bug（env 模板被 gitignore 吞/根路由 banner/admin 无法自举）后全绿；DEPLOY.md 十分钟部署 + 安全口径专节 | ✅ |
 | `r5-11-1-sandbox-libraries-and-skills-plan-2026-06-12.md` | **R5.11.1**:沙箱能力库 + 预设技能已落，镜像预装六库与 CJK 字体（pip 仍禁），七个 SKILL.md + `load_skill` fail-closed；CI 容器内真实生成 docx/xlsx/中文图表/pptx 冒烟通过 | ✅ |
 | `r5-12-permission-matrix-audit-plan-2026-06-12.md` | **R5.12**:权限矩阵审计（P1-4），79 路由全清点 + 修复 audit 跨用户读/permissions 越权两洞 + 常驻 fail-closed 路由门；S1 pilot-ready | ✅ |
+| `r5-10-real-llm-validation-plan-2026-06-12.md` | **R5.10**:真实 LLM 验证（待 key），5 任务集（file-only+富格式）、R5.10-dry key 无关全链彩排、质量-成本-时延报告模板、OQ-2/3/7 校准 | planned |
+| `s1-pilot-week-runbook-2026-06-12.md` | **S1 运营**:Pilot Week turnkey 手册，起飞前检查 / day-0 seed / 每日反馈回灌 / 六指标采集 / 周末报告模板 / S2 决策口径 | ready |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

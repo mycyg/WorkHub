@@ -65,10 +65,10 @@ depends_on:
 ```
 R5.9   Onboarding 最小闭环（P1-6）          ← ✅ 已竣工（2026-06-12，70 步 smoke 全过）
 R5.10-pre Agent 能力强化                    ← ✅ 已竣工（2026-06-12）：压缩/截断/工人 prompt/重试/llm_review
-R5.10  真实 LLM 端到端验证与评估报告        ← "证明劳动力"；待 LLM_API_KEY
+R5.10  真实 LLM 端到端验证与评估报告        ← "证明劳动力"；待 LLM_API_KEY（详细计划已立 r5-10-real-llm-validation-plan，含 key 无关 R5.10-dry 彩排可先跑）
 R5.11  Pilot 部署包 + 最小可观测            ← ✅ 已竣工（2026-06-12，CI pilot-stack-smoke 全绿）
 R5.12  权限矩阵审计（P1-4）                ← ✅ 已竣工（2026-06-12）：修 2 洞 + 常驻 fail-closed 门 → 系统 pilot-ready
-S1     Pilot Week（人到位即启动；单人先行或三人直接上皆可）
+S1     Pilot Week（人到位即启动；turnkey 运营手册已立 s1-pilot-week-runbook）
 S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）、OQ-2/3 阈值校准、pilot 报告决定 S2
 ```
 
