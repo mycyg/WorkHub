@@ -25,6 +25,7 @@ jobs:
 
   web-live-route-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       WORKHUB_QA_CHROME_EXTRA_ARGS: "--no-sandbox --disable-dev-shm-usage"
     steps:
@@ -160,6 +161,7 @@ jobs:
 
   pilot-stack-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Prepare pilot env from template
