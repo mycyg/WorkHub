@@ -30,6 +30,7 @@ export type UserRepository = {
   getOrCreateActiveByNickname: (nickname: string, newCookieToken: string) => Promise<GetOrCreateUserResult>;
   rotateCookieToken: (userId: string, cookieToken: string) => Promise<UserAuthRow | null>;
   updatePreferredLocale?: (userId: string, locale: WorkHubLocale) => Promise<UserAuthRow | null>;
+  promoteToAdmin?: (userId: string) => Promise<UserAuthRow | null>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -91,6 +92,16 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
       const rows = await db
         .update(users)
         .set({ cookieToken, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning();
+      const user = rows[0] ?? null;
+      return user && user.deletedAt === null ? user : null;
+    },
+
+    async promoteToAdmin(userId) {
+      const rows = await db
+        .update(users)
+        .set({ isAdmin: true, updatedAt: new Date() })
         .where(eq(users.id, userId))
         .returning();
       const user = rows[0] ?? null;

@@ -108,6 +108,16 @@ class MemoryUsers implements UserRepository {
     return row;
   }
 
+  async promoteToAdmin(userId: string) {
+    const row = this.rows.find((candidate) => candidate.id === userId && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.isAdmin = true;
+    row.updatedAt = now;
+    return row;
+  }
+
   async updatePreferredLocale(userId: string, locale: WorkHubLocale) {
     const row = this.rows.find((candidate) => candidate.id === userId && candidate.deletedAt === null);
     if (!row) {
@@ -305,6 +315,49 @@ test("admin nickname claim accepts the configured secret", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Set-Cookie")?.includes(COOKIE_NAME), true);
+});
+
+test("a fresh user claims admin with the configured secret (pilot bootstrap)", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" }))));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    body: JSON.stringify({ nickname: "Pilot Admin", admin_secret: "let-me-in" }),
+    headers: { "Content-Type": "application/json" }
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json() as { is_admin: boolean };
+  assert.equal(body.is_admin, true);
+});
+
+test("a wrong claim secret fails closed instead of silently downgrading", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" }))));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    body: JSON.stringify({ nickname: "Sneaky", admin_secret: "wrong" }),
+    headers: { "Content-Type": "application/json" }
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("registering without a secret stays a regular user", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" }))));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    body: JSON.stringify({ nickname: "Member One" }),
+    headers: { "Content-Type": "application/json" }
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json() as { is_admin: boolean };
+  assert.equal(body.is_admin, false);
 });
 
 test("identity exposes and updates the bilingual locale preference", async () => {

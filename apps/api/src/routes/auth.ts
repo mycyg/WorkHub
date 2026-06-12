@@ -29,15 +29,31 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
     const payload = identifyRequestSchema.parse(await c.req.json());
     const nickname = validateNickname(payload.nickname);
     const current = await resolveOptionalCurrentUser(c, deps);
-    const { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
+    let { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
+
+    const secret = getAuthSettings(deps).auth.adminClaimSecret;
+    const provided = payload.admin_secret ?? "";
 
     if (user.isAdmin && current?.id !== user.id) {
-      const secret = getAuthSettings(deps).auth.adminClaimSecret;
-      const provided = payload.admin_secret ?? "";
       if (!secret || !constantTimeEquals(provided, secret)) {
         throw new HTTPException(403, {
           message: "该昵称是管理员账号，需要管理员口令才能在新设备登录"
         });
+      }
+    } else if (provided) {
+      // 认领管理员：显式提交口令即为认领意图，口令错误必须 fail-closed（403），不静默降级为普通用户。
+      if (!secret || !constantTimeEquals(provided, secret)) {
+        throw new HTTPException(403, { message: "管理员口令不正确" });
+      }
+      if (!user.isAdmin) {
+        if (!deps.users.promoteToAdmin) {
+          throw new HTTPException(501, { message: "当前运行时不支持管理员认领" });
+        }
+        const promoted = await deps.users.promoteToAdmin(user.id);
+        if (!promoted) {
+          throw new HTTPException(500, { message: "管理员认领失败" });
+        }
+        user = promoted;
       }
     }
 
