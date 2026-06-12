@@ -45,7 +45,7 @@ depends_on:
 
 | # | 差距 | 现状证据 | 消除于 |
 |---|---|---|---|
-| G1 | **Web 端无注册流**：boot 自动 `identify({nickname:"P0.5 Reviewer"})`，多真实用户无法各自登入 | `apps/web/src/browser.ts` boot 流；中期审查 P1-6 | R5.9 |
+| G1 | ~~**Web 端无注册流**~~ **已消除（R5.9）**：注册屏 + 登出 + deep link 保持，自动注册已删除 | [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./r5-09-onboarding-minimal-plan-2026-06-12.md) 竣工记录 | ✅ |
 | G2 | **真实 LLM 端到端从未被系统验证**：provider env 已在（`packages/config/src/env.ts:68-73`），但真 key 下的质量/成本/时延/预算护栏从未实测留证 | 全部 smoke 走 mock provider | R5.10 |
 | G3 | **部署包不存在**：`docker-compose.yml` 只有 PG/Redis；无 API/Web 服务编排、无 .env 模板、无 TS 栈 DEPLOY 文档、无结构化日志 | 仓库根目录 | R5.11 |
 
@@ -63,7 +63,7 @@ depends_on:
 ## 4. 迭代序列
 
 ```
-R5.9   Onboarding 最小闭环（P1-6）          ← S1 第一刀，已立 plan
+R5.9   Onboarding 最小闭环（P1-6）          ← ✅ 已竣工（2026-06-12，70 步 smoke 全过）
 R5.10  真实 LLM 端到端验证与评估报告        ← "证明劳动力"，矫正形象/劳动力失衡
 R5.11  Pilot 部署包 + 最小可观测（P2-4 第一段）
 R5.12  权限矩阵审计（P1-4，多用户同实例前的安全收口）

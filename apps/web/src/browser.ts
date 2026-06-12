@@ -8,6 +8,7 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
+import { renderOnboardingScreen } from "@workhub/ui";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -85,6 +86,9 @@ const noticeTimerState: RouteNoticeTimerState = {};
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
 let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
+type ShellIdentityUser = { nickname: string; isAdmin: boolean };
+let currentIdentity: ShellIdentityUser | undefined;
+let activeLocale: WorkHubLocale = "zh-CN";
 const liveEventTypes = Object.values(eventTypes);
 
 function setLiveMetric(key: string, value: unknown) {
@@ -160,9 +164,16 @@ function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserA
   return targets;
 }
 
-async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
-  const me = await client.me().catch(() => null);
-  return applyIdentityLocale(me, fallback);
+function identityUserFrom(identity: unknown): ShellIdentityUser | undefined {
+  if (!identity || typeof identity !== "object") {
+    return undefined;
+  }
+  const record = identity as Record<string, unknown>;
+  const nickname = typeof record["nickname"] === "string" ? record["nickname"].trim() : "";
+  if (!nickname) {
+    return undefined;
+  }
+  return { nickname, isAdmin: record["is_admin"] === true };
 }
 
 function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client: BrowserApiClient, signal?: AbortSignal) {
@@ -244,6 +255,17 @@ function bindGoldPathNavigation(
   let pendingApprovalActionId: string | undefined;
 
   shellRoot.addEventListener("click", async (event) => {
+    const logoutButton = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-wh-logout]") : null;
+    if (logoutButton) {
+      event.preventDefault();
+      try {
+        await client.logout();
+      } catch {
+        // cookie 已失效也视为登出成功，fail-closed 回注册屏。
+      }
+      showOnboardingScreen(client, locale);
+      return;
+    }
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
     if (reasonButton && (pendingReviewHref || pendingApprovalId)) {
       event.preventDefault();
@@ -677,7 +699,7 @@ async function refreshCurrentRouteFromLiveEvent(
 ): Promise<"refreshed" | "dirty-deferred"> {
   const match = currentRouteMatch();
   if (match.key === "home" && hasMountedReactRoute("home")) {
-    const result = await loadWebRoute(client, match, locale);
+    const result = await loadWebRoute(client, match, locale, currentIdentity);
     if (result.status === "ready" && result.match.key === "home") {
       const mounted = mountReactRouteIsland(result, locale, "sse-props");
       if (mounted.mounted) {
@@ -774,13 +796,14 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   if (!root) {
     return;
   }
+  activeLocale = locale;
   const renderId = ++activeRouteRenderId;
   const match = currentRouteMatch();
   clearReadyRouteBindings();
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(match, "loading", locale).html;
-  const result = await loadWebRoute(client, match, locale);
+  const result = await loadWebRoute(client, match, locale, currentIdentity);
   if (renderId !== activeRouteRenderId) {
     return;
   }
@@ -797,6 +820,98 @@ function clearReadyRouteBindings() {
   liveRuntime?.clearRefreshTimer();
 }
 
+function showOnboardingScreen(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  input: { errorText?: string; presetNickname?: string } = {}
+) {
+  if (!root) {
+    return;
+  }
+  clearReadyRouteBindings();
+  liveRuntime?.closeAllLiveEventSources();
+  unmountReactRouteIsland();
+  clearLiveDirtyMetrics();
+  currentIdentity = undefined;
+  activeLocale = locale;
+  setDocumentLocale(locale);
+  const targetRoute = `${window.location.pathname}${window.location.search}`;
+  root.innerHTML = renderOnboardingScreen({
+    locale,
+    targetRoute,
+    ...(input.errorText ? { errorText: input.errorText } : {})
+  }).html;
+  bindOnboardingScreen(client, locale, input.presetNickname);
+}
+
+function bindOnboardingScreen(client: BrowserApiClient, locale: WorkHubLocale, presetNickname?: string) {
+  if (!root) {
+    return;
+  }
+  const nicknameInput = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-nickname]");
+  if (nicknameInput && presetNickname) {
+    nicknameInput.value = presetNickname;
+  }
+  nicknameInput?.focus();
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r5-9-onboarding-locale-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextLocale = normalizeWorkHubLocale(option.getAttribute("data-r5-9-onboarding-locale-option"));
+      if (nextLocale === locale) {
+        return;
+      }
+      persistBrowserLocale(nextLocale);
+      showOnboardingScreen(client, nextLocale, {
+        ...(nicknameInput?.value.trim() ? { presetNickname: nicknameInput.value.trim() } : {})
+      });
+    });
+  }
+  root.querySelector<HTMLFormElement>("[data-r5-9-onboarding-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitOnboarding(client, locale);
+  });
+}
+
+async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const nicknameInput = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-nickname]");
+  const nickname = nicknameInput?.value.trim() ?? "";
+  if (!nickname) {
+    nicknameInput?.focus();
+    return;
+  }
+  const adminSecret = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-admin-secret]")?.value.trim() ?? "";
+  try {
+    const identity = await client.identify({
+      nickname,
+      ...(adminSecret ? { admin_secret: adminSecret } : {})
+    });
+    currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
+    persistBrowserLocale(locale);
+    void client.updatePreferences({ locale }).catch(() => undefined);
+    await renderCurrentRouteOrOnboard(client, locale);
+  } catch (error) {
+    const errorText = error instanceof Error && error.message
+      ? error.message
+      : goldPathT(locale, "runtime.actionFail");
+    showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
+  }
+}
+
+async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: WorkHubLocale) {
+  try {
+    await renderCurrentRoute(client, locale);
+  } catch (error) {
+    if (error instanceof WorkHubApiError && error.code === "not_identified") {
+      showOnboardingScreen(client, locale);
+      return;
+    }
+    throw error;
+  }
+}
+
 async function boot() {
   if (!root) {
     return;
@@ -808,18 +923,17 @@ async function boot() {
 
   try {
     const client = createApiClient({ baseUrl: "" });
-    locale = await resolveBootLocale(client, locale);
-    try {
-      await renderCurrentRoute(client, locale);
-    } catch (error) {
-      if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
-        throw error;
-      }
-      locale = applyIdentityLocale(await client.identify({ nickname: "P0.5 Reviewer" }), locale);
-      await renderCurrentRoute(client, locale);
+    const me = await client.me().catch(() => null);
+    if (me) {
+      locale = applyIdentityLocale(me, locale);
+      currentIdentity = identityUserFrom(me);
+      activeLocale = locale;
+      await renderCurrentRouteOrOnboard(client, locale);
+    } else {
+      showOnboardingScreen(client, locale);
     }
     window.addEventListener("popstate", () => {
-      void renderCurrentRoute(client, locale).catch((error) => renderFatalRouteError(locale, error));
+      void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
     });
     window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
   } catch (error) {

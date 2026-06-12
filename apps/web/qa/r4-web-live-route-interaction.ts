@@ -241,6 +241,14 @@ type BrowserAudit = {
     notificationGrounding: string | null;
     notificationEvidenceSearchRef: string | null;
     knowledgeSourceRef: string | null;
+    onboardingScreen: string | null;
+    onboardingLocale: string | null;
+    onboardingNicknameInput: string | null;
+    onboardingAdminToggle: string | null;
+    onboardingTarget: string | null;
+    currentUserChip: string | null;
+    currentUserAdmin: string | null;
+    logoutAction: string | null;
   };
   notice: {
     visible: boolean;
@@ -1594,15 +1602,15 @@ function proposalConflictsFromSurface(surface: GoldPathSurfaceVM) {
   return ((surface as GoldPathSurfaceVM & { proposal_conflicts?: ProposalConflict[] }).proposal_conflicts ?? []);
 }
 
-function identity(locale: WorkHubLocale) {
+function identity(locale: WorkHubLocale, nickname = "R4 Live Reviewer") {
   return {
     id: "r4-live-user",
-    nickname: "R4 Live Reviewer",
-    display_name: "R4 Live Reviewer",
+    nickname,
+    display_name: nickname,
     created: false,
     locale,
     preferences: { locale },
-    is_admin: true,
+    is_admin: nickname === "R4 Live Reviewer",
     availability_status: "available"
   };
 }
@@ -1637,6 +1645,7 @@ function sendApiError(response: ServerResponse, status: number, code: string, me
 
 function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestRecord[]) {
   let currentLocale: WorkHubLocale = "zh-CN";
+  let identifiedNickname: string | null = null;
   let sessionStage: "scope" | "confirm" = "scope";
   let driveQaState: DriveQaState = "initial";
   let driveCommentDraftCreated = false;
@@ -1720,7 +1729,11 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
-      sendJson(response, 200, identity(currentLocale));
+      if (!identifiedNickname) {
+        sendJson(response, 200, null);
+        return;
+      }
+      sendJson(response, 200, identity(currentLocale, identifiedNickname));
       return;
     }
     if (request.method === "PATCH" && url.pathname === "/api/auth/preferences") {
@@ -1736,7 +1749,15 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/auth/identify") {
-      sendJson(response, 200, { ...identity(currentLocale), created: true });
+      requestRecord.body = await requestBody(request);
+      const body = JSON.parse(requestRecord.body || "{}") as { nickname?: string };
+      identifiedNickname = body.nickname?.trim() || "R4 Live Reviewer";
+      sendJson(response, 200, { ...identity(currentLocale, identifiedNickname), created: true });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+      identifiedNickname = null;
+      sendJson(response, 200, { ok: true });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/attention") {
@@ -2616,7 +2637,15 @@ function auditExpression() {
       healthSignalCount: String(document.querySelectorAll("[data-r5-7-health-signal]").length),
       notificationGrounding: document.querySelector("[data-r5-7-notification-grounding]") ? "true" : "false",
       notificationEvidenceSearchRef: document.querySelector("[data-r5-7-notification-evidence-ref='knowledge_search']")?.getAttribute("href") || null,
-      knowledgeSourceRef: document.querySelector("[data-r5-7-knowledge-source-ref]")?.getAttribute("data-r5-7-knowledge-source-ref") || null
+      knowledgeSourceRef: document.querySelector("[data-r5-7-knowledge-source-ref]")?.getAttribute("data-r5-7-knowledge-source-ref") || null,
+      onboardingScreen: document.querySelector("[data-r5-9-onboarding]") ? "true" : "false",
+      onboardingLocale: document.querySelector("[data-r5-9-onboarding]")?.getAttribute("data-r5-9-onboarding-locale") || null,
+      onboardingNicknameInput: document.querySelector("[data-r5-9-onboarding-nickname]") ? "true" : "false",
+      onboardingAdminToggle: document.querySelector("[data-r5-9-onboarding-admin]") ? "true" : "false",
+      onboardingTarget: document.querySelector("[data-r5-9-onboarding-target]")?.getAttribute("data-r5-9-onboarding-target") || null,
+      currentUserChip: document.querySelector("[data-wh-current-user]")?.getAttribute("data-wh-current-user") || null,
+      currentUserAdmin: document.querySelector("[data-wh-current-user]")?.getAttribute("data-wh-current-user-admin") || null,
+      logoutAction: document.querySelector("[data-wh-logout]") ? "true" : "false"
     };
     const noticeElement = document.querySelector("[data-wh-app-notice]");
     const noticeVisible = Boolean(noticeElement && !noticeElement.hasAttribute("hidden"));
@@ -2992,7 +3021,21 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   const steps: StepReport[] = [];
 
   await setViewport(cdp, desktop);
-  await navigate(cdp, `${baseUrl}/`, "ready");
+  await navigate(cdp, `${baseUrl}/`, "onboarding");
+  await clickSelector(cdp, "[data-r5-9-onboarding-locale-option=\"zh-CN\"]");
+  await waitFor<string>(
+    cdp,
+    "onboarding zh locale",
+    "document.querySelector('[data-r5-9-onboarding]')?.getAttribute('data-r5-9-onboarding-locale') || ''",
+    (value) => value === "zh-CN"
+  );
+  steps.push(await captureStep(cdp, { id: "00-onboarding-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "onboarding" }));
+
+  await setViewport(cdp, mobile);
+  steps.push(await captureStep(cdp, { id: "00a-onboarding-zh-mobile-no-overflow", url: `${baseUrl}/`, viewport: mobile, expectedStatus: "onboarding" }));
+  await setViewport(cdp, desktop);
+
+  await submitOnboardingForm(cdp, "R4 Live Reviewer");
   steps.push(await captureStep(cdp, { id: "01-home-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
   await waitFor<BrowserAudit>(
@@ -3301,7 +3344,40 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
   steps.push(await captureStep(cdp, { id: "18-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
 
+  await navigate(cdp, `${baseUrl}/approvals`, "ready");
+  await clickSelector(cdp, "[data-wh-logout]");
+  await waitFor<string>(
+    cdp,
+    "logout -> onboarding",
+    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
+    (value) => value === "onboarding"
+  );
+  steps.push(await captureStep(cdp, { id: "19-logout-onboarding-en-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "onboarding" }));
+
+  await submitOnboardingForm(cdp, "Pilot Two");
+  steps.push(await captureStep(cdp, { id: "19a-second-user-deeplink-en-desktop", url: `${baseUrl}/approvals`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "approvals" }));
+
   return steps;
+}
+
+async function submitOnboardingForm(cdp: CdpClient, nickname: string) {
+  const filled = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector("[data-r5-9-onboarding-nickname]");
+    const form = document.querySelector("[data-r5-9-onboarding-form]");
+    if (!input || !form) return false;
+    input.value = ${JSON.stringify(nickname)};
+    form.requestSubmit();
+    return true;
+  })()`);
+  if (!filled) {
+    throw new Error("Onboarding form not found for scripted registration");
+  }
+  await waitFor<string>(
+    cdp,
+    `register ${nickname} -> ready`,
+    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
+    (value) => value === "ready"
+  );
 }
 
 function requestProof(requests: ApiRequestRecord[]) {
@@ -3346,6 +3422,19 @@ function requestProof(requests: ApiRequestRecord[]) {
     notificationMarkAllRead: requests.some((request) => request.method === "POST" && request.pathname === "/api/notifications/read-all"),
     notificationDismiss: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationMeetingId}/dismiss`),
     notificationComplete: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationDriveId}/complete`),
+    identifyRegistration: requests.some((request) =>
+      request.method === "POST" &&
+      request.pathname === "/api/auth/identify" &&
+      typeof request.body === "string" &&
+      request.body.includes("R4 Live Reviewer")
+    ),
+    identifySecondUser: requests.some((request) =>
+      request.method === "POST" &&
+      request.pathname === "/api/auth/identify" &&
+      typeof request.body === "string" &&
+      request.body.includes("Pilot Two")
+    ),
+    logout: requests.some((request) => request.method === "POST" && request.pathname === "/api/auth/logout"),
     health: requests.some((request) => request.pathname === "/api/pages/health" && request.locale === "en-US"),
     knowledgeSourceRef: requests.some((request) =>
       request.method === "POST" &&
@@ -3394,6 +3483,8 @@ function requestProof(requests: ApiRequestRecord[]) {
       notificationMarkAllRead: count("/api/notifications/read-all", "POST"),
       notificationDismiss: countMatch(/^\/api\/notifications\/[^/]+\/dismiss$/u, "POST"),
       notificationComplete: countMatch(/^\/api\/notifications\/[^/]+\/complete$/u, "POST"),
+      identify: count("/api/auth/identify", "POST"),
+      logout: count("/api/auth/logout", "POST"),
       health: count("/api/pages/health"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
@@ -3885,6 +3976,50 @@ async function main() {
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
+      r5_9_onboarding_routes:
+        proof.identifyRegistration &&
+        proof.identifySecondUser &&
+        proof.logout &&
+        proof.counts.identify === 2 &&
+        proof.counts.logout === 1 &&
+        steps.some((step) =>
+          step.id === "00-onboarding-zh-desktop" &&
+          step.audit.status === "onboarding" &&
+          step.audit.routeData.onboardingScreen === "true" &&
+          step.audit.routeData.onboardingLocale === "zh-CN" &&
+          step.audit.routeData.onboardingNicknameInput === "true" &&
+          step.audit.routeData.onboardingAdminToggle === "true" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "00a-onboarding-zh-mobile-no-overflow" &&
+          step.audit.status === "onboarding" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "01-home-zh-desktop" &&
+          step.audit.routeData.currentUserChip === "R4 Live Reviewer" &&
+          step.audit.routeData.logoutAction === "true"
+        ) &&
+        steps.some((step) =>
+          step.id === "19-logout-onboarding-en-desktop" &&
+          step.audit.status === "onboarding" &&
+          step.audit.routeData.onboardingLocale === "en-US" &&
+          step.audit.routeData.onboardingTarget === "/approvals" &&
+          step.audit.locationHash === "" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "19a-second-user-deeplink-en-desktop" &&
+          step.audit.status === "ready" &&
+          step.audit.pathname === "/approvals" &&
+          step.audit.routeComponent === "approvals" &&
+          step.audit.routeData.currentUserChip === "Pilot Two" &&
+          step.audit.routeData.currentUserAdmin === "false"
+        ),
       r4_11_route_component_source_truth: steps
         .filter((step) => step.audit.productShell && step.audit.status === "ready" && !["intake", "knowledge"].includes(step.audit.routeComponent ?? ""))
         .every((step) => step.audit.routeComponentSource === "page-vm"),
@@ -4047,7 +4182,7 @@ async function main() {
       r4_15_settings_locale_persistence:
         proof.localePatch &&
         proof.localePatchFailureArmed &&
-        proof.counts.preferencePatch === 2 &&
+        proof.counts.preferencePatch === 4 &&
         proof.counts.preferenceFailureArmed === 1 &&
         steps.some((step) =>
           step.id === "13-settings-en-desktop-route-component" &&
@@ -4445,7 +4580,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 66,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 70,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4497,7 +4632,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 66,
+      r4_22_no_new_smoke_sprawl: steps.length === 70,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4546,9 +4681,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 66,
+      r4_23_no_new_smoke_sprawl: steps.length === 70,
       r4_24_no_hash_write:
-        steps.length === 66 &&
+        steps.length === 70 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -4584,7 +4719,7 @@ async function main() {
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
-        proof.counts.approvals === 3 &&
+        proof.counts.approvals === 5 &&
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
         proof.counts.drive === 6 &&
@@ -4615,7 +4750,7 @@ async function main() {
         proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
         proof.counts.replay === 1 &&
-        proof.counts.preferencePatch === 2 &&
+        proof.counts.preferencePatch === 4 &&
         proof.counts.preferenceFailureArmed === 1 &&
         proof.counts.qaEmit === 4 &&
         proof.counts.sseProposal === 1 &&
@@ -4662,6 +4797,7 @@ async function main() {
         `- R5.5 Meeting insight to draft: ${String(gates.r5_5_meeting_insight_to_draft)}`,
         `- R5.6 Schedule/Notify routes: ${String(gates.r5_6_schedule_notify_routes)}`,
         `- R5.7 Health/Grounding routes: ${String(gates.r5_7_health_grounding_routes)}`,
+        `- R5.9 Onboarding routes: ${String(gates.r5_9_onboarding_routes)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

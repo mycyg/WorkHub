@@ -1,7 +1,7 @@
 # R4.5 Web Live Route Interaction Smoke
 
 - ok: true
-- steps: 66
+- steps: 70
 - path nav clicks: true
 - history back/forward: true
 - locale toggle reload: true
@@ -14,6 +14,7 @@
 - R5.5 Meeting insight to draft: true
 - R5.6 Schedule/Notify routes: true
 - R5.7 Health/Grounding routes: true
+- R5.9 Onboarding routes: true
 - R4.11 source truth: true
 - R4.11 VM/DOM match: true
 - R4.14 session/knowledge endpoints: true

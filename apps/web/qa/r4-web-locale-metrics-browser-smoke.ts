@@ -325,6 +325,40 @@ async function waitFor<T>(cdp: CdpClient, label: string, expression: string, pre
   throw new Error(`Timed out waiting for ${label}; last value=${JSON.stringify(last)}`);
 }
 
+
+async function registerThroughOnboarding(cdp: CdpClient, baseUrl: string, nickname: string) {
+  await cdp.send("Page.navigate", { url: `${baseUrl}/` });
+  await waitFor<string>(
+    cdp,
+    "boot -> onboarding/ready",
+    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
+    (value) => value === "onboarding" || value === "ready"
+  );
+  const status = await cdp.evaluate<string>(
+    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''"
+  );
+  if (status === "ready") {
+    return;
+  }
+  const filled = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector("[data-r5-9-onboarding-nickname]");
+    const form = document.querySelector("[data-r5-9-onboarding-form]");
+    if (!input || !form) return false;
+    input.value = ${JSON.stringify(nickname)};
+    form.requestSubmit();
+    return true;
+  })()`);
+  if (!filled) {
+    throw new Error("Onboarding form not found for scripted registration");
+  }
+  await waitFor<string>(
+    cdp,
+    `register ${nickname} -> ready`,
+    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
+    (value) => value === "ready"
+  );
+}
+
 async function navigate(cdp: CdpClient, url: string, expectedRouteKey: string) {
   await cdp.send("Page.navigate", { url });
   await waitFor<BrowserAudit>(
@@ -473,6 +507,7 @@ async function runBrowserScenario(cdp: CdpClient, baseUrl: string, seed: R4WebLi
   const steps: StepReport[] = [];
 
   await setViewport(cdp, desktop);
+  await registerThroughOnboarding(cdp, baseUrl, "P0.5 Reviewer");
   await navigate(cdp, `${baseUrl}/workitems/${ids.workItemId}`, "workitem");
   steps.push(await captureStep(cdp, {
     id: "01-workitem-zh-desktop-locale-metrics",

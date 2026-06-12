@@ -1,7 +1,7 @@
 ---
 module: R5-onboarding-minimal
 layer: C-WEB / P-IDENTITY / API / QA
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -71,6 +71,26 @@ depends_on:
 - browser smoke：注册屏双语四态、deep link 经注册后保持、登出后 fail-closed、第二用户注册成功、无溢出，现有 66 步全回归；
 - `pnpm qa:r2-release-gate`、`git diff --check`、secret scan。
 
-## 6. Handoff
+## 6. 竣工记录
 
-R5.9 完成后进入 R5.10 真实 LLM 端到端验证（S1 序列第二刀，详见 S1 roadmap §4）。
+状态：✅ completed（2026-06-12）
+
+落地范围：
+
+- **注册屏**：新增 `packages/ui/src/onboarding.ts`（`renderOnboardingScreen`），昵称 + 中/英 locale 选择 + 折叠的管理员口令项；双语固定文案自带；带 `data-r4-web-route-status="onboarding"` 与 `data-r5-9-onboarding-*` 全套标记；卡片显示"完成后将打开 <deep link>"承诺。
+- **boot 改造**：`apps/web/src/browser.ts` 删除 `identify({nickname:"P0.5 Reviewer"})` 自动注册；`me()` 为空即渲染注册屏（fail-closed）；提交成功后保持 URL 不变直接进原目标路由（deep link 保持）；管理员口令错误时服务端人话错误内联呈现并保留已填昵称；locale 切换在注册卡上即时生效并在注册成功后 `PATCH /api/auth/preferences` 持久化。
+- **当前用户可见**：product shell topbar 新增用户 chip（昵称 + admin 标签）与"退出"按钮（`data-wh-logout`）；登出走已有 `POST /api/auth/logout`（cookie 轮换 + 设备吊销），回注册屏。
+- **API/client**：`POST /api/auth/logout` 本就存在且有测试（计划范围缩水的好消息）；本步补齐 api-client `logout()` 与 OpenAPI 登记。
+- **QA 适配**：主 smoke 改为脚本化注册——首访见注册屏（zh/EN 切换证明）、注册进入 home、尾段在 `/approvals` 登出→第二用户 "Pilot Two" 注册→deep link 保持回 `/approvals`、用户 chip 切换为新昵称；新增 `r5_9_onboarding_routes` gate 与 4 个步骤（66→70）。
+- **远端 smoke 同步改造**：pg-seed / redis-sse / locale-metrics 三个远端 Linux smoke 的浏览器段补 `registerThroughOnboarding()`（与主 smoke 同构选择器）。**已知限制**：本机无 PG/Redis，三者本轮仅 typecheck 级验证，待下次远端 Linux 验证窗口实跑回归。
+
+验收证据：
+
+- `pnpm typecheck` 全绿、`pnpm test` 全包 0 fail（ui 63 含注册屏/用户 chip 新测试）
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：**70 步 / 115 gates 全 true**，新增 `r5_9_onboarding_routes=true`；request proof：identify ×2（"R4 Live Reviewer" 与 "Pilot Two"）、logout ×1、注册附带 preferences PATCH（2→4）
+- 截图：`00-onboarding-zh-desktop.png`、`00a-onboarding-zh-mobile-no-overflow.png`、`19-logout-onboarding-en-desktop.png`、`19a-second-user-deeplink-en-desktop.png`
+- 安全口径不变：无密码/OAuth（LAN-first D-3）、admin 口令错误 403 fail-closed、未识别状态不渲染任何 Page VM 数据
+
+## 7. Handoff
+
+R5.9 完成后进入 **R5.10 真实 LLM 端到端验证**（S1 序列第二刀，详见 S1 roadmap §4）：真 key 跑全链、实测预算护栏与成本计量、产出质量-成本-时延评估报告。

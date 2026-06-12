@@ -103,6 +103,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async identify() {
       throw new Error("not needed");
     },
+    async logout() {
+      return { ok: true };
+    },
     async me() {
       throw new Error("not needed");
     },

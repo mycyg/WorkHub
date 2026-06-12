@@ -144,6 +144,8 @@ Web boot 遇到 `not_identified` 自动 `client.identify({ nickname: "P0.5 Revie
 
 **回写状态（2026-06-12 S1）**：已立 [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./r5-09-onboarding-minimal-plan-2026-06-12.md)（S1 北极星序列第一刀）：注册屏 + 登出 + 删自动 identify，QA smoke 走脚本化注册；不做密码/OAuth（LAN-first 信任模型不变）。
 
+**回写状态（2026-06-12 R5.9）**：P1-6 关闭。注册屏（昵称+locale+admin 口令）、product shell 用户 chip 与登出、deep link 保持、第二用户切换全部落地，"P0.5 Reviewer" 自动注册已从 boot 删除；70 步 browser smoke（`r5_9_onboarding_routes`）与 ui 单测覆盖。
+
 ### P1-7 locale 切换 = 全页 reload
 
 `bindLocaleSwitch` 成功后 `window.location.reload()`（`apps/web/src/browser.ts:179-187`）。配合 P0-4 的连接重建，切语言的成本是全站冷启。React 化后应是 state 切换；短期可接受，但不要再往 reload 语义上挂新 gate。

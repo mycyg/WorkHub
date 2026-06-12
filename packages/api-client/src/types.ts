@@ -162,6 +162,7 @@ export type WorkHubApiClient = {
   health: () => Promise<HealthResponse>;
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
+  logout: () => Promise<{ ok: boolean }>;
   me: () => Promise<IdentityResponse | null>;
   updatePreferences: (payload: UpdateUserPreferencesRequest) => Promise<IdentityResponse>;
   notifications: () => Promise<NotificationList>;

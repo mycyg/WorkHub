@@ -12,6 +12,12 @@ export function getOpenApiDocument() {
           summary: "Check daemon health"
         }
       },
+      "/api/auth/logout": {
+        post: {
+          tags: ["auth"],
+          summary: "Rotate the cookie token and clear the session cookie"
+        }
+      },
       "/api/auth/preferences": {
         patch: {
           tags: ["auth"],

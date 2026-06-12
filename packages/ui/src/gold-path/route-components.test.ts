@@ -6,6 +6,9 @@ import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, 
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
+import { renderOnboardingScreen } from "../onboarding.js";
+import { renderWebProductShell } from "./product-shell.js";
+import { renderGoldPathSurface } from "./render.js";
 import {
   createCostReactRouteComponent,
   createHomeReactRouteComponent,
@@ -1389,4 +1392,53 @@ test("R5.7 knowledge route component shows the notification search context strip
   assert.equal(withRef.html.includes('data-r5-7-knowledge-source-ref="notification:98000000-0000-4000-8000-000000000010"'), true);
   assert.equal(withRef.html.includes("来自通知的检索上下文"), true);
   assert.equal(withoutRef.html.includes("data-r5-7-knowledge-source-ref"), false);
+});
+
+test("R5.9 onboarding screen renders bilingual registration card with deep link promise", () => {
+  const zh = renderOnboardingScreen({ locale: "zh-CN", targetRoute: "/approvals" });
+  const en = renderOnboardingScreen({ locale: "en-US", errorText: "该昵称是管理员账号，需要管理员口令才能在新设备登录" });
+
+  assert.equal(zh.html.includes('data-r4-web-route-status="onboarding"'), true);
+  assert.equal(zh.html.includes('data-r5-9-onboarding="true"'), true);
+  assert.equal(zh.html.includes('data-r5-9-onboarding-locale="zh-CN"'), true);
+  assert.equal(zh.html.includes("报到后开始干活"), true);
+  assert.equal(zh.html.includes('data-r5-9-onboarding-nickname="true"'), true);
+  assert.equal(zh.html.includes('data-r5-9-onboarding-admin-secret="true"'), true);
+  assert.equal(zh.html.includes('data-r5-9-onboarding-target="/approvals"'), true);
+  assert.equal(zh.html.includes("data-r5-9-onboarding-error"), false);
+
+  assert.equal(en.html.includes("Sign in to get to work"), true);
+  assert.equal(en.html.includes('data-r5-9-onboarding-error="true"'), true);
+  assert.equal(en.html.includes("管理员口令才能在新设备登录"), true);
+  assert.equal(en.html.includes("data-r5-9-onboarding-target"), false);
+});
+
+test("R5.9 product shell shows the current user chip with logout and admin tag", () => {
+  const vm = surfaceVm();
+  const rendered = renderGoldPathSurface(vm, "web", { locale: "zh-CN" });
+  const withUser = renderWebProductShell(rendered, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/",
+    locale: "zh-CN",
+    linkMode: "path",
+    renderActivePanelOnly: true,
+    currentUser: { nickname: "小拓", isAdmin: true }
+  });
+  const withoutUser = renderWebProductShell(rendered, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/",
+    locale: "en-US",
+    linkMode: "path",
+    renderActivePanelOnly: true
+  });
+
+  assert.equal(withUser.html.includes('data-wh-current-user="小拓"'), true);
+  assert.equal(withUser.html.includes('data-wh-current-user-admin="true"'), true);
+  assert.equal(withUser.html.includes('data-wh-logout="true"'), true);
+  assert.equal(withUser.html.includes("退出"), true);
+  assert.equal(withUser.html.includes("管理员"), true);
+  assert.equal(withoutUser.html.includes("data-wh-current-user"), false);
+  assert.equal(withoutUser.html.includes("data-wh-logout"), false);
 });

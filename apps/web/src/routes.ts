@@ -23,6 +23,7 @@ import {
   type GoldPathAppShell,
   type GoldPathRenderedPage,
   type WebProductMetric,
+  type WebProductShellCurrentUser,
   type WebProductShellPage,
   type WebProductShellSurface,
   type WebRouteComponent,
@@ -939,7 +940,8 @@ export function renderWebRouteState(
 function renderReadyRoute(
   surface: WebRouteSurface,
   match: WebRouteMatch,
-  locale: WorkHubLocale
+  locale: WorkHubLocale,
+  shellUser?: WebProductShellCurrentUser
 ): WebRouteReadyResult {
   const rendered = shellSurfaceFor(surface, match, locale);
   const routeComponents = routeComponentsForSurface(surface, locale);
@@ -951,7 +953,8 @@ function renderReadyRoute(
     locale,
     linkMode: "path",
     routeComponents,
-    renderActivePanelOnly: true
+    renderActivePanelOnly: true,
+    currentUser: shellUser
   });
   const routeTreeNode = routeTreeNodeFor(match);
   return {
@@ -966,7 +969,8 @@ function renderReadyRoute(
 export async function loadWebRoute(
   client: WorkHubApiClient,
   match: WebRouteMatch,
-  locale: WorkHubLocale
+  locale: WorkHubLocale,
+  shellUser?: WebProductShellCurrentUser
 ): Promise<WebRouteLoadResult> {
   try {
     const result = await loadRouteSurface(client, match, locale);
@@ -978,7 +982,7 @@ export async function loadWebRoute(
         ...stateInput
       });
     }
-    return renderReadyRoute(result, match, locale);
+    return renderReadyRoute(result, match, locale, shellUser);
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
       throw error;

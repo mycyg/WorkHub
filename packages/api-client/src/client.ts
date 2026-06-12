@@ -199,6 +199,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     me: () => request<IdentityResponse | null>("/api/auth/me"),
+    logout: () =>
+      request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
     updatePreferences: (payload) =>
       request<IdentityResponse>("/api/auth/preferences", {
         method: "PATCH",
