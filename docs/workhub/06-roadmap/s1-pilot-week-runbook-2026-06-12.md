@@ -13,7 +13,7 @@ depends_on:
 # S1 Pilot Week 运营手册（turnkey）
 
 > 目的：把"人到位即启动"从口号变成 turnkey。本篇是主持人(你)的逐步操作手册——从起飞前检查到周末报告，全程不需要再做产品/工程决策。
-> 前置：系统已 pilot-ready（S1 R5.9–R5.12 全竣工）。唯一两个外部输入：`LLM_API_KEY`(真 AI)、1–3 名真实使用者。
+> 前置：系统已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 已通过，可作为起飞前自检；唯一两个外部输入：`LLM_API_KEY`(真 AI)、1–3 名真实使用者。
 
 ## 0. 这一周要回答什么（贴墙上）
 
@@ -26,7 +26,7 @@ depends_on:
 
 - [ ] 一台 LAN 机器，Docker 24+，按 [`DEPLOY.md`](../../DEPLOY.md) 起栈，`docker compose -f docker-compose.pilot.yml ps` 全 healthy。
 - [ ] `.env.pilot` 填了强 `COOKIE_SECRET`、`ADMIN_CLAIM_SECRET`、`LLM_API_KEY`。
-- [ ] 跑一次 [`R5.10`](./r5-10-real-llm-validation-plan-2026-06-12.md) 的 **R5.10-dry 彩排**（key 无关）确认管线通；再用真 key 手动提一个小任务确认 AI 真能产出。
+- [ ] 跑一次 `pnpm qa:r5-10-dry`（key 无关）确认管线通；基线证据见 `2026-06-13-r5-10-dry-agent-pipeline`。再用真 key 手动提一个小任务确认 AI 真能产出。
 - [ ] 浏览器开 `http://<ip>:8787/`，管理员用 `ADMIN_CLAIM_SECRET` 认领 admin，建 1–2 个真实项目。
 - [ ] `bash scripts/ops/backup-pg.sh` 跑通一次，确认备份可用。
 - [ ] 准备一个反馈收集入口（一张共享表/一个群即可）。

@@ -1,0 +1,469 @@
+{
+  "ok": true,
+  "generated_at": "2026-06-12T16:38:51.249Z",
+  "module": "R5.10-dry",
+  "keyless": true,
+  "provider": {
+    "default_provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "live_key_required": false,
+    "fake_transport_calls": [
+      {
+        "via": "stream",
+        "source": "agent_step",
+        "model": "deepseek-v4-flash",
+        "max_tokens": 8192,
+        "content_blocks": 1
+      },
+      {
+        "via": "stream",
+        "source": "agent_step",
+        "model": "deepseek-v4-flash",
+        "max_tokens": 8192,
+        "content_blocks": 1
+      },
+      {
+        "via": "create",
+        "source": "review",
+        "model": "deepseek-v4-flash",
+        "max_tokens": 300,
+        "content_blocks": 1
+      }
+    ]
+  },
+  "entities": {
+    "session_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+    "work_item_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+    "agent_run_id": "1de84abb-046a-4ef4-a489-f5041c51cad2",
+    "proposal_id": "61c28d5d-a246-45a2-90ea-be005c20d378",
+    "merge_snapshot_id": "f78c842d-101a-4394-b210-c1575669241a",
+    "accepted_change_id": "e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd",
+    "drive_version_id": "2243a491-7d08-4053-b6f3-28107de37c64"
+  },
+  "rest_evidence": [
+    {
+      "method": "GET",
+      "path": "/api/pages/cost?locale=en-US",
+      "status": 200,
+      "response_bytes": 2316
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2846
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/daedaabe-38a1-4508-bca0-1a6a60796738/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2207
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 513
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2558
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/daedaabe-38a1-4508-bca0-1a6a60796738?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2558
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/agent-runs",
+      "status": 202,
+      "response_bytes": 1026
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/1de84abb-046a-4ef4-a489-f5041c51cad2",
+      "status": 200,
+      "response_bytes": 2626
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/proposals",
+      "status": 200,
+      "response_bytes": 2785
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/61c28d5d-a246-45a2-90ea-be005c20d378?locale=en-US",
+      "status": 200,
+      "response_bytes": 3021
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/61c28d5d-a246-45a2-90ea-be005c20d378/review",
+      "status": 200,
+      "response_bytes": 2353
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/61c28d5d-a246-45a2-90ea-be005c20d378/merge",
+      "status": 200,
+      "response_bytes": 4765
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/daedaabe-38a1-4508-bca0-1a6a60796738?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 7459
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/preview",
+      "status": 200,
+      "response_bytes": 976
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/download",
+      "status": 200,
+      "response_bytes": 638
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/1de84abb-046a-4ef4-a489-f5041c51cad2/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 8017
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/cost?locale=en-US",
+      "status": 200,
+      "response_bytes": 2457
+    }
+  ],
+  "db_rows": {
+    "agent_runs": 1,
+    "work_items": 1,
+    "proposals": 1,
+    "accepted_deliverable_changes": 1,
+    "project_drive_versions": 1,
+    "snapshots": 2,
+    "usage_records": 3,
+    "cost_ledger_entries": 9,
+    "confidence_records": 1,
+    "audit_logs_related": 3
+  },
+  "usage": {
+    "run_usage": {
+      "steps_used": 2,
+      "token_in": 350,
+      "token_out": 110,
+      "estimated_cost_cny": "0.00158"
+    },
+    "usage_sources": [
+      "agent_step",
+      "review"
+    ],
+    "usage_records": [
+      {
+        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T16:38:51.130Z",
+        "source": "agent_step",
+        "input_tokens": 120,
+        "output_tokens": 45,
+        "estimated_cost_cny": "0.000600"
+      },
+      {
+        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T16:38:51.138Z",
+        "source": "agent_step",
+        "input_tokens": 90,
+        "output_tokens": 35,
+        "estimated_cost_cny": "0.000460"
+      },
+      {
+        "id": "1de84abb-046a-4ef4-a489-f5041c51cad2:daedaabe-38a1-4508-bca0-1a6a60796738:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:review:2026-06-12T16:38:51.146Z",
+        "source": "review",
+        "input_tokens": 140,
+        "output_tokens": 30,
+        "estimated_cost_cny": "0.000520"
+      }
+    ],
+    "cost_page_before": {
+      "generated_at": "2026-06-12T16:38:51.046Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.00316",
+      "token_in": 700,
+      "token_out": 220,
+      "unit_cost_cny": "0.000003",
+      "trend": [
+        {
+          "date": "2026-06-12",
+          "cost_cny": "0.00316",
+          "tokens": 920
+        }
+      ],
+      "by_user": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000003",
+          "label": "Current user",
+          "cost_cny": "0.00948",
+          "tokens": 2760
+        }
+      ],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.00316",
+          "tokens": 920
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "cost_cny": "0.00474",
+          "turns": 6
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 6,
+          "cost_cny": "0.00316"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 700,
+          "token_out": 220,
+          "total_tokens": 920,
+          "max_tokens": 500000,
+          "remaining_tokens": 499080,
+          "estimated_cost_cny": "0.00316",
+          "max_cost_cny": "20",
+          "remaining_cost_cny": "19.99684",
+          "warning_ratio": 0.00184,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 700,
+          "token_out": 220,
+          "total_tokens": 920,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4999080,
+          "estimated_cost_cny": "0.00316",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.99684",
+          "warning_ratio": 0.000184,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "团队 AI 预算",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 700,
+          "token_out": 220,
+          "total_tokens": 920,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49999080,
+          "estimated_cost_cny": "0.00316",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.99684",
+          "warning_ratio": 0.0000184,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    },
+    "cost_page_after": {
+      "generated_at": "2026-06-12T16:38:51.240Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.00474",
+      "token_in": 1050,
+      "token_out": 330,
+      "unit_cost_cny": "0.000003",
+      "trend": [
+        {
+          "date": "2026-06-12",
+          "cost_cny": "0.00474",
+          "tokens": 1380
+        }
+      ],
+      "by_user": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000003",
+          "label": "Current user",
+          "cost_cny": "0.01422",
+          "tokens": 4140
+        }
+      ],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.00474",
+          "tokens": 1380
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "cost_cny": "0.00474",
+          "turns": 6
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 9,
+          "cost_cny": "0.00474"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 1050,
+          "token_out": 330,
+          "total_tokens": 1380,
+          "max_tokens": 500000,
+          "remaining_tokens": 498620,
+          "estimated_cost_cny": "0.00474",
+          "max_cost_cny": "20",
+          "remaining_cost_cny": "19.99526",
+          "warning_ratio": 0.00276,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-12T00:00:00.000Z",
+          "period_end": "2026-06-13T00:00:00.000Z",
+          "token_in": 1050,
+          "token_out": 330,
+          "total_tokens": 1380,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4998620,
+          "estimated_cost_cny": "0.00474",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.99526",
+          "warning_ratio": 0.000276,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "团队 AI 预算",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 1050,
+          "token_out": 330,
+          "total_tokens": 1380,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49998620,
+          "estimated_cost_cny": "0.00474",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.99526",
+          "warning_ratio": 0.0000276,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    },
+    "cost_page_delta": {
+      "total_cost_cny": "0.00158",
+      "token_in": 350,
+      "token_out": 110
+    }
+  },
+  "confidence": {
+    "grade": "high",
+    "risk_level": "low",
+    "verdict": "human_spotcheck",
+    "score": 0.853,
+    "review_grade": 4
+  },
+  "artifact": {
+    "filename": "r5-10-dry-weekly-report.md",
+    "preview_href": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/preview",
+    "download_href": "/api/workitems/daedaabe-38a1-4508-bca0-1a6a60796738/deliverables/e5fe3cb6-cf93-47a6-838d-d4c1ff26d4dd/download",
+    "preview_type": "text",
+    "downloaded_bytes": 638,
+    "downloaded_sha256": "c5f6a61f0dd9d8dd1ca366aa1eb06d6403897aba4a09065aa09955eb110ccf12",
+    "downloaded_text_sha256": "c5f6a61f0dd9d8dd1ca366aa1eb06d6403897aba4a09065aa09955eb110ccf12",
+    "drive_version_sha256": "c5f6a61f0dd9d8dd1ca366aa1eb06d6403897aba4a09065aa09955eb110ccf12",
+    "saved_copy": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/downloaded-r5-10-dry-weekly-report.md"
+  }
+}

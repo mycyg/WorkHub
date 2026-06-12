@@ -1,9 +1,9 @@
 ---
 module: R5-real-llm-validation
 layer: P-AI / P-COST / QA / 验证报告
-status: planned
+status: dry-completed / real-key-planned
 owner: workflow
-date: 2026-06-12
+date: 2026-06-13
 depends_on:
   - s1-pilot-readiness-roadmap-2026-06-12.md
   - r5-10-pre-agent-capability-hardening-plan-2026-06-12.md
@@ -14,7 +14,7 @@ depends_on:
 
 # R5.10 真实 LLM 端到端验证 Plan（S1 第二刀 · "证明劳动力"）
 
-> **唯一外部依赖**：`LLM_API_KEY`（DeepSeek 默认端点 `https://api.deepseek.com/anthropic` 或任何 Anthropic 协议兼容端点）。用户 2026-06-12 暂缓真 key，本计划先备好，key 到位即执行——`R5.10-dry`（§3）不需要 key，可随时先跑。
+> **唯一外部依赖**：`LLM_API_KEY`（DeepSeek 默认端点 `https://api.deepseek.com/anthropic` 或任何 Anthropic 协议兼容端点）。`R5.10-dry` 已在 2026-06-13 本机 PostgreSQL 16 上通过；真 key 评估按后续详细计划 [`r5-10-real-key-evaluation-run-plan-2026-06-13.md`](./r5-10-real-key-evaluation-run-plan-2026-06-13.md) 执行。
 
 ## 1. 目标与边界
 
@@ -46,14 +46,15 @@ T5 是关键对照——验证"AI 知道自己不知道"，直接喂 OQ-2/3 校�
 
 **目的**：把"管线通不通"与"AI 好不好"解耦。用 fake/deterministic provider（返回固定的 write_file + end_turn）跑一个真实 WorkItem 走完 **提需求 → AgentRun → proposal → 审批 → 合并 → accepted ledger → replay → 下载**，落一个真实合并的交付物文件。
 
-- 复用现有 fake-provider 模式（cuu-r3 smokes 同款），但首次贯通到 **merge + ledger + download** 末端；
-- 产出：一个脚本化端到端证据（每段 REST 调用 + 最终下载的文件字节校验）；
-- 价值：key 到位时，R5.10 只需把 fake provider 换成真 client，验证的就纯粹是质量——任何失败都归因于模型而非管线。
-- **本步不需要 key，建议先跑**；它也顺带成为 pilot 主持人的"系统自检"脚本。
+- ✅ **已完成（2026-06-13）**：新增 `apps/api/src/qa/r5-10-dry-agent-pipeline.ts` 与 root `pnpm qa:r5-10-dry`。
+- ✅ 复用正式 provider registry + fake transport，而不是裸 fake client；因此 measured client 照常写入 `usage_records` 与 `cost_ledger_entries`。
+- ✅ 贯通 **提需求 → evidence bind → AgentRun → proposal → 审批 → 合并 → accepted ledger → replay → preview/download**。
+- ✅ 证据：[`../05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/r5-10-dry-agent-pipeline-report.json`](../05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/r5-10-dry-agent-pipeline-report.json)，17 段 REST evidence、3 条 usage_records、9 条 ledger entries、`agent_step` + `review` source、llm_review grade=4 进入 confidence、下载 SHA 与 drive version SHA 一致。
+- ✅ 本步成为 pilot 主持人的"系统自检"脚本；真 key 到位时若失败，先修管线，不消耗模型预算。
 
 ## 4. 执行步骤（key 到位后）
 
-1. 跑 `R5.10-dry`（若尚未跑），确认管线绿。
+1. 跑 `pnpm qa:r5-10-dry`，确认管线绿（2026-06-13 已有基线，真 key 前仍需复跑）。
 2. `.env` 填 `LLM_API_KEY`，起 pilot 栈或本地 daemon。
 3. 逐个提交 T1–T5 为真实 WorkItem，观察 AgentRun 执行。
 4. 每个 run 采集：交付物质量（人工评 1-5 + llm_review 自评 1-5）、token_in/out、成本 CNY、墙钟时延、步数、是否触发压缩/重试/升级、置信度档位与 verdict。
@@ -83,4 +84,4 @@ provider / model / 端点 / 日期 / RunBudget 默认值
 
 ## 6. Handoff
 
-报告产出后回写 S1 roadmap §3 六指标的"成本/升级精准度"两栏初值，并把校准建议挂到 07-open-questions 对应 OQ。R5.10 完成 + S1 Pilot Week 完成 = S1 闭环，由 pilot 报告决定 S2（最可能是 OQ-4 护城河，视真实冲突数据）。
+报告产出后回写 S1 roadmap §3 六指标的"成本/升级精准度"两栏初值，并把校准建议挂到 07-open-questions 对应 OQ。R5.10 完成 + S1 Pilot Week 完成 = S1 闭环，由 pilot 报告决定 S2（最可能是 OQ-4 护城河，视真实冲突数据）。下一步执行清单见 [`r5-10-real-key-evaluation-run-plan-2026-06-13.md`](./r5-10-real-key-evaluation-run-plan-2026-06-13.md)。
