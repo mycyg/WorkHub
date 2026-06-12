@@ -19,11 +19,13 @@ import {
 import { buildReplayManifestFacts, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
+import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "../services/work-items.js";
 
 export type AuditRoutesDependencies = {
   auth?: AuthDependencySource;
   auditLogs?: AuditLogRepository;
   snapshots?: SnapshotRepository;
+  workItems?: WorkItemService | false;
   workdirForRun?: (runId: string) => Promise<string | null> | string | null;
   now?: () => Date;
 };
@@ -35,14 +37,32 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
   const auditLogs = deps.auditLogs ?? defaults?.auditLogs;
   const snapshots = deps.snapshots ?? defaults?.snapshots;
   const workdirForRun = deps.workdirForRun ?? ((runId: string) => getDefaultAgentRunQueue().workdir(runId));
+  const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
   const now = deps.now ?? (() => new Date());
 
   if (!auditLogs || !snapshots) {
     throw new Error("Audit routes require audit log and snapshot repositories");
   }
 
+  // 资源级 fail-closed：审计含历史快照与副作用，必须按 WorkItem 可见性过滤。
+  // detailPage 已内置 admin 读全量（§4.4）与普通用户关系/活跃过滤。
+  async function assertCanReadWorkItem(workItemId: string, actor: AuthEnv["Variables"]["actor"]) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "没有权限查看这个事项的审计。" });
+    }
+    try {
+      await workItems.detailPage({ workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw new HTTPException(error.status as 403, { message: error.message });
+      }
+      throw error;
+    }
+  }
+
   routes.get("/workitems/:id/audit", createCurrentUserMiddleware(authSource), async (c) => {
     const workItemId = c.req.param("id");
+    await assertCanReadWorkItem(workItemId, c.var.actor);
     const snapshotRows = await snapshots.listSnapshotsForWorkItem(workItemId, { includeReverted: true });
     const auditRows = await auditLogs.listAuditLogsForWorkItem(workItemId);
     const snapshotVms = snapshotRows.map(toSnapshotVm);

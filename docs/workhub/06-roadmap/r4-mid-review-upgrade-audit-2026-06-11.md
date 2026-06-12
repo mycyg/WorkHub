@@ -127,6 +127,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **建议（R5 前）**：做一次"权限矩阵 × 路由"审计表（对照 `01-architecture/security-and-permissions.md §4.2` 角色矩阵），把资源检查收成 Hono 中间件/服务层统一入口；fail-closed 缺省。
 
+**回写状态（2026-06-12 R5.12）**：P1-4 关闭。[`r5-12-permission-matrix-audit-plan-2026-06-12.md`](./r5-12-permission-matrix-audit-plan-2026-06-12.md) 程序化清点 79 条路由（业务路由已全 401 fail-closed），深度核查发现并修复 2 个真洞——audit 路由跨用户读他人 WorkItem 审计/快照、permissions 治理策略对普通用户读写开放——均补资源/admin 门带回归；新增常驻 `route-auth-posture.test` 门，新路由漏鉴权 CI 即红。
+
 ### P1-5 浏览器回归全靠本机 Chrome 人肉/脚本 smoke，不在 CI
 
 39 步交互 smoke 是 2591 行脚本驱动**本机 Chrome 真实二进制**（`apps/web/qa/r4-web-live-route-interaction.ts:1042` chromeCandidates），CI（verify.yml）只有 unit/PG/Redis。每个 R4.x 线性加步数：11→13→22→29→36→38→39。**这个曲线撑不到 R5**：步数越多越脆，且 main 上没有任何浏览器级回归门。

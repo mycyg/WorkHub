@@ -29,6 +29,7 @@ import {
   type AuthEnv
 } from "./middleware/auth.js";
 import { createAuditRoutes } from "./routes/audit.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 const userId = "81000000-0000-4000-8000-000000000001";
@@ -36,6 +37,8 @@ const workItemId = "81000000-0000-4000-8000-000000000002";
 const snapshotId = "81000000-0000-4000-8000-000000000003";
 const auditLogId = "81000000-0000-4000-8000-000000000004";
 const agentRunId = "81000000-0000-4000-8000-000000000005";
+
+let userIsAdmin = false;
 
 function user(): UserAuthRow {
   return {
@@ -46,10 +49,26 @@ function user(): UserAuthRow {
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,
-    isAdmin: false,
+    isAdmin: userIsAdmin,
     deletedAt: null,
     createdAt: now,
     updatedAt: now
+  };
+}
+
+function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      return { workitem: {} } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    }
+  };
+}
+
+function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+  return {
+    async detailPage() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
   };
 }
 
@@ -281,6 +300,7 @@ test("audit timeline route returns snapshots, audit logs, and rollback facts", a
     auth: authDeps(runtimeSettings),
     snapshots: new MemorySnapshots(),
     auditLogs: new MemoryAuditLogs(),
+    workItems: allowingWorkItems() as WorkItemService,
     now: () => now
   }));
 
@@ -390,4 +410,47 @@ test("revert route restores the agent run workdir from the selected snapshot", a
     workdir_restored: true,
     reason_md: "测试还原"
   });
+});
+
+test("audit timeline fails closed for a work item the user cannot view", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings),
+    snapshots: new MemorySnapshots(),
+    auditLogs: new MemoryAuditLogs(),
+    workItems: denyingWorkItems() as WorkItemService,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/audit`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("audit timeline lets an admin read across the work item resource gate", async () => {
+  userIsAdmin = true;
+  try {
+    const runtimeSettings = settings();
+    const app = withErrors(new Hono<AuthEnv>());
+    // admin path uses the real detailPage admin short-circuit; here we model it
+    // by allowing access, asserting the route does not block admins.
+    app.route("/api", createAuditRoutes({
+      auth: authDeps(runtimeSettings),
+      snapshots: new MemorySnapshots(),
+      auditLogs: new MemoryAuditLogs(),
+      workItems: allowingWorkItems() as WorkItemService,
+      now: () => now
+    }));
+
+    const response = await app.request(`/api/workitems/${workItemId}/audit`, {
+      headers: { Cookie: await cookie(runtimeSettings) }
+    });
+
+    assert.equal(response.status, 200);
+  } finally {
+    userIsAdmin = false;
+  }
 });

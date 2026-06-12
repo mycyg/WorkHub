@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 import {
   createApprovalRequestSchema,
@@ -28,12 +29,21 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const service = deps.service ?? createApprovalService();
 
+  // 权限策略是 org 级治理面（§4.2 admin 治理角色/策略/配额）：读写均 admin-only。
+  function requireAdmin(c: { var: { currentUser: { isAdmin: boolean } } }) {
+    if (!c.var.currentUser.isAdmin) {
+      throw new HTTPException(403, { message: "只有管理员可以查看或修改权限策略。" });
+    }
+  }
+
   routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
+    requireAdmin(c);
     const data = await service.listPolicies();
     return c.json({ ok: true, data });
   });
 
   routes.put("/", createRequireLocalClientMiddleware(authSource), async (c) => {
+    requireAdmin(c);
     const payload = permissionPolicyWriteSchema.parse(await c.req.json());
     const data = await service.createPolicy(c.var.actor, payload);
     return c.json({ ok: true, data });

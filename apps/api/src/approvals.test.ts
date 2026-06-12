@@ -573,6 +573,15 @@ function authDeps(runtimeSettings: Settings): AuthDependencies {
   };
 }
 
+function nonAdminAuthDeps(runtimeSettings: Settings): AuthDependencies {
+  return {
+    users: new MemoryUsers([user({ isAdmin: false })]),
+    devices: new MemoryDevices(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+}
+
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
     if (error instanceof ZodError) {
@@ -689,4 +698,28 @@ test("permission policy writes keep the local-client device gate", async () => {
   });
 
   assert.equal(response.status, 403);
+});
+
+test("permission policy reads are admin-only (non-admin gets 403)", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({ auth: nonAdminAuthDeps(runtimeSettings), service: serviceDeps().service }));
+
+  const response = await app.request("/api/permissions", {
+    headers: { Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret) }
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("permission policy reads succeed for an admin", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({ auth: authDeps(runtimeSettings), service: serviceDeps().service }));
+
+  const response = await app.request("/api/permissions", {
+    headers: { Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret) }
+  });
+
+  assert.equal(response.status, 200);
 });
