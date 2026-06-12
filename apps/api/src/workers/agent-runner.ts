@@ -326,11 +326,29 @@ export function createInMemoryAgentRunQueue(options: {
     }, "worker");
   }
 
+  function defaultWorkerSystemPrompt() {
+    return [
+      "你是 WorkHub 的 AI 工人（默认劳动力）。人类是审批者：你的产出会进入\"提议→审批→合并\"流程，必须让非技术审阅者一眼能懂。",
+      "",
+      "工作纪律：",
+      "1. 交付物必须写入 outputs/ 目录（用 write_file / write_base64_file）。没有 outputs/ 产出 = 任务失败。",
+      "2. 只做数字交付物：文档、报告、结构化数据(JSON/YAML/CSV)、小型代码或模板、本地可算出的分析结果。不做对外发送、付款、部署、联网安装、不可逆删除；任务要求这些时，停止并在总结中列为 blocker。",
+      "3. 完成判定：当你不再需要任何工具调用时自然结束。结束前用简短人话总结：做了什么、产出文件在哪、还有什么没做。",
+      "4. 信息不足、权限不够或同一动作反复失败时：停止尝试，明确列出 blockers（缺什么、建议谁来定），不要猜测或编造内容。",
+      "5. 工具结果可能被截断（标注\"完整内容见 trace\"）；需要完整内容时分段读取。",
+      "6. 输出语言跟随任务描述的语言；交付物命名用清晰的小写连字符文件名。"
+    ].join("\n");
+  }
+
   function defaultInitialUserMessage(run: AgentRunQueueRecord) {
     return [
-      `请处理这个 WorkHub 事项: ${run.title}`,
+      `任务：${run.title}`,
       `work_item_id: ${run.work_item_id}`,
-      "请先理解目标，必要时使用工具生成 outputs/ 下的交付物，完成后自然结束。"
+      "",
+      "请按以下方式工作：",
+      "1. 先用 list_files / read_file 了解工作目录里已有的材料（如有）。",
+      "2. 围绕任务目标生成交付物，写入 outputs/ 目录。",
+      "3. 完成后自然结束，并给出人话总结（做了什么 / 产出在哪 / 未尽事项）。"
     ].join("\n");
   }
 
@@ -660,11 +678,12 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: current.work_item_id,
         actorId: current.actor_id,
         workdir,
-        systemPrompt: options.systemPrompt ?? "You are WorkHub's AI worker. Produce concise, reviewable deliverables.",
+        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(),
         initialUserMessage: options.initialUserMessage?.(current) ?? defaultInitialUserMessage(current),
         client,
         tools,
         budget: toAgentLoopBudget(current.budget),
+        maxTokensPerStep: settings.llm.maxTokensPerStep,
         requireDeliverable: options.requireDeliverable ?? true,
         snapshot,
         recorder: {

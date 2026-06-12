@@ -210,6 +210,7 @@ test("AgentLoop prefers streaming clients and emits formal trace events", async 
     client,
     tools,
     budget,
+    reviewDeliverable: false,
     snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000003" }),
     emit: (event) => {
       events.push(event);
@@ -231,4 +232,273 @@ test("AgentLoop prefers streaming clients and emits formal trace events", async 
     true
   );
   assert.equal(toCuuState({ type: eventTypes.agentRunStep }), "thinking");
+});
+
+test("AgentLoop compacts after a max_tokens truncation and continues to success", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000004",
+    workItemId: "50000000-0000-4000-8000-000000000004",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a long report",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 20 },
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/report.md", content: "part one" }
+        }]
+      },
+      {
+        id: "m2",
+        stopReason: "max_tokens",
+        usage: { inputTokens: 10, outputTokens: 4096 },
+        content: [{ type: "text", text: "报告写到一半就被截" }]
+      },
+      {
+        id: "m3",
+        stopReason: "end_turn",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        content: [{ type: "text", text: "交付完成" }]
+      }
+    ]),
+    tools,
+    budget,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000004" }),
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.usage.compactions, 1);
+  assert.equal(events.some((event) => event.type === eventTypes.agentRunCompacting && event.data.trigger === "max_tokens"), true);
+  assert.equal(result.steps.length, 3);
+});
+
+test("AgentLoop escalates when the compaction budget is exhausted", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const truncated = (id: string) => ({
+    id,
+    stopReason: "max_tokens",
+    usage: { inputTokens: 10, outputTokens: 4096 },
+    content: [{ type: "text" as const, text: `截断 ${id}` }]
+  });
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000005",
+    workItemId: "50000000-0000-4000-8000-000000000005",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write",
+    client: fakeClient([truncated("m1"), truncated("m2"), truncated("m3")]),
+    tools,
+    budget: { ...budget, maxCompactions: 2 },
+    requireDeliverable: false
+  });
+
+  assert.equal(result.status, "escalated");
+  assert.equal(result.reason, "compact_required");
+  assert.equal(result.usage.compactions, 2);
+});
+
+test("AgentLoop truncates oversized tool results in the conversation context", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const seenMessages: unknown[] = [];
+  const big = "x".repeat(20000);
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        seenMessages.push(JSON.parse(JSON.stringify(params.messages)));
+        if (seenMessages.length === 1) {
+          return {
+            id: "m1",
+            stopReason: "tool_use",
+            content: [{
+              type: "tool_use",
+              id: "tool-1",
+              name: "write_file",
+              input: { path: "outputs/big.md", content: big }
+            }]
+          };
+        }
+        if (seenMessages.length === 2) {
+          return {
+            id: "m2",
+            stopReason: "tool_use",
+            content: [{
+              type: "tool_use",
+              id: "tool-2",
+              name: "read_file",
+              input: { path: "outputs/big.md" }
+            }]
+          };
+        }
+        return {
+          id: "m3",
+          stopReason: "end_turn",
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000006",
+    workItemId: "50000000-0000-4000-8000-000000000006",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write",
+    client,
+    tools,
+    budget: { ...budget, toolResultContextChars: 500 },
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000006" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  const thirdCall = seenMessages[2] as Array<{ role: string; content: unknown }>;
+  const toolResultMessage = [...thirdCall].reverse().find((message) =>
+    Array.isArray(message.content) &&
+    (message.content as Array<{ type?: string }>).some((block) => block.type === "tool_result")
+  );
+  const blocks = toolResultMessage?.content as Array<{ type: string; content: string }>;
+  const toolResult = blocks.find((block) => block.type === "tool_result");
+  assert.ok(toolResult);
+  assert.equal(toolResult.content.length < 700, true);
+  assert.equal(toolResult.content.includes("完整内容见 trace"), true);
+});
+
+test("AgentLoop retries transient provider errors with backoff and then succeeds", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  let calls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create() {
+        calls += 1;
+        if (calls <= 2) {
+          throw Object.assign(new Error("rate limited"), {
+            status: 429,
+            headers: { get: () => null }
+          });
+        }
+        return {
+          id: "m1",
+          stopReason: "end_turn",
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000007",
+    workItemId: "50000000-0000-4000-8000-000000000007",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "say done",
+    client,
+    tools,
+    budget: { ...budget, providerRetryBaseDelayMs: 1 },
+    requireDeliverable: false,
+    reviewDeliverable: false,
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(calls, 3);
+  assert.equal(events.filter((event) => event.data.kind === "provider_retry").length, 2);
+});
+
+test("AgentLoop does not retry non-transient provider errors", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  let calls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create() {
+        calls += 1;
+        throw Object.assign(new Error("bad request"), {
+          status: 400,
+          headers: { get: () => null }
+        });
+      }
+    }
+  };
+  await assert.rejects(() => loop.run({
+    runId: "40000000-0000-4000-8000-000000000008",
+    workItemId: "50000000-0000-4000-8000-000000000008",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "say done",
+    client,
+    tools,
+    budget: { ...budget, providerRetryBaseDelayMs: 1 },
+    requireDeliverable: false
+  }));
+  assert.equal(calls, 1);
+});
+
+test("AgentLoop runs an llm_review after success and carries the grade into the result", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000009",
+    workItemId: "50000000-0000-4000-8000-000000000009",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "任务：写一份报告",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 20 },
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/report.md", content: "报告" }
+        }]
+      },
+      {
+        id: "m2",
+        stopReason: "end_turn",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        content: [{ type: "text", text: "交付完成" }]
+      },
+      {
+        id: "review-1",
+        stopReason: "end_turn",
+        usage: { inputTokens: 30, outputTokens: 20 },
+        content: [{ type: "text", text: "{\"grade\": 4, \"rationale\": \"结构完整，可基本直接采纳\"}" }]
+      }
+    ]),
+    tools,
+    budget,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000009" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.review?.grade, 4);
+  assert.equal(result.review?.source, "llm_review");
+  assert.equal(result.review?.rationale.includes("采纳"), true);
+  assert.equal(result.usage.totalTokens, 90);
 });

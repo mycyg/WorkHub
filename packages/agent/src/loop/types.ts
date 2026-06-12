@@ -17,6 +17,12 @@ export type AgentLoopBudget = RunBudget & Partial<SandboxBudget> & {
   contextWindowTokens?: number;
   compactThreshold?: number;
   doomLoopWindow?: number;
+  /** 每 run 允许的上下文压缩次数（默认 2），超限才升级。 */
+  maxCompactions?: number;
+  /** 写回对话上下文的单条 tool_result 字符上限（默认 8000）；trace 不受影响。 */
+  toolResultContextChars?: number;
+  /** provider 瞬态错误重试的退避基数（毫秒，默认 500）。 */
+  providerRetryBaseDelayMs?: number;
 };
 
 export type AgentLoopUsage = {
@@ -26,6 +32,7 @@ export type AgentLoopUsage = {
   tokenOut: number;
   totalTokens: number;
   estimatedCostCny: string;
+  compactions?: number;
 };
 
 export type AgentAssistantBlock =
@@ -102,11 +109,20 @@ export type AgentLoopInput = {
   budget: AgentLoopBudget;
   maxTokensPerStep?: number;
   requireDeliverable?: boolean;
+  /** run 成功后追加一次 llm_review 评审调用（OQ-2 来源②）；默认开启，失败静默降级。 */
+  reviewDeliverable?: boolean;
   snapshot?: SnapshotHook;
   manifest?: AgentLoopManifestOptions;
   recorder?: AgentLoopRecorder;
   emit?: (event: AgentLoopEvent) => Promise<void> | void;
   now?: () => Date;
+};
+
+export type AgentRunReview = {
+  source: "llm_review";
+  grade: 1 | 2 | 3 | 4 | 5;
+  rationale: string;
+  model: string;
 };
 
 export type AgentLoopResult = {
@@ -118,4 +134,5 @@ export type AgentLoopResult = {
   finalText?: string;
   handoff?: StructuredHandoff;
   manifest?: DeliverableChangeManifest;
+  review?: AgentRunReview;
 };

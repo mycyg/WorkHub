@@ -9,6 +9,7 @@ import {
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "./control.js";
+import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
   AgentAssistantBlock,
@@ -16,6 +17,7 @@ import type {
   AgentLoopResult,
   AgentLoopStep,
   AgentLoopUsage,
+  AgentRunReview,
   StructuredHandoff
 } from "./types.js";
 
@@ -149,6 +151,42 @@ async function callModel(input: AgentLoopInput, params: {
   return responseStream.getFinalMessage();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callModelWithRetry(input: AgentLoopInput, params: Parameters<typeof callModel>[1]) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await callModel(input, params);
+    } catch (error) {
+      const decision = nextRetryDecision(
+        error as { status?: number; headers?: { get: (name: string) => string | null } },
+        attempt,
+        { baseDelayMs: input.budget.providerRetryBaseDelayMs ?? 500 }
+      );
+      if (!decision.retry) {
+        throw error;
+      }
+      attempt += 1;
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `provider 瞬态错误，第 ${attempt} 次重试（${decision.reason}）`,
+        data: {
+          run_id: input.runId,
+          step_no: params.stepNo,
+          kind: "provider_retry",
+          attempt,
+          retry_reason: decision.reason,
+          delay_ms: decision.delayMs
+        }
+      });
+      await sleep(decision.delayMs);
+    }
+  }
+}
+
 async function emitAssistantTrace(input: AgentLoopInput, stepNo: number, assistant: AgentAssistantBlock[]) {
   for (const block of assistant) {
     if (block.type === "thinking") {
@@ -232,6 +270,138 @@ function titleFromFinalText(finalText: string) {
   return title ? title.slice(0, 80) : "AgentRun 交付物变更草案";
 }
 
+function truncateForContext(content: string, maxChars: number) {
+  if (content.length <= maxChars) {
+    return content;
+  }
+  const headChars = Math.floor(maxChars * 0.75);
+  const tailChars = Math.floor(maxChars * 0.15);
+  const omitted = content.length - headChars - tailChars;
+  return `${content.slice(0, headChars)}\n…[已截断 ${omitted} 字符，完整内容见 trace]\n${content.slice(content.length - tailChars)}`;
+}
+
+function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
+  const lines: string[] = [];
+  for (const step of steps) {
+    const text = step.assistant
+      .filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text.trim())
+      .join(" ")
+      .slice(0, 120);
+    if (step.toolCalls.length === 0) {
+      lines.push(`step ${step.index}: ${text || "(无工具调用)"}`);
+      continue;
+    }
+    for (let index = 0; index < step.toolCalls.length; index += 1) {
+      const call = step.toolCalls[index]!;
+      const result = step.toolResults[index];
+      const outcome = result ? (result.isError ? "error" : "ok") : "pending";
+      lines.push(`step ${step.index}: ${call.name}(${previewUnknown(call.input, 80)}) -> ${outcome}`);
+    }
+  }
+  const summary = lines.join("\n");
+  return summary.length > maxChars ? `${summary.slice(0, maxChars)}\n…[摘要已截断]` : summary;
+}
+
+function compactConversation(input: {
+  messages: LlmMessage[];
+  initialUserMessage: string;
+  steps: AgentLoopStep[];
+  keepTailEntries?: number;
+}): LlmMessage[] {
+  const keep = input.keepTailEntries ?? 6;
+  // 尾部保留必须从 assistant 边界开始，保证 tool_use/tool_result 配对完整。
+  let cut = Math.max(1, input.messages.length - keep);
+  while (cut < input.messages.length && input.messages[cut]?.role !== "assistant") {
+    cut += 1;
+  }
+  const tail = input.messages.slice(cut);
+  const summary = summarizeStepsForCompaction(input.steps);
+  return [
+    {
+      role: "user",
+      content: `${input.initialUserMessage}\n\n[上下文已压缩。此前执行摘要]\n${summary}\n[摘要结束。请基于以上进度继续完成任务。]`
+    },
+    ...tail
+  ];
+}
+
+function parseReviewJson(text: string): { grade: 1 | 2 | 3 | 4 | 5; rationale: string } | undefined {
+  const match = /\{[\s\S]*\}/u.exec(text);
+  if (!match) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(match[0]) as { grade?: unknown; rationale?: unknown };
+    const grade = Number(parsed.grade);
+    if (!Number.isInteger(grade) || grade < 1 || grade > 5) {
+      return undefined;
+    }
+    const rationale = typeof parsed.rationale === "string" && parsed.rationale.trim()
+      ? parsed.rationale.trim().slice(0, 500)
+      : "";
+    if (!rationale) {
+      return undefined;
+    }
+    return { grade: grade as 1 | 2 | 3 | 4 | 5, rationale };
+  } catch {
+    return undefined;
+  }
+}
+
+async function reviewDeliverable(input: AgentLoopInput, params: {
+  finalText: string;
+  manifest: AgentLoopResult["manifest"];
+  usage: AgentLoopUsage;
+}): Promise<AgentRunReview | undefined> {
+  const changeLines = (params.manifest?.changes ?? [])
+    .slice(0, 20)
+    .map((change) => `- ${change.target_ref.path ?? change.target_ref.entity_type}: ${change.human_summary}`)
+    .join("\n");
+  try {
+    const response = await input.client.messages.create({
+      system: "你是 WorkHub 的交付物评审员。只输出一个 JSON 对象，不要输出任何其他文本。",
+      messages: [{
+        role: "user",
+        content: [
+          `任务：${input.initialUserMessage.split("\n")[0] ?? ""}`,
+          "",
+          "交付物变更：",
+          changeLines || "(无变更清单)",
+          "",
+          "工人最终陈述：",
+          params.finalText.slice(0, 1500) || "(无)",
+          "",
+          "请按五档评审交付物与任务的匹配度（1=完全不可用，2=大量返工，3=可用但需修改，4=基本可直接采纳，5=可直接采纳），输出严格 JSON：",
+          "{\"grade\": 1-5 的整数, \"rationale\": \"一句人话理由\"}"
+        ].join("\n")
+      }],
+      maxTokens: 300,
+      source: "review"
+    });
+    const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
+    addUsage(params.usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
+    const text = response.content
+      .map(parseBlock)
+      .filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    const parsed = parseReviewJson(text);
+    if (!parsed) {
+      return undefined;
+    }
+    return {
+      source: "llm_review",
+      grade: parsed.grade,
+      rationale: parsed.rationale,
+      model: input.client.model
+    };
+  } catch {
+    // 评审失败静默降级：置信度回退启发式，绝不阻塞主流程。
+    return undefined;
+  }
+}
+
 export class AgentLoop {
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
     const now = input.now ?? (() => new Date());
@@ -246,6 +416,32 @@ export class AgentLoop {
     ];
     const doomLoop = new DoomLoopDetector(input.budget.doomLoopWindow ?? 3);
     const requireDeliverable = input.requireDeliverable ?? true;
+    const maxCompactions = input.budget.maxCompactions ?? 2;
+    const toolResultContextChars = input.budget.toolResultContextChars ?? 8000;
+    let nextCompactionAtTokens = 0;
+
+    const compactNow = async (trigger: "context_window" | "max_tokens", stepNo: number) => {
+      usage.compactions = (usage.compactions ?? 0) + 1;
+      const window = input.budget.contextWindowTokens ?? 0;
+      nextCompactionAtTokens = usage.totalTokens + Math.max(1, Math.floor(window * (input.budget.compactThreshold ?? 0.8)));
+      const compacted = compactConversation({
+        messages,
+        initialUserMessage: input.initialUserMessage,
+        steps
+      });
+      messages.length = 0;
+      messages.push(...compacted);
+      await input.emit?.({
+        type: eventTypes.agentRunCompacting,
+        previewText: `上下文已压缩（第 ${usage.compactions} 次，触发=${trigger}）`,
+        data: {
+          run_id: input.runId,
+          step_no: stepNo,
+          trigger,
+          compactions: usage.compactions
+        }
+      });
+    };
 
     await input.emit?.({
       type: eventTypes.agentRunStarted,
@@ -260,6 +456,29 @@ export class AgentLoop {
     while (usage.stepsUsed < input.budget.maxSteps) {
       usage.secondsUsed = elapsedSeconds(startedAt);
       const budgetDecision = checkLoopBudget(usage, input.budget);
+      if (budgetDecision?.signal === "compact" && usage.totalTokens >= nextCompactionAtTokens) {
+        if ((usage.compactions ?? 0) >= maxCompactions) {
+          const handoff = buildStructuredHandoff({
+            steps,
+            budgetHit: "tokens",
+            reason: "上下文压缩次数已用尽"
+          });
+          await input.emit?.({
+            type: eventTypes.agentRunEscalated,
+            previewText: "上下文压缩次数已用尽",
+            data: { run_id: input.runId, handoff }
+          });
+          return terminalResult({
+            status: "escalated",
+            reason: "compact_budget_exhausted",
+            control: "escalate",
+            usage,
+            steps,
+            handoff
+          });
+        }
+        await compactNow("context_window", usage.stepsUsed + 1);
+      }
       if (budgetDecision?.signal === "escalate") {
         const handoff = buildStructuredHandoff({
           steps,
@@ -296,7 +515,7 @@ export class AgentLoop {
       };
       const tools = await input.tools.toModelTools(ctx);
       const stepNo = usage.stepsUsed + 1;
-      const response = await callModel(input, {
+      const response = await callModelWithRetry(input, {
         stepNo,
         system: input.systemPrompt,
         messages,
@@ -402,7 +621,7 @@ export class AgentLoop {
           content: toolResults.map((result, index) => ({
             type: "tool_result",
             tool_use_id: toolCalls[index]?.id,
-            content: result.content,
+            content: truncateForContext(result.content, toolResultContextChars),
             is_error: result.isError
           }))
         });
@@ -410,14 +629,22 @@ export class AgentLoop {
       }
 
       if (control === "compact") {
+        if ((usage.compactions ?? 0) < maxCompactions) {
+          await compactNow("max_tokens", step.index);
+          messages.push({
+            role: "user",
+            content: "你的上一条回复因长度限制被截断。请基于摘要中的进度继续完成任务，并控制单次输出长度；完成后自然结束。"
+          });
+          continue;
+        }
         const handoff = buildStructuredHandoff({
           steps,
           budgetHit: "tokens",
-          reason: "模型响应被截断，需要上下文压缩。"
+          reason: "模型响应被截断且压缩次数已用尽。"
         });
         await input.emit?.({
           type: eventTypes.agentRunCompacting,
-          previewText: "模型响应被截断，需要上下文压缩。",
+          previewText: "模型响应被截断且压缩次数已用尽。",
           data: {
             run_id: input.runId,
             step_no: step.index,
@@ -489,7 +716,24 @@ export class AgentLoop {
         manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
       }
 
-      return terminalResult({
+      let review: AgentRunReview | undefined;
+      if (input.reviewDeliverable ?? true) {
+        review = await reviewDeliverable(input, { finalText, manifest, usage });
+        if (review) {
+          await input.emit?.({
+            type: eventTypes.agentRunStep,
+            previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
+            data: {
+              run_id: input.runId,
+              step_no: usage.stepsUsed,
+              kind: "llm_review",
+              grade: review.grade
+            }
+          });
+        }
+      }
+
+      const result = terminalResult({
         status: "succeeded",
         reason: finalText || "AgentRun completed",
         control: "stop",
@@ -498,6 +742,10 @@ export class AgentLoop {
         finalText,
         ...(manifest ? { manifest } : {})
       });
+      if (review) {
+        result.review = review;
+      }
+      return result;
     }
 
     const handoff = buildStructuredHandoff({

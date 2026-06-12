@@ -66,6 +66,7 @@ export const envSchema = z.object({
   LLM_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
   LLM_MODEL: z.string().min(1).default("deepseek-v4-flash"),
   LLM_API_KEY: z.string().default(""),
+  LLM_MAX_TOKENS_PER_STEP: z.coerce.number().int().positive().max(64000).default(8192),
 
   PROVIDER_DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
   PROVIDER_DEEPSEEK_MODEL: z.string().min(1).default("deepseek-v4-flash"),
@@ -120,6 +121,7 @@ export type Settings = {
     baseUrl: string;
     model: string;
     apiKey: string;
+    maxTokensPerStep: number;
   };
   providers: {
     deepseek: {
@@ -184,7 +186,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       defaultProvider: parsed.LLM_PROVIDER_DEFAULT,
       baseUrl: parsed.LLM_BASE_URL,
       model: parsed.LLM_MODEL,
-      apiKey: parsed.LLM_API_KEY
+      apiKey: parsed.LLM_API_KEY,
+      maxTokensPerStep: parsed.LLM_MAX_TOKENS_PER_STEP
     },
     providers: {
       deepseek: {

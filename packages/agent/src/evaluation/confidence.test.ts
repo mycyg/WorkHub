@@ -153,3 +153,40 @@ test("budget and doom-loop handoffs map to their escalation triggers", () => {
   assert.equal(budget.escalation?.trigger, "budget_exhausted");
   assert.equal(doomLoop.escalation?.trigger, "doom_loop");
 });
+
+test("confidence fuses llm_review grade with acceptance under R0 weights", () => {
+  const base = {
+    runId: "40000000-0000-4000-8000-000000000010",
+    workItemId: "50000000-0000-4000-8000-000000000010",
+    model: "deepseek-v4-flash"
+  };
+  const succeeded = {
+    status: "succeeded" as const,
+    reason: "done",
+    control: "stop" as const,
+    usage: { stepsUsed: 2, secondsUsed: 5, tokenIn: 10, tokenOut: 10, totalTokens: 20, estimatedCostCny: "0.01" },
+    steps: [],
+    manifest: { work_item_id: base.workItemId } as never
+  };
+
+  const highReview = evaluateAgentRunConfidence({
+    ...base,
+    result: { ...succeeded, review: { source: "llm_review", grade: 5, rationale: "可直接采纳", model: "deepseek-v4-flash" } }
+  });
+  const lowReview = evaluateAgentRunConfidence({
+    ...base,
+    result: { ...succeeded, review: { source: "llm_review", grade: 1, rationale: "完全不可用", model: "deepseek-v4-flash" } }
+  });
+  const noReview = evaluateAgentRunConfidence({ ...base, result: succeeded });
+
+  // grade 5 + manifest: (1*0.5 + 1*0.35)/0.85 = 1
+  assert.equal(highReview.confidenceScore, 1);
+  // grade 1 + manifest: (0*0.5 + 1*0.35)/0.85 ≈ 0.412 → 低置信，必须升级人审
+  assert.equal(lowReview.confidenceScore < 0.6, true);
+  assert.equal(lowReview.grade, "low");
+  // 无 review 回退启发式
+  assert.equal(noReview.confidenceScore, 0.88);
+  const sources = (highReview.signalsJson as { sources: { review: { grade?: number; source?: string } } }).sources;
+  assert.equal(sources.review.grade, 5);
+  assert.equal(sources.review.source, "llm_review");
+});

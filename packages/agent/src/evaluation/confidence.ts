@@ -101,7 +101,7 @@ function matrixVerdict(grade: ConfidenceGrade, riskLevel: RiskLevel): Confidence
   return "human_spotcheck";
 }
 
-function confidenceScoreFor(result: AgentLoopResult) {
+function heuristicScoreFor(result: AgentLoopResult) {
   if (result.status === "succeeded") {
     return result.manifest ? 0.88 : 0.72;
   }
@@ -109,6 +109,19 @@ function confidenceScoreFor(result: AgentLoopResult) {
     return 0.35;
   }
   return 0.2;
+}
+
+// R0 v1 权重（confidence-risk-escalation.md §0.1）：review=0.50 / acceptance=0.35 / self=0.15。
+// self 暂缺时按在场来源归一化；llm_review 缺席时回退启发式整体分。
+function confidenceScoreFor(result: AgentLoopResult) {
+  if (!result.review) {
+    return heuristicScoreFor(result);
+  }
+  const reviewScore = (result.review.grade - 1) / 4;
+  const acceptanceScore = result.status === "succeeded" ? (result.manifest ? 1 : 0.6) : 0;
+  const weights = { review: 0.5, acceptance: 0.35 };
+  const total = weights.review + weights.acceptance;
+  return (reviewScore * weights.review + acceptanceScore * weights.acceptance) / total;
 }
 
 function downgradeAutoMerge(verdict: ConfidenceVerdict, autoMergeAllowed: boolean | undefined) {
@@ -191,10 +204,18 @@ export function evaluateAgentRunConfidence(input: EvaluateAgentRunConfidenceInpu
       reason: input.result.reason
     },
     sources: {
-      review: {
-        score: confidenceScore,
-        reason: input.result.reason
-      },
+      review: input.result.review
+        ? {
+          score: round3((input.result.review.grade - 1) / 4),
+          grade: input.result.review.grade,
+          source: input.result.review.source,
+          model: input.result.review.model,
+          reason: input.result.review.rationale
+        }
+        : {
+          score: confidenceScore,
+          reason: `启发式回退（无 llm_review）：${input.result.reason.slice(0, 120)}`
+        },
       acceptance: {
         score: input.result.status === "succeeded" ? 1 : 0,
         reason: input.result.status === "succeeded" ? "交付物已生成" : "交付物未通过执行终态"
