@@ -89,7 +89,7 @@ depends_on:
 - `pnpm typecheck` 全绿、`pnpm test` 全包 0 fail（ui 63 含注册屏/用户 chip 新测试）
 - `pnpm --filter @workhub/web qa:r4-live-route-interaction`：**70 步 / 115 gates 全 true**，新增 `r5_9_onboarding_routes=true`；request proof：identify ×2（"R4 Live Reviewer" 与 "Pilot Two"）、logout ×1、注册附带 preferences PATCH（2→4）
 - 截图：`00-onboarding-zh-desktop.png`、`00a-onboarding-zh-mobile-no-overflow.png`、`19-logout-onboarding-en-desktop.png`、`19a-second-user-deeplink-en-desktop.png`
-- 安全口径不变：无密码/OAuth（LAN-first D-3）、admin 口令错误 403 fail-closed、未识别状态不渲染任何 Page VM 数据
+- 安全口径不变：无密码/OAuth（LAN-first D-3）、未识别状态不渲染任何 Page VM 数据。**口径修订（R5.11）**：本计划 §3 原写"admin secret 错误时注册仍成功但不提权"已被推翻——R5.11 引入认领语义后，显式提交口令即认领意图，口令错误 403 fail-closed。
 
 ## 7. Handoff
 

@@ -1,7 +1,7 @@
 ---
 module: R5-pilot-deploy-package
 layer: 部署 / CI / API / 可观测
-status: current
+status: completed
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -36,6 +36,30 @@ S1 roadmap G3：部署包不存在——`docker-compose.yml` 只有 PG/Redis，�
 - `pnpm typecheck`、`pnpm test`、`pnpm lint`、browser smoke 70 步回归、release gate；
 - CI：`pilot-stack-smoke` job 首跑绿（P7 即验收）。
 
-## 4. Handoff
+## 4. 竣工记录
+
+状态：✅ completed（2026-06-12）
+
+落地范围（P1–P7 全部完成）：
+
+- **P1 单源静态服务**：`apps/api/src/app.ts` `attachWebStatic()`——SPA fallback、路径穿越防护（distRoot+sep 前缀校验）、按扩展名 MIME；根路径在挂载 dist 后服务注册屏、未挂载保留 API banner。
+- **P2 结构化日志**：`apps/api/src/logging.ts` 零依赖 JSON Lines（`http_request` method/path/status/duration_ms/actor、`unhandled_error`、`server_started`/`server_stopping`、`web_static_attached`），`LOG_FORMAT=json|pretty`。
+- **P3–P6**：单镜像 `Dockerfile`（.dockerignore 挡 reference/client-tauri 共 11G 上下文）、`docker-compose.pilot.yml`（PG+Redis+workhub，启动自动迁移+三层健康检查）、`.env.pilot.example`（中文注释模板）、`scripts/ops/backup-pg.sh`（日期命名+保留轮转）、根目录 `DEPLOY.md`（含"安全口径"专节：pilot=development/LAN 信任模型，production 守卫 fail-closed 不放松）。
+- **P7 CI 部署门**：`pilot-stack-smoke` job——构建镜像→起全栈→容器 healthy→health/注册屏 SPA/deep link/admin 认领/鉴权 Page VM/未鉴权 fail-closed 七段断言，失败上传容器日志 artifact。
+
+**部署门三跑抓出三个真问题**（每个都会让 pilot 当天卡死，本机验证全部漏掉）：
+
+1. `.env.pilot.example` 被 `.gitignore` 的 `.env.*` 规则静默吞掉（模板根本不在仓库里）→ 白名单修复；
+2. 部署形态下 `/` 返回 API banner 而非注册屏（Hono 按注册序匹配，banner 先于 SPA catch-all）→ 根路由感知 web dist + 真实 app 回归测试（并发现 Hono 路由器首请求后冻结的约束）；
+3. **admin 无法自举**：`admin_secret` 此前只守卫"已是 admin 的昵称登录"，系统不存在产生第一个管理员的路径，而注册屏/DEPLOY 已承诺认领语义 → 注册时口令匹配 `ADMIN_CLAIM_SECRET` 即提权；**口令错误 403 fail-closed**（修订 R5.9 计划中"错误口令静默降级"的原口径——显式声称管理员必须验证通过）。
+
+辅助加固：两个 smoke job 增加 `timeout-minutes`（一次 runner flake 曾挂死 16 分钟）。
+
+验收证据：
+
+- CI run `27422701783`（commit `06bf56b6`）七 job 全绿；`pilot-stack-smoke` 端到端约 1 分 40 秒（含镜像构建）。
+- 本机：API+`WEB_DIST_DIR` 实跑（`/` 注册屏、deep link、资产 MIME、JSON 日志逐行可解析）；api 套件 134 pass（新增 web-static×4、admin claim×3）；全包 typecheck/test 绿；release gate PASS。
+
+## 5. Handoff
 
 R5.11 后进入 R5.12 权限矩阵审计（多用户同实例前的安全收口）；R5.10 真 key 验证待 `LLM_API_KEY`（用户暂缓，已记录）。部署包就绪 + 权限审计完成 = pilot-ready，人到位即可启动 S1 Pilot Week。
