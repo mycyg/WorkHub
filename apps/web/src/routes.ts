@@ -2,10 +2,12 @@ import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import type {
   ApprovalCenterVM,
   AttentionHomeVM,
+  CalendarPageVM,
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
   MeetingPageVM,
+  NotificationPageVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -80,6 +82,8 @@ export type WebRouteSurface =
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
   | { key: "drive"; drive: DrivePageVM }
   | { key: "meetings"; meetings: MeetingPageVM }
+  | { key: "notifications"; notifications: NotificationPageVM }
+  | { key: "calendar"; calendar: CalendarPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -136,6 +140,20 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "notifications",
+    pattern: "/notifications",
+    apiBaseLabel: "/api/pages/notifications",
+    regex: /^\/notifications$/u,
+    paramNames: []
+  },
+  {
+    key: "calendar",
+    pattern: "/calendar",
+    apiBaseLabel: "/api/pages/calendar",
+    regex: /^\/calendar$/u,
+    paramNames: []
+  },
+  {
     key: "replay",
     pattern: "/agent-runs/:id/replay",
     apiBaseLabel: "/api/agent-runs/:id/replay",
@@ -179,6 +197,8 @@ type WebRouteTreePageVm =
   | "proposal"
   | "drive"
   | "meetings"
+  | "notifications"
+  | "calendar"
   | "replay"
   | "cost"
   | "evidence"
@@ -220,6 +240,8 @@ const routeTreePageVmByKey = {
   proposal: "proposal",
   drive: "drive",
   meetings: "meetings",
+  notifications: "notifications",
+  calendar: "calendar",
   replay: "replay",
   cost: "cost",
   knowledge: "evidence",
@@ -387,6 +409,8 @@ const shellPageOrder = [
   "proposal",
   "drive",
   "meetings",
+  "notifications",
+  "calendar",
   "replay",
   "cost",
   "knowledge",
@@ -401,6 +425,8 @@ const shellDefaultRoutes = {
   proposal: "/proposals/r4-live-proposal",
   drive: "/drive",
   meetings: "/meetings",
+  notifications: "/notifications",
+  calendar: "/calendar",
   replay: "/agent-runs/r4-live-run/replay",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
@@ -416,6 +442,8 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     proposal: "变更申请",
     drive: "项目网盘",
     meetings: "会议洞察",
+    notifications: "通知中心",
+    calendar: "日程",
     replay: "执行回放",
     cost: "成本",
     knowledge: "知识证据",
@@ -429,6 +457,8 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     proposal: "Change request",
     drive: "Project drive",
     meetings: "Meeting insights",
+    notifications: "Notifications",
+    calendar: "Calendar",
     replay: "Execution replay",
     cost: "Cost",
     knowledge: "Knowledge evidence",
@@ -448,6 +478,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     files: "文件",
     meetings: "会议",
     insights: "洞察",
+    unread: "未读",
+    done: "已处理",
+    overdue: "逾期",
+    today: "今日",
     folders: "文件夹",
     versions: "版本",
     evidence: "证据",
@@ -474,6 +508,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     files: "Files",
     meetings: "Meetings",
     insights: "Insights",
+    unread: "Unread",
+    done: "Done",
+    overdue: "Overdue",
+    today: "Today",
     folders: "Folders",
     versions: "Versions",
     evidence: "Evidence",
@@ -565,6 +603,20 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "insights", String(surface.meetings.summary.confirmed_insight_count + surface.meetings.summary.dismissed_insight_count))
     ];
   }
+  if (surface.key === "notifications") {
+    return [
+      metric(locale, "pending", String(surface.notifications.summary.needs_decision_count)),
+      metric(locale, "unread", String(surface.notifications.summary.unread_count)),
+      metric(locale, "done", String(surface.notifications.summary.done_count))
+    ];
+  }
+  if (surface.key === "calendar") {
+    return [
+      metric(locale, "today", String(surface.calendar.summary.today_count)),
+      metric(locale, "overdue", String(surface.calendar.summary.overdue_count)),
+      metric(locale, "queue", String(surface.calendar.summary.block_count))
+    ];
+  }
   if (surface.key === "replay") {
     return [
       metric(locale, "steps", String(surface.replay.steps.length)),
@@ -619,6 +671,12 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "meetings") {
     return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings }, { locale });
+  }
+  if (surface.key === "notifications") {
+    return renderWebRouteComponent({ key: "notifications", notifications: surface.notifications }, { locale });
+  }
+  if (surface.key === "calendar") {
+    return renderWebRouteComponent({ key: "calendar", calendar: surface.calendar }, { locale });
   }
   if (surface.key === "replay") {
     return renderWebRouteComponent({ key: "replay", replay: surface.replay }, { locale });
@@ -744,6 +802,28 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     return { key: "meetings", meetings } satisfies WebRouteSurface;
+  }
+  if (match.key === "notifications") {
+    const notifications = await client.pages.notifications(withLocale(locale));
+    if (notifications.empty_state === "no_notifications") {
+      return "empty" as const;
+    }
+    return { key: "notifications", notifications } satisfies WebRouteSurface;
+  }
+  if (match.key === "calendar") {
+    const params = new URLSearchParams(match.search);
+    const date = params.get("date") ?? undefined;
+    const viewValue = params.get("view");
+    const view = viewValue === "day" || viewValue === "week" ? viewValue : undefined;
+    const calendar = await client.pages.calendar({
+      ...withLocale(locale),
+      ...(date ? { date } : {}),
+      ...(view ? { view } : {})
+    });
+    if (calendar.empty_state === "no_schedule_blocks") {
+      return "empty" as const;
+    }
+    return { key: "calendar", calendar } satisfies WebRouteSurface;
   }
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));

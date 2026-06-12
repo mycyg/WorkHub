@@ -125,6 +125,21 @@ export function meetingDraftProposalFromHref(href: string) {
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
+export function notificationActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  if (path === "/api/notifications/read-all") {
+    return { action: "mark_all_read" as const };
+  }
+  const match = /^\/api\/notifications\/([^/]+)\/(read|dismiss|complete)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    notificationId: decodeURIComponent(match[1]),
+    action: match[2] as "read" | "dismiss" | "complete"
+  };
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

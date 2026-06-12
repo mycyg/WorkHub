@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   IdentifyRequest,
   IdentityResponse,
+  CalendarPageRequestOptions,
   DrivePageRequestOptions,
   PageRequestOptions,
   MeetingPageRequestOptions,
@@ -76,6 +77,21 @@ function withMeetingPageOptions(path: string, options?: MeetingPageRequestOption
   const meetingId = options?.meetingId ?? options?.meeting_id;
   if (meetingId) {
     params.set("m", meetingId);
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function withCalendarPageOptions(path: string, options?: CalendarPageRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.locale) {
+    params.set("locale", options.locale);
+  }
+  if (options?.date) {
+    params.set("date", options.date);
+  }
+  if (options?.view) {
+    params.set("view", options.view);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
@@ -189,6 +205,22 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     notifications: () => request("/api/notifications"),
+    markNotificationRead: (id) =>
+      request(`/api/notifications/${encodeURIComponent(id)}/read`, {
+        method: "POST"
+      }),
+    markAllNotificationsRead: () =>
+      request("/api/notifications/read-all", {
+        method: "POST"
+      }),
+    dismissNotification: (id) =>
+      request(`/api/notifications/${encodeURIComponent(id)}/dismiss`, {
+        method: "POST"
+      }),
+    completeNotification: (id) =>
+      request(`/api/notifications/${encodeURIComponent(id)}/complete`, {
+        method: "POST"
+      }),
     createSession: (payload = {}) =>
       request("/api/sessions", {
         method: "POST",
@@ -318,6 +350,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),
       drive: (options) => request(withDrivePageOptions("/api/pages/drive", options)),
       meetings: (options) => request(withMeetingPageOptions("/api/pages/meetings", options)),
+      notifications: (options) => request(withPageLocale("/api/pages/notifications", options)),
+      calendar: (options) => request(withCalendarPageOptions("/api/pages/calendar", options)),
       workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
       proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options))
     }

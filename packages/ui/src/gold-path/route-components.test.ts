@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -262,6 +262,171 @@ function meetingPageVm(): MeetingPageVM {
         ]
       }
     ]
+  };
+}
+
+function notificationPageVm(): NotificationPageVM {
+  const needsDecisionItem: NotificationPageVM["items"][number] = {
+    id: "96000000-0000-4000-8000-000000000002",
+    type: "meeting.insight.pending",
+    severity: "high",
+    status: "unread",
+    inbox_bucket: "needs_decision",
+    title: "Meeting insight needs review",
+    body: "Q2 review mentions a pricing update.",
+    target_href: "/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002&insight_id=95000000-0000-4000-8000-000000000004",
+    project_id: "95000000-0000-4000-8000-000000000001",
+    dedupe_key: "meeting_insight:95000000-0000-4000-8000-000000000004",
+    source_context: {
+      source_type: "meeting_insight",
+      meeting_id: "95000000-0000-4000-8000-000000000002",
+      insight_id: "95000000-0000-4000-8000-000000000004",
+      title: "Update proposal pricing model",
+      meeting_title: "Q2 Client Proposal Review",
+      insight_status: "pending",
+      project_id: "95000000-0000-4000-8000-000000000001",
+      project_name: "R5 Meeting Workspace"
+    },
+    created_at: "2026-06-11T09:30:00.000Z",
+    updated_at: "2026-06-11T09:30:00.000Z",
+    actions: {
+      open: {
+        id: "open",
+        label: "Open",
+        method: "GET",
+        href: "/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002&insight_id=95000000-0000-4000-8000-000000000004"
+      },
+      mark_read: {
+        id: "notification_mark_read",
+        label: "Mark as read",
+        method: "POST",
+        href: "/api/notifications/96000000-0000-4000-8000-000000000002/read"
+      },
+      dismiss: {
+        id: "notification_dismiss",
+        label: "Dismiss",
+        method: "POST",
+        href: "/api/notifications/96000000-0000-4000-8000-000000000002/dismiss"
+      },
+      complete: {
+        id: "notification_complete",
+        label: "Complete",
+        method: "POST",
+        href: "/api/notifications/96000000-0000-4000-8000-000000000002/complete"
+      }
+    }
+  };
+  const doneItem: NotificationPageVM["items"][number] = {
+    id: "96000000-0000-4000-8000-000000000003",
+    type: "workitem.merged",
+    severity: "normal",
+    status: "done",
+    inbox_bucket: "done",
+    title: "Proposal merged",
+    target_href: "/workitems/96000000-0000-4000-8000-000000000004",
+    work_item_id: "96000000-0000-4000-8000-000000000004",
+    source_context: {
+      source_type: "work_item",
+      work_item_id: "96000000-0000-4000-8000-000000000004",
+      code: "WH-4",
+      title: "Proposal merged",
+      status: "merged"
+    },
+    archived_at: "2026-06-11T09:40:00.000Z",
+    created_at: "2026-06-11T09:00:00.000Z",
+    updated_at: "2026-06-11T09:40:00.000Z",
+    actions: {}
+  };
+
+  return {
+    generated_at: "2026-06-11T10:00:00.000Z",
+    actor_user_id: "96000000-0000-4000-8000-000000000001",
+    summary: {
+      total_count: 2,
+      unread_count: 1,
+      needs_decision_count: 1,
+      fyi_count: 0,
+      done_count: 1,
+      urgent_count: 1
+    },
+    buckets: {
+      needs_decision: [needsDecisionItem],
+      fyi: [],
+      done: [doneItem]
+    },
+    items: [needsDecisionItem, doneItem],
+    actions: {
+      mark_all_read: {
+        id: "notification_mark_all_read",
+        label: "Mark all as read",
+        method: "POST",
+        href: "/api/notifications/read-all"
+      }
+    }
+  };
+}
+
+function calendarPageVm(): CalendarPageVM {
+  const dueBlock: CalendarPageVM["blocks"][number] = {
+    id: "97000000-0000-4000-8000-000000000001",
+    kind: "work_item_due",
+    title: "Review proposal pricing",
+    description: "Due today for proposal review.",
+    ends_at: "2026-06-11T14:00:00.000Z",
+    all_day: true,
+    status: "today",
+    severity: "urgent",
+    target_href: "/workitems/97000000-0000-4000-8000-000000000002",
+    work_item_id: "97000000-0000-4000-8000-000000000002",
+    source_context: {
+      source_type: "work_item",
+      work_item_id: "97000000-0000-4000-8000-000000000002",
+      code: "WH-7",
+      title: "Review proposal pricing",
+      status: "in_review",
+      due_at: "2026-06-11T14:00:00.000Z"
+    }
+  };
+  const meetingBlock: CalendarPageVM["blocks"][number] = {
+    id: "97000000-0000-4000-8000-000000000003",
+    kind: "meeting_followup",
+    title: "Update proposal pricing model",
+    description: "Q2 Client Proposal Review",
+    ends_at: "2026-06-12T09:00:00.000Z",
+    all_day: true,
+    status: "upcoming",
+    severity: "high",
+    target_href: "/meetings?project_id=95000000-0000-4000-8000-000000000001&m=95000000-0000-4000-8000-000000000002",
+    project_id: "95000000-0000-4000-8000-000000000001",
+    source_context: {
+      source_type: "meeting_insight",
+      meeting_id: "95000000-0000-4000-8000-000000000002",
+      insight_id: "95000000-0000-4000-8000-000000000004",
+      title: "Update proposal pricing model",
+      meeting_title: "Q2 Client Proposal Review",
+      insight_status: "pending"
+    }
+  };
+  return {
+    generated_at: "2026-06-11T10:00:00.000Z",
+    actor_user_id: "97000000-0000-4000-8000-000000000004",
+    scope: {
+      date: "2026-06-11",
+      view: "week",
+      range_start: "2026-06-08T00:00:00.000Z",
+      range_end: "2026-06-15T00:00:00.000Z"
+    },
+    summary: {
+      block_count: 2,
+      overdue_count: 0,
+      today_count: 1,
+      week_count: 2
+    },
+    days: [
+      { date: "2026-06-11", blocks: [dueBlock] },
+      { date: "2026-06-12", blocks: [meetingBlock] }
+    ],
+    blocks: [dueBlock, meetingBlock]
   };
 }
 
@@ -1096,6 +1261,44 @@ test("R5.5 Meeting route component exposes meetings, insights, actions, and appr
   assert.equal(meetings.hydration.pageVm, "meetings");
   assert.equal(meetings.primaryHrefs.includes("/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/draft"), true);
   assertNoMainWindowBoundaryLeak(meetings.html);
+});
+
+test("R5.6 Notifications route component groups inbox buckets and exposes audited actions", () => {
+  const notifications = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "zh-CN" });
+
+  assert.equal(notifications.key, "notifications");
+  assert.equal(notifications.html.includes('data-r4-route-component="notifications"'), true);
+  assert.equal(notifications.html.includes('data-r5-notifications-route="true"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-needs-decision-count="1"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-bucket="needs_decision"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-item="96000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-source-type="meeting_insight"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-mark-read="true"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-dismiss="true"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-complete="true"'), true);
+  assert.equal(notifications.primaryHrefs.includes("/api/notifications/read-all"), true);
+  assert.equal(notifications.primaryHrefs.includes("/api/notifications/96000000-0000-4000-8000-000000000002/dismiss"), true);
+  assert.equal(zh.html.includes("需要你决定"), true);
+  assertNoMainWindowBoundaryLeak(notifications.html);
+});
+
+test("R5.6 Calendar route component renders deterministic day blocks and target links", () => {
+  const calendar = renderWebRouteComponent({ key: "calendar", calendar: calendarPageVm() }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "calendar", calendar: calendarPageVm() }, { locale: "zh-CN" });
+
+  assert.equal(calendar.key, "calendar");
+  assert.equal(calendar.html.includes('data-r4-route-component="calendar"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-route="true"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-date="2026-06-11"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-block-count="2"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-block-kind="work_item_due"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-block-kind="meeting_followup"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-day="2026-06-12"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-open-target="true"'), true);
+  assert.equal(calendar.primaryHrefs.includes("/workitems/97000000-0000-4000-8000-000000000002"), true);
+  assert.equal(zh.html.includes("任务截止"), true);
+  assertNoMainWindowBoundaryLeak(calendar.html);
 });
 
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {

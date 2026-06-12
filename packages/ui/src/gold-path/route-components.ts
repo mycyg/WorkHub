@@ -5,6 +5,7 @@ import type {
   AttentionHomeVM,
   AttentionItem,
   CostDashboardVM,
+  CalendarPageVM,
   DeliverableChange,
   DeliverableCheck,
   DrivePageVM,
@@ -13,6 +14,7 @@ import type {
   ProposalConflict,
   ProposalDetailVM,
   MeetingPageVM,
+  NotificationPageVM,
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
@@ -44,7 +46,7 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "replay" | "cost" | "knowledge" | "settings">;
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "replay" | "cost" | "knowledge" | "settings">;
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -191,6 +193,29 @@ type RouteCopyKey =
   | "meeting.status.creating_requirement"
   | "meeting.status.confirmed"
   | "meeting.status.dismissed"
+  | "notifications.kicker"
+  | "notifications.needsDecision"
+  | "notifications.fyi"
+  | "notifications.done"
+  | "notifications.markAllRead"
+  | "notifications.empty"
+  | "notifications.open"
+  | "notifications.unread"
+  | "notifications.read"
+  | "notifications.completed"
+  | "notifications.source"
+  | "calendar.kicker"
+  | "calendar.today"
+  | "calendar.week"
+  | "calendar.empty"
+  | "calendar.upcoming"
+  | "calendar.overdue"
+  | "calendar.done"
+  | "calendar.allDay"
+  | "calendar.workItemDue"
+  | "calendar.meetingFollowup"
+  | "calendar.scheduleEvent"
+  | "calendar.reviewWindow"
   | "cost.scopes"
   | "cost.risks"
   | "cost.models"
@@ -298,6 +323,29 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.status.creating_requirement": "创建中",
     "meeting.status.confirmed": "已确认",
     "meeting.status.dismissed": "已忽略",
+    "notifications.kicker": "通知中心",
+    "notifications.needsDecision": "需要你决定",
+    "notifications.fyi": "仅供了解",
+    "notifications.done": "已处理",
+    "notifications.markAllRead": "全部已读",
+    "notifications.empty": "通知箱是空的。",
+    "notifications.open": "打开",
+    "notifications.unread": "未读",
+    "notifications.read": "已读",
+    "notifications.completed": "已处理",
+    "notifications.source": "来源",
+    "calendar.kicker": "日程",
+    "calendar.today": "今天",
+    "calendar.week": "本周",
+    "calendar.empty": "这段时间没有日程。",
+    "calendar.upcoming": "即将到来",
+    "calendar.overdue": "已逾期",
+    "calendar.done": "已完成",
+    "calendar.allDay": "全天",
+    "calendar.workItemDue": "任务截止",
+    "calendar.meetingFollowup": "会议建议",
+    "calendar.scheduleEvent": "日程事项",
+    "calendar.reviewWindow": "审阅窗口",
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
     "cost.models": "模型拆解",
@@ -404,6 +452,29 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.status.creating_requirement": "Creating",
     "meeting.status.confirmed": "Confirmed",
     "meeting.status.dismissed": "Dismissed",
+    "notifications.kicker": "Notifications",
+    "notifications.needsDecision": "Needs your decision",
+    "notifications.fyi": "FYI",
+    "notifications.done": "Done",
+    "notifications.markAllRead": "Mark all as read",
+    "notifications.empty": "Your inbox is empty.",
+    "notifications.open": "Open",
+    "notifications.unread": "Unread",
+    "notifications.read": "Read",
+    "notifications.completed": "Done",
+    "notifications.source": "Source",
+    "calendar.kicker": "Calendar",
+    "calendar.today": "Today",
+    "calendar.week": "This week",
+    "calendar.empty": "No events in this period.",
+    "calendar.upcoming": "Upcoming",
+    "calendar.overdue": "Overdue",
+    "calendar.done": "Done",
+    "calendar.allDay": "All-day",
+    "calendar.workItemDue": "Work item due",
+    "calendar.meetingFollowup": "Meeting insight",
+    "calendar.scheduleEvent": "Schedule event",
+    "calendar.reviewWindow": "Review window",
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
     "cost.models": "Model breakdown",
@@ -1413,6 +1484,199 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
   });
 }
 
+function notificationBucketTitle(bucket: NotificationPageVM["items"][number]["inbox_bucket"], locale: WorkHubLocale) {
+  if (bucket === "needs_decision") {
+    return routeT(locale, "notifications.needsDecision");
+  }
+  if (bucket === "done") {
+    return routeT(locale, "notifications.done");
+  }
+  return routeT(locale, "notifications.fyi");
+}
+
+function notificationStatusLabel(status: NotificationPageVM["items"][number]["status"], locale: WorkHubLocale) {
+  if (status === "unread") {
+    return routeT(locale, "notifications.unread");
+  }
+  if (status === "done") {
+    return routeT(locale, "notifications.completed");
+  }
+  return routeT(locale, "notifications.read");
+}
+
+function sourceContextLabel(source: NotificationPageVM["items"][number]["source_context"], locale: WorkHubLocale) {
+  if (!source) {
+    return routeT(locale, "notifications.source");
+  }
+  if (source.source_type === "work_item") {
+    return `${source.code ?? ""} ${source.title}`.trim();
+  }
+  if (source.source_type === "meeting_insight") {
+    return `${source.meeting_title} · ${source.title}`;
+  }
+  if (source.source_type === "schedule_event") {
+    return `${routeT(locale, "calendar.scheduleEvent")} · ${source.title}`;
+  }
+  return source.label;
+}
+
+function notificationActionLinks(item: NotificationPageVM["items"][number], locale: WorkHubLocale) {
+  const links = [
+    item.actions.open ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(item.actions.open.href)}" data-action-id="${escapeHtml(item.actions.open.id)}">${escapeHtml(item.actions.open.label || routeT(locale, "notifications.open"))}</a>` : "",
+    item.actions.mark_read ? `<a class="wh-btn" href="${escapeHtml(item.actions.mark_read.href)}" data-action-id="${escapeHtml(item.actions.mark_read.id)}" data-method="${escapeHtml(item.actions.mark_read.method)}" data-r5-notification-mark-read="true">${escapeHtml(item.actions.mark_read.label)}</a>` : "",
+    item.actions.dismiss ? `<a class="wh-btn" href="${escapeHtml(item.actions.dismiss.href)}" data-action-id="${escapeHtml(item.actions.dismiss.id)}" data-method="${escapeHtml(item.actions.dismiss.method)}" data-r5-notification-dismiss="true">${escapeHtml(item.actions.dismiss.label)}</a>` : "",
+    item.actions.complete ? `<a class="wh-btn" href="${escapeHtml(item.actions.complete.href)}" data-action-id="${escapeHtml(item.actions.complete.id)}" data-method="${escapeHtml(item.actions.complete.method)}" data-r5-notification-complete="true">${escapeHtml(item.actions.complete.label)}</a>` : ""
+  ].filter(Boolean);
+  return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
+}
+
+function renderNotificationBucket(
+  bucket: NotificationPageVM["items"][number]["inbox_bucket"],
+  items: NotificationPageVM["items"],
+  locale: WorkHubLocale
+) {
+  const rows = items.length
+    ? items.map((item) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-notification-item="${escapeHtml(item.id)}" data-r5-notification-status="${escapeHtml(item.status)}" data-r5-notification-severity="${escapeHtml(item.severity)}" data-r5-notification-type="${escapeHtml(item.type)}" data-r5-notification-source-type="${escapeHtml(item.source_context?.source_type ?? "")}">
+      <div>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(notificationStatusLabel(item.status, locale))}</span>
+          <span class="wh-pill">${escapeHtml(item.severity)}</span>
+          <span class="wh-pill">${escapeHtml(item.type)}</span>
+        </div>
+        <strong>${escapeHtml(item.title)}</strong>
+        ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
+        <p>${escapeHtml(routeT(locale, "notifications.source"))}: ${escapeHtml(sourceContextLabel(item.source_context, locale))}</p>
+        <p>${escapeHtml(item.created_at)}</p>
+      </div>
+      ${notificationActionLinks(item, locale)}
+    </div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.empty"))}</p>`;
+  return `<section class="wh-card wh-r4-route-card" data-r5-notification-bucket="${escapeHtml(bucket)}" data-r5-notification-bucket-count="${escapeHtml(String(items.length))}">
+    <h3>${escapeHtml(notificationBucketTitle(bucket, locale))}</h3>
+    <div class="wh-r4-route-timeline">${rows}</div>
+  </section>`;
+}
+
+function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const markAll = vm.actions.mark_all_read
+    ? `<a class="wh-btn" href="${escapeHtml(vm.actions.mark_all_read.href)}" data-action-id="${escapeHtml(vm.actions.mark_all_read.id)}" data-method="${escapeHtml(vm.actions.mark_all_read.method)}" data-r5-notification-mark-all-read="true">${escapeHtml(vm.actions.mark_all_read.label || routeT(locale, "notifications.markAllRead"))}</a>`
+    : "";
+  const primaryHrefs = [
+    vm.actions.mark_all_read?.href,
+    ...vm.items.flatMap((item) => [
+      item.actions.open?.href,
+      item.actions.mark_read?.href,
+      item.actions.dismiss?.href,
+      item.actions.complete?.href
+    ])
+  ].filter((value): value is string => Boolean(value));
+
+  return createWebRouteComponent({
+    key: "notifications",
+    css: webRouteComponentCss,
+    primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "notifications",
+    html: `<section class="wh-r4-route" data-r4-route-component="notifications" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r5-notifications-route="true" data-r5-notification-total-count="${escapeHtml(String(vm.summary.total_count))}" data-r5-notification-unread-count="${escapeHtml(String(vm.summary.unread_count))}" data-r5-notification-needs-decision-count="${escapeHtml(String(vm.summary.needs_decision_count))}" data-r5-notification-fyi-count="${escapeHtml(String(vm.summary.fyi_count))}" data-r5-notification-done-count="${escapeHtml(String(vm.summary.done_count))}" data-r5-notification-urgent-count="${escapeHtml(String(vm.summary.urgent_count))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "notifications.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "notifications.kicker"))}</h2>
+          <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
+        </div>
+        <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
+      </header>
+      <div class="wh-r4-route-grid">
+        ${renderNotificationBucket("needs_decision", vm.buckets.needs_decision, locale)}
+        ${renderNotificationBucket("fyi", vm.buckets.fyi, locale)}
+      </div>
+      ${renderNotificationBucket("done", vm.buckets.done, locale)}
+    </section>`
+  });
+}
+
+function scheduleStatusLabel(status: CalendarPageVM["blocks"][number]["status"], locale: WorkHubLocale) {
+  if (status === "overdue") {
+    return routeT(locale, "calendar.overdue");
+  }
+  if (status === "done") {
+    return routeT(locale, "calendar.done");
+  }
+  if (status === "today") {
+    return routeT(locale, "calendar.today");
+  }
+  return routeT(locale, "calendar.upcoming");
+}
+
+function scheduleKindLabel(kind: CalendarPageVM["blocks"][number]["kind"], locale: WorkHubLocale) {
+  if (kind === "work_item_due") {
+    return routeT(locale, "calendar.workItemDue");
+  }
+  if (kind === "meeting_followup") {
+    return routeT(locale, "calendar.meetingFollowup");
+  }
+  if (kind === "review_window") {
+    return routeT(locale, "calendar.reviewWindow");
+  }
+  return routeT(locale, "calendar.scheduleEvent");
+}
+
+function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: WorkHubLocale) {
+  const link = block.target_href
+    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(block.target_href)}" data-action-id="calendar_open_target" data-r5-calendar-open-target="true">${escapeHtml(routeT(locale, "notifications.open"))}</a>`
+    : "";
+  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-calendar-block="${escapeHtml(block.id)}" data-r5-calendar-block-kind="${escapeHtml(block.kind)}" data-r5-calendar-block-status="${escapeHtml(block.status)}" data-r5-calendar-block-severity="${escapeHtml(block.severity)}">
+    <div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(scheduleKindLabel(block.kind, locale))}</span>
+        <span class="wh-pill">${escapeHtml(scheduleStatusLabel(block.status, locale))}</span>
+        <span class="wh-pill">${escapeHtml(block.all_day ? routeT(locale, "calendar.allDay") : (block.starts_at ?? block.ends_at))}</span>
+      </div>
+      <strong>${escapeHtml(block.title)}</strong>
+      ${block.description ? `<p>${escapeHtml(block.description)}</p>` : ""}
+      <p>${escapeHtml(block.ends_at)}</p>
+    </div>
+    ${link ? `<div class="wh-r4-route-actions">${link}</div>` : ""}
+  </div>`;
+}
+
+function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const primaryHrefs = vm.blocks.map((block) => block.target_href).filter((value): value is string => Boolean(value));
+  const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
+    <h3>${escapeHtml(day.date)}</h3>
+    <div class="wh-r4-route-timeline">${day.blocks.length ? day.blocks.map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
+  </section>`).join("");
+
+  return createWebRouteComponent({
+    key: "calendar",
+    css: webRouteComponentCss,
+    primaryHrefs,
+    source: "page-vm",
+    locale,
+    pageVm: "calendar",
+    html: `<section class="wh-r4-route" data-r4-route-component="calendar" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r5-calendar-route="true" data-r5-calendar-date="${escapeHtml(vm.scope.date)}" data-r5-calendar-view="${escapeHtml(vm.scope.view)}" data-r5-calendar-block-count="${escapeHtml(String(vm.summary.block_count))}" data-r5-calendar-overdue-count="${escapeHtml(String(vm.summary.overdue_count))}" data-r5-calendar-today-count="${escapeHtml(String(vm.summary.today_count))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "calendar.kicker"))}</h2>
+          <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start} - ${vm.scope.range_end}`)}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-calendar-upcoming="true">
+          <h3>${escapeHtml(routeT(locale, "calendar.today"))}</h3>
+          <div class="wh-r4-route-timeline">${vm.blocks.length ? vm.blocks.slice(0, 6).map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
+        </section>
+        <section class="wh-r4-route-stack" data-r5-calendar-days="true">
+          ${dayRows}
+        </section>
+      </div>
+    </section>`
+  });
+}
+
 function costAmount(value: string) {
   return `¥${value}`;
 }
@@ -1649,6 +1913,8 @@ export type WebRouteComponentInput =
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
   | { key: "drive"; drive: DrivePageVM }
   | { key: "meetings"; meetings: MeetingPageVM }
+  | { key: "notifications"; notifications: NotificationPageVM }
+  | { key: "calendar"; calendar: CalendarPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble }
@@ -1674,6 +1940,10 @@ export function renderWebRouteComponent(
       return renderDriveRouteComponent(input.drive, locale);
     case "meetings":
       return renderMeetingRouteComponent(input.meetings, locale);
+    case "notifications":
+      return renderNotificationsRouteComponent(input.notifications, locale);
+    case "calendar":
+      return renderCalendarRouteComponent(input.calendar, locale);
     case "replay":
       return renderReplayRouteComponent(input.replay, locale);
     case "cost":

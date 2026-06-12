@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-11):**122 篇文档已落盘**。R5.5 Meeting insight-to-draft 与 55 步 browser gate 已落，下一步 R5.6 推进 Schedule / Notify。权威路线见 [`06-roadmap/r5-05-meeting-insight-to-draft-plan-2026-06-11.md`](./06-roadmap/r5-05-meeting-insight-to-draft-plan-2026-06-11.md) 与 [`06-roadmap/r5-06-schedule-notify-plan-2026-06-11.md`](./06-roadmap/r5-06-schedule-notify-plan-2026-06-11.md)。
+> 状态(2026-06-11):**123 篇文档已落盘**。R5.6 Schedule / Notify 已落（`/notifications`、`/calendar`、读/完成动作与 63 步 browser gate），下一步 R5.7 推进 Knowledge grounding / dashboard health。权威路线见 [`06-roadmap/r5-06-schedule-notify-plan-2026-06-11.md`](./06-roadmap/r5-06-schedule-notify-plan-2026-06-11.md) 与 [`06-roadmap/r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md`](./06-roadmap/r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md)。
 
 ---
 
@@ -27,7 +27,8 @@
 | R5.3 | ✅ | Drive comment-to-draft / WorkItem 草稿链路已落，47 步 browser gate 覆盖 request proof、notice、operation log 与无溢出。 |
 | R5.4 | ✅ | Drive draft-to-proposal 已落，50 步 browser gate 覆盖 source context、proposal action/link 与 operation log。 |
 | R5.5 | ✅ | Meeting insight-to-draft 已落，55 步 browser gate 覆盖 meeting page、draft、source context、proposal action/link 与移动端无溢出。 |
-| R5.6 | planned | Schedule / Notify 是下一模块硬门，把真实待办、提醒、通知与日历接入 Page VM、Web route 与 shared runtime。 |
+| R5.6 | ✅ | Schedule / Notify 已落，`/notifications` 收件箱分组、`/calendar` 周视图、mark read/dismiss/complete + audit，63 步 browser gate 与 request proof 全过。 |
+| R5.7 | planned | Knowledge grounding / dashboard health：通知 reason/evidence 回链 knowledge search 与 replay，`/dashboard/health` 项目健康分层呈现。 |
 
 ---
 
@@ -195,7 +196,8 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `r5-03-drive-comment-to-draft-plan-2026-06-11.md` | **R5.3**:Drive comment-to-draft，把资料评论生成可审批 WorkItem 草稿，不直接改正式文件；47 步 browser gate 已落 | ✅ |
 | `r5-04-drive-draft-to-proposal-plan-2026-06-11.md` | **R5.4**:Drive draft-to-proposal，把 comment draft 接入 proposal/change preview 与正式审批写回主线；50 步 browser gate 已落 | ✅ |
 | `r5-05-meeting-insight-to-draft-plan-2026-06-11.md` | **R5.5**:Meeting insight-to-draft，把会议洞察生成可追溯 WorkItem 草稿并复用 proposal writeback 主线；55 步 browser gate 已落 | ✅ |
-| `r5-06-schedule-notify-plan-2026-06-11.md` | **R5.6**:Schedule / Notify，把真实待办、提醒、通知与日历接入 Page VM、Web route 与 shared runtime | planned |
+| `r5-06-schedule-notify-plan-2026-06-11.md` | **R5.6**:Schedule / Notify，`/notifications` 收件箱与 `/calendar` 周视图接入 Page VM、shared runtime，mark read/dismiss/complete + audit；63 步 browser gate 已落 | ✅ |
+| `r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md` | **R5.7**:Knowledge grounding / dashboard health，通知 reason/evidence 回链 knowledge search 与 replay，`/dashboard/health` 项目健康分层呈现 | planned |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

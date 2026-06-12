@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -187,6 +187,33 @@ type BrowserAudit = {
     meetingProposalLink: string | null;
     meetingProposalHref: string | null;
     meetingProposalStatus: string | null;
+    notificationTotalCount: string | null;
+    notificationUnreadCount: string | null;
+    notificationNeedsDecisionCount: string | null;
+    notificationFyiCount: string | null;
+    notificationDoneCount: string | null;
+    notificationUrgentCount: string | null;
+    notificationNeedsBucketCount: string | null;
+    notificationFyiBucketCount: string | null;
+    notificationDoneBucketCount: string | null;
+    notificationMeetingItemStatus: string | null;
+    notificationMeetingSourceType: string | null;
+    notificationDriveItemStatus: string | null;
+    notificationMeetingOpenHref: string | null;
+    notificationDriveOpenHref: string | null;
+    notificationMarkReadAction: string | null;
+    notificationMarkAllReadAction: string | null;
+    notificationDismissAction: string | null;
+    notificationCompleteAction: string | null;
+    calendarDate: string | null;
+    calendarView: string | null;
+    calendarBlockCount: string | null;
+    calendarTodayCount: string | null;
+    calendarOverdueCount: string | null;
+    calendarWorkItemBlock: string | null;
+    calendarMeetingBlock: string | null;
+    calendarDayCount: string | null;
+    calendarOpenTarget: string | null;
     costTotalTokens: string | null;
     costTotalCny: string | null;
     costBudgetCount: string | null;
@@ -900,6 +927,224 @@ function meetingPage(
   };
 }
 
+const notificationMeetingId = "10000000-0000-4000-8000-000000001801";
+const notificationDriveId = "10000000-0000-4000-8000-000000001802";
+
+function notificationLabels(locale: WorkHubLocale) {
+  const english = locale === "en-US";
+  return {
+    open: english ? "Open" : "打开",
+    markRead: english ? "Mark as read" : "标为已读",
+    markAllRead: english ? "Mark all as read" : "全部已读",
+    dismiss: english ? "Dismiss" : "忽略",
+    complete: english ? "Complete" : "完成"
+  };
+}
+
+function notificationActionResponse(id: string, state: { read: boolean; done: boolean }) {
+  return {
+    id,
+    user_id: "r4-live-user",
+    type: id === notificationMeetingId ? "meeting.insight.confirmed" : "drive.comment.draft",
+    severity: id === notificationMeetingId ? "high" : "normal",
+    title: id === notificationMeetingId ? "Meeting insight draft created" : "Drive draft awaits proposal",
+    body: id === notificationMeetingId ? "Q2 Client Proposal Review is now in the draft/review flow." : "A Drive comment has been converted into a work draft.",
+    target_url: id === notificationMeetingId
+      ? `/meetings?project_id=${meetingProjectId}&m=${meetingId}&insight_id=${meetingInsightId}`
+      : "/drive?project_id=10000000-0000-4000-8000-000000001600",
+    project_id: meetingProjectId,
+    work_item_id: id === notificationMeetingId ? meetingWorkItemId : "r4-live-workitem",
+    dedupe_key: id === notificationMeetingId ? `meeting_insight:${meetingInsightId}` : "drive_comment:10000000-0000-4000-8000-000000001623",
+    ...(state.read || state.done ? { read_at: "2026-06-11T09:45:00.000Z" } : {}),
+    ...(state.done ? { archived_at: "2026-06-11T09:46:00.000Z" } : {}),
+    created_at: "2026-06-11T09:36:00.000Z",
+    updated_at: "2026-06-11T09:46:00.000Z"
+  };
+}
+
+function notificationPage(
+  locale: WorkHubLocale,
+  state: { meetingRead: boolean; driveRead: boolean; meetingDone: boolean; driveDone: boolean }
+): NotificationPageVM {
+  const labels = notificationLabels(locale);
+  const meetingStatus = state.meetingDone ? "done" as const : state.meetingRead ? "read" as const : "unread" as const;
+  const driveStatus = state.driveDone ? "done" as const : state.driveRead ? "read" as const : "unread" as const;
+  const meetingItem: NotificationPageVM["items"][number] = {
+    id: notificationMeetingId,
+    type: "meeting.insight.confirmed",
+    severity: "high",
+    status: meetingStatus,
+    inbox_bucket: state.meetingDone ? "done" : "needs_decision",
+    title: "Meeting insight draft created",
+    body: "Q2 Client Proposal Review is now in the draft/review flow.",
+    target_href: `/meetings?project_id=${meetingProjectId}&m=${meetingId}&insight_id=${meetingInsightId}`,
+    project_id: meetingProjectId,
+    work_item_id: meetingWorkItemId,
+    dedupe_key: `meeting_insight:${meetingInsightId}`,
+    source_context: {
+      source_type: "meeting_insight",
+      meeting_id: meetingId,
+      insight_id: meetingInsightId,
+      title: "Update proposal pricing model",
+      meeting_title: "Q2 Client Proposal Review",
+      insight_status: "confirmed",
+      project_id: meetingProjectId,
+      project_name: "区域发布资料库"
+    },
+    ...(meetingStatus !== "unread" ? { read_at: "2026-06-11T09:45:00.000Z" } : {}),
+    ...(state.meetingDone ? { archived_at: "2026-06-11T09:46:00.000Z" } : {}),
+    created_at: "2026-06-11T09:36:00.000Z",
+    updated_at: "2026-06-11T09:46:00.000Z",
+    actions: {
+      open: { id: "open", label: labels.open, method: "GET", href: `/meetings?project_id=${meetingProjectId}&m=${meetingId}&insight_id=${meetingInsightId}` },
+      ...(!state.meetingRead && !state.meetingDone ? {
+        mark_read: { id: "notification_mark_read", label: labels.markRead, method: "POST" as const, href: `/api/notifications/${notificationMeetingId}/read` }
+      } : {}),
+      ...(!state.meetingDone ? {
+        dismiss: { id: "notification_dismiss", label: labels.dismiss, method: "POST" as const, href: `/api/notifications/${notificationMeetingId}/dismiss` },
+        complete: { id: "notification_complete", label: labels.complete, method: "POST" as const, href: `/api/notifications/${notificationMeetingId}/complete` }
+      } : {})
+    }
+  };
+  const driveItem: NotificationPageVM["items"][number] = {
+    id: notificationDriveId,
+    type: "drive.comment.draft",
+    severity: "normal",
+    status: driveStatus,
+    inbox_bucket: state.driveDone ? "done" : "fyi",
+    title: "Drive draft awaits proposal",
+    body: "A Drive comment has been converted into a work draft.",
+    target_href: "/drive?project_id=10000000-0000-4000-8000-000000001600",
+    project_id: "10000000-0000-4000-8000-000000001600",
+    work_item_id: "r4-live-workitem",
+    dedupe_key: "drive_comment:10000000-0000-4000-8000-000000001623",
+    source_context: {
+      source_type: "work_item",
+      work_item_id: "r4-live-workitem",
+      code: "WH-R4-14",
+      title: "区域发布复盘包",
+      status: "in_review",
+      project_id: "10000000-0000-4000-8000-000000001600",
+      project_name: "区域发布资料库",
+      due_at: "2026-06-11T15:00:00.000Z"
+    },
+    ...(driveStatus !== "unread" ? { read_at: "2026-06-11T09:45:00.000Z" } : {}),
+    ...(state.driveDone ? { archived_at: "2026-06-11T09:47:00.000Z" } : {}),
+    created_at: "2026-06-11T09:37:00.000Z",
+    updated_at: "2026-06-11T09:47:00.000Z",
+    actions: {
+      open: { id: "open", label: labels.open, method: "GET", href: "/drive?project_id=10000000-0000-4000-8000-000000001600" },
+      ...(!state.driveRead && !state.driveDone ? {
+        mark_read: { id: "notification_mark_read", label: labels.markRead, method: "POST" as const, href: `/api/notifications/${notificationDriveId}/read` }
+      } : {}),
+      ...(!state.driveDone ? {
+        dismiss: { id: "notification_dismiss", label: labels.dismiss, method: "POST" as const, href: `/api/notifications/${notificationDriveId}/dismiss` },
+        complete: { id: "notification_complete", label: labels.complete, method: "POST" as const, href: `/api/notifications/${notificationDriveId}/complete` }
+      } : {})
+    }
+  };
+  const items = [meetingItem, driveItem];
+  const buckets = {
+    needs_decision: items.filter((item) => item.inbox_bucket === "needs_decision"),
+    fyi: items.filter((item) => item.inbox_bucket === "fyi"),
+    done: items.filter((item) => item.inbox_bucket === "done")
+  };
+  return {
+    generated_at: "2026-06-11T09:48:00.000Z",
+    actor_user_id: "r4-live-user",
+    summary: {
+      total_count: items.length,
+      unread_count: items.filter((item) => item.status === "unread").length,
+      needs_decision_count: buckets.needs_decision.length,
+      fyi_count: buckets.fyi.length,
+      done_count: buckets.done.length,
+      urgent_count: items.filter((item) => item.severity === "urgent" || item.severity === "high").length
+    },
+    buckets,
+    items,
+    actions: {
+      mark_all_read: {
+        id: "notification_mark_all_read",
+        label: labels.markAllRead,
+        method: "POST",
+        href: "/api/notifications/read-all"
+      }
+    }
+  };
+}
+
+function calendarPage(locale: WorkHubLocale, view: "day" | "week" = "week", date = "2026-06-11"): CalendarPageVM {
+  const rangeStart = view === "week" ? "2026-06-08T00:00:00.000Z" : `${date}T00:00:00.000Z`;
+  const rangeEnd = view === "week" ? "2026-06-15T00:00:00.000Z" : "2026-06-12T00:00:00.000Z";
+  const workBlock: CalendarPageVM["blocks"][number] = {
+    id: "10000000-0000-4000-8000-000000001811",
+    kind: "work_item_due",
+    title: "Update proposal pricing model",
+    description: "Create a draft update to the pricing section with tiered usage.",
+    ends_at: "2026-06-11T15:00:00.000Z",
+    all_day: true,
+    status: "today",
+    severity: "urgent",
+    target_href: `/workitems/${meetingWorkItemId}`,
+    project_id: meetingProjectId,
+    work_item_id: meetingWorkItemId,
+    source_context: {
+      source_type: "work_item",
+      work_item_id: meetingWorkItemId,
+      code: "WH-R5-5",
+      title: "Update proposal pricing model",
+      status: "in_review",
+      project_id: meetingProjectId,
+      project_name: "区域发布资料库",
+      due_at: "2026-06-11T15:00:00.000Z"
+    }
+  };
+  const meetingBlock: CalendarPageVM["blocks"][number] = {
+    id: "10000000-0000-4000-8000-000000001812",
+    kind: "meeting_followup",
+    title: "Review meeting insight draft",
+    description: "Q2 Client Proposal Review",
+    ends_at: "2026-06-12T09:00:00.000Z",
+    all_day: true,
+    status: "upcoming",
+    severity: "high",
+    target_href: `/meetings?project_id=${meetingProjectId}&m=${meetingId}&insight_id=${meetingInsightId}`,
+    project_id: meetingProjectId,
+    work_item_id: meetingWorkItemId,
+    source_context: {
+      source_type: "meeting_insight",
+      meeting_id: meetingId,
+      insight_id: meetingInsightId,
+      title: "Update proposal pricing model",
+      meeting_title: "Q2 Client Proposal Review",
+      insight_status: "confirmed",
+      project_id: meetingProjectId,
+      project_name: "区域发布资料库"
+    }
+  };
+  const blocks = [workBlock, meetingBlock];
+  const days = (view === "week"
+    ? ["2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14"]
+    : [date]
+  ).map((day) => ({
+    date: day,
+    blocks: blocks.filter((block) => block.ends_at.startsWith(day))
+  }));
+  return {
+    generated_at: "2026-06-11T09:49:00.000Z",
+    actor_user_id: "r4-live-user",
+    scope: { date, view, range_start: rangeStart, range_end: rangeEnd },
+    summary: {
+      block_count: blocks.length,
+      overdue_count: 0,
+      today_count: 1,
+      week_count: blocks.length
+    },
+    days,
+    blocks
+  };
+}
+
 type DriveQaState = "initial" | "uploaded" | "deleted" | "restored";
 
 function drivePage(
@@ -1351,6 +1596,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let meetingInsightDraftCreated = false;
   let meetingDraftProposalCreated = false;
   let meetingInsightDismissed = false;
+  let notificationMeetingRead = false;
+  let notificationDriveRead = false;
+  let notificationMeetingDone = false;
+  let notificationDriveDone = false;
   let failNextPreferencePatch = false;
   let sseEventSeq = 0;
   const sseClients = new Map<ServerResponse, string>();
@@ -1474,6 +1723,73 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     if (request.method === "GET" && url.pathname === "/api/pages/meetings") {
       sendJson(response, 200, meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed));
       return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/pages/notifications") {
+      sendJson(response, 200, notificationPage(currentLocale, {
+        meetingRead: notificationMeetingRead,
+        driveRead: notificationDriveRead,
+        meetingDone: notificationMeetingDone,
+        driveDone: notificationDriveDone
+      }));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/pages/calendar") {
+      const view = url.searchParams.get("view") === "day" ? "day" : "week";
+      const date = url.searchParams.get("date") ?? "2026-06-11";
+      sendJson(response, 200, calendarPage(currentLocale, view, date));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/notifications/read-all") {
+      notificationMeetingRead = true;
+      notificationDriveRead = true;
+      sendJson(response, 200, { ok: true, data: { updated: 2 }, meta: { locale: currentLocale } });
+      return;
+    }
+    const notificationReadMatch = /^\/api\/notifications\/([^/]+)\/read$/u.exec(url.pathname);
+    if (request.method === "POST" && notificationReadMatch?.[1]) {
+      const id = notificationReadMatch[1];
+      if (id === notificationMeetingId) {
+        notificationMeetingRead = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationMeetingRead, done: notificationMeetingDone }), meta: { locale: currentLocale } });
+        return;
+      }
+      if (id === notificationDriveId) {
+        notificationDriveRead = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationDriveRead, done: notificationDriveDone }), meta: { locale: currentLocale } });
+        return;
+      }
+    }
+    const notificationDismissMatch = /^\/api\/notifications\/([^/]+)\/dismiss$/u.exec(url.pathname);
+    if (request.method === "POST" && notificationDismissMatch?.[1]) {
+      const id = notificationDismissMatch[1];
+      if (id === notificationMeetingId) {
+        notificationMeetingRead = true;
+        notificationMeetingDone = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationMeetingRead, done: notificationMeetingDone }), meta: { locale: currentLocale } });
+        return;
+      }
+      if (id === notificationDriveId) {
+        notificationDriveRead = true;
+        notificationDriveDone = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationDriveRead, done: notificationDriveDone }), meta: { locale: currentLocale } });
+        return;
+      }
+    }
+    const notificationCompleteMatch = /^\/api\/notifications\/([^/]+)\/complete$/u.exec(url.pathname);
+    if (request.method === "POST" && notificationCompleteMatch?.[1]) {
+      const id = notificationCompleteMatch[1];
+      if (id === notificationMeetingId) {
+        notificationMeetingRead = true;
+        notificationMeetingDone = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationMeetingRead, done: notificationMeetingDone }), meta: { locale: currentLocale } });
+        return;
+      }
+      if (id === notificationDriveId) {
+        notificationDriveRead = true;
+        notificationDriveDone = true;
+        sendJson(response, 200, { ok: true, data: notificationActionResponse(id, { read: notificationDriveRead, done: notificationDriveDone }), meta: { locale: currentLocale } });
+        return;
+      }
     }
     const driveUploadMatch = /^\/api\/drive\/projects\/([^/]+)\/files$/u.exec(url.pathname);
     if (request.method === "POST" && driveUploadMatch?.[1]) {
@@ -2101,6 +2417,14 @@ function auditExpression() {
     const meetingInsight = document.querySelector("[data-r5-meeting-insight]");
     const meetingDraftLink = document.querySelector("[data-r5-meeting-draft-link]");
     const meetingProposalLink = document.querySelector("[data-r5-meeting-proposal-link]");
+    const notificationNeedsBucket = document.querySelector("[data-r5-notification-bucket='needs_decision']");
+    const notificationFyiBucket = document.querySelector("[data-r5-notification-bucket='fyi']");
+    const notificationDoneBucket = document.querySelector("[data-r5-notification-bucket='done']");
+    const notificationMeetingItem = document.querySelector("[data-r5-notification-item='${notificationMeetingId}']");
+    const notificationDriveItem = document.querySelector("[data-r5-notification-item='${notificationDriveId}']");
+    const calendarWorkItemBlock = document.querySelector("[data-r5-calendar-block-kind='work_item_due']");
+    const calendarMeetingBlock = document.querySelector("[data-r5-calendar-block-kind='meeting_followup']");
+    const calendarDay = document.querySelector("[data-r5-calendar-day='2026-06-11']");
     const panels = Array.from(document.querySelectorAll("[data-wh-panel]"));
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
@@ -2180,6 +2504,33 @@ function auditExpression() {
       meetingProposalLink: meetingProposalLink ? "true" : "false",
       meetingProposalHref: meetingProposalLink?.getAttribute("href") || null,
       meetingProposalStatus: meetingProposalLink?.getAttribute("data-r5-meeting-proposal-status") || null,
+      notificationTotalCount: routeComponent?.getAttribute("data-r5-notification-total-count") || null,
+      notificationUnreadCount: routeComponent?.getAttribute("data-r5-notification-unread-count") || null,
+      notificationNeedsDecisionCount: routeComponent?.getAttribute("data-r5-notification-needs-decision-count") || null,
+      notificationFyiCount: routeComponent?.getAttribute("data-r5-notification-fyi-count") || null,
+      notificationDoneCount: routeComponent?.getAttribute("data-r5-notification-done-count") || null,
+      notificationUrgentCount: routeComponent?.getAttribute("data-r5-notification-urgent-count") || null,
+      notificationNeedsBucketCount: notificationNeedsBucket?.getAttribute("data-r5-notification-bucket-count") || null,
+      notificationFyiBucketCount: notificationFyiBucket?.getAttribute("data-r5-notification-bucket-count") || null,
+      notificationDoneBucketCount: notificationDoneBucket?.getAttribute("data-r5-notification-bucket-count") || null,
+      notificationMeetingItemStatus: notificationMeetingItem?.getAttribute("data-r5-notification-status") || null,
+      notificationMeetingSourceType: notificationMeetingItem?.getAttribute("data-r5-notification-source-type") || null,
+      notificationDriveItemStatus: notificationDriveItem?.getAttribute("data-r5-notification-status") || null,
+      notificationMeetingOpenHref: notificationMeetingItem?.querySelector("[data-action-id='open']")?.getAttribute("href") || null,
+      notificationDriveOpenHref: notificationDriveItem?.querySelector("[data-action-id='open']")?.getAttribute("href") || null,
+      notificationMarkReadAction: document.querySelector("[data-r5-notification-mark-read]") ? "true" : "false",
+      notificationMarkAllReadAction: document.querySelector("[data-r5-notification-mark-all-read]") ? "true" : "false",
+      notificationDismissAction: document.querySelector("[data-r5-notification-dismiss]") ? "true" : "false",
+      notificationCompleteAction: document.querySelector("[data-r5-notification-complete]") ? "true" : "false",
+      calendarDate: routeComponent?.getAttribute("data-r5-calendar-date") || null,
+      calendarView: routeComponent?.getAttribute("data-r5-calendar-view") || null,
+      calendarBlockCount: routeComponent?.getAttribute("data-r5-calendar-block-count") || null,
+      calendarTodayCount: routeComponent?.getAttribute("data-r5-calendar-today-count") || null,
+      calendarOverdueCount: routeComponent?.getAttribute("data-r5-calendar-overdue-count") || null,
+      calendarWorkItemBlock: calendarWorkItemBlock?.getAttribute("data-r5-calendar-block") || null,
+      calendarMeetingBlock: calendarMeetingBlock?.getAttribute("data-r5-calendar-block") || null,
+      calendarDayCount: calendarDay?.getAttribute("data-r5-calendar-day-count") || null,
+      calendarOpenTarget: document.querySelector("[data-r5-calendar-open-target]") ? "true" : "false",
       costTotalTokens: routeComponent?.getAttribute("data-r4-cost-total-tokens") || null,
       costTotalCny: routeComponent?.getAttribute("data-r4-cost-total-cny") || null,
       costBudgetCount: routeComponent?.getAttribute("data-r4-cost-budget-count") || null,
@@ -2273,6 +2624,24 @@ function auditExpression() {
                           document.querySelector("[data-r5-meeting-proposal-link]")
                         )
                     )
+                    : routeComponentKey === "notifications"
+                      ? Boolean(
+                        document.querySelector("[data-r5-notifications-route]") &&
+                          document.querySelector("[data-r5-notification-bucket='needs_decision']") &&
+                          document.querySelector("[data-r5-notification-bucket='fyi']") &&
+                          document.querySelector("[data-r5-notification-bucket='done']") &&
+                          document.querySelector("[data-r5-notification-item]") &&
+                          document.querySelector("[data-r5-notification-mark-all-read]")
+                      )
+                      : routeComponentKey === "calendar"
+                        ? Boolean(
+                          document.querySelector("[data-r5-calendar-route]") &&
+                            document.querySelector("[data-r5-calendar-upcoming]") &&
+                            document.querySelector("[data-r5-calendar-days]") &&
+                            document.querySelector("[data-r5-calendar-block-kind='work_item_due']") &&
+                            document.querySelector("[data-r5-calendar-block-kind='meeting_followup']") &&
+                            document.querySelector("[data-r5-calendar-open-target]")
+                        )
                     : routeComponentKey === "settings"
                       ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
                       : Boolean(routeComponentKey);
@@ -2810,6 +3179,34 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, "ready");
   steps.push(await captureStep(cdp, { id: "15j-meetings-en-mobile-no-overflow", url: `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "meetings" }));
 
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/notifications`, "ready");
+  steps.push(await captureStep(cdp, { id: "15k-notifications-en-desktop", url: `${baseUrl}/notifications`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await clickAndWaitForNotice(cdp, `[data-r5-notification-item="${notificationMeetingId}"] [data-r5-notification-mark-read]`, "action_success", "notification_mark_read");
+  steps.push(await captureStep(cdp, { id: "15l-notification-mark-read-en-desktop", url: `${baseUrl}/notifications`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await clickAndWaitForNotice(cdp, `[data-r5-notification-item="${notificationMeetingId}"] [data-r5-notification-dismiss]`, "action_success", "notification_dismiss");
+  steps.push(await captureStep(cdp, { id: "15m-notification-dismiss-en-desktop", url: `${baseUrl}/notifications`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await clickAndWaitForNotice(cdp, "[data-r5-notification-mark-all-read]", "action_success", "notification_mark_all_read");
+  steps.push(await captureStep(cdp, { id: "15n-notification-mark-all-read-en-desktop", url: `${baseUrl}/notifications`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await clickAndWaitForNotice(cdp, `[data-r5-notification-item="${notificationDriveId}"] [data-r5-notification-complete]`, "action_success", "notification_complete");
+  steps.push(await captureStep(cdp, { id: "15o-notification-complete-en-desktop", url: `${baseUrl}/notifications`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/notifications`, "ready");
+  steps.push(await captureStep(cdp, { id: "15p-notifications-en-mobile-no-overflow", url: `${baseUrl}/notifications`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "notifications" }));
+
+  await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/calendar?date=2026-06-11&view=week`, "ready");
+  steps.push(await captureStep(cdp, { id: "15q-calendar-en-desktop", url: `${baseUrl}/calendar?date=2026-06-11&view=week`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "calendar" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/calendar?date=2026-06-11&view=week`, "ready");
+  steps.push(await captureStep(cdp, { id: "15r-calendar-en-mobile-no-overflow", url: `${baseUrl}/calendar?date=2026-06-11&view=week`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "calendar" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
   steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
@@ -2859,6 +3256,13 @@ function requestProof(requests: ApiRequestRecord[]) {
     meetingInsightDraft: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/draft$/u.test(request.pathname)),
     meetingInsightDismiss: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/dismiss$/u.test(request.pathname)),
     meetingDraftProposal: requests.some((request) => request.method === "POST" && /^\/api\/meetings\/workitems\/[^/]+\/proposal-draft$/u.test(request.pathname)),
+    notifications: requests.some((request) => request.pathname === "/api/pages/notifications" && request.locale === "en-US"),
+    calendar: requests.some((request) => request.pathname === "/api/pages/calendar" && request.locale === "en-US"),
+    calendarWeekQuery: requests.some((request) => request.pathname === "/api/pages/calendar" && request.search.includes("date=2026-06-11") && request.search.includes("view=week")),
+    notificationMarkRead: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationMeetingId}/read`),
+    notificationMarkAllRead: requests.some((request) => request.method === "POST" && request.pathname === "/api/notifications/read-all"),
+    notificationDismiss: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationMeetingId}/dismiss`),
+    notificationComplete: requests.some((request) => request.method === "POST" && request.pathname === `/api/notifications/${notificationDriveId}/complete`),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -2894,6 +3298,12 @@ function requestProof(requests: ApiRequestRecord[]) {
       meetingInsightDraft: countMatch(/^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/draft$/u, "POST"),
       meetingInsightDismiss: countMatch(/^\/api\/meetings\/projects\/[^/]+\/insights\/[^/]+\/dismiss$/u, "POST"),
       meetingDraftProposal: countMatch(/^\/api\/meetings\/workitems\/[^/]+\/proposal-draft$/u, "POST"),
+      notifications: count("/api/pages/notifications"),
+      calendar: count("/api/pages/calendar"),
+      notificationMarkRead: countMatch(/^\/api\/notifications\/[^/]+\/read$/u, "POST"),
+      notificationMarkAllRead: count("/api/notifications/read-all", "POST"),
+      notificationDismiss: countMatch(/^\/api\/notifications\/[^/]+\/dismiss$/u, "POST"),
+      notificationComplete: countMatch(/^\/api\/notifications\/[^/]+\/complete$/u, "POST"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -3038,6 +3448,8 @@ async function main() {
       proposal: "proposal",
       drive: "drive",
       meetings: "meetings",
+      notifications: "notifications",
+      calendar: "calendar",
       replay: "replay",
       cost: "cost",
       knowledge: "evidence",
@@ -3053,7 +3465,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.cost && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -3251,6 +3663,96 @@ async function main() {
           step.audit.routeData.meetingProposalLink === "true" &&
           step.audit.routeData.meetingProposalHref === `/proposals/${meetingDraftProposalId}` &&
           step.audit.routeData.meetingProposalStatus === "opened" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
+      r5_6_schedule_notify_routes:
+        proof.notifications &&
+        proof.calendar &&
+        proof.calendarWeekQuery &&
+        proof.notificationMarkRead &&
+        proof.notificationDismiss &&
+        proof.notificationMarkAllRead &&
+        proof.notificationComplete &&
+        proof.counts.notifications === 6 &&
+        proof.counts.calendar === 2 &&
+        proof.counts.notificationMarkRead === 1 &&
+        proof.counts.notificationDismiss === 1 &&
+        proof.counts.notificationMarkAllRead === 1 &&
+        proof.counts.notificationComplete === 1 &&
+        steps.some((step) =>
+          step.id === "15k-notifications-en-desktop" &&
+          step.audit.routeComponent === "notifications" &&
+          step.audit.routeData.notificationTotalCount === "2" &&
+          step.audit.routeData.notificationUnreadCount === "2" &&
+          step.audit.routeData.notificationNeedsDecisionCount === "1" &&
+          step.audit.routeData.notificationFyiCount === "1" &&
+          step.audit.routeData.notificationDoneCount === "0" &&
+          step.audit.routeData.notificationMeetingItemStatus === "unread" &&
+          step.audit.routeData.notificationMeetingSourceType === "meeting_insight" &&
+          step.audit.routeData.notificationMeetingOpenHref === `/meetings?project_id=${meetingProjectId}&m=${meetingId}&insight_id=${meetingInsightId}` &&
+          step.audit.routeData.notificationDriveOpenHref === "/drive?project_id=10000000-0000-4000-8000-000000001600" &&
+          step.audit.routeData.notificationMarkReadAction === "true" &&
+          step.audit.routeData.notificationDismissAction === "true" &&
+          step.audit.routeData.notificationCompleteAction === "true" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15l-notification-mark-read-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "notification_mark_read" &&
+          step.audit.routeData.notificationUnreadCount === "1" &&
+          step.audit.routeData.notificationMeetingItemStatus === "read"
+        ) &&
+        steps.some((step) =>
+          step.id === "15m-notification-dismiss-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "notification_dismiss" &&
+          step.audit.routeData.notificationNeedsDecisionCount === "0" &&
+          step.audit.routeData.notificationDoneCount === "1" &&
+          step.audit.routeData.notificationMeetingItemStatus === "done"
+        ) &&
+        steps.some((step) =>
+          step.id === "15n-notification-mark-all-read-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "notification_mark_all_read" &&
+          step.audit.routeData.notificationUnreadCount === "0" &&
+          step.audit.routeData.notificationDriveItemStatus === "read"
+        ) &&
+        steps.some((step) =>
+          step.id === "15o-notification-complete-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "notification_complete" &&
+          step.audit.routeData.notificationFyiCount === "0" &&
+          step.audit.routeData.notificationDoneCount === "2" &&
+          step.audit.routeData.notificationDriveItemStatus === "done"
+        ) &&
+        steps.some((step) =>
+          step.id === "15p-notifications-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "notifications" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15q-calendar-en-desktop" &&
+          step.audit.routeComponent === "calendar" &&
+          step.audit.routeData.calendarDate === "2026-06-11" &&
+          step.audit.routeData.calendarView === "week" &&
+          step.audit.routeData.calendarBlockCount === "2" &&
+          step.audit.routeData.calendarTodayCount === "1" &&
+          step.audit.routeData.calendarWorkItemBlock === "10000000-0000-4000-8000-000000001811" &&
+          step.audit.routeData.calendarMeetingBlock === "10000000-0000-4000-8000-000000001812" &&
+          step.audit.routeData.calendarDayCount === "1" &&
+          step.audit.routeData.calendarOpenTarget === "true" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15r-calendar-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "calendar" &&
           !step.audit.horizontalOverflow &&
           !step.audit.navHorizontalOverflow &&
           step.audit.textOverflowCount === 0
@@ -3481,7 +3983,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "11" &&
+        step.audit.routeTreeRouteCount === "13" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
@@ -3815,7 +4317,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 55,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === 63,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3867,7 +4369,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 55,
+      r4_22_no_new_smoke_sprawl: steps.length === 63,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -3916,9 +4418,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 55,
+      r4_23_no_new_smoke_sprawl: steps.length === 63,
       r4_24_no_hash_write:
-        steps.length === 55 &&
+        steps.length === 63 &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -3964,6 +4466,12 @@ async function main() {
         proof.counts.meetingInsightDraft === 1 &&
         proof.counts.meetingInsightDismiss === 0 &&
         proof.counts.meetingDraftProposal === 1 &&
+        proof.counts.notifications === 6 &&
+        proof.counts.calendar === 2 &&
+        proof.counts.notificationMarkRead === 1 &&
+        proof.counts.notificationMarkAllRead === 1 &&
+        proof.counts.notificationDismiss === 1 &&
+        proof.counts.notificationComplete === 1 &&
         proof.counts.session === 3 &&
         proof.counts.nextQuestion === 1 &&
         proof.counts.createWorkItem === 1 &&
@@ -4024,6 +4532,7 @@ async function main() {
         `- R5.3 Drive comment to draft: ${String(gates.r5_3_drive_comment_to_draft)}`,
         `- R5.4 Drive draft to proposal: ${String(gates.r5_4_drive_draft_to_proposal)}`,
         `- R5.5 Meeting insight to draft: ${String(gates.r5_5_meeting_insight_to_draft)}`,
+        `- R5.6 Schedule/Notify routes: ${String(gates.r5_6_schedule_notify_routes)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
         `- R4.14 session/knowledge endpoints: ${String(gates.r4_14_ready_routes_use_session_knowledge_endpoints)}`,

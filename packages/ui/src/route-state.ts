@@ -10,6 +10,8 @@ export type R4WebRouteKey =
   | "proposal"
   | "drive"
   | "meetings"
+  | "notifications"
+  | "calendar"
   | "replay"
   | "cost"
   | "knowledge"
@@ -33,6 +35,8 @@ export const r4WebRouteKeys = [
   "proposal",
   "drive",
   "meetings",
+  "notifications",
+  "calendar",
   "replay",
   "cost",
   "knowledge",
@@ -68,6 +72,8 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     proposal: { label: "变更申请", route: "/proposals/:id" },
     drive: { label: "项目网盘", route: "/drive" },
     meetings: { label: "会议洞察", route: "/meetings" },
+    notifications: { label: "通知中心", route: "/notifications" },
+    calendar: { label: "日程", route: "/calendar" },
     replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
     knowledge: { label: "证据检索", route: "/knowledge/search" },
@@ -81,6 +87,8 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     proposal: { label: "Change request", route: "/proposals/:id" },
     drive: { label: "Project drive", route: "/drive" },
     meetings: { label: "Meeting insights", route: "/meetings" },
+    notifications: { label: "Notifications", route: "/notifications" },
+    calendar: { label: "Calendar", route: "/calendar" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },

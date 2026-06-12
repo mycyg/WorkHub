@@ -79,8 +79,14 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.pages.settings();
   await client.pages.drive();
   await client.pages.meetings({ projectId: "project-1", meetingId: "meeting-1" });
+  await client.pages.notifications();
+  await client.pages.calendar({ date: "2026-06-11", view: "week" });
   await client.me();
   await client.updatePreferences({ locale: "en-US" });
+  await client.markNotificationRead("notification-1");
+  await client.markAllNotificationsRead();
+  await client.dismissNotification("notification-1");
+  await client.completeNotification("notification-1");
   await client.pages.workItem("work-1");
   await client.pages.proposal("proposal-1");
   await client.createSession({ intent_text: "帮我整理客户周报模板。" });
@@ -130,8 +136,14 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/pages/settings",
     "GET /api/pages/drive",
     "GET /api/pages/meetings?project_id=project-1&m=meeting-1",
+    "GET /api/pages/notifications",
+    "GET /api/pages/calendar?date=2026-06-11&view=week",
     "GET /api/auth/me",
     'PATCH /api/auth/preferences {"locale":"en-US"}',
+    "POST /api/notifications/notification-1/read",
+    "POST /api/notifications/read-all",
+    "POST /api/notifications/notification-1/dismiss",
+    "POST /api/notifications/notification-1/complete",
     "GET /api/pages/workitems/work-1",
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions",
@@ -188,6 +200,8 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.settings({ locale: "en-US" });
   await client.pages.drive({ locale: "en-US", projectId: "project 1" });
   await client.pages.meetings({ locale: "en-US", project_id: "project 1", meeting_id: "meeting 1" });
+  await client.pages.notifications({ locale: "zh-CN" });
+  await client.pages.calendar({ locale: "en-US", date: "2026-06-11", view: "day" });
   await client.pages.workItem("work/1", { locale: "zh-CN" });
   await client.pages.proposal("proposal 1", { locale: "en-US" });
   await client.replayAgentRun("run/1", { locale: "en-US" });
@@ -210,6 +224,8 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/settings?locale=en-US",
     "/api/pages/drive?locale=en-US&project_id=project+1",
     "/api/pages/meetings?locale=en-US&project_id=project+1&m=meeting+1",
+    "/api/pages/notifications?locale=zh-CN",
+    "/api/pages/calendar?locale=en-US&date=2026-06-11&view=day",
     "/api/pages/workitems/work%2F1?locale=zh-CN",
     "/api/pages/proposals/proposal%201?locale=en-US",
     "/api/agent-runs/run%2F1/replay?locale=en-US",

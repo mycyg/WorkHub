@@ -4,8 +4,10 @@ import {
   type NotificationList
 } from "@workhub/contracts";
 import {
+  createAuditLogRepository,
   createDatabaseClient,
   createNotificationRepository,
+  type AuditLogRepository,
   type NotificationRepository,
   type NotificationRow,
   type WorkHubDatabaseClient
@@ -32,6 +34,7 @@ export class NotificationServiceError extends Error {
 
 export type NotificationServiceDependencies = {
   notifications: NotificationRepository;
+  audit?: AuditLogRepository;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -44,6 +47,7 @@ export function getDefaultNotificationServiceDependencies(): NotificationService
   defaultDbClient ??= createDatabaseClient();
   return {
     notifications: createNotificationRepository(defaultDbClient.db),
+    audit: createAuditLogRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
   };
 }
@@ -96,6 +100,25 @@ export function createNotificationService(
   deps: NotificationServiceDependencies = getDefaultNotificationServiceDependencies()
 ) {
   const now = deps.now ?? (() => new Date());
+
+  async function auditNotificationAction(input: {
+    userId: string;
+    entityId: string;
+    action: string;
+    detailJson?: Record<string, unknown>;
+  }) {
+    if (!deps.audit) {
+      return;
+    }
+    await deps.audit.createAuditLog({
+      actorKind: "human",
+      actorUserId: input.userId,
+      entityType: "notification",
+      entityId: input.entityId,
+      action: input.action,
+      detailJson: input.detailJson ?? {}
+    });
+  }
 
   async function flushDraft(draft: NotificationDraft) {
     const result = await deps.notifications.createOrUpdateNotification(
@@ -156,12 +179,53 @@ export function createNotificationService(
       if (!row) {
         throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
       }
+      await auditNotificationAction({
+        userId,
+        entityId: id,
+        action: "notification.mark_read"
+      });
       return toNotificationResponse(row);
     },
 
     async markAllRead(userId: string) {
       const updated = await deps.notifications.markAllRead(userId, now());
+      if (deps.audit) {
+        await deps.audit.createAuditLog({
+          actorKind: "human",
+          actorUserId: userId,
+          entityType: "notification_bulk",
+          entityId: userId,
+          action: "notification.mark_all_read",
+          detailJson: { updated }
+        });
+      }
       return { updated };
+    },
+
+    async dismiss(id: string, userId: string) {
+      const row = await deps.notifications.archive(id, userId, now());
+      if (!row) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      await auditNotificationAction({
+        userId,
+        entityId: id,
+        action: "notification.dismiss"
+      });
+      return toNotificationResponse(row);
+    },
+
+    async complete(id: string, userId: string) {
+      const row = await deps.notifications.archive(id, userId, now());
+      if (!row) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      await auditNotificationAction({
+        userId,
+        entityId: id,
+        action: "notification.complete"
+      });
+      return toNotificationResponse(row);
     }
   };
 }

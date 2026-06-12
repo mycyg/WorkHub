@@ -32,6 +32,8 @@ type ProductShellCopyKey =
   | "nav.proposal"
   | "nav.drive"
   | "nav.meetings"
+  | "nav.notifications"
+  | "nav.calendar"
   | "nav.replay"
   | "nav.cost"
   | "nav.settings"
@@ -49,6 +51,8 @@ type ProductShellCopyKey =
   | "rail.nextProposal"
   | "rail.nextDrive"
   | "rail.nextMeetings"
+  | "rail.nextNotifications"
+  | "rail.nextCalendar"
   | "rail.nextReplay"
   | "rail.nextCost"
   | "rail.nextSettings"
@@ -58,6 +62,8 @@ type ProductShellCopyKey =
   | "masthead.proposal"
   | "masthead.drive"
   | "masthead.meetings"
+  | "masthead.notifications"
+  | "masthead.calendar"
   | "masthead.replay"
   | "masthead.cost"
   | "masthead.settings"
@@ -92,6 +98,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.proposal": "变更",
     "nav.drive": "网盘",
     "nav.meetings": "会议",
+    "nav.notifications": "通知",
+    "nav.calendar": "日程",
     "nav.replay": "回放",
     "nav.cost": "成本",
     "nav.settings": "设置",
@@ -109,6 +117,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
     "rail.nextDrive": "检查正式交付物、版本历史和评论草稿入口。",
     "rail.nextMeetings": "确认待处理洞察，再进入草稿与提议链路。",
+    "rail.nextNotifications": "先处理需要你决定的通知，再归档普通消息。",
+    "rail.nextCalendar": "看今天和本周的截止时间，优先处理逾期事项。",
     "rail.nextReplay": "回看执行、成本、快照和决策记录。",
     "rail.nextCost": "看预算风险和用量异常。",
     "rail.nextSettings": "确认语言、设备和运行时边界。",
@@ -118,6 +128,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.proposal": "变更申请像 PR 一样清楚，但面向文档、表格、文件和版本。",
     "masthead.drive": "项目网盘展示正式交付物、当前版本、历史版本与评论转草稿线索。",
     "masthead.meetings": "会议洞察把转写、纪要、AI 理由和草稿入口放在同一个项目上下文。",
+    "masthead.notifications": "通知中心按决策、了解和已处理分组，所有动作仍回到事实来源。",
+    "masthead.calendar": "日程页聚合会议后续、任务截止时间和可审阅时间块。",
     "masthead.replay": "只读解释 AI 当时如何执行、消耗、采纳和回滚。",
     "masthead.cost": "成本页按人、团队、任务和模型拆解预算风险。",
     "masthead.settings": "设置页只放运行时和设备控制，不承载角色形象。",
@@ -151,6 +163,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.proposal": "Changes",
     "nav.drive": "Drive",
     "nav.meetings": "Meetings",
+    "nav.notifications": "Inbox",
+    "nav.calendar": "Calendar",
     "nav.replay": "Replay",
     "nav.cost": "Cost",
     "nav.settings": "Settings",
@@ -168,6 +182,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextProposal": "Check risk, evidence, and rollback path.",
     "rail.nextDrive": "Inspect accepted deliverables, version history, and comment draft entry points.",
     "rail.nextMeetings": "Confirm pending insights, then continue into draft and proposal review.",
+    "rail.nextNotifications": "Handle decisions first, then archive routine updates.",
+    "rail.nextCalendar": "Review today and this week, starting with overdue work.",
     "rail.nextReplay": "Review execution, cost, snapshots, and decisions.",
     "rail.nextCost": "Inspect budget risk and usage anomalies.",
     "rail.nextSettings": "Confirm locale, device, and runtime boundaries.",
@@ -177,6 +193,8 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.proposal": "Change requests read like PRs, but cover documents, sheets, files, and versions.",
     "masthead.drive": "Project drive shows accepted deliverables, current versions, history, and comment-to-draft signals.",
     "masthead.meetings": "Meeting insights keep transcript, minutes, AI rationale, and draft actions in one project context.",
+    "masthead.notifications": "Notifications group decisions, FYI updates, and done items while actions link back to source facts.",
+    "masthead.calendar": "Calendar gathers meeting follow-ups, task due dates, and review windows.",
     "masthead.replay": "A read-only explanation of how AI executed, spent, accepted, and rolled back.",
     "masthead.cost": "Cost breaks budget risk down by person, team, task, and model.",
     "masthead.settings": "Settings are for runtime and device controls, not character presentation.",

@@ -121,6 +121,18 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async notifications() {
       throw new Error("not needed");
     },
+    async markNotificationRead() {
+      throw new Error("not needed");
+    },
+    async markAllNotificationsRead() {
+      throw new Error("not needed");
+    },
+    async dismissNotification() {
+      throw new Error("not needed");
+    },
+    async completeNotification() {
+      throw new Error("not needed");
+    },
     async createSession() {
       return session;
     },
@@ -243,6 +255,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         throw new Error("not needed");
       },
       async meetings() {
+        throw new Error("not needed");
+      },
+      async notifications() {
+        throw new Error("not needed");
+      },
+      async calendar() {
         throw new Error("not needed");
       },
       async workItem() {

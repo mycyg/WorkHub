@@ -10,6 +10,7 @@ import { workHubLocaleSchema } from "./locale.js";
 import { auditLogFactSchema, manifestFactsSchema } from "./audit.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
+import { notificationSeveritySchema } from "./notification.js";
 import {
   attentionItemSchema,
   budgetScopeSchema,
@@ -248,6 +249,136 @@ export const meetingPageVmSchema = z.object({
   empty_state: z.enum(["no_project", "no_meetings"]).optional()
 });
 export type MeetingPageVM = z.infer<typeof meetingPageVmSchema>;
+
+export const notificationSourceContextVmSchema = z.discriminatedUnion("source_type", [
+  z.object({
+    source_type: z.literal("work_item"),
+    work_item_id: idSchema,
+    code: z.string().min(1).optional(),
+    title: z.string().min(1),
+    status: z.string().min(1),
+    project_id: idSchema.optional(),
+    project_name: z.string().min(1).optional(),
+    due_at: isoDateTimeSchema.optional()
+  }),
+  z.object({
+    source_type: z.literal("meeting_insight"),
+    meeting_id: idSchema,
+    insight_id: idSchema,
+    title: z.string().min(1),
+    meeting_title: z.string().min(1),
+    insight_status: z.enum(["pending", "creating_requirement", "confirmed", "dismissed"]),
+    project_id: idSchema.optional(),
+    project_name: z.string().min(1).optional()
+  }),
+  z.object({
+    source_type: z.literal("schedule_event"),
+    schedule_event_id: idSchema,
+    title: z.string().min(1),
+    event_type: z.string().min(1),
+    project_id: idSchema.optional(),
+    work_item_id: idSchema.optional()
+  }),
+  z.object({
+    source_type: z.literal("system"),
+    label: z.string().min(1)
+  })
+]);
+export type NotificationSourceContextVM = z.infer<typeof notificationSourceContextVmSchema>;
+
+export const notificationInboxBucketSchema = z.enum(["needs_decision", "fyi", "done"]);
+export type NotificationInboxBucket = z.infer<typeof notificationInboxBucketSchema>;
+
+export const notificationItemVmSchema = z.object({
+  id: idSchema,
+  type: z.string().min(1),
+  severity: notificationSeveritySchema,
+  status: z.enum(["unread", "read", "done"]),
+  inbox_bucket: notificationInboxBucketSchema,
+  title: z.string().min(1),
+  body: z.string().optional(),
+  target_href: z.string().min(1).optional(),
+  project_id: idSchema.optional(),
+  work_item_id: idSchema.optional(),
+  dedupe_key: z.string().min(1).optional(),
+  source_context: notificationSourceContextVmSchema.optional(),
+  read_at: isoDateTimeSchema.optional(),
+  archived_at: isoDateTimeSchema.optional(),
+  created_at: isoDateTimeSchema,
+  updated_at: isoDateTimeSchema,
+  actions: z.object({
+    open: actionSpecSchema.optional(),
+    mark_read: actionSpecSchema.optional(),
+    dismiss: actionSpecSchema.optional(),
+    complete: actionSpecSchema.optional()
+  }).default({})
+});
+export type NotificationItemVM = z.infer<typeof notificationItemVmSchema>;
+
+export const notificationPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  actor_user_id: idSchema,
+  summary: z.object({
+    total_count: z.number().int().nonnegative(),
+    unread_count: z.number().int().nonnegative(),
+    needs_decision_count: z.number().int().nonnegative(),
+    fyi_count: z.number().int().nonnegative(),
+    done_count: z.number().int().nonnegative(),
+    urgent_count: z.number().int().nonnegative()
+  }),
+  buckets: z.object({
+    needs_decision: z.array(notificationItemVmSchema),
+    fyi: z.array(notificationItemVmSchema),
+    done: z.array(notificationItemVmSchema)
+  }),
+  items: z.array(notificationItemVmSchema),
+  actions: z.object({
+    mark_all_read: actionSpecSchema.optional()
+  }).default({}),
+  empty_state: z.enum(["no_notifications"]).optional()
+});
+export type NotificationPageVM = z.infer<typeof notificationPageVmSchema>;
+
+export const scheduleBlockVmSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["schedule_event", "work_item_due", "meeting_followup", "review_window"]),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  starts_at: isoDateTimeSchema.optional(),
+  ends_at: isoDateTimeSchema,
+  all_day: z.boolean().default(false),
+  status: z.enum(["upcoming", "today", "overdue", "done"]),
+  severity: notificationSeveritySchema,
+  target_href: z.string().min(1).optional(),
+  project_id: idSchema.optional(),
+  work_item_id: idSchema.optional(),
+  source_context: notificationSourceContextVmSchema.optional()
+});
+export type ScheduleBlockVM = z.infer<typeof scheduleBlockVmSchema>;
+
+export const calendarPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  actor_user_id: idSchema,
+  scope: z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    view: z.enum(["day", "week"]),
+    range_start: isoDateTimeSchema,
+    range_end: isoDateTimeSchema
+  }),
+  summary: z.object({
+    block_count: z.number().int().nonnegative(),
+    overdue_count: z.number().int().nonnegative(),
+    today_count: z.number().int().nonnegative(),
+    week_count: z.number().int().nonnegative()
+  }),
+  days: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    blocks: z.array(scheduleBlockVmSchema)
+  })),
+  blocks: z.array(scheduleBlockVmSchema),
+  empty_state: z.enum(["no_schedule_blocks"]).optional()
+});
+export type CalendarPageVM = z.infer<typeof calendarPageVmSchema>;
 
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),

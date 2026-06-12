@@ -18,6 +18,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  notificationActionFromHref,
   proposalActionFromHref,
   replaceCustomFieldPlaceholder,
   sessionNextQuestionIdFromHref
@@ -55,6 +56,21 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   });
   assert.deepEqual(meetingDraftProposalFromHref("/api/meetings/workitems/w%201/proposal-draft"), {
     workItemId: "w 1"
+  });
+  assert.deepEqual(notificationActionFromHref("/api/notifications/n%201/read"), {
+    notificationId: "n 1",
+    action: "read"
+  });
+  assert.deepEqual(notificationActionFromHref("/api/notifications/read-all"), {
+    action: "mark_all_read"
+  });
+  assert.deepEqual(notificationActionFromHref("/api/notifications/n-1/dismiss"), {
+    notificationId: "n-1",
+    action: "dismiss"
+  });
+  assert.deepEqual(notificationActionFromHref("/api/notifications/n-1/complete"), {
+    notificationId: "n-1",
+    action: "complete"
   });
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",

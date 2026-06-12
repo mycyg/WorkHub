@@ -6,11 +6,13 @@ import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/a
 import type {
   ApprovalCenterVM,
   AttentionHomeVM,
+  CalendarPageVM,
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
   GoldPathSurfaceVM,
   MeetingPageVM,
+  NotificationPageVM,
   ProposalConflict,
   ReplayTraceVM,
   SessionVM,
@@ -32,6 +34,8 @@ type RouteClientOverrides = {
   cost?: CostDashboardVM;
   drive?: DrivePageVM;
   meetings?: MeetingPageVM;
+  notifications?: NotificationPageVM;
+  calendar?: CalendarPageVM;
   replay?: ReplayTraceVM;
   session?: SessionVM;
   knowledge?: EvidenceBubble;
@@ -114,6 +118,94 @@ function meetingVm(): MeetingPageVM {
         ]
       }
     ]
+  };
+}
+
+function notificationVm(): NotificationPageVM {
+  return {
+    generated_at: "2026-06-11T10:00:00.000Z",
+    actor_user_id: "98000000-0000-4000-8000-000000000001",
+    summary: {
+      total_count: 1,
+      unread_count: 1,
+      needs_decision_count: 1,
+      fyi_count: 0,
+      done_count: 0,
+      urgent_count: 1
+    },
+    buckets: {
+      needs_decision: [
+        {
+          id: "98000000-0000-4000-8000-000000000002",
+          type: "meeting.insight.pending",
+          severity: "high",
+          status: "unread",
+          inbox_bucket: "needs_decision",
+          title: "Meeting insight needs review",
+          target_href: "/meetings?project_id=95000000-0000-4000-8000-000000000001",
+          created_at: "2026-06-11T10:00:00.000Z",
+          updated_at: "2026-06-11T10:00:00.000Z",
+          source_context: {
+            source_type: "meeting_insight",
+            meeting_id: "95000000-0000-4000-8000-000000000002",
+            insight_id: "95000000-0000-4000-8000-000000000004",
+            title: "Update proposal pricing model",
+            meeting_title: "Q2 Client Proposal Review",
+            insight_status: "pending"
+          },
+          actions: {
+            mark_read: {
+              id: "notification_mark_read",
+              label: "Mark as read",
+              method: "POST",
+              href: "/api/notifications/98000000-0000-4000-8000-000000000002/read"
+            }
+          }
+        }
+      ],
+      fyi: [],
+      done: []
+    },
+    items: [],
+    actions: {
+      mark_all_read: {
+        id: "notification_mark_all_read",
+        label: "Mark all as read",
+        method: "POST",
+        href: "/api/notifications/read-all"
+      }
+    }
+  };
+}
+
+function calendarVm(): CalendarPageVM {
+  const block: CalendarPageVM["blocks"][number] = {
+    id: "99000000-0000-4000-8000-000000000001",
+    kind: "work_item_due",
+    title: "Review proposal pricing",
+    ends_at: "2026-06-11T14:00:00.000Z",
+    all_day: true,
+    status: "today",
+    severity: "urgent",
+    target_href: "/workitems/99000000-0000-4000-8000-000000000002"
+  };
+  return {
+    generated_at: "2026-06-11T10:00:00.000Z",
+    actor_user_id: "99000000-0000-4000-8000-000000000003",
+    scope: {
+      date: "2026-06-11",
+      view: "week",
+      range_start: "2026-06-08T00:00:00.000Z",
+      range_end: "2026-06-15T00:00:00.000Z"
+    },
+    summary: {
+      block_count: 1,
+      overdue_count: 0,
+      today_count: 1,
+      week_count: 1
+    },
+    days: [{ date: "2026-06-11", blocks: [block] }],
+    blocks: [block]
   };
 }
 
@@ -425,6 +517,14 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         calls.push(`meetings:${options?.locale ?? "none"}:${options?.projectId ?? "none"}:${options?.meetingId ?? "none"}`);
         return overrides.meetings ?? meetingVm();
       },
+      async notifications(options?: { locale?: string }) {
+        localeCall("notifications", options);
+        return overrides.notifications ?? notificationVm();
+      },
+      async calendar(options?: { locale?: string; date?: string; view?: "day" | "week" }) {
+        calls.push(`calendar:${options?.locale ?? "none"}:${options?.date ?? "none"}:${options?.view ?? "none"}`);
+        return overrides.calendar ?? calendarVm();
+      },
       async workItem(id: string, options?: { locale?: string }) {
         localeCall(`workItem:${id}`, options);
         return surface.page_vms.workitem;
@@ -627,6 +727,8 @@ test("R4 web route registry resolves product URL routes", () => {
     "proposal",
     "drive",
     "meetings",
+    "notifications",
+    "calendar",
     "replay",
     "cost",
     "knowledge",
@@ -637,6 +739,9 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
   assert.equal(resolveWebRoute("/drive")?.key, "drive");
   assert.equal(resolveWebRoute("/meetings?project_id=95000000-0000-4000-8000-000000000001")?.key, "meetings");
+  assert.equal(resolveWebRoute("/notifications")?.key, "notifications");
+  assert.equal(resolveWebRoute("/calendar?date=2026-06-11&view=week")?.key, "calendar");
+  assert.equal(resolveWebRoute("/calendar?date=2026-06-11&view=week")?.search, "?date=2026-06-11&view=week");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
@@ -667,6 +772,8 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["proposal", "proposal"],
       ["drive", "drive"],
       ["meetings", "meetings"],
+      ["notifications", "notifications"],
+      ["calendar", "calendar"],
       ["replay", "replay"],
       ["cost", "cost"],
       ["knowledge", "evidence"],
@@ -818,6 +925,8 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     ["/approvals", "approvals:en-US"],
     ["/drive", "drive:en-US:none"],
     ["/meetings", "meetings:en-US:none:none"],
+    ["/notifications", "notifications:en-US"],
+    ["/calendar?date=2026-06-11&view=week", "calendar:en-US:2026-06-11:week"],
     ["/dashboard/cost", "cost:en-US"],
     ["/settings", "settings:en-US"]
   ] as const) {
@@ -848,6 +957,8 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
     ]],
     ["/drive", ["drive:en-US:none"]],
     ["/meetings", ["meetings:en-US:none:none"]],
+    ["/notifications", ["notifications:en-US"]],
+    ["/calendar?date=2026-06-11&view=week", ["calendar:en-US:2026-06-11:week"]],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"]]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);
@@ -877,6 +988,8 @@ test("R4.11 web loader marks ready routes as route components", async () => {
     ], "proposal"],
     ["/drive", ["drive:en-US:none"], "drive"],
     ["/meetings", ["meetings:en-US:none:none"], "meetings"],
+    ["/notifications", ["notifications:en-US"], "notifications"],
+    ["/calendar?date=2026-06-11&view=week", ["calendar:en-US:2026-06-11:week"], "calendar"],
     ["/agent-runs/run-42/replay", ["replayAgentRun:run-42:en-US"], "replay"],
     ["/dashboard/cost", ["cost:en-US"], "cost"],
     ["/settings", ["settings:en-US"], "settings"]
@@ -953,6 +1066,34 @@ test("R5.2 drive route loader forwards project id query to the Page VM client", 
 
   assert.equal(result.status, "ready");
   assert.deepEqual(calls, ["drive:en-US:93000000-0000-4000-8000-000000000001"]);
+});
+
+test("R5.6 notifications and calendar routes load typed Page VMs with actionable markers", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client, calls } = fakeRouteClient(surface, {
+    notifications: notificationVm(),
+    calendar: calendarVm()
+  });
+  const notificationsMatch = resolveWebRoute("/notifications");
+  const calendarMatch = resolveWebRoute("/calendar?date=2026-06-11&view=week");
+  assert.ok(notificationsMatch);
+  assert.ok(calendarMatch);
+
+  const notifications = await loadWebRoute(client, notificationsMatch, "zh-CN");
+  const calendar = await loadWebRoute(client, calendarMatch, "zh-CN");
+
+  assert.deepEqual(calls, ["notifications:zh-CN", "calendar:zh-CN:2026-06-11:week"]);
+  assert.equal(notifications.status, "ready");
+  assert.equal(calendar.status, "ready");
+  assert.equal(notifications.html.includes('data-r4-route-component="notifications"'), true);
+  assert.equal(notifications.html.includes('data-r5-notifications-route="true"'), true);
+  assert.equal(notifications.html.includes('data-r5-notification-needs-decision-count="1"'), true);
+  assert.equal(notifications.html.includes("/api/notifications/98000000-0000-4000-8000-000000000002/read"), true);
+  assert.equal(calendar.html.includes('data-r4-route-component="calendar"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-route="true"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-date="2026-06-11"'), true);
+  assert.equal(calendar.html.includes('data-r5-calendar-block-count="1"'), true);
+  assert.equal(calendar.html.includes("/workitems/99000000-0000-4000-8000-000000000002"), true);
 });
 
 test("R5.5 meetings route loader forwards project and meeting ids to the Page VM client", async () => {

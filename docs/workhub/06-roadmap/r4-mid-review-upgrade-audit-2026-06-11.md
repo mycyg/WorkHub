@@ -113,6 +113,8 @@ DB schema 已建 drive/meeting/schedule 全套表（`packages/db/src/schema/core
 
 **回写状态（2026-06-11 R4.24）**：已新增 [`r5-01-drive-business-slice-decision-2026-06-11.md`](./r5-01-drive-business-slice-decision-2026-06-11.md)，R5 第一条业务纵切拍板为 M-DRIVE。理由是 Drive 已承接 accepted deliverables、`ProjectDriveItem/Version`、download/text preview、restore 与 OQ-4 文档合并语义；Meeting/Schedule 仍登记为后续业务断档。
 
+**回写状态（2026-06-11 R5.6）**：断档已大幅收口。R5.1–R5.4 落地 M-DRIVE（page/upload/recycle/operation log/comment-to-draft/draft-to-proposal），R5.5 落地 M-MEETING（insight-to-draft），R5.6 落地 M-NOTIFY（`/notifications` 收件箱 + `/calendar` 周视图 + mark read/dismiss/complete + audit）。六模块中仅 M-DASHBOARD 经营面（项目健康/自治率）未有页面，已排入 [`r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md`](./r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md)。
+
 ### P1-3 每路由双请求模式
 
 每次 `loadRouteSurface` 都 `await loadGoldPathTemplate()` + page VM 两次串行请求（`apps/web/src/routes.ts:469/477/484/491/504/508/514/521/525`）。随 P0-3 fixture 退役一并消掉；若 shell 改为前端常量，导航只剩一次 VM 请求。

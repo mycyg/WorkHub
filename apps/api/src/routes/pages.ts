@@ -6,7 +6,9 @@ import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@
 import {
   normalizeWorkHubLocale,
   type ApprovalCenterVM,
+  type CalendarPageVM,
   type MeetingPageVM,
+  type NotificationPageVM,
   type ApprovalRequest,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -34,6 +36,11 @@ import {
   MeetingPageServiceError,
   type MeetingPageService
 } from "../services/meeting-pages.js";
+import {
+  createScheduleNotifyPageService,
+  ScheduleNotifyPageServiceError,
+  type ScheduleNotifyPageService
+} from "../services/schedule-notify-pages.js";
 import {
   createApprovalService,
   type ApprovalService
@@ -64,6 +71,7 @@ export type PageRoutesDependencies = {
   workItems?: WorkItemService;
   drivePages?: DrivePageService;
   meetingPages?: MeetingPageService;
+  scheduleNotifyPages?: ScheduleNotifyPageService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -140,6 +148,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
+  const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -227,6 +236,42 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     } catch (error) {
       if (error instanceof MeetingPageServiceError) {
         throw new HTTPException(error.status, { message: error.message });
+      }
+      throw error;
+    }
+  });
+
+  routes.get("/notifications", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const data: NotificationPageVM = await scheduleNotifyPages.notificationsPage({
+        actor: c.var.actor,
+        locale
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof ScheduleNotifyPageServiceError) {
+        throw new HTTPException(error.status as 400, { message: error.message });
+      }
+      throw error;
+    }
+  });
+
+  routes.get("/calendar", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const date = c.req.query("date");
+    const view = c.req.query("view");
+    try {
+      const data: CalendarPageVM = await scheduleNotifyPages.calendarPage({
+        actor: c.var.actor,
+        locale,
+        ...(date ? { date } : {}),
+        ...(view ? { view } : {})
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof ScheduleNotifyPageServiceError) {
+        throw new HTTPException(error.status as 400, { message: error.message });
       }
       throw error;
     }

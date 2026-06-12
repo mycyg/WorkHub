@@ -7,6 +7,7 @@ import type {
   BudgetPolicy,
   BudgetPolicyUpdate,
   CostDashboardVM,
+  CalendarPageVM,
   CostSummaryVM,
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
@@ -17,6 +18,8 @@ import type {
   ChooseMergeProposalCandidateRequest,
   EvidenceBubble,
   GoldPathSurfaceVM,
+  Notification,
+  NotificationPageVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
@@ -88,6 +91,11 @@ export type MeetingPageRequestOptions = PageRequestOptions & {
   meeting_id?: string;
 };
 
+export type CalendarPageRequestOptions = PageRequestOptions & {
+  date?: string;
+  view?: "day" | "week";
+};
+
 export type DriveUploadFileRequest = {
   filename: string;
   mime?: string;
@@ -133,6 +141,8 @@ export type PageClient = {
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
   drive: (options?: DrivePageRequestOptions) => Promise<DrivePageVM>;
   meetings: (options?: MeetingPageRequestOptions) => Promise<MeetingPageVM>;
+  notifications: (options?: PageRequestOptions) => Promise<NotificationPageVM>;
+  calendar: (options?: CalendarPageRequestOptions) => Promise<CalendarPageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
@@ -153,6 +163,10 @@ export type WorkHubApiClient = {
   me: () => Promise<IdentityResponse | null>;
   updatePreferences: (payload: UpdateUserPreferencesRequest) => Promise<IdentityResponse>;
   notifications: () => Promise<NotificationList>;
+  markNotificationRead: (id: string) => Promise<Notification>;
+  markAllNotificationsRead: () => Promise<{ updated: number }>;
+  dismissNotification: (id: string) => Promise<Notification>;
+  completeNotification: (id: string) => Promise<Notification>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;

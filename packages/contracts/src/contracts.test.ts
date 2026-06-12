@@ -19,9 +19,11 @@ import {
   createWorkItemRequestSchema,
   cuuLauncherSpecFromSelectedOptionIds,
   confidenceGrades,
+  calendarPageVmSchema,
   drivePageVmSchema,
   identifyRequestSchema,
   meetingPageVmSchema,
+  notificationPageVmSchema,
   normalizeWorkHubLocale,
   mergeProposalRequestSchema,
   mergeProposalCandidateChoiceResultSchema,
@@ -1210,4 +1212,108 @@ test("approval contracts keep UI payloads human-readable and deny reasons explic
   assert.equal(request.kind, "tool");
   assert.equal(request.payload_json.ui?.summary_text.includes("tool.delete_file"), false);
   assert.throws(() => respondApprovalRequestSchema.parse({ decision: "deny", reason_md: "" }));
+});
+
+test("R5.6 notification and calendar page VMs keep source context typed", () => {
+  const notification = notificationPageVmSchema.parse({
+    generated_at: "2026-06-11T00:00:00.000Z",
+    actor_user_id: "81000000-0000-4000-8000-000000000001",
+    summary: {
+      total_count: 1,
+      unread_count: 1,
+      needs_decision_count: 1,
+      fyi_count: 0,
+      done_count: 0,
+      urgent_count: 1
+    },
+    buckets: {
+      needs_decision: [
+        {
+          id: "81000000-0000-4000-8000-000000000002",
+          type: "meeting.insight.pending",
+          severity: "high",
+          status: "unread",
+          inbox_bucket: "needs_decision",
+          title: "会议建议等待确认",
+          target_href: "/meetings?project_id=81000000-0000-4000-8000-000000000003",
+          created_at: "2026-06-11T00:00:00.000Z",
+          updated_at: "2026-06-11T00:00:00.000Z",
+          source_context: {
+            source_type: "meeting_insight",
+            meeting_id: "81000000-0000-4000-8000-000000000004",
+            insight_id: "81000000-0000-4000-8000-000000000005",
+            title: "Update pricing",
+            meeting_title: "Q2 review",
+            insight_status: "pending"
+          },
+          actions: {
+            mark_read: {
+              id: "notification_mark_read",
+              label: "标为已读",
+              method: "POST",
+              href: "/api/notifications/81000000-0000-4000-8000-000000000002/read"
+            }
+          }
+        }
+      ],
+      fyi: [],
+      done: []
+    },
+    items: [],
+    actions: {
+      mark_all_read: {
+        id: "notification_mark_all_read",
+        label: "全部已读",
+        method: "POST",
+        href: "/api/notifications/read-all"
+      }
+    }
+  });
+  const calendar = calendarPageVmSchema.parse({
+    generated_at: "2026-06-11T00:00:00.000Z",
+    actor_user_id: "81000000-0000-4000-8000-000000000001",
+    scope: {
+      date: "2026-06-11",
+      view: "week",
+      range_start: "2026-06-08T00:00:00.000Z",
+      range_end: "2026-06-15T00:00:00.000Z"
+    },
+    summary: {
+      block_count: 1,
+      overdue_count: 0,
+      today_count: 1,
+      week_count: 1
+    },
+    days: [
+      {
+        date: "2026-06-11",
+        blocks: [
+          {
+            id: "81000000-0000-4000-8000-000000000006",
+            kind: "work_item_due",
+            title: "Review pricing",
+            ends_at: "2026-06-11T10:00:00.000Z",
+            all_day: true,
+            status: "today",
+            severity: "urgent",
+            target_href: "/workitems/81000000-0000-4000-8000-000000000007",
+            source_context: {
+              source_type: "work_item",
+              work_item_id: "81000000-0000-4000-8000-000000000007",
+              title: "Review pricing",
+              status: "in_review"
+            }
+          }
+        ]
+      }
+    ],
+    blocks: []
+  });
+
+  assert.equal(notification.buckets.needs_decision[0]?.source_context?.source_type, "meeting_insight");
+  assert.equal(calendar.days[0]?.blocks[0]?.kind, "work_item_due");
+  assert.throws(() => notificationPageVmSchema.parse({
+    ...notification,
+    buckets: { needs_decision: [{ ...notification.buckets.needs_decision[0], inbox_bucket: "later" }], fyi: [], done: [] }
+  }));
 });

@@ -47,6 +47,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  notificationActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
   reasonRequiredNotice,
@@ -503,6 +504,55 @@ function bindGoldPathNavigation(
           await renderCurrentRoute(client, locale);
           if (root) {
             showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const notificationAction = notificationActionFromHref(href);
+      if (notificationAction?.action === "mark_all_read") {
+        try {
+          const result = await client.markAllNotificationsRead();
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_mark_all_read"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (notificationAction?.action === "read") {
+        try {
+          const result = await client.markNotificationRead(notificationAction.notificationId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_mark_read"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (notificationAction?.action === "dismiss") {
+        try {
+          const result = await client.dismissNotification(notificationAction.notificationId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_dismiss"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      if (notificationAction?.action === "complete") {
+        try {
+          const result = await client.completeNotification(notificationAction.notificationId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_complete"));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

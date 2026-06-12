@@ -1,7 +1,7 @@
 ---
 module: R5-schedule-notify
 layer: M-NOTIFY / M-WORKITEM / M-DRIVE / M-MEETING / P-PERM / C-WEB
-status: planned
+status: completed
 owner: workflow
 date: 2026-06-11
 visuals:
@@ -95,4 +95,28 @@ Domain event / REST mutation
 
 ## 6. R5.7 Handoff
 
-R5.6 完成后，优先推进 Knowledge grounding / dashboard health 的下一条纵切：把通知与日程里的 target 反向连到 evidence search、project health 和 agent replay，形成“为什么提醒我、我该先看什么证据”的闭环。桌宠 OS 通知与 Cuu 主动提醒另开 desktop/pet 计划，不阻塞 Web R5 业务纵切。
+R5.6 完成后，优先推进 Knowledge grounding / dashboard health 的下一条纵切：把通知与日程里的 target 反向连到 evidence search、project health 和 agent replay，形成“为什么提醒我、我该先看什么证据”的闭环。桌宠 OS 通知与 Cuu 主动提醒另开 desktop/pet 计划，不阻塞 Web R5 业务纵切。详细计划见 [`r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md`](./r5-07-knowledge-grounding-dashboard-plan-2026-06-11.md)。
+
+## 7. 竣工记录
+
+状态：✅ completed（2026-06-11）
+
+落地范围：
+
+- Contracts：`packages/contracts/src/pages.ts` 新增 `NotificationPageVM`、`CalendarPageVM` 与 notification item / schedule block / source context 合同，actions 走判别联合。
+- DB：新增 `packages/db/src/repositories/schedule-notify.ts`（WorkItem / Meeting insight 日程源行读取），`repositories/notifications.ts` 扩展 `listForUser / markRead / markAllRead / archive`，dedupe 按 `(user_id, dedupe_key)` 收口。
+- Services/API：新增 `apps/api/src/services/schedule-notify-pages.ts`（625 行，inbox 分组 + calendar 周视图聚合）；`routes/notifications.ts` 落 `mark-read / mark-all-read / dismiss / complete`，全部经 `createCurrentUserMiddleware` 且写 audit log；`/api/pages/notifications`、`/api/pages/calendar` 已登记 OpenAPI。
+- 权限：日程/通知源按 `canViewWorkItemRecord` / `canViewProjectDrive` / `canViewProjectMeetings` fail-closed 过滤，看不到目标资源即不出现在 inbox/calendar。
+- Web/UI：route registry 扩到 13 条（`/notifications`、`/calendar`），route components 双语固定文案、desktop/mobile 无溢出，动作走 shared web runtime dispatcher，无 Web/desktop 分叉。
+
+验收证据：
+
+- `pnpm typecheck`（16 包全绿）
+- `pnpm test`（16 包 454 pass / 0 fail）
+- `pnpm --filter @workhub/web qa:r4-live-route-interaction`：**63 步、113 gates 全 true**，新增 `r5_6_schedule_notify_routes=true`；request proof：`notifications / calendar / calendarWeekQuery / notificationMarkRead / notificationMarkAllRead / notificationDismiss / notificationComplete` 全部 true
+- 截图：`15k-notifications-en-desktop.png`、`15l-notification-mark-read-en-desktop.png`、`15m-notification-dismiss-en-desktop.png`、`15n-notification-mark-all-read-en-desktop.png`、`15o-notification-complete-en-desktop.png`、`15p-notifications-en-mobile-no-overflow.png`、`15q-calendar-en-desktop.png`、`15r-calendar-en-mobile-no-overflow.png`
+
+PRD / 概念图审视：
+
+- 符合 `web-operations-pages-atlas.png` P10/P11：通知收件箱按 needs_decision / fyi / done 分组、日历密集可扫描；`target_href` 全部指向产品 route，不暴露 raw API。
+- 符合 §2 硬门：通知是事实的投递与索引，REST 仍是真相源；SSE 只提示刷新；severity 高不代替人工动作。

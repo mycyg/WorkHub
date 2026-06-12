@@ -28,9 +28,10 @@ export type NotificationWriteResult = {
 
 export type NotificationRepository = {
   createOrUpdateNotification: (input: CreateNotificationInput, at: Date) => Promise<NotificationWriteResult>;
-  listForUser: (userId: string, options?: { includeArchived?: boolean }) => Promise<NotificationRow[]>;
+  listForUser: (userId: string, options?: { includeArchived?: boolean; limit?: number }) => Promise<NotificationRow[]>;
   markRead: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
   markAllRead: (userId: string, at: Date) => Promise<number>;
+  archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
 };
 
 function sameContent(row: NotificationRow, input: CreateNotificationInput) {
@@ -115,7 +116,8 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
             ? eq(notifications.userId, userId)
             : and(eq(notifications.userId, userId), isNull(notifications.archivedAt))
         )
-        .orderBy(desc(notifications.createdAt));
+        .orderBy(desc(notifications.createdAt))
+        .limit(Math.max(1, Math.min(options.limit ?? 200, 500)));
     },
 
     async markRead(id, userId, at) {
@@ -134,6 +136,15 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
         .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
         .returning({ id: notifications.id });
       return rows.length;
+    },
+
+    async archive(id, userId, at) {
+      const rows = await db
+        .update(notifications)
+        .set({ readAt: at, archivedAt: at, updatedAt: at })
+        .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+        .returning();
+      return rows[0] ?? null;
     }
   };
 }

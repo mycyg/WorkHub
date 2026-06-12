@@ -50,6 +50,10 @@ class StubNotifications implements NotificationRepository {
   async markAllRead() {
     return 1;
   }
+
+  async archive() {
+    return row({ readAt: now, archivedAt: now });
+  }
 }
 
 test("milestone notifications publish only private user topics and dedupe replays", async () => {

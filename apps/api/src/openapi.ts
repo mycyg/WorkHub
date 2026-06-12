@@ -54,6 +54,18 @@ export function getOpenApiDocument() {
           summary: "Meeting insights page VM"
         }
       },
+      "/api/pages/notifications": {
+        get: {
+          tags: ["pages"],
+          summary: "Notification inbox page VM grouped by decision, FYI, and done"
+        }
+      },
+      "/api/pages/calendar": {
+        get: {
+          tags: ["pages"],
+          summary: "Calendar page VM with schedule events, work item due dates, and meeting follow-ups"
+        }
+      },
       "/api/drive/projects/{projectId}/files": {
         post: {
           tags: ["drive"],
@@ -100,6 +112,30 @@ export function getOpenApiDocument() {
         post: {
           tags: ["meetings"],
           summary: "Create or return a deterministic proposal from a meeting-created work item draft"
+        }
+      },
+      "/api/notifications/{id}/read": {
+        post: {
+          tags: ["notifications"],
+          summary: "Mark one notification as read"
+        }
+      },
+      "/api/notifications/read-all": {
+        post: {
+          tags: ["notifications"],
+          summary: "Mark all current user's notifications as read"
+        }
+      },
+      "/api/notifications/{id}/dismiss": {
+        post: {
+          tags: ["notifications"],
+          summary: "Dismiss and archive one notification"
+        }
+      },
+      "/api/notifications/{id}/complete": {
+        post: {
+          tags: ["notifications"],
+          summary: "Complete and archive one notification"
         }
       },
       "/api/workitems/{id}/proposals": {
