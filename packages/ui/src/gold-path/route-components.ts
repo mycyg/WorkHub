@@ -927,6 +927,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.reason_text ?? item.summary_text)}</p>
       ${renderActions(item.actions)}
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(item.work_item_id)}">${escapeHtml(locale === "zh-CN" ? "查看任务" : "View task")}</a>` : ""}
     </article>`)
     .join("");
   const requestRows = vm.requests
@@ -1198,16 +1199,16 @@ function renderCheck(check: DeliverableCheck, locale: WorkHubLocale) {
 }
 
 function proposalActions(vm: ProposalDetailVM) {
-  if (vm.status === "opened") {
-    return [
-      vm.review_actions.approve,
-      vm.review_actions.request_changes
-    ];
+  // A merged proposal is read-only: hide all write actions. Otherwise surface the
+  // full review set (approve / request changes / merge) so reviewers can act in one place.
+  if (vm.status === "merged") {
+    return [];
   }
-  if (vm.status === "reviewed" && vm.review_actions.merge) {
-    return [vm.review_actions.merge];
-  }
-  return [];
+  return [
+    vm.review_actions.approve,
+    vm.review_actions.request_changes,
+    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
+  ];
 }
 
 function renderProposalRouteComponent(

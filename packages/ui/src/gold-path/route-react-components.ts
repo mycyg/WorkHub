@@ -114,16 +114,16 @@ export type ReplayRouteComponentProps = {
 };
 
 function proposalReviewActions(vm: ProposalDetailVM) {
-  if (vm.status === "opened") {
-    return [
-      vm.review_actions.approve,
-      vm.review_actions.request_changes
-    ];
+  // A merged proposal is read-only: hide all write actions. Otherwise surface the
+  // full review set (approve / request changes / merge) so reviewers can act in one place.
+  if (vm.status === "merged") {
+    return [];
   }
-  if (vm.status === "reviewed" && vm.review_actions.merge) {
-    return [vm.review_actions.merge];
-  }
-  return [];
+  return [
+    vm.review_actions.approve,
+    vm.review_actions.request_changes,
+    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
+  ];
 }
 
 function proposalConflictActionHrefs(conflicts: ProposalConflict[]) {
@@ -260,7 +260,7 @@ export function createProposalReactRouteComponent(
     conflictCount: conflicts.length,
     reviewActionCount: reviewActionHrefs.length,
     reviewActionHrefs,
-    mergeActionAvailable: Boolean(vm.status === "reviewed" && vm.review_actions.merge),
+    mergeActionAvailable: Boolean(vm.status !== "merged" && vm.review_actions.merge),
     rollbackAvailable: vm.manifest.rollback.available,
     advancedFallbackPreserved: true,
     advancedFallbackSource: "proposal-advanced-editors-html-fallback",

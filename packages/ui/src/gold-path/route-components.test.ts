@@ -864,7 +864,8 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
   assert.equal(proposal.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(proposal.primaryHrefs, [
     vm.page_vms.proposal.review_actions.approve.href,
-    vm.page_vms.proposal.review_actions.request_changes.href
+    vm.page_vms.proposal.review_actions.request_changes.href,
+    vm.page_vms.proposal.review_actions.merge?.href
   ].filter(Boolean));
   assertNoMainWindowBoundaryLeak(proposal.html);
 });
@@ -952,7 +953,7 @@ test("R4.19 Proposal split adapter keeps readonly props separate from advanced e
   assert.equal(proposal.reactComponent.props.evidenceRefCount, vm.page_vms.proposal.evidence_refs.length);
   assert.equal(proposal.reactComponent.props.commentCount, vm.page_vms.proposal.comments.length);
   assert.equal(proposal.reactComponent.props.conflictCount, 1);
-  assert.equal(proposal.reactComponent.props.reviewActionCount, 2);
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 3);
   assert.equal(proposal.reactComponent.props.advancedFallbackPreserved, true);
   assert.equal(proposal.reactComponent.props.advancedFallbackSource, "proposal-advanced-editors-html-fallback");
   assert.equal(proposal.reactComponent.props.advancedFallbackActionCount, 1);

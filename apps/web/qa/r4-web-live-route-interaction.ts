@@ -683,7 +683,10 @@ function productSurface(): GoldPathSurfaceVM {
       attention: fixture.attentionHome,
       question: fixture.question,
       evidence: fixture.evidenceBubble,
-      approvals: fixture.approvalCenter,
+      approvals: {
+        ...fixture.approvalCenter,
+        items: fixture.approvalCenter.items.map((item) => ({ ...item, work_item_id: "r4-live-workitem" }))
+      },
       workitem: fixture.workItemDetail,
       proposal: fixture.proposalDetail,
       replay: {
@@ -1440,8 +1443,8 @@ function drivePage(
         status: driveDraftProposalCreated ? "proposal_created" : commentDraftCreated ? "draft_created" : "pending_llm",
         created_at: "2026-06-11T09:22:00.000Z",
         ...(commentDraftCreated ? {
-          draft_work_item_id: workItemId,
-          draft_href: `/workitems/${workItemId}`,
+          draft_work_item_id: "r4-live-workitem",
+          draft_href: "/workitems/r4-live-workitem",
           ...(driveDraftProposalCreated ? {
             proposal_id: driveDraftProposalId,
             proposal_href: `/proposals/${driveDraftProposalId}`,
