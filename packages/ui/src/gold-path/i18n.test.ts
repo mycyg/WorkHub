@@ -15,5 +15,5 @@ test("gold path i18n exposes stable storage key and bilingual shell copy", () =>
   assert.equal(workHubLocaleStorageKey, "workhub.locale");
   assert.equal(goldPathT("zh-CN", "home.decisionTitle"), "需要你决定");
   assert.equal(goldPathT("en-US", "home.decisionTitle"), "Needs your decision");
-  assert.equal(goldPathT("en-US", "boot.desktop.errorTitle"), "daemon is not connected");
+  assert.equal(goldPathT("en-US", "boot.desktop.errorTitle"), "Backend service is not connected");
 });

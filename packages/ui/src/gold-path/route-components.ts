@@ -288,7 +288,7 @@ type RouteCopyKey =
 const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "zh-CN": {
     "workitem.context": "任务上下文",
-    "workitem.trace": "AI 执行轨迹",
+    "workitem.trace": "AI 工作过程",
     "workitem.deliverables": "交付物入口",
     "workitem.driveSource": "网盘评论来源",
     "workitem.meetingSource": "会议洞察来源",
@@ -297,19 +297,19 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.startRun": "开始 AI 执行",
     "intake.summary": "接入摘要",
     "intake.progress": "澄清进度",
-    "intake.freeText": "打字只是折叠兜底",
+    "intake.freeText": "也可以展开手动输入（可选）",
     "intake.createWorkItem": "创建工作项",
     "intake.continue": "继续澄清",
-    "intake.startKicker": "Pilot 工作入口",
+    "intake.startKicker": "试点工作入口",
     "intake.startTitle": "从真实项目开始派活",
-    "intake.startBody": "WorkHub 会先准备 pilot 项目上下文，然后进入选项优先的需求澄清。不会使用旧 smoke seed，也不会直接改正式交付物。",
-    "intake.startProject": "Pilot 项目上下文",
+    "intake.startBody": "WorkHub 会先准备好试点项目，再进入选项优先的需求澄清；不会改动已确认的交付物。",
+    "intake.startProject": "试点项目",
     "intake.startAction": "开始派活",
-    "intake.startNext": "下一步：点选工作类型，再让 AI 干活。",
+    "intake.startNext": "下一步：选择工作类型，让 AI 开始干活。",
     "intake.startEvidence": "证据与成本会进入回放和成本页。",
     "intake.startIntent": "真实任务",
-    "intake.startIntentPlaceholder": "例如：整理今天的试点反馈，输出阻断 issue、采纳建议和下一步负责人。",
-    "knowledge.kicker": "证据兜底",
+    "intake.startIntentPlaceholder": "例如：整理今天的试点反馈，输出阻塞问题、采纳建议和下一步负责人。",
+    "knowledge.kicker": "知识库",
     "knowledge.sources": "证据来源",
     "knowledge.missing": "没有可靠证据，不会编造来源。",
     "knowledge.open": "打开证据",
@@ -318,7 +318,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "proposal.rollback": "回滚路径",
     "proposal.files": "文件与对象变化",
     "drive.kicker": "项目网盘",
-    "drive.files": "文件树",
+    "drive.files": "文件列表",
     "drive.versions": "版本历史",
     "drive.accepted": "正式交付物",
     "drive.comments": "评论草稿",
@@ -331,7 +331,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.download": "下载",
     "drive.restore": "还原",
     "drive.current": "当前",
-    "drive.pendingDrafts": "待转草稿",
+    "drive.pendingDrafts": "待处理草稿",
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "打开提议",
@@ -348,7 +348,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.dismiss": "忽略",
     "meeting.openDraft": "打开草稿",
     "meeting.openProposal": "打开提议",
-    "meeting.reason": "AI 判断理由",
+    "meeting.reason": "AI 推荐理由",
     "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
     "meeting.empty": "这个项目还没有会议洞察。",
     "meeting.status.ready": "已生成",
@@ -370,14 +370,14 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "已处理",
     "notifications.source": "来源",
     "notifications.groundingWhy": "为什么提醒我",
-    "knowledge.fromNotice": "来自通知的检索上下文",
+    "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
     "health.summary": "项目",
     "health.healthy": "健康",
     "health.attention": "需要关注",
     "health.critical": "告急",
     "health.empty": "还没有可见的项目。",
-    "health.bandsOnly": "你看到的是档位视图；数值仅管理员可见。",
+    "health.bandsOnly": "你看到的是分级视图，具体数值仅管理员可见。",
     "health.openProject": "打开项目",
     "health.signal.open_work_items": "进行中事项",
     "health.signal.overdue_work_items": "逾期事项",
@@ -414,8 +414,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.needsAttention": "需要处理",
     "settings.synced": "已同步",
     "settings.needsSync": "待同步",
-    "settings.worker": "Worker",
-    "settings.broker": "事件总线",
+    "settings.worker": "工作进程数",
+    "settings.broker": "消息服务",
     "settings.database": "数据库",
     "settings.runtimeStatus": "运行状态",
     "settings.lease": "执行租约",
@@ -429,14 +429,14 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.preferenceLocale": "服务端偏好",
     "settings.preferenceSource": "偏好来源",
     "settings.preferenceSync": "同步状态",
-    "settings.updateEndpoint": "保存接口",
+    "settings.updateEndpoint": "保存地址",
     "settings.supported": "支持语言",
     "settings.storage": "本地键",
     "settings.localExecution": "本地执行边界",
     "settings.independentPet": "独立桌宠窗口",
-    "settings.petBoundary": "桌宠形象不在 Web 主窗配置",
-    "settings.desktopGate": "桌面能力门",
-    "settings.webLocalActions": "Web 本地动作",
+    "settings.petBoundary": "桌宠形象在独立窗口里设置",
+    "settings.desktopGate": "桌面功能开关",
+    "settings.webLocalActions": "网页端本地操作",
     "settings.restore": "恢复入口"
   },
   "en-US": {
@@ -815,8 +815,8 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
           <h3>${escapeHtml(routeT(locale, "intake.startProject"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">Pilot Project</span>
-            <span class="wh-pill">REST</span>
+            <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "试点项目" : "Pilot project")}</span>
+            <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "实时数据" : "Live data")}</span>
           </div>
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
           <label class="wh-r4-route-stack">
@@ -828,8 +828,8 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
           <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
             <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
             <div class="wh-r4-route-timeline">
-              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.startProject"))}</strong><span class="wh-pill">ready</span></div>
-              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">next</span></div>
+              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.startProject"))}</strong><span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "已就绪" : "Ready")}</span></div>
+              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "待进行" : "Next")}</span></div>
             </div>
             <p>${escapeHtml(routeT(locale, "intake.startEvidence"))}</p>
           </section>

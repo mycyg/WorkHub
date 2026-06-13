@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-day3-expansion
 layer: 运营 / Pilot
-status: active-preflight-ready
+status: active-observation-ready
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -22,12 +22,14 @@ depends_on:
 - Day1 stale proposal artifact 已通过正式 review API 打回。
 - Day2 metrics gates 全 true，backup + isolated restore dry check 通过。
 - Day3 preflight PASS：opened proposal `0`、active run `0`、pending approval `0`，Day2 QA proposal `1f1579ef-e2ac-4557-86c5-94fc072e2a25` 已正式 reject，见 [`s1-pilot-day3-expansion-preflight-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day3-expansion-preflight/s1-pilot-day3-expansion-preflight-report-2026-06-13.md)。
+- Day3 live observation checklist 与 `qa:s1-day3-observation` 已准备；该审计要求显式传入真实参与者昵称，不能把历史 QA 用户算作 G1。
 
 ## Work Packages
 
 | ID | Scope | Deliverable |
 |---|---|---|
 | D3-0 Preflight | 邀人前清空 opened proposal / active run / pending approval，复用 Day1 metrics 合约并对比 Day2 baseline。 | `s1-day3-expansion-preflight-report.json` |
+| D3-0.5 Observation audit | 把真实用户观察验收固化成命令：显式参与者昵称、WorkItem/Run/Proposal 链、proposal 决议、metrics delta。 | `qa:s1-day3-observation` + live checklist |
 | D3-1 User onboarding | 邀请 1-3 位真实使用者，用昵称注册；主持人记录昵称与任务主题，不记录密钥/私人内容。 | participant checklist |
 | D3-2 Real task intake | 每人通过 `/intake` 提交 1 件真实工作，优先文档/方案/表格这类低风险交付。 | WorkItem ids |
 | D3-3 Closed-loop observation | 跑 AgentRun，用户从 WorkItem 进入 Proposal/Replay；能 merge 的合并，不能 merge 的用 reason 打回。 | Run/Proposal/Replay evidence |
@@ -67,6 +69,13 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub
 4. Backup + isolated restore dry check.
 5. Targeted tests only for blocker fixes; full `pnpm verify` before committing code changes.
 
+After real participants finish, run:
+
+```bash
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub \
+  sh -lc 'S1_DAY3_PARTICIPANTS="nickname-one,nickname-two" S1_DAY3_BASELINE_FILE=/tmp/s1-pilot-day2-metrics-snapshot.json S1_DAY3_REQUIRE_OBSERVATION=1 pnpm --filter @workhub/api qa:s1-day3-observation'
+```
+
 ## Non-Goals
 
 - 不新增业务模块。
@@ -80,4 +89,4 @@ Day3 结束时产出一份 expansion report：参与者数、真实 WorkItem/Run
 
 ## Current Status
 
-2026-06-13 preflight 已通过，系统状态为 ready-to-invite；G1 仍等待真实使用者参与。下一步是按 D3-1/D3-2 邀请真实用户从 `/intake` 提交当天真实任务。
+2026-06-13 preflight 与 live observation audit tooling 已通过，系统状态为 ready-to-invite-and-observe；G1 仍等待真实使用者参与。下一步是按 D3-1/D3-2 邀请真实用户从 `/intake` 提交当天真实任务，并用 `qa:s1-day3-observation` 做 Day3 closeout。

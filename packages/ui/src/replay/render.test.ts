@@ -210,7 +210,7 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.stepCount, vm.steps.length);
   assert.equal(zh.mergeAttemptCount, 1);
   assert.equal(zh.structuredAuditCount, 1);
-  assert.equal(zh.html.includes("字段级落点"), true);
+  assert.equal(zh.html.includes("字段改动详情"), true);
   assert.equal(zh.html.includes("data-replay-text-patch-preview=\"true\""), true);
   assert.equal(zh.html.includes("data-replay-text-patch-option-key=\"ai_fusion\""), true);
   assert.equal(zh.css.includes("overflow-wrap:anywhere"), true);
@@ -249,7 +249,7 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("data-replay-bulk-result=\"merged\""), true);
   assert.equal(zh.html.includes("批量动作回放"), true);
   assert.equal(zh.html.includes("点击范围"), true);
-  assert.equal(zh.html.includes("字段写回审计"), true);
+  assert.equal(zh.html.includes("字段保存记录"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
   assert.equal(zh.html.includes("data-replay-subrecord-item-diff=\"true\""), true);
@@ -260,7 +260,7 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("新增风险项"), true);
   assert.equal(zh.html.includes("data-replay-structured-field-audit=\"true\""), true);
   assert.equal(zh.html.includes("data-replay-structured-field-audit=\"task_items\""), true);
-  assert.equal(zh.html.includes("基线: 旧标题"), true);
+  assert.equal(zh.html.includes("原始值: 旧标题"), true);
   assert.equal(zh.html.includes("写入: 新标题"), true);
   assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(zh.html.includes("策略: fast_path"), true);

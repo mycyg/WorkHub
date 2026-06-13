@@ -57,7 +57,7 @@ test("gold path renderer creates the P0.5 pages plus app settings from one share
 test("approval center keeps the blocking decision visible without turning into a kanban", () => {
   const approvals = renderGoldPathSurface(surfaceVm(), "web").pages.find((page) => page.key === "approvals");
 
-  assert.equal(approvals?.html.includes("Approval center"), true);
+  assert.equal(approvals?.html.includes("审批中心"), true);
   assert.equal(approvals?.html.includes("data-requires-reason=\"true\""), true);
   assert.equal(approvals?.html.includes("kanban"), false);
   assert.equal(approvals?.cuuState, "asking_approval");
@@ -98,7 +98,7 @@ test("settings page stays serious and keeps pet model choice out of the main app
   assert.equal(settings?.route, "/settings");
   assert.equal(settings?.title, "设置");
   assert.equal(settings?.html.includes("应用设置"), true);
-  assert.equal(settings?.html.includes("桌宠形象只在独立桌宠窗口里配置和验收"), true);
+  assert.equal(settings?.html.includes("桌宠形象在独立的桌宠窗口里设置"), true);
   assert.equal(settings?.html.includes("wh-grid wh-settings-grid"), true);
   assert.equal(settings?.html.includes("legacy-cuu-pack"), false);
   assert.equal(settings?.html.includes("Live2D 实验形象"), false);
@@ -383,7 +383,7 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("决策记录"), true);
   assert.equal(zhReplay?.html.includes("delivery:/outputs/result.md"), true);
   assert.equal(zhReplay?.html.includes("采纳这次版本"), true);
-  assert.equal(zhReplay?.html.includes("AI 融合建议"), true);
+  assert.equal(zhReplay?.html.includes("AI 综合建议"), true);
   assert.equal(zhReplay?.html.includes("已选择"), true);
   assert.equal(zhReplay?.html.includes("data-replay-text-patch-preview=\"true\""), true);
   assert.equal(zhReplay?.html.includes("data-replay-text-diff3=\"true\""), true);
@@ -402,9 +402,9 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("data-structured-patch-dry-run-status=\"blocked\""), true);
   assert.equal(zhReplay?.html.includes("data-structured-patch-dry-run-issues=\"3\""), true);
   assert.equal(zhReplay?.html.includes("结构化字段检查"), true);
-  assert.equal(zhReplay?.html.includes("Dry-run: 已阻断"), true);
-  assert.equal(zhReplay?.html.includes("字段级落点"), true);
-  assert.equal(zhReplay?.html.includes("字段写回审计"), true);
+  assert.equal(zhReplay?.html.includes("试运行检查: 已阻断"), true);
+  assert.equal(zhReplay?.html.includes("字段改动详情"), true);
+  assert.equal(zhReplay?.html.includes("字段保存记录"), true);
   assert.equal(zhReplay?.html.includes("data-replay-structured-field-operation=\"title\""), true);
   assert.equal(zhReplay?.html.includes("data-replay-structured-field-operation=\"task_items\""), true);
   assert.equal(zhReplay?.html.includes("data-replay-structured-field-audit=\"true\""), true);
@@ -428,7 +428,7 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(enReplay?.html.includes("Needs line review"), true);
   assert.equal(enReplay?.html.includes("Affected lines: line 2"), true);
   assert.equal(enReplay?.html.includes("Structured field check"), true);
-  assert.equal(enReplay?.html.includes("Dry-run: Blocked"), true);
+  assert.equal(enReplay?.html.includes("Pre-check: Blocked"), true);
   assert.equal(enReplay?.html.includes("Field-level targets"), true);
   assert.equal(enReplay?.html.includes("Field writeback audit"), true);
   assert.equal(enReplay?.html.includes("After: 新标题"), true);

@@ -280,11 +280,11 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("data-structured-patch-dry-run-status=\"blocked\""), true);
   assert.equal(rendered.html.includes("data-structured-patch-dry-run-issues=\"3\""), true);
   assert.equal(rendered.html.includes("结构化字段检查"), true);
-  assert.equal(rendered.html.includes("Dry-run: 已阻断"), true);
-  assert.equal(rendered.html.includes("字段级落点"), true);
+  assert.equal(rendered.html.includes("试运行检查: 已阻断"), true);
+  assert.equal(rendered.html.includes("字段改动详情"), true);
   assert.equal(rendered.html.includes("data-proposal-structured-field-operation=\"title\""), true);
   assert.equal(rendered.html.includes("data-proposal-structured-field-operation=\"task_items\""), true);
-  assert.equal(rendered.html.includes("基线: 旧标题"), true);
+  assert.equal(rendered.html.includes("原始值: 旧标题"), true);
   assert.equal(rendered.html.includes("写入: 新标题"), true);
   assert.equal(rendered.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(rendered.html.includes("将写入字段: title, due_at, extra_field"), true);
@@ -314,7 +314,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Apply line choices"), true);
   assert.equal(english.html.includes("Affected lines: line 2"), true);
   assert.equal(english.html.includes("Structured field check"), true);
-  assert.equal(english.html.includes("Dry-run: Blocked"), true);
+  assert.equal(english.html.includes("Pre-check: Blocked"), true);
   assert.equal(english.html.includes("Field-level targets"), true);
   assert.equal(english.html.includes("Base: 旧标题"), true);
   assert.equal(english.html.includes("After: 新标题"), true);

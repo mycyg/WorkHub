@@ -1422,7 +1422,7 @@ test("R5.7 knowledge route component shows the notification search context strip
   const withoutRef = renderWebRouteComponent({ key: "knowledge", evidence: vm.page_vms.evidence }, { locale: "zh-CN" });
 
   assert.equal(withRef.html.includes('data-r5-7-knowledge-source-ref="notification:98000000-0000-4000-8000-000000000010"'), true);
-  assert.equal(withRef.html.includes("来自通知的检索上下文"), true);
+  assert.equal(withRef.html.includes("来自通知的相关资料"), true);
   assert.equal(withoutRef.html.includes("data-r5-7-knowledge-source-ref"), false);
 });
 

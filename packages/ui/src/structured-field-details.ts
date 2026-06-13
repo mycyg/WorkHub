@@ -114,7 +114,7 @@ function operationRows(input: {
       return `<div class="wh-field-row" data-${dataPrefix}-structured-field-${input.mode}="${escapeHtml(field)}" data-structured-field-value-type="${escapeHtml(typeof valueType === "string" ? valueType : "")}" data-structured-field-item-count="${escapeHtml(itemCount === undefined ? "" : String(itemCount))}">
         <div>
           <strong>${escapeHtml(fieldLabel(input.locale, field))}</strong>
-          <p class="wh-structured-fields">${escapeHtml(text(input.locale, "基线", "Base"))}: ${escapeHtml(summarizeValue(beforeValue, input.locale))}</p>
+          <p class="wh-structured-fields">${escapeHtml(text(input.locale, "原始值", "Base"))}: ${escapeHtml(summarizeValue(beforeValue, input.locale))}</p>
           <p class="wh-structured-fields">${escapeHtml(text(input.locale, "当前", "Current"))}: ${escapeHtml(summarizeValue(currentValue, input.locale))}</p>
           <p class="wh-structured-fields">${escapeHtml(text(input.locale, "写入", "After"))}: ${escapeHtml(summarizeValue(afterValue, input.locale))}</p>
         </div>
@@ -143,7 +143,7 @@ export function renderStructuredFieldOperationDetails(input: {
   const dataPrefix = input.surface === "proposal" ? "proposal" : "replay";
   return `<section class="wh-field-details" data-${dataPrefix}-structured-field-details="true">
     <div class="wh-structured-head">
-      <strong>${escapeHtml(text(input.locale, "字段级落点", "Field-level targets"))}</strong>
+      <strong>${escapeHtml(text(input.locale, "字段改动详情", "Field-level targets"))}</strong>
       <span class="wh-pill">${escapeHtml(String(operations.length))}</span>
     </div>
     <div class="wh-field-list">${rows}</div>
@@ -182,7 +182,7 @@ export function renderStructuredFieldAuditDetails(input: {
         : "";
       return `<article class="wh-field-details" data-replay-structured-field-audit="true">
         <div class="wh-structured-head">
-          <strong>${escapeHtml(text(input.locale, "字段写回审计", "Field writeback audit"))}</strong>
+          <strong>${escapeHtml(text(input.locale, "字段保存记录", "Field writeback audit"))}</strong>
           <span class="wh-pill">${escapeHtml(String(changes.length))}</span>
         </div>
         <div class="wh-structured-meta">

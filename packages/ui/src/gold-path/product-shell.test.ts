@@ -74,9 +74,9 @@ test("R4 product shell localizes fixed product chrome", () => {
   assert.equal(shell.html.includes("工作入口"), true);
   assert.equal(shell.html.includes("<h1>任务详情</h1>"), true);
   assert.equal(shell.html.includes("当前焦点"), true);
-  assert.equal(shell.html.includes("任务详情把验收、证据、AI 轨迹与最近变更放在同一处。"), true);
-  assert.equal(shell.html.includes("REST 真相源"), true);
-  assert.equal(shell.html.includes("Web 管理端"), true);
+  assert.equal(shell.html.includes("任务详情把验收项、证据、AI 工作过程和最近变更放在一起。"), true);
+  assert.equal(shell.html.includes("实时数据"), true);
+  assert.equal(shell.html.includes("网页版"), true);
   assert.equal(shell.html.includes('data-r4-product-route-key="workitem"'), true);
   assert.equal(shell.html.includes('aria-pressed="true" title="中文"'), true);
 });

@@ -599,8 +599,8 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     if ("start" in surface) {
       return [
         metric(locale, "options", "0"),
-        metric(locale, "queue", "start"),
-        metric(locale, "runtime", "pilot")
+        metric(locale, "queue", locale === "zh-CN" ? "待开始" : "Start"),
+        metric(locale, "runtime", locale === "zh-CN" ? "试点" : "Pilot")
       ];
     }
     return [
@@ -683,8 +683,8 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   if (surface.key === "knowledge") {
     return [
       metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
-      metric(locale, "evidence", surface.evidence.missing_evidence_note ? "missing" : "found"),
-      metric(locale, "runtime", "REST")
+      metric(locale, "evidence", surface.evidence.missing_evidence_note ? (locale === "zh-CN" ? "缺失" : "Missing") : (locale === "zh-CN" ? "已找到" : "Found")),
+      metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
     ];
   }
   return [

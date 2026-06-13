@@ -86,6 +86,14 @@ pnpm --filter @workhub/web qa:s1-day2-browser
 ```
 
 - 每个 proposal 都要有结论：能采纳就 merge，不能采纳就带 reason 打回；不要留下原因不明的 opened artifact。
+- 真实用户结束后跑 observation audit；昵称必须显式传入，不能让历史 QA 用户自动满足 G1：
+
+```bash
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub \
+  sh -lc 'S1_DAY3_PARTICIPANTS="nickname-one,nickname-two" S1_DAY3_BASELINE_FILE=/tmp/s1-pilot-day2-metrics-snapshot.json S1_DAY3_REQUIRE_OBSERVATION=1 pnpm --filter @workhub/api qa:s1-day3-observation'
+```
+
+- 主持人记录表使用 [`s1-pilot-day3-live-observation-checklist-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day3-expansion-preflight/s1-pilot-day3-live-observation-checklist-2026-06-13.md)。
 
 ## 3. 每日节奏（每天约 15 分钟）
 

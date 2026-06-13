@@ -10,7 +10,7 @@ import { renderAgentRunReplay } from "@workhub/ui/replay";
 
 export const webSurface = {
   name: "C-WEB",
-  description: "Browser SPA surface; it is a thin view over the headless WorkHub daemon.",
+  description: "Browser SPA surface; it is a thin view over the headless WorkHub backend service.",
   devPort: defaultPorts.web,
   apiBaseUrlEnv: "VITE_API_BASE_URL",
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,

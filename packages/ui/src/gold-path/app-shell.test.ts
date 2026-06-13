@@ -50,7 +50,7 @@ test("gold path app shell renders navigable panels around the shared pages", () 
   assert.equal(shell.html.includes("data-wh-panel=\"proposal\""), true);
   assert.equal(shell.html.includes("data-wh-panel=\"approvals\""), true);
   assert.equal(shell.html.includes("data-wh-panel=\"settings\""), true);
-  assert.equal(shell.html.includes("aria-label=\"Gold Path\""), true);
+  assert.equal(shell.html.includes("aria-label=\"主导航\""), true);
   assert.equal(shell.css.includes("wh-cuu-cat"), false);
 });
 

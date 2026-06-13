@@ -104,29 +104,29 @@ const stateCopy: Record<WorkHubLocale, Record<RouteStateKind, { title: string; b
   "zh-CN": {
     loading: {
       title: "正在加载真实数据",
-      body: "页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。",
+      body: "正在等待后台返回真实数据，不会显示假的成功或过期内容。",
       action: "保持等待"
     },
     empty: {
       title: "现在没有需要处理的事项",
-      body: "空态保持安静，只保留创建、返回或查看历史的入口。",
+      body: "这里暂时没有内容，可以新建、返回或查看历史。",
       action: "回到总览"
     },
     error: {
       title: "页面暂时加载失败",
-      body: "保留上下文和追踪编号，用户可以重试，工程侧可以排查。",
+      body: "已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。",
       action: "重试"
     },
     forbidden: {
       title: "你没有权限查看",
-      body: "说明需要谁授权，不暴露敏感正文、证据或交付物。",
+      body: "这部分内容需要授权，请联系有权限的人开通。",
       action: "申请访问"
     }
   },
   "en-US": {
     loading: {
       title: "Loading real data",
-      body: "The page waits for the WorkHub daemon instead of showing fake success.",
+      body: "The page waits for the backend service instead of showing fake success.",
       action: "Keep waiting"
     },
     empty: {

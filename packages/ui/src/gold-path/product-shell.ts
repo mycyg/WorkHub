@@ -112,16 +112,16 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.cost": "成本",
     "nav.settings": "设置",
     "nav.intake": "接入",
-    "topbar.scope": "Web 管理端",
-    "topbar.rest": "REST 真相源",
+    "topbar.scope": "网页版",
+    "topbar.rest": "实时数据",
     "topbar.admin": "管理员",
     "topbar.logout": "退出",
     "rail.now": "当前焦点",
     "rail.source": "数据源",
-    "rail.refresh": "SSE 只触发刷新，页面以 REST Page VM 为准。",
-    "rail.boundary": "主窗口保持严肃工作界面。",
+    "rail.refresh": "有新动态会自动刷新，数据以后台为准。",
+    "rail.boundary": "主窗口专注工作，桌宠在独立窗口陪伴。",
     "rail.next": "下一步",
-    "rail.nextHome": "先处理最阻塞的一件事。",
+    "rail.nextHome": "先处理最要紧的一件事。",
     "rail.nextApprovals": "打回理由会回灌给 AI 继续改。",
     "rail.nextWorkitem": "核对验收项、AI 轨迹和交付物。",
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
@@ -132,18 +132,18 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextReplay": "回看执行、成本、快照和决策记录。",
     "rail.nextCost": "看预算风险和用量异常。",
     "rail.nextSettings": "确认语言、设备和运行时边界。",
-    "masthead.home": "默认只递给负责人一件最需要判断的事，背景运行压低层级。",
-    "masthead.approvals": "阻塞收件箱聚合审批、理由、SLA 与后续执行入口。",
-    "masthead.workitem": "任务详情把验收、证据、AI 轨迹与最近变更放在同一处。",
-    "masthead.proposal": "变更申请像 PR 一样清楚，但面向文档、表格、文件和版本。",
-    "masthead.drive": "项目网盘展示正式交付物、当前版本、历史版本与评论转草稿线索。",
-    "masthead.meetings": "会议洞察把转写、纪要、AI 理由和草稿入口放在同一个项目上下文。",
-    "masthead.notifications": "通知中心按决策、了解和已处理分组，所有动作仍回到事实来源。",
-    "masthead.calendar": "日程页聚合会议后续、任务截止时间和可审阅时间块。",
-    "masthead.replay": "只读解释 AI 当时如何执行、消耗、采纳和回滚。",
-    "masthead.cost": "成本页按人、团队、任务和模型拆解预算风险。",
-    "masthead.settings": "设置页只放运行时和设备控制，不承载角色形象。",
-    "masthead.intake": "提需求先点选方向，打字只是折叠兜底。",
+    "masthead.home": "默认只把最该你拿主意的一件事放在最前，其它在后台安静运行。",
+    "masthead.approvals": "把需要你拍板的审批、理由、超时提醒和后续操作集中在一起。",
+    "masthead.workitem": "任务详情把验收项、证据、AI 工作过程和最近变更放在一起。",
+    "masthead.proposal": "变更申请像代码评审一样清楚，但面向文档、表格、文件和版本。",
+    "masthead.drive": "项目网盘汇总正式交付物、当前版本、历史版本，以及由评论生成的草稿。",
+    "masthead.meetings": "会议洞察把转写、纪要、AI 推荐理由和草稿入口放在同一个项目里。",
+    "masthead.notifications": "通知中心按‘待决定’‘了解一下’‘已处理’分组，每条都能回到原始事项。",
+    "masthead.calendar": "日程汇总会议后续、任务截止时间和可安排的时间段。",
+    "masthead.replay": "完整回看 AI 当时怎么做、花了多少、采纳和回退了什么。",
+    "masthead.cost": "成本页按成员、团队、任务和模型拆解预算情况。",
+    "masthead.settings": "设置页只管运行和设备，桌宠形象在独立窗口里设置。",
+    "masthead.intake": "提需求先选方向，也可以展开手动输入补充。",
     "metric.primary": "当前焦点",
     "metric.queue": "队列",
     "metric.running": "后台运行",
@@ -180,12 +180,12 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.settings": "Settings",
     "nav.intake": "Intake",
     "topbar.scope": "Web manager",
-    "topbar.rest": "REST source",
+    "topbar.rest": "Live data",
     "topbar.admin": "Admin",
     "topbar.logout": "Sign out",
     "rail.now": "Focus",
     "rail.source": "Data source",
-    "rail.refresh": "SSE triggers refresh; REST Page VMs remain the source.",
+    "rail.refresh": "Updates refresh automatically; the backend stays the source of truth.",
     "rail.boundary": "The main window stays a serious work surface.",
     "rail.next": "Next",
     "rail.nextHome": "Handle the single most blocking item first.",
@@ -369,7 +369,7 @@ function renderProductNav(
     .map((page) => {
       const active = page.key === activeKey;
       const navHref = page.route;
-      return `<a href="${escapeHtml(navHref)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span><small>${escapeHtml(page.route)}</small></a>`;
+      return `<a href="${escapeHtml(navHref)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span></a>`;
     })
     .join("");
 }
@@ -412,7 +412,7 @@ export function renderWebProductShell(
       <header class="wh-product-topbar">
         <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></a>
         <div class="wh-product-top-actions">
-          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(options.surfaceLabel)}</span><span>${escapeHtml(options.apiBaseLabel ?? productT(locale, "topbar.rest"))}</span></div>
+          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(productT(locale, "topbar.scope"))}</span></div>
           ${options.currentUser ? `<div class="wh-product-user" data-wh-current-user="${escapeHtml(options.currentUser.nickname)}" data-wh-current-user-admin="${escapeHtml(String(options.currentUser.isAdmin))}"><span class="wh-product-user-name">${escapeHtml(options.currentUser.nickname)}</span>${options.currentUser.isAdmin ? `<span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.admin"))}</span>` : ""}<button type="button" class="wh-product-logout" data-wh-logout="true" data-action-id="logout">${escapeHtml(productT(locale, "topbar.logout"))}</button></div>` : ""}
           ${renderLocaleToggle(locale)}
         </div>

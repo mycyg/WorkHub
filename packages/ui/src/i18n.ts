@@ -63,7 +63,7 @@ const copy = {
     "en-US": "AI has packaged the changes into a reviewable request."
   },
   "workitem.willReadEvidence": {
-    "zh-CN": "AI 会先读证据，再生成可审批的交付物。",
+    "zh-CN": "AI 会先看证据，再生成可供审批的交付物。",
     "en-US": "AI will read evidence first, then prepare a reviewable deliverable."
   },
 
@@ -75,7 +75,7 @@ const copy = {
   "proposal.changeSummary": { "zh-CN": "这次改了什么", "en-US": "What changed" },
   "proposal.checkResults": { "zh-CN": "检查结果", "en-US": "Check results" },
   "proposal.comments": { "zh-CN": "负责人意见", "en-US": "Owner comments" },
-  "proposal.conflictTitle": { "zh-CN": "和别人的改动撞车了", "en-US": "Conflicting change detected" },
+  "proposal.conflictTitle": { "zh-CN": "和别人的改动冲突了", "en-US": "Conflicting change detected" },
   "proposal.conflictBody": {
     "zh-CN": "不用看技术细节，直接选一个处理方式。",
     "en-US": "No technical review needed. Choose how to continue."
@@ -90,7 +90,7 @@ const copy = {
   "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },
   "proposal.conflictWorkbenchTitle": { "zh-CN": "批量冲突检查", "en-US": "Bulk conflict review" },
   "proposal.conflictWorkbenchBody": {
-    "zh-CN": "默认先处理最需要判断的一项；展开后可核对所有冲突和可批量执行的相同决策。",
+    "zh-CN": "默认先处理最需要你拿主意的一项；展开后可以查看全部冲突，并对相同情况批量处理。",
     "en-US": "Start with the highest-signal decision; expand to review every conflict and the safe bulk choices."
   },
   "proposal.conflictWorkbenchDefault": { "zh-CN": "默认仍是一件事优先", "en-US": "One thing first by default" },
@@ -127,11 +127,11 @@ const copy = {
   "proposal.structuredPatchChanged": { "zh-CN": "声明改动字段", "en-US": "Declared fields" },
   "proposal.structuredPatchMissing": { "zh-CN": "缺少字段", "en-US": "Missing fields" },
   "proposal.structuredPatchUnknown": { "zh-CN": "额外字段", "en-US": "Extra fields" },
-  "proposal.structuredPatchDryRun": { "zh-CN": "Dry-run", "en-US": "Dry-run" },
+  "proposal.structuredPatchDryRun": { "zh-CN": "试运行检查", "en-US": "Pre-check" },
   "proposal.structuredPatchIssues": { "zh-CN": "问题", "en-US": "Issues" },
   "proposal.fieldEditorTitle": { "zh-CN": "高级字段编辑", "en-US": "Advanced field editor" },
   "proposal.fieldEditorBody": {
-    "zh-CN": "默认采用 AI 融合稿；需要微调时再展开这里。",
+    "zh-CN": "默认采用 AI 综合后的版本；需要微调时再展开。",
     "en-US": "The default path uses the AI fusion draft; expand only when a field needs a precise adjustment."
   },
   "proposal.fieldEditorAcceptOnly": { "zh-CN": "只采用此字段", "en-US": "Use this field only" },
@@ -141,7 +141,7 @@ const copy = {
   "proposal.fieldEditorField": { "zh-CN": "字段", "en-US": "Field" },
   "proposal.subrecordEditorTitle": { "zh-CN": "高级子记录编辑", "en-US": "Advanced item editor" },
   "proposal.subrecordEditorBody": {
-    "zh-CN": "默认采用 AI 的整组建议；需要微调验收项或任务项时再逐项选择。",
+    "zh-CN": "默认采用 AI 的整套建议；需要单独调整验收项或任务项时再逐项选择。",
     "en-US": "The default path uses the full AI suggestion; expand only when an acceptance or task item needs a precise choice."
   },
   "proposal.subrecordReplayTitle": { "zh-CN": "子记录逐项变化", "en-US": "Subrecord item changes" },
@@ -157,7 +157,7 @@ const copy = {
   "proposal.subrecordKeepCurrent": { "zh-CN": "保留当前项", "en-US": "Keep current item" },
   "proposal.taskPlanScopeTitle": { "zh-CN": "先选目标计划", "en-US": "Choose target plan first" },
   "proposal.taskPlanScopeBody": {
-    "zh-CN": "这个事项有多个计划，写入任务项前必须点选目标计划。",
+    "zh-CN": "这个事项有多个计划，写入任务项前请先选择目标计划。",
     "en-US": "This work item has multiple plans; choose the target before writing task items."
   },
   "proposal.taskPlanScopeRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
@@ -187,7 +187,7 @@ const copy = {
     "en-US": "AI has organized this run. You can review the replay and deliverables."
   },
   "agent.runningBody": {
-    "zh-CN": "AI 只把关键节点递给你，完整过程放进回放。",
+    "zh-CN": "这里只显示关键节点，完整过程在回放里。",
     "en-US": "AI will surface only key moments here; the full process stays in replay."
   },
   "agent.handoffDone": { "zh-CN": "已完成", "en-US": "Done" },

@@ -103,7 +103,7 @@ let postRunClarityMonitorToken = 0;
 function defaultPilotIntent(locale: WorkHubLocale) {
   return locale === "en-US"
     ? "Turn today's pilot feedback into blocker issues, proposal adoption notes, cost observations, and next owners."
-    : "请把今天的试点反馈整理成阻断 issue、提案采纳记录、成本观察和下一步负责人。";
+    : "把今天的试点反馈整理成：待解决的问题、采纳记录、成本观察，以及下一步负责人。";
 }
 
 function startIntentText(actionTarget: HTMLElement, locale: WorkHubLocale) {
@@ -139,8 +139,8 @@ function postRunClarityReadyBody(locale: WorkHubLocale, actionKind: string | und
       : "The run replay is ready on this task. Open it from the visible next action.";
   }
   return actionKind === "proposal"
-    ? "变更申请已出现在这个任务上。请使用可见的下一步动作进入审阅。"
-    : "执行回放已出现在这个任务上。请使用可见的下一步动作查看过程。";
+    ? "变更申请已生成，点任务上的“下一步”即可进入审阅。"
+    : "执行回放已生成，点任务上的“下一步”即可查看过程。";
 }
 
 function postRunClarityFallbackNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
@@ -152,7 +152,7 @@ function postRunClarityFallbackNotice(locale: WorkHubLocale, actionId?: string):
     title: locale === "en-US" ? "Next step needs a refresh" : "下一步需要刷新",
     body: locale === "en-US"
       ? "The AI run finished, but this task has not exposed Proposal or Replay yet. Refresh the task or open replay."
-      : "AI 执行已结束，但任务页还没有显示 Proposal 或 Replay。请刷新任务，或打开回放查看结果。",
+      : "AI 执行已结束，但任务页还没显示结果。请刷新任务，或打开回放查看。",
     actionId
   };
 }

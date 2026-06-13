@@ -657,7 +657,7 @@ function renderKnowledge(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const actionButtons = actions
     .map((action) => action.href ? `<a class="wh-btn" href="${href(action.href)}">${escapeHtml(action.label)}</a>` : "")
     .join("");
-  const main = `<span class="wh-kicker">${escapeHtml(locale === "zh-CN" ? "证据兜底" : "Knowledge fallback")}</span>
+  const main = `<span class="wh-kicker">${escapeHtml(locale === "zh-CN" ? "知识库" : "Knowledge")}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>
     <p class="wh-subtle">${escapeHtml(summary)}</p>
     <div class="wh-list">${rows}</div>
