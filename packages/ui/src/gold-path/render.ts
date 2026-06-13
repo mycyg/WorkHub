@@ -504,11 +504,14 @@ function checkRow(check: DeliverableCheck) {
 function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const proposal = vm.page_vms.proposal;
   const manifest: DeliverableChangeManifest = proposal.manifest;
-  const proposalActions = [
-    proposal.review_actions.approve,
-    proposal.review_actions.request_changes,
-    ...(proposal.review_actions.merge ? [proposal.review_actions.merge] : [])
-  ];
+  const proposalActions = proposal.status === "opened"
+    ? [
+      proposal.review_actions.approve,
+      proposal.review_actions.request_changes
+    ]
+    : proposal.status === "reviewed" && proposal.review_actions.merge
+      ? [proposal.review_actions.merge]
+      : [];
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "proposal.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(proposal.title)}</h1>
     <p class="wh-subtle">${escapeHtml(manifest.summary_md.replace(/[#*_`-]/gu, " ").slice(0, 220))}</p>

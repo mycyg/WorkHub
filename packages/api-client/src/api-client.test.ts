@@ -87,6 +87,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.markAllNotificationsRead();
   await client.dismissNotification("notification-1");
   await client.completeNotification("notification-1");
+  await client.bootstrapProject({ name: "Day 0 Pilot Project" });
   await client.pages.workItem("work-1");
   await client.pages.proposal("proposal-1");
   await client.createSession({ intent_text: "帮我整理客户周报模板。" });
@@ -144,6 +145,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/notifications/read-all",
     "POST /api/notifications/notification-1/dismiss",
     "POST /api/notifications/notification-1/complete",
+    "POST /api/projects/bootstrap",
     "GET /api/pages/workitems/work-1",
     "GET /api/pages/proposals/proposal-1",
     "POST /api/sessions",

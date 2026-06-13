@@ -1,0 +1,54 @@
+{
+  "base_url": "http://127.0.0.1:8787",
+  "audit_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry",
+  "screenshots": [
+    "01-intake-start-en-desktop.png",
+    "02-intake-session-en-desktop.png",
+    "05-intake-session-en-mobile.png",
+    "03-workitem-real-task-en-desktop.png",
+    "04-workitem-run-started-en-desktop.png"
+  ],
+  "gates": {
+    "start_surface": {
+      "url": "http://127.0.0.1:8787/intake",
+      "routeStatus": "ready",
+      "title": "Intake",
+      "startTitle": "Pilot project context",
+      "oldSeedLeak": false,
+      "cuuLeak": false
+    },
+    "intake_session": {
+      "url": "http://127.0.0.1:8787/intake/cf6396b7-a1d0-4084-bcfe-b7a698a81085",
+      "optionCount": 4,
+      "selectedCount": 1,
+      "intentVisible": true,
+      "freeTextCollapsed": null
+    },
+    "workitem": {
+      "url": "http://127.0.0.1:8787/workitems/cf6396b7-a1d0-4084-bcfe-b7a698a81085",
+      "title": "Task detail",
+      "statusText": [
+        "0",
+        "0",
+        "0",
+        "DAY0PILOT-006",
+        "normal",
+        "worker",
+        "Produce a reviewable document or plan draft with structure, body, and follow-up edit points.",
+        "Open",
+        "Mark evidence, assumptions, and items needing confirmation without presenting unconfirmed content as fact.",
+        "Open"
+      ],
+      "day0Visible": true,
+      "startRunVisible": true
+    },
+    "agent_run": {
+      "url": "http://127.0.0.1:8787/workitems/cf6396b7-a1d0-4084-bcfe-b7a698a81085",
+      "notice": "SubmittedSubmitted",
+      "noticeKind": "action_success",
+      "liveVisible": false,
+      "replayLink": null,
+      "proposalLink": null
+    }
+  }
+}

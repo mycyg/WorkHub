@@ -38,6 +38,16 @@ test("proposal renderer stays non-kanban and non-git while exposing deliverable 
   assert.equal(rendered.html.includes("data-action-id=\"request_changes\""), true);
 });
 
+test("proposal renderer hides review actions after a proposal is merged", () => {
+  const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
+  vm.status = "merged";
+  const rendered = renderProposalDetail(vm, "web", { locale: "en-US" });
+
+  assert.equal(rendered.html.includes("data-action-id=\"approve\""), false);
+  assert.equal(rendered.html.includes("data-action-id=\"request_changes\""), false);
+  assert.equal(rendered.html.includes("data-action-id=\"merge\""), false);
+});
+
 test("proposal renderer localizes fixed labels and visible enum labels in English", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const rendered = renderProposalDetail(vm, "web", { locale: "en-US" });

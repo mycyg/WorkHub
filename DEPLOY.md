@@ -19,6 +19,8 @@ cp .env.pilot.example .env.pilot
 $EDITOR .env.pilot
 ```
 
+Cost 默认按 DeepSeek input/output `2/8` CNY per MTok 估算；如果 `.env.pilot` 显式设置 `PROVIDER_DEEPSEEK_COST_*`，会覆盖默认值。Pilot Gate 要求真实 AgentRun 在 `/dashboard/cost` 中显示非零成本。
+
 ## 2. 起栈（首次构建约 3–5 分钟）
 
 ```bash

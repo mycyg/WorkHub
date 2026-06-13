@@ -849,6 +849,24 @@ test("R4.14 intake route loader carries Session VM data into an option-first rou
   assert.equal(result.html.includes("message-list"), false);
 });
 
+test("S1 Day0 /intake renders a project bootstrap start surface instead of empty state", async () => {
+  const { client, calls } = fakeRouteClient(goldPathSurfaceVm());
+  const match = resolveWebRoute("/intake");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, []);
+  assert.equal(result.html.includes('data-r4-route-component="intake"'), true);
+  assert.equal(result.html.includes('data-r4-route-component-source="project-bootstrap"'), true);
+  assert.equal(result.html.includes('data-s1-day0-intake-start="true"'), true);
+  assert.equal(result.html.includes('data-action-id="start_intake"'), true);
+  assert.equal(result.html.includes('href="/api/projects/bootstrap"'), true);
+  assert.equal(result.html.includes('data-route-state="empty"'), false);
+  assert.equal(result.html.includes("/intake/r4-live-session"), false);
+});
+
 test("R4.14 knowledge route loader carries search payload into a cited fallback route component", async () => {
   const surface = goldPathSurfaceVm();
   const knowledge = routeEvidenceBubble();

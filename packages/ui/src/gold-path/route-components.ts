@@ -66,7 +66,7 @@ type RouteComponentOptions = {
 
 export type WebRouteHydrationMode = "html-fallback";
 
-export type WebRouteComponentSource = "page-vm" | "session-vm" | "evidence-bubble";
+export type WebRouteComponentSource = "page-vm" | "session-vm" | "evidence-bubble" | "project-bootstrap";
 
 export type WebRouteHydrationBoundary = {
   rootId: string;
@@ -145,6 +145,13 @@ type RouteCopyKey =
   | "intake.freeText"
   | "intake.createWorkItem"
   | "intake.continue"
+  | "intake.startKicker"
+  | "intake.startTitle"
+  | "intake.startBody"
+  | "intake.startProject"
+  | "intake.startAction"
+  | "intake.startNext"
+  | "intake.startEvidence"
   | "knowledge.kicker"
   | "knowledge.sources"
   | "knowledge.missing"
@@ -290,6 +297,13 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "打字只是折叠兜底",
     "intake.createWorkItem": "创建工作项",
     "intake.continue": "继续澄清",
+    "intake.startKicker": "Day 0 工作入口",
+    "intake.startTitle": "从真实项目开始派活",
+    "intake.startBody": "WorkHub 会先准备 pilot 项目上下文，然后进入选项优先的需求澄清。不会使用旧 smoke seed，也不会直接改正式交付物。",
+    "intake.startProject": "Pilot 项目上下文",
+    "intake.startAction": "开始派活",
+    "intake.startNext": "下一步：点选工作类型，再让 AI 干活。",
+    "intake.startEvidence": "证据与成本会进入回放和成本页。",
     "knowledge.kicker": "证据兜底",
     "knowledge.sources": "证据来源",
     "knowledge.missing": "没有可靠证据，不会编造来源。",
@@ -434,6 +448,13 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "Typing stays a collapsed fallback",
     "intake.createWorkItem": "Create work item",
     "intake.continue": "Continue intake",
+    "intake.startKicker": "Day 0 work entry",
+    "intake.startTitle": "Start from a real project",
+    "intake.startBody": "WorkHub prepares the pilot project context first, then opens option-first intake. It will not use old smoke seed ids or modify accepted deliverables directly.",
+    "intake.startProject": "Pilot project context",
+    "intake.startAction": "Start work intake",
+    "intake.startNext": "Next: pick a work type, then let AI do the work.",
+    "intake.startEvidence": "Evidence and cost will appear in Replay and Cost.",
     "knowledge.kicker": "Knowledge fallback",
     "knowledge.sources": "Evidence sources",
     "knowledge.missing": "No reliable evidence found. WorkHub will not invent sources.",
@@ -754,6 +775,55 @@ function intakeProgressRows(vm: SessionVM) {
       <span class="wh-pill">${escapeHtml(step.state)}</span>
     </div>`)
     .join("");
+}
+
+function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteComponent {
+  const bootstrapPayload = {
+    name: "Day 0 Pilot Project",
+    slug: "day0-pilot",
+    description: "Pilot Day 0 project context created from the WorkHub intake entry."
+  };
+  return createWebRouteComponent({
+    key: "intake",
+    css: webRouteComponentCss,
+    primaryHrefs: ["/api/projects/bootstrap"],
+    source: "project-bootstrap",
+    locale,
+    pageVm: "project_bootstrap",
+    html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="project-bootstrap" data-r4-route-component-locale="${escapeHtml(locale)}" data-s1-day0-intake-start="true">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "intake.startKicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "intake.startTitle"))}</h2>
+          <p>${escapeHtml(routeT(locale, "intake.startBody"))}</p>
+        </div>
+        <span class="wh-r4-route-count">D0</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
+          <h3>${escapeHtml(routeT(locale, "intake.startProject"))}</h3>
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">Day 0 Pilot Project</span>
+            <span class="wh-pill">REST</span>
+          </div>
+          <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
+        </section>
+        <aside class="wh-r4-route-stack">
+          <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
+            <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
+            <div class="wh-r4-route-timeline">
+              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.startProject"))}</strong><span class="wh-pill">ready</span></div>
+              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">next</span></div>
+            </div>
+            <p>${escapeHtml(routeT(locale, "intake.startEvidence"))}</p>
+          </section>
+        </aside>
+      </div>
+      <div class="wh-r4-route-actions">
+        <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>
+      </div>
+    </section>`
+  });
 }
 
 function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRouteComponent {
@@ -1110,11 +1180,16 @@ function renderCheck(check: DeliverableCheck, locale: WorkHubLocale) {
 }
 
 function proposalActions(vm: ProposalDetailVM) {
-  return [
-    vm.review_actions.approve,
-    vm.review_actions.request_changes,
-    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
-  ];
+  if (vm.status === "opened") {
+    return [
+      vm.review_actions.approve,
+      vm.review_actions.request_changes
+    ];
+  }
+  if (vm.status === "reviewed" && vm.review_actions.merge) {
+    return [vm.review_actions.merge];
+  }
+  return [];
 }
 
 function renderProposalRouteComponent(
@@ -2040,6 +2115,7 @@ function renderReplayRouteComponent(vm: ReplayTraceVM, locale: WorkHubLocale): W
 export type WebRouteComponentInput =
   | { key: "home"; attention: AttentionHomeVM }
   | { key: "intake"; session: SessionVM }
+  | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
@@ -2062,6 +2138,9 @@ export function renderWebRouteComponent(
     case "home":
       return renderHomeRouteComponent(input.attention, locale);
     case "intake":
+      if ("start" in input) {
+        return renderIntakeStartRouteComponent(locale);
+      }
       return renderIntakeRouteComponent(input.session, locale);
     case "approvals":
       return renderApprovalsRouteComponent(input.approvals, locale);

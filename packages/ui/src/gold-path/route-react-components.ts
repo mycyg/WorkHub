@@ -114,11 +114,16 @@ export type ReplayRouteComponentProps = {
 };
 
 function proposalReviewActions(vm: ProposalDetailVM) {
-  return [
-    vm.review_actions.approve,
-    vm.review_actions.request_changes,
-    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
-  ];
+  if (vm.status === "opened") {
+    return [
+      vm.review_actions.approve,
+      vm.review_actions.request_changes
+    ];
+  }
+  if (vm.status === "reviewed" && vm.review_actions.merge) {
+    return [vm.review_actions.merge];
+  }
+  return [];
 }
 
 function proposalConflictActionHrefs(conflicts: ProposalConflict[]) {
@@ -255,7 +260,7 @@ export function createProposalReactRouteComponent(
     conflictCount: conflicts.length,
     reviewActionCount: reviewActionHrefs.length,
     reviewActionHrefs,
-    mergeActionAvailable: Boolean(vm.review_actions.merge),
+    mergeActionAvailable: Boolean(vm.status === "reviewed" && vm.review_actions.merge),
     rollbackAvailable: vm.manifest.rollback.available,
     advancedFallbackPreserved: true,
     advancedFallbackSource: "proposal-advanced-editors-html-fallback",

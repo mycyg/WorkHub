@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-day0-real-work-entry
 layer: 运营 / Web / Agent
-status: active
+status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -17,6 +17,7 @@ depends_on:
 
 > 开工前必读：PRD、brainstorm、`requirements-workitem.md`、`projects-and-drive.md`、`web-app.md`、`page-concepts.md`、Launch Gate 报告与 Pilot Week runbook。
 > 背景：Launch Gate 已证明 compose / provider / ledger / backup / 双语关键页可用；本轮 Browser 审查同时发现 fresh pilot 稳定页不应暴露旧 smoke seed detail 链接，已修复。Day 0 的目标是把“主持人能用真实工作开始”从 QA 脚本推进到可见 Web 操作闭环。
+> 2026-06-13 竣工：Day 0 真实入口已 **PASS**。详见验收报告 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。
 
 ## 1. 目标
 
@@ -81,3 +82,27 @@ depends_on:
 ## 7. 完成后的后续
 
 Day 0 若全绿，Pilot Week runbook 状态从 `ready-after-launch-gate` 推进为 `active-day1`，开始邀请真实使用者；若任一 Gate 红，先修阻断，不开多人试运行。
+
+## 8. 竣工记录（2026-06-13）
+
+| Gate | 结果 | 证据 |
+|---|---|---|
+| G1 project context | PASS | `/intake` Day 0 start card 创建/复用真实 pilot project context；无 `r4-live-*` seed。 |
+| G2 intake entry | PASS | Session `cf6396b7-a1d0-4084-bcfe-b7a698a81085`，option-first，desktop/mobile 截图通过。 |
+| G3 work item | PASS | WorkItem `DAY0PILOT-006` 可见，真实 task summary 与验收项进入 detail。 |
+| G4 agent/proposal | PASS | AgentRun `3bb9bd88-85e7-4f4e-bb26-f8ebcff5eb77` succeeded，Proposal `2cff8131-400f-4a19-9dd6-01a5daa06e9c` opened。 |
+| G5 approval/merge/replay | PASS | Proposal reviewed + merged，Replay 显示 17 steps / 1 accepted deliverable / 2 snapshots。 |
+| G6 cost/i18n | PASS | 本次 run cost `0.028870` CNY；Cost 页面总成本非零；Web 主窗 en-US 截图无 Cuu。 |
+| G7 backup after Day0 | PASS | Backup `/private/tmp/workhub-backups/workhub-20260613-151604.sql.gz`，独立 restore dry check 通过。 |
+
+### 实施摘要
+
+- 新增 Project bootstrap contract/repository/service/route/API client，`/intake` 无 session 时显示 Day 0 真实项目入口。
+- Web runtime 增加 project bootstrap 与 start AgentRun action parsing；Browser dispatcher 串起 project -> session -> workitem -> run。
+- AgentRun 执行前注入 DB-backed WorkItem context，修复真实工单只给 `work_item_id` 导致 worker 误判空任务的问题。
+- Proposal action 按 status 收口：`opened` 只允许 approve/request changes，`reviewed` 才 merge，`merged` 隐藏写动作。
+- DeepSeek provider 默认成本从 `0/0` 修正为 `2/8` CNY per MTok，并加配置测试。
+
+### 后续
+
+进入 [`s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md`](./s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md)，保持 Pilot Week `active-day1`，先固化反馈与指标采集，不扩业务面。

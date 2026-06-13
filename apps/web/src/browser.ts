@@ -27,6 +27,7 @@ import {
   approvalRespondIdFromHref,
   bindRouteLineEditor,
   browserLocale,
+  bootstrapProjectActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
   conflictsFromMergeError,
@@ -59,6 +60,7 @@ import {
   showRouteNotice as showSharedRouteNotice,
   sseDirtyGuardNotice,
   sseRefreshNotice,
+  startAgentRunActionFromHref,
   updateIntakeActionPayloads,
   type ActionPayloadResult,
   type RouteNoticeTimerState,
@@ -357,6 +359,33 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
+        const payload = actionElementJsonPayload<Parameters<BrowserApiClient["bootstrapProject"]>[0]>(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          const project = await client.bootstrapProject(payload.payload ?? {});
+          const intentText = locale === "en-US"
+            ? "Prepare a concise Day 0 pilot validation note: summarize the real WorkHub intake flow, evidence screenshots, run outcome, and next actions."
+            : "请整理一份 Day 0 Pilot 验收记录：总结真实 WorkHub 接入流程、截图证据、执行结果和下一步动作。";
+          const session = await client.createSession({
+            project_id: project.project.id,
+            intent_text: intentText
+          });
+          await navigateWebRoute(`/intake/${session.session_id}`, client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `Project ready: ${project.project.name}. Intake is open.`
+              : `项目已就绪：${project.project.name}。接入会话已打开。`;
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       const sessionId = sessionNextQuestionIdFromHref(href);
       if (sessionId) {
         const payload = actionElementNextQuestionPayload(actionTarget);
@@ -389,6 +418,22 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const startAgentRun = startAgentRunActionFromHref(href);
+      if (startAgentRun) {
+        try {
+          const run = await client.startAgentRun(startAgentRun.workItemId);
+          await navigateWebRoute(`/workitems/${startAgentRun.workItemId}`, client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `AI run queued: ${run.run_id}. WorkHub will refresh this task from the run stream.`
+              : `AI 执行已排队：${run.run_id}。WorkHub 会通过执行流刷新这个任务。`;
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
         }
         return;
       }

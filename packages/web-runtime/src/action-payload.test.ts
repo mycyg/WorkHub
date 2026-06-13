@@ -7,6 +7,7 @@ import type { ProposalConflict } from "@workhub/contracts";
 import {
   acceptedDeliverableRestoreFromHref,
   approvalRespondIdFromHref,
+  bootstrapProjectActionFromHref,
   conflictsFromMergeError,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
@@ -21,6 +22,7 @@ import {
   notificationActionFromHref,
   proposalActionFromHref,
   replaceCustomFieldPlaceholder,
+  startAgentRunActionFromHref,
   sessionNextQuestionIdFromHref
 } from "./action-payload.js";
 
@@ -31,6 +33,8 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(mergeProposalCandidateApplyIdFromHref("/api/merge-proposals/mp-1/apply"), "mp-1");
   assert.equal(sessionNextQuestionIdFromHref("/api/sessions/s-1/next-question"), "s-1");
   assert.equal(createWorkItemActionFromHref("/api/workitems"), true);
+  assert.equal(bootstrapProjectActionFromHref("/api/projects/bootstrap"), true);
+  assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
   assert.equal(evidenceBindingWorkItemIdFromHref("/api/workitems/w-1/evidence-bindings"), "w-1");
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {
     workItemId: "w-1",

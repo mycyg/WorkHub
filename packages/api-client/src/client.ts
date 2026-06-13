@@ -223,6 +223,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/notifications/${encodeURIComponent(id)}/complete`, {
         method: "POST"
       }),
+    bootstrapProject: (payload = {}) =>
+      request("/api/projects/bootstrap", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     createSession: (payload = {}) =>
       request("/api/sessions", {
         method: "POST",

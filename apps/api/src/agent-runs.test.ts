@@ -788,6 +788,83 @@ function executableAgentClient(): AgentLoopClient {
   };
 }
 
+test("agent run prompt includes resolved WorkItem context before calling the model", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-context-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-context-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const capturedMessages: unknown[] = [];
+  const responses = [
+    {
+      id: "msg-context-1",
+      stopReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 20 },
+      content: [{
+        type: "tool_use",
+        id: "tool-context-1",
+        name: "write_file",
+        input: { path: "outputs/result.md", content: "done" }
+      }]
+    },
+    {
+      id: "msg-context-2",
+      stopReason: "end_turn",
+      usage: { inputTokens: 5, outputTokens: 5 },
+      content: [{ type: "text", text: "交付完成" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        capturedMessages.push(params.messages[0]?.content);
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake AgentLoop response queued");
+        }
+        return response;
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000029",
+    workdir: () => workdir,
+    client: () => client,
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    workItemContext: () => [
+      "- Work item: DAY0PILOT-005 - Prepare a concise Day 0 pilot validation note",
+      "- Status / mode / priority: spec_ready / worker / normal",
+      "- Raw description:",
+      "  Prepare a concise Day 0 pilot validation note with screenshots and next actions.",
+      "- User-selected clarification options: document-draft",
+      "- Acceptance checks:",
+      "  1. [open] Option-first intake - The task was clarified through options before AI work."
+    ].join("\n")
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "AI worker run" });
+  const executed = await queue.runNext();
+  const firstMessage = String(capturedMessages[0]);
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace));
+  assert.match(firstMessage, /WorkHub 数据库中的真实工单上下文/u);
+  assert.match(firstMessage, /DAY0PILOT-005/u);
+  assert.match(firstMessage, /Prepare a concise Day 0 pilot validation note/u);
+  assert.match(firstMessage, /document-draft/u);
+  assert.match(firstMessage, /Acceptance checks/u);
+});
+
 function noDeliverableAgentClient(): AgentLoopClient {
   return {
     model: "deepseek-v4-flash",

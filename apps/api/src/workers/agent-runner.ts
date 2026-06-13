@@ -38,7 +38,15 @@ import {
   type ToolResult
 } from "@workhub/tools";
 import { makeWorkHubEvent, topics, toCuuState, type LifecycleWorkItemRef } from "@workhub/events";
-import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
+import { createDatabaseClient, createWorkItemRepository } from "@workhub/db";
+import type {
+  AuditLogRepository,
+  SnapshotRepository,
+  StoredWorkItemDetailRows,
+  WorkItemDataRepository,
+  WorkItemProjectRow,
+  WorkHubDatabaseClient
+} from "@workhub/db";
 
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
@@ -157,6 +165,8 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 export type AgentRunEventBus = Pick<PushBus, "publish">;
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
+export type AgentRunWorkItemContextProvider =
+  (run: AgentRunQueueRecord) => Promise<string | undefined> | string | undefined;
 export type AgentRunPersistence = {
   createRun: (run: AgentRunQueueRecord) => Promise<void>;
   createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
@@ -203,6 +213,86 @@ export type AgentRunQueue = {
   runNext: () => Promise<AgentRunQueueRecord | null>;
 };
 
+function compactContextText(value: string | null | undefined, maxChars = 1400) {
+  const text = value?.trim();
+  if (!text) {
+    return undefined;
+  }
+  return text.length <= maxChars ? text : `${text.slice(0, maxChars)}\n...[truncated]`;
+}
+
+function indentedBlock(value: string) {
+  return value.split(/\r?\n/u).map((line) => `  ${line}`).join("\n");
+}
+
+function formatWorkItemContext(
+  rows: StoredWorkItemDetailRows,
+  project: WorkItemProjectRow | null,
+  selectedOptionIds: string[]
+) {
+  const item = rows.workItem;
+  const lines = [
+    `- Work item: ${item.code}${item.title ? ` - ${item.title}` : ""}`,
+    `- Status / mode / priority: ${item.status} / ${item.mode} / ${item.priority}`,
+    `- Project: ${project ? `${project.name} (${project.slug})` : item.projectId}`
+  ];
+  const rawDescription = compactContextText(item.rawDescription, 1800);
+  if (rawDescription) {
+    lines.push(`- Raw description:\n${indentedBlock(rawDescription)}`);
+  }
+  const summary = item.summaryMd !== item.rawDescription ? compactContextText(item.summaryMd, 1200) : undefined;
+  if (summary) {
+    lines.push(`- Current summary:\n${indentedBlock(summary)}`);
+  }
+  const planningNote = compactContextText(item.planningNote, 800);
+  if (planningNote) {
+    lines.push(`- Planning note: ${planningNote}`);
+  }
+  if (selectedOptionIds.length > 0) {
+    lines.push(`- User-selected clarification options: ${selectedOptionIds.join(", ")}`);
+  }
+  if (rows.acceptance.length > 0) {
+    lines.push([
+      "- Acceptance checks:",
+      ...rows.acceptance.slice(0, 10).map((acceptance, index) => {
+        const description = compactContextText(acceptance.description, 320);
+        return `  ${index + 1}. [${acceptance.status}] ${acceptance.title}${description ? ` - ${description}` : ""}`;
+      })
+    ].join("\n"));
+  }
+  if (rows.evidenceBindings.length > 0) {
+    lines.push(`- Evidence bindings available: ${rows.evidenceBindings.length}. Use them as context; do not invent missing facts.`);
+  }
+  if (rows.driveSourceComment) {
+    lines.push(`- Drive source: ${rows.driveSourceComment.folderPath ?? rows.driveSourceComment.comment.folderId ?? "linked drive comment"}`);
+  }
+  if (rows.meetingSourceInsight) {
+    const insight = compactContextText(rows.meetingSourceInsight.insight.description, 500);
+    lines.push(`- Meeting source insight: ${insight ?? rows.meetingSourceInsight.meeting.title ?? rows.meetingSourceInsight.meeting.id}`);
+  }
+  if (rows.latestProposal) {
+    lines.push(`- Latest proposal: ${rows.latestProposal.title} (${rows.latestProposal.status})`);
+  }
+  if (rows.acceptedDeliverables.length > 0) {
+    lines.push(`- Accepted deliverables already exist: ${rows.acceptedDeliverables.length}. Preserve accepted work unless asked to replace it.`);
+  }
+  return lines.join("\n");
+}
+
+function createDbWorkItemContextProvider(repository: WorkItemDataRepository): AgentRunWorkItemContextProvider {
+  return async (run) => {
+    const rows = await repository.readWorkItemDetail(run.work_item_id);
+    if (!rows) {
+      return undefined;
+    }
+    const [project, selectedOptionIds] = await Promise.all([
+      repository.findProjectById(rows.workItem.projectId),
+      repository.listSessionSelectedOptionIds(rows.workItem.id)
+    ]);
+    return formatWorkItemContext(rows, project, selectedOptionIds);
+  };
+}
+
 export function createInMemoryAgentRunQueue(options: {
   now?: () => Date;
   id?: () => string;
@@ -230,7 +320,8 @@ export function createInMemoryAgentRunQueue(options: {
   leaseMs?: number;
   heartbeatIntervalMs?: number;
   systemPrompt?: string;
-  initialUserMessage?: (run: AgentRunQueueRecord) => string;
+  initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
+  workItemContext?: AgentRunWorkItemContextProvider | false;
   requireDeliverable?: boolean;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
@@ -248,6 +339,7 @@ export function createInMemoryAgentRunQueue(options: {
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
+  const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
@@ -345,10 +437,17 @@ export function createInMemoryAgentRunQueue(options: {
     ].join("\n");
   }
 
-  function defaultInitialUserMessage(run: AgentRunQueueRecord) {
+  function defaultInitialUserMessage(run: AgentRunQueueRecord, resolvedWorkItemContext?: string) {
     return [
       `任务：${run.title}`,
       `work_item_id: ${run.work_item_id}`,
+      ...(resolvedWorkItemContext
+        ? [
+            "",
+            "WorkHub 数据库中的真实工单上下文：",
+            resolvedWorkItemContext
+          ]
+        : []),
       "",
       "请按以下方式工作：",
       "1. 先用 list_files / read_file 了解工作目录里已有的材料（如有）。",
@@ -678,13 +777,17 @@ export function createInMemoryAgentRunQueue(options: {
     const stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
 
     try {
+      const resolvedWorkItemContext = await workItemContext?.(current);
+      const initialUserMessage = options.initialUserMessage
+        ? await options.initialUserMessage(current, resolvedWorkItemContext)
+        : defaultInitialUserMessage(current, resolvedWorkItemContext);
       const result = await loop.run({
         runId: current.run_id,
         workItemId: current.work_item_id,
         actorId: current.actor_id,
         workdir,
         systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(),
-        initialUserMessage: options.initialUserMessage?.(current) ?? defaultInitialUserMessage(current),
+        initialUserMessage,
         client,
         tools,
         budget: toAgentLoopBudget(current.budget),
@@ -1189,6 +1292,18 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
 }
 
 let defaultQueue: AgentRunQueue | undefined;
+let defaultWorkItemContextDbClient: WorkHubDatabaseClient | undefined;
+let defaultWorkItemContextProvider: AgentRunWorkItemContextProvider | undefined;
+
+function getDefaultWorkItemContextProvider() {
+  if (!defaultWorkItemContextProvider) {
+    defaultWorkItemContextDbClient = createDatabaseClient();
+    defaultWorkItemContextProvider = createDbWorkItemContextProvider(
+      createWorkItemRepository(defaultWorkItemContextDbClient.db)
+    );
+  }
+  return defaultWorkItemContextProvider;
+}
 
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
@@ -1198,6 +1313,7 @@ export function getDefaultAgentRunQueue() {
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
+    workItemContext: getDefaultWorkItemContextProvider(),
     leaseMs: runtimeSettings.agentRun.leaseMs,
     ...(runtimeSettings.agentRun.heartbeatIntervalMs
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }

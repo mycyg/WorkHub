@@ -79,6 +79,7 @@ export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 export type WebRouteSurface =
   | { key: "home"; attention: AttentionHomeVM }
   | { key: "intake"; session: SessionVM }
+  | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
@@ -595,6 +596,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     ];
   }
   if (surface.key === "intake") {
+    if ("start" in surface) {
+      return [
+        metric(locale, "options", "0"),
+        metric(locale, "queue", "start"),
+        metric(locale, "runtime", "pilot")
+      ];
+    }
     return [
       metric(locale, "options", String(surface.session.question.options.length)),
       metric(locale, "queue", surface.session.question.input_mode),
@@ -691,6 +699,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "home", attention: surface.attention }, { locale });
   }
   if (surface.key === "intake") {
+    if ("start" in surface) {
+      return renderWebRouteComponent({ key: "intake", start: true }, { locale });
+    }
     return renderWebRouteComponent({ key: "intake", session: surface.session }, { locale });
   }
   if (surface.key === "approvals") {
@@ -778,7 +789,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
     if (!sessionId) {
-      return "empty" as const;
+      return { key: "intake", start: true } satisfies WebRouteSurface;
     }
     const session = await client.getSession(sessionId, withLocale(locale));
     return { key: "intake", session } satisfies WebRouteSurface;

@@ -131,7 +131,8 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
 
   assert.equal(proposal?.html.includes("回滚"), true);
   assert.equal(proposal?.html.includes("data-requires-reason=\"true\""), true);
-  assert.equal(proposal?.html.includes("data-action-id=\"merge\""), true);
+  assert.equal(proposal?.html.includes("data-action-id=\"approve\""), true);
+  assert.equal(proposal?.html.includes("data-action-id=\"merge\""), false);
   assert.equal(proposal?.html.includes("<span class=\"wh-pill\">文档</span>"), true);
   assert.equal(proposal?.html.includes("<span class=\"wh-pill\">text_doc</span>"), false);
   assert.equal(englishProposal?.html.includes("<span class=\"wh-pill\">Text document</span>"), true);

@@ -852,10 +852,28 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
   assert.equal(proposal.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(proposal.primaryHrefs, [
     vm.page_vms.proposal.review_actions.approve.href,
-    vm.page_vms.proposal.review_actions.request_changes.href,
-    vm.page_vms.proposal.review_actions.merge?.href
+    vm.page_vms.proposal.review_actions.request_changes.href
   ].filter(Boolean));
   assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("S1 Day0 Proposal route component hides write actions after merge", () => {
+  const vm = structuredClone(surfaceVm());
+  vm.page_vms.proposal.status = "merged";
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.html.includes('data-r4-proposal-action-count="0"'), true);
+  assert.equal(proposal.html.includes('data-action-id="approve"'), false);
+  assert.equal(proposal.html.includes('data-action-id="request_changes"'), false);
+  assert.equal(proposal.html.includes('data-action-id="merge"'), false);
+  assert.deepEqual(proposal.primaryHrefs, []);
+  assert.equal(proposal.reactComponent?.routeKey, "proposal");
+  if (proposal.reactComponent?.routeKey !== "proposal") {
+    throw new Error("proposal route component missing");
+  }
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 0);
+  assert.equal(proposal.reactComponent.props.mergeActionAvailable, false);
 });
 
 test("R4.13 Proposal route component exposes advanced structured conflict editors from route surface", () => {
@@ -922,7 +940,7 @@ test("R4.19 Proposal split adapter keeps readonly props separate from advanced e
   assert.equal(proposal.reactComponent.props.evidenceRefCount, vm.page_vms.proposal.evidence_refs.length);
   assert.equal(proposal.reactComponent.props.commentCount, vm.page_vms.proposal.comments.length);
   assert.equal(proposal.reactComponent.props.conflictCount, 1);
-  assert.equal(proposal.reactComponent.props.reviewActionCount, 3);
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 2);
   assert.equal(proposal.reactComponent.props.advancedFallbackPreserved, true);
   assert.equal(proposal.reactComponent.props.advancedFallbackSource, "proposal-advanced-editors-html-fallback");
   assert.equal(proposal.reactComponent.props.advancedFallbackActionCount, 1);

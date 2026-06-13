@@ -6,6 +6,8 @@ import type {
   AttentionHomeVM,
   BudgetPolicy,
   BudgetPolicyUpdate,
+  BootstrapProjectRequest,
+  BootstrapProjectResult,
   CostDashboardVM,
   CalendarPageVM,
   CostSummaryVM,
@@ -170,6 +172,7 @@ export type WorkHubApiClient = {
   markAllNotificationsRead: () => Promise<{ updated: number }>;
   dismissNotification: (id: string) => Promise<Notification>;
   completeNotification: (id: string) => Promise<Notification>;
+  bootstrapProject: (payload?: BootstrapProjectRequest) => Promise<BootstrapProjectResult>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;

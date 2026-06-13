@@ -604,11 +604,14 @@ export function renderProposalDetail(
 ): ProposalRenderedPage {
   const locale = uiLocale(options);
   const conflictCards = renderProposalConflictCards(options?.conflicts ?? [], { locale });
-  const actionList = [
-    vm.review_actions.approve,
-    vm.review_actions.request_changes,
-    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
-  ];
+  const actionList = vm.status === "opened"
+    ? [
+      vm.review_actions.approve,
+      vm.review_actions.request_changes
+    ]
+    : vm.status === "reviewed" && vm.review_actions.merge
+      ? [vm.review_actions.merge]
+      : [];
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 260);
   const main = `<section class="wh-proposal-main">

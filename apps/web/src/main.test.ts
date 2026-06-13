@@ -127,6 +127,20 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async completeNotification() {
       throw new Error("not needed");
     },
+    async bootstrapProject() {
+      return {
+        project: {
+          id: "50000000-0000-4000-8000-000000000030",
+          workspace_id: "50000000-0000-4000-8000-000000000031",
+          name: "Day 0 Pilot Project",
+          slug: "day0-pilot",
+          owner_nickname: "tester",
+          owner_user_id: "50000000-0000-4000-8000-000000000032"
+        },
+        created: true,
+        context_ready: true
+      };
+    },
     async createSession() {
       return session;
     },

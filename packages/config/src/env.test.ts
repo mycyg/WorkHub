@@ -21,6 +21,8 @@ test("keeps provider and budget defaults available", () => {
 
   assert.equal(value.llm.defaultProvider, "deepseek");
   assert.equal(value.providers.deepseek.model, "deepseek-v4-flash");
+  assert.equal(value.providers.deepseek.costInputCnyPerMtok, 2);
+  assert.equal(value.providers.deepseek.costOutputCnyPerMtok, 8);
   assert.equal(value.budgets.runTokens, 120000);
   assert.equal(value.budgets.teamMonthlyCostCny, "2000");
   assert.equal(value.agentRun.leaseMs, 300000);

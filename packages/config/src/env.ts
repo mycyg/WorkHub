@@ -71,8 +71,8 @@ export const envSchema = z.object({
 
   PROVIDER_DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
   PROVIDER_DEEPSEEK_MODEL: z.string().min(1).default("deepseek-v4-flash"),
-  PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(0),
-  PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(0),
+  PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(2),
+  PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(8),
 
   BUDGET_DEFAULT_RUN_TOKENS: z.coerce.number().int().positive().default(120000),
   BUDGET_DEFAULT_USER_DAILY_TOKENS: z.coerce.number().int().positive().default(500000),

@@ -51,6 +51,16 @@ export function createWorkItemActionFromHref(href: string) {
   return hrefPathname(href) === "/api/workitems";
 }
 
+export function bootstrapProjectActionFromHref(href: string) {
+  return hrefPathname(href) === "/api/projects/bootstrap";
+}
+
+export function startAgentRunActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/workitems\/([^/]+)\/agent-runs$/u.exec(path);
+  return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
 export function evidenceBindingWorkItemIdFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(path);

@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-week-runbook
 layer: 运营 / 验证
-status: ready-after-launch-gate
+status: active-day1
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -13,8 +13,8 @@ depends_on:
 # S1 Pilot Week 运营手册（turnkey）
 
 > 目的：把"人到位即启动"从口号变成 turnkey。本篇是主持人(你)的逐步操作手册——从起飞前检查到周末报告，全程不需要再做产品/工程决策。
-> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate 已通过**，但多人 Pilot Week 仍要等 Day 0 真实工作入口全绿。
-> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。下一步按 [`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](./s1-pilot-day0-real-work-entry-plan-2026-06-13.md) 补齐真实用户从 UI 发起工作/项目种子的可见入口。
+> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate 已通过**，Day 0 真实工作入口也已全绿。
+> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。Day 0 真实入口见 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。当前进入 [`s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md`](./s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md)。
 
 ## 0. 这一周要回答什么（贴墙上）
 
@@ -31,7 +31,7 @@ depends_on:
 - [ ] 在部署现场或 workhub 容器内跑一次 `pnpm qa:r5-10-dry`（key 无关）确认管线通；基线证据见 `2026-06-13-r5-10-dry-agent-pipeline`。
 - [ ] 在部署现场或 workhub 容器内跑一次 `pnpm qa:r5-10-real`，至少 `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real`，确认真 provider 可用；基线证据见 `2026-06-13-r5-10-real-key-evaluation`。
 - [x] 浏览器开 `http://<ip>:8787/`，管理员用 `ADMIN_CLAIM_SECRET` 认领 admin；Cost/Settings 中英 UI 已留证。
-- [ ] 按 Day 0 计划补齐“建 1–2 个真实项目 / 从 UI 发起第一件工作”的可见入口，并跑主持人可见闭环。
+- [x] 按 Day 0 计划补齐“建 1–2 个真实项目 / 从 UI 发起第一件工作”的可见入口，并跑主持人可见闭环（WorkItem `DAY0PILOT-006`、run `3bb9bd88-85e7-4f4e-bb26-f8ebcff5eb77`、proposal `2cff8131-400f-4a19-9dd6-01a5daa06e9c`）。
 - [x] `bash scripts/ops/backup-pg.sh /private/tmp/workhub-backups` 或生产等价仓库外目录跑通一次，确认备份可用。
 - [x] 用 `docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml ...` 独立 project 做 restore dry check，不能覆盖当前 pilot 数据。
 - [ ] 准备一个反馈收集入口（一张共享表/一个群即可）。
@@ -41,6 +41,17 @@ depends_on:
 - 让每个使用者各自注册（昵称报到，admin 不用管别人）。
 - **关键：用真实待办喂系统**，不要造假任务。每人挑 2–3 件本周真要做的数字活(写文档/做表/出图/清数据)提交为 WorkItem。
 - 主持人示范一次完整闭环：提需求 → 看 AI 干 → 在审批中心审 → 合并 → 回放页看它怎么做的。让大家知道"AI 干、你审"长什么样。
+- 当前可见入口：打开 `/intake`，点击 `Start work intake`；系统会先准备 `Day 0 Pilot Project` context，再进入 option-first intake。不要用旧 smoke fixture 或直接访问旧 `r4-live-*` 链接。
+- Day 0 已验证的真实路径：`/intake` -> session -> `DAY0PILOT-006` -> AgentRun -> Proposal direct review/merge -> `/agent-runs/:id/replay` -> `/dashboard/cost`。
+- 注意：Proposal direct review/merge 不会产生 `approval_requests` 行；指标采集要以 proposal review/merge/audit 为准。
+
+## 2.1 Day 1：反馈与观测（约 1 小时启动，之后每天 15 分钟）
+
+- 按 [`s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md`](./s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md) 启动。
+- 先邀请 1–3 个真实使用者，每人 1–2 件真实数字工作。
+- 每条反馈必须绑定 WorkItem/Proposal/Run 和截图，打 `阻断 / 可用性 / 惊喜 / 需求` 标签。
+- 每日收集六项指标：闭环完成件数、AI 直出采纳率、升级精准度、每件成本、冲突发生数、打扰密度。
+- Day 1 结束再次 backup + restore dry check。
 
 ## 3. 每日节奏（每天约 15 分钟）
 

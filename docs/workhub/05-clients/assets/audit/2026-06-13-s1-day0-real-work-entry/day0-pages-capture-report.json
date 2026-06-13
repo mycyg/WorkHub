@@ -1,0 +1,36 @@
+{
+  "base_url": "http://127.0.0.1:8787",
+  "audit_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry",
+  "screenshots": [
+    "06-proposal-merged-en-desktop.png",
+    "07-approvals-after-merge-en-desktop.png",
+    "08-replay-en-desktop.png",
+    "09-cost-en-desktop.png"
+  ],
+  "gates": {
+    "proposal_review": {
+      "url": "http://127.0.0.1:8787/proposals/2cff8131-400f-4a19-9dd6-01a5daa06e9c",
+      "merged": true,
+      "approveVisible": false,
+      "mergeVisible": false
+    },
+    "capture_pages": [
+      {
+        "url": "http://127.0.0.1:8787/proposals/2cff8131-400f-4a19-9dd6-01a5daa06e9c",
+        "screenshot": "06-proposal-merged-en-desktop.png"
+      },
+      {
+        "url": "http://127.0.0.1:8787/approvals",
+        "screenshot": "07-approvals-after-merge-en-desktop.png"
+      },
+      {
+        "url": "http://127.0.0.1:8787/agent-runs/3bb9bd88-85e7-4f4e-bb26-f8ebcff5eb77/replay",
+        "screenshot": "08-replay-en-desktop.png"
+      },
+      {
+        "url": "http://127.0.0.1:8787/dashboard/cost",
+        "screenshot": "09-cost-en-desktop.png"
+      }
+    ]
+  }
+}
