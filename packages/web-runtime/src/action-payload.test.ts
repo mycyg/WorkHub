@@ -27,6 +27,7 @@ import {
   startAgentRunActionFromHref,
   sessionNextQuestionIdFromHref
 } from "./action-payload.js";
+import { inspectPostRunWorkItemClarity } from "./post-run-clarity.js";
 
 test("R4.21 shared runtime parses route action hrefs without app-specific code", () => {
   assert.deepEqual(proposalActionFromHref("/api/proposals/p-1/review"), { proposalId: "p-1", action: "review" });
@@ -169,4 +170,43 @@ test("S1 Day1 shared runtime materializes intake free text into action payload",
   }
   assert.deepEqual(payload.payload.selected_option_ids, ["document-draft"]);
   assert.equal(payload.payload.free_text, "add screenshot evidence");
+});
+
+test("S1 Day2 shared runtime detects post-run WorkItem proposal and replay next actions", () => {
+  const proposal = {
+    dataset: { actionId: "open_proposal", s1Day2PostRunNextAction: "proposal" },
+    getAttribute(name: string) {
+      return name === "href" ? "/proposals/p-1" : null;
+    }
+  };
+  const replay = {
+    dataset: { actionId: "open_replay", s1Day2PostRunNextAction: "replay" },
+    getAttribute(name: string) {
+      return name === "href" ? "/agent-runs/r-1/replay" : null;
+    }
+  };
+  const route = {
+    dataset: { r4WorkitemId: "w-1" },
+    querySelectorAll(selector: string) {
+      return selector.includes("post-run") ? [proposal, replay] : [];
+    }
+  };
+  const scope = {
+    querySelector(selector: string) {
+      return selector.includes("w-1") ? route : null;
+    }
+  };
+
+  assert.deepEqual(inspectPostRunWorkItemClarity(scope as unknown as ParentNode, "w-1"), {
+    routeVisible: true,
+    workItemId: "w-1",
+    actionKind: "proposal",
+    actionHref: "/proposals/p-1",
+    actionCount: 2
+  });
+  assert.deepEqual(inspectPostRunWorkItemClarity(scope as unknown as ParentNode, "missing"), {
+    routeVisible: false,
+    workItemId: "missing",
+    actionCount: 0
+  });
 });

@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-day2-feedback-hardening
 layer: 运营 / Web / QA
-status: planned
+status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -10,6 +10,8 @@ depends_on:
 ---
 
 # S1 Day 2 Feedback Hardening Plan
+
+> 2026-06-13 result: **PASS**. Report: [`s1-pilot-day2-feedback-hardening-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-feedback-hardening-report-2026-06-13.md). Next: [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md).
 
 ## Goal
 
@@ -25,15 +27,25 @@ depends_on:
 | D2-4 Metrics operator surface | 管理员能用 runbook/API 快速取六指标；保留 CLI 但记录 curl/API 示例。 | runbook 更新 + metrics JSON |
 | D2-5 Invite next real users | 在 D2-1/D2-2 后再邀请 1-3 个真实用户，每人 1 件真实任务。 | Day2 browser/DB evidence |
 
+## Completion Notes
+
+| ID | Status | Evidence |
+|---|---|---|
+| D2-1 | PASS | WorkItem `956fcccc-68a7-499c-beee-63706466faf9` shows Proposal `1f1579ef-e2ac-4557-86c5-94fc072e2a25` and Replay for Run `2334968f-32b0-4229-bf6c-74ca3dca80c4`; no duplicate start-run. |
+| D2-2 | PASS | `apps/web/qa/s1-day2-pilot-browser-dry-run.ts` supports fresh/resume, stale notice filtering, desktop/mobile screenshots, overflow and duplicate-start gates. |
+| D2-3 | PASS | Proposal `7ade705e-3438-4edb-9c56-349b80176f3e` rejected through normal review API as QA artifact; metrics record `proposals_rejected: 1`. |
+| D2-4 | PASS | `s1-pilot-day2-metrics-snapshot.json`: closed loops `8`, adoption `89%`, all gates true; runbook has API + CLI examples. |
+| D2-5 | PASS-to-expand | Day2 did not create more real-user work beyond QA validation; it exits by opening Day3 expansion with 1-3 real users and a detailed gate plan. |
+
 ## Gates
 
 | Gate | Must be true |
 |---|---|
-| G1 post-run clarity | 用户启动 run 后，WorkItem route 在 run terminal 后 10 秒内显示 Proposal/Replay next action 或明确刷新动作。 |
-| G2 no duplicate QA artifacts | Dry run 脚本失败可 resume，不因等待条件重复创建 WorkItem/Run。 |
-| G3 feedback log continuity | Day1 feedback log 继续追加，所有 Day2 issue 绑定 WorkItem/Run/Proposal/截图。 |
-| G4 metrics continuity | `qa:s1-day1-metrics` 仍 all gates true，且 Day2 baseline 与 Day1 可比较。 |
-| G5 backup | Day2 结束再次 backup + isolated restore dry check。 |
+| G1 post-run clarity | PASS: browser report `post_run_clarity=true`, `nextActionKind=proposal`, `startRunAction=false`。 |
+| G2 no duplicate QA artifacts | PASS: resume report `resume_without_duplicate_start=true`。 |
+| G3 feedback log continuity | PASS: `D2-FB-001` through `D2-FB-003` appended。 |
+| G4 metrics continuity | PASS: `qa:s1-day1-metrics` all gates true，Day2 baseline 已保存。 |
+| G5 backup | PASS: `/private/tmp/workhub-backups/workhub-20260613-165459.sql.gz` + isolated restore query。 |
 
 ## QA
 
@@ -46,4 +58,4 @@ depends_on:
 
 ## Exit
 
-Day2 全绿后，Pilot Week 可以从“受控第二用户”扩大到 1-3 个真实使用者日常提交；若 G1 或 G2 失败，继续修 Web runtime/QA，不邀请新用户。
+Day2 已全绿。Pilot Week 进入 Day3 expansion：从“受控第二用户”扩大到 1-3 个真实使用者日常提交；若 Day3 任一真实用户路径复现 G1/G2 类问题，立即停止扩人并按 blocker 修复。

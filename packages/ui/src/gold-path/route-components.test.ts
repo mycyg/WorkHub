@@ -754,6 +754,8 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assert.equal(workitem.html.includes("AI execution trace"), true);
   assert.equal(workitem.html.includes("Acceptance checklist"), true);
   assert.equal(workitem.html.includes("data-method=\"GET\""), true);
+  assert.equal(workitem.html.includes('data-s1-day2-post-run-next-action="proposal"'), true);
+  assert.equal(workitem.html.includes('data-s1-day2-post-run-next-action="replay"'), true);
   assert.deepEqual(workitem.primaryHrefs.includes(`/proposals/${vm.page_vms.proposal.proposal_id}`), true);
   assertNoMainWindowBoundaryLeak(workitem.html);
 });
@@ -788,6 +790,16 @@ test("R5.4 WorkItem route component exposes Drive source context and proposal dr
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
   assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
+});
+
+test("S1 Day2 WorkItem route component hides duplicate start-run once proposal or replay is available", () => {
+  const vm = surfaceVm();
+  const workitem = renderWebRouteComponents(vm, { locale: "en-US" }).workitem;
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes('data-action-id="open_proposal"'), true);
+  assert.equal(workitem.html.includes('data-action-id="open_replay"'), true);
+  assert.equal(workitem.html.includes('data-action-id="start_agent_run"'), false);
 });
 
 test("R5.5 WorkItem route component exposes Meeting source context and proposal draft action", () => {

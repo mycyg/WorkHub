@@ -41,7 +41,9 @@ import {
   driveUploadFromHref,
   eventListenerOptions,
   evidenceBindingWorkItemIdFromHref,
+  escapeHtml,
   fieldValueRequiredNotice,
+  inspectPostRunWorkItemClarity,
   intakeOptionRequiredNotice,
   localePersistenceFailedNotice,
   markActiveRouteDirty as sharedMarkActiveRouteDirty,
@@ -92,6 +94,11 @@ type ShellIdentityUser = { nickname: string; isAdmin: boolean };
 let currentIdentity: ShellIdentityUser | undefined;
 let activeLocale: WorkHubLocale = "zh-CN";
 const liveEventTypes = Object.values(eventTypes);
+const postRunTerminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
+const postRunTerminalPollIntervalMs = 1000;
+const postRunTerminalMaxWaitMs = 60000;
+const postRunClarityPollDelaysMs = [0, 1000, 2000, 3000, 4000];
+let postRunClarityMonitorToken = 0;
 
 function defaultPilotIntent(locale: WorkHubLocale) {
   return locale === "en-US"
@@ -104,6 +111,124 @@ function startIntentText(actionTarget: HTMLElement, locale: WorkHubLocale) {
   const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
   const value = input?.value.trim();
   return value && value.length > 0 ? value : defaultPilotIntent(locale);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function currentRouteIsWorkItem(workItemId: string) {
+  const match = currentRouteMatch();
+  return match.key === "workitem" && match.params["id"] === workItemId;
+}
+
+function setPostRunClarityMetric(key: string, value: unknown) {
+  setLiveMetric(`s1Day2PostRun${key}`, value);
+}
+
+function postRunClarityActionHtml(workItemId: string, runId: string, locale: WorkHubLocale) {
+  const refreshLabel = locale === "en-US" ? "Refresh task" : "刷新任务";
+  const replayLabel = locale === "en-US" ? "Open replay" : "打开回放";
+  return `<a class="wh-btn" href="/workitems/${escapeHtml(encodeURIComponent(workItemId))}" data-s1-day2-post-run-refresh-action="true">${escapeHtml(refreshLabel)}</a><a class="wh-btn" href="/agent-runs/${escapeHtml(encodeURIComponent(runId))}/replay" data-s1-day2-post-run-replay-action="true">${escapeHtml(replayLabel)}</a>`;
+}
+
+function postRunClarityReadyBody(locale: WorkHubLocale, actionKind: string | undefined) {
+  if (locale === "en-US") {
+    return actionKind === "proposal"
+      ? "The proposal is ready on this task. Review it from the visible next action."
+      : "The run replay is ready on this task. Open it from the visible next action.";
+  }
+  return actionKind === "proposal"
+    ? "变更申请已出现在这个任务上。请使用可见的下一步动作进入审阅。"
+    : "执行回放已出现在这个任务上。请使用可见的下一步动作查看过程。";
+}
+
+function postRunClarityFallbackNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_pending",
+    tone: "warning",
+    source: "client",
+    locale,
+    title: locale === "en-US" ? "Next step needs a refresh" : "下一步需要刷新",
+    body: locale === "en-US"
+      ? "The AI run finished, but this task has not exposed Proposal or Replay yet. Refresh the task or open replay."
+      : "AI 执行已结束，但任务页还没有显示 Proposal 或 Replay。请刷新任务，或打开回放查看结果。",
+    actionId
+  };
+}
+
+async function waitForRunTerminal(
+  client: BrowserApiClient,
+  runId: string,
+  workItemId: string,
+  monitorToken: number
+) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= postRunTerminalMaxWaitMs) {
+    if (monitorToken !== postRunClarityMonitorToken || !currentRouteIsWorkItem(workItemId)) {
+      return "stopped" as const;
+    }
+    const run = await client.getAgentRun(runId);
+    setPostRunClarityMetric("RunStatus", run.status);
+    if (postRunTerminalStatuses.has(run.status)) {
+      return run.status;
+    }
+    await sleep(postRunTerminalPollIntervalMs);
+  }
+  return "timeout" as const;
+}
+
+async function monitorPostRunWorkItemClarity(input: {
+  client: BrowserApiClient;
+  locale: WorkHubLocale;
+  workItemId: string;
+  runId: string;
+  actionId?: string | undefined;
+  monitorToken: number;
+}) {
+  const { client, locale, workItemId, runId, actionId, monitorToken } = input;
+  setPostRunClarityMetric("Monitor", "waiting-terminal");
+  setPostRunClarityMetric("RunId", runId);
+  const terminal = await waitForRunTerminal(client, runId, workItemId, monitorToken);
+  if (terminal === "stopped") {
+    setPostRunClarityMetric("Monitor", "stopped");
+    return;
+  }
+  if (terminal === "timeout") {
+    setPostRunClarityMetric("Monitor", "terminal-timeout");
+    if (root && currentRouteIsWorkItem(workItemId)) {
+      showRouteNotice(root, postRunClarityFallbackNotice(locale, actionId), postRunClarityActionHtml(workItemId, runId, locale), 0);
+    }
+    return;
+  }
+
+  setPostRunClarityMetric("Monitor", "terminal");
+  for (const delayMs of postRunClarityPollDelaysMs) {
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
+    if (monitorToken !== postRunClarityMonitorToken || !currentRouteIsWorkItem(workItemId)) {
+      setPostRunClarityMetric("Monitor", "stopped");
+      return;
+    }
+    await renderCurrentRoute(client, locale);
+    if (!root || !currentRouteIsWorkItem(workItemId)) {
+      setPostRunClarityMetric("Monitor", "stopped");
+      return;
+    }
+    const clarity = inspectPostRunWorkItemClarity(root, workItemId);
+    setPostRunClarityMetric("ActionCount", clarity.actionCount);
+    if (clarity.actionKind) {
+      setPostRunClarityMetric("Monitor", "ready");
+      setPostRunClarityMetric("NextAction", clarity.actionKind);
+      showRouteNotice(root, actionSuccessNotice(locale, postRunClarityReadyBody(locale, clarity.actionKind), actionId), undefined, 5200);
+      return;
+    }
+  }
+  setPostRunClarityMetric("Monitor", "manual-refresh");
+  if (root && currentRouteIsWorkItem(workItemId)) {
+    showRouteNotice(root, postRunClarityFallbackNotice(locale, actionId), postRunClarityActionHtml(workItemId, runId, locale), 0);
+  }
 }
 
 function setLiveMetric(key: string, value: unknown) {
@@ -439,12 +564,26 @@ function bindGoldPathNavigation(
         try {
           const run = await client.startAgentRun(startAgentRun.workItemId);
           await navigateWebRoute(`/workitems/${startAgentRun.workItemId}`, client, locale);
+          const monitorToken = ++postRunClarityMonitorToken;
           if (root) {
             const body = locale === "en-US"
-              ? `AI run queued: ${run.run_id}. WorkHub will refresh this task from the run stream.`
-              : `AI 执行已排队：${run.run_id}。WorkHub 会通过执行流刷新这个任务。`;
+              ? `AI run queued: ${run.run_id}. WorkHub will refresh this task, then surface Proposal or Replay.`
+              : `AI 执行已排队：${run.run_id}。WorkHub 会刷新任务，并把 Proposal 或 Replay 露出来。`;
             showRouteNotice(root, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
           }
+          void monitorPostRunWorkItemClarity({
+            client,
+            locale,
+            workItemId: startAgentRun.workItemId,
+            runId: run.run_id,
+            actionId: actionId ?? "start_agent_run",
+            monitorToken
+          }).catch((error) => {
+            setPostRunClarityMetric("Monitor", "error");
+            if (root && currentRouteIsWorkItem(startAgentRun.workItemId)) {
+              showRouteNotice(root, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
+            }
+          });
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
         }

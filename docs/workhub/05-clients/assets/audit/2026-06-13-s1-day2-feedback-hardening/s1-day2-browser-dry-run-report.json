@@ -1,0 +1,146 @@
+{
+  "ok": true,
+  "generated_at": "2026-06-13T08:49:00.182Z",
+  "base_url": "http://127.0.0.1:8787",
+  "nickname": "S1 Day2 QA Fresh 202606131651",
+  "mode": "resume",
+  "resume": {
+    "work_item_id": "956fcccc-68a7-499c-beee-63706466faf9",
+    "run_id": "2334968f-32b0-4229-bf6c-74ca3dca80c4",
+    "input_work_item_id": "956fcccc-68a7-499c-beee-63706466faf9",
+    "input_run_id": "2334968f-32b0-4229-bf6c-74ca3dca80c4"
+  },
+  "gates": {
+    "post_run_clarity": true,
+    "stale_notice_ignored": true,
+    "resume_without_duplicate_start": true,
+    "screenshots_captured": true
+  },
+  "clarity": {
+    "mode": "already-visible",
+    "runId": "2334968f-32b0-4229-bf6c-74ca3dca80c4"
+  },
+  "final_audit": {
+    "status": "ready",
+    "routeKey": "workitem",
+    "pathname": "/workitems/956fcccc-68a7-499c-beee-63706466faf9",
+    "workItemId": "956fcccc-68a7-499c-beee-63706466faf9",
+    "startRunAction": false,
+    "nextActionKind": "proposal",
+    "nextActionHref": "/proposals/1f1579ef-e2ac-4557-86c5-94fc072e2a25",
+    "nextActionCount": 2,
+    "refreshAction": false,
+    "replayAction": false,
+    "postRunMonitor": null,
+    "postRunRunId": null,
+    "postRunRunStatus": null,
+    "postRunNextAction": null,
+    "noticeKind": null,
+    "noticeBody": "",
+    "horizontalOverflow": false,
+    "textOverflowCount": 0,
+    "secretLeak": false
+  },
+  "steps": [
+    {
+      "id": "01-day2-home-or-entry",
+      "screenshot": "01-day2-home-or-entry.png",
+      "audit": {
+        "status": "empty",
+        "routeKey": "home",
+        "pathname": "/",
+        "workItemId": null,
+        "startRunAction": false,
+        "nextActionKind": null,
+        "nextActionHref": null,
+        "nextActionCount": 0,
+        "refreshAction": false,
+        "replayAction": false,
+        "postRunMonitor": null,
+        "postRunRunId": null,
+        "postRunRunStatus": null,
+        "postRunNextAction": null,
+        "noticeKind": null,
+        "noticeBody": "",
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "secretLeak": false
+      }
+    },
+    {
+      "id": "02-day2-workitem-before-run",
+      "screenshot": "02-day2-workitem-before-run.png",
+      "audit": {
+        "status": "ready",
+        "routeKey": "workitem",
+        "pathname": "/workitems/956fcccc-68a7-499c-beee-63706466faf9",
+        "workItemId": "956fcccc-68a7-499c-beee-63706466faf9",
+        "startRunAction": false,
+        "nextActionKind": "proposal",
+        "nextActionHref": "/proposals/1f1579ef-e2ac-4557-86c5-94fc072e2a25",
+        "nextActionCount": 2,
+        "refreshAction": false,
+        "replayAction": false,
+        "postRunMonitor": null,
+        "postRunRunId": null,
+        "postRunRunStatus": null,
+        "postRunNextAction": null,
+        "noticeKind": null,
+        "noticeBody": "",
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "secretLeak": false
+      }
+    },
+    {
+      "id": "03-day2-post-run-clarity",
+      "screenshot": "03-day2-post-run-clarity.png",
+      "audit": {
+        "status": "ready",
+        "routeKey": "workitem",
+        "pathname": "/workitems/956fcccc-68a7-499c-beee-63706466faf9",
+        "workItemId": "956fcccc-68a7-499c-beee-63706466faf9",
+        "startRunAction": false,
+        "nextActionKind": "proposal",
+        "nextActionHref": "/proposals/1f1579ef-e2ac-4557-86c5-94fc072e2a25",
+        "nextActionCount": 2,
+        "refreshAction": false,
+        "replayAction": false,
+        "postRunMonitor": null,
+        "postRunRunId": null,
+        "postRunRunStatus": null,
+        "postRunNextAction": null,
+        "noticeKind": null,
+        "noticeBody": "",
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "secretLeak": false
+      }
+    },
+    {
+      "id": "04-day2-post-run-clarity-mobile",
+      "screenshot": "04-day2-post-run-clarity-mobile.png",
+      "audit": {
+        "status": "ready",
+        "routeKey": "workitem",
+        "pathname": "/workitems/956fcccc-68a7-499c-beee-63706466faf9",
+        "workItemId": "956fcccc-68a7-499c-beee-63706466faf9",
+        "startRunAction": false,
+        "nextActionKind": "proposal",
+        "nextActionHref": "/proposals/1f1579ef-e2ac-4557-86c5-94fc072e2a25",
+        "nextActionCount": 2,
+        "refreshAction": false,
+        "replayAction": false,
+        "postRunMonitor": null,
+        "postRunRunId": null,
+        "postRunRunStatus": null,
+        "postRunNextAction": null,
+        "noticeKind": null,
+        "noticeBody": "",
+        "horizontalOverflow": false,
+        "textOverflowCount": 0,
+        "secretLeak": false
+      }
+    }
+  ]
+}

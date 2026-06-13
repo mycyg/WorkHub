@@ -16,7 +16,7 @@ depends_on:
 > **北极星**：让一个真实团队（单人或三人皆可）用核心闭环——**提需求 → AI 干 → 升级 → 审批 → 合并 → 回放**——真干一周的活。这一周跑通的那天，WorkHub 的价值从文档变成事实。
 > **定位**：R5.8 之后的权威施工顺序。它把 R4 中期审查总评指出的四个战略风险（面太宽 / 桌宠占比失衡 / 护城河推迟 / 给谁用最薄）转成一条可执行的验证路径：**所有工期优先服务"核心反转被真实使用验证"这一件事**。
 > **三个已拍板的决策（2026-06-12）**：① pilot 不依赖特定人员，目标是"系统 pilot-ready"，但仍必须通过 S1 Launch Gate 后才能开周；② C-PET/Cuu **不冻结**，按原节奏并行，但不在 pilot 关键路径上；③ OQ-4 护城河走 **pilot 数据驱动**——先收集真实冲突数据，再开深化。
-> **2026-06-13 补充**：S1 Launch Gate 已 **PASS**。首轮 NO-GO 是部署环境缺失；随后本机 Docker Desktop + `docker-compose.pilot.yml` 真实栈完成起栈、部署容器 dry/real、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验。S1 Day 0 Real Work Entry 也已 **PASS**：真实 `/intake` 入口创建 `DAY0PILOT-006`，AgentRun succeeded，Proposal merged，Replay/Cost/backup/restore 全留证。S1 Day 1 Feedback + Observability 已 **PASS**：第二用户非 admin 路径、六指标 API/CLI、feedback log、backup/restore 全绿。下一施工入口是 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)。
+> **2026-06-13 补充**：S1 Launch Gate 已 **PASS**。首轮 NO-GO 是部署环境缺失；随后本机 Docker Desktop + `docker-compose.pilot.yml` 真实栈完成起栈、部署容器 dry/real、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验。S1 Day 0 Real Work Entry 也已 **PASS**：真实 `/intake` 入口创建 `DAY0PILOT-006`，AgentRun succeeded，Proposal merged，Replay/Cost/backup/restore 全留证。S1 Day 1 Feedback + Observability 已 **PASS**：第二用户非 admin 路径、六指标 API/CLI、feedback log、backup/restore 全绿。S1 Day 2 Feedback Hardening 已 **PASS**：post-run WorkItem clarity、browser QA resume/idempotency、opened QA artifact triage、Day2 metrics baseline、backup/restore 全绿。下一施工入口是 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md)。
 
 ---
 
@@ -72,8 +72,9 @@ R5.12  权限矩阵审计（P1-4）                ← ✅ 已竣工（2026-06-1
 S1-Gate Pilot Launch Gate                  ← ✅ 已竣工（2026-06-13）：Docker compose / dry-real / backup-restore / UI-i18n / fresh-nav gates 全绿
 S1-D0  Day 0 Real Work Entry               ← ✅ 已竣工（2026-06-13）：真实 UI 入口、WorkItem/AgentRun/Proposal/Replay/Cost、backup/restore 全绿
 S1-D1  Feedback + Observability            ← ✅ 已竣工（2026-06-13）：第二用户路径、六指标、反馈 log、ops loop、backup/restore 全绿
-S1-D2  Feedback Hardening                  ← active-day2：post-run clarity、QA resume/idempotency、处理 opened QA artifact 后再扩人
-S1     Pilot Week（Day 2 硬化后扩大；turnkey 运营手册已进入 active-day2-hardening）
+S1-D2  Feedback Hardening                  ← ✅ 已竣工（2026-06-13）：post-run clarity、QA resume/idempotency、opened QA artifact rejected、metrics/backup/restore 全绿
+S1-D3  Expansion                           ← active-day3：邀请 1-3 个真实使用者，每人 1 件真实任务，继续 metrics delta 和反馈 issue 化
+S1     Pilot Week（Day 3 扩人中；turnkey 运营手册已进入 active-day3-expansion）
 S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）、OQ-2/3 阈值校准、pilot 报告决定 S2
 ```
 
@@ -88,7 +89,8 @@ S1 后  数据驱动深化：OQ-4 合并语义/AI 调解（真实冲突数据）
 | **S1 Launch Gate** | ✅ 部署现场 compose 起栈、dry/real smoke、backup/restore、secret hygiene、主持人 operator loop；并修复 fresh pilot 稳定页旧 seed 导航 | 不新增业务模块；不把旧 smoke fixture 当真实入口 |
 | **S1 Day 0** | ✅ 已落：真实用户从 UI 发起工作/项目种子的可见入口，主持人可见闭环，Day0 backup/restore | 不邀请多人；不扩业务面 |
 | **S1 Day 1** | ✅ 已落：反馈入口、每日指标快照、第二用户路径、ops loop、Day1 backup/restore | 不新增业务模块；不并行开桌宠新面 |
-| **S1 Day 2** | 修 post-run WorkItem clarity、QA resume/idempotency、处理 opened QA artifact、继续每日指标 | 不扩大用户前不带着已知摩擦硬推 |
+| **S1 Day 2** | ✅ 已落：post-run WorkItem clarity、QA resume/idempotency、处理 opened QA artifact、继续每日指标、Day2 backup/restore | 不扩大用户前不带着已知摩擦硬推 |
+| **S1 Day 3** | 邀请 1-3 个真实使用者，每人 1 件真实任务；每个 Proposal 必须 merge 或 reason reject；记录 metrics delta 与反馈 top issues | 不新增业务模块、不把 QA 中断当理由重复造数据 |
 | **S1 Pilot Week** | 每日反馈回灌（issue 化）、周末 pilot 报告（§3 六指标 + 定性结论） | 不在 pilot 周内并行开新功能面 |
 
 ## 5. 双轨说明

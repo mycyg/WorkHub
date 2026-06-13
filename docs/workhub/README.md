@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-13):**143 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统代码已 pilot-ready**；**R5.10-dry + R5.10-real 已通过**：dry 在本机 PG16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download；real 用 DeepSeek 真 provider 跑完 6 个 AgentRun，T1–T4 质量全达标、T5 升级、B1 预算护栏，真实成本 `0.142346 CNY`。**S1 Pilot Launch Gate、Day 0 Real Work Entry、Day 1 Feedback + Observability 均已通过**：Docker Desktop + pilot compose 真实栈完成起栈、真实 `/intake` 到 WorkItem/AgentRun/Proposal/Replay/Cost、第二用户非 admin 路径、六指标 API/CLI、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验。下一施工线为 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./06-roadmap/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)。
+> 状态(2026-06-13):**145 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统代码已 pilot-ready**；**R5.10-dry + R5.10-real 已通过**：dry 在本机 PG16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download；real 用 DeepSeek 真 provider 跑完 6 个 AgentRun，T1–T4 质量全达标、T5 升级、B1 预算护栏，真实成本 `0.142346 CNY`。**S1 Pilot Launch Gate、Day 0 Real Work Entry、Day 1 Feedback + Observability、Day 2 Feedback Hardening 均已通过**：Docker Desktop + pilot compose 真实栈完成起栈、真实 `/intake` 到 WorkItem/AgentRun/Proposal/Replay/Cost、第二用户非 admin 路径、post-run WorkItem clarity、browser QA resume/idempotency、stale QA artifact triage、六指标 API/CLI、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验。下一施工线为 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./06-roadmap/s1-pilot-day3-expansion-plan-2026-06-13.md)。
 
 ---
 
@@ -30,7 +30,7 @@
 | R5.6 | ✅ | Schedule / Notify 已落，`/notifications` 收件箱分组、`/calendar` 周视图、mark read/dismiss/complete + audit，63 步 browser gate 与 request proof 全过。 |
 | R5.7 | ✅ | Knowledge grounding / dashboard health 已落，`/dashboard/health` admin 数值 / member 档位分层、通知 grounding 与 `source_ref` 证据回链，66 步 browser gate 全过。 |
 | R5.8 | ✅ | Browser smoke 已进 CI：`web-live-route-smoke` job 64 秒跑完 66 步 / 114 gates；首跑抓出 Linux CJK 行高裁切并修复（16 处行高 → 1.35）。 |
-| S1 序列 | active | **北极星迭代计划已立**：[s1-pilot-readiness-roadmap](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)，R5.9–R5.12 消三大差距（注册流/真实 LLM 验证/部署包 + 权限审计）；Launch Gate、Day 0、Day 1 已过，进入 active Day 2 hardening；OQ-4 护城河走 pilot 数据驱动。 |
+| S1 序列 | active | **北极星迭代计划已立**：[s1-pilot-readiness-roadmap](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)，R5.9–R5.12 消三大差距（注册流/真实 LLM 验证/部署包 + 权限审计）；Launch Gate、Day 0、Day 1、Day 2 已过，进入 active Day 3 expansion；OQ-4 护城河走 pilot 数据驱动。 |
 | R5.9 | ✅ | Onboarding 已落：注册屏（昵称+locale+admin 口令）、登出、deep link 保持、第二用户切换；自动注册已删除；70 步 smoke 全过（P1-6 关闭）。 |
 | R5.10-pre | ✅ | Agent 能力强化已落：真·上下文压缩、tool_result 截断、工人合同 prompt、HTTP/fetch-level 瞬态重试、`LLM_MAX_TOKENS_PER_STEP`、llm_review 五档接入 R0 置信度权重；agent 30 测全过。 |
 | R5.10 | ✅ | dry + true-key 全过：6 个真实 AgentRun，T1–T4 人工质量 4/4 达标，T5 信息不足不编造，B1 预算护栏升级，成本/ledger/confidence 全留证。 |
@@ -40,7 +40,8 @@
 | S1 Launch Gate | ✅ | Docker Desktop + pilot compose 现场门通过；dry/real、backup/restore、管理员注册、Cost/Settings 中英截图和 fresh pilot 稳定导航均留证，并修复旧 `r4-live-*` seed 链接泄漏。 |
 | S1 Day 0 | ✅ | 真实 `/intake` 入口、Project bootstrap、WorkItem `DAY0PILOT-006`、AgentRun、Proposal merge、Replay/Cost、backup/restore 全绿；修复 worker 缺 WorkItem context 与 0 成本默认值。 |
 | S1 Day 1 | ✅ | 第二用户非 admin 路径、Day1 真实任务 intent/free text、Proposal merge、Replay/Cost、六指标 API/CLI、feedback log、backup/restore 全绿。 |
-| S1 Day 2 | active | post-run WorkItem clarity、QA resume/idempotency、处理 opened QA artifact，再邀请下一批真实用户。 |
+| S1 Day 2 | ✅ | post-run WorkItem clarity、QA resume/idempotency、opened QA artifact triage、六指标 baseline、backup/restore 全绿。 |
+| S1 Day 3 | active | 邀请 1-3 个真实使用者，每人 1 件真实任务，继续 metrics delta、反馈 issue 化与 backup/restore。 |
 
 ---
 
@@ -222,8 +223,9 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `s1-pilot-launch-gate-plan-2026-06-13.md` | **S1 Pilot Launch Gate**:R5.10-real 之后的启动前核验计划；Docker Desktop + pilot compose 现场门已通过，含 dry/real、backup/restore、UI/i18n/secret/fresh-nav gates | ✅ |
 | `s1-pilot-day0-real-work-entry-plan-2026-06-13.md` | **S1 Day 0**:真实用户从 UI 发起工作/项目种子的可见入口；WorkItem `DAY0PILOT-006`、AgentRun、Proposal merge、Replay/Cost、Day0 backup/restore gates 全绿 | ✅ |
 | `s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md` | **S1 Day 1**:反馈入口、每日六指标、第二用户路径、ops loop、Day1 backup/restore；第二用户闭环与六指标 gates 全绿 | ✅ |
-| `s1-pilot-day2-feedback-hardening-plan-2026-06-13.md` | **S1 Day 2**:post-run WorkItem clarity、browser QA resume/idempotency、opened QA artifact triage、继续每日指标与 backup/restore | active |
-| `s1-pilot-week-runbook-2026-06-12.md` | **S1 运营**:Pilot Week turnkey 手册，起飞前检查 / day-0 seed / 每日反馈回灌 / 六指标采集 / 周末报告模板 / S2 决策口径；Launch Gate、Day0、Day1 全绿后进入 active-day2-hardening | active-day2-hardening |
+| `s1-pilot-day2-feedback-hardening-plan-2026-06-13.md` | **S1 Day 2**:post-run WorkItem clarity、browser QA resume/idempotency、opened QA artifact triage、Day2 metrics baseline 与 backup/restore 全绿 | ✅ |
+| `s1-pilot-day3-expansion-plan-2026-06-13.md` | **S1 Day 3**:邀请 1-3 个真实使用者，每人 1 件真实任务，继续 metrics delta、反馈 issue 化与 backup/restore | active |
+| `s1-pilot-week-runbook-2026-06-12.md` | **S1 运营**:Pilot Week turnkey 手册，起飞前检查 / day-0 seed / 每日反馈回灌 / 六指标采集 / 周末报告模板 / S2 决策口径；Launch Gate、Day0、Day1、Day2 全绿后进入 active-day3-expansion | active-day3-expansion |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级

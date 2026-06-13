@@ -677,7 +677,12 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
       const reason = action.requires_reason ? " data-requires-reason=\"true\"" : "";
       const method = "method" in action ? ` data-method="${escapeHtml(action.method)}"` : "";
       const desktop = action.requires_desktop ? " data-requires-desktop=\"true\"" : "";
-      return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}>${escapeHtml(action.label)}</a>`;
+      const postRunNext = action.id === "open_proposal"
+        ? " data-s1-day2-post-run-next-action=\"proposal\""
+        : action.id === "open_replay"
+          ? " data-s1-day2-post-run-next-action=\"replay\""
+          : "";
+      return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -1023,6 +1028,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
 function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpec[] {
   const proposalId = vm.latest_proposal?.proposal_id;
   const runId = vm.agent_trace_preview[0]?.agent_run_id;
+  const canStartRun = vm.workitem.status === "spec_ready" && !proposalId && vm.agent_trace_preview.length === 0;
   const actions: Array<ActionSpec | undefined> = [
     vm.actions.create_proposal_draft,
     proposalId
@@ -1041,7 +1047,7 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
         href: `/agent-runs/${runId}/replay`
       }
       : undefined,
-    vm.workitem.status === "spec_ready"
+    canStartRun
       ? {
         id: "start_agent_run",
         label: routeT(locale, "workitem.startRun"),

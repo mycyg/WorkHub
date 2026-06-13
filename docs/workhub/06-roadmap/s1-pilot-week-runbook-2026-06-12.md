@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-week-runbook
 layer: 运营 / 验证
-status: active-day2-hardening
+status: active-day3-expansion
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -13,8 +13,8 @@ depends_on:
 # S1 Pilot Week 运营手册（turnkey）
 
 > 目的：把"人到位即启动"从口号变成 turnkey。本篇是主持人(你)的逐步操作手册——从起飞前检查到周末报告，全程不需要再做产品/工程决策。
-> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate、Day 0 真实工作入口、Day 1 反馈观测均已全绿**。
-> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。Day 0 真实入口见 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。Day 1 反馈观测见 [`s1-pilot-day1-feedback-and-observability-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability/s1-pilot-day1-feedback-and-observability-report-2026-06-13.md)。当前进入 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)。
+> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate、Day 0 真实工作入口、Day 1 反馈观测、Day 2 反馈硬化均已全绿**。
+> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。Day 0 真实入口见 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。Day 1 反馈观测见 [`s1-pilot-day1-feedback-and-observability-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability/s1-pilot-day1-feedback-and-observability-report-2026-06-13.md)。Day 2 反馈硬化见 [`s1-pilot-day2-feedback-hardening-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-feedback-hardening-report-2026-06-13.md)。当前进入 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md)。
 
 ## 0. 这一周要回答什么（贴墙上）
 
@@ -55,10 +55,25 @@ depends_on:
 
 ## 2.2 Day 2：反馈硬化（先修摩擦，再扩人）
 
-- 按 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./s1-pilot-day2-feedback-hardening-plan-2026-06-13.md) 推进。
-- 先修 post-run WorkItem clarity：用户启动 run 后必须看见 Proposal/Replay 下一步或明确刷新动作。
-- 把 Day1 临时 browser QA 收敛为可 resume/idempotent 的 repo QA，避免 stale notice 造成重复数据。
-- 处理 Day1 false-negative 留下的 opened proposal `7ade705e-3438-4edb-9c56-349b80176f3e`，再邀请下一批真实用户。
+- Day 2 已按 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./s1-pilot-day2-feedback-hardening-plan-2026-06-13.md) 完成，报告见 [`s1-pilot-day2-feedback-hardening-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-feedback-hardening-report-2026-06-13.md)。
+- post-run WorkItem clarity 已修：WorkItem `956fcccc-68a7-499c-beee-63706466faf9` 在 Run `2334968f-32b0-4229-bf6c-74ca3dca80c4` 后显示 Proposal/Replay，且不再显示重复 start-run。
+- Browser QA 已收敛为 repo 内 resume/idempotent 脚本：`pnpm --filter @workhub/web qa:s1-day2-browser`。
+- Day1 false-negative 留下的 proposal `7ade705e-3438-4edb-9c56-349b80176f3e` 已通过正式 review API 打回为 `rejected`，Day2 metrics 记录 `proposals_rejected: 1`。
+- Day2 backup/restore 已通过：`/private/tmp/workhub-backups/workhub-20260613-165459.sql.gz`，隔离 restore query 返回 Day2 run `succeeded` / proposal `opened` / stale artifact `rejected`。
+
+## 2.3 Day 3：扩大到 1-3 个真实使用者
+
+- 按 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md) 推进。
+- 每位使用者只提交 1 件当天真实要做的低风险任务；优先文档/方案/表格，不为了测试造假。
+- 遇到浏览器脚本中断或页面状态不确定，先用 resume ids 跑：
+
+```bash
+S1_DAY2_WORKITEM_ID=<workitem-id> \
+S1_DAY2_RUN_ID=<run-id> \
+pnpm --filter @workhub/web qa:s1-day2-browser
+```
+
+- 每个 proposal 都要有结论：能采纳就 merge，不能采纳就带 reason 打回；不要留下原因不明的 opened artifact。
 
 ## 3. 每日节奏（每天约 15 分钟）
 
@@ -90,11 +105,19 @@ depends_on:
 | 冲突发生数 | `merge_attempts.result=conflict` 与 conflict instances | **OQ-4 是否值得做** |
 | 打扰密度 | `notifications_created / active_user_count` + 主观"烦不烦" | OQ-5 校准 |
 
-命令：
+CLI 命令：
 
 ```bash
 docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub \
   sh -lc 'S1_DAY1_REQUIRE_GATES=1 pnpm --filter @workhub/api qa:s1-day1-metrics'
+```
+
+API 示例（admin-only；不要把真实 cookie 写进文档或 issue）：
+
+```bash
+curl -fsS \
+  -H 'Cookie: wh_session=<admin-session-cookie>' \
+  'http://127.0.0.1:8787/api/pilot/day1/metrics?from=2026-06-12T00:00:00.000Z&to=2026-06-14T00:00:00.000Z'
 ```
 
 ## 6. 周末 Pilot 报告（产出物 `docs/.../s1-pilot-report-<date>.md`）
