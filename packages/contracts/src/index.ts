@@ -11,6 +11,7 @@ export * from "./audit.js";
 export * from "./replay.js";
 export * from "./domain/common.js";
 export * from "./domain/identity.js";
+export * from "./domain/pilot.js";
 export * from "./domain/project.js";
 export * from "./domain/work-item.js";
 export * from "./domain/collaboration.js";

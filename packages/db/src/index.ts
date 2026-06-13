@@ -24,3 +24,4 @@ export * from "./repositories/project-health.js";
 export * from "./repositories/agent-runs.js";
 export * from "./repositories/cost-ledger.js";
 export * from "./repositories/budget-policies.js";
+export * from "./repositories/pilot-metrics.js";

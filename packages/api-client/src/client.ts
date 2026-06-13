@@ -7,6 +7,7 @@ import type {
   CalendarPageRequestOptions,
   DrivePageRequestOptions,
   PageRequestOptions,
+  PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
   WorkHubApiClient,
   WorkHubApiClientOptions
@@ -92,6 +93,18 @@ function withCalendarPageOptions(path: string, options?: CalendarPageRequestOpti
   }
   if (options?.view) {
     params.set("view", options.view);
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function withPilotDay1MetricsOptions(path: string, options?: PilotDay1MetricsRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.from) {
+    params.set("from", options.from);
+  }
+  if (options?.to) {
+    params.set("to", options.to);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
@@ -348,6 +361,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "PUT",
         body: JSON.stringify(payload)
       }),
+    pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),

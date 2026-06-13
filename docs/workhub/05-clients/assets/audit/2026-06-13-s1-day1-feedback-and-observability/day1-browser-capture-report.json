@@ -1,0 +1,118 @@
+{
+  "base_url": "http://127.0.0.1:8787",
+  "audit_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability",
+  "nickname": "S1 Day1 User 20260613075734",
+  "resumed": true,
+  "screenshots": [
+    "01-intake-start-day1-intent-en-desktop.png",
+    "02-intake-session-free-text-en-desktop.png",
+    "03-intake-session-free-text-en-mobile.png",
+    "04-workitem-second-user-en-desktop.png",
+    "05-workitem-run-succeeded-en-desktop.png",
+    "06-proposal-review-ready-en-desktop.png",
+    "07-proposal-merged-en-desktop.png",
+    "08-replay-en-desktop.png",
+    "09-cost-en-desktop.png"
+  ],
+  "ids": {
+    "work_item_id": "4afa12db-0a9a-448a-a0be-9bda4725c0e7",
+    "run_id": "1ea4dd8f-a466-45b4-b3d7-683a1dcf5544",
+    "proposal_id": "09b45408-6e19-4e79-bb98-68b6d953fcd8",
+    "day0_work_item_id_checked": "cf6396b7-a1d0-4084-bcfe-b7a698a81085"
+  },
+  "gates": {
+    "start_intent": {
+      "result": "pass",
+      "evidence": "01-intake-start-day1-intent-en-desktop.png"
+    },
+    "intake_free_text": {
+      "result": "pass",
+      "evidence": [
+        "02-intake-session-free-text-en-desktop.png",
+        "03-intake-session-free-text-en-mobile.png"
+      ]
+    },
+    "identity": {
+      "status": 200,
+      "ok": true,
+      "body": {
+        "id": "a16f84e1-c991-48cc-84c9-adec211ba6a7",
+        "nickname": "S1 Day1 User 20260613075734",
+        "display_name": "S1 Day1 User 20260613075734",
+        "created": false,
+        "locale": "en-US",
+        "preferences": {
+          "locale": "en-US"
+        },
+        "is_admin": false,
+        "availability_status": "free",
+        "identity": {
+          "actor_kind": "human",
+          "actor_id": "a16f84e1-c991-48cc-84c9-adec211ba6a7",
+          "actor_label": "S1 Day1 User 20260613075734",
+          "user_id": "a16f84e1-c991-48cc-84c9-adec211ba6a7",
+          "org_id": "00000000-0000-4000-8000-000000000001",
+          "workspace_id": "00000000-0000-4000-8000-000000000002",
+          "is_admin": false
+        }
+      }
+    },
+    "agent_run": {
+      "status": "succeeded",
+      "token_in": null,
+      "token_out": null,
+      "cost_estimate_cny": null
+    },
+    "workitem": {
+      "url": "http://127.0.0.1:8787/workitems/4afa12db-0a9a-448a-a0be-9bda4725c0e7",
+      "startRunVisible": true,
+      "proposalLink": "/proposals/09b45408-6e19-4e79-bb98-68b6d953fcd8",
+      "oldSeedLeak": false
+    },
+    "review_reason_guard": {
+      "dirtyReason": "review_reason_pending",
+      "reasonButtons": 3,
+      "noticeVisible": true
+    },
+    "proposal_merge": {
+      "url": "http://127.0.0.1:8787/proposals/09b45408-6e19-4e79-bb98-68b6d953fcd8",
+      "merged": true,
+      "approveVisible": false,
+      "dirtyReasonAfterMerge": ""
+    },
+    "replay": {
+      "url": "http://127.0.0.1:8787/agent-runs/1ea4dd8f-a466-45b4-b3d7-683a1dcf5544/replay",
+      "stepCount": "32",
+      "acceptedDeliverableCount": "1",
+      "mergeAttemptCount": "1"
+    },
+    "cost": {
+      "url": "http://127.0.0.1:8787/dashboard/cost",
+      "totalTokens": "33639",
+      "totalCny": "0.138888",
+      "modelCount": "1"
+    },
+    "metrics_non_admin": {
+      "status": 403,
+      "ok": false,
+      "body": {
+        "ok": false,
+        "error": {
+          "code": "forbidden",
+          "message": "Day 1 pilot metrics are admin-only."
+        }
+      }
+    },
+    "cross_user_forbidden": {
+      "status": 403,
+      "ok": false,
+      "body": {
+        "ok": false,
+        "error": {
+          "code": "forbidden",
+          "message": "你没有权限查看这个事项。"
+        }
+      }
+    }
+  }
+}

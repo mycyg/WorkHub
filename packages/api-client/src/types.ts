@@ -22,6 +22,7 @@ import type {
   GoldPathSurfaceVM,
   Notification,
   NotificationPageVM,
+  PilotDay1MetricsSnapshot,
   ProjectHealthPageVM,
   NotificationList,
   Proposal,
@@ -97,6 +98,11 @@ export type MeetingPageRequestOptions = PageRequestOptions & {
 export type CalendarPageRequestOptions = PageRequestOptions & {
   date?: string;
   view?: "day" | "week";
+};
+
+export type PilotDay1MetricsRequestOptions = {
+  from?: string;
+  to?: string;
 };
 
 export type DriveUploadFileRequest = {
@@ -214,6 +220,7 @@ export type WorkHubApiClient = {
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
+  pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streams: PushStreamClient;

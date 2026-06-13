@@ -16,6 +16,8 @@ import {
   driveUploadFromHref,
   evidenceBindingWorkItemIdFromHref,
   hasCustomFieldPlaceholder,
+  intakeFreeTextValue,
+  materializeIntakePayload,
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
@@ -130,4 +132,41 @@ test("R4.21 shared runtime extracts merge conflicts from API error details", () 
   });
   assert.deepEqual(conflictsFromMergeError(error), [conflict]);
   assert.deepEqual(conflictsFromMergeError(new Error("plain")), []);
+});
+
+test("S1 Day1 shared runtime materializes intake free text into action payload", () => {
+  const option = { dataset: { intakeOptionId: "document-draft", intakeOptionSelected: "true" } };
+  const input = { value: "  add screenshot evidence  " };
+  const action = {
+    dataset: { requestJson: "{\"selected_option_ids\":[]}" },
+    setAttribute(name: string, value: string) {
+      if (name === "data-request-json") {
+        this.dataset.requestJson = value;
+      }
+    },
+    closest() {
+      return route;
+    }
+  };
+  const route = {
+    dataset: { r4IntakeOptionCount: "2" },
+    querySelectorAll(selector: string) {
+      return selector === "[data-intake-option-selected=\"true\"]" ? [option] : [action];
+    },
+    querySelector(selector: string) {
+      return selector === "[data-intake-free-text-input]" ? input : null;
+    }
+  };
+
+  assert.equal(intakeFreeTextValue(route as unknown as ParentNode), "add screenshot evidence");
+  const payload = materializeIntakePayload<{ selected_option_ids: string[]; free_text?: string }>(
+    action as unknown as HTMLElement
+  );
+
+  assert.equal(payload.ok, true);
+  if (!payload.ok || !payload.payload) {
+    assert.fail("expected intake payload to materialize");
+  }
+  assert.deepEqual(payload.payload.selected_option_ids, ["document-draft"]);
+  assert.equal(payload.payload.free_text, "add screenshot evidence");
 });

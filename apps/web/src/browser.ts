@@ -93,6 +93,19 @@ let currentIdentity: ShellIdentityUser | undefined;
 let activeLocale: WorkHubLocale = "zh-CN";
 const liveEventTypes = Object.values(eventTypes);
 
+function defaultPilotIntent(locale: WorkHubLocale) {
+  return locale === "en-US"
+    ? "Turn today's pilot feedback into blocker issues, proposal adoption notes, cost observations, and next owners."
+    : "请把今天的试点反馈整理成阻断 issue、提案采纳记录、成本观察和下一步负责人。";
+}
+
+function startIntentText(actionTarget: HTMLElement, locale: WorkHubLocale) {
+  const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
+  const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
+  const value = input?.value.trim();
+  return value && value.length > 0 ? value : defaultPilotIntent(locale);
+}
+
 function setLiveMetric(key: string, value: unknown) {
   document.documentElement.dataset[key] = String(value);
 }
@@ -283,6 +296,7 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
           pendingReviewHref = undefined;
           pendingReviewActionId = undefined;
+          clearActiveRouteDirty();
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingReviewActionId ?? "request_changes"));
         }
@@ -297,6 +311,7 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), pendingApprovalActionId ?? "deny"));
           pendingApprovalId = undefined;
           pendingApprovalActionId = undefined;
+          clearActiveRouteDirty();
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
         }
@@ -367,9 +382,7 @@ function bindGoldPathNavigation(
         }
         try {
           const project = await client.bootstrapProject(payload.payload ?? {});
-          const intentText = locale === "en-US"
-            ? "Prepare a concise Day 0 pilot validation note: summarize the real WorkHub intake flow, evidence screenshots, run outcome, and next actions."
-            : "请整理一份 Day 0 Pilot 验收记录：总结真实 WorkHub 接入流程、截图证据、执行结果和下一步动作。";
+          const intentText = startIntentText(actionTarget, locale);
           const session = await client.createSession({
             project_id: project.project.id,
             intent_text: intentText
@@ -646,6 +659,7 @@ function bindGoldPathNavigation(
         if (action.requiresReason || actionId === "deny") {
           pendingApprovalId = approvalRespondId;
           pendingApprovalActionId = actionId ?? "deny";
+          markActiveRouteDirty("review_reason_pending");
           showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale));
           return;
         }
@@ -662,6 +676,7 @@ function bindGoldPathNavigation(
         if (action.requiresReason) {
           pendingReviewHref = href;
           pendingReviewActionId = actionId ?? "request_changes";
+          markActiveRouteDirty("review_reason_pending");
           showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale));
           return;
         }
@@ -699,6 +714,24 @@ function bindGoldPathNavigation(
   }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("input", (event) => {
+    const intakeFreeText = event.target instanceof Element
+      ? event.target.closest<HTMLTextAreaElement>("[data-intake-free-text-input]")
+      : null;
+    if (intakeFreeText) {
+      const intakeRoute = intakeFreeText.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
+      if (intakeRoute) {
+        updateIntakeActionPayloads(intakeRoute);
+        if (intakeFreeText.value.trim().length > 0) {
+          markActiveRouteDirty("intake_free_text");
+        }
+      }
+    }
+    const intakeStartText = event.target instanceof Element
+      ? event.target.closest<HTMLTextAreaElement>("[data-s1-day1-intent-input]")
+      : null;
+    if (intakeStartText && intakeStartText.value.trim().length > 0) {
+      markActiveRouteDirty("intake_start_intent");
+    }
     const customField = event.target instanceof Element
       ? event.target.closest<HTMLTextAreaElement>("[data-structured-field-custom-input]")
       : null;

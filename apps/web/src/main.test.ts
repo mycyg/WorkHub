@@ -240,6 +240,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async updateCostPolicy() {
       throw new Error("not needed");
     },
+    async pilotDay1Metrics() {
+      throw new Error("not needed");
+    },
     async replayAgentRun() {
       return surface.page_vms.replay;
     },

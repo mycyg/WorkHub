@@ -232,13 +232,25 @@ export function selectedIntakeOptionIds(scope: ParentNode) {
     .filter((value) => value.length > 0);
 }
 
+export function intakeFreeTextValue(scope: ParentNode) {
+  const input = scope.querySelector<HTMLTextAreaElement>("[data-intake-free-text-input]");
+  return input?.value.trim() ?? "";
+}
+
 export function updateIntakeActionPayloads(route: HTMLElement) {
   const selected = selectedIntakeOptionIds(route);
+  const freeText = intakeFreeTextValue(route);
   route.dataset.r4IntakeSelectedCount = String(selected.length);
+  route.dataset.r4IntakeFreeTextLength = String(freeText.length);
   for (const action of route.querySelectorAll<HTMLElement>("[data-intake-submit],[data-intake-create-workitem]")) {
     const base = actionElementJsonPayload<Record<string, unknown>>(action);
     const payload = base.ok && base.payload && typeof base.payload === "object" ? { ...base.payload } : {};
     payload["selected_option_ids"] = selected;
+    if (freeText) {
+      payload["free_text"] = freeText;
+    } else {
+      delete payload["free_text"];
+    }
     if (action.dataset.intakeCreateWorkitem === "true") {
       payload["session_id"] = action.dataset.sessionId;
     }

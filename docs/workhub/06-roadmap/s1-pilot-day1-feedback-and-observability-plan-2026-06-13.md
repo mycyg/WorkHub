@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-day1-feedback-and-observability
 layer: 运营 / 观测 / Web
-status: planned
+status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -17,6 +17,15 @@ depends_on:
 ## Goal
 
 把 Day 0 的单人主持人闭环推进到 **受控 Day 1**：邀请 1-3 个真实使用者各提交 1-2 件真实数字工作，同时把反馈、成本、异常、采纳率和阻断 issue 的采集方式固定下来。
+
+## Completion Update (2026-06-13)
+
+**PASS.** Day 1 已完成受控第二用户路径与观测闭环。证据见 [`s1-pilot-day1-feedback-and-observability-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability/s1-pilot-day1-feedback-and-observability-report-2026-06-13.md)。
+
+- 非 admin 第二用户 `S1 Day1 User 20260613075734` 完成真实任务：WorkItem `4afa12db-0a9a-448a-a0be-9bda4725c0e7`、Run `1ea4dd8f-a466-45b4-b3d7-683a1dcf5544`、Proposal `09b45408-6e19-4e79-bb98-68b6d953fcd8` merged。
+- 六指标快照 API/CLI 已落，`S1_DAY1_REQUIRE_GATES=1 pnpm --filter @workhub/api qa:s1-day1-metrics` 全 gates true。
+- Day1 backup `/private/tmp/workhub-backups/workhub-20260613-160144.sql.gz` 已完成，隔离 restore dry check 返回 run `succeeded` / proposal `merged` / accepted_count `1`。
+- 下一施工入口：[`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](./s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)。
 
 ## Product Boundary
 
@@ -63,4 +72,4 @@ depends_on:
 
 ## Exit
 
-Day 1 全绿后，Pilot Week runbook 状态保持 `active-day1`，开始按每日节奏收集 1-3 人真实反馈；若 G2/G3/G4 任一失败，先修阻断再邀请更多人。
+Day 1 全绿后，Pilot Week runbook 状态从 `active-day1` 推进到 `active-day2-hardening`：先修 post-run WorkItem clarity 与 QA resume/idempotency，再扩大下一批真实使用者；若 Day2 G1/G2 任一失败，继续修阻断再邀请更多人。

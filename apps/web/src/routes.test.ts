@@ -845,7 +845,7 @@ test("R4.14 intake route loader carries Session VM data into an option-first rou
   assert.equal(result.html.includes('data-r4-intake-free-text-collapsed="true"'), true);
   assert.equal(result.html.includes('data-r4-intake-option-first="true"'), true);
   assert.equal(result.html.includes('data-intake-submit="next-question"'), true);
-  assert.equal(result.html.includes("<textarea"), false);
+  assert.equal(result.html.includes('data-intake-free-text-input="true"'), true);
   assert.equal(result.html.includes("message-list"), false);
 });
 
@@ -861,8 +861,12 @@ test("S1 Day0 /intake renders a project bootstrap start surface instead of empty
   assert.equal(result.html.includes('data-r4-route-component="intake"'), true);
   assert.equal(result.html.includes('data-r4-route-component-source="project-bootstrap"'), true);
   assert.equal(result.html.includes('data-s1-day0-intake-start="true"'), true);
+  assert.equal(result.html.includes('data-s1-day1-intent-input="true"'), true);
   assert.equal(result.html.includes('data-action-id="start_intake"'), true);
   assert.equal(result.html.includes('href="/api/projects/bootstrap"'), true);
+  assert.equal(result.html.includes("&quot;name&quot;:&quot;Pilot Project&quot;"), true);
+  assert.equal(result.html.includes("&quot;slug&quot;:&quot;pilot-project&quot;"), true);
+  assert.equal(result.html.includes("Day 0 Pilot Project"), false);
   assert.equal(result.html.includes('data-route-state="empty"'), false);
   assert.equal(result.html.includes("/intake/r4-live-session"), false);
 });

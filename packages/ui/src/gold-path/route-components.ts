@@ -124,6 +124,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
+  ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
@@ -152,6 +153,8 @@ type RouteCopyKey =
   | "intake.startAction"
   | "intake.startNext"
   | "intake.startEvidence"
+  | "intake.startIntent"
+  | "intake.startIntentPlaceholder"
   | "knowledge.kicker"
   | "knowledge.sources"
   | "knowledge.missing"
@@ -297,13 +300,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "打字只是折叠兜底",
     "intake.createWorkItem": "创建工作项",
     "intake.continue": "继续澄清",
-    "intake.startKicker": "Day 0 工作入口",
+    "intake.startKicker": "Pilot 工作入口",
     "intake.startTitle": "从真实项目开始派活",
     "intake.startBody": "WorkHub 会先准备 pilot 项目上下文，然后进入选项优先的需求澄清。不会使用旧 smoke seed，也不会直接改正式交付物。",
     "intake.startProject": "Pilot 项目上下文",
     "intake.startAction": "开始派活",
     "intake.startNext": "下一步：点选工作类型，再让 AI 干活。",
     "intake.startEvidence": "证据与成本会进入回放和成本页。",
+    "intake.startIntent": "真实任务",
+    "intake.startIntentPlaceholder": "例如：整理今天的试点反馈，输出阻断 issue、采纳建议和下一步负责人。",
     "knowledge.kicker": "证据兜底",
     "knowledge.sources": "证据来源",
     "knowledge.missing": "没有可靠证据，不会编造来源。",
@@ -448,13 +453,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "Typing stays a collapsed fallback",
     "intake.createWorkItem": "Create work item",
     "intake.continue": "Continue intake",
-    "intake.startKicker": "Day 0 work entry",
+    "intake.startKicker": "Pilot work entry",
     "intake.startTitle": "Start from a real project",
     "intake.startBody": "WorkHub prepares the pilot project context first, then opens option-first intake. It will not use old smoke seed ids or modify accepted deliverables directly.",
     "intake.startProject": "Pilot project context",
     "intake.startAction": "Start work intake",
     "intake.startNext": "Next: pick a work type, then let AI do the work.",
     "intake.startEvidence": "Evidence and cost will appear in Replay and Cost.",
+    "intake.startIntent": "Real task",
+    "intake.startIntentPlaceholder": "Example: turn today's pilot feedback into blocker issues, adoption notes, and next owners.",
     "knowledge.kicker": "Knowledge fallback",
     "knowledge.sources": "Evidence sources",
     "knowledge.missing": "No reliable evidence found. WorkHub will not invent sources.",
@@ -779,9 +786,9 @@ function intakeProgressRows(vm: SessionVM) {
 
 function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteComponent {
   const bootstrapPayload = {
-    name: "Day 0 Pilot Project",
-    slug: "day0-pilot",
-    description: "Pilot Day 0 project context created from the WorkHub intake entry."
+    name: "Pilot Project",
+    slug: "pilot-project",
+    description: "Pilot project context created from the WorkHub intake entry."
   };
   return createWebRouteComponent({
     key: "intake",
@@ -803,10 +810,14 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
           <h3>${escapeHtml(routeT(locale, "intake.startProject"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">Day 0 Pilot Project</span>
+            <span class="wh-pill">Pilot Project</span>
             <span class="wh-pill">REST</span>
           </div>
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
+          <label class="wh-r4-route-stack">
+            <strong>${escapeHtml(routeT(locale, "intake.startIntent"))}</strong>
+            <textarea class="wh-r4-intake-free-text" data-s1-day1-intent-input="true" maxlength="280" aria-label="${escapeHtml(routeT(locale, "intake.startIntent"))}" placeholder="${escapeHtml(routeT(locale, "intake.startIntentPlaceholder"))}"></textarea>
+          </label>
         </section>
         <aside class="wh-r4-route-stack">
           <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
@@ -848,6 +859,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
     ? `<details class="wh-card wh-r4-route-card" data-r4-intake-free-text="true" ${question.free_text.collapsed_by_default ? "" : "open"}>
       <summary>${escapeHtml(routeT(locale, "intake.freeText"))}</summary>
       <p>${escapeHtml(question.free_text.placeholder ?? goldPathT(locale, "intake.freeTextFallback"))}</p>
+      <textarea class="wh-r4-intake-free-text" data-intake-free-text-input="true" ${question.free_text.max_length ? `maxlength="${escapeHtml(String(question.free_text.max_length))}"` : ""} placeholder="${escapeHtml(question.free_text.placeholder ?? goldPathT(locale, "intake.freeTextFallback"))}"></textarea>
     </details>`
     : "";
   const continuePayload = { selected_option_ids: [] as string[] };

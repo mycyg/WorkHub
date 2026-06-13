@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-06-13T08:01:24.749Z",
+  "range": {
+    "from": "2026-06-12T08:01:24.749Z",
+    "to": "2026-06-13T08:01:24.749Z"
+  },
+  "metrics": [
+    {
+      "id": "closed_loop_count",
+      "label_zh": "闭环完成件数",
+      "label_en": "Closed loops",
+      "value": "8",
+      "unit": "work_items",
+      "numerator": 8,
+      "denominator": null,
+      "status": "pass"
+    },
+    {
+      "id": "proposal_adoption_rate",
+      "label_zh": "AI 直出采纳率",
+      "label_en": "Proposal adoption",
+      "value": "100%",
+      "unit": "percent",
+      "numerator": 8,
+      "denominator": 8,
+      "status": "pass"
+    },
+    {
+      "id": "escalation_count",
+      "label_zh": "升级次数",
+      "label_en": "Escalations",
+      "value": "3",
+      "unit": "events",
+      "numerator": 3,
+      "denominator": null,
+      "status": "pass"
+    },
+    {
+      "id": "cost_per_merged_item_cny",
+      "label_zh": "每件成本",
+      "label_en": "Cost per merged item",
+      "value": "0.017361",
+      "unit": "CNY",
+      "numerator": 0.138888,
+      "denominator": 8,
+      "status": "pass"
+    },
+    {
+      "id": "conflict_count",
+      "label_zh": "冲突数",
+      "label_en": "Conflicts",
+      "value": "0",
+      "unit": "conflicts",
+      "numerator": 0,
+      "denominator": null,
+      "status": "pass"
+    },
+    {
+      "id": "notification_density",
+      "label_zh": "打扰密度",
+      "label_en": "Notification density",
+      "value": "1.25",
+      "unit": "notifications/user",
+      "numerator": 5,
+      "denominator": 4,
+      "status": "pass"
+    }
+  ],
+  "raw_counts": {
+    "work_items_created": 13,
+    "closed_loop_work_items": 8,
+    "proposals_opened": 9,
+    "proposals_reviewed": 8,
+    "proposals_merged": 8,
+    "proposals_rejected": 0,
+    "escalation_events": 3,
+    "approval_requests": 0,
+    "merge_conflict_attempts": 0,
+    "merge_conflict_instances": 0,
+    "notifications_created": 5,
+    "active_user_count": 4,
+    "submitter_count": 4
+  },
+  "cost": {
+    "total_cost_cny": "0.138888",
+    "token_in": 19116,
+    "token_out": 14523,
+    "unique_usage_records": 56
+  },
+  "gates": {
+    "feedback_log_ready": true,
+    "metrics_ready": true,
+    "second_user_path_observed": true,
+    "cost_nonzero": true,
+    "conflict_counter_ready": true,
+    "notification_density_ready": true
+  }
+}

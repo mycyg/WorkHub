@@ -27,6 +27,7 @@ import {
   notificationItemVmSchema,
   notificationPageVmSchema,
   normalizeWorkHubLocale,
+  pilotDay1MetricsSnapshotSchema,
   projectHealthPageVmSchema,
   projectHealthSignalBand,
   resolveProjectHealthBand,
@@ -1380,4 +1381,117 @@ test("R5.7 notification grounding carries reason and product-route evidence refs
   });
   assert.equal(grounded.grounding?.evidence_refs.length, 2);
   assert.throws(() => notificationGroundingVmSchema.parse({ reason_text: "", evidence_refs: [] }));
+});
+
+test("S1 Day1 pilot metrics snapshot carries six ops metrics and gates", () => {
+  const snapshot = pilotDay1MetricsSnapshotSchema.parse({
+    generated_at: "2026-06-13T12:00:00.000Z",
+    range: {
+      from: "2026-06-13T00:00:00.000Z",
+      to: "2026-06-14T00:00:00.000Z"
+    },
+    metrics: [
+      {
+        id: "closed_loop_count",
+        label_zh: "闭环完成件数",
+        label_en: "Closed loops",
+        value: "1",
+        unit: "work_items",
+        numerator: 1,
+        denominator: null,
+        status: "pass",
+        source_tables: ["proposals", "work_items"]
+      },
+      {
+        id: "proposal_adoption_rate",
+        label_zh: "AI 直出采纳率",
+        label_en: "Proposal adoption",
+        value: "100%",
+        unit: "percent",
+        numerator: 1,
+        denominator: 1,
+        status: "pass",
+        source_tables: ["proposals", "reviews"]
+      },
+      {
+        id: "escalation_count",
+        label_zh: "升级次数",
+        label_en: "Escalations",
+        value: "0",
+        unit: "events",
+        numerator: 0,
+        denominator: null,
+        status: "pass",
+        source_tables: ["escalation_events", "approval_requests"]
+      },
+      {
+        id: "cost_per_merged_item_cny",
+        label_zh: "每件成本",
+        label_en: "Cost per merged item",
+        value: "0.018",
+        unit: "CNY",
+        numerator: 0.018,
+        denominator: 1,
+        status: "pass",
+        source_tables: ["cost_ledger_entries", "usage_records", "proposals"]
+      },
+      {
+        id: "conflict_count",
+        label_zh: "冲突数",
+        label_en: "Conflicts",
+        value: "0",
+        unit: "conflicts",
+        numerator: 0,
+        denominator: null,
+        status: "pass",
+        source_tables: ["merge_attempts"]
+      },
+      {
+        id: "notification_density",
+        label_zh: "打扰密度",
+        label_en: "Notification density",
+        value: "1",
+        unit: "notifications/user",
+        numerator: 2,
+        denominator: 2,
+        status: "pass",
+        source_tables: ["notifications", "users"]
+      }
+    ],
+    raw_counts: {
+      work_items_created: 1,
+      closed_loop_work_items: 1,
+      proposals_opened: 1,
+      proposals_reviewed: 1,
+      proposals_merged: 1,
+      proposals_rejected: 0,
+      escalation_events: 0,
+      approval_requests: 0,
+      merge_conflict_attempts: 0,
+      merge_conflict_instances: 0,
+      notifications_created: 2,
+      active_user_count: 2,
+      submitter_count: 1
+    },
+    cost: {
+      total_cost_cny: "0.018",
+      token_in: 1000,
+      token_out: 2000,
+      unique_usage_records: 1
+    },
+    gates: {
+      feedback_log_ready: true,
+      metrics_ready: true,
+      second_user_path_observed: true,
+      cost_nonzero: true,
+      conflict_counter_ready: true,
+      notification_density_ready: true
+    },
+    notes: ["Proposal direct review/merge is counted through proposals."]
+  });
+  assert.equal(snapshot.metrics.length, 6);
+  assert.throws(() => pilotDay1MetricsSnapshotSchema.parse({
+    ...snapshot,
+    metrics: [{ ...snapshot.metrics[0], id: "unknown_metric" }]
+  }));
 });
