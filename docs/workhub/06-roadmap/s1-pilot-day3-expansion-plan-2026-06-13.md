@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-day3-expansion
 layer: 运营 / Pilot
-status: planned
+status: active-preflight-ready
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -21,11 +21,13 @@ depends_on:
 - Day2 browser QA resume/idempotency PASS。
 - Day1 stale proposal artifact 已通过正式 review API 打回。
 - Day2 metrics gates 全 true，backup + isolated restore dry check 通过。
+- Day3 preflight PASS：opened proposal `0`、active run `0`、pending approval `0`，Day2 QA proposal `1f1579ef-e2ac-4557-86c5-94fc072e2a25` 已正式 reject，见 [`s1-pilot-day3-expansion-preflight-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day3-expansion-preflight/s1-pilot-day3-expansion-preflight-report-2026-06-13.md)。
 
 ## Work Packages
 
 | ID | Scope | Deliverable |
 |---|---|---|
+| D3-0 Preflight | 邀人前清空 opened proposal / active run / pending approval，复用 Day1 metrics 合约并对比 Day2 baseline。 | `s1-day3-expansion-preflight-report.json` |
 | D3-1 User onboarding | 邀请 1-3 位真实使用者，用昵称注册；主持人记录昵称与任务主题，不记录密钥/私人内容。 | participant checklist |
 | D3-2 Real task intake | 每人通过 `/intake` 提交 1 件真实工作，优先文档/方案/表格这类低风险交付。 | WorkItem ids |
 | D3-3 Closed-loop observation | 跑 AgentRun，用户从 WorkItem 进入 Proposal/Replay；能 merge 的合并，不能 merge 的用 reason 打回。 | Run/Proposal/Replay evidence |
@@ -37,6 +39,7 @@ depends_on:
 
 | Gate | Must be true |
 |---|---|
+| G0 preflight clean | 邀请前 `qa:s1-day3-preflight` 返回 `ready_to_invite_real_users=true`，且无 opened proposal / active run / pending approval。 |
 | G1 real users observed | 至少 1 位真实使用者完成从 `/intake` 到 WorkItem 的路径。 |
 | G2 next action visible | 每个 terminal run 的 WorkItem 在 10 秒内显示 Proposal/Replay 或明确刷新动作。 |
 | G3 no duplicate artifacts | QA 或人工恢复必须使用 resume ids，不重复造 WorkItem/Run/Proposal。 |
@@ -45,6 +48,17 @@ depends_on:
 | G6 backup restored | Day3 backup 可在隔离 restore project 中查询关键 WorkItem/Proposal/Run。 |
 
 ## QA
+
+0. Before invitations, copy or inject the Day2 baseline into the pilot container and run:
+
+```bash
+docker cp \
+  docs/workhub/05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-metrics-snapshot.json \
+  workhub-workhub-1:/tmp/s1-pilot-day2-metrics-snapshot.json
+
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub \
+  sh -lc 'S1_DAY3_BASELINE_FILE=/tmp/s1-pilot-day2-metrics-snapshot.json S1_DAY3_REQUIRE_PREFLIGHT=1 pnpm --filter @workhub/api qa:s1-day3-preflight'
+```
 
 1. Fresh real-user browser path for each participant.
 2. Resume QA for any failed or interrupted run:
@@ -63,3 +77,7 @@ depends_on:
 ## Exit
 
 Day3 结束时产出一份 expansion report：参与者数、真实 WorkItem/Run/Proposal、合并/打回结果、六指标 delta、反馈 Top 3、backup/restore 证据，以及 Day4 继续扩大或暂停修 blocker 的建议。
+
+## Current Status
+
+2026-06-13 preflight 已通过，系统状态为 ready-to-invite；G1 仍等待真实使用者参与。下一步是按 D3-1/D3-2 邀请真实用户从 `/intake` 提交当天真实任务。

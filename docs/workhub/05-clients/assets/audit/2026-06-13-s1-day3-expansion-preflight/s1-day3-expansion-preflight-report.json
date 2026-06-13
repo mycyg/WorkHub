@@ -1,0 +1,230 @@
+{
+  "generated_at": "2026-06-13T10:18:36.475Z",
+  "module": "S1 Day3 expansion preflight",
+  "status": "ready_to_invite_real_users",
+  "range": {
+    "from": "2026-06-12T10:18:36.475Z",
+    "to": "2026-06-13T10:18:36.475Z"
+  },
+  "gates": {
+    "no_opened_proposals": true,
+    "no_active_runs": true,
+    "no_pending_approvals": true,
+    "metrics_gates_true": true,
+    "day2_baseline_available": true,
+    "ready_to_invite_real_users": true,
+    "real_user_observation": "waiting_external_users"
+  },
+  "blockers": [],
+  "queues": {
+    "opened_proposals": [],
+    "active_runs": [],
+    "pending_approvals": []
+  },
+  "metrics": {
+    "current_snapshot": {
+      "generated_at": "2026-06-13T10:18:36.475Z",
+      "range": {
+        "from": "2026-06-12T10:18:36.475Z",
+        "to": "2026-06-13T10:18:36.475Z"
+      },
+      "metrics": [
+        {
+          "id": "closed_loop_count",
+          "label_zh": "闭环完成件数",
+          "label_en": "Closed loops",
+          "value": "8",
+          "unit": "work_items",
+          "numerator": 8,
+          "denominator": null,
+          "status": "pass",
+          "source_tables": [
+            "proposals",
+            "work_items"
+          ]
+        },
+        {
+          "id": "proposal_adoption_rate",
+          "label_zh": "AI 直出采纳率",
+          "label_en": "Proposal adoption",
+          "value": "80%",
+          "unit": "percent",
+          "numerator": 8,
+          "denominator": 10,
+          "status": "pass",
+          "source_tables": [
+            "proposals",
+            "reviews"
+          ]
+        },
+        {
+          "id": "escalation_count",
+          "label_zh": "升级次数",
+          "label_en": "Escalations",
+          "value": "3",
+          "unit": "events",
+          "numerator": 3,
+          "denominator": null,
+          "status": "pass",
+          "source_tables": [
+            "escalation_events",
+            "approval_requests"
+          ]
+        },
+        {
+          "id": "cost_per_merged_item_cny",
+          "label_zh": "每件成本",
+          "label_en": "Cost per merged item",
+          "value": "0.02036",
+          "unit": "CNY",
+          "numerator": 0.162876,
+          "denominator": 8,
+          "status": "pass",
+          "source_tables": [
+            "cost_ledger_entries",
+            "usage_records",
+            "proposals"
+          ]
+        },
+        {
+          "id": "conflict_count",
+          "label_zh": "冲突数",
+          "label_en": "Conflicts",
+          "value": "0",
+          "unit": "conflicts",
+          "numerator": 0,
+          "denominator": null,
+          "status": "pass",
+          "source_tables": [
+            "merge_attempts"
+          ]
+        },
+        {
+          "id": "notification_density",
+          "label_zh": "打扰密度",
+          "label_en": "Notification density",
+          "value": "0.86",
+          "unit": "notifications/user",
+          "numerator": 6,
+          "denominator": 7,
+          "status": "pass",
+          "source_tables": [
+            "notifications",
+            "users"
+          ]
+        }
+      ],
+      "raw_counts": {
+        "work_items_created": 16,
+        "closed_loop_work_items": 8,
+        "proposals_opened": 10,
+        "proposals_reviewed": 10,
+        "proposals_merged": 8,
+        "proposals_rejected": 2,
+        "escalation_events": 3,
+        "approval_requests": 0,
+        "merge_conflict_attempts": 0,
+        "merge_conflict_instances": 0,
+        "notifications_created": 6,
+        "active_user_count": 7,
+        "submitter_count": 7
+      },
+      "cost": {
+        "total_cost_cny": "0.162876",
+        "token_in": 21938,
+        "token_out": 16816,
+        "unique_usage_records": 64
+      },
+      "gates": {
+        "feedback_log_ready": true,
+        "metrics_ready": true,
+        "second_user_path_observed": true,
+        "cost_nonzero": true,
+        "conflict_counter_ready": true,
+        "notification_density_ready": true
+      },
+      "notes": [
+        "Proposal direct review/merge is counted through proposals.reviewed_at and proposals.merged_at; approval_requests is only the approval-center component.",
+        "Cost uses the Cost page ledger rule: one CostLedgerEntry per unique usage_record_id is counted."
+      ]
+    },
+    "current_metric_gate_failures": [],
+    "day2_baseline_path": "/tmp/s1-pilot-day2-metrics-snapshot.json",
+    "day2_baseline_source": "/tmp/s1-pilot-day2-metrics-snapshot.json",
+    "day2_baseline_generated_at": "2026-06-13T08:54:36.106Z",
+    "day2_to_current_delta": [
+      {
+        "id": "closed_loop_count",
+        "label_zh": "闭环完成件数",
+        "label_en": "Closed loops",
+        "baseline_value": "8",
+        "current_value": "8",
+        "numerator_delta": 0,
+        "denominator_delta": null,
+        "current_status": "pass"
+      },
+      {
+        "id": "proposal_adoption_rate",
+        "label_zh": "AI 直出采纳率",
+        "label_en": "Proposal adoption",
+        "baseline_value": "89%",
+        "current_value": "80%",
+        "numerator_delta": 0,
+        "denominator_delta": 1,
+        "current_status": "pass"
+      },
+      {
+        "id": "escalation_count",
+        "label_zh": "升级次数",
+        "label_en": "Escalations",
+        "baseline_value": "3",
+        "current_value": "3",
+        "numerator_delta": 0,
+        "denominator_delta": null,
+        "current_status": "pass"
+      },
+      {
+        "id": "cost_per_merged_item_cny",
+        "label_zh": "每件成本",
+        "label_en": "Cost per merged item",
+        "baseline_value": "0.02036",
+        "current_value": "0.02036",
+        "numerator_delta": 0,
+        "denominator_delta": 0,
+        "current_status": "pass"
+      },
+      {
+        "id": "conflict_count",
+        "label_zh": "冲突数",
+        "label_en": "Conflicts",
+        "baseline_value": "0",
+        "current_value": "0",
+        "numerator_delta": 0,
+        "denominator_delta": null,
+        "current_status": "pass"
+      },
+      {
+        "id": "notification_density",
+        "label_zh": "打扰密度",
+        "label_en": "Notification density",
+        "baseline_value": "0.86",
+        "current_value": "0.86",
+        "numerator_delta": 0,
+        "denominator_delta": 0,
+        "current_status": "pass"
+      }
+    ]
+  },
+  "external_dependencies": [
+    {
+      "id": "real_users",
+      "status": "waiting_external_users",
+      "note": "Day3 G1 still requires 1-3 real users to submit one real /intake task each; this preflight only proves the system is clean enough to invite them."
+    }
+  ],
+  "notes": [
+    "Preflight is intentionally stricter than the metrics CLI: opened proposals, active runs, and pending approvals must be zero before real-user expansion.",
+    "Metrics reuse the S1 Day1 snapshot contract so Day2 and Day3 deltas remain comparable.",
+    "No secrets, session cookies, or private task content are emitted."
+  ]
+}

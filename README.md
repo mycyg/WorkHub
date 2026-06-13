@@ -8,11 +8,11 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 - **去 git 黑话的协作**:协作者各有"工作副本",AI 拟好改动 → 负责人确认 → 采纳;用户看不到 merge / 分支 / 冲突。
 - **入口**:桌面宠物 + Web,Agent 几乎能操作所有功能,让小白也能顺畅使用。
 
-## 现状:S1 Day 2 已过，进入 active Day 3 expansion ✅
+## 现状:S1 Day 3 preflight 已过，等待真实用户 expansion ✅
 
-本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。S1 Pilot Launch Gate、S1 Day 0 真实入口、S1 Day 1 反馈观测、S1 Day 2 反馈硬化均已通过：第二用户非 admin 路径完成 WorkItem -> AgentRun -> Proposal merge -> Replay/Cost，Day2 修复 post-run WorkItem clarity 与 QA resume/idempotency，stale QA proposal 已正式打回，六指标 API/CLI 全 gates true，Day2 backup/restore 全留证。下一施工线是 active Day 3 expansion：邀请 1-3 个真实使用者，每人 1 件真实任务，继续采集 metrics/feedback。
+本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。S1 Pilot Launch Gate、S1 Day 0 真实入口、S1 Day 1 反馈观测、S1 Day 2 反馈硬化均已通过；Day3 preflight 已确认 opened proposal / active run / pending approval 均为 `0`，Day2 QA proposal 已正式打回，六指标 gates 仍全 true，backup/restore 通过。下一施工线是 Day 3 expansion：邀请 1-3 个真实使用者，每人 1 件真实任务，继续采集 metrics/feedback。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 145 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 146 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
@@ -38,7 +38,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 | S1 Day 0 | ✅ | 真实 `/intake` 入口、Project bootstrap、WorkItem `DAY0PILOT-006`、AgentRun、Proposal merge、Replay/Cost、backup/restore 全绿；修复 worker 缺 WorkItem context 与 0 成本默认值。 |
 | S1 Day 1 | ✅ | 第二用户非 admin 路径、Day1 真实任务 intent/free text、Proposal merge、Replay/Cost、六指标 API/CLI、feedback log、backup/restore 全绿。 |
 | S1 Day 2 | ✅ | post-run WorkItem clarity、QA resume/idempotency、opened QA artifact triage、六指标 baseline、backup/restore 全绿。 |
-| S1 Day 3 | active | 下一计划已立：邀请 1-3 个真实使用者，每人 1 件真实任务，继续 metrics delta、反馈 issue 化与 backup/restore。 |
+| S1 Day 3 | preflight ✅ | `qa:s1-day3-preflight` 已留证：opened proposal / active run / pending approval 均为 `0`，metrics 与 Day2 baseline 可比，等待 1-3 位真实使用者进入 `/intake`。 |
 
 ## 本地开发
 

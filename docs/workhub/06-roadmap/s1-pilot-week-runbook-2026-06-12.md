@@ -13,8 +13,8 @@ depends_on:
 # S1 Pilot Week 运营手册（turnkey）
 
 > 目的：把"人到位即启动"从口号变成 turnkey。本篇是主持人(你)的逐步操作手册——从起飞前检查到周末报告，全程不需要再做产品/工程决策。
-> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate、Day 0 真实工作入口、Day 1 反馈观测、Day 2 反馈硬化均已全绿**。
-> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。Day 0 真实入口见 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。Day 1 反馈观测见 [`s1-pilot-day1-feedback-and-observability-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability/s1-pilot-day1-feedback-and-observability-report-2026-06-13.md)。Day 2 反馈硬化见 [`s1-pilot-day2-feedback-hardening-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-feedback-hardening-report-2026-06-13.md)。当前进入 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md)。
+> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate、Day 0 真实工作入口、Day 1 反馈观测、Day 2 反馈硬化均已全绿，Day 3 preflight 已 ready-to-invite**。
+> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。Day 0 真实入口见 [`s1-pilot-day0-real-work-entry-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day0-real-work-entry/s1-pilot-day0-real-work-entry-report-2026-06-13.md)。Day 1 反馈观测见 [`s1-pilot-day1-feedback-and-observability-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day1-feedback-and-observability/s1-pilot-day1-feedback-and-observability-report-2026-06-13.md)。Day 2 反馈硬化见 [`s1-pilot-day2-feedback-hardening-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-feedback-hardening-report-2026-06-13.md)。Day 3 preflight 见 [`s1-pilot-day3-expansion-preflight-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day3-expansion-preflight/s1-pilot-day3-expansion-preflight-report-2026-06-13.md)，当前等待真实使用者进入 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md)。
 
 ## 0. 这一周要回答什么（贴墙上）
 
@@ -64,6 +64,18 @@ depends_on:
 ## 2.3 Day 3：扩大到 1-3 个真实使用者
 
 - 按 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./s1-pilot-day3-expansion-plan-2026-06-13.md) 推进。
+- 邀人前先跑 Day3 preflight。当前已通过：opened proposal `0`、active run `0`、pending approval `0`，report 见 [`s1-pilot-day3-expansion-preflight-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-day3-expansion-preflight/s1-pilot-day3-expansion-preflight-report-2026-06-13.md)。
+- 因 pilot 镜像 `.dockerignore` 排除 `docs/`，容器内跑 preflight 时先复制 Day2 baseline 或用 `S1_DAY3_BASELINE_JSON` 注入：
+
+```bash
+docker cp \
+  docs/workhub/05-clients/assets/audit/2026-06-13-s1-day2-feedback-hardening/s1-pilot-day2-metrics-snapshot.json \
+  workhub-workhub-1:/tmp/s1-pilot-day2-metrics-snapshot.json
+
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml exec -T workhub \
+  sh -lc 'S1_DAY3_BASELINE_FILE=/tmp/s1-pilot-day2-metrics-snapshot.json S1_DAY3_REQUIRE_PREFLIGHT=1 pnpm --filter @workhub/api qa:s1-day3-preflight'
+```
+
 - 每位使用者只提交 1 件当天真实要做的低风险任务；优先文档/方案/表格，不为了测试造假。
 - 遇到浏览器脚本中断或页面状态不确定，先用 resume ids 跑：
 

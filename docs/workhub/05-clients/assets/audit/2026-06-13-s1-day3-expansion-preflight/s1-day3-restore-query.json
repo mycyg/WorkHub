@@ -1,0 +1,18 @@
+{
+    "active_runs": 0,
+    "merged_count": 8,
+    "rejected_count": 2,
+    "reviewed_count": 10,
+    "proposal_counts": {
+        "merged": 8,
+        "rejected": 2
+    },
+    "day2_qa_proposal": {
+        "id": "1f1579ef-e2ac-4557-86c5-94fc072e2a25",
+        "status": "rejected",
+        "reviewed_at": "2026-06-13T10:08:37.522+00:00",
+        "review_count": 1
+    },
+    "opened_proposals": 0,
+    "pending_approvals": 0
+}
