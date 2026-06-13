@@ -430,18 +430,25 @@ const shellPageOrder = [
   "settings"
 ] as const satisfies readonly GoldPathRenderedPage["key"][];
 
+const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
+  "intake",
+  "workitem",
+  "proposal",
+  "replay"
+]);
+
 const shellDefaultRoutes = {
   home: "/",
-  intake: "/intake/r4-live-session",
+  intake: "/intake",
   approvals: "/approvals",
-  workitem: "/workitems/r4-live-workitem",
-  proposal: "/proposals/r4-live-proposal",
+  workitem: "/",
+  proposal: "/approvals",
   drive: "/drive",
   meetings: "/meetings",
   notifications: "/notifications",
   calendar: "/calendar",
   health: "/dashboard/health",
-  replay: "/agent-runs/r4-live-run/replay",
+  replay: "/",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
   settings: "/settings"
@@ -563,8 +570,12 @@ function routeForShellPage(key: GoldPathRenderedPage["key"], match: WebRouteMatc
   return key === match.key ? match.pathname : shellDefaultRoutes[key];
 }
 
+function shellPageOrderFor(match: WebRouteMatch) {
+  return shellPageOrder.filter((key) => !detailOnlyShellPages.has(key) || key === match.key);
+}
+
 function shellPagesFor(match: WebRouteMatch, locale: WorkHubLocale, activeMetrics: WebProductMetric[]): WebProductShellPage[] {
-  return shellPageOrder.map((key) => ({
+  return shellPageOrderFor(match).map((key) => ({
     key,
     route: routeForShellPage(key, match),
     title: shellPageTitles[locale][key],

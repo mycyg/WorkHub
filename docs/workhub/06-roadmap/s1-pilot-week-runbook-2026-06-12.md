@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-week-runbook
 layer: 运营 / 验证
-status: ready-blocked-by-launch-gate
+status: ready-after-launch-gate
 owner: workflow
 date: 2026-06-12
 depends_on:
@@ -13,8 +13,8 @@ depends_on:
 # S1 Pilot Week 运营手册（turnkey）
 
 > 目的：把"人到位即启动"从口号变成 turnkey。本篇是主持人(你)的逐步操作手册——从起飞前检查到周末报告，全程不需要再做产品/工程决策。
-> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**但必须先通过 S1 Pilot Launch Gate**，否则不能开周。
-> 2026-06-13：Launch Gate 首轮为 NO-GO；本机等价门通过，但真实 compose / backup / operator loop 被本机无 Docker 与远端 SSH 阻断。见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。
+> 前置：系统代码已 pilot-ready（S1 R5.9–R5.12 全竣工）。R5.10-dry 与 R5.10-real 均已通过；**S1 Pilot Launch Gate 已通过**，但多人 Pilot Week 仍要等 Day 0 真实工作入口全绿。
+> 2026-06-13：Launch Gate 已在 Docker Desktop + pilot compose 真实栈通过，见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。下一步按 [`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](./s1-pilot-day0-real-work-entry-plan-2026-06-13.md) 补齐真实用户从 UI 发起工作/项目种子的可见入口。
 
 ## 0. 这一周要回答什么（贴墙上）
 
@@ -25,14 +25,15 @@ depends_on:
 
 ## 1. 起飞前检查（pilot 前 1 天，约 30 分钟）
 
-- [ ] S1 Launch Gate 全绿，报告状态不是 NO-GO。
+- [x] S1 Launch Gate 全绿，报告状态不是 NO-GO。
 - [ ] 一台 LAN 机器，Docker 24+，按 [`DEPLOY.md`](../../../DEPLOY.md) 起栈，`docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps` 全 healthy。
 - [ ] `.env.pilot` 填了强 `COOKIE_SECRET`、`ADMIN_CLAIM_SECRET`、`LLM_API_KEY`。
 - [ ] 在部署现场或 workhub 容器内跑一次 `pnpm qa:r5-10-dry`（key 无关）确认管线通；基线证据见 `2026-06-13-r5-10-dry-agent-pipeline`。
 - [ ] 在部署现场或 workhub 容器内跑一次 `pnpm qa:r5-10-real`，至少 `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real`，确认真 provider 可用；基线证据见 `2026-06-13-r5-10-real-key-evaluation`。
-- [ ] 浏览器开 `http://<ip>:8787/`，管理员用 `ADMIN_CLAIM_SECRET` 认领 admin，建 1–2 个真实项目。
-- [ ] `bash scripts/ops/backup-pg.sh /private/tmp/workhub-backups` 或生产等价仓库外目录跑通一次，确认备份可用。
-- [ ] 用 `docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml ...` 独立 project 做 restore dry check，不能覆盖当前 pilot 数据。
+- [x] 浏览器开 `http://<ip>:8787/`，管理员用 `ADMIN_CLAIM_SECRET` 认领 admin；Cost/Settings 中英 UI 已留证。
+- [ ] 按 Day 0 计划补齐“建 1–2 个真实项目 / 从 UI 发起第一件工作”的可见入口，并跑主持人可见闭环。
+- [x] `bash scripts/ops/backup-pg.sh /private/tmp/workhub-backups` 或生产等价仓库外目录跑通一次，确认备份可用。
+- [x] 用 `docker compose --env-file .env.pilot -p workhub_restore -f docker-compose.pilot.yml ...` 独立 project 做 restore dry check，不能覆盖当前 pilot 数据。
 - [ ] 准备一个反馈收集入口（一张共享表/一个群即可）。
 
 ## 2. Day 0：导入真实工作（约 1 小时）

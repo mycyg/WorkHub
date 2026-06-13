@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-launch-gate
 layer: 运营 / 部署 / QA
-status: blocked-no-go
+status: passed
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -14,8 +14,8 @@ depends_on:
 
 # S1 Pilot Launch Gate Plan（R5.10-real 之后）
 
-> 开工前已读：S1 roadmap、Pilot Week runbook、R5.10 real-key 竣工记录、Pilot deploy package、权限矩阵审计。当前不新增功能面；目标是把“系统 pilot-ready”转成“部署现场可启动”。
-> 2026-06-13 执行结论：**NO-GO**。本机等价门通过，但真实 Docker compose / backup / operator loop 因本机无 Docker 且远端 SSH 在 KEX 前断开而未能完成。证据见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。
+> 开工前已读：S1 roadmap、Pilot Week runbook、R5.10 real-key 竣工记录、Pilot deploy package、权限矩阵审计、PRD/brainstorm、Web 概念图与 Settings/Cost 边界图。
+> 2026-06-13 执行结论：**PASS**。首轮 NO-GO 是本机无 Docker / 远端 SSH 阻断；随后已安装 Docker Desktop，在真实 pilot compose 栈完成 G1-G6。证据见 [`s1-pilot-launch-gate-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。
 
 ## 1. 当前入口状态
 
@@ -24,62 +24,58 @@ depends_on:
 - R5.9 onboarding ✅
 - R5.10-pre agent hardening ✅
 - R5.10-dry ✅
-- R5.10-real ✅：6 个真 provider AgentRun，T1–T4 质量全达标，T5 升级，B1 预算护栏，真实成本 `0.142346 CNY`
+- R5.10-real ✅：6 个真 provider AgentRun，T1-T4 质量全达标，T5 升级，B1 预算护栏，真实成本 `0.142346 CNY`
 - R5.11/R5.11.1 deploy + sandbox libraries ✅
 - R5.12 permission matrix ✅
+- S1 Launch Gate ✅：Docker Desktop + `docker-compose.pilot.yml` 现场起栈，dry/real、backup/restore、Browser UI/i18n/secret gate 全过
 
-系统代码已 pilot-ready；启动现场仍需可执行 Docker compose 的本机或远端环境。下一步只补部署运行时与 Launch Gate 真证据，不扩新模块。
+系统已从“代码 pilot-ready”推进到“受控 Day 0 可启动”。下一步不是扩新模块，而是按 Day 0 计划把真实工作入口和主持人可见闭环做扎实。
 
 ## 2. Gate
 
-| Gate | 必须为真 |
-|---|---|
-| G1 deploy stack | `docker compose --env-file .env.pilot -f docker-compose.pilot.yml` 起 API/Web/PG/Redis，health 全绿，migrations 已跑。 |
-| G2 dry smoke | 部署现场 `pnpm qa:r5-10-dry` 或等价容器内 dry smoke 通过。 |
-| G3 real smoke | 部署现场 `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real` 通过，证明 key、provider、tool schema、ledger 都可用。 |
-| G4 backup | `scripts/ops/backup-pg.sh` 成功并能列出备份产物。 |
-| G5 secret hygiene | `.env.pilot` 不入 git；报告、日志、截图无 `LLM_API_KEY`、Cookie、DB password。 |
-| G6 operator loop | 主持人能按 runbook 完成：注册 admin、建项目、提一个真实任务、审批、合并、回放、看成本。 |
-
-## 3. 施工顺序
-
-1. 复跑本机 `pnpm verify` 与密钥/reference 扫描，确认 main 基线干净。
-2. 用 pilot compose 起一套本机部署栈。
-3. 在部署栈或等价本机环境跑 G2/G3。
-4. 做一次备份/恢复 dry check（不破坏当前库）。
-5. 形成 `s1-pilot-launch-gate-report-2026-06-13.md`，列出 go/no-go 与剩余人工输入。
-6. 若 Gate 全绿，进入 S1 Pilot Week；若某 Gate 红，先修阻断 bug，不开新功能面。
-
-## 3.1 2026-06-13 执行记录
-
-| Gate | 结果 | 说明 |
+| Gate | 结果 | 证据 |
 |---|---|---|
-| G1 deploy stack | BLOCKED | 本机无 Docker/Colima/OrbStack/Podman；远端 `192.168.5.53` 的 `22/2222/22022/2022` 均在 SSH banner/KEX 前关闭连接，无法进入测试环境。 |
-| G2 dry smoke | PASS（本机等价） | `pnpm qa:r5-10-dry` 通过，accepted deliverable download、usage、ledger、confidence 均留证。 |
-| G3 real smoke | PASS（本机等价） | `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real` 通过，run `afbac902-389a-4022-ac89-8d431742fb87`，成本 `0.021664 CNY`。 |
-| G4 backup | BLOCKED | `bash -n scripts/ops/backup-pg.sh` 通过；真实 `pg_dump` 依赖 compose postgres，受 G1 阻断。 |
-| G5 secret hygiene | PASS（复扫后提交） | `.env.pilot` 未入库；报告/截图不写入 provider key、cookie、DB password。 |
-| G6 operator loop | PARTIAL | 本机单源 API+Web 完成注册、关键页面、Cost/Settings 中英截图；compose 现场完整 loop 未完成。 |
+| G1 deploy stack | ✅ | `docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build` 成功；workhub/postgres/redis healthy；`/api/health` ok。 |
+| G2 dry smoke | ✅ | 部署容器内 `pnpm qa:r5-10-dry` 通过；修复后 run `17132ee8-c13a-4fde-a030-426e357f7327`。 |
+| G3 real smoke | ✅ | 部署容器内 `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real` 通过；run `c49c6067-0879-449c-9260-8cd0687353bb`，成本 `0.019976 CNY`。 |
+| G4 backup | ✅ | `/private/tmp/workhub-backups/workhub-20260613-025228.sql.gz` 写出；独立 `workhub_restore` project 恢复后关键表非空。 |
+| G5 secret hygiene | ✅ | `.env.pilot` 不入库；报告/截图不含 provider key、cookie、DB password。 |
+| G6 operator loop | ✅ | Browser 完成 admin 认领、Cost/Settings 中英切换、fresh pilot 导航复验；dry/real 覆盖数据闭环。 |
 
-本轮发现并修复 Cost Page VM 英文页“团队 AI 预算”漏翻译为团队月预算标签的问题，新增回归测试并通过 API test/typecheck。
+## 3. 本轮发现与修复
 
-## 4. 不做
+### Fresh Pilot Shell 旧 Seed 链接
 
+真实 compose Browser 审查发现稳定页导航仍暴露 `r4-live-*` smoke seed detail 链接。fresh pilot 库没有这些记录，点击 `/intake/r4-live-session` 会触发 500。
+
+修复：
+
+- `apps/web/src/routes.ts`：intake/workitem/proposal/replay 改为 detail-only shell page，只在当前 route 是对应真实记录时显示；稳定页导航不再暴露旧 seed。
+- `apps/web/src/routes.test.ts`：新增 S1 guard，断言稳定页不包含 `r4-live-*`。
+
+验证：
+
+- `pnpm --filter @workhub/web test`：27 tests passed。
+- 重建 compose 后 Browser 复查：稳定页 nav `hasR4Seed=false`，`/intake` 为受控空态而非旧 seed 500。
+
+## 4. 验收产物
+
+- [`../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/`](../05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/)
+- `06-compose-register.png` 到 `12-compose-intake-empty-en.png`
+- `s1-pilot-launch-gate-report-2026-06-13.md`
+- 新后续计划：[`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](./s1-pilot-day0-real-work-entry-plan-2026-06-13.md)
+
+## 5. 不做
+
+- 不把 Day 0 直接扩大为多人 pilot week。
 - 不新增业务模块。
 - 不做云部署或多租户。
 - 不调模型路由策略。
-- 不修改 R5.10 的评估结论；只验证部署现场可复现。
 
-## 5. 验收产物
+## 6. 下一步
 
-- `docs/workhub/05-clients/assets/audit/2026-06-13-s1-pilot-launch-gate/`
-- `s1-pilot-launch-gate-report-2026-06-13.md`
-- README / S1 roadmap / Pilot runbook 状态回写
+Launch Gate 已完成，施工顺序切到 **S1 Day 0 Real Work Entry**：
 
-## 6. 后续硬门
-
-1. 先取得可执行 Docker compose 的环境：本机安装 Docker Desktop / Colima / OrbStack，或修复远端 Linux SSH + Docker。
-2. 用真实 `.env.pilot` 运行 `docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build`。
-3. 在部署现场复跑 dry / task-limit real smoke。
-4. 备份写仓库外目录，并用 `-p workhub_restore` 独立 compose project 做 restore dry check。
-5. 主持人按 runbook 完成真实 operator loop 后，再把本计划状态改为 `passed` 并启动 Pilot Week。
+1. 补齐真实用户从 UI 发起工作 / 项目种子的受控入口。
+2. 在现有 compose 栈跑主持人可见闭环：提交 → agent run → proposal → approval/merge → replay → cost。
+3. Day 0 全绿后，再按 Pilot Week runbook 邀请真实使用者进入一周试运行。

@@ -457,20 +457,21 @@ R4.24 没有新增视觉图，而是以同一 42 步 contact sheet 做 runtime/g
 - `web-drive-preview-change-draft.png` 中旧 Cuu 影像只作为“文件评论触发草稿”的信息架构参考，不代表 Cuu 进入 Web 主窗；当前 Cuu 边界仍以本页第 1 节和第 5 节为准。
 - 主窗继续无 Cuu、无默认 Kanban、无 hash route、无 weekly demo、无 secret-like 文本、无 horizontal/text overflow；R4.24 no-hash-write gate 通过。
 
-### 6.21 S1 Pilot Launch Gate 本机等价 UI 审查
+### 6.21 S1 Pilot Launch Gate compose UI 审查
 
-![S1 Cost EN](./assets/audit/2026-06-13-s1-pilot-launch-gate/03-cost-en.png)
+![S1 Compose Cost EN](./assets/audit/2026-06-13-s1-pilot-launch-gate/10-compose-cost-en.png)
 
-S1 Launch Gate 首轮不是新视觉系统，而是部署前现场门禁审查。证据目录：`./assets/audit/2026-06-13-s1-pilot-launch-gate/`；详细报告见 [`s1-pilot-launch-gate-report-2026-06-13.md`](./assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。
+S1 Launch Gate 不是新视觉系统，而是部署前现场门禁审查。首轮本机等价审查因缺 Docker 为 NO-GO；随后本机 Docker Desktop + pilot compose 真实栈复验通过。证据目录：`./assets/audit/2026-06-13-s1-pilot-launch-gate/`；详细报告见 [`s1-pilot-launch-gate-report-2026-06-13.md`](./assets/audit/2026-06-13-s1-pilot-launch-gate/s1-pilot-launch-gate-report-2026-06-13.md)。
 
 本轮对概念图的符合点：
 
 - Home 仍对齐 `web-ai-first-home.png`：默认是安静的 attention empty state，不回退为重型 Kanban 或营销 hero。
 - Approvals 仍对齐 `web-approval-center.png`：空态保持负责人阻塞收件箱语气，不新增第二套审批流。
-- Cost 仍是运营治理页；本轮修复英文页团队月预算默认标签漏翻译，`Team AI budget this month` 与中文 `团队本月 AI 预算` 均可审计。
+- Cost 仍是运营治理页；英文页团队月预算默认标签为 `Team AI budget this month`，中文为 `团队本月 AI 预算`，并显示 compose 真实 ledger 汇总。
 - Settings 仍对齐 Web/desktop/Cuu 边界：主窗无 Cuu 本体，不展示模型预览，只说明 pet 配置在独立桌面窗口。
-- 截图覆盖 Home / Approvals / Cost / Settings 英文与 Settings 中文；未发现文本溢出、secret 泄漏或主窗 Cuu 泄漏。
-- 现场部署 Gate 仍是 NO-GO：本机等价 UI 审查通过，但 Docker compose / backup / operator loop 未在真实部署环境跑通。
+- 截图覆盖注册 / Home / Cost / Settings / Intake empty 的 compose 页面，中英双语未发现文本溢出、secret 泄漏或主窗 Cuu 泄漏。
+- Fresh pilot 稳定页导航不再暴露旧 `r4-live-*` smoke seed detail 链接；`/intake` 为受控空态，不再从导航进入旧 seed 500。
+- Launch Gate 已 GO；后续 Day 0 计划继续补齐真实用户从 UI 发起工作/项目种子的可见入口。
 
 ## 7. 后续补图计划
 

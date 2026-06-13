@@ -1,7 +1,7 @@
 ---
 module: S1-pilot-launch-gate
 layer: 运营 / 部署 / QA
-status: no-go
+status: passed
 owner: workflow
 date: 2026-06-13
 depends_on:
@@ -14,114 +14,109 @@ depends_on:
 
 ## 1. 结论
 
-**NO-GO：系统代码与本机等价运行门通过，但真实 Pilot Launch Gate 仍被部署环境阻断。**
+**PASS：首轮 NO-GO 已解除；本机 Docker Desktop + pilot compose 现场门通过。**
 
-阻断点不是业务代码：当前 macOS 本机没有 Docker / Colima / OrbStack / Podman；远端 Linux 测试机 `192.168.5.53` 的 SSH 在 banner / KEX 前即关闭连接，`22`、`2222`、`22022`、`2022` 均无法进入密码阶段。因此本轮无法完成 G1 Docker compose 全栈、G4 真实备份/恢复、G6 compose 现场 operator loop。
+首轮阻断是环境问题：本机没有 Docker，远端 Linux SSH 在 KEX 前断开。随后已在本机安装 Docker Desktop，使用真实 `.env.pilot` 起 `docker-compose.pilot.yml` 全栈，WorkHub / PostgreSQL / Redis 均 healthy，并在部署容器内复跑 dry 与 task-limit real smoke。
 
-已完成的本机等价门证明：Web/API 单源可构建启动、R5.10 dry/real 关键链路可复现、管理员注册与关键页面可访问、中英双语关键截图无 Cuu 主窗泄漏，且发现并修复 1 个 Cost 页面英文标签漏翻译 bug。
+本轮还撞出并修复 1 个 fresh pilot UI 风险：生产 shell 仍把旧 `r4-live-*` smoke seed detail 链接暴露在稳定页面导航里，fresh compose 库点击会进入 500。已改为 detail-only 页面只在当前真实记录上下文中显示，稳定页导航只保留真实可达入口，并补 `S1 pilot shell omits R4 smoke seed detail links on stable routes` 测试。
 
 ## 2. Gate 结果
 
 | Gate | 结果 | 证据 |
 |---|---|---|
-| G1 deploy stack | **BLOCKED** | 本机无 Docker 运行时；远端 SSH 在 KEX 前断开，无法执行 `docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build`。 |
-| G2 dry smoke | **PASS（本机等价）** | `pnpm qa:r5-10-dry` 通过；run `6d88a4f8-c603-4190-b726-363fcf250a9b`，work item `e3878fe9-c078-43eb-904f-91308fd108b5`，proposal `611e1993-4611-4bd0-b375-8ca5983a14f3`，accepted change `4bf8fd4e-8ceb-45a7-ab3c-03eaebe6a857`，accepted download SHA `c5f6a61...`。 |
-| G3 real smoke | **PASS（本机等价，task limit 1）** | `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real` 通过；run `afbac902-389a-4022-ac89-8d431742fb87`，状态 succeeded，operator quality `4`，真实成本 `0.021664 CNY`。 |
-| G4 backup | **BLOCKED（脚本静态通过）** | `bash -n scripts/ops/backup-pg.sh` 通过；真实备份依赖 compose 内 postgres，因 G1 阻断未执行。脚本默认备份目录已改为仓库外 `../workhub-backups`。 |
-| G5 secret hygiene | **PASS** | `.env.pilot` 未创建/未入库；截图与报告不含 provider key、cookie、DB password。提交前 refined secret scan 无输出；broad DB URL 扫描仅命中模板默认值和测试字符串。 |
-| G6 operator loop | **PARTIAL** | 本机单源 API+Web 跑通 health、root HTML、JS asset、管理员注册、`/approvals`、`/dashboard/cost`、`/settings` 与中英切换；compose 现场完整 loop 因 G1 阻断未执行。 |
+| G1 deploy stack | **PASS** | `docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build` 成功；`workhub/postgres/redis` 均 healthy；`GET /api/health` 返回 `ok=true`。 |
+| G2 dry smoke | **PASS（部署容器）** | `docker compose ... exec -T workhub pnpm qa:r5-10-dry` 通过；修复后 run `17132ee8-c13a-4fde-a030-426e357f7327`，work item `53b84e53-6cf4-49d3-af10-8c1e9a7a5c6f`，proposal `79907118-0e02-4b03-a8a7-65942f3afc8c`，accepted change `6334096f-ae96-48d4-a904-756dd86fa395`。 |
+| G3 real smoke | **PASS（部署容器，task limit 1）** | `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real` 通过；修复后 run `c49c6067-0879-449c-9260-8cd0687353bb`，operator quality `4`，成本 `0.019976 CNY`，无 fake transport。 |
+| G4 backup / restore | **PASS** | `bash scripts/ops/backup-pg.sh /private/tmp/workhub-backups 14` 写出 `/private/tmp/workhub-backups/workhub-20260613-025228.sql.gz`（36K）；独立 `-p workhub_restore` project 恢复成功，恢复库关键表计数：agent_runs `4` / proposals `4` / accepted_changes `4` / usage_records `19` / cost_ledger_entries `57`。 |
+| G5 secret hygiene | **PASS** | `.env.pilot` 被 `.gitignore` 排除；报告、截图、日志摘要不写入 provider key、cookie、DB password；收尾会再跑 refined secret scan。 |
+| G6 operator browser loop | **PASS（受控 Day 0 前置）** | Browser 完成管理员认领、Cost/Settings 中英切换、compose 截图、旧 seed link 复验；`/intake` 为空态而非 500。真实“提需求→AI 干→审批/合并→成本”数据闭环由部署容器 dry/real smoke 覆盖。Day 0 继续把真实用户发起任务入口做成硬门。 |
 
-## 3. 本机等价验证记录
+## 3. Compose / Docker 记录
 
-### 3.1 基线验证
+- Docker Desktop 安装后，`docker --version` 为 Docker 29.5.3，`docker compose version` 为 v5.1.4。
+- 首次 build 拉取 `postgres:16` / `redis:7` / `node:22-slim`，镜像内安装 Python 办公文档库与 Noto CJK 字体。
+- 修复 shell seed link 后重建镜像，Web bundle 更新为 `dist/assets/index-DKjF14g4.js`。
+- 当前主 pilot 栈保留运行，便于 Day 0 继续使用：`http://127.0.0.1:8787/`。
 
-- `pnpm verify`：通过。
-- `pnpm --filter @workhub/web build`：通过；Vite 仅提示 chunk size 大于 500KB。
-- `pnpm db:migrate`：通过；本机 sandbox 对 `tsx` IPC 有 `EPERM`，已在批准的外部执行环境复跑。
-- 单源 API+Web：`WEB_DIST_DIR=apps/web/dist PORT=18787 API_HOST=127.0.0.1 ... pnpm --filter @workhub/api start` 成功，日志包含 `web_static_attached` 与 `server_started host=127.0.0.1 port=18787`。
-- `/api/health`：返回 `ok=true`。
-- `/`：返回 Web HTML，`#root` 与 title 存在。
-- JS asset：HTTP 200，`content-type: text/javascript`。
-
-### 3.2 Browser / UI 审查
+## 4. Browser / UI 审查
 
 截图证据：
 
-- ![Home empty EN](./01-home-empty-en.png)
-- ![Approvals empty EN](./02-approvals-empty-en.png)
-- ![Cost EN](./03-cost-en.png)
-- ![Settings EN](./04-settings-en.png)
-- ![Settings ZH](./05-settings-zh.png)
+- ![Compose register ZH](./06-compose-register.png)
+- ![Compose home ZH](./07-compose-home-zh.png)
+- ![Compose cost ZH](./08-compose-cost-zh.png)
+- ![Compose settings ZH](./09-compose-settings-zh.png)
+- ![Compose cost EN](./10-compose-cost-en.png)
+- ![Compose settings EN](./11-compose-settings-en.png)
+- ![Compose intake empty EN](./12-compose-intake-empty-en.png)
 
 审查结论：
 
-- Home 默认是安静的 attention empty state，不是重型看板；主窗无 Cuu 本体。
-- Settings 中英双语均无明显文本溢出；Web 明确只展示桌面/Cuu 边界，不承载模型预览或桌宠操作。
-- Cost 英文页原先泄漏中文默认标签“团队 AI 预算”；本轮修复为 `Team AI budget this month` 并补测试。
-- 截图未暴露 provider key、cookie、base URL 或 DB password。
+- 中英双语切换在真实 compose 页面可用，`html lang` 随偏好切换；Cost 英文页显示 `Team AI budget this month`，未再泄漏中文团队月预算标签。
+- Cost 页显示真实 ledger 汇总：tokens、CNY 成本、预算范围、model breakdown 均来自 REST Page VM。
+- Settings 页显示 runtime / Redis broker / DB / DeepSeek model / key configured / locale preference / desktop boundary，且不暴露密钥原文。
+- Web 主窗继续无 Cuu 本体；Settings 只说明 pet 配置与验收在独立桌宠窗口。
+- fresh pilot 稳定页导航已无 `r4-live-*` smoke seed detail 链接；旧链接直达风险已由代码修复和测试锁住。
 
-## 4. 修复项
+## 5. 修复项
 
-### 4.1 Cost Page VM 英文标签漏翻译
+### 5.1 Fresh Pilot Shell 旧 Seed 链接
 
-问题：英文 locale 下，团队月预算的默认 `scopeLabel` 仍显示中文“团队 AI 预算”。
+问题：稳定页面（Cost / Settings 等）的左侧导航仍暴露 `/intake/r4-live-session`、`/workitems/r4-live-workitem`、`/proposals/r4-live-proposal`、`/agent-runs/r4-live-run/replay`。这些只在 browser smoke seed 里存在，fresh compose 库点击会触发 500 / 404。
 
 修复：
 
-- `apps/api/src/pages/i18n.ts` 新增 `cost.scope.teamMonth`。
-- `apps/api/src/pages/cost.ts` 按 `scope.kind === "team" && period === "month"` 翻译默认月预算标签。
-- `apps/api/src/pages-i18n.test.ts` 新增回归测试，确保默认团队月标签翻译为 `Team AI budget this month`，自定义团队名仍保持原文。
+- `apps/web/src/routes.ts`：detail-only shell pages（intake/workitem/proposal/replay）只在当前 route 就是对应真实记录时显示；稳定页导航保留 Overview / Approvals / Drive / Meetings / Inbox / Calendar / Project health / Cost / Knowledge / Settings。
+- `apps/web/src/routes.test.ts`：新增 S1 guard，断言稳定页 shell 不再包含 `r4-live-*`。
 
 验证：
 
-- `pnpm --filter @workhub/api test`：140 tests passed。
-- `pnpm --filter @workhub/api typecheck`：通过。
-- Browser 复查 Cost 页面：英文 DOM 不再包含“团队 AI 预算”。
+- `pnpm --filter @workhub/web test`：27 tests passed。
+- 重新 build compose 后 Browser 审查：nav `hasR4Seed=false`，`navCount=10`。
+- `/intake` 直达为受控空态，不再暴露旧 seed 500 链路。
 
-### 4.2 Pilot 操作口径收紧
+### 5.2 Cost Page VM 英文标签漏翻译
 
-问题：部署文档未显式使用 `--env-file .env.pilot`，compose 变量插值可能不读取 `.env.pilot` 中的 `POSTGRES_PASSWORD` / `WORKHUB_PORT`；备份默认写 `./backups`，容易把备份产物落进仓库工作区。
+延续首轮发现并已修复的问题：英文 locale 下团队月预算默认标签从中文“团队 AI 预算”改为 `Team AI budget this month`，并保留自定义团队名原文。
 
-修复：
+验证：
 
-- `DEPLOY.md` 与 S1 runbook 统一使用 `docker compose --env-file .env.pilot -f docker-compose.pilot.yml ...`。
-- `scripts/ops/backup-pg.sh` 默认写 `../workhub-backups`，可用 `WORKHUB_BACKUP_DIR` 覆盖。
-- `.gitignore` 补充 `backups/` 防误提交。
+- `pnpm --filter @workhub/api test`：140 tests passed（首轮修复时已跑）。
+- `pnpm --filter @workhub/api typecheck`：通过（首轮修复时已跑）。
+- compose Browser 复查 Cost EN：`Team AI budget this month` 可见。
 
-## 5. PRD / 概念图对齐
+## 6. PRD / 概念图对齐
 
-| 维度 | 本轮判断 |
+| 维度 | 判断 |
 |---|---|
-| PRD 核心闭环 | 本机等价 dry/real smoke 证明“提需求 → AI 干 → 升级/预算 → 审批 → 合并 → 回放/下载”仍可复现。 |
-| AI 默认劳动力 | T1 task-limit real smoke 证明 provider、tool schema、ledger、置信度链路可用；完整 6-run 结论沿用 R5.10-real。 |
-| 人是审批者 | Approvals 页面可访问；本轮未在 compose 现场跑完整审批 loop，仍是 NO-GO 原因之一。 |
-| 中英双语 | Home / Approvals / Cost / Settings 关键截图覆盖英文，Settings 覆盖中文；修复 Cost 月预算英文漏翻译。 |
-| Cuu 边界 | Web 主窗截图无 Cuu 本体；Settings 只说明 pet 配置在独立桌面窗口。 |
-| 操作安全 | `.env.pilot` 不入库，备份默认迁出仓库，restore dry check 需独立 compose project。 |
+| PRD 核心闭环 | 部署容器 dry/real smoke 证明“提需求 → AI 干 → 升级/预算 → 审批 → 合并 → 回放/下载”可在 compose 现场复现。 |
+| AI 默认劳动力 | task-limit real smoke 证明 provider、tool schema、ledger、置信度链路在部署镜像内可用。 |
+| 人是审批者 | Browser 管理员认领、审批入口、成本/设置可见；真实审批/合并链路由 dry smoke 数据闭环覆盖。 |
+| 中英双语 | 注册、Cost、Settings、Intake empty 覆盖中英；语言偏好服务端同步。 |
+| Cuu 边界 | Web 主窗无 Cuu；Cuu 仍只在独立桌宠窗口与后续 C-PET 验收里出现。 |
+| 操作安全 | `.env.pilot` 不入库，备份写仓库外，restore dry check 使用独立 compose project，secret 不入截图/报告。 |
 
-## 6. Pilot Week 前硬门
+## 7. 后续 Day 0 硬门
 
-Pilot Week 不能仅凭本机等价门启动，必须先补齐：
+Launch Gate 通过后，下一模块不是扩业务面，而是启动受控 Day 0：
 
-1. 本机安装并启动 Docker Desktop / Colima / OrbStack，或修复远端 Linux SSH + Docker 访问。
-2. 在真实部署环境创建 `.env.pilot`，使用 `docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build` 起栈。
-3. 在容器/部署现场复跑 `pnpm qa:r5-10-dry` 与 `R5_10_REAL_TASK_LIMIT=1 pnpm qa:r5-10-real`。
-4. 执行 `bash scripts/ops/backup-pg.sh /private/tmp/workhub-backups` 或生产等价目录，并用 `-p workhub_restore` 独立 project 做 restore dry check。
-5. 重新跑 secret/log/screenshot 扫描，确认 `.env.pilot`、provider key、cookie、DB password 未入库、未入报告、未进截图。
-6. 主持人按 runbook 在 compose 栈完成管理员注册、建项目、真实任务、审批、合并、回放、成本查看。
+1. 用 [`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](../../../../06-roadmap/s1-pilot-day0-real-work-entry-plan-2026-06-13.md) 做下一施工入口。
+2. 把“真实用户从 UI 发起任务 / 项目种子”设为 Day 0 首个硬门，避免只靠 QA 脚本创建数据。
+3. 用本次 compose 栈继续跑一条主持人可见的真实 work item：提交 → agent run → proposal → approval/merge → replay → cost。
+4. Day 0 通过后再按 Pilot Week runbook 邀请更多使用者。
 
-## 7. 提交前复扫
+## 8. 收尾复扫计划
 
-- `pnpm --filter @workhub/api test`：140 tests passed。
-- `pnpm --filter @workhub/api typecheck`：通过。
-- `bash -n scripts/ops/backup-pg.sh`：通过。
-- `git diff --check`：通过。
-- refined secret scan：无输出。
-- `git diff --name-only -- reference references`：无输出。
-- `find docs/workhub -name '*.md' | wc -l`：137。
+- `pnpm --filter @workhub/web test`：已通过，27 tests。
+- `pnpm --filter @workhub/api test` / `typecheck`：首轮修复时已通过；收尾若 API 未再改可不重复。
+- `docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps`：healthy。
+- `docker compose ... exec -T workhub pnpm qa:r5-10-dry`：已通过。
+- `docker compose ... exec -T -e R5_10_REAL_TASK_LIMIT=1 workhub pnpm qa:r5-10-real`：已通过。
+- backup / restore dry check：已通过。
+- `git diff --check`、secret scan、reference scan：提交前执行。
 
-## 8. Go / No-Go
+## 9. Go / No-Go
 
-**当前：NO-GO。**
+**Launch Gate：GO。**
 
-下一步不是开新功能，而是修复部署运行时：先拿到可执行 Docker compose 的本机或远端环境，再把 G1/G4/G6 跑成真证据。等 Launch Gate 全绿后，才能把 S1 Pilot Week runbook 从“turnkey 脚本”推进到“正在执行”。
+含义是：部署包、真实 provider、成本账本、备份恢复、管理员入口、双语关键页与 fresh pilot 稳定导航都已达启动 Day 0 的要求。Pilot Week 不直接扩大到多人使用；下一步先完成 Day 0 真实工作入口和主持人可见闭环，再放开一周试运行。

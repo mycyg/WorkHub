@@ -949,6 +949,23 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
   }
 });
 
+test("S1 pilot shell omits R4 smoke seed detail links on stable routes", async () => {
+  const { client } = fakeRouteClient(goldPathSurfaceVm());
+  const match = resolveWebRoute("/dashboard/cost");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('href="/approvals"'), true);
+  assert.equal(result.html.includes('href="/dashboard/cost"'), true);
+  assert.equal(result.html.includes('href="/settings"'), true);
+  assert.equal(result.html.includes("/intake/r4-live-session"), false);
+  assert.equal(result.html.includes("/workitems/r4-live-workitem"), false);
+  assert.equal(result.html.includes("/proposals/r4-live-proposal"), false);
+  assert.equal(result.html.includes("/agent-runs/r4-live-run/replay"), false);
+});
+
 test("R4 web loader uses detail Page VM endpoints before rendering ready routes", async () => {
   const surface = goldPathSurfaceVm();
 
