@@ -89,4 +89,6 @@ Day3 结束时产出一份 expansion report：参与者数、真实 WorkItem/Run
 
 ## Current Status
 
-2026-06-13 preflight 与 live observation audit tooling 已通过，系统状态为 ready-to-invite-and-observe；G1 仍等待真实使用者参与。下一步是按 D3-1/D3-2 邀请真实用户从 `/intake` 提交当天真实任务，并用 `qa:s1-day3-observation` 做 Day3 closeout。
+2026-06-13 preflight 与 live observation audit tooling 已通过，系统状态为 ready-to-invite-and-observe；G1 仍等待真实使用者参与。
+
+2026-06-15 恢复检查发现 pilot API 容器曾因 `pg.Pool` idle client error 未监听而退出；已在 [`s1-pilot-runtime-stability-plan-2026-06-15.md`](./s1-pilot-runtime-stability-plan-2026-06-15.md) 修复并验证 compose 三服务 healthy、`/api/health` ok。下一步是先复跑 D3-0 preflight，再按 D3-1/D3-2 邀请真实用户从 `/intake` 提交当天真实任务，并用 `qa:s1-day3-observation` 做 Day3 closeout。

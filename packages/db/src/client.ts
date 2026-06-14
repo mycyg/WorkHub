@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 
@@ -15,15 +15,39 @@ export type WorkHubDatabaseClient = {
   close: () => Promise<void>;
 };
 
+function serializePoolError(error: Error) {
+  return {
+    name: error.name,
+    message: error.message,
+    ...("code" in error ? { code: (error as Error & { code?: unknown }).code } : {}),
+    ...("severity" in error ? { severity: (error as Error & { severity?: unknown }).severity } : {})
+  };
+}
+
+function handleIdlePoolError(error: Error, client: PoolClient) {
+  const processId = (client as PoolClient & { processID?: number }).processID;
+  process.stderr.write(`${JSON.stringify({
+    ts: new Date().toISOString(),
+    level: "warn",
+    service: "workhub-db",
+    event: "pg_pool_idle_client_error",
+    error: serializePoolError(error),
+    ...(typeof processId === "number" ? { process_id: processId } : {})
+  })}\n`);
+}
+
 export function createPgPool(runtimeSettings: Settings = defaultSettings, overrides: PoolConfig = {}) {
   const connectionString = normalizeNodePostgresUrl(runtimeSettings.databaseUrl);
 
-  return new Pool({
+  const pool = new Pool({
     connectionString,
     max: runtimeSettings.db.poolSize + runtimeSettings.db.maxOverflow,
     connectionTimeoutMillis: runtimeSettings.db.poolTimeout * 1000,
     ...overrides
   });
+
+  pool.on("error", handleIdlePoolError);
+  return pool;
 }
 
 export function createDatabaseClient(

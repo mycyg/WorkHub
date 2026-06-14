@@ -99,8 +99,8 @@ function staleDocMatches() {
     "Proposal route 自身仍缺",
     "尚未接后台调度",
     "REST 权限全面收口仍未完成",
-    "58 篇",
-    "当前 58",
+    /(?<!\d)58 篇/u,
+    /当前 58(?!\d)/u,
     "R2.6 stuck-job 后台调度"
   ];
   const matches: string[] = [];
@@ -110,8 +110,9 @@ function staleDocMatches() {
     }
     const text = readFileSync(file, "utf8");
     for (const pattern of stalePatterns) {
-      if (text.includes(pattern)) {
-        matches.push(`${relativePath(file)}:${pattern}`);
+      const matched = typeof pattern === "string" ? text.includes(pattern) : pattern.test(text);
+      if (matched) {
+        matches.push(`${relativePath(file)}:${typeof pattern === "string" ? pattern : pattern.source}`);
       }
     }
   }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createPgPool } from "./client.js";
 import { formatProjectCode, allocateProjectCode } from "./sequences.js";
 import { defaultSeedFixture, defaultSeedIds } from "./seed.js";
 import {
@@ -16,6 +17,15 @@ test("database URL normalization accepts SQLAlchemy-style psycopg URLs for TS cl
   );
   assert.equal(isPostgresUrl("postgresql://workhub:workhub@127.0.0.1:5432/workhub"), true);
   assert.throws(() => normalizeNodePostgresUrl("sqlite:///tmp/workhub.db"), /SQLite URLs/);
+});
+
+test("pg pool handles idle client errors without crashing the process", async () => {
+  const pool = createPgPool();
+  try {
+    assert.equal(pool.listenerCount("error"), 1);
+  } finally {
+    await pool.end();
+  }
 });
 
 test("F03 type conversion matrix captures the SQLite to PostgreSQL audit targets", () => {
