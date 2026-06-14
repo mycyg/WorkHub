@@ -242,7 +242,9 @@ async function buildApprovalItemDetail(
   viewerId: string,
   locale: WorkHubLocale
 ): Promise<ApprovalDetailVM> {
-  const payload = approvalPayloadSchema.parse(row.payloadJson ?? { raw_args: {} });
+  // L#W2-4：safeParse——一条畸形 payload 不能 500 掉整页（与 toApprovalAttentionItem 一致地降级）。
+  const parsedPayload = approvalPayloadSchema.safeParse(row.payloadJson ?? { raw_args: {} });
+  const payload = parsedPayload.success ? parsedPayload.data : { raw_args: {} as Record<string, unknown> };
   const timeline = synthesizeApprovalTimeline(row, viewerId, locale);
   let comments: ApprovalCommentVM[] = [];
   try {
@@ -257,7 +259,10 @@ async function buildApprovalItemDetail(
     try {
       const proposalId = typeof payload.raw_args.proposal_id === "string" ? payload.raw_args.proposal_id : undefined;
       if (proposalId) {
-        proposal = await deps.proposals.get(proposalId);
+        const candidate = await deps.proposals.get(proposalId);
+        // L#W2-3/6（IDOR 防护）：直传 proposal_id 必须属于本审批的 work item，否则丢弃——
+        // 否则任意 proposal_id 都能借审批页泄露其完整 diff_manifest（跨资源越权）。
+        proposal = candidate && (!row.workItemId || candidate.work_item_id === row.workItemId) ? candidate : null;
       } else if (row.workItemId) {
         const list = await deps.proposals.listByWorkItem(row.workItemId);
         proposal = list.find((candidate) => candidate.status === "opened" || candidate.status === "reviewed") ?? list[0] ?? null;

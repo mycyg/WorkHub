@@ -15,18 +15,20 @@ export type CreateApprovalCommentInput = {
 };
 
 export type ApprovalCommentRepository = {
-  listByApproval: (approvalId: string) => Promise<ApprovalCommentRow[]>;
+  listByApproval: (approvalId: string, limit?: number) => Promise<ApprovalCommentRow[]>;
   create: (input: CreateApprovalCommentInput) => Promise<ApprovalCommentRow>;
 };
 
 export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentRepository {
   return {
-    async listByApproval(approvalId) {
+    async listByApproval(approvalId, limit = 100) {
+      // L#W2-13：封顶，热门审批的评论流不会把全部正文塞进预取的页面 VM。
       return db
         .select()
         .from(approvalComments)
         .where(eq(approvalComments.approvalId, approvalId))
-        .orderBy(asc(approvalComments.createdAt));
+        .orderBy(asc(approvalComments.createdAt))
+        .limit(Math.max(1, Math.min(limit, 200)));
     },
 
     async create(input) {

@@ -60,6 +60,15 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     if (!approval) {
       throw new HTTPException(404, { message: "没有找到这条审批。" });
     }
+    // L#W2-15：无 work item 的审批（工具/权限类）不能因 canReadWorkItem(undefined)=true 而对所有登录用户敞开——
+    // 这类按 id 直达的端点（respond/delegate/comments）要求管理员或被路由到的本人。
+    if (!approval.work_item_id) {
+      const actorUserId = actor.userId ?? actor.id;
+      if (!actor.isAdmin && approval.routed_to_user_id !== actorUserId) {
+        throw new HTTPException(403, { message: "你没有权限查看这条审批。" });
+      }
+      return approval;
+    }
     if (!await canReadWorkItem(approval.work_item_id, actor)) {
       throw new HTTPException(403, { message: "你没有权限查看这条审批。" });
     }

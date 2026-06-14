@@ -23,7 +23,7 @@ export type ApprovalRequestRepository = {
   createApprovalRequest: (input: CreateApprovalRequestInput) => Promise<ApprovalRequestRow>;
   findById: (id: string) => Promise<ApprovalRequestRow | null>;
   listPendingDue: (at: Date, limit?: number) => Promise<ApprovalRequestRow[]>;
-  listPendingForUser: (userId: string, options?: { includeAll?: boolean }) => Promise<ApprovalRequestRow[]>;
+  listPendingForUser: (userId: string, options?: { includeAll?: boolean; limit?: number }) => Promise<ApprovalRequestRow[]>;
   respondPending: (
     id: string,
     decision: ApprovalDecision,
@@ -73,7 +73,9 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
     },
 
     async listPendingForUser(userId, options = {}) {
-      const query = db
+      // L#W2-2：封顶，避免管理员（includeAll）把全组织 pending 全量拉出再逐条 join（无界 N+1）。
+      const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
+      return db
         .select()
         .from(approvalRequests)
         .where(
@@ -81,8 +83,8 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
             ? eq(approvalRequests.status, "pending")
             : and(eq(approvalRequests.status, "pending"), eq(approvalRequests.routedToUserId, userId))
         )
-        .orderBy(desc(approvalRequests.createdAt));
-      return query;
+        .orderBy(desc(approvalRequests.createdAt))
+        .limit(limit);
     },
 
     async respondPending(id, decision, decidedByUserId, reasonMd, at) {

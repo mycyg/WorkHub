@@ -447,6 +447,8 @@ function bindGoldPathNavigation(
         try {
           const comment = await client.postApprovalComment(approvalId, { body });
           if (form && input) {
+            // L#W2-16：首条评论先移除「还没有讨论」空态占位，避免占位与新评论并存。
+            commentSubmit.closest("[data-r4-approval-discussion]")?.querySelector("p.wh-subtle")?.remove();
             const row = document.createElement("div");
             row.className = "wh-r4-route-row wh-r4-route-row--stacked";
             row.setAttribute("data-r4-approval-comment", comment.id);
@@ -488,9 +490,11 @@ function bindGoldPathNavigation(
       if (pendingApprovalId) {
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
+          // L#W2-17：优先用决策面板里手写的「意见说明」，没写才回落到预设理由按钮。
+          const customReason = shellRoot.querySelector<HTMLTextAreaElement>("[data-r4-approval-reason]")?.value.trim();
           const result = await client.respondApproval(pendingApprovalId, {
             decision: "deny",
-            reason_md: reasonMd,
+            reason_md: customReason || reasonMd,
             remember
           });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), pendingApprovalActionId ?? "deny"));
