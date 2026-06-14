@@ -44,7 +44,7 @@ depends_on:
 - **新表 `team_skills`**（迁移 `0012`）：`workspace_id`（团队边界）/ `skill_key` / `name` / `when_to_use` / `content_md` / `status`(draft|proposed|active|deprecated) / `version` / `source_kind`(distilled|authored) / `proposal_id`。合同 `packages/contracts/src/domain/skill-curation.ts`；repo `packages/db/src/repositories/team-skills.ts`。
 - **合并视图**：`listSkills/loadSkillContent/skillCatalogForPrompt/createSkillTool` 升级为「文件系统 ∪ DB(按 workspace active)」，按 run 的 `work_items.workspaceId` 注入（`agent-runner.ts:336/423/440`）。fail-closed 行为保留。
 - **闲时整理 job**：新建 `apps/api/src/workers/skill-curation-scheduler.ts`，照 `AgentRunRecoveryScheduler` 结构（setInterval + 24h 节流 + 队列空闲检测 + `timer.unref()`）。挖 artifact：`accepted_deliverable_changes`(正样本) / `agent_steps`(动作模式) / `proposals+reviews+confidence_records`(高质量/反模式) / `escalation_events`(缺技能信号)。
-- **候选→审批→晋升**：蒸馏出 `SKILL.md` 草稿 → **复用 `openProposalFromManifest`（`proposals.ts:698`）**，`target_kind` 加 `team_skill`，走和普通 AI 产出一样的「提议→审批→合并」流程，PM/人类在审批中心 vet。merge → `promote()`（active + 版本递增），reject → 作废 + reason 反馈。全程 `audit_logs`。
+- **候选→自动晋升（AI 自迭代，无人工前置审批）** —— 已按用户决策定稿：蒸馏出 `SKILL.md` 草稿后，若 `confidence ≥ 阈值` 且通过**自验门**（frontmatter schema + 内容 lint + 可选 dry-run）→ 直接 `promote()`（status=active + 版本递增，旧版 deprecated），**无需 Proposal/人类审批**。理由：skill 是 AI 内部能力（不是生产交付物），自迭代风险远低于自动合并交付物，宪法"人是审批者"约束的是生产写入而非内部技能库。低分/未过自验的候选丢弃 + 记 reason（下次蒸馏避开）。全程 `audit_logs`（`actorKind='ai'`, `action='skill.distilled'/'skill.promoted'/'skill.deprecated'`）。**人类兜底 = 事后 kill-switch**：团队技能设置页可查看/停用/回退任一技能版本（非前置审批）。
 
 ## 4. Memory 系统（用户个人 ID 级 / user-scoped）
 
@@ -68,7 +68,7 @@ depends_on:
 | **A0 AI 战绩** | 派生 2 metric + `/api/ai-worklog/today` + home optional `worklog` 横幅 | 低 | 无（独立于所有开放问题）|
 | **W1 决策收件箱首页** | 重写 `renderHomeRouteComponent` 视觉为 CR 决策卡 + AI 进行中表 + 战绩横幅 + 卖萌文案；保住所有 `data-r4-home-*` 标记 + React fingerprint | 中 | V0、A0 |
 | **M1 Memory 读路径** | `user_memories` 表 + repo + prompt 注入（先只读偏好）；写入先规则提取 | 中 | 迁移 0012 |
-| **S2 Skill 合并视图** | `team_skills` 表 + `load_skill` 合并视图 + 人工创作团队技能走 Proposal 晋升 | 中 | 迁移 0012 |
+| **S2 Skill 合并视图** | `team_skills` 表 + `load_skill` 合并视图 + 人工创作 & AI 蒸馏候选，**自动晋升**（confidence + 自验门控，无人工前置）+ 团队技能设置页 kill-switch | 中 | 迁移 0012 |
 | **W2 审批中心三栏** | `renderApprovals` → 概念图④三栏（list+SLA / 变更详情 / 我的操作+置信环+timeline）| 中 | V0 |
 | **P3 桌宠三气泡** | `renderDesktopPetBubble` 砍成 3 形态 + 情绪 10→5（`motion.ts`/`experience.ts`）；Live2D 资产不动 | 中（隔离，走 Tauri smoke）| V0 |
 | **S3 闲时自迭代** | daily curation scheduler（setInterval）+ artifact 蒸馏 + 候选 Proposal + memory prune | 高（唯一新后台循环）| S2、M1 |
@@ -78,7 +78,7 @@ depends_on:
 
 1. **team 实体**：建议「团队 = workspace」（现状单租户，多租户路径已埋）。除非你心中的团队是 org 下多团队，否则按此推进。
 2. **闲时调度**：建议 setInterval + 24h 节流 + 队列空闲检测，**不引 cron**（同 recovery scheduler，零新依赖）。
-3. **新技能把关**：建议**人类把关**（走 Proposal，复用审批 UI，贴宪法"人是审批者"）。激进路径=AI 自动晋升高 confidence、人类事后否决，需你明确风险偏好。
+3. **新技能把关**：✅ **已定 = AI 全自动迭代、无人工前置审批**（confidence 阈值 + 自验门控自动晋升；人类只保留事后 kill-switch / 回退）。理由见 §3。
 4. **省下人力换算**：v0 写死一个保守单件基线常量并标注"估算"。
 5. **Memory 写入**：v0 规则提取（便宜可控）；LLM 蒸馏更聪明但增 token 成本。
 
