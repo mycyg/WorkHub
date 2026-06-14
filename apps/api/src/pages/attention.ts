@@ -29,6 +29,7 @@ export function buildAttentionHomePage(input: {
   queue?: AttentionHomeVM["queue"];
   backgroundRuns?: AgentRunQueueRecord[];
   locale?: WorkHubLocale;
+  worklog?: AttentionHomeVM["worklog"];
 } = {}): AttentionHomeVM {
   const locale = input.locale ?? "zh-CN";
   const queue = input.queue ?? [];
@@ -40,6 +41,7 @@ export function buildAttentionHomePage(input: {
     primary: queue[0],
     queue,
     background_runs,
-    cuu_state: queue[0]?.cuu_state ?? (background_runs.length > 0 ? "thinking" : "idle")
+    cuu_state: queue[0]?.cuu_state ?? (background_runs.length > 0 ? "thinking" : "idle"),
+    ...(input.worklog ? { worklog: input.worklog } : {})
   };
 }

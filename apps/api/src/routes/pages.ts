@@ -23,6 +23,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildAttentionHomePage } from "../pages/attention.js";
+import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage } from "../pages/proposals.js";
@@ -78,6 +79,7 @@ export type PageRoutesDependencies = {
   meetingPages?: MeetingPageService;
   scheduleNotifyPages?: ScheduleNotifyPageService;
   projectHealthPages?: ProjectHealthPageService;
+  aiWorklog?: AiWorklogMetricsService;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -156,11 +158,19 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
+  const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const activeRuns = await queue.listActive();
-    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns, locale }), locale));
+    // 战绩是首页加分项：取数失败/无数据时静默降级（worklog 为可选字段，UI 不渲染横幅）。
+    let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
+    try {
+      worklog = await aiWorklog.getTodayMetrics();
+    } catch {
+      worklog = undefined;
+    }
+    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns, locale, worklog }), locale));
   });
 
   if (allowUnauthenticatedGoldPath) {

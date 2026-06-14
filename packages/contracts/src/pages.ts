@@ -36,6 +36,16 @@ export const actionSpecSchema = z.object({
 });
 export type ActionSpec = z.infer<typeof actionSpecSchema>;
 
+export const aiWorklogVmSchema = z.object({
+  runs_today: z.number().int().nonnegative(),
+  autonomy_rate: z.number().int().min(0).max(100),
+  accepted_today: z.number().int().nonnegative(),
+  saved_hours_estimate: z.number().nonnegative(),
+  generated_at: z.string().min(1),
+  range_label: z.string().min(1).optional()
+});
+export type AiWorklogVM = z.infer<typeof aiWorklogVmSchema>;
+
 export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),
@@ -46,7 +56,8 @@ export const attentionHomeVmSchema = z.object({
     state: z.enum(["queued", "running", "waiting_for_user", "failed"]),
     preview_text: z.string().min(1)
   })),
-  cuu_state: cuuStateSchema
+  cuu_state: cuuStateSchema,
+  worklog: aiWorklogVmSchema.optional()
 });
 export type AttentionHomeVM = z.infer<typeof attentionHomeVmSchema>;
 
