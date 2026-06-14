@@ -25,7 +25,8 @@ depends_on:
 > - `apps/api/src/workers/project-hydrate.ts`：`hydrateProjectWorkdir()` 把项目当前 Drive 文件物化进 `workdir/project/`（只读参考区，按 parentId 链重建目录树）；纯函数+可注入依赖；**预算上限**(默认 200 文件/32MB)防爆、每路径过 `safeResolvePath` 防逃逸、逐文件 try **fail-open**。`outputs/` 仍是唯一可写产出区（manifest 只扫 outputs/，互不干扰）。
 > - 接进 `agent-runner` workdir 创建后（fail-open 包裹）；默认 hydrator `run→work_item→projectId→drive.readPage` 取材。**默认关闭** `AGENT_RUN_PROJECT_HYDRATE_ENABLED=false`（CI/pilot-stack 零行为变化），开启才生效。
 > - 测试：4 个 CI-gated 单测（物化/路径逃逸/双预算上限/fail-open）；**真 PG 端到端实证**：开启后对真实 work_item 物化 38 文件/322KB、目录树正确、0 skip。全量 `pnpm test`(api 165) + typecheck 绿。
-> - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止，未给友好 UX）；② project-scope 撞车同步进 `MemoryProposalRepository` 做 CI-gated 跨任务测试（现靠真 PG 本地实证 + pilot-stack-smoke 兜）；③ base 底稿快照(M2，配合 rebase)；④ 去黑话撞车卡 + 结构记录三方兜底；⑤ 撞车判定/作废的 project 范围回填迁移（供生产升级）。
+> - **增量 4（迁移 `0015_backfill_project_id`）已交付**：回填历史 `accepted_deliverable_changes.project_id`（`UPDATE ... FROM work_items`）。新库无历史行=no-op；旧库升级后历史文件也纳入 project 范围撞车判定，彻底闭合"升级后旧文件仍可能被覆盖"的缝。drizzle check 通过、r1-pg-smoke 兜。
+> - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止；且现有"撞车→AI 融合稿"流已能功能性处理跨任务冲突，rebase 是锦上添花）；② project-scope 撞车的 CI-gated 跨任务单测（侦察发现 `MemoryProposalRepository.acceptedByTargetKey` 本就按 targetKey 全局建模 ≈ 跨任务，服务层冲突行为已被既有测试覆盖；真库路径由 pilot-stack-smoke 兜，故此项边际价值低）；③ base 底稿快照(M2，配合 rebase)；④ 去黑话撞车卡 + 结构记录三方兜底。
 
 
 > **北极星延伸**：让 AI 不再被困在一个任务的小盒子里——它能读写**整个项目（一个 project 下的全部资料）**；每一次改动都是一份独立的**工作副本**（带备份/快照），人确认后才**采纳**进项目；采纳这一步由 **LLM 做三方对照**（base/我的/你的），而不是闭眼覆盖；多人异步采纳时，**用旧底稿采纳绝不能盖掉别人刚加进去的东西**（不丢更新）。全部建立在现有 `sha256_before` 乐观并发 + diff3 + AI 融合稿 + 快照之上——**扩展，不重造**。
