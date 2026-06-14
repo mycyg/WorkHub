@@ -523,7 +523,8 @@ async function main() {
       inputTokens: 1500,
       outputTokens: 500,
       costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-      createdAt: new Date("2026-06-08T12:00:00.000Z")
+      // 周期感知预算（C3）只统计当前周期用量，用量须落在当前周期内才计入 delta。
+      createdAt: new Date()
     }));
     const costUsage = await app.request("/api/cost/usage", { headers });
     const costPage = await app.request("/api/pages/cost", { headers });
