@@ -72,6 +72,20 @@ export type GoldPathCopyKey =
   | "approvals.evidenceEmpty"
   | "approvals.myActions"
   | "approvals.noSelection"
+  | "approvals.diffTitle"
+  | "approvals.checksTitle"
+  | "approvals.aiTitle"
+  | "approvals.benefitTitle"
+  | "approvals.conflictsTitle"
+  | "approvals.affectedTitle"
+  | "approvals.timelineTitle"
+  | "approvals.discussionTitle"
+  | "approvals.commentsEmpty"
+  | "approvals.commentPlaceholder"
+  | "approvals.commentSubmit"
+  | "approvals.reasonLabel"
+  | "approvals.reasonPlaceholder"
+  | "approvals.rememberLabel"
   | "workitem.kicker"
   | "workitem.statusTitle"
   | "workitem.deliverableTitle"
@@ -242,6 +256,20 @@ const goldPathCopy = {
     "approvals.evidenceEmpty": "这条没有附证据。",
     "approvals.myActions": "你来拍板",
     "approvals.noSelection": "左边选一条，这里看详情 (=^･ω･^=)",
+    "approvals.diffTitle": "变更对比",
+    "approvals.checksTitle": "合规检查",
+    "approvals.aiTitle": "AI 解释与依据",
+    "approvals.benefitTitle": "预期收益",
+    "approvals.conflictsTitle": "冲突与建议",
+    "approvals.affectedTitle": "影响目标",
+    "approvals.timelineTitle": "审批流程",
+    "approvals.discussionTitle": "相关讨论",
+    "approvals.commentsEmpty": "还没有讨论，来说两句 (=^･ω･^=)",
+    "approvals.commentPlaceholder": "写下你的看法…",
+    "approvals.commentSubmit": "发表",
+    "approvals.reasonLabel": "意见说明",
+    "approvals.reasonPlaceholder": "可填：补充说明审批理由",
+    "approvals.rememberLabel": "记住我的审批（相同类型自动通过）",
     "workitem.kicker": "任务详情",
     "workitem.statusTitle": "状态",
     "workitem.deliverableTitle": "交付物",
@@ -411,6 +439,20 @@ const goldPathCopy = {
     "approvals.evidenceEmpty": "No evidence attached to this one.",
     "approvals.myActions": "Your call",
     "approvals.noSelection": "Pick an item on the left to see details (=^･ω･^=)",
+    "approvals.diffTitle": "Before → after",
+    "approvals.checksTitle": "Compliance checks",
+    "approvals.aiTitle": "AI rationale",
+    "approvals.benefitTitle": "Expected benefit",
+    "approvals.conflictsTitle": "Conflicts & suggestions",
+    "approvals.affectedTitle": "Affected targets",
+    "approvals.timelineTitle": "Approval flow",
+    "approvals.discussionTitle": "Discussion",
+    "approvals.commentsEmpty": "No discussion yet — say something (=^･ω･^=)",
+    "approvals.commentPlaceholder": "Write a comment…",
+    "approvals.commentSubmit": "Comment",
+    "approvals.reasonLabel": "Your note",
+    "approvals.reasonPlaceholder": "Optional: explain your decision",
+    "approvals.rememberLabel": "Remember my decision (auto-approve similar)",
     "workitem.kicker": "Work item",
     "workitem.statusTitle": "Status",
     "workitem.deliverableTitle": "Deliverable",

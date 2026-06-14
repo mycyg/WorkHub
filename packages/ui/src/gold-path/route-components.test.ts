@@ -1475,3 +1475,30 @@ test("R5.9 product shell shows the current user chip with logout and admin tag",
   assert.equal(withoutUser.html.includes("data-wh-current-user"), false);
   assert.equal(withoutUser.html.includes("data-wh-logout"), false);
 });
+
+test("W2 approval workbench renders diff/checks/timeline/discussion markers + reason/remember controls", () => {
+  const vm = surfaceVm();
+  const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
+  assert.ok(approvals);
+  const html = approvals.html;
+  // 中栏每事项详情面板 + 选中项 deliverable diff 工作台。
+  assert.equal(html.includes("data-r4-approval-detail-for="), true);
+  assert.equal(html.includes('data-r4-approval-detail-kind="deliverable"'), true);
+  assert.equal(html.includes('data-r4-approval-diff="true"'), true);
+  assert.equal(html.includes('data-r4-approval-checks="true"'), true);
+  assert.equal(html.includes('data-r4-approval-ai="true"'), true);
+  // 审批流程时间线。
+  assert.equal(html.includes('data-r4-approval-timeline="true"'), true);
+  assert.equal(html.includes("data-r4-approval-timeline-step="), true);
+  // 相关讨论：评论行 + 发表表单。
+  assert.equal(html.includes('data-r4-approval-discussion="true"'), true);
+  assert.equal(html.includes("data-r4-approval-comment="), true);
+  assert.equal(html.includes("data-r4-approval-comment-form="), true);
+  // 右栏决策面板：理由框 + 记住勾选（默认未勾）。
+  assert.equal(html.includes("data-r4-approval-reason"), true);
+  assert.equal(html.includes("data-r4-approval-remember"), true);
+  assert.equal(html.includes("checked"), false);
+  // 既有标记仍在（不破 smoke）。
+  assert.equal(html.includes('data-r4-approval-routed="true"'), true);
+  assert.equal(html.includes("data-requires-reason=\"true\""), true);
+});

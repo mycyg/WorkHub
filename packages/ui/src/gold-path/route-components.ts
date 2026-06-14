@@ -1,6 +1,7 @@
 import type {
   ActionSpec,
   ApprovalCenterVM,
+  ApprovalDetailVM,
   AttentionAction,
   AttentionHomeVM,
   AttentionItem,
@@ -139,6 +140,8 @@ export const webRouteComponentCss = [
   ".wh-r4-approval-list-item{cursor:default}.wh-r4-approval-list-item h3{font-size:14px}.wh-r4-approval-list-item p{font-size:12.5px}.wh-r4-approval-list-item[data-r4-approval-selected=true]{border-color:var(--wh-product-blue,#4F46E5);box-shadow:inset 3px 0 0 var(--wh-product-blue,#4F46E5)}",
   ".wh-r4-approval-detail h4{margin:4px 0 0;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.02em;color:var(--wh-product-secondary,#5B616E)}",
   ".wh-r4-approval-evidence{list-style:none;margin:0;padding:0;display:grid;gap:6px}.wh-r4-approval-evidence li{display:grid;gap:2px;font-size:13px;line-height:1.4}.wh-r4-approval-evidence .wh-subtle{font-size:12px}",
+  ".wh-r4-approval-detail-panel[hidden]{display:none}.wh-r4-approval-detail-panel section{display:grid;gap:6px}.wh-r4-approval-field{display:grid;gap:4px}.wh-r4-approval-reason,.wh-r4-approval-comment-input{width:100%;max-width:100%;box-sizing:border-box;min-width:0;resize:vertical;font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:8px;padding:6px;overflow-wrap:anywhere}.wh-r4-approval-remember{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--wh-product-secondary,#5B616E)}.wh-r4-approval-comment-form{display:grid;gap:6px}",
+  ".wh-r4-approval-detail .wh-r4-route-row{grid-template-columns:1fr}.wh-r4-approval-detail .wh-r4-route-row p,.wh-r4-approval-detail .wh-r4-route-row strong{overflow-wrap:anywhere;white-space:normal}.wh-r4-approval-detail .wh-r4-route-meta{justify-content:flex-start}",
   "@media (max-width:1040px){.wh-r4-approvals-grid{grid-template-columns:1fr}}",
   "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}"
 ].join("");
@@ -1116,37 +1119,103 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
   });
 }
 
-function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
-  const primary = vm.items[0];
-  const pendingCount = vm.counts["pending"] ?? vm.items.length;
-  const request = vm.requests[0];
-  // 左栏：待审批列表（紧凑可点选行，primary 高亮）。操作按钮统一放右栏，避免重复 data-action-id。
-  const queueRows = vm.items
-    .map((item) => `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}">
-      <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, locale === "zh-CN"))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, locale === "zh-CN"))}</span></div>
-      <h3>${escapeHtml(item.title)}</h3>
-      <p>${escapeHtml(item.summary_text)}</p>
-      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "去处理" : "Open")}</a>` : ""}
-    </article>`)
-    .join("");
-  // 中栏：变更详情（取自 primary AttentionItem，零新增请求；深层 manifest 仍在 proposal 详情页）。
-  const evidence = primary?.evidence_refs?.length
-    ? `<ul class="wh-r4-approval-evidence" data-r4-approval-evidence-list="true">${primary.evidence_refs
+function approvalEvidenceConfidenceLabel(hint: string, zh: boolean): string {
+  return localizedEnumLabel(
+    hint,
+    zh,
+    { found: "证据充分", weak: "证据较弱", missing: "缺证据" },
+    { found: "Found", weak: "Weak", missing: "Missing" }
+  );
+}
+
+function approvalStepStatusLabel(status: string, zh: boolean): string {
+  return localizedEnumLabel(
+    status,
+    zh,
+    { done: "已完成", current: "进行中", pending: "待处理" },
+    { done: "Done", current: "Current", pending: "Pending" }
+  );
+}
+
+// W2 中栏：单个事项的「变更详情」面板。deliverable 渲染 diff 表+合规检查+AI 解释+冲突；
+// permission/tool 渲染影响目标。再叠加证据、审批流程时间线、相关讨论。非选中项 hidden（不计入溢出测量）。
+function renderApprovalDetailPanel(
+  item: AttentionItem,
+  detail: ApprovalDetailVM | undefined,
+  locale: WorkHubLocale,
+  selected: boolean
+): string {
+  const zh = locale === "zh-CN";
+  const evidence = item.evidence_refs?.length
+    ? `<ul class="wh-r4-approval-evidence" data-r4-approval-evidence-list="true">${item.evidence_refs
         .slice(0, 4)
-        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}</li>`)
+        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}${ev.confidence_hint ? `<span class="wh-pill" data-r4-approval-evidence-confidence="${escapeHtml(ev.confidence_hint)}">${escapeHtml(approvalEvidenceConfidenceLabel(ev.confidence_hint, zh))}</span>` : ""}</li>`)
         .join("")}</ul>`
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.evidenceEmpty"))}</p>`;
-  const detail = primary
-    ? `<article class="wh-card wh-r4-route-card wh-r4-route-card--accent">
-        <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.detailTitle"))}</span>
-        <h3>${escapeHtml(primary.title)}</h3>
-        <p>${escapeHtml(primary.summary_text)}</p>
-        ${primary.reason_text ? `<p class="wh-subtle">${escapeHtml(primary.reason_text)}</p>` : ""}
-        <h4>${escapeHtml(goldPathT(locale, "approvals.evidenceTitle"))}</h4>
-        ${evidence}
-        ${primary.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(primary.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(primary.work_item_id)}">${escapeHtml(locale === "zh-CN" ? "查看任务" : "View task")}</a>` : ""}
-      </article>`
+
+  const isDeliverable = detail?.kind === "deliverable" && detail.manifest_changes.length > 0;
+  const diffSection = isDeliverable
+    ? `<section data-r4-approval-diff="true"><h4>${escapeHtml(goldPathT(locale, "approvals.diffTitle"))}</h4><div class="wh-r4-route-timeline">${detail.manifest_changes.map((change) => renderChange(change, locale)).join("")}</div></section>`
+    : (detail?.affected_targets.length
+        ? `<section data-r4-approval-affected="true"><h4>${escapeHtml(goldPathT(locale, "approvals.affectedTitle"))}</h4><div class="wh-r4-route-meta">${detail.affected_targets.map((target) => `<span class="wh-pill">${escapeHtml(target)}</span>`).join("")}</div></section>`
+        : "");
+  const checksSection = detail?.checks.length
+    ? `<section data-r4-approval-checks="true"><h4>${escapeHtml(goldPathT(locale, "approvals.checksTitle"))}</h4><div class="wh-r4-route-timeline">${detail.checks.map((check) => renderCheck(check, locale)).join("")}</div></section>`
+    : "";
+  const aiSection = (detail?.ai_reason || detail?.expected_benefit || detail?.risk_label)
+    ? `<section data-r4-approval-ai="true"><h4>${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}</section>`
+    : "";
+  const conflictsSection = detail?.conflicts.length
+    ? `<section data-r4-approval-conflicts="true"><h4>${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
+    : "";
+  const timelineSection = detail?.timeline.length
+    ? `<section data-r4-approval-timeline="true"><h4>${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline">${detail.timeline.map((step) => `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${step.actor_label ? `<p class="wh-subtle">${escapeHtml(step.actor_label)}</p>` : ""}</div><span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div>`).join("")}</div></section>`
+    : "";
+  const comments = detail?.comments ?? [];
+  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${comments.length
+    ? comments.map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-comment="${escapeHtml(comment.id)}"><strong>${escapeHtml(comment.author_label)}</strong><p>${escapeHtml(comment.body)}</p></div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.commentsEmpty"))}</p>`}<form class="wh-r4-approval-comment-form" data-r4-approval-comment-form="${escapeHtml(item.id)}"><textarea class="wh-r4-approval-comment-input" data-r4-approval-comment-input rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.commentPlaceholder"))}"></textarea><button type="submit" class="wh-btn" data-r4-approval-comment-submit="${escapeHtml(item.id)}">${escapeHtml(goldPathT(locale, "approvals.commentSubmit"))}</button></form></section>`;
+
+  return `<article class="wh-card wh-r4-route-card wh-r4-route-card--accent wh-r4-approval-detail-panel" data-r4-approval-detail-for="${escapeHtml(item.id)}" data-r4-approval-detail-kind="${escapeHtml(detail?.kind ?? "permission")}"${selected ? "" : " hidden"}>
+      <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.detailTitle"))}</span>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.summary_text)}</p>
+      ${item.reason_text ? `<p class="wh-subtle">${escapeHtml(item.reason_text)}</p>` : ""}
+      ${diffSection}
+      ${checksSection}
+      ${aiSection}
+      ${conflictsSection}
+      <h4>${escapeHtml(goldPathT(locale, "approvals.evidenceTitle"))}</h4>
+      ${evidence}
+      ${timelineSection}
+      ${commentsSection}
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(item.work_item_id)}">${escapeHtml(zh ? "查看任务" : "View task")}</a>` : ""}
+    </article>`;
+}
+
+function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
+  const zh = locale === "zh-CN";
+  const primary = vm.items[0];
+  const pendingCount = vm.counts["pending"] ?? vm.items.length;
+  const selectedRequest = primary ? vm.requests.find((req) => req.id === primary.id) : undefined;
+  // 左栏：待审批列表（紧凑可点选行 + 每行 SLA，primary 默认高亮）。操作按钮统一放右栏，避免重复 data-action-id。
+  const queueRows = vm.items
+    .map((item) => {
+      const itemRequest = vm.requests.find((req) => req.id === item.id);
+      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}">
+      <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.summary_text)}</p>
+      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">SLA ${escapeHtml(itemRequest.sla_due_at)}</span>` : ""}
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(zh ? "去处理" : "Open")}</a>` : ""}
+    </article>`;
+    })
+    .join("");
+  // 中栏：每个事项一张详情面板，仅选中项可见（其余 hidden）。
+  const detailPanels = vm.items.length
+    ? vm.items.map((item) => renderApprovalDetailPanel(item, vm.items_detail[item.id], locale, item.id === primary?.id)).join("")
     : `<article class="wh-card wh-r4-route-card"><p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p></article>`;
+  // 右栏事实区：审批请求路由状态（保留 data-r4-approval-routed / Routed 标记）。
   const requestRows = vm.requests
     .map((item) => `<div class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
@@ -1178,12 +1247,14 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}
         </section>
         <section class="wh-r4-route-stack wh-r4-approval-detail" data-r4-approval-detail="true">
-          ${detail}
+          ${detailPanels}
         </section>
         <aside class="wh-r4-route-stack wh-r4-approval-actions" data-r4-approval-action-panel="true">
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.myActions"))}</h3>
             ${primary ? renderActions(primary.actions) : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p>`}
+            ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
+            <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
@@ -1191,7 +1262,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.slaTitle"))}</h3>
-            <p>${escapeHtml(request?.sla_due_at ?? goldPathT(locale, "approvals.slaEmpty"))}</p>
+            <p>${escapeHtml(selectedRequest?.sla_due_at ?? goldPathT(locale, "approvals.slaEmpty"))}</p>
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.factsTitle"))}</h3>
