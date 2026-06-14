@@ -3,10 +3,14 @@ import {
   cardFromAgentRunLive,
   createCuuController,
   createCuuIdleScheduler,
+  cuuBubbleKindForState,
+  cuuEmotionForState,
   cuuFormat,
   cuuMotionForState,
   cuuT,
+  type CuuBubbleKind,
   type CuuCard,
+  type CuuEmotion,
   type CuuController,
   type CuuControllerPreferences,
   type CuuIdleMicroAction,
@@ -133,6 +137,16 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-bubble>*{min-width:0;max-width:100%}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
+  ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:rgba(254,251,240,.97);border-color:#f1dc9c}",
+  ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-emotion{color:#a15c07}",
+  ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-dot{background:#e0892a;box-shadow:0 0 0 3px rgba(224,137,42,.18)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:rgba(255,255,255,.96);border-color:rgba(38,49,70,.14)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:rgba(234,244,254,.97);border-color:#b6d8f7}",
+  ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-emotion{color:#1f6fb2}",
+  ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-dot{background:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.18)}",
+  ".wh-pet-bubble[data-pet-bubble-emotion=celebrating] .wh-pet-emotion{color:#15a05a}",
+  ".wh-pet-bubble[data-pet-bubble-emotion=worried] .wh-pet-emotion{color:#b42318}",
   ".wh-pet-kind,.wh-pet-priority{max-width:100%;border:1px solid rgba(38,49,70,.12);border-radius:8px;background:#fff;padding:3px 6px;color:#344054;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-priority[data-priority=urgent],.wh-pet-priority[data-priority=high]{background:#fff4f3;border-color:rgba(238,107,95,.28);color:#b42318}",
   ".wh-pet-title{min-width:0;max-width:100%;width:100%;font-size:14px;line-height:1.35;font-weight:850;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
@@ -1360,8 +1374,13 @@ function renderDesktopPetBubble(input: {
     ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
     : "";
   const transientAttrs = input.status_text && !card ? ` data-pet-bubble-transient="true"` : "";
-  return `<aside class="wh-pet-bubble" data-pet-bubble="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${payloadAttrs}>
-    <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${kind}${priority}</div>
+  // R6.P3：5 情绪 + 3 气泡（cream 审批 / white 对话 / light-blue 检索），由协议态收敛而来。
+  const emotion = card ? cuuEmotionForState(card.state) : undefined;
+  const tone = card ? cuuBubbleKindForState(card.state) : undefined;
+  const emotionAttrs = emotion && tone ? ` data-pet-bubble-emotion="${emotion}" data-pet-bubble-tone="${tone}"` : "";
+  const emotionLabel = emotion && !compact ? `<span class="wh-pet-emotion">${escapeHtml(petEmotionLabel(emotion, locale))}</span>` : "";
+  return `<aside class="wh-pet-bubble" data-pet-bubble="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>
+    <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
     ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
@@ -1463,6 +1482,21 @@ function renderPetInputHint(input: NonNullable<CuuCard["input"]>, locale: WorkHu
 function evidenceLabel(ref: NonNullable<CuuCard["evidence_refs"]>[number]) {
   const locator = ref.locator?.path ?? (ref.locator?.page ? `p.${ref.locator.page}` : ref.locator?.sheet ?? "");
   return locator ? `${ref.title} · ${locator}` : ref.title;
+}
+
+function petEmotionLabel(emotion: CuuEmotion, locale: WorkHubLocale) {
+  switch (emotion) {
+    case "idle":
+      return cuuT(locale, "pet.emotion.idle");
+    case "thinking":
+      return cuuT(locale, "pet.emotion.thinking");
+    case "approval":
+      return cuuT(locale, "pet.emotion.approval");
+    case "worried":
+      return cuuT(locale, "pet.emotion.worried");
+    case "celebrating":
+      return cuuT(locale, "pet.emotion.celebrating");
+  }
 }
 
 function petCardKindLabel(kind: CuuCard["kind"], locale: WorkHubLocale) {

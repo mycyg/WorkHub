@@ -6,7 +6,11 @@ import { cuuStates } from "@workhub/contracts";
 import {
   createCuuBehaviorManifest,
   cuuBehaviorStateForState,
+  cuuBubbleKindForState,
+  cuuBubbleKinds,
   cuuDefaultLive2DRendererStateForClip,
+  cuuEmotionForState,
+  cuuEmotions,
   cuuMotionSlotForClip
 } from "./index.js";
 
@@ -65,6 +69,41 @@ test("Cuu idle random pool expresses alive micro actions without adding a third 
   ]);
   assert.equal(manifest.idle_random.every((slot) => slot.probability > 0 && slot.cooldown_ms >= 1200), true);
   assert.equal(manifest.idle_random.every((slot) => slot.renderer_state.startsWith("mtn/")), true);
+});
+
+test("Cuu collapses 10 protocol states into 5 visible emotions", () => {
+  assert.deepEqual([...cuuEmotions], ["idle", "thinking", "approval", "worried", "celebrating"]);
+  // 每个协议态都映射到 5 情绪之一，且覆盖映射表是穷尽的。
+  const seen = new Set<string>();
+  for (const state of cuuStates) {
+    const emotion = cuuEmotionForState(state);
+    assert.equal(cuuEmotions.includes(emotion), true);
+    seen.add(emotion);
+  }
+  assert.deepEqual([...seen].sort(), [...cuuEmotions].sort());
+  // 关键收敛点。
+  assert.equal(cuuEmotionForState("carrying_document"), "thinking");
+  assert.equal(cuuEmotionForState("searching_evidence"), "thinking");
+  assert.equal(cuuEmotionForState("syncing_files"), "thinking");
+  assert.equal(cuuEmotionForState("revision_requested"), "worried");
+  assert.equal(cuuEmotionForState("offline"), "idle");
+  assert.equal(cuuEmotionForState("asking_approval"), "approval");
+  assert.equal(cuuEmotionForState("celebrating"), "celebrating");
+});
+
+test("Cuu maps each state to one of three bubble tones (approval/chat/search)", () => {
+  assert.deepEqual([...cuuBubbleKinds], ["approval", "chat", "search"]);
+  for (const state of cuuStates) {
+    assert.equal(cuuBubbleKinds.includes(cuuBubbleKindForState(state)), true);
+  }
+  assert.equal(cuuBubbleKindForState("asking_approval"), "approval");
+  assert.equal(cuuBubbleKindForState("carrying_document"), "approval");
+  assert.equal(cuuBubbleKindForState("worried"), "approval");
+  assert.equal(cuuBubbleKindForState("searching_evidence"), "search");
+  assert.equal(cuuBubbleKindForState("syncing_files"), "search");
+  assert.equal(cuuBubbleKindForState("thinking"), "chat");
+  assert.equal(cuuBubbleKindForState("celebrating"), "chat");
+  assert.equal(cuuBubbleKindForState("idle"), "chat");
 });
 
 test("Cuu Live2D renderer state mapping is centralized for model packs and desktop runtime", () => {

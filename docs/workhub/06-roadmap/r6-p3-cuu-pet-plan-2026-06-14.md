@@ -1,7 +1,7 @@
 ---
 module: R6-P3-cuu-pet-bubble-emotion-rework
 layer: C-PET / CONTRACTS / UI
-status: planned
+status: done
 owner: design+engineering
 date: 2026-06-14
 depends_on:
@@ -9,6 +9,15 @@ depends_on:
 ---
 
 # 桌宠 Cuu 气泡 + 情绪映射重做计划
+
+> **交付记录(2026-06-14, status=done):** V0 已实现并全量绿。与本规划的**关键决策差异**：
+> - **不窄化 `cuuStates` 协议枚举（仍 10 个）。** 原计划要把 contract 的 10 态砍到 5，但侦察发现该枚举同时是 SSE 事件(`workHubEventSchema.cuu_state`)与 attention(`attentionItemSchema.cuu_state`)的 zod 词表，且有 21 处 `toCuuState` 映射、cards.ts 4 个函数、agent-runner 3 处、model-pack「恰好 18 motion」断言、30+ 测试断言依赖它——窄化=高风险协议破坏。
+> - **改为表现层收敛**：在 `packages/cuu/src/motion.ts` 新增 `cuuEmotionForState`(10 协议态→5 可见情绪 idle/thinking/approval/worried/celebrating) + `cuuBubbleKindForState`(→3 气泡 approval/chat/search)。协议精度不丢，用户只看到 5 情绪 + 3 气泡，且全部既有测试/8 个 cuu-r3 smoke/70 步 web smoke 零改动保绿。
+> - 气泡三色（`apps/desktop-webview/src/pet-surface.ts`）：cream 审批 `#FEFBF0/#F1DC9C` · white 对话 · light-blue 检索 `#EAF4FE/#B6D8F7`，由 `data-pet-bubble-tone` 驱动；kicker 加颜文字情绪标签（`pet.emotion.*` i18n，如「等你拍板 (｡･ω･｡)ﾉ」）。
+> - **Live2D 黑/白猫资产、`bubbleModeForState`、motion clip 绑定全部不动**（渲染层本就把 10 sprite 收敛到 ~6 个 .mtn）。
+> - 测试：cuu 35(+2 情绪/气泡映射)、desktop-webview 85、全量 `pnpm test` exit 0、6 个 cuu-r3 smoke 绿、70 步 web smoke 绿。
+> - 暂缓：气泡进出场动画、「了解更多」深链按钮（已留 `data-pet-payload-ref-href`）、把 Live2D 动作也收敛到恰好 5 个（非必要，渲染层已收敛）。
+
 
 > **范围**：缩减桌宠气泡形态（3 种）、重新映射情绪状态（10 个→5 个），保留全部 Live2D 黑猫/白猫资产与模型包，聚焦决策入口体验。
 >

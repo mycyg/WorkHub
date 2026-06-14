@@ -162,7 +162,12 @@ export type CuuCopyKey =
   | "pet.priority.urgent"
   | "pet.priority.high"
   | "pet.priority.low"
-  | "pet.priority.normal";
+  | "pet.priority.normal"
+  | "pet.emotion.idle"
+  | "pet.emotion.thinking"
+  | "pet.emotion.approval"
+  | "pet.emotion.worried"
+  | "pet.emotion.celebrating";
 
 const cuuCopy = {
   "zh-CN": {
@@ -323,7 +328,12 @@ const cuuCopy = {
     "pet.priority.urgent": "急",
     "pet.priority.high": "高",
     "pet.priority.low": "低",
-    "pet.priority.normal": "普通"
+    "pet.priority.normal": "普通",
+    "pet.emotion.idle": "待命中 (=^･ω･^=)",
+    "pet.emotion.thinking": "忙着干活 (๑˃ᴗ˂)",
+    "pet.emotion.approval": "等你拍板 (｡･ω･｡)ﾉ",
+    "pet.emotion.worried": "有点担心 (>﹏<)",
+    "pet.emotion.celebrating": "搞定啦 ٩(◜◡◝)۶"
   },
   "en-US": {
     "agentRun.doneTitle": "This run is complete",
@@ -483,7 +493,12 @@ const cuuCopy = {
     "pet.priority.urgent": "Urgent",
     "pet.priority.high": "High",
     "pet.priority.low": "Low",
-    "pet.priority.normal": "Normal"
+    "pet.priority.normal": "Normal",
+    "pet.emotion.idle": "On standby (=^･ω･^=)",
+    "pet.emotion.thinking": "On it (๑˃ᴗ˂)",
+    "pet.emotion.approval": "Your call (｡･ω･｡)ﾉ",
+    "pet.emotion.worried": "A bit worried (>﹏<)",
+    "pet.emotion.celebrating": "All done ٩(◜◡◝)۶"
   }
 } as const satisfies Record<WorkHubLocale, Record<CuuCopyKey, string>>;
 

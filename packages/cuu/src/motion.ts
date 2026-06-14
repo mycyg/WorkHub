@@ -138,6 +138,56 @@ export function allCuuMotionHints(): CuuMotionHint[] {
   return cuuStates.map((state) => cuuMotionForState(state));
 }
 
+// R6.P3 桌宠表现层：把 10 个协议态(CuuState)收敛成 5 种「可见情绪」(给猫的表情/气泡用)。
+// 协议态保持 10 个不变（SSE 事件 / attention 词表精度不丢）；这里只决定用户看到几种心情。
+export const cuuEmotions = ["idle", "thinking", "approval", "worried", "celebrating"] as const;
+export type CuuEmotion = (typeof cuuEmotions)[number];
+
+export function cuuEmotionForState(state: CuuState): CuuEmotion {
+  switch (state) {
+    case "idle":
+    case "offline":
+      return "idle";
+    case "thinking":
+    case "carrying_document":
+    case "searching_evidence":
+    case "syncing_files":
+      return "thinking";
+    case "asking_approval":
+      return "approval";
+    case "worried":
+    case "revision_requested":
+      return "worried";
+    case "celebrating":
+      return "celebrating";
+  }
+}
+
+// 三种气泡（按"用户要做什么"分色，与情绪正交）：
+// - approval(cream)：需你拍板/审阅 → 求批准 / 变更申请 / 需修改 / 风险提醒
+// - search(light-blue)：在找/同步信息 → 检索证据 / 同步文件
+// - chat(white)：日常对话 / 进展 / 完成
+export const cuuBubbleKinds = ["approval", "chat", "search"] as const;
+export type CuuBubbleKind = (typeof cuuBubbleKinds)[number];
+
+export function cuuBubbleKindForState(state: CuuState): CuuBubbleKind {
+  switch (state) {
+    case "asking_approval":
+    case "carrying_document":
+    case "revision_requested":
+    case "worried":
+      return "approval";
+    case "searching_evidence":
+    case "syncing_files":
+      return "search";
+    case "idle":
+    case "thinking":
+    case "celebrating":
+    case "offline":
+      return "chat";
+  }
+}
+
 export function createCuuBehaviorManifest(input: {
   model_pack_id: CuuBehaviorModelPackId;
   coverage?: CuuBehaviorCoverage;
