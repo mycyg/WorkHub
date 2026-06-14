@@ -1731,6 +1731,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
             actor: input.actor
           })
         : [];
+      // L#47：采纳会先把交付物写进存储树（文件系统），再开 DB 事务做 merge。若 repository.merge 之后
+      // 失败/撞车回滚，已写入的存储文件不会随 DB 事务回滚——它们是孤儿但无害（不被任何已提交行引用，
+      // 会被下次同 targetKey 采纳覆盖）。如需严格，应改为先写临时路径、事务提交后再 promote。
       const adoptedDriveFiles = await adoptDriveFilesForMerge({
         repository,
         proposalId: input.proposalId,

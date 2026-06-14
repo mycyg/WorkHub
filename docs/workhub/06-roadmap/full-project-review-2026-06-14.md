@@ -501,3 +501,20 @@ Flow verified end to end:
 Payload contract matches: Rust emits snake_case `scale_percent`/`opacity_percent`/`pass_through`/`hide_on_hover` (main.rs:331-334); the JS parser reads exactly those keys (cuu-preferences.ts:131-134). So scale/opacity/pass-through/hide-on-hover DO visually update the pet content without a reload.
 
 The finding itself hedged on this exact point ("If the Tauri Rust set_pet_window_settings command already re-broadcasts to the pet, document that contract") — and the code does re-broadcast. The reviewer appears to have only read the JS layer; note the cited path apps/desktop-webview/src-tauri does not exist (the Rust lives in client-tauri/src-tauri), so the Rust command was never opened. The proposed JS emit would in fact cause a redundant double broadcast. The only legitimate residual is documentation: nothing in the JS layer comments the Rust re-broadcast contract, but the behavior is correct, so this is not a high-severity data-flow bug.
+
+---
+
+## 修复落地记录（2026-06-14，全部 87 项已处置）
+
+按严重度从高到低分批修复，每批 `pnpm -r typecheck` + 全量 `pnpm test` + （触及 web/审批时）70 步 live-route smoke + CI 全绿后再推 main。
+
+- **Critical（3）+ High（14）**：batch1/2a/2b/2c（commit `3ee183a1`/`3cc68b3f`/`5d572d39`/`d8330e89`）。H12（首页 SSE 只刷隐藏 React 探针、可见内容不更新）为架构性改动，已 spawn 任务 `task_bd72c91e` 单独立项缓办（需重做首页 live-update 路径 + 改 70 步 smoke 的 01r/01s 断言）。
+- **Medium（27）**：batch3a/3b/3c-1/3c-2（commit `23e2da0b`/`3babebe2`/`22971a85`/`af339b6e`）。含迁移 0016（通知去重 partial unique index）。
+- **Low（43）**：batch4a–4f（commit `e1976805`/`ecb0a7bf`/`73945c43`/`5612e349`/`324ee8c4`/本提交）。含迁移 0017（通知 user_id+created_at 复合索引）、0018（agent_runs.model 加宽到 128）。
+
+**少数按设计/重复归档（非代码改动或已被他项覆盖，附理由）**：
+- **L63（重试重发流式 trace）**：已被 M16（流式 emit 节流 ≤1/s）覆盖——重试导致的重复被节流压到可忽略；trace 重建依赖 step 级记录而非 per-delta，无数据损坏。
+- **L64（按累计 token 而非实时上下文触发压缩）**：架构项。改压缩触发口径有destabilize agent loop 风险；累计 token 同时服务于成本上限，二者解耦需要新增 liveContextTokens 计数与重置逻辑，留作后续 agent-loop 迭代。
+- **L76（render.ts 与 route-components.ts 并行渲染路径漂移）**：架构项。legacy render.ts 是 R4 React 迁移遗留的并行路径，合并两条路径属较大重构，留作 React 迁移收尾时统一处理。
+- **L53（searchKnowledge 无过滤时跨租户）**：已被 H4（service 层授权：非管理员无 scope 直接 403）关闭，repo 层未过滤分支仅管理员可达（§4.4 允许）。
+- **L47 / L57 / L77 / L81**：以代码注释就地记录契约/不变量（存储写不随 DB 事务回滚；round 列为同分支多轮预留；no-JS 行编辑器统一用推荐决策；SSE 游标为尽力而为的全局值，待后端按 last_event_id 重放后改逐流）。

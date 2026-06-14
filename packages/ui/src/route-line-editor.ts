@@ -187,6 +187,8 @@ function filesFromConflicts(conflicts: ProposalConflict[]) {
 }
 
 function applyPayload(file: LineEditorFile) {
+  // L#77：无 JS（或点击任何逐 hunk 决策之前）的提交：所有 hunk 统一用 file.defaultDecision，
+  // 它等于每个 hunk 卡片上展示的推荐选项，因此 no-JS 提交与推荐一致。逐 hunk 混合选择需要 JS。
   return {
     confirm: true,
     text_hunk_overrides: {
