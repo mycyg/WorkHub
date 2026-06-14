@@ -34,7 +34,13 @@ export function persistBrowserLocale(
   } = {}
 ) {
   const storage = input.storage ?? globalThis.localStorage;
-  storage.setItem(workHubLocaleStorageKey, locale);
+  // L#69：localStorage 写入可能抛错（隐私模式/配额已满/被禁用）。语言偏好持久化失败不应中断流程——
+  // 吞掉异常并仍然应用到 document（本次会话内仍生效）。
+  try {
+    storage?.setItem(workHubLocaleStorageKey, locale);
+  } catch {
+    // 忽略：偏好无法持久化时退化为仅本次会话生效
+  }
   setDocumentLocale(locale, input.documentElement);
 }
 

@@ -13,12 +13,14 @@ import {
   createAuditLogRepository,
   getSharedDatabaseClient,
   createPermissionPolicyRepository,
+  createUserRepository,
   type AuditLogRepository,
   type ApprovalRequestRepository,
   type ApprovalRequestRow,
   type CreateApprovalRequestInput,
   type PermissionPolicyRepository,
   type UserAuthRow,
+  type UserRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import { topics } from "@workhub/events";
@@ -73,6 +75,8 @@ export type ApprovalServiceDependencies = {
   approvals: ApprovalRequestRepository;
   policies: PermissionPolicyRepository;
   auditLogs: AuditLogRepository;
+  // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
+  users?: Pick<UserRepository, "findActiveById">;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -95,6 +99,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     approvals: createApprovalRequestRepository(defaultDbClient.db),
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
+    users: createUserRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
   };
 }
@@ -399,6 +404,14 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(404, "not_found", "没有找到这条审批。");
       }
       ensureCanActOnApproval(approval, actor);
+
+      // L#48：委派目标必须是真实存在的活跃用户，否则审批会被路由进黑洞或转给非法 id。
+      if (deps.users) {
+        const target = await deps.users.findActiveById(toUserId);
+        if (!target) {
+          throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
+        }
+      }
 
       const previousUserId = approval.routedToUserId;
       const updated = await deps.approvals.delegatePending(id, toUserId, now());

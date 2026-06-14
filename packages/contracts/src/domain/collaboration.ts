@@ -246,6 +246,11 @@ const structuredWorkItemFieldTypes = {
 } as const satisfies Record<string, readonly StructuredFieldPatchValueType[]>;
 
 const structuredWorkItemPriorityValues = new Set(["low", "normal", "high", "urgent"]);
+// L#58：枚举字段的合法值按字段名查表，而不是把所有 enum 字段都当 priority 校验。
+// 新增 enum 字段必须在此登记其词表，否则一律判非法（fail-closed），不再误用 priority 词表。
+const structuredEnumFieldValues: Record<string, ReadonlySet<string>> = {
+  priority: structuredWorkItemPriorityValues
+};
 const structuredAcceptanceItemStatusSchema = z.enum(["open", "met", "unmet", "waived"]);
 export const structuredAcceptanceItemPatchSchema = z.object({
   id: idSchema,
@@ -305,8 +310,13 @@ function structuredFieldPatchValueMatchesType(input: {
     case "string":
     case "markdown":
       return typeof input.value === "string" && input.value.trim().length > 0;
-    case "enum":
-      return typeof input.value === "string" && structuredWorkItemPriorityValues.has(input.value);
+    case "enum": {
+      if (typeof input.value !== "string") {
+        return false;
+      }
+      const allowed = input.field ? structuredEnumFieldValues[input.field] : undefined;
+      return allowed ? allowed.has(input.value) : false;
+    }
     case "datetime":
       return typeof input.value === "string" && z.string().datetime({ offset: true }).safeParse(input.value).success;
     case "number":

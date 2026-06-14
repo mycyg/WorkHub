@@ -147,12 +147,25 @@ test("retry helper honors Retry-After before exponential transient backoff", () 
     ),
     { retry: true, delayMs: 2000, reason: "retry_after" }
   );
+  // 退避按 2**attempt 增长：attempt=2 → base×4（修复"前两次重试延迟相同"）。
   assert.deepEqual(nextRetryDecision({ status: 500 }, 2, { baseDelayMs: 100 }), {
+    retry: true,
+    delayMs: 400,
+    reason: "transient"
+  });
+  assert.deepEqual(nextRetryDecision({ status: 500 }, 0, { baseDelayMs: 100 }), {
+    retry: true,
+    delayMs: 100,
+    reason: "transient"
+  });
+  assert.deepEqual(nextRetryDecision({ status: 500 }, 1, { baseDelayMs: 100 }), {
     retry: true,
     delayMs: 200,
     reason: "transient"
   });
   assert.equal(nextRetryDecision({ status: 400 }, 1).retry, false);
+  // L#62：4xx 即便带 Retry-After 也不重试。
+  assert.equal(nextRetryDecision({ status: 400, headers: { get: () => "5" } }, 1).retry, false);
 });
 
 test("anthropic-compatible transport maps create requests and normalizes usage", async () => {

@@ -106,7 +106,13 @@ export class DoomLoopDetector {
 }
 
 export function controlFromAssistant(blocks: AgentAssistantBlock[], stopReason: string | undefined): AgentLoopControlSignal {
-  if (blocks.some((block) => block.type === "tool_use")) {
+  const toolUses = blocks.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
+  // L#65：max_tokens 截断时 tool_use 的 input 可能是没解析完的 partial_json（退化成 string）。
+  // 直接执行会把残缺输入喂给工具。这种情况下走 compact 重来，而不是 continue 后执行垃圾输入。
+  if (stopReason === "max_tokens" && toolUses.some((block) => typeof block.input === "string")) {
+    return "compact";
+  }
+  if (toolUses.length > 0) {
     return "continue";
   }
   if (!stopReason || stopReason === "end_turn") {

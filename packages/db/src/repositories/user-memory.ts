@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import { USER_MEMORY_MAX_ACTIVE_PER_USER, type UserMemoryCategory } from "@workhub/contracts";
 
@@ -108,16 +108,18 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
 
     async listForUser(userId, options = {}) {
       const conditions = [eq(userMemories.userId, userId), isNull(userMemories.deletedAt)];
+      // L#86：类别过滤下推到 SQL，使 LIMIT 在过滤之后生效——否则先取全类别前 N 行再过滤，
+      // 指定类别时可能返回远少于 limit 的行（明明还有更多该类别的记忆）。
+      if (options.categories?.length) {
+        conditions.push(inArray(userMemories.category, options.categories));
+      }
       const rows = await db
         .select()
         .from(userMemories)
         .where(and(...conditions))
         .orderBy(desc(userMemories.confidence), desc(sql`coalesce(${userMemories.lastUsedAt}, ${userMemories.createdAt})`))
         .limit(options.limit ?? USER_MEMORY_MAX_ACTIVE_PER_USER);
-      const filtered = options.categories?.length
-        ? rows.filter((row) => options.categories!.includes(row.category as UserMemoryCategory))
-        : rows;
-      return filtered;
+      return rows;
     },
 
     async touch(ids, at) {

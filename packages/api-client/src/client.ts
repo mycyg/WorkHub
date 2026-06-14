@@ -268,7 +268,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     getAgentRunHandoff: (runId) => request(`/api/agent-runs/${encodeURIComponent(runId)}/handoff`),
     respondApproval: (id, payload) =>
-      request(`/api/approvals/${id}/respond`, {
+      request(`/api/approvals/${encodeURIComponent(id)}/respond`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -279,14 +279,14 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
-    getProposal: (id) => request(`/api/proposals/${id}`),
+    getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
     reviewProposal: (id, payload) =>
-      request(`/api/proposals/${id}/review`, {
+      request(`/api/proposals/${encodeURIComponent(id)}/review`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),
     mergeProposal: (id, payload = {}) =>
-      request(`/api/proposals/${id}/merge`, {
+      request(`/api/proposals/${encodeURIComponent(id)}/merge`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -301,7 +301,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     nextQuestion: (sessionId, payload = {}) =>
-      request(`/api/sessions/${sessionId}/next-question`, {
+      request(`/api/sessions/${encodeURIComponent(sessionId)}/next-question`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),

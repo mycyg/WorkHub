@@ -937,7 +937,9 @@ async function refreshCurrentRouteFromLiveEvent(
     return "dirty-deferred";
   }
   setLiveMetric("r4LiveRefreshMode", "page-vm-render");
-  await renderCurrentRoute(client, locale);
+  // L#79：SSE 刷新也要 fail-closed——会话过期(not_identified)时回到注册屏，
+  // 而不是让错误冒泡、让用户停在一个已失效的已登录视图上。
+  await renderCurrentRouteOrOnboard(client, locale);
   return "refreshed";
 }
 

@@ -30,34 +30,30 @@ export function nextRetryDecision(
   }
 
   const status = error.status ?? 0;
-  const retryAfter = parseRetryAfterMs(error.headers?.get("retry-after"), options.now);
-  if (retryAfter !== undefined) {
-    return { retry: true, delayMs: retryAfter, reason: "retry_after" };
-  }
-
-  if (status === 429 || status >= 500) {
-    return {
-      retry: true,
-      delayMs: (options.baseDelayMs ?? 500) * 2 ** Math.max(0, attempt - 1),
-      reason: "transient"
-    };
-  }
-
   const networkMessage = [
     error.message,
     error.code,
     error.cause instanceof Error ? error.cause.message : undefined
   ].filter(Boolean).join(" ");
-  if (
-    status === 0
-    && /\b(fetch failed|terminated|econnreset|econnrefused|etimedout|enotfound|network)\b/iu.test(networkMessage)
-  ) {
-    return {
-      retry: true,
-      delayMs: (options.baseDelayMs ?? 500) * 2 ** Math.max(0, attempt - 1),
-      reason: "transient"
-    };
+  const isNetworkError = status === 0
+    && /\b(fetch failed|terminated|econnreset|econnrefused|etimedout|enotfound|network)\b/iu.test(networkMessage);
+  const isRetryableStatus = status === 429 || status >= 500;
+  if (!isRetryableStatus && !isNetworkError) {
+    // L#62：非可重试状态（4xx，鉴权/参数错误等）即便带 Retry-After 也不重试——
+    // 否则恶意/异常上游用一个 4xx + Retry-After 就能逼客户端反复重打。
+    return { retry: false, delayMs: 0, reason: "none" };
   }
 
-  return { retry: false, delayMs: 0, reason: "none" };
+  const retryAfter = parseRetryAfterMs(error.headers?.get("retry-after"), options.now);
+  if (retryAfter !== undefined) {
+    return { retry: true, delayMs: retryAfter, reason: "retry_after" };
+  }
+
+  // L#67：退避按 2**attempt 增长（attempt 是已失败次数，从 0 起），
+  // 这样第一次、第二次、第三次重试分别是 base×1 / ×2 / ×4，而不是前两次都等于 base。
+  return {
+    retry: true,
+    delayMs: (options.baseDelayMs ?? 500) * 2 ** attempt,
+    reason: "transient"
+  };
 }
