@@ -15,7 +15,13 @@ depends_on:
 > - **L2 采纳序列化锁已上**：真库 `repositories/proposals.ts` `merge()` 事务开头 `pg_advisory_xact_lock(hashtext('project-merge:'||projectId)::bigint)`——同项目采纳串行化（projectId 早已由 workItems join 取到）。两条 accepted-change 写入路径（merge + applyMergeProposalCandidate）都填 projectId。
 > - 真 PG 验证：列/索引存在、advisory-lock SQL 合法执行；全量 `pnpm test` + `pnpm -r typecheck` 绿（迁移由 r1-pg-smoke 兜）。
 > - **侦察关键结论（影响后续测试策略）**：`apps/api/src/proposals.test.ts` 用的是 **`MemoryProposalRepository`（内存假实现）**，不碰真库 `merge()`——所以真库的 advisory lock / 撞车并发**不被 api 套件覆盖**，CI 也没有真 PG 并发 harness。
-> **→ 增量 2（语义核心，未做）**：把撞车判定键从 `(workItemId,targetKey)` 翻成 `(projectId,targetKey)`（L1 跨任务防覆盖）+ 提交前 sha 复检 + 行数断言（L3）+ rebase 流；**测试策略**：把 project-scope 撞车语义**同步进 `MemoryProposalRepository`** 让 api 套件能 CI-gated 验"两任务同项目同文件→不丢更新"，真库并发用本地真 PG 测验证（同 S2 做法）。base 快照/项目 hydrate(M1/M2) 与去黑话文案(M3 §9)各自独立增量。
+> **增量 2（语义核心）已交付：L1 跨任务防覆盖 + L3 提交前复检。**
+> - `readCurrentAccepted` 撞车判定键 `(workItemId,targetKey)` → **`(projectId,targetKey)`**（projectId 缺失回落任务级，向后兼容）；5 个相关读/作废点全部对齐 project 范围（merge / applyMergeProposalCandidate / 撞车预览），**读与作废同范围**（否则跨任务会作废错行）。
+> - **L3 提交前复检**：merge() 作废当前态时 `.returning()` + sha256_after 断言，若 0 行作废（advisory lock 下不应发生的最后防线）→ 抛错中止整笔采纳，绝不脏写。
+> - 历史行 `project_id` 一次性回填（dev DB 38→0；**生产升级需同样回填**，已记 handoff）。CI 新库无历史行、逐条带 projectId，无需回填。
+> - **真 PG 实证**（真实回填数据）：project-scope 查询能看到 6 条跨任务当前真相，而旧的 workItem-scope（别的任务来问）看到 0——正是会丢更新的洞被堵上。
+> - 回归：全量 `pnpm test`(api 161/db 15) + `pnpm -r typecheck` 绿；真库 merge 端到端由 **pilot-stack-smoke** CI 兜（real PG 真跑 agent→proposal→merge）。
+> - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止，未给"对一下底稿"友好 UX）；② 把 project-scope 撞车同步进 `MemoryProposalRepository` 做 CI-gated 跨任务测试（现靠真 PG 本地实证 + pilot-stack-smoke 兜）；③ 项目级 hydrate(AI 读整个项目)+base 底稿快照；④ 去黑话撞车卡 + 结构记录三方兜底；⑤ 回填迁移（供生产升级）。
 
 
 > **北极星延伸**：让 AI 不再被困在一个任务的小盒子里——它能读写**整个项目（一个 project 下的全部资料）**；每一次改动都是一份独立的**工作副本**（带备份/快照），人确认后才**采纳**进项目；采纳这一步由 **LLM 做三方对照**（base/我的/你的），而不是闭眼覆盖；多人异步采纳时，**用旧底稿采纳绝不能盖掉别人刚加进去的东西**（不丢更新）。全部建立在现有 `sha256_before` 乐观并发 + diff3 + AI 融合稿 + 快照之上——**扩展，不重造**。

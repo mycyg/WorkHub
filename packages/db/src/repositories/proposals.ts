@@ -387,13 +387,19 @@ function conflictsWithCurrentAccepted(input: {
 
 async function readCurrentAccepted(
   tx: WorkHubTx,
-  input: { workItemId: string; targetKey: string }
+  input: { projectId?: string | null; workItemId: string; targetKey: string }
 ) {
+  // P-COLLAB L1：项目级当前真相——同一项目跨任务改同一文件时，看到的是项目里这个文件的最新态，
+  // 不再只看本任务范围；这是"旧底稿采纳不会盖掉别人刚加进去的内容"的查询前提。
+  // projectId 缺失（历史行未回填/无项目）时回落任务级，保证向后兼容。
+  const scope = input.projectId
+    ? eq(acceptedDeliverableChanges.projectId, input.projectId)
+    : eq(acceptedDeliverableChanges.workItemId, input.workItemId);
   const rows = await tx
     .select()
     .from(acceptedDeliverableChanges)
     .where(and(
-      eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+      scope,
       eq(acceptedDeliverableChanges.targetKey, input.targetKey),
       isNull(acceptedDeliverableChanges.supersededAt)
     ))
@@ -1722,10 +1728,12 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           .select({
             proposalId: proposals.id,
             workItemId: proposals.workItemId,
+            projectId: workItems.projectId,
             title: proposals.title,
             diffManifest: proposals.diffManifest
           })
           .from(proposals)
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
           .where(and(
             eq(proposals.workItemId, workItemId),
             eq(proposals.status, "reviewed")
@@ -1735,6 +1743,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           for (const change of proposal.diffManifest.changes) {
             const key = targetKey(change);
             const current = await readCurrentAccepted(tx, {
+              projectId: proposal.projectId,
               workItemId: proposal.workItemId,
               targetKey: key
             });
@@ -2039,6 +2048,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           mergeProposalId: input.mergeProposalId
         });
         const current = await readCurrentAccepted(tx, {
+          projectId: row.projectId,
           workItemId: row.workItemId,
           targetKey: row.mergeProposal.conflictKey
         });
@@ -2119,7 +2129,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             .update(acceptedDeliverableChanges)
             .set({ supersededAt: at, updatedAt: at })
             .where(and(
-              eq(acceptedDeliverableChanges.workItemId, row.workItemId),
+              row.projectId
+                ? eq(acceptedDeliverableChanges.projectId, row.projectId)
+                : eq(acceptedDeliverableChanges.workItemId, row.workItemId),
               eq(acceptedDeliverableChanges.targetKey, row.mergeProposal.conflictKey),
               isNull(acceptedDeliverableChanges.supersededAt)
             ));
@@ -2286,7 +2298,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const resolvedConflicts: ProposalMergeConflict[] = [];
         for (const change of proposal.diffManifest.changes) {
           const key = targetKey(change);
-          const current = await readCurrentAccepted(tx, { workItemId: proposal.workItemId, targetKey: key });
+          const current = await readCurrentAccepted(tx, { projectId: proposal.projectId, workItemId: proposal.workItemId, targetKey: key });
           currentByTargetKey.set(key, current);
           if (current) {
             const conflict = conflictsWithCurrentAccepted({
@@ -2446,14 +2458,25 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           const key = targetKey(change);
           const current = currentByTargetKey.get(key) ?? null;
           if (current) {
-            await tx
+            const superseded = await tx
               .update(acceptedDeliverableChanges)
               .set({ supersededAt: at, updatedAt: at })
               .where(and(
-                eq(acceptedDeliverableChanges.workItemId, proposal.workItemId),
+                proposal.projectId
+                  ? eq(acceptedDeliverableChanges.projectId, proposal.projectId)
+                  : eq(acceptedDeliverableChanges.workItemId, proposal.workItemId),
                 eq(acceptedDeliverableChanges.targetKey, key),
-                isNull(acceptedDeliverableChanges.supersededAt)
-              ));
+                isNull(acceptedDeliverableChanges.supersededAt),
+                ...(current.sha256After ? [eq(acceptedDeliverableChanges.sha256After, current.sha256After)] : [])
+              ))
+              .returning({ id: acceptedDeliverableChanges.id });
+            // P-COLLAB L3：提交前复检。L2 advisory lock 下真相不应在事务内变；若一行都没作废，
+            // 说明读到的当前态已被改（最后防线），中止整笔采纳，绝不脏写盖掉别人内容。
+            if (superseded.length === 0) {
+              throw new Error(
+                `P-COLLAB stale-base abort: current accepted row for ${key} changed mid-transaction; merge aborted to avoid lost update.`
+              );
+            }
           }
           const acceptedChangeId = randomUUID();
           acceptedRows.push(acceptedChangeId);
