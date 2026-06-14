@@ -1,7 +1,7 @@
 ---
 module: R6-web-redesign
 layer: C-WEB / Design system
-status: planned
+status: done
 owner: design+engineering
 date: 2026-06-14
 depends_on:
@@ -9,6 +9,15 @@ depends_on:
 ---
 
 # R6 Web 设计重做：V0 设计 token + W1 决策收件箱首页 + W2 审批中心三栏 + 卖萌文案
+
+> **交付记录(2026-06-14):** V0 / W1 / **W2 已全部完成、CI 绿**。卖萌文案(C4)随各阶段持续铺开，全站统一收尾留作最后一步。
+> **W2 审批中心三栏（纯表现层，零契约/服务/smoke 改动）**：`renderApprovalsRouteComponent`(`route-components.ts`) 从两栏改三栏 `.wh-r4-approvals-grid`：
+> - **左 待审批列表** `.wh-r4-approval-list`（紧凑可点行，primary 高亮 `data-r4-approval-selected`，操作按钮移出避免重复）。
+> - **中 变更详情** `.wh-r4-approval-detail`（新增 `data-r4-approval-detail`）：取自 primary `AttentionItem` 的 summary + reason(AI解释) + `用到的证据`(evidence_refs，`data-r4-approval-evidence-list`) + 查看任务链接——**零新增请求**，深层 manifest 仍在 proposal 详情页。
+> - **右 你来拍板** `.wh-r4-approval-actions`（保留 `data-r4-approval-action-panel`）：primary.actions(同意/打回) + 规则 + 超时提醒 + 流转 timeline(`data-r4-approval-request`)。
+> - 所有 `data-r4-approval-*` 标记 + `primaryHrefs` 不变；新增 i18n `approvals.detailTitle/evidenceTitle/evidenceEmpty/myActions/noSelection`(zh/en)。1040px 以下自动堆叠。
+> - 验证：ui 66 / web 28 / typecheck 绿 / 70 步 web smoke 一次过（deny 理由门 + approve + 查看任务链 全绿）。
+
 
 ## 开工前必读
 

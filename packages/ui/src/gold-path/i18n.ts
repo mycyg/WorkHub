@@ -65,6 +65,11 @@ export type GoldPathCopyKey =
   | "approvals.ruleText"
   | "approvals.factsTitle"
   | "approvals.unrouted"
+  | "approvals.detailTitle"
+  | "approvals.evidenceTitle"
+  | "approvals.evidenceEmpty"
+  | "approvals.myActions"
+  | "approvals.noSelection"
   | "workitem.kicker"
   | "workitem.statusTitle"
   | "workitem.deliverableTitle"
@@ -228,6 +233,11 @@ const goldPathCopy = {
     "approvals.ruleText": "打回时请说明原因，AI 会照着继续改。",
     "approvals.factsTitle": "审批事实",
     "approvals.unrouted": "未路由",
+    "approvals.detailTitle": "变更详情",
+    "approvals.evidenceTitle": "用到的证据",
+    "approvals.evidenceEmpty": "这条没有附证据。",
+    "approvals.myActions": "你来拍板",
+    "approvals.noSelection": "左边选一条，这里看详情 (=^･ω･^=)",
     "workitem.kicker": "任务详情",
     "workitem.statusTitle": "状态",
     "workitem.deliverableTitle": "交付物",
@@ -390,6 +400,11 @@ const goldPathCopy = {
     "approvals.ruleText": "Rejected work must include a reason so AI can revise it.",
     "approvals.factsTitle": "Approval facts",
     "approvals.unrouted": "Unrouted",
+    "approvals.detailTitle": "Change detail",
+    "approvals.evidenceTitle": "Evidence used",
+    "approvals.evidenceEmpty": "No evidence attached to this one.",
+    "approvals.myActions": "Your call",
+    "approvals.noSelection": "Pick an item on the left to see details (=^･ω･^=)",
     "workitem.kicker": "Work item",
     "workitem.statusTitle": "Status",
     "workitem.deliverableTitle": "Deliverable",
