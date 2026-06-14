@@ -235,9 +235,9 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
 };
 
 const productShellCss = [
-  ":root{color-scheme:light;--wh-product-ink:#172033;--wh-product-muted:#66728c;--wh-product-faint:#8a96ad;--wh-product-line:#dce4f1;--wh-product-blue:#355cff;--wh-product-green:#24a66a;--wh-product-coral:#ee6b5f;--wh-product-amber:#d98b16;--wh-product-paper:#fff;--wh-product-soft:#f5f8fc}",
-  "body{margin:0;background:#f6f9fd;color:var(--wh-product-ink);overflow-x:hidden}",
-  ".wh-product-root{min-height:100vh;background:linear-gradient(180deg,#fbfdff 0%,#edf4fb 100%);font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;color:var(--wh-product-ink)}",
+  ":root{color-scheme:light;--wh-product-ink:#1A1D26;--wh-product-secondary:#5B616E;--wh-product-muted:#9AA0AC;--wh-product-faint:#C8CCD4;--wh-product-line:#E6E7EB;--wh-product-line-alt:#EEF0F3;--wh-product-blue:#4F46E5;--wh-product-blue-light:#EEF0FE;--wh-product-blue-tint:#F5F5FE;--wh-product-blue-pale:#D9DBF5;--wh-product-green:#15A05A;--wh-product-green-light:#E7F0EA;--wh-product-green-lighter:#E7F6EE;--wh-product-red:#E5484D;--wh-product-red-light:#FCECEC;--wh-product-coral:#ee6b5f;--wh-product-amber:#E0892A;--wh-product-amber-light:#FCF3E6;--wh-product-paper:#fff;--wh-product-panel:#fff;--wh-product-page:#F7F8FA;--wh-product-soft:#F5F5FE;--wh-radius-card:14px;--wh-radius-button:10px}",
+  "body{margin:0;background:var(--wh-product-page);color:var(--wh-product-ink);overflow-x:hidden}",
+  ".wh-product-root{min-height:100vh;background:var(--wh-product-page);font-family:\"Segoe UI\",system-ui,-apple-system,\"Microsoft YaHei\",\"PingFang SC\",sans-serif;color:var(--wh-product-ink)}",
   ".wh-product-root,.wh-product-root *{box-sizing:border-box;min-width:0}",
   ".wh-product-topbar{position:sticky;top:0;z-index:30;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--wh-product-line);background:rgba(255,255,255,.9);backdrop-filter:blur(18px);padding:0 22px;overflow:hidden}",
   ".wh-product-brand{display:flex;align-items:center;gap:10px;color:var(--wh-product-ink);text-decoration:none;font-weight:900;min-width:0}.wh-product-brand-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--wh-product-blue),var(--wh-product-green) 54%,var(--wh-product-coral));box-shadow:0 10px 24px rgba(53,92,255,.18);flex:0 0 auto}.wh-product-brand span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
