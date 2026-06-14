@@ -27,6 +27,8 @@ depends_on:
 > - 测试：4 个 CI-gated 单测（物化/路径逃逸/双预算上限/fail-open）；**真 PG 端到端实证**：开启后对真实 work_item 物化 38 文件/322KB、目录树正确、0 skip。全量 `pnpm test`(api 165) + typecheck 绿。
 > - **增量 4（迁移 `0015_backfill_project_id`）已交付**：回填历史 `accepted_deliverable_changes.project_id`（`UPDATE ... FROM work_items`）。新库无历史行=no-op；旧库升级后历史文件也纳入 project 范围撞车判定，彻底闭合"升级后旧文件仍可能被覆盖"的缝。drizzle check 通过、r1-pg-smoke 兜。
 > - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止；且现有"撞车→AI 融合稿"流已能功能性处理跨任务冲突，rebase 是锦上添花）；② project-scope 撞车的 CI-gated 跨任务单测（侦察发现 `MemoryProposalRepository.acceptedByTargetKey` 本就按 targetKey 全局建模 ≈ 跨任务，服务层冲突行为已被既有测试覆盖；真库路径由 pilot-stack-smoke 兜，故此项边际价值低）；③ base 底稿快照(M2，配合 rebase)；④ 去黑话撞车卡 + 结构记录三方兜底。
+>
+> - **✅ 2026-06-15 收尾（main，CI 全绿，3 增量 `651e26e3` / `ef49f6f3` / `6acbe8ab`）**：①③④ 已落。**M2 base 快照**：run 开始(hydrate 后)拍 `kind:"base"` 项目快照 → `manifest.base.snapshot_id` → `branches.baseSnapshotId`（激活闲置字段）；`findMergeContext` 出 `baseSnapshotRef`，融合候选优先用 base 快照当 diff3 共同祖先（`/outputs/` 前缀剥成 drive 路径读，记录了祖先 sha 才核对）。**rebase**：L3 撞车且有 base 快照 → `rebase_required` 409 + 去黑话卡（服务端生成，"rebase" 不过线）；`POST /:id/rebase` 重算冲突+候选**不动账本**，回既有三选项卡；web `showRebaseRequiredNotice` 接住。**关键认知**：常见"别人改了"其实走 `merge_conflict`（读时检测，已有三选项，inc2 让其祖先更准），`stale_base` 只是 L2 锁下罕见的提交期竞态死胡同，本次补掉它。**仍缓办（属 OQ-4 数据驱动）**：让 manifest 记录 `sha256_before`/对象身份以真正激活三方合并、hunk 写回路径用快照祖先、apply-candidate 路径的 rebase 门。
 
 
 > **北极星延伸**：让 AI 不再被困在一个任务的小盒子里——它能读写**整个项目（一个 project 下的全部资料）**；每一次改动都是一份独立的**工作副本**（带备份/快照），人确认后才**采纳**进项目；采纳这一步由 **LLM 做三方对照**（base/我的/你的），而不是闭眼覆盖；多人异步采纳时，**用旧底稿采纳绝不能盖掉别人刚加进去的东西**（不丢更新）。全部建立在现有 `sha256_before` 乐观并发 + diff3 + AI 融合稿 + 快照之上——**扩展，不重造**。
