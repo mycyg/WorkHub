@@ -413,6 +413,23 @@ export const projectDriveComments = pgTable(
   ]
 );
 
+// W2：审批工作台「相关讨论」评论流。克隆自 project_drive_comments 的写法。
+export const approvalComments = pgTable(
+  "approval_comments",
+  {
+    id: id(),
+    approvalId: uuid("approval_id").notNull().references((): AnyPgColumn => approvalRequests.id, { onDelete: "cascade" }),
+    authorUserId: uuid("author_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    authorNickname: varchar("author_nickname", { length: 64 }).notNull(),
+    body: text("body").notNull(),
+    ...timestamps()
+  },
+  (table) => [
+    index("approval_comments_approval_created_idx").on(table.approvalId, table.createdAt),
+    index("approval_comments_author_user_id_idx").on(table.authorUserId)
+  ]
+);
+
 export const scheduleEvents = pgTable(
   "schedule_events",
   {

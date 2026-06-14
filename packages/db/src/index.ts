@@ -12,6 +12,7 @@ export * from "./repositories/user-memory.js";
 export * from "./repositories/team-skill.js";
 export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";
+export * from "./repositories/approval-comments.js";
 export * from "./repositories/permission-policies.js";
 export * from "./repositories/notifications.js";
 export * from "./repositories/audit.js";
