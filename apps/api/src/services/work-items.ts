@@ -918,6 +918,21 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     },
 
     async searchKnowledge(input) {
+      // 授权：检索必须锚定一个可访问的工单或项目，否则跨项目/工作空间泄露知识库与工单。
+      const actorUserId = input.actor.userId ?? input.actor.id;
+      if (input.payload.work_item_id) {
+        await requireDetail(input.payload.work_item_id, input.actor); // 抛 403/404
+      } else if (input.payload.project_id) {
+        if (!input.actor.isAdmin) {
+          const project = await repository.findProjectById(input.payload.project_id);
+          if (!project || project.ownerUserId !== actorUserId) {
+            throw new WorkItemServiceError(403, "forbidden", "你没有权限检索这个项目的资料。");
+          }
+        }
+      } else if (!input.actor.isAdmin) {
+        // 既无工单也无项目 = 全局检索，非管理员禁止（避免泄露全部项目资料）。
+        throw new WorkItemServiceError(403, "forbidden", "请在具体事项或项目内检索。");
+      }
       const query = input.payload.query ?? input.payload.q;
       const searchInput: Parameters<WorkItemDataRepository["searchKnowledge"]>[0] = {};
       if (query) searchInput.query = query;

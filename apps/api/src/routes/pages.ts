@@ -162,7 +162,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    const activeRuns = await queue.listActive();
+    // 只展示请求者自己的在跑 AI（管理员看全部）。否则首页 background_runs 会泄露所有用户的活跃 run。
+    const actor = c.var.actor;
+    const activeRuns = (await queue.listActive()).filter((run) => actor.isAdmin || run.actor_id === actor.id);
     // 战绩是首页加分项：取数失败/无数据时静默降级（worklog 为可选字段，UI 不渲染横幅）。
     let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
     try {

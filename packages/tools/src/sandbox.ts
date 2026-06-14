@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -53,6 +54,32 @@ export function ensureCommandAllowed(args: string[]) {
   }
 }
 
+// 防符号链接逃逸：词法检查（path.relative）挡不住沙箱内一个指向外部的 symlink。
+// 解析 target 最近的"已存在祖先"的真实路径，确认仍在 workdir 真实根内。workdir 本身不存在时
+// （纯路径单测）跳过——没有真实文件就没有 symlink 可跟。
+function realpathEscapes(root: string, target: string): boolean {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    return false; // workdir 不存在 → 无 symlink 风险，词法守卫已足够
+  }
+  let probe = target;
+  for (;;) {
+    try {
+      const real = realpathSync(probe);
+      const rel = path.relative(realRoot, real);
+      return rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel));
+    } catch {
+      const parent = path.dirname(probe);
+      if (parent === probe) {
+        return false;
+      }
+      probe = parent;
+    }
+  }
+}
+
 export function safeResolvePath(workdir: string, inputPath = ".") {
   if (inputPath.includes("\0")) {
     throw new Error("path must not contain null bytes");
@@ -60,11 +87,11 @@ export function safeResolvePath(workdir: string, inputPath = ".") {
   const root = path.resolve(workdir);
   const target = path.resolve(root, inputPath);
   const relative = path.relative(root, target);
-  if (relative === "") {
-    return target;
-  }
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) {
     throw new Error("path escapes workdir");
+  }
+  if (realpathEscapes(root, target)) {
+    throw new Error("path escapes workdir via symlink");
   }
   return target;
 }
@@ -126,15 +153,41 @@ export const nodeCommandRunner: CommandRunner = async ({ args, cwd, timeoutSecon
     });
     let stdout = "";
     let stderr = "";
+    let truncated = false;
+    // 输出上限：被白名单命令（LLM 可控，如 python3 -c "print('x'*N)"）在超时窗口内能吐 GB 级，
+    // 撑爆 agent 宿主内存（DoS）。各流封顶并截断 + 杀进程。
+    const MAX_STREAM_BYTES = 2 * 1024 * 1024;
+    const capStop = () => {
+      if (!truncated) {
+        truncated = true;
+        child.kill("SIGKILL");
+      }
+    };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
     }, timeoutSeconds * 1000);
 
     child.stdout?.on("data", (chunk: Buffer) => {
+      if (stdout.length >= MAX_STREAM_BYTES) {
+        capStop();
+        return;
+      }
       stdout += chunk.toString("utf8");
+      if (stdout.length > MAX_STREAM_BYTES) {
+        stdout = `${stdout.slice(0, MAX_STREAM_BYTES)}\n[output truncated]`;
+        capStop();
+      }
     });
     child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length >= MAX_STREAM_BYTES) {
+        capStop();
+        return;
+      }
       stderr += chunk.toString("utf8");
+      if (stderr.length > MAX_STREAM_BYTES) {
+        stderr = `${stderr.slice(0, MAX_STREAM_BYTES)}\n[output truncated]`;
+        capStop();
+      }
     });
     child.on("close", (code) => {
       clearTimeout(timer);

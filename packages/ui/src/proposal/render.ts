@@ -108,6 +108,16 @@ function escapeHtml(value: unknown) {
     .replace(/"/gu, "&quot;");
 }
 
+// 契约/外部来源的 href（evidence.source_url、preview_ref.href 等）可能带 javascript:/data: 协议 → XSS。
+// 只放行相对路径与 http/https/mailto，其余拦成 "#"。仍需再过 escapeHtml。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
+}
+
 function stripMarkdown(value: string) {
   return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
 }
@@ -542,7 +552,7 @@ function renderChange(change: DeliverableChange, options?: UiRenderOptions) {
   const locale = uiLocale(options);
   const path = change.target_ref.path ?? change.target_ref.entity_id ?? change.target_ref.entity_type;
   const preview = change.preview_ref
-    ? `<a class="wh-pill" href="${escapeHtml(change.preview_ref.href)}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
+    ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
     : "";
   return `<div class="wh-row" data-change-kind="${escapeHtml(change.target_kind)}" data-change-type="${escapeHtml(change.change_type)}">
     <div>
@@ -573,7 +583,7 @@ function renderEvidence(evidenceRefs: EvidenceRef[], options?: UiRenderOptions) 
   return evidenceRefs
     .map(
       (ref) =>
-        `<article class="wh-card" data-evidence-source="${escapeHtml(ref.source_type)}"><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p>${ref.href ? `<a class="wh-pill" href="${escapeHtml(ref.href)}">${escapeHtml(uiT(locale, "generic.openSource"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}</article>`
+        `<article class="wh-card" data-evidence-source="${escapeHtml(ref.source_type)}"><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p>${ref.href ? `<a class="wh-pill" href="${escapeHtml(safeHref(ref.href))}">${escapeHtml(uiT(locale, "generic.openSource"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}</article>`
     )
     .join("");
 }

@@ -613,6 +613,16 @@ function escapeHtml(value: unknown) {
     .replace(/"/gu, "&quot;");
 }
 
+// 契约/外部来源的 href（evidence.href、preview_ref.href）可能带 javascript:/data: → XSS。
+// 只放行相对路径与 http/https/mailto，其余拦成 "#"。仍需再过 escapeHtml。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
+}
+
 function dataAttrs(attrs: Record<string, string>) {
   return Object.entries(attrs)
     .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
@@ -994,7 +1004,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
   const evidence = primary?.evidence_refs?.length
     ? `<ul class="wh-r4-approval-evidence" data-r4-approval-evidence-list="true">${primary.evidence_refs
         .slice(0, 4)
-        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(ev.href)}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}</li>`)
+        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}</li>`)
         .join("")}</ul>`
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.evidenceEmpty"))}</p>`;
   const detail = primary
@@ -1258,7 +1268,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
 function renderChange(change: DeliverableChange, locale: WorkHubLocale) {
   const path = change.target_ref.path ?? change.target_ref.entity_id ?? change.target_ref.entity_type;
   const preview = change.preview_ref
-    ? `<a class="wh-pill" href="${escapeHtml(change.preview_ref.href)}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
+    ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
     : "";
   return `<div class="wh-r4-route-row" data-r4-proposal-change="${escapeHtml(change.id)}" data-r4-proposal-change-kind="${escapeHtml(change.target_kind)}" data-r4-proposal-change-type="${escapeHtml(change.change_type)}">
     <div>

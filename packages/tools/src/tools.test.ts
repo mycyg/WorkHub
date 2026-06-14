@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -38,6 +38,23 @@ test("remote package execution (exec/dlx/x) is disabled", () => {
   assert.throws(() => ensureCommandAllowed(["npm", "exec", "cowsay"]), /disabled/);
   assert.throws(() => ensureCommandAllowed(["pnpm", "dlx", "cowsay"]), /disabled/);
   assert.throws(() => ensureCommandAllowed(["bun", "x", "cowsay"]), /disabled/);
+});
+
+test("safeResolvePath rejects symlink escapes via realpath containment", async () => {
+  const wd = await mkdtemp(path.join(os.tmpdir(), "wh-sbx-"));
+  const outside = await mkdtemp(path.join(os.tmpdir(), "wh-out-"));
+  try {
+    const secret = path.join(outside, "secret.txt");
+    await writeFile(secret, "top secret");
+    await symlink(secret, path.join(wd, "link.txt"));
+    // 沙箱内一个指向外部的 symlink：词法检查放行，realpath 守卫必须拦下。
+    assert.throws(() => safeResolvePath(wd, "link.txt"), /symlink/);
+    // 沙箱内尚不存在的新文件仍可解析（写入路径）。
+    assert.doesNotThrow(() => safeResolvePath(wd, "new-output.txt"));
+  } finally {
+    await rm(wd, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
 });
 
 test("side-effect tools fail closed without a snapshot hook", async () => {
