@@ -12,7 +12,7 @@ WorkHub 让团队里"绝大多数事"由 AI 默认完成,人只在 AI **做不�
 
 本仓库目前是 **产品规格文档树 + TS-first WorkHub 实现**。S1 序列 R5.9–R5.12 已把 onboarding、agent 能力强化、pilot 部署包、沙箱能力库与权限矩阵审计落完；R5.10-dry 与 R5.10-real 已证明需求到交付下载、真实 provider 质量/成本/时延、信息不足升级与预算护栏。S1 Pilot Launch Gate、S1 Day 0 真实入口、S1 Day 1 反馈观测、S1 Day 2 反馈硬化均已通过；Day3 preflight 已确认 opened proposal / active run / pending approval 均为 `0`，Day2 QA proposal 已正式打回，六指标 gates 仍全 true，backup/restore 通过。下一施工线是 Day 3 expansion：邀请 1-3 个真实使用者，每人 1 件真实任务，继续采集 metrics/feedback。
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 155 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
+- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md) —— 156 篇(架构 / AI 引擎 / 协作 / 业务模块 / 客户端 / 路线图 / 成本治理 / 视觉 QA)
 - 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
 - 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
 
