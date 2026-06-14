@@ -272,6 +272,17 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    delegateApproval: (id, payload) =>
+      request(`/api/approvals/${encodeURIComponent(id)}/delegate`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    listApprovalComments: (id) => request(`/api/approvals/${encodeURIComponent(id)}/comments`),
+    postApprovalComment: (id, payload) =>
+      request(`/api/approvals/${encodeURIComponent(id)}/comments`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     createProposalFromManifest: (workItemId, payload) =>
       request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`, {
         method: "POST",

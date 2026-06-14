@@ -62,6 +62,12 @@ export const delegateApprovalRequestSchema = z.object({
 });
 export type DelegateApprovalRequest = z.infer<typeof delegateApprovalRequestSchema>;
 
+// W2：审批工作台「相关讨论」发表评论。
+export const addApprovalCommentRequestSchema = z.object({
+  body: z.string().trim().min(1).max(4000)
+});
+export type AddApprovalCommentRequest = z.infer<typeof addApprovalCommentRequestSchema>;
+
 export const permissionPolicyWriteSchema = z.object({
   scope_kind: permissionScopeKindSchema,
   scope_id: z.string().min(1).max(64),

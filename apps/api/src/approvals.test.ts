@@ -816,3 +816,79 @@ test("W2 listPendingForUser degrades to empty detail when no proposals dep is wi
   assert.equal(detail?.comments.length, 0);
   assert.equal(detail?.timeline[0]?.kind, "created");
 });
+
+test("W2 approval comment routes: GET/POST behind read gate, 422 on empty body, 403 without access", async () => {
+  const runtimeSettings = settings();
+  const approvals = new MemoryApprovals();
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.inspect",
+    workItemId: "50000000-0000-4000-8000-0000000000c4",
+    routedToUserId: approverId
+  });
+  const commentRows: ApprovalCommentRow[] = [];
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    approvalComments: {
+      listByApproval: async (id) => commentRows.filter((commentRow) => commentRow.approvalId === id),
+      create: async (input) => {
+        const created: ApprovalCommentRow = {
+          id: `20000000-0000-4000-8000-${String(commentRows.length + 1).padStart(12, "0")}`,
+          approvalId: input.approvalId,
+          authorUserId: input.authorUserId,
+          authorNickname: input.authorNickname,
+          body: input.body,
+          createdAt: now,
+          updatedAt: now
+        };
+        commentRows.push(created);
+        return created;
+      }
+    },
+    now: () => now
+  });
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service,
+    workItems: allowingWorkItems()
+  }));
+
+  const initial = await app.request(`/api/approvals/${seeded.id}/comments`, { headers });
+  assert.equal(initial.status, 200);
+  assert.deepEqual((await initial.json() as { data: unknown[] }).data, []);
+
+  const posted = await app.request(`/api/approvals/${seeded.id}/comments`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ body: "建议错峰执行。" })
+  });
+  assert.equal(posted.status, 200);
+  assert.equal(typeof (await posted.json() as { data: { author_label: string } }).data.author_label, "string");
+
+  const after = await app.request(`/api/approvals/${seeded.id}/comments`, { headers });
+  assert.equal((await after.json() as { data: unknown[] }).data.length, 1);
+
+  const empty = await app.request(`/api/approvals/${seeded.id}/comments`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ body: "   " })
+  });
+  assert.equal(empty.status, 422);
+
+  const deniedApp = withErrors(new Hono<AuthEnv>());
+  deniedApp.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service,
+    workItems: denyingWorkItems()
+  }));
+  const forbidden = await deniedApp.request(`/api/approvals/${seeded.id}/comments`, { headers });
+  assert.equal(forbidden.status, 403);
+});

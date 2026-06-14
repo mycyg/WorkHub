@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import {
   type ApprovalCenterVM,
   type ApprovalRequest,
+  addApprovalCommentRequestSchema,
   delegateApprovalRequestSchema,
   respondApprovalRequestSchema
 } from "@workhub/contracts";
@@ -111,6 +112,20 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     await assertCanReadApproval(c.req.param("id"), c.var.actor);
     const payload = delegateApprovalRequestSchema.parse(await c.req.json());
     const data = await service.delegate(c.req.param("id"), c.var.actor, payload.to_user_id);
+    return c.json({ ok: true, data });
+  });
+
+  // W2：审批工作台「相关讨论」评论流，读写都过同一资源可见性闸门。
+  routes.get("/:id/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    const data = await service.listComments(c.req.param("id"));
+    return c.json({ ok: true, data });
+  });
+
+  routes.post("/:id/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    const payload = addApprovalCommentRequestSchema.parse(await c.req.json());
+    const data = await service.addComment(c.req.param("id"), c.var.actor, payload.body);
     return c.json({ ok: true, data });
   });
 

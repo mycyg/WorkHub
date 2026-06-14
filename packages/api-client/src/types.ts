@@ -34,6 +34,9 @@ import type {
   ReplayTraceVM,
   ReviewProposalRequest,
   RespondApprovalRequest,
+  DelegateApprovalRequest,
+  AddApprovalCommentRequest,
+  ApprovalCommentVM,
   MergeProposalRequest,
   NextQuestionRequest,
   SessionVM,
@@ -188,6 +191,9 @@ export type WorkHubApiClient = {
   abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
+  listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;
+  postApprovalComment: (id: string, payload: AddApprovalCommentRequest) => Promise<ApprovalCommentVM>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
   listWorkItemConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;

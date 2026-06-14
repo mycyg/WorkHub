@@ -597,6 +597,41 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       };
     },
 
+    async listComments(id: string): Promise<ApprovalCommentVM[]> {
+      if (!deps.approvalComments) {
+        return [];
+      }
+      return (await deps.approvalComments.listByApproval(id)).map(toApprovalCommentVm);
+    },
+
+    async addComment(id: string, actor: AuthActor, body: string): Promise<ApprovalCommentVM> {
+      const approval = await deps.approvals.findById(id);
+      if (!approval) {
+        throw new ApprovalServiceError(404, "not_found", "没有找到这条审批。");
+      }
+      if (!deps.approvalComments) {
+        throw new ApprovalServiceError(503, "comments_unavailable", "评论功能暂不可用。");
+      }
+      const created = await deps.approvalComments.create({
+        approvalId: id,
+        authorUserId: approverId(actor),
+        authorNickname: actorNickname(actor),
+        body
+      });
+      await auditApprovalAction(approval, {
+        action: "approval.commented",
+        actor: {
+          kind: "human",
+          label: actorNickname(actor),
+          orgId: actor.orgId,
+          workspaceId: actor.workspaceId,
+          ...(actor.userId ? { userId: actor.userId } : {})
+        },
+        detail: { approval_id: id, comment_id: created.id }
+      });
+      return toApprovalCommentVm(created);
+    },
+
     async expireDueApprovals(options: { limit?: number } = {}): Promise<ApprovalExpirationResult[]> {
       const at = now();
       const dueRows = await deps.approvals.listPendingDue(at, options.limit);

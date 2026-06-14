@@ -177,6 +177,15 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async respondApproval() {
       throw new Error("not needed");
     },
+    async delegateApproval() {
+      throw new Error("not needed");
+    },
+    async listApprovalComments() {
+      throw new Error("not needed");
+    },
+    async postApprovalComment() {
+      throw new Error("not needed");
+    },
     async createProposalFromManifest() {
       throw new Error("not needed");
     },
