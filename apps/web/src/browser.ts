@@ -406,6 +406,65 @@ function bindGoldPathNavigation(
       showOnboardingScreen(client, locale);
       return;
     }
+
+    // W2：左栏选择——点选一行，高亮它、显示对应中栏详情面板、把右栏决策按钮重绑到选中事项。
+    const approvalRow = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-r4-approval-item]") : null;
+    if (approvalRow && !(event.target instanceof Element && event.target.closest("a,button,textarea,input,form"))) {
+      const itemId = approvalRow.dataset["r4ApprovalItem"];
+      if (itemId) {
+        shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-item]").forEach((rowEl) => {
+          rowEl.setAttribute("data-r4-approval-selected", String(rowEl === approvalRow));
+        });
+        shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-detail-for]").forEach((panel) => {
+          if (panel.dataset["r4ApprovalDetailFor"] === itemId) {
+            panel.removeAttribute("hidden");
+          } else {
+            panel.setAttribute("hidden", "");
+          }
+        });
+        const respondHref = approvalRow.dataset["r4ApprovalRespondHref"];
+        if (respondHref) {
+          shellRoot.querySelectorAll<HTMLAnchorElement>("[data-r4-approval-action-panel] a[data-action-id]").forEach((link) => {
+            const id = link.getAttribute("data-action-id");
+            if (id === "approve" || id === "deny") {
+              link.setAttribute("href", respondHref);
+            }
+          });
+        }
+      }
+      return;
+    }
+
+    // W2：相关讨论——发表评论（乐观追加，再回填服务端结果）。
+    const commentSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r4-approval-comment-submit]") : null;
+    if (commentSubmit) {
+      event.preventDefault();
+      const approvalId = commentSubmit.dataset["r4ApprovalCommentSubmit"];
+      const form = commentSubmit.closest<HTMLFormElement>("[data-r4-approval-comment-form]");
+      const input = form?.querySelector<HTMLTextAreaElement>("[data-r4-approval-comment-input]");
+      const body = input?.value.trim();
+      if (approvalId && body) {
+        try {
+          const comment = await client.postApprovalComment(approvalId, { body });
+          if (form && input) {
+            const row = document.createElement("div");
+            row.className = "wh-r4-route-row wh-r4-route-row--stacked";
+            row.setAttribute("data-r4-approval-comment", comment.id);
+            const author = document.createElement("strong");
+            author.textContent = comment.author_label;
+            const text = document.createElement("p");
+            text.textContent = comment.body;
+            row.append(author, text);
+            form.parentElement?.insertBefore(row, form);
+            input.value = "";
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, "approval_comment"));
+        }
+      }
+      return;
+    }
+
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
     if (reasonButton && (pendingReviewHref || pendingApprovalId)) {
       event.preventDefault();
@@ -428,10 +487,11 @@ function bindGoldPathNavigation(
       }
       if (pendingApprovalId) {
         try {
+          const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           const result = await client.respondApproval(pendingApprovalId, {
             decision: "deny",
             reason_md: reasonMd,
-            remember: "once"
+            remember
           });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), pendingApprovalActionId ?? "deny"));
           pendingApprovalId = undefined;
@@ -803,7 +863,8 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const result = await client.respondApproval(approvalRespondId, { decision: "allow", remember: "once" });
+          const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
+          const result = await client.respondApproval(approvalRespondId, { decision: "allow", remember });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "approve"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "approve"));
