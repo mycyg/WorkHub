@@ -2856,8 +2856,8 @@ function auditExpression() {
       textOverflowCount: textOverflowSamples.length,
       textOverflowSamples: textOverflowSamples.slice(0, 8),
       topbarNavOverlap,
-      zhChrome: text.includes("工作入口") && text.includes("当前焦点"),
-      enChrome: text.includes("Work entry") && text.includes("Focus")
+      zhChrome: text.includes("工作入口"),
+      enChrome: text.includes("Work entry")
     };
   })()`;
 }

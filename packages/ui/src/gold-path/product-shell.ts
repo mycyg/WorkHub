@@ -423,14 +423,14 @@ export function renderWebProductShell(
           <div class="wh-product-nav-list">${nav}</div>
         </nav>
         <main class="wh-product-main">
-          <section class="wh-product-masthead" data-r4-product-masthead="true">
+          ${activeKey === "home" ? "" : `<section class="wh-product-masthead" data-r4-product-masthead="true">
             <div>
               <p class="wh-product-kicker">${escapeHtml(productT(locale, "rail.now"))}</p>
               <h1>${escapeHtml(activeTitle)}</h1>
               <p>${escapeHtml(activeSubtitle)}</p>
             </div>
             ${metrics}
-          </section>
+          </section>`}
           <div class="wh-product-route-panels">${panels}</div>
         </main>
         <aside class="wh-product-rail" aria-label="${escapeHtml(productT(locale, "rail.now"))}">

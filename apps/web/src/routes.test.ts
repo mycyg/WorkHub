@@ -963,7 +963,8 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     assert.deepEqual(calls, [endpointCall]);
     assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
     assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
-    assert.equal(result.html.includes('data-r4-product-masthead="true"'), true);
+    // R6 W1: home (决策收件箱) owns its own full layout — the shell masthead is suppressed there.
+    assert.equal(result.html.includes('data-r4-product-masthead="true"'), path !== "/");
     assert.equal(result.html.match(/data-wh-panel=/gu)?.length, 1);
     assert.equal(result.html.includes('href="#/approvals"'), false);
     assert.equal(result.html.includes('href="/approvals"'), true);

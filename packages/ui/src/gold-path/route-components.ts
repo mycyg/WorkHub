@@ -129,6 +129,12 @@ export const webRouteComponentCss = [
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
   ".wh-r5-meeting-text{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;color:var(--wh-product-muted,#66728c);font-family:\"Aptos\",\"Segoe UI\",sans-serif;font-size:13px;line-height:1.55;overflow-wrap:anywhere}",
+  ".wh-r4-home-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid #F1DC9C;border-radius:12px;background:#FEFBF0;color:#8A7330;font-size:13.5px;font-weight:700;flex-wrap:wrap;line-height:1.5}.wh-r4-home-banner b{color:#1A1D26;font-weight:900}.wh-r4-home-banner-cat{width:18px;height:18px;border-radius:50% 50% 45% 45%;background:#1A1D26;position:relative;flex:0 0 auto}.wh-r4-home-banner-cat::before,.wh-r4-home-banner-cat::after{content:\"\";position:absolute;top:6px;width:4px;height:4px;border-radius:999px;background:#F4D35E}.wh-r4-home-banner-cat::before{left:4px}.wh-r4-home-banner-cat::after{right:4px}.wh-r4-home-kao{color:var(--wh-product-blue,#4F46E5)}",
+  ".wh-r4-home-chips{display:flex;gap:10px;flex-wrap:wrap}.wh-r4-home-chip{display:flex;align-items:center;gap:8px;padding:11px 14px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;background:#fff;font-size:12.5px;font-weight:700;color:var(--wh-product-secondary,#5B616E);min-width:118px}.wh-r4-home-chip b{font-size:22px;font-weight:900;color:var(--wh-product-ink,#1A1D26);line-height:1}.wh-r4-home-chip--accent{border-color:var(--wh-product-blue-pale,#D9DBF5);background:var(--wh-product-blue-tint,#F5F5FE);color:var(--wh-product-blue,#4F46E5)}.wh-r4-home-chip--accent b{color:var(--wh-product-blue,#4F46E5)}.wh-r4-home-chip--ok b{color:var(--wh-product-green,#15A05A)}",
+  ".wh-r4-decision{position:relative;border-color:var(--wh-product-blue-pale,#D9DBF5);overflow:hidden}.wh-r4-decision .wh-r4-decision-top{position:absolute;top:0;left:0;right:0;height:3px;background:var(--wh-product-blue,#4F46E5)}.wh-r4-decision h3{font-size:18px}",
+  ".wh-r4-prio{font-weight:800}.wh-r4-prio--danger{background:var(--wh-product-red-light,#FCECEC);color:var(--wh-product-red,#E5484D)}.wh-r4-prio--warn{background:var(--wh-product-amber-light,#FCF3E6);color:var(--wh-product-amber,#E0892A)}.wh-r4-prio--muted{background:var(--wh-product-blue-light,#EEF0FE);color:var(--wh-product-blue,#4F46E5)}",
+  ".wh-r4-status{display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--wh-product-line-alt,#EEF0F3);font-size:12.5px;font-weight:700;color:var(--wh-product-secondary,#5B616E)}",
+  ".wh-r4-run{display:flex;align-items:center;gap:10px;justify-content:space-between;border-top:1px solid var(--wh-product-line-alt,#EEF0F3);padding-top:10px}.wh-r4-run:first-child{border-top:0;padding-top:0}.wh-r4-run-main{min-width:0}.wh-r4-run-main strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-r4-run-main p{margin:2px 0 0;color:var(--wh-product-muted,#9AA0AC);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-r4-runstate{flex:0 0 auto;font-weight:800}.wh-r4-runstate--accent{background:var(--wh-product-blue-light,#EEF0FE);color:var(--wh-product-blue,#4F46E5)}.wh-r4-runstate--warn{background:var(--wh-product-amber-light,#FCF3E6);color:var(--wh-product-amber,#E0892A)}.wh-r4-runstate--danger{background:var(--wh-product-red-light,#FCECEC);color:var(--wh-product-red,#E5484D)}",
   "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}"
 ].join("");
 
@@ -714,28 +720,80 @@ function approvalRouteLabel(routedToUserId: string | undefined, locale: WorkHubL
   return locale === "zh-CN" ? "已路由" : "Routed";
 }
 
+function homePriorityPill(priority: string, zh: boolean): string {
+  const map: Record<string, [string, string]> = zh
+    ? { urgent: ["紧急", "danger"], high: ["较高", "warn"], normal: ["常规", "muted"], low: ["低", "muted"] }
+    : { urgent: ["Urgent", "danger"], high: ["High", "warn"], normal: ["Normal", "muted"], low: ["Low", "muted"] };
+  const [label, tone] = map[priority] ?? [priority, "muted"];
+  return `<span class="wh-pill wh-r4-prio wh-r4-prio--${tone}">${escapeHtml(label)}</span>`;
+}
+
+function homeRunStateLabel(state: string, zh: boolean): string {
+  const map: Record<string, string> = zh
+    ? { queued: "排队中", running: "进行中", waiting_for_user: "等你拍板", failed: "出错了" }
+    : { queued: "Queued", running: "Running", waiting_for_user: "Needs you", failed: "Failed" };
+  return map[state] ?? state;
+}
+
+function homeRunStateTone(state: string): string {
+  return state === "failed" ? "danger" : state === "waiting_for_user" ? "warn" : "accent";
+}
+
 function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): WebRouteComponent {
   const reactComponent = createHomeReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const primary = vm.primary;
   const primaryActions = primary?.actions ?? [];
-  const backgroundRows = vm.background_runs.length
-    ? vm.background_runs.slice(0, 4).map((run) => `<div class="wh-r4-route-row" data-r4-home-background-run="${escapeHtml(run.run_id)}">
-      <div>
-        <strong>${escapeHtml(run.title)}</strong>
-        <p>${escapeHtml(run.preview_text)}</p>
-      </div>
-      <span class="wh-pill">${escapeHtml(run.state)}</span>
-    </div>`).join("")
+  const zh = locale === "zh-CN";
+  const decideCount = vm.queue.length + (primary ? 1 : 0);
+  const workingCount = vm.background_runs.length;
+  const evidenceCount = primary?.evidence_refs?.length ?? 0;
+  const worklog = vm.worklog;
+
+  const worklogBanner = worklog
+    ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
+        <span class="wh-r4-home-banner-cat" aria-hidden="true"></span>
+        <span>${escapeHtml(zh ? "今天我替你扛了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>
+      </div>`
+    : "";
+
+  const chips = `<div class="wh-r4-home-chips">
+      <span class="wh-r4-home-chip wh-r4-home-chip--accent"><b>${escapeHtml(String(decideCount))}</b>${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
+      <span class="wh-r4-home-chip"><b>${escapeHtml(String(workingCount))}</b>${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
+      <span class="wh-r4-home-chip wh-r4-home-chip--ok"><b>0</b>${escapeHtml(zh ? "风险 ✓ 安心" : "Risk ✓")}</span>
+    </div>`;
+
+  const decisionCard = primary
+    ? `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
+        <div class="wh-r4-decision-top"></div>
+        <div class="wh-r4-route-meta">${homePriorityPill(primary.priority, zh)}<span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span></div>
+        <h3>${escapeHtml(primary.title)}</h3>
+        <p>${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
+        ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
+        ${renderActions(primaryActions)}
+      </section>`
+    : `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
+        <div class="wh-r4-decision-top"></div>
+        <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
+        <h3>${escapeHtml(goldPathT(locale, "home.emptyTitle"))}</h3>
+        <p>${escapeHtml(goldPathT(locale, "home.emptySummary"))}</p>
+      </section>`;
+
+  const runRows = vm.background_runs.length
+    ? vm.background_runs.slice(0, 4).map((run) => `<div class="wh-r4-run" data-r4-home-background-run="${escapeHtml(run.run_id)}">
+        <div class="wh-r4-run-main"><strong>${escapeHtml(run.title)}</strong><p>${escapeHtml(run.preview_text)}</p></div>
+        <span class="wh-pill wh-r4-runstate wh-r4-runstate--${homeRunStateTone(run.state)}">${escapeHtml(homeRunStateLabel(run.state, zh))}</span>
+      </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "home.aiWorkingEmpty"))}</p>`;
+
   const evidenceRows = primary?.evidence_refs?.length
     ? primary.evidence_refs.slice(0, 3).map((ref) => `<div class="wh-r4-route-row" data-r4-home-evidence="${escapeHtml(ref.id)}">
-      <div>
-        <strong>${escapeHtml(ref.title)}</strong>
-        <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
-      </div>
-      <span class="wh-pill">${escapeHtml(ref.source_type)}</span>
-    </div>`).join("")
+        <div>
+          <strong>${escapeHtml(ref.title)}</strong>
+          <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
+        </div>
+        <span class="wh-pill">${escapeHtml(ref.source_type)}</span>
+      </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "empty.evidence"))}</p>`;
 
   return createWebRouteComponent({
@@ -747,23 +805,21 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
     pageVm: "attention",
     reactComponent,
     html: `<section class="wh-r4-route" data-r4-route-component="home" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-home-primary="${escapeHtml(String(Boolean(primary)))}">
+      ${worklogBanner}
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.kicker"))}</span>
-          <h2>${escapeHtml(primary?.title ?? goldPathT(locale, "home.emptyTitle"))}</h2>
-          <p>${escapeHtml(primary?.summary_text ?? goldPathT(locale, "home.emptySummary"))}</p>
+          <h2>${escapeHtml(zh ? "决策收件箱" : "Decision inbox")}</h2>
+          <p>${escapeHtml(zh ? "AI 替你扛了大半，这儿只留要你拍板的。" : "AI handles the rest — only decisions that need you land here.")}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.queue.length + (primary ? 1 : 0)))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(String(decideCount))}</span>
       </header>
+      ${chips}
       <div class="wh-r4-route-grid">
-        <section class="wh-card wh-r4-route-card" data-r4-home-decision="true">
-          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
-          <h3>${escapeHtml(primary?.reason_text ?? primary?.summary_text ?? goldPathT(locale, "home.decisionEmpty"))}</h3>
-          ${renderActions(primaryActions)}
-        </section>
+        ${decisionCard}
         <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
-          <div class="wh-r4-route-timeline">${backgroundRows}</div>
+          <div class="wh-r4-route-timeline">${runRows}</div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
