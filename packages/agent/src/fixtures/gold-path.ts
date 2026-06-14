@@ -885,7 +885,9 @@ const approvalCenter: ApprovalCenterVM = {
     pending: 1,
     all: 1,
     urgent: 0
-  }
+  },
+  // W2 inc1：契约新增字段，先置空；inc3 服务/fixture 会填充真实逐项详情。
+  items_detail: {}
 };
 
 const workItemDetail: WorkItemDetailVM = {

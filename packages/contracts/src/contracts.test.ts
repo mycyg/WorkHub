@@ -49,7 +49,9 @@ import {
   structuredFieldPatchDryRunSchema,
   useEvidenceForTaskRequestSchema,
   workItemDetailVmSchema,
-  workItemStatuses
+  workItemStatuses,
+  approvalCenterVmSchema,
+  approvalDetailVmSchema
 } from "./index.js";
 
 test("work item statuses expose the data-model transition truth", () => {
@@ -1494,4 +1496,41 @@ test("S1 Day1 pilot metrics snapshot carries six ops metrics and gates", () => {
     ...snapshot,
     metrics: [{ ...snapshot.metrics[0], id: "unknown_metric" }]
   }));
+});
+
+test("W2 approvalCenterVm items_detail is additive: parses with and without it", () => {
+  const base = {
+    items: [],
+    requests: [],
+    filters: { pending: true },
+    counts: { pending: 0 }
+  };
+  // 旧调用方（无 items_detail）仍解析通过，默认补空对象。
+  const legacy = approvalCenterVmSchema.parse(base);
+  assert.deepEqual(legacy.items_detail, {});
+
+  // 新逐项详情：deliverable kind 携带 diff/checks/timeline/comments，缺省数组自动补全。
+  const detail = approvalDetailVmSchema.parse({
+    kind: "deliverable",
+    proposal_id: "30000000-0000-4000-8000-0000000000d1",
+    ai_reason: "预算从 ¥320k 提到 ¥460k 以追加投放",
+    risk_label: "中等风险",
+    timeline: [{ id: "t1", kind: "created", label: "发起申请", status: "done" }],
+    comments: [{
+      id: "30000000-0000-4000-8000-0000000000c1",
+      author_label: "刘梅",
+      body: "建议错峰执行",
+      created_at: "2026-06-14T10:24:00.000Z"
+    }]
+  });
+  assert.equal(detail.manifest_changes.length, 0);
+  assert.equal(detail.checks.length, 0);
+  assert.equal(detail.affected_targets.length, 0);
+  assert.equal(detail.timeline[0]?.kind, "created");
+
+  const enriched = approvalCenterVmSchema.parse({
+    ...base,
+    items_detail: { "20000000-0000-4000-8000-0000000000a1": detail }
+  });
+  assert.equal(enriched.items_detail["20000000-0000-4000-8000-0000000000a1"]?.kind, "deliverable");
 });

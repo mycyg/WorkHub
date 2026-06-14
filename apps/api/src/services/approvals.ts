@@ -1,6 +1,7 @@
 import {
   approvalPayloadSchema,
   eventTypes,
+  type ApprovalCenterVM,
   type ApprovalDecision,
   type ApprovalRequest,
   type AttentionItem,
@@ -326,7 +327,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
-        counts: { pending: rows.length }
+        counts: { pending: rows.length },
+        // W2 inc1：契约新增字段，先置空；inc3 在此 join proposal.diff_manifest + 合成时间线 + 读评论填充。
+        items_detail: {} as ApprovalCenterVM["items_detail"]
       };
     },
 

@@ -19,6 +19,8 @@ import {
   costSummaryVmSchema,
   cuuStateSchema,
   deliverableChangeManifestSchema,
+  deliverableChangeSchema,
+  deliverableCheckSchema,
   evidenceBubbleSchema,
   evidenceRefSchema,
   questionCardSchema,
@@ -598,11 +600,57 @@ export const workItemDetailVmSchema = z.object({
 });
 export type WorkItemDetailVM = z.infer<typeof workItemDetailVmSchema>;
 
+// W2：审批工作台逐项详情。全部加在可选/默认字段上，旧 fixture/VM/smoke 解析不受影响。
+export const approvalCommentVmSchema = z.object({
+  id: idSchema,
+  author_label: z.string().min(1),
+  body: z.string().min(1),
+  created_at: isoDateTimeSchema
+});
+export type ApprovalCommentVM = z.infer<typeof approvalCommentVmSchema>;
+
+export const approvalRoutingStepSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["created", "routed", "delegated", "decided", "expired"]),
+  label: z.string().min(1),
+  actor_label: z.string().optional(),
+  status: z.enum(["done", "current", "pending"]),
+  at: isoDateTimeSchema.optional(),
+  sla_due_at: isoDateTimeSchema.optional()
+});
+export type ApprovalRoutingStep = z.infer<typeof approvalRoutingStepSchema>;
+
+export const approvalConflictRowSchema = z.object({
+  description: z.string().min(1),
+  impact: z.string().optional(),
+  suggestion: z.string().optional()
+});
+export type ApprovalConflictRow = z.infer<typeof approvalConflictRowSchema>;
+
+// 中栏按 kind 条件化：deliverable 渲染 before→after 对比表+合规检查；permission/tool 渲染摘要+证据+影响目标。
+export const approvalDetailVmSchema = z.object({
+  kind: z.enum(["deliverable", "permission", "tool"]),
+  proposal_id: idSchema.optional(),
+  proposal_href: z.string().optional(),
+  ai_reason: z.string().optional(),
+  expected_benefit: z.string().optional(),
+  risk_label: z.string().optional(),
+  manifest_changes: z.array(deliverableChangeSchema).default([]),
+  checks: z.array(deliverableCheckSchema).default([]),
+  conflicts: z.array(approvalConflictRowSchema).default([]),
+  affected_targets: z.array(z.string()).default([]),
+  timeline: z.array(approvalRoutingStepSchema).default([]),
+  comments: z.array(approvalCommentVmSchema).default([])
+});
+export type ApprovalDetailVM = z.infer<typeof approvalDetailVmSchema>;
+
 export const approvalCenterVmSchema = z.object({
   items: z.array(attentionItemSchema),
   requests: z.array(approvalRequestSchema),
   filters: z.record(z.string(), z.unknown()),
-  counts: z.record(z.string(), z.number().int().nonnegative())
+  counts: z.record(z.string(), z.number().int().nonnegative()),
+  // 逐 item.id 的详情（预取，左栏点选时客户端就地切换；旧调用方默认空对象）。
+  items_detail: z.record(z.string(), approvalDetailVmSchema).default({})
 });
 export type ApprovalCenterVM = z.infer<typeof approvalCenterVmSchema>;
 
