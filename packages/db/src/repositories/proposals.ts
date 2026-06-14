@@ -265,6 +265,7 @@ export type ProposalRepository = {
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
   findAcceptedDriveFileForTarget: (input: {
     workItemId: string;
+    projectId?: string;
     targetKey: string;
     ref?: string;
     sha256?: string;
@@ -1624,7 +1625,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         ...(sha ? [eq(acceptedDeliverableChanges.sha256After, sha)] : [])
       ];
       const conditions = [
-        eq(acceptedDeliverableChanges.workItemId, input.workItemId),
+        // H3：融合/三方合并读取的"当前/底稿"内容必须与撞车判定同范围（project 优先），
+        // 否则跨任务采纳同一文件时会读到错的 base，三方校验校验了错的行。
+        input.projectId
+          ? eq(acceptedDeliverableChanges.projectId, input.projectId)
+          : eq(acceptedDeliverableChanges.workItemId, input.workItemId),
         eq(acceptedDeliverableChanges.targetKey, input.targetKey),
         refConditions.length > 0 ? or(...refConditions) : isNull(acceptedDeliverableChanges.supersededAt)
       ];
@@ -1857,14 +1862,24 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         }
         found = true;
         proposalId = row.proposalId;
-        if (row.proposalStatus === "merged") {
+        // H2/H5：AI 融合稿写回是对同一 targetKey 的完整采纳，必须和 merge() 一样上同项目 advisory lock
+        // 并锁内复读状态，否则并发/与 merge 交错会丢更新或重复采纳。
+        if (row.projectId) {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${row.projectId}`})::bigint)`);
+        }
+        const lockedStatus = (await tx
+          .select({ status: proposals.status })
+          .from(proposals)
+          .where(eq(proposals.id, row.proposalId))
+          .limit(1))[0]?.status;
+        if (lockedStatus === "merged") {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
             input.mergeProposalId,
             "proposal_already_merged",
             "Proposal is already merged"
           );
         }
-        if (row.proposalStatus !== "reviewed") {
+        if (lockedStatus !== "reviewed") {
           throw new ProposalRepositoryUnsupportedMergeProposalApplyError(
             input.mergeProposalId,
             "proposal_not_reviewed",
@@ -2125,7 +2140,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           })
           .where(eq(workItems.id, row.workItemId));
         if (current) {
-          await tx
+          const superseded = await tx
             .update(acceptedDeliverableChanges)
             .set({ supersededAt: at, updatedAt: at })
             .where(and(
@@ -2133,8 +2148,16 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
                 ? eq(acceptedDeliverableChanges.projectId, row.projectId)
                 : eq(acceptedDeliverableChanges.workItemId, row.workItemId),
               eq(acceptedDeliverableChanges.targetKey, row.mergeProposal.conflictKey),
-              isNull(acceptedDeliverableChanges.supersededAt)
-            ));
+              isNull(acceptedDeliverableChanges.supersededAt),
+              ...(current.sha256After ? [eq(acceptedDeliverableChanges.sha256After, current.sha256After)] : [])
+            ))
+            .returning({ id: acceptedDeliverableChanges.id });
+          // H2/H5 L3：提交前复检，0 行作废即中止采纳（最后防线，避免盖掉别人内容）。
+          if (superseded.length === 0) {
+            throw new Error(
+              `P-COLLAB stale-base abort: current accepted row for ${row.mergeProposal.conflictKey} changed mid-transaction; apply aborted to avoid lost update.`
+            );
+          }
         }
         const acceptedChangeId = randomUUID();
         await tx.insert(acceptedDeliverableChanges).values({
@@ -2274,6 +2297,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             projectId: workItems.projectId,
             submitterUserId: workItems.submitterUserId,
             branchId: proposals.branchId,
+            status: proposals.status,
             diffManifest: proposals.diffManifest
           })
           .from(proposals)
@@ -2289,6 +2313,17 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         // 消除"两个并发采纳同时读到 reviewed 再同时进事务"的竞态——不丢更新的序列化地基。
         if (proposal.projectId) {
           await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${proposal.projectId}`})::bigint)`);
+        }
+        // H14：锁内复读 proposal.status（select 在加锁前、可能已被并发采纳改成 merged）。
+        // 非 reviewed 即提前返回——found 已 true，merge() 会回读当前态幂等返回已合并结果，
+        // 避免对同一已合并提议重复采纳（重复 accepted_deliverable_changes / 快照）。
+        const lockedRows = await tx
+          .select({ status: proposals.status })
+          .from(proposals)
+          .where(eq(proposals.id, input.proposalId))
+          .limit(1);
+        if (lockedRows[0]?.status !== "reviewed") {
+          return;
         }
         const acceptedIncomingTargetKeyList = [...new Set(input.acceptIncomingTargetKeys ?? [])];
         const acceptIncomingTargetKeys = new Set(acceptedIncomingTargetKeyList);

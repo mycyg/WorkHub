@@ -861,11 +861,17 @@ export function createInMemoryAgentRunQueue(options: {
       if (drifted) {
         return drifted;
       }
-      await openProposalFromManifest(current, result);
+      // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
+      // 提议已存在/DB 写失败）会被外层 catch 当作"run 失败"、丢掉本已成功的交付物。
       current = updateRun(finalizeExecutedRun(current, result, now()));
       await persistRunWithTrace(current);
       await emitFinalRunEvent(current, result);
       await recordRunConfidence(current, result);
+      try {
+        await openProposalFromManifest(current, result);
+      } catch (error) {
+        console.warn("WorkHub openProposalFromManifest failed; run already recorded as succeeded", error);
+      }
       await notifyRunMilestone(current, result.reason);
       return current;
     } catch (error) {

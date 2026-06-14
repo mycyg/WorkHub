@@ -335,11 +335,13 @@ async function fusionContentContextsForConflicts(input: {
     const change = changeForMergeConflict(mergeContext.diffManifest, conflict);
     const currentFile = await input.repository.findAcceptedDriveFileForTarget({
       workItemId: mergeContext.workItemId,
+      ...(mergeContext.projectId ? { projectId: mergeContext.projectId } : {}),
       targetKey: conflict.target_key
     });
     const baseFile = (conflict.incoming_version_before || conflict.incoming_sha256_before)
       ? await input.repository.findAcceptedDriveFileForTarget({
           workItemId: mergeContext.workItemId,
+          ...(mergeContext.projectId ? { projectId: mergeContext.projectId } : {}),
           targetKey: conflict.target_key,
           ...(conflict.incoming_version_before ? { ref: conflict.incoming_version_before } : {}),
           ...(conflict.incoming_sha256_before ? { sha256: conflict.incoming_sha256_before } : {})
@@ -933,6 +935,7 @@ async function fullTextContextForHunkMaterialization(input: {
   }
   const currentFile = await input.repository.findAcceptedDriveFileForTarget({
     workItemId: input.context.workItemId,
+    ...(mergeContext.projectId ? { projectId: mergeContext.projectId } : {}),
     targetKey: input.context.conflictKey
   });
   if (!currentFile?.storagePath) {
@@ -962,6 +965,7 @@ async function fullTextContextForHunkMaterialization(input: {
   const baseFile = (input.context.conflict.incoming_version_before || input.context.conflict.incoming_sha256_before)
     ? await input.repository.findAcceptedDriveFileForTarget({
         workItemId: input.context.workItemId,
+        ...(mergeContext.projectId ? { projectId: mergeContext.projectId } : {}),
         targetKey: input.context.conflictKey,
         ...(input.context.conflict.incoming_version_before ? { ref: input.context.conflict.incoming_version_before } : {}),
         ...(input.context.conflict.incoming_sha256_before ? { sha256: input.context.conflict.incoming_sha256_before } : {})
