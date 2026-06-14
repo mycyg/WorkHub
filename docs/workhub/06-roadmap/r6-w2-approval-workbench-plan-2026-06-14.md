@@ -154,3 +154,22 @@ Click `[data-r4-approval-item]` → set selected, show matching `[data-r4-approv
 
 ### Per-increment gate
 `pnpm -r typecheck` (catches tsc-only errors the tsx test runner misses, per MEMORY) + full `pnpm test` + (web/approval touched) 70-step web smoke + (inc2) `pnpm db:migrate` on local PG + `pnpm audit:migrations`. CI green before the next increment.
+
+---
+
+## 对抗式验收审查 + 加固（2026-06-14，design 工作流 wf_65811f2e-4b0：5 维度找 bug × 独立复核）
+
+审查 6 增量得 **19 条确认问题**；**12 条已修并 CI 绿**（3 批）：
+- **batch1 `a07683a1`（安全/正确性/无界查询）**：#3/#6 提议 join 校验 work_item 归属（堵跨资源 IDOR——任意 proposal_id 曾能泄露完整 diff_manifest）；#4 buildApprovalItemDetail 用 safeParse（一条畸形 payload 不再 500 整页）；#2 listPendingForUser 封顶（管理员不再全组织拉取再逐条 join）；#13 评论 listByApproval 封顶；#15 无 work item 的审批（工具/权限类）按 id 直达端点要求管理员或被路由本人（堵 canReadWorkItem(undefined)=true 的敞口）；#16 首条评论清空态；#17 deny 读决策面板手写理由。
+- **batch2 `c510717b`（展示）**：#18 时间线显示合成的时间戳/每步 SLA；#19 SLA 用 formatApprovalTimestamp（YYYY-MM-DD HH:mm，确定性 smoke 安全）。
+- **batch3 `9006cdce`（性能）**：#12 评论一次 IN 批量预取（N+1→1）；#14 visibleApprovalCenter 按 work_item_id 去重可见性判定。
+
+**7 条按品味/范围刻意缓办（非 bug，附理由）**：
+- #1/#5 **转交按钮**：后端(delegate 服务+路由+api-client)已就绪，但无成员列表来源（UserRepository 无 listActive），做成可用选择器=新端点+UI 一个独立特性；核心「人审批=批准/拒绝/查看任务」已完整，故不渲染半残按钮，待产品决定委派目标策略再建。
+- #8 **预期收益**：manifest/proposal 无对应字段，AI 也未产出；编造=坏品味，字段保留可选待 AI 端产出。
+- #9 **时间线非本人姓名**：当前显示阶段+状态+时间戳+本人「你」；解析他人姓名需批量 user 查询，pilot 小团队边际收益低。
+- #10 **发起人/部门**：数据模型无 department 概念；编造=坏品味。
+- #7 **中栏子标签页**：概念图用 变更对比|交付物预览|相关信息 标签隐藏分区；审批是「必须看全」的场景，全量平铺(现状)比标签隐藏信息更合适——刻意保留平铺。
+- #11 **左栏搜索/待处理-全部标签**：one_thing 收件箱条目少，搜索/标签是噪音；规模上来再加。
+
+**结论**：所有安全/正确性/性能/数据流问题已清零，W2 达到「diff 工作台」可用且稳健的品味标准；剩余为需要产品拍板或新增数据模型/特性的增强，已记录待 greenlight。
