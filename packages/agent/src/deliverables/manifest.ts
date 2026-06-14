@@ -440,11 +440,34 @@ async function buildChange(input: BuildDeliverableChangeManifestInput, entry: Ou
   return change;
 }
 
+// L#66：有界并发，避免一次把所有输出文件全读进内存（文件多/大时峰值内存不受控）。
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) {
+        return;
+      }
+      results[index] = await fn(items[index] as T, index);
+    }
+  }
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 export async function buildDeliverableChangeManifestFromOutputs(
   input: BuildDeliverableChangeManifestInput
 ): Promise<DeliverableChangeManifest> {
   const entries = await listOutputEntries(input.workdir);
-  const changes = await Promise.all(entries.map((entry) => buildChange(input, entry)));
+  const changes = await mapWithConcurrency(entries, 6, (entry) => buildChange(input, entry));
   const base: DeliverableChangeManifest["base"] = {
     created_at: createdAtIso(input.createdAt)
   };

@@ -52,6 +52,8 @@ export function usageToLedgerEntry(
 }
 
 export function usageRecordId(usage: UsageRecord) {
+  // L#68：把 token/成本计入去重键（id 列 varchar(512)，故不加更长的 actorId）。仍对"同一事件被重复
+  // 记账"幂等（同内容→同 id），但两次真正不同的调用即便落在同一毫秒，只要 token/成本不同就不再被误并、少记成本。
   return [
     usage.runId ?? "no-run",
     usage.workItemId ?? "no-workitem",
@@ -60,6 +62,9 @@ export function usageRecordId(usage: UsageRecord) {
     usage.model,
     usage.task,
     usage.source,
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.estimatedCostCny,
     usage.createdAt
   ].join(":");
 }

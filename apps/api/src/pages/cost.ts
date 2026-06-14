@@ -1,4 +1,4 @@
-import type { BudgetNotice, BudgetUsage, CostDashboardVM, CostSummaryVM, WorkHubLocale } from "@workhub/contracts";
+import { costDashboardVmSchema, type BudgetNotice, type BudgetUsage, type CostDashboardVM, type CostSummaryVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 import type { BudgetUsage as InternalBudgetUsage, CostLedgerEntry } from "@workhub/cost";
 import { pageT } from "./i18n.js";
@@ -100,7 +100,8 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
   const modelBreakdown = aggregateByModel(uniqueEntries);
 
-  return {
+  // L#51：返回前过一遍 zod schema，把契约漂移挡在服务端（与其他 page builder 一致）。
+  return costDashboardVmSchema.parse({
     generated_at: summary.generated_at,
     currency: "CNY",
     total_cost_cny: formatCny(totalCost),
@@ -138,7 +139,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
         status: usage.status
       })),
     ...(uniqueEntries.length === 0 ? { empty_state: "no_agent_runs" as const } : {})
-  };
+  });
 }
 
 function toApiBudgetUsage(usage: InternalBudgetUsage, locale: WorkHubLocale): BudgetUsage {

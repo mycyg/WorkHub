@@ -311,6 +311,8 @@ export const notifications = pgTable(
     index("notifications_dedupe_key_idx").on(table.dedupeKey),
     index("notifications_read_at_idx").on(table.readAt),
     index("notifications_archived_at_idx").on(table.archivedAt),
+    // L#56：listForUser 的热路径是 WHERE user_id ORDER BY created_at DESC LIMIT n —— 加复合索引避免按 user 过滤后再全量排序。
+    index("notifications_user_created_idx").on(table.userId, table.createdAt),
     // M13/M15：同一用户同一 dedupeKey 只能有一条，挡住并发 check-then-insert 产生的重复通知。
     uniqueIndex("notifications_user_dedupe_uq")
       .on(table.userId, table.dedupeKey)

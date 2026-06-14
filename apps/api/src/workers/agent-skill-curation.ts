@@ -84,8 +84,12 @@ export function createAgentRunSkillCurationScheduler(
     }
 
     const distilled = await options.distill(analysis);
+    // L#49：把本批已晋升的 key 也算进"已有"，否则同一批里两个同 key 技能都能通过去重检查、双双晋升。
+    const promotedKeysThisBatch: string[] = [];
     for (const skill of distilled.distilled_skills) {
-      const validation = validateDistilledSkill(skill, { existingSkills: analysis.existingSkills });
+      const validation = validateDistilledSkill(skill, {
+        existingSkills: [...analysis.existingSkills, ...promotedKeysThisBatch]
+      });
       if (!validation.ok) {
         discarded += 1;
         await options.auditLog.createAuditLog({
@@ -113,6 +117,7 @@ export function createAgentRunSkillCurationScheduler(
         }
       });
       promoted += 1;
+      promotedKeysThisBatch.push(skill.skill_key);
       await options.auditLog.createAuditLog({
         workspaceId,
         actorKind: "ai",

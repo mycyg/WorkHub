@@ -120,6 +120,13 @@
       "when": 1781511133742,
       "tag": "0016_notifications_dedupe_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781511233742,
+      "tag": "0017_notifications_user_created_idx",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray, or } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -155,7 +155,11 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
         .leftJoin(projects, eq(workItems.projectId, projects.id))
         .where(and(
           isNull(workItems.deletedAt),
+          // L#55：限定在窗口内（加下界）并排除已结束(done/cancelled)的事项——
+          // 否则全表扫所有历史 dueAt，且已完成/已取消的事项还会被当作"待办到期"显示。
+          gte(workItems.dueAt, input.rangeStart),
           lte(workItems.dueAt, input.rangeEnd),
+          notInArray(workItems.status, ["done", "cancelled"]),
           or(
             eq(workItems.submitterUserId, input.actorUserId),
             eq(workItems.claimedByUserId, input.actorUserId)

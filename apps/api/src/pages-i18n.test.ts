@@ -138,7 +138,7 @@ test("Page VM builders localize generated English copy without translating user/
     generatedAt: new Date(at),
     budgetUsages: [
       {
-        scope: { kind: "team", teamId: "marketing-team" },
+        scope: { kind: "team", teamId: "10000000-0000-4000-8000-000000000030" },
         scopeLabel: "Marketing Team",
         policyId: "custom-team",
         period: "day",

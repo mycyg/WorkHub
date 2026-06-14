@@ -37,7 +37,8 @@ function dateInRange(value: Date | string | null | undefined, from: Date, to: Da
   if (Number.isNaN(ts)) {
     return false;
   }
-  return ts >= from.getTime() && ts <= to.getTime();
+  // L#50：统一用 [from, to) 半开区间（与 pilot-day1-metrics 一致），避免两个面板在同一数据上差一行。
+  return ts >= from.getTime() && ts < to.getTime();
 }
 
 function round1(value: number): number {

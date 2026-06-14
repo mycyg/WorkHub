@@ -230,7 +230,8 @@ export function buildPilotDay1MetricsSnapshot(input: {
       metric({
         id: "cost_per_merged_item_cny",
         value: formatCny(costPerMerged),
-        numerator: Number(formatCny(totalCost)),
+        // L#50：用原始 totalCost，不再经 formatCny 字符串往返丢精度。
+        numerator: totalCost,
         denominator: closedLoopCount,
         unit: "CNY",
         status: closedLoopCount > 0 ? "pass" : "sample_insufficient"

@@ -317,14 +317,31 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async listActive() {
-      const rows = await db
+      // L#54：一次查活跃 run，再一次批量查它们的 step（按 run 分组），避免每个 run 再各发 2 条查询（N+1）。
+      const runRows = await db
         .select()
         .from(agentRuns)
         .where(inArray(agentRuns.status, activeStatuses))
         .orderBy(asc(agentRuns.createdAt));
-      return Promise.all(rows.map((row) => readStoredAgentRun(db, row.id))).then((items) =>
-        items.filter((item): item is StoredAgentRunRows => Boolean(item))
-      );
+      if (runRows.length === 0) {
+        return [];
+      }
+      const runIds = runRows.map((row) => row.id);
+      const allSteps = await db
+        .select()
+        .from(agentSteps)
+        .where(inArray(agentSteps.agentRunId, runIds))
+        .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
+      const stepsByRun = new Map<string, typeof allSteps>();
+      for (const step of allSteps) {
+        const list = stepsByRun.get(step.agentRunId);
+        if (list) {
+          list.push(step);
+        } else {
+          stepsByRun.set(step.agentRunId, [step]);
+        }
+      }
+      return runRows.map((run) => ({ run, steps: stepsByRun.get(run.id) ?? [] }));
     },
 
     claimQueued(runId, claim) {
