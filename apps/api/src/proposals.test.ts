@@ -19,6 +19,8 @@ import {
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
+  ProposalRepositoryRebaseRequiredError,
+  ProposalRepositoryStaleBaseError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type MergeAttemptRow,
   type MergeProposalCandidateApplicationContext,
@@ -40,6 +42,7 @@ import {
   createDbProposalService,
   createInMemoryProposalService,
   ProposalServiceError,
+  ProposalServiceRebaseRequiredError,
   drivePathFromTargetPath,
   readBaseSnapshotFusionExcerpt
 } from "./services/proposals.js";
@@ -407,6 +410,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly acceptedDriveFiles = new Map<string, ProposalAcceptedDriveFile[]>();
   public readonly workdirRefs = new Map<string, string>();
   public readonly baseSnapshotRefs = new Map<string, string>();
+  public readonly forceStaleBase = new Set<string>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -1009,7 +1013,7 @@ class MemoryProposalRepository implements ProposalRepository {
   private recordMergeAttempt(input: {
     stored: StoredProposalRows;
     actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
-    result: "conflict" | "merged";
+    result: "conflict" | "merged" | "rebased";
     conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
     acceptedTargetKeys: string[];
     mergeSnapshotId?: string;
@@ -1050,6 +1054,12 @@ class MemoryProposalRepository implements ProposalRepository {
     const stored = this.rows.get(input.proposalId);
     if (!stored) {
       return null;
+    }
+    // 模拟真库的 L3 最后防线撞车：有 base 快照 → rebase_required（可对底稿）；否则裸 stale_base。
+    if (this.forceStaleBase.has(input.proposalId)) {
+      throw this.baseSnapshotRefs.has(input.proposalId)
+        ? new ProposalRepositoryRebaseRequiredError([this.conflictsForStored(stored)[0]?.target_key ?? "unknown"])
+        : new ProposalRepositoryStaleBaseError(this.conflictsForStored(stored)[0]?.target_key ?? "unknown");
     }
     const at = input.at ?? now;
     const acceptedTargetKeys = [...new Set(input.acceptIncomingTargetKeys ?? [])];
@@ -1104,6 +1114,24 @@ class MemoryProposalRepository implements ProposalRepository {
       workItem.version += 1;
     }
     return stored;
+  }
+
+  async rebase(input: Parameters<ProposalRepository["rebase"]>[0]) {
+    const stored = this.rows.get(input.proposalId);
+    if (!stored) {
+      return null;
+    }
+    // 对底稿 = 对最新正式版重算冲突（不动账本）。内存版直接复用冲突计算。
+    this.recordMergeAttempt({
+      stored,
+      actor: input.actor,
+      result: "rebased",
+      conflicts: this.conflictsForStored(stored),
+      acceptedTargetKeys: [],
+      ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
+      at: input.at ?? now
+    });
+    return this.conflictsForStored(stored);
   }
 }
 
@@ -1452,6 +1480,57 @@ test("proposal service persists AI fusion candidates when the mediator supplies 
     ),
     true
   );
+});
+
+test("P-COLLAB rebase: merge surfaces rebase_required with a de-jargoned card when a base snapshot exists", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const m = manifest(0);
+  const created = await service.createFromManifest({ workItemId: m.work_item_id, manifest: m, actor: { actor_kind: "ai", label: "WorkHub AI" } });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  // 有 base 快照 + 撞上最后防线 → 期望可恢复的 rebase_required,而非裸 stale_base。
+  repository.baseSnapshotRefs.set(created.id, "/tmp/workhub-rebase-base");
+  repository.forceStaleBase.add(created.id);
+
+  let captured: unknown;
+  try {
+    await service.merge({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } });
+  } catch (error) {
+    captured = error;
+  }
+  assert.ok(captured instanceof ProposalServiceRebaseRequiredError);
+  const err = captured as ProposalServiceRebaseRequiredError;
+  assert.equal(err.status, 409);
+  assert.equal(err.code, "rebase_required");
+  assert.ok(err.card.headline.length > 0 && err.card.body.length > 0 && err.card.action_label.length > 0);
+  // 去黑话铁律：用户面卡片不得出现 git 术语 rebase。
+  assert.doesNotMatch(`${err.card.headline} ${err.card.body} ${err.card.action_label}`, /rebase/iu);
+});
+
+test("P-COLLAB rebase: merge stays a bare stale_base when there is no base snapshot", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const m = manifest(0);
+  const created = await service.createFromManifest({ workItemId: m.work_item_id, manifest: m, actor: { actor_kind: "ai", label: "WorkHub AI" } });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  repository.forceStaleBase.add(created.id); // 无 base 快照 → 无法三方合并 → 仍走安全中止
+
+  await assert.rejects(
+    service.merge({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    (error: unknown) => error instanceof ProposalServiceError && error.code === "stale_base"
+  );
+});
+
+test("P-COLLAB rebase: rebase() reports clean when there is nothing to reconcile", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const m = manifest(0);
+  const created = await service.createFromManifest({ workItemId: m.work_item_id, manifest: m, actor: { actor_kind: "ai", label: "WorkHub AI" } });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  const result = await service.rebase({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId } });
+  assert.equal(result.proposal_id, created.id);
+  assert.equal(result.conflicts.length, 0);
+  assert.equal(result.empty_state, "clean_after_rebase");
 });
 
 test("P-COLLAB M2: drivePathFromTargetPath maps an /outputs path to its project/ drive path", () => {

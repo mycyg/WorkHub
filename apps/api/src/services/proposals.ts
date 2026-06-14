@@ -17,6 +17,8 @@ import {
   type ProposalConflict,
   type ProposalConflictListResult,
   type Proposal,
+  type RebaseProposalResult,
+  type RebaseRequiredCard,
   type Review,
   type StructuredFieldApplyOverrides,
   type StructuredFieldPatchDryRun,
@@ -34,6 +36,7 @@ import {
   ProposalRepositoryMergeProposalNotChosenError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
   ProposalRepositoryStaleBaseError,
+  ProposalRepositoryRebaseRequiredError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
   type MergeProposalCandidateApplicationContext,
@@ -82,6 +85,17 @@ export class ProposalServiceMergeConflictError extends ProposalServiceError {
   }
 }
 
+// P-COLLAB rebase「对一下底稿再采纳」：正式版在你之后被人改过、采纳撞上最后防线时,带去黑话卡片 + 重算的冲突回前端,
+// 而不是裸 stale_base 中止。前端调 /rebase 后用既有三选项解决,再重新采纳。
+export class ProposalServiceRebaseRequiredError extends ProposalServiceError {
+  constructor(
+    public readonly conflicts: ProposalConflict[],
+    public readonly card: RebaseRequiredCard
+  ) {
+    super(409, "rebase_required", "项目里这个文件在你之后被人更新过，需要先对一下底稿。");
+  }
+}
+
 export type ProposalConflictResolution = {
   acceptIncomingTargetKeys?: string[];
   bulkAction?: {
@@ -117,6 +131,7 @@ export type ProposalService = {
     actor: ProposalActor;
     conflictResolution?: ProposalConflictResolution;
   }) => Promise<StoredProposal>;
+  rebase: (input: { proposalId: string; actor: ProposalActor }) => Promise<RebaseProposalResult>;
   chooseMergeCandidate: (input: {
     mergeProposalId: string;
     optionKey: string;
@@ -1599,6 +1614,17 @@ export function createInMemoryProposalService(options: {
       });
     },
 
+    async rebase(input) {
+      // 内存版不建模并发冲突/base 快照,对底稿恒为"干净"。
+      const proposal = requireProposal(input.proposalId);
+      return {
+        proposal_id: proposal.id,
+        work_item_id: proposal.work_item_id,
+        conflicts: [],
+        empty_state: "clean_after_rebase" as const
+      };
+    },
+
     async chooseMergeCandidate(input) {
       throw new ProposalServiceError(
         404,
@@ -1634,6 +1660,55 @@ export function createDbProposalService(repository: ProposalRepository, options:
       throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
     }
     return storedRowsToProposal(rows);
+  }
+
+  // P-COLLAB「对一下底稿再采纳」：对着最新正式版重算冲突 + 生成 AI 融合候选(不动账本),
+  // 把冲突渲染成前端既有三选项卡片。供 merge 撞上 rebase_required 时回卡片,也供 /rebase 端点直接调用。
+  async function runRebase(proposal: StoredProposal, actor: ProposalActor): Promise<ProposalConflict[]> {
+    const conflictsRaw = (await repository.listConflictsByWorkItem(proposal.work_item_id))
+      .filter((conflict) => conflict.proposal_id === proposal.id);
+    const contentContexts = conflictsRaw.length > 0
+      ? await fusionContentContextsForConflicts({ repository, proposalId: proposal.id, conflicts: conflictsRaw })
+      : undefined;
+    const candidateSupplements = conflictsRaw.length > 0
+      ? await safelyGenerateMergeFusionCandidates(fusionCandidateGenerator, {
+          proposalId: proposal.id,
+          workItemId: proposal.work_item_id,
+          proposalTitle: proposal.title,
+          manifest: proposal.diff_manifest,
+          conflicts: conflictsRaw,
+          ...(contentContexts ? { contentContexts } : {}),
+          actor
+        })
+      : [];
+    const repoConflicts = await repository.rebase({
+      proposalId: proposal.id,
+      actor: actorToRepository(actor),
+      ...(candidateSupplements.length > 0 ? { candidateSupplements } : {})
+    });
+    const detected = repoConflicts ?? conflictsRaw;
+    const refsByKey = await mergeProposalRefsByConflictKey(repository, proposal.id);
+    const rationaleByKey = aiFusionRationaleByConflictKey(candidateSupplements);
+    const qualityGateByKey = aiFusionQualityGateByConflictKey(candidateSupplements);
+    return detected.map((conflict) => {
+      const ref = refsByKey.get(conflict.target_key);
+      const aiFusionRationale = ref?.aiFusionRationale ?? rationaleByKey.get(conflict.target_key);
+      const aiFusionQualityGate = ref?.aiFusionQualityGate ?? qualityGateByKey.get(conflict.target_key);
+      return conflictToVm(conflict, {
+        ...(aiFusionRationale ? { aiFusionRationale } : {}),
+        ...(aiFusionQualityGate ? { aiFusionQualityGate } : {}),
+        ...(ref?.mergeProposalId ? { aiFusionMergeProposalId: ref.mergeProposalId } : {}),
+        ...(ref?.recommendedOptionId ? { recommendedOptionId: ref.recommendedOptionId } : {})
+      });
+    });
+  }
+
+  function rebaseRequiredCard(): RebaseRequiredCard {
+    return {
+      headline: "这里和别人撞车了",
+      body: "项目里这个文件在你之后被人更新过，需要先对一下底稿。",
+      action_label: "先对一下底稿"
+    };
   }
 
   return {
@@ -1824,6 +1899,11 @@ export function createDbProposalService(repository: ProposalRepository, options:
             });
           }));
         }
+        // 本分支有 base 快照 → 撞上最后防线时不裸中止,改成"对一下底稿再采纳"：对最新正式版重算冲突 + 候选,回 409 卡片。
+        if (error instanceof ProposalRepositoryRebaseRequiredError) {
+          const conflicts = await runRebase(proposal, input.actor);
+          throw new ProposalServiceRebaseRequiredError(conflicts, rebaseRequiredCard());
+        }
         if (error instanceof ProposalRepositoryStaleBaseError) {
           throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
         }
@@ -1833,6 +1913,20 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
       return storedRowsToProposal(rows);
+    },
+
+    async rebase(input) {
+      const proposal = await requireProposal(input.proposalId);
+      if (proposal.status !== "reviewed") {
+        throw new ProposalServiceError(409, "not_reviewed", "这份变更还没通过评审，暂时不用对底稿。");
+      }
+      const conflicts = await runRebase(proposal, input.actor);
+      return {
+        proposal_id: proposal.id,
+        work_item_id: proposal.work_item_id,
+        conflicts,
+        ...(conflicts.length === 0 ? { empty_state: "clean_after_rebase" as const } : {})
+      };
     },
 
     async chooseMergeCandidate(input) {

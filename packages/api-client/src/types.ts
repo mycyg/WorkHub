@@ -30,6 +30,7 @@ import type {
   ProposalDetailVM,
   MergeProposalCandidateChoiceResult,
   ProposalMergeResult,
+  RebaseProposalResult,
   ProposalReviewResult,
   ReplayTraceVM,
   ReviewProposalRequest,
@@ -200,6 +201,7 @@ export type WorkHubApiClient = {
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
+  rebaseProposal: (id: string) => Promise<RebaseProposalResult>;
   chooseMergeProposalCandidate: (
     id: string,
     payload: ChooseMergeProposalCandidateRequest

@@ -301,6 +301,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    rebaseProposal: (id) =>
+      request(`/api/proposals/${encodeURIComponent(id)}/rebase`, {
+        method: "POST",
+        body: JSON.stringify({})
+      }),
     chooseMergeProposalCandidate: (id, payload) =>
       request(`/api/merge-proposals/${encodeURIComponent(id)}/choose`, {
         method: "POST",

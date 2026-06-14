@@ -381,6 +381,25 @@ function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale:
   return true;
 }
 
+// P-COLLAB「对一下底稿再采纳」：采纳撞上最后防线(rebase_required)时,先对最新正式版重算冲突,
+// 再用既有三选项冲突卡片让用户解决,然后重新采纳。
+async function showRebaseRequiredNotice(
+  shellRoot: HTMLElement,
+  error: unknown,
+  proposalId: string,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  actionId?: string
+): Promise<boolean> {
+  if (!(error instanceof WorkHubApiError) || error.code !== "rebase_required") {
+    return false;
+  }
+  const result = await client.rebaseProposal(proposalId);
+  const rendered = renderProposalConflictCards(result.conflicts, { locale });
+  showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId), rendered.html, 0);
+  return true;
+}
+
 function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
@@ -890,6 +909,9 @@ function bindGoldPathNavigation(
           clearActiveRouteDirty();
           showRouteNotice(shellRoot, actionSuccessNotice(locale, `${review.attention.summary_text} ${merge.attention.summary_text}`, actionId));
         } catch (error) {
+          if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {
+            return;
+          }
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
@@ -907,6 +929,9 @@ function bindGoldPathNavigation(
           clearActiveRouteDirty();
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
+          if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {
+            return;
+          }
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }

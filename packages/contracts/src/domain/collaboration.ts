@@ -615,3 +615,21 @@ export const proposalMergeResultSchema = z.object({
   audit_logs: z.array(auditLogFactSchema).min(1)
 });
 export type ProposalMergeResult = z.infer<typeof proposalMergeResultSchema>;
+
+// P-COLLAB rebase「对一下底稿再采纳」：正式版在你之后被人改过、采纳时撞上最后防线时,
+// 用去黑话的卡片提示先对底稿,而不是裸报错中止。卡片随 merge 的 409 rebase_required 错误一起回。
+export const rebaseRequiredCardSchema = z.object({
+  headline: z.string().min(1),
+  body: z.string().min(1),
+  action_label: z.string().min(1)
+});
+export type RebaseRequiredCard = z.infer<typeof rebaseRequiredCardSchema>;
+
+// POST /api/proposals/:id/rebase 的结果：对着最新正式版重算一遍冲突与合并候选,交回前端用既有三选项解决。
+export const rebaseProposalResultSchema = z.object({
+  proposal_id: idSchema,
+  work_item_id: idSchema,
+  conflicts: z.array(proposalConflictSchema),
+  empty_state: z.enum(["clean_after_rebase"]).optional()
+});
+export type RebaseProposalResult = z.infer<typeof rebaseProposalResultSchema>;

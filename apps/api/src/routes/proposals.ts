@@ -31,6 +31,7 @@ import {
   getDefaultProposalService,
   ProposalServiceError,
   ProposalServiceMergeConflictError,
+  ProposalServiceRebaseRequiredError,
   type ProposalActor,
   type ProposalService,
   type StoredProposal
@@ -459,6 +460,21 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
           }
         }, 409);
       }
+      // P-COLLAB「对一下底稿再采纳」：撞上最后防线但有 base 快照时,回去黑话卡片 + 重算的冲突,前端走 /rebase。
+      if (error instanceof ProposalServiceRebaseRequiredError) {
+        return c.json({
+          ok: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            details: {
+              conflicts: error.conflicts,
+              card: error.card
+            },
+            recoverable: true
+          }
+        }, 409);
+      }
       handleProposalServiceError(error);
     }
     return c.json({
@@ -470,6 +486,20 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         createdAt: nowIso()
       })
     });
+  });
+
+  // P-COLLAB：对最新正式版重算冲突/候选,交回前端用既有三选项解决,然后重新采纳。不动账本。
+  routes.post("/:id/rebase", authMiddleware, async (c) => {
+    await readProposalForActor(c.req.param("id"), c.var.actor);
+    try {
+      const result = await proposals.rebase({
+        proposalId: c.req.param("id"),
+        actor: proposalActorFor(c.var.actor)
+      });
+      return c.json({ ok: true, data: result });
+    } catch (error) {
+      handleProposalServiceError(error);
+    }
   });
 
   return routes;

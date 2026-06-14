@@ -82,6 +82,14 @@ export type MergeProposalInput = {
   at?: Date;
 };
 
+// P-COLLAB rebase：对着最新正式版重算冲突并落候选,不动账本(不 supersede/不 accept、不改状态)。
+export type RebaseProposalInput = {
+  proposalId: string;
+  actor?: ProposalRepositoryActor;
+  candidateSupplements?: MergeProposalCandidateSupplement[];
+  at?: Date;
+};
+
 export type ProposalMergeBulkActionInput = {
   action: "keep_current" | "accept_incoming";
   targetKeys: string[];
@@ -274,6 +282,16 @@ export class ProposalRepositoryStaleBaseError extends Error {
   }
 }
 
+// P-COLLAB rebase「对一下底稿再采纳」：撞上 L3 最后防线、但本分支有 base 快照(可做三方合并)时,
+// 抛这个而非 StaleBase——上层据此把"裸中止"升级成"先对一下底稿再采纳"的可恢复流程。
+export class ProposalRepositoryRebaseRequiredError extends Error {
+  public readonly code = "rebase_required";
+
+  constructor(public readonly staleTargetKeys: string[]) {
+    super(`Accepted base changed mid-transaction for ${staleTargetKeys.join(", ")}; rebase required before adopting.`);
+  }
+}
+
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
@@ -297,6 +315,7 @@ export type ProposalRepository = {
   applyMergeProposalCandidate: (input: ApplyMergeProposalCandidateInput) => Promise<StoredProposalRows | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
+  rebase: (input: RebaseProposalInput) => Promise<ProposalMergeConflict[] | null>;
 };
 
 async function readReviewsForProposal(db: WorkHubDb, proposalId: string) {
@@ -449,7 +468,7 @@ async function recordMergeAttempt(
     workItemId: string;
     branchId: string;
     actor?: ProposalRepositoryActor;
-    result: "conflict" | "merged" | "aborted" | "clean";
+    result: "conflict" | "merged" | "aborted" | "clean" | "rebased";
     mergeSnapshotId?: string;
     conflicts: ProposalMergeConflict[];
     acceptedTargetKeys: string[];
@@ -2317,11 +2336,14 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             projectId: workItems.projectId,
             submitterUserId: workItems.submitterUserId,
             branchId: proposals.branchId,
+            // P-COLLAB：本分支有无 base 快照,决定撞上最后防线时是"可对底稿(rebase)"还是裸 stale_base。
+            baseSnapshotId: branches.baseSnapshotId,
             status: proposals.status,
             diffManifest: proposals.diffManifest
           })
           .from(proposals)
           .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+          .innerJoin(branches, eq(proposals.branchId, branches.id))
           .where(eq(proposals.id, input.proposalId))
           .limit(1);
         const proposal = proposalRows[0];
@@ -2527,8 +2549,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               .returning({ id: acceptedDeliverableChanges.id });
             // P-COLLAB L3：提交前复检。L2 advisory lock 下真相不应在事务内变；若一行都没作废，
             // 说明读到的当前态已被改（最后防线），中止整笔采纳，绝不脏写盖掉别人内容。
+            // 本分支有 base 快照(可三方合并)→ 抛 rebase_required,让上层走"对一下底稿再采纳";否则裸 stale_base。
             if (superseded.length === 0) {
-              throw new ProposalRepositoryStaleBaseError(key);
+              throw proposal.baseSnapshotId
+                ? new ProposalRepositoryRebaseRequiredError([key])
+                : new ProposalRepositoryStaleBaseError(key);
             }
           }
           const acceptedChangeId = randomUUID();
@@ -2594,6 +2619,95 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         return null;
       }
       return readStoredProposal(db, input.proposalId);
+    },
+    // P-COLLAB rebase「对一下底稿再采纳」：对着最新正式版重算冲突并落候选,供既有三选项解决,
+    // 然后让用户重新采纳。**绝不动账本**——不 supersede、不 insert accepted_deliverable_changes、不改状态,
+    // 真正的提交仍由随后那次带 L2+L3 守卫的 merge 完成。这样 rebase 撞上并发也不会双写。
+    async rebase(input) {
+      const at = input.at ?? new Date();
+      let found = false;
+      let detected: ProposalMergeConflict[] = [];
+      await db.transaction(async (tx) => {
+        const proposalRows = await tx
+          .select({
+            workItemId: proposals.workItemId,
+            title: proposals.title,
+            projectId: workItems.projectId,
+            branchId: proposals.branchId,
+            status: proposals.status,
+            diffManifest: proposals.diffManifest
+          })
+          .from(proposals)
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+          .where(eq(proposals.id, input.proposalId))
+          .limit(1);
+        const proposal = proposalRows[0];
+        if (!proposal) {
+          return;
+        }
+        found = true;
+        // 与 merge 同把 L2 串行化锁,锁内复读状态：已合并/非 reviewed 则无需对底稿,返回空冲突。
+        if (proposal.projectId) {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${proposal.projectId}`})::bigint)`);
+        }
+        const lockedRows = await tx
+          .select({ status: proposals.status })
+          .from(proposals)
+          .where(eq(proposals.id, input.proposalId))
+          .limit(1);
+        if (lockedRows[0]?.status !== "reviewed") {
+          return;
+        }
+        const targetKeys = proposal.diffManifest.changes.map(targetKey);
+        const conflicts: ProposalMergeConflict[] = [];
+        for (const change of proposal.diffManifest.changes) {
+          const key = targetKey(change);
+          const current = await readCurrentAccepted(tx, {
+            projectId: proposal.projectId,
+            workItemId: proposal.workItemId,
+            targetKey: key
+          });
+          if (current) {
+            const conflict = conflictsWithCurrentAccepted({
+              proposalId: input.proposalId,
+              workItemId: proposal.workItemId,
+              proposalTitle: proposal.title,
+              change,
+              targetKey: key,
+              current
+            });
+            if (conflict) {
+              conflicts.push(conflict);
+            }
+          }
+        }
+        detected = conflicts;
+        const mergeAttemptId = await recordMergeAttempt(tx, {
+          proposalId: input.proposalId,
+          workItemId: proposal.workItemId,
+          branchId: proposal.branchId,
+          ...(input.actor ? { actor: input.actor } : {}),
+          result: "rebased",
+          conflicts,
+          acceptedTargetKeys: [],
+          targetKeys,
+          at
+        });
+        if (conflicts.length > 0) {
+          await recordMergeProposals(tx, {
+            mergeAttemptId,
+            conflicts,
+            acceptedTargetKeys: [],
+            ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
+            ...(input.actor ? { actor: input.actor } : {}),
+            at
+          });
+        }
+      });
+      if (!found) {
+        return null;
+      }
+      return detected;
     }
   };
 }
