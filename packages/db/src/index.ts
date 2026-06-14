@@ -9,6 +9,7 @@ export * from "./r4-web-seed.js";
 export * from "./types.js";
 export * from "./repositories/users.js";
 export * from "./repositories/user-memory.js";
+export * from "./repositories/team-skill.js";
 export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";
 export * from "./repositories/permission-policies.js";

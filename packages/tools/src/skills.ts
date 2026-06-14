@@ -75,20 +75,27 @@ export function loadSkillContent(id: string, root = skillsRoot): string | undefi
   return readFileSync(skillPath, "utf8");
 }
 
-/** 注入工人 system prompt 的技能目录（id + 适用场景一句话）。 */
-export function skillCatalogForPrompt(root = skillsRoot): string {
-  const skills = listSkills(root);
+/** 把技能列表格式化成工人 system prompt 的技能目录（id + 适用场景一句话）。 */
+export function formatSkillCatalog(skills: SkillMeta[]): string {
   if (skills.length === 0) {
     return "";
   }
   return skills.map((skill) => `- ${skill.id}：${skill.whenToUse || skill.description}`).join("\n");
 }
 
-export function createSkillTool(root = skillsRoot): AnyToolSpec {
+/** 注入工人 system prompt 的技能目录（id + 适用场景一句话）。 */
+export function skillCatalogForPrompt(root = skillsRoot): string {
+  return formatSkillCatalog(listSkills(root));
+}
+
+// 团队技能内容映射（skill_key → SKILL.md 全文），由调用方按 workspace 预取后注入。
+export type TeamSkillContentMap = Record<string, string>;
+
+export function createSkillTool(root = skillsRoot, teamContent?: TeamSkillContentMap): AnyToolSpec {
   return {
     id: "load_skill",
     description:
-      "加载一个预设技能（交付物类型的库用法合同与模板）。涉及对应交付物时必须先加载再动手，库用法以技能内容为准。",
+      "加载一个技能（交付物类型的库用法合同与模板，含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库用法以技能内容为准。",
     schema: z.object({
       id: z.string().min(1).optional().describe("技能 id，如 docx-document / stat-charts"),
       skill: z.string().min(1).optional().describe("技能 id 的兼容别名")
@@ -98,9 +105,13 @@ export function createSkillTool(root = skillsRoot): AnyToolSpec {
     sideEffect: "none",
     async execute(input: { id?: string; skill?: string }) {
       const id = input.id ?? input.skill ?? "";
-      const content = loadSkillContent(id, root);
+      // FS 预设优先；未命中再回落团队技能（仅接受合法 id，复用同样的 path-safe 校验）。
+      const teamHit = teamContent && /^[a-z0-9-]+$/u.test(id) ? teamContent[id] : undefined;
+      const content = loadSkillContent(id, root) ?? teamHit;
       if (!content) {
-        const available = listSkills(root).map((skill) => skill.id).join(", ");
+        const fsIds = listSkills(root).map((skill) => skill.id);
+        const teamIds = teamContent ? Object.keys(teamContent) : [];
+        const available = [...fsIds, ...teamIds].join(", ");
         return errorToolResult(`未知技能 id: ${id}。可用技能: ${available || "(无)"}`);
       }
       return okToolResult(content, { data: { id } });

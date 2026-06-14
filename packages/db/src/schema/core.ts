@@ -1223,9 +1223,42 @@ export const userMemories = pgTable(
   ]
 );
 
+// R6.S2 团队级技能：AI 闲时从团队真实工作（接受的交付物/升级缺口）自蒸馏的 SKILL.md，
+// workspace 维度、版本化。active 版本与 FS 预设技能合并后注入 worker prompt（赋能整个团队）。
+// 无人工预审：AI 自验通过即 active；人类仅事后 deprecate/rollback（kill-switch）。
+export const teamSkills = pgTable(
+  "team_skills",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    skillKey: varchar("skill_key", { length: 64 }).notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    whenToUse: text("when_to_use").notNull(),
+    contentMd: text("content_md").notNull(),
+    status: varchar("status", { length: 16 }).$type<"draft" | "active" | "deprecated">().notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    sourceKind: varchar("source_kind", { length: 16 }).$type<"distilled" | "authored">().notNull().default("distilled"),
+    createdByKind: varchar("created_by_kind", { length: 16 }).$type<"ai" | "human">().notNull().default("ai"),
+    confidenceScore: doublePrecision("confidence_score"),
+    sampleCount: integer("sample_count").notNull().default(0),
+    samplesJson: jsonb("samples_json").$type<JsonObject>().notNull().default({}),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    deprecatedReason: text("deprecated_reason"),
+    deprecatedAt: timestampTz("deprecated_at"),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("team_skills_workspace_key_version_uq").on(table.workspaceId, table.skillKey, table.version),
+    index("team_skills_workspace_status_idx").on(table.workspaceId, table.status),
+    index("team_skills_workspace_key_idx").on(table.workspaceId, table.skillKey),
+    index("team_skills_created_at_idx").on(table.createdAt)
+  ]
+);
+
 export const workHubTables = {
   users,
   userMemories,
+  teamSkills,
   clientDevices,
   userProfiles,
   orgs,

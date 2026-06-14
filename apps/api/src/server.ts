@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
+import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
 
 if (settings.webDistDir) {
   attachWebStatic(app, settings.webDistDir);
@@ -10,6 +11,12 @@ if (settings.webDistDir) {
 
 const recoveryScheduler = getDefaultAgentRunRecoveryScheduler();
 recoveryScheduler.start();
+
+// 团队技能闲时自蒸馏（默认关闭：AGENT_RUN_SKILL_CURATION_ENABLED=true 才启）。
+const skillCurationScheduler = settings.agentRun.skillCurationEnabled
+  ? getDefaultAgentRunSkillCurationScheduler()
+  : undefined;
+skillCurationScheduler?.start();
 
 const server = serve(
   {
@@ -30,6 +37,7 @@ const server = serve(
 function shutdown(exitCode: number) {
   logger.info("server_stopping", { exit_code: exitCode });
   recoveryScheduler.stop();
+  skillCurationScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
   forceExit.unref?.();
   server.close(() => {

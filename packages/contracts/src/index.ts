@@ -18,4 +18,5 @@ export * from "./domain/collaboration.js";
 export * from "./domain/agent.js";
 export * from "./domain/governance.js";
 export * from "./domain/user-memory.js";
+export * from "./domain/team-skill.js";
 export * from "./fixtures/manifest-fixtures.js";

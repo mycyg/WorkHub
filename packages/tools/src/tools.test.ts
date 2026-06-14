@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   createSkillTool,
+  formatSkillCatalog,
   listSkills,
   skillCatalogForPrompt, createBuiltInFileTools, createToolRegistry, ensureCommandAllowed, safeResolvePath } from "./index.js";
 
@@ -121,6 +122,34 @@ test("skill registry lists the seven preset skills with frontmatter", () => {
   const catalog = skillCatalogForPrompt();
   assert.equal(catalog.split("\n").length, 7);
   assert.equal(catalog.includes("docx-document"), true);
+});
+
+test("load_skill serves injected team skills (FS-first, team fallback) and lists both on miss", async () => {
+  const ctx = { workdir: "/tmp" };
+  const teamContent = { "quarterly-report": "---\nname: 季度报告\nwhen_to_use: 季报\n---\n\n# 季度报告" };
+  const tool = createSkillTool(undefined, teamContent);
+
+  // FS 预设仍优先命中。
+  const fs = await tool.execute({ id: "docx-document" }, ctx);
+  assert.equal(fs.content.includes("from docx import Document"), true);
+
+  // 团队技能可被加载。
+  const team = await tool.execute({ id: "quarterly-report" }, ctx);
+  assert.equal(team.ok, true);
+  assert.equal(team.content.includes("季度报告"), true);
+
+  // 未知 id 的报错把 FS + 团队技能都列出来。
+  const unknown = await tool.execute({ id: "no-such-skill" }, ctx);
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.content.includes("quarterly-report"), true);
+  assert.equal(unknown.content.includes("docx-document"), true);
+});
+
+test("formatSkillCatalog renders id：whenToUse lines", () => {
+  const catalog = formatSkillCatalog([
+    { id: "a-skill", name: "A", description: "desc", whenToUse: "用 A 的时候" }
+  ]);
+  assert.equal(catalog, "- a-skill：用 A 的时候");
 });
 
 test("load_skill returns skill content and fails closed on unknown ids", async () => {

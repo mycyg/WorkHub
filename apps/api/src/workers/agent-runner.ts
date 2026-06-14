@@ -66,6 +66,10 @@ import {
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { getDefaultUserMemoryContextProvider, type UserMemoryContextProvider } from "../services/user-memory.js";
+import {
+  getDefaultTeamSkillContextProvider,
+  type TeamSkillContextProvider
+} from "../services/team-skill-context.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -324,6 +328,7 @@ export function createInMemoryAgentRunQueue(options: {
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
   userMemory?: UserMemoryContextProvider | false;
+  teamSkills?: TeamSkillContextProvider | false;
   requireDeliverable?: boolean;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
@@ -343,6 +348,7 @@ export function createInMemoryAgentRunQueue(options: {
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
+  const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
@@ -423,7 +429,10 @@ export function createInMemoryAgentRunQueue(options: {
     }, "worker");
   }
 
-  function defaultWorkerSystemPrompt() {
+  function defaultWorkerSystemPrompt(teamSkillCatalogAppendix?: string) {
+    const catalog = [skillCatalogForPrompt(), teamSkillCatalogAppendix?.trim()]
+      .filter((part): part is string => Boolean(part))
+      .join("\n");
     return [
       "你是 WorkHub 的 AI 工人（默认劳动力）。人类是审批者：你的产出会进入\"提议→审批→合并\"流程，必须让非技术审阅者一眼能懂。",
       "",
@@ -436,7 +445,7 @@ export function createInMemoryAgentRunQueue(options: {
       "6. 输出语言跟随任务描述的语言；交付物命名用清晰的小写连字符文件名。",
       "",
       "技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手；库用法、模板与自验步骤以技能内容为准，不得凭记忆臆写 API。",
-      skillCatalogForPrompt()
+      catalog
     ].join("\n");
   }
 
@@ -757,16 +766,6 @@ export function createInMemoryAgentRunQueue(options: {
       updated_at: now().toISOString()
     });
     await persistence?.setWorkdir(current.run_id, workdir, now());
-    const rawTools = options.tools?.(executionInput) ?? defaultTools;
-    const tools: ReturnType<AgentRunToolsProvider> = {
-      toModelTools: (ctx) => rawTools.toModelTools(ctx),
-      execute: async (toolId, input, ctx) => {
-        if (driftedRun(current.run_id)) {
-          return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
-        }
-        return rawTools.execute(toolId, input, ctx);
-      }
-    };
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
       run: current,
       settings,
@@ -783,6 +782,22 @@ export function createInMemoryAgentRunQueue(options: {
     try {
       const resolvedWorkItemContext = await workItemContext?.(current);
       const resolvedUserMemory = await userMemory?.(current);
+      const resolvedTeamSkills = await teamSkills?.(current);
+      // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
+      const teamSkillContent = resolvedTeamSkills?.contentByKey;
+      const rawTools =
+        !options.tools && teamSkillContent && Object.keys(teamSkillContent).length > 0
+          ? createToolRegistry([...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)])
+          : options.tools?.(executionInput) ?? defaultTools;
+      const tools: ReturnType<AgentRunToolsProvider> = {
+        toModelTools: (ctx) => rawTools.toModelTools(ctx),
+        execute: async (toolId, input, ctx) => {
+          if (driftedRun(current.run_id)) {
+            return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
+          }
+          return rawTools.execute(toolId, input, ctx);
+        }
+      };
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
         : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory);
@@ -791,7 +806,7 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: current.work_item_id,
         actorId: current.actor_id,
         workdir,
-        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(),
+        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(resolvedTeamSkills?.catalogAppendix),
         initialUserMessage,
         client,
         tools,
@@ -1320,6 +1335,7 @@ export function getDefaultAgentRunQueue() {
     persistence: getDefaultAgentRunPersistence(),
     workItemContext: getDefaultWorkItemContextProvider(),
     userMemory: getDefaultUserMemoryContextProvider(),
+    teamSkills: getDefaultTeamSkillContextProvider(),
     leaseMs: runtimeSettings.agentRun.leaseMs,
     ...(runtimeSettings.agentRun.heartbeatIntervalMs
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }

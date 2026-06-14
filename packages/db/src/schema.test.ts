@@ -24,7 +24,7 @@ import {
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 48;
+const F02_TABLE_COUNT = 49;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -55,6 +55,7 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
   assert.equal(tableNames.includes("budget_policies"), true);
   assert.equal(tableNames.includes("user_memories"), true);
+  assert.equal(tableNames.includes("team_skills"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);

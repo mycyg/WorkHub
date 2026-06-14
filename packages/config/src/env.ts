@@ -85,7 +85,9 @@ export const envSchema = z.object({
 
   AGENT_RUN_LEASE_MS: z.coerce.number().int().positive().default(300000),
   AGENT_RUN_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
-  AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000)
+  AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000),
+  AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
+  AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -147,6 +149,8 @@ export type Settings = {
     leaseMs: number;
     heartbeatIntervalMs?: number;
     recoveryIntervalMs: number;
+    skillCurationEnabled: boolean;
+    skillCurationIntervalMs: number;
   };
 };
 
@@ -215,7 +219,9 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       ...(parsed.AGENT_RUN_HEARTBEAT_INTERVAL_MS > 0
         ? { heartbeatIntervalMs: parsed.AGENT_RUN_HEARTBEAT_INTERVAL_MS }
         : {}),
-      recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS
+      recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS,
+      skillCurationEnabled: parsed.AGENT_RUN_SKILL_CURATION_ENABLED,
+      skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS
     }
   };
 

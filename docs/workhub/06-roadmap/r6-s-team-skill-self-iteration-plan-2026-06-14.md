@@ -1,7 +1,7 @@
 ---
 module: skill-curation
 layer: agent-runtime
-status: planned
+status: done
 owner: ai-labor-loop
 date: 2026-06-14
 depends_on:
@@ -10,6 +10,17 @@ depends_on:
 ---
 
 # WorkHub 团队技能自迭代规划(TEAM-scoped Autonomous Skill Self-Iteration)
+
+> **交付记录(2026-06-14, status=done):** MVP 已实现并全量绿。与本规划的差异：
+> - 迁移号 **0013**（非 0012；0012 已被 M1 user_memories 占用）→ `packages/db/migrations/0013_shallow_norrin_radd.sql`，`team_skills` 表已上真实库（18 列 / 4 索引 / 2 外键）。
+> - 表数门 F02 47→**49**（M1 +1、S2 +1）。
+> - schema `teamSkills`（含 `source_run_id` / `deprecated_at`，回滚配套）→ `packages/db/src/schema/core.ts`；repo `createTeamSkillRepository`（promote 一 key 一 active + 版本递增、rollbackTo、deprecate、信号查询）→ `packages/db/src/repositories/team-skill.ts`。
+> - 契约 `packages/contracts/src/domain/team-skill.ts`；自验/蒸馏纯函数 `apps/api/src/services/skill-curation.ts`；调度器 `apps/api/src/workers/agent-skill-curation.ts`（copy recovery 模板、idle 闸门、可注入依赖）。
+> - **合并视图注入**：`createSkillTool(root, teamContent)` FS 优先、团队回落；`defaultWorkerSystemPrompt(appendix)` 追加团队技能目录；per-run provider `getDefaultTeamSkillContextProvider`（work_item→workspace→active 团队技能），已对真实库与真实 work_item 验证「蒸馏技能可达 worker」。
+> - **默认关闭**：`AGENT_RUN_SKILL_CURATION_ENABLED=false`（server.ts 闸门），开启才跑 24h 闲时蒸馏，避免 CI/prod 误发 LLM 调用。
+> - 测试：tools 11（含团队 load_skill）/ db 15（F02=49）/ api 161（+9 curation 单测）/ 全量 `pnpm test` exit 0 / 70 步 web smoke 绿。SQL 信号查询（accepted/escalation join）已对真实 PG 验证可编译返回。
+> - 暂缓到后续：团队技能设置页 UI（Phase 2）、dry-run 沙箱执行、agentSteps 工具频率信号（列不确定，先不接）。
+
 
 > **决策(D-1):** NO 人工预审 → AI **全自主蒸馏·晋升**;人类仅事后 kill-switch/rollback(团队设置)。
 > 
