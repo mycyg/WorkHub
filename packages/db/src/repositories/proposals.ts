@@ -115,6 +115,9 @@ export type ProposalMergeContext = {
   branchId: string;
   agentRunId: string | null;
   workdirRef: string | null;
+  // P-COLLAB M2：本分支 run 开始时拍的 project/ base 快照目录(三方合并的共同祖先来源)。
+  // 无 base 快照时为 null,合并/对底稿回退到 accepted-history 祖先。
+  baseSnapshotRef: string | null;
   diffManifest: DeliverableChangeManifest;
 };
 
@@ -1620,12 +1623,16 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           branchId: proposals.branchId,
           agentRunId: branches.agentRunId,
           workdirRef: agentRuns.workdirRef,
+          baseSnapshotRef: snapshots.ref,
           diffManifest: proposals.diffManifest
         })
         .from(proposals)
         .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
         .innerJoin(branches, eq(proposals.branchId, branches.id))
         .leftJoin(agentRuns, eq(branches.agentRunId, agentRuns.id))
+        // P-COLLAB M2：把分支记录的 base 快照(branches.baseSnapshotId,非 FK 软引用)连进来取其目录,
+        // 供 diff3 当共同祖先读文件。snapshot 不存在(悬挂/未拍)时 leftJoin 给 null,合并自动回退。
+        .leftJoin(snapshots, eq(branches.baseSnapshotId, snapshots.id))
         .where(eq(proposals.id, proposalId))
         .limit(1);
       return rows[0] ?? null;

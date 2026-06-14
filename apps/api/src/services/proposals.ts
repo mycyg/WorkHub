@@ -25,6 +25,7 @@ import {
   type TextHunkApplyOverrides
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
+import { readSnapshotFile } from "@workhub/audit";
 import {
   getSharedDatabaseClient,
   createProposalRepository,
@@ -45,6 +46,7 @@ import {
   createLlmMergeFusionCandidateGenerator,
   safelyGenerateMergeFusionCandidates,
   type MergeFusionContentContext,
+  type MergeFusionTextExcerpt,
   type MergeFusionCandidateGenerator
 } from "./merge-fusion-candidates.js";
 import {
@@ -276,6 +278,49 @@ async function readFusionTextExcerpt(input: {
   }
 }
 
+// P-COLLAB M2：manifest 的 target_ref.path 形如 "/outputs/<rel>"；project/ base 快照按 Drive 路径
+// <rel> 存文件（hydrate 时 safeResolvePath(project, file.path)）。约定输出路径镜像项目路径,
+// 故剥掉 outputs/ 前缀即得快照里的相对路径。
+export function drivePathFromTargetPath(targetPath: string | undefined) {
+  if (!targetPath) {
+    return undefined;
+  }
+  const stripped = targetPath.replace(/^\/+/u, "").replace(/^outputs\/+/u, "");
+  return stripped.length > 0 ? stripped : undefined;
+}
+
+// 从本次运行开始时拍的 project/ base 快照里读出某交付物的"共同祖先"内容,喂给 diff3 三方合并。
+// base 快照天然就是这次工作副本的起点；若 change 记录了它所基于的祖先 sha(当前 manifest 尚不填,
+// 见 OQ-4)则额外核对一致才采信,防路径映射出错喂错祖先。读不到/对不上 → undefined,调用方回退。
+export async function readBaseSnapshotFusionExcerpt(input: {
+  baseSnapshotRef: string | null;
+  targetPath: string | undefined;
+  expectedShaBefore?: string;
+}): Promise<MergeFusionTextExcerpt | undefined> {
+  if (!input.baseSnapshotRef) {
+    return undefined;
+  }
+  const drivePath = drivePathFromTargetPath(input.targetPath);
+  if (!drivePath) {
+    return undefined;
+  }
+  const read = await readSnapshotFile({ ref: input.baseSnapshotRef }, drivePath);
+  if (!read) {
+    return undefined;
+  }
+  const expected = normalizeShaRef(input.expectedShaBefore);
+  if (expected && expected !== read.sha256) {
+    return undefined;
+  }
+  const truncated = read.text.length > maxFusionContextChars;
+  return {
+    text: truncated ? read.text.slice(0, maxFusionContextChars) : read.text,
+    bytes: Buffer.byteLength(read.text, "utf8"),
+    truncated,
+    sha256: read.sha256
+  };
+}
+
 async function readFullUtf8TextFile(filePath: string) {
   try {
     const fileStat = await stat(filePath);
@@ -357,13 +402,21 @@ async function fusionContentContextsForConflicts(input: {
           ...(currentFile.sha256After ? { sha256: currentFile.sha256After } : {})
         })
       : undefined;
-    const base = baseFile?.storagePath && baseFile.acceptedChangeId !== currentFile?.acceptedChangeId
-      ? await readFusionTextExcerpt({
-          filePath: baseFile.storagePath,
-          ...(baseFile.acceptedRef ? { ref: baseFile.acceptedRef } : {}),
-          ...(baseFile.sha256After ? { sha256: baseFile.sha256After } : {})
-        })
-      : undefined;
+    // P-COLLAB M2：优先用本次运行开始时的 project/ base 快照当三方合并的共同祖先(它就是这次
+    // 工作副本的真实起点);读不到再回退到 accepted-history 祖先(旧逻辑)。
+    const snapshotBase = await readBaseSnapshotFusionExcerpt({
+      baseSnapshotRef: mergeContext.baseSnapshotRef,
+      targetPath: change?.target_ref.path ?? conflict.target_path,
+      ...(conflict.incoming_sha256_before ? { expectedShaBefore: conflict.incoming_sha256_before } : {})
+    });
+    const base = snapshotBase
+      ?? (baseFile?.storagePath && baseFile.acceptedChangeId !== currentFile?.acceptedChangeId
+        ? await readFusionTextExcerpt({
+            filePath: baseFile.storagePath,
+            ...(baseFile.acceptedRef ? { ref: baseFile.acceptedRef } : {}),
+            ...(baseFile.sha256After ? { sha256: baseFile.sha256After } : {})
+          })
+        : undefined);
     let incoming: Awaited<ReturnType<typeof readFusionTextExcerpt>> | undefined;
     if (mergeContext.workdirRef && change?.target_ref.path) {
       try {

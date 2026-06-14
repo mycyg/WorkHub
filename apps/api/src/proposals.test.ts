@@ -36,7 +36,13 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
-import { createDbProposalService, createInMemoryProposalService, ProposalServiceError } from "./services/proposals.js";
+import {
+  createDbProposalService,
+  createInMemoryProposalService,
+  ProposalServiceError,
+  drivePathFromTargetPath,
+  readBaseSnapshotFusionExcerpt
+} from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-06T00:00:00.000Z");
@@ -400,6 +406,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly taskPlans = new Map<string, MemoryTaskPlanRow[]>();
   public readonly acceptedDriveFiles = new Map<string, ProposalAcceptedDriveFile[]>();
   public readonly workdirRefs = new Map<string, string>();
+  public readonly baseSnapshotRefs = new Map<string, string>();
 
   get acceptedTargetCount() {
     return this.acceptedByTargetKey.size;
@@ -493,6 +500,7 @@ class MemoryProposalRepository implements ProposalRepository {
       branchId: stored.proposal.branchId,
       agentRunId: null,
       workdirRef: this.workdirRefs.get(proposalId) ?? null,
+      baseSnapshotRef: this.baseSnapshotRefs.get(proposalId) ?? null,
       diffManifest: stored.proposal.diffManifest
     };
   }
@@ -1444,6 +1452,52 @@ test("proposal service persists AI fusion candidates when the mediator supplies 
     ),
     true
   );
+});
+
+test("P-COLLAB M2: drivePathFromTargetPath maps an /outputs path to its project/ drive path", () => {
+  assert.equal(drivePathFromTargetPath("/outputs/docs/spec.md"), "docs/spec.md");
+  assert.equal(drivePathFromTargetPath("/outputs/report.md"), "report.md");
+  assert.equal(drivePathFromTargetPath("outputs/report.md"), "report.md");
+  assert.equal(drivePathFromTargetPath("/report.md"), "report.md");
+  assert.equal(drivePathFromTargetPath(undefined), undefined);
+  assert.equal(drivePathFromTargetPath("/outputs/"), undefined);
+});
+
+test("P-COLLAB M2: readBaseSnapshotFusionExcerpt reads the project/ ancestor, gates on sha, and falls back", async () => {
+  const baseSnapshotDir = await mkdtemp(path.join(tmpdir(), "workhub-m2-base-snap-"));
+  await mkdir(path.join(baseSnapshotDir, "docs"), { recursive: true });
+  await writeFile(path.join(baseSnapshotDir, "docs", "spec.md"), "ANCESTOR\n", "utf8");
+  const ancestorSha = sha256Text("ANCESTOR\n");
+
+  // 命中：base 快照里的祖先文件按 /outputs/ 路径映射读到。
+  const hit = await readBaseSnapshotFusionExcerpt({
+    baseSnapshotRef: baseSnapshotDir,
+    targetPath: "/outputs/docs/spec.md"
+  });
+  assert.equal(hit?.text, "ANCESTOR\n");
+  assert.equal(hit?.sha256, ancestorSha);
+
+  // 记录了祖先 sha 且一致 → 采信。
+  assert.equal(
+    (await readBaseSnapshotFusionExcerpt({
+      baseSnapshotRef: baseSnapshotDir,
+      targetPath: "/outputs/docs/spec.md",
+      expectedShaBefore: ancestorSha
+    }))?.text,
+    "ANCESTOR\n"
+  );
+  // 祖先 sha 对不上 → 宁可不采信,回退(undefined),绝不喂错祖先给 diff3。
+  assert.equal(
+    await readBaseSnapshotFusionExcerpt({
+      baseSnapshotRef: baseSnapshotDir,
+      targetPath: "/outputs/docs/spec.md",
+      expectedShaBefore: "f".repeat(64)
+    }),
+    undefined
+  );
+  // 没有 base 快照 / 文件不在快照里 → undefined。
+  assert.equal(await readBaseSnapshotFusionExcerpt({ baseSnapshotRef: null, targetPath: "/outputs/docs/spec.md" }), undefined);
+  assert.equal(await readBaseSnapshotFusionExcerpt({ baseSnapshotRef: baseSnapshotDir, targetPath: "/outputs/missing.md" }), undefined);
 });
 
 test("proposal service dry-runs structured field patches before applying AI fusion", async () => {

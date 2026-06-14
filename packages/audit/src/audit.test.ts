@@ -4,11 +4,26 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createSnapshotService, buildManifestFacts, shouldAskGate } from "./index.js";
+import { createSnapshotService, buildManifestFacts, shouldAskGate, readSnapshotFile } from "./index.js";
 
 async function tempDir(prefix: string) {
   return mkdtemp(path.join(os.tmpdir(), prefix));
 }
+
+test("readSnapshotFile reads an ancestor file by relative path, guards traversal, and returns null when absent", async () => {
+  const snapshotDir = await tempDir("workhub-audit-base-snap-");
+  await mkdir(path.join(snapshotDir, "docs"), { recursive: true });
+  await writeFile(path.join(snapshotDir, "docs", "spec.md"), "ancestor body\n", "utf8");
+
+  const hit = await readSnapshotFile({ ref: snapshotDir }, "docs/spec.md");
+  assert.equal(hit?.text, "ancestor body\n");
+  assert.match(hit?.sha256 ?? "", /^[0-9a-f]{64}$/u);
+
+  // 路径越界(..)一律视为不存在,绝不读到快照目录外的文件。
+  assert.equal(await readSnapshotFile({ ref: snapshotDir }, "../escape.md"), null);
+  // 不存在的文件返回 null（调用方据此回退到 accepted-history 祖先）。
+  assert.equal(await readSnapshotFile({ ref: snapshotDir }, "docs/missing.md"), null);
+});
 
 test("SnapshotService takes and reverts a sandbox file snapshot", async () => {
   const workdir = await tempDir("workhub-audit-work-");
