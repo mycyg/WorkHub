@@ -136,7 +136,17 @@ async function callModel(input: AgentLoopInput, params: {
   }
 
   const responseStream = await stream(request);
+  // M16：流式增量不再每个 delta 都发一条持久总线事件——否则长回复会产生成百上千次 awaited publish，
+  // 既把流式消费串行卡在 publish 延迟上，又用 per-token 记录淹没事件存储/SSE 订阅者。
+  // 节流成最多每秒一条心跳：保留"正在生成"的活跃感，把总线写入降到 O(时长) 而非 O(token 数)。
+  const STREAM_EMIT_THROTTLE_MS = 1000;
+  let lastStreamEmitAt = 0;
   for await (const event of responseStream) {
+    const at = Date.now();
+    if (at - lastStreamEmitAt < STREAM_EMIT_THROTTLE_MS) {
+      continue;
+    }
+    lastStreamEmitAt = at;
     await input.emit?.({
       type: eventTypes.agentRunStep,
       previewText: previewStreamEvent(event),

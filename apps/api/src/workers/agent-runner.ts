@@ -738,7 +738,11 @@ export function createInMemoryAgentRunQueue(options: {
     await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
   }
 
-  async function openProposalFromManifest(run: AgentRunQueueRecord, result: AgentLoopResult) {
+  async function openProposalFromManifest(
+    run: AgentRunQueueRecord,
+    result: AgentLoopResult,
+    confidenceId?: string
+  ) {
     if (!proposalSink || result.status !== "succeeded" || !result.manifest) {
       return;
     }
@@ -749,6 +753,8 @@ export function createInMemoryAgentRunQueue(options: {
       actor: { actor_kind: "ai", label: "WorkHub AI" },
       title: result.manifest.title,
       agentRunId: run.run_id,
+      // M27：把本次运行的置信度记录与提议关联，审查者打开提议即可看到 AI 的评级/结论。
+      ...(confidenceId ? { confidenceId } : {}),
       ...(result.manifest.branch_id ? { branchId: result.manifest.branch_id } : {})
     });
     await emitProposalOpenedEvent(run, proposal);
@@ -899,9 +905,9 @@ export function createInMemoryAgentRunQueue(options: {
       current = updateRun(finalizeExecutedRun(current, result, now()));
       await persistRunWithTrace(current);
       await emitFinalRunEvent(current, result);
-      await recordRunConfidence(current, result);
+      const confidenceId = await recordRunConfidence(current, result);
       try {
-        await openProposalFromManifest(current, result);
+        await openProposalFromManifest(current, result, confidenceId);
       } catch (error) {
         console.warn("WorkHub openProposalFromManifest failed; run already recorded as succeeded", error);
       }
@@ -977,14 +983,19 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
-  async function recordRunConfidence(run: AgentRunQueueRecord, result: AgentLoopResult) {
+  async function recordRunConfidence(
+    run: AgentRunQueueRecord,
+    result: AgentLoopResult
+  ): Promise<string | undefined> {
     if (options.confidence === false || !options.confidence) {
-      return;
+      return undefined;
     }
     try {
-      await options.confidence({ run, result });
+      const recorded = await options.confidence({ run, result });
+      return recorded?.confidenceId;
     } catch (error) {
       console.warn("WorkHub AgentRun confidence recording failed", error);
+      return undefined;
     }
   }
 

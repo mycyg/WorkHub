@@ -58,6 +58,7 @@ export type CreateProposalFromManifestInput = {
   actor: ProposalRepositoryActor;
   title?: string;
   agentRunId?: string;
+  confidenceId?: string;
   at?: Date;
 };
 
@@ -1589,6 +1590,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           diffManifest: manifest,
           openedByKind: input.actor.actorKind,
           openedByUserId: input.actor.actorUserId,
+          // M27：关联本次运行的置信度记录，让提议自带 AI 评级（不再永远为 null）。
+          ...(input.confidenceId ? { confidenceId: input.confidenceId } : {}),
           createdAt: at,
           updatedAt: at
         });

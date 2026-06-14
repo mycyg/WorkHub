@@ -97,6 +97,7 @@ export type ProposalService = {
     title?: string;
     branchId?: string;
     agentRunId?: string;
+    confidenceId?: string;
   }) => Promise<StoredProposal>;
   get: (proposalId: string) => Promise<StoredProposal | null>;
   getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
@@ -107,6 +108,7 @@ export type ProposalService = {
     actor: ProposalActor;
     decision: "approve" | "request_changes";
     reasonMd?: string;
+    remember?: "once" | "always";
   }) => Promise<StoredProposal>;
   merge: (input: {
     proposalId: string;
@@ -1609,6 +1611,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         actor: actorToRepository(input.actor),
         title: input.title ?? manifest.title,
         ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
+        ...(input.confidenceId ? { confidenceId: input.confidenceId } : {}),
         at
       });
       return storedRowsToProposal(rows);
@@ -1664,18 +1667,22 @@ export function createDbProposalService(repository: ProposalRepository, options:
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
       // R6.M1：用户打回并写了原因 → 沉淀为该用户的 correction 记忆（best-effort，失败不阻断审批）。
-      try {
-        const memory = correctionFromReview({
-          reviewerUserId: input.actor.actor_user_id ?? null,
-          decision: input.decision,
-          reasonMd: input.reasonMd,
-          proposalId: input.proposalId
-        });
-        if (memory) {
-          await getDefaultUserMemoryRepository().upsert(memory);
+      // M26：仅当 remember === "always" 才永久沉淀（与 approvals.ts 的 shouldLearnAlways 语义一致）；
+      // 默认 "once" 表示只此一次、不长期学习，绝不偷偷写入记忆。
+      if (input.remember === "always") {
+        try {
+          const memory = correctionFromReview({
+            reviewerUserId: input.actor.actor_user_id ?? null,
+            decision: input.decision,
+            reasonMd: input.reasonMd,
+            proposalId: input.proposalId
+          });
+          if (memory) {
+            await getDefaultUserMemoryRepository().upsert(memory);
+          }
+        } catch {
+          // 记忆沉淀失败不影响审批结果
         }
-      } catch {
-        // 记忆沉淀失败不影响审批结果
       }
       return storedRowsToProposal(rows);
     },

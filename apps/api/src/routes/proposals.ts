@@ -342,7 +342,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         proposalId: c.req.param("id"),
         actor: proposalActorFor(c.var.actor),
         decision: payload.decision,
-        ...(payload.reason_md ? { reasonMd: payload.reason_md } : {})
+        ...(payload.reason_md ? { reasonMd: payload.reason_md } : {}),
+        ...(payload.remember ? { remember: payload.remember } : {})
       });
     } catch (error) {
       handleProposalServiceError(error);

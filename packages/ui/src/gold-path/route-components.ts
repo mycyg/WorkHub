@@ -712,7 +712,7 @@ function jsonAttr(value: unknown) {
   return escapeHtml(JSON.stringify(value));
 }
 
-function renderAttentionRows(items: AttentionItem[], emptyCopy: string) {
+function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: boolean) {
   if (items.length === 0) {
     return `<p class="wh-subtle">${escapeHtml(emptyCopy)}</p>`;
   }
@@ -723,7 +723,7 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string) {
         <strong>${escapeHtml(item.title)}</strong>
         <p>${escapeHtml(item.summary_text)}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(item.priority)}</span>
+      <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
     </div>`)
     .join("");
 }
@@ -741,6 +741,130 @@ function homePriorityPill(priority: string, zh: boolean): string {
     : { urgent: ["Urgent", "danger"], high: ["High", "warn"], normal: ["Normal", "muted"], low: ["Low", "muted"] };
   const [label, tone] = map[priority] ?? [priority, "muted"];
   return `<span class="wh-pill wh-r4-prio wh-r4-prio--${tone}">${escapeHtml(label)}</span>`;
+}
+
+// M23：把机器枚举值翻成给人看的本地化标签（可见 pill 用；data-* 标记仍保留原值供 smoke/脚本断言）。
+// 未知值回退为去下划线、首字母大写的形式，至少比 "proposal_review" 友好。
+function humanizeToken(value: string): string {
+  return value.replace(/_/g, " ").replace(/\b\w/gu, (char) => char.toUpperCase());
+}
+
+function localizedEnumLabel(value: string, zh: boolean, zhMap: Record<string, string>, enMap: Record<string, string>): string {
+  if (zh) {
+    return zhMap[value] ?? enMap[value] ?? humanizeToken(value);
+  }
+  return enMap[value] ?? humanizeToken(value);
+}
+
+function attentionPriorityLabel(priority: string, zh: boolean): string {
+  return localizedEnumLabel(
+    priority,
+    zh,
+    { urgent: "紧急", high: "较高", normal: "常规", low: "低" },
+    { urgent: "Urgent", high: "High", normal: "Normal", low: "Low" }
+  );
+}
+
+function attentionKindLabel(kind: string, zh: boolean): string {
+  return localizedEnumLabel(
+    kind,
+    zh,
+    {
+      clarification: "待澄清",
+      approval: "待审批",
+      proposal_review: "待审查",
+      escalation: "已升级",
+      sync_conflict: "撞车冲突",
+      knowledge_result: "知识结果",
+      budget: "预算",
+      delivery_ready: "可交付",
+      system_health: "系统状态"
+    },
+    {
+      clarification: "Clarification",
+      approval: "Approval",
+      proposal_review: "Review",
+      escalation: "Escalated",
+      sync_conflict: "Conflict",
+      knowledge_result: "Knowledge",
+      budget: "Budget",
+      delivery_ready: "Ready",
+      system_health: "System"
+    }
+  );
+}
+
+function notificationSeverityLabel(severity: string, zh: boolean): string {
+  return localizedEnumLabel(
+    severity,
+    zh,
+    { urgent: "紧急", high: "重要", normal: "常规" },
+    { urgent: "Urgent", high: "High", normal: "Normal" }
+  );
+}
+
+function notificationTypeLabel(type: string, zh: boolean): string {
+  return localizedEnumLabel(
+    type,
+    zh,
+    {
+      proposal_review: "待审查",
+      escalation: "已升级",
+      sync_conflict: "撞车冲突",
+      delivery_ready: "可交付",
+      budget_warning: "预算预警",
+      knowledge_result: "知识结果",
+      milestone: "里程碑"
+    },
+    {}
+  );
+}
+
+function driveItemKindLabel(kind: string, zh: boolean): string {
+  return localizedEnumLabel(kind, zh, { file: "文件", folder: "文件夹" }, { file: "File", folder: "Folder" });
+}
+
+function driveOpTypeLabel(op: string, zh: boolean): string {
+  return localizedEnumLabel(
+    op,
+    zh,
+    {
+      upload_file: "上传文件",
+      delete_item: "删除",
+      restore_item: "恢复",
+      restore_version: "恢复版本",
+      rename_item: "重命名",
+      comment_to_draft: "评论转草稿",
+      draft_to_proposal: "草稿转申请"
+    },
+    {
+      upload_file: "Upload",
+      delete_item: "Delete",
+      restore_item: "Restore",
+      restore_version: "Restore version",
+      rename_item: "Rename",
+      comment_to_draft: "Comment → draft",
+      draft_to_proposal: "Draft → proposal"
+    }
+  );
+}
+
+function driveVersionSourceLabel(source: string, zh: boolean): string {
+  return localizedEnumLabel(
+    source,
+    zh,
+    { accepted_deliverable: "已采纳交付", manual_upload: "手动上传", comment_draft: "评论草稿" },
+    { accepted_deliverable: "Accepted", manual_upload: "Upload", comment_draft: "Comment draft" }
+  );
+}
+
+function meetingInsightKindLabel(kind: string, zh: boolean): string {
+  return localizedEnumLabel(
+    kind,
+    zh,
+    { new_requirement: "新需求", requirement_change: "需求变更", normal_note: "普通记录" },
+    { new_requirement: "New requirement", requirement_change: "Requirement change", normal_note: "Note" }
+  );
 }
 
 function homeRunStateLabel(state: string, zh: boolean): string {
@@ -844,7 +968,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-home-queue="true">
           <h3>${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
-          ${renderAttentionRows(vm.queue, goldPathT(locale, "home.entryText"))}
+          ${renderAttentionRows(vm.queue, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
           <h3>${escapeHtml(goldPathT(locale, "empty.evidence"))}</h3>
@@ -999,7 +1123,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
   // 左栏：待审批列表（紧凑可点选行，primary 高亮）。操作按钮统一放右栏，避免重复 data-action-id。
   const queueRows = vm.items
     .map((item) => `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}">
-      <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span><span class="wh-pill">${escapeHtml(item.kind)}</span></div>
+      <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, locale === "zh-CN"))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, locale === "zh-CN"))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
       ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "去处理" : "Open")}</a>` : ""}
@@ -1492,7 +1616,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
           <p>${escapeHtml(item.path)}</p>
         </div>
         <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(item.kind)}</span>
+          <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
           ${current ? `<span class="wh-pill">v${escapeHtml(String(current.version_no))}</span>` : ""}
           ${size ? `<span class="wh-pill">${escapeHtml(size)}</span>` : ""}
         </div>
@@ -1506,7 +1630,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at}`)}</p>
       </div>
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(version.source)}</span>
+        <span class="wh-pill">${escapeHtml(driveVersionSourceLabel(version.source, locale === "zh-CN"))}</span>
         ${version.current ? `<span class="wh-pill">${escapeHtml(routeT(locale, "drive.current"))}</span>` : ""}
       </div>
     </div>`).join("")
@@ -1543,7 +1667,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <p>${escapeHtml(item.path)}</p>
       </div>
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(item.kind)}</span>
+        <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at)}</span>` : ""}
       </div>
     </div>`).join("")
@@ -1555,7 +1679,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
         <p>${escapeHtml(operation.created_at)}</p>
       </div>
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(operation.op_type)}</span>
+        <span class="wh-pill">${escapeHtml(driveOpTypeLabel(operation.op_type, locale === "zh-CN"))}</span>
         ${operation.target_path ? `<span class="wh-pill">${escapeHtml(operation.target_path)}</span>` : ""}
       </div>
     </div>`).join("")
@@ -1659,7 +1783,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
         : "";
       return `<article class="wh-card wh-r4-route-card" data-r5-meeting-insight="${escapeHtml(insight.id)}" data-r5-meeting-insight-status="${escapeHtml(insight.status)}" data-r5-meeting-insight-kind="${escapeHtml(insight.kind)}">
         <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(insight.kind)}</span>
+          <span class="wh-pill">${escapeHtml(meetingInsightKindLabel(insight.kind, locale === "zh-CN"))}</span>
           <span class="wh-pill">${escapeHtml(meetingInsightStatusLabel(insight.status, locale))}</span>
           ${draftLink}
           ${proposalLink}
@@ -1794,8 +1918,8 @@ function renderNotificationBucket(
       <div>
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(notificationStatusLabel(item.status, locale))}</span>
-          <span class="wh-pill">${escapeHtml(item.severity)}</span>
-          <span class="wh-pill">${escapeHtml(item.type)}</span>
+          <span class="wh-pill">${escapeHtml(notificationSeverityLabel(item.severity, locale === "zh-CN"))}</span>
+          <span class="wh-pill">${escapeHtml(notificationTypeLabel(item.type, locale === "zh-CN"))}</span>
         </div>
         <strong>${escapeHtml(item.title)}</strong>
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
