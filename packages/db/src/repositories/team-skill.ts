@@ -59,8 +59,8 @@ async function evictActiveOverCap(db: WorkHubDb, workspaceId: string, at: Date):
 }
 
 export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
-  async function latestVersion(workspaceId: string, skillKey: string): Promise<number> {
-    const rows = await db
+  async function latestVersion(workspaceId: string, skillKey: string, executor: WorkHubDb = db): Promise<number> {
+    const rows = await executor
       .select({ version: teamSkills.version })
       .from(teamSkills)
       .where(and(eq(teamSkills.workspaceId, workspaceId), eq(teamSkills.skillKey, skillKey)))
@@ -72,46 +72,49 @@ export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
   return {
     async promote(input) {
       const now = new Date();
-      const nextVersion = (await latestVersion(input.workspaceId, input.skillKey)) + 1;
+      // 三步原子化（M14）：弃旧 active → 插新 active → 超额驱逐。否则中途崩溃会让该 key 没有任何 active 版本。
+      return db.transaction(async (tx) => {
+        const nextVersion = (await latestVersion(input.workspaceId, input.skillKey, tx)) + 1;
 
-      // 同 key 的旧 active 版本先弃用，保证"一 key 一 active"。
-      await db
-        .update(teamSkills)
-        .set({
-          status: "deprecated",
-          deprecatedReason: `superseded by v${nextVersion}`,
-          deprecatedAt: now,
-          updatedAt: now
-        })
-        .where(
-          and(
-            eq(teamSkills.workspaceId, input.workspaceId),
-            eq(teamSkills.skillKey, input.skillKey),
-            eq(teamSkills.status, "active")
-          )
-        );
+        // 同 key 的旧 active 版本先弃用，保证"一 key 一 active"。
+        await tx
+          .update(teamSkills)
+          .set({
+            status: "deprecated",
+            deprecatedReason: `superseded by v${nextVersion}`,
+            deprecatedAt: now,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(teamSkills.workspaceId, input.workspaceId),
+              eq(teamSkills.skillKey, input.skillKey),
+              eq(teamSkills.status, "active")
+            )
+          );
 
-      const inserted = await db
-        .insert(teamSkills)
-        .values({
-          id: randomUUID(),
-          workspaceId: input.workspaceId,
-          skillKey: input.skillKey,
-          name: input.name,
-          whenToUse: input.whenToUse,
-          contentMd: input.contentMd,
-          status: "active",
-          version: nextVersion,
-          sourceKind: input.sourceKind ?? "distilled",
-          createdByKind: input.createdByKind ?? "ai",
-          ...(input.confidenceScore !== undefined ? { confidenceScore: input.confidenceScore } : {}),
-          sampleCount: input.sampleCount ?? 0,
-          ...(input.samplesJson ? { samplesJson: input.samplesJson } : {}),
-          ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {})
-        })
-        .returning();
-      await evictActiveOverCap(db, input.workspaceId, now);
-      return inserted[0]!;
+        const inserted = await tx
+          .insert(teamSkills)
+          .values({
+            id: randomUUID(),
+            workspaceId: input.workspaceId,
+            skillKey: input.skillKey,
+            name: input.name,
+            whenToUse: input.whenToUse,
+            contentMd: input.contentMd,
+            status: "active",
+            version: nextVersion,
+            sourceKind: input.sourceKind ?? "distilled",
+            createdByKind: input.createdByKind ?? "ai",
+            ...(input.confidenceScore !== undefined ? { confidenceScore: input.confidenceScore } : {}),
+            sampleCount: input.sampleCount ?? 0,
+            ...(input.samplesJson ? { samplesJson: input.samplesJson } : {}),
+            ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {})
+          })
+          .returning();
+        await evictActiveOverCap(tx, input.workspaceId, now);
+        return inserted[0]!;
+      });
     },
 
     async listActive(workspaceId) {
@@ -153,31 +156,34 @@ export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
     async rollbackTo(workspaceId, skillKey, version, at) {
       const now = at ?? new Date();
       // 目标版本设 active，同 key 其余版本弃用（人类回滚 / kill-switch 配套）。
-      const target = await db
-        .update(teamSkills)
-        .set({ status: "active", deprecatedReason: null, deprecatedAt: null, updatedAt: now })
-        .where(
-          and(
-            eq(teamSkills.workspaceId, workspaceId),
-            eq(teamSkills.skillKey, skillKey),
-            eq(teamSkills.version, version)
+      // 两步原子化（M14）：否则中途崩溃会出现多个 active 或一个都不 active。
+      return db.transaction(async (tx) => {
+        const target = await tx
+          .update(teamSkills)
+          .set({ status: "active", deprecatedReason: null, deprecatedAt: null, updatedAt: now })
+          .where(
+            and(
+              eq(teamSkills.workspaceId, workspaceId),
+              eq(teamSkills.skillKey, skillKey),
+              eq(teamSkills.version, version)
+            )
           )
-        )
-        .returning({ id: teamSkills.id });
-      if (target.length === 0) {
-        return false;
-      }
-      await db
-        .update(teamSkills)
-        .set({ status: "deprecated", deprecatedReason: `rolled back to v${version}`, deprecatedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(teamSkills.workspaceId, workspaceId),
-            eq(teamSkills.skillKey, skillKey),
-            ne(teamSkills.version, version)
-          )
-        );
-      return true;
+          .returning({ id: teamSkills.id });
+        if (target.length === 0) {
+          return false;
+        }
+        await tx
+          .update(teamSkills)
+          .set({ status: "deprecated", deprecatedReason: `rolled back to v${version}`, deprecatedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(teamSkills.workspaceId, workspaceId),
+              eq(teamSkills.skillKey, skillKey),
+              ne(teamSkills.version, version)
+            )
+          );
+        return true;
+      });
     },
 
     async listActiveWorkspaceIds() {

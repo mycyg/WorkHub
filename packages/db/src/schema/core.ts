@@ -310,7 +310,11 @@ export const notifications = pgTable(
     index("notifications_work_item_id_idx").on(table.workItemId),
     index("notifications_dedupe_key_idx").on(table.dedupeKey),
     index("notifications_read_at_idx").on(table.readAt),
-    index("notifications_archived_at_idx").on(table.archivedAt)
+    index("notifications_archived_at_idx").on(table.archivedAt),
+    // M13/M15：同一用户同一 dedupeKey 只能有一条，挡住并发 check-then-insert 产生的重复通知。
+    uniqueIndex("notifications_user_dedupe_uq")
+      .on(table.userId, table.dedupeKey)
+      .where(sql`${table.dedupeKey} is not null`)
   ]
 );
 

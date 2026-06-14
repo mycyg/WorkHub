@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -292,10 +292,13 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .from(acceptedDeliverableChanges)
           .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
           .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+          // M12：按采纳记录自身的 projectId 圈定范围（而非 leftJoin 出来的 driveItem.projectId），
+          // 否则非 drive 目标（driveItemId 为空，如 text_doc）的采纳会被 eq(NULL, id) 默默丢弃。
+          // deletedAt 仅在确有 drive item 时才校验。
           .where(and(
-            eq(projectDriveItems.projectId, project.id),
-            isNull(projectDriveItems.deletedAt),
-            isNull(acceptedDeliverableChanges.supersededAt)
+            eq(acceptedDeliverableChanges.projectId, project.id),
+            isNull(acceptedDeliverableChanges.supersededAt),
+            or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
           ))
           .orderBy(desc(acceptedDeliverableChanges.createdAt))
           .limit(limit),
