@@ -3,7 +3,7 @@
 > **业务版 GitHub × AI-native 工作中台。AI 是默认劳动力,人是审批者与异常处理者。**
 > 本目录按"全新项目"组织。上游:[PRD](../prd/2026-06-04-workhub-prd.md) · [Brainstorm](../brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)。
 > 研究参照:`D:/02_代码与开发/_workhub_research/opencode`。
-> 状态(2026-06-14):**156 篇文档已落盘**。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统代码已 pilot-ready**；**R5.10-dry + R5.10-real 已通过**：dry 在本机 PG16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download；real 用 DeepSeek 真 provider 跑完 6 个 AgentRun，T1–T4 质量全达标、T5 升级、B1 预算护栏，真实成本 `0.142346 CNY`。**S1 Pilot Launch Gate、Day 0 Real Work Entry、Day 1 Feedback + Observability、Day 2 Feedback Hardening 均已通过，Day 3 已 ready-to-invite-and-observe**：Docker Desktop + pilot compose 真实栈完成起栈、真实 `/intake` 到 WorkItem/AgentRun/Proposal/Replay/Cost、第二用户非 admin 路径、post-run WorkItem clarity、browser QA resume/idempotency、QA artifact triage、六指标 API/CLI、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验；Day3 preflight 已确认 opened proposal / active run / pending approval 均为 `0`，observation audit 已要求显式真实参与者昵称。下一施工线为 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./06-roadmap/s1-pilot-day3-expansion-plan-2026-06-13.md)。
+> 状态(2026-06-14):**157 篇文档已落盘**。**R6「复利劳动力」八阶段全部竣工、CI 全绿**（V0 靛蓝 token / A0 AI 战绩 / W1 决策收件箱首页 / M1 用户记忆 / S2 团队 skill 自迭代 / P3 桌宠情绪气泡 / **W2 审批中心 diff 工作台（全量含评论流，6 增量 + 对抗式验收 12 项加固）** / C4 卖萌文案）；**全项目多 agent 深度 review 出的 87 个真问题（3C+14H+27M+43L）已全部处置、CI 全绿**（详见 [`06-roadmap/full-project-review-2026-06-14.md`](./06-roadmap/full-project-review-2026-06-14.md)）。**权威施工顺序 = [`06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md`](./06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md)**（北极星 = 真实团队用核心闭环干一周活）。**S1 序列 R5.9–R5.12 全部竣工 → 系统代码已 pilot-ready**；**R5.10-dry + R5.10-real 已通过**：dry 在本机 PG16 跑完需求→AgentRun→proposal→审批→合并→accepted ledger→replay→download；real 用 DeepSeek 真 provider 跑完 6 个 AgentRun，T1–T4 质量全达标、T5 升级、B1 预算护栏，真实成本 `0.142346 CNY`。**S1 Pilot Launch Gate、Day 0 Real Work Entry、Day 1 Feedback + Observability、Day 2 Feedback Hardening 均已通过，Day 3 已 ready-to-invite-and-observe**：Docker Desktop + pilot compose 真实栈完成起栈、真实 `/intake` 到 WorkItem/AgentRun/Proposal/Replay/Cost、第二用户非 admin 路径、post-run WorkItem clarity、browser QA resume/idempotency、QA artifact triage、六指标 API/CLI、backup/restore、管理员注册、Cost/Settings 中英 UI 与 fresh pilot 导航复验；Day3 preflight 已确认 opened proposal / active run / pending approval 均为 `0`，observation audit 已要求显式真实参与者昵称。下一施工线为 [`s1-pilot-day3-expansion-plan-2026-06-13.md`](./06-roadmap/s1-pilot-day3-expansion-plan-2026-06-13.md)。
 
 ---
 
@@ -42,6 +42,9 @@
 | S1 Day 1 | ✅ | 第二用户非 admin 路径、Day1 真实任务 intent/free text、Proposal merge、Replay/Cost、六指标 API/CLI、feedback log、backup/restore 全绿。 |
 | S1 Day 2 | ✅ | post-run WorkItem clarity、QA resume/idempotency、opened QA artifact triage、六指标 baseline、backup/restore 全绿。 |
 | S1 Day 3 | observe-ready ✅ | `qa:s1-day3-preflight` 与 `qa:s1-day3-observation` 已准备：队列干净，metrics 与 Day2 baseline 可比，等待 1-3 位真实使用者进入 `/intake`。 |
+| R6 复利劳动力 | ✅ | 方向 [r6-compounding-ai-labor-plan](./06-roadmap/r6-compounding-ai-labor-plan-2026-06-14.md)：八阶段 V0/A0/W1/M1/S2/P3/W2/C4 全竣工、CI 全绿。决策收件箱首页 + AI 战绩 + 团队 skill 自迭代（AI 全自动晋升、人类事后 kill-switch）+ 用户级 memory + 桌宠 5 情绪 3 气泡；目标=AI 劳动力复利、人逐步减负。 |
+| 全项目深度 review | ✅ | 多 agent + 对抗验证出 87 真问题（3C+14H+27M+43L），按严重度分批全部处置、CI 全绿（迁移 0016/0017/0018）；仅首页 SSE 架构项 spawn 缓办、2 架构项注释归档。详见 [full-project-review](./06-roadmap/full-project-review-2026-06-14.md)。 |
+| R6 W2 审批工作台 | ✅ | [r6-w2-approval-workbench-plan](./06-roadmap/r6-w2-approval-workbench-plan-2026-06-14.md)：审批中心升级为概念图④「三栏 diff 工作台」（左可选列表+SLA / 中 before→after 对比+合规检查+AI 解释+冲突 / 右 决策+记住规则+审批流程时间线+评论流），6 增量（含迁移 0019 approval_comments）+ 对抗式验收 12 项加固（IDOR/越权/无界查询/N+1 全清零），CI 全绿。 |
 
 ---
 
@@ -226,6 +229,15 @@ WorkHub 不是单一 app,而是**一个 headless 核心 + 多个瘦客户端**(�
 | `s1-pilot-day2-feedback-hardening-plan-2026-06-13.md` | **S1 Day 2**:post-run WorkItem clarity、browser QA resume/idempotency、opened QA artifact triage、Day2 metrics baseline 与 backup/restore 全绿 | ✅ |
 | `s1-pilot-day3-expansion-plan-2026-06-13.md` | **S1 Day 3**:邀请 1-3 个真实使用者，每人 1 件真实任务，继续 metrics delta、反馈 issue 化与 backup/restore | active |
 | `s1-pilot-week-runbook-2026-06-12.md` | **S1 运营**:Pilot Week turnkey 手册，起飞前检查 / day-0 seed / 每日反馈回灌 / 六指标采集 / 周末报告模板 / S2 决策口径；Launch Gate、Day0、Day1、Day2 全绿后进入 active-day3-expansion | active-day3-expansion |
+| `r6-compounding-ai-labor-plan-2026-06-14.md` | **R6 方向总纲**:复利劳动力——决策收件箱 + AI 战绩 + 团队 skill 自迭代 + 用户 memory；八阶段相位表与客户端分工 | ✅ |
+| `r6-web-redesign-plan-2026-06-14.md` | **R6 V0+W1+W2**:Web 视觉重做（靛蓝 token / 决策收件箱首页 / 审批三栏）规范化施工步骤 | ✅ |
+| `r6-a0-ai-worklog-plan-2026-06-14.md` | **R6 A0**:AI 战绩（自主率 / 今日处理 N 件 / 估算省时），派生自 pilot 指标行 + `/api/ai-worklog/today` | ✅ |
+| `r6-m1-user-memory-plan-2026-06-14.md` | **R6 M1**:用户个人级 memory（偏好/纠正注入 worker prompt，规则提取 v0 不烧 LLM，可自助删） | ✅ |
+| `r6-s-team-skill-self-iteration-plan-2026-06-14.md` | **R6 S2/S3**:团队（workspace）级 skill 自迭代——FS∪DB 合并视图 + 闲时蒸馏，AI 全自动晋升 + 人类事后 kill-switch | ✅ |
+| `r6-p3-cuu-pet-plan-2026-06-14.md` | **R6 P3**:桌宠表现层收敛 5 情绪 3 气泡（cream 审批 / white 对话 / light-blue 检索），不动 Live2D 黑白猫资产 | ✅ |
+| `r6-w2-approval-workbench-plan-2026-06-14.md` | **R6 W2**:审批中心概念图④「三栏 diff 工作台」（含评论流）；6 增量 + 迁移 0019 + 对抗式验收 12 项加固 | ✅ |
+| `r6-project-file-merge-collaboration-plan-2026-06-14.md` | **P-COLLAB**:项目文件合并协作（序列化锁 + project 范围撞车 + L3 stale-base 防丢更新） | 文档已落 |
+| `full-project-review-2026-06-14.md` | **全项目深度 review**:多 agent + 对抗验证出 87 真问题（3C+14H+27M+43L），全部处置记录与缓办理由 | ✅ |
 | `functional-requirements.md` | 全量 FR 清单(可追溯到模块与验收) | ✅ |
 
 ### 根级
