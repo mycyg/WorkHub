@@ -65,6 +65,7 @@ import {
 } from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
+import { getDefaultUserMemoryContextProvider, type UserMemoryContextProvider } from "../services/user-memory.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -322,6 +323,7 @@ export function createInMemoryAgentRunQueue(options: {
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
+  userMemory?: UserMemoryContextProvider | false;
   requireDeliverable?: boolean;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
@@ -340,6 +342,7 @@ export function createInMemoryAgentRunQueue(options: {
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
+  const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
@@ -437,7 +440,7 @@ export function createInMemoryAgentRunQueue(options: {
     ].join("\n");
   }
 
-  function defaultInitialUserMessage(run: AgentRunQueueRecord, resolvedWorkItemContext?: string) {
+  function defaultInitialUserMessage(run: AgentRunQueueRecord, resolvedWorkItemContext?: string, userMemorySection?: string) {
     return [
       `任务：${run.title}`,
       `work_item_id: ${run.work_item_id}`,
@@ -448,6 +451,7 @@ export function createInMemoryAgentRunQueue(options: {
             resolvedWorkItemContext
           ]
         : []),
+      ...(userMemorySection ? [userMemorySection] : []),
       "",
       "请按以下方式工作：",
       "1. 先用 list_files / read_file 了解工作目录里已有的材料（如有）。",
@@ -778,9 +782,10 @@ export function createInMemoryAgentRunQueue(options: {
 
     try {
       const resolvedWorkItemContext = await workItemContext?.(current);
+      const resolvedUserMemory = await userMemory?.(current);
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
-        : defaultInitialUserMessage(current, resolvedWorkItemContext);
+        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory);
       const result = await loop.run({
         runId: current.run_id,
         workItemId: current.work_item_id,
@@ -1314,6 +1319,7 @@ export function getDefaultAgentRunQueue() {
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
     workItemContext: getDefaultWorkItemContextProvider(),
+    userMemory: getDefaultUserMemoryContextProvider(),
     leaseMs: runtimeSettings.agentRun.leaseMs,
     ...(runtimeSettings.agentRun.heartbeatIntervalMs
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }

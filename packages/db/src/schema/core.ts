@@ -1193,8 +1193,39 @@ export const auditLogs = pgTable(
   ]
 );
 
+// R6.M1 用户级 memory：个人偏好/纠正/常用上下文，注入 worker prompt 减少重复澄清。
+// 全局 user_id 维度（workspace_id 预留多租户）；用户自助可删（软删 deletedAt）。
+export const userMemories = pgTable(
+  "user_memories",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 32 }).$type<"preference" | "correction" | "recurring_context">().notNull(),
+    key: varchar("key", { length: 256 }).notNull(),
+    valueMd: text("value_md").notNull(),
+    confidence: doublePrecision("confidence").notNull().default(0.5),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    lastUsedAt: timestampTz("last_used_at"),
+    expiresAt: timestampTz("expires_at"),
+    deletedAt: timestampTz("deleted_at"),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("user_memories_key_uq").on(table.userId, table.category, table.key).where(sql`${table.deletedAt} is null`),
+    index("user_memories_user_id_idx").on(table.userId),
+    index("user_memories_workspace_id_idx").on(table.workspaceId),
+    index("user_memories_category_idx").on(table.category),
+    index("user_memories_confidence_idx").on(table.confidence),
+    index("user_memories_last_used_at_idx").on(table.lastUsedAt),
+    index("user_memories_expires_at_idx").on(table.expiresAt),
+    index("user_memories_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
 export const workHubTables = {
   users,
+  userMemories,
   clientDevices,
   userProfiles,
   orgs,

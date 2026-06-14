@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { PilotDay1MetricsRows } from "@workhub/db";
 
-import { buildAiWorklog, createAiWorklogMetricsService } from "./ai-worklog-metrics.js";
+import { buildAiWorklog, createAiWorklogMetricsService } from "./services/ai-worklog-metrics.js";
 
 function emptyRows(): PilotDay1MetricsRows {
   return {

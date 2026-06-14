@@ -51,6 +51,7 @@ import {
   TextHunkMaterializationError,
   type TextHunkMaterializationResult
 } from "./text-hunk-materializer.js";
+import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -1656,6 +1657,20 @@ export function createDbProposalService(repository: ProposalRepository, options:
       });
       if (!rows) {
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+      }
+      // R6.M1：用户打回并写了原因 → 沉淀为该用户的 correction 记忆（best-effort，失败不阻断审批）。
+      try {
+        const memory = correctionFromReview({
+          reviewerUserId: input.actor.actor_user_id ?? null,
+          decision: input.decision,
+          reasonMd: input.reasonMd,
+          proposalId: input.proposalId
+        });
+        if (memory) {
+          await getDefaultUserMemoryRepository().upsert(memory);
+        }
+      } catch {
+        // 记忆沉淀失败不影响审批结果
       }
       return storedRowsToProposal(rows);
     },
