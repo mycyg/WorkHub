@@ -72,7 +72,7 @@ export type SpecDoc = z.infer<typeof specDocSchema>;
 
 export const reviewProposalRequestSchema = z.object({
   decision: z.enum(["approve", "request_changes"]),
-  reason_md: z.string().trim().min(1).max(200_000).optional(),
+  reason_md: z.string().trim().min(1).max(10_000).optional(),
   remember: z.enum(["once", "always"]).default("once")
 }).superRefine((value, ctx) => {
   if (value.decision === "request_changes" && !value.reason_md) {

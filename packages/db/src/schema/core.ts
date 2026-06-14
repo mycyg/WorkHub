@@ -902,7 +902,8 @@ export const agentRuns = pgTable(
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
     title: varchar("title", { length: 256 }).notNull().default("AI worker run"),
     status: varchar("status", { length: 16 }).notNull().default("queued"),
-    model: varchar("model", { length: 64 }).notNull(),
+    // L#61：与 usage_records / cost_ledger_entries 的 model(128) 对齐。
+    model: varchar("model", { length: 128 }).notNull(),
     turnsUsed: integer("turns_used").notNull().default(0),
     maxTurns: integer("max_turns").notNull(),
     totalTimeoutS: integer("total_timeout_s").notNull().default(300),

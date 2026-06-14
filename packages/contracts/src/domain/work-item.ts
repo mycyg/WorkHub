@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   confidenceGradeSchema,
   workItemModeSchema,
+  workItemPrioritySchema,
   workItemStatusSchema
 } from "../enums.js";
 import { idSchema, isoDateTimeSchema, timestampFieldsSchema } from "./common.js";
@@ -34,7 +35,7 @@ export const workItemSchema = timestampFieldsSchema.extend({
   raw_description: z.string().optional(),
   summary_md: z.string().optional(),
   status: workItemStatusSchema,
-  priority: z.string().max(16),
+  priority: workItemPrioritySchema,
   estimate_hours: z.number().optional(),
   estimate_confidence: confidenceGradeSchema.optional(),
   planning_note: z.string().optional(),

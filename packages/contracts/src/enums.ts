@@ -15,6 +15,11 @@ export const workItemStatuses = [
 export const workItemStatusSchema = z.enum(workItemStatuses);
 export type WorkItemStatus = z.infer<typeof workItemStatusSchema>;
 
+// L#59：优先级是固定枚举（下游按 low/normal/high/urgent 处理），不是任意字符串。
+export const workItemPriorities = ["low", "normal", "high", "urgent"] as const;
+export const workItemPrioritySchema = z.enum(workItemPriorities);
+export type WorkItemPriority = z.infer<typeof workItemPrioritySchema>;
+
 export const allowedWorkItemTransitions = {
   intake: ["ai_clarifying", "cancelled"],
   ai_clarifying: ["spec_ready", "cancelled"],

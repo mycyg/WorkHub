@@ -19,7 +19,8 @@ export const agentRunSchema = timestampFieldsSchema.extend({
   mode: workItemModeSchema,
   actor: z.string().min(1).max(32),
   status: agentRunStatusSchema,
-  model: z.string().min(1).max(64),
+  // L#61：与 usage/cost ledger 的 model 列(128)对齐，避免长模型名截断/校验不一致。
+  model: z.string().min(1).max(128),
   turns_used: z.number().int().nonnegative(),
   max_turns: z.number().int().positive(),
   seconds: z.number().nonnegative().optional(),

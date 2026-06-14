@@ -21,6 +21,7 @@ import {
   evidenceRefSchema,
   sessionVmSchema,
   workItemDetailVmSchema,
+  workItemPrioritySchema,
   type AgentStep,
   type AcceptedDeliverableRestoreResult,
   type CreateSessionRequest,
@@ -379,7 +380,8 @@ function toWorkItemVm(row: WorkItemRow): WorkItem {
     project_id: row.projectId,
     submitter_user_id: row.submitterUserId,
     status: row.status,
-    priority: row.priority,
+    // L#59：DB 是 varchar，遇到非枚举的历史值退化为 normal，而不是让整条 VM 校验失败。
+    priority: workItemPrioritySchema.catch("normal").parse(row.priority),
     sync_state: row.syncState as WorkItem["sync_state"],
     version: row.version,
     mode: row.mode,
