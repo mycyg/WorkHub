@@ -87,7 +87,7 @@ export type ApprovalServiceDependencies = {
   users?: Pick<UserRepository, "findActiveById">;
   // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
-  approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "create">;
+  approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -240,15 +240,19 @@ async function buildApprovalItemDetail(
   row: ApprovalRequestRow,
   deps: ApprovalServiceDependencies,
   viewerId: string,
-  locale: WorkHubLocale
+  locale: WorkHubLocale,
+  prefetchedComments?: ApprovalCommentVM[]
 ): Promise<ApprovalDetailVM> {
   // L#W2-4：safeParse——一条畸形 payload 不能 500 掉整页（与 toApprovalAttentionItem 一致地降级）。
   const parsedPayload = approvalPayloadSchema.safeParse(row.payloadJson ?? { raw_args: {} });
   const payload = parsedPayload.success ? parsedPayload.data : { raw_args: {} as Record<string, unknown> };
   const timeline = synthesizeApprovalTimeline(row, viewerId, locale);
-  let comments: ApprovalCommentVM[] = [];
+  // L#W2-12：评论优先用上层批量预取的结果（一次 IN 查询），仅在未预取时回落到单审批查询。
+  let comments: ApprovalCommentVM[] = prefetchedComments ?? [];
   try {
-    comments = (await deps.approvalComments?.listByApproval(row.id) ?? []).map(toApprovalCommentVm);
+    if (!prefetchedComments) {
+      comments = (await deps.approvalComments?.listByApproval(row.id) ?? []).map(toApprovalCommentVm);
+    }
   } catch {
     comments = [];
   }
@@ -468,9 +472,23 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const rows = await deps.approvals.listPendingForUser(user.id, { includeAll: user.isAdmin });
       const itemOptions = options.locale ? { locale: options.locale } : {};
       const locale: WorkHubLocale = options.locale ?? "zh-CN";
-      // W2 inc3：逐项构建详情（join proposal.diff_manifest + 合成路由时间线 + 读评论）。
+      // L#W2-12：一次 IN 查询批量取所有审批的评论，再按 approvalId 分组，避免逐审批 N+1。
+      const commentsByApproval = new Map<string, ApprovalCommentVM[]>();
+      if (deps.approvalComments?.listByApprovals) {
+        try {
+          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id))) {
+            const list = commentsByApproval.get(commentRow.approvalId) ?? [];
+            list.push(toApprovalCommentVm(commentRow));
+            commentsByApproval.set(commentRow.approvalId, list);
+          }
+        } catch {
+          commentsByApproval.clear();
+        }
+      }
+      // W2 inc3：逐项构建详情（join proposal.diff_manifest + 合成路由时间线 + 预取评论）。
       const detailEntries = await Promise.all(
-        rows.map(async (row) => [row.id, await buildApprovalItemDetail(row, deps, user.id, locale)] as const)
+        rows.map(async (row) =>
+          [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [])] as const)
       );
       return {
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),

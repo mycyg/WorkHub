@@ -770,6 +770,7 @@ test("W2 listPendingForUser builds items_detail: deliverable joins manifest, too
     },
     approvalComments: {
       listByApproval: async (id) => (id === deliverableRow.id ? [commentRow] : []),
+      listByApprovals: async (ids) => (ids.includes(deliverableRow.id) ? [commentRow] : []),
       create: async () => commentRow
     },
     now: () => now
@@ -833,6 +834,7 @@ test("W2 approval comment routes: GET/POST behind read gate, 422 on empty body, 
     bus: new RecordingBus(),
     approvalComments: {
       listByApproval: async (id) => commentRows.filter((commentRow) => commentRow.approvalId === id),
+      listByApprovals: async (ids) => commentRows.filter((commentRow) => ids.includes(commentRow.approvalId)),
       create: async (input) => {
         const created: ApprovalCommentRow = {
           id: `20000000-0000-4000-8000-${String(commentRows.length + 1).padStart(12, "0")}`,

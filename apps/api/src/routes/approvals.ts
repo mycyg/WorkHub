@@ -78,8 +78,20 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
   async function visibleApprovalCenter(data: ApprovalCenterVM, actor: AuthEnv["Variables"]["actor"]) {
     const visibleRequests: ApprovalRequest[] = [];
     const visibleRequestIds = new Set<string>();
+    // L#W2-14：按 work_item_id 去重可见性判定——多条审批常指向同一事项，避免对同一 work item 重复 detailPage（N+1）。
+    const workItemVisibility = new Map<string, boolean>();
+    const canRead = async (workItemId: string | undefined) => {
+      const cacheKey = workItemId ?? "";
+      const cached = workItemVisibility.get(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const allowed = await canReadWorkItem(workItemId, actor);
+      workItemVisibility.set(cacheKey, allowed);
+      return allowed;
+    };
     for (const request of data.requests) {
-      if (await canReadWorkItem(request.work_item_id, actor)) {
+      if (await canRead(request.work_item_id)) {
         visibleRequests.push(request);
         visibleRequestIds.add(request.id);
       }

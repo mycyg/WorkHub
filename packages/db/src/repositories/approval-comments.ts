@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { approvalComments } from "../schema/index.js";
@@ -16,6 +16,8 @@ export type CreateApprovalCommentInput = {
 
 export type ApprovalCommentRepository = {
   listByApproval: (approvalId: string, limit?: number) => Promise<ApprovalCommentRow[]>;
+  // 批量读：一条 IN 查询取多审批的评论（审批中心页面预取，避免逐审批 N+1）。
+  listByApprovals: (approvalIds: string[]) => Promise<ApprovalCommentRow[]>;
   create: (input: CreateApprovalCommentInput) => Promise<ApprovalCommentRow>;
 };
 
@@ -29,6 +31,17 @@ export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentR
         .where(eq(approvalComments.approvalId, approvalId))
         .orderBy(asc(approvalComments.createdAt))
         .limit(Math.max(1, Math.min(limit, 200)));
+    },
+
+    async listByApprovals(approvalIds) {
+      if (approvalIds.length === 0) {
+        return [];
+      }
+      return db
+        .select()
+        .from(approvalComments)
+        .where(inArray(approvalComments.approvalId, approvalIds))
+        .orderBy(asc(approvalComments.createdAt));
     },
 
     async create(input) {
