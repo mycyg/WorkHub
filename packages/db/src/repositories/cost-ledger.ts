@@ -10,6 +10,8 @@ import {
   type UsageSource
 } from "@workhub/cost";
 
+import { and, eq, or, type SQL } from "drizzle-orm";
+
 import type { WorkHubDb } from "../client.js";
 import { costLedgerEntries, usageRecords } from "../schema/index.js";
 
@@ -158,9 +160,32 @@ export function createDbCostLedgerStore(
 ): CostLedgerStore {
   const recentRecords: UsageRecord[] = [];
   const recentEntries: CostLedgerEntry[] = [];
+  const RECENT_CAP = 1000; // recentRecords/recentEntries 是进程内缓存，封顶防无界增长（H6）。
 
   async function listEntries() {
     const rows = await db.select().from(costLedgerEntries);
+    return rows.map(rowToLedgerEntry);
+  }
+
+  // 只查请求到的 scope（按 scope_kind+scope_id 走索引），避免每次预算/快照都全表扫描所有用户/项目（H6）。
+  async function listEntriesForScopes(scopeIds: LedgerScopeIds) {
+    const conds: SQL[] = [];
+    if (scopeIds.workItemId) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "workitem"), eq(costLedgerEntries.scopeId, scopeIds.workItemId)) as SQL);
+    }
+    if (scopeIds.userId) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "user"), eq(costLedgerEntries.scopeId, scopeIds.userId)) as SQL);
+    }
+    if (scopeIds.teamId) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "team"), eq(costLedgerEntries.scopeId, scopeIds.teamId)) as SQL);
+    }
+    if (scopeIds.evalSuite) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "eval"), eq(costLedgerEntries.scopeId, scopeIds.evalSuite)) as SQL);
+    }
+    if (conds.length === 0) {
+      return [];
+    }
+    const rows = await db.select().from(costLedgerEntries).where(or(...conds));
     return rows.map(rowToLedgerEntry);
   }
 
@@ -196,10 +221,16 @@ export function createDbCostLedgerStore(
           });
       }
       recentRecords.push(record);
+      if (recentRecords.length > RECENT_CAP) {
+        recentRecords.splice(0, recentRecords.length - RECENT_CAP);
+      }
       recentEntries.push(...entries);
+      if (recentEntries.length > RECENT_CAP) {
+        recentEntries.splice(0, recentEntries.length - RECENT_CAP);
+      }
     },
     async usageSnapshots(scopeIds: LedgerScopeIds, options?: { now?: Date }) {
-      return ledgerUsageSnapshots(await listEntries(), scopeIds, options);
+      return ledgerUsageSnapshots(await listEntriesForScopes(scopeIds), scopeIds, options);
     },
     listEntries,
     listRecords

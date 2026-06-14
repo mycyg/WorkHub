@@ -998,6 +998,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span><span class="wh-pill">${escapeHtml(item.kind)}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "去处理" : "Open")}</a>` : ""}
     </article>`)
     .join("");
   // 中栏：变更详情（取自 primary AttentionItem，零新增请求；深层 manifest 仍在 proposal 详情页）。
