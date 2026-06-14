@@ -886,8 +886,35 @@ const approvalCenter: ApprovalCenterVM = {
     all: 1,
     urgent: 0
   },
-  // W2 inc1：契约新增字段，先置空；inc3 服务/fixture 会填充真实逐项详情。
-  items_detail: {}
+  // W2 inc3：逐项详情——交付物类审批，join 出 diff/合规检查 + 合成时间线 + 一条讨论。
+  items_detail: {
+    [p05GoldPathIds.approval]: {
+      kind: "deliverable",
+      proposal_id: p05GoldPathIds.proposal,
+      proposal_href: `/proposals/${p05GoldPathIds.proposal}`,
+      ai_reason: manifest.summary_md,
+      risk_label: manifest.risk.human_label,
+      manifest_changes: manifest.changes,
+      checks: manifest.checks,
+      conflicts: manifest.checks
+        .filter((check) => check.status === "failed" || check.status === "warning")
+        .map((check) => ({ description: check.label, ...(check.detail ? { impact: check.detail } : {}) })),
+      affected_targets: [],
+      timeline: [
+        { id: `${p05GoldPathIds.approval}:created`, kind: "created", label: "发起申请", status: "done", at: at(8) },
+        { id: `${p05GoldPathIds.approval}:routed`, kind: "routed", label: "路由审批", status: "current", actor_label: "你", sla_due_at: at(90) },
+        { id: `${p05GoldPathIds.approval}:decided`, kind: "decided", label: "待决策", status: "pending" }
+      ],
+      comments: [
+        {
+          id: "20000000-0000-4000-8000-0000000000f1",
+          author_label: "李梅",
+          body: "建议错峰执行，避免和渠道推广预算撞车。",
+          created_at: at(4)
+        }
+      ]
+    }
+  }
 };
 
 const workItemDetail: WorkItemDetailVM = {

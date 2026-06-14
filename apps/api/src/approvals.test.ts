@@ -7,9 +7,11 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import { deliverableManifestFixtures } from "@workhub/contracts";
 import type {
   AuditLogRepository,
   AuditLogRow,
+  ApprovalCommentRow,
   ApprovalRequestRepository,
   ApprovalRequestRow,
   ClientDeviceAuthRow,
@@ -25,6 +27,7 @@ import {
   ApprovalServiceError,
   createApprovalService
 } from "./services/approvals.js";
+import type { StoredProposal } from "./services/proposals.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
@@ -722,4 +725,94 @@ test("permission policy reads succeed for an admin", async () => {
   });
 
   assert.equal(response.status, 200);
+});
+
+test("W2 listPendingForUser builds items_detail: deliverable joins manifest, tool degrades, comments+timeline", async () => {
+  const approvals = new MemoryApprovals();
+  const manifest = deliverableManifestFixtures[0]!;
+  const proposalId = "30000000-0000-4000-8000-000000000777";
+  const deliverableRow = await approvals.createApprovalRequest({
+    workItemId: "50000000-0000-4000-8000-000000000777",
+    actionPattern: "proposal.review.weekly",
+    routedToUserId: approverId,
+    payloadJson: { raw_args: { proposal_id: proposalId } }
+  });
+  const toolRow = await approvals.createApprovalRequest({
+    actionPattern: "tool.publish_external",
+    routedToUserId: approverId,
+    payloadJson: { ui: { summary_text: "对外发布", affected_targets: ["公众号", "官网"] }, raw_args: {} }
+  });
+
+  const fakeProposal = {
+    id: proposalId,
+    work_item_id: "50000000-0000-4000-8000-000000000777",
+    status: "opened",
+    diff_manifest: manifest
+  } as unknown as StoredProposal;
+  const commentRow: ApprovalCommentRow = {
+    id: "20000000-0000-4000-8000-0000000000c7",
+    approvalId: deliverableRow.id,
+    authorUserId: approverId,
+    authorNickname: "李梅",
+    body: "建议错峰执行。",
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    proposals: {
+      get: async (id) => (id === proposalId ? fakeProposal : null),
+      listByWorkItem: async () => []
+    },
+    approvalComments: {
+      listByApproval: async (id) => (id === deliverableRow.id ? [commentRow] : []),
+      create: async () => commentRow
+    },
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+
+  const deliverable = vm.items_detail[deliverableRow.id];
+  assert.equal(deliverable?.kind, "deliverable");
+  assert.equal(deliverable?.risk_label, manifest.risk.human_label);
+  assert.equal(deliverable?.ai_reason, manifest.summary_md);
+  assert.ok((deliverable?.manifest_changes.length ?? 0) > 0);
+  assert.equal(deliverable?.proposal_href, `/proposals/${proposalId}`);
+  assert.equal(deliverable?.timeline[0]?.kind, "created");
+  assert.equal(deliverable?.timeline.some((step) => step.kind === "routed"), true);
+  assert.equal(deliverable?.comments[0]?.author_label, "李梅");
+
+  const tool = vm.items_detail[toolRow.id];
+  assert.equal(tool?.kind, "tool");
+  assert.deepEqual(tool?.affected_targets, ["公众号", "官网"]);
+  assert.equal(tool?.manifest_changes.length, 0);
+});
+
+test("W2 listPendingForUser degrades to empty detail when no proposals dep is wired", async () => {
+  const approvals = new MemoryApprovals();
+  const row = await approvals.createApprovalRequest({
+    workItemId: "50000000-0000-4000-8000-000000000888",
+    actionPattern: "proposal.review.weekly",
+    routedToUserId: approverId,
+    payloadJson: { raw_args: { proposal_id: "30000000-0000-4000-8000-000000000888" } }
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+  // 无 proposals/approvalComments 依赖：不崩，详情降级为 permission kind + 空 manifest/comments。
+  const detail = vm.items_detail[row.id];
+  assert.ok(detail);
+  assert.equal(detail?.manifest_changes.length, 0);
+  assert.equal(detail?.comments.length, 0);
+  assert.equal(detail?.timeline[0]?.kind, "created");
 });

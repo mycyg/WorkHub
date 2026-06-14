@@ -74,12 +74,19 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
         visibleRequestIds.add(request.id);
       }
     }
+    const visibleItems = data.items.filter((item) => {
+      const id = item.source_ref?.entity_type === "approval_request" ? item.source_ref.entity_id : item.id;
+      return visibleRequestIds.has(id) || (item.source_ref?.entity_id && visibleRequestIds.has(item.source_ref.entity_id));
+    });
+    // W2：items_detail 按可见 item.id 收口，不把不可见事项的详情泄露出去。
+    const visibleItemIds = new Set(visibleItems.map((item) => item.id));
+    const visibleItemsDetail = Object.fromEntries(
+      Object.entries(data.items_detail).filter(([itemId]) => visibleItemIds.has(itemId))
+    );
     return {
       ...data,
-      items: data.items.filter((item) => {
-        const id = item.source_ref?.entity_type === "approval_request" ? item.source_ref.entity_id : item.id;
-        return visibleRequestIds.has(id) || (item.source_ref?.entity_id && visibleRequestIds.has(item.source_ref.entity_id));
-      }),
+      items: visibleItems,
+      items_detail: visibleItemsDetail,
       requests: visibleRequests,
       counts: {
         ...data.counts,

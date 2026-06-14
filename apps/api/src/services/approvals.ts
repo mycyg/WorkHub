@@ -2,8 +2,11 @@ import {
   approvalPayloadSchema,
   eventTypes,
   type ApprovalCenterVM,
+  type ApprovalCommentVM,
   type ApprovalDecision,
+  type ApprovalDetailVM,
   type ApprovalRequest,
+  type ApprovalRoutingStep,
   type AttentionItem,
   type PermissionPolicyWrite,
   type RespondApprovalRequest,
@@ -11,10 +14,13 @@ import {
 } from "@workhub/contracts";
 import {
   createApprovalRequestRepository,
+  createApprovalCommentRepository,
   createAuditLogRepository,
   getSharedDatabaseClient,
   createPermissionPolicyRepository,
   createUserRepository,
+  type ApprovalCommentRepository,
+  type ApprovalCommentRow,
   type AuditLogRepository,
   type ApprovalRequestRepository,
   type ApprovalRequestRow,
@@ -36,6 +42,7 @@ import {
 import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { getDefaultProposalService, type ProposalService, type StoredProposal } from "./proposals.js";
 
 export class ApprovalServiceError extends Error {
   constructor(
@@ -78,6 +85,9 @@ export type ApprovalServiceDependencies = {
   auditLogs: AuditLogRepository;
   // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
   users?: Pick<UserRepository, "findActiveById">;
+  // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
+  proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
+  approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "create">;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -101,6 +111,8 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
     users: createUserRepository(defaultDbClient.db),
+    proposals: getDefaultProposalService(),
+    approvalComments: createApprovalCommentRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
   };
 }
@@ -160,6 +172,133 @@ export function toApprovalRequestResponse(row: ApprovalRequestRow): ApprovalRequ
 
 function approverId(actor: AuthActor) {
   return actor.userId ?? actor.id;
+}
+
+// W2：审批工作台逐项详情构建（join 提议 manifest + 合成路由时间线 + 读评论）。
+const APPROVAL_DECIDED_STATUSES = new Set(["approved", "rejected", "allowed", "denied", "expired", "decided"]);
+
+function timelineLabel(kind: ApprovalRoutingStep["kind"], zh: boolean): string {
+  const map: Record<ApprovalRoutingStep["kind"], [string, string]> = {
+    created: ["发起申请", "Submitted"],
+    routed: ["路由审批", "Routed"],
+    delegated: ["已转交", "Delegated"],
+    decided: ["已决策", "Decided"],
+    expired: ["已超时", "Expired"]
+  };
+  const [zhLabel, enLabel] = map[kind];
+  return zh ? zhLabel : enLabel;
+}
+
+function synthesizeApprovalTimeline(row: ApprovalRequestRow, viewerId: string, locale: WorkHubLocale): ApprovalRoutingStep[] {
+  const zh = locale !== "en-US";
+  const youLabel = zh ? "你" : "You";
+  const decided = Boolean(row.decidedByUserId) || APPROVAL_DECIDED_STATUSES.has(row.status);
+  const steps: ApprovalRoutingStep[] = [
+    { id: `${row.id}:created`, kind: "created", label: timelineLabel("created", zh), status: "done", at: row.createdAt.toISOString() }
+  ];
+  if (row.routedToUserId) {
+    steps.push({
+      id: `${row.id}:routed`,
+      kind: "routed",
+      label: timelineLabel("routed", zh),
+      status: decided ? "done" : "current",
+      ...(row.routedToUserId === viewerId ? { actor_label: youLabel } : {}),
+      ...(row.slaDueAt ? { sla_due_at: row.slaDueAt.toISOString() } : {})
+    });
+  }
+  if (row.delegatedToUserId) {
+    steps.push({
+      id: `${row.id}:delegated`,
+      kind: "delegated",
+      label: timelineLabel("delegated", zh),
+      status: decided ? "done" : "current",
+      ...(row.delegatedToUserId === viewerId ? { actor_label: youLabel } : {})
+    });
+  }
+  if (row.status === "expired") {
+    steps.push({ id: `${row.id}:expired`, kind: "expired", label: timelineLabel("expired", zh), status: "done", at: row.updatedAt.toISOString() });
+  } else if (decided) {
+    steps.push({
+      id: `${row.id}:decided`,
+      kind: "decided",
+      label: timelineLabel("decided", zh),
+      status: "done",
+      at: row.updatedAt.toISOString(),
+      ...(row.decidedByUserId === viewerId ? { actor_label: youLabel } : {})
+    });
+  } else {
+    steps.push({ id: `${row.id}:decided`, kind: "decided", label: timelineLabel("decided", zh), status: "pending" });
+  }
+  return steps;
+}
+
+function toApprovalCommentVm(row: ApprovalCommentRow): ApprovalCommentVM {
+  return { id: row.id, author_label: row.authorNickname, body: row.body, created_at: row.createdAt.toISOString() };
+}
+
+async function buildApprovalItemDetail(
+  row: ApprovalRequestRow,
+  deps: ApprovalServiceDependencies,
+  viewerId: string,
+  locale: WorkHubLocale
+): Promise<ApprovalDetailVM> {
+  const payload = approvalPayloadSchema.parse(row.payloadJson ?? { raw_args: {} });
+  const timeline = synthesizeApprovalTimeline(row, viewerId, locale);
+  let comments: ApprovalCommentVM[] = [];
+  try {
+    comments = (await deps.approvalComments?.listByApproval(row.id) ?? []).map(toApprovalCommentVm);
+  } catch {
+    comments = [];
+  }
+
+  // 仅交付物类审批有提议可 join 出 diff/checks；权限/工具类没有提议。失败一律降级为空 detail。
+  let proposal: StoredProposal | null = null;
+  if (deps.proposals) {
+    try {
+      const proposalId = typeof payload.raw_args.proposal_id === "string" ? payload.raw_args.proposal_id : undefined;
+      if (proposalId) {
+        proposal = await deps.proposals.get(proposalId);
+      } else if (row.workItemId) {
+        const list = await deps.proposals.listByWorkItem(row.workItemId);
+        proposal = list.find((candidate) => candidate.status === "opened" || candidate.status === "reviewed") ?? list[0] ?? null;
+      }
+    } catch {
+      proposal = null;
+    }
+  }
+
+  if (proposal) {
+    const manifest = proposal.diff_manifest;
+    const conflicts = manifest.checks
+      .filter((check) => check.status === "failed" || check.status === "warning")
+      .map((check) => ({ description: check.label, ...(check.detail ? { impact: check.detail } : {}) }));
+    return {
+      kind: "deliverable",
+      proposal_id: proposal.id,
+      proposal_href: `/proposals/${proposal.id}`,
+      ai_reason: manifest.summary_md,
+      risk_label: manifest.risk.human_label,
+      manifest_changes: manifest.changes,
+      checks: manifest.checks,
+      conflicts,
+      affected_targets: [],
+      timeline,
+      comments
+    };
+  }
+
+  const kind: ApprovalDetailVM["kind"] = row.actionPattern.startsWith("tool") ? "tool" : "permission";
+  return {
+    kind,
+    ...(payload.ui?.reason_text ? { ai_reason: payload.ui.reason_text } : {}),
+    ...(payload.ui?.risk?.human_label ? { risk_label: payload.ui.risk.human_label } : {}),
+    manifest_changes: [],
+    checks: [],
+    conflicts: [],
+    affected_targets: payload.ui?.affected_targets ?? [],
+    timeline,
+    comments
+  };
 }
 
 function ensureCanActOnApproval(approval: ApprovalRequestRow, actor: AuthActor) {
@@ -323,13 +462,17 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
     async listPendingForUser(user: UserAuthRow, options: { locale?: WorkHubLocale } = {}) {
       const rows = await deps.approvals.listPendingForUser(user.id, { includeAll: user.isAdmin });
       const itemOptions = options.locale ? { locale: options.locale } : {};
+      const locale: WorkHubLocale = options.locale ?? "zh-CN";
+      // W2 inc3：逐项构建详情（join proposal.diff_manifest + 合成路由时间线 + 读评论）。
+      const detailEntries = await Promise.all(
+        rows.map(async (row) => [row.id, await buildApprovalItemDetail(row, deps, user.id, locale)] as const)
+      );
       return {
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length },
-        // W2 inc1：契约新增字段，先置空；inc3 在此 join proposal.diff_manifest + 合成时间线 + 读评论填充。
-        items_detail: {} as ApprovalCenterVM["items_detail"]
+        items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
       };
     },
 
