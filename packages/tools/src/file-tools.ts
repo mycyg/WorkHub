@@ -29,6 +29,15 @@ async function enforceBudget(ctx: ToolExecutionContext) {
   return enforceSandboxBudget(ctx.workdir, ctx.sandboxBudget ?? defaultSandboxBudget);
 }
 
+// 写前预检：单次写入的字节数本身就超预算时，先拒绝再落盘。否则巨型 payload 会先写满主机磁盘，
+// 事后的 enforceBudget 才报错——损害已造成（DoS）。
+function assertWriteWithinBudget(ctx: ToolExecutionContext, byteLength: number) {
+  const budget = ctx.sandboxBudget ?? defaultSandboxBudget;
+  if (byteLength > budget.maxBytes) {
+    throw new Error(`sandbox byte budget exceeded: write of ${byteLength} bytes over limit ${budget.maxBytes}`);
+  }
+}
+
 async function listRelativeFiles(root: string, start: string, limit: number, acc: string[] = []) {
   if (acc.length >= limit) {
     return acc;
@@ -201,6 +210,7 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
         const target = safeResolvePath(ctx.workdir, input.path);
+        assertWriteWithinBudget(ctx, Buffer.byteLength(input.content, "utf8"));
         await mkdir(path.dirname(target), { recursive: true });
         await writeFile(target, input.content, "utf8");
         await enforceBudget(ctx);
@@ -214,8 +224,10 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
         const target = safeResolvePath(ctx.workdir, input.path);
+        const bytes = Buffer.from(input.base64_content, "base64");
+        assertWriteWithinBudget(ctx, bytes.byteLength);
         await mkdir(path.dirname(target), { recursive: true });
-        await writeFile(target, Buffer.from(input.base64_content, "base64"));
+        await writeFile(target, bytes);
         await enforceBudget(ctx);
         return okToolResult(`wrote ${input.path}`);
       }

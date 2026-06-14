@@ -118,10 +118,23 @@ function itemSummary(field: SubrecordField, item: SubrecordItem | undefined, loc
   return `${itemTitle(item, item.id)}${itemMeta(field, item, locale)}`;
 }
 
+// 稳定序列化：递归按 key 排序，避免不同 key 顺序的等价对象被误判为 "modified"（幻象 diff 行）。
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "null";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+}
+
 function itemKind(current: SubrecordItem | undefined, incoming: SubrecordItem | undefined): SubrecordDiffKind {
   if (!current && incoming) return "added";
   if (current && !incoming) return "removed";
-  if (current && incoming && JSON.stringify(current) !== JSON.stringify(incoming)) return "modified";
+  if (current && incoming && stableStringify(current) !== stableStringify(incoming)) return "modified";
   return "unchanged";
 }
 

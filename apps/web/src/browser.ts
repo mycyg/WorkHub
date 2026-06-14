@@ -1140,6 +1140,12 @@ async function boot() {
 
   try {
     const client = createApiClient({ baseUrl: "" });
+    // 先挂导航监听，再渲染：否则首次渲染抛错时这两个监听永远注册不上，
+    // 整个会话的前进/后退会静默失效（即便用户已从首屏错误中恢复）。
+    window.addEventListener("popstate", () => {
+      void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
+    });
+    window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
     const me = await client.me().catch(() => null);
     if (me) {
       locale = applyIdentityLocale(me, locale);
@@ -1149,10 +1155,6 @@ async function boot() {
     } else {
       showOnboardingScreen(client, locale);
     }
-    window.addEventListener("popstate", () => {
-      void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
-    });
-    window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
   } catch (error) {
     renderFatalRouteError(locale, error);
   }

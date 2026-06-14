@@ -380,6 +380,10 @@ export function createInMemoryAgentRunQueue(options: {
   const runWorkdirs = new Map<string, string>();
   const startingWorkItems = new Set<string>();
   const tracePersistenceChains = new Map<string, Promise<void>>();
+  // 内存里只保留有限条已结束的 run 作为读缓存；活跃(queued/running)的永不剔除。
+  // 否则长跑 worker 的 runs/runWorkdirs Map 会无限增长 → 内存泄漏。有 persistence 时被剔的 run 仍可从 DB 读回。
+  const RUN_CACHE_CAP = 500;
+  const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "escalated", "budget_exhausted", "cancelled"]);
 
   function activeForWorkItem(workItemId: string) {
     if (startingWorkItems.has(workItemId)) {
@@ -485,7 +489,24 @@ export function createInMemoryAgentRunQueue(options: {
 
   function updateRun(run: AgentRunQueueRecord) {
     runs.set(run.run_id, run);
+    pruneRunCache();
     return run;
+  }
+
+  // 超过上限时，按插入顺序剔除最旧的已结束 run（Map 保序），保留全部活跃 run。
+  function pruneRunCache() {
+    if (runs.size <= RUN_CACHE_CAP) {
+      return;
+    }
+    for (const [runId, record] of runs) {
+      if (runs.size <= RUN_CACHE_CAP) {
+        break;
+      }
+      if (TERMINAL_RUN_STATUSES.has(record.status)) {
+        runs.delete(runId);
+        runWorkdirs.delete(runId);
+      }
+    }
   }
 
   async function persistCreatedRun(run: AgentRunQueueRecord) {
@@ -852,6 +873,18 @@ export function createInMemoryAgentRunQueue(options: {
             });
             persistTraceInBackground(current);
             refreshClaimInBackground(current.run_id);
+          },
+          // M1：把每步累计用量落到 current.usage，这样即便 loop 中途抛错，失败 run 也按真实消耗记账（不再记 0）。
+          recordUsage: (usage) => {
+            current = {
+              ...current,
+              usage: {
+                steps_used: usage.stepsUsed,
+                token_in: usage.tokenIn,
+                token_out: usage.tokenOut,
+                estimated_cost_cny: usage.estimatedCostCny
+              }
+            };
           }
         },
         emit: (event) => emitRunEvent(event, current),

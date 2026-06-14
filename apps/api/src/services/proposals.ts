@@ -32,6 +32,7 @@ import {
   ProposalRepositoryMergeConflictError,
   ProposalRepositoryMergeProposalNotChosenError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
+  ProposalRepositoryStaleBaseError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
   type MergeProposalCandidateApplicationContext,
@@ -1750,6 +1751,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
             });
           }));
         }
+        if (error instanceof ProposalRepositoryStaleBaseError) {
+          throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
+        }
         throw error;
       }
       if (!rows) {
@@ -1853,6 +1857,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
         }
         if (error instanceof ProposalRepositoryUnsupportedMergeProposalApplyError) {
           throw new ProposalServiceError(409, error.code, error.message);
+        }
+        if (error instanceof ProposalRepositoryStaleBaseError) {
+          throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
         }
         throw error;
       }

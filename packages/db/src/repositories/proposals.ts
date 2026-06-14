@@ -260,6 +260,16 @@ export class ProposalRepositoryUnsupportedMergeProposalApplyError extends Error 
   }
 }
 
+// P-COLLAB L3 最后防线：advisory lock 下提交前复检发现当前正式版已被并发改动，
+// 中止采纳以避免脏写。这是「重试可解」的并发冲突，应映射成 409，而非裸 500。
+export class ProposalRepositoryStaleBaseError extends Error {
+  public readonly code = "stale_base";
+
+  constructor(public readonly targetKey: string) {
+    super(`Accepted base for ${targetKey} changed mid-transaction; apply aborted to avoid lost update.`);
+  }
+}
+
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
@@ -2154,9 +2164,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             .returning({ id: acceptedDeliverableChanges.id });
           // H2/H5 L3：提交前复检，0 行作废即中止采纳（最后防线，避免盖掉别人内容）。
           if (superseded.length === 0) {
-            throw new Error(
-              `P-COLLAB stale-base abort: current accepted row for ${row.mergeProposal.conflictKey} changed mid-transaction; apply aborted to avoid lost update.`
-            );
+            throw new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
           }
         }
         const acceptedChangeId = randomUUID();
@@ -2508,9 +2516,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             // P-COLLAB L3：提交前复检。L2 advisory lock 下真相不应在事务内变；若一行都没作废，
             // 说明读到的当前态已被改（最后防线），中止整笔采纳，绝不脏写盖掉别人内容。
             if (superseded.length === 0) {
-              throw new Error(
-                `P-COLLAB stale-base abort: current accepted row for ${key} changed mid-transaction; merge aborted to avoid lost update.`
-              );
+              throw new ProposalRepositoryStaleBaseError(key);
             }
           }
           const acceptedChangeId = randomUUID();

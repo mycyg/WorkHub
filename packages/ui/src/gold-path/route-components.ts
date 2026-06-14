@@ -772,10 +772,14 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       </div>`
     : "";
 
+  // 真实风险计数：升级/同步冲突/预算类事项，或任何紧急项（替代之前硬编码的 0）。
+  const riskKinds = new Set(["escalation", "sync_conflict", "budget"]);
+  const isRisk = (item: AttentionItem) => item.priority === "urgent" || riskKinds.has(item.kind);
+  const riskCount = [...(primary ? [primary] : []), ...vm.queue].filter(isRisk).length;
   const chips = `<div class="wh-r4-home-chips">
       <span class="wh-r4-home-chip wh-r4-home-chip--accent"><b>${escapeHtml(String(decideCount))}</b>${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
       <span class="wh-r4-home-chip"><b>${escapeHtml(String(workingCount))}</b>${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
-      <span class="wh-r4-home-chip wh-r4-home-chip--ok"><b>0</b>${escapeHtml(zh ? "风险 ✓ 安心" : "Risk ✓")}</span>
+      <span class="wh-r4-home-chip ${riskCount === 0 ? "wh-r4-home-chip--ok" : "wh-r4-prio--danger"}"><b>${escapeHtml(String(riskCount))}</b>${escapeHtml(riskCount === 0 ? (zh ? "风险 ✓ 安心" : "Risk ✓") : (zh ? "风险待看" : "Risk"))}</span>
     </div>`;
 
   const decisionCard = primary

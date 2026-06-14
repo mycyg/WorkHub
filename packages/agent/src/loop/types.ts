@@ -73,6 +73,8 @@ export type AgentLoopClient = {
 
 export type AgentLoopRecorder = {
   recordStep: (step: AgentLoopStep) => Promise<void> | void;
+  /** 每步累计用量回调：让宿主在 loop 中途抛错时仍持有已消耗的 token/成本，避免失败 run 记账为 0。 */
+  recordUsage?: (usage: AgentLoopUsage) => void;
 };
 
 export type AgentLoopManifestOptions = {

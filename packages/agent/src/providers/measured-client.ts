@@ -28,6 +28,16 @@ function usageFromResponse(response: LlmCreateResponse) {
   return response.usage ?? { inputTokens: 0, outputTokens: 0 };
 }
 
+// 用量记账是尽力而为：sink（通常是 DB 写）抛错不应让一次已成功的模型调用失败、从而拖垮整个 run。
+// 记账失败大声告警、继续返回响应（可用性优先于一次瞬时记账的完整性）。
+async function recordUsageSafely(sink: UsageSink, record: UsageRecord) {
+  try {
+    await sink.recordUsage(record);
+  } catch (error) {
+    console.warn("WorkHub usage sink failed; run continues without this usage record", error);
+  }
+}
+
 function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, response: LlmCreateResponse, source: LlmCreateParams["source"]): UsageRecord {
   const usage = usageFromResponse(response);
   const input: BuildUsageRecordInput = {
@@ -76,7 +86,7 @@ class MeasuredStream implements LlmStream {
     const final = await this.inner.getFinalMessage();
     if (!this.usageRecord) {
       this.usageRecord = makeUsageRecord(this.route, this.actor, final, this.source);
-      await this.sink.recordUsage(this.usageRecord);
+      await recordUsageSafely(this.sink, this.usageRecord);
     }
     return { ...final, usageRecord: this.usageRecord };
   }
@@ -91,7 +101,7 @@ export class MeasuredLlmClient {
     create: async (params: LlmCreateParams) => {
       const response = await this.transport.create({ ...params, model: this.model });
       const usageRecord = makeUsageRecord(this.route, this.actor, response, params.source);
-      await this.usageSink.recordUsage(usageRecord);
+      await recordUsageSafely(this.usageSink, usageRecord);
       return { ...response, usageRecord };
     },
     stream: async (params: LlmCreateParams) => {

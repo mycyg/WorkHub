@@ -83,6 +83,26 @@ test("write_file executes only after snapshot succeeds", async () => {
   assert.equal(await readFile(path.join(workdir, "outputs", "a.txt"), "utf8"), "hello");
 });
 
+test("write_file rejects an over-budget payload before it touches disk", async () => {
+  const workdir = await tempWorkdir();
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const oversized = "x".repeat(64);
+  const result = await registry.execute(
+    "write_file",
+    { path: "outputs/big.txt", content: oversized },
+    {
+      workdir,
+      snapshot: () => ({ snapshotId: "30000000-0000-4000-8000-000000000099" }),
+      sandboxBudget: { maxFiles: 100, maxBytes: 16, commandTimeoutSeconds: 5 }
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.match(result.content, /byte budget exceeded/);
+  // 预检的关键：文件根本没被写出去（不是写完再报错）。
+  await assert.rejects(readFile(path.join(workdir, "outputs", "big.txt"), "utf8"));
+});
+
 test("read_file can infer the only input file when providers send a description", async () => {
   const workdir = await tempWorkdir();
   await mkdir(path.join(workdir, "inputs"), { recursive: true });

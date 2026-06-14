@@ -150,8 +150,9 @@ function evaluatePolicyUsage(
   const totalTokens = tokenIn + tokenOut;
   const usedCost = parseCny(snapshot?.estimatedCostCny ?? "0");
   const maxCost = parseCny(policy.maxCostCny);
-  const tokenRatio = policy.maxTokens > 0 ? totalTokens / policy.maxTokens : 1;
-  const costRatio = maxCost > 0 ? usedCost / maxCost : 1;
+  // 上限 <=0 视为"该维度不限"（ratio 0），而非满载。否则 maxCostCny='0' 的策略会把每次运行都判 exhausted、永久卡死。
+  const tokenRatio = policy.maxTokens > 0 ? totalTokens / policy.maxTokens : 0;
+  const costRatio = maxCost > 0 ? usedCost / maxCost : 0;
   const ratio = Math.max(tokenRatio, costRatio);
   const bounds = periodBounds(policy.period, now);
   const usage: BudgetUsage = {

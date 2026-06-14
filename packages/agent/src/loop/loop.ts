@@ -524,6 +524,8 @@ export class AgentLoop {
       });
       const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
       addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
+      // 立刻把累计用量回传宿主：若本步后续（工具执行/下一次模型调用）抛错，失败 run 仍能记到真实 token/成本。
+      input.recorder?.recordUsage?.(usage);
 
       const assistant = response.content.map(parseBlock);
       await emitAssistantTrace(input, stepNo, assistant);

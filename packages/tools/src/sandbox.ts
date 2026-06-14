@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { CommandRunner, SandboxBudget } from "./types.js";
@@ -104,7 +104,11 @@ export type SandboxStats = {
 export async function sandboxStats(workdir: string): Promise<SandboxStats> {
   const root = safeResolvePath(workdir);
   async function walk(current: string): Promise<SandboxStats> {
-    const currentStat = await stat(current);
+    const currentStat = await lstat(current);
+    // 不跟随符号链接：否则毒环 symlink 会让预算统计死循环、指向 / 的 symlink 把整个主机 FS 算进预算。
+    if (currentStat.isSymbolicLink()) {
+      return { files: 1, bytes: 0 };
+    }
     if (!currentStat.isDirectory()) {
       return { files: 1, bytes: currentStat.size };
     }
