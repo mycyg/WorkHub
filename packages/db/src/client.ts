@@ -40,6 +40,23 @@ export function createDatabaseClient(
   };
 }
 
+let sharedClient: WorkHubDatabaseClient | undefined;
+
+// 进程内共享单一连接池：各服务以前各自 createDatabaseClient() → 每个一个 pg Pool，
+// 一个 API 进程能开 20+ 个池、轻易耗尽 Postgres 连接（M6）。默认 settings 复用同一个；
+// 显式传入自定义 settings（测试/多库）时另建，互不影响。共享实例的 close() 故意置空，
+// 避免某个服务关掉别人还在用的池。
+export function getSharedDatabaseClient(runtimeSettings: Settings = defaultSettings): WorkHubDatabaseClient {
+  if (runtimeSettings !== defaultSettings) {
+    return createDatabaseClient(runtimeSettings);
+  }
+  if (!sharedClient) {
+    const base = createDatabaseClient(runtimeSettings);
+    sharedClient = { db: base.db, pool: base.pool, close: async () => {} };
+  }
+  return sharedClient;
+}
+
 export async function checkDatabaseHealth(db: Pick<WorkHubDb, "execute">) {
   await db.execute(sql`select 1 as ok`);
   return true;

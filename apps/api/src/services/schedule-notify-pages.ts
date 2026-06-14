@@ -12,7 +12,7 @@ import {
 } from "@workhub/contracts";
 import {
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createNotificationRepository,
   createScheduleNotifyRepository,
   type AuditLogRepository,
@@ -56,7 +56,7 @@ export type ScheduleNotifyPageService = ReturnType<typeof createScheduleNotifyPa
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultScheduleNotifyPageServiceDependencies(): ScheduleNotifyPageServiceDependencies {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     notifications: createNotificationRepository(defaultDbClient.db),
     scheduleNotify: createScheduleNotifyRepository(defaultDbClient.db),

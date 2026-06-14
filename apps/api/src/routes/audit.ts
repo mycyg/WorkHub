@@ -88,6 +88,9 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
     if (!snapshot) {
       throw new HTTPException(404, { message: "没有找到可回滚的快照。" });
     }
+    // 资源级 fail-closed：还原是破坏性写操作，必须确认调用方对该快照所属事项可见，
+    // 否则任意本地客户端可回滚别人事项的快照（越权）。
+    await assertCanReadWorkItem(snapshot.workItemId, c.var.actor);
     const snapshotAuditRows = await auditLogs.listAuditLogsForWorkItem(snapshot.workItemId);
     const belongsToRun = snapshotAuditRows.some((row) =>
       row.snapshotId === snapshot.id && detailJson(row.detailJson).run_id === runId

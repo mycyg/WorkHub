@@ -91,10 +91,33 @@ test("createAiWorklogMetricsService reads today rows from the repository", async
   const rows = emptyRows();
   rows.agentRuns = [agentRun("succeeded", new Date("2026-06-14T09:00:00"))];
   const service = createAiWorklogMetricsService(
-    { readDay1MetricsRows: async () => rows } as never,
+    {
+      readDay1MetricsRows: async () => rows,
+      readAiWorklogRows: async () => ({ agentRuns: rows.agentRuns, proposals: rows.proposals })
+    } as never,
     { now: () => now }
   );
   const worklog = await service.getTodayMetrics();
   assert.equal(worklog.runs_today, 1);
   assert.equal(worklog.autonomy_rate, 100);
+});
+
+test("createAiWorklogMetricsService passes start-of-today as the query lower bound", async () => {
+  const now = new Date("2026-06-14T12:00:00");
+  let capturedSince: Date | undefined;
+  const service = createAiWorklogMetricsService(
+    {
+      readDay1MetricsRows: async () => emptyRows(),
+      readAiWorklogRows: async (since: Date) => {
+        capturedSince = since;
+        return { agentRuns: [], proposals: [] };
+      }
+    } as never,
+    { now: () => now }
+  );
+  await service.getTodayMetrics();
+  assert.ok(capturedSince);
+  assert.equal(capturedSince?.getHours(), 0);
+  assert.equal(capturedSince?.getMinutes(), 0);
+  assert.equal(capturedSince?.getDate(), 14);
 });

@@ -1,5 +1,5 @@
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createUserMemoryRepository,
   type UpsertUserMemoryInput,
   type UserMemoryRepository,
@@ -51,7 +51,7 @@ let defaultRepository: UserMemoryRepository | undefined;
 
 export function getDefaultUserMemoryRepository(): UserMemoryRepository {
   if (!defaultRepository) {
-    defaultDbClient = defaultDbClient ?? createDatabaseClient();
+    defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
     defaultRepository = createUserMemoryRepository(defaultDbClient.db);
   }
   return defaultRepository;

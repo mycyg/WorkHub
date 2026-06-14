@@ -1,6 +1,6 @@
 import {
   createAgentRunRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   type AgentRunForPersistence,
   type AgentRunRepository,
   type AgentRunTraceForPersistence,
@@ -309,7 +309,7 @@ let defaultAgentRunPersistence: AgentRunPersistence | undefined;
 
 export function getDefaultAgentRunPersistence() {
   if (!defaultAgentRunPersistence) {
-    defaultAgentRunDbClient = createDatabaseClient();
+    defaultAgentRunDbClient = getSharedDatabaseClient();
     defaultAgentRunPersistence = createDbAgentRunPersistence(createAgentRunRepository(defaultAgentRunDbClient.db));
   }
   return defaultAgentRunPersistence;

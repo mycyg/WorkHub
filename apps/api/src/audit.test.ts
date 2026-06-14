@@ -372,6 +372,7 @@ test("revert route restores the agent run workdir from the selected snapshot", a
     auth: authDeps(runtimeSettings, [clientDevice(token)]),
     snapshots,
     auditLogs,
+    workItems: allowingWorkItems() as WorkItemService,
     workdirForRun: (runId) => runId === agentRunId ? workdir : null,
     now: () => now
   }));
@@ -410,6 +411,34 @@ test("revert route restores the agent run workdir from the selected snapshot", a
     workdir_restored: true,
     reason_md: "测试还原"
   });
+});
+
+test("revert route fails closed for a snapshot whose work item the caller cannot view", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [auditLog({ action: "tool.write_file.snapshot", detailJson: { run_id: agentRunId }, snapshotId })];
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workItems: denyingWorkItems() as WorkItemService,
+    workdirForRun: () => "/tmp/should-not-be-reached",
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", [LOCAL_CLIENT_HEADER]: token },
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+
+  assert.equal(response.status, 403);
+  // 越权被挡在还原之前：快照不应被标记 reverted。
+  assert.equal(snapshots.rows[0]?.revertedAt ?? null, null);
 });
 
 test("audit timeline fails closed for a work item the user cannot view", async () => {

@@ -162,6 +162,10 @@ test("Day1 metrics service is admin-only and rejects invalid ranges", async () =
   const repository: PilotMetricsRepository = {
     async readDay1MetricsRows() {
       return rows();
+    },
+    async readAiWorklogRows() {
+      const all = rows();
+      return { agentRuns: all.agentRuns, proposals: all.proposals };
     }
   };
   const service = createPilotDay1MetricsService(repository, { now: () => generatedAt });

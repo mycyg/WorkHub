@@ -1,5 +1,5 @@
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createTeamSkillRepository,
   createWorkItemRepository,
   type TeamSkillRepository,
@@ -23,7 +23,7 @@ let defaultRepository: TeamSkillRepository | undefined;
 let defaultWorkItems: WorkItemDataRepository | undefined;
 
 function getRepositories(): { repo: TeamSkillRepository; workItems: WorkItemDataRepository } {
-  defaultDbClient = defaultDbClient ?? createDatabaseClient();
+  defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
   defaultRepository = defaultRepository ?? createTeamSkillRepository(defaultDbClient.db);
   defaultWorkItems = defaultWorkItems ?? createWorkItemRepository(defaultDbClient.db);
   return { repo: defaultRepository, workItems: defaultWorkItems };

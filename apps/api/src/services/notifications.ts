@@ -5,7 +5,7 @@ import {
 } from "@workhub/contracts";
 import {
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createNotificationRepository,
   type AuditLogRepository,
   type NotificationRepository,
@@ -44,7 +44,7 @@ export type NotificationService = ReturnType<typeof createNotificationService>;
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultNotificationServiceDependencies(): NotificationServiceDependencies {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     notifications: createNotificationRepository(defaultDbClient.db),
     audit: createAuditLogRepository(defaultDbClient.db),

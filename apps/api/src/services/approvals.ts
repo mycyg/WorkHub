@@ -11,7 +11,7 @@ import {
 import {
   createApprovalRequestRepository,
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createPermissionPolicyRepository,
   type AuditLogRepository,
   type ApprovalRequestRepository,
@@ -90,7 +90,7 @@ type AuditApprovalActor = {
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependencies {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     approvals: createApprovalRequestRepository(defaultDbClient.db),
     auditLogs: createAuditLogRepository(defaultDbClient.db),

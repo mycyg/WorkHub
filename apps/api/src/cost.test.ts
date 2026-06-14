@@ -342,6 +342,19 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
     createdAt: now
   }));
+  // 另一个用户的花费：非管理员绝不能在自己的总额/趋势里看到它（M8）。
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000b3",
+    workItemId: "50000000-0000-4000-8000-0000000000b3",
+    userId: "10000000-0000-4000-8000-0000000000c9",
+    inputTokens: 9000,
+    outputTokens: 9000,
+    costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
+    createdAt: now
+  }));
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
@@ -360,14 +373,18 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
   assert.equal(adminResponse.status, 200);
   const userBody = await userResponse.json() as {
     ok: true;
-    data: { total_cost_cny: string; token_in: number; by_user: unknown[]; model_breakdown: { provider: string }[] };
+    data: { total_cost_cny: string; token_in: number; by_user: unknown[]; model_breakdown: { provider: string; model: string }[] };
   };
-  const adminBody = await adminResponse.json() as { ok: true; data: { by_user: unknown[] } };
+  const adminBody = await adminResponse.json() as { ok: true; data: { by_user: unknown[]; token_in: number } };
+  // 非管理员：只看到自己的花费，另一用户的 18000 token / 高额成本完全不出现。
   assert.equal(userBody.data.total_cost_cny, "0.006");
   assert.equal(userBody.data.token_in, 1000);
   assert.equal(userBody.data.by_user.length, 0);
-  assert.equal(userBody.data.model_breakdown[0]?.provider, "deepseek");
-  assert.equal(adminBody.data.by_user.length, 1);
+  assert.equal(userBody.data.model_breakdown.length, 1);
+  assert.equal(userBody.data.model_breakdown[0]?.model, "deepseek-v4-flash");
+  // 管理员：全组织视图，两个用户都在。
+  assert.equal(adminBody.data.by_user.length, 2);
+  assert.equal(adminBody.data.token_in, 10000);
 });
 
 test("api provider registry records create and stream usage into the shared cost ledger", async () => {

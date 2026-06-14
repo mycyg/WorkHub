@@ -113,12 +113,18 @@ export function ledgerUsageSnapshots(
   return snapshots;
 }
 
+function entryInScopes(entry: CostLedgerEntry, scopeIds: LedgerScopeIds): boolean {
+  return scopesFromIds(scopeIds).some((scope) => sameScope(entry.scope, scope));
+}
+
 export type CostLedgerStore = {
   records: readonly UsageRecord[];
   entries: readonly CostLedgerEntry[];
   recordUsage: (record: UsageRecord) => Promise<void> | void;
   usageSnapshots: (scopeIds: LedgerScopeIds, options?: { now?: Date }) => MaybePromise<BudgetUsageSnapshot[]>;
   listEntries?: () => MaybePromise<readonly CostLedgerEntry[]>;
+  /** 只读请求到的 scope 的账目（走索引），用于非管理员只取自己的用量、避免全表扫描。 */
+  listEntriesForScopes?: (scopeIds: LedgerScopeIds) => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
 };
 
@@ -158,6 +164,9 @@ export function createMemoryCostLedgerStore(options: {
     },
     listEntries() {
       return entries;
+    },
+    listEntriesForScopes(scopeIds) {
+      return entries.filter((entry) => entryInScopes(entry, scopeIds));
     },
     listRecords() {
       return records;

@@ -8,7 +8,7 @@ import {
   type WorkHubLocale
 } from "@workhub/contracts";
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createProjectHealthRepository,
   type ProjectHealthRepository,
   type ProjectHealthSourceRows,
@@ -33,7 +33,7 @@ export type ProjectHealthPageService = ReturnType<typeof createProjectHealthPage
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultProjectHealthPageServiceDependencies(): ProjectHealthPageServiceDependencies {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     projectHealth: createProjectHealthRepository(defaultDbClient.db)
   };

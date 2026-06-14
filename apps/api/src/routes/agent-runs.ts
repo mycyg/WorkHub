@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createProposalRepository,
   type AuditLogRepository,
   type MergeAttemptRow,
@@ -75,7 +75,7 @@ export type ProposalReplayAuditReader = {
 let defaultProposalReplayAuditDbClient: WorkHubDatabaseClient | undefined;
 
 function getDefaultProposalReplayAudit(): ProposalReplayAuditReader {
-  defaultProposalReplayAuditDbClient ??= createDatabaseClient();
+  defaultProposalReplayAuditDbClient ??= getSharedDatabaseClient();
   return createProposalRepository(defaultProposalReplayAuditDbClient.db);
 }
 

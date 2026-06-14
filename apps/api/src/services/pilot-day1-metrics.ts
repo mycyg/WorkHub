@@ -1,4 +1,4 @@
-import { createDatabaseClient, createPilotMetricsRepository, type PilotDay1MetricsRows, type PilotMetricsRepository, type WorkHubDatabaseClient } from "@workhub/db";
+import { getSharedDatabaseClient, createPilotMetricsRepository, type PilotDay1MetricsRows, type PilotMetricsRepository, type WorkHubDatabaseClient } from "@workhub/db";
 import { pilotDay1MetricsSnapshotSchema, type PilotDay1Metric, type PilotDay1MetricsSnapshot } from "@workhub/contracts";
 import type { CostLedgerEntry } from "@workhub/cost";
 
@@ -321,7 +321,7 @@ export function createPilotDay1MetricsService(
 
 export function getDefaultPilotDay1MetricsService() {
   if (!defaultPilotDay1MetricsService) {
-    defaultDbClient = createDatabaseClient();
+    defaultDbClient = getSharedDatabaseClient();
     defaultPilotDay1MetricsService = createPilotDay1MetricsService(
       createPilotMetricsRepository(defaultDbClient.db)
     );

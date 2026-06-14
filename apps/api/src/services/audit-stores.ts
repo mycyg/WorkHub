@@ -1,6 +1,6 @@
 import {
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createSnapshotRepository,
   type AuditLogRepository,
   type SnapshotRepository,
@@ -15,7 +15,7 @@ export type AuditStores = {
 };
 
 export function getDefaultAuditStores(): AuditStores {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     snapshots: createSnapshotRepository(defaultDbClient.db)

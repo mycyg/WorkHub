@@ -317,13 +317,20 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       policies: await policyStore.listPolicies(settings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
+    // 非管理员只读自己 user scope 的账目（走索引，不全表扫描，也不带 team scope——否则会把同队他人的花费混进总额）。
+    // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员才取全组织视图。M8/M9。
+    const ledgerEntries = c.var.currentUser.isAdmin
+      ? (ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries)
+      : (ledgerStore.listEntriesForScopes
+          ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id })
+          : (ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries));
     const data = buildCostDashboardPage({
       settings,
       isAdmin: c.var.currentUser.isAdmin,
       userId: c.var.currentUser.id,
       locale,
       budgetUsages: decision.usages,
-      ledgerEntries: ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries
+      ledgerEntries
     });
     return c.json(pageEnvelope(data, locale));
   });

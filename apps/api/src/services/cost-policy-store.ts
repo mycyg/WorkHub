@@ -1,6 +1,6 @@
 import {
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createDbBudgetPolicyStore,
   type AuditLogRepository,
   type WorkHubDatabaseClient
@@ -12,7 +12,7 @@ let defaultBudgetPolicyStore: BudgetPolicyStore | undefined;
 let defaultBudgetPolicyAuditLogs: AuditLogRepository | undefined;
 
 function getDefaultDbClient() {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return defaultDbClient;
 }
 

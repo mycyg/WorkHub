@@ -1,5 +1,5 @@
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createPilotMetricsRepository,
   type PilotDay1MetricsRows,
   type PilotMetricsRepository,
@@ -82,9 +82,23 @@ export function createAiWorklogMetricsService(
   return {
     async getTodayMetrics(input) {
       const reference = input?.now ?? now();
+      const from = startOfToday(reference);
+      // 只读今天的 agentRuns/proposals（M5：不再为 4 个数字全表扫 9 张表）。
+      // buildAiWorklog 只用到 rows.agentRuns / rows.proposals，其余字段补空即可。
+      const slice = await repository.readAiWorklogRows(from);
       return buildAiWorklog({
-        rows: await repository.readDay1MetricsRows(),
-        from: startOfToday(reference),
+        rows: {
+          workItems: [],
+          proposals: slice.proposals,
+          reviews: [],
+          agentRuns: slice.agentRuns,
+          escalationEvents: [],
+          approvalRequests: [],
+          mergeAttempts: [],
+          notifications: [],
+          costLedgerEntries: []
+        },
+        from,
         to: reference,
         now: reference
       });
@@ -97,7 +111,7 @@ let defaultAiWorklogMetricsService: AiWorklogMetricsService | undefined;
 
 export function getDefaultAiWorklogMetricsService(): AiWorklogMetricsService {
   if (!defaultAiWorklogMetricsService) {
-    defaultDbClient = defaultDbClient ?? createDatabaseClient();
+    defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
     defaultAiWorklogMetricsService = createAiWorklogMetricsService(
       createPilotMetricsRepository(defaultDbClient.db)
     );

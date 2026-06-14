@@ -1,6 +1,6 @@
 import { settings } from "@workhub/config";
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createDbCostLedgerStore,
   type WorkHubDatabaseClient
 } from "@workhub/db";
@@ -11,7 +11,7 @@ let defaultCostLedgerStore: CostLedgerStore | undefined;
 
 export function getDefaultCostLedgerStore(): CostLedgerStore {
   if (!defaultCostLedgerStore) {
-    defaultDbClient = createDatabaseClient();
+    defaultDbClient = getSharedDatabaseClient();
     defaultCostLedgerStore = createDbCostLedgerStore(defaultDbClient.db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"

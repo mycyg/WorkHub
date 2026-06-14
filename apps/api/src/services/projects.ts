@@ -1,4 +1,4 @@
-import { createDatabaseClient, createProjectRepository, type ProjectRepository, type WorkHubDatabaseClient } from "@workhub/db";
+import { getSharedDatabaseClient, createProjectRepository, type ProjectRepository, type WorkHubDatabaseClient } from "@workhub/db";
 import type { BootstrapProjectRequest, BootstrapProjectResult, ProjectVM } from "@workhub/contracts";
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 
@@ -86,7 +86,7 @@ export function createProjectService(
 
 export function getDefaultProjectService() {
   if (!defaultProjectService) {
-    defaultDbClient = createDatabaseClient();
+    defaultDbClient = getSharedDatabaseClient();
     defaultProjectService = createProjectService(createProjectRepository(defaultDbClient.db));
   }
   return defaultProjectService;

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createWorkItemRepository,
   defaultSeedIds,
   WorkItemAcceptedDeliverableRestoreError,
@@ -1253,7 +1253,7 @@ let defaultWorkItemDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultWorkItemService() {
   if (!defaultWorkItemService) {
-    defaultWorkItemDbClient = createDatabaseClient();
+    defaultWorkItemDbClient = getSharedDatabaseClient();
     defaultWorkItemService = createDbWorkItemService(createWorkItemRepository(defaultWorkItemDbClient.db));
   }
   return defaultWorkItemService;

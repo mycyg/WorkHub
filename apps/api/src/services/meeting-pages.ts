@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createMeetingRepository,
   MeetingRepositoryConflictError,
   type MeetingInsightRow,
@@ -577,7 +577,7 @@ let defaultMeetingPageDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultMeetingPageService() {
   if (!defaultMeetingPageService) {
-    defaultMeetingPageDbClient = createDatabaseClient();
+    defaultMeetingPageDbClient = getSharedDatabaseClient();
     defaultMeetingPageService = createMeetingPageService({
       repo: createMeetingRepository(defaultMeetingPageDbClient.db)
     });

@@ -1,5 +1,5 @@
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createWorkItemRepository,
   type WorkHubDatabaseClient,
   type WorkItemRepository
@@ -18,7 +18,7 @@ export type AgentRunNotificationWorkItemResolver = (
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 function getDefaultWorkItemRepository() {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return createWorkItemRepository(defaultDbClient.db);
 }
 

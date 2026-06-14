@@ -3,7 +3,7 @@ import { eventTypes } from "@workhub/contracts";
 import {
   createAiDecisionRepository,
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createWorkItemRepository,
   type AiDecisionRepository,
   type AuditLogRepository,
@@ -47,7 +47,7 @@ export type HumanReservedGuardOptions = {
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 function defaultStores() {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     workItems: createWorkItemRepository(defaultDbClient.db),
     decisions: createAiDecisionRepository(defaultDbClient.db),

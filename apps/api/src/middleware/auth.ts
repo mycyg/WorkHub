@@ -9,7 +9,7 @@ import { authDefaults, settings as defaultSettings, type Settings } from "@workh
 import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
   createClientDeviceRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createUserRepository,
   type ClientDeviceAuthRow,
   type ClientDeviceRepository,
@@ -63,7 +63,7 @@ export type AuthDependencySource = AuthDependencies | (() => AuthDependencies);
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultAuthDependencies(): AuthDependencies {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   const presence = getDefaultPresenceStore();
   return {
     users: createUserRepository(defaultDbClient.db),

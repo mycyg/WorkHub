@@ -233,6 +233,7 @@ export function createDbCostLedgerStore(
       return ledgerUsageSnapshots(await listEntriesForScopes(scopeIds), scopeIds, options);
     },
     listEntries,
+    listEntriesForScopes,
     listRecords
   };
 }

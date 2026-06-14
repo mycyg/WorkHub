@@ -1,4 +1,5 @@
 import type { CostLedgerEntry } from "@workhub/cost";
+import { gte, or, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -99,8 +100,15 @@ export type PilotDay1MetricsRows = {
   costLedgerEntries: readonly CostLedgerEntry[];
 };
 
+// 首页 AI 战绩只需要这两张表的今日切片——不再为 4 个数字全表扫 9 张表（M5）。
+export type AiWorklogMetricsRows = {
+  agentRuns: PilotDay1AgentRunMetricRow[];
+  proposals: PilotDay1ProposalMetricRow[];
+};
+
 export type PilotMetricsRepository = {
   readDay1MetricsRows: () => Promise<PilotDay1MetricsRows>;
+  readAiWorklogRows: (since: Date) => Promise<AiWorklogMetricsRows>;
 };
 
 export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsRepository {
@@ -198,6 +206,35 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
         notifications: notificationRows,
         costLedgerEntries
       };
+    },
+
+    async readAiWorklogRows(since: Date) {
+      const [agentRunRows, proposalRows] = await Promise.all([
+        db.select({
+          id: agentRuns.id,
+          workItemId: agentRuns.workItemId,
+          actorUserId: agentRuns.actorUserId,
+          status: agentRuns.status,
+          tokenIn: agentRuns.tokenIn,
+          tokenOut: agentRuns.tokenOut,
+          costEstimate: agentRuns.costEstimate,
+          createdAt: agentRuns.createdAt,
+          finishedAt: agentRuns.finishedAt
+        }).from(agentRuns).where(
+          or(gte(agentRuns.createdAt, since), gte(agentRuns.finishedAt, since)) as SQL
+        ),
+        db.select({
+          id: proposals.id,
+          workItemId: proposals.workItemId,
+          status: proposals.status,
+          openedByKind: proposals.openedByKind,
+          openedByUserId: proposals.openedByUserId,
+          reviewedAt: proposals.reviewedAt,
+          mergedAt: proposals.mergedAt,
+          createdAt: proposals.createdAt
+        }).from(proposals).where(gte(proposals.mergedAt, since))
+      ]);
+      return { agentRuns: agentRunRows, proposals: proposalRows };
     }
   };
 }

@@ -85,13 +85,19 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const generatedAt = input.generatedAt ?? new Date();
   const locale = input.locale ?? "zh-CN";
   const summary = buildCostSummary({ ...input, generatedAt });
-  const uniqueEntries = uniqueUsageEntries(input.ledgerEntries ?? []);
+  // 纵深防御（M8）：非管理员的总额/趋势/模型分布只能基于自己 user scope 的账目，
+  // 即便上游误传了全量账目，也绝不把同组织他人的花费泄露给普通用户。
+  const allEntries = input.ledgerEntries ?? [];
+  const scopedEntries = input.isAdmin
+    ? allEntries
+    : allEntries.filter((entry) => entry.scope.kind === "user" && entry.scope.userId === input.userId);
+  const uniqueEntries = uniqueUsageEntries(scopedEntries);
   const totalCost = sumCost(uniqueEntries);
   const tokenIn = uniqueEntries.reduce((sum, entry) => sum + entry.tokenIn, 0);
   const tokenOut = uniqueEntries.reduce((sum, entry) => sum + entry.tokenOut, 0);
-  const byUser = aggregateByScope(input.ledgerEntries ?? [], "user");
-  const byTeam = aggregateByScope(input.ledgerEntries ?? [], "team");
-  const byWorkitem = aggregateByScope(input.ledgerEntries ?? [], "workitem");
+  const byUser = aggregateByScope(scopedEntries, "user");
+  const byTeam = aggregateByScope(scopedEntries, "team");
+  const byWorkitem = aggregateByScope(scopedEntries, "workitem");
   const modelBreakdown = aggregateByModel(uniqueEntries);
 
   return {

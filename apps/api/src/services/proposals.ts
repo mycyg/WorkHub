@@ -26,7 +26,7 @@ import {
 } from "@workhub/contracts";
 import { settings as defaultSettings } from "@workhub/config";
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createProposalRepository,
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
@@ -1876,7 +1876,7 @@ let defaultProposalDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultProposalService() {
   if (!defaultProposalService) {
-    defaultProposalDbClient = createDatabaseClient();
+    defaultProposalDbClient = getSharedDatabaseClient();
     defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db));
   }
   return defaultProposalService;

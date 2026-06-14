@@ -1,6 +1,6 @@
 import { settings } from "@workhub/config";
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createTeamSkillRepository,
   type AuditLogRepository,
   type TeamSkillRepository,
@@ -252,7 +252,7 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
   if (defaultScheduler) {
     return defaultScheduler;
   }
-  defaultDbClient = defaultDbClient ?? createDatabaseClient();
+  defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
   const db = defaultDbClient.db;
   const repository = createTeamSkillRepository(db);
   const auditStores = getDefaultAuditStores();

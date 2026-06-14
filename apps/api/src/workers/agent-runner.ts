@@ -38,7 +38,7 @@ import {
   type ToolResult
 } from "@workhub/tools";
 import { makeWorkHubEvent, topics, toCuuState, type LifecycleWorkItemRef } from "@workhub/events";
-import { createDatabaseClient, createWorkItemRepository } from "@workhub/db";
+import { getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
 import type {
   AuditLogRepository,
   SnapshotRepository,
@@ -1381,7 +1381,7 @@ let defaultWorkItemContextProvider: AgentRunWorkItemContextProvider | undefined;
 
 function getDefaultWorkItemContextProvider() {
   if (!defaultWorkItemContextProvider) {
-    defaultWorkItemContextDbClient = createDatabaseClient();
+    defaultWorkItemContextDbClient = getSharedDatabaseClient();
     defaultWorkItemContextProvider = createDbWorkItemContextProvider(
       createWorkItemRepository(defaultWorkItemContextDbClient.db)
     );

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createDriveRepository,
   DriveRepositoryConflictError,
   type DriveItemRow,
@@ -747,7 +747,7 @@ let defaultDrivePageDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultDrivePageService() {
   if (!defaultDrivePageService) {
-    defaultDrivePageDbClient = createDatabaseClient();
+    defaultDrivePageDbClient = getSharedDatabaseClient();
     defaultDrivePageService = createDrivePageService({
       repo: createDriveRepository(defaultDrivePageDbClient.db)
     });

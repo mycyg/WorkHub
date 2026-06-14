@@ -3,7 +3,7 @@ import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   createAiDecisionRepository,
   createAuditLogRepository,
-  createDatabaseClient,
+  getSharedDatabaseClient,
   type AiDecisionRepository,
   type AuditLogRepository,
   type WorkHubDatabaseClient
@@ -31,7 +31,7 @@ export type AgentRunConfidenceRecorderOptions = {
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 function defaultStores() {
-  defaultDbClient ??= createDatabaseClient();
+  defaultDbClient ??= getSharedDatabaseClient();
   return {
     decisions: createAiDecisionRepository(defaultDbClient.db),
     auditLogs: createAuditLogRepository(defaultDbClient.db)

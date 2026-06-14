@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 import {
-  createDatabaseClient,
+  getSharedDatabaseClient,
   createDriveRepository,
   createWorkItemRepository,
   type WorkHubDatabaseClient,
@@ -124,7 +124,7 @@ let defaultDeps: ProjectHydrateDeps | undefined;
 export function getDefaultProjectHydrator(settings: Settings = defaultSettings): ProjectHydrator {
   return async (run, workdir) => {
     try {
-      defaultDbClient = defaultDbClient ?? createDatabaseClient();
+      defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
       defaultWorkItems = defaultWorkItems ?? createWorkItemRepository(defaultDbClient.db);
       defaultDeps = defaultDeps ?? buildDefaultDeps(defaultDbClient.db);
       const detail = await defaultWorkItems.readWorkItemDetail(run.work_item_id);
