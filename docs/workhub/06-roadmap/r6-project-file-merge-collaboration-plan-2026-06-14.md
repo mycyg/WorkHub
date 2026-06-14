@@ -21,7 +21,11 @@ depends_on:
 > - 历史行 `project_id` 一次性回填（dev DB 38→0；**生产升级需同样回填**，已记 handoff）。CI 新库无历史行、逐条带 projectId，无需回填。
 > - **真 PG 实证**（真实回填数据）：project-scope 查询能看到 6 条跨任务当前真相，而旧的 workItem-scope（别的任务来问）看到 0——正是会丢更新的洞被堵上。
 > - 回归：全量 `pnpm test`(api 161/db 15) + `pnpm -r typecheck` 绿；真库 merge 端到端由 **pilot-stack-smoke** CI 兜（real PG 真跑 agent→proposal→merge）。
-> - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止，未给"对一下底稿"友好 UX）；② 把 project-scope 撞车同步进 `MemoryProposalRepository` 做 CI-gated 跨任务测试（现靠真 PG 本地实证 + pilot-stack-smoke 兜）；③ 项目级 hydrate(AI 读整个项目)+base 底稿快照；④ 去黑话撞车卡 + 结构记录三方兜底；⑤ 回填迁移（供生产升级）。
+> **增量 3（项目级文件范围 M1）已交付：AI 能读整个项目。**
+> - `apps/api/src/workers/project-hydrate.ts`：`hydrateProjectWorkdir()` 把项目当前 Drive 文件物化进 `workdir/project/`（只读参考区，按 parentId 链重建目录树）；纯函数+可注入依赖；**预算上限**(默认 200 文件/32MB)防爆、每路径过 `safeResolvePath` 防逃逸、逐文件 try **fail-open**。`outputs/` 仍是唯一可写产出区（manifest 只扫 outputs/，互不干扰）。
+> - 接进 `agent-runner` workdir 创建后（fail-open 包裹）；默认 hydrator `run→work_item→projectId→drive.readPage` 取材。**默认关闭** `AGENT_RUN_PROJECT_HYDRATE_ENABLED=false`（CI/pilot-stack 零行为变化），开启才生效。
+> - 测试：4 个 CI-gated 单测（物化/路径逃逸/双预算上限/fail-open）；**真 PG 端到端实证**：开启后对真实 work_item 物化 38 文件/322KB、目录树正确、0 skip。全量 `pnpm test`(api 165) + typecheck 绿。
+> - **仍未做（后续增量）**：① rebase「先对一下底稿」流 + `POST /:id/rebase` + merge 返回 `rebase_required`（现在底稿过期是抛错中止，未给友好 UX）；② project-scope 撞车同步进 `MemoryProposalRepository` 做 CI-gated 跨任务测试（现靠真 PG 本地实证 + pilot-stack-smoke 兜）；③ base 底稿快照(M2，配合 rebase)；④ 去黑话撞车卡 + 结构记录三方兜底；⑤ 撞车判定/作废的 project 范围回填迁移（供生产升级）。
 
 
 > **北极星延伸**：让 AI 不再被困在一个任务的小盒子里——它能读写**整个项目（一个 project 下的全部资料）**；每一次改动都是一份独立的**工作副本**（带备份/快照），人确认后才**采纳**进项目；采纳这一步由 **LLM 做三方对照**（base/我的/你的），而不是闭眼覆盖；多人异步采纳时，**用旧底稿采纳绝不能盖掉别人刚加进去的东西**（不丢更新）。全部建立在现有 `sha256_before` 乐观并发 + diff3 + AI 融合稿 + 快照之上——**扩展，不重造**。

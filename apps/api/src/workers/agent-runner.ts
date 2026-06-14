@@ -70,6 +70,7 @@ import {
   getDefaultTeamSkillContextProvider,
   type TeamSkillContextProvider
 } from "../services/team-skill-context.js";
+import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -329,6 +330,7 @@ export function createInMemoryAgentRunQueue(options: {
   workItemContext?: AgentRunWorkItemContextProvider | false;
   userMemory?: UserMemoryContextProvider | false;
   teamSkills?: TeamSkillContextProvider | false;
+  hydrateProject?: ProjectHydrator | false;
   requireDeliverable?: boolean;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
@@ -349,6 +351,7 @@ export function createInMemoryAgentRunQueue(options: {
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
+  const hydrateProject = options.hydrateProject === false ? undefined : options.hydrateProject;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
@@ -766,6 +769,15 @@ export function createInMemoryAgentRunQueue(options: {
       updated_at: now().toISOString()
     });
     await persistence?.setWorkdir(current.run_id, workdir, now());
+    // P-COLLAB M1：把项目现有文件物化进 workdir/project/（只读参考区），让 AI 能读整个项目。
+    // fail-open：物化失败不影响 run（照常以空 workdir 跑）。默认关闭，由 hydrateProject 提供者决定。
+    if (hydrateProject) {
+      try {
+        await hydrateProject(current, workdir);
+      } catch (error) {
+        console.warn("WorkHub project hydrate failed", error);
+      }
+    }
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
       run: current,
       settings,
@@ -1336,6 +1348,8 @@ export function getDefaultAgentRunQueue() {
     workItemContext: getDefaultWorkItemContextProvider(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
+    // 默认关闭：AGENT_RUN_PROJECT_HYDRATE_ENABLED=true 才让 AI 取材整个项目（fail-open + 预算上限）。
+    hydrateProject: runtimeSettings.agentRun.projectHydrateEnabled ? getDefaultProjectHydrator() : false,
     leaseMs: runtimeSettings.agentRun.leaseMs,
     ...(runtimeSettings.agentRun.heartbeatIntervalMs
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }

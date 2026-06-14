@@ -87,7 +87,10 @@ export const envSchema = z.object({
   AGENT_RUN_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
   AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000),
   AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
-  AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000)
+  AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
+  AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(false),
+  AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
+  AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -151,6 +154,9 @@ export type Settings = {
     recoveryIntervalMs: number;
     skillCurationEnabled: boolean;
     skillCurationIntervalMs: number;
+    projectHydrateEnabled: boolean;
+    projectHydrateMaxFiles: number;
+    projectHydrateMaxBytes: number;
   };
 };
 
@@ -221,7 +227,10 @@ export function loadSettings(env: EnvInput = process.env): Settings {
         : {}),
       recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS,
       skillCurationEnabled: parsed.AGENT_RUN_SKILL_CURATION_ENABLED,
-      skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS
+      skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS,
+      projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,
+      projectHydrateMaxFiles: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_FILES,
+      projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES
     }
   };
 
