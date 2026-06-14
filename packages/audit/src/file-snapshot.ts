@@ -69,6 +69,30 @@ export async function takeFileSnapshot(input: SnapshotTakeInput): Promise<Snapsh
   return snapshot;
 }
 
+// P-COLLAB M2：从一份 base 快照里按相对路径读出单个文件,作为三方合并的"共同祖先"内容。
+// 快照是整棵目录拷贝(无逐文件 API),diff3 需要按路径取祖先文本。路径越界(..)一律视为不存在,
+// 不抛错——调用方据此回退到旧的 accepted-history 祖先。
+export async function readSnapshotFile(
+  snapshot: { ref: string },
+  relativePath: string
+): Promise<{ text: string; sha256: string } | null> {
+  const root = path.resolve(snapshot.ref);
+  const cleaned = relativePath.replace(/^[\\/]+/, "");
+  const resolved = path.resolve(root, cleaned);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    return null;
+  }
+  try {
+    const bytes = await readFile(resolved);
+    return {
+      text: bytes.toString("utf8"),
+      sha256: createHash("sha256").update(bytes).digest("hex")
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function clearDirectory(root: string) {
   await mkdir(root, { recursive: true });
   const entries = await readdir(root);

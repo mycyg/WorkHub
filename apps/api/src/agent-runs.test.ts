@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -2235,6 +2235,66 @@ test("successful agent run opens a proposal from its generated manifest", async 
   assert.equal(proposalEvent?.data.proposal_id, opened[0]?.id);
   assert.equal(proposalEvent?.data.cuu_state, "carrying_document");
   assert.equal(proposalEvent?.data.data["branch_id"], opened[0]?.branch_id);
+});
+
+test("P-COLLAB M2: a hydrated run captures a base snapshot and stamps manifest.base.snapshot_id", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-base-snapshot-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-base-snapshot-root-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const proposalIds = [
+    "62000000-0000-4000-8000-000000000025",
+    "63000000-0000-4000-8000-000000000025"
+  ];
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => {
+      const id = proposalIds.shift();
+      if (!id) {
+        throw new Error("No fake proposal id queued");
+      }
+      return id;
+    }
+  });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000028",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: false,
+    notifications: false,
+    // 物化出 project/ 只读祖先文件,触发 run 开始时的 base 快照。
+    hydrateProject: async (_run, wd) => {
+      const projectDir = path.join(wd, "project");
+      await mkdir(projectDir, { recursive: true });
+      await writeFile(path.join(projectDir, "spec.md"), "existing project content\n", "utf8");
+      return { files: 1, bytes: 25, skipped: 0 };
+    },
+    eventBus: { async publish() {} }
+  });
+
+  await queue.enqueue({ workItemId, actorId: userId, title: "Base snapshot run" });
+  const executed = await queue.runNext();
+  assert.equal(executed?.status, "succeeded");
+
+  // 拍了一份 kind:"base" 快照,且其 ref 目录里含 project/ 树(spec.md),不是 outputs/。
+  const baseRows = snapshots.rows.filter((row) => row.kind === "base");
+  assert.equal(baseRows.length, 1, "exactly one base snapshot should be captured");
+  const baseRef = baseRows[0]?.ref;
+  assert.ok(baseRef, "base snapshot has a ref dir");
+  assert.equal(await readFile(path.join(baseRef!, "spec.md"), "utf8"), "existing project content\n");
+
+  // base.snapshot_id 写进了 manifest → createProposal 会落到 branches.baseSnapshotId。
+  const opened = await proposals.listByWorkItem(workItemId);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0]?.diff_manifest.base.snapshot_id, baseRows[0]?.id);
 });
 
 test("agent run confidence recording opens an escalation for failed deliverables", async () => {

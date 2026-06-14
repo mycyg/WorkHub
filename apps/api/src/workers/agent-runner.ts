@@ -52,6 +52,7 @@ import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
+import { createSnapshotService } from "@workhub/audit";
 import { createAgentRunSnapshotHook } from "../services/agent-run-snapshots.js";
 import {
   createAgentRunConfidenceRecorder,
@@ -378,6 +379,9 @@ export function createInMemoryAgentRunQueue(options: {
     }));
   const runs = new Map<string, AgentRunQueueRecord>();
   const runWorkdirs = new Map<string, string>();
+  // P-COLLAB M2：run 开始时拍下的 project/ base 快照 id（按 run 暂存），
+  // 开提议时写进 manifest.base.snapshot_id → createProposal 落到 branches.baseSnapshotId。
+  const runBaseSnapshotIds = new Map<string, string>();
   const startingWorkItems = new Set<string>();
   const tracePersistenceChains = new Map<string, Promise<void>>();
   // 内存里只保留有限条已结束的 run 作为读缓存；活跃(queued/running)的永不剔除。
@@ -505,6 +509,7 @@ export function createInMemoryAgentRunQueue(options: {
       if (TERMINAL_RUN_STATUSES.has(record.status)) {
         runs.delete(runId);
         runWorkdirs.delete(runId);
+        runBaseSnapshotIds.delete(runId);
       }
     }
   }
@@ -747,6 +752,15 @@ export function createInMemoryAgentRunQueue(options: {
       return;
     }
 
+    // P-COLLAB M2：把 run 开始时拍的 project/ base 快照 id 写进 manifest.base.snapshot_id。
+    // createProposal 建分支时读取它落到 branches.baseSnapshotId,供三方合并/对底稿当 diff3 共同祖先。
+    // 这里是覆盖写：manifest.base.snapshot_id 原本是循环的整 workdir 快照（回滚点,另存于
+    // rollback.snapshot_id),而合并要的是 project/ 专属祖先。branches.baseSnapshotId 目前别无消费者,覆盖安全。
+    const baseSnapshotId = runBaseSnapshotIds.get(run.run_id);
+    if (baseSnapshotId) {
+      result.manifest.base.snapshot_id = baseSnapshotId;
+    }
+
     const proposal = await proposalSink.createFromManifest({
       workItemId: run.work_item_id,
       manifest: result.manifest,
@@ -816,6 +830,33 @@ export function createInMemoryAgentRunQueue(options: {
         projectFileCount = hydrated?.files ?? 0;
       } catch (error) {
         console.warn("WorkHub project hydrate failed", error);
+      }
+    }
+    // P-COLLAB M2：物化出 project/（只读祖先态）后,趁 AI 还没动手,拍一份 kind:"base" 快照。
+    // 它就是这次工作副本的"共同祖先",日后三方合并/对底稿(rebase)拿它当 diff3 base。
+    // fail-open：拍照失败不影响 run（baseSnapshotId 留空,合并回退到 accepted-history 祖先）。
+    if (projectFileCount > 0 && options.snapshots) {
+      try {
+        const baseSnapshotRoot =
+          options.snapshotRoot ?? path.join(settings.dataDir, "snapshots", "agent-runs", current.run_id);
+        const baseSnapshot = await createSnapshotService({ snapshotRoot: baseSnapshotRoot, now })
+          .takeSandboxFileSnapshot({
+            workItemId: current.work_item_id,
+            workdir: path.join(workdir, "project"),
+            kind: "base",
+            createdByKind: "system"
+          });
+        const baseRow = await options.snapshots.createSnapshot({
+          id: baseSnapshot.id,
+          workItemId: baseSnapshot.workItemId,
+          kind: baseSnapshot.kind,
+          ref: baseSnapshot.ref,
+          ...(baseSnapshot.contentSha256 ? { contentSha256: baseSnapshot.contentSha256 } : {}),
+          createdByKind: baseSnapshot.createdByKind
+        });
+        runBaseSnapshotIds.set(current.run_id, baseRow.id);
+      } catch (error) {
+        console.warn("WorkHub base snapshot capture failed", error);
       }
     }
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({

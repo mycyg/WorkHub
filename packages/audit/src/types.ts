@@ -16,7 +16,7 @@ export type SnapshotRef = {
   id: string;
   workItemId: string;
   branchId?: string;
-  kind: "pre_step" | "merge" | "manual";
+  kind: "pre_step" | "merge" | "manual" | "base";
   ref: string;
   contentSha256?: string;
   createdByKind: ActorKind;
