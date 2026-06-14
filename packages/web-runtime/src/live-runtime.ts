@@ -80,6 +80,8 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
   const liveEventSources = new Map<string, LiveEventSourceEntry>();
   const liveRefreshDebounceMs = options.debounceMs ?? 220;
   let liveRefreshTimer: number | undefined;
+  // L#80/#87：去抖窗口内记住"最新"触发事件，定时器到点时用最新而非窗口里的第一条。
+  let pendingRefreshEvent: { eventType: string; targetKey: string } | undefined;
   let liveEventCount = 0;
   let liveRefreshCount = 0;
   let liveEventSourceOpenCount = 0;
@@ -168,6 +170,7 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
     setMetric("r4LiveEventCount", liveEventCount);
     setMetric("r4LiveLastEvent", eventType);
     setMetric("r4LiveLastStream", targetKey);
+    pendingRefreshEvent = { eventType, targetKey };
     if (liveRefreshTimer !== undefined) {
       return;
     }
@@ -175,8 +178,10 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
       liveRefreshTimer = undefined;
       liveRefreshCount += 1;
       setMetric("r4LiveRefreshCount", liveRefreshCount);
-      void options.onRefresh(eventType, targetKey)
-        .then((outcome) => options.onRefreshNotice(outcome, eventType, targetKey))
+      const pending = pendingRefreshEvent ?? { eventType, targetKey };
+      pendingRefreshEvent = undefined;
+      void options.onRefresh(pending.eventType, pending.targetKey)
+        .then((outcome) => options.onRefreshNotice(outcome, pending.eventType, pending.targetKey))
         .catch((error) => options.onFatal(error));
     }, liveRefreshDebounceMs);
   }

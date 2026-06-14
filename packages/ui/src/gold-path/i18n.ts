@@ -39,6 +39,8 @@ export type GoldPathCopyKey =
   | "shell.localeAria"
   | "empty.evidence"
   | "home.kicker"
+  | "home.inboxTitle"
+  | "home.inboxSummary"
   | "home.emptyTitle"
   | "home.emptySummary"
   | "home.decisionTitle"
@@ -207,6 +209,8 @@ const goldPathCopy = {
     "shell.localeAria": "语言切换",
     "empty.evidence": "没有找到可展示的证据 (´；ω；`)",
     "home.kicker": "今日焦点",
+    "home.inboxTitle": "决策收件箱",
+    "home.inboxSummary": "AI 替你扛了大半，这儿只留要你拍板的。",
     "home.emptyTitle": "现在没有要你拍板的事 (=^･ω･^=)",
     "home.emptySummary": "需要你拿主意时，AI 会第一时间把事项端到你面前，先安心忙别的吧 (=^･ω･^=)",
     "home.decisionTitle": "需要你决定",
@@ -374,6 +378,8 @@ const goldPathCopy = {
     "shell.localeAria": "Language",
     "empty.evidence": "No evidence is ready to show (´；ω；`)",
     "home.kicker": "AI-first home",
+    "home.inboxTitle": "Decision inbox",
+    "home.inboxSummary": "AI handles the rest — only decisions that need you land here.",
     "home.emptyTitle": "Nothing needs your call right now (=^･ω･^=)",
     "home.emptySummary": "AI brings work forward the moment your judgment is needed — relax for now (=^･ω･^=)",
     "home.decisionTitle": "Needs your decision",

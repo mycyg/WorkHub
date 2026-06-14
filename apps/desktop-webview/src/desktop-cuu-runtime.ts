@@ -412,6 +412,8 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   let refreshAgain = false;
   let errorCardShown = false;
   let fallbackRefreshTimer: TimerId | undefined;
+  // L#84：兜底轮询带退避 + 失败上限，避免离线时永远每 2s 打一次 API。
+  let consecutiveRefreshFailures = 0;
 
   const close = (reason = "closed") => {
     if (closed) {
@@ -419,7 +421,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     }
     closed = true;
     if (fallbackRefreshTimer !== undefined) {
-      globalThis.clearInterval(fallbackRefreshTimer);
+      globalThis.clearTimeout(fallbackRefreshTimer);
       fallbackRefreshTimer = undefined;
     }
     source.close();
@@ -437,12 +439,14 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     refreshing = true;
     try {
       const live = await input.client.getAgentRun(runId);
+      consecutiveRefreshFailures = 0;
       input.onCard(cardFromAgentRunLive(live, input), cuuFormat(input.locale, "cuuStart.streamUpdated", { title: live.title }));
       input.onStatus?.({ state: "refreshed", runId, status: live.status });
       if (!desktopCuuAgentRunIsActive(live.status)) {
         close("terminal_status");
       }
     } catch (error) {
+      consecutiveRefreshFailures += 1;
       input.onCard(cardFromDesktopCuuRuntimeError(error, { locale: input.locale, run: input.run }));
       input.onStatus?.({ state: "error", runId, message: desktopCuuErrorMessage(error, input.locale) });
     } finally {
@@ -460,7 +464,8 @@ export function subscribeDesktopCuuAgentRunStream(input: {
       return;
     }
     input.onStatus?.({ state: "event", runId, eventType: workHubEvent?.type ?? eventName });
-    void refresh();
+    // SSE 事件到达即恢复兜底轮询（若此前因连续失败停摆）。
+    void refresh().finally(() => scheduleFallbackRefresh());
   };
 
   for (const eventName of desktopCuuRunStreamEventNames) {
@@ -478,11 +483,24 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   });
   input.onStatus?.({ state: "subscribed", runId, streamUrl });
   const fallbackRefreshMs = input.fallbackRefreshMs ?? 2000;
-  if (fallbackRefreshMs > 0) {
-    fallbackRefreshTimer = globalThis.setInterval(() => {
-      void refresh();
-    }, fallbackRefreshMs);
-  }
+  const MAX_FALLBACK_FAILURES = 10;
+  const MAX_FALLBACK_DELAY_MS = 15_000;
+  // 自调度退避：连续失败时间隔翻倍（封顶 15s），连续失败超过上限就停摆——
+  // 等下一个 SSE 事件或 close 再恢复，不再离线空转打 API。
+  const scheduleFallbackRefresh = () => {
+    if (fallbackRefreshMs <= 0 || closed || fallbackRefreshTimer !== undefined) {
+      return;
+    }
+    if (consecutiveRefreshFailures >= MAX_FALLBACK_FAILURES) {
+      return;
+    }
+    const delay = Math.min(fallbackRefreshMs * 2 ** Math.min(consecutiveRefreshFailures, 3), MAX_FALLBACK_DELAY_MS);
+    fallbackRefreshTimer = globalThis.setTimeout(() => {
+      fallbackRefreshTimer = undefined;
+      void refresh().finally(scheduleFallbackRefresh);
+    }, delay);
+  };
+  scheduleFallbackRefresh();
 
   return {
     runId,

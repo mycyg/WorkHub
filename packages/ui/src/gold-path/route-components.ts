@@ -952,8 +952,8 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.kicker"))}</span>
-          <h2>${escapeHtml(zh ? "决策收件箱" : "Decision inbox")}</h2>
-          <p>${escapeHtml(zh ? "AI 替你扛了大半，这儿只留要你拍板的。" : "AI handles the rest — only decisions that need you land here.")}</p>
+          <h2>${escapeHtml(goldPathT(locale, "home.inboxTitle"))}</h2>
+          <p>${escapeHtml(goldPathT(locale, "home.inboxSummary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(decideCount))}</span>
       </header>

@@ -222,7 +222,12 @@ export function describeCuuModelPackChoices(input: { selected_pack_id?: string |
       selected: pack.pack_id === selection.active_pack.pack_id,
       can_be_default: canBeDefault,
       can_select_in_settings: canBeDefault,
-      status: "default_ready",
+      // L#71：status 从就绪度推导，保持与 can_select_in_settings 一致，而不是恒为 default_ready。
+      status: canBeDefault
+        ? "default_ready"
+        : pack.default_policy.status === "blocked"
+          ? "blocked"
+          : "experimental_locked",
       reason: pack.default_policy.reason,
       visual_gate: pack.visual_gate,
       ...(pack.source.reference_url ? { reference_url: pack.source.reference_url } : {}),
@@ -492,6 +497,17 @@ function validateBehaviorManifest(issues: CuuModelPackIssue[], manifest: CuuMode
         path: `behavior_manifest.states.${hint.state}.loop`,
         message: `Cuu behavior state ${hint.state} points at missing motion ${loopMotion}.`
       });
+    }
+    // L#72：enter/exit 过场动作也必须绑定到 manifest.motions，否则进入/离开该状态时会请求一个不存在的动作。
+    for (const slot of ["enter", "exit"] as const) {
+      const slotMotion = behavior[slot]?.motion;
+      if (slotMotion && !manifest.motions[slotMotion]) {
+        issues.push({
+          code: "missing_behavior_state",
+          path: `behavior_manifest.states.${hint.state}.${slot}`,
+          message: `Cuu behavior state ${hint.state} ${slot} points at missing motion ${slotMotion}.`
+        });
+      }
     }
   }
   if (!manifest.behavior_manifest.idle_random.length) {

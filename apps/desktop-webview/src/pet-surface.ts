@@ -688,6 +688,8 @@ export async function bootDesktopPetSurface(
     getClientToken: clientToken
   });
   let currentCard: CuuCard | undefined;
+  // L#83：卡片内容只在 setCard 时变；用单调递增的版本号代表结构身份，避免每帧(4Hz) JSON.stringify 整张卡片。
+  let cardRevision = 0;
   let idleAction: CuuIdleMicroAction = input.idleScheduler
     ? idleScheduler.snapshot().last_action ?? "idle_breathe"
     : desktopPetInitialIdleAction;
@@ -742,7 +744,8 @@ export async function bootDesktopPetSurface(
     const windowModeError = compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined;
     const windowModeStatus = compactCard ? petWindowModeError ? "failed" : "syncing" : undefined;
     const structuralRenderKey = desktopPetStructuralRenderKey({
-      card: currentCard,
+      card_revision: currentCard ? cardRevision : 0,
+      card_id: currentCard?.id,
       status_text: statusText,
       include_reject_reasons: Boolean(pendingAction),
       pet_window_settings: petWindowSettings,
@@ -807,6 +810,7 @@ export async function bootDesktopPetSurface(
       idleScheduler.observeWorkEvent(Date.now());
     }
     currentCard = card;
+    cardRevision += 1;
     statusText = status;
     pendingAction = undefined;
     if (options.persist !== false) {
@@ -1306,7 +1310,9 @@ function desktopPetWindowSettingsKey(settings: DesktopPetWindowSettings) {
 }
 
 function desktopPetStructuralRenderKey(input: {
-  card?: CuuCard | undefined;
+  // L#83：用卡片版本号+id 代表结构身份，不再每帧序列化整张卡片（热路径 4Hz）。
+  card_revision: number;
+  card_id?: string | undefined;
   status_text?: string | undefined;
   include_reject_reasons: boolean;
   pet_window_settings: DesktopPetWindowSettings;
@@ -1316,17 +1322,18 @@ function desktopPetStructuralRenderKey(input: {
   window_mode_status?: "syncing" | "failed" | undefined;
   locale: WorkHubLocale;
 }) {
-  return JSON.stringify({
-    card: input.card ?? null,
-    status_text: input.status_text ?? null,
-    include_reject_reasons: input.include_reject_reasons,
-    pet_window_settings: input.pet_window_settings,
-    requested_model_pack_id: input.requested_model_pack_id ?? null,
-    compact_card: input.compact_card,
-    window_mode_error: input.window_mode_error ?? null,
-    window_mode_status: input.window_mode_status ?? null,
-    locale: input.locale
-  });
+  return [
+    input.card_revision,
+    input.card_id ?? "",
+    input.status_text ?? "",
+    input.include_reject_reasons ? "1" : "0",
+    desktopPetWindowSettingsKey(input.pet_window_settings),
+    input.requested_model_pack_id ?? "",
+    input.compact_card ? "1" : "0",
+    input.window_mode_error ?? "",
+    input.window_mode_status ?? "",
+    input.locale
+  ].join("|");
 }
 
 function desktopPetPointerStateEqual(a: DesktopPetPointerSnapshot, b: DesktopPetPointerSnapshot) {
@@ -1375,8 +1382,10 @@ function renderDesktopPetBubble(input: {
     : "";
   const transientAttrs = input.status_text && !card ? ` data-pet-bubble-transient="true"` : "";
   // R6.P3：5 情绪 + 3 气泡（cream 审批 / white 对话 / light-blue 检索），由协议态收敛而来。
-  const emotion = card ? cuuEmotionForState(card.state) : undefined;
-  const tone = card ? cuuBubbleKindForState(card.state) : undefined;
+  // L#82：离线整卡（非 compact）时精灵已重映射为 worried，气泡情绪也用同一有效态，避免"忧虑猫 + 待命气泡"不一致。
+  const effectiveState = card && !compact && card.state === "offline" ? "worried" : card?.state;
+  const emotion = effectiveState ? cuuEmotionForState(effectiveState) : undefined;
+  const tone = effectiveState ? cuuBubbleKindForState(effectiveState) : undefined;
   const emotionAttrs = emotion && tone ? ` data-pet-bubble-emotion="${emotion}" data-pet-bubble-tone="${tone}"` : "";
   const emotionLabel = emotion && !compact ? `<span class="wh-pet-emotion">${escapeHtml(petEmotionLabel(emotion, locale))}</span>` : "";
   return `<aside class="wh-pet-bubble" data-pet-bubble="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>

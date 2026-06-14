@@ -273,7 +273,8 @@ function cardFromAgentRunEvent(event: WorkHubEvent<unknown>, options: CuuLocaleO
     state,
     title,
     message: truncate(event.preview_text ?? dataStringField(event.data, "summary") ?? cuuT(options.locale, "agentRun.progressFallback")),
-    priority: state === "worried" ? "high" : "normal",
+    // L#74：预算耗尽与 cardFromBudgetNotice 一致用 urgent（同一现实状况不应因卡片来源不同而优先级不一）。
+    priority: dataStatus === "budget_exhausted" ? "urgent" : state === "worried" ? "high" : "normal",
     actions: href
       ? [
           {

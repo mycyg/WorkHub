@@ -143,16 +143,8 @@ export function createMemoryBudgetPolicyStore(seed: BudgetPolicy[] = []): SyncBu
   };
 }
 
-export function budgetExhaustedNotice(scope: BudgetNotice["scope"]): BudgetNotice {
-  return {
-    code: "budget_exhausted",
-    severity: "critical",
-    message: "AI 预算已经用完，先暂停新的自动执行。",
-    scope,
-    usageRatio: 1,
-    recommendedAction: "pause"
-  };
-}
+// L#73：删除 budgetExhaustedNotice——无任何生产/测试调用方，且它是唯一不带 options/actionHref 的
+// notice 工厂（会产生无动作按钮的卡片）。真实预算路径走 decision.ts 的 budgetNotice()（必带 options+actionHref）。
 
 export function allowWithDefaultBudget(settings: Settings, route: BudgetDecision["modelRoute"]): BudgetDecision {
   return {
