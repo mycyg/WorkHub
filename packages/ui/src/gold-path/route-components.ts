@@ -1128,6 +1128,15 @@ function approvalEvidenceConfidenceLabel(hint: string, zh: boolean): string {
   );
 }
 
+// 2026-06-14T10:24:00.000Z → 2026-06-14 10:24（确定性、不解析 Date、不卷时区，smoke 安全；比裸 ISO 友好）。
+function formatApprovalTimestamp(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
+  return match ? `${match[1]} ${match[2]}` : iso;
+}
+
 function approvalStepStatusLabel(status: string, zh: boolean): string {
   return localizedEnumLabel(
     status,
@@ -1169,7 +1178,11 @@ function renderApprovalDetailPanel(
     ? `<section data-r4-approval-conflicts="true"><h4>${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
     : "";
   const timelineSection = detail?.timeline.length
-    ? `<section data-r4-approval-timeline="true"><h4>${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline">${detail.timeline.map((step) => `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${step.actor_label ? `<p class="wh-subtle">${escapeHtml(step.actor_label)}</p>` : ""}</div><span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div>`).join("")}</div></section>`
+    ? `<section data-r4-approval-timeline="true"><h4>${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline">${detail.timeline.map((step) => {
+        // L#W2-18：把合成的时间戳/每步 SLA 真正显示出来（之前只算不渲染）。
+        const sub = [step.actor_label, formatApprovalTimestamp(step.at)].filter(Boolean).join(" · ");
+        return `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">SLA ${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
+      }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
   const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${comments.length
@@ -1208,7 +1221,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
-      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">SLA ${escapeHtml(itemRequest.sla_due_at)}</span>` : ""}
+      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">SLA ${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
       ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(zh ? "去处理" : "Open")}</a>` : ""}
     </article>`;
     })
