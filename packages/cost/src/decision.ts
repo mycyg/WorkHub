@@ -16,6 +16,7 @@ export type BudgetScopeIds = {
 export type BudgetUsageSnapshot = {
   scope: BudgetScope;
   policyId?: string;
+  period?: BudgetPolicy["period"];
   scopeLabel?: string;
   periodStart?: Date | string;
   periodEnd?: Date | string;
@@ -190,6 +191,11 @@ function scopeForPolicy(policy: BudgetPolicy, scopeIds: BudgetScopeIds): BudgetS
 function matchesUsage(policy: BudgetPolicy, scope: BudgetScope, usage: BudgetUsageSnapshot) {
   if (usage.policyId && usage.policyId === policy.id) {
     return true;
+  }
+  // 周期感知快照：同一 scope 会有 run/day/month 多个快照，必须挑 period 对得上的那个，
+  // 否则日预算会错配到全量(run)快照、把历史用量算进来 → 误判超额。
+  if (usage.period && usage.period !== policy.period) {
+    return false;
   }
   return sameScope(scope, usage.scope);
 }

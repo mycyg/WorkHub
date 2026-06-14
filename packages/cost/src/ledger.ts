@@ -74,31 +74,50 @@ export function usageToLedgerEntries(usage: UsageRecord, options: ReconcileUsage
   );
 }
 
+// 周期感知：日/月预算只能统计当天/当月用量，否则会把全部历史都算进去 → 误判超额、用一阵后永久卡死。
+// periodBucket 是 entry 的日期 "YYYY-MM-DD"。每个 scope 产出 run/day/month 三个快照（按 period 过滤），
+// 由 decideRunBudget 的 matchesUsage 按 (scope, period) 取对应那个。run 周期保留 scope 全量（per-run 上限在运行时另行实时管控）。
+const SNAPSHOT_PERIODS: ReadonlyArray<NonNullable<BudgetUsageSnapshot["period"]>> = ["run", "day", "month"];
+
 export function ledgerUsageSnapshots(
   entries: readonly CostLedgerEntry[],
-  scopeIds: LedgerScopeIds
+  scopeIds: LedgerScopeIds,
+  options: { now?: Date } = {}
 ): BudgetUsageSnapshot[] {
-  return scopesFromIds(scopeIds).map((scope) => {
+  const now = options.now ?? new Date();
+  const dayBucket = now.toISOString().slice(0, 10);
+  const monthPrefix = now.toISOString().slice(0, 7);
+  const inPeriod = (entry: CostLedgerEntry, period: NonNullable<BudgetUsageSnapshot["period"]>) => {
+    if (period === "day") {
+      return entry.periodBucket === dayBucket;
+    }
+    if (period === "month") {
+      return entry.periodBucket.slice(0, 7) === monthPrefix;
+    }
+    return true; // run: scope 全量（per-run 上限运行时实时管控）
+  };
+  const snapshots: BudgetUsageSnapshot[] = [];
+  for (const scope of scopesFromIds(scopeIds)) {
     const scopeEntries = entries.filter((entry) => sameScope(entry.scope, scope));
-    const tokenIn = scopeEntries.reduce((sum, entry) => sum + entry.tokenIn, 0);
-    const tokenOut = scopeEntries.reduce((sum, entry) => sum + entry.tokenOut, 0);
-    const estimatedCostCny = formatCny(
-      scopeEntries.reduce((sum, entry) => sum + parseCny(entry.estimatedCostCny), 0)
-    );
-    return {
-      scope,
-      tokenIn,
-      tokenOut,
-      estimatedCostCny
-    };
-  });
+    for (const period of SNAPSHOT_PERIODS) {
+      const periodEntries = scopeEntries.filter((entry) => inPeriod(entry, period));
+      snapshots.push({
+        scope,
+        period,
+        tokenIn: periodEntries.reduce((sum, entry) => sum + entry.tokenIn, 0),
+        tokenOut: periodEntries.reduce((sum, entry) => sum + entry.tokenOut, 0),
+        estimatedCostCny: formatCny(periodEntries.reduce((sum, entry) => sum + parseCny(entry.estimatedCostCny), 0))
+      });
+    }
+  }
+  return snapshots;
 }
 
 export type CostLedgerStore = {
   records: readonly UsageRecord[];
   entries: readonly CostLedgerEntry[];
   recordUsage: (record: UsageRecord) => Promise<void> | void;
-  usageSnapshots: (scopeIds: LedgerScopeIds) => MaybePromise<BudgetUsageSnapshot[]>;
+  usageSnapshots: (scopeIds: LedgerScopeIds, options?: { now?: Date }) => MaybePromise<BudgetUsageSnapshot[]>;
   listEntries?: () => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
 };
@@ -134,8 +153,8 @@ export function createMemoryCostLedgerStore(options: {
         entries.push(entry);
       }
     },
-    usageSnapshots(scopeIds) {
-      return ledgerUsageSnapshots(entries, scopeIds);
+    usageSnapshots(scopeIds, options) {
+      return ledgerUsageSnapshots(entries, scopeIds, options);
     },
     listEntries() {
       return entries;

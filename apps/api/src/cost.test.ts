@@ -296,7 +296,8 @@ test("cost usage route reads budget usage from the shared ledger", async () => {
     inputTokens: 450000,
     outputTokens: 0,
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-    createdAt: now
+    // 路由用真实 now 做周期预算（user-day/team-month），用量须落在当前周期内才计入。
+    createdAt: new Date()
   }));
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/cost", createCostRoutes({

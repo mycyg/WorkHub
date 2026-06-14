@@ -20,9 +20,24 @@ test("safeResolvePath rejects path escapes", async () => {
 });
 
 test("dependency install commands are disabled", () => {
-  assert.throws(() => ensureCommandAllowed(["npm", "install"]), /dependency installation is disabled/);
-  assert.throws(() => ensureCommandAllowed(["pnpm", "add", "left-pad"]), /dependency installation is disabled/);
+  assert.throws(() => ensureCommandAllowed(["npm", "install"]), /disabled/);
+  assert.throws(() => ensureCommandAllowed(["pnpm", "add", "left-pad"]), /disabled/);
   assert.doesNotThrow(() => ensureCommandAllowed(["node", "--version"]));
+});
+
+test("path-bearing command names are rejected (allowlist-bypass guard)", () => {
+  // 白名单按 basename 校验、spawn 按原样执行 → 带路径的命令必须拒绝，否则 ./python 可绕过跑任意代码。
+  assert.throws(() => ensureCommandAllowed(["./python"]), /bare allowlisted name/);
+  assert.throws(() => ensureCommandAllowed(["../python"]), /bare allowlisted name/);
+  assert.throws(() => ensureCommandAllowed(["evil/node"]), /bare allowlisted name/);
+  assert.throws(() => ensureCommandAllowed(["/usr/bin/python"]), /bare allowlisted name/);
+  assert.doesNotThrow(() => ensureCommandAllowed(["python3", "-c", "print(1)"]));
+});
+
+test("remote package execution (exec/dlx/x) is disabled", () => {
+  assert.throws(() => ensureCommandAllowed(["npm", "exec", "cowsay"]), /disabled/);
+  assert.throws(() => ensureCommandAllowed(["pnpm", "dlx", "cowsay"]), /disabled/);
+  assert.throws(() => ensureCommandAllowed(["bun", "x", "cowsay"]), /disabled/);
 });
 
 test("side-effect tools fail closed without a snapshot hook", async () => {

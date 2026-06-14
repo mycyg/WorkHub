@@ -198,8 +198,8 @@ export function createDbCostLedgerStore(
       recentRecords.push(record);
       recentEntries.push(...entries);
     },
-    async usageSnapshots(scopeIds: LedgerScopeIds) {
-      return ledgerUsageSnapshots(await listEntries(), scopeIds);
+    async usageSnapshots(scopeIds: LedgerScopeIds, options?: { now?: Date }) {
+      return ledgerUsageSnapshots(await listEntries(), scopeIds, options);
     },
     listEntries,
     listRecords

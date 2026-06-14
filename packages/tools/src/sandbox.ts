@@ -18,6 +18,8 @@ export const allowedCommands = new Set([
 ]);
 
 const dependencyInstallCommands = new Set(["install", "i", "add", "ci"]);
+// npm exec / pnpm dlx / bun x / *run / create / init 都会从 registry 下载并执行任意包 → 一并禁。
+const remoteExecCommands = new Set(["exec", "x", "dlx", "run", "create", "init"]);
 
 function normalizeCommandName(raw: string) {
   const base = path.basename(raw).toLowerCase();
@@ -32,14 +34,22 @@ export function ensureCommandAllowed(args: string[]) {
     throw new Error("command args must not contain null bytes");
   }
 
-  const command = normalizeCommandName(args[0]);
+  // 命令必须是裸名，不能带路径或绝对路径。否则白名单按 basename 校验、spawn 却按原样执行：
+  // AI 可先 write_file 一个同名可执行文件，再用 ./python / evil/node / /usr/bin/x 绕过白名单跑任意代码。
+  const raw = args[0] as string;
+  if (path.isAbsolute(raw) || path.basename(raw) !== raw) {
+    throw new Error("command must be a bare allowlisted name, not a path");
+  }
+
+  const command = normalizeCommandName(raw);
   if (!allowedCommands.has(command)) {
     throw new Error(`command not allowlisted: ${command}`);
   }
 
   const subcommand = args[1]?.toLowerCase();
-  if (["npm", "pnpm", "bun"].includes(command) && subcommand && dependencyInstallCommands.has(subcommand)) {
-    throw new Error("dependency installation is disabled in the WorkHub sandbox");
+  if (["npm", "pnpm", "bun"].includes(command) && subcommand
+    && (dependencyInstallCommands.has(subcommand) || remoteExecCommands.has(subcommand))) {
+    throw new Error("dependency installation / remote package execution is disabled in the WorkHub sandbox");
   }
 }
 

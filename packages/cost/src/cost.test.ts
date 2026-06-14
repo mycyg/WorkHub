@@ -196,3 +196,23 @@ test("eval usage is reconciled separately from user and team quota", async () =>
   assert.equal(userSnapshots.every((snapshot) => snapshot.tokenIn === 0), true);
   assert.equal(evalSnapshots[0]?.estimatedCostCny, "0.002");
 });
+
+test("usage snapshots are period-aware: day/month ignore prior-period usage", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    userId: "user-1",
+    inputTokens: 999999,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2000-01-15T00:00:00.000Z") // long ago — must not count toward current periods
+  }));
+  const snaps = await ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" }, { now: new Date() });
+  const userDay = snaps.find((s) => s.scope.kind === "user" && s.period === "day");
+  const teamMonth = snaps.find((s) => s.scope.kind === "team" && s.period === "month");
+  // 否则日/月预算把全部历史都算进去 → 误判超额、用一阵后永久卡死所有 run（C3）。
+  assert.equal(userDay?.tokenIn, 0);
+  assert.equal(teamMonth?.tokenIn, 0);
+});

@@ -137,8 +137,26 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     return getDefaultAuditStores();
   }
 
+  // 启动 AI 前必须验调用者能读该工单（防越权：否则任何登录用户猜到 work_item_id 就能
+  // 在别人/别的工作空间的工单上启动 AI、烧其预算、读其上下文、改其交付物）。生产 wiring
+  // 无 queue dep → replayWorkItems 解析为真实 service，强制生效；纯队列单测不传 workItems 则跳过。
+  async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
+    if (!replayWorkItems) {
+      return;
+    }
+    try {
+      await replayWorkItems.detailPage({ workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw new HTTPException(error.status as 400, { message: error.message });
+      }
+      throw error;
+    }
+  }
+
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = startAgentRunRequestSchema.parse(await c.req.json().catch(() => ({})));
+    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
     const run = await queue.enqueue({
       workItemId: c.req.param("id"),
       actorId: c.var.actor.id,

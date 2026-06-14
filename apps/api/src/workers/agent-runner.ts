@@ -368,7 +368,7 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: input.workItemId,
         userId: input.actorId,
         teamId: input.settings.auth.defaultWorkspaceId
-      })),
+      }, { now: now() })),
       modelRoute: {
         provider: input.settings.llm.defaultProvider,
         model: input.settings.llm.model,

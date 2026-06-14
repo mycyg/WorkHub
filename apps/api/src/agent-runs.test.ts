@@ -37,7 +37,7 @@ import { createAgentRunRoutes, type ProposalReplayAuditReader } from "./routes/a
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
-import type { WorkItemService } from "./services/work-items.js";
+import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
@@ -962,6 +962,33 @@ test("agent run enqueue consumes P-COST decisions before creating a run", async 
   assert.equal(body.data.budget_decision.reason, "critical");
   assert.equal(body.data.budget_decision.model_route.reason, "near_budget_downgrade");
   assert.equal(body.data.budget_decision.notice?.recommended_action, "downgrade_model");
+});
+
+test("agent run enqueue denies starting AI on a work item the caller cannot read (cross-tenant IDOR guard)", async () => {
+  const runtimeSettings = settings();
+  let enqueued = false;
+  const queue = {
+    enqueue: async () => {
+      enqueued = true;
+      throw new Error("enqueue should not be reached when work-item access is denied");
+    }
+  } as unknown as AgentRunQueue;
+  const denyingWorkItems = {
+    detailPage: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
+  } as unknown as WorkItemService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({ auth: authDeps(runtimeSettings), queue, workItems: denyingWorkItems, autoRun: false }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "should be blocked" })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(enqueued, false);
 });
 
 test("agent run enqueue returns budget_exhausted before queueing new work", async () => {
