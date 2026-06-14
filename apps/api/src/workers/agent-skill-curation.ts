@@ -11,6 +11,7 @@ import type { DistilledTeamSkillsResponse } from "@workhub/contracts";
 
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
+import { getDefaultAgentRunQueue } from "./agent-runner.js";
 import {
   buildCurationPrompt,
   buildCurationSystemPrompt,
@@ -268,6 +269,8 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     repository,
     auditLog: auditStores.auditLogs,
     intervalMs: settings.agentRun.skillCurationIntervalMs,
+    // L#46：worker 队列还有排队/执行中的 run 时，技能蒸馏先让路（idle = listActive 为空）。
+    workQueueIsIdle: async () => (await getDefaultAgentRunQueue().listActive()).length === 0,
     listWorkspaces: async () => (await repository.listActiveWorkspaceIds()).map((id) => ({ id })),
     analyze: async (workspaceId) => {
       const since = new Date(Date.now() - SEVEN_DAYS_MS);

@@ -28,11 +28,14 @@ export function createAgentRunRecoveryScheduler(options: {
   queue: Pick<AgentRunQueue, "recoverExpiredClaims" | "runNext">;
   intervalMs?: number;
   autoDrain?: boolean;
+  maxDrainPerTick?: number;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }): AgentRunRecoveryScheduler {
   const intervalMs = options.intervalMs ?? settings.agentRun.recoveryIntervalMs;
   const autoDrain = options.autoDrain ?? true;
+  // L#45：每个 tick 最多放行有限条 run，避免一次恢复 tick 同步跑完整条队列、霸占进程。
+  const maxDrainPerTick = Math.max(1, options.maxDrainPerTick ?? 8);
   const now = options.now ?? (() => new Date());
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
@@ -59,7 +62,9 @@ export function createAgentRunRecoveryScheduler(options: {
       const recovered = await options.queue.recoverExpiredClaims();
       let drained = 0;
       if (autoDrain && recovered.length > 0) {
-        for (;;) {
+        // 上限取「恢复的过期 claim 数」与硬上限的较小值：只需放行被重新入队的那些，且永不超过硬上限。
+        const drainBudget = Math.min(recovered.length, maxDrainPerTick);
+        while (drained < drainBudget) {
           const run = await options.queue.runNext();
           if (!run) {
             break;

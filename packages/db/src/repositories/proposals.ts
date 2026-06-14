@@ -1584,6 +1584,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           id: proposalId,
           workItemId: input.workItemId,
           branchId,
+          // L#57：当前是「一分支一提议」模型，round 恒为 1（多轮修订走新分支）。round 列与
+          // (branch_id, round) 唯一索引为未来「同分支多轮」预留；保持恒 1 以维持每分支单提议的不变量。
           round: 1,
           title: input.title ?? manifest.title,
           status: "opened",

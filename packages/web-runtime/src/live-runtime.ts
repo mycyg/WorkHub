@@ -87,6 +87,9 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
   let liveEventSourceOpenCount = 0;
   let liveEventSourceCloseCount = 0;
   let liveEventSourceReuseCount = 0;
+  // L#81：当前 last_event_id 是单一全局游标（跨 me/session/workitem/proposal/run 各流共享）。
+  // resume 目前是尽力而为：后端尚未按 last_event_id 真正重放，所以即便游标精度不足也不会漏发——
+  // 一旦后端支持按流重放，应改成 Map<streamKey, cursor> 的逐流游标。
   let liveLastEventId = options.readCursor?.() ?? "";
 
   const setMetric = options.setMetric;

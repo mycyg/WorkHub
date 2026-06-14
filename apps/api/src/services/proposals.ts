@@ -1701,8 +1701,18 @@ export function createDbProposalService(repository: ProposalRepository, options:
 
       let rows: StoredProposalRows | null;
       const mergedAt = now();
-      const mergeConflicts = (await repository.listConflictsByWorkItem(proposal.work_item_id))
+      const allMergeConflicts = (await repository.listConflictsByWorkItem(proposal.work_item_id))
         .filter((conflict) => conflict.proposal_id === proposal.id);
+      // L#85：调用方已用 accept_incoming 处理掉的冲突，不必再花一次 LLM 调用 + 读文件去生成融合候选。
+      const resolvedTargetKeys = new Set<string>([
+        ...(input.conflictResolution?.acceptIncomingTargetKeys ?? []),
+        ...(input.conflictResolution?.bulkAction?.action === "accept_incoming"
+          ? input.conflictResolution.bulkAction.targetKeys
+          : [])
+      ]);
+      const mergeConflicts = resolvedTargetKeys.size > 0
+        ? allMergeConflicts.filter((conflict) => !resolvedTargetKeys.has(conflict.target_key))
+        : allMergeConflicts;
       const contentContexts = mergeConflicts.length > 0
         ? await fusionContentContextsForConflicts({
             repository,

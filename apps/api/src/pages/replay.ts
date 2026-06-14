@@ -435,6 +435,8 @@ export function buildReplayCostSummary(run: AgentRunQueueRecord, locale: WorkHub
     warning_ratio: usageRatio,
     status
   };
+  // L#52：replay 只有单次 run 的数据，没有用户日预算。me 卡片就是「这次 run 的预算」（标签已写明），
+  // 但不再把同一组数字克隆成一个独立的 user-scope 行塞进 scopes（那会让人误以为是用户的聚合预算）。
   const userUsage: CostSummaryVM["me"] = {
     ...workitemUsage,
     scope: { kind: "user", user_id: run.actor_id },
@@ -444,7 +446,7 @@ export function buildReplayCostSummary(run: AgentRunQueueRecord, locale: WorkHub
 
   return {
     me: userUsage,
-    scopes: [workitemUsage, userUsage],
+    scopes: [workitemUsage],
     active_notices:
       usageRatio >= 0.8
         ? [
