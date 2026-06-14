@@ -99,6 +99,13 @@
       "when": 1781416002052,
       "tag": "0013_shallow_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781420282005,
+      "tag": "0014_graceful_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

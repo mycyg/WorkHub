@@ -774,6 +774,9 @@ export const acceptedDeliverableChanges = pgTable(
   {
     id: id(),
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    // P-COLLAB：项目级采纳命名空间（同一项目跨任务改同一文件 → 同一并发边界，防丢更新）。
+    // 暂可空（兼容历史行）；新采纳一律按所属 work_item 的 project 填入。
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
     proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
     changeId: uuid("change_id").notNull(),
@@ -805,6 +808,7 @@ export const acceptedDeliverableChanges = pgTable(
     index("accepted_deliverable_changes_drive_version_id_idx").on(table.driveVersionId),
     index("accepted_deliverable_changes_target_idx").on(table.workItemId, table.targetKey),
     index("accepted_deliverable_changes_current_idx").on(table.workItemId, table.targetKey, table.supersededAt),
+    index("accepted_deliverable_changes_project_current_idx").on(table.projectId, table.targetKey, table.supersededAt),
     index("accepted_deliverable_changes_created_at_idx").on(table.createdAt)
   ]
 );

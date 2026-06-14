@@ -1,7 +1,7 @@
 ---
 module: P-COLLAB-project-file-merge
 layer: P-COLLAB
-status: planned
+status: active
 owner: engineering+design
 date: 2026-06-14
 depends_on:
@@ -9,6 +9,14 @@ depends_on:
 ---
 
 # P-COLLAB 项目级文件协作：全项目可读写 + 工作副本 + LLM 三方采纳 + 异步不丢更新
+
+> **进度（2026-06-14, status=active）—— 增量 1（安全地基）已交付、CI 绿：**
+> - **迁移号 0014**（非 0013；0013 被 S2 team_skills 占）→ `acceptedDeliverableChanges.project_id`(可空，兼容历史行) + 项目级索引 `(project_id,target_key,superseded_at)`。
+> - **L2 采纳序列化锁已上**：真库 `repositories/proposals.ts` `merge()` 事务开头 `pg_advisory_xact_lock(hashtext('project-merge:'||projectId)::bigint)`——同项目采纳串行化（projectId 早已由 workItems join 取到）。两条 accepted-change 写入路径（merge + applyMergeProposalCandidate）都填 projectId。
+> - 真 PG 验证：列/索引存在、advisory-lock SQL 合法执行；全量 `pnpm test` + `pnpm -r typecheck` 绿（迁移由 r1-pg-smoke 兜）。
+> - **侦察关键结论（影响后续测试策略）**：`apps/api/src/proposals.test.ts` 用的是 **`MemoryProposalRepository`（内存假实现）**，不碰真库 `merge()`——所以真库的 advisory lock / 撞车并发**不被 api 套件覆盖**，CI 也没有真 PG 并发 harness。
+> **→ 增量 2（语义核心，未做）**：把撞车判定键从 `(workItemId,targetKey)` 翻成 `(projectId,targetKey)`（L1 跨任务防覆盖）+ 提交前 sha 复检 + 行数断言（L3）+ rebase 流；**测试策略**：把 project-scope 撞车语义**同步进 `MemoryProposalRepository`** 让 api 套件能 CI-gated 验"两任务同项目同文件→不丢更新"，真库并发用本地真 PG 测验证（同 S2 做法）。base 快照/项目 hydrate(M1/M2) 与去黑话文案(M3 §9)各自独立增量。
+
 
 > **北极星延伸**：让 AI 不再被困在一个任务的小盒子里——它能读写**整个项目（一个 project 下的全部资料）**；每一次改动都是一份独立的**工作副本**（带备份/快照），人确认后才**采纳**进项目；采纳这一步由 **LLM 做三方对照**（base/我的/你的），而不是闭眼覆盖；多人异步采纳时，**用旧底稿采纳绝不能盖掉别人刚加进去的东西**（不丢更新）。全部建立在现有 `sha256_before` 乐观并发 + diff3 + AI 融合稿 + 快照之上——**扩展，不重造**。
 >

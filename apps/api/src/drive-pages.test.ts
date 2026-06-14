@@ -117,6 +117,7 @@ function rows(): DrivePageRows {
     accepted: {
       id: acceptedChangeId,
       workItemId,
+      projectId: null,
       proposalId,
       branchId: null,
       changeId,

@@ -1,0 +1,3 @@
+ALTER TABLE "accepted_deliverable_changes" ADD COLUMN "project_id" uuid;--> statement-breakpoint
+ALTER TABLE "accepted_deliverable_changes" ADD CONSTRAINT "accepted_deliverable_changes_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "accepted_deliverable_changes_project_current_idx" ON "accepted_deliverable_changes" USING btree ("project_id","target_key","superseded_at");

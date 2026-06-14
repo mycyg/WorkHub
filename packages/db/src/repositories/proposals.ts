@@ -2128,6 +2128,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         await tx.insert(acceptedDeliverableChanges).values({
           id: acceptedChangeId,
           workItemId: row.workItemId,
+          ...(row.projectId ? { projectId: row.projectId } : {}),
           proposalId: row.proposalId,
           branchId: row.branchId,
           changeId: resolvedChange.id,
@@ -2272,6 +2273,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           return;
         }
         found = true;
+        // P-COLLAB L2：同项目采纳串行化。事务级 advisory lock 随提交/回滚自动释放，
+        // 消除"两个并发采纳同时读到 reviewed 再同时进事务"的竞态——不丢更新的序列化地基。
+        if (proposal.projectId) {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${proposal.projectId}`})::bigint)`);
+        }
         const acceptedIncomingTargetKeyList = [...new Set(input.acceptIncomingTargetKeys ?? [])];
         const acceptIncomingTargetKeys = new Set(acceptedIncomingTargetKeyList);
         const targetKeys = proposal.diffManifest.changes.map(targetKey);
@@ -2455,6 +2461,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           await tx.insert(acceptedDeliverableChanges).values({
             id: acceptedChangeId,
             workItemId: proposal.workItemId,
+            ...(proposal.projectId ? { projectId: proposal.projectId } : {}),
             proposalId: input.proposalId,
             branchId: proposal.branchId,
             changeId: change.id,
