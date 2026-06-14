@@ -1,6 +1,7 @@
 # R6 W2 — 审批中心 diff 工作台（全量含评论流）施工计划
 
-- status: active
+- status: **done**（6 增量全部 CI 绿推 main：inc1 `6cb9d0e3` / inc2 `a04ffdc2` / inc3 `a2dd3b7f` / inc4 `76af2c3a` / inc5 `5edbc310` / inc6 `216416e6`；含迁移 0019）
+- 缓办：smoke 02d/02e/02f（live smoke 走 fixture，评论 POST 需桩 + 第二条 fixture 项；逻辑已由 ui marker 测试 + api 评论路由测试覆盖）；转交目标选择器 UI（api-client + 路由已就绪）。
 - 来源: design 工作流 wf_99f894c5-9b1（3 架构师 + 综合评审）
 - 范围: 用户拍板「全量含评论流」——100% 复刻概念图 ④ `docs/workhub/05-clients/assets/web/web-approval-center.png`
 - 纪律: 每个增量独立 CI 绿、可单独回滚；既有审批 smoke（02/02a/02b/02c + approvalRespond===2）永不破。
