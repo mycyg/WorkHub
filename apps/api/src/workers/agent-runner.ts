@@ -452,7 +452,12 @@ export function createInMemoryAgentRunQueue(options: {
     ].join("\n");
   }
 
-  function defaultInitialUserMessage(run: AgentRunQueueRecord, resolvedWorkItemContext?: string, userMemorySection?: string) {
+  function defaultInitialUserMessage(
+    run: AgentRunQueueRecord,
+    resolvedWorkItemContext?: string,
+    userMemorySection?: string,
+    projectFileCount?: number
+  ) {
     return [
       `任务：${run.title}`,
       `work_item_id: ${run.work_item_id}`,
@@ -464,6 +469,12 @@ export function createInMemoryAgentRunQueue(options: {
           ]
         : []),
       ...(userMemorySection ? [userMemorySection] : []),
+      ...(projectFileCount && projectFileCount > 0
+        ? [
+            "",
+            `本项目已有 ${projectFileCount} 个文件放在只读目录 project/（项目现有资料）。动手前先用 list_files/read_file 查阅相关文件，复用或衔接已有内容，避免重复造或与现有冲突。project/ 只读，产出仍写入 outputs/。`
+          ]
+        : []),
       "",
       "请按以下方式工作：",
       "1. 先用 list_files / read_file 了解工作目录里已有的材料（如有）。",
@@ -771,9 +782,11 @@ export function createInMemoryAgentRunQueue(options: {
     await persistence?.setWorkdir(current.run_id, workdir, now());
     // P-COLLAB M1：把项目现有文件物化进 workdir/project/（只读参考区），让 AI 能读整个项目。
     // fail-open：物化失败不影响 run（照常以空 workdir 跑）。默认关闭，由 hydrateProject 提供者决定。
+    let projectFileCount = 0;
     if (hydrateProject) {
       try {
-        await hydrateProject(current, workdir);
+        const hydrated = await hydrateProject(current, workdir);
+        projectFileCount = hydrated?.files ?? 0;
       } catch (error) {
         console.warn("WorkHub project hydrate failed", error);
       }
@@ -812,7 +825,7 @@ export function createInMemoryAgentRunQueue(options: {
       };
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
-        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory);
+        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory, projectFileCount);
       const result = await loop.run({
         runId: current.run_id,
         workItemId: current.work_item_id,
