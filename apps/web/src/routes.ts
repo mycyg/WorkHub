@@ -431,8 +431,8 @@ const shellPageOrder = [
   "settings"
 ] as const satisfies readonly GoldPathRenderedPage["key"][];
 
+// intake 不算 detail-only：/intake（无 sessionId）就是"提需求"起点页，应常驻导航,让用户随处可发起新活。
 const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
-  "intake",
   "workitem",
   "proposal",
   "replay"
@@ -759,10 +759,6 @@ function shellSurfaceFor(surface: WebRouteSurface, match: WebRouteMatch, locale:
   };
 }
 
-function isAttentionEmpty(data: AttentionHomeVM) {
-  return !data.primary && data.background_runs.length === 0;
-}
-
 function isApprovalCenterEmpty(data: ApprovalCenterVM) {
   return data.items.length === 0 && data.requests.length === 0;
 }
@@ -780,10 +776,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return "error" as const;
   }
   if (match.key === "home") {
+    // 首页是落地页,永不塌成通用空卡：即便没有待决策事项,也渲染决策收件箱组件本身
+    // （战绩横幅 + 计数 + 可爱空态 + 去提需求 CTA），而不是给叶子路由用的"回到总览"死胡同。
     const attention = await client.pages.attention(withLocale(locale));
-    if (isAttentionEmpty(attention)) {
-      return "empty" as const;
-    }
     return { key: "home", attention } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {

@@ -923,6 +923,9 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
         <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
         <h3>${escapeHtml(goldPathT(locale, "home.emptyTitle"))}</h3>
         <p>${escapeHtml(goldPathT(locale, "home.emptySummary"))}</p>
+        <div class="wh-r4-route-actions">
+          <a class="wh-btn wh-btn-primary" href="/intake" data-wh-route="/intake" data-r4-home-intake-cta="true">${escapeHtml(goldPathT(locale, "home.emptyCta"))}</a>
+        </div>
       </section>`;
 
   const runRows = vm.background_runs.length

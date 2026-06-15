@@ -1018,6 +1018,37 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
   }
 });
 
+test("R6 home never collapses to the generic empty card — empty attention still renders the decision inbox + intake CTA + nav entry", async () => {
+  const surface = goldPathSurfaceVm();
+  const emptyAttention = {
+    ...surface.page_vms.attention,
+    primary: undefined,
+    queue: [],
+    background_runs: [],
+    worklog: {
+      runs_today: 6,
+      autonomy_rate: 0,
+      accepted_today: 0,
+      saved_hours_estimate: 0,
+      generated_at: "2026-06-15T00:00:00.000Z",
+      range_label: "今天"
+    }
+  };
+  const { client } = fakeRouteClient(surface, { attention: emptyAttention });
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "zh-CN");
+  // ① 不再塌成通用空卡：状态 ready、渲染首页决策收件箱组件本身。
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-route-component="home"'), true);
+  // ② 战绩横幅 + 提需求 CTA 仍在；不出现"回到总览"死胡同。
+  assert.equal(result.html.includes('data-r4-home-worklog="true"'), true);
+  assert.equal(result.html.includes('data-r4-home-intake-cta="true"'), true);
+  assert.equal(result.html.includes("回到总览"), false);
+  // ③ 导航常驻"提需求"入口（intake 不再 detail-only）。
+  assert.equal(result.html.includes('data-wh-page-key="intake"'), true);
+});
+
 test("R4.11 web loader marks ready routes as route components", async () => {
   const surface = goldPathSurfaceVm();
 

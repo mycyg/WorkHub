@@ -43,6 +43,7 @@ export type GoldPathCopyKey =
   | "home.inboxSummary"
   | "home.emptyTitle"
   | "home.emptySummary"
+  | "home.emptyCta"
   | "home.decisionTitle"
   | "home.decisionEmpty"
   | "home.aiWorkingTitle"
@@ -227,6 +228,7 @@ const goldPathCopy = {
     "home.inboxSummary": "AI 替你扛了大半，这儿只留要你拍板的。",
     "home.emptyTitle": "现在没有要你拍板的事 (=^･ω･^=)",
     "home.emptySummary": "需要你拿主意时，AI 会第一时间把事项端到你面前，先安心忙别的吧 (=^･ω･^=)",
+    "home.emptyCta": "去提个需求，让 AI 开干 ٩(◜◡◝)۶",
     "home.decisionTitle": "需要你决定",
     "home.decisionEmpty": "暂无",
     "home.aiWorkingTitle": "AI 正在做",
@@ -410,6 +412,7 @@ const goldPathCopy = {
     "home.inboxSummary": "AI handles the rest — only decisions that need you land here.",
     "home.emptyTitle": "Nothing needs your call right now (=^･ω･^=)",
     "home.emptySummary": "AI brings work forward the moment your judgment is needed — relax for now (=^･ω･^=)",
+    "home.emptyCta": "Start a request — let AI take it ٩(◜◡◝)۶",
     "home.decisionTitle": "Needs your decision",
     "home.decisionEmpty": "Nothing yet",
     "home.aiWorkingTitle": "AI is working",
