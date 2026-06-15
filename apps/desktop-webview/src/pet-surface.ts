@@ -29,6 +29,7 @@ import {
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
+import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   desktopPetSettingsPayloadFromPreferences,
   desktopPetSettingsPreferencesFromPayload,
@@ -118,7 +119,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
-  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 18px 42px rgba(30,39,58,.18);padding:10px 12px;pointer-events:auto;backdrop-filter:blur(10px);overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;font-family:'M PLUS Rounded 1c','Noto Sans SC',inherit;border:1px solid rgba(255,255,255,.7);border-radius:16px;background:rgba(255,255,255,.72);box-shadow:0 22px 50px -18px rgba(70,54,140,.45),inset 0 1px 0 rgba(255,255,255,.7);padding:11px 13px;pointer-events:auto;backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
@@ -138,11 +139,11 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:rgba(254,251,240,.97);border-color:#f1dc9c}",
+  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:rgba(255,247,228,.74);border-color:rgba(245,199,117,.55)}",
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-emotion{color:#a15c07}",
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-dot{background:#e0892a;box-shadow:0 0 0 3px rgba(224,137,42,.18)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:rgba(255,255,255,.96);border-color:rgba(38,49,70,.14)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:rgba(234,244,254,.97);border-color:#b6d8f7}",
+  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:rgba(255,255,255,.72);border-color:rgba(255,255,255,.7)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:rgba(228,238,255,.74);border-color:rgba(124,131,255,.4)}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-emotion{color:#1f6fb2}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-dot{background:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.18)}",
   ".wh-pet-bubble[data-pet-bubble-emotion=celebrating] .wh-pet-emotion{color:#15a05a}",
@@ -785,7 +786,7 @@ export async function bootDesktopPetSurface(
       window_mode_status: windowModeStatus,
       locale
     });
-    root.innerHTML = `<style>${surface.css}</style>${surface.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${surface.css}</style>${surface.html}`;
     applyRunStreamStatusAttributes();
     writeDesktopPetQaDomSnapshot(root, "render");
     lastStructuralRenderKey = structuralRenderKey;

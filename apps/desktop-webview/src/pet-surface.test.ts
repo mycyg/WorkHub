@@ -763,8 +763,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-pet-bubble-emotion="approval"/u);
   assert.match(card.html, /data-pet-bubble-tone="approval"/u);
   assert.match(card.html, /class="wh-pet-emotion">等你拍板/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=approval\]\{[^}]*border-color:#f1dc9c/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=search\]\{[^}]*border-color:#b6d8f7/u);
+  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=approval\]\{[^}]*border-color:rgba\(245,199,117,\.55\)/u);
+  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=search\]\{[^}]*border-color:rgba\(124,131,255,\.4\)/u);
   assert.match(card.html, /data-pet-section-id="changes"/u);
   assert.match(card.html, /data-pet-evidence-count="2"/u);
   assert.match(card.html, /data-recommended="true"/u);
