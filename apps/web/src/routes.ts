@@ -72,7 +72,6 @@ export type WebRouteStateResult = {
   status: Exclude<WebRouteLoadStatus, "ready">;
   match: WebRouteMatch;
   html: string;
-  shell?: GoldPathAppShell | undefined;
 };
 
 export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
@@ -955,76 +954,6 @@ export function renderWebRouteState(
   };
 }
 
-function routeStateComponentFor(
-  match: WebRouteMatch,
-  status: Exclude<WebRouteLoadStatus, "ready">,
-  locale: WorkHubLocale,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string } = {}
-): WebRouteComponent {
-  const state = routeStateFromStatus(status);
-  const actionHref = input.actionHref ?? (state === "empty" ? "/" : match.pathname);
-  return {
-    key: match.key,
-    html: renderRouteStateCard({
-      routeKey: match.key,
-      state,
-      locale,
-      route: match.pathname,
-      ...(input.traceId ? { traceId: input.traceId } : {}),
-      ...(input.ownerLabel ? { ownerLabel: input.ownerLabel } : {}),
-      actionHref
-    }),
-    css: routeStateCss,
-    primaryHrefs: [actionHref],
-    hydration: {
-      rootId: `wh-route-state-${match.key}`,
-      routeKey: match.key,
-      mode: "html-fallback",
-      source: "page-vm",
-      locale,
-      pageVm: "route-state",
-      actionHrefCount: 1,
-      adapter: "route-component-v1"
-    }
-  };
-}
-
-function renderWebRouteStateInShell(
-  match: WebRouteMatch,
-  status: Exclude<WebRouteLoadStatus, "ready">,
-  locale: WorkHubLocale,
-  shellUser: WebProductShellCurrentUser,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string } = {}
-): WebRouteStateResult {
-  const state = routeStateFromStatus(status);
-  const rendered: WebProductShellSurface = {
-    surface: "web",
-    fixtureId: "web-route-state-shell-v1",
-    css: goldPathCss,
-    pages: shellPagesFor(match, locale, [metric(locale, "primary", state)])
-  };
-  const routeComponents: WebRouteComponentMap = {
-    [match.key]: routeStateComponentFor(match, status, locale, input)
-  };
-  const shell = renderWebProductShell(rendered, {
-    appName: "WorkHub",
-    surfaceLabel: "Web R4",
-    apiBaseLabel: apiLabelFor(match),
-    currentRoute: match.pathname,
-    locale,
-    linkMode: "path",
-    routeComponents,
-    renderActivePanelOnly: true,
-    currentUser: shellUser
-  });
-  return {
-    status,
-    match,
-    shell,
-    html: `<style>${shell.css}</style><div data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}" data-r4-web-route-state-shell="true">${shell.html}</div>`
-  };
-}
-
 function renderReadyRoute(
   surface: WebRouteSurface,
   match: WebRouteMatch,
@@ -1066,9 +995,6 @@ export async function loadWebRoute(
       const stateInput = result === "error"
         ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
         : { actionHref: "/" };
-      if (shellUser) {
-        return renderWebRouteStateInShell(match, result, locale, shellUser, stateInput);
-      }
       return renderWebRouteState(match, result, locale, {
         ...stateInput
       });
@@ -1084,9 +1010,6 @@ export async function loadWebRoute(
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {})
     };
-    if (shellUser) {
-      return renderWebRouteStateInShell(match, status, locale, shellUser, stateInput);
-    }
     return renderWebRouteState(match, status, locale, stateInput);
   }
 }

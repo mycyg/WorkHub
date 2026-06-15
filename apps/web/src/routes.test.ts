@@ -1227,18 +1227,6 @@ test("R4 web loader renders route-state empty without fake ready content", async
   assert.deepEqual(calls, ["approvals:zh-CN"]);
   assert.equal(result.html.includes('data-route-state="empty"'), true);
   assert.equal(result.html.includes("现在没有需要处理的事项"), true);
-
-  const shellCase = fakeRouteClient(surface, { approvals: emptyApprovals });
-  const shellResult = await loadWebRoute(shellCase.client, match, "zh-CN", {
-    nickname: "小拓",
-    isAdmin: false
-  });
-  assert.equal(shellResult.status, "empty");
-  assert.deepEqual(shellCase.calls, ["approvals:zh-CN"]);
-  assert.equal(shellResult.html.includes('data-r4-product-shell="true"'), true);
-  assert.equal(shellResult.html.includes('data-r4-web-route-state-shell="true"'), true);
-  assert.equal(shellResult.html.includes('data-route-state="empty"'), true);
-  assert.equal(shellResult.html.includes('data-wh-current-user="小拓"'), true);
 });
 
 test("R4 web loader maps forbidden and not-found API failures to route states", async () => {
@@ -1252,18 +1240,6 @@ test("R4 web loader maps forbidden and not-found API failures to route states", 
   assert.equal(forbiddenResult.status, "forbidden");
   assert.equal(forbiddenResult.html.includes('data-route-state="forbidden"'), true);
   assert.equal(forbiddenResult.html.includes("需要管理员授权"), true);
-
-  const forbiddenShell = fakeRouteClient(surface, {
-    costError: new WorkHubApiError(403, "forbidden", "需要管理员授权")
-  });
-  const forbiddenShellResult = await loadWebRoute(forbiddenShell.client, costMatch, "zh-CN", {
-    nickname: "小拓",
-    isAdmin: false
-  });
-  assert.equal(forbiddenShellResult.status, "forbidden");
-  assert.equal(forbiddenShellResult.html.includes('data-r4-product-shell="true"'), true);
-  assert.equal(forbiddenShellResult.html.includes('data-route-state="forbidden"'), true);
-  assert.equal(forbiddenShellResult.html.includes("需要管理员授权"), true);
 
   const missing = fakeRouteClient(surface, {
     approvalsError: new WorkHubApiError(404, "not_found", "not found")

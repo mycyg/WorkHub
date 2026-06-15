@@ -1087,35 +1087,17 @@ function canonicalizeLegacyHashRoute() {
   document.documentElement.dataset.r4WebLegacyHashCanonicalized = "true";
 }
 
-function bindProductShellBasics(shell: GoldPathAppShell, client: BrowserApiClient, locale: WorkHubLocale, signal: AbortSignal) {
+function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
   if (!root) {
     return;
-  }
-  bindLocaleSwitch(root, locale, client, signal);
-  bindGoldPathNavigation(root, shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
-}
-
-function bindRouteShell(result: { shell?: GoldPathAppShell | undefined }, client: BrowserApiClient, locale: WorkHubLocale) {
-  if (!root || !result.shell) {
-    return undefined;
   }
   clearReadyRouteBindings();
   readyRouteBindings = new AbortController();
   const { signal } = readyRouteBindings;
-  bindProductShellBasics(result.shell, client, locale, signal);
-  return signal;
-}
-
-function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
-  const signal = bindRouteShell(result, client, locale);
-  if (!signal) {
-    return;
-  }
-  if (!root) {
-    return;
-  }
   setLiveMetric("r4SharedActionRuntime", "notice-payload-line-editor");
+  bindLocaleSwitch(root, locale, client, signal);
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
+  bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -1138,9 +1120,7 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   if (result.status === "ready") {
     mountReactRouteIsland(result, locale, "initial");
     bindReadyRoute(result, client, locale);
-    return;
   }
-  bindRouteShell(result, client, locale);
 }
 
 function clearReadyRouteBindings() {
