@@ -8,49 +8,29 @@
 
 ---
 
-> *"If every tool could perform its own work when ordered, or by seeing what to do in advance… if the shuttle would weave and the plectrum touch the lyre without a hand to guide them, master-craftsmen would have no need of assistants, nor masters of slaves."*
->
-> — Aristotle, *Politics*, Book I (c. 350 BCE)
+In his *Politics*, Aristotle wrote something close to science fiction: if every tool could do its own work at a word of command — if the shuttle would weave and the plectrum touch the lyre without a hand to guide them — then master-craftsmen would need no assistants, and masters no slaves.
 
-Twenty-three centuries ago, Aristotle wrote down what reads almost like science fiction. He knew, of course, that it was a fantasy: in his age there were no tools that did their own work, so the weight of *labor* had to rest on the shoulders of other people. The sentence became an open prophecy — and it waited twenty-three hundred years.
+He wrote that around 350 BCE, and he knew it was a fantasy: in his age no tool did its own work, so the weight of *labor* could only rest on other people's shoulders. The sentence became a suspended prophecy — and it waited twenty-three hundred years.
 
-Only now have tools that take an instruction and carry the work through, start to finish, actually appeared. **What WorkHub sets out to do is make that ancient prophecy land, in one concrete way: hand the heavy lifting to AI, and turn people back from *the ones who do the work* into *the ones who judge it*.**
+Only now have tools that take an instruction and carry the work through, start to finish, actually appeared. **What WorkHub sets out to do is let that ancient prophecy land, in one concrete way: hand the heavy lifting to AI, and turn people back from *the ones who do the work* into *the ones who judge it*.**
 
 ## Origin & ambition
 
-Nearly every collaboration tool — Feishu, Notion, Jira, and this project's own predecessor "Requirement Master" — rests on the same assumption: humans do the work, and AI is at most a drafting-and-Q&A assistant. The assumption is so self-evident that almost no one asks the obvious question: **what if you flipped it?**
+Nearly every collaboration tool — Feishu, Notion, Jira, and this project's own predecessor "Requirement Master" — rests on the same assumption: humans do the work, and AI is at most a drafting-and-Q&A assistant. The assumption is so self-evident that almost no one stops to ask: **what if you flipped it?**
 
 What if the vast majority of a team's daily work were handed to AI by default? What if AI were no longer the one *suggesting*, but the one who *acts first*? What if people no longer had to type out every document and every draft themselves, but could step back — nodding when it's time to nod, taking over when it's time to take over? What kind of work would that be?
 
-That is WorkHub's ambition: **not to bolt an AI plugin onto the old way of working, but to invert the deepest assumption of all — who does the work.** People are freed from repetition to do the part machines can't —
-
-> *The Master said: "An accomplished person is not a utensil."*
->
-> — Confucius, *Analects* 2.12
-
-Confucius warned against living as a mere instrument, a tool. Hand the instrumental labor back to actual instruments, and people regain the room to do what is *not* tool-work: to judge, to take responsibility, to empathize, to decide. This is not about replacing anyone. It is a restoration of roles: **let machines do what machines are good at, so people can again do what people are good at.**
+That is WorkHub's ambition: **not to bolt an AI plugin onto the old way of working, but to invert the deepest assumption of all — who does the work.** People are freed from repetition to do the part machines can't. Confucius said *an accomplished person is not a utensil* (君子不器) — a person should not live as a mere tool; hand the instrumental labor back to actual instruments, and people regain the room to judge, to take responsibility, to empathize, to decide. This is not about replacing anyone. It is a restoration of roles: **let machines do what machines are good at, so people can again do what people are good at.**
 
 The larger the ambition, the more it needs one inviolable line to hold it. WorkHub's line is a single sentence: **no AI change ever silently touches production data.** Every change must carry a clear reason, leave a snapshot (one-click rollback), and reach the single source of truth through one path only — **propose → approve → merge**. We measure how well it works with one north-star metric, the Autonomy Rate — the share of work items AI completes and merges end to end with no one stepping in — while keeping a hard eye on rollback rate, reject rate, and escalation precision. **A higher autonomy rate is never, ever bought with trust.**
 
 ## An order you don't see
 
-The highest form of automation is the kind you barely feel is there.
-
-> *The best rulers are those whose existence the people merely know of.*
->
-> — Laozi, *Tao Te Ching*, ch. 17
-
-The best governance is the kind people know exists but never feel pressing on them. That is the "invisible order" WorkHub is after: you voice a need, and the work quietly takes shape behind the scenes; only at the moment that genuinely needs your call does it come knocking. Most of the time, you never need to know how the gears turn.
+The highest form of automation is the kind you barely feel is there. Laozi wrote that *the best rulers are those whose existence the people merely know of* — the best governance is the kind people know exists but never feel pressing on them. That is the "invisible order" WorkHub is after: you voice a need, and the work quietly takes shape behind the scenes; only at the moment that genuinely needs your call does it come knocking. Most of the time, you never need to know how the gears turn.
 
 And so that *invisible* never means *untrustworthy*, the core of WorkHub is, in fact, a **business-version GitHub**: everyone (every AI worker included) edits on their own copy, submits changes as proposals, and only after the owner reviews and approves does anything merge into the one trusted version. This battle-tested discipline of collaboration is carried, intact, onto business objects — requirements, documents, plans, structured records — rather than source code.
 
-But users never have to see the machine's insides.
-
-> *"We shape our tools, and thereafter our tools shape us."*
->
-> — Marshall McLuhan
-
-Precisely because tools shape us back, WorkHub keeps all git jargon outside the door. It speaks two languages, inward and outward:
+But users never have to see the machine's insides. As McLuhan put it, *we shape our tools, and thereafter our tools shape us* — and precisely because tools shape us back, WorkHub keeps all git jargon outside the door. It speaks two languages, inward and outward:
 
 | What you see | What it actually is |
 |---|---|
@@ -99,13 +79,11 @@ Ambition is cheap to talk; code doesn't lie. As of today:
 - **The core loop has been validated end to end with a real LLM.** Across 6 real DeepSeek runs, T1–T4 scored full marks on human review, T5 **correctly chose to escalate rather than fabricate** when information was insufficient, and B1 hit the budget guardrail dead-on — all with real money on the line, at a cost of **¥0.142346 / 30103 tokens**. That AI does the work is *proven*, not *claimed*.
 - **From request to deliverable, the whole pipeline is alive:** option-first clarification → a real agent loop (provider routing → sandboxed tools → snapshot → deliverable manifest → auto-opened proposal) → confidence scoring with auto-escalation → SLA-aware approval routing → a ledgered, collision-guarded merge → replay, audit, restore.
 - **All eight phases of "compounding AI labor" have shipped and are CI-green:** the decision-inbox home, the AI worklog, user memory, team-skill self-iteration, pet emotions, the three-column approval diff workbench — each step making AI's output accumulate, get reused, and compound on itself.
-- **Quality was beaten in, not assumed.** A multi-agent deep review surfaced 87 real issues (3 Critical + 14 High + 27 Medium + 43 Low); 84 are fixed and CI-green, with only 3 architectural items consciously deferred; of the 70-step browser live-route smoke, 66 steps are gated in CI and run in ~64s. 159 spec documents are on record.
+- **Quality was beaten in, not assumed.** A multi-agent deep review surfaced 87 real issues (3 Critical + 14 High + 27 Medium + 43 Low); 84 are fixed and CI-green, with only 3 architectural items consciously deferred; of the 70-step browser live-route smoke, 66 steps are gated in CI and run in ~64s. 160 spec documents are on record.
 
 Honesty is its own kind of strength, so here is what has **not** yet arrived: the home decision-queue is scaffolded but production doesn't feed approvals and to-dos into it yet; team-skill idle self-iteration is built but default-off and has never actually run; the pet is still a black/white cat, with the concept-art orange one not yet matched. **The one real gap — and the heaviest — is that no real team has yet used this loop to do a full week of real work.** That is the last mile of the north star; the system is already on the starting line (queue clean: 0 open proposals / 0 active runs / 0 pending approvals), waiting only for real people to step in.
 
-> *"The future is already here — it's just not evenly distributed."*
->
-> — William Gibson
+As William Gibson put it: *the future is already here — it's just not evenly distributed.*
 
 ## Deploy & get started
 
