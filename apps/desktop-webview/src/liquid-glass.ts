@@ -44,6 +44,21 @@ export const liquidGlassCss = [
   ".wh-app-content .wh-btn-primary{background:linear-gradient(135deg,#7c83ff,#b57bff)!important;border:0!important;color:#fff!important;box-shadow:0 14px 26px -8px rgba(124,131,255,.7)!important}",
   // 浮层提示玻璃
   ".wh-app-notice{background:rgba(255,255,255,.6)!important;backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);border:1px solid rgba(255,255,255,.75)!important;border-radius:16px!important;color:#2c2746!important;box-shadow:0 26px 60px -28px rgba(70,54,140,.5)!important}",
+  // —— 路由组件内部(首页决策收件箱) ——
+  ".wh-app-content .wh-r4-home-banner{background:rgba(255,255,255,.42)!important;border:1px solid rgba(255,255,255,.6)!important;border-radius:16px!important;backdrop-filter:blur(20px) saturate(170%);-webkit-backdrop-filter:blur(20px) saturate(170%);color:#5d567e}",
+  ".wh-app-content .wh-r4-home-chip{background:rgba(255,255,255,.55)!important;border:1px solid rgba(255,255,255,.8)!important;border-radius:999px!important;color:#5d567e}",
+  ".wh-app-content .wh-r4-home-chip--accent{background:rgba(124,131,255,.16)!important;color:#5a45d8!important}",
+  ".wh-app-content .wh-r4-home-chip--ok{background:rgba(52,199,154,.16)!important;color:#1faf86!important}",
+  ".wh-app-content .wh-r4-decision-top{background:linear-gradient(90deg,#7c83ff,#b57bff)!important}",
+  ".wh-app-content .wh-r4-route-kicker{color:#8b7ed6!important}",
+  ".wh-app-content .wh-r4-route-count{color:#5a45d8!important}",
+  ".wh-app-content .wh-r4-run{background:rgba(255,255,255,.45)!important;border:1px solid rgba(255,255,255,.65)!important;border-radius:14px!important}",
+  ".wh-app-content .wh-r4-runstate--accent{background:rgba(124,131,255,.16)!important;color:#5a45d8!important}",
+  ".wh-app-content .wh-r4-runstate--warn{background:rgba(255,193,117,.22)!important;color:#b06a17!important}",
+  ".wh-app-content .wh-r4-runstate--danger{background:rgba(255,122,138,.18)!important;color:#e85d70!important}",
+  // —— 桌宠设置面板(主窗内浮层)玻璃 ——
+  ".wh-cuu-preferences-panel{background:rgba(255,255,255,.55)!important;backdrop-filter:blur(34px) saturate(180%)!important;-webkit-backdrop-filter:blur(34px) saturate(180%)!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:20px!important;box-shadow:0 30px 66px -28px rgba(70,54,140,.6),inset 0 1px 0 rgba(255,255,255,.8)!important}",
+  ".wh-cuu-pref-row{border-radius:12px}.wh-cuu-pref-button{border-radius:12px!important}.wh-cuu-pref-toggle{border-radius:999px!important}",
   // 滚动条
   ".wh-app-root ::-webkit-scrollbar{width:10px}",
   ".wh-app-root ::-webkit-scrollbar-thumb{background:rgba(90,69,216,.22);border-radius:8px;border:3px solid transparent;background-clip:content-box}"
