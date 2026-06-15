@@ -182,6 +182,8 @@ function bindGoldPathNavigation(
   locale: WorkHubLocale,
   input: {
     listen?: DesktopShellListen | undefined;
+    // R7 P3:任一动作落库后(成功或失败)回调,用于刷新决策卡牌(回拉服务端真相)。
+    onActionSettled?: (() => void) | undefined;
   } = {}
 ) {
   let pendingReviewHref: string | undefined;
@@ -236,6 +238,8 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
         }
       }
+      // R7 P3:打回/改改在理由确认后落库,刷新决策卡牌让已处理的卡从牌叠消失。
+      input.onActionSettled?.();
       return;
     }
 
@@ -299,6 +303,7 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
+        input.onActionSettled?.();
         return;
       }
       const approvalRespondId = approvalRespondIdFromHref(href);
@@ -315,6 +320,7 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "approve"));
         }
+        input.onActionSettled?.();
         return;
       }
       const proposalAction = proposalActionFromHref(href);
@@ -334,6 +340,7 @@ function bindGoldPathNavigation(
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
         }
+        input.onActionSettled?.();
         return;
       }
       if (proposalAction?.action === "merge") {
@@ -350,6 +357,7 @@ function bindGoldPathNavigation(
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
         }
+        input.onActionSettled?.();
         return;
       }
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
@@ -411,6 +419,20 @@ async function boot() {
     if (homePanel) {
       homePanel.innerHTML = renderDecisionDeckHtml({ items: surfaceVm.page_vms.attention.queue, locale });
     }
+    // R7 P3:动作落库后回拉服务端真相、重渲染决策卡牌——已处理的卡从牌叠消失,失败则卡片留存
+    // (服务端仍 pending → 回拉的 queue 仍含此卡),天然规避「乐观前进但其实失败」的错位。
+    // 走 goldPath 全量聚合,与 boot 同源;桌面低频,成本可接受。失败静默保留现状,绝不空首页。
+    const refreshDecisionDeck = async () => {
+      if (!homePanel) {
+        return;
+      }
+      try {
+        const fresh = await client.pages.goldPath({ locale });
+        homePanel.innerHTML = renderDecisionDeckHtml({ items: fresh.page_vms.attention.queue, locale });
+      } catch {
+        // 保留当前卡牌,不打断用户。
+      }
+    };
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
@@ -435,7 +457,12 @@ async function boot() {
     });
     bindLocaleSwitch(root, locale, client);
     bindRouteLineEditor(root);
-    bindGoldPathNavigation(root, shell, client, locale, { listen: realShellListen });
+    bindGoldPathNavigation(root, shell, client, locale, {
+      listen: realShellListen,
+      onActionSettled: () => {
+        void refreshDecisionDeck();
+      }
+    });
   } catch (error) {
     root.innerHTML = renderGoldPathBootDocument({
       title: goldPathT(locale, "boot.desktop.errorTitle"),
