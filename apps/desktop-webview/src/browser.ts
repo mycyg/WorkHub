@@ -394,8 +394,10 @@ async function boot() {
     const rendered = renderGoldPathSurface(surfaceVm, "desktop", { locale });
     const shell = renderGoldPathAppShell(rendered, {
       appName: "WorkHub Desktop",
-      surfaceLabel: "Tauri Webview P0.5",
-      apiBaseLabel: "device-token aware client",
+      // R7：顶栏去开发黑话——把 "Tauri Webview P0.5 / device-token aware client"
+      // 换成用户真正关心的运行状态「● 已连接 · 本地同步正常」。
+      surfaceLabel: goldPathT(locale, "shell.typedApi"),
+      apiBaseLabel: goldPathT(locale, "shell.desktopSync"),
       locale
     });
     root.innerHTML = `<style>${shell.css}${desktopPetSettingsCss}</style>${shell.html}`;

@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-11T00:08:09.370Z",
+  "generated_at": "2026-06-15T07:49:35.588Z",
   "module": "R4.4 Web product shell baseline",
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-product-shell-baseline",
   "contact_sheet": "contact-sheet.png",
   "gates": {
@@ -28,14 +28,13 @@
         "height": 1180
       },
       "endpoint_calls": [
-        "attention:zh-CN",
-        "goldPath:zh-CN"
+        "attention:zh-CN"
       ],
       "html": "product-home-zh-desktop.html",
       "screenshot": "product-home-zh-desktop.png",
       "markers": {
         "productShell": true,
-        "masthead": true,
+        "masthead": false,
         "routeKey": "home",
         "statusReady": 1,
         "pathNavigation": true,
@@ -44,10 +43,10 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "weeklyFixtureLeak": false,
-        "zhChrome": true,
+        "zhChrome": false,
         "enChrome": false,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
         "navClientWidth": 217,
         "navScrollWidth": 217,
         "navHorizontalOverflow": false,
@@ -66,8 +65,7 @@
         "height": 1600
       },
       "endpoint_calls": [
-        "approvals:en-US",
-        "goldPath:en-US"
+        "approvals:en-US"
       ],
       "html": "product-approvals-en-mobile.html",
       "screenshot": "product-approvals-en-mobile.png",
@@ -84,10 +82,10 @@
         "weeklyFixtureLeak": false,
         "zhChrome": false,
         "enChrome": true,
-        "clientWidth": 467,
-        "scrollWidth": 467,
-        "navClientWidth": 467,
-        "navScrollWidth": 467,
+        "clientWidth": 485,
+        "scrollWidth": 485,
+        "navClientWidth": 485,
+        "navScrollWidth": 485,
         "navHorizontalOverflow": false,
         "horizontalOverflow": false,
         "textBoxOverflow": false,
@@ -104,8 +102,7 @@
         "height": 1220
       },
       "endpoint_calls": [
-        "workItem:r4-product-workitem:zh-CN",
-        "goldPath:zh-CN"
+        "workItem:r4-product-workitem:zh-CN"
       ],
       "html": "product-workitem-zh-desktop.html",
       "screenshot": "product-workitem-zh-desktop.png",
@@ -122,8 +119,8 @@
         "weeklyFixtureLeak": false,
         "zhChrome": true,
         "enChrome": false,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "navClientWidth": 217,
         "navScrollWidth": 217,
         "navHorizontalOverflow": false,
@@ -143,7 +140,7 @@
       },
       "endpoint_calls": [
         "proposal:r4-product-proposal:en-US",
-        "goldPath:en-US"
+        "conflicts:00000000-0000-4000-8000-000000000104:none"
       ],
       "html": "product-proposal-en-mobile.html",
       "screenshot": "product-proposal-en-mobile.png",
@@ -160,10 +157,10 @@
         "weeklyFixtureLeak": false,
         "zhChrome": false,
         "enChrome": true,
-        "clientWidth": 467,
-        "scrollWidth": 467,
-        "navClientWidth": 467,
-        "navScrollWidth": 467,
+        "clientWidth": 485,
+        "scrollWidth": 485,
+        "navClientWidth": 485,
+        "navScrollWidth": 485,
         "navHorizontalOverflow": false,
         "horizontalOverflow": false,
         "textBoxOverflow": false,

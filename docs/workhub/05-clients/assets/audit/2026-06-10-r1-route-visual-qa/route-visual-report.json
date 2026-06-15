@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-09T21:21:08.474Z",
+  "generated_at": "2026-06-15T08:00:40.825Z",
   "module": "R1.39 route visual QA",
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-10-r1-route-visual-qa",
   "gates": {
     "no_main_window_cuu": true,
@@ -54,8 +54,8 @@
         "errorState": 0,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1332,
-        "scrollWidth": 1332,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -92,8 +92,8 @@
         "errorState": 0,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 467,
-        "scrollWidth": 467,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -130,8 +130,8 @@
         "errorState": 0,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1147,
-        "scrollWidth": 1147,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -168,8 +168,8 @@
         "errorState": 0,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1332,
-        "scrollWidth": 1332,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -206,8 +206,8 @@
         "errorState": 0,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1147,
-        "scrollWidth": 1147,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -244,8 +244,8 @@
         "errorState": 1,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     }

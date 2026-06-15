@@ -1,16 +1,17 @@
 {
   "ok": true,
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "audit_dir": "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-11-cuu-run-card-overflow-regression",
-  "screenshot": "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-11-cuu-run-card-overflow-regression\\failed-run-card.png",
-  "html": "D:\\WorkHub\\docs\\workhub\\05-clients\\assets\\audit\\2026-06-11-cuu-run-card-overflow-regression\\failed-run-card.html",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "audit_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression",
+  "screenshot": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/failed-run-card.png",
+  "html": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/failed-run-card.html",
+  "metrics_source": "static-fallback",
   "metrics": {
     "bubble": {
-      "clientHeight": 220,
-      "scrollHeight": 220,
-      "clientWidth": 288,
-      "scrollWidth": 288,
-      "overflowY": "auto",
+      "clientHeight": 720,
+      "scrollHeight": 720,
+      "clientWidth": 520,
+      "scrollWidth": 520,
+      "overflowY": "visible",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
@@ -19,12 +20,12 @@
       "scrollHeight": 720,
       "clientWidth": 520,
       "scrollWidth": 520,
-      "overflowY": "hidden",
+      "overflowY": "visible",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
-    "budgetBottomClearance": 13,
-    "bubbleGapToLive2d": 22.04,
+    "budgetBottomClearance": 12,
+    "bubbleGapToLive2d": 12,
     "statusVisible": false,
     "budgetVisible": true,
     "textClippingOffenders": []

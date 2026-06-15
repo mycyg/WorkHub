@@ -12,7 +12,7 @@
     h1{font-size:30px;line-height:1.15;margin:0;overflow-wrap:anywhere}
     p{margin:6px 0 0;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
     .r4qa-badge{border:1px solid var(--line);border-radius:999px;background:#fff;padding:7px 10px;color:var(--muted);font-size:12px;font-weight:800;max-width:100%;overflow-wrap:anywhere}
-    .wh-route-state-matrix{display:grid;gap:16px;min-width:0;max-width:100%}.wh-route-state-row{display:grid;grid-template-columns:160px repeat(4,minmax(0,1fr));gap:12px;align-items:stretch;min-width:0}.wh-route-state-route{border:1px solid #dfe5f1;border-radius:8px;background:#fff;padding:14px;display:grid;align-content:center;gap:6px;min-width:0;overflow-wrap:anywhere}.wh-route-state-route strong{font-size:14px}.wh-route-state-route span{font-size:12px;color:#66728c;overflow-wrap:anywhere}.wh-route-state-card{border:1px solid #dfe5f1;background:rgba(255,255,255,.94);border-radius:8px;padding:14px;display:grid;gap:10px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 14px 38px rgba(37,51,79,.07)}.wh-route-state-card[data-route-state=loading]{border-color:#b8c7ff}.wh-route-state-card[data-route-state=empty]{border-color:#dfe8d7}.wh-route-state-card[data-route-state=error]{border-color:#f0c5bd}.wh-route-state-card[data-route-state=forbidden]{border-color:#d8dff2}.wh-route-state-pill{display:inline-flex;align-items:center;max-width:100%;border-radius:999px;background:#f5f8fc;color:#66728c;font-size:11px;font-weight:800;padding:5px 8px;overflow-wrap:anywhere}.wh-route-state-card h3{margin:0;font-size:16px;line-height:1.25;overflow-wrap:anywhere}.wh-route-state-card p{margin:0;color:#66728c;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.wh-route-state-action{display:inline-flex;width:max-content;max-width:100%;align-items:center;justify-content:center;border:1px solid #dfe5f1;border-radius:8px;background:#fff;color:#172033;text-decoration:none;font-weight:800;font-size:12px;padding:8px 10px;overflow-wrap:anywhere}@media (max-width:980px){.wh-route-state-row{grid-template-columns:1fr}.wh-route-state-route{position:sticky;top:0;z-index:1}}
+    .wh-route-state-matrix{display:grid;gap:16px;min-width:0;max-width:100%}.wh-route-state-row{display:grid;grid-template-columns:160px repeat(4,minmax(0,1fr));gap:12px;align-items:stretch;min-width:0}.wh-route-state-route{border:1px solid #dfe5f1;border-radius:8px;background:#fff;padding:14px;display:grid;align-content:center;gap:6px;min-width:0;overflow-wrap:anywhere}.wh-route-state-route strong{font-size:14px}.wh-route-state-route span{font-size:12px;color:#66728c;overflow-wrap:anywhere}.wh-route-state-card{border:1px solid #dfe5f1;background:rgba(255,255,255,.94);border-radius:8px;padding:14px;display:grid;gap:10px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 14px 38px rgba(37,51,79,.07)}.wh-route-state-card[data-route-state=loading]{border-color:#b8c7ff}.wh-route-state-card[data-route-state=empty]{border-color:#dfe8d7}.wh-route-state-card[data-route-state=error]{border-color:#f0c5bd}.wh-route-state-card[data-route-state=forbidden]{border-color:#d8dff2}.wh-route-state-pill{display:inline-flex;align-items:center;max-width:100%;border-radius:999px;background:#f5f8fc;color:#66728c;font-size:11px;font-weight:800;padding:5px 8px;overflow-wrap:anywhere}.wh-route-state-card h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}.wh-route-state-card p{margin:0;color:#66728c;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.wh-route-state-action{display:inline-flex;width:max-content;max-width:100%;align-items:center;justify-content:center;border:1px solid #dfe5f1;border-radius:8px;background:#fff;color:#172033;text-decoration:none;font-weight:800;font-size:12px;padding:8px 10px;overflow-wrap:anywhere}@media (max-width:980px){.wh-route-state-row{grid-template-columns:1fr}.wh-route-state-route{position:sticky;top:0;z-index:1}}
   </style>
 </head>
 <body data-r4-web-route-state-case="matrix-zh-CN" data-r4-locale="zh-CN">
@@ -27,22 +27,22 @@
       <article class="wh-route-state-card" data-route-key="home" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="home" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="home" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/">重试</a>
   </article><article class="wh-route-state-card" data-route-key="home" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="intake">
@@ -50,22 +50,22 @@
       <article class="wh-route-state-card" data-route-key="intake" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/intake/:sessionId</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/intake/:sessionId">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/intake/:sessionId</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/intake/:sessionId">重试</a>
   </article><article class="wh-route-state-card" data-route-key="intake" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/intake/:sessionId">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="approvals">
@@ -73,22 +73,22 @@
       <article class="wh-route-state-card" data-route-key="approvals" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/approvals</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/approvals">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/approvals</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/approvals">重试</a>
   </article><article class="wh-route-state-card" data-route-key="approvals" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/approvals">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="workitem">
@@ -96,22 +96,22 @@
       <article class="wh-route-state-card" data-route-key="workitem" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/workitems/:id</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/workitems/:id">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/workitems/:id</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/workitems/:id">重试</a>
   </article><article class="wh-route-state-card" data-route-key="workitem" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/workitems/:id">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="proposal">
@@ -119,45 +119,160 @@
       <article class="wh-route-state-card" data-route-key="proposal" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/proposals/:id</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/proposals/:id">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/proposals/:id</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/proposals/:id">重试</a>
   </article><article class="wh-route-state-card" data-route-key="proposal" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/proposals/:id">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="drive">
+      <div class="wh-route-state-route"><strong>项目网盘</strong><span>/drive</span></div>
+      <article class="wh-route-state-card" data-route-key="drive" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/drive</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/drive">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="drive" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/drive</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="drive" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/drive">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="drive" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/drive">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="meetings">
+      <div class="wh-route-state-route"><strong>会议洞察</strong><span>/meetings</span></div>
+      <article class="wh-route-state-card" data-route-key="meetings" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/meetings</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/meetings">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="meetings" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/meetings</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="meetings" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/meetings">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="meetings" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/meetings">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="notifications">
+      <div class="wh-route-state-route"><strong>通知中心</strong><span>/notifications</span></div>
+      <article class="wh-route-state-card" data-route-key="notifications" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/notifications</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/notifications">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="notifications" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/notifications</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="notifications" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/notifications">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="notifications" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/notifications">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="calendar">
+      <div class="wh-route-state-route"><strong>日程</strong><span>/calendar</span></div>
+      <article class="wh-route-state-card" data-route-key="calendar" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/calendar</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/calendar">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="calendar" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/calendar</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="calendar" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/calendar">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="calendar" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/calendar">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="health">
+      <div class="wh-route-state-route"><strong>项目健康</strong><span>/dashboard/health</span></div>
+      <article class="wh-route-state-card" data-route-key="health" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/dashboard/health</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/dashboard/health">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="health" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/dashboard/health</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="health" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/dashboard/health">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="health" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/dashboard/health">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="replay">
       <div class="wh-route-state-route"><strong>执行回放</strong><span>/agent-runs/:id/replay</span></div>
       <article class="wh-route-state-card" data-route-key="replay" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/agent-runs/:id/replay</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/agent-runs/:id/replay">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/agent-runs/:id/replay</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/agent-runs/:id/replay">重试</a>
   </article><article class="wh-route-state-card" data-route-key="replay" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/agent-runs/:id/replay">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="cost">
@@ -165,45 +280,68 @@
       <article class="wh-route-state-card" data-route-key="cost" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/dashboard/cost</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/dashboard/cost">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/dashboard/cost</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/dashboard/cost">重试</a>
   </article><article class="wh-route-state-card" data-route-key="cost" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/dashboard/cost">申请访问</a>
+  </article>
+    </div><div class="wh-route-state-row" data-route-key="knowledge">
+      <div class="wh-route-state-route"><strong>证据检索</strong><span>/knowledge/search</span></div>
+      <article class="wh-route-state-card" data-route-key="knowledge" data-route-state="loading" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/knowledge/search</span>
+    <h3>正在加载真实数据</h3>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
+    <a class="wh-route-state-action" href="/knowledge/search">保持等待</a>
+  </article><article class="wh-route-state-card" data-route-key="knowledge" data-route-state="empty" data-locale="zh-CN">
+    <span class="wh-route-state-pill">/knowledge/search</span>
+    <h3>现在没有需要处理的事项</h3>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
+    <a class="wh-route-state-action" href="/">回到总览</a>
+  </article><article class="wh-route-state-card" data-route-key="knowledge" data-route-state="error" data-locale="zh-CN">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>页面暂时加载失败</h3>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
+    <a class="wh-route-state-action" href="/knowledge/search">重试</a>
+  </article><article class="wh-route-state-card" data-route-key="knowledge" data-route-state="forbidden" data-locale="zh-CN">
+    <span class="wh-route-state-pill">需要负责人授权</span>
+    <h3>你没有权限查看</h3>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
+    <a class="wh-route-state-action" href="/knowledge/search">申请访问</a>
   </article>
     </div><div class="wh-route-state-row" data-route-key="settings">
       <div class="wh-route-state-route"><strong>设置</strong><span>/settings</span></div>
       <article class="wh-route-state-card" data-route-key="settings" data-route-state="loading" data-locale="zh-CN">
     <span class="wh-route-state-pill">/settings</span>
     <h3>正在加载真实数据</h3>
-    <p>页面等待 WorkHub daemon 返回，不显示假成功或旧缓存。</p>
+    <p>正在等待后台返回真实数据，不会显示假的成功或过期内容。</p>
     <a class="wh-route-state-action" href="/settings">保持等待</a>
   </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="empty" data-locale="zh-CN">
     <span class="wh-route-state-pill">/settings</span>
     <h3>现在没有需要处理的事项</h3>
-    <p>空态保持安静，只保留创建、返回或查看历史的入口。</p>
+    <p>这里暂时没有内容，可以新建、返回或查看历史。</p>
     <a class="wh-route-state-action" href="/">回到总览</a>
   </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="error" data-locale="zh-CN">
     <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
     <h3>页面暂时加载失败</h3>
-    <p>保留上下文和追踪编号，用户可以重试，工程侧可以排查。</p>
+    <p>已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。</p>
     <a class="wh-route-state-action" href="/settings">重试</a>
   </article><article class="wh-route-state-card" data-route-key="settings" data-route-state="forbidden" data-locale="zh-CN">
     <span class="wh-route-state-pill">需要负责人授权</span>
     <h3>你没有权限查看</h3>
-    <p>说明需要谁授权，不暴露敏感正文、证据或交付物。</p>
+    <p>这部分内容需要授权，请联系有权限的人开通。</p>
     <a class="wh-route-state-action" href="/settings">申请访问</a>
   </article>
     </div>

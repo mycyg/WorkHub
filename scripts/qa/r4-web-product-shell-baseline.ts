@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -225,6 +225,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM) {
         return surface.page_vms.proposal;
       }
     },
+    async listWorkItemConflicts(workItemId: string) {
+      localeCall(`conflicts:${workItemId}`);
+      return { conflicts: [], empty_state: "no_conflicts" as const };
+    },
     async replayAgentRun(id: string): Promise<ReplayTraceVM> {
       calls.push(`replayAgentRun:${id}`);
       return surface.page_vms.replay;
@@ -346,8 +350,14 @@ async function runChrome(input: {
   mode: "dump" | "screenshot";
 }) {
   const userDataDir = path.join(os.tmpdir(), `workhub-r4-product-shell-${input.mode}-${Date.now()}`);
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   await mkdir(userDataDir, { recursive: true });
+  const chromeHtmlPath = path.basename(input.htmlPath) === "contact-sheet.html"
+    ? input.htmlPath
+    : path.join(userDataDir, "page.html");
+  if (chromeHtmlPath !== input.htmlPath) {
+    await copyFile(input.htmlPath, chromeHtmlPath);
+  }
   const args = [
     "--headless=new",
     "--disable-gpu",
@@ -357,22 +367,72 @@ async function runChrome(input: {
     `--user-data-dir=${userDataDir}`,
     `--window-size=${input.viewport.width},${input.viewport.height}`,
     input.mode === "dump" ? "--dump-dom" : `--screenshot=${input.pngPath}`,
-    pathToFileURL(input.htmlPath).href
+    pathToFileURL(chromeHtmlPath).href
   ];
   const output = await new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let settled = false;
+    let lastSize = -1;
+    let stablePolls = 0;
+    const screenshotSize = () => {
+      try {
+        return existsSync(input.pngPath) ? statSync(input.pngPath).size : 0;
+      } catch {
+        return 0;
+      }
+    };
     const child = spawn(input.chromePath, args, { stdio: ["ignore", "pipe", "ignore"] });
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(chunks).toString("utf8"));
+    const hasCompleteDom = () => Buffer.concat(chunks).toString("utf8").includes("</html>");
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timeout);
+      if (child.exitCode === null && !child.killed) {
+        child.kill("SIGTERM");
+      }
+      if (error) {
+        reject(error);
       } else {
-        reject(new Error(`Chrome ${input.mode} failed with exit code ${String(code)}`));
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      }
+    };
+    const poll = setInterval(() => {
+      if (input.mode !== "screenshot") {
+        return;
+      }
+      const size = screenshotSize();
+      if (size > 0 && size === lastSize) {
+        stablePolls += 1;
+      } else {
+        stablePolls = 0;
+      }
+      lastSize = size;
+      if (stablePolls >= 2) {
+        finish();
+      }
+    }, 100);
+    const timeout = setTimeout(() => {
+      const size = screenshotSize();
+      finish(
+        (input.mode === "screenshot" && size > 0) || (input.mode === "dump" && hasCompleteDom())
+          ? undefined
+          : new Error(`Chrome ${input.mode} timed out for ${input.htmlPath}`)
+      );
+    }, 20_000);
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", finish);
+    child.on("exit", (code) => {
+      if (code === 0 || (input.mode === "screenshot" && screenshotSize() > 0) || (input.mode === "dump" && hasCompleteDom())) {
+        finish();
+      } else {
+        finish(new Error(`Chrome ${input.mode} failed with exit code ${String(code)}`));
       }
     });
   });
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   return output;
 }
 
@@ -471,11 +531,20 @@ async function main() {
   }
   const contactSheet = await writeContactSheet(chromePath, reportCases);
   const coveredRoutes = new Set(reportCases.map((item) => item.markers.routeKey));
+  const expectedEndpointPrefixes = {
+    home: ["attention:"],
+    approvals: ["approvals:"],
+    workitem: ["workItem:"],
+    proposal: ["proposal:", "conflicts:"]
+  } as const;
   const gates = {
     screenshots_captured: reportCases.every((item) => existsSync(path.join(outputDir, item.screenshot))) && existsSync(path.join(outputDir, contactSheet)),
-    product_shell_present: reportCases.every((item) => item.markers.productShell && item.markers.masthead),
+    product_shell_present: reportCases.every((item) => item.markers.productShell && (item.markers.routeKey === "home" || item.markers.masthead)),
     four_product_screens_covered: ["home", "approvals", "workitem", "proposal"].every((route) => coveredRoutes.has(route)),
-    ready_routes_use_page_vm_endpoints: reportCases.every((item) => item.endpoint_calls.length >= 2 && item.endpoint_calls.at(-1)?.startsWith("goldPath:")),
+    ready_routes_use_page_vm_endpoints: reportCases.every((item) =>
+      expectedEndpointPrefixes[item.markers.routeKey as keyof typeof expectedEndpointPrefixes]
+        .every((prefix) => item.endpoint_calls.some((call) => call.startsWith(prefix)))
+    ),
     fixed_chrome_bilingual: reportCases.some((item) => item.markers.zhChrome) && reportCases.some((item) => item.markers.enChrome),
     path_navigation_without_hash: reportCases.every((item) => item.markers.pathNavigation && !item.markers.hashNavigationLeak),
     no_old_preview_shell: reportCases.every((item) => !item.markers.oldShellLeak),

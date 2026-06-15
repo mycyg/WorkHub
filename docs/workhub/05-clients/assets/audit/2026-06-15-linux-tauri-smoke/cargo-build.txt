@@ -1,0 +1,2 @@
+   Compiling workhub-client-tauri v0.1.0 (/home/mycyg/workhub-codex-e2e/client-tauri/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.63s

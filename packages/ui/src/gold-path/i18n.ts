@@ -36,6 +36,7 @@ export type GoldPathCopyKey =
   | "shell.navTitle"
   | "shell.navAria"
   | "shell.typedApi"
+  | "shell.desktopSync"
   | "shell.localeAria"
   | "empty.evidence"
   | "home.kicker"
@@ -221,6 +222,7 @@ const goldPathCopy = {
     "shell.navTitle": "WorkHub",
     "shell.navAria": "主导航",
     "shell.typedApi": "已连接",
+    "shell.desktopSync": "本地同步正常",
     "shell.localeAria": "语言切换",
     "empty.evidence": "没有找到可展示的证据 (´；ω；`)",
     "home.kicker": "今日焦点",
@@ -405,6 +407,7 @@ const goldPathCopy = {
     "shell.navTitle": "WorkHub",
     "shell.navAria": "Main navigation",
     "shell.typedApi": "Connected",
+    "shell.desktopSync": "Local sync OK",
     "shell.localeAria": "Language",
     "empty.evidence": "No evidence is ready to show (´；ω；`)",
     "home.kicker": "AI-first home",

@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-10T22:35:10.028Z",
+  "generated_at": "2026-06-15T07:58:19.411Z",
   "module": "R4.2 Web route registry loader",
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-route-registry-loader",
   "registry": [
     {
@@ -30,6 +30,31 @@
       "apiBaseLabel": "/api/pages/proposals/:id"
     },
     {
+      "key": "drive",
+      "pattern": "/drive",
+      "apiBaseLabel": "/api/pages/drive"
+    },
+    {
+      "key": "meetings",
+      "pattern": "/meetings",
+      "apiBaseLabel": "/api/pages/meetings"
+    },
+    {
+      "key": "notifications",
+      "pattern": "/notifications",
+      "apiBaseLabel": "/api/pages/notifications"
+    },
+    {
+      "key": "calendar",
+      "pattern": "/calendar",
+      "apiBaseLabel": "/api/pages/calendar"
+    },
+    {
+      "key": "health",
+      "pattern": "/dashboard/health",
+      "apiBaseLabel": "/api/pages/health"
+    },
+    {
       "key": "replay",
       "pattern": "/agent-runs/:id/replay",
       "apiBaseLabel": "/api/agent-runs/:id/replay"
@@ -38,6 +63,11 @@
       "key": "cost",
       "pattern": "/dashboard/cost",
       "apiBaseLabel": "/api/pages/cost"
+    },
+    {
+      "key": "knowledge",
+      "pattern": "/knowledge/search",
+      "apiBaseLabel": "/api/knowledge/search"
     },
     {
       "key": "settings",
@@ -89,8 +119,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -105,8 +135,7 @@
         "height": 1200
       },
       "endpoint_calls": [
-        "attention:zh-CN",
-        "goldPath:zh-CN"
+        "attention:zh-CN"
       ],
       "html": "ready-home-zh-desktop.html",
       "screenshot": "ready-home-zh-desktop.png",
@@ -129,8 +158,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -145,8 +174,7 @@
         "height": 1600
       },
       "endpoint_calls": [
-        "approvals:en-US",
-        "goldPath:en-US"
+        "approvals:en-US"
       ],
       "html": "ready-approvals-en-mobile.html",
       "screenshot": "ready-approvals-en-mobile.png",
@@ -169,8 +197,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -185,8 +213,7 @@
         "height": 1200
       },
       "endpoint_calls": [
-        "cost:zh-CN",
-        "goldPath:zh-CN"
+        "cost:zh-CN"
       ],
       "html": "ready-cost-zh-desktop.html",
       "screenshot": "ready-cost-zh-desktop.png",
@@ -209,8 +236,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -248,8 +275,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -287,8 +314,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -326,8 +353,8 @@
         "hashNavigationLeak": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     }

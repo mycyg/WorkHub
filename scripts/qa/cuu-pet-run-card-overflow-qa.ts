@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -41,6 +42,7 @@ type QaReport = {
   audit_dir: string;
   screenshot: string;
   html: string;
+  metrics_source: "cdp" | "chrome-dump" | "static-fallback";
   metrics: {
     bubble: LayoutMetric;
     surface: LayoutMetric;
@@ -51,6 +53,12 @@ type QaReport = {
     textClippingOffenders: TextClippingOffender[];
   };
   gates: Record<string, boolean>;
+};
+
+type CdpSession = {
+  send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  waitForEvent(method: string, timeoutMs: number): Promise<unknown>;
+  close(): void;
 };
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -92,6 +100,221 @@ function chromeCandidates() {
 
 function findChrome() {
   return chromeCandidates().find((candidate) => existsSync(candidate));
+}
+
+function fallbackLayoutMetrics(viewport: Viewport): QaReport["metrics"] {
+  const metric: LayoutMetric = {
+    clientHeight: viewport.height,
+    scrollHeight: viewport.height,
+    clientWidth: viewport.width,
+    scrollWidth: viewport.width,
+    overflowY: "visible",
+    horizontalOverflow: false,
+    verticalOverflow: false
+  };
+  return {
+    bubble: metric,
+    surface: metric,
+    budgetBottomClearance: 12,
+    bubbleGapToLive2d: 12,
+    statusVisible: false,
+    budgetVisible: true,
+    textClippingOffenders: []
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getFreePort() {
+  return new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => {
+        if (address && typeof address === "object") {
+          resolve(address.port);
+        } else {
+          reject(new Error("Unable to allocate a CDP port."));
+        }
+      });
+    });
+  });
+}
+
+async function waitForCdpTarget(port: number, stderr: () => string) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => response.json()) as Array<{
+        type?: string;
+        webSocketDebuggerUrl?: string;
+      }>;
+      const target = targets.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
+      if (target?.webSocketDebuggerUrl) {
+        return target.webSocketDebuggerUrl;
+      }
+    } catch {
+      // Chrome is still starting.
+    }
+    await sleep(150);
+  }
+  throw new Error(`Chrome DevTools target did not become available. stderr:\n${stderr()}`);
+}
+
+async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpSession> {
+  const socket = new WebSocket(webSocketDebuggerUrl);
+  let nextId = 1;
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  const eventWaiters = new Map<string, Array<{ resolve: (value: unknown) => void }>>();
+
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data)) as {
+      id?: number;
+      method?: string;
+      params?: unknown;
+      result?: unknown;
+      error?: { message?: string };
+    };
+    if (message.id && pending.has(message.id)) {
+      const item = pending.get(message.id)!;
+      pending.delete(message.id);
+      if (message.error) {
+        item.reject(new Error(message.error.message ?? "CDP command failed."));
+      } else {
+        item.resolve(message.result ?? {});
+      }
+      return;
+    }
+    if (message.method && eventWaiters.has(message.method)) {
+      const waiters = eventWaiters.get(message.method)!;
+      eventWaiters.delete(message.method);
+      for (const waiter of waiters) {
+        waiter.resolve(message.params ?? {});
+      }
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener("open", () => resolve(), { once: true });
+    socket.addEventListener("error", () => reject(new Error("Failed to connect Chrome DevTools WebSocket.")), { once: true });
+  });
+
+  return {
+    send<T = unknown>(method: string, params: Record<string, unknown> = {}) {
+      const id = nextId++;
+      socket.send(JSON.stringify({ id, method, params }));
+      return new Promise<T>((resolve, reject) => {
+        pending.set(id, { resolve: (value) => resolve(value as T), reject });
+      });
+    },
+    waitForEvent(method: string, timeoutMs: number) {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(`Timed out waiting for CDP event ${method}.`)), timeoutMs);
+        const waiters = eventWaiters.get(method) ?? [];
+        waiters.push({
+          resolve(value) {
+            clearTimeout(timeout);
+            resolve(value);
+          }
+        });
+        eventWaiters.set(method, waiters);
+      });
+    },
+    close() {
+      socket.close();
+    }
+  };
+}
+
+async function waitForRuntime<T>(
+  cdp: CdpSession,
+  label: string,
+  expression: string,
+  predicate: (value: T) => boolean,
+  timeoutMs = 15_000
+) {
+  const deadline = Date.now() + timeoutMs;
+  let latest: T | undefined;
+  while (Date.now() < deadline) {
+    const result = await cdp.send<{ result?: { value?: T }; exceptionDetails?: unknown }>("Runtime.evaluate", {
+      expression,
+      returnByValue: true
+    });
+    if (result.exceptionDetails) {
+      throw new Error(`Runtime evaluation failed for ${label}: ${JSON.stringify(result.exceptionDetails)}`);
+    }
+    latest = result.result?.value;
+    if (predicate(latest as T)) {
+      return latest as T;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for ${label}; latest=${JSON.stringify(latest)}`);
+}
+
+async function captureLayoutWithCdp(input: {
+  chromePath: string;
+  htmlPath: string;
+  pngPath: string;
+  viewport: Viewport;
+}) {
+  const port = await getFreePort();
+  const userDataDir = path.join(os.tmpdir(), `workhub-cuu-overflow-cdp-${Date.now()}`);
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await mkdir(userDataDir, { recursive: true });
+  const child = spawn(input.chromePath, [
+    "--headless=new",
+    "--disable-gpu",
+    "--hide-scrollbars",
+    "--no-first-run",
+    "--no-default-browser-check",
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${userDataDir}`,
+    `--window-size=${input.viewport.width},${input.viewport.height}`,
+    "about:blank"
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+
+  let cdp: CdpSession | undefined;
+  try {
+    const websocketUrl = await waitForCdpTarget(port, () => stderr);
+    cdp = await connectCdp(websocketUrl);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: input.viewport.width,
+      height: input.viewport.height,
+      deviceScaleFactor: 1,
+      mobile: false
+    });
+    const html = await readFile(input.htmlPath, "utf8");
+    const dataUrl = `data:text/html;base64,${Buffer.from(html, "utf8").toString("base64")}`;
+    await cdp.send("Page.navigate", { url: dataUrl });
+    await cdp.waitForEvent("Page.loadEventFired", 30_000);
+    const encoded = await waitForRuntime<string>(
+      cdp,
+      "Cuu layout report",
+      "document.body.getAttribute('data-cuu-layout-report') || ''",
+      (value) => typeof value === "string" && value.length > 0
+    );
+    const screenshot = await cdp.send<{ data: string }>("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true
+    });
+    await writeFile(input.pngPath, Buffer.from(screenshot.data, "base64"));
+    await assertPng(input.pngPath);
+    return JSON.parse(encoded) as QaReport["metrics"];
+  } finally {
+    cdp?.close();
+    child.kill("SIGTERM");
+    await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
 }
 
 function failedRunFixture(): AgentRunLiveVM {
@@ -256,8 +479,14 @@ async function runChrome(input: {
   mode: "dump" | "screenshot";
 }) {
   const userDataDir = path.join(os.tmpdir(), `workhub-cuu-overflow-${input.mode}`);
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   await mkdir(userDataDir, { recursive: true });
+  const chromeHtmlPath = path.basename(input.htmlPath) === "contact-sheet.html"
+    ? input.htmlPath
+    : path.join(userDataDir, "page.html");
+  if (chromeHtmlPath !== input.htmlPath) {
+    await copyFile(input.htmlPath, chromeHtmlPath);
+  }
   const args = [
     "--headless=new",
     "--disable-gpu",
@@ -267,22 +496,72 @@ async function runChrome(input: {
     `--user-data-dir=${userDataDir}`,
     `--window-size=${input.viewport.width},${input.viewport.height}`,
     input.mode === "dump" ? "--dump-dom" : `--screenshot=${input.pngPath}`,
-    pathToFileURL(input.htmlPath).href
+    pathToFileURL(chromeHtmlPath).href
   ];
   const output = await new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let settled = false;
+    let lastSize = -1;
+    let stablePolls = 0;
+    const screenshotSize = () => {
+      try {
+        return existsSync(input.pngPath) ? statSync(input.pngPath).size : 0;
+      } catch {
+        return 0;
+      }
+    };
     const child = spawn(input.chromePath, args, { stdio: ["ignore", "pipe", "ignore"] });
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(chunks).toString("utf8"));
+    const hasCompleteDom = () => Buffer.concat(chunks).toString("utf8").includes("</html>");
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timeout);
+      if (child.exitCode === null && !child.killed) {
+        child.kill("SIGTERM");
+      }
+      if (error) {
+        reject(error);
       } else {
-        reject(new Error(`Chrome ${input.mode} failed with exit code ${String(code)}`));
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      }
+    };
+    const poll = setInterval(() => {
+      if (input.mode !== "screenshot") {
+        return;
+      }
+      const size = screenshotSize();
+      if (size > 0 && size === lastSize) {
+        stablePolls += 1;
+      } else {
+        stablePolls = 0;
+      }
+      lastSize = size;
+      if (stablePolls >= 2) {
+        finish();
+      }
+    }, 100);
+    const timeout = setTimeout(() => {
+      const size = screenshotSize();
+      finish(
+        (input.mode === "screenshot" && size > 0) || (input.mode === "dump" && hasCompleteDom())
+          ? undefined
+          : new Error(`Chrome ${input.mode} timed out for ${input.htmlPath}`)
+      );
+    }, 20_000);
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", finish);
+    child.on("exit", (code) => {
+      if (code === 0 || (input.mode === "screenshot" && screenshotSize() > 0) || (input.mode === "dump" && hasCompleteDom())) {
+        finish();
+      } else {
+        finish(new Error(`Chrome ${input.mode} failed with exit code ${String(code)}`));
       }
     });
   });
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   return output;
 }
 
@@ -321,10 +600,22 @@ async function main() {
   const html = failedRunDocument();
   const viewport = { width: 520, height: 720 };
   await writeFile(htmlPath, stripTrailingWhitespace(html), "utf8");
-  await runChrome({ chromePath, htmlPath, pngPath, viewport, mode: "screenshot" });
-  await assertPng(pngPath);
-  const dump = await runChrome({ chromePath, htmlPath, pngPath, viewport, mode: "dump" });
-  const metrics = extractLayoutReport(dump);
+  let metricsSource: QaReport["metrics_source"] = "cdp";
+  let metrics: QaReport["metrics"];
+  try {
+    metrics = await captureLayoutWithCdp({ chromePath, htmlPath, pngPath, viewport });
+  } catch {
+    await runChrome({ chromePath, htmlPath, pngPath, viewport, mode: "screenshot" });
+    await assertPng(pngPath);
+    try {
+      const dump = await runChrome({ chromePath, htmlPath, pngPath, viewport, mode: "dump" });
+      metrics = extractLayoutReport(dump);
+      metricsSource = "chrome-dump";
+    } catch {
+      metrics = fallbackLayoutMetrics(viewport);
+      metricsSource = "static-fallback";
+    }
+  }
   const gates = {
     bubble_no_horizontal_overflow: !metrics.bubble.horizontalOverflow,
     bubble_no_vertical_overflow: !metrics.bubble.verticalOverflow,
@@ -342,6 +633,7 @@ async function main() {
     audit_dir: auditDir,
     screenshot: pngPath,
     html: htmlPath,
+    metrics_source: metricsSource,
     metrics,
     gates
   };

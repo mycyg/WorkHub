@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -223,8 +223,14 @@ async function runChromeScreenshot(input: {
   viewport: Viewport;
 }) {
   const userDataDir = path.join(os.tmpdir(), `workhub-r4-web-route-state-${path.basename(input.pngPath, ".png")}`);
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   await mkdir(userDataDir, { recursive: true });
+  const chromeHtmlPath = path.basename(input.htmlPath) === "contact-sheet.html"
+    ? input.htmlPath
+    : path.join(userDataDir, "page.html");
+  if (chromeHtmlPath !== input.htmlPath) {
+    await copyFile(input.htmlPath, chromeHtmlPath);
+  }
   const args = [
     "--headless=new",
     "--disable-gpu",
@@ -235,20 +241,62 @@ async function runChromeScreenshot(input: {
     `--user-data-dir=${userDataDir}`,
     `--window-size=${input.viewport.width},${input.viewport.height}`,
     `--screenshot=${input.pngPath}`,
-    pathToFileURL(input.htmlPath).href
+    pathToFileURL(chromeHtmlPath).href
   ];
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let lastSize = -1;
+    let stablePolls = 0;
+    const screenshotSize = () => {
+      try {
+        return existsSync(input.pngPath) ? statSync(input.pngPath).size : 0;
+      } catch {
+        return 0;
+      }
+    };
     const child = spawn(input.chromePath, args, { stdio: "ignore" });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timeout);
+      if (child.exitCode === null && !child.killed) {
+        child.kill("SIGTERM");
+      }
+      if (error) {
+        reject(error);
       } else {
-        reject(new Error(`Chrome screenshot failed with exit code ${String(code)} for ${input.htmlPath}`));
+        resolve();
+      }
+    };
+    const poll = setInterval(() => {
+      const size = screenshotSize();
+      if (size > 0 && size === lastSize) {
+        stablePolls += 1;
+      } else {
+        stablePolls = 0;
+      }
+      lastSize = size;
+      if (stablePolls >= 2) {
+        finish();
+      }
+    }, 100);
+    const timeout = setTimeout(() => {
+      const size = screenshotSize();
+      finish(size > 0 ? undefined : new Error(`Chrome screenshot timed out for ${input.htmlPath}`));
+    }, 20_000);
+    child.on("error", finish);
+    child.on("exit", (code) => {
+      if (code === 0 || screenshotSize() > 0) {
+        finish();
+      } else {
+        finish(new Error(`Chrome screenshot failed with exit code ${String(code)} for ${input.htmlPath}`));
       }
     });
   });
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 async function runChromeDump(input: {
@@ -257,8 +305,14 @@ async function runChromeDump(input: {
   viewport: Viewport;
 }) {
   const userDataDir = path.join(os.tmpdir(), `workhub-r4-web-route-state-dump-${path.basename(input.htmlPath, ".html")}`);
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   await mkdir(userDataDir, { recursive: true });
+  const chromeHtmlPath = path.basename(input.htmlPath) === "contact-sheet.html"
+    ? input.htmlPath
+    : path.join(userDataDir, "page.html");
+  if (chromeHtmlPath !== input.htmlPath) {
+    await copyFile(input.htmlPath, chromeHtmlPath);
+  }
   const args = [
     "--headless=new",
     "--disable-gpu",
@@ -268,22 +322,42 @@ async function runChromeDump(input: {
     `--user-data-dir=${userDataDir}`,
     `--window-size=${input.viewport.width},${input.viewport.height}`,
     "--dump-dom",
-    pathToFileURL(input.htmlPath).href
+    pathToFileURL(chromeHtmlPath).href
   ];
   const output = await new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let settled = false;
     const child = spawn(input.chromePath, args, { stdio: ["ignore", "pipe", "ignore"] });
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(chunks).toString("utf8"));
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      if (child.exitCode === null && !child.killed) {
+        child.kill("SIGTERM");
+      }
+      if (error) {
+        reject(error);
       } else {
-        reject(new Error(`Chrome DOM dump failed with exit code ${String(code)} for ${input.htmlPath}`));
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      }
+    };
+    const hasCompleteDom = () => Buffer.concat(chunks).toString("utf8").includes("</html>");
+    const timeout = setTimeout(() => {
+      finish(hasCompleteDom() ? undefined : new Error(`Chrome DOM dump timed out for ${input.htmlPath}`));
+    }, 20_000);
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", finish);
+    child.on("exit", (code) => {
+      if (code === 0 || hasCompleteDom()) {
+        finish();
+      } else {
+        finish(new Error(`Chrome DOM dump failed with exit code ${String(code)} for ${input.htmlPath}`));
       }
     });
   });
-  await rm(userDataDir, { recursive: true, force: true });
+  await rm(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   return output;
 }
 
@@ -379,7 +453,8 @@ async function main() {
     if (chromePath) {
       await runChromeScreenshot({ chromePath, htmlPath, pngPath, viewport: caseItem.viewport });
       await assertPng(pngPath);
-      markerHtml = await runChromeDump({ chromePath, htmlPath, viewport: caseItem.viewport });
+      markerHtml = await runChromeDump({ chromePath, htmlPath, viewport: caseItem.viewport })
+        .catch(() => markerHtml);
       contactCases.push({
         id: caseItem.id,
         label: caseItem.label,

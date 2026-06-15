@@ -1,0 +1,117 @@
+{
+  "loggedInOwner": false,
+  "audits": [
+    {
+      "admin": "true",
+      "downloadLinks": [],
+      "h1": "Task detail",
+      "label": "workitem-admin",
+      "lang": "en-US",
+      "navCount": 12,
+      "overflowing": [],
+      "previewLinks": [],
+      "productShell": true,
+      "routeReady": false,
+      "routeState": null,
+      "routeStateShell": false,
+      "scrollWidth": 1265,
+      "textDigest": "WorkHub Web manager owner Admin Sign out 中 EN WORK ENTRY Overview New request Approvals Tasks Drive Meetings Inbox Calendar Project health Cost Knowledge evidence Settings FOCUS Task detail Task detail keeps acceptance, evidence, AI trace, ",
+      "title": "WorkHub",
+      "url": "http://127.0.0.1:8788/workitems/13c91c8d-815a-4c57-9b6e-7c72ccbeb99b",
+      "userChip": "owner",
+      "viewportWidth": 1280
+    },
+    {
+      "admin": "true",
+      "downloadLinks": [],
+      "h1": "Change request",
+      "label": "proposal-admin",
+      "lang": "en-US",
+      "navCount": 12,
+      "overflowing": [],
+      "previewLinks": [
+        "http://127.0.0.1:8788/api/agent/outputs/preview?path=%2Foutputs%2Ft1-weekly-report.md"
+      ],
+      "productShell": true,
+      "routeReady": false,
+      "routeState": null,
+      "routeStateShell": false,
+      "scrollWidth": 1265,
+      "textDigest": "WorkHub Web manager owner Admin Sign out 中 EN WORK ENTRY Overview New request Approvals Changes Drive Meetings Inbox Calendar Project health Cost Knowledge evidence Settings FOCUS Change request Change requests read like PRs, but cover docu",
+      "title": "WorkHub",
+      "url": "http://127.0.0.1:8788/proposals/541f5c97-f66d-44c0-b556-f5eb4fb721fc",
+      "userChip": "owner",
+      "viewportWidth": 1280
+    },
+    {
+      "admin": "true",
+      "downloadLinks": [
+        "http://127.0.0.1:8788/api/workitems/13c91c8d-815a-4c57-9b6e-7c72ccbeb99b/deliverables/43b5f940-0d15-4ce7-bf5d-57fc6c048ea0/download"
+      ],
+      "h1": "Execution replay",
+      "label": "replay-admin",
+      "lang": "en-US",
+      "navCount": 12,
+      "overflowing": [],
+      "previewLinks": [
+        "http://127.0.0.1:8788/api/workitems/13c91c8d-815a-4c57-9b6e-7c72ccbeb99b/deliverables/43b5f940-0d15-4ce7-bf5d-57fc6c048ea0/preview"
+      ],
+      "productShell": true,
+      "routeReady": false,
+      "routeState": null,
+      "routeStateShell": false,
+      "scrollWidth": 1265,
+      "textDigest": "WorkHub Web manager owner Admin Sign out 中 EN WORK ENTRY Overview New request Approvals Drive Meetings Inbox Calendar Project health Replay Cost Knowledge evidence Settings FOCUS Execution replay A read-only explanation of how AI executed, ",
+      "title": "WorkHub",
+      "url": "http://127.0.0.1:8788/agent-runs/c83a6999-704d-4d30-b454-4ce662de271b/replay",
+      "userChip": "owner",
+      "viewportWidth": 1280
+    },
+    {
+      "admin": "true",
+      "downloadLinks": [],
+      "h1": "Cost",
+      "label": "cost-admin",
+      "lang": "en-US",
+      "navCount": 11,
+      "overflowing": [],
+      "previewLinks": [],
+      "productShell": true,
+      "routeReady": false,
+      "routeState": null,
+      "routeStateShell": false,
+      "scrollWidth": 1280,
+      "textDigest": "WorkHub Web manager owner Admin Sign out 中 EN WORK ENTRY Overview New request Approvals Drive Meetings Inbox Calendar Project health Cost Knowledge evidence Settings FOCUS Cost Cost breaks budget risk down by person, team, task, and model. ",
+      "title": "WorkHub",
+      "url": "http://127.0.0.1:8788/dashboard/cost",
+      "userChip": "owner",
+      "viewportWidth": 1280
+    },
+    {
+      "admin": "true",
+      "downloadLinks": [],
+      "h1": "Notifications",
+      "label": "notifications-state-shell",
+      "lang": "en-US",
+      "navCount": 11,
+      "overflowing": [],
+      "previewLinks": [],
+      "productShell": true,
+      "routeReady": false,
+      "routeState": "empty",
+      "routeStateShell": true,
+      "scrollWidth": 1280,
+      "textDigest": "WorkHub Web manager owner Admin Sign out 中 EN WORK ENTRY Overview New request Approvals Drive Meetings Inbox Calendar Project health Cost Knowledge evidence Settings FOCUS Notifications Notifications group decisions, FYI updates, and done i",
+      "title": "WorkHub",
+      "url": "http://127.0.0.1:8788/notifications",
+      "userChip": "owner",
+      "viewportWidth": 1280
+    }
+  ],
+  "links": {
+    "download": null,
+    "preview": null
+  },
+  "finalTitle": "WorkHub",
+  "auditDir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-15-manual-browser-e2e"
+}

@@ -64,6 +64,25 @@ type RestEvidence = {
   response_bytes: number;
 };
 
+type MergeResultData = {
+  status: string;
+  merge_snapshot_id: string;
+};
+
+type RecoverableMergeConflict = {
+  ok: false;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: {
+      conflicts?: {
+        target_key?: string;
+      }[];
+    };
+    recoverable?: boolean;
+  };
+};
+
 type EvalTask = {
   id: string;
   title: string;
@@ -685,6 +704,57 @@ async function main() {
       return buffer;
     }
 
+    async function mergeProposalWithConflictResolution(proposalId: string) {
+      const requestPath = `/api/proposals/${proposalId}/merge`;
+      const first = await app.request(requestPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({})
+      });
+      const firstText = await first.text();
+      restCalls.push({ method: "POST", path: requestPath, status: first.status, response_bytes: Buffer.byteLength(firstText, "utf8") });
+      if (first.status === 200) {
+        return (JSON.parse(firstText) as { data: MergeResultData }).data;
+      }
+      if (first.status !== 409) {
+        throw new Error(`Expected POST ${requestPath} 200, got ${first.status}: ${firstText}`);
+      }
+
+      const conflictBody = JSON.parse(firstText) as RecoverableMergeConflict;
+      if (conflictBody.error?.code !== "merge_conflict" || conflictBody.error.recoverable !== true) {
+        throw new Error(`Expected recoverable merge_conflict for POST ${requestPath}, got ${firstText}`);
+      }
+      const targetKeys = (conflictBody.error.details?.conflicts ?? [])
+        .map((conflict) => conflict.target_key)
+        .filter((targetKey): targetKey is string => Boolean(targetKey));
+      if (targetKeys.length === 0) {
+        throw new Error(`Recoverable merge_conflict did not include target keys: ${firstText}`);
+      }
+
+      const retryBody = {
+        confirm: true,
+        conflict_resolution: {
+          accept_incoming_target_keys: targetKeys,
+          bulk_action: {
+            action: "accept_incoming",
+            target_keys: targetKeys,
+            conflict_count: targetKeys.length
+          }
+        }
+      };
+      const retry = await app.request(requestPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(retryBody)
+      });
+      const retryText = await retry.text();
+      restCalls.push({ method: "POST", path: requestPath, status: retry.status, response_bytes: Buffer.byteLength(retryText, "utf8") });
+      if (retry.status !== 200) {
+        throw new Error(`Expected conflict-resolved POST ${requestPath} 200, got ${retry.status}: ${retryText}`);
+      }
+      return (JSON.parse(retryText) as { data: MergeResultData }).data;
+    }
+
     const costPageBefore = await requestJson<{ data: { total_cost_cny: string; token_in: number; token_out: number } }>(
       "GET",
       "/api/pages/cost?locale=en-US",
@@ -767,7 +837,7 @@ async function main() {
         await requestJson("POST", `/api/proposals/${proposal.id}/review`, {
           decision: "approve"
         }, 200);
-        merged = (await requestJson<{ data: { status: string; merge_snapshot_id: string } }>("POST", `/api/proposals/${proposal.id}/merge`, {}, 200)).data;
+        merged = await mergeProposalWithConflictResolution(proposal.id);
       }
 
       const workItemPage = await requestJson<{ data: { accepted_deliverables?: { id: string; filename?: string; preview_href?: string; download_href?: string; drive_version_id?: string }[] } }>(

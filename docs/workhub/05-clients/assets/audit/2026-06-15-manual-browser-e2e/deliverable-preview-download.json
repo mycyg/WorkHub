@@ -1,0 +1,23 @@
+{
+  "identifyStatus": 200,
+  "results": [
+    {
+      "name": "preview",
+      "status": 200,
+      "contentType": "application/json",
+      "contentDisposition": "",
+      "bytes": 2990,
+      "sha256": "8925a1d32f235d03a2ac46f88be1a738509ebe61756c732ba9d2f65d79b4eb93",
+      "head": "{\"ok\":true,\"data\":{\"id\":\"43b5f940-0d15-4ce7-bf5d-57fc6c048ea0\",\"filename\":\"t1-weekly-report.md\",\"mime\":\"text/markdown\",\"size_bytes\":2613,\"pr"
+    },
+    {
+      "name": "download",
+      "status": 200,
+      "contentType": "text/markdown",
+      "contentDisposition": "attachment; filename=\"t1-weekly-report.md\"; filename*=UTF-8''t1-weekly-report.md",
+      "bytes": 2613,
+      "sha256": "fbc9dd3730e7301854ce562239e000b2bd37e7b42ff8971058ffef91dbdb8bc4",
+      "head": "# R5.10 T1 周报 — 截至本周\n\n## 结论\n\n1. **本周已完成**注册流、R5.10 预演（dry run）、Pilot 环境编排与权限矩阵四项关键交付物，满足 Pilot Week 前置条件中的三项。\n2. **真实 LLM 质量和成本尚无实测数据**，下周必须"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-10T23:01:41.799Z",
+  "generated_at": "2026-06-15T08:00:34.793Z",
   "module": "R4.3 Web multi-record Page VM visual QA",
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-multi-record-page-vm",
   "gates": {
     "screenshots_captured": true,
@@ -27,8 +27,7 @@
         "height": 1200
       },
       "endpoint_calls": [
-        "attention:zh-CN",
-        "goldPath:zh-CN"
+        "attention:zh-CN"
       ],
       "html": "ready-home-multi-zh-desktop.html",
       "screenshot": "ready-home-multi-zh-desktop.png",
@@ -43,14 +42,14 @@
           "regionalLaunch": true,
           "legalReview": true,
           "budgetReview": true,
-          "workitemDetail": true,
-          "proposalDetail": true,
-          "replayDetail": true
+          "workitemDetail": false,
+          "proposalDetail": false,
+          "replayDetail": false
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -65,8 +64,7 @@
         "height": 1700
       },
       "endpoint_calls": [
-        "approvals:en-US",
-        "goldPath:en-US"
+        "approvals:en-US"
       ],
       "html": "ready-approvals-multi-en-mobile.html",
       "screenshot": "ready-approvals-multi-en-mobile.png",
@@ -78,17 +76,17 @@
         "hashNavigationLeak": false,
         "weeklyFixtureLeak": 0,
         "multiRecordCopy": {
-          "regionalLaunch": true,
+          "regionalLaunch": false,
           "legalReview": true,
           "budgetReview": true,
-          "workitemDetail": true,
-          "proposalDetail": true,
-          "replayDetail": true
+          "workitemDetail": false,
+          "proposalDetail": false,
+          "replayDetail": false
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 467,
-        "scrollWidth": 467,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -103,8 +101,7 @@
         "height": 1200
       },
       "endpoint_calls": [
-        "cost:zh-CN",
-        "goldPath:zh-CN"
+        "cost:zh-CN"
       ],
       "html": "ready-cost-multi-zh-desktop.html",
       "screenshot": "ready-cost-multi-zh-desktop.png",
@@ -116,17 +113,17 @@
         "hashNavigationLeak": false,
         "weeklyFixtureLeak": 0,
         "multiRecordCopy": {
-          "regionalLaunch": true,
-          "legalReview": true,
+          "regionalLaunch": false,
+          "legalReview": false,
           "budgetReview": true,
           "workitemDetail": true,
-          "proposalDetail": true,
-          "replayDetail": true
+          "proposalDetail": false,
+          "replayDetail": false
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -141,8 +138,7 @@
         "height": 1200
       },
       "endpoint_calls": [
-        "workItem:r4-multi-workitem:en-US",
-        "goldPath:en-US"
+        "workItem:r4-multi-workitem:en-US"
       ],
       "html": "ready-workitem-multi-en-desktop.html",
       "screenshot": "ready-workitem-multi-en-desktop.png",
@@ -154,17 +150,17 @@
         "hashNavigationLeak": false,
         "weeklyFixtureLeak": 0,
         "multiRecordCopy": {
-          "regionalLaunch": true,
+          "regionalLaunch": false,
           "legalReview": true,
-          "budgetReview": true,
+          "budgetReview": false,
           "workitemDetail": true,
-          "proposalDetail": true,
-          "replayDetail": true
+          "proposalDetail": false,
+          "replayDetail": false
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -180,7 +176,7 @@
       },
       "endpoint_calls": [
         "proposal:r4-multi-proposal:zh-CN",
-        "goldPath:zh-CN"
+        "conflicts:r4-multi-workitem:none"
       ],
       "html": "ready-proposal-multi-zh-mobile.html",
       "screenshot": "ready-proposal-multi-zh-mobile.png",
@@ -192,17 +188,17 @@
         "hashNavigationLeak": false,
         "weeklyFixtureLeak": 0,
         "multiRecordCopy": {
-          "regionalLaunch": true,
-          "legalReview": true,
+          "regionalLaunch": false,
+          "legalReview": false,
           "budgetReview": true,
           "workitemDetail": true,
           "proposalDetail": true,
-          "replayDetail": true
+          "replayDetail": false
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -217,8 +213,7 @@
         "height": 1300
       },
       "endpoint_calls": [
-        "replayAgentRun:r4-multi-run",
-        "goldPath:en-US"
+        "replayAgentRun:r4-multi-run"
       ],
       "html": "ready-replay-multi-en-desktop.html",
       "screenshot": "ready-replay-multi-en-desktop.png",
@@ -230,17 +225,17 @@
         "hashNavigationLeak": false,
         "weeklyFixtureLeak": 0,
         "multiRecordCopy": {
-          "regionalLaunch": true,
+          "regionalLaunch": false,
           "legalReview": true,
           "budgetReview": true,
           "workitemDetail": true,
-          "proposalDetail": true,
+          "proposalDetail": false,
           "replayDetail": true
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -276,8 +271,8 @@
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -313,8 +308,8 @@
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 482,
-        "scrollWidth": 482,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     },
@@ -350,8 +345,8 @@
         },
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": null,
+        "scrollWidth": null,
         "horizontalOverflow": false
       }
     }

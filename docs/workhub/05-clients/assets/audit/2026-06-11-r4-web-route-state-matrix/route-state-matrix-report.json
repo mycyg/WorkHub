@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-10T22:35:34.819Z",
+  "generated_at": "2026-06-15T07:51:24.371Z",
   "module": "R4.1 Web route-state matrix",
-  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-route-state-matrix",
   "gates": {
     "screenshots_captured": true,
@@ -18,8 +18,14 @@
     "approvals",
     "workitem",
     "proposal",
+    "drive",
+    "meetings",
+    "notifications",
+    "calendar",
+    "health",
     "replay",
     "cost",
+    "knowledge",
     "settings"
   ],
   "required_states": [
@@ -53,17 +59,23 @@
           "approvals": 0,
           "workitem": 0,
           "proposal": 0,
+          "drive": 0,
+          "meetings": 0,
+          "notifications": 0,
+          "calendar": 0,
+          "health": 0,
           "replay": 0,
           "cost": 0,
+          "knowledge": 0,
           "settings": 0
         },
-        "readyPanels": 8,
+        "readyPanels": 9,
         "zhCopy": false,
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1332,
-        "scrollWidth": 1332,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false
       }
     },
@@ -91,17 +103,23 @@
           "approvals": 0,
           "workitem": 0,
           "proposal": 0,
+          "drive": 0,
+          "meetings": 0,
+          "notifications": 0,
+          "calendar": 0,
+          "health": 0,
           "replay": 0,
           "cost": 0,
+          "knowledge": 0,
           "settings": 0
         },
-        "readyPanels": 8,
+        "readyPanels": 9,
         "zhCopy": false,
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 467,
-        "scrollWidth": 467,
+        "clientWidth": 485,
+        "scrollWidth": 485,
         "horizontalOverflow": false
       }
     },
@@ -116,12 +134,12 @@
       "html": "states-zh-desktop.html",
       "screenshot": "states-zh-desktop.png",
       "markers": {
-        "routeStateCards": 32,
+        "routeStateCards": 56,
         "routeStates": {
-          "loading": 8,
-          "empty": 8,
-          "error": 8,
-          "forbidden": 8
+          "loading": 14,
+          "empty": 14,
+          "error": 14,
+          "forbidden": 14
         },
         "routeKeys": {
           "home": 5,
@@ -129,8 +147,14 @@
           "approvals": 5,
           "workitem": 5,
           "proposal": 5,
+          "drive": 5,
+          "meetings": 5,
+          "notifications": 5,
+          "calendar": 5,
+          "health": 5,
           "replay": 5,
           "cost": 5,
+          "knowledge": 5,
           "settings": 5
         },
         "readyPanels": 0,
@@ -138,8 +162,8 @@
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1347,
-        "scrollWidth": 1347,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false
       }
     },
@@ -154,12 +178,12 @@
       "html": "states-en-mobile.html",
       "screenshot": "states-en-mobile.png",
       "markers": {
-        "routeStateCards": 32,
+        "routeStateCards": 56,
         "routeStates": {
-          "loading": 8,
-          "empty": 8,
-          "error": 8,
-          "forbidden": 8
+          "loading": 14,
+          "empty": 14,
+          "error": 14,
+          "forbidden": 14
         },
         "routeKeys": {
           "home": 5,
@@ -167,8 +191,14 @@
           "approvals": 5,
           "workitem": 5,
           "proposal": 5,
+          "drive": 5,
+          "meetings": 5,
+          "notifications": 5,
+          "calendar": 5,
+          "health": 5,
           "replay": 5,
           "cost": 5,
+          "knowledge": 5,
           "settings": 5
         },
         "readyPanels": 0,
@@ -176,8 +206,8 @@
         "enCopy": true,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 467,
-        "scrollWidth": 467,
+        "clientWidth": 485,
+        "scrollWidth": 485,
         "horizontalOverflow": false
       }
     }
