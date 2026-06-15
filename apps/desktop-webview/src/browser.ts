@@ -56,6 +56,7 @@ import {
   saveCuuPreferences
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
+import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge
@@ -400,7 +401,8 @@ async function boot() {
       apiBaseLabel: goldPathT(locale, "shell.desktopSync"),
       locale
     });
-    root.innerHTML = `<style>${shell.css}${desktopPetSettingsCss}</style>${shell.html}`;
+    // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}</style>${shell.html}`;
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
