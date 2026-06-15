@@ -159,7 +159,7 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build
 | Direction | Why | Status |
 |---|---|---|
 | **A real pilot week** | The last mile of the north star: real people, real tasks, a full week, validating the "AI as default labor force" thesis | 🗺️ planned |
-| **Wire the decision inbox to real data** | The home decision-queue is scaffolded; production doesn't feed approvals/to-dos into it yet | 🟡 to be wired |
+| **Wire the decision inbox to real data** | The home decision-queue now feeds from the user's pending approvals (same source as the approval center, user-routed, graceful degradation on lookup failure) | ✅ wired |
 | **Business-object merge semantics + AI conflict mediation** (the moat) | Only the lowest-risk layer ships today (ledger + optimistic blocking + diff3 + AI merge options); the full three-way merge experience is left for real conflict data | 📊 data-driven |
 | **Confidence / risk threshold calibration** | Today's weights are v0 defaults from just 6 real runs — too small a sample; they need retuning on real data and a new policy version | 📊 data-driven |
 | **Team-skill idle self-iteration in production** | The subsystem is built but default-off; compounding labor only pays off once it actually runs | 🟡 default-off |
