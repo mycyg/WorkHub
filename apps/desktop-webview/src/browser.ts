@@ -57,6 +57,7 @@ import {
 } from "./cuu-preferences.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
+import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
 import {
   desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge
@@ -402,7 +403,14 @@ async function boot() {
       locale
     });
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}</style>${shell.html}`;
+    // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
+    // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
+    // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
+    const homePanel = root.querySelector<HTMLElement>("[data-wh-panel=\"home\"]");
+    if (homePanel) {
+      homePanel.innerHTML = renderDecisionDeckHtml({ items: surfaceVm.page_vms.attention.queue, locale });
+    }
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
