@@ -6,6 +6,7 @@ import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@
 import {
   normalizeWorkHubLocale,
   type ApprovalCenterVM,
+  type AttentionHomeVM,
   type CalendarPageVM,
   type MeetingPageVM,
   type NotificationPageVM,
@@ -172,7 +173,19 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     } catch {
       worklog = undefined;
     }
-    return c.json(pageEnvelope(buildAttentionHomePage({ backgroundRuns: activeRuns, locale, worklog }), locale));
+    // 决策队列：把"这个用户当前待决策的审批"接进首页收件箱（与 /approvals 同源、同按用户路由）。
+    // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败静默降级成空队列，不拖垮首页。
+    let decisionQueue: AttentionHomeVM["queue"] = [];
+    try {
+      const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
+      decisionQueue = pending.items;
+    } catch {
+      decisionQueue = [];
+    }
+    return c.json(pageEnvelope(
+      buildAttentionHomePage({ queue: decisionQueue, backgroundRuns: activeRuns, locale, worklog }),
+      locale
+    ));
   });
 
   if (allowUnauthenticatedGoldPath) {

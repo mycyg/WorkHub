@@ -6,7 +6,7 @@ import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
-import { p05GoldPathIds } from "@workhub/agent/fixtures";
+import { p05GoldPathIds, createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import { loadSettings, type Settings } from "@workhub/config";
 import type {
   ClientDeviceAuthRow,
@@ -19,6 +19,7 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createPageRoutes } from "./routes/pages.js";
+import type { ApprovalService } from "./services/approvals.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
@@ -202,6 +203,49 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
   assert.equal(body.data.events.some((event) => event.type === "permission.ask" && event.topic.startsWith("user:")), true);
   assert.equal(body.data.cuu_states.includes("carrying_document"), true);
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
+});
+
+test("attention home decision queue is fed by the user's pending approvals", async () => {
+  const runtimeSettings = settings();
+  const fixture = createP05GoldPathFixture();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
+    approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService
+  }));
+
+  const response = await app.request("/api/pages/attention", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    data: { queue: { id: string }[]; primary?: { id: string } };
+  };
+  assert.ok(fixture.approvalCenter.items.length > 0);
+  assert.equal(body.data.queue.length, fixture.approvalCenter.items.length);
+  assert.equal(body.data.primary?.id, fixture.approvalCenter.items[0]?.id);
+});
+
+test("attention home degrades to an empty decision queue when the approvals lookup fails", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService
+  }));
+
+  const response = await app.request("/api/pages/attention", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { queue: unknown[]; primary?: unknown } };
+  assert.equal(body.data.queue.length, 0);
+  assert.equal(body.data.primary, undefined);
 });
 
 test("settings page carries server locale preference sync state without secrets", async () => {
