@@ -36,6 +36,21 @@ title: LLM 调用全链路系统审查 + 真 key 测试
 
 → 补丁见 `packages/agent/src/providers/providers.test.ts`（+3 测试，33/33 绿）。无生产代码改动（行为本就正确，只是把行为钉死）。
 
+## 2.5 相关功能：上下文管理 / 压缩（context management / compaction）
+
+LLM 调用的旁路功能里，最关键的是 **agent 工人循环的上下文管理**——它决定长任务会不会撑爆上下文窗、撑爆时数据流是否仍然干净。审查结论：**全 sound、且为确定性实现（不二次烧 LLM）**。
+
+- **判定层** `packages/agent/src/loop/control.ts`：`checkLoopBudget` 在 `totalTokens > contextWindowTokens * compactThreshold(0.8)` 时返回 `"compact"` 信号；`maxTokens / maxCost` 命中则直接 `escalate`。另有 `controlFromAssistant` 守卫：`stopReason==="max_tokens"` 且某个 `tool_use.input` 还是裸字符串（partial JSON 没收完）时也判 `"compact"`——避免拿半截 JSON 去执行工具。
+- **压缩层** `loop.ts`：
+  - `truncateForContext(content, maxChars)`——单条超大内容取「头 75% + 尾 15% + 省略标记」，保住首尾语义。
+  - `summarizeStepsForCompaction(steps, maxChars=4000)`——把历史步骤确定性地摘成 `step N: tool(input) -> ok/error` 行，**不调 LLM**（省钱、可复现、无新失败面）。
+  - `compactConversation({messages, initialUserMessage, steps, keepTailEntries=6})`——`cut = max(1, len-keep)` 后**向后推进到第一条 assistant** 才下刀（`while cut<len && messages[cut].role!=="assistant" cut++`），保证尾段不会以悬空 `tool_result` 起头、`tool_use`/`tool_result` 永远成对。返回 `[压缩摘要(user), ...尾段]`。
+- **熔断**：`compactNow` 累加 `usage.compactions` 并把 `nextCompactionAtTokens` 顶到 `totalTokens + window*0.8`、发 `agentRunCompacting` 事件；压缩次数达上限 `maxCompactions(2)` 仍超 → 不再压缩，直接**结构化升级**（`compact_required`），交给人。
+
+**为什么对接是安全的**：压缩只重写「喂给 provider 的 messages」，对外只多发一个 `agentRunCompacting` 事件（前端可显示「上下文已压缩」而非静默丢历史）；返回给前后端的 manifest / 置信度 / usage 链路不受影响。
+
+**测试覆盖**（`loop.test.ts`，35/35 绿）：① 触发 max_tokens 截断后压缩并继续跑成功（断言 `compactions==1` + `agentRunCompacting` 事件）；② 压缩预算耗尽→升级（`maxCompactions:2`，`compactions==2`，reason `compact_required`）；③ 超大 tool result 被截断。本轮**补两条直接单测**钉死最易回归的不变量——压缩在 assistant 边界下刀（`tool_use`/`tool_result` 成对）、cut 落在悬空 `tool_result` 上时前进到下一条 assistant（导出 `compactConversation` 直测，因为 fake provider 不强制 Anthropic 配对，此前只被间接覆盖）。补丁见 commit `881a9194`。
+
 ## 3. 真 key 端到端测试（全绿）
 
 `pnpm qa:r5-10-real`（真 DeepSeek key + flash + 本机 PG），6 个真 AgentRun，详见同目录 [`assets/audit/2026-06-16-r5-10-real-key-evaluation/`](../05-clients/assets/audit/2026-06-16-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-16.md)：
@@ -55,4 +70,4 @@ title: LLM 调用全链路系统审查 + 真 key 测试
 
 ## 5. 结论
 
-WorkHub 的 LLM 层**数据流通畅、提示词质量达标、返回映射稳健、真 key 端到端全绿**。本轮把 provider 的 thinking/tool_use/累计-usage 行为钉进测试，关掉了唯二的覆盖缺口。剩一个窄路径（merge fusion 的真实冲突 e2e）+ SkillOpt 尚未集成（计划已就绪）。
+WorkHub 的 LLM 层**数据流通畅、提示词质量达标、返回映射稳健、真 key 端到端全绿**。本轮把 provider 的 thinking/tool_use/累计-usage 行为钉进测试，关掉了唯二的覆盖缺口；并审查了 LLM 旁路的**上下文管理/压缩**——确定性实现、tool 配对安全、达上限即升级，且补了两条直接单测钉死边界不变量（§2.5）。剩一个窄路径（merge fusion 的真实冲突 e2e）+ SkillOpt 尚未集成（计划已就绪）。
