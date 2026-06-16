@@ -60,7 +60,7 @@ LLM 调用的旁路功能里，最关键的是 **agent 工人循环的上下文�
 - 总成本 `¥0.199692` / 44574 tokens（~¥0.03/任务）。`no_fake_transport` = 真调用非 mock。
 - **覆盖模块 1（provider）+ 2（agent loop）+ 3（review，每个任务 usage_sources 都含 `review`）+ 预算护栏 + 结构化升级**。
 - **模块 4（技能蒸馏 distill）**：直连真 key 测通——`buildCurationPrompt` → DeepSeek → `parseDistilledResponse` → `validateDistilledSkill` 全链路 ok（合成分析样本，LLM 返回合法 JSON，证据不足时正确返回空 distilled_skills）。
-- **模块 5（merge fusion）**：审查判定 sound + 连通性已证；其 LLM 路径仅在「支持的冲突类型」真实合并时触发，端到端用例需构造多变更冲突夹具（窄路径，留作后续）。
+- **模块 5（merge fusion）·真 key e2e 已通**：用真实语义冲突夹具（base「本周交付了登录改版」；current 追加「已验收、建议本周上线」；incoming 追加「压测发现高并发登录超时、建议复测后再上线」——两侧 overlap 触发 LLM 调解路径而非确定性 diff3）直连真 DeepSeek：`createLlmMergeFusionCandidateGenerator().generate(...)` → `recommendedOptionKey: ai_fusion` / `source: llm` / `quality_gate: passed`。模型正确判出第一行无冲突、第二行才是分歧（上线时机），融合出「验收完成但需复测后再上线」的合理结论。注：合成 `work_item_id` 未入库 → 成本台账 `recordUsageSafely` 命中 FK 约束被安全吞掉（不影响 generate 返回），属合成夹具的预期副作用。至此 **5 个 LLM 模块全部真 key 跑通**。
 
 ## 4. SkillOpt 集成度：**0%（仅计划文档，无代码）**
 
@@ -70,4 +70,4 @@ LLM 调用的旁路功能里，最关键的是 **agent 工人循环的上下文�
 
 ## 5. 结论
 
-WorkHub 的 LLM 层**数据流通畅、提示词质量达标、返回映射稳健、真 key 端到端全绿**。本轮把 provider 的 thinking/tool_use/累计-usage 行为钉进测试，关掉了唯二的覆盖缺口；并审查了 LLM 旁路的**上下文管理/压缩**——确定性实现、tool 配对安全、达上限即升级，且补了两条直接单测钉死边界不变量（§2.5）。剩一个窄路径（merge fusion 的真实冲突 e2e）+ SkillOpt 尚未集成（计划已就绪）。
+WorkHub 的 LLM 层**数据流通畅、提示词质量达标、返回映射稳健、5 个 LLM 模块全部真 key 端到端跑通**（provider / agent loop / review / 技能蒸馏 / merge fusion）。本轮把 provider 的 thinking/tool_use/累计-usage 行为钉进测试，关掉了唯二的覆盖缺口；审查并补测了 LLM 旁路的**上下文管理/压缩**——确定性实现、tool 配对安全、达上限即升级（§2.5）；补上了最后一个窄路径 **merge fusion 真 key e2e**（真实语义冲突 → ai_fusion / source llm / 质检通过，§3）。**唯一未动工项 = SkillOpt 集成（0%，计划已就绪，见 §4）**——属新功能而非缺陷。
