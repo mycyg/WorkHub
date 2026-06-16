@@ -584,6 +584,19 @@ class MemoryProposalRepository implements ProposalRepository {
     return [...this.rows.values()].filter((row) => row.proposal.workItemId === workItemId);
   }
 
+  async listReviewable(input: Parameters<ProposalRepository["listReviewable"]>[0]) {
+    void input;
+    return [...this.rows.values()]
+      .filter((row) => row.proposal.status === "opened" || row.proposal.status === "reviewed")
+      .map((row) => ({
+        id: row.proposal.id,
+        workItemId: row.proposal.workItemId,
+        title: row.proposal.title,
+        status: row.proposal.status,
+        createdAt: row.proposal.createdAt
+      }));
+  }
+
   async review(input: Parameters<ProposalRepository["review"]>[0]) {
     const stored = this.rows.get(input.proposalId);
     if (!stored) {

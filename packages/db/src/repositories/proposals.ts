@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type {
   ActorKind,
@@ -41,6 +41,15 @@ export type MergeProposalRow = typeof mergeProposals.$inferSelect;
 export type StoredProposalRows = {
   proposal: ProposalRow;
   reviews: ReviewRow[];
+};
+
+// GAP-1：首页决策队列要展示「AI 已交付、待评审」的提议。这是该查询的轻量行(不带 manifest/reviews)。
+export type ReviewableProposalRow = {
+  id: string;
+  workItemId: string;
+  title: string;
+  status: string;
+  createdAt: Date;
 };
 
 type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
@@ -308,6 +317,7 @@ export type ProposalRepository = {
   findProposalByMergeProposalId: (mergeProposalId: string) => Promise<StoredProposalRows | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
+  listReviewable: (input: { submitterUserId?: string; includeAll: boolean; limit?: number }) => Promise<ReviewableProposalRow[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
@@ -1765,6 +1775,31 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           reviews: await readReviewsForProposal(db, proposal.id)
         }))
       );
+    },
+    // GAP-1：列出待评审(opened/reviewed)的提议给首页决策队列。inner join work_items 取提交人做鉴权——
+    // 非 admin 只看自己提交的工作项的提议(与 routeApprover "proposal"→submitter 一致);admin 看全部。
+    async listReviewable(input) {
+      const conditions = [inArray(proposals.status, ["opened", "reviewed"])];
+      if (!input.includeAll) {
+        if (!input.submitterUserId) {
+          return [];
+        }
+        conditions.push(eq(workItems.submitterUserId, input.submitterUserId));
+      }
+      const rows = await db
+        .select({
+          id: proposals.id,
+          workItemId: proposals.workItemId,
+          title: proposals.title,
+          status: proposals.status,
+          createdAt: proposals.createdAt
+        })
+        .from(proposals)
+        .innerJoin(workItems, eq(workItems.id, proposals.workItemId))
+        .where(and(...conditions))
+        .orderBy(desc(proposals.createdAt))
+        .limit(input.limit ?? 50);
+      return rows;
     },
 
     async listConflictsByWorkItem(workItemId) {

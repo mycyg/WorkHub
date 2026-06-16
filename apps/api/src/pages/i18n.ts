@@ -16,6 +16,9 @@ type PageCopyKey =
   | "proposal.action.requestChanges"
   | "proposal.action.approve"
   | "proposal.action.merge"
+  | "proposal.action.view"
+  | "attention.proposalReview.opened"
+  | "attention.proposalReview.reviewed"
   | "proposal.author.ai"
   | "proposal.author.human"
   | "replay.handoff.done"
@@ -44,6 +47,9 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "proposal.action.requestChanges": "打回并说明原因",
     "proposal.action.approve": "确认",
     "proposal.action.merge": "采纳到正式版",
+    "proposal.action.view": "查看变更",
+    "attention.proposalReview.opened": "AI 交付了一份变更，等你确认。",
+    "attention.proposalReview.reviewed": "已通过确认，可以采纳到正式版了。",
     "proposal.author.ai": "AI Reviewer",
     "proposal.author.human": "负责人",
     "replay.handoff.done": "已完成",
@@ -71,6 +77,9 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "proposal.action.requestChanges": "Request changes with a reason",
     "proposal.action.approve": "Approve",
     "proposal.action.merge": "Accept into the official version",
+    "proposal.action.view": "View changes",
+    "attention.proposalReview.opened": "AI delivered a change — review it.",
+    "attention.proposalReview.reviewed": "Approved — ready to accept into the official version.",
     "proposal.author.ai": "AI Reviewer",
     "proposal.author.human": "Owner",
     "replay.handoff.done": "Done",

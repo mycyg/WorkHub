@@ -69,6 +69,15 @@ export type StoredProposal = Proposal & {
   reviews: Review[];
 };
 
+// GAP-1：首页决策队列里「待评审提议」的轻量摘要(不含 manifest/reviews)。
+export type ReviewableProposalSummary = {
+  id: string;
+  work_item_id: string;
+  title: string;
+  status: "opened" | "reviewed";
+  created_at: string;
+};
+
 export class ProposalServiceError extends Error {
   constructor(
     public readonly status: number,
@@ -118,6 +127,7 @@ export type ProposalService = {
   get: (proposalId: string) => Promise<StoredProposal | null>;
   getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
+  listReviewableForUser: (input: { user: { id: string; isAdmin: boolean }; limit?: number }) => Promise<ReviewableProposalSummary[]>;
   listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
     proposalId: string;
@@ -1554,6 +1564,19 @@ export function createInMemoryProposalService(options: {
       return [...proposals.values()].filter((proposal) => proposal.work_item_id === workItemId);
     },
 
+    async listReviewableForUser() {
+      // 内存双不建模工作项归属;返回所有 opened/reviewed 提议(测试/开发足够)。
+      return [...proposals.values()]
+        .filter((proposal) => proposal.status === "opened" || proposal.status === "reviewed")
+        .map((proposal) => ({
+          id: proposal.id,
+          work_item_id: proposal.work_item_id,
+          title: proposal.title,
+          status: proposal.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+          created_at: proposal.created_at
+        }));
+    },
+
     async listConflicts() {
       return conflictListResult([]);
     },
@@ -1758,6 +1781,21 @@ export function createDbProposalService(repository: ProposalRepository, options:
     async listByWorkItem(workItemId) {
       const rows = await repository.listByWorkItem(workItemId);
       return rows.map(storedRowsToProposal);
+    },
+
+    async listReviewableForUser(input) {
+      const rows = await repository.listReviewable({
+        submitterUserId: input.user.id,
+        includeAll: input.user.isAdmin,
+        limit: input.limit ?? 50
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        work_item_id: row.workItemId,
+        title: row.title,
+        status: row.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+        created_at: row.createdAt.toISOString()
+      }));
     },
 
     async listConflicts(workItemId) {

@@ -27,7 +27,7 @@ import { buildAttentionHomePage } from "../pages/attention.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
-import { buildProposalDetailPage } from "../pages/proposals.js";
+import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
 import {
   DrivePageServiceError,
@@ -181,6 +181,18 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       decisionQueue = pending.items;
     } catch {
       decisionQueue = [];
+    }
+    // GAP-1：把「AI 已交付、待这个用户评审」的提议接进首页决策队列(proposal_review 卡),
+    // 与审批同源、同按用户路由(非 admin 只看自己提交的工作项)。这是此前缺的真实数据源——
+    // 没接前 AI 干完活、提议 opened 只进通知中心,决策卡牌(今日待办)看不到。取数失败静默降级。
+    try {
+      const reviewable = await proposals.listReviewableForUser({ user: c.var.currentUser });
+      decisionQueue = [
+        ...decisionQueue,
+        ...reviewable.map((summary) => buildProposalReviewAttentionItem(summary, locale))
+      ];
+    } catch {
+      // 保留已有审批队列,不拖垮首页。
     }
     return c.json(pageEnvelope(
       buildAttentionHomePage({ queue: decisionQueue, backgroundRuns: activeRuns, locale, worklog }),
