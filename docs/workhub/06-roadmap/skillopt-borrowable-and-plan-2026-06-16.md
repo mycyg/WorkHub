@@ -80,6 +80,9 @@ SkillOpt 的 gate 之所以成立，是因为它的分数是 **benchmark ground-
 定位：把 WorkHub 已有的 S2 团队技能自迭代（`agent-skill-curation` 夜间 tick + `team-skill` 版本化 + confidence + rollback），从「一次性整文档蒸馏」升级为「**有记忆、会节流、按硬信号精修、可审计**」的复利闭环。**全程不引入数值 gate**。
 
 - **R8.1 闭合最便宜的复利环（S 批）**：K1 读回弃用日志 + K3 递减 edit-budget + K5 curation 成本分账。产出：curation 不再重复白烧、每夜改动有上限、AI 战绩显「自进化花费」。
+  - ✅ **K1 已落**（rejected-edit buffer）：`team-skill.ts discardedSkillSignals()` 读回近 7 天 `team_skill.distilled_but_discarded` 审计按 skill_key 聚合 → `SkillCurationAnalysis.discardedSkills` → `buildCurationPrompt` 渲染「勿再原样重提」块。真 key 验证：给定 weekly-recap 已被弃 4 次 + 高频正样本诱惑，curator **未重提**，转而从升级信号正确蒸出 `meeting-notes-to-actions`（conf 0.92）。
+  - ✅ **K3 已落**（edit-budget = 学习率退火）：`contracts editBudgetForTick(activeTeamSkillCount)` 线性退火（空库=3，半满=2，近上限=1，到上限=0）；worker 按 confidence 降序晋升至预算上限，其余合格候选记 `team_skill.deferred_over_budget`（推迟非拒绝，不进 K1 记忆）。
+  - ⏳ K5（curation 成本分账）待下一刀：`UsageSource` 加 `"curation"` + 战绩分账「干活 vs 自进化」。
 - **R8.2 精修而非churn（M）**：K2 受限编辑补丁 + 打字化段落 schema（+ 顺带 #20 token 大小带守卫，技能注入每个未来 prompt，得管体积）。产出：技能演进有可审 diff、保留 provenance。
 - **R8.3 从失败学习（M）**：K4 append-only 升级 appendix。产出：复发升级转成技能里的去重「踩坑提醒」，硬信号驱动、可逆。
 - **R8.4 吵信号下的 gradient（M）**：K6 结果分桶 minibatch 反思。产出：curation 抽「跨 run 共性」而非单 run 噪声。

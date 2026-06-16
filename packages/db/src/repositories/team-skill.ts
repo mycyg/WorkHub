@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
 
-import { TEAM_SKILL_MAX_ACTIVE_PER_WORKSPACE } from "@workhub/contracts";
+import { TEAM_SKILL_DISCARD_MEMORY_LIMIT, TEAM_SKILL_MAX_ACTIVE_PER_WORKSPACE } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { acceptedDeliverableChanges, escalationEvents, teamSkills, workItems, workspaces } from "../schema/index.js";
+import { acceptedDeliverableChanges, auditLogs, escalationEvents, teamSkills, workItems, workspaces } from "../schema/index.js";
 
 export type TeamSkillRow = typeof teamSkills.$inferSelect;
 
@@ -25,6 +25,8 @@ export type PromoteTeamSkillInput = {
 
 export type AcceptedDeliverableSignal = { targetKind: string; count: number };
 export type EscalationSignal = { reasonMd: string; trigger: string; count: number };
+// K1（借鉴 SkillOpt rejected-edit buffer）：曾被蒸馏出来但自验未过而放弃的提议，回灌给 curator 当「勿再原样重提」记忆。
+export type DiscardedSkillSignal = { skillKey: string; reason: string; count: number; lastAt: string };
 
 export type TeamSkillRepository = {
   promote: (input: PromoteTeamSkillInput) => Promise<TeamSkillRow>;
@@ -38,6 +40,8 @@ export type TeamSkillRepository = {
   listActiveWorkspaceIds: () => Promise<string[]>;
   acceptedDeliverableSignals: (workspaceId: string, since: Date) => Promise<AcceptedDeliverableSignal[]>;
   escalationSignals: (workspaceId: string, since: Date) => Promise<EscalationSignal[]>;
+  // K1：读回近期 team_skill.distilled_but_discarded 审计，按 skill_key 聚合成「勿再重提」记忆。
+  discardedSkillSignals: (workspaceId: string, since: Date) => Promise<DiscardedSkillSignal[]>;
 };
 
 // 活跃技能超上限时，按 confidence 升序驱逐最弱的（deprecate）。
@@ -228,6 +232,47 @@ export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
         .orderBy(desc(sql`count(*)`))
         .limit(20);
       return rows.map((row) => ({ reasonMd: row.reasonMd, trigger: row.trigger, count: Number(row.count) }));
+    },
+
+    async discardedSkillSignals(workspaceId, since) {
+      // entity_id = skill_key（worker 放弃时这样写）；detail_json.reason 是放弃理由。
+      // 在 JS 里按 skill_key 聚合（jsonb 分组在 SQL 里笨重），保留出现次数 + 最近一次理由/时间。
+      const rows = await db
+        .select({
+          skillKey: auditLogs.entityId,
+          detailJson: auditLogs.detailJson,
+          createdAt: auditLogs.createdAt
+        })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.workspaceId, workspaceId),
+            eq(auditLogs.action, "team_skill.distilled_but_discarded"),
+            gte(auditLogs.createdAt, since)
+          )
+        )
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(200);
+
+      const byKey = new Map<string, DiscardedSkillSignal>();
+      for (const row of rows) {
+        const existing = byKey.get(row.skillKey);
+        if (existing) {
+          existing.count += 1;
+          continue;
+        }
+        const reasonValue = (row.detailJson as { reason?: unknown } | null)?.reason;
+        byKey.set(row.skillKey, {
+          skillKey: row.skillKey,
+          // rows 已按时间倒序，首次见到即最近一次的理由/时间。
+          reason: typeof reasonValue === "string" ? reasonValue : "unknown",
+          count: 1,
+          lastAt: (row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt)).toISOString()
+        });
+      }
+      return [...byKey.values()]
+        .sort((a, b) => b.count - a.count || b.lastAt.localeCompare(a.lastAt))
+        .slice(0, TEAM_SKILL_DISCARD_MEMORY_LIMIT);
     }
   };
 }

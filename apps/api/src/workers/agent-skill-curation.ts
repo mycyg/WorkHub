@@ -7,7 +7,7 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import { listSkills } from "@workhub/tools";
-import type { DistilledTeamSkillsResponse } from "@workhub/contracts";
+import { editBudgetForTick, type DistilledTeamSkillsResponse } from "@workhub/contracts";
 
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
@@ -28,6 +28,8 @@ export type SkillCurationTickResult = {
   workspaces: number;
   promoted: number;
   discarded: number;
+  // K3：合格但超出本夜 edit-budget 而推迟（非拒绝；信号仍在则下夜可再晋升）。
+  deferred: number;
   started_at: string;
   finished_at: string;
 };
@@ -41,6 +43,7 @@ export type AgentRunSkillCurationScheduler = {
     tick_count: number;
     promoted_count: number;
     discarded_count: number;
+    deferred_count: number;
     error_count: number;
     last_tick_at?: string;
     last_error_message?: string;
@@ -71,23 +74,31 @@ export function createAgentRunSkillCurationScheduler(
   let tickCount = 0;
   let promotedCount = 0;
   let discardedCount = 0;
+  let deferredCount = 0;
   let errorCount = 0;
   let lastTickAt: string | undefined;
   let lastErrorMessage: string | undefined;
 
-  async function curateWorkspace(workspaceId: string): Promise<{ promoted: number; discarded: number }> {
+  async function curateWorkspace(
+    workspaceId: string
+  ): Promise<{ promoted: number; discarded: number; deferred: number }> {
     let promoted = 0;
     let discarded = 0;
+    let deferred = 0;
 
     const analysis = await options.analyze(workspaceId);
     if (!hasCurationSignal(analysis)) {
-      return { promoted, discarded };
+      return { promoted, discarded, deferred };
     }
 
     const distilled = await options.distill(analysis);
+    // K3：本夜 edit-budget = 学习率退火（活跃技能库越满，新增上限越小，到硬上限归零）。
+    const budget = editBudgetForTick(analysis.activeTeamSkillCount);
+    // 按 confidence 降序——预算紧张时优先晋升把握最大的，其余合格候选推迟而非丢弃。
+    const ranked = [...distilled.distilled_skills].sort((a, b) => b.confidence_score - a.confidence_score);
     // L#49：把本批已晋升的 key 也算进"已有"，否则同一批里两个同 key 技能都能通过去重检查、双双晋升。
     const promotedKeysThisBatch: string[] = [];
-    for (const skill of distilled.distilled_skills) {
+    for (const skill of ranked) {
       const validation = validateDistilledSkill(skill, {
         existingSkills: [...analysis.existingSkills, ...promotedKeysThisBatch]
       });
@@ -101,6 +112,20 @@ export function createAgentRunSkillCurationScheduler(
           entityId: skill.skill_key,
           action: "team_skill.distilled_but_discarded",
           detailJson: { skill_key: skill.skill_key, reason: validation.reason, confidence: skill.confidence_score }
+        });
+        continue;
+      }
+      if (promoted >= budget) {
+        // K3：合格但本夜预算已用尽 → 推迟（独立审计动作，不进 K1 的「勿再重提」记忆，下夜可再来）。
+        deferred += 1;
+        await options.auditLog.createAuditLog({
+          workspaceId,
+          actorKind: "ai",
+          actorNickname: "skill-curator",
+          entityType: "team_skill",
+          entityId: skill.skill_key,
+          action: "team_skill.deferred_over_budget",
+          detailJson: { skill_key: skill.skill_key, confidence: skill.confidence_score, edit_budget: budget }
         });
         continue;
       }
@@ -135,7 +160,7 @@ export function createAgentRunSkillCurationScheduler(
       });
     }
 
-    return { promoted, discarded };
+    return { promoted, discarded, deferred };
   }
 
   async function tick(): Promise<SkillCurationTickResult> {
@@ -145,6 +170,7 @@ export function createAgentRunSkillCurationScheduler(
         workspaces: 0,
         promoted: 0,
         discarded: 0,
+        deferred: 0,
         started_at: startedAt.toISOString(),
         finished_at: startedAt.toISOString()
       };
@@ -153,6 +179,7 @@ export function createAgentRunSkillCurationScheduler(
     let workspaceCount = 0;
     let promoted = 0;
     let discarded = 0;
+    let deferred = 0;
     try {
       const idle = await workQueueIsIdle();
       if (!idle) {
@@ -160,6 +187,7 @@ export function createAgentRunSkillCurationScheduler(
           workspaces: 0,
           promoted: 0,
           discarded: 0,
+          deferred: 0,
           started_at: startedAt.toISOString(),
           finished_at: now().toISOString()
         };
@@ -171,6 +199,7 @@ export function createAgentRunSkillCurationScheduler(
           workspaceCount += 1;
           promoted += result.promoted;
           discarded += result.discarded;
+          deferred += result.deferred;
         } catch (error) {
           // 单工作空间失败不连累其余（蒸馏是尽力而为）。
           console.warn(
@@ -184,11 +213,13 @@ export function createAgentRunSkillCurationScheduler(
       tickCount += 1;
       promotedCount += promoted;
       discardedCount += discarded;
+      deferredCount += deferred;
       lastTickAt = finishedAt.toISOString();
       return {
         workspaces: workspaceCount,
         promoted,
         discarded,
+        deferred,
         started_at: startedAt.toISOString(),
         finished_at: finishedAt.toISOString()
       };
@@ -231,6 +262,7 @@ export function createAgentRunSkillCurationScheduler(
       tick_count: tickCount,
       promoted_count: promotedCount,
       discarded_count: discardedCount,
+      deferred_count: deferredCount,
       error_count: errorCount,
       ...(lastTickAt ? { last_tick_at: lastTickAt } : {}),
       ...(lastErrorMessage ? { last_error_message: lastErrorMessage } : {})
@@ -274,16 +306,20 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     listWorkspaces: async () => (await repository.listActiveWorkspaceIds()).map((id) => ({ id })),
     analyze: async (workspaceId) => {
       const since = new Date(Date.now() - SEVEN_DAYS_MS);
-      const [acceptedDeliverables, escalations, activeKeys] = await Promise.all([
+      const [acceptedDeliverables, escalations, activeKeys, discardedSkills] = await Promise.all([
         repository.acceptedDeliverableSignals(workspaceId, since),
         repository.escalationSignals(workspaceId, since),
-        repository.listActiveSkillKeys(workspaceId)
+        repository.listActiveSkillKeys(workspaceId),
+        repository.discardedSkillSignals(workspaceId, since)
       ]);
       return {
         workspaceId,
         acceptedDeliverables,
         escalations,
         existingSkills: [...presetSkillKeys, ...activeKeys],
+        discardedSkills,
+        // K3：edit-budget 只按「团队」活跃技能数退火（预设技能固定，不算进演进库）。
+        activeTeamSkillCount: activeKeys.length,
         totalAccepted: acceptedDeliverables.reduce((sum, row) => sum + row.count, 0)
       };
     },

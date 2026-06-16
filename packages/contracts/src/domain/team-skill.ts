@@ -56,7 +56,27 @@ export type DistilledTeamSkillsResponse = z.infer<typeof distilledTeamSkillsResp
 // 自验门槛（AI 全自主晋升，无人工预审）。
 export const TEAM_SKILL_MIN_SAMPLE_COUNT = 5;
 export const TEAM_SKILL_MIN_CONFIDENCE = 0.7;
-// 每工作空间一次蒸馏最多产出的技能数（防爆）。
+// 每工作空间一次蒸馏最多产出的技能数（防爆）。这是「学习率」的基准值，见 editBudgetForTick。
 export const TEAM_SKILL_MAX_PER_CURATION = 3;
 // 每工作空间活跃技能硬上限。
 export const TEAM_SKILL_MAX_ACTIVE_PER_WORKSPACE = 50;
+// 喂回 curation prompt 的「近期被放弃提议」记忆条数上限（K1 rejected-edit buffer）。
+export const TEAM_SKILL_DISCARD_MEMORY_LIMIT = 12;
+
+// K3（借鉴 SkillOpt 的 edit-budget = 学习率调度）：每次 curation tick 允许「新增」多少技能，
+// 随活跃技能库的成熟度线性退火——库越满，每夜新增预算越小，到硬上限归零（只精修/驱逐，不再加）。
+// WorkHub 无 ground-truth 分数，所以不去「测量」改进、而是限制每夜改动的爆炸半径（配合 rollback 兜底）。
+// 这是 SkillOpt 数值 gate 的 noise-tolerant 替代：静态调度，不依赖任何吵分数。
+export function editBudgetForTick(
+  activeTeamSkillCount: number,
+  options: { base?: number; cap?: number } = {}
+): number {
+  const base = options.base ?? TEAM_SKILL_MAX_PER_CURATION;
+  const cap = options.cap ?? TEAM_SKILL_MAX_ACTIVE_PER_WORKSPACE;
+  if (base <= 0) {
+    return 0;
+  }
+  const safeCount = Math.max(0, activeTeamSkillCount);
+  const ratio = cap > 0 ? Math.min(safeCount / cap, 1) : 1;
+  return Math.max(0, Math.ceil(base * (1 - ratio)));
+}

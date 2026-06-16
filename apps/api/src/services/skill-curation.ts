@@ -7,13 +7,17 @@ import {
   type DistilledTeamSkill,
   type DistilledTeamSkillsResponse
 } from "@workhub/contracts";
-import type { AcceptedDeliverableSignal, EscalationSignal } from "@workhub/db";
+import type { AcceptedDeliverableSignal, DiscardedSkillSignal, EscalationSignal } from "@workhub/db";
 
 export type SkillCurationAnalysis = {
   workspaceId: string;
   acceptedDeliverables: AcceptedDeliverableSignal[];
   escalations: EscalationSignal[];
   existingSkills: string[];
+  // K1：近期被放弃的提议（rejected-edit buffer），喂回 prompt 当「勿再原样重提」记忆。
+  discardedSkills: DiscardedSkillSignal[];
+  // K3：当前活跃「团队」技能数（不含预设技能），用来算本夜 edit-budget（学习率退火）。
+  activeTeamSkillCount: number;
   totalAccepted: number;
 };
 
@@ -72,6 +76,12 @@ export function buildCurationPrompt(analysis: SkillCurationAnalysis): string {
   const escalations = analysis.escalations.length
     ? analysis.escalations.map((row) => `- [${row.trigger}×${row.count}] ${row.reasonMd}`).join("\n")
     : "（无）";
+  // K1：rejected-edit 记忆——把近期蒸馏出来却自验未过的提议列出来，避免每夜重复白烧同一个低质提议。
+  const discarded = analysis.discardedSkills.length
+    ? analysis.discardedSkills
+        .map((row) => `- ${row.skillKey}（曾被放弃 ${row.count} 次，最近原因：${row.reason}）`)
+        .join("\n")
+    : "（无）";
   return [
     "请根据下面这个团队最近 7 天的工作数据，提议 0–3 项新的团队技能。",
     "",
@@ -82,6 +92,9 @@ export function buildCurationPrompt(analysis: SkillCurationAnalysis): string {
     escalations,
     "",
     `【已有技能（不要重复）】\n${analysis.existingSkills.join("、") || "（无）"}`,
+    "",
+    "【近期被放弃的提议（除非证据明显变强，否则勿再原样重提相同 skill_key）】",
+    discarded,
     "",
     "硬性要求：",
     `1. 每项技能必须对应至少 ${TEAM_SKILL_MIN_SAMPLE_COUNT} 个样本（sample_count ≥ ${TEAM_SKILL_MIN_SAMPLE_COUNT}）。`,
