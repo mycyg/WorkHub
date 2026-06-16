@@ -1,4 +1,6 @@
 import {
+  calendarPageVmSchema,
+  notificationPageVmSchema,
   type ActionSpec,
   type CalendarPageVM,
   type NotificationEvidenceRefVM,
@@ -544,7 +546,8 @@ export function createScheduleNotifyPageService(
         fyi: items.filter((item) => item.inbox_bucket === "fyi"),
         done: items.filter((item) => item.inbox_bucket === "done")
       };
-      return {
+      // L8：与 drive/meeting/health page 一致，返回前过 zod parse（fail-closed）。
+      return notificationPageVmSchema.parse({
         generated_at: now().toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
         summary: {
@@ -561,7 +564,7 @@ export function createScheduleNotifyPageService(
           mark_all_read: action("notification_mark_all_read", copy(input.locale).markAllRead as string, "POST", "/api/notifications/read-all")
         },
         ...(items.length === 0 ? { empty_state: "no_notifications" as const } : {})
-      };
+      });
     },
 
     async calendarPage(input: { actor: AuthActor; locale: WorkHubLocale; date?: string; view?: string }): Promise<CalendarPageVM> {
@@ -606,7 +609,8 @@ export function createScheduleNotifyPageService(
           blocks: blocks.filter((block) => dateKey(new Date(block.ends_at)) === key)
         };
       });
-      return {
+      // L8：返回前过 zod parse（fail-closed）。
+      return calendarPageVmSchema.parse({
         generated_at: clock.toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
         scope: {
@@ -624,7 +628,7 @@ export function createScheduleNotifyPageService(
         days,
         blocks,
         ...(blocks.length === 0 ? { empty_state: "no_schedule_blocks" as const } : {})
-      };
+      });
     },
 
     async markRead(id: string, actor: AuthActor) {

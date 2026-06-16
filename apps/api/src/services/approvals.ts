@@ -703,7 +703,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (!actor.isAdmin) {
         throw new ApprovalServiceError(403, "forbidden", "只有管理员可以调整权限策略。");
       }
-      return deps.policies.createPermissionPolicy({
+      const policy = await deps.policies.createPermissionPolicy({
         scopeKind: input.scope_kind,
         scopeId: input.scope_id,
         actionPattern: input.action_pattern,
@@ -716,6 +716,25 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         orgId: actor.orgId,
         workspaceId: actor.workspaceId
       });
+      // L23：策略创建（含 allow 授权扩权）必须留审计，与撤销(permission_policy.revoked)对称。
+      await deps.auditLogs.createAuditLog({
+        actorKind: actor.kind,
+        actorNickname: actor.label,
+        entityType: "permission_policy",
+        entityId: policy.id ?? `${input.scope_kind}:${input.scope_id}:${input.action_pattern}`,
+        action: "permission_policy.created",
+        ...(actor.orgId ? { orgId: actor.orgId } : {}),
+        ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
+        ...(actor.userId ? { actorUserId: actor.userId } : {}),
+        detailJson: {
+          scope_kind: input.scope_kind,
+          scope_id: input.scope_id,
+          action_pattern: input.action_pattern,
+          effect: input.effect,
+          learned_from_session: input.learned_from_session ?? false
+        }
+      });
+      return policy;
     },
 
     async listPolicies() {

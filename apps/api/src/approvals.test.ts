@@ -727,6 +727,24 @@ test("permission policy reads succeed for an admin", async () => {
   assert.equal(response.status, 200);
 });
 
+test("L23 createPolicy emits a permission_policy.created audit", async () => {
+  const deps = serviceDeps();
+  const adminActor = { ...actor, isAdmin: true };
+  const policy = await deps.service.createPolicy(adminActor, {
+    scope_kind: "org",
+    scope_id: orgId,
+    action_pattern: "tool.delete_file",
+    effect: "deny",
+    priority: 0,
+    learned_from_session: false
+  });
+  assert.equal(policy.effect, "deny");
+  const audit = deps.auditLogs.rows.find((row) => row.action === "permission_policy.created");
+  assert.ok(audit);
+  assert.equal(audit?.entityType, "permission_policy");
+  assert.equal((audit?.detailJson as Record<string, unknown> | undefined)?.action_pattern, "tool.delete_file");
+});
+
 test("M24 revokePolicy soft-deletes a policy and audits it; admin-only; 404 on unknown", async () => {
   const policyId = "70000000-0000-4000-8000-0000000000d1";
   const seeded: PermissionPolicyRecord[] = [{

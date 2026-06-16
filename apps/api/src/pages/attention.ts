@@ -1,4 +1,4 @@
-import type { AttentionHomeVM, WorkHubLocale } from "@workhub/contracts";
+import { attentionHomeVmSchema, type AttentionHomeVM, type WorkHubLocale } from "@workhub/contracts";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 import { pageT } from "./i18n.js";
@@ -37,11 +37,12 @@ export function buildAttentionHomePage(input: {
     .map((run) => toBackgroundRun(run, locale))
     .filter((run): run is AttentionHomeVM["background_runs"][number] => Boolean(run));
 
-  return {
+  // L10：与其余 page builder 一致，返回前过 zod parse（fail-closed：装配出错就报错而非渲染走样 VM）。
+  return attentionHomeVmSchema.parse({
     primary: queue[0],
     queue,
     background_runs,
     cuu_state: queue[0]?.cuu_state ?? (background_runs.length > 0 ? "thinking" : "idle"),
     ...(input.worklog ? { worklog: input.worklog } : {})
-  };
+  });
 }
