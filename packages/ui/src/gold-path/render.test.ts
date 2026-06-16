@@ -438,3 +438,24 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(enReplay?.html.includes("Extra fields: extra_field"), true);
   assert.equal(enReplay?.html.includes("Review required"), true);
 });
+
+test("gold path cost page renders the K5 work-vs-self-improvement labor split when present (desktop parity)", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: { ...base.page_vms.cost, labor_split: { production_cost_cny: "0.8", self_improvement_cost_cny: "0.2", self_improvement_ratio: 0.2 } }
+    }
+  } as unknown as GoldPathSurfaceVM;
+  const cost = renderGoldPathSurface(vm, "desktop").pages.find((page) => page.key === "cost");
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r8-cost-labor-split="true"'), true);
+  assert.equal(cost.html.includes('data-r8-cost-self-improvement-ratio="0.2"'), true);
+  assert.equal(cost.html.includes("干活 vs 自进化"), true);
+  assert.equal(cost.html.includes("自进化 ¥0.2（20%）"), true);
+
+  // 无 labor_split 时不渲染该卡。
+  const plain = renderGoldPathSurface(base as unknown as GoldPathSurfaceVM, "desktop").pages.find((page) => page.key === "cost");
+  assert.equal(plain?.html.includes('data-r8-cost-labor-split="true"'), false);
+});

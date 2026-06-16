@@ -7,6 +7,7 @@ import {
   renderGoldPathAppShell,
   renderGoldPathBootDocument,
   renderGoldPathSurface,
+  renderWebRouteComponent,
   resolveGoldPathPageKey,
   type GoldPathAppShell,
   type WorkHubLocale
@@ -504,7 +505,9 @@ async function boot() {
         homePanel.innerHTML = renderDecisionDeckHtml({
           items: attention.queue,
           locale,
-          backgroundRuns: attention.background_runs
+          backgroundRuns: attention.background_runs,
+          // R8 对齐:把今日战绩(含自进化「技能 +X · 精修 Y」)带进桌面决策卡牌首屏。
+          ...(attention.worklog ? { worklog: attention.worklog } : {})
         });
       } catch {
         // 保留当前帧(fixture 或上一帧 live),不打断用户。
@@ -604,6 +607,20 @@ async function boot() {
       load: async (host) => {
         const list = await client.listProjects();
         host.innerHTML = renderProjectsListHtml({ page: list, locale });
+      }
+    });
+    // 桌面端「团队技能」页与 web /dashboard/skills 对齐:懒拉 GET /api/pages/skills,
+    // 复用共享 renderWebRouteComponent({key:"skills"})——卡片/版本/置信/「精修自 vN」provenance 徽章全一致。
+    // 组件 css(wh-r4-route*)随面板内联;wh-card/wh-pill/wh-subtle 来自壳的 goldPathCss(天然玻璃)。
+    mountLazyDesktopPanel(root, shell, {
+      key: "skills",
+      navLabel: zh ? "团队技能" : "Team skills",
+      loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉团队技能…" : "Loading team skills…"),
+      errorHtml: desktopLazyLoadingHtml(zh ? "技能没拉到，再点一次「团队技能」重试～" : "Couldn't load — tap Team skills again to retry"),
+      load: async (host) => {
+        const skills = await client.pages.skills({ locale });
+        const component = renderWebRouteComponent({ key: "skills", skills }, { locale });
+        host.innerHTML = `<style>${component.css}</style>${component.html}`;
       }
     });
     // R7 P4:项目卡下钻——点项目卡(无 href 的 <a>,nav 管线不劫持)快照当前列表 HTML,懒拉该项目

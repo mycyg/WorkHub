@@ -4,7 +4,7 @@
 // (审批 respond / 提议 review·merge),不需新交互代码;滑动手势是后续 polish。
 // 不进共享 @workhub/ui;只在桌面注入,Web 与 web-live-route-smoke 不受影响。
 
-import type { AttentionItem, WorkHubLocale } from "@workhub/contracts";
+import type { AiWorklogVM, AttentionItem, WorkHubLocale } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 type DeckTagTone = "approval" | "choice" | "permission" | "handoff" | "info";
@@ -90,8 +90,9 @@ function backgroundRunsFooter(runs: DeckBackgroundRun[], zh: boolean): string {
   return `<div class="wh-deck-runs"><span class="wh-deck-runs-label"><span class="wh-deck-runs-spark gl-avatar">(=ΦωΦ=)</span>${label}</span><div class="wh-deck-runs-list">${chips}${more}</div></div>`;
 }
 
-function doneState(zh: boolean, footer: string) {
+function doneState(zh: boolean, footer: string, worklogStrip: string) {
   return `<div class="wh-deck" data-deck-empty="true">
+    ${worklogStrip}
     <div class="wh-deck-done">
       <div class="wh-deck-done-face gl-avatar">٩(◜◡◝)۶</div>
       <h3 class="wh-deck-done-title">${zh ? "全部搞定啦！" : "All clear!"}</h3>
@@ -101,17 +102,34 @@ function doneState(zh: boolean, footer: string) {
   </div>`;
 }
 
+// 今日 AI 战绩条(与 web 首页横幅对齐:干活 + 自主率 + 约省 + R8 自进化「技能 +X · 精修 Y」)。无数据不渲染。
+function worklogStripHtml(worklog: AiWorklogVM | undefined, zh: boolean): string {
+  if (!worklog) {
+    return "";
+  }
+  const selfEvolved = worklog.skills_promoted_today + worklog.skills_refined_today;
+  const evolve = selfEvolved > 0
+    ? `<span class="wh-deck-worklog-evolve" data-deck-self-evolve="true" data-deck-skills-promoted="${escapeHtml(String(worklog.skills_promoted_today))}" data-deck-skills-refined="${escapeHtml(String(worklog.skills_refined_today))}">${escapeHtml(zh ? `· 自我精进 技能 +${worklog.skills_promoted_today} · 精修 ${worklog.skills_refined_today}` : `· leveled up: skills +${worklog.skills_promoted_today} · refined ${worklog.skills_refined_today}`)}</span>`
+    : "";
+  const main = zh
+    ? `今天我替你扛了 <b>${worklog.accepted_today}</b> 件 · 自主率 <b>${worklog.autonomy_rate}%</b> · 约省 <b>${worklog.saved_hours_estimate}</b> 小时`
+    : `AI handled <b>${worklog.accepted_today}</b> today · autonomy <b>${worklog.autonomy_rate}%</b> · saved ≈ <b>${worklog.saved_hours_estimate}</b>h`;
+  return `<div class="wh-deck-worklog" data-deck-worklog="true"><span class="wh-deck-worklog-cat gl-avatar">(=^･ω･^=)</span><span class="wh-deck-worklog-text">${main} ${evolve}</span></div>`;
+}
+
 export function renderDecisionDeckHtml(input: {
   items: AttentionItem[];
   locale: WorkHubLocale;
   cuuLine?: string;
   backgroundRuns?: DeckBackgroundRun[];
+  worklog?: AiWorklogVM;
 }): string {
   const zh = input.locale === "zh-CN";
   const items = input.items;
   const footer = backgroundRunsFooter(input.backgroundRuns ?? [], zh);
+  const worklogStrip = worklogStripHtml(input.worklog, zh);
   if (items.length === 0) {
-    return doneState(zh, footer);
+    return doneState(zh, footer, worklogStrip);
   }
   const top = items[0]!;
   const tone = tagToneForKind(top.kind);
@@ -121,6 +139,7 @@ export function renderDecisionDeckHtml(input: {
   const body = top.reason_text ?? top.summary_text;
   const cuuLine = input.cuuLine ?? (zh ? "这件你定了我就接着跑 (=^･ω･^=)" : "Call it and I'll run with it (=^･ω･^=)");
   return `<div class="wh-deck" data-deck-count="${items.length}">
+    ${worklogStrip}
     <div class="wh-deck-stack">
       ${showPeek2 ? "<div class=\"wh-deck-peek wh-deck-peek2\" aria-hidden=\"true\"></div>" : ""}
       ${showPeek1 ? "<div class=\"wh-deck-peek wh-deck-peek1\" aria-hidden=\"true\"></div>" : ""}
@@ -145,6 +164,10 @@ export function renderDecisionDeckHtml(input: {
 // 决策卡牌液态玻璃样式(桌面注入)。
 export const decisionDeckCss = [
   ".wh-deck{max-width:600px;margin:0 auto;font-family:'M PLUS Rounded 1c','Noto Sans SC',sans-serif}",
+  ".wh-deck-worklog{display:flex;align-items:center;gap:10px;max-width:600px;margin:0 auto 16px;border-radius:16px;padding:11px 16px;background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.7);backdrop-filter:blur(24px) saturate(165%);-webkit-backdrop-filter:blur(24px) saturate(165%);box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}",
+  ".wh-deck-worklog-cat{font:700 18px/1 'M PLUS Rounded 1c',sans-serif;flex:0 0 auto}",
+  ".wh-deck-worklog-text{font:700 13px/1.5 'Noto Sans SC',sans-serif;color:#6b6488;overflow-wrap:anywhere}.wh-deck-worklog-text b{color:#5a45d8;font-weight:900}",
+  ".wh-deck-worklog-evolve{color:#1faf86}",
   ".wh-deck-stack{position:relative;min-height:240px}",
   ".wh-deck-peek{position:absolute;left:0;right:0;top:0;height:100%;border-radius:24px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.4);box-shadow:0 18px 40px -26px rgba(70,54,140,.4)}",
   ".wh-deck-peek1{transform:translateY(11px) scale(.95);transform-origin:top center;z-index:2}",

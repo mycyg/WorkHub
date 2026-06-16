@@ -80,3 +80,52 @@ test("decision deck omits the footer when nothing is actively running (en plural
   const one = renderDecisionDeckHtml({ items: [], locale: "en-US", backgroundRuns: [{ run_id: "r", title: "Report", state: "running", preview_text: "p" }] });
   assert.match(one, /Cuu is on 1 task</u);
 });
+
+test("decision deck shows today's worklog strip with R8 self-evolution counts when present", () => {
+  const worklog = {
+    runs_today: 5,
+    autonomy_rate: 80,
+    accepted_today: 3,
+    saved_hours_estimate: 1.5,
+    skills_promoted_today: 1,
+    skills_refined_today: 2,
+    generated_at: "2026-06-16T00:00:00.000Z",
+    range_label: "今天"
+  };
+  const withItems = renderDecisionDeckHtml({ items: [item()], locale: "zh-CN", worklog });
+  assert.match(withItems, /data-deck-worklog="true"/u);
+  assert.match(withItems, /扛了 <b>3<\/b>/u);
+  assert.match(withItems, /data-deck-self-evolve="true"/u);
+  assert.match(withItems, /data-deck-skills-promoted="1"/u);
+  assert.match(withItems, /data-deck-skills-refined="2"/u);
+  assert.match(withItems, /自我精进 技能 \+1 · 精修 2/u);
+
+  // 战绩条在「全部搞定」空态也显示。
+  const done = renderDecisionDeckHtml({ items: [], locale: "zh-CN", worklog });
+  assert.match(done, /data-deck-empty="true"/u);
+  assert.match(done, /data-deck-worklog="true"/u);
+});
+
+test("decision deck omits the self-evolution clause when no skills changed today", () => {
+  const worklog = {
+    runs_today: 2,
+    autonomy_rate: 50,
+    accepted_today: 1,
+    saved_hours_estimate: 0.5,
+    skills_promoted_today: 0,
+    skills_refined_today: 0,
+    generated_at: "2026-06-16T00:00:00.000Z"
+  };
+  const html = renderDecisionDeckHtml({ items: [item()], locale: "zh-CN", worklog });
+  assert.match(html, /data-deck-worklog="true"/u); // 战绩条仍在
+  assert.doesNotMatch(html, /data-deck-self-evolve="true"/u); // 但无自进化子句
+});
+
+test("decision deck omits the worklog strip entirely when no worklog data", () => {
+  const html = renderDecisionDeckHtml({ items: [item()], locale: "zh-CN" });
+  assert.doesNotMatch(html, /data-deck-worklog="true"/u);
+});
+
+test("decisionDeckCss styles the worklog strip", () => {
+  assert.match(decisionDeckCss, /wh-deck-worklog/u);
+});
