@@ -14,7 +14,7 @@ import type {
   LlmTransport
 } from "@workhub/agent/providers";
 import { loadSettings, type Settings } from "@workhub/config";
-import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore } from "@workhub/cost";
+import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore, type CostLedgerStore } from "@workhub/cost";
 import type {
   ClientDeviceAuthRow,
   CreateAuditLogInput,
@@ -388,6 +388,59 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
   // 管理员：全组织视图，两个用户都在。
   assert.equal(adminBody.data.by_user.length, 2);
   assert.equal(adminBody.data.token_in, 10000);
+});
+
+test("L[1] cost dashboard fails closed (empty) for a non-admin when the store lacks scope-filtered reads", async () => {
+  const runtimeSettings = settings();
+  const fullStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000d2",
+    workItemId: "50000000-0000-4000-8000-0000000000d2",
+    userId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000d3",
+    workItemId: "50000000-0000-4000-8000-0000000000d3",
+    userId: "10000000-0000-4000-8000-0000000000c9",
+    inputTokens: 9000,
+    outputTokens: 9000,
+    costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
+    createdAt: now
+  }));
+  // 模拟一个未实现按 scope 查询的 store 注入：保留 listEntries/entries（全量），但去掉 listEntriesForScopes。
+  // 非管理员请求绝不能 fail-open 回退到全量账目——必须 fail-closed 返回空。
+  const storeWithoutScopes: CostLedgerStore = {
+    records: fullStore.records,
+    entries: fullStore.entries,
+    recordUsage: (record) => fullStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => fullStore.usageSnapshots(scopeIds, options),
+    listEntries: () => fullStore.listEntries!()
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: storeWithoutScopes
+  }));
+
+  const userResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+  assert.equal(userResponse.status, 200);
+  const userBody = await userResponse.json() as { ok: true; data: { token_in: number; by_user: unknown[] } };
+  // fail-closed：既看不到自己的 1000，也绝不泄露另一用户的 18000——全空。
+  assert.equal(userBody.data.token_in, 0);
+  assert.equal(userBody.data.by_user.length, 0);
 });
 
 test("api provider registry records create and stream usage into the shared cost ledger", async () => {

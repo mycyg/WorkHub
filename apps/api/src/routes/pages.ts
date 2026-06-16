@@ -353,7 +353,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       ? (ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries)
       : (ledgerStore.listEntriesForScopes
           ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id })
-          : (ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries));
+          // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
+          // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
+          : []);
     const data = buildCostDashboardPage({
       settings,
       isAdmin: c.var.currentUser.isAdmin,

@@ -178,12 +178,15 @@ test("project health page bands signals per visible project and fails closed on 
   assert.equal(card.target_href, `/drive?project_id=${visibleProjectId}`);
 
   const byKey = new Map(card.signals.map((signal) => [signal.key, signal]));
-  assert.equal(byKey.get("open_work_items")?.count, 2);
-  assert.equal(byKey.get("overdue_work_items")?.count, 1);
+  // L[5]：非管理员的原始 count 一律服务端归零（不泄露精确待审批/失败运行数），但定性 band 仍由真实
+  // count 推导——所以 band 仍是 attention、卡片 band 仍是 attention，证明归零发生在 band 计算之后。
+  assert.equal(byKey.get("open_work_items")?.count, 0);
+  assert.equal(byKey.get("overdue_work_items")?.count, 0);
   assert.equal(byKey.get("overdue_work_items")?.band, "attention");
-  assert.equal(byKey.get("pending_approvals")?.count, 1);
-  assert.equal(byKey.get("failed_runs")?.count, 1);
+  assert.equal(byKey.get("pending_approvals")?.count, 0);
+  assert.equal(byKey.get("failed_runs")?.count, 0);
   assert.equal(byKey.get("failed_runs")?.band, "attention");
+  assert.equal(card.signals.every((signal) => signal.count === 0), true);
   assert.equal(card.band, "attention");
   assert.equal(card.signals.every((signal) => signal.target_href?.startsWith("/")), true);
   assert.equal(card.signals.some((signal) => signal.target_href?.startsWith("/api/")), false);
@@ -200,4 +203,6 @@ test("project health page gives admin the numeric view across projects", async (
   assert.equal(page.summary.project_count, 2);
   assert.equal(page.cards.every((card) => card.numbers_visible), true);
   assert.equal(page.cards[0]?.band, "attention");
+  // L[5]：管理员仍看到真实 count（归零只对非管理员生效）。
+  assert.equal(page.cards.some((card) => card.signals.some((signal) => signal.count > 0)), true);
 });

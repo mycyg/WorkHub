@@ -149,8 +149,11 @@ export function createProjectHealthPageService(
         return {
           project_id: project.id,
           project_name: project.name,
+          // band 仍由真实 count 推导（健康/关注/紧急三档），保证排序与配色正确。
           band: resolveProjectHealthBand(signals),
-          signals,
+          // L[5]：原始 count 是服务端泄露面——numbers_visible 只是展示提示，绕过它（curl）仍能读到精确的
+          // 待审批数 / 失败运行数。非管理员一律把 count 归零，仅保留定性 band，绝不依赖客户端遵守 numbers_visible。
+          signals: input.actor.isAdmin ? signals : signals.map((signalVm) => ({ ...signalVm, count: 0 })),
           numbers_visible: input.actor.isAdmin,
           target_href: `/drive?project_id=${project.id}`
         };
