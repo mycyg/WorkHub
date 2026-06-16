@@ -1345,6 +1345,7 @@ export const workHubTables = {
   snapshots,
   permissionPolicies,
   approvalRequests,
+  approvalComments,
   auditLogs
 } as const;
 

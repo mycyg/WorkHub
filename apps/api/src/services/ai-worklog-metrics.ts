@@ -24,8 +24,10 @@ export type AiWorklogMetricsService = {
 };
 
 function startOfToday(now: Date): Date {
+  // L7：用 UTC 日界，与系统其余处（cost ledger periodBounds 等）一致；否则非 UTC 服务器时区下
+  // 「今天」的窗口与别处错位。CI/生产服务器为 UTC，行为不变。
   const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
+  start.setUTCHours(0, 0, 0, 0);
   return start;
 }
 

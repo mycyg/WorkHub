@@ -7,7 +7,6 @@ import type {
   DeliverableChangeManifest,
   DeliverableCheck,
   DeliverableChange,
-  EvidenceRef,
   GoldPathSurfaceVM,
   QuestionCard,
   ReplayMergeCandidateVM,
@@ -122,18 +121,6 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
 
 function pageTitle(locale: WorkHubLocale, key: GoldPathRenderedPage["key"]) {
   return pageTitles[locale][key];
-}
-
-function evidenceList(evidenceRefs: EvidenceRef[], locale: WorkHubLocale) {
-  if (evidenceRefs.length === 0) {
-    return `<p class="wh-subtle">${escapeHtml(t(locale, "empty.evidence"))}</p>`;
-  }
-  return `<div class="wh-list">${evidenceRefs
-    .map(
-      (ref) =>
-        `<article class="wh-card"><strong>${escapeHtml(ref.title)}</strong><p class="wh-subtle">${escapeHtml(ref.excerpt ?? ref.source_id)}</p><span class="wh-pill">${escapeHtml(ref.source_type)}</span></article>`
-    )
-    .join("")}</div>`;
 }
 
 function actionHref(action: AttentionAction | ActionSpec) {

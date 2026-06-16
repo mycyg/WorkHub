@@ -114,7 +114,8 @@ test("createAiWorklogMetricsService reads today rows from the repository", async
 });
 
 test("createAiWorklogMetricsService passes start-of-today as the query lower bound", async () => {
-  const now = new Date("2026-06-14T12:00:00");
+  // L7：startOfToday 现在用 UTC 日界，断言改 UTC 且 now 带显式 Z，跨机器时区确定（CI/生产为 UTC）。
+  const now = new Date("2026-06-14T12:00:00Z");
   let capturedSince: Date | undefined;
   const service = createAiWorklogMetricsService(
     {
@@ -128,7 +129,7 @@ test("createAiWorklogMetricsService passes start-of-today as the query lower bou
   );
   await service.getTodayMetrics();
   assert.ok(capturedSince);
-  assert.equal(capturedSince?.getHours(), 0);
-  assert.equal(capturedSince?.getMinutes(), 0);
-  assert.equal(capturedSince?.getDate(), 14);
+  assert.equal(capturedSince?.getUTCHours(), 0);
+  assert.equal(capturedSince?.getUTCMinutes(), 0);
+  assert.equal(capturedSince?.getUTCDate(), 14);
 });

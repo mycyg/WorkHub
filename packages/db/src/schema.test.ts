@@ -24,7 +24,7 @@ import {
   workItems
 } from "./index.js";
 
-const F02_TABLE_COUNT = 49;
+const F02_TABLE_COUNT = 50;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
