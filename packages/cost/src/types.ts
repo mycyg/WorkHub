@@ -70,7 +70,14 @@ export type BudgetDecision = {
   notice?: BudgetNotice;
 };
 
-export type UsageSource = "agent_step" | "review" | "compact" | "retry" | "eval";
+// "curation" = 夜间技能自进化（蒸馏）的 LLM 花费——与「干活」分账，见成本面板 labor_split（K5）。
+export type UsageSource = "agent_step" | "review" | "compact" | "retry" | "eval" | "curation";
+
+// 自进化（self-improvement）花费来源：当前只有 curation；后续 K2/K6 若新增自进化调用点在此扩列。
+export const SELF_IMPROVEMENT_USAGE_SOURCES = new Set<UsageSource>(["curation"]);
+export function isSelfImprovementSource(source: UsageSource): boolean {
+  return SELF_IMPROVEMENT_USAGE_SOURCES.has(source);
+}
 
 export type UsageRecord = {
   runId?: string;

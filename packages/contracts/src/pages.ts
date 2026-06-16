@@ -735,6 +735,13 @@ export const costDashboardVmSchema = z.object({
     count: z.number().int().nonnegative(),
     cost_cny: z.string()
   })),
+  // K5（借鉴 SkillOpt 的「生产 vs 自我改进」分账）：把花费拆成「干活」与「自进化（夜间技能蒸馏）」，
+  // 让复利劳动力的「自我打磨」开销显性、可审。ratio = 自进化 / 总花费（0–1）。
+  labor_split: z.object({
+    production_cost_cny: z.string(),
+    self_improvement_cost_cny: z.string(),
+    self_improvement_ratio: z.number().min(0).max(1)
+  }).optional(),
   budget: z.array(budgetUsageSchema),
   notices: z.array(budgetNoticeSchema),
   top_exhaustion_risks: z.array(z.object({

@@ -1,6 +1,6 @@
 import { costDashboardVmSchema, type BudgetNotice, type BudgetUsage, type CostDashboardVM, type CostSummaryVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
-import type { BudgetUsage as InternalBudgetUsage, CostLedgerEntry } from "@workhub/cost";
+import { isSelfImprovementSource, type BudgetUsage as InternalBudgetUsage, type CostLedgerEntry } from "@workhub/cost";
 import { pageT } from "./i18n.js";
 
 type CostPageInput = {
@@ -99,6 +99,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byTeam = aggregateByScope(scopedEntries, "team");
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
   const modelBreakdown = aggregateByModel(uniqueEntries);
+  const laborSplit = buildLaborSplit(uniqueEntries);
 
   // L#51：返回前过一遍 zod schema，把契约漂移挡在服务端（与其他 page builder 一致）。
   return costDashboardVmSchema.parse({
@@ -128,6 +129,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       turns: item.turns
     })),
     model_breakdown: modelBreakdown,
+    ...(laborSplit ? { labor_split: laborSplit } : {}),
     budget: summary.scopes,
     notices: summary.active_notices,
     top_exhaustion_risks: summary.scopes
@@ -265,6 +267,31 @@ function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "t
     buckets.set(id, current);
   }
   return [...buckets.entries()].map(([id, value]) => ({ id, ...value }));
+}
+
+// K5：按花费来源拆「干活（production）vs 自进化（self-improvement = 夜间技能蒸馏）」。
+// 无账目时返回 undefined（面板此时走 empty_state，不显分账）。
+function buildLaborSplit(entries: readonly CostLedgerEntry[]): CostDashboardVM["labor_split"] {
+  if (entries.length === 0) {
+    return undefined;
+  }
+  let selfImprovement = 0;
+  let production = 0;
+  for (const entry of entries) {
+    const cost = parseCny(entry.estimatedCostCny);
+    if (isSelfImprovementSource(entry.source)) {
+      selfImprovement += cost;
+    } else {
+      production += cost;
+    }
+  }
+  const total = selfImprovement + production;
+  return {
+    production_cost_cny: formatCny(production),
+    self_improvement_cost_cny: formatCny(selfImprovement),
+    // 两位小数的比值，避免把吵的浮点尾巴塞进契约。
+    self_improvement_ratio: total > 0 ? Math.round((selfImprovement / total) * 100) / 100 : 0
+  };
 }
 
 function aggregateByModel(entries: readonly CostLedgerEntry[]): CostDashboardVM["model_breakdown"] {

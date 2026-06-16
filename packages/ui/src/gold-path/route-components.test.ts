@@ -1050,6 +1050,38 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
+test("K5 Cost route component renders the work-vs-self-improvement labor split when present", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        labor_split: {
+          production_cost_cny: "0.8",
+          self_improvement_cost_cny: "0.2",
+          self_improvement_ratio: 0.2
+        }
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r4-cost-labor-split="true"'), true);
+  assert.equal(cost.html.includes('data-r4-cost-self-improvement-ratio="0.2"'), true);
+  assert.equal(cost.html.includes("Work vs self-improvement"), true);
+  assert.equal(cost.html.includes("Self-improvement share: 20%"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("K5 Cost route component omits the labor split card when labor_split is absent", () => {
+  const cost = renderWebRouteComponents(surfaceVm(), { locale: "en-US" }).cost;
+  assert.ok(cost);
+  // 默认 fixture 的 cost VM 没有 labor_split → 不渲染该卡。
+  assert.equal(cost.html.includes('data-r4-cost-labor-split="true"'), false);
+});
+
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
   const vm = surfaceVm();
   const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;

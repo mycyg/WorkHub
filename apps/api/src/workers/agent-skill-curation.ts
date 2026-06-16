@@ -327,6 +327,8 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
       const client = providerRegistry.get({ id: "skill-curator", label: "skill-curator" }, "assistant");
       const response = await client.messages.create({
         maxTokens: 4000,
+        // K5：技能蒸馏花费记为 "curation"（自进化），成本面板与「干活」分账。
+        source: "curation",
         system: buildCurationSystemPrompt(),
         messages: [{ role: "user", content: buildCurationPrompt(analysis) }]
       });

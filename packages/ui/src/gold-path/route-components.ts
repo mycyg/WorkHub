@@ -261,6 +261,10 @@ type RouteCopyKey =
   | "cost.models"
   | "cost.trend"
   | "cost.remaining"
+  | "cost.laborSplit"
+  | "cost.laborProduction"
+  | "cost.laborSelfImprovement"
+  | "cost.laborSelfImprovementRatio"
   | "cost.users"
   | "cost.teams"
   | "cost.workitems"
@@ -415,6 +419,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.models": "模型拆解",
     "cost.trend": "趋势",
     "cost.remaining": "剩余",
+    "cost.laborSplit": "干活 vs 自进化",
+    "cost.laborProduction": "干活花费",
+    "cost.laborSelfImprovement": "自进化花费",
+    "cost.laborSelfImprovementRatio": "自进化占比",
     "cost.users": "个人",
     "cost.teams": "团队",
     "cost.workitems": "任务",
@@ -568,6 +576,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.models": "Model breakdown",
     "cost.trend": "Trend",
     "cost.remaining": "Remaining",
+    "cost.laborSplit": "Work vs self-improvement",
+    "cost.laborProduction": "Production spend",
+    "cost.laborSelfImprovement": "Self-improvement spend",
+    "cost.laborSelfImprovementRatio": "Self-improvement share",
     "cost.users": "People",
     "cost.teams": "Teams",
     "cost.workitems": "Work items",
@@ -2267,6 +2279,25 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
     </div>`)
     .join("");
+  // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
+  const laborSplitCard = vm.labor_split
+    ? `<section class="wh-card wh-r4-route-card" data-r4-cost-labor-split="true" data-r4-cost-self-improvement-ratio="${escapeHtml(String(vm.labor_split.self_improvement_ratio))}">
+          <h3>${escapeHtml(routeT(locale, "cost.laborSplit"))}</h3>
+          <div class="wh-r4-route-timeline">
+            <div class="wh-r4-route-row" data-r4-cost-labor="production">
+              <div><strong>${escapeHtml(routeT(locale, "cost.laborProduction"))}</strong></div>
+              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.production_cost_cny))}</span>
+            </div>
+            <div class="wh-r4-route-row" data-r4-cost-labor="self_improvement">
+              <div>
+                <strong>${escapeHtml(routeT(locale, "cost.laborSelfImprovement"))}</strong>
+                <p>${escapeHtml(`${routeT(locale, "cost.laborSelfImprovementRatio")}: ${Math.round(vm.labor_split.self_improvement_ratio * 100)}%`)}</p>
+              </div>
+              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.self_improvement_cost_cny))}</span>
+            </div>
+          </div>
+        </section>`
+    : "";
 
   return createWebRouteComponent({
     key: "cost",
@@ -2310,6 +2341,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <div class="wh-r4-route-timeline">${models || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`}</div>
         </section>
       </div>
+      ${laborSplitCard ? `<div class="wh-r4-route-grid">${laborSplitCard}</div>` : ""}
     </section>`
   });
 }
