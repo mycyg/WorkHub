@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, mkdir, writeFile, utimes, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -41,6 +41,7 @@ import { WorkItemServiceError, type WorkItemService } from "./services/work-item
 import {
   AgentRunnerError,
   createInMemoryAgentRunQueue,
+  sweepStaleAgentWorkdirs,
   type AgentRunNotificationPublisher,
   type AgentRunClaimLease,
   type AgentRunHeartbeatLease,
@@ -2037,6 +2038,28 @@ test("agent run queue dead-letters a run that keeps crashing past the recover-at
   // 审计：第二次走专门的 dead-letter 动作。
   const deadLetterAudit = auditLogs.rows.find((row) => row.action === "agent_run.dead_lettered_stale_claim");
   assert.equal(deadLetterAudit?.entityId, queued.run_id);
+});
+
+test("sweepStaleAgentWorkdirs removes only stale workhub-agent dirs", async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "workhub-sweep-test-"));
+  const stale = path.join(parent, "workhub-agent-stale");
+  const fresh = path.join(parent, "workhub-agent-fresh");
+  const unrelated = path.join(parent, "some-other-tmp");
+  await mkdir(stale, { recursive: true });
+  await mkdir(fresh, { recursive: true });
+  await mkdir(unrelated, { recursive: true });
+  await writeFile(path.join(stale, "outputs.bin"), "x", "utf8");
+  // 把 stale 目录的 mtime 退回到很久以前；fresh / unrelated 保持当前时间。
+  const longAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  await utimes(stale, longAgo, longAgo);
+
+  const result = await sweepStaleAgentWorkdirs({ tmpDir: parent, ttlMs: 6 * 60 * 60 * 1000 });
+
+  assert.equal(result.removed, 1);
+  await assert.rejects(stat(stale), "stale workhub-agent dir should be removed");
+  assert.equal((await stat(fresh)).isDirectory(), true);
+  // 非 workhub-agent 前缀的目录即使陈旧也不动。
+  assert.equal((await stat(unrelated)).isDirectory(), true);
 });
 
 test("agent run recovery scheduler ticks once, recovers stale claims, and drains recovered work", async () => {

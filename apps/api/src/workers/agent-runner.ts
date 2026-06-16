@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -1457,6 +1457,46 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
   }
 }
 
+// 回收泄漏的 run workdir：长跑 worker 每个 run 在 os.tmpdir() 下 mkdtemp 一个 workhub-agent-* 目录
+// （hydrate≤32MB 项目文件 + AI 输出），从不删除；崩溃/重启后旧目录成孤儿无限堆积。启动时扫一遍，
+// 删掉 mtime 早于 TTL 的目录。TTL 默认 6h——远大于单次 run 上限（≤300s），故绝不会碰到活跃或近期
+// （replay 仍要读产物）的 run 目录，无需额外的活跃集排除。
+export async function sweepStaleAgentWorkdirs(input: {
+  tmpDir?: string;
+  ttlMs?: number;
+  now?: () => number;
+} = {}): Promise<{ removed: number; scanned: number }> {
+  const dir = input.tmpDir ?? os.tmpdir();
+  const ttlMs = input.ttlMs ?? 6 * 60 * 60 * 1000;
+  const nowMs = input.now ? input.now() : Date.now();
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return { removed: 0, scanned: 0 };
+  }
+  let removed = 0;
+  let scanned = 0;
+  for (const name of entries) {
+    if (!name.startsWith("workhub-agent-")) {
+      continue;
+    }
+    scanned += 1;
+    const full = path.join(dir, name);
+    try {
+      const info = await stat(full);
+      if (!info.isDirectory() || nowMs - info.mtimeMs < ttlMs) {
+        continue;
+      }
+      await rm(full, { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      // 单个目录扫描/删除失败不影响其余（可能正被并发清理/权限问题）。
+    }
+  }
+  return { removed, scanned };
+}
+
 let defaultQueue: AgentRunQueue | undefined;
 let defaultWorkItemContextDbClient: WorkHubDatabaseClient | undefined;
 let defaultWorkItemContextProvider: AgentRunWorkItemContextProvider | undefined;
@@ -1479,6 +1519,9 @@ export function getDefaultAgentRunQueue() {
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
+    // P-COLLAB M2：生产环境也接入快照仓库，否则 hydrate 后的 project/ base 快照分支永不触发，
+    // manifest.base.snapshot_id 永远为空、三方合并退回 accepted-history 祖先（背离 M2 设计）。
+    snapshots: getDefaultAuditStores().snapshots,
     workItemContext: getDefaultWorkItemContextProvider(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
@@ -1493,6 +1536,10 @@ export function getDefaultAgentRunQueue() {
     // 生产/多租户应保持 false 并改注入真正隔离的 runner。
     ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver()
+  });
+  // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。
+  void sweepStaleAgentWorkdirs().catch((error) => {
+    console.warn("WorkHub stale agent workdir sweep failed", error);
   });
   return defaultQueue;
 }
