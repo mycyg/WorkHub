@@ -59,6 +59,7 @@ import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
 import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
 import { renderTeamCalendarHtml, teamCalendarCss } from "./team-calendar.js";
+import { renderProjectsListHtml, projectsPageCss } from "./projects-page.js";
 import {
   desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge
@@ -375,6 +376,69 @@ function bindGoldPathNavigation(
   activateFromHash();
 }
 
+// R7 P4:通用玻璃加载占位卡(桌面懒加载页首屏/出错态)。title 为受控字面量,无需转义。
+function desktopLazyLoadingHtml(title: string): string {
+  return `<div style="max-width:560px;margin:24px auto 0;border-radius:24px;padding:46px 30px;text-align:center;background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.75);box-shadow:0 26px 60px -28px rgba(70,54,140,.5),inset 0 1px 0 rgba(255,255,255,.7);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);font-family:'M PLUS Rounded 1c','Noto Sans SC',sans-serif"><div style="font-size:32px">(=^･ω･^=)</div><h3 style="margin:14px 0 0;font-size:18px;font-weight:900;color:#2c2746">${title}</h3></div>`;
+}
+
+// R7 P4:在已渲染的 gold-path 壳里注入一个「桌面专属」懒加载页——共享 surface 无对应 page_vm,
+// 故桌面侧补导航项 + 面板,并把 "/<key>" 挂进 shell.routeMap 让既有导航管线
+// (classifyGoldPathHref→setActivePage,按字符串比 data-wh-panel,与 PageKey 联合无关)认得它。
+// load(host) 首次进入该页时调用一次拉数据+渲染;失败渲染 errorHtml 并允许下次重试。
+// 幂等:面板已存在则跳过(boot 理论只跑一次,仍防御)。fail-open:取不到 nav/content 容器就什么都不做。
+function mountLazyDesktopPanel(
+  shellRoot: HTMLElement,
+  shell: GoldPathAppShell,
+  input: {
+    key: string;
+    navLabel: string;
+    loadingHtml: string;
+    errorHtml: string;
+    load: (host: HTMLElement) => Promise<void>;
+  }
+): void {
+  const navList = shellRoot.querySelector<HTMLElement>(".wh-app-nav-list");
+  const appContent = shellRoot.querySelector<HTMLElement>(".wh-app-content");
+  const panelSelector = `[data-wh-panel="${input.key}"]`;
+  if (!navList || !appContent || appContent.querySelector(panelSelector)) {
+    return;
+  }
+  navList.insertAdjacentHTML(
+    "beforeend",
+    `<a href="/${input.key}" data-wh-route="/${input.key}" data-wh-page-key="${input.key}" aria-current="false"><span>${input.navLabel}</span></a>`
+  );
+  appContent.insertAdjacentHTML(
+    "beforeend",
+    `<section class="wh-route-panel" data-wh-panel="${input.key}" hidden><div data-wh-lazy-host>${input.loadingHtml}</div></section>`
+  );
+  // key 不在 PageKey 联合类型里(桌面 only 扩展),就地放宽类型让既有管线认它。
+  (shell.routeMap as Record<string, string>)[`/${input.key}`] = input.key;
+  const host = appContent.querySelector<HTMLElement>(`${panelSelector} [data-wh-lazy-host]`);
+  let loaded = false;
+  const runLoad = async () => {
+    if (loaded || !host) {
+      return;
+    }
+    loaded = true;
+    try {
+      await input.load(host);
+    } catch {
+      loaded = false; // 允许下次再进该页时重试
+      host.innerHTML = input.errorHtml;
+    }
+  };
+  shellRoot.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest(`[data-wh-page-key="${input.key}"]`) : null;
+    if (link) {
+      void runLoad();
+    }
+  });
+  // 深链/刷新时 hash 已是 #/<key>:activateFromHash 会显示面板,这里同步把数据拉起来。
+  if (window.location.hash.slice(1) === `/${input.key}`) {
+    void runLoad();
+  }
+}
+
 async function boot() {
   if (!root) {
     return;
@@ -412,7 +476,7 @@ async function boot() {
       locale
     });
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -434,53 +498,30 @@ async function boot() {
         // 保留当前卡牌,不打断用户。
       }
     };
-    // R7 P4:桌面专属「团队」页(先上日历段)。共享 gold-path surface 没有 team page_vm,
-    // 所以在已渲染的壳里注入桌面 only 的导航项 + 面板,并把 "/team" 挂进 shell.routeMap——
-    // 既有导航管线(classifyGoldPathHref→setActivePage)即认得它(setActivePage 用字符串比较
-    // data-wh-panel,与 PageKey 联合类型无关)。日历懒加载:首次进 team 才拉 client.pages.calendar()。
-    // 后端零改动:GET /api/pages/calendar 早已存在,仅未接桌面。失败可重试,绝不阻塞其它页。
-    const teamZh = locale === "zh-CN";
-    const teamLoadingHtml = (title: string) =>
-      `<div class="wh-tcal"><div class="wh-tcal-empty"><div class="wh-tcal-empty-face gl-avatar">(=^･ω･^=)</div><h3 class="wh-tcal-empty-title">${title}</h3></div></div>`;
-    const navList = root.querySelector<HTMLElement>(".wh-app-nav-list");
-    const appContent = root.querySelector<HTMLElement>(".wh-app-content");
-    if (navList && appContent && !appContent.querySelector("[data-wh-panel=\"team\"]")) {
-      navList.insertAdjacentHTML(
-        "beforeend",
-        `<a href="/team" data-wh-route="/team" data-wh-page-key="team" aria-current="false"><span>${teamZh ? "团队" : "Team"}</span></a>`
-      );
-      appContent.insertAdjacentHTML(
-        "beforeend",
-        `<section class="wh-route-panel" data-wh-panel="team" hidden><div data-wh-team-calendar>${teamLoadingHtml(teamZh ? "正在拉团队日历…" : "Loading team calendar…")}</div></section>`
-      );
-      // "team" 不在 PageKey 联合类型里,这是桌面 only 扩展,故就地放宽类型让既有管线认它。
-      (shell.routeMap as Record<string, string>)["/team"] = "team";
-      const calendarHost = appContent.querySelector<HTMLElement>("[data-wh-panel=\"team\"] [data-wh-team-calendar]");
-      let teamCalendarLoaded = false;
-      const loadTeamCalendar = async () => {
-        if (teamCalendarLoaded || !calendarHost) {
-          return;
-        }
-        teamCalendarLoaded = true;
-        try {
-          const calendar = await client.pages.calendar({ locale });
-          calendarHost.innerHTML = renderTeamCalendarHtml({ page: calendar, locale });
-        } catch {
-          teamCalendarLoaded = false; // 允许下次再进 team 时重试
-          calendarHost.innerHTML = teamLoadingHtml(teamZh ? "日历没拉到，再点一次「团队」重试～" : "Couldn't load — tap Team again to retry");
-        }
-      };
-      root.addEventListener("click", (event) => {
-        const teamLink = event.target instanceof Element ? event.target.closest("[data-wh-page-key=\"team\"]") : null;
-        if (teamLink) {
-          void loadTeamCalendar();
-        }
-      });
-      // 深链/刷新时 hash 已是 #/team:activateFromHash 会显示面板,这里同步把日历拉起来。
-      if (window.location.hash.slice(1) === "/team") {
-        void loadTeamCalendar();
+    // R7 P4:桌面专属「团队」「项目」页。共享 gold-path surface 无 team/projects page_vm,
+    // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
+    // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。
+    const zh = locale === "zh-CN";
+    mountLazyDesktopPanel(root, shell, {
+      key: "team",
+      navLabel: zh ? "团队" : "Team",
+      loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉团队日历…" : "Loading team calendar…"),
+      errorHtml: desktopLazyLoadingHtml(zh ? "日历没拉到，再点一次「团队」重试～" : "Couldn't load — tap Team again to retry"),
+      load: async (host) => {
+        const calendar = await client.pages.calendar({ locale });
+        host.innerHTML = renderTeamCalendarHtml({ page: calendar, locale });
       }
-    }
+    });
+    mountLazyDesktopPanel(root, shell, {
+      key: "projects",
+      navLabel: zh ? "项目" : "Projects",
+      loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉项目…" : "Loading projects…"),
+      errorHtml: desktopLazyLoadingHtml(zh ? "项目没拉到，再点一次「项目」重试～" : "Couldn't load — tap Projects again to retry"),
+      load: async (host) => {
+        const list = await client.listProjects();
+        host.innerHTML = renderProjectsListHtml({ page: list, locale });
+      }
+    });
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
