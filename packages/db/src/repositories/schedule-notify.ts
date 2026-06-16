@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -142,7 +142,8 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
         .leftJoin(workItems, eq(scheduleEvents.workItemId, workItems.id))
         .where(and(
           gte(scheduleEvents.endAt, input.rangeStart),
-          lte(scheduleEvents.endAt, input.rangeEnd)
+          // 上界独占：rangeEnd 是下一周期 00:00，与服务层生成的 7 天 day key 对齐，避免边界块落到第 8 天而隐身。
+          lt(scheduleEvents.endAt, input.rangeEnd)
         ))
         .orderBy(asc(scheduleEvents.endAt))
         .limit(limit);
@@ -158,7 +159,7 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
           // L#55：限定在窗口内（加下界）并排除已结束(done/cancelled)的事项——
           // 否则全表扫所有历史 dueAt，且已完成/已取消的事项还会被当作"待办到期"显示。
           gte(workItems.dueAt, input.rangeStart),
-          lte(workItems.dueAt, input.rangeEnd),
+          lt(workItems.dueAt, input.rangeEnd),
           notInArray(workItems.status, ["done", "cancelled"]),
           or(
             eq(workItems.submitterUserId, input.actorUserId),

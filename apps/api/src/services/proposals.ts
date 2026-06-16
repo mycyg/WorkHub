@@ -1101,6 +1101,21 @@ async function fullTextContextForHunkMaterialization(input: {
     );
   }
 
+  // 防 DoS：逐段合并对 base×current / base×incoming / base×aiFusion 各跑一次 O(N*M) 行级 LCS 矩阵，
+  // 大文本（几 MB / 几十万行）会吃光内存或阻塞事件循环。任一文本超阈值即 409 拒绝（与 fusion 16K context cap 同理）。
+  const MAX_TEXT_HUNK_BYTES = 1024 * 1024;
+  const MAX_TEXT_HUNK_LINES = 5000;
+  for (const part of [base, current, incoming]) {
+    const lineCount = part.text.length === 0 ? 0 : part.text.split(/\r?\n/u).length;
+    if (part.bytes > MAX_TEXT_HUNK_BYTES || lineCount > MAX_TEXT_HUNK_LINES) {
+      throw new ProposalServiceError(
+        409,
+        "text_too_large",
+        "正文太大，无法逐段合并；请改用整篇采纳，或拆分文件后再处理。"
+      );
+    }
+  }
+
   return {
     base,
     current,

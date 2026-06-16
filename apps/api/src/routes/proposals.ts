@@ -29,7 +29,6 @@ import {
 } from "../middleware/auth.js";
 import {
   getDefaultProposalService,
-  ProposalServiceError,
   ProposalServiceMergeConflictError,
   ProposalServiceRebaseRequiredError,
   type ProposalActor,
@@ -38,7 +37,6 @@ import {
 } from "../services/proposals.js";
 import {
   getDefaultWorkItemService,
-  WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
 
@@ -287,17 +285,14 @@ function mergeResultFor(input: {
   });
 }
 
+// 直接重抛领域错误：app.onError 有 ProposalServiceError/WorkItemServiceError 专门分支，会保留真实
+// error.code（及冲突/rebase 子类的 details）。此前包成 HTTPException 会把 409/422/415 等状态的 code
+// 统统抹成 "http_error"，客户端据 code 分支（如 stale_base→rebase 流、proposal_already_merged）就失灵了。
 function handleProposalServiceError(error: unknown): never {
-  if (error instanceof ProposalServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
-  }
   throw error;
 }
 
 function handleWorkItemAccessError(error: unknown): never {
-  if (error instanceof WorkItemServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
-  }
   throw error;
 }
 

@@ -592,8 +592,10 @@ export function createScheduleNotifyPageService(
         .filter((row) => canViewMeetingInsight(row, input.actor))
         .map((row) => blockFromMeetingInsight(row, clock))
         .filter((block) => {
+          // 上界独占（与生成的 7 天 day key 对齐）：rangeEnd 是下一周期 00:00，end===rangeEnd 的块
+          // 其 dateKey=rangeStart+7 不在 days 里，会让 summary 总数对不上且块在网格里隐身。
           const end = new Date(block.ends_at);
-          return end >= scope.rangeStart && end <= scope.rangeEnd;
+          return end >= scope.rangeStart && end < scope.rangeEnd;
         });
       const blocks = [...eventBlocks, ...workItemBlocks, ...meetingBlocks]
         .sort((left, right) => left.ends_at.localeCompare(right.ends_at));

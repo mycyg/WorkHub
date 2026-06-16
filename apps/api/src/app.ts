@@ -30,6 +30,12 @@ import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/pro
 import { createCostRoutes } from "./routes/cost.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
+import {
+  ProposalServiceError,
+  ProposalServiceMergeConflictError,
+  ProposalServiceRebaseRequiredError
+} from "./services/proposals.js";
+import { WorkItemServiceError } from "./services/work-items.js";
 
 import { createRequestLogMiddleware, createStructuredLogger } from "./logging.js";
 
@@ -161,6 +167,39 @@ app.onError((error, c) => {
   }
 
   if (error instanceof NotificationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ProposalServiceError) {
+    // 保留真实 code（409/422/415 等）与冲突/rebase 子类的 details，供客户端据 code 分支驱动 UX。
+    const details = error instanceof ProposalServiceRebaseRequiredError
+      ? { conflicts: error.conflicts, card: error.card }
+      : error instanceof ProposalServiceMergeConflictError
+        ? { conflicts: error.conflicts }
+        : undefined;
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(details ? { details } : {})
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof WorkItemServiceError) {
     return c.json(
       {
         ok: false,

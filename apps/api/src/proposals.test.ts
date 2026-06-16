@@ -42,6 +42,7 @@ import {
   createDbProposalService,
   createInMemoryProposalService,
   ProposalServiceError,
+  ProposalServiceMergeConflictError,
   ProposalServiceRebaseRequiredError,
   drivePathFromTargetPath,
   readBaseSnapshotFusionExcerpt
@@ -166,6 +167,18 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   app.onError((error, c) => {
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
+    }
+    if (error instanceof ProposalServiceError) {
+      // 镜像生产 app.onError：保留真实 code 与冲突/rebase 子类的 details。
+      const details = error instanceof ProposalServiceRebaseRequiredError
+        ? { conflicts: error.conflicts, card: error.card }
+        : error instanceof ProposalServiceMergeConflictError
+          ? { conflicts: error.conflicts }
+          : undefined;
+      return c.json({ ok: false, error: { code: error.code, message: error.message, ...(details ? { details } : {}) } }, error.status as 400);
+    }
+    if (error instanceof WorkItemServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
     }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
