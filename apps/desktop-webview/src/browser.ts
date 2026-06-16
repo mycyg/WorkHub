@@ -11,7 +11,7 @@ import {
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
-import { renderProposalConflictCards } from "@workhub/ui/proposal";
+import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "@workhub/ui/proposal";
 import {
   actionElementApplyPayload,
   actionElementMergePayload,
@@ -477,7 +477,9 @@ async function boot() {
       locale
     });
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}</style>${shell.html}`;
+    // proposalCss 放最前:它含一个 :root 重定义(--ink/--blue… 与 goldPathCss 同名不同值),放 shell.css
+    // 之前 → goldPath :root 后覆盖、不全局串色;其 wh-proposal-* 布局类(独有)生效;玻璃覆盖在 liquidGlassCss 里(更后)赢。
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${proposalCss}${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -509,6 +511,34 @@ async function boot() {
       }
     };
     void refreshDecisionDeck();
+    // R7:proposal 详情页改用 LIVE 数据(桌面壳详情页本是 P0.5 fixture 假 diff)。导航到 /proposals/:id
+    // 时懒拉 client.pages.proposal(id) 用共享 renderProposalDetail 重渲该面板;proposalCss 已注入壳、
+    // wh-proposal-* 玻璃覆盖在 liquidGlass 里 → live 数据 + 玻璃质感。面板内动作(通过/打回/采纳)仍走既有
+    // bindGoldPathNavigation 管线(根上委托,重渲不脱钩)。失败保留 fixture 面板,绝不空。
+    const proposalPanel = root.querySelector<HTMLElement>("[data-wh-panel=\"proposal\"]");
+    const loadLiveProposal = async (proposalId: string) => {
+      if (!proposalPanel || !proposalId) {
+        return;
+      }
+      try {
+        const vm = await client.pages.proposal(proposalId, { locale });
+        proposalPanel.innerHTML = renderProposalDetail(vm, "desktop", { locale }).html;
+      } catch {
+        // 保留 fixture 面板,不打断用户。
+      }
+    };
+    root.addEventListener("click", (event) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      const href = link?.getAttribute("href");
+      const matched = href ? /^\/proposals\/([^/?#]+)/u.exec(href) : null;
+      if (matched && matched[1]) {
+        void loadLiveProposal(matched[1]);
+      }
+    });
+    const proposalHashMatch = /^\/proposals\/([^/?#]+)/u.exec(window.location.hash.slice(1));
+    if (proposalHashMatch && proposalHashMatch[1]) {
+      void loadLiveProposal(proposalHashMatch[1]);
+    }
     // R7 P4:桌面专属「团队」「项目」页。共享 gold-path surface 无 team/projects page_vm,
     // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
     // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。

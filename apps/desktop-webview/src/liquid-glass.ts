@@ -59,6 +59,11 @@ export const liquidGlassCss = [
   // —— 桌宠设置面板(主窗内浮层)玻璃 ——
   ".wh-cuu-preferences-panel{background:rgba(255,255,255,.55)!important;backdrop-filter:blur(34px) saturate(180%)!important;-webkit-backdrop-filter:blur(34px) saturate(180%)!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:20px!important;box-shadow:0 30px 66px -28px rgba(70,54,140,.6),inset 0 1px 0 rgba(255,255,255,.8)!important}",
   ".wh-cuu-pref-row{border-radius:12px}.wh-cuu-pref-button{border-radius:12px!important}.wh-cuu-pref-toggle{border-radius:999px!important}",
+  // —— live proposal 详情面板玻璃化(共享 renderProposalDetail 用 wh-proposal-* 类,非 gold-path 的 wh-panel) ——
+  // 去掉它自带的靛蓝渐变底让极光透出;主栏/侧栏磨砂成玻璃卡(对齐 .wh-card 玻璃质感)。
+  ".wh-app-content .wh-proposal{background:transparent!important;padding:4px!important}",
+  ".wh-app-content .wh-proposal-main,.wh-app-content .wh-proposal-rail{background:rgba(255,255,255,.5)!important;backdrop-filter:blur(30px) saturate(175%);-webkit-backdrop-filter:blur(30px) saturate(175%);border:1px solid rgba(255,255,255,.7)!important;border-radius:20px!important;box-shadow:0 26px 58px -28px rgba(70,54,140,.5),inset 0 1px 0 rgba(255,255,255,.7)!important}",
+  ".wh-app-content .wh-proposal .wh-kicker{color:#8b7ed6!important}",
   // 滚动条
   ".wh-app-root ::-webkit-scrollbar{width:10px}",
   ".wh-app-root ::-webkit-scrollbar-thumb{background:rgba(90,69,216,.22);border-radius:8px;border:3px solid transparent;background-clip:content-box}"
