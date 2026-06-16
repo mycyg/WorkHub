@@ -60,6 +60,7 @@ import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
 import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
 import { renderTeamCalendarHtml, teamCalendarCss } from "./team-calendar.js";
 import { renderProjectsListHtml, projectsPageCss } from "./projects-page.js";
+import { renderProjectDriveHtml, projectDriveCss } from "./project-drive.js";
 import {
   desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge
@@ -476,7 +477,7 @@ async function boot() {
       locale
     });
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -521,6 +522,49 @@ async function boot() {
         const list = await client.listProjects();
         host.innerHTML = renderProjectsListHtml({ page: list, locale });
       }
+    });
+    // R7 P4:项目卡下钻——点项目卡(无 href 的 <a>,nav 管线不劫持)快照当前列表 HTML,懒拉该项目
+    // 文件(client.pages.drive)渲染只读玻璃文件浏览;「返回项目」(纯 button)还原列表快照。
+    // 失败:还原列表 + 轻提示,绝不卡死面板。下钻态会停留在子视图(再进 projects 不重置),可接受。
+    let projectsListSnapshot = "";
+    root.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) {
+        return;
+      }
+      const host = root.querySelector<HTMLElement>("[data-wh-panel=\"projects\"] [data-wh-lazy-host]");
+      if (!host) {
+        return;
+      }
+      const back = target.closest("[data-proj-back]");
+      if (back && host.contains(back)) {
+        if (projectsListSnapshot) {
+          host.innerHTML = projectsListSnapshot;
+        }
+        return;
+      }
+      const card = target.closest<HTMLElement>("[data-project-id]");
+      if (!card || !host.contains(card)) {
+        return;
+      }
+      const projectId = card.dataset.projectId;
+      if (!projectId) {
+        return;
+      }
+      const projectName = card.dataset.projectName ?? "";
+      projectsListSnapshot = host.innerHTML;
+      host.innerHTML = desktopLazyLoadingHtml(zh ? "正在打开项目…" : "Opening project…");
+      void (async () => {
+        try {
+          const drive = await client.pages.drive({ project_id: projectId, locale });
+          host.innerHTML = renderProjectDriveHtml({ drive, projectName, locale });
+        } catch {
+          if (projectsListSnapshot) {
+            host.innerHTML = projectsListSnapshot;
+          }
+          showNotice(root, zh ? "项目文件没打开，请重试～" : "Couldn't open the project files — please retry");
+        }
+      })();
     });
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
