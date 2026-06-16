@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { idSchema } from "./common.js";
+import { idSchema, isoDateTimeSchema } from "./common.js";
 
 export const projectVmSchema = z.object({
   id: idSchema,
@@ -12,6 +12,22 @@ export const projectVmSchema = z.object({
   owner_user_id: idSchema.nullable().optional()
 });
 export type ProjectVM = z.infer<typeof projectVmSchema>;
+
+// 项目清单条目(桌面「项目」页 + 跨项目概览)。在 ProjectVM 基础上带归档态、时间戳与
+// 「进行中工作项」计数(状态非 merged/done/cancelled 且未删除)。
+export const projectListItemVmSchema = projectVmSchema.extend({
+  archived: z.boolean(),
+  created_at: isoDateTimeSchema,
+  updated_at: isoDateTimeSchema,
+  open_work_item_count: z.number().int().nonnegative()
+});
+export type ProjectListItemVM = z.infer<typeof projectListItemVmSchema>;
+
+export const projectListVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  projects: z.array(projectListItemVmSchema)
+});
+export type ProjectListVM = z.infer<typeof projectListVmSchema>;
 
 export const bootstrapProjectRequestSchema = z.object({
   name: z.string().min(1).max(128).optional(),

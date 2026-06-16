@@ -1,5 +1,11 @@
 import { getSharedDatabaseClient, createProjectRepository, type ProjectRepository, type WorkHubDatabaseClient } from "@workhub/db";
-import type { BootstrapProjectRequest, BootstrapProjectResult, ProjectVM } from "@workhub/contracts";
+import type {
+  BootstrapProjectRequest,
+  BootstrapProjectResult,
+  ProjectListItemVM,
+  ProjectListVM,
+  ProjectVM
+} from "@workhub/contracts";
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 
 import type { AuthActor } from "../middleware/auth.js";
@@ -19,6 +25,7 @@ export type ProjectService = {
     payload: BootstrapProjectRequest;
     actor: AuthActor;
   }) => Promise<BootstrapProjectResult>;
+  listProjects: (input: { actor: AuthActor }) => Promise<ProjectListVM>;
 };
 
 export type ProjectServiceOptions = {
@@ -51,6 +58,24 @@ function toProjectVm(project: Awaited<ReturnType<ProjectRepository["bootstrapPil
   };
 }
 
+function toProjectListItemVm(
+  row: Awaited<ReturnType<ProjectRepository["listForWorkspace"]>>[number]
+): ProjectListItemVM {
+  return {
+    id: row.id,
+    workspace_id: row.workspaceId ?? null,
+    name: row.name,
+    slug: row.slug,
+    ...(row.description ? { description: row.description } : {}),
+    owner_nickname: row.ownerNickname,
+    owner_user_id: row.ownerUserId ?? null,
+    archived: row.archived,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    open_work_item_count: row.openWorkItemCount
+  };
+}
+
 export function createProjectService(
   repository: ProjectRepository,
   options: ProjectServiceOptions = {}
@@ -79,6 +104,14 @@ export function createProjectService(
         project: toProjectVm(result.project),
         created: result.created,
         context_ready: true
+      };
+    },
+    async listProjects(input) {
+      const workspaceId = input.actor.workspaceId || runtimeSettings.auth.defaultWorkspaceId;
+      const rows = await repository.listForWorkspace(workspaceId);
+      return {
+        generated_at: now().toISOString(),
+        projects: rows.map(toProjectListItemVm)
       };
     }
   };

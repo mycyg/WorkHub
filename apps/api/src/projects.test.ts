@@ -140,6 +140,9 @@ test("project bootstrap creates a Day0 project context for the current actor", a
         created: true,
         context_ready: true
       };
+    },
+    async listProjects() {
+      return { generated_at: now.toISOString(), projects: [] };
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -169,11 +172,77 @@ test("project bootstrap is not available without identity", async () => {
     projects: {
       async bootstrapProject() {
         throw new Error("should not be called");
+      },
+      async listProjects() {
+        throw new Error("should not be called");
       }
     }
   }));
 
   const response = await app.request("/api/projects/bootstrap", { method: "POST" });
+
+  assert.equal(response.status, 401);
+});
+
+test("GET /api/projects lists the current actor's projects with open work item counts", async () => {
+  const runtimeSettings = settings();
+  let listedWorkspaceId = "";
+  const projects: ProjectService = {
+    async bootstrapProject() {
+      throw new Error("should not be called");
+    },
+    async listProjects(input) {
+      listedWorkspaceId = input.actor.workspaceId;
+      return {
+        generated_at: now.toISOString(),
+        projects: [
+          {
+            id: "62000000-0000-4000-8000-000000000020",
+            workspace_id: input.actor.workspaceId,
+            name: "渠道增长",
+            slug: "growth",
+            owner_nickname: input.actor.label,
+            owner_user_id: input.actor.userId ?? null,
+            archived: false,
+            created_at: now.toISOString(),
+            updated_at: now.toISOString(),
+            open_work_item_count: 3
+          }
+        ]
+      };
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({ auth: authDeps(runtimeSettings), projects }));
+
+  const response = await app.request("/api/projects", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  assert.notEqual(listedWorkspaceId, "");
+  const body = await response.json() as { data: { projects: Array<{ slug: string; open_work_item_count: number }> } };
+  assert.equal(body.data.projects.length, 1);
+  assert.equal(body.data.projects[0]?.slug, "growth");
+  assert.equal(body.data.projects[0]?.open_work_item_count, 3);
+});
+
+test("GET /api/projects requires identity", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({
+    auth: authDeps(runtimeSettings),
+    projects: {
+      async bootstrapProject() {
+        throw new Error("should not be called");
+      },
+      async listProjects() {
+        throw new Error("should not be called");
+      }
+    }
+  }));
+
+  const response = await app.request("/api/projects");
 
   assert.equal(response.status, 401);
 });

@@ -24,6 +24,7 @@ import type {
   NotificationPageVM,
   PilotDay1MetricsSnapshot,
   ProjectHealthPageVM,
+  ProjectListVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
@@ -229,6 +230,7 @@ export type WorkHubApiClient = {
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
+  listProjects: () => Promise<ProjectListVM>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   pages: PageClient;
   streams: PushStreamClient;

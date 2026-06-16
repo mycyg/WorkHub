@@ -44,6 +44,15 @@ export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const projects = deps.projects ?? getDefaultProjectService();
 
+  routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const data = await projects.listProjects({ actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleProjectError(error);
+    }
+  });
+
   routes.post("/bootstrap", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = bootstrapProjectRequestSchema.parse(await optionalJson(c.req));
     try {
