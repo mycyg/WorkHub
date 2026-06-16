@@ -80,6 +80,7 @@ test("hasCurationSignal is false on an idle workspace", () => {
     existingSkills: ["code-script"],
     discardedSkills: [],
     activeTeamSkillCount: 0,
+    activeSkills: [],
     totalAccepted: 0
   };
   assert.equal(hasCurationSignal(analysis), false);
@@ -94,6 +95,7 @@ test("buildCurationPrompt surfaces accepted + escalation signals and existing sk
     existingSkills: ["code-script", "data-analysis"],
     discardedSkills: [],
     activeTeamSkillCount: 2,
+    activeSkills: [],
     totalAccepted: 12
   });
   assert.equal(prompt.includes("document"), true);
@@ -111,6 +113,7 @@ test("buildCurationPrompt feeds back discarded proposals as a do-not-repeat memo
       { skillKey: "weekly-recap", reason: "low_confidence", count: 3, lastAt: "2026-06-15T00:00:00.000Z" }
     ],
     activeTeamSkillCount: 1,
+    activeSkills: [],
     totalAccepted: 12
   });
   assert.equal(prompt.includes("勿再原样重提"), true);
@@ -155,6 +158,7 @@ function buildScheduler(over: Partial<SkillCurationSchedulerOptions> = {}) {
       existingSkills: ["code-script"],
       discardedSkills: [],
       activeTeamSkillCount: 1,
+      activeSkills: [],
       totalAccepted: 9
     }),
     distill: async () => ({ distilled_skills: [skill()] }),
@@ -196,6 +200,7 @@ test("scheduler clips promotions to the edit-budget and defers the rest by confi
       existingSkills: ["code-script"],
       discardedSkills: [],
       activeTeamSkillCount: 49,
+      activeSkills: [],
       totalAccepted: 9
     }),
     distill: async () => ({
@@ -217,6 +222,109 @@ test("scheduler clips promotions to the edit-budget and defers the rest by confi
   assert.equal(deferral?.detailJson?.["edit_budget"], 1);
 });
 
+const ACTIVE_SKILL_CONTENT = [
+  "---",
+  "name: 季度报告",
+  "when_to_use: 生成季度业务报告",
+  "---",
+  "",
+  "# 季度报告",
+  "",
+  "## 套路",
+  "",
+  "1. 拉数据"
+].join("\n");
+
+function refineAnalyze(over: { version?: number } = {}) {
+  return async (workspaceId: string) => ({
+    workspaceId,
+    acceptedDeliverables: [{ targetKind: "document", count: 9 }],
+    escalations: [{ reasonMd: "季度报告缺少边界情况说明", trigger: "low_confidence", count: 2 }],
+    existingSkills: ["code-script", "quarterly-report"],
+    discardedSkills: [],
+    activeTeamSkillCount: 1,
+    activeSkills: [
+      {
+        skillKey: "quarterly-report",
+        name: "季度报告",
+        whenToUse: "生成季度业务报告",
+        version: over.version ?? 2,
+        contentMd: ACTIVE_SKILL_CONTENT
+      }
+    ],
+    totalAccepted: 9
+  });
+}
+
+test("scheduler refines an active skill via a bounded edit patch and audits the new version (K2)", async () => {
+  const promotedInputs: Array<{ skillKey: string; contentMd: string; samplesJson?: Record<string, unknown> | undefined }> = [];
+  const { scheduler, audits } = buildScheduler({
+    repository: {
+      async promote(input) {
+        promotedInputs.push({ skillKey: input.skillKey, contentMd: input.contentMd, samplesJson: input.samplesJson });
+        return { id: `ts-${input.skillKey}`, version: 3 } as unknown as TeamSkillRow;
+      }
+    },
+    analyze: refineAnalyze(),
+    distill: async () => ({ distilled_skills: [] }), // 本测试只看精修
+    refine: async () => ({
+      patches: [
+        {
+          skill_key: "quarterly-report",
+          base_version: 2,
+          ops: [{ op: "add_section", section: "边界情况", content_md: "数据缺口时标注假设并说明影响。" }],
+          rationale_md: "补上反复卡壳的边界情况段。",
+          confidence_score: 0.86
+        }
+      ]
+    })
+  });
+  const result = await scheduler.tick();
+  assert.equal(result.refined, 1);
+  assert.equal(result.promoted, 0);
+  assert.equal(promotedInputs.length, 1);
+  assert.equal(promotedInputs[0]?.skillKey, "quarterly-report");
+  // 受限补丁真的把新段落写进了正文。
+  assert.match(promotedInputs[0]?.contentMd ?? "", /## 边界情况\n\n数据缺口时标注假设并说明影响。/u);
+  // 旧段落保留（不是整篇重写）。
+  assert.match(promotedInputs[0]?.contentMd ?? "", /## 套路/u);
+  // provenance：记录从哪个版本精修来 + 应用了哪些 op。
+  assert.equal(promotedInputs[0]?.samplesJson?.["refined_from_version"], 2);
+  const refineAudit = audits.find((a) => a.action === "team_skill.refined_via_patch");
+  assert.equal(refineAudit?.detailJson?.["skill_key"], "quarterly-report");
+  assert.equal(refineAudit?.detailJson?.["to_version"], 3);
+});
+
+test("scheduler discards a refine patch whose base_version is stale (K2 optimistic concurrency)", async () => {
+  const promotedInputs: string[] = [];
+  const { scheduler, audits } = buildScheduler({
+    repository: {
+      async promote(input) {
+        promotedInputs.push(input.skillKey);
+        return { id: `ts-${input.skillKey}`, version: 3 } as unknown as TeamSkillRow;
+      }
+    },
+    analyze: refineAnalyze({ version: 2 }),
+    distill: async () => ({ distilled_skills: [] }),
+    refine: async () => ({
+      patches: [
+        {
+          skill_key: "quarterly-report",
+          base_version: 1, // 与当前激活 v2 不符 → 作废
+          ops: [{ op: "add_section", section: "边界情况", content_md: "x" }],
+          rationale_md: "对旧底稿的改动",
+          confidence_score: 0.9
+        }
+      ]
+    })
+  });
+  const result = await scheduler.tick();
+  assert.equal(result.refined, 0);
+  assert.deepEqual(promotedInputs, []);
+  const discard = audits.find((a) => a.action === "team_skill.refine_discarded");
+  assert.equal(discard?.detailJson?.["reason"], "stale_base_version");
+});
+
 test("scheduler skips entirely when the work queue is not idle", async () => {
   const { scheduler, promoted } = buildScheduler({ workQueueIsIdle: async () => false });
   const result = await scheduler.tick();
@@ -235,6 +343,7 @@ test("scheduler skips distillation for an idle workspace (no signal → no LLM c
       existingSkills: [],
       discardedSkills: [],
       activeTeamSkillCount: 0,
+      activeSkills: [],
       totalAccepted: 0
     }),
     distill: async () => {
