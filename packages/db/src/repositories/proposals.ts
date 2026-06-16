@@ -1887,7 +1887,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           result = row;
           return;
         }
-        await tx
+        // CAS：仅当 chosen_option_key 仍为空时写入，避免 read-check-write 竞态下的 last-write-wins 覆盖。
+        const updatedRows = await tx
           .update(mergeProposals)
           .set({
             chosenOptionKey: input.optionKey,
@@ -1895,13 +1896,27 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             chosenAt: at,
             updatedAt: at
           })
-          .where(eq(mergeProposals.id, input.mergeProposalId));
-        const updatedRows = await tx
+          .where(and(eq(mergeProposals.id, input.mergeProposalId), isNull(mergeProposals.chosenOptionKey)))
+          .returning();
+        if (updatedRows.length > 0) {
+          result = updatedRows[0] ?? null;
+          return;
+        }
+        // 0 行：并发调用抢先选定。复读后调和——同 optionKey 视为幂等成功，不同则报"已选定"冲突。
+        const rereadRows = await tx
           .select()
           .from(mergeProposals)
           .where(eq(mergeProposals.id, input.mergeProposalId))
           .limit(1);
-        result = updatedRows[0] ?? null;
+        const reread = rereadRows[0];
+        if (reread?.chosenOptionKey === input.optionKey) {
+          result = reread;
+          return;
+        }
+        throw new ProposalRepositoryMergeProposalAlreadyChosenError(
+          input.mergeProposalId,
+          reread?.chosenOptionKey ?? "unknown"
+        );
       });
       return result;
     },
@@ -2312,13 +2327,35 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       await db.transaction(async (tx) => {
         const proposalRows = await tx
           .select({
-            branchId: proposals.branchId
+            branchId: proposals.branchId,
+            status: proposals.status,
+            projectId: workItems.projectId
           })
           .from(proposals)
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
           .where(eq(proposals.id, input.proposalId))
           .limit(1);
         const proposal = proposalRows[0];
         if (!proposal) {
+          return;
+        }
+        // 终态(merged/rejected)不可再被 review——否则迟到的 review 会把状态打回 reviewed/rejected、复活已合并的提议。
+        if (proposal.status !== "opened" && proposal.status !== "reviewed") {
+          return;
+        }
+        // 与 merge() 同 advisory lock 串行化，避免 review 与并发 merge 交错。
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${proposal.projectId}`})::bigint)`);
+        // 锁内 CAS：仅当仍非终态才推进状态；0 行说明等锁期间被并发 merge/reject，放弃且不写 review（事务无副作用）。
+        const updated = await tx
+          .update(proposals)
+          .set({
+            status: input.decision === "approve" ? "reviewed" : "rejected",
+            reviewedAt: at,
+            updatedAt: at
+          })
+          .where(and(eq(proposals.id, input.proposalId), inArray(proposals.status, ["opened", "reviewed"])))
+          .returning({ id: proposals.id });
+        if (updated.length === 0) {
           return;
         }
         found = true;
@@ -2333,14 +2370,6 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           createdAt: at,
           updatedAt: at
         });
-        await tx
-          .update(proposals)
-          .set({
-            status: input.decision === "approve" ? "reviewed" : "rejected",
-            reviewedAt: at,
-            updatedAt: at
-          })
-          .where(eq(proposals.id, input.proposalId));
         if (input.decision === "reject") {
           await tx
             .update(branches)

@@ -603,6 +603,17 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const at = input.at ?? new Date();
       let restoredAcceptedChangeId: string | undefined;
       await db.transaction(async (tx) => {
+        // 与 merge()/apply() 同 project-merge advisory lock 串行化：否则 restore 与并发采纳交错，
+        // 同一 targetKey 可能出现两个未被 superseded 的「当前」交付物。锁后再读当前版本。
+        const wiRows = await tx
+          .select({ projectId: workItems.projectId })
+          .from(workItems)
+          .where(eq(workItems.id, input.workItemId))
+          .limit(1);
+        const projectId = wiRows[0]?.projectId;
+        if (projectId) {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-merge:${projectId}`})::bigint)`);
+        }
         const currentRows = await acceptedDeliverableQueryForTx(tx, {
           workItemId: input.workItemId,
           acceptedChangeId: input.acceptedChangeId

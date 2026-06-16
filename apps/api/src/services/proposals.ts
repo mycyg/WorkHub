@@ -1211,10 +1211,29 @@ function assertAiFusionApplyContext(context: MergeProposalCandidateApplicationCo
 }
 
 async function materializeAiFusionCandidate(input: {
+  repository: ProposalRepository;
   context: MergeProposalCandidateApplicationContext;
   storageRoot: string;
   changeId: string;
 }) {
+  // 丢失更新防护（与逐段文本路径同口径）：融合稿是针对 existing_sha256_after 这个底稿算出来的；
+  // 写回前复核当前正式版仍等于该底稿，否则正式版已被并发改动，必须重生成而非盲目覆盖。
+  const expectedCurrentSha = normalizeShaRef(input.context.conflict.existing_sha256_after);
+  if (expectedCurrentSha) {
+    const mergeContext = await input.repository.findMergeContext(input.context.proposalId);
+    const currentFile = await input.repository.findAcceptedDriveFileForTarget({
+      workItemId: input.context.workItemId,
+      ...(mergeContext?.projectId ? { projectId: mergeContext.projectId } : {}),
+      targetKey: input.context.conflictKey
+    });
+    if (currentFile?.sha256After && currentFile.sha256After !== expectedCurrentSha) {
+      throw new ProposalServiceError(
+        409,
+        "ai_fusion_stale_current",
+        "正式版在生成融合建议后被改动过，需要重新生成融合建议。"
+      );
+    }
+  }
   const root = path.resolve(input.storageRoot);
   const filename = filenameForAiFusionCandidate(input.context);
   const { content, mime } = aiFusionCandidateMaterialization({
@@ -2030,6 +2049,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
             })
           : {
               file: await materializeAiFusionCandidate({
+                repository,
                 context,
                 storageRoot,
                 changeId: nextId()
