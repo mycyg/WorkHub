@@ -58,6 +58,7 @@ import {
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
 import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
+import { renderTeamCalendarHtml, teamCalendarCss } from "./team-calendar.js";
 import {
   desktopPetWindowSettingsFromPreferences,
   resolveDesktopPetWindowBridge
@@ -411,7 +412,7 @@ async function boot() {
       locale
     });
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -433,6 +434,53 @@ async function boot() {
         // 保留当前卡牌,不打断用户。
       }
     };
+    // R7 P4:桌面专属「团队」页(先上日历段)。共享 gold-path surface 没有 team page_vm,
+    // 所以在已渲染的壳里注入桌面 only 的导航项 + 面板,并把 "/team" 挂进 shell.routeMap——
+    // 既有导航管线(classifyGoldPathHref→setActivePage)即认得它(setActivePage 用字符串比较
+    // data-wh-panel,与 PageKey 联合类型无关)。日历懒加载:首次进 team 才拉 client.pages.calendar()。
+    // 后端零改动:GET /api/pages/calendar 早已存在,仅未接桌面。失败可重试,绝不阻塞其它页。
+    const teamZh = locale === "zh-CN";
+    const teamLoadingHtml = (title: string) =>
+      `<div class="wh-tcal"><div class="wh-tcal-empty"><div class="wh-tcal-empty-face gl-avatar">(=^･ω･^=)</div><h3 class="wh-tcal-empty-title">${title}</h3></div></div>`;
+    const navList = root.querySelector<HTMLElement>(".wh-app-nav-list");
+    const appContent = root.querySelector<HTMLElement>(".wh-app-content");
+    if (navList && appContent && !appContent.querySelector("[data-wh-panel=\"team\"]")) {
+      navList.insertAdjacentHTML(
+        "beforeend",
+        `<a href="/team" data-wh-route="/team" data-wh-page-key="team" aria-current="false"><span>${teamZh ? "团队" : "Team"}</span></a>`
+      );
+      appContent.insertAdjacentHTML(
+        "beforeend",
+        `<section class="wh-route-panel" data-wh-panel="team" hidden><div data-wh-team-calendar>${teamLoadingHtml(teamZh ? "正在拉团队日历…" : "Loading team calendar…")}</div></section>`
+      );
+      // "team" 不在 PageKey 联合类型里,这是桌面 only 扩展,故就地放宽类型让既有管线认它。
+      (shell.routeMap as Record<string, string>)["/team"] = "team";
+      const calendarHost = appContent.querySelector<HTMLElement>("[data-wh-panel=\"team\"] [data-wh-team-calendar]");
+      let teamCalendarLoaded = false;
+      const loadTeamCalendar = async () => {
+        if (teamCalendarLoaded || !calendarHost) {
+          return;
+        }
+        teamCalendarLoaded = true;
+        try {
+          const calendar = await client.pages.calendar({ locale });
+          calendarHost.innerHTML = renderTeamCalendarHtml({ page: calendar, locale });
+        } catch {
+          teamCalendarLoaded = false; // 允许下次再进 team 时重试
+          calendarHost.innerHTML = teamLoadingHtml(teamZh ? "日历没拉到，再点一次「团队」重试～" : "Couldn't load — tap Team again to retry");
+        }
+      };
+      root.addEventListener("click", (event) => {
+        const teamLink = event.target instanceof Element ? event.target.closest("[data-wh-page-key=\"team\"]") : null;
+        if (teamLink) {
+          void loadTeamCalendar();
+        }
+      });
+      // 深链/刷新时 hash 已是 #/team:activateFromHash 会显示面板,这里同步把日历拉起来。
+      if (window.location.hash.slice(1) === "/team") {
+        void loadTeamCalendar();
+      }
+    }
     const realShellListen = resolveDesktopShellListen();
     const petWindowBridge = resolveDesktopPetWindowBridge();
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
