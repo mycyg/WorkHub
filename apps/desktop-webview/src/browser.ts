@@ -539,6 +539,36 @@ async function boot() {
     if (proposalHashMatch && proposalHashMatch[1]) {
       void loadLiveProposal(proposalHashMatch[1]);
     }
+    // R7:审批中心改用 LIVE 数据(桌面壳本是 P0.5 fixture)。approvals 由 renderGoldPathSurface 内部
+    // renderApprovals 渲染、用 gold-path 类(壳已玻璃化),无独立 css/无 :root 冲突——故复用「拿 live page_vm
+    // 重建 surface→renderGoldPathSurface→抽该面板 html」范式即可,天然玻璃。导航到 /approvals 时懒拉;
+    // 在审批中心内做完动作也回拉(仅当该面板可见,省无谓请求)。失败保留 fixture。
+    const approvalsPanel = root.querySelector<HTMLElement>("[data-wh-panel=\"approvals\"]");
+    const loadLiveApprovals = async () => {
+      if (!approvalsPanel) {
+        return;
+      }
+      try {
+        const approvals = await client.pages.approvals({ locale });
+        const liveSurface = { ...surfaceVm, page_vms: { ...surfaceVm.page_vms, approvals } };
+        const page = renderGoldPathSurface(liveSurface, "desktop", { locale }).pages.find((entry) => entry.key === "approvals");
+        if (page) {
+          approvalsPanel.innerHTML = page.html;
+        }
+      } catch {
+        // 保留 fixture 面板,不打断用户。
+      }
+    };
+    root.addEventListener("click", (event) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      const href = link?.getAttribute("href");
+      if (href && /^\/approvals(?:[/?#]|$)/u.test(href)) {
+        void loadLiveApprovals();
+      }
+    });
+    if (/^\/approvals(?:[/?#]|$)/u.test(window.location.hash.slice(1))) {
+      void loadLiveApprovals();
+    }
     // R7 P4:桌面专属「团队」「项目」页。共享 gold-path surface 无 team/projects page_vm,
     // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
     // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。
@@ -634,6 +664,10 @@ async function boot() {
       listen: realShellListen,
       onActionSettled: () => {
         void refreshDecisionDeck();
+        // 在审批中心内做完动作也回拉它(仅当面板可见,省无谓请求)。
+        if (approvalsPanel && !approvalsPanel.hidden) {
+          void loadLiveApprovals();
+        }
       }
     });
   } catch (error) {
