@@ -55,3 +55,28 @@ test("decision deck maps kinds to glass tones and localizes tags (en)", () => {
   assert.match(handoff, /Assign/u);
   assert.ok(decisionDeckCss.includes(".wh-deck-card{"));
 });
+
+test("decision deck shows a background-runs footer for running/queued AI, even in the done state", () => {
+  const runs = [
+    { run_id: "r1", work_item_id: "w1", title: "渠道周报", state: "running", preview_text: "写初稿中" },
+    { run_id: "r2", title: "数据透视", state: "queued", preview_text: "排队中" },
+    { run_id: "r3", title: "已完事", state: "failed", preview_text: "失败" }
+  ];
+  // done-state(无待办)也展示在跑 AI
+  const done = renderDecisionDeckHtml({ items: [], locale: "zh-CN", backgroundRuns: runs });
+  assert.match(done, /data-deck-empty="true"/u);
+  assert.match(done, /Cuu 正在干 2 件活/u); // running + queued,failed 不计
+  assert.match(done, /渠道周报/u);
+  assert.match(done, /数据透视/u);
+  // 有待办时 footer 也在
+  const withItems = renderDecisionDeckHtml({ items: [item()], locale: "zh-CN", backgroundRuns: runs });
+  assert.match(withItems, /wh-deck-runs/u);
+  assert.match(withItems, /Cuu 正在干 2 件活/u);
+});
+
+test("decision deck omits the footer when nothing is actively running (en pluralization)", () => {
+  const none = renderDecisionDeckHtml({ items: [item()], locale: "zh-CN", backgroundRuns: [{ run_id: "r", title: "t", state: "waiting_for_user", preview_text: "p" }] });
+  assert.doesNotMatch(none, /wh-deck-runs/u);
+  const one = renderDecisionDeckHtml({ items: [], locale: "en-US", backgroundRuns: [{ run_id: "r", title: "Report", state: "running", preview_text: "p" }] });
+  assert.match(one, /Cuu is on 1 task</u);
+});

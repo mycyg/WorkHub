@@ -482,23 +482,33 @@ async function boot() {
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
     const homePanel = root.querySelector<HTMLElement>("[data-wh-panel=\"home\"]");
+    // 首屏即时用壳里的(P0.5 fixture)队列渲一帧,避免空白;随后 refreshDecisionDeck 换成 live。
     if (homePanel) {
-      homePanel.innerHTML = renderDecisionDeckHtml({ items: surfaceVm.page_vms.attention.queue, locale });
+      homePanel.innerHTML = renderDecisionDeckHtml({
+        items: surfaceVm.page_vms.attention.queue,
+        locale,
+        backgroundRuns: surfaceVm.page_vms.attention.background_runs
+      });
     }
-    // R7 P3:动作落库后回拉服务端真相、重渲染决策卡牌——已处理的卡从牌叠消失,失败则卡片留存
-    // (服务端仍 pending → 回拉的 queue 仍含此卡),天然规避「乐观前进但其实失败」的错位。
-    // 走 goldPath 全量聚合,与 boot 同源;桌面低频,成本可接受。失败静默保留现状,绝不空首页。
+    // R7:决策卡牌取 LIVE /api/pages/attention——真实待办(本人待决审批 + GAP-1 的 AI 提议)+ 真实后台在跑,
+    // 不再用 P0.5 gold-path fixture(那是 demo 数据、卡片 ID 是假的、动作点了打不通)。动作落库后也调它回拉:
+    // 已处理的卡从服务端 queue 消失;失败则卡仍在(规避「乐观前进其实失败」)。取数失败保留当前帧,绝不空首页。
     const refreshDecisionDeck = async () => {
       if (!homePanel) {
         return;
       }
       try {
-        const fresh = await client.pages.goldPath({ locale });
-        homePanel.innerHTML = renderDecisionDeckHtml({ items: fresh.page_vms.attention.queue, locale });
+        const attention = await client.pages.attention({ locale });
+        homePanel.innerHTML = renderDecisionDeckHtml({
+          items: attention.queue,
+          locale,
+          backgroundRuns: attention.background_runs
+        });
       } catch {
-        // 保留当前卡牌,不打断用户。
+        // 保留当前帧(fixture 或上一帧 live),不打断用户。
       }
     };
+    void refreshDecisionDeck();
     // R7 P4:桌面专属「团队」「项目」页。共享 gold-path surface 无 team/projects page_vm,
     // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
     // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。

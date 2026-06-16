@@ -74,13 +74,30 @@ function renderDeckAction(action: AttentionItem["actions"][number]) {
   return `<a ${attrs}>${escapeHtml(action.label)}</a>`;
 }
 
-function doneState(zh: boolean) {
+// R7 P3:卡牌底部「Cuu 正在干 N 件活」条——展示在跑的后台 AI(running/queued),只读,信息性。
+type DeckBackgroundRun = { run_id: string; work_item_id?: string | undefined; title: string; state: string; preview_text: string };
+
+function backgroundRunsFooter(runs: DeckBackgroundRun[], zh: boolean): string {
+  const active = runs.filter((run) => run.state === "running" || run.state === "queued");
+  if (active.length === 0) {
+    return "";
+  }
+  const chips = active.slice(0, 3)
+    .map((run) => `<span class="wh-deck-run"><span class="wh-deck-run-dot"></span><span class="wh-deck-run-title">${escapeHtml(run.title)}</span></span>`)
+    .join("");
+  const more = active.length > 3 ? `<span class="wh-deck-run-more">+${active.length - 3}</span>` : "";
+  const label = zh ? `Cuu 正在干 ${active.length} 件活` : `Cuu is on ${active.length} task${active.length > 1 ? "s" : ""}`;
+  return `<div class="wh-deck-runs"><span class="wh-deck-runs-label"><span class="wh-deck-runs-spark gl-avatar">(=ΦωΦ=)</span>${label}</span><div class="wh-deck-runs-list">${chips}${more}</div></div>`;
+}
+
+function doneState(zh: boolean, footer: string) {
   return `<div class="wh-deck" data-deck-empty="true">
     <div class="wh-deck-done">
       <div class="wh-deck-done-face gl-avatar">٩(◜◡◝)۶</div>
       <h3 class="wh-deck-done-title">${zh ? "全部搞定啦！" : "All clear!"}</h3>
       <p class="wh-deck-done-sub">${zh ? "今天也辛苦你啦～有要你拍板的，Cuu 会第一时间端过来 (=^･ω･^=)" : "Nice work today — Cuu will bring the next call straight to you (=^･ω･^=)"}</p>
     </div>
+    ${footer}
   </div>`;
 }
 
@@ -88,11 +105,13 @@ export function renderDecisionDeckHtml(input: {
   items: AttentionItem[];
   locale: WorkHubLocale;
   cuuLine?: string;
+  backgroundRuns?: DeckBackgroundRun[];
 }): string {
   const zh = input.locale === "zh-CN";
   const items = input.items;
+  const footer = backgroundRunsFooter(input.backgroundRuns ?? [], zh);
   if (items.length === 0) {
-    return doneState(zh);
+    return doneState(zh, footer);
   }
   const top = items[0]!;
   const tone = tagToneForKind(top.kind);
@@ -119,6 +138,7 @@ export function renderDecisionDeckHtml(input: {
       </article>
     </div>
     <div class="wh-deck-cuu"><span class="wh-deck-cuu-face gl-avatar">(=^･ω･^=)</span><span class="wh-deck-cuu-line">${escapeHtml(cuuLine)}</span></div>
+    ${footer}
   </div>`;
 }
 
@@ -151,5 +171,13 @@ export const decisionDeckCss = [
   ".wh-deck-done{max-width:560px;margin:8px auto 0;border-radius:24px;padding:46px 30px;text-align:center;background:rgba(255,255,255,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);border:1px solid rgba(255,255,255,.75);box-shadow:0 26px 60px -28px rgba(70,54,140,.5),inset 0 1px 0 rgba(255,255,255,.7)}",
   ".wh-deck-done-face{font:700 34px/1 'M PLUS Rounded 1c',sans-serif}",
   ".wh-deck-done-title{margin:18px 0 0;font-size:21px;font-weight:900;color:#2c2746}",
-  ".wh-deck-done-sub{margin:10px 0 0;font-size:14px;line-height:1.6;color:#6b6488}"
+  ".wh-deck-done-sub{margin:10px 0 0;font-size:14px;line-height:1.6;color:#6b6488}",
+  ".wh-deck-runs{margin:22px auto 0;max-width:600px;border-radius:16px;padding:13px 16px;background:rgba(255,255,255,.42);border:1px solid rgba(255,255,255,.6);backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}",
+  ".wh-deck-runs-label{display:flex;align-items:center;gap:8px;font:800 12px/1 'M PLUS Rounded 1c','Noto Sans SC',sans-serif;color:#6b6488}",
+  ".wh-deck-runs-spark{font-size:15px}",
+  ".wh-deck-runs-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}",
+  ".wh-deck-run{display:inline-flex;align-items:center;gap:7px;max-width:100%;font:700 12px/1.3 'Noto Sans SC',sans-serif;color:#5d567e;background:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.7);border-radius:10px;padding:6px 10px}",
+  ".wh-deck-run-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,#7c83ff,#34c79a);box-shadow:0 0 0 3px rgba(124,131,255,.16)}",
+  ".wh-deck-run-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}",
+  ".wh-deck-run-more{display:inline-flex;align-items:center;font:800 12px/1 'M PLUS Rounded 1c',sans-serif;color:#8b84ad;padding:6px 8px}"
 ].join("");
