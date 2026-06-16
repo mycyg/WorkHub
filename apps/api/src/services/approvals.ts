@@ -447,6 +447,16 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         return { outcome: "escalated", reason: "no_approver" };
       }
 
+      // L37：路由目标必须是真实存在的活跃用户，否则审批会落进无人能看见的黑洞收件箱。
+      // 既挡管理员经 /ask 路由到伪造 id，也挡 agent-runner 升级到已被删除的工作项负责人——
+      // 两种情况都按「无有效审批人」降级为升级，而非创建一条永远不会被处理的 pending。
+      if (deps.users) {
+        const target = await deps.users.findActiveById(input.routedToUserId);
+        if (!target) {
+          return { outcome: "escalated", reason: "no_approver" };
+        }
+      }
+
       const createInput: CreateApprovalRequestInput = {
         actionPattern: input.actionPattern,
         payloadJson: approvalPayloadSchema.parse(input.payloadJson ?? { raw_args: {} })

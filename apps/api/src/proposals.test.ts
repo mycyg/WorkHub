@@ -1234,12 +1234,20 @@ test("proposal routes require work item access before read and write operations"
     headers,
     body: JSON.stringify({})
   });
+  // L3：鉴权先于请求体解析——未授权者发畸形 body 也应拿到 403（鉴权），而非 400（schema 校验），
+  // 否则会泄露请求体形状/字段要求给无权限者。
+  const reviewBadBody = await app.request(`/api/proposals/${created.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "definitely-not-a-valid-decision" })
+  });
 
   assert.equal(list.status, 403);
   assert.equal(create.status, 403);
   assert.equal(read.status, 403);
   assert.equal(review.status, 403);
   assert.equal(merge.status, 403);
+  assert.equal(reviewBadBody.status, 403);
 });
 
 test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {
@@ -3225,12 +3233,15 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   assert.equal(chosenAiBody.data.candidate.option_key, "ai_fusion");
   assert.equal(chosenAiBody.data.candidate.source, "llm");
 
+  // L5：keep_current / accept_incoming 不是候选「选择」路由的合法 option——apply 只认 ai_fusion，
+  // 选了它们会让变更申请永久卡在 reviewed（死状态）。路由层直接 422 fail-closed 拒绝，无论该合并建议
+  // 此前是否已选定（这两种解析走合并接口的 conflict_resolution 内联完成）。
   const overwriteChoice = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
     method: "POST",
     headers,
     body: JSON.stringify({ option_key: "keep_current" })
   });
-  assert.equal(overwriteChoice.status, 409);
+  assert.equal(overwriteChoice.status, 422);
 
   const reapply = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
     method: "POST",

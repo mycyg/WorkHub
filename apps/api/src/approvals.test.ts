@@ -298,6 +298,59 @@ test("ask creates a pending approval and publishes only private user/session top
   }
 });
 
+test("L37 ask escalates instead of creating a phantom-inbox approval when the routed user does not exist", async () => {
+  const approvals = new MemoryApprovals();
+  const policyRepo = new MemoryPolicies([]);
+  const auditLogs = new MemoryAuditLogs();
+  const bus = new RecordingBus();
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    users: { findActiveById: async () => null },
+    now: () => now
+  });
+
+  const result = await service.createApproval({
+    actor,
+    kind: "tool",
+    actionPattern: "tool.write_file",
+    routedToUserId: "99999999-0000-4000-8000-000000000099"
+  });
+
+  assert.equal(result.outcome, "escalated");
+  if (result.outcome === "escalated") {
+    assert.equal(result.reason, "no_approver");
+  }
+  assert.equal(approvals.rows.length, 0, "no approval row is written into a non-existent inbox");
+});
+
+test("L37 ask still creates a pending approval when the routed user exists", async () => {
+  const approvals = new MemoryApprovals();
+  const policyRepo = new MemoryPolicies([]);
+  const auditLogs = new MemoryAuditLogs();
+  const bus = new RecordingBus();
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    users: { findActiveById: async () => ({ id: approverId }) as never },
+    now: () => now
+  });
+
+  const result = await service.createApproval({
+    actor,
+    kind: "tool",
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId
+  });
+
+  assert.equal(result.outcome, "pending");
+  assert.equal(approvals.rows.length, 1);
+});
+
 test("allow policy skips approval creation while no policy defaults to ask", async () => {
   const deps = serviceDeps([
     {

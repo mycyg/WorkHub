@@ -1880,6 +1880,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         if (!mergeProposalCandidateOptionKeys(row).has(input.optionKey)) {
           throw new ProposalRepositoryInvalidMergeProposalCandidateError(input.mergeProposalId, input.optionKey);
         }
+        // L5：候选里虽含 keep_current / accept_incoming（供展示/推荐），但 applyMergeProposalCandidate 只认
+        // ai_fusion，选了那两者会让变更申请永久卡在 reviewed（死状态）。HTTP 路由层（routes/proposals.ts
+        // 的 /choose）已 fail-closed 拒绝这两种 option_key——它们的解析走合并接口的 conflict_resolution 内联完成。
         if (row.chosenOptionKey) {
           if (row.chosenOptionKey !== input.optionKey) {
             throw new ProposalRepositoryMergeProposalAlreadyChosenError(input.mergeProposalId, row.chosenOptionKey);

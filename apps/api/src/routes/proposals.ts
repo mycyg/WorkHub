@@ -330,8 +330,10 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   });
 
   routes.post("/:id/review", authMiddleware, async (c) => {
-    const payload = reviewProposalRequestSchema.parse(await readJsonBody(c));
+    // L3：先鉴权再解析请求体——否则未授权者会先收到 schema 校验 400（泄露请求体形状/字段要求），
+    // 拿不到本应优先返回的 404/403。授权检查（readProposalForActor → assertCanReadWorkItem）置于解析之前。
     await readProposalForActor(c.req.param("id"), c.var.actor);
+    const payload = reviewProposalRequestSchema.parse(await readJsonBody(c));
     let proposal: StoredProposal;
     try {
       proposal = await proposals.review({
@@ -565,6 +567,15 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   routes.post("/merge-proposals/:id/choose", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
     await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    // L5：keep_current / accept_incoming 不经候选「选择 + 应用」路由——apply 只认 ai_fusion，选了它们会
+    // 把变更申请永久卡在 reviewed 且冲突反复出现（死状态）。这两种解析在合并接口里内联完成：采纳来方填
+    // conflict_resolution.accept_incoming_target_keys；保留现状则省略该冲突，merge 即可收口。此处 fail-closed，
+    // 让候选选择路由专司 AI 融合稿。
+    if (payload.option_key === "keep_current" || payload.option_key === "accept_incoming") {
+      throw new HTTPException(422, {
+        message: "“保留现状”和“采纳来方”请在合并冲突处直接处理，这里仅用于选择 AI 融合稿。"
+      });
+    }
     try {
       const result = await proposals.chooseMergeCandidate({
         mergeProposalId: c.req.param("id"),
