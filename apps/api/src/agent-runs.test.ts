@@ -2125,6 +2125,78 @@ test("agent run queue keeps the lease alive during a long provider call", async 
   assert.notEqual(duringProvider?.claim?.heartbeat_at, duringProvider?.claim?.claimed_at);
 });
 
+test("agent run aborts its in-flight loop when its lease is lost mid-run", async () => {
+  // 模拟：worker 正跑着，租约被回收/转交（心跳命中 0 行 → heartbeatClaim 返回 null）。
+  // 期望：worker 本地标记漂移、停手，最终 run 不落「成功」（不会污染接手方的结果）。
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const leaseLostSeen = deferred<void>();
+  const releaseProvider = deferred<void>();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-lease-lost-test-"));
+  let tick = 0;
+  const longProviderClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        await releaseProvider.promise;
+        return {
+          id: "msg-lease-lost",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 1,
+            outputTokens: 1,
+            estimatedCostCny: "0.001",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:00.000Z"
+          },
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  // 第一次心跳即返回 null，模拟租约已被别的 worker 接手。
+  persistence.heartbeatClaim = async () => {
+    leaseLostSeen.resolve();
+    return null;
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => new Date(now.getTime() + tick++ * 100),
+    id: () => "40000000-0000-4000-8000-00000000002a",
+    workerId: "worker-lease-lost",
+    leaseMs: 300,
+    heartbeatIntervalMs: 10,
+    workdir: () => workdir,
+    client: () => longProviderClient,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Lease-lost abort run"
+  });
+
+  const running = queue.runNext();
+  await leaseLostSeen.promise;
+  releaseProvider.resolve();
+  const executed = await running;
+
+  // 本地漂移标记：失去租约后 run 不再以「成功」收尾。
+  assert.notEqual(executed?.status, "succeeded");
+  // 持久层里这条 run 也没被本 worker 打成 succeeded（接手的新 owner 才决定它的终态）。
+  const persisted = await persistence.get(run.run_id);
+  assert.notEqual(persisted?.status, "succeeded");
+});
+
 test("agent run route auto-pumps queued work after enqueue", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-autopump-test-"));

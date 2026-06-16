@@ -177,9 +177,11 @@ export type AgentRunWorkItemContextProvider =
 export type AgentRunPersistence = {
   createRun: (run: AgentRunQueueRecord) => Promise<void>;
   createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
-  updateRun: (run: AgentRunQueueRecord) => Promise<void>;
-  replaceTrace: (runId: string, trace: AgentRunTraceStepRecord[]) => Promise<void>;
-  setWorkdir: (runId: string, workdir: string, at: Date) => Promise<void>;
+  // workerId（可选）：执行循环把自己的 workerId 透传下去，让持久层对写入加 `claimedBy = workerId` 守卫；
+  // 租约被回收/转交后本 worker 的写入即变空操作，不会污染新 owner 的数据。abort/enqueue 等非执行路径不传。
+  updateRun: (run: AgentRunQueueRecord, workerId?: string) => Promise<void>;
+  replaceTrace: (runId: string, trace: AgentRunTraceStepRecord[], workerId?: string) => Promise<void>;
+  setWorkdir: (runId: string, workdir: string, at: Date, workerId?: string) => Promise<void>;
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
   getWorkdir: (runId: string) => Promise<string | null>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
@@ -535,23 +537,25 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
-  async function persistRun(run: AgentRunQueueRecord) {
-    await persistence?.updateRun(run);
+  // fencingWorkerId：执行循环传 workerId 给写入加租约守卫（见 AgentRunPersistence 注释）；
+  // abort/enqueue 等非执行路径省略，保持无守卫写入。
+  async function persistRun(run: AgentRunQueueRecord, fencingWorkerId?: string) {
+    await persistence?.updateRun(run, fencingWorkerId);
   }
 
-  async function persistRunWithTrace(run: AgentRunQueueRecord) {
-    await persistRun(run);
-    await queueTracePersistence(run);
+  async function persistRunWithTrace(run: AgentRunQueueRecord, fencingWorkerId?: string) {
+    await persistRun(run, fencingWorkerId);
+    await queueTracePersistence(run, fencingWorkerId);
   }
 
-  function queueTracePersistence(run: AgentRunQueueRecord) {
+  function queueTracePersistence(run: AgentRunQueueRecord, fencingWorkerId?: string) {
     if (!persistence) {
       return Promise.resolve();
     }
     const previous = tracePersistenceChains.get(run.run_id) ?? Promise.resolve();
     const task = previous
       .catch(() => undefined)
-      .then(() => persistence.replaceTrace(run.run_id, run.trace));
+      .then(() => persistence.replaceTrace(run.run_id, run.trace, fencingWorkerId));
     tracePersistenceChains.set(run.run_id, task);
     void task.finally(() => {
       if (tracePersistenceChains.get(run.run_id) === task) {
@@ -561,11 +565,11 @@ export function createInMemoryAgentRunQueue(options: {
     return task;
   }
 
-  function persistTraceInBackground(run: AgentRunQueueRecord) {
+  function persistTraceInBackground(run: AgentRunQueueRecord, fencingWorkerId?: string) {
     if (!persistence) {
       return;
     }
-    void queueTracePersistence(run).catch((error) => {
+    void queueTracePersistence(run, fencingWorkerId).catch((error) => {
       console.warn("WorkHub AgentRun trace persistence failed", error);
     });
   }
@@ -583,7 +587,16 @@ export function createInMemoryAgentRunQueue(options: {
       leaseExpiresAt
     });
     const live = runs.get(run.run_id);
-    if (!updated || !live || live.status !== "running") {
+    if (!live || live.status !== "running") {
+      return;
+    }
+    if (!updated) {
+      // 心跳命中 0 行：该 run 已不归本 worker（租约过期被回收/转交给别的 worker，或已被取消）。
+      // 本地标记漂移，让执行循环尽快停手——工具执行守卫(driftedRun)与循环后的 driftedRun 检查都会据此中止；
+      // 同时后续写入会被持久层的 claimedBy fencing 拒绝，不会污染接手的新 owner。
+      // 注意：心跳的瞬时 DB 错误会 throw 并被 refreshClaimInBackground 的 .catch 吞掉，不会走到这里，
+      // 因此 updated 为 null 必定意味着「行不再匹配 id+running+claimedBy」，即真正的租约丢失。
+      runs.set(run.run_id, { ...live, status: "failed", updated_at: now().toISOString() });
       return;
     }
     runs.set(run.run_id, {
@@ -809,7 +822,7 @@ export function createInMemoryAgentRunQueue(options: {
           updated_at: now().toISOString()
         });
     if (run.status !== "running") {
-      await persistRun(current);
+      await persistRun(current, workerId);
     }
     const executionInput = { run: current, settings };
     const client = await (options.client ?? defaultClient)(executionInput);
@@ -820,7 +833,7 @@ export function createInMemoryAgentRunQueue(options: {
       workdir_ref: workdir,
       updated_at: now().toISOString()
     });
-    await persistence?.setWorkdir(current.run_id, workdir, now());
+    await persistence?.setWorkdir(current.run_id, workdir, now(), workerId);
     // P-COLLAB M1：把项目现有文件物化进 workdir/project/（只读参考区），让 AI 能读整个项目。
     // fail-open：物化失败不影响 run（照常以空 workdir 跑）。默认关闭，由 hydrateProject 提供者决定。
     let projectFileCount = 0;
@@ -918,7 +931,7 @@ export function createInMemoryAgentRunQueue(options: {
               trace: [...live.trace, ...traceRecordsFromStep(current.run_id, step)],
               updated_at: now().toISOString()
             });
-            persistTraceInBackground(current);
+            persistTraceInBackground(current, workerId);
             refreshClaimInBackground(current.run_id);
           },
           // M1：把每步累计用量落到 current.usage，这样即便 loop 中途抛错，失败 run 也按真实消耗记账（不再记 0）。
@@ -944,7 +957,7 @@ export function createInMemoryAgentRunQueue(options: {
       // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
       // 提议已存在/DB 写失败）会被外层 catch 当作"run 失败"、丢掉本已成功的交付物。
       current = updateRun(finalizeExecutedRun(current, result, now()));
-      await persistRunWithTrace(current);
+      await persistRunWithTrace(current, workerId);
       await emitFinalRunEvent(current, result);
       const confidenceId = await recordRunConfidence(current, result);
       try {
@@ -979,7 +992,7 @@ export function createInMemoryAgentRunQueue(options: {
         ],
         updated_at: now().toISOString()
       });
-      await persistRunWithTrace(current);
+      await persistRunWithTrace(current, workerId);
       await emitRunEvent({
         type: eventTypes.agentRunFailed,
         previewText: failureReason,

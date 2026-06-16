@@ -88,9 +88,12 @@ export type AgentRunRequeueStaleInput = {
 export type AgentRunRepository = {
   createRun: (run: AgentRunForPersistence) => Promise<AgentRunRow>;
   createRunIfWorkItemIdle: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
-  updateRun: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
-  replaceTrace: (runId: string, trace: AgentRunTraceForPersistence[]) => Promise<AgentStepRow[]>;
-  setWorkdir: (runId: string, workdirRef: string, at: Date) => Promise<AgentRunRow | null>;
+  // fencingWorkerId（可选）：执行中的 worker 传自己的 claimedBy，写入会附 `claimedBy = workerId` 守卫，
+  // 一旦该 run 的租约已被回收/转交给别的 worker，本次写入命中 0 行（返回 null/[]），不会覆盖新 owner 的数据。
+  // 非执行路径（enqueue 建 run、abort 取消）省略此参数，保持原无守卫语义。
+  updateRun: (run: AgentRunForPersistence, fencingWorkerId?: string) => Promise<AgentRunRow | null>;
+  replaceTrace: (runId: string, trace: AgentRunTraceForPersistence[], fencingWorkerId?: string) => Promise<AgentStepRow[]>;
+  setWorkdir: (runId: string, workdirRef: string, at: Date, fencingWorkerId?: string) => Promise<AgentRunRow | null>;
   findById: (runId: string) => Promise<StoredAgentRunRows | null>;
   listActive: () => Promise<StoredAgentRunRows[]>;
   claimQueued: (runId: string, claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
@@ -271,18 +274,33 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
       return rows[0] ?? null;
     },
 
-    async updateRun(run) {
+    async updateRun(run, fencingWorkerId) {
       const rows = await db
         .update(agentRuns)
         .set(runUpdateValues(run))
-        .where(eq(agentRuns.id, run.runId))
+        .where(and(
+          eq(agentRuns.id, run.runId),
+          fencingWorkerId ? eq(agentRuns.claimedBy, fencingWorkerId) : undefined
+        ))
         .returning();
       return rows[0] ?? null;
     },
 
-    async replaceTrace(runId, trace) {
+    async replaceTrace(runId, trace, fencingWorkerId) {
       // delete+insert 必须同事务：否则 insert 失败/进程崩溃会把已删的整条 trace 永久抹掉。
       return db.transaction(async (tx) => {
+        if (fencingWorkerId) {
+          // trace 行不带 claimedBy，故在事务里先核对父 run 的 owner；租约已转交则直接放弃，
+          // 不删不写（避免抹掉新 owner 正在写的 trace）。
+          const owner = await tx
+            .select({ claimedBy: agentRuns.claimedBy })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, runId))
+            .limit(1);
+          if (owner[0]?.claimedBy !== fencingWorkerId) {
+            return [];
+          }
+        }
         await tx.delete(agentSteps).where(eq(agentSteps.agentRunId, runId));
         if (trace.length === 0) {
           return [];
@@ -305,11 +323,14 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
       });
     },
 
-    async setWorkdir(runId, workdirRef, at) {
+    async setWorkdir(runId, workdirRef, at, fencingWorkerId) {
       const rows = await db
         .update(agentRuns)
         .set({ workdirRef, updatedAt: at })
-        .where(eq(agentRuns.id, runId))
+        .where(and(
+          eq(agentRuns.id, runId),
+          fencingWorkerId ? eq(agentRuns.claimedBy, fencingWorkerId) : undefined
+        ))
         .returning();
       return rows[0] ?? null;
     },

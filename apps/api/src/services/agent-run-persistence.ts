@@ -255,16 +255,16 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
       return Boolean(row);
     },
 
-    async updateRun(run) {
-      await repository.updateRun(toPersistenceRun(run));
+    async updateRun(run, workerId) {
+      await repository.updateRun(toPersistenceRun(run), workerId);
     },
 
-    async replaceTrace(runId, trace) {
-      await repository.replaceTrace(runId, toPersistenceTrace(trace));
+    async replaceTrace(runId, trace, workerId) {
+      await repository.replaceTrace(runId, toPersistenceTrace(trace), workerId);
     },
 
-    async setWorkdir(runId, workdir, at) {
-      await repository.setWorkdir(runId, workdir, at);
+    async setWorkdir(runId, workdir, at, workerId) {
+      await repository.setWorkdir(runId, workdir, at, workerId);
     },
 
     async get(runId) {
