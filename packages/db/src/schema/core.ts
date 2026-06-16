@@ -939,6 +939,8 @@ export const agentRuns = pgTable(
     claimedAt: timestampTz("claimed_at"),
     heartbeatAt: timestampTz("heartbeat_at"),
     leaseExpiresAt: timestampTz("lease_expires_at"),
+    // 因租约过期被恢复(requeue)的累计次数；超过 maxRecoverAttempts 即转死信 failed，不再无限重跑。
+    recoverAttempts: integer("recover_attempts").notNull().default(0),
     startedAt: timestampTz("started_at"),
     finishedAt: timestampTz("finished_at"),
     ...timestamps()

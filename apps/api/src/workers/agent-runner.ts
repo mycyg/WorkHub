@@ -208,6 +208,8 @@ export type AgentRunHeartbeatLease = {
 export type AgentRunRequeueExpiredLeases = {
   expiredBefore: Date;
   requeuedAt: Date;
+  // 已被恢复 >= 此次数的过期 run 转死信 failed，不再重排（防 poison run 无限重跑）。
+  maxRecoverAttempts: number;
 };
 
 export type AgentRunQueue = {
@@ -328,6 +330,7 @@ export function createInMemoryAgentRunQueue(options: {
   workerId?: string;
   leaseMs?: number;
   heartbeatIntervalMs?: number;
+  maxRecoverAttempts?: number;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
@@ -358,6 +361,7 @@ export function createInMemoryAgentRunQueue(options: {
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
+  const maxRecoverAttempts = Math.max(1, options.maxRecoverAttempts ?? 3);
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -612,15 +616,18 @@ export function createInMemoryAgentRunQueue(options: {
     }
     const auditLogs = options.auditLogs ?? getDefaultAuditStores().auditLogs;
     for (const run of recovered) {
+      // 转死信的（status=failed）与重排的（status=queued）打不同 action：死信值得人盯（poison run）。
+      const deadLettered = run.status === "failed";
       await auditLogs.createAuditLog({
         actorKind: "system",
         actorNickname: "agent-run-recovery",
         entityType: "agent_run",
         entityId: run.run_id,
-        action: "agent_run.requeued_stale_claim",
+        action: deadLettered ? "agent_run.dead_lettered_stale_claim" : "agent_run.requeued_stale_claim",
         detailJson: {
           run_id: run.run_id,
           work_item_id: run.work_item_id,
+          ...(deadLettered ? { dead_lettered: true } : {}),
           requeued_at: recoveredAt.toISOString()
         }
       });
@@ -1223,7 +1230,8 @@ export function createInMemoryAgentRunQueue(options: {
       const recoveredAt = now();
       const recovered = await persistence.requeueExpiredClaims({
         expiredBefore: recoveredAt,
-        requeuedAt: recoveredAt
+        requeuedAt: recoveredAt,
+        maxRecoverAttempts
       });
       for (const run of recovered) {
         runs.set(run.run_id, run);
@@ -1471,6 +1479,7 @@ export function getDefaultAgentRunQueue() {
     ...(runtimeSettings.agentRun.heartbeatIntervalMs
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }
       : {}),
+    maxRecoverAttempts: runtimeSettings.agentRun.maxRecoverAttempts,
     notificationWorkItem: createAgentRunNotificationWorkItemResolver()
   });
   return defaultQueue;

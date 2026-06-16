@@ -68,6 +68,8 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
   public readonly claims: { runId: string; workerId: string }[] = [];
   public readonly heartbeats: AgentRunHeartbeatLease[] = [];
+  // 模拟 DB 的 agent_runs.recover_attempts 列：按 run 累计被恢复次数，到上限即转死信。
+  private readonly recoverAttempts = new Map<string, number>();
 
   async createRun(run: AgentRunQueueRecord) {
     this.rows.set(run.run_id, structuredClone(run));
@@ -180,24 +182,28 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   }
 
   async requeueExpiredClaims(input: AgentRunRequeueExpiredLeases) {
-    const requeued: AgentRunQueueRecord[] = [];
+    const recovered: AgentRunQueueRecord[] = [];
     for (const run of this.rows.values()) {
       if (
         run.status === "running" &&
         run.claim &&
         new Date(run.claim.lease_expires_at).getTime() < input.expiredBefore.getTime()
       ) {
+        // 已恢复 >= 上限：转死信 failed，不再重排（与 DB repo 同口径）。
+        const attempts = this.recoverAttempts.get(run.run_id) ?? 0;
+        const deadLetter = attempts >= input.maxRecoverAttempts;
+        this.recoverAttempts.set(run.run_id, attempts + 1);
         const updated: AgentRunQueueRecord = {
           ...structuredClone(run),
-          status: "queued",
+          status: deadLetter ? "failed" : "queued",
           updated_at: input.requeuedAt.toISOString()
         };
         delete updated.claim;
         this.rows.set(run.run_id, structuredClone(updated));
-        requeued.push(structuredClone(updated));
+        recovered.push(structuredClone(updated));
       }
     }
-    return requeued;
+    return recovered;
   }
 }
 
@@ -1984,6 +1990,53 @@ test("agent run queue requeues expired persistent claims and audits the recovery
   assert.equal(auditLogs.rows[0]?.action, "agent_run.requeued_stale_claim");
   assert.equal(auditLogs.rows[0]?.entityType, "agent_run");
   assert.equal(auditLogs.rows[0]?.entityId, queued.run_id);
+});
+
+test("agent run queue dead-letters a run that keeps crashing past the recover-attempt cap", async () => {
+  // poison run（每次都崩）不该被无限重排：超过 maxRecoverAttempts 即转死信 failed，且打专门的审计动作。
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004a",
+    workerId: "worker-deadletter",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  // 第一次过期：仍在上限内 → 重排 queued。
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  const firstRecover = await queue.recoverExpiredClaims();
+  assert.equal(firstRecover[0]?.status, "queued");
+
+  // 第二次过期（attempts 已达上限）：转死信 failed，不再重排。
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  const secondRecover = await queue.recoverExpiredClaims();
+  assert.equal(secondRecover[0]?.status, "failed");
+
+  const live = await queue.get(queued.run_id);
+  assert.equal(live?.status, "failed");
+  // 死信后不应再出现在活跃列表里被领走重跑。
+  const active = await queue.listActive();
+  assert.equal(active.some((run) => run.run_id === queued.run_id), false);
+  // 审计：第二次走专门的 dead-letter 动作。
+  const deadLetterAudit = auditLogs.rows.find((row) => row.action === "agent_run.dead_lettered_stale_claim");
+  assert.equal(deadLetterAudit?.entityId, queued.run_id);
 });
 
 test("agent run recovery scheduler ticks once, recovers stale claims, and drains recovered work", async () => {

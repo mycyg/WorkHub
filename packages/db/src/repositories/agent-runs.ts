@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 import type { WorkItemMode } from "@workhub/contracts";
 
@@ -83,6 +83,8 @@ export type AgentRunHeartbeatInput = {
 export type AgentRunRequeueStaleInput = {
   expiredBefore: Date;
   requeuedAt: Date;
+  // 已被恢复 >= 此次数的过期 run 不再重排，而是转死信 failed（防 poison run 无限重跑）。
+  maxRecoverAttempts: number;
 };
 
 export type AgentRunRepository = {
@@ -420,22 +422,46 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async requeueExpiredClaims(input) {
-      return db
-        .update(agentRuns)
-        .set({
-          status: "queued",
-          claimedBy: null,
-          claimedAt: null,
-          heartbeatAt: null,
-          leaseExpiresAt: null,
-          startedAt: null,
-          updatedAt: input.requeuedAt
-        })
-        .where(and(
+      // 两条互斥的 UPDATE 同事务：已恢复够多次的过期 run 转死信 failed，其余清租约重排 queued。
+      // 谓词按 recoverAttempts 阈值分区（且 dead-letter 先跑会把行翻成 failed），两条不会碰同一行。
+      return db.transaction(async (tx) => {
+        const stale = and(
           eq(agentRuns.status, "running"),
           lt(agentRuns.leaseExpiresAt, input.expiredBefore)
-        ))
-        .returning();
+        );
+        // 已被恢复 >= maxRecoverAttempts 次：再崩就转死信，不再重排（防 poison run 无限重跑、烧预算）。
+        const deadLettered = await tx
+          .update(agentRuns)
+          .set({
+            status: "failed",
+            recoverAttempts: sql`${agentRuns.recoverAttempts} + 1`,
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            leaseExpiresAt: null,
+            finishedAt: input.requeuedAt,
+            outcomeReason: "AI 执行多次崩溃，已转入死信，不再自动重试。",
+            updatedAt: input.requeuedAt
+          })
+          .where(and(stale, gte(agentRuns.recoverAttempts, input.maxRecoverAttempts)))
+          .returning();
+        // 仍在上限内：清租约、累加恢复次数、重排 queued 等下一次执行。
+        const requeued = await tx
+          .update(agentRuns)
+          .set({
+            status: "queued",
+            recoverAttempts: sql`${agentRuns.recoverAttempts} + 1`,
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            leaseExpiresAt: null,
+            startedAt: null,
+            updatedAt: input.requeuedAt
+          })
+          .where(and(stale, lt(agentRuns.recoverAttempts, input.maxRecoverAttempts)))
+          .returning();
+        return [...deadLettered, ...requeued];
+      });
     }
   };
 }

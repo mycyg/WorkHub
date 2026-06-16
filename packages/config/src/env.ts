@@ -86,6 +86,8 @@ export const envSchema = z.object({
   AGENT_RUN_LEASE_MS: z.coerce.number().int().positive().default(300000),
   AGENT_RUN_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
   AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000),
+  // 一条 run 因租约过期被恢复（requeue）的最大次数；超过即转入死信 failed，不再无限重跑。
+  AGENT_RUN_MAX_RECOVER_ATTEMPTS: z.coerce.number().int().positive().default(3),
   AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(false),
@@ -152,6 +154,7 @@ export type Settings = {
     leaseMs: number;
     heartbeatIntervalMs?: number;
     recoveryIntervalMs: number;
+    maxRecoverAttempts: number;
     skillCurationEnabled: boolean;
     skillCurationIntervalMs: number;
     projectHydrateEnabled: boolean;
@@ -226,6 +229,7 @@ export function loadSettings(env: EnvInput = process.env): Settings {
         ? { heartbeatIntervalMs: parsed.AGENT_RUN_HEARTBEAT_INTERVAL_MS }
         : {}),
       recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS,
+      maxRecoverAttempts: parsed.AGENT_RUN_MAX_RECOVER_ATTEMPTS,
       skillCurationEnabled: parsed.AGENT_RUN_SKILL_CURATION_ENABLED,
       skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS,
       projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,

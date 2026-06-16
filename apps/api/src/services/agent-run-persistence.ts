@@ -240,7 +240,8 @@ function heartbeatForRepository(input: AgentRunHeartbeatLease) {
 function requeueForRepository(input: AgentRunRequeueExpiredLeases) {
   return {
     expiredBefore: input.expiredBefore,
-    requeuedAt: input.requeuedAt
+    requeuedAt: input.requeuedAt,
+    maxRecoverAttempts: input.maxRecoverAttempts
   };
 }
 
