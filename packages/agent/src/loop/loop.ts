@@ -313,7 +313,7 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   return summary.length > maxChars ? `${summary.slice(0, maxChars)}\n…[摘要已截断]` : summary;
 }
 
-function compactConversation(input: {
+export function compactConversation(input: {
   messages: LlmMessage[];
   initialUserMessage: string;
   steps: AgentLoopStep[];

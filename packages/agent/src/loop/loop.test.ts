@@ -8,8 +8,9 @@ import { eventTypes } from "@workhub/contracts";
 import { toCuuState } from "@workhub/events";
 import { createBuiltInFileTools, createToolRegistry } from "@workhub/tools";
 
-import type { LlmCreateResponse, LlmStream, LlmStreamEvent } from "../providers/types.js";
+import type { LlmCreateResponse, LlmMessage, LlmStream, LlmStreamEvent } from "../providers/types.js";
 import { createAgentLoop, type AgentLoopClient, type AgentLoopEvent } from "./index.js";
+import { compactConversation } from "./loop.js";
 
 const budget = {
   maxSteps: 5,
@@ -546,4 +547,36 @@ test("AgentLoop runs an llm_review after success and carries the grade into the 
   assert.equal(result.review?.source, "llm_review");
   assert.equal(result.review?.rationale.includes("采纳"), true);
   assert.equal(result.usage.totalTokens, 90);
+});
+
+test("compactConversation keeps the tail starting at an assistant boundary (tool_use/tool_result paired)", () => {
+  const messages: LlmMessage[] = [
+    { role: "user", content: "做个周报" },
+    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "read_file", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "t2", name: "write_file", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t2", content: "ok" }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "t3", name: "run_command", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t3", content: "ok" }] }
+  ];
+  const compacted = compactConversation({ messages, initialUserMessage: "做个周报", steps: [], keepTailEntries: 2 });
+  // 首条是压缩摘要(user);尾部从 assistant 开始 → 配对完整,不会以悬空 tool_result 起头。
+  assert.equal(compacted[0]?.role, "user");
+  assert.match(String(compacted[0]?.content), /上下文已压缩/u);
+  assert.equal(compacted[1]?.role, "assistant");
+});
+
+test("compactConversation advances the cut past a dangling tool_result to the next assistant", () => {
+  const messages: LlmMessage[] = [
+    { role: "user", content: "task" },
+    { role: "assistant", content: [{ type: "tool_use", id: "a", name: "x", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content: "r" }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "b", name: "y", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "b", content: "r" }] }
+  ];
+  // len=5, keep=3 → cut=2 落在 user(tool_result) → 必须前进到 3(assistant)。
+  const compacted = compactConversation({ messages, initialUserMessage: "task", steps: [], keepTailEntries: 3 });
+  assert.equal(compacted[0]?.role, "user");
+  assert.equal(compacted[1]?.role, "assistant");
+  assert.equal(compacted.length, 3);
 });
