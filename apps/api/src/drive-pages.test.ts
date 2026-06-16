@@ -346,6 +346,29 @@ function storedProposalFromManifest(manifest: DeliverableChangeManifest): Stored
   };
 }
 
+test("drive page service scopes the default-project lookup to the actor's workspace (M8)", async () => {
+  let seenWorkspaceId: string | undefined;
+  let seenProjectId: string | undefined;
+  const repo: DriveRepository = {
+    async readPage(input) {
+      seenWorkspaceId = input?.workspaceId;
+      seenProjectId = input?.projectId;
+      return rows();
+    },
+    async uploadFile() { throw new Error("not needed"); },
+    async softDeleteItem() { throw new Error("not needed"); },
+    async restoreDeletedItem() { throw new Error("not needed"); },
+    async commentToDraft() { throw new Error("not needed"); },
+    async recordDraftProposal() { throw new Error("not needed"); }
+  };
+  const service = createDrivePageService({ repo, now: () => now });
+
+  // 不传 projectId：默认项目挑选必须限定到 actor 的 workspace，不能全库取最老项目。
+  await service.page({ actor: actor(), locale: "en-US" });
+  assert.equal(seenProjectId, undefined);
+  assert.equal(seenWorkspaceId, actor().workspaceId);
+});
+
 test("drive page service builds project files, version history, accepted deliverable links, and comment draft state", async () => {
   let seenProjectId: string | undefined;
   const repo: DriveRepository = {

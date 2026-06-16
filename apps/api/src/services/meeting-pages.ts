@@ -298,7 +298,9 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
 
   async function pageForActor(input: { actor: AuthActor; projectId?: string }) {
     const rows = await deps.repo.readPage({
-      ...(input.projectId ? { projectId: input.projectId } : {})
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      // 无显式 projectId 时默认项目限定在 actor 所在 workspace（M8）。
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {})
     });
     if (rows.project && !canViewProjectMeetings(rows.project, input.actor)) {
       if (!input.projectId) {

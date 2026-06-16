@@ -86,6 +86,7 @@ export class DriveRepositoryConflictError extends Error {
 export type DriveRepository = {
   readPage: (input?: {
     projectId?: string;
+    workspaceId?: string;
     limit?: number;
     includeDeleted?: boolean;
     operationLimit?: number;
@@ -153,12 +154,19 @@ async function driveItemPath(db: WorkHubDb, item: DriveItemRow) {
   return itemPathFromRows(item, itemById);
 }
 
-async function findProject(db: WorkHubDb, projectId?: string) {
+async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: string) {
   const baseConditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+  // 显式 projectId → 按 id 查（上层再做 canView 鉴权）。否则挑「默认项目」时必须限定在 actor 所在 workspace，
+  // 不能全库取最老的一个（M8：多租户里 B 工作区成员永远落到别人最老的项目→空 drive）。
+  const conditions = projectId
+    ? [...baseConditions, eq(projects.id, projectId)]
+    : workspaceId
+      ? [...baseConditions, eq(projects.workspaceId, workspaceId)]
+      : baseConditions;
   const rows = await db
     .select()
     .from(projects)
-    .where(and(...(projectId ? [...baseConditions, eq(projects.id, projectId)] : baseConditions)))
+    .where(and(...conditions))
     .orderBy(asc(projects.createdAt))
     .limit(1);
   return rows[0] ?? null;
@@ -246,7 +254,7 @@ function commentPreview(body: string) {
 export function createDriveRepository(db: WorkHubDb): DriveRepository {
   return {
     async readPage(input = {}) {
-      const project = await findProject(db, input.projectId);
+      const project = await findProject(db, input.projectId, input.workspaceId);
       if (!project) {
         return {
           project: null,

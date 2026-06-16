@@ -422,6 +422,8 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
   async function pageForActor(input: { actor: AuthActor; projectId?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
+      // 无显式 projectId 时，默认项目限定在 actor 所在 workspace（M8：否则全库取最老项目，多租户落空）。
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       includeDeleted: true,
       operationLimit: 12
     });

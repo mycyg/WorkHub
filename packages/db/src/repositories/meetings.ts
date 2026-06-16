@@ -61,6 +61,7 @@ export class MeetingRepositoryConflictError extends Error {
 export type MeetingRepository = {
   readPage: (input?: {
     projectId?: string;
+    workspaceId?: string;
     limit?: number;
   }) => Promise<MeetingPageRows>;
   insightToDraft: (input: MeetingRepositoryActor & {
@@ -84,12 +85,18 @@ function clampLimit(limit: number | undefined) {
   return Math.max(1, Math.min(limit ?? 100, 300));
 }
 
-async function findProject(db: WorkHubDb, projectId?: string) {
-  const conditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: string) {
+  const baseConditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+  // 同 drive（M8）：挑默认项目时限定在 actor 所在 workspace，不能全库取最老的一个。显式 projectId 仍按 id 查。
+  const conditions = projectId
+    ? [...baseConditions, eq(projects.id, projectId)]
+    : workspaceId
+      ? [...baseConditions, eq(projects.workspaceId, workspaceId)]
+      : baseConditions;
   const rows = await db
     .select()
     .from(projects)
-    .where(and(...(projectId ? [...conditions, eq(projects.id, projectId)] : conditions)))
+    .where(and(...conditions))
     .orderBy(asc(projects.createdAt))
     .limit(1);
   return rows[0] ?? null;
@@ -140,7 +147,7 @@ async function insertMeetingAudit(
 export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
   return {
     async readPage(input = {}) {
-      const project = await findProject(db, input.projectId);
+      const project = await findProject(db, input.projectId, input.workspaceId);
       if (!project) {
         return {
           project: null,
