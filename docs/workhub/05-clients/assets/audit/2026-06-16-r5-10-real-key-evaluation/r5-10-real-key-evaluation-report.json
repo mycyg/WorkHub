@@ -1,0 +1,2099 @@
+{
+  "ok": true,
+  "generated_at": "2026-06-16T05:26:34.222Z",
+  "module": "R5.10-real-key-evaluation",
+  "real_provider": true,
+  "fake_transport": false,
+  "provider": {
+    "default_provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "key_configured": true
+  },
+  "runtime": {
+    "tool_runtime_path": {
+      "python_path_injected": true,
+      "python_bin": "/Users/apple/Desktop/开发项目/.runtime/r5-10-eval-venv/bin"
+    },
+    "local_eval_note": "If using the repository-external .runtime/r5-10-eval-venv on macOS, numpy may be 2.0.2 because the local Python 3.9 runtime cannot install the pilot image's numpy 2.1.3 pin."
+  },
+  "gates": {
+    "real_agent_runs": 6,
+    "quality_pass_count_t1_to_t4": 4,
+    "structured_upgrade_t5": true,
+    "budget_guard_escalated": true,
+    "no_fake_transport": true
+  },
+  "rest_evidence": [
+    {
+      "method": "GET",
+      "path": "/api/pages/cost?locale=en-US",
+      "status": 200,
+      "response_bytes": 6506
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2839
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/c948ac06-0de1-469a-8bea-3c075074d0b4/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2204
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1181
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2577
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2577
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4/agent-runs",
+      "status": 202,
+      "response_bytes": 1049
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/1f613904-c87f-4653-8386-96ec89d91d1c",
+      "status": 200,
+      "response_bytes": 8118
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4/proposals",
+      "status": 200,
+      "response_bytes": 3140
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/a1553134-e328-4e45-8492-88a89a37fa14?locale=en-US",
+      "status": 200,
+      "response_bytes": 3321
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/a1553134-e328-4e45-8492-88a89a37fa14/review",
+      "status": 200,
+      "response_bytes": 2305
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/a1553134-e328-4e45-8492-88a89a37fa14/merge",
+      "status": 409,
+      "response_bytes": 1945
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/a1553134-e328-4e45-8492-88a89a37fa14/merge",
+      "status": 200,
+      "response_bytes": 4669
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 9572
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/c948ac06-0de1-469a-8bea-3c075074d0b4/deliverables/d5f560b9-1d88-4d75-8bcf-0c652e98bd2f/download",
+      "status": 200,
+      "response_bytes": 3207
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/1f613904-c87f-4653-8386-96ec89d91d1c/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 18130
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2846
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/9ed0134b-d58b-4397-91de-1a4cb452914c/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2225
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1211
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2612
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2612
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/agent-runs",
+      "status": 202,
+      "response_bytes": 1038
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/5a16d553-1e2d-4f27-9e90-74b899c01d7a",
+      "status": 200,
+      "response_bytes": 11588
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/proposals",
+      "status": 200,
+      "response_bytes": 4620
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/155166b9-ab81-4de6-be4d-295cb7c8b79d?locale=en-US",
+      "status": 200,
+      "response_bytes": 4801
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/155166b9-ab81-4de6-be4d-295cb7c8b79d/review",
+      "status": 200,
+      "response_bytes": 2317
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/155166b9-ab81-4de6-be4d-295cb7c8b79d/merge",
+      "status": 409,
+      "response_bytes": 3736
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/155166b9-ab81-4de6-be4d-295cb7c8b79d/merge",
+      "status": 200,
+      "response_bytes": 4693
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 13616
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/deliverables/4340bebb-31e7-4b23-b29c-bd94b53e0e97/download",
+      "status": 200,
+      "response_bytes": 1140
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/deliverables/0807417b-1e66-48df-9b1b-38bb2e4f073b/download",
+      "status": 200,
+      "response_bytes": 72
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/deliverables/1292a49d-628d-4a7f-9f88-cfd0b7e08ad8/download",
+      "status": 200,
+      "response_bytes": 1807
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/9ed0134b-d58b-4397-91de-1a4cb452914c/deliverables/235e1745-f252-4aa0-95c0-5a3624045dde/download",
+      "status": 200,
+      "response_bytes": 81
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/5a16d553-1e2d-4f27-9e90-74b899c01d7a/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 33044
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2835
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2192
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1137
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2557
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2557
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/agent-runs",
+      "status": 202,
+      "response_bytes": 1046
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/0130d989-abef-4ec1-aa26-4a6050040e47",
+      "status": 200,
+      "response_bytes": 14708
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/proposals",
+      "status": 200,
+      "response_bytes": 4622
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/52362ed8-e4c5-45f3-a769-66f3c18df9ac?locale=en-US",
+      "status": 200,
+      "response_bytes": 4803
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/52362ed8-e4c5-45f3-a769-66f3c18df9ac/review",
+      "status": 200,
+      "response_bytes": 2281
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/52362ed8-e4c5-45f3-a769-66f3c18df9ac/merge",
+      "status": 409,
+      "response_bytes": 5600
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/52362ed8-e4c5-45f3-a769-66f3c18df9ac/merge",
+      "status": 200,
+      "response_bytes": 4621
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 13882
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/deliverables/190771fd-cad9-4913-bbc5-284cc3dd093a/download",
+      "status": 200,
+      "response_bytes": 86
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/deliverables/3c5ecc3a-791a-4f13-b925-e88736b0ab64/download",
+      "status": 200,
+      "response_bytes": 52439
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/deliverables/6483af5a-dbb9-42d5-96d6-da3af286dba2/download",
+      "status": 200,
+      "response_bytes": 839
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/4071f355-ecf6-4ea5-a4bf-dd8ea62450b1/deliverables/442109b2-2a54-40bf-a445-f258e9952f1a/download",
+      "status": 200,
+      "response_bytes": 79783
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/0130d989-abef-4ec1-aa26-4a6050040e47/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 45044
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2827
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2168
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1109
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2517
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2517
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/agent-runs",
+      "status": 202,
+      "response_bytes": 1052
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/09c1e19d-9771-41d2-9214-3b0f56e9862a",
+      "status": 200,
+      "response_bytes": 11815
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/proposals",
+      "status": 200,
+      "response_bytes": 4378
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/33109d0f-2f10-47b5-b936-96ad40b40a00?locale=en-US",
+      "status": 200,
+      "response_bytes": 4559
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/33109d0f-2f10-47b5-b936-96ad40b40a00/review",
+      "status": 200,
+      "response_bytes": 2233
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/33109d0f-2f10-47b5-b936-96ad40b40a00/merge",
+      "status": 409,
+      "response_bytes": 7227
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/33109d0f-2f10-47b5-b936-96ad40b40a00/merge",
+      "status": 200,
+      "response_bytes": 4525
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 13403
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/deliverables/067c8872-006c-4976-918f-1fe22cf07c73/download",
+      "status": 200,
+      "response_bytes": 88
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/deliverables/35cde913-7c08-4f37-a436-4498963c6a9f/download",
+      "status": 200,
+      "response_bytes": 25
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/deliverables/b31a1ba1-7a9c-4afa-9179-dbd20ff05ecc/download",
+      "status": 200,
+      "response_bytes": 1516
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/67b14258-f9bb-46a3-82c7-cac3b22fc7f6/deliverables/24c0529e-fb1b-4775-bd0c-16a0c199ec91/download",
+      "status": 200,
+      "response_bytes": 2908
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/09c1e19d-9771-41d2-9214-3b0f56e9862a/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 41265
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2837
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/e62f680d-09af-476c-b85c-193ed9265314/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2198
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1165
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/e62f680d-09af-476c-b85c-193ed9265314/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2567
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/e62f680d-09af-476c-b85c-193ed9265314?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2567
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/e62f680d-09af-476c-b85c-193ed9265314/agent-runs",
+      "status": 202,
+      "response_bytes": 1049
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/d997d956-8942-4ce0-ac2c-f75c4f19c054",
+      "status": 200,
+      "response_bytes": 10533
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/e62f680d-09af-476c-b85c-193ed9265314/proposals",
+      "status": 200,
+      "response_bytes": 3190
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/proposals/bfd5ebe6-3369-4def-9b0b-a448b11eff2c?locale=en-US",
+      "status": 200,
+      "response_bytes": 3371
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/bfd5ebe6-3369-4def-9b0b-a448b11eff2c/review",
+      "status": 200,
+      "response_bytes": 2353
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/bfd5ebe6-3369-4def-9b0b-a448b11eff2c/merge",
+      "status": 409,
+      "response_bytes": 1915
+    },
+    {
+      "method": "POST",
+      "path": "/api/proposals/bfd5ebe6-3369-4def-9b0b-a448b11eff2c/merge",
+      "status": 200,
+      "response_bytes": 4765
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/e62f680d-09af-476c-b85c-193ed9265314?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 8798
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/e62f680d-09af-476c-b85c-193ed9265314/deliverables/bec022e6-24c9-4904-a1b7-8eb4cf5cdd7f/download",
+      "status": 200,
+      "response_bytes": 4058
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/d997d956-8942-4ce0-ac2c-f75c4f19c054/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 21862
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 200,
+      "response_bytes": 2845
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/d80ab86a-f395-4301-810b-be37f09669fa/next-question",
+      "status": 200,
+      "response_bytes": 1599
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems",
+      "status": 201,
+      "response_bytes": 2222
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge/search",
+      "status": 200,
+      "response_bytes": 1217
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/d80ab86a-f395-4301-810b-be37f09669fa/evidence-bindings",
+      "status": 200,
+      "response_bytes": 2607
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/d80ab86a-f395-4301-810b-be37f09669fa?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 2607
+    },
+    {
+      "method": "POST",
+      "path": "/api/workitems/d80ab86a-f395-4301-810b-be37f09669fa/agent-runs",
+      "status": 202,
+      "response_bytes": 1026
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/0db1a26b-f0b5-4b24-9007-2e63343d430d",
+      "status": 200,
+      "response_bytes": 3739
+    },
+    {
+      "method": "GET",
+      "path": "/api/workitems/d80ab86a-f395-4301-810b-be37f09669fa/proposals",
+      "status": 200,
+      "response_bytes": 21
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/workitems/d80ab86a-f395-4301-810b-be37f09669fa?locale=zh-CN",
+      "status": 200,
+      "response_bytes": 4661
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-runs/0db1a26b-f0b5-4b24-9007-2e63343d430d/replay?locale=en-US",
+      "status": 200,
+      "response_bytes": 6605
+    },
+    {
+      "method": "GET",
+      "path": "/api/pages/cost?locale=en-US",
+      "status": 200,
+      "response_bytes": 7318
+    }
+  ],
+  "usage": {
+    "cost_page_before": {
+      "generated_at": "2026-06-16T05:22:17.451Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.761032",
+      "token_in": 119496,
+      "token_out": 65255,
+      "unit_cost_cny": "0.000004",
+      "trend": [
+        {
+          "date": "2026-06-11",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
+          "date": "2026-06-12",
+          "cost_cny": "0.233362",
+          "tokens": 50069
+        },
+        {
+          "date": "2026-06-13",
+          "cost_cny": "0.138058",
+          "tokens": 28100
+        },
+        {
+          "date": "2026-06-14",
+          "cost_cny": "0.007",
+          "tokens": 2000
+        },
+        {
+          "date": "2026-06-15",
+          "cost_cny": "0.120702",
+          "tokens": 19671
+        },
+        {
+          "date": "2026-06-16",
+          "cost_cny": "0.03791",
+          "tokens": 8911
+        }
+      ],
+      "by_user": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000003",
+          "label": "Current user",
+          "cost_cny": "1.409406",
+          "tokens": 293205
+        },
+        {
+          "user_id": "00000000-0000-4000-8000-000000000102",
+          "label": "00000000-0000-4000-8000-000000000102",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
+          "user_id": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "label": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "cost_cny": "0.20169",
+          "tokens": 33048
+        }
+      ],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.761032",
+          "tokens": 184751
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "cost_cny": "0.010476",
+          "turns": 3
+        },
+        {
+          "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "code": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "cost_cny": "0.14193",
+          "turns": 33
+        },
+        {
+          "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "cost_cny": "0.004662",
+          "turns": 6
+        },
+        {
+          "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "cost_cny": "0.00819",
+          "turns": 6
+        },
+        {
+          "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "cost_cny": "0.014358",
+          "turns": 12
+        },
+        {
+          "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "cost_cny": "0.06765",
+          "turns": 21
+        },
+        {
+          "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "cost_cny": "0.06588",
+          "turns": 24
+        },
+        {
+          "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
+          "code": "46d27105-fb63-4543-98af-d361886ada90",
+          "cost_cny": "0.097632",
+          "turns": 24
+        },
+        {
+          "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "cost_cny": "0.11289",
+          "turns": 33
+        },
+        {
+          "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "cost_cny": "0.077442",
+          "turns": 18
+        },
+        {
+          "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "cost_cny": "0.005544",
+          "turns": 3
+        },
+        {
+          "workitem_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "code": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "code": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "code": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "cost_cny": "0.064992",
+          "turns": 15
+        },
+        {
+          "workitem_id": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "code": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "cost_cny": "0.04899",
+          "turns": 15
+        },
+        {
+          "workitem_id": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "code": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "cost_cny": "0.068556",
+          "turns": 27
+        },
+        {
+          "workitem_id": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "code": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "cost_cny": "0.129084",
+          "turns": 30
+        },
+        {
+          "workitem_id": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "code": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "cost_cny": "0.086856",
+          "turns": 24
+        },
+        {
+          "workitem_id": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "code": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "cost_cny": "0.075432",
+          "turns": 21
+        },
+        {
+          "workitem_id": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "code": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "cost_cny": "0.005256",
+          "turns": 3
+        },
+        {
+          "workitem_id": "00000000-0000-4000-8000-000000000104",
+          "code": "00000000-0000-4000-8000-000000000104",
+          "cost_cny": "0.672",
+          "turns": 3
+        },
+        {
+          "workitem_id": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "code": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "code": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "cost_cny": "0.160416",
+          "turns": 45
+        },
+        {
+          "workitem_id": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "code": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "cost_cny": "0.20169",
+          "turns": 27
+        },
+        {
+          "workitem_id": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "code": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "cost_cny": "0.11373",
+          "turns": 21
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 172,
+          "cost_cny": "0.761032"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-16T00:00:00.000Z",
+          "period_end": "2026-06-17T00:00:00.000Z",
+          "token_in": 5563,
+          "token_out": 3348,
+          "total_tokens": 8911,
+          "max_tokens": 250000,
+          "remaining_tokens": 241089,
+          "estimated_cost_cny": "0.03791",
+          "max_cost_cny": "12.5",
+          "remaining_cost_cny": "12.46209",
+          "warning_ratio": 0.035644,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-16T00:00:00.000Z",
+          "period_end": "2026-06-17T00:00:00.000Z",
+          "token_in": 5563,
+          "token_out": 3348,
+          "total_tokens": 8911,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4991089,
+          "estimated_cost_cny": "0.03791",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.96209",
+          "warning_ratio": 0.0017822,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget this month",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 119496,
+          "token_out": 65255,
+          "total_tokens": 184751,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49815249,
+          "estimated_cost_cny": "0.761032",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.238968",
+          "warning_ratio": 0.00369502,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    },
+    "cost_page_after": {
+      "generated_at": "2026-06-16T05:26:34.214Z",
+      "currency": "CNY",
+      "total_cost_cny": "0.960724",
+      "token_in": 145646,
+      "token_out": 83679,
+      "unit_cost_cny": "0.000004",
+      "trend": [
+        {
+          "date": "2026-06-11",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
+          "date": "2026-06-12",
+          "cost_cny": "0.233362",
+          "tokens": 50069
+        },
+        {
+          "date": "2026-06-13",
+          "cost_cny": "0.138058",
+          "tokens": 28100
+        },
+        {
+          "date": "2026-06-14",
+          "cost_cny": "0.007",
+          "tokens": 2000
+        },
+        {
+          "date": "2026-06-15",
+          "cost_cny": "0.120702",
+          "tokens": 19671
+        },
+        {
+          "date": "2026-06-16",
+          "cost_cny": "0.237602",
+          "tokens": 53485
+        }
+      ],
+      "by_user": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000003",
+          "label": "Current user",
+          "cost_cny": "2.008482",
+          "tokens": 426927
+        },
+        {
+          "user_id": "00000000-0000-4000-8000-000000000102",
+          "label": "00000000-0000-4000-8000-000000000102",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
+          "user_id": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "label": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "cost_cny": "0.20169",
+          "tokens": 33048
+        }
+      ],
+      "by_team": [
+        {
+          "team_id": "00000000-0000-4000-8000-000000000002",
+          "label": "Team budget",
+          "cost_cny": "0.960724",
+          "tokens": 229325
+        }
+      ],
+      "by_workitem": [
+        {
+          "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
+          "cost_cny": "0.010476",
+          "turns": 3
+        },
+        {
+          "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "code": "6db5dba7-8907-46e6-8891-a1afca305439",
+          "cost_cny": "0.14193",
+          "turns": 33
+        },
+        {
+          "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
+          "cost_cny": "0.004662",
+          "turns": 6
+        },
+        {
+          "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
+          "cost_cny": "0.00819",
+          "turns": 6
+        },
+        {
+          "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
+          "cost_cny": "0.014358",
+          "turns": 12
+        },
+        {
+          "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
+          "cost_cny": "0.06765",
+          "turns": 21
+        },
+        {
+          "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
+          "cost_cny": "0.06588",
+          "turns": 24
+        },
+        {
+          "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
+          "code": "46d27105-fb63-4543-98af-d361886ada90",
+          "cost_cny": "0.097632",
+          "turns": 24
+        },
+        {
+          "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
+          "cost_cny": "0.11289",
+          "turns": 33
+        },
+        {
+          "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
+          "cost_cny": "0.077442",
+          "turns": 18
+        },
+        {
+          "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
+          "cost_cny": "0.005544",
+          "turns": 3
+        },
+        {
+          "workitem_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "code": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "code": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "cost_cny": "0.00474",
+          "turns": 6
+        },
+        {
+          "workitem_id": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "code": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "cost_cny": "0.064992",
+          "turns": 15
+        },
+        {
+          "workitem_id": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "code": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "cost_cny": "0.04899",
+          "turns": 15
+        },
+        {
+          "workitem_id": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "code": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "cost_cny": "0.068556",
+          "turns": 27
+        },
+        {
+          "workitem_id": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "code": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "cost_cny": "0.129084",
+          "turns": 30
+        },
+        {
+          "workitem_id": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "code": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "cost_cny": "0.086856",
+          "turns": 24
+        },
+        {
+          "workitem_id": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "code": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "cost_cny": "0.075432",
+          "turns": 21
+        },
+        {
+          "workitem_id": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "code": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "cost_cny": "0.005256",
+          "turns": 3
+        },
+        {
+          "workitem_id": "00000000-0000-4000-8000-000000000104",
+          "code": "00000000-0000-4000-8000-000000000104",
+          "cost_cny": "0.672",
+          "turns": 3
+        },
+        {
+          "workitem_id": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "code": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "cost_cny": "0.021",
+          "turns": 3
+        },
+        {
+          "workitem_id": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "code": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "cost_cny": "0.160416",
+          "turns": 45
+        },
+        {
+          "workitem_id": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "code": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "cost_cny": "0.20169",
+          "turns": 27
+        },
+        {
+          "workitem_id": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "code": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "cost_cny": "0.11373",
+          "turns": 21
+        },
+        {
+          "workitem_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "code": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "cost_cny": "0.109476",
+          "turns": 15
+        },
+        {
+          "workitem_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "code": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "cost_cny": "0.107892",
+          "turns": 24
+        },
+        {
+          "workitem_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "code": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "cost_cny": "0.126966",
+          "turns": 33
+        },
+        {
+          "workitem_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "code": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "cost_cny": "0.119268",
+          "turns": 24
+        },
+        {
+          "workitem_id": "e62f680d-09af-476c-b85c-193ed9265314",
+          "code": "e62f680d-09af-476c-b85c-193ed9265314",
+          "cost_cny": "0.131478",
+          "turns": 21
+        },
+        {
+          "workitem_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "code": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "cost_cny": "0.003996",
+          "turns": 3
+        }
+      ],
+      "model_breakdown": [
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "count": 222,
+          "cost_cny": "0.960724"
+        }
+      ],
+      "budget": [
+        {
+          "scope": {
+            "kind": "user",
+            "user_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "scope_label": "My AI budget today",
+          "policy_id": "pcost-user-day-v0",
+          "period": "day",
+          "period_start": "2026-06-16T00:00:00.000Z",
+          "period_end": "2026-06-17T00:00:00.000Z",
+          "token_in": 31713,
+          "token_out": 21772,
+          "total_tokens": 53485,
+          "max_tokens": 250000,
+          "remaining_tokens": 196515,
+          "estimated_cost_cny": "0.237602",
+          "max_cost_cny": "12.5",
+          "remaining_cost_cny": "12.262398",
+          "warning_ratio": 0.21394,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget today",
+          "policy_id": "pcost-team-day-v0",
+          "period": "day",
+          "period_start": "2026-06-16T00:00:00.000Z",
+          "period_end": "2026-06-17T00:00:00.000Z",
+          "token_in": 31713,
+          "token_out": 21772,
+          "total_tokens": 53485,
+          "max_tokens": 5000000,
+          "remaining_tokens": 4946515,
+          "estimated_cost_cny": "0.237602",
+          "max_cost_cny": "200",
+          "remaining_cost_cny": "199.762398",
+          "warning_ratio": 0.010697,
+          "status": "ok"
+        },
+        {
+          "scope": {
+            "kind": "team",
+            "team_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "scope_label": "Team AI budget this month",
+          "policy_id": "pcost-team-month-v0",
+          "period": "month",
+          "period_start": "2026-06-01T00:00:00.000Z",
+          "period_end": "2026-07-01T00:00:00.000Z",
+          "token_in": 145646,
+          "token_out": 83679,
+          "total_tokens": 229325,
+          "max_tokens": 50000000,
+          "remaining_tokens": 49770675,
+          "estimated_cost_cny": "0.960724",
+          "max_cost_cny": "2000",
+          "remaining_cost_cny": "1999.039276",
+          "warning_ratio": 0.0045865,
+          "status": "ok"
+        }
+      ],
+      "notices": [],
+      "top_exhaustion_risks": []
+    },
+    "cost_page_delta": {
+      "total_cost_cny": "0.199692",
+      "token_in": 26150,
+      "token_out": 18424
+    },
+    "total_task_cost_cny": "0.1251",
+    "total_task_tokens": 25287
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "R5.10 T1 weekly report from meeting notes",
+      "expected_mode": "deliverable",
+      "session_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+      "work_item_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+      "agent_run_id": "1f613904-c87f-4653-8386-96ec89d91d1c",
+      "status": "succeeded",
+      "proposal_id": "a1553134-e328-4e45-8492-88a89a37fa14",
+      "proposal_status": "opened",
+      "merge_snapshot_id": "3c9e8db7-57c8-4406-91c0-4f142f1ce689",
+      "latency_ms": 29508,
+      "usage": {
+        "token_in": 2349,
+        "token_out": 1973,
+        "estimated_cost_cny": "0.020482",
+        "sources": [
+          "agent_step",
+          "review"
+        ],
+        "records": 6,
+        "ledger_entries": 18
+      },
+      "confidence": {
+        "grade": "high",
+        "risk_level": "low",
+        "verdict": "human_spotcheck",
+        "score": 1,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.15,
+              "reversibility": 0.2
+            },
+            "has_revert_snapshot": true
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 2349,
+            "tokenOut": 1973,
+            "stepsUsed": 5,
+            "secondsUsed": 21.074,
+            "totalTokens": 4322,
+            "estimatedCostCny": "0.020482"
+          },
+          "result": {
+            "reason": "The report looks good. It follows the markdown-report structure:\n\n1. ✅ Title with one-line summary\n2. ✅ Conclusion (3 points, each can be referenced independently)\n3. ✅ Evidence (source noted)\n4. ✅ Detailed content with sub-sections (progress, risks, next week plan, decisions needed)\n5. ✅ Unfinished items and suggestions\n\nNo technical jargon was used. Unconfirmed information (like the specific T5 missing details) is clearly marked as \"待确认\" (to be confirmed). The report has clear sections that a non-technical approver can understand in 30 seconds.\n\nLet me submit with a summary.\n报告已生成且自验通过。以下是完成总结：\n\n---\n\n## ✅ 完成总结\n\n**产出文件**：`outputs/t1-weekly-report.md`\n\n**内容结构**（遵循 markdown-report 技能约定，结论先行）：\n1. **结论** — 3 条可独立引用的一句话结论\n2. **依据** — 注明来源为 `inputs/meeting-notes.md`\n3. **本周进展** — 注册流 / R5.10-dry / Pilot Compose / 权限矩阵（✅ 均完成）\n4. **风险** — 真实模型质量成本无数据（🔴高）、T5 信息不足（🟡中）\n5. **下周计划** — 真 Key 评估 / 回写 OQ-2/3/7 / 准备 Pilot Runbook\n6. **需要审批者决定的事项** — 4 个待决策问题，均明确标注为\"待确认\"，未做任何猜测\n\n**未做 / blocker**：\n- 真 Key 评估、OQ 回写、Runbook 撰写 — 已排入下周计划，非本产出范围\n- T5 缺失的具体内容 — 会议记录未详述，已在报告中明示需审批者界定",
+            "status": "succeeded",
+            "control": "stop"
+          },
+          "run_id": "1f613904-c87f-4653-8386-96ec89d91d1c",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "grade": 5,
+              "model": "deepseek-v4-flash",
+              "score": 1,
+              "reason": "报告完整遵循markdown-report规范，结论先行，内容清晰，标记待确认项，可直接采纳。",
+              "source": "llm_review"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 1,
+              "reason": "交付物已生成"
+            }
+          },
+          "work_item_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [],
+      "db_rows": {
+        "accepted_deliverable_changes": 1,
+        "project_drive_versions": 1,
+        "snapshots": 2,
+        "audit_logs_related": 4
+      },
+      "artifacts": {
+        "output_files": [
+          "t1-weekly-report.md"
+        ],
+        "accepted_downloads": [
+          {
+            "id": "d5f560b9-1d88-4d75-8bcf-0c652e98bd2f",
+            "filename": "t1-weekly-report.md",
+            "bytes": 3207,
+            "sha256": "205c7dd46208b9982c27a641acec1983ab6ece9acd2e6a9199b80bf236722abc",
+            "drive_version_id": "9829bcd8-da2c-40f5-89eb-7f80aac5a1d4"
+          }
+        ]
+      },
+      "assessment": {
+        "operator_quality": 4,
+        "passed": true,
+        "artifact_checks": {
+          "has_markdown": true,
+          "has_weekly_sections": true,
+          "has_decision_language": true
+        },
+        "rationale": "周报结构、风险和审批语言完整，可直接进入人工审批。"
+      }
+    },
+    {
+      "id": "T2",
+      "title": "R5.10 T2 sales CSV aggregation",
+      "expected_mode": "deliverable",
+      "session_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+      "work_item_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+      "agent_run_id": "5a16d553-1e2d-4f27-9e90-74b899c01d7a",
+      "status": "succeeded",
+      "proposal_id": "155166b9-ab81-4de6-be4d-295cb7c8b79d",
+      "proposal_status": "opened",
+      "merge_snapshot_id": "d65cc842-07f7-4f14-9b15-f763b8e8731f",
+      "latency_ms": 29117,
+      "usage": {
+        "token_in": 2058,
+        "token_out": 2162,
+        "estimated_cost_cny": "0.021412",
+        "sources": [
+          "agent_step",
+          "review"
+        ],
+        "records": 9,
+        "ledger_entries": 27
+      },
+      "confidence": {
+        "grade": "high",
+        "risk_level": "low",
+        "verdict": "human_spotcheck",
+        "score": 1,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.15,
+              "reversibility": 0.2
+            },
+            "has_revert_snapshot": true
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 2058,
+            "tokenOut": 2162,
+            "stepsUsed": 8,
+            "secondsUsed": 23.134,
+            "totalTokens": 4220,
+            "estimatedCostCny": "0.021412"
+          },
+          "result": {
+            "reason": "All outputs are present and correct. Let me summarize the work done.\n---\n\n## 总结\n\n**已完成 R5.10 T2 — Sales CSV 聚合分析。**\n\n### 产出文件\n\n| 文件 | 说明 |\n|------|------|\n| `outputs/t2-sales-summary.csv` | 按 region 分组的订单数 + amount 合计（含总计行） |\n| `outputs/t2-sales-analysis.md` | 分析结论报告（结论先行、关键数字、方法口径、数据质量、可复算依据） |\n| `outputs/t2-data-profile.csv` | 中间产物：数据体检（dtype / non_null / nulls） |\n| `outputs/run-analysis.py` | 中间产物：可复现脚本 |\n\n### 结论核对\n\n- **North = 2000** ✅ (Ada 1200 + Ben 800)\n- **South = 1650** ✅ (Chen 950 + Dia 700)\n- **East = 400** ✅ (Eli 400)\n- **总销售额 = 4050** ✅\n\n原始数据无缺失、无异常值，所有数字均可直接逐行复算。",
+            "status": "succeeded",
+            "control": "stop"
+          },
+          "run_id": "5a16d553-1e2d-4f27-9e90-74b899c01d7a",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "grade": 5,
+              "model": "deepseek-v4-flash",
+              "score": 1,
+              "reason": "全部产出文件齐全，聚合结果正确，数据可复现且分析报告清晰，完全符合任务要求。",
+              "source": "llm_review"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 1,
+              "reason": "交付物已生成"
+            }
+          },
+          "work_item_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [],
+      "db_rows": {
+        "accepted_deliverable_changes": 4,
+        "project_drive_versions": 4,
+        "snapshots": 5,
+        "audit_logs_related": 7
+      },
+      "artifacts": {
+        "output_files": [
+          "run-analysis.py",
+          "t2-data-profile.csv",
+          "t2-sales-analysis.md",
+          "t2-sales-summary.csv"
+        ],
+        "accepted_downloads": [
+          {
+            "id": "4340bebb-31e7-4b23-b29c-bd94b53e0e97",
+            "filename": "run-analysis.py",
+            "bytes": 1140,
+            "sha256": "d0594932acb03011a8a846bc121d6c0bd89e5489f61700be65774283cdea57a4",
+            "drive_version_id": "be66608a-739a-4550-b73e-87f65e233f74"
+          },
+          {
+            "id": "0807417b-1e66-48df-9b1b-38bb2e4f073b",
+            "filename": "t2-data-profile.csv",
+            "bytes": 72,
+            "sha256": "32251251ca3b4053e362126f2ebd312e87afe127e9f4e8b35219d42665b29221",
+            "drive_version_id": "9892b771-eb12-41f5-ac50-7818af727e4f"
+          },
+          {
+            "id": "1292a49d-628d-4a7f-9f88-cfd0b7e08ad8",
+            "filename": "t2-sales-analysis.md",
+            "bytes": 1807,
+            "sha256": "c26a654ce20d33e926e90d832eafaa5af67e59096084bc2dd0455da06e6e09a8",
+            "drive_version_id": "f097f017-26b3-4373-a5c2-affb2134af67"
+          },
+          {
+            "id": "235e1745-f252-4aa0-95c0-5a3624045dde",
+            "filename": "t2-sales-summary.csv",
+            "bytes": 81,
+            "sha256": "b2088569480cd121685b4b7f537be2ee8ba95ea6fe6dcf41419082ce963e8d43",
+            "drive_version_id": "68774b24-5c2f-4f7c-831a-ecc98cdd0fac"
+          }
+        ]
+      },
+      "assessment": {
+        "operator_quality": 5,
+        "passed": true,
+        "numeric_checks": {
+          "total_4050": true,
+          "north_2000": true,
+          "south_1650": true,
+          "east_400": true,
+          "has_csv": true,
+          "has_md": true
+        },
+        "rationale": "CSV 聚合数字与预置答案一致，且有结论说明。"
+      }
+    },
+    {
+      "id": "T3",
+      "title": "R5.10 T3 weekly metrics PPT with chart",
+      "expected_mode": "deliverable",
+      "session_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+      "work_item_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+      "agent_run_id": "0130d989-abef-4ec1-aa26-4a6050040e47",
+      "status": "succeeded",
+      "proposal_id": "52362ed8-e4c5-45f3-a769-66f3c18df9ac",
+      "proposal_status": "opened",
+      "merge_snapshot_id": "17e96b56-fc6e-49cc-8ec8-c59f3a7697c8",
+      "latency_ms": 51214,
+      "usage": {
+        "token_in": 2718,
+        "token_out": 2996,
+        "estimated_cost_cny": "0.029404",
+        "sources": [
+          "agent_step",
+          "review"
+        ],
+        "records": 12,
+        "ledger_entries": 36
+      },
+      "confidence": {
+        "grade": "high",
+        "risk_level": "low",
+        "verdict": "human_spotcheck",
+        "score": 1,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.15,
+              "reversibility": 0.2
+            },
+            "has_revert_snapshot": true
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 2718,
+            "tokenOut": 2996,
+            "stepsUsed": 11,
+            "secondsUsed": 45.488,
+            "totalTokens": 5714,
+            "estimatedCostCny": "0.029404"
+          },
+          "result": {
+            "reason": "All files are in place. Let me summarize the completion.\n## ✅ 任务完成总结\n\n### 已交付产物（均在 `outputs/` 目录）\n\n| 文件 | 说明 |\n|------|------|\n| `t3-weekly-metrics-chart.png` | 统计图表（双轴：柱状图显示 Closed/Opened，折线显示 Cost），52KB |\n| `t3-weekly-metrics-chart-data.csv` | 图表源数据，供审阅核数 |\n| `t3-weekly-metrics.pptx` | PPT 演示文档，共 **3 页** |\n| `t3-weekly-metrics-outline.md` | PPT 大纲，快速预览每页内容 |\n\n### PPT 结构\n1. **标题页** — R5.10 T3 周度指标快报\n2. **指标趋势页** — 嵌入双轴图表 PNG\n3. **结论页** — 5 条小结要点（效率提升、成本可控）\n\n### 自验结果\n- PNG 字节数：`52439 bytes` ✅\n- PPT 页数：`3 slides` ✅\n\n### 备注\n- 中文字体使用 `Noto Sans CJK SC`（镜像已装），标题中文可正常渲染。\n- 无 blocker，全部完成。",
+            "status": "succeeded",
+            "control": "stop"
+          },
+          "run_id": "0130d989-abef-4ec1-aa26-4a6050040e47",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "grade": 5,
+              "model": "deepseek-v4-flash",
+              "score": 1,
+              "reason": "所有交付物完整且符合任务要求，PPT结构合理，图表数据齐全，可直接采纳。",
+              "source": "llm_review"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 1,
+              "reason": "交付物已生成"
+            }
+          },
+          "work_item_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [],
+      "db_rows": {
+        "accepted_deliverable_changes": 4,
+        "project_drive_versions": 4,
+        "snapshots": 8,
+        "audit_logs_related": 10
+      },
+      "artifacts": {
+        "output_files": [
+          "t3-weekly-metrics-chart-data.csv",
+          "t3-weekly-metrics-chart.png",
+          "t3-weekly-metrics-outline.md",
+          "t3-weekly-metrics.pptx"
+        ],
+        "accepted_downloads": [
+          {
+            "id": "190771fd-cad9-4913-bbc5-284cc3dd093a",
+            "filename": "t3-weekly-metrics-chart-data.csv",
+            "bytes": 86,
+            "sha256": "a4087503cbd38cff2a5c8c1cbb6a71a16d5cd0210c13bf3aa9e3e96a880af53d",
+            "drive_version_id": "8f716f97-8220-4130-8528-cabd9123d9ad"
+          },
+          {
+            "id": "3c5ecc3a-791a-4f13-b925-e88736b0ab64",
+            "filename": "t3-weekly-metrics-chart.png",
+            "bytes": 52439,
+            "sha256": "1748bbd28b2efb5eb961d00cb1f626ffad0139067e709610afc658c62f890dc6",
+            "drive_version_id": "23aa6b94-5d06-4fda-9fa2-9c2ab91c3f8d"
+          },
+          {
+            "id": "6483af5a-dbb9-42d5-96d6-da3af286dba2",
+            "filename": "t3-weekly-metrics-outline.md",
+            "bytes": 839,
+            "sha256": "a0770e567f15be729a290af4c9de401c9640390c80d70d224e2d6f0ed414a562",
+            "drive_version_id": "064a58e3-c7df-4d91-88dc-afdf363c5387"
+          },
+          {
+            "id": "442109b2-2a54-40bf-a445-f258e9952f1a",
+            "filename": "t3-weekly-metrics.pptx",
+            "bytes": 79783,
+            "sha256": "9ce064e9e931c62538cef64ad8b71bc55d95dab2d80ae1b2897a5d5c6d7bfbe6",
+            "drive_version_id": "f769190e-d627-4c26-bc5a-1bd194463b33"
+          }
+        ]
+      },
+      "assessment": {
+        "operator_quality": 4,
+        "passed": true,
+        "artifact_checks": {
+          "has_pptx": true,
+          "has_png": true,
+          "mentions_trend": true,
+          "pptx_bytes": 79783,
+          "png_bytes": 52439
+        },
+        "rationale": "PPTX 与 PNG 均真实生成，满足富格式能力验证。"
+      }
+    },
+    {
+      "id": "T4",
+      "title": "R5.10 T4 data cleaning script with self-test",
+      "expected_mode": "deliverable",
+      "session_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+      "work_item_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+      "agent_run_id": "09c1e19d-9771-41d2-9214-3b0f56e9862a",
+      "status": "succeeded",
+      "proposal_id": "33109d0f-2f10-47b5-b936-96ad40b40a00",
+      "proposal_status": "opened",
+      "merge_snapshot_id": "f300ec11-cf94-4e03-ae7a-e350b0c440bb",
+      "latency_ms": 31280,
+      "usage": {
+        "token_in": 1877,
+        "token_out": 2747,
+        "estimated_cost_cny": "0.02573",
+        "sources": [
+          "agent_step",
+          "review"
+        ],
+        "records": 9,
+        "ledger_entries": 27
+      },
+      "confidence": {
+        "grade": "high",
+        "risk_level": "low",
+        "verdict": "human_spotcheck",
+        "score": 1,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.15,
+              "reversibility": 0.2
+            },
+            "has_revert_snapshot": true
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 1877,
+            "tokenOut": 2747,
+            "stepsUsed": 8,
+            "secondsUsed": 25.004,
+            "totalTokens": 4624,
+            "estimatedCostCny": "0.02573"
+          },
+          "result": {
+            "reason": "All good. Let me summarize for the user.\n## 总结\n\n已完成 R5.10 T4（数据清洗脚本 + 自验）的全部交付物。\n\n### 产出文件\n\n| 文件 | 说明 |\n|------|------|\n| `outputs/t4_clean_customers.py` | 清洗脚本，含三行注释头、入口防御、CSV 读写 |\n| `outputs/t4-cleaned.csv` | 清洗后数据（3 行有效） |\n| `outputs/t4-rejects.csv` | 缺 email 的被拒行（1 行：Ben） |\n| `outputs/t4-self-test.md` | 自验报告，含命令、结果对照表、剩余限制 |\n\n### 清洗结果速览\n\n- **Ada** → `ada` / `ada@example.com` / `34` ✅\n- **Ben** → 缺 email → 进入 rejects ✅\n- **Chen** → `chen` / `chen@example.com` / `age=\"\"`（原 `not_available` 非数字）✅\n- **Dia** → `dia` / `dia@example.com` / `41` ✅\n\n所有断言自验通过，无 blocker。",
+            "status": "succeeded",
+            "control": "stop"
+          },
+          "run_id": "09c1e19d-9771-41d2-9214-3b0f56e9862a",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "grade": 5,
+              "model": "deepseek-v4-flash",
+              "score": 1,
+              "reason": "交付物完整，自验通过，与任务要求完全匹配，可直接采纳。",
+              "source": "llm_review"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 1,
+              "reason": "交付物已生成"
+            }
+          },
+          "work_item_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [],
+      "db_rows": {
+        "accepted_deliverable_changes": 4,
+        "project_drive_versions": 4,
+        "snapshots": 5,
+        "audit_logs_related": 7
+      },
+      "artifacts": {
+        "output_files": [
+          "t4-cleaned.csv",
+          "t4-rejects.csv",
+          "t4-self-test.md",
+          "t4_clean_customers.py"
+        ],
+        "accepted_downloads": [
+          {
+            "id": "067c8872-006c-4976-918f-1fe22cf07c73",
+            "filename": "t4-cleaned.csv",
+            "bytes": 88,
+            "sha256": "88bc4e86932f41097930aa194a5d79a7b37ac3a88a81539b94676c4286b5b9f2",
+            "drive_version_id": "29134331-7d66-46a4-bcdb-c7132b6b1597"
+          },
+          {
+            "id": "35cde913-7c08-4f37-a436-4498963c6a9f",
+            "filename": "t4-rejects.csv",
+            "bytes": 25,
+            "sha256": "51799390c1cacae882f986c7b3dad8576d35d46bb7c91f9cc31278cc055fbdc2",
+            "drive_version_id": "e2a97981-8026-4289-aca1-bf82de173902"
+          },
+          {
+            "id": "b31a1ba1-7a9c-4afa-9179-dbd20ff05ecc",
+            "filename": "t4-self-test.md",
+            "bytes": 1516,
+            "sha256": "6728d36e415a40e9c9db0e6914113d728396b8cce9c964e3b5bf3ec14c1a7695",
+            "drive_version_id": "56c2c070-5dc8-4256-a3f2-cb77b9199896"
+          },
+          {
+            "id": "24c0529e-fb1b-4775-bd0c-16a0c199ec91",
+            "filename": "t4_clean_customers.py",
+            "bytes": 2908,
+            "sha256": "bd5733fe79c3eae904b8a7d7a60f9a8af3d65c39a0b48a4d02f20d4a325d4477",
+            "drive_version_id": "3115e8f5-bf27-4133-862c-e455a4ac8311"
+          }
+        ]
+      },
+      "assessment": {
+        "operator_quality": 4,
+        "passed": true,
+        "artifact_checks": {
+          "has_script": true,
+          "cleaned_lower_email": true,
+          "reject_missing_email": true,
+          "self_test_notes": true
+        },
+        "rationale": "脚本、清洗结果、rejects 与自验记录齐全。"
+      }
+    },
+    {
+      "id": "T5",
+      "title": "R5.10 T5 insufficient information handoff",
+      "expected_mode": "structured_upgrade",
+      "session_id": "e62f680d-09af-476c-b85c-193ed9265314",
+      "work_item_id": "e62f680d-09af-476c-b85c-193ed9265314",
+      "agent_run_id": "d997d956-8942-4ce0-ac2c-f75c4f19c054",
+      "status": "succeeded",
+      "proposal_id": "bfd5ebe6-3369-4def-9b0b-a448b11eff2c",
+      "proposal_status": "opened",
+      "merge_snapshot_id": "696ec253-13a8-4a72-ac98-932e416e85e6",
+      "latency_ms": 35112,
+      "usage": {
+        "token_in": 3622,
+        "token_out": 2437,
+        "estimated_cost_cny": "0.02674",
+        "sources": [
+          "agent_step",
+          "review"
+        ],
+        "records": 8,
+        "ledger_entries": 24
+      },
+      "confidence": {
+        "grade": "low",
+        "risk_level": "low",
+        "verdict": "escalate",
+        "score": 0.412,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.15,
+              "reversibility": 0.2
+            },
+            "has_revert_snapshot": true
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 3622,
+            "tokenOut": 2437,
+            "stepsUsed": 7,
+            "secondsUsed": 29.775,
+            "totalTokens": 6059,
+            "estimatedCostCny": "0.02674"
+          },
+          "result": {
+            "reason": "The task is complete. I've submitted the summary and the handoff document is ready.\n任务已完成。`outputs/t5-handoff.md` 已就绪，可直接作为升级交接件流转给税务主管或客户对接人。",
+            "status": "succeeded",
+            "control": "stop"
+          },
+          "run_id": "d997d956-8942-4ce0-ac2c-f75c4f19c054",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "grade": 1,
+              "model": "deepseek-v4-flash",
+              "score": 0,
+              "reason": "未提供交付物内容，无法评估其与任务的匹配度，判定为完全不可用。",
+              "source": "llm_review"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 1,
+              "reason": "交付物已生成"
+            }
+          },
+          "work_item_id": "e62f680d-09af-476c-b85c-193ed9265314",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [
+        {
+          "id": "b342e68c-bf22-4d59-9286-33a6f5b13683",
+          "trigger": "unqualified",
+          "reason_md": "AI 没有完成可用交付：The task is complete. I've submitted the summary and the handoff document is ready.\n任务已完成。`outputs/t5-handoff.md` 已就绪，可直接作为升级交接件流转给税务主管或客户对接人。。建议请人查看执行过程后决定继续或转人工。",
+          "handoff_json": {
+            "done": [],
+            "blockers": [],
+            "artifacts": [],
+            "remaining": [
+              "需要查看 AgentRun trace 后确认下一步。"
+            ],
+            "budget_hit": "unknown",
+            "next_steps": [
+              "查看执行过程",
+              "决定继续、打回或转人工处理"
+            ]
+          }
+        }
+      ],
+      "db_rows": {
+        "accepted_deliverable_changes": 1,
+        "project_drive_versions": 1,
+        "snapshots": 2,
+        "audit_logs_related": 5
+      },
+      "artifacts": {
+        "output_files": [
+          "t5-handoff.md"
+        ],
+        "accepted_downloads": [
+          {
+            "id": "bec022e6-24c9-4904-a1b7-8eb4cf5cdd7f",
+            "filename": "t5-handoff.md",
+            "bytes": 4058,
+            "sha256": "a6d50a42b9049e1e871e67bc6c1f340bc38d5a2e91a329782610de46d06e5c95",
+            "drive_version_id": "c9eb37a4-07ff-41c4-b7d1-6e031ef2a4b7"
+          }
+        ]
+      },
+      "assessment": {
+        "operator_quality": null,
+        "passed": true,
+        "structured_upgrade": true,
+        "artifact_checks": {
+          "has_markdown_handoff": true,
+          "has_blockers": true,
+          "avoids_fabricated_tax_answer": true
+        },
+        "rationale": "信息不足任务输出了 blocker/handoff，没有硬编税务结论。"
+      }
+    },
+    {
+      "id": "B1",
+      "title": "R5.10 B1 low budget guard",
+      "expected_mode": "budget_guard",
+      "session_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+      "work_item_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+      "agent_run_id": "0db1a26b-f0b5-4b24-9007-2e63343d430d",
+      "status": "escalated",
+      "proposal_id": null,
+      "proposal_status": null,
+      "merge_snapshot_id": null,
+      "latency_ms": 1794,
+      "usage": {
+        "token_in": 242,
+        "token_out": 106,
+        "estimated_cost_cny": "0.001332",
+        "sources": [
+          "agent_step"
+        ],
+        "records": 1,
+        "ledger_entries": 3
+      },
+      "confidence": {
+        "grade": "low",
+        "risk_level": "medium",
+        "verdict": "escalate",
+        "score": 0.35,
+        "signals": {
+          "risk": {
+            "dimensions": {
+              "external": 0,
+              "monetary": 0,
+              "domain_gate": 0,
+              "blast_radius": 0.25,
+              "reversibility": 0.5
+            },
+            "has_revert_snapshot": false
+          },
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "tokenIn": 242,
+            "tokenOut": 106,
+            "stepsUsed": 1,
+            "secondsUsed": 0,
+            "totalTokens": 348,
+            "estimatedCostCny": "0.001332"
+          },
+          "result": {
+            "reason": "步数预算已耗尽",
+            "status": "escalated",
+            "control": "escalate"
+          },
+          "run_id": "0db1a26b-f0b5-4b24-9007-2e63343d430d",
+          "sources": {
+            "self": {
+              "score": null,
+              "reason": "当前 AgentRun 未提供自评"
+            },
+            "review": {
+              "score": 0.35,
+              "reason": "启发式回退（无 llm_review）：步数预算已耗尽"
+            },
+            "history": {
+              "reason": "冷启动或样本不足时不做历史缩放",
+              "calibration_factor": 1
+            },
+            "acceptance": {
+              "score": 0,
+              "reason": "交付物未通过执行终态"
+            }
+          },
+          "work_item_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "policy_version": "confidence-v0-file-only"
+        }
+      },
+      "escalations": [
+        {
+          "id": "a208898b-4edc-4c42-bada-b21019fa3898",
+          "trigger": "budget_exhausted",
+          "reason_md": "AI 的执行预算已经用尽，已整理交接信息，建议请人接手或调整预算后继续。",
+          "handoff_json": {
+            "done": [
+              "Step 1: used load_skill, list_files"
+            ],
+            "blockers": [
+              "步数预算已耗尽"
+            ],
+            "artifacts": [],
+            "remaining": [
+              "需要人工或经理模式确认剩余目标是否仍成立。"
+            ],
+            "budget_hit": "steps",
+            "next_steps": [
+              "查看 AgentRun trace",
+              "确认已有半成品",
+              "决定继续、打回或转人工处理"
+            ]
+          }
+        }
+      ],
+      "db_rows": {
+        "accepted_deliverable_changes": 0,
+        "project_drive_versions": 0,
+        "snapshots": 0,
+        "audit_logs_related": 2
+      },
+      "artifacts": {
+        "output_files": [],
+        "accepted_downloads": []
+      },
+      "assessment": {
+        "operator_quality": null,
+        "passed": true,
+        "structured_upgrade": true,
+        "artifact_checks": {
+          "terminal_status": "escalated",
+          "mentions_budget": true
+        },
+        "rationale": "低 token budget 触发 AgentLoop 结构化升级。"
+      }
+    }
+  ]
+}
