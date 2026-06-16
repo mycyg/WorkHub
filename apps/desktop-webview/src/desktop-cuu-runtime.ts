@@ -1296,7 +1296,7 @@ function renderAction(action: CuuCardAction) {
   if (!action.href) {
     return `<span class="wh-cuu-action" data-tone="${escapeHtml(action.tone)}">${escapeHtml(action.label)}</span>`;
   }
-  return `<a class="wh-cuu-action" href="${escapeHtml(action.href)}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
+  return `<a class="wh-cuu-action" href="${escapeHtml(safeHref(action.href))}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
 }
 
 function selectDemoEvents(events: GoldPathEvent[]) {
@@ -1390,4 +1390,13 @@ function escapeHtml(value: unknown) {
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
     .replace(/"/gu, "&quot;");
+}
+
+// 外部/契约来源的 href 可能带 javascript:/data: → 点击即 XSS。只放行相对路径与 http(s)/mailto，其余拦成 "#"。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
 }

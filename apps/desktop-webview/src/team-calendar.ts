@@ -6,7 +6,7 @@
 // 不进共享 @workhub/ui;只在桌面注入,Web 与 web-live-route-smoke 不受影响。
 
 import type { CalendarPageVM, ScheduleBlockVM, WorkHubLocale } from "@workhub/contracts";
-import { escapeHtml } from "@workhub/web-runtime";
+import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 type BlockTone = "event" | "due" | "meeting" | "review";
 
@@ -79,7 +79,7 @@ function renderBlock(block: ScheduleBlockVM, zh: boolean): string {
           ${block.description ? `<span class="wh-tcal-block-desc">${escapeHtml(block.description)}</span>` : ""}
         </span>`;
   if (clickable) {
-    return `<a class="wh-tcal-block wh-tcal-block--link gl-press" data-tcal-block="${escapeHtml(block.id)}" data-action-href="${escapeHtml(block.target_href!)}" data-href="${escapeHtml(block.target_href!)}">${inner}</a>`;
+    return `<a class="wh-tcal-block wh-tcal-block--link gl-press" data-tcal-block="${escapeHtml(block.id)}" data-action-href="${escapeHtml(safeHref(block.target_href!))}" data-href="${escapeHtml(safeHref(block.target_href!))}">${inner}</a>`;
   }
   return `<div class="wh-tcal-block" data-tcal-block="${escapeHtml(block.id)}">${inner}</div>`;
 }

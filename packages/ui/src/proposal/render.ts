@@ -135,7 +135,7 @@ function renderActions(actions: ActionSpec[]) {
     .map((action, index) => {
       const reason = action.requires_reason ? ' data-requires-reason="true"' : "";
       const desktop = action.requires_desktop ? ' data-requires-desktop="true"' : "";
-      return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}" data-method="${escapeHtml(action.method)}"${reason}${desktop}>${escapeHtml(action.label)}</a>`;
+      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}" data-method="${escapeHtml(action.method)}"${reason}${desktop}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -244,12 +244,12 @@ function renderStructuredFieldEditor(input: {
     return `<div class="wh-field-editor-row" data-proposal-structured-field-editor-row="${escapeHtml(field)}">
       <strong>${escapeHtml(uiT(input.locale, "proposal.fieldEditorField"))}: ${escapeHtml(field)}</strong>
       <div class="wh-field-editor-actions">
-        <a class="wh-btn" href="${escapeHtml(href)}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="accept_only" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(acceptOnly))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorAcceptOnly"))}</a>
-        <a class="wh-btn" href="${escapeHtml(href)}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="keep_current" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(keepCurrent))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorKeep"))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(href))}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="accept_only" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(acceptOnly))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorAcceptOnly"))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(href))}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="keep_current" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(keepCurrent))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorKeep"))}</a>
       </div>
       <div class="wh-field-editor-custom">
         <textarea data-structured-field-custom-input="${escapeHtml(field)}" aria-label="${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustomPlaceholder"))}"></textarea>
-        <button type="button" class="wh-btn" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="custom" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-action-href="${escapeHtml(href)}" data-href="${escapeHtml(href)}" data-request-json-template="${escapeHtml(JSON.stringify(customTemplate))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustom"))}</button>
+        <button type="button" class="wh-btn" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="custom" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-action-href="${escapeHtml(safeHref(href))}" data-href="${escapeHtml(safeHref(href))}" data-request-json-template="${escapeHtml(JSON.stringify(customTemplate))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorCustom"))}</button>
       </div>
     </div>`;
   }).join("");
@@ -407,7 +407,7 @@ function renderConflictOption(option: ProposalConflictOption, options?: UiRender
   const requestJson = option.action.request_json
     ? ` data-request-json="${escapeHtml(JSON.stringify(option.action.request_json))}"`
     : "";
-  return `<a class="${conflictOptionClass(option)}" href="${escapeHtml(option.action.href)}" data-action-id="${escapeHtml(option.action.id)}" data-conflict-option-id="${escapeHtml(option.id)}" data-method="${escapeHtml(option.action.method)}"${requestJson}>${escapeHtml(conflictOptionLabel(option, { locale }))}${recommended}</a>`;
+  return `<a class="${conflictOptionClass(option)}" href="${escapeHtml(safeHref(option.action.href))}" data-action-id="${escapeHtml(option.action.id)}" data-conflict-option-id="${escapeHtml(option.id)}" data-method="${escapeHtml(option.action.method)}"${requestJson}>${escapeHtml(conflictOptionLabel(option, { locale }))}${recommended}</a>`;
 }
 
 function actionForConflictDecision(conflict: ProposalConflict, decision: BulkConflictDecision) {
@@ -456,7 +456,7 @@ function renderBulkConflictAction(action: BulkConflictAction, locale: WorkHubLoc
     ? "proposal.conflictWorkbenchBulkKeep"
     : "proposal.conflictWorkbenchBulkIncoming";
   const className = action.id === "accept_incoming" ? "wh-btn wh-btn-danger" : "wh-btn";
-  return `<a class="${className}" href="${escapeHtml(action.href)}" data-action-id="bulk_${escapeHtml(action.id)}" data-proposal-conflict-bulk-action="${escapeHtml(action.id)}" data-action-href="${escapeHtml(action.href)}" data-method="${escapeHtml(action.method)}" data-request-json="${escapeHtml(JSON.stringify(action.requestJson))}">${escapeHtml(uiT(locale, labelKey))}</a>`;
+  return `<a class="${className}" href="${escapeHtml(safeHref(action.href))}" data-action-id="bulk_${escapeHtml(action.id)}" data-proposal-conflict-bulk-action="${escapeHtml(action.id)}" data-action-href="${escapeHtml(safeHref(action.href))}" data-method="${escapeHtml(action.method)}" data-request-json="${escapeHtml(JSON.stringify(action.requestJson))}">${escapeHtml(uiT(locale, labelKey))}</a>`;
 }
 
 function renderConflictWorkbench(conflicts: ProposalConflict[], options?: UiRenderOptions) {

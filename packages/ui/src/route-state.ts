@@ -160,6 +160,15 @@ function escapeHtml(value: unknown) {
     .replace(/'/gu, "&#39;");
 }
 
+// 外部/契约来源的 href 可能带 javascript:/data: → XSS。只放行相对路径与 http(s)/mailto，其余拦成 "#"。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
+}
+
 export function renderRouteStateCard(input: RouteStateCardInput) {
   const locale = normalizeWorkHubLocale(input.locale);
   const route = routeInfo[locale][input.routeKey];
@@ -174,7 +183,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
     <span class="wh-route-state-pill">${escapeHtml(meta)}</span>
     <h3>${escapeHtml(copy.title)}</h3>
     <p>${escapeHtml(copy.body)}</p>
-    <a class="wh-route-state-action" href="${escapeHtml(actionHref)}">${escapeHtml(copy.action)}</a>
+    <a class="wh-route-state-action" href="${escapeHtml(safeHref(actionHref))}">${escapeHtml(copy.action)}</a>
   </article>`;
 }
 

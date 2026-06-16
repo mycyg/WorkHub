@@ -754,7 +754,7 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
         : action.id === "open_replay"
           ? " data-s1-day2-post-run-next-action=\"replay\""
           : "";
-      return `<a class="${actionClass(action, index)}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${postRunNext}>${escapeHtml(action.label)}</a>`;
+      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -1172,7 +1172,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
       </div>
       ${freeText}
       <div class="wh-r4-route-actions">
-        <a class="wh-btn" href="${escapeHtml(question.submit.href)}" data-action-id="intake_continue" data-method="${escapeHtml(question.submit.method)}" data-intake-submit="next-question" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(continuePayload)}">${escapeHtml(routeT(locale, "intake.continue"))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(question.submit.href))}" data-action-id="intake_continue" data-method="${escapeHtml(question.submit.method)}" data-intake-submit="next-question" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(continuePayload)}">${escapeHtml(routeT(locale, "intake.continue"))}</a>
         ${createAction}
       </div>
     </section>`
@@ -1277,7 +1277,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       const itemRequest = vm.requests.find((req) => req.id === item.id);
       // 嵌入该事项的 respond href，供左栏选择时把右栏决策按钮重绑到选中项（避免误批 items[0]）。
       const respondHref = item.actions.find((action) => action.href.includes("/respond"))?.href;
-      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(respondHref)}"` : ""}>
+      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
       <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
@@ -1438,7 +1438,7 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
   if (source.source_type === "drive_comment") {
     const folder = source.folder_path ? `<span class="wh-pill">${escapeHtml(source.folder_path)}</span>` : "";
     const proposal = source.proposal_href
-      ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
+      ? `<a class="wh-pill" href="${escapeHtml(safeHref(source.proposal_href))}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
       : "";
     return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
       <div>
@@ -1454,7 +1454,7 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
     </div>`;
   }
   const proposal = source.proposal_href
-    ? `<a class="wh-pill" href="${escapeHtml(source.proposal_href)}" data-r5-workitem-source-proposal-link="true" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-source-proposal-status="${escapeHtml(source.proposal_status ?? "")}">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
+    ? `<a class="wh-pill" href="${escapeHtml(safeHref(source.proposal_href))}" data-r5-workitem-source-proposal-link="true" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-source-proposal-status="${escapeHtml(source.proposal_status ?? "")}">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
     : "";
   const evidence = source.evidence_refs.length
     ? source.evidence_refs.slice(0, 3).map((ref) => `<span class="wh-pill" data-r5-workitem-source-evidence="${escapeHtml(ref.id)}">${escapeHtml(ref.title)}</span>`).join("")
@@ -1692,13 +1692,13 @@ function driveActionLinks(
 ) {
   const links: string[] = [];
   if (item.preview_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(item.preview_href)}" data-action-id="drive_preview">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
   }
   if (item.download_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(item.download_href)}" data-action-id="drive_download">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.download_href))}" data-action-id="drive_download">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
   }
   if (item.restore_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(item.restore_href)}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
   }
   return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
 }
@@ -1748,9 +1748,9 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
     parsed_text: locale === "zh-CN" ? "# R5 上传样例\n\n这是一份可审计的项目资料上传样例。" : "# R5 upload sample\n\nA small auditable project drive upload sample."
   };
   const driveManageActions = [
-    vm.actions.upload_file ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(vm.actions.upload_file.href)}" data-action-id="drive_upload_file" data-method="POST" data-request-json="${jsonAttr(uploadPayload)}">${escapeHtml(routeT(locale, "drive.upload"))}</a>` : "",
-    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(vm.actions.delete_item.href)}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : "",
-    vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(vm.actions.restore_item.href)}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
+    vm.actions.upload_file ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" data-action-id="drive_upload_file" data-method="POST" data-request-json="${jsonAttr(uploadPayload)}">${escapeHtml(routeT(locale, "drive.upload"))}</a>` : "",
+    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : "",
+    vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.restore_item.href))}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
     ? vm.items.slice(0, 12).map((item) => {
@@ -1800,9 +1800,9 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(comment.status, locale))}</span>
-        ${comment.draft_action ? `<a class="wh-btn" href="${escapeHtml(comment.draft_action.href)}" data-action-id="comment_to_draft" data-method="POST">${escapeHtml(routeT(locale, "drive.createDraft"))}</a>` : ""}
-        ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(comment.draft_href)}">${escapeHtml(routeT(locale, "drive.openDraft"))}</a>` : ""}
-        ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(comment.proposal_href)}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
+        ${comment.draft_action ? `<a class="wh-btn" href="${escapeHtml(safeHref(comment.draft_action.href))}" data-action-id="comment_to_draft" data-method="POST">${escapeHtml(routeT(locale, "drive.createDraft"))}</a>` : ""}
+        ${comment.draft_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(comment.draft_href))}">${escapeHtml(routeT(locale, "drive.openDraft"))}</a>` : ""}
+        ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(comment.proposal_href))}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
@@ -1913,16 +1913,16 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
       const createDraftAction = insight.actions?.create_draft;
       const dismissInsightAction = insight.actions?.dismiss;
       const createAction = createDraftAction
-        ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(createDraftAction.href)}" data-action-id="${escapeHtml(createDraftAction.id)}" data-method="${escapeHtml(createDraftAction.method)}" data-r5-meeting-insight-create-draft="true">${escapeHtml(createDraftAction.label ?? routeT(locale, "meeting.createDraft"))}</a>`
+        ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(createDraftAction.href))}" data-action-id="${escapeHtml(createDraftAction.id)}" data-method="${escapeHtml(createDraftAction.method)}" data-r5-meeting-insight-create-draft="true">${escapeHtml(createDraftAction.label ?? routeT(locale, "meeting.createDraft"))}</a>`
         : "";
       const dismissAction = dismissInsightAction
-        ? `<a class="wh-btn" href="${escapeHtml(dismissInsightAction.href)}" data-action-id="${escapeHtml(dismissInsightAction.id)}" data-method="${escapeHtml(dismissInsightAction.method)}" data-r5-meeting-insight-dismiss="true">${escapeHtml(dismissInsightAction.label ?? routeT(locale, "meeting.dismiss"))}</a>`
+        ? `<a class="wh-btn" href="${escapeHtml(safeHref(dismissInsightAction.href))}" data-action-id="${escapeHtml(dismissInsightAction.id)}" data-method="${escapeHtml(dismissInsightAction.method)}" data-r5-meeting-insight-dismiss="true">${escapeHtml(dismissInsightAction.label ?? routeT(locale, "meeting.dismiss"))}</a>`
         : "";
       const draftLink = insight.draft_href
-        ? `<a class="wh-pill" href="${escapeHtml(insight.draft_href)}" data-r5-meeting-draft-link="true">${escapeHtml(routeT(locale, "meeting.openDraft"))}</a>`
+        ? `<a class="wh-pill" href="${escapeHtml(safeHref(insight.draft_href))}" data-r5-meeting-draft-link="true">${escapeHtml(routeT(locale, "meeting.openDraft"))}</a>`
         : "";
       const proposalLink = insight.proposal_href
-        ? `<a class="wh-pill" href="${escapeHtml(insight.proposal_href)}" data-r5-meeting-proposal-link="true" data-r5-meeting-proposal-id="${escapeHtml(insight.proposal_id ?? "")}" data-r5-meeting-proposal-status="${escapeHtml(insight.proposal_status ?? "")}">${escapeHtml(routeT(locale, "meeting.openProposal"))}</a>`
+        ? `<a class="wh-pill" href="${escapeHtml(safeHref(insight.proposal_href))}" data-r5-meeting-proposal-link="true" data-r5-meeting-proposal-id="${escapeHtml(insight.proposal_id ?? "")}" data-r5-meeting-proposal-status="${escapeHtml(insight.proposal_status ?? "")}">${escapeHtml(routeT(locale, "meeting.openProposal"))}</a>`
         : "";
       const evidence = insight.evidence_refs.length
         ? insight.evidence_refs.slice(0, 3).map((ref) => `<span class="wh-pill" data-r5-meeting-evidence-ref="${escapeHtml(ref.id)}">${escapeHtml(ref.title)}</span>`).join("")
@@ -2032,10 +2032,10 @@ function sourceContextLabel(source: NotificationPageVM["items"][number]["source_
 
 function notificationActionLinks(item: NotificationPageVM["items"][number], locale: WorkHubLocale) {
   const links = [
-    item.actions.open ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(item.actions.open.href)}" data-action-id="${escapeHtml(item.actions.open.id)}">${escapeHtml(item.actions.open.label || routeT(locale, "notifications.open"))}</a>` : "",
-    item.actions.mark_read ? `<a class="wh-btn" href="${escapeHtml(item.actions.mark_read.href)}" data-action-id="${escapeHtml(item.actions.mark_read.id)}" data-method="${escapeHtml(item.actions.mark_read.method)}" data-r5-notification-mark-read="true">${escapeHtml(item.actions.mark_read.label)}</a>` : "",
-    item.actions.dismiss ? `<a class="wh-btn" href="${escapeHtml(item.actions.dismiss.href)}" data-action-id="${escapeHtml(item.actions.dismiss.id)}" data-method="${escapeHtml(item.actions.dismiss.method)}" data-r5-notification-dismiss="true">${escapeHtml(item.actions.dismiss.label)}</a>` : "",
-    item.actions.complete ? `<a class="wh-btn" href="${escapeHtml(item.actions.complete.href)}" data-action-id="${escapeHtml(item.actions.complete.id)}" data-method="${escapeHtml(item.actions.complete.method)}" data-r5-notification-complete="true">${escapeHtml(item.actions.complete.label)}</a>` : ""
+    item.actions.open ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(item.actions.open.href))}" data-action-id="${escapeHtml(item.actions.open.id)}">${escapeHtml(item.actions.open.label || routeT(locale, "notifications.open"))}</a>` : "",
+    item.actions.mark_read ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.mark_read.href))}" data-action-id="${escapeHtml(item.actions.mark_read.id)}" data-method="${escapeHtml(item.actions.mark_read.method)}" data-r5-notification-mark-read="true">${escapeHtml(item.actions.mark_read.label)}</a>` : "",
+    item.actions.dismiss ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.dismiss.href))}" data-action-id="${escapeHtml(item.actions.dismiss.id)}" data-method="${escapeHtml(item.actions.dismiss.method)}" data-r5-notification-dismiss="true">${escapeHtml(item.actions.dismiss.label)}</a>` : "",
+    item.actions.complete ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.complete.href))}" data-action-id="${escapeHtml(item.actions.complete.id)}" data-method="${escapeHtml(item.actions.complete.method)}" data-r5-notification-complete="true">${escapeHtml(item.actions.complete.label)}</a>` : ""
   ].filter(Boolean);
   return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
 }
@@ -2046,7 +2046,7 @@ function renderNotificationGrounding(item: NotificationPageVM["items"][number], 
     return "";
   }
   const refs = grounding.evidence_refs.map((ref) =>
-    `<a class="wh-btn" href="${escapeHtml(ref.href)}" data-action-id="notification_evidence_${escapeHtml(ref.kind)}" data-r5-7-notification-evidence-ref="${escapeHtml(ref.kind)}">${escapeHtml(ref.label)}</a>`
+    `<a class="wh-btn" href="${escapeHtml(safeHref(ref.href))}" data-action-id="notification_evidence_${escapeHtml(ref.kind)}" data-r5-7-notification-evidence-ref="${escapeHtml(ref.kind)}">${escapeHtml(ref.label)}</a>`
   ).join("");
   return `<div class="wh-r4-route-meta" data-r5-7-notification-grounding="true" data-r5-7-notification-evidence-count="${escapeHtml(String(grounding.evidence_refs.length))}">
     <span class="wh-pill">${escapeHtml(routeT(locale, "notifications.groundingWhy"))}: ${escapeHtml(grounding.reason_text)}</span>
@@ -2084,7 +2084,7 @@ function renderNotificationBucket(
 
 function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkHubLocale): WebRouteComponent {
   const markAll = vm.actions.mark_all_read
-    ? `<a class="wh-btn" href="${escapeHtml(vm.actions.mark_all_read.href)}" data-action-id="${escapeHtml(vm.actions.mark_all_read.id)}" data-method="${escapeHtml(vm.actions.mark_all_read.method)}" data-r5-notification-mark-all-read="true">${escapeHtml(vm.actions.mark_all_read.label || routeT(locale, "notifications.markAllRead"))}</a>`
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.mark_all_read.href))}" data-action-id="${escapeHtml(vm.actions.mark_all_read.id)}" data-method="${escapeHtml(vm.actions.mark_all_read.method)}" data-r5-notification-mark-all-read="true">${escapeHtml(vm.actions.mark_all_read.label || routeT(locale, "notifications.markAllRead"))}</a>`
     : "";
   const primaryHrefs = [
     vm.actions.mark_all_read?.href,
@@ -2140,13 +2140,13 @@ function renderHealthSignal(
   const value = numbersVisible ? `${label}: ${signal.count}` : `${label}: ${healthBandLabel(signal.band, locale)}`;
   const inner = `<span class="wh-pill" data-r5-7-health-signal="${escapeHtml(signal.key)}" data-r5-7-health-signal-band="${escapeHtml(signal.band)}">${escapeHtml(value)}</span>`;
   return signal.target_href
-    ? `<a href="${escapeHtml(signal.target_href)}" data-action-id="health_signal_${escapeHtml(signal.key)}">${inner}</a>`
+    ? `<a href="${escapeHtml(safeHref(signal.target_href))}" data-action-id="health_signal_${escapeHtml(signal.key)}">${inner}</a>`
     : inner;
 }
 
 function renderHealthCard(card: ProjectHealthPageVM["cards"][number], locale: WorkHubLocale) {
   const open = card.target_href
-    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(card.target_href)}" data-action-id="health_open_project" data-r5-7-health-open-project="true">${escapeHtml(routeT(locale, "health.openProject"))}</a>`
+    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(card.target_href))}" data-action-id="health_open_project" data-r5-7-health-open-project="true">${escapeHtml(routeT(locale, "health.openProject"))}</a>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r5-7-health-card="${escapeHtml(card.project_id)}" data-r5-7-health-card-band="${escapeHtml(card.band)}" data-r5-7-health-numbers-visible="${escapeHtml(String(card.numbers_visible))}">
     <div class="wh-r4-route-meta">
@@ -2219,7 +2219,7 @@ function scheduleKindLabel(kind: CalendarPageVM["blocks"][number]["kind"], local
 
 function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: WorkHubLocale) {
   const link = block.target_href
-    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(block.target_href)}" data-action-id="calendar_open_target" data-r5-calendar-open-target="true">${escapeHtml(routeT(locale, "notifications.open"))}</a>`
+    ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(block.target_href))}" data-action-id="calendar_open_target" data-r5-calendar-open-target="true">${escapeHtml(routeT(locale, "notifications.open"))}</a>`
     : "";
   return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-calendar-block="${escapeHtml(block.id)}" data-r5-calendar-block-kind="${escapeHtml(block.kind)}" data-r5-calendar-block-status="${escapeHtml(block.status)}" data-r5-calendar-block-severity="${escapeHtml(block.severity)}">
     <div>
@@ -2360,7 +2360,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <strong>${escapeHtml(notice.severity)}</strong>
         <p>${escapeHtml(notice.message)}</p>
       </div>
-      ${notice.action_href ? `<a class="wh-pill" href="${escapeHtml(notice.action_href)}">${escapeHtml(goldPathT(locale, "cost.title"))}</a>` : ""}
+      ${notice.action_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(notice.action_href))}">${escapeHtml(goldPathT(locale, "cost.title"))}</a>` : ""}
     </div>`).join("")
     : "";
   const models = vm.model_breakdown.slice(0, 5)
@@ -2446,7 +2446,7 @@ function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: Ev
   const payload = action.id === "use_for_current_task"
     ? { evidence_bubble_id: vm.id, evidence_refs: vm.evidence_refs }
     : undefined;
-  return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(action.href)}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
+  return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
 }
 
 function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string): WebRouteComponent {
@@ -2546,7 +2546,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!props.petModelSettingsInWeb))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(String(props.restoreRequiresDesktop))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(String(props.webLocalActionsEnabled))}</span></div>
-          <a class="wh-btn" href="${escapeHtml(props.restoreHref)}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
+          <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
     </section>`

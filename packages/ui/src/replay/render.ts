@@ -61,6 +61,15 @@ function escapeHtml(value: unknown) {
     .replace(/'/gu, "&#39;");
 }
 
+// 外部/契约来源的 href 可能带 javascript:/data: → XSS。只放行相对路径与 http(s)/mailto，其余拦成 "#"。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
+}
+
 function copy(locale: WorkHubLocale, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
 }
@@ -219,9 +228,9 @@ function renderDeliverables(vm: ReplayTraceVM, locale: WorkHubLocale) {
   return accepted
     .map((item) => {
       const actions = [
-        item.preview_href ? `<a class="wh-btn" href="${escapeHtml(item.preview_href)}">${escapeHtml(copy(locale, "预览", "Preview"))}</a>` : "",
-        item.download_href ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(item.download_href)}">${escapeHtml(copy(locale, "下载", "Download"))}</a>` : "",
-        item.restore_href ? `<a class="wh-btn wh-btn-danger" href="${escapeHtml(item.restore_href)}" data-action-id="restore_deliverable" data-method="POST">${escapeHtml(copy(locale, "还原", "Restore"))}</a>` : ""
+        item.preview_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}">${escapeHtml(copy(locale, "预览", "Preview"))}</a>` : "",
+        item.download_href ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(item.download_href))}">${escapeHtml(copy(locale, "下载", "Download"))}</a>` : "",
+        item.restore_href ? `<a class="wh-btn wh-btn-danger" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="restore_deliverable" data-method="POST">${escapeHtml(copy(locale, "还原", "Restore"))}</a>` : ""
       ].filter(Boolean).join("");
       return `<article class="wh-card" data-replay-deliverable="${escapeHtml(item.id)}"><strong>${escapeHtml(item.filename ?? item.target_key)}</strong><p class="wh-subtle">${escapeHtml(item.target_path ?? item.target_key)}</p>${actions ? `<div class="wh-actions">${actions}</div>` : ""}</article>`;
     })

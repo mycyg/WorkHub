@@ -1379,7 +1379,7 @@ function renderDesktopPetBubble(input: {
   const suppressStatusForContext = shouldSuppressPetStatusForContext(card, compact, context);
   const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
   const payloadAttrs = card?.payload_ref
-    ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(card.payload_ref.href)}"` : ""}`
+    ? ` data-pet-payload-ref-entity-type="${escapeHtml(card.payload_ref.entity_type)}" data-pet-payload-ref-entity-id="${escapeHtml(card.payload_ref.entity_id)}"${card.payload_ref.href ? ` data-pet-payload-ref-href="${escapeHtml(safeHref(card.payload_ref.href))}"` : ""}`
     : "";
   const transientAttrs = input.status_text && !card ? ` data-pet-bubble-transient="true"` : "";
   // R6.P3：5 情绪 + 3 气泡（cream 审批 / white 对话 / light-blue 检索），由协议态收敛而来。
@@ -1421,7 +1421,7 @@ function renderPetChip(chip: NonNullable<CuuCard["chips"]>[number], card?: CuuCa
     card?.kind === "question" || card?.input
       ? ` data-pet-option-id="${escapeHtml(chip.id)}" data-pet-option-first="true"`
       : "";
-  const attrs = `class="wh-pet-chip" data-chip-id="${escapeHtml(chip.id)}" data-tone="${escapeHtml(chip.tone ?? "neutral")}" data-recommended="${chip.recommended ? "true" : "false"}" data-selected="${chip.selected ? "true" : "false"}"${optionAttrs}${chip.href ? ` data-chip-href="${escapeHtml(chip.href)}"` : ""}`;
+  const attrs = `class="wh-pet-chip" data-chip-id="${escapeHtml(chip.id)}" data-tone="${escapeHtml(chip.tone ?? "neutral")}" data-recommended="${chip.recommended ? "true" : "false"}" data-selected="${chip.selected ? "true" : "false"}"${optionAttrs}${chip.href ? ` data-chip-href="${escapeHtml(safeHref(chip.href))}"` : ""}`;
   if (optionAttrs) {
     return `<button ${attrs} type="button" aria-pressed="${chip.selected ? "true" : "false"}">${escapeHtml(text)}</button>`;
   }
@@ -1432,7 +1432,7 @@ function renderPetAction(action: CuuCard["actions"][number]) {
   if (!action.href) {
     return `<span class="wh-pet-action" data-tone="${escapeHtml(action.tone)}">${escapeHtml(action.label)}</span>`;
   }
-  return `<a class="wh-pet-action" href="${escapeHtml(action.href)}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
+  return `<a class="wh-pet-action" href="${escapeHtml(safeHref(action.href))}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
 }
 
 function renderRejectReasons(locale: WorkHubLocale) {
@@ -1681,4 +1681,13 @@ function escapeHtml(value: unknown) {
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
     .replace(/"/gu, "&quot;");
+}
+
+// 外部/契约来源的 href 可能带 javascript:/data: → 点击即 XSS。只放行相对路径与 http(s)/mailto，其余拦成 "#"。
+function safeHref(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+    return v;
+  }
+  return "#";
 }

@@ -5,7 +5,7 @@
 // 不进共享 @workhub/ui;只在桌面注入,Web 与 web-live-route-smoke 不受影响。
 
 import type { AiWorklogVM, AttentionItem, WorkHubLocale } from "@workhub/contracts";
-import { escapeHtml } from "@workhub/web-runtime";
+import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 type DeckTagTone = "approval" | "choice" | "permission" | "handoff" | "info";
 
@@ -64,7 +64,7 @@ function actionButtonClass(style: AttentionItem["actions"][number]["style"]) {
 function renderDeckAction(action: AttentionItem["actions"][number]) {
   const attrs = [
     `class="${actionButtonClass(action.style)} gl-press"`,
-    `href="${escapeHtml(action.href)}"`,
+    `href="${escapeHtml(safeHref(action.href))}"`,
     `data-action-id="${escapeHtml(action.id)}"`,
     `data-deck-action="${escapeHtml(action.id)}"`,
     action.method ? `data-method="${escapeHtml(action.method)}"` : "",
