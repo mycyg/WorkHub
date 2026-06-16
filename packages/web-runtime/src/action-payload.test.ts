@@ -6,6 +6,7 @@ import type { ProposalConflict } from "@workhub/contracts";
 
 import {
   acceptedDeliverableRestoreFromHref,
+  actionElementJsonPayload,
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
   conflictsFromMergeError,
@@ -101,6 +102,27 @@ test("R4.21 shared runtime materializes custom field placeholders recursively", 
     confirm: true,
     nested: ["keep", "Release note", { title: "Release note" }]
   });
+});
+
+test("M28 custom-field action re-substitutes the latest textarea value on every click", () => {
+  let textareaValue = "first value";
+  // 模拟 type=button 的 custom 按钮：只有 requestJsonTemplate（含占位符），textarea 值可变。
+  const button = {
+    dataset: { requestJsonTemplate: "{\"value\":\"__WORKHUB_CUSTOM_FIELD_VALUE__\"}", structuredField: "title" } as Record<string, string>,
+    closest: () => ({ querySelector: () => ({ value: textareaValue }) })
+  } as unknown as HTMLElement;
+
+  const first = actionElementJsonPayload<{ value: string }>(button);
+  assert.equal(first.ok, true);
+  assert.deepEqual(first.payload, { value: "first value" });
+
+  // 用户改了输入再点一次：必须用新值，而不是上次物化的旧值。
+  textareaValue = "second value";
+  const second = actionElementJsonPayload<{ value: string }>(button);
+  assert.equal(second.ok, true);
+  assert.deepEqual(second.payload, { value: "second value" });
+  // 物化结果不得写回 requestJson 污染下一次点击。
+  assert.equal(button.dataset.requestJson, undefined);
 });
 
 test("R4.21 shared runtime extracts merge conflicts from API error details", () => {

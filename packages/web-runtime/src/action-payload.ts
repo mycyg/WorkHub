@@ -197,7 +197,10 @@ export function customFieldValueForElement(element: HTMLElement) {
 }
 
 export function actionElementJsonPayload<T>(element: HTMLElement): ActionPayloadResult<T> {
-  const raw = element.dataset.requestJson ?? element.dataset.requestJsonTemplate;
+  // M28：模板驱动（custom）动作优先读 requestJsonTemplate（始终含占位符），且**不**把物化结果写回
+  // requestJson——否则 type=button 的 custom 按钮第二次点击会读到上次物化的值、丢掉用户改后的输入，
+  // 用旧值解决字段冲突。accept_only/keep_current 等只有 requestJson（无 template），不受影响。
+  const raw = element.dataset.requestJsonTemplate ?? element.dataset.requestJson;
   if (!raw) {
     return { ok: true };
   }
@@ -209,7 +212,6 @@ export function actionElementJsonPayload<T>(element: HTMLElement): ActionPayload
         return { ok: false, reason: "field_value_required" };
       }
       const materialized = replaceCustomFieldPlaceholder(parsed, customValue);
-      element.dataset.requestJson = JSON.stringify(materialized);
       return { ok: true, payload: materialized as T };
     }
     return { ok: true, payload: parsed as T };
