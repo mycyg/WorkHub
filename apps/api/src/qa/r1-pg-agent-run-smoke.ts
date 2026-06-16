@@ -422,8 +422,9 @@ async function main() {
     const policyListBeforeBody = await policyListBefore.json() as {
       data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
     };
-    if (policyListBeforeBody.data.length !== 4) {
-      throw new Error(`Expected 4 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    // 5 条默认策略：workitem-run / user-day / team-day / team-month / eval-day（M21 新增 eval 上限）。
+    if (policyListBeforeBody.data.length !== 5) {
+      throw new Error(`Expected 5 default P-COST policies, got ${policyListBeforeBody.data.length}`);
     }
     const userPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-user-day-v0");
     if (!userPolicyBefore || userPolicyBefore.scope_kind !== "user") {
