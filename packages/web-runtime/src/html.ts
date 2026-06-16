@@ -3,7 +3,8 @@ export function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
 export function eventListenerOptions(signal?: AbortSignal): AddEventListenerOptions | undefined {

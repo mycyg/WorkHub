@@ -105,7 +105,8 @@ function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
 // 契约/外部来源的 href（evidence.source_url、preview_ref.href 等）可能带 javascript:/data: 协议 → XSS。

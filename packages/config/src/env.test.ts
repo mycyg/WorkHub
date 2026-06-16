@@ -72,7 +72,7 @@ test("fails closed for wildcard CORS in production", () => {
   assert.throws(() =>
     loadSettings({
       APP_ENV: "production",
-      COOKIE_SECRET: "strong-secret",
+      COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
       COOKIE_SECURE: "true",
       CORS_ALLOW_ORIGINS: "*"
     })
@@ -83,7 +83,7 @@ test("fails closed for memory broker with multiple production workers", () => {
   assert.throws(() =>
     loadSettings({
       APP_ENV: "production",
-      COOKIE_SECRET: "strong-secret",
+      COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
       COOKIE_SECURE: "true",
       CORS_ALLOW_ORIGINS: "http://localhost:5173",
       WORKER_COUNT: "2",
@@ -95,7 +95,7 @@ test("fails closed for memory broker with multiple production workers", () => {
 test("allows redis broker for multiple production workers when url is configured", () => {
   const value = loadSettings({
     APP_ENV: "production",
-    COOKIE_SECRET: "strong-secret",
+    COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
     COOKIE_SECURE: "true",
     CORS_ALLOW_ORIGINS: "http://localhost:5173",
     WORKER_COUNT: "2",
@@ -111,7 +111,7 @@ test("requires broker url for non-memory production broker", () => {
   assert.throws(() =>
     loadSettings({
       APP_ENV: "production",
-      COOKIE_SECRET: "strong-secret",
+      COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
       COOKIE_SECURE: "true",
       CORS_ALLOW_ORIGINS: "http://localhost:5173",
       BROKER_BACKEND: "redis"
@@ -123,7 +123,7 @@ test("fails closed for insecure production cookies", () => {
   assert.throws(() =>
     loadSettings({
       APP_ENV: "production",
-      COOKIE_SECRET: "strong-secret",
+      COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
       CORS_ALLOW_ORIGINS: "http://localhost:5173",
       COOKIE_SECURE: "false"
     })

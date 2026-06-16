@@ -251,6 +251,17 @@ export function validateRuntimeConfig(value: Settings) {
     throw new Error("COOKIE_SECRET must be changed in production");
   }
 
+  // .default() only fires on undefined, so "" or a short value would otherwise pass — a weak/empty
+  // cookie secret makes identity cookies forgeable. Require real entropy in production.
+  if (value.auth.cookieSecret.length < 32) {
+    throw new Error("COOKIE_SECRET must be at least 32 characters in production");
+  }
+
+  // The admin-claim secret is the only privileged-account boundary; an empty default must not pass in prod.
+  if (value.auth.adminClaimSecret.length < 16) {
+    throw new Error("ADMIN_CLAIM_SECRET must be set (>=16 chars) in production");
+  }
+
   if (!value.auth.cookieSecure) {
     throw new Error("COOKIE_SECURE must be true in production");
   }

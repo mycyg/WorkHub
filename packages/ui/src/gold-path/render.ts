@@ -68,11 +68,15 @@ function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
+// 外部/契约来源的 href 可能带 javascript:/data: → XSS。只放行相对路径与 http/https/mailto，其余拦成 "#"，再过 escapeHtml。
 function href(value: string) {
-  return escapeHtml(value);
+  const v = String(value ?? "").trim();
+  const safe = v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v) ? v : "#";
+  return escapeHtml(safe);
 }
 
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {

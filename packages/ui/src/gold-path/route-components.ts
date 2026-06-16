@@ -660,7 +660,8 @@ function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
 }
 
 // 契约/外部来源的 href（evidence.href、preview_ref.href）可能带 javascript:/data: → XSS。
@@ -2453,7 +2454,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         <strong>${escapeHtml(ref.title)}</strong>
         <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
       </div>
-      ${ref.href ? `<a class="wh-pill" href="${escapeHtml(ref.href)}">${escapeHtml(routeT(locale, "knowledge.open"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}
+      ${ref.href ? `<a class="wh-pill" href="${escapeHtml(safeHref(ref.href))}">${escapeHtml(routeT(locale, "knowledge.open"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}
     </div>`).join("")
     : `<p class="wh-subtle" data-r4-knowledge-missing-note="true">${escapeHtml(vm.missing_evidence_note ?? routeT(locale, "knowledge.missing"))}</p>`;
   const actions = vm.actions.map((action) => renderKnowledgeAction(action, vm)).join("");
