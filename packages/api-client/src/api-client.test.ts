@@ -60,6 +60,68 @@ test("api client converts error envelopes to WorkHubApiError", async () => {
   );
 });
 
+test("api client surfaces inner error.details consistently on non-2xx errors", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(
+        JSON.stringify({ ok: false, error: { code: "merge_conflict", message: "冲突", details: { conflicts: [{ id: "c1" }] } } }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      )
+  });
+
+  await assert.rejects(
+    () => client.request("/api/proposals/demo/merge"),
+    (error) => {
+      assert.equal(error instanceof WorkHubApiError, true);
+      const apiError = error as WorkHubApiError;
+      assert.equal(apiError.code, "merge_conflict");
+      // error.details 应是内层 details（{conflicts}），不是整个信封。
+      assert.deepEqual(apiError.details, { conflicts: [{ id: "c1" }] });
+      return true;
+    }
+  );
+});
+
+test("api client times out a hung request into a 408 WorkHubApiError", async () => {
+  const client = createApiClient({
+    requestTimeoutMs: 20,
+    // 永远挂起的 fetch，只在 signal abort 时以 AbortError 拒绝。
+    fetchFn: (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      })
+  });
+
+  await assert.rejects(
+    () => client.request("/api/pages/home"),
+    (error) => error instanceof WorkHubApiError && error.status === 408 && error.code === "request_timeout"
+  );
+});
+
+test("api client propagates a caller abort without mislabeling it as a timeout", async () => {
+  const controller = new AbortController();
+  const client = createApiClient({
+    requestTimeoutMs: 10_000,
+    fetchFn: (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      })
+  });
+  const pending = client.request("/api/pages/home", { signal: controller.signal });
+  controller.abort();
+
+  // 调用方主动 abort：不应被映射成 408 超时，保持原始 AbortError。
+  await assert.rejects(pending, (error) => (error as { name?: string }).name === "AbortError");
+});
+
 test("api client exposes P0.5 gold path page and replay endpoints", async () => {
   const calls: string[] = [];
   const client = createApiClient({

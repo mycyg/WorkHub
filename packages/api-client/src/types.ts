@@ -83,6 +83,12 @@ export type WorkHubApiClientOptions = {
   fetchFn?: FetchLike;
   getClientToken?: () => string | undefined;
   credentials?: WorkHubRequestCredentials;
+  /**
+   * 每次请求的超时（毫秒）。设置后用 AbortController 在超时时中止请求，避免连接卡死时
+   * UI 动作（合并/审批等）永远 pending。超时抛 WorkHubApiError(408, "request_timeout")。
+   * 不设则无超时（保持原行为）。
+   */
+  requestTimeoutMs?: number;
 };
 
 export type PageRequestOptions = {

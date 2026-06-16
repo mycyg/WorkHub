@@ -141,6 +141,18 @@ function errorMessageFrom(body: unknown, fallback: string) {
   return fallback;
 }
 
+// 非 2xx 时 body 是整个错误信封 {ok:false,error:{code,message,details}}；取出内层 details，
+// 使 error.details 的语义与 2xx-信封分支(传 body.error.details)一致。非信封 body 回退到原值。
+function errorDetailsFrom(body: unknown, fallback: unknown) {
+  if (body && typeof body === "object") {
+    const error = (body as Record<string, unknown>).error;
+    if (error && typeof error === "object" && "details" in (error as Record<string, unknown>)) {
+      return (error as Record<string, unknown>).details;
+    }
+  }
+  return fallback;
+}
+
 function errorCodeFrom(body: unknown, fallback: string) {
   if (!body || typeof body !== "object") {
     return fallback;
@@ -170,18 +182,48 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await fetchFn(joinApiUrl(options.baseUrl, path), {
-      ...init,
-      credentials,
-      headers
-    });
+    // 可选请求超时：超时即用 AbortController 中止，避免连接卡死时 UI 动作永远 pending。
+    // 与调用方自带的 signal 组合（任一触发即中止）。
+    const timeoutMs = options.requestTimeoutMs;
+    let timeoutController: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let signal = init.signal ?? undefined;
+    if (timeoutMs && timeoutMs > 0) {
+      timeoutController = new AbortController();
+      timer = setTimeout(() => timeoutController?.abort(), timeoutMs);
+      if (init.signal && typeof AbortSignal.any === "function") {
+        signal = AbortSignal.any([init.signal, timeoutController.signal]);
+      } else {
+        signal = timeoutController.signal;
+      }
+    }
+
+    let response: Response;
+    try {
+      response = await fetchFn(joinApiUrl(options.baseUrl, path), {
+        ...init,
+        credentials,
+        headers,
+        ...(signal ? { signal } : {})
+      });
+    } catch (error) {
+      // 仅超时触发的中止才映射为 408；调用方自己 abort 的保持原始错误。
+      if (timeoutController?.signal.aborted && (error as { name?: string } | null)?.name === "AbortError") {
+        throw new WorkHubApiError(408, "request_timeout", `WorkHub API 请求超时（${timeoutMs}ms）`);
+      }
+      throw error;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
     const body = await readJson(response);
     if (!response.ok) {
       throw new WorkHubApiError(
         response.status,
         errorCodeFrom(body, "http_error"),
         errorMessageFrom(body, `WorkHub API request failed with ${response.status}`),
-        body
+        errorDetailsFrom(body, body)
       );
     }
     if (isEnvelope<T>(body)) {
