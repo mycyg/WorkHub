@@ -230,13 +230,16 @@ export function buildReplayManifestFacts(input: {
 }
 
 export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[]): EvidenceRef[] {
-  return auditLogs.map((log) => ({
-    id: log.id,
-    source_type: "audit_log",
-    source_id: log.id,
-    title: `${log.action} audit`,
-    href: `/api/workitems/${log.entity.entity_id}/audit`
-  }));
+  // M23：已撤销（回滚）的审计行不再作为「生效」证据列出——否则回放/manifest 会把已被还原的变更当真。
+  return auditLogs
+    .filter((log) => !log.undone_at)
+    .map((log) => ({
+      id: log.id,
+      source_type: "audit_log",
+      source_id: log.id,
+      title: `${log.action} audit`,
+      href: `/api/workitems/${log.entity.entity_id}/audit`
+    }));
 }
 
 function optionalRecord(value: unknown) {

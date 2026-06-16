@@ -117,6 +117,13 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
 
     const at = now();
     const reverted = await snapshots.markSnapshotReverted(snapshot.id, at);
+    // M23：把这个快照对应的写操作审计行标记为已撤销，否则回滚后审计轨迹/manifest 仍把已被还原的
+    // 变更当作生效证据（undone_at=null）。snapshotAuditRows 在创建下面的 revert 日志之前取的，不含它。
+    for (const row of snapshotAuditRows) {
+      if (row.snapshotId === snapshot.id && row.id) {
+        await auditLogs.markAuditLogUndone(row.id, at);
+      }
+    }
     const actor = c.var.actor;
     await auditLogs.createAuditLog({
       orgId: actor.orgId,

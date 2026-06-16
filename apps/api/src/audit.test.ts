@@ -29,6 +29,7 @@ import {
   type AuthEnv
 } from "./middleware/auth.js";
 import { createAuditRoutes } from "./routes/audit.js";
+import { buildReplayEvidenceRefs } from "./pages/replay.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -411,6 +412,21 @@ test("revert route restores the agent run workdir from the selected snapshot", a
     workdir_restored: true,
     reason_md: "测试还原"
   });
+  // M23：这个快照对应的写操作审计行（tool.write_file.snapshot）应被标记为已撤销，
+  // 让审计轨迹/manifest 不再把已回滚的变更当作生效证据。
+  const writeLog = auditLogs.rows.find((row) => row.action === "tool.write_file.snapshot");
+  assert.equal(writeLog?.undoneAt?.toISOString(), now.toISOString());
+});
+
+test("buildReplayEvidenceRefs skips undone (reverted) audit logs", () => {
+  const facts = [
+    { id: "log-live", action: "tool.write_file.snapshot", entity: { entity_id: "wi-1" } },
+    { id: "log-undone", action: "tool.write_file.snapshot", entity: { entity_id: "wi-1" }, undone_at: now.toISOString() }
+  ] as unknown as Parameters<typeof buildReplayEvidenceRefs>[0];
+  const refs = buildReplayEvidenceRefs(facts);
+  // 已撤销的行不再作为生效证据列出。
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0]?.source_id, "log-live");
 });
 
 test("revert route fails closed for a snapshot whose work item the caller cannot view", async () => {
