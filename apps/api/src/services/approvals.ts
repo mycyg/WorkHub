@@ -720,6 +720,45 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
 
     async listPolicies() {
       return deps.policies.listActivePolicies();
+    },
+
+    // M24：权限策略撤销。此前 softDeletePolicy 存在但无任何路由/服务调用它——学到的 allow 授权
+    // （respond remember:'always'）或管理员手写策略一旦建立就永远撤不掉（RBAC 降权缺口）。
+    async revokePolicy(actor: AuthActor, id: string) {
+      if (!actor.isAdmin) {
+        throw new ApprovalServiceError(403, "forbidden", "只有管理员可以撤销权限策略。");
+      }
+      const active = await deps.policies.listActivePolicies();
+      const target = active.find((policy) => policy.id === id);
+      // 找不到，或不属于本租户：一律当「未找到」（防跨租户撤销 + 避免存在性泄露）。
+      const tenantMismatch = Boolean(target)
+        && ((Boolean(target!.orgId) && target!.orgId !== actor.orgId)
+          || (Boolean(target!.workspaceId) && target!.workspaceId !== actor.workspaceId));
+      if (!target || tenantMismatch) {
+        throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
+      }
+      const revoked = await deps.policies.softDeletePolicy(id, actor.userId ?? actor.id, now());
+      if (!revoked) {
+        throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
+      }
+      await deps.auditLogs.createAuditLog({
+        actorKind: actor.kind,
+        actorNickname: actor.label,
+        entityType: "permission_policy",
+        entityId: id,
+        action: "permission_policy.revoked",
+        ...(actor.orgId ? { orgId: actor.orgId } : {}),
+        ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
+        ...(actor.userId ? { actorUserId: actor.userId } : {}),
+        detailJson: {
+          scope_kind: target.scopeKind,
+          scope_id: target.scopeId,
+          action_pattern: target.actionPattern,
+          effect: target.effect,
+          learned_from_session: target.learnedFromSession ?? false
+        }
+      });
+      return revoked;
     }
   };
 }

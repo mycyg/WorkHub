@@ -727,6 +727,45 @@ test("permission policy reads succeed for an admin", async () => {
   assert.equal(response.status, 200);
 });
 
+test("M24 revokePolicy soft-deletes a policy and audits it; admin-only; 404 on unknown", async () => {
+  const policyId = "70000000-0000-4000-8000-0000000000d1";
+  const seeded: PermissionPolicyRecord[] = [{
+    id: policyId,
+    scopeKind: "session",
+    scopeId: "session-xyz",
+    actionPattern: "tool.delete_file",
+    effect: "allow",
+    priority: 0,
+    learnedFromSession: true,
+    createdByUserId: approverId,
+    orgId,
+    workspaceId,
+    deletedAt: null
+  }];
+  const deps = serviceDeps(seeded);
+  const adminActor = { ...actor, isAdmin: true };
+
+  // 非 admin 撤销被拒。
+  await assert.rejects(
+    () => deps.service.revokePolicy(actor, policyId),
+    (error: unknown) => error instanceof ApprovalServiceError && error.status === 403
+  );
+
+  // admin 撤销成功：软删 + 从 active 列表消失 + 写审计。
+  const revoked = await deps.service.revokePolicy(adminActor, policyId);
+  assert.ok(revoked.deletedAt);
+  assert.equal((await deps.service.listPolicies()).length, 0);
+  const audit = deps.auditLogs.rows.find((row) => row.action === "permission_policy.revoked");
+  assert.equal(audit?.entityId, policyId);
+  assert.equal(audit?.entityType, "permission_policy");
+
+  // 未知 id → 404。
+  await assert.rejects(
+    () => deps.service.revokePolicy(adminActor, "70000000-0000-4000-8000-0000000000ff"),
+    (error: unknown) => error instanceof ApprovalServiceError && error.status === 404
+  );
+});
+
 test("W2 listPendingForUser builds items_detail: deliverable joins manifest, tool degrades, comments+timeline", async () => {
   const approvals = new MemoryApprovals();
   const manifest = deliverableManifestFixtures[0]!;

@@ -49,6 +49,13 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
     return c.json({ ok: true, data });
   });
 
+  // M24：撤销权限策略（含学到的 allow 授权）。与 PUT 同样要求本地客户端 + admin。
+  routes.delete("/:id", createRequireLocalClientMiddleware(authSource), async (c) => {
+    requireAdmin(c);
+    const data = await service.revokePolicy(c.var.actor, c.req.param("id"));
+    return c.json({ ok: true, data });
+  });
+
   routes.post("/ask", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createApprovalRequestSchema.parse(await c.req.json());
     // 防止任意用户把待审批塞进别人的收件箱：非管理员只能把 /ask 路由给自己。
