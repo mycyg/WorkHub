@@ -1060,7 +1060,11 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
         outcome === "dirty-deferred"
           ? sseDirtyGuardNotice(locale, eventType, targetKey)
           : sseRefreshNotice(locale, eventType, targetKey),
-        outcome === "dirty-deferred" ? dirtyGuardRefreshAction(locale, webRouteHref(window.location.pathname)) : undefined,
+        outcome === "dirty-deferred"
+          // 带上 search：calendar(?date/view)、drive/meetings(?project_id)、knowledge 等路由的状态全在 query 里，
+          // 只传 pathname 会让手动「刷新」丢掉当前视图参数（与 navigateWebRoute 用全 location 对齐）。
+          ? dirtyGuardRefreshAction(locale, webRouteHref(`${window.location.pathname}${window.location.search}`))
+          : undefined,
         outcome === "dirty-deferred" ? 0 : 3600
       );
     },
@@ -1246,7 +1250,18 @@ async function boot() {
       void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
     });
     window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
-    const me = await client.me().catch(() => null);
+    // 只有「未登录」才落注册屏：me() 在 200 空 body 时返回 null（真·未识别），或抛 401/not_identified。
+    // 5xx/网络/403 等不应把已登录用户强行踢回注册——交给外层 catch 渲染可重试错误态（renderFatalRouteError）。
+    let me: Awaited<ReturnType<typeof client.me>> | null;
+    try {
+      me = await client.me();
+    } catch (error) {
+      if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
+        showOnboardingScreen(client, locale);
+        return;
+      }
+      throw error;
+    }
     if (me) {
       locale = applyIdentityLocale(me, locale);
       currentIdentity = identityUserFrom(me);
