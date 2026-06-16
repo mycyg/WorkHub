@@ -1030,6 +1030,8 @@ test("R6 home never collapses to the generic empty card — empty attention stil
       autonomy_rate: 0,
       accepted_today: 0,
       saved_hours_estimate: 0,
+      skills_promoted_today: 0,
+      skills_refined_today: 0,
       generated_at: "2026-06-15T00:00:00.000Z",
       range_label: "今天"
     }

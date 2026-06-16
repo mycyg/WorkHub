@@ -741,6 +741,59 @@ test("R4.10 Home route component renders directly from Attention Page VM with bi
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
+test("R8 Home worklog banner surfaces today's self-evolution only when skills changed", () => {
+  const base = surfaceVm();
+  const withEvolution = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      attention: {
+        ...base.page_vms.attention,
+        worklog: {
+          runs_today: 3,
+          autonomy_rate: 80,
+          accepted_today: 2,
+          saved_hours_estimate: 1,
+          skills_promoted_today: 1,
+          skills_refined_today: 2,
+          generated_at: "2026-06-16T00:00:00.000Z",
+          range_label: "今天"
+        }
+      }
+    }
+  };
+  const zh = renderWebRouteComponents(withEvolution, { locale: "zh-CN" }).home;
+  assert.ok(zh);
+  assert.equal(zh.html.includes('data-r4-home-self-evolve="true"'), true);
+  assert.equal(zh.html.includes('data-r4-home-skills-promoted="1"'), true);
+  assert.equal(zh.html.includes('data-r4-home-skills-refined="2"'), true);
+  assert.equal(zh.html.includes("自我精进"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+
+  // 零自进化 → 不显示该行（不刷存在感）。
+  const noEvolution = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      attention: {
+        ...base.page_vms.attention,
+        worklog: {
+          runs_today: 3,
+          autonomy_rate: 80,
+          accepted_today: 2,
+          saved_hours_estimate: 1,
+          skills_promoted_today: 0,
+          skills_refined_today: 0,
+          generated_at: "2026-06-16T00:00:00.000Z",
+          range_label: "今天"
+        }
+      }
+    }
+  };
+  const zeroHome = renderWebRouteComponents(noEvolution, { locale: "zh-CN" }).home;
+  assert.equal(zeroHome?.html.includes('data-r4-home-self-evolve="true"'), false);
+});
+
 test("R4.11 WorkItem route component keeps task context, trace, acceptance, and evidence from Page VM", () => {
   const vm = surfaceVm();
   const workitem = renderWebRouteComponents(vm, { locale: "en-US" }).workitem;

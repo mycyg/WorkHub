@@ -43,6 +43,9 @@ export const aiWorklogVmSchema = z.object({
   autonomy_rate: z.number().int().min(0).max(100),
   accepted_today: z.number().int().nonnegative(),
   saved_hours_estimate: z.number().nonnegative(),
+  // R8：今日「自进化」——AI 给团队技能库新增/精修了多少条（复利劳动力的自我打磨在战绩里显性化）。
+  skills_promoted_today: z.number().int().nonnegative().default(0),
+  skills_refined_today: z.number().int().nonnegative().default(0),
   generated_at: z.string().min(1),
   range_label: z.string().min(1).optional()
 });

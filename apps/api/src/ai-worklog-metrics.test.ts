@@ -93,13 +93,24 @@ test("createAiWorklogMetricsService reads today rows from the repository", async
   const service = createAiWorklogMetricsService(
     {
       readDay1MetricsRows: async () => rows,
-      readAiWorklogRows: async () => ({ agentRuns: rows.agentRuns, proposals: rows.proposals })
+      readAiWorklogRows: async () => ({
+        agentRuns: rows.agentRuns,
+        proposals: rows.proposals,
+        skillCurationEvents: [
+          { action: "team_skill.distilled_and_promoted" },
+          { action: "team_skill.refined_via_patch" },
+          { action: "team_skill.refined_via_patch" }
+        ]
+      })
     } as never,
     { now: () => now }
   );
   const worklog = await service.getTodayMetrics();
   assert.equal(worklog.runs_today, 1);
   assert.equal(worklog.autonomy_rate, 100);
+  // R8：今日自进化计数从审计事件聚合（1 新增 + 2 精修）。
+  assert.equal(worklog.skills_promoted_today, 1);
+  assert.equal(worklog.skills_refined_today, 2);
 });
 
 test("createAiWorklogMetricsService passes start-of-today as the query lower bound", async () => {
@@ -110,7 +121,7 @@ test("createAiWorklogMetricsService passes start-of-today as the query lower bou
       readDay1MetricsRows: async () => emptyRows(),
       readAiWorklogRows: async (since: Date) => {
         capturedSince = since;
-        return { agentRuns: [], proposals: [] };
+        return { agentRuns: [], proposals: [], skillCurationEvents: [] };
       }
     } as never,
     { now: () => now }

@@ -50,6 +50,8 @@ export function buildAiWorklog(input: {
   from: Date;
   to: Date;
   now?: Date;
+  // R8：今日技能自进化事件（审计动作）。无则视为 0（向后兼容旧调用方）。
+  skillCurationEvents?: readonly { action: string }[];
 }): AiWorklogVM {
   const { rows, from, to } = input;
   const now = input.now ?? new Date();
@@ -65,11 +67,17 @@ export function buildAiWorklog(input: {
   const acceptedToday = rows.proposals.filter((row) => dateInRange(row.mergedAt, from, to)).length;
   const savedHours = round1(acceptedToday * SAVED_HOURS_PER_ACCEPTED);
 
+  const skillEvents = input.skillCurationEvents ?? [];
+  const skillsPromotedToday = skillEvents.filter((row) => row.action === "team_skill.distilled_and_promoted").length;
+  const skillsRefinedToday = skillEvents.filter((row) => row.action === "team_skill.refined_via_patch").length;
+
   return {
     runs_today: runsToday.length,
     autonomy_rate: autonomyRate,
     accepted_today: acceptedToday,
     saved_hours_estimate: savedHours,
+    skills_promoted_today: skillsPromotedToday,
+    skills_refined_today: skillsRefinedToday,
     generated_at: now.toISOString(),
     range_label: "今天"
   };
@@ -84,7 +92,7 @@ export function createAiWorklogMetricsService(
     async getTodayMetrics(input) {
       const reference = input?.now ?? now();
       const from = startOfToday(reference);
-      // 只读今天的 agentRuns/proposals（M5：不再为 4 个数字全表扫 9 张表）。
+      // 只读今天的 agentRuns/proposals/技能自进化事件（M5：不再为几个数字全表扫 9 张表）。
       // buildAiWorklog 只用到 rows.agentRuns / rows.proposals，其余字段补空即可。
       const slice = await repository.readAiWorklogRows(from);
       return buildAiWorklog({
@@ -101,7 +109,8 @@ export function createAiWorklogMetricsService(
         },
         from,
         to: reference,
-        now: reference
+        now: reference,
+        skillCurationEvents: slice.skillCurationEvents
       });
     }
   };

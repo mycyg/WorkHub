@@ -1,10 +1,11 @@
 import type { CostLedgerEntry } from "@workhub/cost";
-import { gte, or, type SQL } from "drizzle-orm";
+import { and, gte, inArray, or, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
   agentRuns,
   approvalRequests,
+  auditLogs,
   escalationEvents,
   mergeAttempts,
   notifications,
@@ -100,10 +101,14 @@ export type PilotDay1MetricsRows = {
   costLedgerEntries: readonly CostLedgerEntry[];
 };
 
-// 首页 AI 战绩只需要这两张表的今日切片——不再为 4 个数字全表扫 9 张表（M5）。
+// R8：今日技能自进化事件（按审计动作；新增 = distilled_and_promoted，精修 = refined_via_patch）。
+export type SkillCurationEventRow = { action: string };
+
+// 首页 AI 战绩只需要这几张表的今日切片——不再为几个数字全表扫 9 张表（M5）。
 export type AiWorklogMetricsRows = {
   agentRuns: PilotDay1AgentRunMetricRow[];
   proposals: PilotDay1ProposalMetricRow[];
+  skillCurationEvents: SkillCurationEventRow[];
 };
 
 export type PilotMetricsRepository = {
@@ -209,7 +214,7 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
     },
 
     async readAiWorklogRows(since: Date) {
-      const [agentRunRows, proposalRows] = await Promise.all([
+      const [agentRunRows, proposalRows, skillCurationEvents] = await Promise.all([
         db.select({
           id: agentRuns.id,
           workItemId: agentRuns.workItemId,
@@ -232,9 +237,16 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
           reviewedAt: proposals.reviewedAt,
           mergedAt: proposals.mergedAt,
           createdAt: proposals.createdAt
-        }).from(proposals).where(gte(proposals.mergedAt, since))
+        }).from(proposals).where(gte(proposals.mergedAt, since)),
+        // R8：今日技能自进化（新增 + 精修）——从审计日志按动作取。
+        db.select({ action: auditLogs.action }).from(auditLogs).where(
+          and(
+            gte(auditLogs.createdAt, since),
+            inArray(auditLogs.action, ["team_skill.distilled_and_promoted", "team_skill.refined_via_patch"])
+          ) as SQL
+        )
       ]);
-      return { agentRuns: agentRunRows, proposals: proposalRows };
+      return { agentRuns: agentRunRows, proposals: proposalRows, skillCurationEvents };
     }
   };
 }

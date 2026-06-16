@@ -904,10 +904,16 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   const evidenceCount = primary?.evidence_refs?.length ?? 0;
   const worklog = vm.worklog;
 
+  // R8：今日「自进化」——只在确有新增/精修时显示，避免零活动时刷存在感。
+  const selfEvolved = (worklog?.skills_promoted_today ?? 0) + (worklog?.skills_refined_today ?? 0);
+  const selfEvolveLine = worklog && selfEvolved > 0
+    ? `<span class="wh-r4-home-banner-evolve" data-r4-home-self-evolve="true" data-r4-home-skills-promoted="${escapeHtml(String(worklog.skills_promoted_today))}" data-r4-home-skills-refined="${escapeHtml(String(worklog.skills_refined_today))}">${escapeHtml(zh ? "还顺手自我精进：技能 +" : "Also leveled up: skills +")}${escapeHtml(String(worklog.skills_promoted_today))}${escapeHtml(zh ? " · 精修 " : " · refined ")}${escapeHtml(String(worklog.skills_refined_today))}</span>`
+    : "";
   const worklogBanner = worklog
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
         <span class="wh-r4-home-banner-cat" aria-hidden="true"></span>
         <span>${escapeHtml(zh ? "今天我替你扛了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>
+        ${selfEvolveLine}
       </div>`
     : "";
 
