@@ -281,26 +281,28 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async replaceTrace(runId, trace) {
-      await db.delete(agentSteps).where(eq(agentSteps.agentRunId, runId));
-      if (trace.length === 0) {
-        return [];
-      }
-      const rows = await db
-        .insert(agentSteps)
-        .values(trace.map((step, index) => ({
-          id: stableUuid(`${runId}:${step.id}:${index + 1}`),
-          agentRunId: runId,
-          seq: index + 1,
-          stepNo: step.stepNo,
-          phase: step.phase,
-          inputJson: {},
-          outputExcerpt: step.outputExcerpt,
-          controlSignal: step.controlSignal,
-          snapshotId: step.snapshotId,
-          createdAt: step.createdAt
-        })))
-        .returning();
-      return rows;
+      // delete+insert 必须同事务：否则 insert 失败/进程崩溃会把已删的整条 trace 永久抹掉。
+      return db.transaction(async (tx) => {
+        await tx.delete(agentSteps).where(eq(agentSteps.agentRunId, runId));
+        if (trace.length === 0) {
+          return [];
+        }
+        return tx
+          .insert(agentSteps)
+          .values(trace.map((step, index) => ({
+            id: stableUuid(`${runId}:${step.id}:${index + 1}`),
+            agentRunId: runId,
+            seq: index + 1,
+            stepNo: step.stepNo,
+            phase: step.phase,
+            inputJson: {},
+            outputExcerpt: step.outputExcerpt,
+            controlSignal: step.controlSignal,
+            snapshotId: step.snapshotId,
+            createdAt: step.createdAt
+          })))
+          .returning();
+      });
     },
 
     async setWorkdir(runId, workdirRef, at) {

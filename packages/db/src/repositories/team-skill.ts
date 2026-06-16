@@ -78,6 +78,9 @@ export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
       const now = new Date();
       // 三步原子化（M14）：弃旧 active → 插新 active → 超额驱逐。否则中途崩溃会让该 key 没有任何 active 版本。
       return db.transaction(async (tx) => {
+        // 同 (workspace, skillKey) 的并发 promote 串行化：否则两者都读到同一 max(version) 再插同号，
+        // 撞 (workspace,key,version) 唯一索引报错。事务级 advisory lock 随提交/回滚自动释放。
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`team-skill:${input.workspaceId}:${input.skillKey}`})::bigint)`);
         const nextVersion = (await latestVersion(input.workspaceId, input.skillKey, tx)) + 1;
 
         // 同 key 的旧 active 版本先弃用，保证"一 key 一 active"。
