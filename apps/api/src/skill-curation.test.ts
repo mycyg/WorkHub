@@ -227,6 +227,37 @@ test("scheduler promotes a valid distilled skill and audits the promotion", asyn
   assert.equal(audits[0]?.action, "team_skill.distilled_and_promoted");
 });
 
+test("M13 scheduler skips the whole tick (no distill spend) when the curation budget is exhausted", async () => {
+  let distillCalls = 0;
+  const { scheduler, promoted } = buildScheduler({
+    curationBudgetOk: async () => false,
+    distill: async () => {
+      distillCalls += 1;
+      return { distilled_skills: [skill()] };
+    }
+  });
+  const result = await scheduler.tick();
+  // 预算耗尽：根本不调用 distill（不烧 token），不晋升任何技能。
+  assert.equal(distillCalls, 0);
+  assert.equal(result.promoted, 0);
+  assert.equal(result.workspaces, 0);
+  assert.deepEqual(promoted, []);
+});
+
+test("M13 scheduler runs distill when the curation budget is available", async () => {
+  let distillCalls = 0;
+  const { scheduler } = buildScheduler({
+    curationBudgetOk: async () => true,
+    distill: async () => {
+      distillCalls += 1;
+      return { distilled_skills: [skill()] };
+    }
+  });
+  const result = await scheduler.tick();
+  assert.equal(distillCalls, 1);
+  assert.equal(result.promoted, 1);
+});
+
 test("scheduler discards a low-confidence skill and audits the reason (no promote)", async () => {
   const { scheduler, audits, promoted } = buildScheduler({
     distill: async () => ({ distilled_skills: [skill({ confidence_score: 0.5 })] })

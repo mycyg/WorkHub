@@ -85,6 +85,8 @@ export const envSchema = z.object({
   BUDGET_DEFAULT_TEAM_DAILY_COST_CNY: cnyString.default("200"),
   BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY: cnyString.default("2000"),
   BUDGET_DEFAULT_EVAL_DAILY_COST_CNY: cnyString.default("80"),
+  // 夜间技能蒸馏(curation)日花费上限：当日 curation 花费超过即整轮跳过，防 interval 配错/跑飞无限烧钱。
+  BUDGET_DEFAULT_CURATION_DAILY_COST_CNY: cnyString.default("40"),
 
   AGENT_RUN_LEASE_MS: z.coerce.number().int().positive().default(300000),
   AGENT_RUN_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
@@ -158,6 +160,7 @@ export type Settings = {
     teamDailyCostCny: string;
     teamMonthlyCostCny: string;
     evalDailyCostCny: string;
+    curationDailyCostCny: string;
   };
   agentRun: {
     leaseMs: number;
@@ -233,7 +236,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       userDailyCostCny: parsed.BUDGET_DEFAULT_USER_DAILY_COST_CNY,
       teamDailyCostCny: parsed.BUDGET_DEFAULT_TEAM_DAILY_COST_CNY,
       teamMonthlyCostCny: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY,
-      evalDailyCostCny: parsed.BUDGET_DEFAULT_EVAL_DAILY_COST_CNY
+      evalDailyCostCny: parsed.BUDGET_DEFAULT_EVAL_DAILY_COST_CNY,
+      curationDailyCostCny: parsed.BUDGET_DEFAULT_CURATION_DAILY_COST_CNY
     },
     agentRun: {
       leaseMs: parsed.AGENT_RUN_LEASE_MS,

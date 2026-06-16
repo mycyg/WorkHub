@@ -17,6 +17,7 @@ import {
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { getDefaultAgentRunQueue } from "./agent-runner.js";
+import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import {
   buildCurationPrompt,
   buildCurationSystemPrompt,
@@ -72,6 +73,9 @@ export type SkillCurationSchedulerOptions = {
   refine?: (analysis: SkillCurationAnalysis) => Promise<SkillEditPatchResponse>;
   intervalMs?: number;
   workQueueIsIdle?: () => Promise<boolean>;
+  // M13：本轮 curation 是否还在花费预算内。返回 false 则整轮跳过 distill/refine（不烧 token）。
+  // 默认（未提供）视为始终允许，保持向后兼容。
+  curationBudgetOk?: () => Promise<boolean>;
   now?: () => Date;
   onError?: (error: unknown) => void;
 };
@@ -82,6 +86,7 @@ export function createAgentRunSkillCurationScheduler(
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const now = options.now ?? (() => new Date());
   const workQueueIsIdle = options.workQueueIsIdle ?? (async () => true);
+  const curationBudgetOk = options.curationBudgetOk ?? (async () => true);
 
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
@@ -296,6 +301,20 @@ export function createAgentRunSkillCurationScheduler(
           finished_at: now().toISOString()
         };
       }
+      // M13：curation 花费 gate——当日 curation 预算耗尽则整轮跳过，避免夜间无条件烧 token。
+      const budgetOk = await curationBudgetOk();
+      if (!budgetOk) {
+        console.warn("WorkHub skill curation: skipped tick, daily curation budget exhausted");
+        return {
+          workspaces: 0,
+          promoted: 0,
+          discarded: 0,
+          deferred: 0,
+          refined: 0,
+          started_at: startedAt.toISOString(),
+          finished_at: now().toISOString()
+        };
+      }
       const workspaces = await options.listWorkspaces();
       for (const workspace of workspaces) {
         try {
@@ -411,6 +430,22 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     intervalMs: settings.agentRun.skillCurationIntervalMs,
     // L#46：worker 队列还有排队/执行中的 run 时，技能蒸馏先让路（idle = listActive 为空）。
     workQueueIsIdle: async () => (await getDefaultAgentRunQueue().listActive()).length === 0,
+    // M13：当日 curation 花费(source=curation 的 usage 记录)超过日上限即整轮跳过，防 interval 配错/跑飞烧钱。
+    // curation usage 无 scope 不进 cost_ledger_entries，故查原始 usage_records(listRecords)按 source 过滤。
+    curationBudgetOk: async () => {
+      const capCny = Number(settings.budgets.curationDailyCostCny);
+      const ledgerStore = getDefaultCostLedgerStore();
+      if (!Number.isFinite(capCny) || capCny <= 0 || !ledgerStore.listRecords) {
+        return true;
+      }
+      const startOfDay = new Date();
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const records = await ledgerStore.listRecords();
+      const spent = records
+        .filter((record) => record.source === "curation" && new Date(record.createdAt) >= startOfDay)
+        .reduce((sum, record) => sum + Number(record.estimatedCostCny || 0), 0);
+      return spent < capCny;
+    },
     listWorkspaces: async () => (await repository.listActiveWorkspaceIds()).map((id) => ({ id })),
     analyze: async (workspaceId) => {
       const since = new Date(Date.now() - SEVEN_DAYS_MS);
