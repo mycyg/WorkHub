@@ -190,3 +190,26 @@ test("confidence fuses llm_review grade with acceptance under R0 weights", () =>
   assert.equal(sources.review.grade, 5);
   assert.equal(sources.review.source, "llm_review");
 });
+
+test("findings[0] signalsJson acceptance.score matches the score driving the verdict (succeeded without manifest = 0.6)", () => {
+  const base = {
+    runId: "40000000-0000-4000-8000-000000000011",
+    workItemId: "50000000-0000-4000-8000-000000000011",
+    model: "deepseek-v4-flash"
+  };
+  const succeededNoManifest = {
+    status: "succeeded" as const,
+    reason: "done",
+    control: "stop" as const,
+    usage: { stepsUsed: 2, secondsUsed: 5, tokenIn: 10, tokenOut: 10, totalTokens: 20, estimatedCostCny: "0.01" },
+    steps: [],
+    review: { source: "llm_review" as const, grade: 5, rationale: "ok", model: "deepseek-v4-flash" }
+    // 故意不带 manifest
+  };
+  const assessment = evaluateAgentRunConfidence({ ...base, result: succeededNoManifest as never });
+  const sources = (assessment.signalsJson as { sources: { acceptance: { score: number } } }).sources;
+  // 成功但无 manifest：acceptance 应为 0.6（与 confidenceScoreFor 同口径），而非旧的硬编码 1。
+  assert.equal(sources.acceptance.score, 0.6);
+  // 裁决分确实用了 0.6：(1*0.5 + 0.6*0.35)/0.85 = 0.835（证明 signals 与计分一致）。
+  assert.equal(assessment.confidenceScore, 0.835);
+});

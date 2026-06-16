@@ -46,7 +46,8 @@ export const aiWorklogVmSchema = z.object({
   // R8：今日「自进化」——AI 给团队技能库新增/精修了多少条（复利劳动力的自我打磨在战绩里显性化）。
   skills_promoted_today: z.number().int().nonnegative().default(0),
   skills_refined_today: z.number().int().nonnegative().default(0),
-  generated_at: z.string().min(1),
+  // findings[18]：与其它 generated_at 统一用 isoDateTimeSchema，挡住非 ISO 时间戳越过 VM 边界后下游格式化成 Invalid Date。
+  generated_at: isoDateTimeSchema,
   range_label: z.string().min(1).optional()
 });
 export type AiWorklogVM = z.infer<typeof aiWorklogVmSchema>;
@@ -742,7 +743,8 @@ export const costDashboardVmSchema = z.object({
   token_out: z.number().int().nonnegative(),
   unit_cost_cny: z.string().optional(),
   trend: z.array(z.object({
-    date: z.string(),
+    // findings[18]：日序列桶为 "YYYY-MM-DD"（ledger periodBucket = createdAt.slice(0,10)），与 calendar 同口径严校。
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
     cost_cny: z.string(),
     tokens: z.number().int().nonnegative()
   })),

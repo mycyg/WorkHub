@@ -111,6 +111,13 @@ function heuristicScoreFor(result: AgentLoopResult) {
   return 0.2;
 }
 
+// R0 acceptance 信号：成功且有交付物清单=1；成功但无清单=0.6；未成功=0。
+// findings[0]：驱动裁决计分的这个表达式与 signalsJson 解释载荷必须用同一个值，否则
+// 「succeeded 但无 manifest」的运行会出现「展示/审计的 acceptance=1」与「实际计分=0.6」相左，破坏审计可信度。
+function acceptanceScoreFor(result: AgentLoopResult): number {
+  return result.status === "succeeded" ? (result.manifest ? 1 : 0.6) : 0;
+}
+
 // R0 v1 权重（confidence-risk-escalation.md §0.1）：review=0.50 / acceptance=0.35 / self=0.15。
 // self 暂缺时按在场来源归一化；llm_review 缺席时回退启发式整体分。
 function confidenceScoreFor(result: AgentLoopResult) {
@@ -118,7 +125,7 @@ function confidenceScoreFor(result: AgentLoopResult) {
     return heuristicScoreFor(result);
   }
   const reviewScore = (result.review.grade - 1) / 4;
-  const acceptanceScore = result.status === "succeeded" ? (result.manifest ? 1 : 0.6) : 0;
+  const acceptanceScore = acceptanceScoreFor(result);
   const weights = { review: 0.5, acceptance: 0.35 };
   const total = weights.review + weights.acceptance;
   return (reviewScore * weights.review + acceptanceScore * weights.acceptance) / total;
@@ -217,8 +224,11 @@ export function evaluateAgentRunConfidence(input: EvaluateAgentRunConfidenceInpu
           reason: `启发式回退（无 llm_review）：${input.result.reason.slice(0, 120)}`
         },
       acceptance: {
-        score: input.result.status === "succeeded" ? 1 : 0,
-        reason: input.result.status === "succeeded" ? "交付物已生成" : "交付物未通过执行终态"
+        // findings[0]：与 confidenceScoreFor 用同一个 acceptanceScoreFor，三态一致（1 / 0.6 / 0）。
+        score: round3(acceptanceScoreFor(input.result)),
+        reason: input.result.status === "succeeded"
+          ? (input.result.manifest ? "交付物已生成" : "执行成功但未产出交付物清单")
+          : "交付物未通过执行终态"
       },
       self: {
         score: null,
