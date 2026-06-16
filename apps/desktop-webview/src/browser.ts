@@ -187,6 +187,8 @@ function bindGoldPathNavigation(
     listen?: DesktopShellListen | undefined;
     // R7 P3:任一动作落库后(成功或失败)回调,用于刷新决策卡牌(回拉服务端真相)。
     onActionSettled?: (() => void) | undefined;
+    // M31：懒加载面板的路由→数据加载器表。激活路由(navigate/hashchange)时触发对应 loader。
+    lazyPanelLoaders?: Map<string, () => void> | undefined;
   } = {}
 ) {
   let pendingReviewHref: string | undefined;
@@ -198,6 +200,8 @@ function bindGoldPathNavigation(
     const pageKey = resolveGoldPathPageKey(shell.routeMap, route);
     if (pageKey) {
       setActivePage(shellRoot, shell, pageKey);
+      // M31：直接导航/壳 navigate 事件进入懒加载页时也拉数据(此前只 click 触发,导致面板空着)。
+      input.lazyPanelLoaders?.get(route)?.();
       return true;
     }
     return false;
@@ -393,6 +397,9 @@ function mountLazyDesktopPanel(
     loadingHtml: string;
     errorHtml: string;
     load: (host: HTMLElement) => Promise<void>;
+    // M31：把本面板的懒加载触发器注册到共享路由表，让 shell `navigate` 事件 / hashchange 也能拉数据
+    //（此前只有 nav 链接 click + boot hash 会触发，直接导航/壳事件进页则面板空着）。
+    registerLoader?: (route: string, load: () => void) => void;
   }
 ): void {
   const navList = shellRoot.querySelector<HTMLElement>(".wh-app-nav-list");
@@ -430,6 +437,11 @@ function mountLazyDesktopPanel(
     if (link) {
       void runLoad();
     }
+  });
+  // M31：注册到共享路由表，由 activateRoute（navigate 事件 + hashchange 都经它）激活本路由时触发。
+  // runLoad 幂等（loaded 标志），与上面的 click / 下面的 boot-hash 多路触发互不冲突。
+  input.registerLoader?.(`/${input.key}`, () => {
+    void runLoad();
   });
   // 深链/刷新时 hash 已是 #/<key>:activateFromHash 会显示面板,这里同步把数据拉起来。
   if (window.location.hash.slice(1) === `/${input.key}`) {
@@ -585,8 +597,12 @@ async function boot() {
     // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
     // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。
     const zh = locale === "zh-CN";
+    // M31：懒加载面板的路由→数据加载器共享表；mountLazyDesktopPanel 注册，bindGoldPathNavigation 激活时触发。
+    const lazyPanelLoaders = new Map<string, () => void>();
+    const registerLazyLoader = (route: string, load: () => void) => lazyPanelLoaders.set(route, load);
     mountLazyDesktopPanel(root, shell, {
       key: "team",
+      registerLoader: registerLazyLoader,
       navLabel: zh ? "团队" : "Team",
       loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉团队日历…" : "Loading team calendar…"),
       errorHtml: desktopLazyLoadingHtml(zh ? "日历没拉到，再点一次「团队」重试～" : "Couldn't load — tap Team again to retry"),
@@ -597,6 +613,7 @@ async function boot() {
     });
     mountLazyDesktopPanel(root, shell, {
       key: "projects",
+      registerLoader: registerLazyLoader,
       navLabel: zh ? "项目" : "Projects",
       loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉项目…" : "Loading projects…"),
       errorHtml: desktopLazyLoadingHtml(zh ? "项目没拉到，再点一次「项目」重试～" : "Couldn't load — tap Projects again to retry"),
@@ -610,6 +627,7 @@ async function boot() {
     // 组件 css(wh-r4-route*)随面板内联;wh-card/wh-pill/wh-subtle 来自壳的 goldPathCss(天然玻璃)。
     mountLazyDesktopPanel(root, shell, {
       key: "skills",
+      registerLoader: registerLazyLoader,
       navLabel: zh ? "团队技能" : "Team skills",
       loadingHtml: desktopLazyLoadingHtml(zh ? "正在拉团队技能…" : "Loading team skills…"),
       errorHtml: desktopLazyLoadingHtml(zh ? "技能没拉到，再点一次「团队技能」重试～" : "Couldn't load — tap Team skills again to retry"),
@@ -688,6 +706,7 @@ async function boot() {
     bindRouteLineEditor(root);
     bindGoldPathNavigation(root, shell, client, locale, {
       listen: realShellListen,
+      lazyPanelLoaders,
       onActionSettled: () => {
         void refreshDecisionDeck();
         // 动作落库后也回拉当前打开的 live gold-path 详情页(approvals/workitem/replay/cost),让它前进/更新。
