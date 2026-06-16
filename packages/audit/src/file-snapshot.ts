@@ -9,6 +9,11 @@ async function listFiles(root: string, current = root): Promise<string[]> {
   const files: string[] = [];
   for (const entry of entries) {
     const full = path.join(current, entry.name);
+    // L24：显式跳过符号链接（不跟随、不快照）——跟随会有目录环 / 越出快照根的路径穿越风险。
+    // 此前它们恰好既非 isDirectory 也非 isFile 而被默默漏掉；这里把意图显式化、并防御未来 API 变化。
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
     if (entry.isDirectory()) {
       files.push(...await listFiles(root, full));
     } else if (entry.isFile()) {

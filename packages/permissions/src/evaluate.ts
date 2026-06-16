@@ -35,7 +35,9 @@ function escapeRegExp(input: string) {
 }
 
 export function globMatch(pattern: string, value: string): boolean {
-  const regex = new RegExp(`^${pattern.split("*").map(escapeRegExp).join(".*")}$`);
+  // L25：'s'(dotAll) 让 `*` 也跨换行，否则含 \n 的 action 值能绕过 deny 通配
+  // （如 "tool.x\ninjected" 不被 "tool.*" 匹配 → 漏过本应 deny 的动作）。
+  const regex = new RegExp(`^${pattern.split("*").map(escapeRegExp).join(".*")}$`, "s");
   return regex.test(value);
 }
 

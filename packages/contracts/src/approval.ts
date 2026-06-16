@@ -83,8 +83,8 @@ export const permissionPolicyWriteSchema = z.object({
   action_pattern: z.string().min(1).max(128),
   effect: permissionEffectSchema,
   priority: z.number().int().default(0),
-  learned_from_session: z.boolean().default(false),
-  org_id: idSchema.optional(),
-  workspace_id: idSchema.optional()
+  learned_from_session: z.boolean().default(false)
+  // L4：移除 org_id/workspace_id——策略的租户归属一律由服务端从 actor.orgId/workspaceId 派生
+  // （见 approvals.createPolicy），暴露这两个字段会误导调用方以为可指定租户，实则被忽略。
 });
 export type PermissionPolicyWrite = z.infer<typeof permissionPolicyWriteSchema>;
