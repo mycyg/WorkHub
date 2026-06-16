@@ -52,7 +52,15 @@ export function browserLocale(
 ): WorkHubLocale {
   const storage = input.storage ?? globalThis.localStorage;
   const navigatorLanguage = input.navigatorLanguage ?? globalThis.navigator?.language;
-  return normalizeWorkHubLocale(storage.getItem(workHubLocaleStorageKey) ?? navigatorLanguage);
+  // L#69（与 persistBrowserLocale 同口径）：localStorage 在 SSR/非 DOM、WebView、隐私模式/禁用存储时
+  // 可能 undefined 或读取抛错。读失败不应中断 bootstrap——退化为仅用 navigator 语言。
+  let stored: string | null = null;
+  try {
+    stored = storage?.getItem(workHubLocaleStorageKey) ?? null;
+  } catch {
+    stored = null;
+  }
+  return normalizeWorkHubLocale(stored ?? navigatorLanguage);
 }
 
 export function applyIdentityLocale(identity: IdentityLocaleCarrier, fallback: WorkHubLocale): WorkHubLocale {

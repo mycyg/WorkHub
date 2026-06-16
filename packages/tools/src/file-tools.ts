@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { z } from "zod";
@@ -200,6 +200,24 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
           return errorToolResult("read_file requires path. Example: {\"path\":\"inputs/meeting-notes.md\"}");
         }
         const target = safeResolvePath(ctx.workdir, requestedPath);
+        // 读上限：沙箱文件可达 maxBytes(默认 200MB)，且 run_command 能廉价造大文件。
+        // 整文件塞回 tool-result→agent loop/LLM context 会撑爆 agent 宿主内存或炸 context/成本。
+        // 超过 cap 只读前 cap 字节并标 [truncated]（这是唯一没有预算约束的 ingest 路径）。
+        const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
+        const info = await stat(target);
+        if (info.size > READ_FILE_MAX_BYTES) {
+          const handle = await open(target, "r");
+          try {
+            const buffer = Buffer.alloc(READ_FILE_MAX_BYTES);
+            const { bytesRead } = await handle.read(buffer, 0, READ_FILE_MAX_BYTES, 0);
+            const head = buffer.subarray(0, bytesRead).toString("utf8");
+            return okToolResult(
+              `${head}\n[truncated: 文件 ${info.size} 字节，仅读取前 ${READ_FILE_MAX_BYTES} 字节]`
+            );
+          } finally {
+            await handle.close();
+          }
+        }
         return okToolResult(await readFile(target, "utf8"));
       }
     }),

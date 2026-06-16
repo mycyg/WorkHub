@@ -103,6 +103,32 @@ test("write_file rejects an over-budget payload before it touches disk", async (
   await assert.rejects(readFile(path.join(workdir, "outputs", "big.txt"), "utf8"));
 });
 
+test("read_file truncates files larger than the read cap", async () => {
+  const workdir = await tempWorkdir();
+  await mkdir(path.join(workdir, "inputs"), { recursive: true });
+  // 3MB > 2MB cap：必须截断，不能整个塞回 tool-result。
+  const big = "x".repeat(3 * 1024 * 1024);
+  await writeFile(path.join(workdir, "inputs", "huge.txt"), big, "utf8");
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const result = await registry.execute("read_file", { path: "inputs/huge.txt" }, { workdir });
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /\[truncated/);
+  // 返回内容远小于原文件（截到 ~2MB + 标记），不是 3MB 全量。
+  assert.equal(result.content.length < 3 * 1024 * 1024, true);
+});
+
+test("read_file returns small files whole", async () => {
+  const workdir = await tempWorkdir();
+  await mkdir(path.join(workdir, "inputs"), { recursive: true });
+  await writeFile(path.join(workdir, "inputs", "small.txt"), "hello world", "utf8");
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const result = await registry.execute("read_file", { path: "inputs/small.txt" }, { workdir });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.content, "hello world");
+});
+
 test("run_command fails closed when no sandboxed command runner is configured", async () => {
   const workdir = await tempWorkdir();
   const registry = createToolRegistry(createBuiltInFileTools());

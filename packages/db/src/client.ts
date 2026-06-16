@@ -43,6 +43,12 @@ export function createPgPool(runtimeSettings: Settings = defaultSettings, overri
     connectionString,
     max: runtimeSettings.db.poolSize + runtimeSettings.db.maxOverflow,
     connectionTimeoutMillis: runtimeSettings.db.poolTimeout * 1000,
+    // 服务端兜底超时：限制挂死事务的爆炸半径。代码里大量长事务持锁（FOR UPDATE [SKIP LOCKED] 领取、
+    // 按项目串行化合并的 pg_advisory_xact_lock），一个崩溃/卡住的 client 会无限持锁、拖垮 15 槽连接池。
+    // - idle_in_transaction_session_timeout：杀掉「开了事务但空转」的连接（崩溃 worker 卡在事务中途）。
+    // - lock_timeout：等锁超过阈值即报错，而不是无限排队。
+    // 二者都不会打断正在执行的语句（迁移 DDL 安全）；statement_timeout 故意不设，避免误杀合法长查询/迁移。
+    options: "-c idle_in_transaction_session_timeout=30000 -c lock_timeout=15000",
     ...overrides
   });
 

@@ -940,6 +940,10 @@ export function createInMemoryAgentRunQueue(options: {
             }
             current = updateRun({
               ...live,
+              // recordUsage 在 recordStep 之前跑（loop.ts），但只写了 current 没写 runs map；
+              // 这里 spread live（其 usage 是上一步的旧值）会把最新用量盖掉，导致失败 run 少记最近一步。
+              // 显式带上 current.usage 保留最新用量（M1 失败记账的本意）。
+              usage: current.usage,
               trace: [...live.trace, ...traceRecordsFromStep(current.run_id, step)],
               updated_at: now().toISOString()
             });
