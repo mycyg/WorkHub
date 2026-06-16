@@ -51,6 +51,38 @@ export const aiWorklogVmSchema = z.object({
 });
 export type AiWorklogVM = z.infer<typeof aiWorklogVmSchema>;
 
+// R8：团队技能管理页 VM——展示当前激活的团队技能、版本/出处（含 K2 精修 provenance）与自进化统计。
+export const teamSkillVmSchema = z.object({
+  skill_key: z.string().min(1),
+  name: z.string().min(1),
+  when_to_use: z.string().min(1),
+  version: z.number().int().positive(),
+  source_kind: z.enum(["distilled", "authored"]),
+  created_by_kind: z.enum(["ai", "human"]),
+  confidence_score: z.number().min(0).max(1).optional(),
+  sample_count: z.number().int().nonnegative(),
+  updated_at: isoDateTimeSchema,
+  // K2 精修出处（仅精修版本有）：从哪个版本来、改了几段、为什么。
+  provenance: z.object({
+    refined_from_version: z.number().int().positive(),
+    op_count: z.number().int().nonnegative(),
+    rationale_md: z.string().optional()
+  }).optional()
+});
+export type TeamSkillVM = z.infer<typeof teamSkillVmSchema>;
+
+export const teamSkillsPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  skills: z.array(teamSkillVmSchema),
+  totals: z.object({
+    active: z.number().int().nonnegative(),
+    ai_authored: z.number().int().nonnegative(),
+    refined: z.number().int().nonnegative()
+  }),
+  empty_state: z.enum(["no_skills"]).optional()
+});
+export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
+
 export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),

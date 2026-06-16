@@ -23,9 +23,12 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import { createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
+
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
+import { buildTeamSkillsPage } from "../pages/team-skills.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
@@ -81,6 +84,7 @@ export type PageRoutesDependencies = {
   scheduleNotifyPages?: ScheduleNotifyPageService;
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
+  teamSkills?: Pick<TeamSkillRepository, "listActive">;
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -160,6 +164,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
+  const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -358,6 +363,14 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       ledgerEntries
     });
     return c.json(pageEnvelope(data, locale));
+  });
+
+  routes.get("/skills", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    // pilot = 单工作空间：技能按默认工作空间读（与 /cost 的 teamId 同源）。
+    const workspaceId = settings.auth.defaultWorkspaceId;
+    const active = await teamSkills.listActive(workspaceId);
+    return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active }), locale));
   });
 
   routes.get("/settings", createCurrentUserMiddleware(authSource), (c) => {

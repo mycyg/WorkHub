@@ -19,6 +19,7 @@ import type {
   ClientDeviceAuthRow,
   CreateAuditLogInput,
   ClientDeviceRepository,
+  TeamSkillRow,
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
@@ -456,4 +457,66 @@ test("api provider registry records create and stream usage into the shared cost
   assert.deepEqual(body.data.model_breakdown, [
     { provider: "deepseek", model: "deepseek-v4-flash", count: 2, cost_cny: "0.018" }
   ]);
+});
+
+test("team skills page route authenticates and returns active skills with K2 provenance", async () => {
+  const runtimeSettings = settings();
+  const activeRow = {
+    id: "ts-quarterly-report",
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    skillKey: "quarterly-report",
+    name: "季度报告",
+    whenToUse: "生成季度业务报告",
+    contentMd: "---\nname: q\nwhen_to_use: y\n---\n\n# q\n正文",
+    status: "active",
+    version: 2,
+    sourceKind: "distilled",
+    createdByKind: "ai",
+    confidenceScore: 0.86,
+    sampleCount: 0,
+    samplesJson: { refined_from_version: 1, ops: [{ op: "add_section", section: "边界情况" }], rationale_md: "补边界" },
+    sourceRunId: null,
+    deprecatedReason: null,
+    deprecatedAt: null,
+    createdAt: now,
+    updatedAt: now
+  } as unknown as TeamSkillRow;
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    teamSkills: { listActive: async () => [activeRow] }
+  }));
+
+  const response = await app.request("/api/pages/skills", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      skills: Array<{ skill_key: string; version: number; provenance?: { refined_from_version: number; op_count: number } }>;
+      totals: { active: number; refined: number; ai_authored: number };
+    };
+  };
+  assert.equal(body.data.skills.length, 1);
+  assert.equal(body.data.skills[0]?.skill_key, "quarterly-report");
+  assert.equal(body.data.skills[0]?.version, 2);
+  assert.equal(body.data.skills[0]?.provenance?.refined_from_version, 1);
+  assert.equal(body.data.skills[0]?.provenance?.op_count, 1);
+  assert.equal(body.data.totals.active, 1);
+  assert.equal(body.data.totals.refined, 1);
+  assert.equal(body.data.totals.ai_authored, 1);
+});
+
+test("team skills page route requires authentication", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    teamSkills: { listActive: async () => [] }
+  }));
+  const response = await app.request("/api/pages/skills");
+  assert.equal(response.status, 401);
 });
