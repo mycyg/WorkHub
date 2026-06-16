@@ -88,6 +88,10 @@ export const envSchema = z.object({
   AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000),
   // 一条 run 因租约过期被恢复（requeue）的最大次数；超过即转入死信 failed，不再无限重跑。
   AGENT_RUN_MAX_RECOVER_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  // 默认 false：run_command 默认 fail-closed（不执行宿主命令）。仅在受信本地/单机环境显式置 true，
+  // 才把无约束 nodeCommandRunner 接进 agent 循环（白名单解释器但不隔离，可访问宿主路径）。
+  // 多租户/生产环境应保持 false，并由部署方注入真正隔离的 commandRunner。
+  AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS: booleanString.default(false),
   AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(false),
@@ -155,6 +159,7 @@ export type Settings = {
     heartbeatIntervalMs?: number;
     recoveryIntervalMs: number;
     maxRecoverAttempts: number;
+    allowUnsandboxedCommands: boolean;
     skillCurationEnabled: boolean;
     skillCurationIntervalMs: number;
     projectHydrateEnabled: boolean;
@@ -230,6 +235,7 @@ export function loadSettings(env: EnvInput = process.env): Settings {
         : {}),
       recoveryIntervalMs: parsed.AGENT_RUN_RECOVERY_INTERVAL_MS,
       maxRecoverAttempts: parsed.AGENT_RUN_MAX_RECOVER_ATTEMPTS,
+      allowUnsandboxedCommands: parsed.AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS,
       skillCurationEnabled: parsed.AGENT_RUN_SKILL_CURATION_ENABLED,
       skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS,
       projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,

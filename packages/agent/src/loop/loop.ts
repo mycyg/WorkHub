@@ -521,7 +521,8 @@ export class AgentLoop {
           maxBytes: input.budget.maxBytes ?? 200 * 1024 * 1024,
           commandTimeoutSeconds: input.budget.commandTimeoutSeconds ?? 45
         },
-        ...(input.snapshot ? { snapshot: input.snapshot } : {})
+        ...(input.snapshot ? { snapshot: input.snapshot } : {}),
+        ...(input.commandRunner ? { commandRunner: input.commandRunner } : {})
       };
       const tools = await input.tools.toModelTools(ctx);
       const stepNo = usage.stepsUsed + 1;

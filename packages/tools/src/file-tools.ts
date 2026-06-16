@@ -278,6 +278,15 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
       }),
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
+        // 沙箱逃逸 fail-closed：run_command 跑的是白名单解释器（python3/node/…），cwd 在 workdir 但**进程不隔离**
+        // ——无 chroot/namespace/seccomp，PATH 是宿主 PATH。未注入受控 runner 时底层会回退到无约束的
+        // nodeCommandRunner，可读写宿主任意路径（已 live 验证可读 /etc/hosts），击穿 safeResolvePath 这层防护。
+        // 因此默认拒绝执行；部署方必须显式注入一个隔离 runner（或在受信本地环境显式注入 nodeCommandRunner 作为 opt-in）。
+        if (!ctx.commandRunner) {
+          return errorToolResult(
+            "run_command 已禁用：当前部署没有配置受控命令执行器（沙箱）。需要由部署方注入隔离的 commandRunner 后才能运行命令。"
+          );
+        }
         const budget = ctx.sandboxBudget ?? defaultSandboxBudget;
         const timeoutSeconds = input.timeout_s ?? budget.commandTimeoutSeconds;
         const result = await runSandboxedCommand({
@@ -285,7 +294,7 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
           cwd: input.cwd,
           workdir: ctx.workdir,
           timeoutSeconds,
-          ...(ctx.commandRunner ? { runner: ctx.commandRunner } : {})
+          runner: ctx.commandRunner
         });
         await enforceBudget(ctx);
         return result.exitCode === 0

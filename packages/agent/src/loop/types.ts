@@ -1,6 +1,7 @@
 import type { RunBudget } from "@workhub/cost";
 import type { DeliverableChangeManifest, EventType, EvidenceRef } from "@workhub/contracts";
 import type {
+  CommandRunner,
   SandboxBudget,
   SnapshotHook,
   ToolExecutionContext,
@@ -114,6 +115,8 @@ export type AgentLoopInput = {
   /** run 成功后追加一次 llm_review 评审调用（OQ-2 来源②）；默认开启，失败静默降级。 */
   reviewDeliverable?: boolean;
   snapshot?: SnapshotHook;
+  // 注入受控命令执行器；不传则 run_command fail-closed（默认不执行宿主命令）。由部署/worker 按配置决定。
+  commandRunner?: CommandRunner;
   manifest?: AgentLoopManifestOptions;
   recorder?: AgentLoopRecorder;
   emit?: (event: AgentLoopEvent) => Promise<void> | void;

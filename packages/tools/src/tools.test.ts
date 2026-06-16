@@ -103,6 +103,46 @@ test("write_file rejects an over-budget payload before it touches disk", async (
   await assert.rejects(readFile(path.join(workdir, "outputs", "big.txt"), "utf8"));
 });
 
+test("run_command fails closed when no sandboxed command runner is configured", async () => {
+  const workdir = await tempWorkdir();
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const result = await registry.execute(
+    "run_command",
+    { args: ["python3", "-c", "print('hi')"], cwd: "." },
+    {
+      workdir,
+      // 给足 snapshot gate，确保拦截的是「没有受控 runner」这道关，而不是快照关。
+      snapshot: () => ({ snapshotId: "30000000-0000-4000-8000-0000000000aa" })
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.match(result.content, /run_command 已禁用|commandRunner/);
+});
+
+test("run_command runs through an injected command runner (opt-in)", async () => {
+  const workdir = await tempWorkdir();
+  const registry = createToolRegistry(createBuiltInFileTools());
+  let received: string[] | undefined;
+  const result = await registry.execute(
+    "run_command",
+    { args: ["python3", "-c", "print('hi')"], cwd: "." },
+    {
+      workdir,
+      snapshot: () => ({ snapshotId: "30000000-0000-4000-8000-0000000000ab" }),
+      // 显式注入的受控 runner（这里用桩，不真起进程）：fail-closed 关被 opt-in 放开。
+      commandRunner: async ({ args }) => {
+        received = args;
+        return { exitCode: 0, stdout: "stub-ok", stderr: "" };
+      }
+    }
+  );
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /stub-ok/);
+  assert.deepEqual(received, ["python3", "-c", "print('hi')"]);
+});
+
 test("read_file can infer the only input file when providers send a description", async () => {
   const workdir = await tempWorkdir();
   await mkdir(path.join(workdir, "inputs"), { recursive: true });

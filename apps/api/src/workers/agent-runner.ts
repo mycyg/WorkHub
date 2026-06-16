@@ -33,6 +33,8 @@ import {
   createBuiltInFileTools,
   createToolRegistry,
   errorToolResult,
+  nodeCommandRunner,
+  type CommandRunner,
   type SnapshotHook,
   type ToolExecutionContext,
   type ToolResult
@@ -331,6 +333,8 @@ export function createInMemoryAgentRunQueue(options: {
   leaseMs?: number;
   heartbeatIntervalMs?: number;
   maxRecoverAttempts?: number;
+  // 注入受控命令执行器；不传则 run_command fail-closed（默认不执行宿主命令）。
+  commandRunner?: CommandRunner;
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
@@ -926,6 +930,7 @@ export function createInMemoryAgentRunQueue(options: {
         budget: toAgentLoopBudget(current.budget),
         maxTokensPerStep: settings.llm.maxTokensPerStep,
         requireDeliverable: options.requireDeliverable ?? true,
+        ...(options.commandRunner ? { commandRunner: options.commandRunner } : {}),
         snapshot,
         recorder: {
           recordStep: (step) => {
@@ -1480,6 +1485,9 @@ export function getDefaultAgentRunQueue() {
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }
       : {}),
     maxRecoverAttempts: runtimeSettings.agentRun.maxRecoverAttempts,
+    // 默认 run_command fail-closed；仅当显式 opt-in 才接入无约束 nodeCommandRunner（受信本地/单机）。
+    // 生产/多租户应保持 false 并改注入真正隔离的 runner。
+    ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver()
   });
   return defaultQueue;

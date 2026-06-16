@@ -44,6 +44,8 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 
 镜像预装（工人沙箱白名单库，R5.11.1）：`pandas / numpy / matplotlib / python-docx / openpyxl / python-pptx` + Noto CJK 字体。即 AI 工人可直接交付 **Word、Excel、PPT、统计图表（中文标签）、数据分析报告、可运行脚本**。工人内置七个预设技能（docx/xlsx/pptx/图表/分析/报告/脚本），涉及对应交付物时会先加载技能合同再动手，避免库 API 误用。沙箱仍禁网、禁装包。
 
+> 注意：`run_command`（工人跑 python/node 产出上述交付物的能力）默认 **fail-closed（关）**——未隔离的命令执行器可访问宿主路径，因此不默认开启。LAN 单机试运行是受信环境，`.env.pilot.example` 已置 `AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true` 打开它；**多租户/公网部署务必保持 false**，并由部署方注入真正隔离的 runner（容器/namespace/firejail）。
+
 ## 4. 备份与恢复
 
 ```bash
