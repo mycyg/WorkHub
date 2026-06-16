@@ -265,6 +265,86 @@ test("anthropic-compatible stream preserves events and builds final usage", asyn
   assert.equal(final.stopReason, "end_turn");
 });
 
+function streamTransport(streamText: string) {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(streamText));
+          controller.close();
+        }
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } }
+    );
+  return createAnthropicCompatibleTransport(
+    { name: "deepseek", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "secret-provider-key", defaultModelId: "default", models: {} },
+    { fetchImpl }
+  );
+}
+
+// deepseek-v4-flash emits a thinking block BEFORE the text block. The provider must preserve both
+// in index order so downstream extractText() picks the text (not the thinking) — verified live.
+test("anthropic-compatible stream preserves thinking blocks before text (deepseek-v4-flash)", async () => {
+  const streamText = [
+    'event: message_start\ndata: {"type":"message_start","message":{"id":"msg-think-1","usage":{"input_tokens":12,"output_tokens":0}}}',
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"let me think"}}',
+    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+    'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"final answer"}}',
+    'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}',
+    'event: message_stop\ndata: {"type":"message_stop"}'
+  ].join("\n\n");
+  const stream = await streamTransport(streamText).stream({ model: "deepseek-v4-flash", maxTokens: 128, messages: [{ role: "user", content: "hi" }] });
+  for await (const _event of stream) { void _event; }
+  const final = await stream.getFinalMessage();
+  assert.equal(final.content.length, 2);
+  assert.equal((final.content[0] as { type?: string }).type, "thinking");
+  assert.equal((final.content[0] as { thinking?: string }).thinking, "let me think");
+  assert.equal((final.content[1] as { type?: string }).type, "text");
+  assert.equal((final.content[1] as { text?: string }).text, "final answer");
+});
+
+// tool_use input arrives as input_json_delta fragments; the provider must reassemble + JSON.parse them
+// into a structured input object (dropping partial_json) so the tool sandbox gets a usable payload.
+test("anthropic-compatible stream reassembles tool_use input_json_delta into parsed input", async () => {
+  const streamText = [
+    'event: message_start\ndata: {"type":"message_start","message":{"id":"msg-tool-1","usage":{"input_tokens":8,"output_tokens":0}}}',
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"write_file","input":{}}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"path\\":\\"a.txt\\","}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\\"body\\":\\"hi\\"}"}}',
+    'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}',
+    'event: message_stop\ndata: {"type":"message_stop"}'
+  ].join("\n\n");
+  const stream = await streamTransport(streamText).stream({ model: "deepseek-v4-flash", maxTokens: 128, messages: [{ role: "user", content: "hi" }] });
+  for await (const _event of stream) { void _event; }
+  const final = await stream.getFinalMessage();
+  assert.equal((final.content[0] as { type?: string }).type, "tool_use");
+  assert.deepEqual((final.content[0] as { input?: unknown }).input, { path: "a.txt", body: "hi" });
+  assert.equal((final.content[0] as { partial_json?: unknown }).partial_json, undefined);
+  assert.equal(final.stopReason, "tool_use");
+});
+
+// DeepSeek reports CUMULATIVE output_tokens on message_delta (the running total), so the Math.max merge
+// must yield the last/largest total — not the sum (150) nor the first delta (40). Locks in the billing assumption.
+test("anthropic-compatible stream treats message_delta output_tokens as a cumulative running total", async () => {
+  const streamText = [
+    'event: message_start\ndata: {"type":"message_start","message":{"id":"msg-usage-1","usage":{"input_tokens":15,"output_tokens":0}}}',
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"output_tokens":40}}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":110}}',
+    'event: message_stop\ndata: {"type":"message_stop"}'
+  ].join("\n\n");
+  const stream = await streamTransport(streamText).stream({ model: "deepseek-v4-flash", maxTokens: 256, messages: [{ role: "user", content: "hi" }] });
+  for await (const _event of stream) { void _event; }
+  const final = await stream.getFinalMessage();
+  assert.equal(final.usage?.inputTokens, 15);
+  assert.equal(final.usage?.outputTokens, 110);
+});
+
 test("anthropic-compatible transport throws retryable http errors without leaking keys", async () => {
   const fetchImpl: typeof fetch = async () =>
     new Response("rate limited", {
