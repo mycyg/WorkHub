@@ -935,7 +935,10 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   const primary = vm.primary;
   const primaryActions = primary?.actions ?? [];
   const zh = locale === "zh-CN";
-  const decideCount = vm.queue.length + (primary ? 1 : 0);
+  // 契约去歧义：fixture 里 primary 与 queue 不相交，但 live /api/pages/attention 把 primary=queue[0] 留在 queue 里。
+  // 按 id 去重得到「除首决策外的剩余队列」，避免首决策被重复计数 + 重复渲染（对两种来源都正确）。
+  const queueWithoutPrimary = primary ? vm.queue.filter((item) => item.id !== primary.id) : vm.queue;
+  const decideCount = queueWithoutPrimary.length + (primary ? 1 : 0);
   const workingCount = vm.background_runs.length;
   const evidenceCount = primary?.evidence_refs?.length ?? 0;
   const worklog = vm.worklog;
@@ -956,7 +959,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   // 真实风险计数：升级/同步冲突/预算类事项，或任何紧急项（替代之前硬编码的 0）。
   const riskKinds = new Set(["escalation", "sync_conflict", "budget"]);
   const isRisk = (item: AttentionItem) => item.priority === "urgent" || riskKinds.has(item.kind);
-  const riskCount = [...(primary ? [primary] : []), ...vm.queue].filter(isRisk).length;
+  const riskCount = [...(primary ? [primary] : []), ...queueWithoutPrimary].filter(isRisk).length;
   const chips = `<div class="wh-r4-home-chips">
       <span class="wh-r4-home-chip wh-r4-home-chip--accent"><b>${escapeHtml(String(decideCount))}</b>${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
       <span class="wh-r4-home-chip"><b>${escapeHtml(String(workingCount))}</b>${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
@@ -1028,7 +1031,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-home-queue="true">
           <h3>${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
-          ${renderAttentionRows(vm.queue, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
+          ${renderAttentionRows(queueWithoutPrimary, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
           <h3>${escapeHtml(goldPathT(locale, "empty.evidence"))}</h3>

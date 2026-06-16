@@ -201,7 +201,8 @@ export function createHomeReactRouteComponent(vm: AttentionHomeVM, locale: WorkH
     primarySummary: vm.primary?.summary_text ?? "",
     primaryReason: vm.primary?.reason_text ?? vm.primary?.summary_text ?? "",
     primaryActions,
-    queueCount: vm.queue.length,
+    // 与 SSR home 一致：primary 可能 = queue[0]（live），按 id 去重避免重复计数。
+    queueCount: vm.primary ? vm.queue.filter((item) => item.id !== vm.primary?.id).length : vm.queue.length,
     backgroundRunCount: vm.background_runs.length,
     evidenceRefCount: vm.primary?.evidence_refs?.length ?? 0
   };

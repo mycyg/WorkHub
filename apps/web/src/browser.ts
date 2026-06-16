@@ -1006,15 +1006,23 @@ async function refreshCurrentRouteFromLiveEvent(
 ): Promise<"refreshed" | "dirty-deferred"> {
   const match = currentRouteMatch();
   if (match.key === "home" && hasMountedReactRoute("home")) {
-    const result = await loadWebRoute(client, match, locale, currentIdentity);
-    if (result.status === "ready" && result.match.key === "home") {
-      const mounted = mountReactRouteIsland(result, locale, "sse-props");
-      if (mounted.mounted) {
-        setLiveMetric("r4LiveRefreshMode", "react-props");
-        setLiveMetric("r4LiveReactPropsEvent", eventType);
-        setLiveMetric("r4LiveReactPropsStream", targetKey);
-        setLiveMetric("r4LiveReactPropsUpdateCount", mounted.propsUpdateCount);
-        return "refreshed";
+    try {
+      const result = await loadWebRoute(client, match, locale, currentIdentity);
+      if (result.status === "ready" && result.match.key === "home") {
+        const mounted = mountReactRouteIsland(result, locale, "sse-props");
+        if (mounted.mounted) {
+          setLiveMetric("r4LiveRefreshMode", "react-props");
+          setLiveMetric("r4LiveReactPropsEvent", eventType);
+          setLiveMetric("r4LiveReactPropsStream", targetKey);
+          setLiveMetric("r4LiveReactPropsUpdateCount", mounted.propsUpdateCount);
+          return "refreshed";
+        }
+      }
+    } catch (error) {
+      // L#79：会话过期(not_identified)不应让首页 React 岛刷新冒泡成致命错误屏——
+      // 落到下方 renderCurrentRouteOrOnboard 走注册屏（与非首页路径同一 fail-closed 语义）。其余错误照常抛。
+      if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
+        throw error;
       }
     }
   }

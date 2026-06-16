@@ -166,13 +166,16 @@ test("cost ledger reconciles usage into scoped entries and budget snapshots", as
   assert.equal(ledger.entries.length, 3);
   assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), ["team", "user", "workitem"]);
 
+  // now 钉到 entry 当天，让 day 快照捕获这次用量（run 快照按新语义恒为 0——per-run 上限运行时管控）。
   const snapshots = await ledger.usageSnapshots({
     workItemId: "workitem-1",
     userId: "user-1",
     teamId: "team-1"
-  });
-  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "user")?.tokenIn, 1000);
-  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "team")?.estimatedCostCny, "0.006");
+  }, { now: new Date("2026-06-05T00:00:00.000Z") });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "user" && snapshot.period === "day")?.tokenIn, 1000);
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "team" && snapshot.period === "day")?.estimatedCostCny, "0.006");
+  // 新语义：per-run 快照恒为 0（这次 run 决策时尚未花费），避免 scope 全量把 per-run 上限卡死。
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "workitem" && snapshot.period === "run")?.tokenIn, 0);
 });
 
 test("eval usage is reconciled separately from user and team quota", async () => {
@@ -191,10 +194,11 @@ test("eval usage is reconciled separately from user and team quota", async () =>
 
   assert.equal(ledger.entries.length, 1);
   assert.deepEqual(ledger.entries[0]?.scope, { kind: "eval", suite: "nightly" });
-  const userSnapshots = await ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" });
-  const evalSnapshots = await ledger.usageSnapshots({ evalSuite: "nightly" });
+  const at = { now: new Date("2026-06-05T00:00:00.000Z") };
+  const userSnapshots = await ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" }, at);
+  const evalSnapshots = await ledger.usageSnapshots({ evalSuite: "nightly" }, at);
   assert.equal(userSnapshots.every((snapshot) => snapshot.tokenIn === 0), true);
-  assert.equal(evalSnapshots[0]?.estimatedCostCny, "0.002");
+  assert.equal(evalSnapshots.find((snapshot) => snapshot.period === "day")?.estimatedCostCny, "0.002");
 });
 
 test("usage snapshots are period-aware: day/month ignore prior-period usage", async () => {

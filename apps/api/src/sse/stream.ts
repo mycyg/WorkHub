@@ -46,12 +46,17 @@ export function writeEventStream(
       subscription = await bus.subscribe(topic);
       const iterator = subscription[Symbol.asyncIterator]();
 
+      // 单条在飞 next() 跨心跳复用：每轮都新建 iterator.next() 会在心跳胜出时把上一轮的 resolver
+      // 留成孤儿 waiter，导致心跳后丢掉队列里的第一条事件。缓存 pending，只在真正消费后清空。
+      let pending: ReturnType<typeof iterator.next> | undefined;
       while (!aborted) {
-        const result = await nextWithHeartbeat(iterator, heartbeatMs);
+        pending = pending ?? iterator.next();
+        const result = await raceHeartbeat(pending, heartbeatMs);
         if (result === "heartbeat") {
           await output.write(encoder.encode(formatSseComment("ping")));
           continue;
         }
+        pending = undefined;
         if (result.done) {
           break;
         }
@@ -86,11 +91,13 @@ function eventIdFromData(data: unknown): string | undefined {
   return undefined;
 }
 
-async function nextWithHeartbeat<T>(iterator: AsyncIterator<T>, ms: number) {
+// Race an ALREADY-PENDING next() against a heartbeat timer. The caller owns `pending` and only
+// discards it after it actually resolves, so a heartbeat win never abandons a registered waiter.
+async function raceHeartbeat<T>(pending: Promise<T>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      iterator.next(),
+      pending,
       new Promise<"heartbeat">((resolve) => {
         timer = setTimeout(() => resolve("heartbeat"), ms);
       })

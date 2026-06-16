@@ -26,7 +26,6 @@ import {
   bindRouteLineEditor,
   browserLocale,
   conflictsFromMergeError,
-  desktopRequiredNotice,
   fieldValueRequiredNotice,
   intakeOptionRequiredNotice,
   localePersistenceFailedNotice,
@@ -278,11 +277,8 @@ function bindGoldPathNavigation(
     }
     const href = actionHrefFromElement(actionTarget);
     const actionId = actionTarget.dataset.actionId;
-    if (actionTarget.dataset.requiresDesktop === "true") {
-      event.preventDefault();
-      showRouteNotice(shellRoot, desktopRequiredNotice(locale, actionId));
-      return;
-    }
+    // 注意：不拦 requires_desktop。这是桌面 app 自身——「需要本地权限/独立窗口」的动作正应在此处执行，
+    // 而非弹「请到桌面端继续」。该守卫只属于 web 客户端。
     const action = classifyGoldPathHref(shell.routeMap, href, {
       requiresReason: actionTarget.dataset.requiresReason === "true",
       method: actionTarget.dataset.method

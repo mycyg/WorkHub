@@ -99,7 +99,11 @@ export function ledgerUsageSnapshots(
     if (period === "month") {
       return entry.periodBucket.slice(0, 7) === monthPrefix;
     }
-    return true; // run: scope 全量（per-run 上限运行时实时管控）
+    // run：决策只在 run 启动时调用一次，此刻这次 run 尚未花费 → run 快照用量记 0。
+    // 否则 run 快照取 scope 全量，per-run 策略的 remainingTokens 会随历史累计跌到 0，
+    // 让 constrainRunBudget 把本次 run 上限塌成 1，把高频 workitem 永久卡死。
+    // 真正的 per-run 上限由运行时 checkLoopBudget 实时管控（见 constrainRunBudget 设的 maxTokens）。
+    return false;
   };
   const snapshots: BudgetUsageSnapshot[] = [];
   for (const scope of scopesFromIds(scopeIds)) {
