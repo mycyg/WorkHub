@@ -3639,6 +3639,7 @@ async function main() {
       replay: "replay",
       cost: "cost",
       knowledge: "evidence",
+      skills: "skills",
       settings: "settings"
     };
     const migratedReactSteps = readyProductSteps.filter((step) => Boolean(step.audit.routeComponent && r4ReactComponentByRoute[step.audit.routeComponent]));
@@ -4249,7 +4250,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "14" &&
+        step.audit.routeTreeRouteCount === "15" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
