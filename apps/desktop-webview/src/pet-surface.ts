@@ -700,10 +700,14 @@ export async function bootDesktopPetSurface(
   let confirmedPetWindowMode: DesktopPetWindowMode | undefined;
   let syncingPetWindowMode: DesktopPetWindowMode | undefined;
   let failedPetWindowMode: DesktopPetWindowMode | undefined;
+  let failedPetWindowModeAt: number | undefined;
   let petWindowModeError: string | undefined;
   let confirmedPetWindowSettingsKey: string | undefined;
   let syncingPetWindowSettingsKey: string | undefined;
   let failedPetWindowSettingsKey: string | undefined;
+  let failedPetWindowSettingsKeyAt: number | undefined;
+  // M33/M34：失败后只在冷却期内拦截重试（防每次 render 刷屏调用 Tauri），冷却过后允许再试，恢复瞬时失败。
+  const PET_WINDOW_RETRY_COOLDOWN_MS = 5000;
   let pointerSnapshot = defaultDesktopPetPointerSnapshot();
   let lastCursorNear = false;
   let pointerSensor: DesktopPetPointerSensor | undefined;
@@ -1248,11 +1252,17 @@ export async function bootDesktopPetSurface(
     if (confirmedPetWindowMode === mode || syncingPetWindowMode === mode) {
       return;
     }
-    if (failedPetWindowMode === mode && petWindowModeError) {
+    if (
+      failedPetWindowMode === mode &&
+      petWindowModeError &&
+      failedPetWindowModeAt !== undefined &&
+      Date.now() - failedPetWindowModeAt < PET_WINDOW_RETRY_COOLDOWN_MS
+    ) {
       return;
     }
     syncingPetWindowMode = mode;
     failedPetWindowMode = undefined;
+    failedPetWindowModeAt = undefined;
     petWindowModeError = undefined;
     void Promise.resolve(petWindowBridge.setMode?.(mode))
       .then(() => {
@@ -1271,6 +1281,7 @@ export async function bootDesktopPetSurface(
         }
         syncingPetWindowMode = undefined;
         failedPetWindowMode = mode;
+        failedPetWindowModeAt = Date.now();
         petWindowModeError = actionMessage(error, locale);
       render();
     });
@@ -1282,11 +1293,19 @@ export async function bootDesktopPetSurface(
       confirmedPetWindowSettingsKey = key;
       return;
     }
-    if (confirmedPetWindowSettingsKey === key || syncingPetWindowSettingsKey === key || failedPetWindowSettingsKey === key) {
+    if (confirmedPetWindowSettingsKey === key || syncingPetWindowSettingsKey === key) {
+      return;
+    }
+    if (
+      failedPetWindowSettingsKey === key &&
+      failedPetWindowSettingsKeyAt !== undefined &&
+      Date.now() - failedPetWindowSettingsKeyAt < PET_WINDOW_RETRY_COOLDOWN_MS
+    ) {
       return;
     }
     syncingPetWindowSettingsKey = key;
     failedPetWindowSettingsKey = undefined;
+    failedPetWindowSettingsKeyAt = undefined;
     void Promise.resolve(petWindowBridge.setSettings?.(settings))
       .then(() => {
         if (syncingPetWindowSettingsKey !== key) {
@@ -1302,6 +1321,7 @@ export async function bootDesktopPetSurface(
         }
         syncingPetWindowSettingsKey = undefined;
         failedPetWindowSettingsKey = key;
+        failedPetWindowSettingsKeyAt = Date.now();
       });
   }
 }
