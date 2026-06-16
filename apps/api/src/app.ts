@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import { settings } from "@workhub/config";
@@ -37,6 +38,17 @@ export const logger = createStructuredLogger({ format: settings.logFormat });
 export const app = new Hono();
 
 app.use("*", createRequestLogMiddleware(logger));
+
+// CORS：此前 CORS_ALLOW_ORIGINS 被解析+生产校验却从未挂载（死配置）。挂上 hono/cors，由 settings 驱动。
+// 凭据走 cookie，故不能用通配 origin——用 "*" 时反射请求 origin（等效放行且兼容 credentials）；
+// 否则只放行白名单。生产已禁止 "*"（validateRuntimeConfig）。
+const corsAllowOrigins = settings.auth.corsAllowOrigins;
+app.use("/api/*", cors({
+  origin: corsAllowOrigins.includes("*") ? (origin) => origin || "*" : corsAllowOrigins,
+  credentials: true,
+  allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+}));
 
 // attachWebStatic() 之后根路径服务 SPA；未挂载 web dist 时保留 API banner。
 let webIndexHtml: string | undefined;

@@ -51,6 +51,11 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
 
   routes.post("/ask", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createApprovalRequestSchema.parse(await c.req.json());
+    // 防止任意用户把待审批塞进别人的收件箱：非管理员只能把 /ask 路由给自己。
+    // 服务端的合法升级（agent-runner → 路由给工作项负责人）走 service.createApproval 直连，不经此 HTTP 路由。
+    if (payload.routed_to_user_id && payload.routed_to_user_id !== c.var.currentUser.id && !c.var.currentUser.isAdmin) {
+      throw new HTTPException(403, { message: "你只能把审批请求路由给自己。" });
+    }
     const input: CreateApprovalInput = {
       actor: c.var.actor,
       kind: payload.kind,

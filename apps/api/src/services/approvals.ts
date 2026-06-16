@@ -710,8 +710,10 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         priority: input.priority,
         learnedFromSession: input.learned_from_session,
         ...(actor.userId ? { createdByUserId: actor.userId } : {}),
-        orgId: input.org_id ?? actor.orgId,
-        workspaceId: input.workspace_id ?? actor.workspaceId
+        // 租户隔离：策略始终写进 actor 自己的 org/workspace，绝不信任 client 传入的 org_id/workspace_id
+        // （否则管理员可越权往别的租户写策略）。
+        orgId: actor.orgId,
+        workspaceId: actor.workspaceId
       });
     },
 
