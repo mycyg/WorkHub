@@ -59,8 +59,10 @@ export const users = pgTable(
     ...timestamps()
   },
   (table) => [
-    uniqueIndex("users_nickname_uq").on(table.nickname),
-    uniqueIndex("users_cookie_token_uq").on(table.cookieToken),
+    // M18：partial unique（WHERE deleted_at IS NULL），与其余 soft-delete 表一致——否则 soft-delete 后
+    // 该昵称/cookie 被墓碑行永久占用，重新注册同名会撞死索引 500。
+    uniqueIndex("users_nickname_uq").on(table.nickname).where(sql`${table.deletedAt} is null`),
+    uniqueIndex("users_cookie_token_uq").on(table.cookieToken).where(sql`${table.deletedAt} is null`),
     index("users_is_admin_idx").on(table.isAdmin),
     index("users_deleted_at_idx").on(table.deletedAt)
   ]
@@ -832,6 +834,15 @@ export const acceptedDeliverableChanges = pgTable(
     index("accepted_deliverable_changes_target_idx").on(table.workItemId, table.targetKey),
     index("accepted_deliverable_changes_current_idx").on(table.workItemId, table.targetKey, table.supersededAt),
     index("accepted_deliverable_changes_project_current_idx").on(table.projectId, table.targetKey, table.supersededAt),
+    // M19：纵深防护——「每 (project,target) 至多一个未被取代的 current 版本」这条 P-COLLAB 丢失更新不变量
+    // 此前只靠应用层 advisory lock + L3 重核守住。加 partial unique，万一某写路径漏锁（如 projectId 为空跳过
+    // 项目级锁、或新摄取/回填），DB 直接拒第二个并发 current 行。项目态 + 遗留 null-project 两条各管一段。
+    uniqueIndex("accepted_deliverable_changes_project_current_uq")
+      .on(table.projectId, table.targetKey)
+      .where(sql`${table.supersededAt} is null and ${table.projectId} is not null`),
+    uniqueIndex("accepted_deliverable_changes_workitem_current_uq")
+      .on(table.workItemId, table.targetKey)
+      .where(sql`${table.supersededAt} is null and ${table.projectId} is null`),
     index("accepted_deliverable_changes_created_at_idx").on(table.createdAt)
   ]
 );
