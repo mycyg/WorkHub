@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentRunLiveBudgetSchema,
   agentRunLiveVmSchema,
+  structuredFieldPatchSchema,
   agentRunTraceVmSchema,
   attentionItemSchema,
   authContextSchema,
@@ -1220,6 +1222,26 @@ test("approval contracts keep UI payloads human-readable and deny reasons explic
   assert.equal(request.kind, "tool");
   assert.equal(request.payload_json.ui?.summary_text.includes("tool.delete_file"), false);
   assert.throws(() => respondApprovalRequestSchema.parse({ decision: "deny", reason_md: "" }));
+  // L16：deny 省略 reason_md 也必须被拒（superRefine），而 allow 无需理由仍通过。
+  assert.throws(() => respondApprovalRequestSchema.parse({ decision: "deny" }));
+  assert.equal(respondApprovalRequestSchema.parse({ decision: "deny", reason_md: "理由" }).decision, "deny");
+  assert.equal(respondApprovalRequestSchema.parse({ decision: "allow" }).decision, "allow");
+});
+
+test("B6a contract tightening: live budget max_tokens positive + structured-field patch non-empty", () => {
+  // L18：max_tokens 必须 >0（0 上限的预算花不出去）。
+  assert.throws(() => agentRunLiveBudgetSchema.parse({ max_steps: 5, total_timeout_s: 60, max_tokens: 0, max_cost_cny: "1" }));
+  assert.equal(
+    agentRunLiveBudgetSchema.parse({ max_steps: 5, total_timeout_s: 60, max_tokens: 1000, max_cost_cny: "1" }).max_tokens,
+    1000
+  );
+  // L17：空 operations 的 structured-field patch 被拒。
+  assert.throws(() => structuredFieldPatchSchema.parse({
+    type: "structured_field_patch",
+    target_entity_type: "work_item",
+    target_entity_id: "70000000-0000-4000-8000-000000000001",
+    operations: []
+  }));
 });
 
 test("R5.6 notification and calendar page VMs keep source context typed", () => {

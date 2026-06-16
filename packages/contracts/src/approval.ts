@@ -54,6 +54,15 @@ export const respondApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,
   reason_md: z.string().trim().min(1).max(200_000).optional(),
   remember: approvalRememberSchema.default("once")
+}).superRefine((value, ctx) => {
+  // L16：与 reviewProposalRequestSchema 同口径——拒绝(deny)必须说明原因，在类型边界就挡住空理由。
+  if (value.decision === "deny" && !value.reason_md) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["reason_md"],
+      message: "拒绝必须说明原因。"
+    });
+  }
 });
 export type RespondApprovalRequest = z.infer<typeof respondApprovalRequestSchema>;
 

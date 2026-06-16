@@ -379,7 +379,8 @@ export const structuredFieldPatchSchema = z.object({
   type: z.literal("structured_field_patch"),
   target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
   target_entity_id: idSchema,
-  operations: z.array(structuredFieldPatchOperationSchema),
+  // L17：空补丁无意义（写回逻辑也丢弃它），在类型边界就拒掉，与 structuredFieldOverrides 的 .min(1) 一致。
+  operations: z.array(structuredFieldPatchOperationSchema).min(1),
   source: structuredFieldPatchSourceSchema.default("ai_fusion")
 });
 export type StructuredFieldPatch = z.infer<typeof structuredFieldPatchSchema>;

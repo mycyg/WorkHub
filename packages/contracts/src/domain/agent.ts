@@ -84,7 +84,8 @@ export type StructuredHandoff = z.infer<typeof structuredHandoffSchema>;
 export const agentRunLiveBudgetSchema = z.object({
   max_steps: z.number().int().positive(),
   total_timeout_s: z.number().int().positive(),
-  max_tokens: z.number().int().nonnegative(),
+  // L18：与 runBudgetSchema/budgetPolicySchema 一致——0 上限的预算永远花不出去，不是合法 budget。
+  max_tokens: z.number().int().positive(),
   max_cost_cny: z.string()
 });
 export type AgentRunLiveBudget = z.infer<typeof agentRunLiveBudgetSchema>;
