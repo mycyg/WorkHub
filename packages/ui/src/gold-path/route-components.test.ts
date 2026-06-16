@@ -1422,6 +1422,55 @@ test("R5.6 Calendar route component renders deterministic day blocks and target 
   assertNoMainWindowBoundaryLeak(calendar.html);
 });
 
+test("R8 Team skills route component renders active skills, K2 provenance, and totals", () => {
+  const skillsVm = {
+    generated_at: "2026-06-16T00:00:00.000Z",
+    skills: [
+      {
+        skill_key: "quarterly-report",
+        name: "季度报告",
+        when_to_use: "生成季度业务报告",
+        version: 3,
+        source_kind: "distilled" as const,
+        created_by_kind: "ai" as const,
+        confidence_score: 0.86,
+        sample_count: 0,
+        updated_at: "2026-06-16T00:00:00.000Z",
+        provenance: { refined_from_version: 2, op_count: 1, rationale_md: "补边界情况" }
+      }
+    ],
+    totals: { active: 1, ai_authored: 1, refined: 1 }
+  };
+  const en = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "zh-CN" });
+
+  assert.equal(en.key, "skills");
+  assert.equal(en.html.includes('data-r4-route-component="skills"'), true);
+  assert.equal(en.html.includes('data-r8-skills-active="1"'), true);
+  assert.equal(en.html.includes('data-r8-skills-refined="1"'), true);
+  assert.equal(en.html.includes('data-r8-skill="quarterly-report"'), true);
+  assert.equal(en.html.includes('data-r8-skill-version="3"'), true);
+  // K2 provenance 徽章。
+  assert.equal(en.html.includes('data-r8-skill-refined="true"'), true);
+  assert.equal(en.html.includes("refined from v2 · +1"), true);
+  assert.equal(en.html.includes("补边界情况"), true);
+  assert.equal(en.html.includes("Team skills"), true);
+  assert.equal(zh.html.includes("团队技能"), true);
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("R8 Team skills route component shows an empty state when there are no skills", () => {
+  const emptyVm = {
+    generated_at: "2026-06-16T00:00:00.000Z",
+    skills: [],
+    totals: { active: 0, ai_authored: 0, refined: 0 },
+    empty_state: "no_skills" as const
+  };
+  const en = renderWebRouteComponent({ key: "skills", skills: emptyVm }, { locale: "en-US" });
+  assert.equal(en.html.includes('data-r8-skills-empty="true"'), true);
+  assert.equal(en.html.includes('data-r8-skills-active="0"'), true);
+});
+
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {
   const vm = surfaceVm();
   const replay = renderWebRouteComponents(vm, { locale: "en-US" }).replay;

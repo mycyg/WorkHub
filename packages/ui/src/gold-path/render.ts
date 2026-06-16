@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings";
+  key: "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "skills" | "settings";
   route: string;
   title: string;
   html: string;
@@ -94,6 +94,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     replay: "执行回放",
     cost: "成本看板",
     knowledge: "证据检索",
+    skills: "团队技能",
     settings: "设置"
   },
   "en-US": {
@@ -110,6 +111,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     replay: "Replay Work",
     cost: "Cost Dashboard",
     knowledge: "Evidence Search",
+    skills: "Team Skills",
     settings: "Settings"
   }
 };

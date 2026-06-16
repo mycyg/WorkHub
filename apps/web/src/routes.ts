@@ -14,6 +14,7 @@ import type {
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
+  TeamSkillsPageVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
 import {
@@ -91,6 +92,7 @@ export type WebRouteSurface =
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined }
+  | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
 const routeMatchers = [
@@ -186,6 +188,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "skills",
+    pattern: "/dashboard/skills",
+    apiBaseLabel: "/api/pages/skills",
+    regex: /^\/dashboard\/skills$/u,
+    paramNames: []
+  },
+  {
     key: "settings",
     pattern: "/settings",
     apiBaseLabel: "/settings",
@@ -214,6 +223,7 @@ type WebRouteTreePageVm =
   | "replay"
   | "cost"
   | "evidence"
+  | "skills"
   | "settings";
 
 export type WebReactRouteTreeNode = WebRouteDefinition & {
@@ -258,6 +268,7 @@ const routeTreePageVmByKey = {
   replay: "replay",
   cost: "cost",
   knowledge: "evidence",
+  skills: "skills",
   settings: "settings"
 } satisfies Record<R4WebRouteKey, WebRouteTreePageVm>;
 
@@ -428,6 +439,7 @@ const shellPageOrder = [
   "replay",
   "cost",
   "knowledge",
+  "skills",
   "settings"
 ] as const satisfies readonly GoldPathRenderedPage["key"][];
 
@@ -452,6 +464,7 @@ const shellDefaultRoutes = {
   replay: "/",
   cost: "/dashboard/cost",
   knowledge: "/knowledge/search",
+  skills: "/dashboard/skills",
   settings: "/settings"
 } satisfies Record<GoldPathRenderedPage["key"], string>;
 
@@ -470,6 +483,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     replay: "执行回放",
     cost: "成本",
     knowledge: "知识证据",
+    skills: "团队技能",
     settings: "设置"
   },
   "en-US": {
@@ -486,6 +500,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     replay: "Execution replay",
     cost: "Cost",
     knowledge: "Knowledge evidence",
+    skills: "Team skills",
     settings: "Settings"
   }
 };
@@ -687,6 +702,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
     ];
   }
+  if (surface.key === "skills") {
+    return [
+      metric(locale, "primary", String(surface.skills.totals.active)),
+      metric(locale, "queue", String(surface.skills.totals.refined)),
+      metric(locale, "running", String(surface.skills.totals.ai_authored))
+    ];
+  }
   return [
     metric(locale, "runtime", surface.settings.runtime.app_env),
     metric(locale, "queue", surface.settings.runtime.broker_backend),
@@ -740,6 +762,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "knowledge") {
     return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref }, { locale });
+  }
+  if (surface.key === "skills") {
+    return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
   }
   return renderWebRouteComponent({ key: "settings", settings: surface.settings }, { locale });
 }
@@ -889,6 +914,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     return { key: "replay", replay } satisfies WebRouteSurface;
+  }
+  if (match.key === "skills") {
+    const skills = await client.pages.skills(withLocale(locale));
+    return { key: "skills", skills } satisfies WebRouteSurface;
   }
   if (match.key === "settings") {
     const settings = await client.pages.settings(withLocale(locale));

@@ -43,6 +43,7 @@ import type {
   NextQuestionRequest,
   SessionVM,
   SettingsPageVM,
+  TeamSkillsPageVM,
   StartAgentRunRequest,
   StructuredHandoff,
   UpdateUserPreferencesRequest,
@@ -151,6 +152,7 @@ export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: PageRequestOptions) => Promise<ApprovalCenterVM>;
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
+  skills: (options?: PageRequestOptions) => Promise<TeamSkillsPageVM>;
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
   drive: (options?: DrivePageRequestOptions) => Promise<DrivePageVM>;

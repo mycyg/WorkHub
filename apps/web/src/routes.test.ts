@@ -16,7 +16,8 @@ import type {
   ProposalConflict,
   ReplayTraceVM,
   SessionVM,
-  SettingsPageVM
+  SettingsPageVM,
+  TeamSkillsPageVM
 } from "@workhub/contracts";
 
 import {
@@ -32,6 +33,7 @@ type RouteClientOverrides = {
   attention?: AttentionHomeVM;
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
+  skills?: TeamSkillsPageVM;
   drive?: DrivePageVM;
   meetings?: MeetingPageVM;
   notifications?: NotificationPageVM;
@@ -501,6 +503,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         }
         return overrides.cost ?? surface.page_vms.cost;
       },
+      async skills(options?: { locale?: string }) {
+        localeCall("skills", options);
+        return overrides.skills ?? { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 0, ai_authored: 0, refined: 0 }, empty_state: "no_skills" as const };
+      },
       async settings(options?: { locale?: string }) {
         localeCall("settings", options);
         return overrides.settings ?? settingsVm(options?.locale === "en-US" ? "en-US" : "zh-CN");
@@ -733,6 +739,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "replay",
     "cost",
     "knowledge",
+    "skills",
     "settings"
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
@@ -746,6 +753,7 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/calendar?date=2026-06-11&view=week")?.search, "?date=2026-06-11&view=week");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
+  assert.equal(resolveWebRoute("/dashboard/skills")?.key, "skills");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
   assert.equal(resolveWebRoute("/#/approvals")?.key, "home");
@@ -780,6 +788,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["replay", "replay"],
       ["cost", "cost"],
       ["knowledge", "evidence"],
+      ["skills", "skills"],
       ["settings", "settings"]
     ]
   );
@@ -953,6 +962,7 @@ test("R4 web loader uses typed Page VM endpoints before rendering ready routes",
     ["/notifications", "notifications:en-US"],
     ["/calendar?date=2026-06-11&view=week", "calendar:en-US:2026-06-11:week"],
     ["/dashboard/cost", "cost:en-US"],
+    ["/dashboard/skills", "skills:en-US"],
     ["/settings", "settings:en-US"]
   ] as const) {
     const { client, calls } = fakeRouteClient(surface);

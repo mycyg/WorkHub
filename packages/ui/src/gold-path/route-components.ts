@@ -20,6 +20,7 @@ import type {
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
+  TeamSkillsPageVM,
   GoldPathSurfaceVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
@@ -48,7 +49,8 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings">;
+// "skills" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -265,6 +267,17 @@ type RouteCopyKey =
   | "cost.laborProduction"
   | "cost.laborSelfImprovement"
   | "cost.laborSelfImprovementRatio"
+  | "skills.kicker"
+  | "skills.title"
+  | "skills.summary"
+  | "skills.empty"
+  | "skills.active"
+  | "skills.aiAuthored"
+  | "skills.refined"
+  | "skills.version"
+  | "skills.confidence"
+  | "skills.refinedFrom"
+  | "skills.authoredBy"
   | "cost.users"
   | "cost.teams"
   | "cost.workitems"
@@ -423,6 +436,17 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "干活花费",
     "cost.laborSelfImprovement": "自进化花费",
     "cost.laborSelfImprovementRatio": "自进化占比",
+    "skills.kicker": "团队技能库",
+    "skills.title": "团队技能",
+    "skills.summary": "AI 沉淀并持续打磨的可复用技能",
+    "skills.empty": "还没有沉淀出团队技能。AI 会在夜间从真实工作里蒸馏。",
+    "skills.active": "在用",
+    "skills.aiAuthored": "AI 蒸馏",
+    "skills.refined": "已精修",
+    "skills.version": "版本",
+    "skills.confidence": "置信",
+    "skills.refinedFrom": "精修自 v",
+    "skills.authoredBy": "来源",
     "cost.users": "个人",
     "cost.teams": "团队",
     "cost.workitems": "任务",
@@ -580,6 +604,17 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "Production spend",
     "cost.laborSelfImprovement": "Self-improvement spend",
     "cost.laborSelfImprovementRatio": "Self-improvement share",
+    "skills.kicker": "Team skill library",
+    "skills.title": "Team skills",
+    "skills.summary": "Reusable skills the AI distills and keeps refining",
+    "skills.empty": "No team skills yet. The AI distills them nightly from real work.",
+    "skills.active": "Active",
+    "skills.aiAuthored": "AI-distilled",
+    "skills.refined": "Refined",
+    "skills.version": "Version",
+    "skills.confidence": "Confidence",
+    "skills.refinedFrom": "refined from v",
+    "skills.authoredBy": "Source",
     "cost.users": "People",
     "cost.teams": "Teams",
     "cost.workitems": "Work items",
@@ -2254,6 +2289,54 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
   }).join("");
 }
 
+function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale): WebRouteComponent {
+  const cards = vm.skills.length
+    ? vm.skills.map((skill) => {
+        const badges = [
+          `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.version")} v${skill.version}`)}</span>`,
+          skill.created_by_kind === "ai"
+            ? `<span class="wh-pill">${escapeHtml(routeT(locale, "skills.aiAuthored"))}</span>`
+            : "",
+          skill.confidence_score !== undefined
+            ? `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.confidence")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
+            : "",
+          skill.provenance
+            ? `<span class="wh-pill wh-pill--accent" data-r8-skill-refined="true">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${skill.provenance.refined_from_version} · +${skill.provenance.op_count}`)}</span>`
+            : ""
+        ].filter(Boolean).join("");
+        const rationale = skill.provenance?.rationale_md
+          ? `<p class="wh-subtle">${escapeHtml(skill.provenance.rationale_md)}</p>`
+          : "";
+        return `<section class="wh-card wh-r4-route-card" data-r8-skill="${escapeHtml(skill.skill_key)}" data-r8-skill-version="${escapeHtml(String(skill.version))}">
+          <h3>${escapeHtml(skill.name)}</h3>
+          <p>${escapeHtml(skill.when_to_use)}</p>
+          <div class="wh-r4-route-meta">${badges}</div>
+          ${rationale}
+        </section>`;
+      }).join("")
+    : `<p class="wh-subtle" data-r8-skills-empty="true">${escapeHtml(routeT(locale, "skills.empty"))}</p>`;
+
+  return createWebRouteComponent({
+    key: "skills",
+    css: webRouteComponentCss,
+    primaryHrefs: [],
+    source: "page-vm",
+    locale,
+    pageVm: "skills",
+    html: `<section class="wh-r4-route" data-r4-route-component="skills" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r8-skills-active="${escapeHtml(String(vm.totals.active))}" data-r8-skills-ai-authored="${escapeHtml(String(vm.totals.ai_authored))}" data-r8-skills-refined="${escapeHtml(String(vm.totals.refined))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "skills.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "skills.title"))}</h2>
+          <p>${escapeHtml(`${routeT(locale, "skills.summary")} · ${routeT(locale, "skills.active")} ${vm.totals.active} · ${routeT(locale, "skills.refined")} ${vm.totals.refined}`)}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.totals.active))}</span>
+      </header>
+      <div class="wh-r4-route-grid">${cards}</div>
+    </section>`
+  });
+}
+
 function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): WebRouteComponent {
   const reactComponent = createCostReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
@@ -2497,6 +2580,7 @@ export type WebRouteComponentInput =
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined }
+  | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
 export function renderWebRouteComponent(
@@ -2534,6 +2618,8 @@ export function renderWebRouteComponent(
       return renderCostRouteComponent(input.cost, locale);
     case "knowledge":
       return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef);
+    case "skills":
+      return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":
       return renderSettingsRouteComponent(input.settings, locale);
   }
