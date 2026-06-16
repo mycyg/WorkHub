@@ -101,6 +101,7 @@ export function createAgentRunSkillCurationScheduler(
     }
     const response = await options.refine(analysis);
     const byKey = new Map(analysis.activeSkills.map((skill) => [skill.skillKey, skill]));
+    const refinedKeys = new Set<string>();
     let refined = 0;
     for (const patch of response.patches) {
       if (refined >= TEAM_SKILL_MAX_REFINES_PER_CURATION) {
@@ -109,6 +110,10 @@ export function createAgentRunSkillCurationScheduler(
       const active = byKey.get(patch.skill_key);
       if (!active) {
         continue; // 只精修当前激活技能（防 LLM 凭空造 key）。
+      }
+      if (refinedKeys.has(patch.skill_key)) {
+        // 一个技能一夜只精修一次：否则同 key 的第二个补丁会对着已被取代的旧底稿再 promote，双重 churn。
+        continue;
       }
       const validation = validateSkillEditPatch(patch, {
         activeVersion: active.version,
@@ -143,6 +148,7 @@ export function createAgentRunSkillCurationScheduler(
         }
       });
       refined += 1;
+      refinedKeys.add(active.skillKey);
       await options.auditLog.createAuditLog({
         workspaceId: analysis.workspaceId,
         actorKind: "ai",

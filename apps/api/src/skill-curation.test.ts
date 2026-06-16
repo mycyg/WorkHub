@@ -14,6 +14,7 @@ import {
   hasValidFrontmatter,
   parseDistilledResponse,
   validateDistilledSkill,
+  validateSkillEditPatch,
   type SkillCurationAnalysis
 } from "./services/skill-curation.js";
 
@@ -56,6 +57,54 @@ test("validateDistilledSkill gates on samples, confidence, key, dedup, frontmatt
     validateDistilledSkill(skill({ content_md: "# 无 frontmatter 正文" }), { existingSkills: [] }),
     { ok: false, reason: "invalid_frontmatter" }
   );
+  // #20 体积守卫：超大正文被拒。
+  const huge = GOOD_CONTENT + "\n" + "啰嗦".repeat(5000);
+  assert.deepEqual(
+    validateDistilledSkill(skill({ content_md: huge }), { existingSkills: [] }),
+    { ok: false, reason: "exceeds_size_budget" }
+  );
+});
+
+test("validateSkillEditPatch hardening: rejects no-op and oversized refinements (K2 guards)", () => {
+  const current = ["---", "name: q", "when_to_use: 用于季度报告", "---", "", "# Q", "", "## 套路", "", "拉数据"].join("\n");
+  // no-op：modify 成与现役逐字相同的正文 → 拒（别空转 bump 版本）。
+  const noop = validateSkillEditPatch(
+    {
+      skill_key: "q",
+      base_version: 2,
+      ops: [{ op: "modify_section", section: "套路", content_md: "拉数据" }],
+      rationale_md: "其实没改",
+      confidence_score: 0.9
+    },
+    { activeVersion: 2, currentContentMd: current }
+  );
+  assert.deepEqual(noop, { ok: false, reason: "no_effective_change" });
+
+  // 体积：modify 塞入超大正文 → 拒。
+  const oversize = validateSkillEditPatch(
+    {
+      skill_key: "q",
+      base_version: 2,
+      ops: [{ op: "modify_section", section: "套路", content_md: "x".repeat(9000) }],
+      rationale_md: "撑爆",
+      confidence_score: 0.9
+    },
+    { activeVersion: 2, currentContentMd: current }
+  );
+  assert.deepEqual(oversize, { ok: false, reason: "exceeds_size_budget" });
+
+  // 正常小补丁仍通过。
+  const ok = validateSkillEditPatch(
+    {
+      skill_key: "q",
+      base_version: 2,
+      ops: [{ op: "add_section", section: "边界情况", content_md: "数据缺口标注假设" }],
+      rationale_md: "补边界",
+      confidence_score: 0.9
+    },
+    { activeVersion: 2, currentContentMd: current }
+  );
+  assert.equal(ok.ok, true);
 });
 
 test("parseDistilledResponse tolerates fenced json and recovers partial-valid items", () => {
@@ -293,6 +342,42 @@ test("scheduler refines an active skill via a bounded edit patch and audits the 
   const refineAudit = audits.find((a) => a.action === "team_skill.refined_via_patch");
   assert.equal(refineAudit?.detailJson?.["skill_key"], "quarterly-report");
   assert.equal(refineAudit?.detailJson?.["to_version"], 3);
+});
+
+test("scheduler refines each skill at most once per tick even if the model returns two patches for it (K2 guard)", async () => {
+  let promoteCalls = 0;
+  const { scheduler } = buildScheduler({
+    repository: {
+      async promote(input) {
+        promoteCalls += 1;
+        return { id: `ts-${input.skillKey}`, version: 3 } as unknown as TeamSkillRow;
+      }
+    },
+    analyze: refineAnalyze({ version: 2 }),
+    distill: async () => ({ distilled_skills: [] }),
+    refine: async () => ({
+      patches: [
+        {
+          skill_key: "quarterly-report",
+          base_version: 2,
+          ops: [{ op: "add_section", section: "边界情况", content_md: "第一处补丁" }],
+          rationale_md: "补丁一",
+          confidence_score: 0.9
+        },
+        {
+          skill_key: "quarterly-report",
+          base_version: 2,
+          ops: [{ op: "add_section", section: "输出格式", content_md: "第二处补丁" }],
+          rationale_md: "补丁二",
+          confidence_score: 0.9
+        }
+      ]
+    })
+  });
+  const result = await scheduler.tick();
+  // 同一技能一夜只精修一次 → 只 promote 一次，避免对旧底稿双重 churn。
+  assert.equal(result.refined, 1);
+  assert.equal(promoteCalls, 1);
 });
 
 test("scheduler discards a refine patch whose base_version is stale (K2 optimistic concurrency)", async () => {

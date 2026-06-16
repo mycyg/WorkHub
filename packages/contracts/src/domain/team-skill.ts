@@ -62,6 +62,8 @@ export const TEAM_SKILL_MAX_PER_CURATION = 3;
 export const TEAM_SKILL_MAX_ACTIVE_PER_WORKSPACE = 50;
 // 喂回 curation prompt 的「近期被放弃提议」记忆条数上限（K1 rejected-edit buffer）。
 export const TEAM_SKILL_DISCARD_MEMORY_LIMIT = 12;
+// #20 体积守卫：技能正文会注入每个未来 worker prompt，必须管体积。新增/精修后超此上限即拒（约 2–3k tokens）。
+export const TEAM_SKILL_MAX_CONTENT_CHARS = 8000;
 
 // K3（借鉴 SkillOpt 的 edit-budget = 学习率调度）：每次 curation tick 允许「新增」多少技能，
 // 随活跃技能库的成熟度线性退火——库越满，每夜新增预算越小，到硬上限归零（只精修/驱逐，不再加）。

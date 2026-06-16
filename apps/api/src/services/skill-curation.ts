@@ -5,6 +5,7 @@ import {
   skillEditPatchSchema,
   skillEditPatchResponseSchema,
   TEAM_SKILL_CANONICAL_SECTIONS,
+  TEAM_SKILL_MAX_CONTENT_CHARS,
   TEAM_SKILL_MAX_EDIT_OPS,
   TEAM_SKILL_MAX_PER_CURATION,
   TEAM_SKILL_MIN_CONFIDENCE,
@@ -71,6 +72,10 @@ export function validateDistilledSkill(
   }
   if (!hasValidFrontmatter(skill.content_md)) {
     return { ok: false, reason: "invalid_frontmatter" };
+  }
+  // #20 体积守卫：技能会注入每个未来 worker prompt，过大的正文直接拒（防 prompt 膨胀）。
+  if (skill.content_md.length > TEAM_SKILL_MAX_CONTENT_CHARS) {
+    return { ok: false, reason: "exceeds_size_budget" };
   }
   return { ok: true };
 }
@@ -194,11 +199,19 @@ export function validateSkillEditPatch(
   if (applied.appliedCount === 0) {
     return { ok: false, reason: "no_ops_applied" };
   }
+  // 防 churn：补丁应用后正文与现役逐字相同 = 空转晋升，拒（别为没改动的东西 bump 版本）。
+  if (applied.content_md.trim() === options.currentContentMd.trim()) {
+    return { ok: false, reason: "no_effective_change" };
+  }
   if (!hasValidFrontmatter(applied.content_md)) {
     return { ok: false, reason: "invalid_frontmatter" };
   }
   if (applied.content_md.trim().length < 40) {
     return { ok: false, reason: "too_short" };
+  }
+  // #20 体积守卫：精修后超体积上限即拒（技能注入每个 worker prompt，不能让它越长越胖）。
+  if (applied.content_md.length > TEAM_SKILL_MAX_CONTENT_CHARS) {
+    return { ok: false, reason: "exceeds_size_budget" };
   }
   if (hasConflictMarkers(applied.content_md)) {
     return { ok: false, reason: "conflict_markers" };
