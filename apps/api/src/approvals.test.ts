@@ -794,6 +794,42 @@ test("W2 listPendingForUser builds items_detail: deliverable joins manifest, too
   assert.equal(tool?.manifest_changes.length, 0);
 });
 
+test("W2 approval without a work item never leaks a payload proposal_id's manifest (IDOR guard)", async () => {
+  const approvals = new MemoryApprovals();
+  const manifest = deliverableManifestFixtures[0]!;
+  const leakProposalId = "30000000-0000-4000-8000-0000000009a1";
+  // 工具/权限类审批：无 workItemId，但 payload 里塞了一个属于别处 work item 的 proposal_id。
+  const toolRow = await approvals.createApprovalRequest({
+    actionPattern: "tool.publish_external",
+    routedToUserId: approverId,
+    payloadJson: { raw_args: { proposal_id: leakProposalId } }
+  });
+  const foreignProposal = {
+    id: leakProposalId,
+    work_item_id: "50000000-0000-4000-8000-0000000009ff",
+    status: "opened",
+    diff_manifest: manifest
+  } as unknown as StoredProposal;
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    proposals: {
+      get: async (id) => (id === leakProposalId ? foreignProposal : null),
+      listByWorkItem: async () => []
+    },
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+  const detail = vm.items_detail[toolRow.id];
+  // 关键：不渲染成 deliverable，也不暴露 foreignProposal 的 manifest。
+  assert.notEqual(detail?.kind, "deliverable");
+  assert.equal(detail?.manifest_changes.length, 0);
+  assert.equal(detail?.proposal_id, undefined);
+});
+
 test("W2 listPendingForUser degrades to empty detail when no proposals dep is wired", async () => {
   const approvals = new MemoryApprovals();
   const row = await approvals.createApprovalRequest({

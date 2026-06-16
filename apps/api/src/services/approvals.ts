@@ -264,9 +264,10 @@ async function buildApprovalItemDetail(
       const proposalId = typeof payload.raw_args.proposal_id === "string" ? payload.raw_args.proposal_id : undefined;
       if (proposalId) {
         const candidate = await deps.proposals.get(proposalId);
-        // L#W2-3/6（IDOR 防护）：直传 proposal_id 必须属于本审批的 work item，否则丢弃——
-        // 否则任意 proposal_id 都能借审批页泄露其完整 diff_manifest（跨资源越权）。
-        proposal = candidate && (!row.workItemId || candidate.work_item_id === row.workItemId) ? candidate : null;
+        // L#W2-3/6 + 审计 M6（IDOR 防护）：直传 proposal_id 必须属于本审批的 work item，否则丢弃。
+        // 关键：审批没有 workItemId（工具/权限类审批）时绝不放行——此前 `!row.workItemId` 短路会让
+        // 任意 proposal_id 借审批页泄露其完整 diff_manifest（跨资源越权）。无 workItemId 即不渲染提议详情。
+        proposal = candidate && row.workItemId && candidate.work_item_id === row.workItemId ? candidate : null;
       } else if (row.workItemId) {
         const list = await deps.proposals.listByWorkItem(row.workItemId);
         proposal = list.find((candidate) => candidate.status === "opened" || candidate.status === "reviewed") ?? list[0] ?? null;
