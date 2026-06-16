@@ -29,6 +29,7 @@ import {
   type AuthEnv
 } from "./middleware/auth.js";
 import { createAuthRoutes } from "./routes/auth.js";
+import { createAdminClaimThrottle } from "./middleware/admin-claim-throttle.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 
@@ -315,6 +316,47 @@ test("admin nickname claim accepts the configured secret", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Set-Cookie")?.includes(COOKIE_NAME), true);
+});
+
+test("admin claim attempts are rate-limited and locked out after repeated wrong secrets", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  // 低阈值 + 固定时钟，确定性验证锁定。
+  const throttle = createAdminClaimThrottle({ maxFailures: 2, windowMs: 60_000, lockoutMs: 600_000, now: () => 1_000_000 });
+  app.route(
+    "/api/auth",
+    createAuthRoutes(deps([], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" })), { adminClaimThrottle: throttle })
+  );
+  const attempt = (secret: string) =>
+    app.request("/api/auth/identify", {
+      method: "POST",
+      body: JSON.stringify({ nickname: "Sneaky", admin_secret: secret }),
+      headers: { "Content-Type": "application/json" }
+    });
+
+  // 前两次错误口令 → 403。
+  assert.equal((await attempt("wrong-1")).status, 403);
+  assert.equal((await attempt("wrong-2")).status, 403);
+  // 达到阈值后锁定：第三次（即便口令正确也）被 429 拦在校验之前。
+  assert.equal((await attempt("wrong-3")).status, 429);
+  assert.equal((await attempt("let-me-in")).status, 429);
+});
+
+test("admin claim throttle does not block ordinary nickname logins", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  const throttle = createAdminClaimThrottle({ maxFailures: 1, windowMs: 60_000, lockoutMs: 600_000, now: () => 2_000_000 });
+  app.route(
+    "/api/auth",
+    createAuthRoutes(deps([], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" })), { adminClaimThrottle: throttle })
+  );
+  // 普通昵称登录（不带口令）不计入限流，连续多次都正常。
+  for (let i = 0; i < 3; i += 1) {
+    const response = await app.request("/api/auth/identify", {
+      method: "POST",
+      body: JSON.stringify({ nickname: `Member ${i}` }),
+      headers: { "Content-Type": "application/json" }
+    });
+    assert.equal(response.status, 201);
+  }
 });
 
 test("a fresh user claims admin with the configured secret (pilot bootstrap)", async () => {

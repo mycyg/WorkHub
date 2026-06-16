@@ -20,9 +20,20 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import {
+  adminClaimClientKey,
+  createAdminClaimThrottle,
+  type AdminClaimThrottle
+} from "../middleware/admin-claim-throttle.js";
 
-export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDependencies) {
+export function createAuthRoutes(
+  source: AuthDependencySource = getDefaultAuthDependencies,
+  options: { adminClaimThrottle?: AdminClaimThrottle } = {}
+) {
   const routes = new Hono<AuthEnv>();
+  // 默认每个 createAuthRoutes 起一个进程内限流器：生产只建一次（应用生命周期一个），
+  // 测试各自隔离不串扰。
+  const adminClaimThrottle = options.adminClaimThrottle ?? createAdminClaimThrottle();
 
   routes.post("/identify", async (c) => {
     const deps = resolveAuthDependencies(source);
@@ -33,9 +44,21 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
 
     const secret = getAuthSettings(deps).auth.adminClaimSecret;
     const provided = payload.admin_secret ?? "";
+    // 需要校验口令的两种情形：在新设备登录已有管理员账号；或显式提交口令认领管理员。
+    const needsSecret = (user.isAdmin && current?.id !== user.id) || provided !== "";
+    const throttleKey = adminClaimClientKey(c.req.raw.headers);
+    if (needsSecret) {
+      const gate = adminClaimThrottle.check(throttleKey);
+      if (!gate.allowed) {
+        throw new HTTPException(429, {
+          message: `管理员口令尝试过于频繁，请约 ${gate.retryAfterSeconds} 秒后再试。`
+        });
+      }
+    }
 
     if (user.isAdmin && current?.id !== user.id) {
       if (!secret || !constantTimeEquals(provided, secret)) {
+        adminClaimThrottle.recordFailure(throttleKey);
         throw new HTTPException(403, {
           message: "该昵称是管理员账号，需要管理员口令才能在新设备登录"
         });
@@ -43,6 +66,7 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
     } else if (provided) {
       // 认领管理员：显式提交口令即为认领意图，口令错误必须 fail-closed（403），不静默降级为普通用户。
       if (!secret || !constantTimeEquals(provided, secret)) {
+        adminClaimThrottle.recordFailure(throttleKey);
         throw new HTTPException(403, { message: "管理员口令不正确" });
       }
       if (!user.isAdmin) {
@@ -55,6 +79,10 @@ export function createAuthRoutes(source: AuthDependencySource = getDefaultAuthDe
         }
         user = promoted;
       }
+    }
+    // 口令校验通过（或本就无需口令）：清空该来源的失败计数，避免影响后续正常登录。
+    if (needsSecret) {
+      adminClaimThrottle.recordSuccess(throttleKey);
     }
 
     await issueUserCookie(c, user, getAuthSettings(deps));
