@@ -160,7 +160,8 @@ export const snapshotSchema = z.object({
   id: idSchema,
   work_item_id: idSchema,
   branch_id: idSchema.optional(),
-  kind: z.enum(["pre_step", "merge", "manual"]),
+  // "base" = P-COLLAB M2 物化的只读祖先态快照(diff3 合并底稿);与 packages/audit SnapshotRef 对齐。
+  kind: z.enum(["pre_step", "merge", "manual", "base"]),
   ref: z.string().min(1).max(128),
   content_sha256: z.string().length(64).optional(),
   created_by_kind: z.enum(["ai", "human", "system"]),

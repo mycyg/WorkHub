@@ -169,7 +169,7 @@ function toSnapshotRef(row: SnapshotRow): SnapshotRef {
 }
 
 function toSnapshotKind(value: string): SnapshotRef["kind"] {
-  if (value === "pre_step" || value === "merge" || value === "manual") {
+  if (value === "pre_step" || value === "merge" || value === "manual" || value === "base") {
     return value;
   }
   throw new Error(`Unsupported snapshot kind: ${value}`);

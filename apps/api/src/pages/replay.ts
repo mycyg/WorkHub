@@ -53,7 +53,8 @@ export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "
     id: run.run_id,
     work_item_id: run.work_item_id,
     mode: run.mode,
-    actor: "human",
+    // GAP-4：agent run 的执行者是 AI,不是 human。按 mode 给个真实标签(actor 为展示用自由字符串)。
+    actor: run.mode === "pm" ? (locale === "zh-CN" ? "Cuu 项目管家" : "Cuu PM") : (locale === "zh-CN" ? "AI 工人" : "AI worker"),
     status: run.status,
     model: run.budget_decision.model_route.model,
     turns_used: run.usage.steps_used,
