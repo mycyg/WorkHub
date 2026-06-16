@@ -51,10 +51,14 @@ test("default budget mirrors P-COST v0 values from settings", () => {
     "pcost-workitem-run-v0",
     "pcost-user-day-v0",
     "pcost-team-day-v0",
-    "pcost-team-month-v0"
+    "pcost-team-month-v0",
+    "pcost-eval-day-v0"
   ]);
   assert.equal(policies.find((policy) => policy.id === "pcost-user-day-v0")?.maxTokens, 500000);
   assert.equal(policies.find((policy) => policy.id === "pcost-team-month-v0")?.maxCostCny, "2000");
+  // eval 套件日预算现在有上限（此前 eval 在决策层无策略=无限）。
+  assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.scopeKind, "eval");
+  assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.maxCostCny, "80");
   assert.equal(allowWithDefaultBudget(settings, { provider: "deepseek", model: "m", reason: "default" }).allowed, true);
 });
 

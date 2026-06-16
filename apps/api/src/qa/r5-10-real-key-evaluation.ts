@@ -594,7 +594,9 @@ async function main() {
           scopeIds: {
             workItemId: input.workItemId,
             userId: input.actorId,
-            teamId: input.settings.auth.defaultWorkspaceId
+            teamId: input.settings.auth.defaultWorkspaceId,
+            // 传 evalSuite 让 eval-scope 日预算策略真正生效（否则 scopeForPolicy 跳过 eval scope，套件无上限）。
+            evalSuite: "release"
           },
           policies: await policyStore.listPolicies(input.settings),
           usage: await ledgerStore.usageSnapshots({

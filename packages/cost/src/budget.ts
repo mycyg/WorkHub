@@ -102,6 +102,22 @@ export function defaultBudgetPoliciesFromSettings(settings: Settings): BudgetPol
       modelRouteHint: "balanced",
       enabled: true,
       version: 1
+    },
+    {
+      // eval（夜间/发布评测套件）日预算：此前 eval 在决策层完全无策略=无上限，跑飞的套件可无限烧钱。
+      // 评测 harness 在 decideRunBudget 的 scopeIds 里传 evalSuite，scopeForPolicy 即按此 eval scope 计量。
+      id: "pcost-eval-day-v0",
+      scopeKind: "eval",
+      period: "day",
+      maxTokens: settings.budgets.evalDailyTokens,
+      maxCostCny: settings.budgets.evalDailyCostCny,
+      warningRatio: 0.8,
+      criticalRatio: 0.95,
+      onWarning: "notify",
+      onExhausted: "block_new_run",
+      modelRouteHint: "cheapest_safe",
+      enabled: true,
+      version: 1
     }
   ];
 }

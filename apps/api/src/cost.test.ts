@@ -213,8 +213,10 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
     ok: true;
     data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
   };
-  assert.equal(listBody.data.length, 4);
+  assert.equal(listBody.data.length, 5);
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-workitem-run-v0")?.max_tokens, 120000);
+  // eval 套件日预算策略现已存在（M21：此前 eval 在决策层无上限）。
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-eval-day-v0")?.scope_kind, "eval");
 
   const update = await app.request("/api/cost/policies/user/pcost-user-day-v0", {
     method: "PUT",
