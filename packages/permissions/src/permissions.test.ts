@@ -9,6 +9,7 @@ import {
   canViewProjectDrive,
   canViewWorkItemRecord,
   canWorkWorkItem,
+  OVERRIDE_DENY_PRIORITY,
   resolvePermissionDecision,
   routeApprover,
   toApprovalAttentionItem,
@@ -114,6 +115,34 @@ test("action gate resolves by scope, priority, specificity, and fail-safe effect
   assert.equal(resolvePermissionDecision(actor, "tool.delete_file", policies, { now }).effect, "allow");
   assert.equal(resolvePermissionDecision(actor, "tool.write_file", policies, { now }).effect, "deny");
   assert.equal(resolvePermissionDecision(actor, "tool.unknown", [], { now }).effect, "ask");
+});
+
+test("M25 override-priority deny is a cross-scope kill-switch beating narrower allows and the admin fallback", () => {
+  const actor: PermissionActor = {
+    id: "run-1",
+    isAdmin: false,
+    orgId: "org-1",
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    roleIds: ["lead"]
+  };
+  // org 级紧急 deny 提到 override 优先级 → 跨 scope 压过更窄的 session allow。
+  const killSwitch: PermissionPolicyRecord[] = [
+    { scopeKind: "org", scopeId: "org-1", actionPattern: "tool.delete_file", effect: "deny", priority: OVERRIDE_DENY_PRIORITY },
+    { scopeKind: "session", scopeId: "session-1", actionPattern: "tool.delete_file", effect: "allow" }
+  ];
+  assert.equal(resolvePermissionDecision(actor, "tool.delete_file", killSwitch, { now }).effect, "deny");
+
+  // 连管理员也挡：硬熔断在 admin fallback 之前生效。
+  const admin: PermissionActor = { id: "admin", isAdmin: true, orgId: "org-1" };
+  assert.equal(resolvePermissionDecision(admin, "tool.delete_file", killSwitch, { now }).effect, "deny");
+
+  // 默认优先级（< override）的 org deny 仍按 scope 解析，被更窄 allow 压过——常规行为完全不变。
+  const normal: PermissionPolicyRecord[] = [
+    { scopeKind: "org", scopeId: "org-1", actionPattern: "tool.delete_file", effect: "deny" },
+    { scopeKind: "session", scopeId: "session-1", actionPattern: "tool.delete_file", effect: "allow" }
+  ];
+  assert.equal(resolvePermissionDecision(actor, "tool.delete_file", normal, { now }).effect, "allow");
 });
 
 test("admin action fallback does not change resource write gates", () => {

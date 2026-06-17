@@ -14,6 +14,12 @@ const scopeRank = {
   session: 4
 } as const;
 
+// M25：达到此优先级的 deny 是「硬熔断」——跨 scope 强制阻断，压过任何更窄 scope 的 allow，连管理员也挡。
+// 普通策略优先级远低于此（默认 0），故常规的 scope 优先解析对它们行为完全不变；只有管理员显式把某条 deny
+// 提到此优先级，org/workspace 级紧急 kill-switch 才真正生效。仅对 deny 开此口子——跨 scope 的 allow 覆盖
+// 风险更大（可能误授权），不允许越过 scope。
+export const OVERRIDE_DENY_PRIORITY = 1000;
+
 const effectRank: Record<PermissionEffect, number> = {
   allow: 1,
   ask: 2,
@@ -118,6 +124,23 @@ export function resolvePermissionDecision(
       effect: "ask",
       actionPattern,
       reason: "no matching policy",
+      consideredPolicies
+    };
+  }
+
+  // M25：硬熔断先于常规 scope 解析——任何达到 OVERRIDE_DENY_PRIORITY 的 deny 跨 scope 强制阻断，
+  // 即便存在更窄 scope（role/session）的 allow，也即便 actor 是管理员。这让 org/workspace 级紧急 deny
+  // 真正生效（此前 scope 优先 → 宽 deny 永远压不过窄 allow，kill-switch 形同虚设）。
+  const overrideDenies = consideredPolicies.filter(
+    (policy) => policy.effect === "deny" && (policy.priority ?? 0) >= OVERRIDE_DENY_PRIORITY
+  );
+  if (overrideDenies.length > 0) {
+    const matchedPolicy = [...overrideDenies].sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0))[0] as PermissionPolicyRecord;
+    return {
+      effect: "deny",
+      actionPattern,
+      ...(matchedPolicy.reason ? { reason: matchedPolicy.reason } : {}),
+      matchedPolicy,
       consideredPolicies
     };
   }
