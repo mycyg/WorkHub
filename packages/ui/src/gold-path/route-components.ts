@@ -1588,9 +1588,12 @@ function renderProposalRouteComponent(
 ): WebRouteComponent {
   const actions = proposalActions(vm);
   const conflictCards = renderProposalConflictCards(conflicts, { locale });
-  const hasLineEditor = conflictCards.html.includes("data-route-line-editor=");
-  const hasFieldEditor = conflictCards.html.includes("data-proposal-structured-field-editor=");
-  const hasSubrecordEditor = conflictCards.html.includes("data-proposal-subrecord-item-diff=");
+  // findings[28]：探测真实编辑器标记时带上开引号（真实标记总写成 data-...="true"），否则冲突文本
+  // （headline/summary_text/target_path 等，仅经 escapeHtml）里若出现裸 `data-route-line-editor=` 字样会
+  // 误判挂载空编辑器宿主。escapeHtml 把 " 转成 &quot;，故带引号的探针无法被冲突文本伪造。
+  const hasLineEditor = conflictCards.html.includes("data-route-line-editor=\"");
+  const hasFieldEditor = conflictCards.html.includes("data-proposal-structured-field-editor=\"");
+  const hasSubrecordEditor = conflictCards.html.includes("data-proposal-subrecord-item-diff=\"");
   const reactComponent = createProposalReactRouteComponent(vm, conflicts, locale, {
     actionHrefs: conflictCards.actionHrefs,
     lineEditor: hasLineEditor,

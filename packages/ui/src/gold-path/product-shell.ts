@@ -64,6 +64,10 @@ type ProductShellCopyKey =
   | "rail.nextReplay"
   | "rail.nextCost"
   | "rail.nextSettings"
+  | "rail.nextIntake"
+  | "rail.nextHealth"
+  | "rail.nextKnowledge"
+  | "rail.nextSkills"
   | "masthead.home"
   | "masthead.approvals"
   | "masthead.workitem"
@@ -76,6 +80,9 @@ type ProductShellCopyKey =
   | "masthead.cost"
   | "masthead.settings"
   | "masthead.intake"
+  | "masthead.health"
+  | "masthead.knowledge"
+  | "masthead.skills"
   | "metric.primary"
   | "metric.queue"
   | "metric.running"
@@ -132,6 +139,10 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextReplay": "回看执行、成本、快照和决策记录。",
     "rail.nextCost": "看预算风险和用量异常。",
     "rail.nextSettings": "确认语言、设备和运行时边界。",
+    "rail.nextIntake": "先选方向，需要时再展开手动补充。",
+    "rail.nextHealth": "先看红黄风险项，再决定要不要拍板介入。",
+    "rail.nextKnowledge": "按证据来源核对，再回到对应任务或审批。",
+    "rail.nextSkills": "看团队技能战绩与自进化记录，再决定要不要调整。",
     "masthead.home": "默认只把最该你拿主意的一件事放在最前，其它在后台安静运行。",
     "masthead.approvals": "把需要你拍板的审批、理由、超时提醒和后续操作集中在一起。",
     "masthead.workitem": "任务详情把验收项、证据、AI 工作过程和最近变更放在一起。",
@@ -144,6 +155,9 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.cost": "成本页按成员、团队、任务和模型拆解预算情况。",
     "masthead.settings": "设置页只管运行和设备，桌宠形象在独立窗口里设置。",
     "masthead.intake": "提需求先选方向，也可以展开手动输入补充。",
+    "masthead.health": "项目健康把风险信号、阻塞项和需要你介入的地方汇总在一起。",
+    "masthead.knowledge": "证据检索把来源、片段和回链放在一起，便于核对事实。",
+    "masthead.skills": "团队技能页汇总成员技能、AI 自进化战绩和成本分账。",
     "metric.primary": "当前焦点",
     "metric.queue": "队列",
     "metric.running": "后台运行",
@@ -199,6 +213,10 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextReplay": "Review execution, cost, snapshots, and decisions.",
     "rail.nextCost": "Inspect budget risk and usage anomalies.",
     "rail.nextSettings": "Confirm locale, device, and runtime boundaries.",
+    "rail.nextIntake": "Pick a direction first; typing stays a collapsed fallback.",
+    "rail.nextHealth": "Scan red/amber risks first, then decide whether to step in.",
+    "rail.nextKnowledge": "Verify against sources, then jump back to the task or approval.",
+    "rail.nextSkills": "Review team skills and self-evolution records before adjusting.",
     "masthead.home": "The default view offers one decision first while background work stays secondary.",
     "masthead.approvals": "A blocking inbox for approvals, reasons, SLA, and follow-up execution.",
     "masthead.workitem": "Task detail keeps acceptance, evidence, AI trace, and recent change together.",
@@ -211,6 +229,9 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.cost": "Cost breaks budget risk down by person, team, task, and model.",
     "masthead.settings": "Settings are for runtime and device controls, not character presentation.",
     "masthead.intake": "Intake starts with choices; typing remains a collapsed fallback.",
+    "masthead.health": "Project health gathers risk signals, blockers, and spots that need your call.",
+    "masthead.knowledge": "Evidence search keeps sources, snippets, and back-links together for fact-checking.",
+    "masthead.skills": "Team skills summarize member skills, AI self-evolution records, and cost split.",
     "metric.primary": "Focus",
     "metric.queue": "Queue",
     "metric.running": "Background",

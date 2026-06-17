@@ -972,6 +972,27 @@ test("R4.13 Proposal route component exposes advanced structured conflict editor
   assertNoMainWindowBoundaryLeak(proposal.html);
 });
 
+test("findings[28] editor-host probe is not forged by conflict text containing a bare marker", () => {
+  const vm = {
+    ...surfaceVm(),
+    proposal_conflicts: [] as ProposalConflict[]
+  };
+  const conflict = structuredProposalConflict(vm);
+  // 这个 structured 冲突本不产生 line editor。把裸标记字样塞进会经 escapeHtml 渲染的冲突文本里，
+  // 验证收紧后的探针（带开引号）不会被它伪造成"有 line editor"。
+  conflict.headline = "marker data-route-line-editor= here";
+  conflict.summary_text = "see data-route-line-editor= in the text";
+  vm.proposal_conflicts = [conflict];
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  // 裸标记不算数：line editor 仍判为 false，且不挂 react line-editor 宿主。
+  assert.equal(proposal.html.includes('data-r4-proposal-line-editor="false"'), true);
+  assert.equal(proposal.html.includes("data-r4-proposal-react-line-editor-host="), false);
+  // 真实的 field editor（带引号标记）仍正常检测，证明收紧没误伤真实路径。
+  assert.equal(proposal.html.includes('data-r4-proposal-field-editor="true"'), true);
+});
+
 test("R4.19 Proposal split adapter keeps readonly props separate from advanced editor fallback", () => {
   const vm = {
     ...surfaceVm(),
