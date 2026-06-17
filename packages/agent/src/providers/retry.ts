@@ -22,9 +22,13 @@ export function parseRetryAfterMs(value: string | null | undefined, now = new Da
 export function nextRetryDecision(
   error: { status?: number; headers?: { get: (name: string) => string | null }; message?: string; code?: string; cause?: unknown },
   attempt: number,
-  options: { maxAttempts?: number; baseDelayMs?: number; now?: Date } = {}
+  options: { maxAttempts?: number; baseDelayMs?: number; maxDelayMs?: number; now?: Date } = {}
 ): RetryDecision {
   const maxAttempts = options.maxAttempts ?? 3;
+  // findings[#49]：钳住重试延迟上限。Retry-After 由（可能恶意/异常的）上游控制且无上界——
+  // 一个 `Retry-After: 86400` 就能把 worker 在单次重试上 park 24 小时，而 totalTimeoutSeconds 只在
+  // 循环顶部检查、sleep 期间无法打断。退避指数增长也可能膨胀过大。两条分支都钳到 maxDelayMs。
+  const clampDelay = (ms: number) => (options.maxDelayMs !== undefined ? Math.min(ms, options.maxDelayMs) : ms);
   if (attempt >= maxAttempts) {
     return { retry: false, delayMs: 0, reason: "none" };
   }
@@ -46,14 +50,14 @@ export function nextRetryDecision(
 
   const retryAfter = parseRetryAfterMs(error.headers?.get("retry-after"), options.now);
   if (retryAfter !== undefined) {
-    return { retry: true, delayMs: retryAfter, reason: "retry_after" };
+    return { retry: true, delayMs: clampDelay(retryAfter), reason: "retry_after" };
   }
 
   // L#67：退避按 2**attempt 增长（attempt 是已失败次数，从 0 起），
   // 这样第一次、第二次、第三次重试分别是 base×1 / ×2 / ×4，而不是前两次都等于 base。
   return {
     retry: true,
-    delayMs: (options.baseDelayMs ?? 500) * 2 ** attempt,
+    delayMs: clampDelay((options.baseDelayMs ?? 500) * 2 ** attempt),
     reason: "transient"
   };
 }

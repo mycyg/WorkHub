@@ -173,10 +173,17 @@ async function callModelWithRetry(input: AgentLoopInput, params: Parameters<type
     try {
       return await callModel(input, params);
     } catch (error) {
+      // findings[#49]：钳住重试延迟。上限取「配置上限(默认 60s)」与「整 run 超时」的较小值——单次重试延迟绝不
+      // 应超过整个 run 的预算，更不能让上游用一个超大 Retry-After 把 worker park 数小时（totalTimeoutSeconds
+      // 只在循环顶部检查、sleep 期间打断不了）。
+      const retryMaxDelayMs = Math.min(
+        input.budget.providerRetryMaxDelayMs ?? 60_000,
+        Math.max(0, input.budget.totalTimeoutSeconds) * 1000
+      );
       const decision = nextRetryDecision(
         error as { status?: number; headers?: { get: (name: string) => string | null } },
         attempt,
-        { baseDelayMs: input.budget.providerRetryBaseDelayMs ?? 500 }
+        { baseDelayMs: input.budget.providerRetryBaseDelayMs ?? 500, maxDelayMs: retryMaxDelayMs }
       );
       if (!decision.retry) {
         throw error;

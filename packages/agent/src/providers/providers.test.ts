@@ -168,6 +168,28 @@ test("retry helper honors Retry-After before exponential transient backoff", () 
   assert.equal(nextRetryDecision({ status: 400, headers: { get: () => "5" } }, 1).retry, false);
 });
 
+test("findings[#49] retry delay is clamped to maxDelayMs (Retry-After and exponential backoff)", () => {
+  // 恶意/异常上游用一个超大 Retry-After 想把 worker park 24 小时 → 钳到 maxDelayMs。
+  assert.deepEqual(
+    nextRetryDecision(
+      { status: 429, headers: { get: () => "86400" } },
+      1,
+      { maxDelayMs: 60_000, now: new Date("2026-06-05T00:00:00.000Z") }
+    ),
+    { retry: true, delayMs: 60_000, reason: "retry_after" }
+  );
+  // 指数退避膨胀也钳住（attempt=2 → base×4=2000，钳到 1000）。
+  assert.equal(
+    nextRetryDecision({ status: 500 }, 2, { baseDelayMs: 500, maxDelayMs: 1_000 }).delayMs,
+    1_000
+  );
+  // 未超上限的延迟不受影响。
+  assert.equal(
+    nextRetryDecision({ status: 429, headers: { get: () => "2" } }, 1, { maxDelayMs: 60_000 }).delayMs,
+    2_000
+  );
+});
+
 test("anthropic-compatible transport maps create requests and normalizes usage", async () => {
   const calls: FetchCall[] = [];
   const fetchImpl: typeof fetch = async (url, init) => {

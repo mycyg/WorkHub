@@ -24,6 +24,8 @@ export type AgentLoopBudget = RunBudget & Partial<SandboxBudget> & {
   toolResultContextChars?: number;
   /** provider 瞬态错误重试的退避基数（毫秒，默认 500）。 */
   providerRetryBaseDelayMs?: number;
+  /** 单次重试延迟上限（毫秒，默认 60000）。findings[#49]：钳住上游 Retry-After，防恶意/异常上游 park worker 数小时。 */
+  providerRetryMaxDelayMs?: number;
 };
 
 export type AgentLoopUsage = {
