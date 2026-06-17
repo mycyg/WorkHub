@@ -15,6 +15,7 @@ import {
   budgetPolicySchema,
   budgetPolicyUpdateSchema,
   budgetUsageSchema,
+  meetingInsightVmSchema,
   applyMergeProposalCandidateRequestSchema,
   buildStructuredFieldPatchDryRun,
   chooseMergeProposalCandidateRequestSchema,
@@ -1620,4 +1621,22 @@ test("W2 approvalCenterVm items_detail is additive: parses with and without it",
     items_detail: { "20000000-0000-4000-8000-0000000000a1": detail }
   });
   assert.equal(enriched.items_detail["20000000-0000-4000-8000-0000000000a1"]?.kind, "deliverable");
+});
+
+test("findings: meeting insight status enum no longer accepts the dead 'creating_requirement' value", () => {
+  const base = {
+    id: "10000000-0000-4000-8000-000000000001",
+    meeting_id: "10000000-0000-4000-8000-000000000002",
+    kind: "new_requirement" as const,
+    title: "更新报价",
+    description: "把季度报价更新到最新口径。",
+    confidence_reason: "会议里项目负责人确认。",
+    created_at: "2026-06-05T00:00:00.000Z"
+  };
+  // 活枚举仍放行。
+  for (const status of ["pending", "confirmed", "dismissed"] as const) {
+    assert.equal(meetingInsightVmSchema.safeParse({ ...base, status }).success, true);
+  }
+  // 死值已移除。
+  assert.equal(meetingInsightVmSchema.safeParse({ ...base, status: "creating_requirement" }).success, false);
 });

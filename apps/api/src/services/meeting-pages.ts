@@ -102,8 +102,8 @@ function insightKind(kind: string): "new_requirement" | "requirement_change" | "
   return kind === "requirement_change" || kind === "normal_note" ? kind : "new_requirement";
 }
 
-function insightStatus(status: string): "pending" | "creating_requirement" | "confirmed" | "dismissed" {
-  if (status === "creating_requirement" || status === "confirmed" || status === "dismissed") {
+function insightStatus(status: string): "pending" | "confirmed" | "dismissed" {
+  if (status === "confirmed" || status === "dismissed") {
     return status;
   }
   return "pending";

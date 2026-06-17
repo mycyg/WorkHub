@@ -217,7 +217,6 @@ type RouteCopyKey =
   | "meeting.status.processing"
   | "meeting.status.failed"
   | "meeting.status.pending"
-  | "meeting.status.creating_requirement"
   | "meeting.status.confirmed"
   | "meeting.status.dismissed"
   | "notifications.kicker"
@@ -383,7 +382,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.status.processing": "处理中",
     "meeting.status.failed": "处理失败",
     "meeting.status.pending": "待确认",
-    "meeting.status.creating_requirement": "创建中",
     "meeting.status.confirmed": "已确认",
     "meeting.status.dismissed": "已忽略",
     "notifications.kicker": "通知中心",
@@ -548,7 +546,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.status.processing": "Processing",
     "meeting.status.failed": "Failed",
     "meeting.status.pending": "Pending",
-    "meeting.status.creating_requirement": "Creating",
     "meeting.status.confirmed": "Confirmed",
     "meeting.status.dismissed": "Dismissed",
     "notifications.kicker": "Notifications",

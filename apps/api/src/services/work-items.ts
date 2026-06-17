@@ -530,13 +530,11 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
       title: sourceInsight.insight.title,
       description: sourceInsight.insight.description,
       confidence_reason: compactText(sourceInsight.insight.confidenceReason, 420) ?? "Meeting insight was confirmed by a project owner.",
-      status: sourceInsight.insight.status === "creating_requirement"
-        ? "creating_requirement"
-        : sourceInsight.insight.status === "confirmed"
-          ? "confirmed"
-          : sourceInsight.insight.status === "dismissed"
-            ? "dismissed"
-            : "pending",
+      status: sourceInsight.insight.status === "confirmed"
+        ? "confirmed"
+        : sourceInsight.insight.status === "dismissed"
+          ? "dismissed"
+          : "pending",
       ...(sourceInsight.meeting.transcriptText ? { transcript_excerpt: compactText(sourceInsight.meeting.transcriptText, 420) } : {}),
       ...(sourceInsight.meeting.minutesMd ? { minutes_excerpt: compactText(sourceInsight.meeting.minutesMd, 420) } : {}),
       evidence_refs: [{
