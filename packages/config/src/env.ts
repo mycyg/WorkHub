@@ -63,7 +63,10 @@ export const envSchema = z.object({
   DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
   DEFAULT_WORKSPACE_ID: z.string().uuid().default(authDefaults.defaultWorkspaceId),
 
-  LLM_PROVIDER_DEFAULT: z.string().min(1).default("deepseek"),
+  // findings[#33/M39]：只约束到真正注册的 provider（createProviderRegistryConfig 仅注册 "deepseek"）。
+  // 此前任意字符串都收，配错(如 "openai")要到运行时找不到路由才炸；改 enum 后启动解析即 fail-closed。
+  // 加新 provider 时这里与 providers.ts 注册表同步更新——刻意如此。
+  LLM_PROVIDER_DEFAULT: z.enum(["deepseek"]).default("deepseek"),
   LLM_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
   LLM_MODEL: z.string().min(1).default("deepseek-v4-flash"),
   LLM_API_KEY: z.string().default(""),

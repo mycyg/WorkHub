@@ -30,6 +30,14 @@ test("keeps provider and budget defaults available", () => {
   assert.equal(value.agentRun.recoveryIntervalMs, 30000);
 });
 
+test("findings[#33] LLM_PROVIDER_DEFAULT is constrained to registered providers (fail-closed at parse)", () => {
+  // 默认/显式 "deepseek" 通过，且确实在注册表里。
+  assert.equal(loadSettings({ LLM_PROVIDER_DEFAULT: "deepseek" }).llm.defaultProvider, "deepseek");
+  assert.equal("deepseek" in createProviderRegistryConfig(loadSettings({})).providers, true);
+  // 未注册的 provider 在启动解析时就被拒，而不是到运行时找不到路由才炸。
+  assert.throws(() => loadSettings({ LLM_PROVIDER_DEFAULT: "openai" }));
+});
+
 test("agent run runtime intervals are configurable without serializing secrets", () => {
   const value = loadSettings({
     AGENT_RUN_LEASE_MS: "600000",
