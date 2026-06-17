@@ -241,10 +241,18 @@ async function resolveUserFromClientToken(deps: AuthDependencies, rawToken: stri
 }
 
 export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
-  const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
+  const clientTokenHeader = c.req.header(LOCAL_CLIENT_HEADER);
+  const byToken = await resolveUserFromClientToken(deps, clientTokenHeader);
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);
     return byToken.user;
+  }
+
+  // findings：呈递了 client-token header 但解析不到有效设备 → fail-closed，不回退 cookie。否则 CSRF 同源守卫
+  // 「存在即豁免」(csrf.ts) + 此处 cookie 回退，会让带垃圾 token 的跨站请求既跳过同源检查又靠 cookie 鉴权过关。
+  // 用 403（与 soft local-client gate 对 bad token 的既有语义一致），而非 401。
+  if (clientTokenHeader && clientTokenHeader.trim().length > 0) {
+    throw new HTTPException(403, { message: "invalid client token" });
   }
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));

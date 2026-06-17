@@ -289,6 +289,24 @@ test("hard and soft local-client gates keep their old distinction", async () => 
   assert.equal(softBadToken.status, 403);
 });
 
+test("findings: current-user gate fails closed on a present-but-invalid client token (no cookie fallback)", async () => {
+  const alice = user();
+  const runtimeSettings = settings();
+  const authDeps = deps([alice], [], runtimeSettings);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/me", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+  const cookie = await signedCookie(alice.cookieToken, runtimeSettings);
+
+  // cookie 单独 → 正常鉴权。
+  assert.equal((await app.request("/me", { headers: { Cookie: cookie } })).status, 200);
+
+  // 带垃圾 client-token header + 合法 cookie → fail-closed 403，不回退 cookie（堵 CSRF 同源守卫 header-存在即豁免 + cookie 回退的组合）。
+  const badToken = await app.request("/me", {
+    headers: { Cookie: cookie, [LOCAL_CLIENT_HEADER]: "bad-token" }
+  });
+  assert.equal(badToken.status, 403);
+});
+
 test("admin nickname claim fails closed when admin secret is empty", async () => {
   const admin = user({ nickname: "owner", isAdmin: true });
   const app = withErrors(new Hono<AuthEnv>());

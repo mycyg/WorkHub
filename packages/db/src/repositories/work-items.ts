@@ -495,7 +495,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         })
         .from(workItems)
         .innerJoin(projects, eq(workItems.projectId, projects.id))
-        .where(eq(workItems.id, workItemId))
+        // findings：补 isNull(deletedAt)——此前中央读路径漏了软删过滤（其它读路径如 search/findProject 都有），
+        // 导致已软删的工作项仍能经 detailPage 读出。
+        .where(and(eq(workItems.id, workItemId), isNull(workItems.deletedAt)))
         .limit(1);
       const row = rows[0];
       if (!row) {
