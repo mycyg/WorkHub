@@ -92,6 +92,15 @@ function requestLocale(c: { req: { query: (key: string) => string | undefined; h
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
+// findings[#74/#80]：管理员成本看板的时间窗口（天）。窗口内的账目走 period_bucket 索引下推，避免每次
+// 加载都全表扫描 cost_ledger_entries、也把 trend 桶数封顶。窗口外的历史不在看板展示（按需另查累计）。
+const COST_DASHBOARD_WINDOW_DAYS = 90;
+
+function costDashboardSinceBucket(now: Date): string {
+  const cutoff = new Date(now.getTime() - COST_DASHBOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  return cutoff.toISOString().slice(0, 10);
+}
+
 function pageEnvelope<T>(data: T, locale: WorkHubLocale) {
   return {
     ok: true,
@@ -360,7 +369,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 非管理员只读自己 user scope 的账目（走索引，不全表扫描，也不带 team scope——否则会把同队他人的花费混进总额）。
     // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员才取全组织视图。M8/M9。
     const ledgerEntries = c.var.currentUser.isAdmin
-      ? (ledgerStore.listEntries ? await ledgerStore.listEntries() : ledgerStore.entries)
+      ? (ledgerStore.listEntries
+          ? await ledgerStore.listEntries({ sinceBucket: costDashboardSinceBucket(new Date()) })
+          : ledgerStore.entries)
       : (ledgerStore.listEntriesForScopes
           ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id })
           // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries

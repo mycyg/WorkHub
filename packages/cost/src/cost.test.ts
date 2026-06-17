@@ -280,3 +280,26 @@ test("usage snapshots are period-aware: day/month ignore prior-period usage", as
   assert.equal(userDay?.tokenIn, 0);
   assert.equal(teamMonth?.tokenIn, 0);
 });
+
+test("findings[#74/#80] listEntries(sinceBucket) windows the admin read instead of full-scanning all history", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  const common = {
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    workItemId: "workitem-1",
+    userId: "user-1",
+    inputTokens: 10,
+    outputTokens: 10,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 }
+  };
+  await ledger.recordUsage(buildUsageRecord({ ...common, runId: "old", createdAt: new Date("2026-01-01T00:00:00.000Z") }));
+  await ledger.recordUsage(buildUsageRecord({ ...common, runId: "recent", createdAt: new Date("2026-06-10T00:00:00.000Z") }));
+
+  // 每次用量扇成 workitem+user+team 三条账目。
+  const all = await ledger.listEntries?.();
+  const windowed = await ledger.listEntries?.({ sinceBucket: "2026-06-01" });
+  assert.equal(all?.length, 6);
+  assert.equal(windowed?.length, 3); // 只剩窗口内那次用量的三条
+  assert.equal(windowed?.every((entry) => entry.periodBucket >= "2026-06-01"), true);
+});

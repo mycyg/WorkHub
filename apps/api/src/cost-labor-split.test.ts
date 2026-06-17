@@ -96,3 +96,20 @@ test("findings[H10/H13] per-scope breakdowns count each usage once, not 2-3x", (
   assert.equal(cost.by_workitem[0]?.turns, 1);
   assert.equal(cost.by_workitem[0]?.cost_cny, "0.6");
 });
+
+test("findings[#81] malformed period_bucket row is skipped from trend, not 422-ing the whole dashboard", () => {
+  // 一条好行 + 一条坏 periodBucket(非 ISO)。修复前坏行进 trend.date 触发 fail-closed VM 解析抛错→整张看板 422；
+  // 修复后坏行被跳过，看板照常构建，trend 只剩好行。
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-06-16T02:00:00.000Z"),
+    ledgerEntries: [
+      entry({ usageRecordId: "u1", source: "agent_step", estimatedCostCny: "0.6", periodBucket: "2026-06-16" }),
+      entry({ usageRecordId: "u2", source: "agent_step", estimatedCostCny: "0.4", periodBucket: "not-a-date" })
+    ]
+  });
+  assert.equal(cost.trend.length, 1);
+  assert.equal(cost.trend[0]?.date, "2026-06-16");
+});

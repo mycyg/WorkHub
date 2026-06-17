@@ -133,7 +133,12 @@ export type CostLedgerStore = {
   entries: readonly CostLedgerEntry[];
   recordUsage: (record: UsageRecord) => Promise<void> | void;
   usageSnapshots: (scopeIds: LedgerScopeIds, options?: { now?: Date }) => MaybePromise<BudgetUsageSnapshot[]>;
-  listEntries?: () => MaybePromise<readonly CostLedgerEntry[]>;
+  /**
+   * 读全量账目。findings[#74/#80]：管理员看板曾无窗口全表扫描 cost_ledger_entries（每步 agent 写 ~3 行、
+   * 无保留/裁剪，越用越慢且 trend 桶无限增长）。传 sinceBucket("YYYY-MM-DD") 即按 period_bucket 索引下推、
+   * 只取该日期及以后的账目。不传则全量（pilot-metrics 等累计统计仍需全量）。
+   */
+  listEntries?: (options?: { sinceBucket?: string }) => MaybePromise<readonly CostLedgerEntry[]>;
   /** 只读请求到的 scope 的账目（走索引），用于非管理员只取自己的用量、避免全表扫描。 */
   listEntriesForScopes?: (scopeIds: LedgerScopeIds) => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
@@ -173,8 +178,12 @@ export function createMemoryCostLedgerStore(options: {
     usageSnapshots(scopeIds, options) {
       return ledgerUsageSnapshots(entries, scopeIds, options);
     },
-    listEntries() {
-      return entries;
+    listEntries(options) {
+      if (!options?.sinceBucket) {
+        return entries;
+      }
+      const sinceBucket = options.sinceBucket;
+      return entries.filter((entry) => entry.periodBucket >= sinceBucket);
     },
     listEntriesForScopes(scopeIds) {
       return entries.filter((entry) => entryInScopes(entry, scopeIds));

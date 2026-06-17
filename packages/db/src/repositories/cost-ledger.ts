@@ -10,7 +10,7 @@ import {
   type UsageSource
 } from "@workhub/cost";
 
-import { and, eq, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, or, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { costLedgerEntries, usageRecords } from "../schema/index.js";
@@ -168,8 +168,12 @@ export function createDbCostLedgerStore(
   const recentEntries: CostLedgerEntry[] = [];
   const RECENT_CAP = 1000; // recentRecords/recentEntries 是进程内缓存，封顶防无界增长（H6）。
 
-  async function listEntries() {
-    const rows = await db.select().from(costLedgerEntries);
+  async function listEntries(options?: { sinceBucket?: string }) {
+    // findings[#74/#80]：管理员看板别再全表扫描——给了 sinceBucket 就按 period_bucket_idx 下推时间窗口，
+    // 只取窗口内账目（period_bucket 是 "YYYY-MM-DD"，与游标按字典序比较即时间序）。不传则全量（累计统计用）。
+    const rows = options?.sinceBucket
+      ? await db.select().from(costLedgerEntries).where(gte(costLedgerEntries.periodBucket, options.sinceBucket))
+      : await db.select().from(costLedgerEntries);
     return rows.map(rowToLedgerEntry);
   }
 

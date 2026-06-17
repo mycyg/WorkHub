@@ -242,9 +242,17 @@ function uniqueUsageEntries(entries: readonly CostLedgerEntry[]) {
   return unique;
 }
 
+// trend.date 契约是严格 ISO 日期 /^\d{4}-\d{2}-\d{2}$/。periodBucket 正常由 createdAt.slice(0,10) 派生，
+// 但手工插入/迁移回填/非 ISO createdAt 可能产出不匹配的桶——findings[#81]：因整张看板 VM fail-closed 解析，
+// 单条坏行会让所有人 422。这里防御性跳过非 ISO 桶，宁可漏画那点花费也不能整张看板挂掉。
+const ISO_DATE_BUCKET = /^\d{4}-\d{2}-\d{2}$/u;
+
 function aggregateTrend(entries: readonly CostLedgerEntry[]): CostDashboardVM["trend"] {
   const buckets = new Map<string, { cost: number; tokens: number }>();
   for (const entry of entries) {
+    if (!ISO_DATE_BUCKET.test(entry.periodBucket)) {
+      continue;
+    }
     const current = buckets.get(entry.periodBucket) ?? { cost: 0, tokens: 0 };
     current.cost += parseCny(entry.estimatedCostCny);
     current.tokens += entry.tokenIn + entry.tokenOut;
