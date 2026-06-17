@@ -1054,6 +1054,9 @@ export async function bootDesktopPetSurface(
 
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-reason]") : null;
     if (reasonButton && pendingAction) {
+      // findings[#low]：currentCard 在 await 期间可能被改写，await 后再读会用到新值（TOCTOU）。
+      // 捕获 await 前的卡片做兜底。
+      const fallbackCard = currentCard;
       try {
         const result = await submitDesktopCuuAction({
           client,
@@ -1061,7 +1064,7 @@ export async function bootDesktopPetSurface(
           reasonMd: reasonButton.dataset.petReason ?? cuuT(locale, "pet.reasonDefault"),
           locale
         });
-        setCard(result.card ?? currentCard, result.message);
+        setCard(result.card ?? fallbackCard, result.message);
         subscribeToAgentRun(result);
       } catch (error) {
         setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
@@ -1076,7 +1079,9 @@ export async function bootDesktopPetSurface(
         setCard(createDesktopCuuAgentLauncherCard({ locale }));
         return;
       }
-      const decision = idleScheduler.observeInteraction("tap", Date.now());
+      // findings[#low]：有卡片在显示时点击不该冒出 tap_bubble 闲置微动作（与指针传感器守卫相反）。
+      // 走 tick({active_card:true})→active_card_controls_motion，不产生 action。
+      const decision = idleScheduler.tick({ now_ms: Date.now(), interaction: "tap", active_card: true });
       if (decision.action) {
         idleAction = decision.action;
         render();
@@ -1118,9 +1123,11 @@ export async function bootDesktopPetSurface(
       render();
       return;
     }
+    // findings[#low]：同上——捕获 await 前的卡片做兜底，避免 await 期间 currentCard 被改写。
+    const fallbackCard = currentCard;
     try {
       const result = await submitDesktopCuuAction({ client, action, locale });
-      setCard(result.card ?? currentCard, result.message);
+      setCard(result.card ?? fallbackCard, result.message);
       subscribeToAgentRun(result);
     } catch (error) {
       setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));

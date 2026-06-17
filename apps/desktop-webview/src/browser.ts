@@ -527,12 +527,19 @@ async function boot() {
     // wh-proposal-* 玻璃覆盖在 liquidGlass 里 → live 数据 + 玻璃质感。面板内动作(通过/打回/采纳)仍走既有
     // bindGoldPathNavigation 管线(根上委托,重渲不脱钩)。失败保留 fixture 面板,绝不空。
     const proposalPanel = root.querySelector<HTMLElement>("[data-wh-panel=\"proposal\"]");
+    // findings[#low]：连点不同详情时多个 load 并发，last-resolved 会覆盖 last-clicked。
+    // 用单调代次：await 回来后若已不是最新一发，就放弃写面板。
+    let proposalLoadGen = 0;
     const loadLiveProposal = async (proposalId: string) => {
       if (!proposalPanel || !proposalId) {
         return;
       }
+      const gen = ++proposalLoadGen;
       try {
         const vm = await client.pages.proposal(proposalId, { locale });
+        if (gen !== proposalLoadGen) {
+          return;
+        }
         proposalPanel.innerHTML = renderProposalDetail(vm, "desktop", { locale }).html;
       } catch {
         // 保留 fixture 面板,不打断用户。
@@ -560,13 +567,19 @@ async function boot() {
       { key: "replay", match: /^\/agent-runs\/([^/?#]+)\/replay/u, load: async (id?: string) => (id ? { replay: await client.replayAgentRun(id, { locale }) } : {}) },
       { key: "cost", match: /^\/dashboard\/cost(?:[/?#]|$)/u, load: async () => ({ cost: await client.pages.cost({ locale }) }) }
     ];
+    // findings[#low]：同款代次守卫——并发 gold-path load 只让最新一发写面板。
+    let goldPathLoadGen = 0;
     const renderLiveGoldPathPanel = async (entry: typeof liveGoldPathPages[number], id?: string) => {
       const panel = root.querySelector<HTMLElement>(`[data-wh-panel="${entry.key}"]`);
       if (!panel) {
         return;
       }
+      const gen = ++goldPathLoadGen;
       try {
         const patch = await entry.load(id);
+        if (gen !== goldPathLoadGen) {
+          return;
+        }
         const liveSurface = { ...surfaceVm, page_vms: { ...surfaceVm.page_vms, ...patch } };
         const page = renderGoldPathSurface(liveSurface, "desktop", { locale }).pages.find((p) => p.key === entry.key);
         if (page) {

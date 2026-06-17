@@ -464,6 +464,9 @@ export function subscribeDesktopCuuAgentRunStream(input: {
       return;
     }
     input.onStatus?.({ state: "event", runId, eventType: workHubEvent?.type ?? eventName });
+    // findings[#low]：收到有效 SSE 事件视为连接已恢复，重置错误卡闩，使后续真实断连可再次提示
+    //（否则一次断连后 errorCardShown 永久为 true，重连后再断也不再弹卡）。
+    errorCardShown = false;
     // SSE 事件到达即恢复兜底轮询（若此前因连续失败停摆）。
     void refresh().finally(() => scheduleFallbackRefresh());
   };

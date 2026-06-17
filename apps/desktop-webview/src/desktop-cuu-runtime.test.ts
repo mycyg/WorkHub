@@ -1058,6 +1058,45 @@ test("desktop Cuu run stream refreshes agent cards and closes on terminal status
   assert.deepEqual(statuses.map((status) => status.state), ["subscribed", "event", "refreshed", "event", "refreshed", "closed"]);
 });
 
+test("findings: error card re-surfaces after a recovery event resets the latch", async () => {
+  FakeEventSource.instances = [];
+  const cards: CuuCard[] = [];
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      return agentRunLive({ status: "running" });
+    }
+  };
+  subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive(),
+    EventSourceCtor: FakeEventSource,
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus() {}
+  });
+  const source = FakeEventSource.instances[0]!;
+
+  // 1) 首次断连 → 弹错误卡（worried）。
+  source.emit("error");
+  // 2) 收到有效事件 → 同步重置 errorCardShown 闩。
+  source.emit(eventTypes.agentRunStep, workHubEvent({
+    event_id: "10000000-0000-4000-8000-000000000601",
+    type: eventTypes.agentRunStep,
+    topic: "run:10000000-0000-4000-8000-000000000301",
+    data: { run_id: "10000000-0000-4000-8000-000000000301" }
+  }));
+  // 3) 再次断连 → 修复后应再次弹错误卡（修复前闩永久 true，不再弹）。
+  source.emit("error");
+
+  // event_source_error → kind "offline" → 卡片 state "offline"。
+  const errorCards = cards.filter((card) => card.state === "offline");
+  assert.equal(errorCards.length, 2);
+});
+
 test("desktop Cuu run stream falls back to polling when no SSE event arrives", async () => {
   FakeEventSource.instances = [];
   const cards: CuuCard[] = [];
