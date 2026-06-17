@@ -403,8 +403,9 @@ test("revert route restores the agent run workdir from the selected snapshot", a
   assert.equal(snapshots.rows[0]?.revertedAt?.toISOString(), now.toISOString());
   const revertLog = auditLogs.rows.at(-1);
   assert.equal(revertLog?.action, "snapshot.reverted");
-  assert.equal(revertLog?.entityType, "agent_run");
-  assert.equal(revertLog?.entityId, agentRunId);
+  // findings[21]：revert 审计挂在 work_item 实体上（而非 agent_run），run_id 仍在 detailJson。
+  assert.equal(revertLog?.entityType, "work_item");
+  assert.equal(revertLog?.entityId, workItemId);
   assert.equal(revertLog?.snapshotId, snapshotId);
   assert.deepEqual(revertLog?.detailJson, {
     snapshot_id: snapshotId,
@@ -412,6 +413,13 @@ test("revert route restores the agent run workdir from the selected snapshot", a
     workdir_restored: true,
     reason_md: "测试还原"
   });
+  // findings[21] 可见性回归：revert 现在能在 work-item 审计时间线里看到（此前挂在 agent_run 上不可见）。
+  const timeline = await app.request(`/api/workitems/${workItemId}/audit`, {
+    headers: { [LOCAL_CLIENT_HEADER]: token }
+  });
+  assert.equal(timeline.status, 200);
+  const timelineBody = await timeline.json() as { ok: true; data: { audit_logs: Array<{ action: string }> } };
+  assert.equal(timelineBody.data.audit_logs.some((entry) => entry.action === "snapshot.reverted"), true);
   // M23：这个快照对应的写操作审计行（tool.write_file.snapshot）应被标记为已撤销，
   // 让审计轨迹/manifest 不再把已回滚的变更当作生效证据。
   const writeLog = auditLogs.rows.find((row) => row.action === "tool.write_file.snapshot");

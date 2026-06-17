@@ -131,8 +131,10 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
       actorKind: actor.kind,
       ...(actor.userId ? { actorUserId: actor.userId } : {}),
       actorNickname: actor.label,
-      entityType: "agent_run",
-      entityId: runId,
+      // findings[21]：revert 是对该 work item 交付物的破坏性改动，必须挂在 work_item 实体上，
+      // 才能和它撤销的那些写入一道出现在 work-item 审计时间线 / 回放视图里（run_id 仍存于 detailJson）。
+      entityType: "work_item",
+      entityId: snapshot.workItemId,
       action: "snapshot.reverted",
       detailJson: {
         snapshot_id: snapshot.id,

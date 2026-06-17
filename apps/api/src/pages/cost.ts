@@ -116,18 +116,20 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
     })) : [],
-    by_team: byTeam.map((item) => ({
+    // findings[37]：by_team / by_workitem 与 by_user 一样是全组织口径，仅管理员可见。非管理员置空——
+    // 否则非 admin 的 by_team 会把"自己的"花费聚到硬编码的"团队预算"标签下（单 teamId 标记），一旦被渲染就会误导。
+    by_team: input.isAdmin ? byTeam.map((item) => ({
       team_id: item.id,
       label: pageT(locale, "cost.label.teamBudget"),
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
-    })),
-    by_workitem: byWorkitem.map((item) => ({
+    })) : [],
+    by_workitem: input.isAdmin ? byWorkitem.map((item) => ({
       workitem_id: item.id,
       code: item.id,
       cost_cny: formatCny(item.cost),
       turns: item.turns
-    })),
+    })) : [],
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
     budget: summary.scopes,

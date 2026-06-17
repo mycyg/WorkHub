@@ -299,6 +299,10 @@ function defaultScopeLabel(scope: BudgetScope) {
   }
 }
 
+// findings[20]：预算 day/month 桶按 UTC 日界刻意为之，不是 bug——写入侧 ledger periodBucket
+// (createdAt.slice(0,10)) 与读取侧（这里 + ledgerUsageSnapshots）同用 UTC，单一真相、绝无双计。
+// 与 ai-worklog 的 UTC 日界（L7）一致；CI/生产均为 UTC。代价仅是 UTC+8 下"今日"额度按北京时间 08:00
+// 重置（纯 UX 取舍）。若将来要按业务时区切日，必须写入侧与读取侧同时改、保持两端时区一致，否则会双计。
 function periodBounds(period: BudgetPolicy["period"], now: Date) {
   const start = new Date(now);
   if (period === "month") {

@@ -376,18 +376,22 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
   assert.equal(adminResponse.status, 200);
   const userBody = await userResponse.json() as {
     ok: true;
-    data: { total_cost_cny: string; token_in: number; by_user: unknown[]; model_breakdown: { provider: string; model: string }[] };
+    data: { total_cost_cny: string; token_in: number; by_user: unknown[]; by_team: unknown[]; by_workitem: unknown[]; model_breakdown: { provider: string; model: string }[] };
   };
-  const adminBody = await adminResponse.json() as { ok: true; data: { by_user: unknown[]; token_in: number } };
+  const adminBody = await adminResponse.json() as { ok: true; data: { by_user: unknown[]; by_team: unknown[]; by_workitem: unknown[]; token_in: number } };
   // 非管理员：只看到自己的花费，另一用户的 18000 token / 高额成本完全不出现。
   assert.equal(userBody.data.total_cost_cny, "0.006");
   assert.equal(userBody.data.token_in, 1000);
   assert.equal(userBody.data.by_user.length, 0);
+  // findings[37]：by_team / by_workitem 也是全组织口径，非管理员一律置空（不把自己花费误标成"团队预算"）。
+  assert.equal(userBody.data.by_team.length, 0);
+  assert.equal(userBody.data.by_workitem.length, 0);
   assert.equal(userBody.data.model_breakdown.length, 1);
   assert.equal(userBody.data.model_breakdown[0]?.model, "deepseek-v4-flash");
-  // 管理员：全组织视图，两个用户都在。
+  // 管理员：全组织视图，两个用户都在，团队聚合可见。
   assert.equal(adminBody.data.by_user.length, 2);
   assert.equal(adminBody.data.token_in, 10000);
+  assert.ok(adminBody.data.by_team.length >= 1);
 });
 
 test("L[1] cost dashboard fails closed (empty) for a non-admin when the store lacks scope-filtered reads", async () => {
