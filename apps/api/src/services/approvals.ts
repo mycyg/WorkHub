@@ -525,7 +525,10 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         payload.decision,
         approverId(actor),
         payload.reason_md?.trim() ?? null,
-        now()
+        now(),
+        // findings[#27]：非 admin 必须在原子更新里复核单据仍路由给本人（堵 delegate 交错的 TOCTOU）；
+        // admin override 跳过（ensureCanActOnApproval 已允许 admin 处理任意路由的单据）。
+        actor.isAdmin ? undefined : approverId(actor)
       );
       if (!updated) {
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");

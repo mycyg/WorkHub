@@ -116,9 +116,15 @@ class MemoryApprovals implements ApprovalRequestRepository {
     decision: "allow" | "deny",
     decidedByUserId: string,
     reasonMd: string | null,
-    at: Date
+    at: Date,
+    requireRoutedToUserId?: string
   ) {
-    const approval = this.rows.find((candidate) => candidate.id === id && candidate.status === "pending") ?? null;
+    const approval = this.rows.find((candidate) =>
+      candidate.id === id
+      && candidate.status === "pending"
+      // findings[#27]：与真实仓库一致，非 admin 决策须复核路由人仍是本人。
+      && (requireRoutedToUserId === undefined || candidate.routedToUserId === requireRoutedToUserId)
+    ) ?? null;
     if (!approval) {
       return null;
     }
@@ -481,6 +487,28 @@ test("approval decisions, delegation, and expiry are audited with identity ancho
   assert.equal(deps.auditLogs.rows[2]?.actorUserId, null);
   assert.equal(deps.auditLogs.rows[2]?.detailJson["approval_id"], due.id);
   assert.equal(deps.auditLogs.rows[2]?.detailJson["next_action"], "escalate_pm");
+});
+
+test("findings[#27] respondPending CAS rejects a stale decision after the request was delegated away (TOCTOU)", async () => {
+  const approvals = new MemoryApprovals();
+  const userA = approverId;
+  const userB = "10000000-0000-4000-8000-000000000003";
+  const req = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: userA
+  });
+  // 交错：respond() 读快照(路由给 A)、按快照鉴权后，与原子更新之间单据被 delegatePending 改派给 B（仍 pending）。
+  await approvals.delegatePending(req.id, userB, now);
+  // 非 admin 决策须复核路由人仍是本人：A 已不是路由人 → 原子匹配 0 行 → null → 服务层抛 409 approval_race。
+  const blocked = await approvals.respondPending(req.id, "allow", userA, null, now, userA);
+  assert.equal(blocked, null);
+  const still = await approvals.findById(req.id);
+  assert.equal(still?.status, "pending");
+  assert.equal(still?.routedToUserId, userB);
+  // 现路由人 B（或 admin override 传 undefined）可正常决策。
+  const ok = await approvals.respondPending(req.id, "allow", userB, null, now, userB);
+  assert.equal(ok?.status, "approved");
 });
 
 test("SLA expiry never auto-allows approvals and emits private expiration events", async () => {

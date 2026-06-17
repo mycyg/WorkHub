@@ -29,7 +29,10 @@ export type ApprovalRequestRepository = {
     decision: ApprovalDecision,
     decidedByUserId: string,
     reasonMd: string | null,
-    at: Date
+    at: Date,
+    // findings[#27]：非 admin 决策时传当前审批人 id，让原子更新额外复核 routedToUserId 仍指向他——
+    // 堵 respond 与 delegatePending 交错改派的 TOCTOU。admin override 传 undefined（可处理任意路由单据）。
+    requireRoutedToUserId?: string
   ) => Promise<ApprovalRequestRow | null>;
   delegatePending: (id: string, toUserId: string, at: Date) => Promise<ApprovalRequestRow | null>;
   expirePending: (id: string, at: Date) => Promise<ApprovalRequestRow | null>;
@@ -87,7 +90,7 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
         .limit(limit);
     },
 
-    async respondPending(id, decision, decidedByUserId, reasonMd, at) {
+    async respondPending(id, decision, decidedByUserId, reasonMd, at, requireRoutedToUserId) {
       const rows = await db
         .update(approvalRequests)
         .set({
@@ -96,7 +99,14 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
           decisionReasonMd: reasonMd,
           updatedAt: at
         })
-        .where(and(eq(approvalRequests.id, id), eq(approvalRequests.status, "pending")))
+        .where(and(
+          eq(approvalRequests.id, id),
+          eq(approvalRequests.status, "pending"),
+          // findings[#27]：CAS 复核路由人。respond() 先读单据、按快照鉴权，再 update；若 delegatePending 在中间
+          // 把单据改派给别人(仍保持 pending)，原审批人的鉴权快照已失效，这里原子匹配 0 行 → 409 approval_race，
+          // 不让过期决策落库。admin override(requireRoutedToUserId=undefined)不加此谓词，可处理任意路由单据。
+          ...(requireRoutedToUserId ? [eq(approvalRequests.routedToUserId, requireRoutedToUserId)] : [])
+        ))
         .returning();
       return rows[0] ?? null;
     },
