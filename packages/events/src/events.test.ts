@@ -146,3 +146,10 @@ test("SSE formatting carries optional event ids for browser resume cursors", () 
   assert.equal(frame, 'id: evt_r4_20_cursor\nevent: proposal.merged\ndata: {"ok":true}\n\n');
   assert.deepEqual(parseSseFrames(frame), [{ id: "evt_r4_20_cursor", event: "proposal.merged", data: '{"ok":true}' }]);
 });
+
+test("SSE formatting strips CR/LF from event name and id (no field injection)", () => {
+  const frame = formatSseEvent("evt\ninjected: x", "ok", { id: "id1\r\nevent: forged" });
+  // event/id 中的换行被剥掉，无法伪造额外 SSE 字段/帧。
+  assert.equal(frame, "id: id1event: forged\nevent: evtinjected: x\ndata: ok\n\n");
+  assert.equal(frame.split("\n").filter((l) => l.startsWith("event:")).length, 1);
+});

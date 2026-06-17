@@ -74,7 +74,7 @@ function escapeHtml(value: unknown) {
 // 外部/契约来源的 href 可能带 javascript:/data: → XSS。只放行相对路径与 http/https/mailto，其余拦成 "#"，再过 escapeHtml。
 function href(value: string) {
   const v = String(value ?? "").trim();
-  const safe = v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v) ? v : "#";
+  const safe = (v.startsWith("/") && !v.startsWith("//")) || /^(?:https?:|mailto:)/iu.test(v) ? v : "#";
   return escapeHtml(safe);
 }
 

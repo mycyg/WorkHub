@@ -2,12 +2,18 @@ export type FormatSseEventOptions = {
   id?: string | undefined;
 };
 
+// findings：event-name 与 id 直接进 SSE 帧，若含 CR/LF 会伪造额外 SSE 字段/帧（字段注入）。
+// data 已按行拆成多条 data: 行处理；这里把 event/id 里的 CR/LF 剥掉，使该原语无论调用方如何传都安全。
+function stripSseControl(value: string) {
+  return value.replace(/[\r\n]/gu, "");
+}
+
 export function formatSseEvent(event: string, data: unknown, options: FormatSseEventOptions = {}) {
   const payload = typeof data === "string" ? data : JSON.stringify(data);
   const lines = payload ? payload.split(/\r\n|\n|\r/u) : [""];
   const dataBlock = lines.map((line) => `data: ${line}`).join("\n");
-  const idLine = options.id ? `id: ${options.id}\n` : "";
-  return `${idLine}event: ${event}\n${dataBlock}\n\n`;
+  const idLine = options.id ? `id: ${stripSseControl(options.id)}\n` : "";
+  return `${idLine}event: ${stripSseControl(event)}\n${dataBlock}\n\n`;
 }
 
 export function formatSseComment(comment: string) {

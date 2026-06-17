@@ -156,7 +156,7 @@ function canViewMeetingInsight(row: MeetingInsightScheduleSourceRow, actor: Auth
 }
 
 function safeTargetHref(value: string | null | undefined) {
-  if (!value || !value.startsWith("/") || value.startsWith("/api/")) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/api/")) {
     return undefined;
   }
   return value;

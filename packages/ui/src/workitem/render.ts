@@ -15,6 +15,7 @@ import {
   workItemStatusLabel,
   type UiRenderOptions
 } from "../i18n.js";
+import { safeHref } from "../safe-href.js";
 
 export type WorkItemRenderSurface = "web" | "desktop";
 
@@ -169,7 +170,7 @@ export function renderWorkItemDetail(
     ${
       hrefs.length
         ? `<div class="wh-actions">${hrefs
-            .map((href, index) => `<a class="${index === 0 ? "wh-btn wh-btn-primary" : "wh-btn"}" href="${escapeHtml(href)}">${escapeHtml(index === 0 ? uiT(locale, "generic.continueViewing") : uiT(locale, "generic.open"))}</a>`)
+            .map((href, index) => `<a class="${index === 0 ? "wh-btn wh-btn-primary" : "wh-btn"}" href="${escapeHtml(safeHref(href))}">${escapeHtml(index === 0 ? uiT(locale, "generic.continueViewing") : uiT(locale, "generic.open"))}</a>`)
             .join("")}</div>`
         : ""
     }

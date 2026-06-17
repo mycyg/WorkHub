@@ -19,6 +19,13 @@ test("safeHref neutralizes javascript: and data: schemes to #", () => {
   assert.equal(safeHref("vbscript:msgbox(1)"), "#");
 });
 
+test("safeHref rejects protocol-relative URLs (//evil.com) to #", () => {
+  assert.equal(safeHref("//evil.com/x"), "#");
+  assert.equal(safeHref("  //evil.com"), "#");
+  // 单斜杠相对路径仍放行。
+  assert.equal(safeHref("/evil.com"), "/evil.com");
+});
+
 test("safeHref maps empty/nullish to #", () => {
   assert.equal(safeHref(""), "#");
   assert.equal(safeHref(undefined), "#");

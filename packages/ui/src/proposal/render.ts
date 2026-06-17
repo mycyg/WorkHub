@@ -113,7 +113,7 @@ function escapeHtml(value: unknown) {
 // 只放行相对路径与 http/https/mailto，其余拦成 "#"。仍需再过 escapeHtml。
 function safeHref(value: unknown): string {
   const v = String(value ?? "").trim();
-  if (v.startsWith("/") || /^(?:https?:|mailto:)/iu.test(v)) {
+  if ((v.startsWith("/") && !v.startsWith("//")) || /^(?:https?:|mailto:)/iu.test(v)) {
     return v;
   }
   return "#";

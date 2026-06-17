@@ -8,6 +8,7 @@ import {
   uiT,
   type UiRenderOptions
 } from "../i18n.js";
+import { safeHref } from "../safe-href.js";
 
 export type AgentRunRenderSurface = "web" | "desktop";
 
@@ -127,7 +128,7 @@ export function renderAgentRunLive(
     <h2>${escapeHtml(uiT(locale, "agent.handoff"))}</h2>
     <article class="wh-card">${renderHandoff(vm, { locale })}</article>
     <div class="wh-actions">
-      <a class="wh-btn wh-btn-primary" href="${escapeHtml(vm.replay_href)}">${escapeHtml(uiT(locale, "agent.viewReplay"))}</a>
+      <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.replay_href))}">${escapeHtml(uiT(locale, "agent.viewReplay"))}</a>
       <a class="wh-btn" href="/workitems/${escapeHtml(vm.work_item_id)}">${escapeHtml(uiT(locale, "agent.backToTask"))}</a>
       ${active ? `<a class="wh-btn wh-btn-danger" href="/api/agent-runs/${escapeHtml(vm.run_id)}/abort" data-method="POST">${escapeHtml(uiT(locale, "agent.abort"))}</a>` : ""}
     </div>

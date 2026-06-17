@@ -344,7 +344,9 @@ function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    // findings: 与 @workhub/web-runtime 的规范 escapeHtml 对齐，补单引号转义（单引号属性场景防注入）。
+    .replace(/'/gu, "&#39;");
 }
 
 function normalizePathname(input: string) {

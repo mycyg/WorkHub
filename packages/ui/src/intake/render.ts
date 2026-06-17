@@ -1,6 +1,7 @@
 import type { CuuState, QuestionCard, SessionVM } from "@workhub/contracts";
 
 import { uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
+import { safeHref } from "../safe-href.js";
 
 export type IntakeRenderSurface = "web" | "desktop";
 
@@ -109,7 +110,7 @@ export function renderIntakeSession(
     <div class="wh-progress" aria-label="${escapeHtml(uiT(locale, "intake.progressAria"))}"><span style="width:${pct}%"></span></div>
     <div class="wh-grid">${renderOptions(question, { locale })}</div>
     ${renderFreeText(question, { locale })}
-    <div class="wh-actions"><a class="wh-btn" href="${escapeHtml(question.submit.href)}" data-method="${escapeHtml(question.submit.method)}">${escapeHtml(uiT(locale, "intake.continue"))}</a></div>
+    <div class="wh-actions"><a class="wh-btn" href="${escapeHtml(safeHref(question.submit.href))}" data-method="${escapeHtml(question.submit.method)}">${escapeHtml(uiT(locale, "intake.continue"))}</a></div>
   </section>`;
 
   return {
@@ -126,6 +127,6 @@ export function renderIntakeSession(
     recommendedOptionIds: question.recommended_option_ids ?? [],
     freeTextCollapsed: question.free_text.collapsed_by_default,
     cuuState: state,
-    primaryHrefs: [question.submit.href]
+    primaryHrefs: [safeHref(question.submit.href)]
   };
 }

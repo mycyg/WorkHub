@@ -8,6 +8,7 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { uiCount, uiT } from "@workhub/ui";
+import { safeHref } from "@workhub/web-runtime";
 import type { ProposalConflict, ProposalConflictOption } from "@workhub/contracts";
 
 import type { WebRouteReadyResult } from "./routes.js";
@@ -459,7 +460,8 @@ function proposalLineEditorProps(conflicts: ProposalConflict[], locale: WorkHubL
       targetKey: conflict.target_key,
       targetLabel: conflict.target_path ?? conflict.target_key,
       panelId: `react-line-editor-${safeId(conflict.id)}`,
-      href: option.action.href,
+      // findings[H17]：action.href 进 React <a href> 前必须 safeHref（React 不拦 javascript:/data: href）。
+      href: safeHref(option.action.href),
       method: option.action.method ?? "POST",
       actionId: option.action.id ?? "apply_ai_fusion",
       ranges,
