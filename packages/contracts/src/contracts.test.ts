@@ -975,6 +975,27 @@ test("structured field patch dry-run validates executable work item fields", () 
   assert.deepEqual(parsed.patch.operations[4]?.before_value, []);
 });
 
+test("structured field patch dry-run with no resolvable fields is blocked, not thrown (empty-patch carrier)", () => {
+  // 回归守卫：AI 给出「仅说明、无字段」结构化解析时 merged_fields 无有效字段 → operations 为空。
+  // buildStructuredFieldPatchDryRun 内部会构造空补丁承载 blocked + empty_patch 并 re-parse；若 dry-run 载体
+  // 的 operations 被 .min(1) 卡住就会 throw，进而被 safelyGenerateMergeFusionCandidates 吞掉、静默清零整批融合候选。
+  const dryRun = buildStructuredFieldPatchDryRun({
+    target_entity_type: "work_item",
+    target_entity_id: "72000000-0000-4000-8000-000000000101",
+    changed_fields: [],
+    merged_fields: {},
+    source: "ai_fusion"
+  });
+
+  assert.equal(dryRun.status, "blocked");
+  assert.equal(dryRun.executable, false);
+  assert.equal(dryRun.issues.some((issue) => issue.code === "empty_patch"), true);
+  assert.deepEqual(dryRun.patch.operations, []);
+  // 载体 schema 必须接受空 operations（不 throw）；入站 structuredFieldPatchSchema 仍 .min(1) 拒空（见上一个测试）。
+  const parsed = structuredFieldPatchDryRunSchema.parse(dryRun);
+  assert.deepEqual(parsed.patch.operations, []);
+});
+
 test("structured field patch dry-run blocks unknown, missing, and mistyped fields", () => {
   const dryRun = buildStructuredFieldPatchDryRun({
     target_entity_type: "work_item",

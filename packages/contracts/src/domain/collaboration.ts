@@ -379,7 +379,8 @@ export const structuredFieldPatchSchema = z.object({
   type: z.literal("structured_field_patch"),
   target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
   target_entity_id: idSchema,
-  // L17：空补丁无意义（写回逻辑也丢弃它），在类型边界就拒掉，与 structuredFieldOverrides 的 .min(1) 一致。
+  // L17：空补丁无意义（写回逻辑也丢弃它），在入站补丁的类型边界就拒掉，与 structuredFieldOverrides 的 .min(1) 一致。
+  // 注意：dry-run 结果里的 patch 载体必须放宽允许空 operations（它要承载 blocked/empty_patch 状态），见下方 .extend。
   operations: z.array(structuredFieldPatchOperationSchema).min(1),
   source: structuredFieldPatchSourceSchema.default("ai_fusion")
 });
@@ -405,7 +406,13 @@ export const structuredFieldPatchDryRunSchema = z.object({
   type: z.literal("structured_field_patch_dry_run"),
   status: z.enum(["ready", "needs_review", "blocked"]),
   executable: z.boolean(),
-  patch: structuredFieldPatchSchema,
+  // dry-run 的 patch 是「计算出来的」结果，可能合法地为空 operations（buildStructuredFieldPatchDryRun 会构造
+  // 一个空补丁来承载 status:"blocked" + empty_patch issue）。故此处放宽 operations 允许空——否则空补丁 dry-run
+  // 在 parse 时 throw，被 safelyGenerateMergeFusionCandidates 吞掉，导致 AI 给出「仅说明、无字段」结构化解析时
+  // 整批融合候选（含确定性文本 diff）被静默清零。入站的 structuredFieldPatchSchema 仍保持 .min(1)。
+  patch: structuredFieldPatchSchema.extend({
+    operations: z.array(structuredFieldPatchOperationSchema)
+  }),
   issues: z.array(structuredFieldPatchDryRunIssueSchema),
   audit_payload: z.object({
     target_entity_type: structuredFieldPatchTargetEntityTypeSchema,
