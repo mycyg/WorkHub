@@ -188,9 +188,12 @@ export const deliverableChangeSchema = z.object({
   target_ref: z.object({
     entity_type: z.enum(["work_item", "drive_item", "delivery", "spec_doc", "folder", "external"]),
     entity_id: idSchema.optional(),
-    path: z.string().optional(),
-    version_before: z.string().optional(),
-    version_after: z.string().optional(),
+    // findings[#7]：这些 AI 产出的串落进定宽列，原本无 .max 上界，超长串到 INSERT 才以 PG 22001 抛未捕获 500。
+    // 在契约边界按对应列宽收口，让超长 manifest 在创建时即得干净 400。path→target_path(512)；
+    // version_before→base_version_ref(128)；version_after/preview_ref.href→accepted_ref(512)。
+    path: z.string().max(512).optional(),
+    version_before: z.string().max(128).optional(),
+    version_after: z.string().max(512).optional(),
     sha256_before: z.string().length(64).optional(),
     sha256_after: z.string().length(64).optional()
   }),
@@ -211,7 +214,8 @@ export const deliverableChangeSchema = z.object({
   preview_ref: z
     .object({
       kind: z.enum(["text", "image", "pdf", "office_preview", "download"]),
-      href: z.string().min(1)
+      // findings[#7]：href 可作 acceptedRef 落进 accepted_ref(512)。
+      href: z.string().min(1).max(512)
     })
     .optional(),
   evidence_refs: z.array(evidenceRefSchema).optional()

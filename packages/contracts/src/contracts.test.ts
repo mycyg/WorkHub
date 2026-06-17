@@ -702,6 +702,23 @@ test("deliverable manifest fixtures cover non-code payload families", () => {
   );
 });
 
+test("findings[#7] deliverable manifest rejects over-length target_ref strings (clean 400, not a PG 22001 500 at INSERT)", () => {
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const withRef = (ref: Record<string, unknown>) => ({
+    ...base,
+    changes: [{ ...change, target_ref: { ...change.target_ref, ...ref } }]
+  });
+  // path > target_path(512) 列宽。
+  assert.throws(() => deliverableChangeManifestSchema.parse(withRef({ path: "a".repeat(600) })));
+  // version_before > base_version_ref(128) 列宽。
+  assert.throws(() => deliverableChangeManifestSchema.parse(withRef({ version_before: "v".repeat(200) })));
+  // version_after > accepted_ref(512) 列宽。
+  assert.throws(() => deliverableChangeManifestSchema.parse(withRef({ version_after: "x".repeat(600) })));
+  // 合法长度照常通过。
+  assert.doesNotThrow(() => deliverableChangeManifestSchema.parse(withRef({ path: `/a/${"b".repeat(100)}` })));
+});
+
 test("proposal conflict cards carry option-first merge resolution payloads", () => {
   const parsed = proposalConflictListResultSchema.parse({
     conflicts: [
