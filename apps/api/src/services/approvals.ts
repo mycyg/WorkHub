@@ -414,8 +414,11 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       attention
     });
 
-    if (row.agentRunId) {
-      await publishIfAvailable(deps.bus, topics.session(row.agentRunId).topic, eventTypes.permissionAsk, {
+    // findings[#169]：会话流订阅的是 session:<workItemId>（sessionVmFor 设 session_id=workItem.id、
+    // stream_href=/api/push/stream/session/<workItemId>）。原来发到 session:<agentRunId> 没有任何订阅者，
+    // 是死扇出——权限提示永远不会实时到达会话流。改发到 workItemId。
+    if (row.workItemId) {
+      await publishIfAvailable(deps.bus, topics.session(row.workItemId).topic, eventTypes.permissionAsk, {
         approval_id: row.id,
         summary_text: attention.summary_text
       });
@@ -698,9 +701,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         );
         if (updated.workItemId) {
           await publishIfAvailable(deps.bus, topics.workitem(updated.workItemId).topic, eventTypes.permissionExpired, eventData);
-        }
-        if (updated.agentRunId) {
-          await publishIfAvailable(deps.bus, topics.session(updated.agentRunId).topic, eventTypes.permissionExpired, eventData);
+          // findings[#169]：会话流订阅 session:<workItemId>，原来发到 session:<agentRunId> 是死扇出。
+          await publishIfAvailable(deps.bus, topics.session(updated.workItemId).topic, eventTypes.permissionExpired, eventData);
         }
         results.push({
           approval: toApprovalRequestResponse(updated),

@@ -1161,16 +1161,25 @@ class MemoryProposalRepository implements ProposalRepository {
   }
 }
 
+// findings[#168/H12]：记录式总线，断言合并/评审事件确有 publish（也让路由测试与全局 PushBus 单例隔离）。
+class RecordingBus {
+  public events: { topic: string; type: string; data: unknown }[] = [];
+  async publish(topic: string, type: string, data: unknown) {
+    this.events.push({ topic, type, data });
+  }
+}
+
 function appWithProposalRoutes() {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
   const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
   const workItems = allowingWorkItems();
+  const bus = new RecordingBus();
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
-  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems, bus }));
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems, bus }));
   app.route("/api/pages", createPageRoutes({ auth, proposals, workItems: workItems as WorkItemService, allowUnauthenticatedGoldPath: false }));
-  return { app, runtimeSettings };
+  return { app, runtimeSettings, bus };
 }
 
 function appWithDbProposalRoutes(options: Parameters<typeof createDbProposalService>[1] = {}) {
@@ -3019,6 +3028,62 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
   assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id), true);
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
+});
+
+test("findings[#168] review and merge publish their events to the bus (live refresh for other clients)", async () => {
+  const { app, runtimeSettings, bus } = appWithProposalRoutes();
+  const created = await createProposal(app, runtimeSettings, manifest(3));
+  const proposalId = created.data.id;
+  const workItemId = created.data.diff_manifest.work_item_id;
+  const headers = { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) };
+
+  const review = await app.request(`/api/proposals/${proposalId}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(review.status, 200);
+  // 评审通过发 proposal.reviewed 到工作项频道（修复前只塞进响应、从不 publish）。
+  assert.equal(
+    bus.events.some((event) => event.type === "proposal.reviewed" && event.topic === `workitem:${workItemId}`),
+    true
+  );
+
+  const merge = await app.request(`/api/proposals/${proposalId}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(merge.status, 200);
+  // 合并发 proposal.merged（→ workitem 频道）+ notification.created（→ user 频道）。
+  assert.equal(
+    bus.events.some((event) => event.type === "proposal.merged" && event.topic === `workitem:${workItemId}`),
+    true
+  );
+  assert.equal(bus.events.some((event) => event.type === "notification.created" && event.topic.startsWith("user:")), true);
+});
+
+test("findings[#168] a throwing bus does not fail the merge (best-effort publish)", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const workItems = allowingWorkItems();
+  const throwingBus = { publish: async () => { throw new Error("bus down"); } };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems, bus: throwingBus }));
+  const created = await proposals.createFromManifest({
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  const headers = { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) };
+  await app.request(`/api/proposals/${created.id}/review`, {
+    method: "POST", headers, body: JSON.stringify({ decision: "approve" })
+  });
+  const merge = await app.request(`/api/proposals/${created.id}/merge`, {
+    method: "POST", headers, body: JSON.stringify({})
+  });
+  assert.equal(merge.status, 200);
 });
 
 test("proposal routes expose conflict cards, choose AI candidates, and apply an AI fusion artifact", async (t) => {

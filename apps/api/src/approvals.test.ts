@@ -282,6 +282,7 @@ test("ask creates a pending approval and publishes only private user/session top
     actor,
     kind: "tool",
     agentRunId: "60000000-0000-4000-8000-000000000001",
+    workItemId: "50000000-0000-4000-8000-000000000001",
     actionPattern: "tool.write_file",
     routedToUserId: approverId,
     payloadJson: {
@@ -294,9 +295,10 @@ test("ask creates a pending approval and publishes only private user/session top
   });
 
   assert.equal(result.outcome, "pending");
+  // findings[#169]：会话流订阅 session:<workItemId>，权限 ask 必须发到 workItemId 的会话频道（不是 agentRunId）。
   assert.deepEqual(
     deps.bus.events.map((event) => event.topic).sort(),
-    [`session:60000000-0000-4000-8000-000000000001`, `user:${approverId}`].sort()
+    [`session:50000000-0000-4000-8000-000000000001`, `user:${approverId}`].sort()
   );
   assert.equal(deps.bus.events.some((event) => event.topic === "all"), false);
   if (result.outcome === "pending") {
@@ -549,7 +551,7 @@ test("SLA expiry never auto-allows approvals and emits private expiration events
   assert.deepEqual(
     deps.bus.events.map((event) => [event.topic, event.type]).sort(),
     [
-      [`session:${dueTool.agentRunId}`, "permission.expired"],
+      [`session:${dueTool.workItemId}`, "permission.expired"],
       [`user:${approverId}`, "permission.expired"],
       [`workitem:${dueTool.workItemId}`, "permission.expired"]
     ].sort()
@@ -577,6 +579,8 @@ test("proposal expiry asks for reviewer follow-up instead of merging", async () 
   assert.deepEqual(
     deps.bus.events.map((event) => [event.topic, event.type]).sort(),
     [
+      // findings[#169]：有 workItemId 的审批过期也发到会话频道 session:<workItemId>（会话流订阅处）。
+      [`session:${proposal.workItemId}`, "permission.expired"],
       [`user:${approverId}`, "permission.expired"],
       [`workitem:${proposal.workItemId}`, "permission.expired"]
     ].sort()

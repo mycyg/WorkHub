@@ -19,6 +19,7 @@ import {
   type ProposalReviewResult
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
+import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 
 import {
   createCurrentUserMiddleware,
@@ -44,6 +45,9 @@ export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
   proposals?: ProposalService;
   workItems?: Pick<WorkItemService, "detailPage"> | false;
+  // findings[#168/H12]：合并/评审/打回事件原本只塞进 HTTP 响应、从不 publish 到总线，其它客户端的 SSE 实时
+  // 刷新因此失效。注入 PushBus 后在各操作成功后 best-effort 发布。
+  bus?: Pick<PushBus, "publish">;
 };
 
 async function readJsonBody(c: Context) {
@@ -288,6 +292,24 @@ function mergeResultFor(input: {
 // 直接重抛领域错误：app.onError 有 ProposalServiceError/WorkItemServiceError 专门分支，会保留真实
 // error.code（及冲突/rebase 子类的 details）。此前包成 HTTPException 会把 409/422/415 等状态的 code
 // 统统抹成 "http_error"，客户端据 code 分支（如 stale_base→rebase 流、proposal_already_merged）就失灵了。
+// findings[#168/H12]：把已构造的 WorkHubEvent 信封 best-effort 发布到各自 topic（envelope.topic/.type 已设好）。
+// 与 agent-runner/approvals 同口径：发布失败绝不能拖垮已成功的合并/评审操作，故逐条 try/catch 吞错。
+async function publishProposalEvents(
+  bus: Pick<PushBus, "publish"> | undefined,
+  events: ReadonlyArray<{ topic: string; type: string } & Record<string, unknown>>
+) {
+  if (!bus) {
+    return;
+  }
+  for (const event of events) {
+    try {
+      await bus.publish(event.topic, event.type, event);
+    } catch {
+      // best-effort：丢一次实时刷新可接受，绝不让总线故障使 HTTP 操作失败。
+    }
+  }
+}
+
 function handleProposalServiceError(error: unknown): never {
   throw error;
 }
@@ -302,6 +324,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const authMiddleware = createCurrentUserMiddleware(authSource);
   const proposals = deps.proposals ?? getDefaultProposalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+  const bus = deps.bus ?? getDefaultPushBus();
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
@@ -413,6 +436,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       resultBase.audit_logs = [auditLog];
     }
 
+    // findings[#168/H12]：发布 proposal.reviewed（及打回时的 revision.fedback），让其它客户端实时刷新。
+    await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])]);
     return c.json({ ok: true, data: proposalReviewResultSchema.parse(resultBase) });
   });
 
@@ -476,15 +501,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       }
       handleProposalServiceError(error);
     }
-    return c.json({
-      ok: true,
-      data: mergeResultFor({
-        proposal,
-        actor: actorFor(c.var.actor),
-        userId: c.var.currentUser.id,
-        createdAt: nowIso()
-      })
+    const mergeResult = mergeResultFor({
+      proposal,
+      actor: actorFor(c.var.actor),
+      userId: c.var.currentUser.id,
+      createdAt: nowIso()
     });
+    // findings[#168/H12]：发布 proposal.merged（→ workitem topic）+ notification.created（→ user topic）。
+    await publishProposalEvents(bus, mergeResult.events);
+    return c.json({ ok: true, data: mergeResult });
   });
 
   // P-COLLAB：对最新正式版重算冲突/候选,交回前端用既有三选项解决,然后重新采纳。不动账本。
@@ -509,6 +534,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const proposals = deps.proposals ?? getDefaultProposalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+  const bus = deps.bus ?? getDefaultPushBus();
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
@@ -613,15 +639,15 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
           ? { taskPlanScope: payload.task_plan_scope }
           : {})
       });
-      return c.json({
-        ok: true,
-        data: mergeResultFor({
-          proposal,
-          actor: actorFor(c.var.actor),
-          userId: c.var.currentUser.id,
-          createdAt: nowIso()
-        })
+      const applyResult = mergeResultFor({
+        proposal,
+        actor: actorFor(c.var.actor),
+        userId: c.var.currentUser.id,
+        createdAt: nowIso()
       });
+      // findings[#168/H12]：AI 融合候选采纳也是一次合并，同样发布 proposal.merged + notification。
+      await publishProposalEvents(bus, applyResult.events);
+      return c.json({ ok: true, data: applyResult });
     } catch (error) {
       handleProposalServiceError(error);
     }
