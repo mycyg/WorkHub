@@ -78,7 +78,6 @@ import {
   type WebRouteReadyResult
 } from "./routes.js";
 import {
-  hasMountedReactRoute,
   mountReactRouteIsland,
   unmountReactRouteIsland
 } from "./react-route-mount.js";
@@ -1004,28 +1003,11 @@ async function refreshCurrentRouteFromLiveEvent(
   eventType: string,
   targetKey: string
 ): Promise<"refreshed" | "dirty-deferred"> {
-  const match = currentRouteMatch();
-  if (match.key === "home" && hasMountedReactRoute("home")) {
-    try {
-      const result = await loadWebRoute(client, match, locale, currentIdentity);
-      if (result.status === "ready" && result.match.key === "home") {
-        const mounted = mountReactRouteIsland(result, locale, "sse-props");
-        if (mounted.mounted) {
-          setLiveMetric("r4LiveRefreshMode", "react-props");
-          setLiveMetric("r4LiveReactPropsEvent", eventType);
-          setLiveMetric("r4LiveReactPropsStream", targetKey);
-          setLiveMetric("r4LiveReactPropsUpdateCount", mounted.propsUpdateCount);
-          return "refreshed";
-        }
-      }
-    } catch (error) {
-      // L#79：会话过期(not_identified)不应让首页 React 岛刷新冒泡成致命错误屏——
-      // 落到下方 renderCurrentRouteOrOnboard 走注册屏（与非首页路径同一 fail-closed 语义）。其余错误照常抛。
-      if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
-        throw error;
-      }
-    }
-  }
+  // findings[#118]：home 此前在这里短路——只对 HIDDEN 的 React 探针岛做 sse-props 更新、设 refreshMode="react-props"
+  // 后 return，从不把新 result.html 写回 root.innerHTML。但首页可见的决策卡/战绩条/后台 run 行是 renderHomeRouteComponent
+  // 产出的服务端静态 HTML，只由 renderCurrentRoute 写入；React 探针是隐藏的、不管理这些可见节点。于是 SSE 事件（新决策、
+  // proposal.merged、budget.warning）永远刷不新可见的决策收件箱。删掉 home 专属短路，让 home 与其它路由一样走下面的
+  // dirty-check + renderCurrentRouteOrOnboard 全量重渲染（后者同样 fail-closed：not_identified 回注册屏）。
   if (activeRouteHasDirtyEdits()) {
     liveDirtyGuardCount += 1;
     setLiveMetric("r4LiveRefreshMode", "dirty-deferred");

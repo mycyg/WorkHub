@@ -3051,18 +3051,17 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "01r-home-react-dispatcher-probe-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
   await emitQaSseEvent(cdp, "budget.warning", "me");
+  // findings[#118]：home 的 SSE 刷新现在走与其它路由一致的整页 VM 重渲染（page-vm-render），把可见的决策收件箱
+  // 真正刷新；不再是只更新隐藏 React 探针的 react-props 短路。等待可见提示出现 + refreshMode=page-vm-render。
   await waitFor<BrowserAudit>(
     cdp,
-    "home React props SSE refresh",
+    "home SSE full page-vm refresh",
     auditExpression(),
     (audit) =>
       audit.notice.visible &&
       audit.notice.kind === "budget_warning" &&
-      audit.live.refreshMode === "react-props" &&
-      audit.live.reactPropsEvent === "budget.warning" &&
-      audit.live.reactPropsStream === "me" &&
-      audit.reactRuntimeLastUpdateReason === "sse-props" &&
-      Number(audit.reactRuntimePropsUpdateCount ?? "0") >= 1
+      audit.live.refreshMode === "page-vm-render" &&
+      audit.reactRuntimeComponent === "HomeRouteComponent"
   );
   steps.push(await captureStep(cdp, { id: "01s-home-react-sse-props-update-zh-desktop", url: `${baseUrl}/`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "home" }));
 
@@ -4430,6 +4429,8 @@ async function main() {
           step.audit.notice.actionId === "r4_react_mount_probe" &&
           step.audit.reactRuntimeMountCount === "1"
         ),
+      // findings[#118]：home SSE 刷新从「只更新隐藏 React 探针 (react-props)」改为整页 VM 重渲染
+      // (page-vm-render)，可见决策收件箱真正刷新。仍出可见的 budget_warning 提示；home React 岛随整页重渲染重挂。
       r4_19_pre_sse_props_update_without_full_render:
         steps.some((step) =>
           step.id === "01s-home-react-sse-props-update-zh-desktop" &&
@@ -4437,13 +4438,9 @@ async function main() {
           step.audit.notice.source === "sse" &&
           step.audit.notice.eventType === "budget.warning" &&
           step.audit.notice.stream === "me" &&
-          step.audit.live.refreshMode === "react-props" &&
-          step.audit.live.reactPropsEvent === "budget.warning" &&
-          step.audit.live.reactPropsStream === "me" &&
-          step.audit.reactRuntimeLastUpdateReason === "sse-props" &&
-          step.audit.reactRuntimeMountCount === "1" &&
-          Number(step.audit.reactRuntimePropsUpdateCount ?? "0") >= 1 &&
-          Number(step.audit.live.reactPropsUpdateCount ?? "0") >= 1
+          step.audit.live.refreshMode === "page-vm-render" &&
+          step.audit.reactRuntimeComponent === "HomeRouteComponent" &&
+          step.audit.reactRuntimeRoute === "home"
         ),
       r4_19_proposal_split_component_marker:
         steps.some((step) =>
@@ -4557,12 +4554,12 @@ async function main() {
           step.audit.routeData.proposalLineEditorSearchValue === "scope" &&
           step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
         ),
+      // findings[#118]：回归——home SSE 现在整页 VM 重渲染（修复「可见决策收件箱永不刷新」），不再是 react-props 短路。
       r4_20_home_react_props_update_regression:
         steps.some((step) =>
           step.id === "01s-home-react-sse-props-update-zh-desktop" &&
-          step.audit.live.refreshMode === "react-props" &&
-          step.audit.reactRuntimeLastUpdateReason === "sse-props" &&
-          step.audit.reactRuntimeMountCount === "1"
+          step.audit.live.refreshMode === "page-vm-render" &&
+          step.audit.reactRuntimeComponent === "HomeRouteComponent"
         ),
       r4_20_no_new_fixture_chrome:
         proof.counts.goldPath === 0 &&
