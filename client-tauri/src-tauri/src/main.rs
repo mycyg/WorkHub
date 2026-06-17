@@ -1145,6 +1145,18 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .manage(Mutex::new(WorkHubLocale::default()))
+        .on_window_event(|window, event| {
+            // findings[#132/H15]：主窗口带 OS 关闭按钮(tauri.conf decorations:true)，Tauri v2 默认关闭即销毁 webview，
+            // 之后托盘/深链/通知再想唤起主窗都会因 get_webview_window("main")==None 而失败（execute_window_control 报错），
+            // 等于关一次主窗就永久失联。改为「关闭即收进托盘」：拦截 main 窗的 CloseRequested、阻止真正关闭、改为隐藏；
+            // show_main_window（托盘/深链/通知触发）仍可把它重新显示出来。pet 等其它 label 的窗口行为不变。
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             let shell_config = load_workhub_shell_config(&app.handle())?;
             if let Ok(mut locale) = app.state::<Mutex<WorkHubLocale>>().lock() {
