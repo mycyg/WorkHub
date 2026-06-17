@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import { z } from "zod";
 
@@ -210,7 +211,10 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
           try {
             const buffer = Buffer.alloc(READ_FILE_MAX_BYTES);
             const { bytesRead } = await handle.read(buffer, 0, READ_FILE_MAX_BYTES, 0);
-            const head = buffer.subarray(0, bytesRead).toString("utf8");
+            // findings[#low]：直接 toString('utf8') 会把跨越 cap 边界的半个多字节字符
+            // 解成 U+FFFD（）。StringDecoder.write 只吐完整字符、扣下尾部不完整序列
+            // （文件本就被截断，扣掉正合适）。
+            const head = new StringDecoder("utf8").write(buffer.subarray(0, bytesRead));
             return okToolResult(
               `${head}\n[truncated: 文件 ${info.size} 字节，仅读取前 ${READ_FILE_MAX_BYTES} 字节]`
             );

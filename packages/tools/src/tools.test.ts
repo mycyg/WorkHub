@@ -118,6 +118,23 @@ test("read_file truncates files larger than the read cap", async () => {
   assert.equal(result.content.length < 3 * 1024 * 1024, true);
 });
 
+test("findings: read_file truncation does not split a multibyte char into U+FFFD", async () => {
+  const workdir = await tempWorkdir();
+  await mkdir(path.join(workdir, "inputs"), { recursive: true });
+  // 让 'é'（0xC3 0xA9，2 字节）正好骑在 2MB cap 边界上：前 2MB-1 个 'x' + 'é' + 填充。
+  // cap 读到的最后一个字节是 0xC3（lead byte），其续字节 0xA9 在 cap 之外。
+  const PAD = 2 * 1024 * 1024 - 1;
+  const content = "x".repeat(PAD) + "é" + "y".repeat(1024 * 1024);
+  await writeFile(path.join(workdir, "inputs", "boundary.txt"), content, "utf8");
+  const registry = createToolRegistry(createBuiltInFileTools());
+  const result = await registry.execute("read_file", { path: "inputs/boundary.txt" }, { workdir });
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /\[truncated/);
+  // 不能出现替换字符——半个 'é' 应被干净丢弃，而不是解成 。
+  assert.equal(result.content.includes("�"), false);
+});
+
 test("read_file returns small files whole", async () => {
   const workdir = await tempWorkdir();
   await mkdir(path.join(workdir, "inputs"), { recursive: true });
