@@ -53,13 +53,6 @@ function patternSpecificity(pattern: string) {
   return literalChars * 10 - wildcardPenalty;
 }
 
-function isExpired(policy: PermissionPolicyRecord, now: Date) {
-  if (!policy.expiresAt) {
-    return false;
-  }
-  return new Date(policy.expiresAt).getTime() <= now.getTime();
-}
-
 function policyAppliesToActor(policy: PermissionPolicyRecord, actor: PermissionActor) {
   switch (policy.scopeKind) {
     case "org":
@@ -75,8 +68,10 @@ function policyAppliesToActor(policy: PermissionPolicyRecord, actor: PermissionA
   }
 }
 
-function isActivePolicy(policy: PermissionPolicyRecord, actor: PermissionActor, now: Date) {
-  return policy.deletedAt == null && !isExpired(policy, now) && policyAppliesToActor(policy, actor);
+// findings[#12]：去掉 isExpired/expiresAt TTL 死代码——permission_policies 没有 expires_at 列、expiresAt 从未被
+// 写入，isExpired 恒为 false，徒增「策略会过期」的误导。仅按软删 + scope 适配判活。
+function isActivePolicy(policy: PermissionPolicyRecord, actor: PermissionActor) {
+  return policy.deletedAt == null && policyAppliesToActor(policy, actor);
 }
 
 function rankPolicy(policy: PermissionPolicyRecord): CandidateRank {
@@ -106,9 +101,8 @@ export function resolvePermissionDecision(
   options: { now?: Date } = {}
 ): PermissionDecision {
   const actionPattern = actionId(action);
-  const now = options.now ?? new Date();
   const consideredPolicies = policies.filter(
-    (policy) => isActivePolicy(policy, actor, now) && globMatch(policy.actionPattern, actionPattern)
+    (policy) => isActivePolicy(policy, actor) && globMatch(policy.actionPattern, actionPattern)
   );
 
   if (consideredPolicies.length === 0) {

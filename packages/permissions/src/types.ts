@@ -30,7 +30,6 @@ export type PermissionPolicyRecord = {
   reason?: string | null;
   orgId?: string | null;
   workspaceId?: string | null;
-  expiresAt?: Date | string | null;
   deletedAt?: Date | string | null;
 };
 
