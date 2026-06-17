@@ -100,7 +100,11 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
             targetUrl: input.targetUrl,
             projectId: input.projectId,
             workItemId: input.workItemId,
-            dedupeKey: input.dedupeKey
+            dedupeKey: input.dedupeKey,
+            // findings[14]：显式把两个时间戳钉成同一个 `at`，让「真插入 ⇒ created_at === updated_at」成为确定不变式；
+            // 冲突更新分支只改 updated_at（见下），据此精确区分真插入与并发收敛的更新。
+            createdAt: at,
+            updatedAt: at
           });
         // 仅当带 dedupeKey 时才可能撞分部唯一索引；用 upsert 复活，避免并发下抛唯一冲突。
         const rows = input.dedupeKey
@@ -127,7 +131,12 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
         if (!notification) {
           throw new Error("Failed to create notification");
         }
-        return { notification, created: true, resurfaced: true };
+        // findings[14]：onConflictDoUpdate 既可能是真插入，也可能是把「读到无→插入」期间另一笔并发插入
+        // 收敛成更新。不能恒报 created:true，否则下游用 created 做「新通知」计数/推送会把更新双计。
+        // 真插入时 created_at/updated_at 同为本次 at（相等）；冲突更新只动 updated_at → 二者不等。
+        // resurfaced 仍恒 true：它在 service 层表示「值得推送」（新建或有变更都要发），与 created 语义不同。
+        const created = notification.createdAt.getTime() === notification.updatedAt.getTime();
+        return { notification, created, resurfaced: true };
       });
     },
 
