@@ -1222,8 +1222,10 @@ async function main() {
     ) {
       throw new Error(`Expected structured field patch to update WorkItem scalars, got ${JSON.stringify(structuredWorkItem)}`);
     }
-    if (structuredAcceptedRows.length !== 0) {
-      throw new Error("Expected structured field patch apply to avoid creating accepted deliverable rows.");
+    if (structuredAcceptedRows.length !== 1) {
+      // findings[H14]：结构化记录 AI 融合采纳现在与 merge()/drive-file 分支一致，写一条 accepted_deliverable_changes
+      // 台账行（此前漏写导致台账与已改写的 WorkItem 发散）。
+      throw new Error(`Expected structured field patch apply to write exactly one accepted deliverable ledger row, got ${structuredAcceptedRows.length}.`);
     }
     if (structuredOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
       throw new Error("Expected structured field patch apply to mark the original merge proposal chosen.");
@@ -1232,7 +1234,7 @@ async function main() {
     if (
       structuredAudit?.detailJson["merge_strategy"] !== "field_merge"
       || structuredAudit.detailJson["structured_field_count"] !== 4
-      || structuredAudit.detailJson["accepted_change_count"] !== 0
+      || structuredAudit.detailJson["accepted_change_count"] !== 1
       || !Array.isArray(structuredAudit.detailJson["structured_field_changes"])
     ) {
       throw new Error(`Expected structured field patch audit payload, got ${JSON.stringify(structuredAudit?.detailJson)}`);
@@ -1576,8 +1578,9 @@ async function main() {
     ) {
       throw new Error(`Expected acceptance item patch to replace subrecords, got ${JSON.stringify(structuredAcceptanceRows)}`);
     }
-    if (structuredAcceptanceAcceptedRows.length !== 0) {
-      throw new Error("Expected acceptance item patch apply to avoid creating accepted deliverable rows.");
+    if (structuredAcceptanceAcceptedRows.length !== 1) {
+      // findings[H14]：见上——结构化采纳一律写一条台账行。
+      throw new Error(`Expected acceptance item patch apply to write exactly one accepted deliverable ledger row, got ${structuredAcceptanceAcceptedRows.length}.`);
     }
     if (structuredAcceptanceOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
       throw new Error("Expected acceptance item patch apply to mark the original merge proposal chosen.");
@@ -1587,7 +1590,7 @@ async function main() {
     if (
       structuredAcceptanceAudit?.detailJson["merge_strategy"] !== "field_merge"
       || structuredAcceptanceAudit.detailJson["structured_field_count"] !== 1
-      || structuredAcceptanceAudit.detailJson["accepted_change_count"] !== 0
+      || structuredAcceptanceAudit.detailJson["accepted_change_count"] !== 1
       || !Array.isArray(structuredAcceptanceChanges)
       || structuredAcceptanceChanges[0]?.field !== "acceptance_items"
       || structuredAcceptanceChanges[0]?.itemCount !== 2
@@ -1792,8 +1795,9 @@ async function main() {
     ) {
       throw new Error(`Expected task item patch to replace dispatch plan subrecords, got ${JSON.stringify(structuredTaskRows)}`);
     }
-    if (structuredTaskAcceptedRows.length !== 0) {
-      throw new Error("Expected task item patch apply to avoid creating accepted deliverable rows.");
+    if (structuredTaskAcceptedRows.length !== 1) {
+      // findings[H14]：见上——结构化采纳一律写一条台账行。
+      throw new Error(`Expected task item patch apply to write exactly one accepted deliverable ledger row, got ${structuredTaskAcceptedRows.length}.`);
     }
     if (structuredTaskOriginalMergeProposalRows[0]?.chosenOptionKey !== "ai_fusion") {
       throw new Error("Expected task item patch apply to mark the original merge proposal chosen.");
