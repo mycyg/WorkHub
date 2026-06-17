@@ -854,7 +854,9 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         }
         const updated = await repository.updateWorkItemFromSession(updateInput);
         if (!updated) {
-          handleMissingWorkItem();
+          // findings[#19/H4]：item 必存在（requireDetail 已在上方校验），故 0 行命中只能是状态守卫拒绝了
+          // 非法转移（如想把已交付/在审事项回滚到 spec_ready/ai_working）→ 409 状态冲突，而非误报 404。
+          throw new WorkItemServiceError(409, "workitem_state_conflict", "这个事项的当前状态不允许重新定稿。");
         }
         await repository.insertChatMessage({
           workItemId: updated.id,

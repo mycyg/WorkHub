@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 
-import { allowedWorkItemTransitions } from "@workhub/contracts";
+import { allowedWorkItemTransitions, sessionFinalizeFromStatuses } from "@workhub/contracts";
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
@@ -441,42 +441,57 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
 
     async updateWorkItemFromSession(input) {
       const at = input.at ?? new Date();
-      const rows = await db
-        .update(workItems)
-        .set({
-          ...(input.title ? { title: input.title } : {}),
-          ...(input.rawDescription ? { rawDescription: input.rawDescription } : {}),
-          ...(input.summaryMd ? { summaryMd: input.summaryMd } : {}),
-          status: input.status,
-          planningNote: input.planningNote
-            ? input.planningNote
-            : input.selectedOptionIds?.length
-            ? `selected_options: ${input.selectedOptionIds.join(",")}`
-            : undefined,
-          version: sql`${workItems.version} + 1`,
-          updatedAt: at
-        })
-        .where(eq(workItems.id, input.workItemId))
-        .returning();
-      const row = rows[0] ?? null;
-      if (row && input.acceptanceItems) {
-        await db.delete(workItemAcceptanceItems).where(eq(workItemAcceptanceItems.workItemId, input.workItemId));
-        if (input.acceptanceItems.length > 0) {
-          await db.insert(workItemAcceptanceItems).values(
-            input.acceptanceItems.map((item, index) => ({
-              id: randomUUID(),
-              workItemId: input.workItemId,
-              title: item.title,
-              ...(item.description ? { description: item.description } : {}),
-              status: item.status ?? "open",
-              sortOrder: item.sortOrder ?? index,
-              createdAt: at,
-              updatedAt: at
-            }))
-          );
+      // findings[#19/H4]：session-finalize 只允许从「澄清阶段」(intake/ai_clarifying/spec_ready) 或同状态幂等改写
+      // 推进——绝不能把已交付/终态(merged/done/cancelled)或在审/升级(in_review/escalated/pm_mode)的事项回滚到
+      // spec_ready/ai_working：那会复活成品、覆盖 title/raw_description/summary，并(下方)清空已评审的验收态。
+      // service 层只会传 spec_ready/ai_working，故终态事项经公开 API 永远进不来。`input.status` 自纳保证同状态
+      // 改写(如 r1-pg smoke 模拟「并发人工改标题」对自身状态重写)照常通过，与具体当前状态无关。
+      // 0 行命中 → 返回 null → service 抛 409 状态冲突(item 必存在，requireDetail 先于此已校验)。
+      const allowedFromStatuses = sessionFinalizeFromStatuses(input.status);
+      // findings[#20/H5]：状态更新 + 验收项删/插放进同一事务原子完成——否则崩在 delete 与 insert 之间会永久
+      // 留下零验收行；状态守卫也确保终态/在审事项的验收态绝不被本路径截断重写。
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(workItems)
+          .set({
+            ...(input.title ? { title: input.title } : {}),
+            ...(input.rawDescription ? { rawDescription: input.rawDescription } : {}),
+            ...(input.summaryMd ? { summaryMd: input.summaryMd } : {}),
+            status: input.status,
+            planningNote: input.planningNote
+              ? input.planningNote
+              : input.selectedOptionIds?.length
+              ? `selected_options: ${input.selectedOptionIds.join(",")}`
+              : undefined,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: at
+          })
+          .where(and(
+            eq(workItems.id, input.workItemId),
+            inArray(workItems.status, allowedFromStatuses),
+            isNull(workItems.deletedAt)
+          ))
+          .returning();
+        const row = rows[0] ?? null;
+        if (row && input.acceptanceItems) {
+          await tx.delete(workItemAcceptanceItems).where(eq(workItemAcceptanceItems.workItemId, input.workItemId));
+          if (input.acceptanceItems.length > 0) {
+            await tx.insert(workItemAcceptanceItems).values(
+              input.acceptanceItems.map((item, index) => ({
+                id: randomUUID(),
+                workItemId: input.workItemId,
+                title: item.title,
+                ...(item.description ? { description: item.description } : {}),
+                status: item.status ?? "open",
+                sortOrder: item.sortOrder ?? index,
+                createdAt: at,
+                updatedAt: at
+              }))
+            );
+          }
         }
-      }
-      return row;
+        return row;
+      });
     },
 
     async insertChatMessage(input) {

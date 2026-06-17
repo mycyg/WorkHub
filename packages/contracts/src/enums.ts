@@ -33,6 +33,15 @@ export const allowedWorkItemTransitions = {
   cancelled: []
 } satisfies Record<WorkItemStatus, readonly WorkItemStatus[]>;
 
+// findings[#19/H4]：session-finalize（POST /api/workitems with session_id）合法的「源」状态白名单。
+// 只允许从澄清阶段(intake/ai_clarifying/spec_ready)或同状态幂等改写推进到 spec_ready/ai_working；
+// 据此守卫 updateWorkItemFromSession，杜绝把已交付/终态(merged/done/cancelled)或在审/升级
+// (in_review/escalated/pm_mode)的事项经此路径复活、覆盖内容并清空验收态。`to` 自纳保证同状态改写通过。
+export function sessionFinalizeFromStatuses(to: WorkItemStatus): WorkItemStatus[] {
+  const base: WorkItemStatus[] = ["intake", "ai_clarifying", "spec_ready", to];
+  return base.filter((status, index) => base.indexOf(status) === index);
+}
+
 export const workItemModes = ["worker", "pm"] as const;
 export const workItemModeSchema = z.enum(workItemModes);
 export type WorkItemMode = z.infer<typeof workItemModeSchema>;

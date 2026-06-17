@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  sessionFinalizeFromStatuses,
   agentRunLiveBudgetSchema,
   agentRunLiveVmSchema,
   structuredFieldPatchSchema,
@@ -63,6 +64,27 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("findings[#19/H4] sessionFinalizeFromStatuses blocks resurrecting finalized items, allows clarify-phase + same-status", () => {
+  // 公开 API 只会传 spec_ready / ai_working 作为 finalize 目标。
+  const toSpecReady = sessionFinalizeFromStatuses("spec_ready");
+  const toAiWorking = sessionFinalizeFromStatuses("ai_working");
+  // 已交付/终态绝不能作为 finalize 的源（杜绝复活成品、覆盖内容、清空验收态）。
+  for (const blocked of ["merged", "done", "cancelled", "in_review", "escalated", "pm_mode"] as const) {
+    assert.equal(toSpecReady.includes(blocked), false, `spec_ready finalize must not allow source ${blocked}`);
+    assert.equal(toAiWorking.includes(blocked), false, `ai_working finalize must not allow source ${blocked}`);
+  }
+  // 澄清阶段是合法的源；kickoff 是 ai_clarifying→ai_working。
+  assert.equal(toSpecReady.includes("ai_clarifying"), true);
+  assert.equal(toSpecReady.includes("spec_ready"), true); // 幂等再定稿
+  assert.equal(toAiWorking.includes("ai_clarifying"), true); // kickoff
+  assert.equal(toAiWorking.includes("spec_ready"), true);
+  // `to` 自纳：任意同状态改写(含 r1-pg smoke 对 merged 自身重写)都放行，与当前状态无关。
+  assert.equal(sessionFinalizeFromStatuses("merged").includes("merged"), true);
+  // 无重复元素。
+  const set = sessionFinalizeFromStatuses("spec_ready");
+  assert.equal(set.length, new Set(set).size);
 });
 
 test("shared locale contract normalizes the bilingual product surface", () => {
