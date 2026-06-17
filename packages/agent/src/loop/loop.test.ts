@@ -285,6 +285,51 @@ test("AgentLoop compacts after a max_tokens truncation and continues to success"
   assert.equal(result.steps.length, 3);
 });
 
+test("M1 AgentLoop proactively compacts when the context-window threshold is crossed", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000005",
+    workItemId: "50000000-0000-4000-8000-000000000005",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a long report",
+    client: fakeClient([
+      {
+        // 第一步用量把累计 token 推过 0.8×contextWindow（=80）→ 下一轮顶部触发主动压缩。
+        id: "m1",
+        stopReason: "tool_use",
+        usage: { inputTokens: 90, outputTokens: 0 },
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/report.md", content: "part one" }
+        }]
+      },
+      {
+        id: "m2",
+        stopReason: "end_turn",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        content: [{ type: "text", text: "交付完成" }]
+      }
+    ]),
+    tools,
+    // M1：设上下文窗口 → 启用主动压缩（此前生产 toAgentLoopBudget 丢了这个字段，主动压缩永不触发）。
+    budget: { ...budget, contextWindowTokens: 100 },
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000005" }),
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.usage.compactions, 1);
+  assert.equal(events.some((event) => event.type === eventTypes.agentRunCompacting && event.data.trigger === "context_window"), true);
+});
+
 test("AgentLoop escalates when the compaction budget is exhausted", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());

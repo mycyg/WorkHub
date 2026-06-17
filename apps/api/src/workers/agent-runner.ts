@@ -927,7 +927,7 @@ export function createInMemoryAgentRunQueue(options: {
         initialUserMessage,
         client,
         tools,
-        budget: toAgentLoopBudget(current.budget),
+        budget: toAgentLoopBudget(current.budget, resolveWorkerContextWindowTokens()),
         maxTokensPerStep: settings.llm.maxTokensPerStep,
         requireDeliverable: options.requireDeliverable ?? true,
         ...(options.commandRunner ? { commandRunner: options.commandRunner } : {}),
@@ -1284,12 +1284,24 @@ function toQueueRunBudget(budget: RunBudget): AgentRunQueueRecord["budget"] {
   };
 }
 
-function toAgentLoopBudget(budget: AgentRunQueueRecord["budget"]) {
+// M1：从 worker 路由的模型配置读上下文窗口（如 deepseek 128000），喂给 loop 启用「主动压缩」。
+// 不抛错：路由未配置时回退 undefined（loop 退回仅 max_tokens 截断触发的被动压缩，行为同此前）。
+function resolveWorkerContextWindowTokens(): number | undefined {
+  try {
+    return getDefaultProviderRegistry().routeFor("worker").model.contextWindowTokens;
+  } catch {
+    return undefined;
+  }
+}
+
+function toAgentLoopBudget(budget: AgentRunQueueRecord["budget"], contextWindowTokens?: number) {
   return {
     maxSteps: budget.max_steps,
     totalTimeoutSeconds: budget.total_timeout_s,
     maxTokens: budget.max_tokens,
-    maxCostCny: budget.max_cost_cny
+    maxCostCny: budget.max_cost_cny,
+    // M1：有上下文窗口才启用主动压缩——接近窗口上限（默认 0.8×window）时先压缩历史，避免长跑撞窗被截。
+    ...(contextWindowTokens ? { contextWindowTokens } : {})
   };
 }
 
