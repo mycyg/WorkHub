@@ -26,6 +26,23 @@ test("GET /api/health returns the daemon health payload", async () => {
   assert.equal(body.runtime, "node");
 });
 
+test("CORS preflight allows the desktop client token headers (cross-origin desktop fetch)", async () => {
+  const response = await app.request("/api/sessions", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://tauri.localhost",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "x-yqgl-client-token, x-workhub-client-token, content-type"
+    }
+  });
+
+  assert.equal(response.status, 204);
+  const allowHeaders = (response.headers.get("Access-Control-Allow-Headers") ?? "").toLowerCase();
+  // 桌面 webview 每个认证请求都带这两个令牌头；预检必须放行，否则跨源桌面写请求全被浏览器拦掉。
+  assert.ok(allowHeaders.includes("x-yqgl-client-token"));
+  assert.ok(allowHeaders.includes("x-workhub-client-token"));
+});
+
 test("GET /api/openapi.json exposes the headless daemon contract seed", async () => {
   const response = await app.request("/api/openapi.json");
 

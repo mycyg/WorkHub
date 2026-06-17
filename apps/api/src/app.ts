@@ -37,6 +37,7 @@ import {
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 
+import { LOCAL_CLIENT_HEADER } from "./middleware/auth.js";
 import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
 import { createRequestLogMiddleware, createStructuredLogger } from "./logging.js";
 
@@ -54,7 +55,10 @@ app.use("/api/*", cors({
   origin: corsAllowOrigins.includes("*") ? (origin) => origin || "*" : corsAllowOrigins,
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  // 桌面 webview 从 tauri://localhost 跨源调 daemon，且每个认证请求都带这两个自定义令牌头
+  // （api-client 同时发 X-YQGL + X-WorkHub 别名）。自定义头触发 CORS 预检；hono/cors 设了 allowHeaders 后只回显
+  // 这个白名单，故必须把令牌头列进来，否则桌面所有写请求 + fetch-SSE 在预检处被浏览器拦掉。
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", LOCAL_CLIENT_HEADER, "X-WorkHub-Client-Token"]
 }));
 
 // findings[8]：CSRF 纵深防御——在 SameSite=Lax cookie 之上加同源守卫，对 cookie 认证的写请求把关。
