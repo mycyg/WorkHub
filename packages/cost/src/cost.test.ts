@@ -237,6 +237,30 @@ test("eval usage is reconciled separately from user and team quota", async () =>
   assert.equal(evalSnapshots.find((snapshot) => snapshot.period === "day")?.estimatedCostCny, "0.002");
 });
 
+test("findings[#164] curation usage lands in an isolated curation scope, not the team production budget", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "skill-curation",
+    inputTokens: 1000,
+    outputTokens: 1000,
+    source: "curation",
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-06-05T00:00:00.000Z")
+  }));
+
+  // 蒸馏花费只产出 1 条 curation-scoped 账目（仍进 cost_ledger_entries 供 labor_split 分账），
+  // 绝不扇成 team/user/workitem——后者会被团队生产预算统计、吃掉生产额度。
+  assert.equal(ledger.entries.length, 1);
+  assert.deepEqual(ledger.entries[0]?.scope, { kind: "curation", teamId: "team-1" });
+
+  // 团队生产预算快照对蒸馏花费视而不见（curation scope 不在 team scopeIds 里）。
+  const at = { now: new Date("2026-06-05T00:00:00.000Z") };
+  const teamSnapshots = await ledger.usageSnapshots({ userId: "user-1", teamId: "team-1" }, at);
+  assert.equal(teamSnapshots.every((snapshot) => snapshot.tokenIn === 0), true);
+});
+
 test("usage snapshots are period-aware: day/month ignore prior-period usage", async () => {
   const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
   await ledger.recordUsage(buildUsageRecord({

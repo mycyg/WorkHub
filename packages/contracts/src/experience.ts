@@ -279,6 +279,11 @@ export const budgetScopeSchema = z.discriminatedUnion("kind", [
     team_id: idSchema
   }),
   z.object({
+    // findings[#164]：技能蒸馏(自我提升)用量自成 scope，与团队生产预算隔离（不进 team/user/workitem）。
+    kind: z.literal("curation"),
+    team_id: idSchema
+  }),
+  z.object({
     kind: z.literal("eval"),
     suite: z.enum(["nightly", "release"])
   })

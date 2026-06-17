@@ -1289,6 +1289,7 @@ type QueueBudgetScope =
   | { kind: "workitem"; workitem_id: string }
   | { kind: "user"; user_id: string }
   | { kind: "team"; team_id: string }
+  | { kind: "curation"; team_id: string }
   | { kind: "eval"; suite: "nightly" | "release" };
 
 type QueueBudgetNotice = {
@@ -1491,6 +1492,8 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
       return { kind: "user", user_id: scope.userId };
     case "team":
       return { kind: "team", team_id: scope.teamId };
+    case "curation":
+      return { kind: "curation", team_id: scope.teamId };
     case "eval":
       return { kind: "eval", suite: scope.suite };
   }

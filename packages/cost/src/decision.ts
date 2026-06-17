@@ -212,6 +212,8 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
       return right.kind === "user" && left.userId === right.userId;
     case "team":
       return right.kind === "team" && left.teamId === right.teamId;
+    case "curation":
+      return right.kind === "curation" && left.teamId === right.teamId;
     case "eval":
       return right.kind === "eval" && left.suite === right.suite;
   }
@@ -294,6 +296,8 @@ function defaultScopeLabel(scope: BudgetScope) {
       return "我的 AI 日预算";
     case "team":
       return "团队 AI 预算";
+    case "curation":
+      return "技能蒸馏(自我提升)预算";
     case "eval":
       return "评测预算";
   }

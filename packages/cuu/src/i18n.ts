@@ -47,6 +47,7 @@ export type CuuCopyKey =
   | "budget.scope.workitem"
   | "budget.scope.user"
   | "budget.scope.team"
+  | "budget.scope.curation"
   | "budget.scope.eval"
   | "budget.handle"
   | "budget.view"
@@ -213,6 +214,7 @@ const cuuCopy = {
     "budget.scope.workitem": "任务预算",
     "budget.scope.user": "个人预算",
     "budget.scope.team": "团队预算",
+    "budget.scope.curation": "蒸馏预算",
     "budget.scope.eval": "评测预算",
     "budget.handle": "处理预算",
     "budget.view": "查看预算",
@@ -378,6 +380,7 @@ const cuuCopy = {
     "budget.scope.workitem": "Task budget",
     "budget.scope.user": "Personal budget",
     "budget.scope.team": "Team budget",
+    "budget.scope.curation": "Curation budget",
     "budget.scope.eval": "Eval budget",
     "budget.handle": "Handle budget",
     "budget.view": "View budget",

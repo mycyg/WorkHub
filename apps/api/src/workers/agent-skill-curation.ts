@@ -431,7 +431,9 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     // L#46：worker 队列还有排队/执行中的 run 时，技能蒸馏先让路（idle = listActive 为空）。
     workQueueIsIdle: async () => (await getDefaultAgentRunQueue().listActive()).length === 0,
     // M13：当日 curation 花费(source=curation 的 usage 记录)超过日上限即整轮跳过，防 interval 配错/跑飞烧钱。
-    // curation usage 无 scope 不进 cost_ledger_entries，故查原始 usage_records(listRecords)按 source 过滤。
+    // findings[#164]：curation usage 确实会进 cost_ledger_entries，但落在独立的 curation scope(见
+    // scopesForUsage)，刻意与团队生产预算隔离、不会吃掉生产额度。这里的当日上限是 curation 专属的
+    // 独立闸门，按原始 usage_records(listRecords) 的 source=curation 过滤即可，与 scope/预算策略解耦。
     curationBudgetOk: async () => {
       const capCny = Number(settings.budgets.curationDailyCostCny);
       const ledgerStore = getDefaultCostLedgerStore();

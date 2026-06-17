@@ -218,6 +218,8 @@ function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): Cu
       return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: scope.user_id };
     case "team":
       return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: scope.team_id };
+    case "curation":
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.curation"), description: scope.team_id };
     case "eval":
       return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: scope.suite };
   }

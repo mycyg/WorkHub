@@ -34,6 +34,8 @@ function scopeId(scope: BudgetScope) {
       return scope.userId;
     case "team":
       return scope.teamId;
+    case "curation":
+      return scope.teamId;
     case "eval":
       return scope.suite;
   }
@@ -47,6 +49,8 @@ function scopeJson(scope: BudgetScope): Record<string, unknown> {
       return { kind: "user", userId: scope.userId };
     case "team":
       return { kind: "team", teamId: scope.teamId };
+    case "curation":
+      return { kind: "curation", teamId: scope.teamId };
     case "eval":
       return { kind: "eval", suite: scope.suite };
   }
@@ -60,6 +64,8 @@ function rowToScope(row: CostLedgerEntryRow): BudgetScope {
       return { kind: "user", userId: row.scopeId };
     case "team":
       return { kind: "team", teamId: row.scopeId };
+    case "curation":
+      return { kind: "curation", teamId: row.scopeId };
     case "eval":
       return { kind: "eval", suite: row.scopeId === "release" ? "release" : "nightly" };
     default:

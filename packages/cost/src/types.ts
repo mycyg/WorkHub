@@ -2,6 +2,10 @@ export type BudgetScope =
   | { kind: "workitem"; workitemId: string }
   | { kind: "user"; userId: string }
   | { kind: "team"; teamId: string }
+  // 技能蒸馏(自我提升)用量自成 scope，与 eval 一样和团队生产预算隔离：findings[#164] curation 花费
+  // 曾被记到 team scope，于是夜间蒸馏会吃掉团队生产日/月预算、卡死次晨的生产 run。curation 另有独立
+  // 日上限(curationBudgetOk，按原始 usage_records 过滤 source)。
+  | { kind: "curation"; teamId: string }
   | { kind: "eval"; suite: "nightly" | "release" };
 
 export type RunBudget = {

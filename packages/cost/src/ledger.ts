@@ -189,6 +189,13 @@ function scopesForUsage(usage: UsageRecord, options: ReconcileUsageOptions) {
   if (usage.source === "eval") {
     return [{ kind: "eval", suite: options.evalSuite ?? "nightly" } satisfies BudgetScope];
   }
+  if (usage.source === "curation") {
+    // findings[#164]：蒸馏(自我提升)花费只进独立的 curation scope，绝不进 team/user/workitem——否则会被
+    // 团队生产预算(pcost-team-day/month)统计、吃掉生产额度。仍写入 cost_ledger_entries(供 labor_split 按
+    // source 分账)，但因 scope.kind="curation" 不在任何预算决策的 scopeIds 里，永远不参与生产预算执行。
+    const curationTeamId = options.teamIdForUsage?.(usage) ?? options.teamId;
+    return curationTeamId ? [{ kind: "curation", teamId: curationTeamId } satisfies BudgetScope] : [];
+  }
 
   const scopes: BudgetScope[] = [];
   if (usage.workItemId) {
@@ -232,6 +239,8 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
       return right.kind === "user" && left.userId === right.userId;
     case "team":
       return right.kind === "team" && left.teamId === right.teamId;
+    case "curation":
+      return right.kind === "curation" && left.teamId === right.teamId;
     case "eval":
       return right.kind === "eval" && left.suite === right.suite;
   }
@@ -249,6 +258,8 @@ function scopeKey(scope: BudgetScope) {
       return `user:${scope.userId}`;
     case "team":
       return `team:${scope.teamId}`;
+    case "curation":
+      return `curation:${scope.teamId}`;
     case "eval":
       return `eval:${scope.suite}`;
   }

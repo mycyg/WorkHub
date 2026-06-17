@@ -200,6 +200,8 @@ function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
       return { kind: "user", user_id: scope.userId };
     case "team":
       return { kind: "team", team_id: scope.teamId };
+    case "curation":
+      return { kind: "curation", team_id: scope.teamId };
     case "eval":
       return { kind: "eval", suite: scope.suite };
   }
