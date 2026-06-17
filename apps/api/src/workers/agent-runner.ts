@@ -401,7 +401,9 @@ export function createInMemoryAgentRunQueue(options: {
   // 内存里只保留有限条已结束的 run 作为读缓存；活跃(queued/running)的永不剔除。
   // 否则长跑 worker 的 runs/runWorkdirs Map 会无限增长 → 内存泄漏。有 persistence 时被剔的 run 仍可从 DB 读回。
   const RUN_CACHE_CAP = 500;
-  const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "escalated", "budget_exhausted", "cancelled"]);
+  // findings：去掉死状态 'budget_exhausted'——AgentRunQueueStatus 无此值（预算耗尽在入队时是 402 错误码、
+  // 在 escalation trigger 是枚举，run 终态用 'escalated' 表达），它从不匹配任何真实 run.status。
+  const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "escalated", "cancelled"]);
 
   function activeForWorkItem(workItemId: string) {
     if (startingWorkItems.has(workItemId)) {
@@ -704,27 +706,33 @@ export function createInMemoryAgentRunQueue(options: {
     run: AgentRunQueueRecord,
     cuuState?: CuuState
   ) {
-    await options.emit?.(event, run);
-    if (!eventBus) {
-      return;
-    }
-
-    const topic = topics.run(run.run_id).topic;
-    const envelope = makeWorkHubEvent({
-      type: event.type,
-      topic,
-      actor: { actor_kind: "ai", label: "WorkHub AI" },
-      work_item_id: run.work_item_id,
-      run_id: run.run_id,
-      ...(event.previewText ? { preview_text: event.previewText } : {}),
-      cuu_state: cuuState ?? toCuuState({ type: event.type }),
-      data: {
-        run_id: run.run_id,
-        work_item_id: run.work_item_id,
-        ...event.data
+    // findings：事件发布是尽力而为——options.emit 或 eventBus.publish（Redis 在负载/抖动下可能抛错）
+    // 绝不能让一次本已成功的 run 失败。整体包 try/catch + 告警；loop 内的 input.emit 也经此处，故一并保护。
+    try {
+      await options.emit?.(event, run);
+      if (!eventBus) {
+        return;
       }
-    });
-    await eventBus.publish(topic, event.type, envelope);
+
+      const topic = topics.run(run.run_id).topic;
+      const envelope = makeWorkHubEvent({
+        type: event.type,
+        topic,
+        actor: { actor_kind: "ai", label: "WorkHub AI" },
+        work_item_id: run.work_item_id,
+        run_id: run.run_id,
+        ...(event.previewText ? { preview_text: event.previewText } : {}),
+        cuu_state: cuuState ?? toCuuState({ type: event.type }),
+        data: {
+          run_id: run.run_id,
+          work_item_id: run.work_item_id,
+          ...event.data
+        }
+      });
+      await eventBus.publish(topic, event.type, envelope);
+    } catch (error) {
+      console.warn("WorkHub run event emit failed (best-effort)", error);
+    }
   }
 
   async function emitFinalRunEvent(run: AgentRunQueueRecord, result: AgentLoopResult) {
