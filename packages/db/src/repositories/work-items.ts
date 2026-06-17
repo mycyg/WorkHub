@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 
+import { allowedWorkItemTransitions } from "@workhub/contracts";
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
@@ -183,6 +184,14 @@ export type WorkItemRepository = {
     workItemId: string;
     at: Date;
   }) => Promise<WorkItemHumanReservedRow | null>;
+  // findings[H8/H9]：CAS 守卫的状态机迁移——仅当当前状态是 `to` 的合法前驱(按 allowedWorkItemTransitions)时才写，
+  // 否则 0 行(no-op，返回 null)。供 agent-runner 把跑完的工作项推进 ai_working→in_review / ai_working→escalated，
+  // 也防止 illegal 迁移(此前各处直接 SET status 不校验前驱)。
+  transitionWorkItemStatus: (input: {
+    workItemId: string;
+    to: WorkItemStatus;
+    at: Date;
+  }) => Promise<{ id: string; status: WorkItemStatus } | null>;
 };
 
 export type WorkItemDataRepository = WorkItemRepository & {
@@ -333,6 +342,32 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           )
         )
         .returning(humanReservedGuardColumns);
+      return rows[0] ?? null;
+    },
+
+    async transitionWorkItemStatus(input) {
+      // 反查 allowedWorkItemTransitions 得到 `to` 的所有合法前驱状态。
+      const predecessors = (Object.entries(allowedWorkItemTransitions) as [WorkItemStatus, readonly WorkItemStatus[]][])
+        .filter(([, targets]) => targets.includes(input.to))
+        .map(([from]) => from);
+      if (predecessors.length === 0) {
+        return null;
+      }
+      const rows = await db
+        .update(workItems)
+        .set({
+          status: input.to,
+          version: sql`${workItems.version} + 1`,
+          updatedAt: input.at
+        })
+        .where(
+          and(
+            eq(workItems.id, input.workItemId),
+            inArray(workItems.status, predecessors),
+            isNull(workItems.deletedAt)
+          )
+        )
+        .returning({ id: workItems.id, status: workItems.status });
       return rows[0] ?? null;
     },
 

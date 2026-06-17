@@ -442,6 +442,16 @@ class MemoryWorkItems implements WorkItemRepository {
     this.rows.set(input.workItemId, updated);
     return updated;
   }
+
+  transitions: { workItemId: string; to: string }[] = [];
+  async transitionWorkItemStatus(input: Parameters<WorkItemRepository["transitionWorkItemStatus"]>[0]) {
+    this.transitions.push({ workItemId: input.workItemId, to: input.to });
+    const row = this.rows.get(input.workItemId);
+    if (row) {
+      this.rows.set(input.workItemId, { ...row, status: input.to });
+    }
+    return { id: input.workItemId, status: input.to };
+  }
 }
 
 class MemoryAuditLogs implements AuditLogRepository {
@@ -834,6 +844,7 @@ test("agent run prompt includes resolved WorkItem context before calling the mod
       }
     }
   };
+  const statusTransitions: string[] = [];
   const queue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
     now: () => now,
@@ -848,6 +859,8 @@ test("agent run prompt includes resolved WorkItem context before calling the mod
     proposals: false,
     notifications: false,
     eventBus: false,
+    // findings[H8]：成功 run 应把工作项推进 in_review。
+    transitionWorkItemStatus: async (input) => { statusTransitions.push(input.to); },
     workItemContext: () => [
       "- Work item: DAY0PILOT-005 - Prepare a concise Day 0 pilot validation note",
       "- Status / mode / priority: spec_ready / worker / normal",
@@ -865,6 +878,8 @@ test("agent run prompt includes resolved WorkItem context before calling the mod
 
   assert.equal(executed?.run_id, queued.run_id);
   assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace));
+  // findings[H8]：成功 run 把工作项推进 ai_working→in_review（此前永不迁移，卡在 ai_working）。
+  assert.equal(statusTransitions.includes("in_review"), true);
   assert.match(firstMessage, /WorkHub 数据库中的真实工单上下文/u);
   assert.match(firstMessage, /DAY0PILOT-005/u);
   assert.match(firstMessage, /Prepare a concise Day 0 pilot validation note/u);

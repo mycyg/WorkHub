@@ -1,8 +1,10 @@
 import { evaluateAgentRunConfidence, type AgentLoopResult } from "@workhub/agent";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
+import type { WorkItemStatus } from "@workhub/contracts";
 import {
   createAiDecisionRepository,
   createAuditLogRepository,
+  createWorkItemRepository,
   getSharedDatabaseClient,
   type AiDecisionRepository,
   type AuditLogRepository,
@@ -26,6 +28,9 @@ export type AgentRunConfidenceRecorderOptions = {
   auditLogs?: AuditLogRepository;
   settings?: Settings;
   autoMergeAllowed?: boolean;
+  // findings[H9]：开了升级事件就把工作项 ai_working→escalated（CAS 守卫在仓库层，非法前驱则 no-op）；
+  // 让 escalated 死枚举真正活起来。不传则用默认 work-item 仓库；fire-and-forget 不拖垮记账。
+  transitionWorkItemStatus?: (input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>;
 };
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
@@ -36,6 +41,19 @@ function defaultStores() {
     decisions: createAiDecisionRepository(defaultDbClient.db),
     auditLogs: createAuditLogRepository(defaultDbClient.db)
   };
+}
+
+let defaultConfidenceStatusWriter: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | undefined;
+
+function getDefaultConfidenceStatusWriter() {
+  if (!defaultConfidenceStatusWriter) {
+    defaultDbClient ??= getSharedDatabaseClient();
+    const repo = createWorkItemRepository(defaultDbClient.db);
+    defaultConfidenceStatusWriter = async (input) => {
+      await repo.transitionWorkItemStatus(input);
+    };
+  }
+  return defaultConfidenceStatusWriter;
 }
 
 function actorOrg(settings: Settings) {
@@ -56,6 +74,8 @@ export function createAgentRunConfidenceRecorder(
   if (!decisions || !auditLogs) {
     throw new Error("AgentRun confidence recorder requires decision and audit stores");
   }
+
+  const transitionWorkItemStatus = options.transitionWorkItemStatus ?? getDefaultConfidenceStatusWriter();
 
   return async ({ run, result }) => {
     const assessment = evaluateAgentRunConfidence({
@@ -122,6 +142,14 @@ export function createAgentRunConfidenceRecorder(
         reason_preview: escalation.reasonMd.slice(0, 160)
       }
     });
+
+    // findings[H9]：升级即把工作项推进 escalated（即便 run 本身 succeeded 但置信度判定 escalate）。
+    // CAS 守卫在仓库层；fire-and-forget——状态写失败不影响已落库的置信度/升级记录。
+    try {
+      await transitionWorkItemStatus({ workItemId: run.work_item_id, to: "escalated", at: new Date() });
+    } catch (error) {
+      console.warn("WorkHub escalation work-item status transition failed", error);
+    }
 
     return { confidenceId: confidence.id, escalationId: escalation.id };
   };

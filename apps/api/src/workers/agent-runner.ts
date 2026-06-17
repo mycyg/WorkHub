@@ -13,7 +13,7 @@ import {
   type StructuredHandoff
 } from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
-import { eventTypes, type CuuState, type WorkItemMode } from "@workhub/contracts";
+import { eventTypes, type CuuState, type WorkItemMode, type WorkItemStatus } from "@workhub/contracts";
 import {
   createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
@@ -327,6 +327,9 @@ export function createInMemoryAgentRunQueue(options: {
   proposals?: AgentRunProposalSink | false;
   notifications?: AgentRunNotificationPublisher | false;
   notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
+  // findings[H8/H9]：跑完后把工作项状态机推进（成功+开了提议→in_review；失败/升级/提议创建失败→escalated）。
+  // CAS 守卫在仓库层(transitionWorkItemStatus)，此处只是 fire-and-forget 的写入回调；不传则不写状态（旧行为）。
+  transitionWorkItemStatus?: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
   workerId?: string;
@@ -356,6 +359,7 @@ export function createInMemoryAgentRunQueue(options: {
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
+  const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
@@ -976,12 +980,16 @@ export function createInMemoryAgentRunQueue(options: {
       await persistRunWithTrace(current, workerId);
       await emitFinalRunEvent(current, result);
       const confidenceId = await recordRunConfidence(current, result);
+      let proposalOpened = false;
       try {
         await openProposalFromManifest(current, result, confidenceId);
+        proposalOpened = true;
       } catch (error) {
         console.warn("WorkHub openProposalFromManifest failed; run already recorded as succeeded", error);
       }
-      await notifyRunMilestone(current, result.reason);
+      // findings[H8 + chain-core-loop]：成功且开了提议 → 工作项 ai_working→in_review；成功但提议创建失败
+      // → 不谎报 in_review，转 escalated（交付物已产出但进不了审阅，需人工）。
+      await notifyRunMilestone(current, result.reason, { proposalOpened });
       return current;
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
@@ -1069,13 +1077,24 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
-  async function notifyRunMilestone(run: AgentRunQueueRecord, reasonOneline: string) {
-    const newStatus = run.status === "succeeded"
-      ? "in_review"
+  async function notifyRunMilestone(run: AgentRunQueueRecord, reasonOneline: string, opts: { proposalOpened?: boolean } = {}) {
+    const proposalOpened = opts.proposalOpened ?? true;
+    const newStatus: WorkItemStatus | null = run.status === "succeeded"
+      ? (proposalOpened ? "in_review" : "escalated")
       : run.status === "failed" || run.status === "escalated"
         ? "escalated"
         : null;
-    if (!newStatus || options.notifications === false) {
+    if (!newStatus) {
+      return;
+    }
+    // findings[H8/H9]：把工作项状态机推进（CAS 守卫在仓库层 transitionWorkItemStatus，非法前驱/已迁移则 no-op）。
+    // 独立于通知开关，且 fire-and-forget——状态写入失败不拖垮已完成的 run。
+    try {
+      await transitionWorkItemStatus?.({ workItemId: run.work_item_id, to: newStatus, at: now() });
+    } catch (error) {
+      console.warn("WorkHub work-item status transition failed", error);
+    }
+    if (options.notifications === false) {
       return;
     }
     const notifications = options.notifications ?? createNotificationService();
@@ -1523,6 +1542,19 @@ function getDefaultWorkItemContextProvider() {
   return defaultWorkItemContextProvider;
 }
 
+let defaultWorkItemStatusWriter: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | undefined;
+
+// findings[H8/H9]：默认状态写入器——把 run 完成时的工作项状态机迁移落到真实 work-item 仓库（CAS 守卫）。
+function getDefaultWorkItemStatusWriter() {
+  if (!defaultWorkItemStatusWriter) {
+    const repo = createWorkItemRepository(getSharedDatabaseClient().db);
+    defaultWorkItemStatusWriter = async (input) => {
+      await repo.transitionWorkItemStatus(input);
+    };
+  }
+  return defaultWorkItemStatusWriter;
+}
+
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
@@ -1547,7 +1579,8 @@ export function getDefaultAgentRunQueue() {
     // 默认 run_command fail-closed；仅当显式 opt-in 才接入无约束 nodeCommandRunner（受信本地/单机）。
     // 生产/多租户应保持 false 并改注入真正隔离的 runner。
     ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
-    notificationWorkItem: createAgentRunNotificationWorkItemResolver()
+    notificationWorkItem: createAgentRunNotificationWorkItemResolver(),
+    transitionWorkItemStatus: getDefaultWorkItemStatusWriter()
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。
   void sweepStaleAgentWorkdirs().catch((error) => {
