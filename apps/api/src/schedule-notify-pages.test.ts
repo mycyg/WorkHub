@@ -307,6 +307,34 @@ test("M10 repeat notifications read does not re-upsert unchanged meeting-insight
   assert.equal(notifications.upsertCalls, afterFirst);
 });
 
+test("findings: a drifted severity value clamps to normal instead of 500ing the whole inbox", async () => {
+  const notifications = new MemoryNotifications();
+  // 模拟 DB 里历史/漂移的 severity（varchar，不在 normal|high|urgent 枚举内）。
+  notifications.rows.push(
+    notification({
+      id: "82000000-0000-4000-8000-000000000015",
+      type: "system.notice",
+      severity: "critical",
+      title: "legacy severity row",
+      body: null,
+      targetUrl: null,
+      dedupeKey: "drifted-severity-row"
+    })
+  );
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const page = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const allItems = [...page.buckets.needs_decision, ...page.buckets.fyi, ...page.buckets.done];
+  const drifted = allItems.find((item) => item.id === "82000000-0000-4000-8000-000000000015");
+  assert.ok(drifted, "drifted-severity row still renders");
+  assert.equal(drifted!.severity, "normal");
+});
+
 test("schedule notify page service builds calendar blocks from due work and meeting followups", async () => {
   const service = createScheduleNotifyPageService({
     notifications: new MemoryNotifications(),

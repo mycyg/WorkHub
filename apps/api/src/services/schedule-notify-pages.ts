@@ -1,6 +1,7 @@
 import {
   calendarPageVmSchema,
   notificationPageVmSchema,
+  notificationSeveritySchema,
   type ActionSpec,
   type CalendarPageVM,
   type NotificationEvidenceRefVM,
@@ -267,6 +268,14 @@ function groundingFor(row: NotificationRow, bucket: NotificationInboxBucket, loc
   return { reason_text: reason, evidence_refs: refs };
 }
 
+// 审查 LOW：notifications.severity 是 varchar，DB 里可能存在漂移/历史值
+// （非 normal|high|urgent）。若直接 cast，单行坏值会让整页 zod parse(571 行)
+// 抛错、把整个收件箱打成 500。逐行夹紧到合法枚举，坏值降级为 normal。
+function coerceSeverity(value: string): NotificationItemVM["severity"] {
+  const parsed = notificationSeveritySchema.safeParse(value);
+  return parsed.success ? parsed.data : "normal";
+}
+
 function notificationItem(
   row: NotificationRow,
   locale: WorkHubLocale,
@@ -289,7 +298,7 @@ function notificationItem(
   return {
     id: row.id,
     type: row.type,
-    severity: row.severity as NotificationItemVM["severity"],
+    severity: coerceSeverity(row.severity),
     status: statusFor(row),
     inbox_bucket: bucket,
     title: row.title,
