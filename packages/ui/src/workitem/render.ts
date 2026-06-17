@@ -7,6 +7,7 @@ import type {
 } from "@workhub/contracts";
 
 import {
+  agentStepPhaseLabel,
   checkStatusLabel,
   evidenceSourceLabel,
   uiCount,
@@ -97,7 +98,7 @@ function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
   return `<div class="wh-trace">${steps
     .map(
       (step) =>
-        `<div class="wh-trace-row"><span class="wh-trace-dot">${step.step_no}</span><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p></div></div>`
+        `<div class="wh-trace-row"><span class="wh-trace-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p></div></div>`
     )
     .join("")}</div>`;
 }

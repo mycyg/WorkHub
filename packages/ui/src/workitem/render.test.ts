@@ -13,6 +13,9 @@ test("work item renderer keeps the page focused on status, trace, evidence, and 
   assert.equal(rendered.workItemId, fixture.workItem.id);
   assert.equal(rendered.cuuState, "carrying_document");
   assert.equal(rendered.traceCount >= 5, true);
+  // findings[#low-F3]：trace 步骤 phase 本地化（思考/调用工具/...），不再把原始英文 token 渲染给 zh-CN 用户。
+  assert.equal(rendered.html.includes("思考"), true);
+  assert.equal(/<strong>(?:think|tool_call|tool_result|final)<\/strong>/u.test(rendered.html), false);
   assert.equal(rendered.evidenceCount, 3);
   assert.equal(rendered.html.includes("AI 实时执行"), true);
   assert.equal(rendered.html.includes("验收清单"), true);
