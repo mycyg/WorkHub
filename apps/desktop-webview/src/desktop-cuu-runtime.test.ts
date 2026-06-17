@@ -1069,10 +1069,12 @@ test("findings: error card re-surfaces after a recovery event resets the latch",
       return agentRunLive({ status: "running" });
     }
   };
-  subscribeDesktopCuuAgentRunStream({
+  const subscription = subscribeDesktopCuuAgentRunStream({
     client,
     run: agentRunLive(),
     EventSourceCtor: FakeEventSource,
+    // 大值：避免兜底刷新计时器在本测试同步断言期间触发。
+    fallbackRefreshMs: 60_000,
     onCard(card) {
       cards.push(card);
     },
@@ -1095,6 +1097,9 @@ test("findings: error card re-surfaces after a recovery event resets the latch",
   // event_source_error → kind "offline" → 卡片 state "offline"。
   const errorCards = cards.filter((card) => card.state === "offline");
   assert.equal(errorCards.length, 2);
+
+  // 关键：关闭订阅，停掉兜底刷新计时器 + EventSource，否则进程挂起不退出（run 是 running，永不自然 close）。
+  subscription.close();
 });
 
 test("desktop Cuu run stream falls back to polling when no SSE event arrives", async () => {
