@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { clientDevices } from "../schema/index.js";
@@ -76,7 +76,9 @@ export function createClientDeviceRepository(db: WorkHubDb): ClientDeviceReposit
         .select()
         .from(clientDevices)
         .where(eq(clientDevices.userId, userId))
-        .orderBy(clientDevices.revokedAt, desc(clientDevices.lastSeenAt));
+        // findings[#low]：revokedAt ASC 在 PG 默认 NULLS LAST，会把 active(null) 排到吊销设备之后。
+        // 用 `is not null` 布尔键：active=false(0) 排前，revoked=true(1) 排后；组内按最近活跃倒序。
+        .orderBy(sql`${clientDevices.revokedAt} is not null`, desc(clientDevices.lastSeenAt));
     },
 
     async touchLastSeen(deviceId, at) {

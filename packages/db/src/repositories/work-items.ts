@@ -404,51 +404,55 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
 
     async createWorkItem(input) {
       const at = input.at ?? new Date();
-      const allocation = await allocateProjectCode(db, input.projectId);
-      const values: typeof workItems.$inferInsert = {
-          id: input.id ?? randomUUID(),
-          code: allocation.code,
-          projectId: input.projectId,
-          submitterUserId: input.submitterUserId,
-          status: input.status ?? "intake",
-          priority: input.priority ?? "normal",
-          mode: input.mode ?? "worker",
-          humanReserved: false,
-          createdAt: at,
-          updatedAt: at
-        };
-      if (input.workspaceId) values.workspaceId = input.workspaceId;
-      if (input.title) values.title = input.title;
-      if (input.rawDescription) values.rawDescription = input.rawDescription;
-      if (input.summaryMd) values.summaryMd = input.summaryMd;
-      if (input.planningNote) {
-        values.planningNote = input.planningNote;
-      } else if (input.selectedOptionIds?.length) {
-        values.planningNote = `selected_options: ${input.selectedOptionIds.join(",")}`;
-      }
-      const rows = await db
-        .insert(workItems)
-        .values(values)
-        .returning();
-      const row = rows[0];
-      if (!row) {
-        throw new Error("Failed to create work item");
-      }
-      if (input.acceptanceItems?.length) {
-        await db.insert(workItemAcceptanceItems).values(
-          input.acceptanceItems.map((item, index) => ({
-            id: randomUUID(),
-            workItemId: row.id,
-            title: item.title,
-            ...(item.description ? { description: item.description } : {}),
-            status: item.status ?? "open",
-            sortOrder: item.sortOrder ?? index,
+      // findings[#low]：序列号分配 + work item 插入 + 验收项插入要原子化，否则中途失败会
+      // 留下孤儿 work item 或漏掉的 next_seq 推进（与 updateWorkItemFromSession 同款事务）。
+      return db.transaction(async (tx) => {
+        const allocation = await allocateProjectCode(tx, input.projectId);
+        const values: typeof workItems.$inferInsert = {
+            id: input.id ?? randomUUID(),
+            code: allocation.code,
+            projectId: input.projectId,
+            submitterUserId: input.submitterUserId,
+            status: input.status ?? "intake",
+            priority: input.priority ?? "normal",
+            mode: input.mode ?? "worker",
+            humanReserved: false,
             createdAt: at,
             updatedAt: at
-          }))
-        );
-      }
-      return row;
+          };
+        if (input.workspaceId) values.workspaceId = input.workspaceId;
+        if (input.title) values.title = input.title;
+        if (input.rawDescription) values.rawDescription = input.rawDescription;
+        if (input.summaryMd) values.summaryMd = input.summaryMd;
+        if (input.planningNote) {
+          values.planningNote = input.planningNote;
+        } else if (input.selectedOptionIds?.length) {
+          values.planningNote = `selected_options: ${input.selectedOptionIds.join(",")}`;
+        }
+        const rows = await tx
+          .insert(workItems)
+          .values(values)
+          .returning();
+        const row = rows[0];
+        if (!row) {
+          throw new Error("Failed to create work item");
+        }
+        if (input.acceptanceItems?.length) {
+          await tx.insert(workItemAcceptanceItems).values(
+            input.acceptanceItems.map((item, index) => ({
+              id: randomUUID(),
+              workItemId: row.id,
+              title: item.title,
+              ...(item.description ? { description: item.description } : {}),
+              status: item.status ?? "open",
+              sortOrder: item.sortOrder ?? index,
+              createdAt: at,
+              updatedAt: at
+            }))
+          );
+        }
+        return row;
+      });
     },
 
     async updateWorkItemFromSession(input) {

@@ -83,6 +83,18 @@ export class DriveRepositoryConflictError extends Error {
   }
 }
 
+// findings[#low]：name 预检和实际写入之间存在 TOCTOU 窗口——并发同名 upload/restore 会撞上
+// project_drive_items_active_path_uq 唯一索引、抛 pg 23505 冒泡成 500。把这一特定唯一冲突
+// 在仓库层翻译成 drive_name_conflict（已映射 409），其余错误原样抛出。
+export function isActivePathUniqueViolation(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      (error as { code?: string }).code === "23505" &&
+      (error as { constraint?: string }).constraint === "project_drive_items_active_path_uq"
+  );
+}
+
 export type DriveRepository = {
   readPage: (input?: {
     projectId?: string;
@@ -375,21 +387,30 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         const itemId = randomUUID();
         const versionId = randomUUID();
         const storagePath = `drive/${input.projectId}/${itemId}/${versionId}/${input.filename}`;
-        const itemRows = await tx
-          .insert(projectDriveItems)
-          .values({
-            id: itemId,
-            projectId: input.projectId,
-            parentId: input.parentId ?? null,
-            name: input.filename,
-            kind: "file",
-            currentVersionId: versionId,
-            createdByUserId: input.actorUserId,
-            updatedByUserId: input.actorUserId,
-            createdAt: at,
-            updatedAt: at
-          })
-          .returning();
+        let itemRows;
+        try {
+          itemRows = await tx
+            .insert(projectDriveItems)
+            .values({
+              id: itemId,
+              projectId: input.projectId,
+              parentId: input.parentId ?? null,
+              name: input.filename,
+              kind: "file",
+              currentVersionId: versionId,
+              createdByUserId: input.actorUserId,
+              updatedByUserId: input.actorUserId,
+              createdAt: at,
+              updatedAt: at
+            })
+            .returning();
+        } catch (error) {
+          // 预检和写入之间的并发同名 → 唯一索引冲突翻译成 409，而不是 500。
+          if (isActivePathUniqueViolation(error)) {
+            throw new DriveRepositoryConflictError("drive_name_conflict", "同名文件已经存在，请换一个名字。");
+          }
+          throw error;
+        }
         const versionRows = await tx
           .insert(projectDriveVersions)
           .values({
@@ -557,16 +578,25 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         if (await activeItemByName(tx, { projectId: input.projectId, parentId: item.parentId, name: item.name })) {
           throw new DriveRepositoryConflictError("drive_name_conflict", "当前位置已有同名文件，请先重命名后再恢复。");
         }
-        const updated = await tx
-          .update(projectDriveItems)
-          .set({
-            deletedAt: null,
-            deletedByUserId: null,
-            updatedByUserId: input.actorUserId,
-            updatedAt: at
-          })
-          .where(and(eq(projectDriveItems.id, item.id), isNotNull(projectDriveItems.deletedAt)))
-          .returning();
+        let updated;
+        try {
+          updated = await tx
+            .update(projectDriveItems)
+            .set({
+              deletedAt: null,
+              deletedByUserId: null,
+              updatedByUserId: input.actorUserId,
+              updatedAt: at
+            })
+            .where(and(eq(projectDriveItems.id, item.id), isNotNull(projectDriveItems.deletedAt)))
+            .returning();
+        } catch (error) {
+          // 预检和恢复之间被人占了同名 → 唯一索引冲突翻译成 409，而不是 500。
+          if (isActivePathUniqueViolation(error)) {
+            throw new DriveRepositoryConflictError("drive_name_conflict", "当前位置已有同名文件，请先重命名后再恢复。");
+          }
+          throw error;
+        }
         if (!updated[0]) {
           throw new DriveRepositoryConflictError("drive_item_not_deleted", "这个文件不在回收站里。");
         }

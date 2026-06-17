@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { resolveDriveFolderPath } from "./repositories/work-items.js";
+import { isActivePathUniqueViolation } from "./repositories/drive.js";
+
+test("findings[#low] isActivePathUniqueViolation only matches the active-path unique index 23505", () => {
+  assert.equal(
+    isActivePathUniqueViolation({ code: "23505", constraint: "project_drive_items_active_path_uq" }),
+    true
+  );
+  // 其它唯一索引 / 外键 / 缺约束名 / 非对象都不算名字冲突。
+  assert.equal(isActivePathUniqueViolation({ code: "23505", constraint: "some_other_uq" }), false);
+  assert.equal(isActivePathUniqueViolation({ code: "23503" }), false);
+  assert.equal(isActivePathUniqueViolation({ code: "23505" }), false);
+  assert.equal(isActivePathUniqueViolation(new Error("boom")), false);
+  assert.equal(isActivePathUniqueViolation(null), false);
+});
 
 type Node = { id: string; parentId: string | null; name: string };
 
