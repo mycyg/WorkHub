@@ -172,8 +172,9 @@ function buildInsightVm(input: {
       proposal_href: `/proposals/${input.latestProposal.id}`,
       proposal_status: input.latestProposal.status
     } : {}),
-    ...(input.insight.confirmedByUserId ? { confirmed_by_user_id: input.insight.confirmedByUserId } : {}),
-    ...(input.insight.confirmedAt ? { confirmed_at: input.insight.confirmedAt.toISOString() } : {}),
+    // findings[#low-F39]：仅 confirmed 态才暴露 confirmed_by/at——dismissed 等态即便列里残留确认信息也不回传，避免误导。
+    ...(status === "confirmed" && input.insight.confirmedByUserId ? { confirmed_by_user_id: input.insight.confirmedByUserId } : {}),
+    ...(status === "confirmed" && input.insight.confirmedAt ? { confirmed_at: input.insight.confirmedAt.toISOString() } : {}),
     created_at: input.insight.createdAt.toISOString(),
     evidence_refs: [{
       id: stableUuid(`meeting-insight-evidence:${input.insight.id}`),
@@ -289,7 +290,9 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
       confirmed_insight_count: flatInsights.filter((insight) => insight.status === "confirmed").length,
       dismissed_insight_count: flatInsights.filter((insight) => insight.status === "dismissed").length
     },
-    can_manage: meetings.some((meeting) => canManageProjectMeeting(rows.project!, { uploadedByUserId: meeting.uploaded_by_user_id }, actor)),
+    // findings[#low-F40]：can_manage 是项目级权限(admin/owner)，不该因「项目暂无会议」让 meetings.some()→false。
+    // 直接问项目级 canManageProjectMeeting(空 uploadedByUserId)——admin/owner 判定不看该字段；非 owner 非 admin 仍 false。
+    can_manage: canManageProjectMeeting(rows.project!, { uploadedByUserId: "" }, actor),
     selected_meeting_id: meetings.find((meeting) => meeting.id === selectedMeetingId)?.id ?? meetings[0]?.id,
     meetings,
     ...(meetings.length === 0 ? { empty_state: "no_meetings" } : {})

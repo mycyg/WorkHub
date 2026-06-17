@@ -366,6 +366,11 @@ test("meeting page service dismisses a pending insight without creating a draft"
   assert.deepEqual(repo.dismissCalls, [{ projectId, insightId, actorUserId: userId }]);
   assert.equal(refreshed.meetings[0]?.insights[0]?.status, "dismissed");
   assert.equal(refreshed.meetings[0]?.insights[0]?.draft_href, undefined);
+  // findings[#low-F39]：被驳回的洞见即便底层列残留 confirmedByUserId/At，也绝不在 VM 暴露 confirmed_by/at(误导)。
+  assert.equal(refreshed.meetings[0]?.insights[0]?.confirmed_by_user_id, undefined);
+  assert.equal(refreshed.meetings[0]?.insights[0]?.confirmed_at, undefined);
+  // findings[#low-F40]：can_manage 是项目级权限——owner 即便项目里有/无会议都为 true。
+  assert.equal(refreshed.can_manage, true);
 });
 
 test("meeting page route authenticates and passes project and selected meeting query", async () => {
