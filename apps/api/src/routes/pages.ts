@@ -134,12 +134,20 @@ async function visibleApprovalCenter(
       visibleRequestIds.add(request.id);
     }
   }
+  const visibleItems = data.items.filter((item) => {
+    const id = item.source_ref.entity_type === "approval_request" ? item.source_ref.entity_id : item.id;
+    return visibleRequestIds.has(id);
+  });
+  // findings[H7]：items_detail 也要按可见 item.id 收口——否则 GET /api/pages/approvals 会把不可读事项的
+  // 详情（ai_reason/风险/payload）原样回传（此前只过滤了 items/requests 却 `...data` 带出整张 items_detail）。
+  // 与 routes/approvals.ts 的同名 helper 对齐。
+  const visibleItemIds = new Set(visibleItems.map((item) => item.id));
   return {
     ...data,
-    items: data.items.filter((item) => {
-      const id = item.source_ref.entity_type === "approval_request" ? item.source_ref.entity_id : item.id;
-      return visibleRequestIds.has(id);
-    }),
+    items: visibleItems,
+    items_detail: Object.fromEntries(
+      Object.entries(data.items_detail).filter(([itemId]) => visibleItemIds.has(itemId))
+    ),
     requests: visibleRequests,
     counts: {
       ...data.counts,
@@ -183,7 +191,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     let decisionQueue: AttentionHomeVM["queue"] = [];
     try {
       const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
-      decisionQueue = pending.items;
+      // findings：决策队列要和 /approvals 一样按可读工作项过滤——否则被路由到的审批若其工作项不可读，
+      // 卡片仍会在首页泄露事项信息。复用同一个 visibleApprovalCenter 收口。
+      decisionQueue = (await visibleApprovalCenter(pending, workItems, c.var.actor)).items;
     } catch {
       decisionQueue = [];
     }

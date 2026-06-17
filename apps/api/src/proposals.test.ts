@@ -1241,6 +1241,12 @@ test("proposal routes require work item access before read and write operations"
     headers,
     body: JSON.stringify({ decision: "definitely-not-a-valid-decision" })
   });
+  // 同理 merge 也应鉴权先于 parse：未授权者发畸形 body 得 403 而非 400。
+  const mergeBadBody = await app.request(`/api/proposals/${created.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ conflict_resolution: { accept_incoming_target_keys: "not-an-array" } })
+  });
 
   assert.equal(list.status, 403);
   assert.equal(create.status, 403);
@@ -1248,6 +1254,7 @@ test("proposal routes require work item access before read and write operations"
   assert.equal(review.status, 403);
   assert.equal(merge.status, 403);
   assert.equal(reviewBadBody.status, 403);
+  assert.equal(mergeBadBody.status, 403);
 });
 
 test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {

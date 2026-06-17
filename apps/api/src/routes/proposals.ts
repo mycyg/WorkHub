@@ -417,8 +417,10 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   });
 
   routes.post("/:id/merge", authMiddleware, async (c) => {
-    const payload = mergeProposalRequestSchema.parse(await readJsonBody(c));
+    // findings：鉴权先于请求体解析（与 /review 一致，L3 修过 review 但 merge 漏了）——未授权者发畸形 body
+    // 应拿 403/404 而非泄露 schema 的 400。
     await readProposalForActor(c.req.param("id"), c.var.actor);
+    const payload = mergeProposalRequestSchema.parse(await readJsonBody(c));
     let proposal: StoredProposal;
     try {
       proposal = await proposals.merge({

@@ -213,7 +213,9 @@ test("attention home decision queue is fed by the user's pending approvals", asy
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
-    approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService
+    approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
+    // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
+    workItems: { async detailPage() { return {}; } } as never
   }));
 
   const response = await app.request("/api/pages/attention", {
