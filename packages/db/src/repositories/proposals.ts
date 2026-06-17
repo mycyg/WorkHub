@@ -2293,6 +2293,12 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           })
           .where(eq(workItems.id, row.workItemId));
         if (current) {
+          // findings[#0]：融合稿(及逐段文本稿)是针对 conflict.existing_sha256_after 这个底稿算出来的。原 CAS 只比
+          // 锁内复读的 current.sha256After（即拿行自身比自身，恒真，是「self-compare」漏洞）——锁前 staleness
+          // 检查在 advisory lock 外跑，若在「检查通过」与「拿到锁」之间有并发采纳改了底稿，这里检测不到、会盖掉别人。
+          // 增补对融合底稿 sha 的 CAS：legit 流里 base==current 必匹配；仅当锁内当前态已偏离融合底稿时 0 行作废
+          // → StaleBaseError（与结构化分支的 base CAS 同口径）。normalizeShaRef 对齐存库去前缀格式。
+          const expectedBaseSha = normalizeShaRef(conflict.existing_sha256_after);
           const superseded = await tx
             .update(acceptedDeliverableChanges)
             .set({ supersededAt: at, updatedAt: at })
@@ -2302,10 +2308,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
                 : eq(acceptedDeliverableChanges.workItemId, row.workItemId),
               eq(acceptedDeliverableChanges.targetKey, row.mergeProposal.conflictKey),
               isNull(acceptedDeliverableChanges.supersededAt),
-              ...(current.sha256After ? [eq(acceptedDeliverableChanges.sha256After, current.sha256After)] : [])
+              ...(current.sha256After ? [eq(acceptedDeliverableChanges.sha256After, current.sha256After)] : []),
+              ...(expectedBaseSha ? [eq(acceptedDeliverableChanges.sha256After, expectedBaseSha)] : [])
             ))
             .returning({ id: acceptedDeliverableChanges.id });
-          // H2/H5 L3：提交前复检，0 行作废即中止采纳（最后防线，避免盖掉别人内容）。
+          // H2/H5 L3 + #0：提交前复检，0 行作废即中止采纳（最后防线，避免盖掉别人内容/基于陈旧底稿写回）。
           if (superseded.length === 0) {
             throw new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
           }
