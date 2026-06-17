@@ -441,6 +441,68 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(english.html.includes("Use all incoming"), true);
 });
 
+test("findings: conflicts whose ids collapse to the same safeId still get distinct line-editor panel ids", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const mergeHref = `/api/proposals/${vm.proposal_id}/merge`;
+  const lineEditorConflict = (id: string, targetKey: string, targetPath: string): ProposalConflict => ({
+    id,
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000709",
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: targetKey,
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: targetPath,
+    headline: `${targetPath} 冲突`,
+    summary_text: "正式版和这次版本都改了同一个文档。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000711",
+      change_id: "10000000-0000-4000-8000-000000000712",
+      sha256: "a".repeat(64)
+    },
+    incoming: { sha256_before: "b".repeat(64), sha256_after: "c".repeat(64) },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 融合稿。",
+        recommended: true,
+        quality_gate: {
+          text_diff3: {
+            type: "line_text_diff3",
+            auto_merge: false,
+            current_hunks: 1,
+            incoming_hunks: 1,
+            conflict_hunks: 1,
+            conflict_ranges: [{ start_line: 1, end_line: 1 }]
+          }
+        },
+        action: {
+          id: "ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: mergeHref,
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [targetKey] } }
+        }
+      }
+    ]
+  });
+  // 两个 id 经 safeId（非字母数字 → '-'）都压成 "c-docs-a-md"——撞车。
+  const conflicts = [
+    lineEditorConflict("c:docs/a.md", "drive_item:docs/a.md", "docs/a.md"),
+    lineEditorConflict("c:docs.a.md", "drive_item:docs/b.md", "docs/b.md")
+  ];
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts });
+  // 只取独立的 id="..." 属性（前导空白），避开 data-line-editor-panel-id="..." 这类引用属性。
+  const panelIds = [...rendered.html.matchAll(/\sid="(line-editor-[^"]*)"/gu)].map((match) => match[1]);
+  assert.equal(panelIds.length >= 2, true);
+  // 修复前两个 panel/tab id 完全相同；修复后 render-local 序号前缀保证唯一。
+  assert.equal(new Set(panelIds).size, panelIds.length);
+});
+
 test("proposal renderer folds large rich patch previews instead of turning conflict cards into a workbench", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const lines = Array.from({ length: 90 }, (_, index) => index % 2 === 0 ? `-旧段落 ${index}` : `+新段落 ${index}`);

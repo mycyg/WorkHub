@@ -278,9 +278,6 @@ type RouteCopyKey =
   | "skills.confidence"
   | "skills.refinedFrom"
   | "skills.authoredBy"
-  | "cost.users"
-  | "cost.teams"
-  | "cost.workitems"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -447,9 +444,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.confidence": "置信",
     "skills.refinedFrom": "精修自 v",
     "skills.authoredBy": "来源",
-    "cost.users": "个人",
-    "cost.teams": "团队",
-    "cost.workitems": "任务",
     "settings.runtime": "运行时",
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
@@ -615,9 +609,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.confidence": "Confidence",
     "skills.refinedFrom": "refined from v",
     "skills.authoredBy": "Source",
-    "cost.users": "People",
-    "cost.teams": "Teams",
-    "cost.workitems": "Work items",
     "settings.runtime": "Runtime",
     "settings.llm": "AI runtime config",
     "settings.language": "Language",
@@ -715,6 +706,14 @@ function createWebRouteComponent(input: CreateWebRouteComponentInput): WebRouteC
 
 function routeT(locale: WorkHubLocale, key: RouteCopyKey) {
   return routeCopy[locale][key];
+}
+
+// findings[#low]：动态拼出的 copy-key（如 meeting.status.${status}）此前用 `as RouteCopyKey`
+// 硬转，契约枚举新增值时会查不到、渲染空 label。改走守卫查找：未命中就 humanize 回退
+// （如 "pending_llm" → "Pending Llm"），而不是吐空串。
+function routeTOrHumanize(locale: WorkHubLocale, key: string, fallbackToken: string): string {
+  const map = routeCopy[locale] as Record<string, string>;
+  return map[key] ?? humanizeToken(fallbackToken);
 }
 
 function stripMarkdown(value: string | undefined) {
@@ -1730,11 +1729,11 @@ function driveCommentStatusLabel(status: DrivePageVM["comments"][number]["status
 }
 
 function meetingRecordStatusLabel(status: MeetingPageVM["meetings"][number]["status"], locale: WorkHubLocale) {
-  return routeT(locale, `meeting.status.${status}` as RouteCopyKey);
+  return routeTOrHumanize(locale, `meeting.status.${status}`, status);
 }
 
 function meetingInsightStatusLabel(status: MeetingPageVM["meetings"][number]["insights"][number]["status"], locale: WorkHubLocale) {
-  return routeT(locale, `meeting.status.${status}` as RouteCopyKey);
+  return routeTOrHumanize(locale, `meeting.status.${status}`, status);
 }
 
 function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
@@ -2139,7 +2138,7 @@ function renderHealthSignal(
   numbersVisible: boolean,
   locale: WorkHubLocale
 ) {
-  const label = routeT(locale, `health.signal.${signal.key}` as RouteCopyKey);
+  const label = routeTOrHumanize(locale, `health.signal.${signal.key}`, signal.key);
   const value = numbersVisible ? `${label}: ${signal.count}` : `${label}: ${healthBandLabel(signal.band, locale)}`;
   const inner = `<span class="wh-pill" data-r5-7-health-signal="${escapeHtml(signal.key)}" data-r5-7-health-signal-band="${escapeHtml(signal.band)}">${escapeHtml(value)}</span>`;
   return signal.target_href

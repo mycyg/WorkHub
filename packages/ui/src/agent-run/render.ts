@@ -120,7 +120,7 @@ export function renderAgentRunLive(
     <p class="wh-subtle">${escapeHtml(latestStep?.output_excerpt ?? uiT(locale, "agent.defaultSummary"))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.status"))}</strong><p><span class="${statusClass(vm.status)}">${escapeHtml(agentRunStatusLabel(locale, vm.status))}</span></p></article>
-      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.budget"))}</strong><p class="wh-subtle">${vm.usage.token_in + vm.usage.token_out} / ${vm.budget.max_tokens} tokens</p></article>
+      <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.budget"))}</strong><p class="wh-subtle">${vm.usage.token_in + vm.usage.token_out} / ${vm.budget.max_tokens} ${escapeHtml(uiT(locale, "generic.tokens"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.steps"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.trace.length, "条", "step"))}</p></article>
     </div>
     <h2>${escapeHtml(uiT(locale, "agent.liveTitle"))}</h2>

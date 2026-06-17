@@ -448,7 +448,7 @@ function lineEditorDecisionOptions(conflict: ProposalConflict): LineEditorDecisi
 }
 
 function proposalLineEditorProps(conflicts: ProposalConflict[], locale: WorkHubLocale): ProposalLineEditorProps | undefined {
-  const files = conflicts.flatMap((conflict): ProposalLineEditorFile[] => {
+  const files = conflicts.flatMap((conflict, conflictIndex): ProposalLineEditorFile[] => {
     const option = lineEditorOption(conflict);
     const diff3 = option ? textDiff3(option) : undefined;
     const ranges = lineEditorConflictRanges(diff3?.["conflict_ranges"]);
@@ -459,7 +459,8 @@ function proposalLineEditorProps(conflicts: ProposalConflict[], locale: WorkHubL
       conflictId: conflict.id,
       targetKey: conflict.target_key,
       targetLabel: conflict.target_path ?? conflict.target_key,
-      panelId: `react-line-editor-${safeId(conflict.id)}`,
+      // findings[#low]：safeId 可能把不同 conflict.id 压成同串 → panelId 撞车；前缀加序号保证唯一。
+      panelId: `react-line-editor-${conflictIndex}-${safeId(conflict.id)}`,
       // findings[H17]：action.href 进 React <a href> 前必须 safeHref（React 不拦 javascript:/data: href）。
       href: safeHref(option.action.href),
       method: option.action.method ?? "POST",

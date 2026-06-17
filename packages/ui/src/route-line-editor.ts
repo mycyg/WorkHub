@@ -168,7 +168,7 @@ function defaultDecision(conflict: ProposalConflict): LineEditorDecision {
 }
 
 function filesFromConflicts(conflicts: ProposalConflict[]) {
-  return conflicts.flatMap((conflict) => {
+  return conflicts.flatMap((conflict, conflictIndex) => {
     const option = routeLineEditorOption(conflict);
     const diff3 = option ? textDiff3(option) : undefined;
     const ranges = conflictRanges(diff3?.["conflict_ranges"]);
@@ -181,7 +181,9 @@ function filesFromConflicts(conflicts: ProposalConflict[]) {
       option,
       ranges,
       rows: patchRows(option.quality_gate?.["text_patch_preview"]),
-      panelId: `line-editor-${safeId(conflict.id)}`,
+      // findings[#low]：safeId 会把不同 conflict.id（如 docs/a.md vs docs-a.md）压成同一串，
+      // 导致 panel/tab DOM id 撞车、aria-controls 失联。前缀加 render-local 序号保证唯一。
+      panelId: `line-editor-${conflictIndex}-${safeId(conflict.id)}`,
       targetLabel,
       defaultDecision: defaultDecision(conflict)
     }];

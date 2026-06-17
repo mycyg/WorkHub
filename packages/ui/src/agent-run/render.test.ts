@@ -111,3 +111,13 @@ test("agent run renderer localizes fixed labels and visible run status in Englis
   assert.equal(rendered.html.includes("AI 实时执行"), false);
   assert.equal(rendered.html.includes("Cuu 正在读取项目文档。"), true);
 });
+
+test("findings: budget card token unit is localized, no hardcoded English 'tokens' in zh", () => {
+  const renderedZh = renderAgentRunLive(baseRun, "web", { locale: "zh-CN" });
+  // 之前硬编码 ' tokens' 单位会漏进 zh；现在走 generic.tokens 文案键。
+  assert.equal(renderedZh.html.includes(" tokens<"), false);
+  assert.equal(renderedZh.html.includes("令牌"), true);
+
+  const renderedEn = renderAgentRunLive(baseRun, "web", { locale: "en-US" });
+  assert.equal(renderedEn.html.includes("tokens<"), true);
+});

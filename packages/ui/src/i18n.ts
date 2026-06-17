@@ -31,6 +31,7 @@ const copy = {
   "generic.checks": { "zh-CN": "检查", "en-US": "Checks" },
   "generic.steps": { "zh-CN": "步骤", "en-US": "Steps" },
   "generic.budget": { "zh-CN": "预算", "en-US": "Budget" },
+  "generic.tokens": { "zh-CN": "令牌", "en-US": "tokens" },
   "generic.model": { "zh-CN": "模型", "en-US": "Model" },
   "generic.rollback": { "zh-CN": "回滚", "en-US": "Rollback" },
   "generic.snapshot": { "zh-CN": "快照", "en-US": "Snapshot" },
