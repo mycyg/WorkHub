@@ -189,6 +189,44 @@ test("push route allows authorized workitem topic before handing off to the SSE 
   controller.abort();
 });
 
+test("findings[#170] connected frame advertises fresh resume mode even with a cursor (no false reconcile)", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const bus = new InProcessPushBus();
+  const presence = new InMemoryPresenceStore();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice], [], runtimeSettings),
+      bus,
+      presence,
+      access: { canViewWorkItem: async () => true },
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request(
+    "/api/push/stream/workitem/50000000-0000-4000-8000-000000000001?last_event_id=evt_stale_123",
+    {
+      headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    }
+  );
+  assert.equal(response.status, 200);
+  // 客户端确实请求了 resume（header 如实记录），但后端不重放 → connected 帧诚实报 "fresh"，不谎称 "reconcile"。
+  assert.equal(response.headers.get("x-workhub-sse-cursor"), "resume-requested");
+  const reader = response.body!.getReader();
+  const { value } = await reader.read();
+  const text = new TextDecoder().decode(value ?? new Uint8Array());
+  assert.match(text, /event: connected/u);
+  assert.match(text, /"resume_mode":"fresh"/u);
+  assert.doesNotMatch(text, /reconcile/u);
+  await reader.cancel();
+  controller.abort();
+});
+
 test("push route default resolvers authorize workitem session and proposal streams through work item ownership", async () => {
   const runtimeSettings = settings();
   const alice = user();
