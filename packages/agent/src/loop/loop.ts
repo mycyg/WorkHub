@@ -550,24 +550,31 @@ export class AgentLoop {
       const assistant = response.content.map(parseBlock);
       await emitAssistantTrace(input, stepNo, assistant);
       const toolCalls = assistant.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
+      // findings[#48]：先算 control。max_tokens 截断会让 tool_use.input 退化成残缺 partial_json 字符串，
+      // controlFromAssistant 此时返回 "compact"——绝不能拿这种垃圾输入去执行工具。原实现在算 control 之前就把
+      // 工具全跑了，导致 compact 守卫成死代码（执行后 toolResults>0 总走 continue 分支，compact 分支不可达）。
+      // 故 compact 时跳过工具执行，让下方路由进 compact 重来（compactNow 会把残缺的 assistant 内容摘要掉）。
+      // 注意：max_tokens 但所有 tool_use input 仍解析成功时返回的是 "continue"，工具照常执行——只有真退化才跳过。
+      const control = controlFromAssistant(assistant, response.stopReason);
       const toolResults = [];
-      for (const toolCall of toolCalls) {
-        const result = await input.tools.execute(toolCall.name, toolCall.input, ctx);
-        toolResults.push(result);
-        await input.emit?.({
-          type: eventTypes.stepToolResult,
-          previewText: result.content.slice(0, 200),
-          data: {
-            run_id: input.runId,
-            step_no: stepNo,
-            tool_id: toolCall.name,
-            ok: result.ok,
-            is_error: result.isError
-          }
-        });
+      if (control !== "compact") {
+        for (const toolCall of toolCalls) {
+          const result = await input.tools.execute(toolCall.name, toolCall.input, ctx);
+          toolResults.push(result);
+          await input.emit?.({
+            type: eventTypes.stepToolResult,
+            previewText: result.content.slice(0, 200),
+            data: {
+              run_id: input.runId,
+              step_no: stepNo,
+              tool_id: toolCall.name,
+              ok: result.ok,
+              is_error: result.isError
+            }
+          });
+        }
       }
 
-      const control = controlFromAssistant(assistant, response.stopReason);
       const step: AgentLoopStep = {
         index: stepNo,
         assistant,

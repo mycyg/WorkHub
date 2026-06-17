@@ -285,6 +285,49 @@ test("AgentLoop compacts after a max_tokens truncation and continues to success"
   assert.equal(result.steps.length, 3);
 });
 
+test("findings[#48] a max_tokens-truncated tool_use with degraded string input is NOT executed; loop compacts instead", async () => {
+  const workdir = await tempWorkdir();
+  const executed: string[] = [];
+  const spyTools = {
+    toModelTools: async () => [{ name: "write_file", description: "write", input_schema: { type: "object" } }],
+    execute: async (name: string) => {
+      executed.push(name);
+      return { ok: true, isError: false, content: "ran" };
+    }
+  } as unknown as Parameters<ReturnType<typeof createAgentLoop>["run"]>[0]["tools"];
+  const loop = createAgentLoop();
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000048",
+    workItemId: "50000000-0000-4000-8000-000000000048",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a long report",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "max_tokens",
+        usage: { inputTokens: 10, outputTokens: 4096 },
+        // partial_json 截断：input 退化成残缺 string，不能拿去执行工具。
+        content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }]
+      },
+      {
+        id: "m2",
+        stopReason: "end_turn",
+        usage: { inputTokens: 5, outputTokens: 5 },
+        content: [{ type: "text", text: "交付完成" }]
+      }
+    ]),
+    tools: spyTools,
+    budget,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000048" })
+  });
+
+  // 关键：残缺输入的 tool_use 绝不被执行（修复前会在算 control 之前就把垃圾输入跑了），改走 compact 重来。
+  assert.equal(executed.length, 0);
+  assert.equal(result.usage.compactions, 1);
+  // （此 spy 不写交付物，故终态是 no-deliverable failed——与本用例要证的「跳过执行+compact」无关，不断言终态。）
+});
+
 test("M1 AgentLoop proactively compacts when the context-window threshold is crossed", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());
