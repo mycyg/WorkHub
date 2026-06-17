@@ -2107,6 +2107,65 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               updatedAt: at
             })
             .where(eq(branches.id, row.branchId));
+          // H14 数据完整性：结构化记录的 AI 融合采纳也必须写台账(accepted_deliverable_changes)并作废旧 current 行，
+          // 否则 drive-file/merge() 两条路径都写台账、唯独此分支不写，台账会与已被融合稿改写的 WorkItem 发散。
+          // 镜像 drive-file 分支(2236-2279)：readCurrentAccepted → supersede CAS(0 行即 stale_base) → 插新行。
+          const resolvedStructuredChange = aiFusionResolvedChange({
+            sourceChange,
+            conflict,
+            candidate,
+            changeId: randomUUID(),
+            mergeProposalId: input.mergeProposalId
+          });
+          const currentStructuredAccepted = await readCurrentAccepted(tx, {
+            projectId: row.projectId,
+            workItemId: row.workItemId,
+            targetKey: row.mergeProposal.conflictKey
+          });
+          if (currentStructuredAccepted) {
+            const superseded = await tx
+              .update(acceptedDeliverableChanges)
+              .set({ supersededAt: at, updatedAt: at })
+              .where(and(
+                row.projectId
+                  ? eq(acceptedDeliverableChanges.projectId, row.projectId)
+                  : eq(acceptedDeliverableChanges.workItemId, row.workItemId),
+                eq(acceptedDeliverableChanges.targetKey, row.mergeProposal.conflictKey),
+                isNull(acceptedDeliverableChanges.supersededAt),
+                ...(currentStructuredAccepted.sha256After
+                  ? [eq(acceptedDeliverableChanges.sha256After, currentStructuredAccepted.sha256After)]
+                  : [])
+              ))
+              .returning({ id: acceptedDeliverableChanges.id });
+            // L3 提交前复检：0 行作废说明锁内当前态已被改，中止采纳，绝不脏写盖掉别人内容。
+            if (superseded.length === 0) {
+              throw new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
+            }
+          }
+          const structuredAcceptedChangeId = randomUUID();
+          await tx.insert(acceptedDeliverableChanges).values({
+            id: structuredAcceptedChangeId,
+            workItemId: row.workItemId,
+            ...(row.projectId ? { projectId: row.projectId } : {}),
+            proposalId: row.proposalId,
+            branchId: row.branchId,
+            changeId: resolvedStructuredChange.id,
+            targetKind: resolvedStructuredChange.target_kind,
+            targetEntityType: resolvedStructuredChange.target_ref.entity_type,
+            ...(resolvedStructuredChange.target_ref.entity_id ? { targetEntityId: resolvedStructuredChange.target_ref.entity_id } : {}),
+            ...(resolvedStructuredChange.target_ref.path ? { targetPath: resolvedStructuredChange.target_ref.path } : {}),
+            targetKey: row.mergeProposal.conflictKey,
+            changeType: resolvedStructuredChange.change_type,
+            acceptedVersion: (currentStructuredAccepted?.acceptedVersion ?? 0) + 1,
+            ...(baseVersionRef(resolvedStructuredChange) ? { baseVersionRef: baseVersionRef(resolvedStructuredChange) } : {}),
+            acceptedRef: acceptedRef(resolvedStructuredChange),
+            ...(resolvedStructuredChange.target_ref.sha256_before ? { sha256Before: resolvedStructuredChange.target_ref.sha256_before } : {}),
+            ...(resolvedStructuredChange.target_ref.sha256_after ? { sha256After: resolvedStructuredChange.target_ref.sha256_after } : {}),
+            ...(resolvedStructuredChange.preview_ref ? { previewRefJson: resolvedStructuredChange.preview_ref } : {}),
+            manifestChangeJson: resolvedStructuredChange,
+            createdAt: at,
+            updatedAt: at
+          });
           await tx.insert(auditLogs).values({
             id: randomUUID(),
             actorKind: input.actor?.actorKind ?? "system",
@@ -2126,8 +2185,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               structured_field_patch_dry_run: resolvedStructuredPatch.dryRun,
               structured_field_changes: fieldChanges,
               structured_field_count: fieldChanges.length,
-              accepted_change_ids: [],
-              accepted_change_count: 0,
+              accepted_change_ids: [structuredAcceptedChangeId],
+              accepted_change_count: 1,
               adopted_drive_version_ids: [],
               adopted_drive_version_count: 0,
               conflict_checked: true,
