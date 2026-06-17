@@ -207,14 +207,9 @@ export function createCuuController(input: {
       return decision("drop", "removed_queued_card", { ...(removed ? { card: removed } : {}) });
     }
 
-    if (!activeCard) {
-      const promoted = takeNextCard(queue, badges);
-      activeCard = promoted?.card;
-      if (promoted) {
-        return decision("show", promoted.reason, { card: promoted.card });
-      }
-    }
-
+    // findings[#low]：此前这里有一个 `if (!activeCard) 提升下一张` 兜底块——但能走到这里
+    // 说明 cardId 既不是 active、也不在 queue/badge 里（未知 id）。dismiss(未知 id) 不该
+    // 顺手把队列/徽标卡提升上来。删掉该块，直接落到 nothing_active。
     return decision("idle", "nothing_active");
   };
 

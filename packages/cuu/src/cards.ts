@@ -730,8 +730,11 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleO
       title: cuuT(options.locale, "workItem.acceptanceSection"),
       lines: vm.acceptance.slice(0, 4).map((item, index) => {
         const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
-        const title = record.title ?? cuuFormat(options.locale, "workItem.acceptanceFallback", { index: index + 1 });
-        const status = record.status ?? "open";
+        // findings[#low]：acceptance 项是 z.unknown()，title/status 可能不是字符串。
+        // ?? 只挡 null/undefined，对象/数字会 stringify 成 "[object Object]"/"5"。改 typeof 守卫，
+        // 非字符串落到占位文案（与 cards.ts:233 dataStringField 约定一致）。
+        const title = typeof record.title === "string" ? record.title : cuuFormat(options.locale, "workItem.acceptanceFallback", { index: index + 1 });
+        const status = typeof record.status === "string" ? record.status : "open";
         return `${title}: ${status}`;
       })
     });

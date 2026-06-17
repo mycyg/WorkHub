@@ -368,6 +368,29 @@ test("work item detail becomes a lightweight Cuu task card", () => {
   assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
 });
 
+test("findings: acceptance items with non-string title/status fall back instead of rendering [object Object]", () => {
+  const detail = {
+    workitem: {
+      id: "10000000-0000-4000-8000-000000000002",
+      code: "CSW-2",
+      project_id: "10000000-0000-4000-8000-000000000002",
+      title: "坏数据验收项",
+      status: "ai_working",
+      summary_md: "验收项含非字符串字段。"
+    },
+    // z.unknown() 允许任意值——模拟坏数据：title 是对象、status 是数字。
+    acceptance: [{ title: { nested: true }, status: 5 }],
+    agent_trace_preview: [],
+    evidence_refs: []
+  } as unknown as WorkItemDetailVM;
+
+  const card = cardFromWorkItemDetail(detail);
+  const line = card.sections?.find((section) => section.id === "acceptance")?.lines[0] ?? "";
+  assert.equal(line.includes("[object Object]"), false);
+  assert.equal(line.includes(": 5"), false);
+  assert.equal(line.endsWith(": open"), true);
+});
+
 test("evidence bubbles preserve task binding POST actions", () => {
   const bubble: EvidenceBubble = {
     id: "00000000-0000-4000-8000-000000000302",

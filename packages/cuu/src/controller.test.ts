@@ -78,6 +78,22 @@ test("Cuu controller turns quiet and do-not-disturb interruptions into badges", 
   assert.equal(promoted.snapshot.badge_count, 0);
 });
 
+test("findings: dismiss(unknownId) with an empty active slot does not promote a badge", () => {
+  const dnd = createCuuController({ preferences: { attention_mode: "do_not_disturb" } });
+  dnd.enqueue(card({ id: "dnd-urgent", priority: "urgent", state: "asking_approval" }));
+  // do_not_disturb：urgent 进徽标，active 槽保持空。
+  assert.equal(dnd.snapshot().active_card, undefined);
+  assert.equal(dnd.snapshot().badge_count, 1);
+
+  const result = dnd.dismiss("does-not-exist");
+
+  // 未知 id：什么都不该被提升上来。
+  assert.equal(result.outcome, "idle");
+  assert.equal(result.reason, "nothing_active");
+  assert.equal(result.snapshot.badge_count, 1);
+  assert.equal(result.snapshot.active_card, undefined);
+});
+
 test("Cuu controller drops duplicates and respects queue limits", () => {
   const controller = createCuuController({ preferences: { queue_limit: 1 } });
 
