@@ -1807,7 +1807,7 @@ async function main() {
     if (
       structuredTaskAudit?.detailJson["merge_strategy"] !== "field_merge"
       || structuredTaskAudit.detailJson["structured_field_count"] !== 1
-      || structuredTaskAudit.detailJson["accepted_change_count"] !== 0
+      || structuredTaskAudit.detailJson["accepted_change_count"] !== 1
       || !Array.isArray(structuredTaskChanges)
       || structuredTaskChanges[0]?.field !== "task_items"
       || structuredTaskChanges[0]?.itemCount !== 2
