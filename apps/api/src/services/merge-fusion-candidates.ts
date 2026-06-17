@@ -848,46 +848,59 @@ export function createLlmMergeFusionCandidateGenerator(options: {
       const supplements: MergeProposalCandidateSupplement[] = [];
 
       if (eligibleConflicts.length > 0 && registry.isConfigured()) {
-        const client = registry.get({
-          id: input.actor?.actor_user_id ?? input.proposalId,
-          label: input.actor?.label ?? "proposal-merge-mediator",
-          ...(input.actor?.actor_user_id ? { userId: input.actor.actor_user_id } : {}),
-          workItemId: input.workItemId
-        }, "review");
-        const response = await client.messages.create({
-          maxTokens: 1200,
-          source: "review",
-          system: "You are WorkHub's merge mediator. Return strict JSON only. Never include secrets or git conflict markers.",
-          messages: [
-            {
-              role: "user",
-              content: promptFor({
-                ...input,
-                conflicts: eligibleConflicts
-              })
-            }
-          ]
-        });
-        const parsed = llmFusionResponseSchema.parse(parseJsonObject(textFromContent(response.content)));
-        const byConflict = new Map(input.conflicts.map((conflict) => [conflict.target_key, conflict]));
-        for (const raw of parsed.candidates) {
-          const conflict = byConflict.get(raw.conflict_key);
-          if (!conflict || !supportedFusionTargetKinds.has(conflict.target_kind)) {
-            continue;
-          }
-          if (hasConflictMarkers(raw.rationale_md) || hasConflictMarkers(raw.merged_value)) {
-            continue;
-          }
-          supplements.push({
-            conflictKey: raw.conflict_key,
-            candidates: [candidateFor({
-              conflict,
-              change: changeSummary(input.manifest, conflict),
-              rationaleMd: raw.rationale_md,
-              ...(raw.merged_value ? { mergedValue: raw.merged_value } : {})
-            })],
-            ...(raw.recommend ? { recommendedOptionKey: "ai_fusion" } : {})
+        // 仅把 LLM 调用 + JSON 解析包进 try/catch：模型返回空/截断/畸形 JSON 会让 parseJsonObject/schema.parse
+        // 抛错，若让它冒泡到 safelyGenerateMergeFusionCandidates 的兜底 catch，会连同上面零成本、确定性的
+        // diff3 文本合并候选(deterministicSupplements)一起被清零。LLM 侧失败必须只丢弃 LLM 候选。
+        try {
+          const client = registry.get({
+            id: input.actor?.actor_user_id ?? input.proposalId,
+            label: input.actor?.label ?? "proposal-merge-mediator",
+            ...(input.actor?.actor_user_id ? { userId: input.actor.actor_user_id } : {}),
+            workItemId: input.workItemId
+          }, "review");
+          const response = await client.messages.create({
+            maxTokens: 1200,
+            source: "review",
+            system: "You are WorkHub's merge mediator. Return strict JSON only. Never include secrets or git conflict markers.",
+            messages: [
+              {
+                role: "user",
+                content: promptFor({
+                  ...input,
+                  conflicts: eligibleConflicts
+                })
+              }
+            ]
           });
+          const parsed = llmFusionResponseSchema.parse(parseJsonObject(textFromContent(response.content)));
+          const byConflict = new Map(input.conflicts.map((conflict) => [conflict.target_key, conflict]));
+          for (const raw of parsed.candidates) {
+            const conflict = byConflict.get(raw.conflict_key);
+            if (!conflict || !supportedFusionTargetKinds.has(conflict.target_kind)) {
+              continue;
+            }
+            if (hasConflictMarkers(raw.rationale_md) || hasConflictMarkers(raw.merged_value)) {
+              continue;
+            }
+            supplements.push({
+              conflictKey: raw.conflict_key,
+              candidates: [candidateFor({
+                conflict,
+                change: changeSummary(input.manifest, conflict),
+                rationaleMd: raw.rationale_md,
+                ...(raw.merged_value ? { mergedValue: raw.merged_value } : {})
+              })],
+              ...(raw.recommend ? { recommendedOptionKey: "ai_fusion" } : {})
+            });
+          }
+        } catch (error) {
+          // 退回到只用确定性候选；绝不让 LLM 侧异常吞掉 diff3 合并稿。
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[merge-fusion] LLM mediator failed for proposal ${input.proposalId}; falling back to deterministic diff3 candidates only: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       }
       return supplementsWithTextPatchPreviews(input, [...deterministicSupplements, ...supplements]);

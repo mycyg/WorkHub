@@ -417,6 +417,59 @@ test("LLM merge mediator creates deterministic diff3 candidates for non-overlapp
   assert.equal(preview?.hunks?.[0]?.lines?.some((line) => line.includes("+New evidence.")), true);
 });
 
+test("findings[#11] malformed LLM JSON falls back to deterministic diff3 candidates instead of wiping them", async () => {
+  // 一个非重叠冲突(确定性 diff3 可自动合并) + 一个重叠冲突(走 LLM)。fakeRegistry 返回空串
+  // → textFromContent="" → JSON.parse("") 抛错。修复前异常冒泡到 safelyGenerate 兜底 catch，
+  // 确定性候选连同 LLM 候选被一起清零(返回 [])；修复后只丢 LLM 候选，确定性 diff3 候选必须存活。
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry("")
+  });
+
+  const deterministicKey = "delivery:/outputs/report.md";
+  const llmKey = "delivery:/outputs/notes.md";
+  const notesConflict: ProposalMergeConflict = {
+    ...conflict(),
+    target_key: llmKey,
+    target_path: "/outputs/notes.md"
+  };
+
+  const result = await generator.generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [conflict(), notesConflict],
+    contentContexts: {
+      [deterministicKey]: {
+        conflict_key: deterministicKey,
+        target_kind: "text_doc",
+        target_path: "/outputs/report.md",
+        base: { text: "# Report\n\nSummary.\n\nRisks.\n", bytes: 27, truncated: false, ref: "v1" },
+        current: { text: "# Report\n\nSummary updated by owner.\n\nRisks.\n", bytes: 44, truncated: false, ref: "v2" },
+        incoming: { text: "# Report\n\nSummary.\n\nRisks.\n\nNew evidence.\n", bytes: 42, truncated: false, ref: "v3" }
+      },
+      [llmKey]: {
+        conflict_key: llmKey,
+        target_kind: "text_doc",
+        target_path: "/outputs/notes.md",
+        base: { text: "A\nB\nC\n", bytes: 6, truncated: false, ref: "v1" },
+        current: { text: "A\nB owner\nC\n", bytes: 12, truncated: false, ref: "v2" },
+        incoming: { text: "A\nB incoming\nC\n", bytes: 15, truncated: false, ref: "v3" }
+      }
+    }
+  });
+
+  // 确定性 diff3 候选必须存活，不因 LLM 解析失败被清零。
+  const deterministic = result.find((supplement) => supplement.conflictKey === deterministicKey);
+  assert.ok(deterministic, "deterministic diff3 supplement must survive an LLM JSON failure");
+  assert.equal(deterministic?.candidates[0]?.source, "diff3");
+  // LLM 候选被丢弃：重叠冲突没有 source==='llm' 的候选。
+  const llmSupplement = result.find((supplement) =>
+    supplement.conflictKey === llmKey && supplement.candidates.some((candidate) => candidate.source === "llm")
+  );
+  assert.equal(llmSupplement, undefined);
+});
+
 test("LLM merge mediator keeps overlapping text changes on the LLM path", async () => {
   let prompt = "";
   const generator = createLlmMergeFusionCandidateGenerator({
