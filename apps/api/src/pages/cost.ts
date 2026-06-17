@@ -256,12 +256,28 @@ function aggregateTrend(entries: readonly CostLedgerEntry[]): CostDashboardVM["t
 }
 
 function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "team" | "workitem") {
+  // findings[H10/H13]：每次用量被 usageToLedgerEntries 扇成 user+team+workitem 三条 entry，且每条都复制了
+  // 同一份 userId/workItemId 反规范化列——直接按这些列聚合会把一次花费数 2-3 次。改为：只认 scope.kind 匹配的
+  // entry（每次用量在该 scope 恰好一条），按 usageRecordId 去重（防重试/双写），并从 entry.scope 取本 scope 的 id。
   const buckets = new Map<string, { cost: number; tokens: number; turns: number }>();
+  const seenUsage = new Set<string>();
   for (const entry of entries) {
-    const id = scopeId(entry, kind);
+    if (entry.scope.kind !== kind) {
+      continue;
+    }
+    const id = entry.scope.kind === "user"
+      ? entry.scope.userId
+      : entry.scope.kind === "team"
+        ? entry.scope.teamId
+        : entry.scope.workitemId;
     if (!id) {
       continue;
     }
+    const usageKey = `${entry.usageRecordId}:${id}`;
+    if (seenUsage.has(usageKey)) {
+      continue;
+    }
+    seenUsage.add(usageKey);
     const current = buckets.get(id) ?? { cost: 0, tokens: 0, turns: 0 };
     current.cost += parseCny(entry.estimatedCostCny);
     current.tokens += entry.tokenIn + entry.tokenOut;
@@ -311,16 +327,6 @@ function aggregateByModel(entries: readonly CostLedgerEntry[]): CostDashboardVM[
     count: item.count,
     cost_cny: formatCny(item.cost)
   }));
-}
-
-function scopeId(entry: CostLedgerEntry, kind: "user" | "team" | "workitem") {
-  if (kind === "user") {
-    return entry.userId;
-  }
-  if (kind === "team") {
-    return entry.teamId;
-  }
-  return entry.workItemId;
 }
 
 function sumCost(entries: readonly CostLedgerEntry[]) {
