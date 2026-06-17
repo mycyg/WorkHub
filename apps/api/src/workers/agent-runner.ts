@@ -1017,7 +1017,9 @@ export function createInMemoryAgentRunQueue(options: {
             id: `${current.run_id}:final:error`,
             step_no: Math.max(current.trace.at(-1)?.step_no ?? 0, 0) + 1,
             phase: "final",
-            output_excerpt: failureReason,
+            // findings[#78]：与其余 trace 写入(.slice(0,200))一致截断。否则长 PG/provider 错误消息会被
+            // toAgentRunVm 抄进 outcome_reason，违反 agentRunSchema.outcome_reason 的 max(256) 契约。
+            output_excerpt: failureReason.slice(0, 256),
             control_signal: "escalate",
             created_at: now().toISOString()
           }

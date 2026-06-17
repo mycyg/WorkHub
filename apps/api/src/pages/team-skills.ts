@@ -1,6 +1,8 @@
 import { teamSkillsPageVmSchema, type TeamSkillsPageVM, type TeamSkillVM } from "@workhub/contracts";
 import type { TeamSkillRow } from "@workhub/db";
 
+import { parseOutputContract } from "./output-contract.js";
+
 export type TeamSkillsPageInput = {
   // 当前激活的团队技能（一 key 一 active），按 skill_key 排序。
   skills: readonly TeamSkillRow[];
@@ -57,7 +59,8 @@ export function buildTeamSkillsPage(input: TeamSkillsPageInput): TeamSkillsPageV
   const refined = skills.filter((skill) => skill.provenance !== undefined).length;
   const aiAuthored = skills.filter((skill) => skill.created_by_kind === "ai").length;
 
-  return teamSkillsPageVmSchema.parse({
+  // findings[#79]：输出边界 parse 失败是服务端装配 bug → InternalContractError(500)，不是客户端 422。
+  return parseOutputContract(teamSkillsPageVmSchema, {
     generated_at: generatedAt.toISOString(),
     skills,
     totals: {
@@ -66,5 +69,5 @@ export function buildTeamSkillsPage(input: TeamSkillsPageInput): TeamSkillsPageV
       refined
     },
     ...(skills.length === 0 ? { empty_state: "no_skills" as const } : {})
-  });
+  }, "team-skills");
 }

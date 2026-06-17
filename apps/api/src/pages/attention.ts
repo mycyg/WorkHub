@@ -2,6 +2,7 @@ import { attentionHomeVmSchema, type AttentionHomeVM, type WorkHubLocale } from 
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 import { pageT } from "./i18n.js";
+import { parseOutputContract } from "./output-contract.js";
 
 function toBackgroundRun(
   run: AgentRunQueueRecord,
@@ -38,11 +39,12 @@ export function buildAttentionHomePage(input: {
     .filter((run): run is AttentionHomeVM["background_runs"][number] => Boolean(run));
 
   // L10：与其余 page builder 一致，返回前过 zod parse（fail-closed：装配出错就报错而非渲染走样 VM）。
-  return attentionHomeVmSchema.parse({
+  // findings[#79]：输出边界 parse 失败是服务端装配 bug → InternalContractError(500)，不是客户端 422。
+  return parseOutputContract(attentionHomeVmSchema, {
     primary: queue[0],
     queue,
     background_runs,
     cuu_state: queue[0]?.cuu_state ?? (background_runs.length > 0 ? "thinking" : "idle"),
     ...(input.worklog ? { worklog: input.worklog } : {})
-  });
+  }, "attention-home");
 }

@@ -1,22 +1,28 @@
 import { createHash } from "node:crypto";
 
-import type {
-  AgentRun,
-  AgentRunLiveVM,
-  AgentStep,
-  AuditLogFact,
-  AcceptedDeliverableVM,
-  CostSummaryVM,
-  EvidenceRef,
-  ManifestFacts,
-  ReplayMergeCandidateVM,
-  ReplayMergeAttemptVM,
-  Snapshot,
-  StructuredHandoff,
-  WorkHubLocale
+import {
+  agentRunSchema,
+  agentRunLiveVmSchema,
+  replayMergeAttemptVmSchema,
+  replayTraceVmSchema,
+  type AgentRun,
+  type AgentRunLiveVM,
+  type AgentStep,
+  type AuditLogFact,
+  type AcceptedDeliverableVM,
+  type CostSummaryVM,
+  type EvidenceRef,
+  type ManifestFacts,
+  type ReplayMergeCandidateVM,
+  type ReplayMergeAttemptVM,
+  type Snapshot,
+  type StructuredHandoff,
+  type WorkHubLocale
 } from "@workhub/contracts";
 import { buildManifestFacts, type AuditLogFact as InternalAuditLogFact, type SnapshotRef } from "@workhub/audit";
 import type { AuditLogRow, MergeAttemptRow, MergeProposalRow, SnapshotRow } from "@workhub/db";
+
+import { parseOutputContract } from "./output-contract.js";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 import { pageT } from "./i18n.js";
@@ -49,7 +55,8 @@ function handoffMd(handoff: AgentRunQueueRecord["handoff"], locale: WorkHubLocal
 export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): AgentRun {
   const latestOutput = run.trace.at(-1)?.output_excerpt;
   const handoffText = handoffMd(run.handoff, locale);
-  return {
+  // findings[#78]：与其他 page builder 一致 fail-closed parse；装配走样 → InternalContractError(500)。
+  return parseOutputContract(agentRunSchema, {
     id: run.run_id,
     work_item_id: run.work_item_id,
     mode: run.mode,
@@ -66,7 +73,7 @@ export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "
     ...(handoffText ? { handoff_md: handoffText } : {}),
     created_at: run.created_at,
     updated_at: run.updated_at
-  };
+  }, "agent-run-vm");
 }
 
 export function toAgentStepVm(runId: string, step: AgentRunQueueRecord["trace"][number]): AgentStep {
@@ -95,7 +102,8 @@ function toStructuredHandoff(handoff: NonNullable<AgentRunQueueRecord["handoff"]
 }
 
 export function toAgentRunLiveVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): AgentRunLiveVM {
-  return {
+  // findings[#78]：fail-closed parse，与其他 page builder 一致。
+  return parseOutputContract(agentRunLiveVmSchema, {
     run: toAgentRunVm(run, locale),
     run_id: run.run_id,
     work_item_id: run.work_item_id,
@@ -108,7 +116,7 @@ export function toAgentRunLiveVm(run: AgentRunQueueRecord, locale: WorkHubLocale
     ...(run.handoff ? { handoff: toStructuredHandoff(run.handoff) } : {}),
     stream_href: `/api/push/stream/run/${run.run_id}`,
     replay_href: `/api/agent-runs/${run.run_id}/replay`
-  };
+  }, "agent-run-live-vm");
 }
 
 export function toSnapshotVm(row: SnapshotRow): Snapshot {
@@ -378,7 +386,8 @@ export function toReplayMergeAttemptVm(input: {
   const auditLogs = input.auditLogs ?? [];
   const textHunkAudit = replayTextHunkAudit(auditLogs);
   const bulkAction = replayBulkActionAudit(auditLogs);
-  return {
+  // findings[#78]：fail-closed parse，与其他 page builder 一致。
+  return parseOutputContract(replayMergeAttemptVmSchema, {
     id: attempt.id,
     proposal_id: attempt.proposalId,
     work_item_id: attempt.workItemId,
@@ -407,7 +416,7 @@ export function toReplayMergeAttemptVm(input: {
       : {}),
     ...(bulkAction ? { bulk_action: bulkAction } : {}),
     created_at: attempt.createdAt.toISOString()
-  };
+  }, "replay-merge-attempt-vm");
 }
 
 export function buildReplayCostSummary(run: AgentRunQueueRecord, locale: WorkHubLocale = "zh-CN"): CostSummaryVM {
@@ -484,7 +493,8 @@ export function buildReplayTracePage(input: {
   const snapshots = input.snapshots ?? [];
   const auditLogs = input.auditLogs ?? [];
   const locale = input.locale ?? "zh-CN";
-  return {
+  // findings[#78]：fail-closed parse，与其他 page builder 一致。
+  return parseOutputContract(replayTraceVmSchema, {
     run: toAgentRunVm(input.run, locale),
     steps: input.run.trace.map((step) => toAgentStepVm(input.run.run_id, step)),
     evidence_refs: buildReplayEvidenceRefs(auditLogs),
@@ -494,5 +504,5 @@ export function buildReplayTracePage(input: {
     merge_timeline: input.mergeTimeline ?? [],
     manifest_facts: input.manifestFacts ?? buildReplayManifestFacts({ snapshots, auditLogs }),
     cost: buildReplayCostSummary(input.run, locale)
-  };
+  }, "replay-trace-page");
 }

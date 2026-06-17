@@ -36,6 +36,7 @@ import {
   ProposalServiceRebaseRequiredError
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
+import { InternalContractError } from "./pages/output-contract.js";
 
 import { LOCAL_CLIENT_HEADER } from "./middleware/auth.js";
 import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
@@ -218,6 +219,26 @@ app.onError((error, c) => {
         }
       },
       error.status as 400
+    );
+  }
+
+  if (error instanceof InternalContractError) {
+    // findings[#79]：服务端装配 VM 违反自身契约——按 500 给 on-call 告警（含 context/issues，仅服务端日志），
+    // response 不回 issues、不甩锅调用方。
+    logger.error("internal_contract_error", {
+      path: new URL(c.req.url).pathname,
+      context: error.context,
+      issues: error.issues
+    });
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: "internal_contract_error",
+          message: "WorkHub hit an unexpected server error."
+        }
+      },
+      500
     );
   }
 
