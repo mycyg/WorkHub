@@ -30,6 +30,7 @@ export function writeEventStream(
 
   return stream(c, async (output) => {
     let aborted = false;
+    let opened = false;
     let subscription: PushSubscription | undefined;
 
     output.onAbort(() => {
@@ -38,6 +39,9 @@ export function writeEventStream(
 
     try {
       await presence.markStreamOpen(user.id);
+      // findings[#low]：只有 markStreamOpen 真正成功后才允许 finally 里 markStreamClosed，
+      // 否则 open 抛错时会跑一次没有配对 open 的 close，把 Redis 在线计数减成负数。
+      opened = true;
       await output.write(encoder.encode(formatSseEvent("connected", {
         topic,
         last_event_id: lastEventId || undefined,
@@ -56,6 +60,9 @@ export function writeEventStream(
         pending = pending ?? iterator.next();
         const result = await raceHeartbeat(pending, heartbeatMs);
         if (result === "heartbeat") {
+          // findings[#low]：长时间空闲流靠心跳刷新 presence lastSeen，否则在线键自然过期、
+          // is_online 误转 false（heartbeatMs 30s < TTL 120s，刷 lastSeen 即可保持 recent）。
+          await presence.touchUser(user.id);
           await output.write(encoder.encode(formatSseComment("ping")));
           continue;
         }
@@ -71,7 +78,9 @@ export function writeEventStream(
       if (subscription) {
         await bus.unsubscribe(topic, subscription);
       }
-      await presence.markStreamClosed(user.id);
+      if (opened) {
+        await presence.markStreamClosed(user.id);
+      }
     }
   });
 }
