@@ -1,0 +1,66 @@
+import type { Context, MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
+
+import { settings as defaultSettings, type Settings } from "@workhub/config";
+
+import { LOCAL_CLIENT_HEADER } from "./auth.js";
+
+// findings[8]：状态变更请求此前只靠 SameSite=Lax cookie 防 CSRF（CORS 只挡读取响应，不挡浏览器发出带 cookie 的写）。
+// 这是在 cookie 之上再加一层"同源守卫"，不替换 cookie，也不需要任何前端改动：
+//  - 桌面端用自定义 token header（X-YQGL-Client-Token）做 bearer 鉴权，天然免疫 CSRF；
+//  - web SPA 由 API 同源伺服，浏览器对每个跨源 mutation 必带 Sec-Fetch-Site 或 Origin 之一；
+//  - 非浏览器/服务端调用两者都不带 → 放行，仍由既有 cookie/token 鉴权把关。
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// 由请求自身重建 origin（scheme://host），优先反代头。仅在"有 Origin 但无 Sec-Fetch-Site"（老浏览器）时用到，
+// 出错只会过度拒绝古早浏览器，绝不会放过现代浏览器的跨源写（那条由 Sec-Fetch-Site 兜住）。
+function selfOrigin(c: Context): string | undefined {
+  const host = c.req.header("X-Forwarded-Host") ?? c.req.header("Host");
+  if (!host) {
+    return undefined;
+  }
+  let scheme = c.req.header("X-Forwarded-Proto");
+  if (!scheme) {
+    try {
+      scheme = new URL(c.req.url).protocol.replace(/:$/u, "");
+    } catch {
+      scheme = "http";
+    }
+  }
+  return `${scheme}://${host}`;
+}
+
+export function createSameOriginGuardMiddleware(
+  source: () => Settings = () => defaultSettings
+): MiddlewareHandler {
+  return async (c, next) => {
+    if (SAFE_METHODS.has(c.req.method.toUpperCase())) {
+      return next();
+    }
+    // (1) 本地客户端令牌（桌面）= header bearer 鉴权，免疫 CSRF。只认服务端真正用于鉴权的那个 header
+    //     （resolveUserFromClientToken 读 LOCAL_CLIENT_HEADER）——自定义 header 跨源需 CORS 预检，无法被伪造发出。
+    if (c.req.header(LOCAL_CLIENT_HEADER)) {
+      return next();
+    }
+    // (2) Sec-Fetch-Site：现代浏览器在每个 mutation 上都带。同源/同站/直接导航放行，明确跨站拒绝。
+    const secFetchSite = c.req.header("Sec-Fetch-Site");
+    if (secFetchSite) {
+      if (secFetchSite === "same-origin" || secFetchSite === "same-site" || secFetchSite === "none") {
+        return next();
+      }
+      throw new HTTPException(403, { message: "跨站请求被拒绝。" });
+    }
+    // (3) 退而求其次（老浏览器无 Sec-Fetch-Site）：比对 Origin 与本服务 origin / CORS 白名单。
+    const origin = c.req.header("Origin");
+    if (origin) {
+      const allowOrigins = source().auth.corsAllowOrigins;
+      const self = selfOrigin(c);
+      if (allowOrigins.includes("*") || allowOrigins.includes(origin) || (self !== undefined && origin === self)) {
+        return next();
+      }
+      throw new HTTPException(403, { message: "跨域请求被拒绝。" });
+    }
+    // (4) 既无 Sec-Fetch-Site 也无 Origin（非浏览器/服务端/老客户端）→ 放行，cookie/token 鉴权仍把关。
+    return next();
+  };
+}

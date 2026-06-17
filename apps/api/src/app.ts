@@ -37,6 +37,7 @@ import {
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 
+import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
 import { createRequestLogMiddleware, createStructuredLogger } from "./logging.js";
 
 export const logger = createStructuredLogger({ format: settings.logFormat });
@@ -55,6 +56,10 @@ app.use("/api/*", cors({
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
+
+// findings[8]：CSRF 纵深防御——在 SameSite=Lax cookie 之上加同源守卫，对 cookie 认证的写请求把关。
+// 安全方法 no-op；桌面 token header / 同源浏览器 / 非浏览器调用放行，跨站浏览器写拒绝。见 middleware/csrf.ts。
+app.use("/api/*", createSameOriginGuardMiddleware());
 
 // attachWebStatic() 之后根路径服务 SPA；未挂载 web dist 时保留 API banner。
 let webIndexHtml: string | undefined;
