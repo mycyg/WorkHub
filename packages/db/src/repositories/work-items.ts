@@ -257,14 +257,26 @@ function acceptedDeliverableColumns() {
   };
 }
 
-function projectDriveItemPath(item: typeof projectDriveItems.$inferSelect, itemById: Map<string, typeof projectDriveItems.$inferSelect>) {
-  const names: string[] = [];
-  let cursor: typeof projectDriveItems.$inferSelect | undefined = item;
-  const seen = new Set<string>();
-  while (cursor && !seen.has(cursor.id) && names.length < 50) {
-    seen.add(cursor.id);
-    names.unshift(cursor.name);
-    cursor = cursor.parentId ? itemById.get(cursor.parentId) : undefined;
+type DriveFolderNode = { id: string; parentId: string | null; name: string };
+
+// findings[#24]：原实现为算一个文件夹路径，把整个项目的 drive items 全量(所有列)拉进内存建 Map——开销随项目
+// drive 总量线性增长（不是路径深度），是潜在全表扫描悬崖。改为从该文件夹按 parentId 逐级单行上溯（≤50 跳，
+// 与旧实现的环/深度上限一致），每跳只取 id/parentId/name 三列、按主键命中。fetchParent 注入以便纯函数单测。
+export async function resolveDriveFolderPath(
+  folder: DriveFolderNode,
+  fetchParent: (id: string) => Promise<DriveFolderNode | undefined>
+): Promise<string> {
+  const names: string[] = [folder.name];
+  const seen = new Set<string>([folder.id]);
+  let parentId = folder.parentId;
+  while (parentId && !seen.has(parentId) && names.length < 50) {
+    seen.add(parentId);
+    const parent = await fetchParent(parentId);
+    if (!parent) {
+      break;
+    }
+    names.unshift(parent.name);
+    parentId = parent.parentId;
   }
   return `/${names.join("/")}`;
 }
@@ -617,14 +629,14 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       if (driveSourceComment) {
         let folderPath: string | null = null;
         if (driveSourceComment.folder) {
-          const projectDriveItemRows = await db
-            .select()
-            .from(projectDriveItems)
-            .where(eq(projectDriveItems.projectId, driveSourceComment.comment.projectId));
-          folderPath = projectDriveItemPath(
-            driveSourceComment.folder,
-            new Map(projectDriveItemRows.map((item) => [item.id, item]))
-          );
+          folderPath = await resolveDriveFolderPath(driveSourceComment.folder, async (id) => {
+            const rows = await db
+              .select({ id: projectDriveItems.id, parentId: projectDriveItems.parentId, name: projectDriveItems.name })
+              .from(projectDriveItems)
+              .where(eq(projectDriveItems.id, id))
+              .limit(1);
+            return rows[0];
+          });
         }
         driveSourceCommentWithPath = {
           ...driveSourceComment,
