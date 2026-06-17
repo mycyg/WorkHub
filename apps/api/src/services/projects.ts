@@ -1,4 +1,5 @@
 import { getSharedDatabaseClient, createProjectRepository, type ProjectRepository, type WorkHubDatabaseClient } from "@workhub/db";
+import { projectListVmSchema } from "@workhub/contracts";
 import type {
   BootstrapProjectRequest,
   BootstrapProjectResult,
@@ -9,6 +10,7 @@ import type {
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 export class ProjectServiceError extends Error {
   constructor(
@@ -109,10 +111,11 @@ export function createProjectService(
     async listProjects(input) {
       const workspaceId = input.actor.workspaceId || runtimeSettings.auth.defaultWorkspaceId;
       const rows = await repository.listForWorkspace(workspaceId);
-      return {
+      // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
+      return parseOutputContract(projectListVmSchema, {
         generated_at: now().toISOString(),
         projects: rows.map(toProjectListItemVm)
-      };
+      }, "projects.list");
     }
   };
 }

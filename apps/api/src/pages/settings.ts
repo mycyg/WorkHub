@@ -1,5 +1,7 @@
-import { workHubLocaleStorageKey, workHubLocales, type SettingsPageVM, type WorkHubLocale } from "@workhub/contracts";
+import { settingsPageVmSchema, workHubLocaleStorageKey, workHubLocales, type SettingsPageVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
+
+import { parseOutputContract } from "./output-contract.js";
 
 type SettingsPageInput = {
   settings: Settings;
@@ -14,7 +16,8 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
   const databaseConfigured = input.settings.databaseUrl.length > 0;
   const preferenceLocale = input.preferenceLocale ?? input.locale;
   const preferenceSource = input.preferenceSource ?? (input.preferenceLocale ? "server" : "request");
-  return {
+  // findings[#79 同类]：返回前过 fail-closed 输出契约校验，VM 装配走样 → 500（不是甩给调用方 422）。
+  return parseOutputContract(settingsPageVmSchema, {
     generated_at: (input.generatedAt ?? new Date()).toISOString(),
     locale: input.locale,
     runtime: {
@@ -63,5 +66,5 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
       restore_requires_desktop: true,
       web_local_actions_enabled: false
     }
-  };
+  }, "settings.page");
 }

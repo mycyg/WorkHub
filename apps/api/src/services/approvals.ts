@@ -1,4 +1,5 @@
 import {
+  approvalCenterVmSchema,
   approvalPayloadSchema,
   eventTypes,
   type ApprovalCenterVM,
@@ -42,6 +43,7 @@ import {
 import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "./proposals.js";
 
 export class ApprovalServiceError extends Error {
@@ -504,13 +506,14 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         rows.map(async (row) =>
           [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [])] as const)
       );
-      return {
+      // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
+      return parseOutputContract(approvalCenterVmSchema, {
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length },
         items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
-      };
+      }, "approval-center.page") satisfies ApprovalCenterVM;
     },
 
     async respond(id: string, actor: AuthActor, payload: RespondApprovalRequest) {

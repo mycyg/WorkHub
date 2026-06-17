@@ -1,4 +1,5 @@
 import {
+  projectHealthPageVmSchema,
   projectHealthSignalBand,
   resolveProjectHealthBand,
   type ProjectHealthCardVM,
@@ -22,6 +23,7 @@ import {
 } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 export type ProjectHealthPageServiceDependencies = {
   projectHealth: ProjectHealthRepository;
@@ -164,7 +166,8 @@ export function createProjectHealthPageService(
         return order[left.band] - order[right.band] || left.project_name.localeCompare(right.project_name);
       });
 
-      return {
+      // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
+      return parseOutputContract(projectHealthPageVmSchema, {
         generated_at: clock.toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
         viewer_scope: input.actor.isAdmin ? "admin" : "member",
@@ -176,7 +179,7 @@ export function createProjectHealthPageService(
         },
         cards: sorted,
         ...(sorted.length === 0 ? { empty_state: "no_projects" as const } : {})
-      };
+      }, "project-health.page");
     }
   };
 }
