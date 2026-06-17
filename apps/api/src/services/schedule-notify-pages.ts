@@ -17,7 +17,9 @@ import {
   getSharedDatabaseClient,
   createNotificationRepository,
   createScheduleNotifyRepository,
+  notificationContentMatches,
   type AuditLogRepository,
+  type CreateNotificationInput,
   type MeetingInsightScheduleSourceRow,
   type NotificationRepository,
   type NotificationRow,
@@ -480,7 +482,15 @@ export function createScheduleNotifyPageService(
 
   async function ensureMeetingInsightNotifications(actor: AuthActor, locale: WorkHubLocale) {
     const labels = copy(locale);
+    const userId = actor.userId ?? actor.id;
     const sources = await deps.scheduleNotify.listMeetingInsightSources({ limit: 80 });
+    // M10：读路径写放大治理——此前每次 GET /notifications 都对最多 80 个会议洞见各发一笔 createOrUpdateNotification
+    // 事务（轮询/多标签页时成倍放大读端写负载）。这里先一次性批量读出用户现有通知，按 dedupeKey 建表；循环里
+    // 只有"缺失或内容已变"的洞见才落库，把"每次读 ~80 个事务"降为"1 次批量读 + 极少量写"。
+    const existing = await deps.notifications.listForUser(userId, { includeArchived: true, limit: 200 });
+    const existingByDedupeKey = new Map(
+      existing.filter((row) => row.dedupeKey).map((row) => [row.dedupeKey as string, row])
+    );
     for (const source of sources) {
       if (!canViewMeetingInsight(source, actor)) {
         continue;
@@ -490,8 +500,8 @@ export function createScheduleNotifyPageService(
       const body = pending
         ? (labels.meetingPendingBody as (title: string, meeting: string) => string)(source.insight.title, source.meeting.title)
         : (labels.meetingConfirmedBody as (title: string, meeting: string) => string)(source.insight.title, source.meeting.title);
-      await deps.notifications.createOrUpdateNotification({
-        userId: actor.userId ?? actor.id,
+      const input: CreateNotificationInput = {
+        userId,
         type: pending ? "meeting.insight.pending" : "meeting.insight.confirmed",
         severity: pending ? "high" : "normal",
         title,
@@ -502,7 +512,13 @@ export function createScheduleNotifyPageService(
         ...((source.insight.createdWorkItemId ?? source.insight.targetWorkItemId)
           ? { workItemId: (source.insight.createdWorkItemId ?? source.insight.targetWorkItemId) as string }
           : {})
-      }, now());
+      };
+      const prior = input.dedupeKey ? existingByDedupeKey.get(input.dedupeKey) : undefined;
+      // 内容未变（含已读/归档态保持）→ 跳过 upsert 事务；createOrUpdateNotification 内部用同一份判定，二者一致。
+      if (prior && notificationContentMatches(prior, input)) {
+        continue;
+      }
+      await deps.notifications.createOrUpdateNotification(input, now());
     }
   }
 

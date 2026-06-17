@@ -154,10 +154,22 @@ function workItemSource(): WorkItemScheduleSourceRow {
 
 class MemoryNotifications implements NotificationRepository {
   rows = [notification()];
+  upsertCalls = 0;
 
   async createOrUpdateNotification(input: CreateNotificationInput, at: Date): Promise<NotificationWriteResult> {
+    // 每次调用 = 真实仓库里的一笔事务；M10 计这个数来衡量读路径放大。
+    this.upsertCalls += 1;
     const existing = this.rows.find((row) => row.dedupeKey === input.dedupeKey && row.userId === input.userId);
     if (existing) {
+      // 镜像真实仓库：存在则把内容更新到 input（这样重复读时内容一致，门才能跳过）。
+      existing.type = input.type;
+      existing.severity = input.severity;
+      existing.title = input.title;
+      existing.body = input.body ?? null;
+      existing.targetUrl = input.targetUrl ?? null;
+      existing.projectId = input.projectId ?? null;
+      existing.workItemId = input.workItemId ?? null;
+      existing.updatedAt = at;
       return { notification: existing, created: false, resurfaced: false };
     }
     const row = notification({
@@ -275,6 +287,24 @@ test("schedule notify page service groups meeting insight notifications and arch
 
   await service.dismiss(page.buckets.needs_decision[0]!.id, actor());
   assert.equal(audit.inputs.at(-1)?.action, "notification.dismiss");
+});
+
+test("M10 repeat notifications read does not re-upsert unchanged meeting-insight notifications", async () => {
+  const notifications = new MemoryNotifications();
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const afterFirst = notifications.upsertCalls;
+  assert.ok(afterFirst >= 1, "first read materializes at least one meeting-insight notification");
+
+  await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  // 第二次读：内容未变 → 0 笔额外 upsert 事务（读路径写放大被门挡住）。
+  assert.equal(notifications.upsertCalls, afterFirst);
 });
 
 test("schedule notify page service builds calendar blocks from due work and meeting followups", async () => {

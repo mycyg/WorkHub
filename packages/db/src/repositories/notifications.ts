@@ -34,7 +34,9 @@ export type NotificationRepository = {
   archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
 };
 
-function sameContent(row: NotificationRow, input: CreateNotificationInput) {
+// M10：导出供读路径（schedule-notify-pages.ensureMeetingInsightNotifications）做"内容未变则跳过 upsert"的门，
+// 与本仓库内部的去重判定共用同一份逻辑，避免漂移。
+export function notificationContentMatches(row: NotificationRow, input: CreateNotificationInput) {
   return (
     row.type === input.type &&
     row.severity === input.severity &&
@@ -61,7 +63,7 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
             .limit(1);
           const existing = existingRows[0];
           if (existing) {
-            if (sameContent(existing, input)) {
+            if (notificationContentMatches(existing, input)) {
               return { notification: existing, created: false, resurfaced: false };
             }
             const updatedRows = await tx
