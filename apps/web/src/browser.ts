@@ -167,10 +167,20 @@ async function waitForRunTerminal(
     if (monitorToken !== postRunClarityMonitorToken || !currentRouteIsWorkItem(workItemId)) {
       return "stopped" as const;
     }
-    const run = await client.getAgentRun(runId);
-    setPostRunClarityMetric("RunStatus", run.status);
-    if (postRunTerminalStatuses.has(run.status)) {
-      return run.status;
+    try {
+      const run = await client.getAgentRun(runId);
+      setPostRunClarityMetric("RunStatus", run.status);
+      if (postRunTerminalStatuses.has(run.status)) {
+        return run.status;
+      }
+    } catch (error) {
+      // findings[#30]：轮询期间的瞬态错误(网络抖动/偶发 5xx)不该让 run 监控冒泡成致命错误屏。明确的会话失效/
+      // 资源不存在(not_identified/401/403/404)→ 停止监控(stopped，上层走手动刷新)；其余按瞬态处理，sleep 后继续
+      // 轮询，最终只会以 timeout 收尾(同样是手动刷新)，绝不抛致命错误。
+      if (error instanceof WorkHubApiError
+        && (error.code === "not_identified" || error.status === 401 || error.status === 403 || error.status === 404)) {
+        return "stopped" as const;
+      }
     }
     await sleep(postRunTerminalPollIntervalMs);
   }
