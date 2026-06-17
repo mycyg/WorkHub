@@ -1264,6 +1264,11 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.equal(decision.reason, "budget_exhausted");
   assert.throws(() => budgetPolicySchema.parse({ ...policy, warning_ratio: 0.96 }));
   assert.throws(() => budgetPolicyUpdateSchema.parse({}));
+  // findings[#low]：update schema 也带 warning_ratio < critical_ratio 跨字段不变量（二者同时出现时）。
+  assert.throws(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.96, critical_ratio: 0.9 }));
+  assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.8, critical_ratio: 0.95 }));
+  // 单字段更新仍放行（合并不变量由服务端守卫兜底）。
+  assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.99 }));
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

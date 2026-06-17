@@ -146,8 +146,19 @@ function parseSkillDoc(contentMd: string): ParsedSkillDoc {
   const preambleLines: string[] = [];
   const sections: Array<{ heading: string; body: string[] }> = [];
   let current: { heading: string; body: string[] } | undefined;
+  // findings[#low]：围栏代码块（``` / ~~~）内的 `## ` 行不是真段落标题，不能当作分节边界。
+  let inFence = false;
+  let fenceMarker = "";
   for (const line of lines) {
-    const headingMatch = /^##\s+(.*\S)\s*$/u.exec(line);
+    const fenceOpen = /^\s*(```+|~~~+)/u.exec(line);
+    if (!inFence && fenceOpen) {
+      inFence = true;
+      fenceMarker = fenceOpen[1]![0]!;
+    } else if (inFence && fenceOpen && fenceOpen[1]![0] === fenceMarker) {
+      inFence = false;
+      fenceMarker = "";
+    }
+    const headingMatch = inFence ? null : /^##\s+(.*\S)\s*$/u.exec(line);
     if (headingMatch) {
       current = { heading: headingMatch[1]!.trim(), body: [] };
       sections.push(current);
@@ -181,8 +192,30 @@ function serializeSkillDoc(doc: ParsedSkillDoc): string {
 }
 
 // content_md 自身含 `## ` 行会破坏「单 op 单段落」不变量；用 `### ` 子标题代替。
+// findings[#low]：与 parseSkillDoc 一致——围栏代码块内的 `## ` 不算真标题，逐行扫描跳过围栏内。
 function opContentHasSectionHeading(content: string | undefined): boolean {
-  return content !== undefined && /^##\s+/mu.test(content);
+  if (content === undefined) {
+    return false;
+  }
+  let inFence = false;
+  let fenceMarker = "";
+  for (const line of content.split("\n")) {
+    const fenceOpen = /^\s*(```+|~~~+)/u.exec(line);
+    if (!inFence && fenceOpen) {
+      inFence = true;
+      fenceMarker = fenceOpen[1]![0]!;
+      continue;
+    }
+    if (inFence && fenceOpen && fenceOpen[1]![0] === fenceMarker) {
+      inFence = false;
+      fenceMarker = "";
+      continue;
+    }
+    if (!inFence && /^##\s+/u.test(line)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

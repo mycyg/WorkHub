@@ -351,8 +351,24 @@ export const budgetPolicyUpdateSchema = z
     model_route_hint: z.enum(["cheapest_safe", "balanced", "premium"]).optional(),
     enabled: z.boolean().optional()
   })
-  .refine((payload) => Object.keys(payload).length > 0, {
-    message: "budget policy update must include at least one field"
+  // findings[#low]：保留「至少一个字段」检查，并补上 budgetPolicySchema 已有的
+  // warning_ratio < critical_ratio 跨字段不变量（仅当二者同时出现在本次 payload 时能查）。
+  // 单字段更新（只改 warning_ratio）的合并不变量仍由 cost/budget.ts 服务端守卫兜底。
+  .superRefine((payload, ctx) => {
+    if (Object.keys(payload).length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "budget policy update must include at least one field" });
+    }
+    if (
+      payload.warning_ratio !== undefined &&
+      payload.critical_ratio !== undefined &&
+      payload.warning_ratio >= payload.critical_ratio
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["warning_ratio"],
+        message: "warning_ratio must be lower than critical_ratio"
+      });
+    }
   });
 export type BudgetPolicyUpdate = z.infer<typeof budgetPolicyUpdateSchema>;
 

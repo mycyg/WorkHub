@@ -84,6 +84,46 @@ test("applySkillEditPatch refuses content that smuggles a new ## heading (keeps 
   assert.equal(result.content_md, SKILL); // 无 op 应用 → 原文不变
 });
 
+test("findings: a fenced `## ` line is not treated as a section boundary by the parser", () => {
+  const SKILL_WITH_FENCE = [
+    "---",
+    "name: quarterly-report",
+    "when_to_use: 生成季度业务报告",
+    "---",
+    "",
+    "## 总则",
+    "",
+    "先列目标。",
+    "",
+    "## 套路",
+    "",
+    "示例：",
+    "```md",
+    "## 不是真段落",
+    "正文",
+    "```",
+    "收尾"
+  ].join("\n");
+
+  // 关键判别：围栏内的 `## 不是真段落` 若被错当成段落，add_section 同名会因「已存在」被 rejected。
+  // 修复后它不是段落 → add_section 能成功落地。
+  const added = applySkillEditPatch(SKILL_WITH_FENCE, [
+    { op: "add_section", section: "不是真段落", content_md: "真正的新段落正文。" }
+  ]);
+  assert.equal(added.ops[0]?.status, "applied");
+  assert.equal(added.appliedCount, 1);
+  // 围栏块原文（含 `## 不是真段落` 和闭合 ```）仍整体保留在 套路 段落里。
+  assert.match(added.content_md, /## 套路[\s\S]*```md\n## 不是真段落\n正文\n```[\s\S]*收尾/u);
+});
+
+test("findings: op content with a fenced `## ` is accepted (only bare headings break one-op-one-section)", () => {
+  const result = applySkillEditPatch(SKILL, [
+    { op: "modify_section", section: "套路", content_md: "正文\n```\n## 在围栏里\n```\n收尾" }
+  ]);
+  assert.equal(result.ops[0]?.status, "applied");
+  assert.equal(result.appliedCount, 1);
+});
+
 test("applySkillEditPatch is re-parseable: a section added then modified lands once", () => {
   const added = applySkillEditPatch(SKILL, [{ op: "add_section", section: "输出格式", content_md: "Markdown 表格。" }]);
   const modified = applySkillEditPatch(added.content_md, [{ op: "modify_section", section: "输出格式", content_md: "改成 CSV。" }]);
