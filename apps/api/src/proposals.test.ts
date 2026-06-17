@@ -1340,6 +1340,37 @@ test("proposal service blocks unreviewed merges and unlocks rejected branches", 
   );
 });
 
+test("findings: re-reviewing a rejected proposal is a 409 proposal_rejected, not a 404 not_found", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = manifest(2);
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+
+  await service.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "request_changes",
+    reasonMd: "请补齐证据。"
+  });
+
+  // 第二次审查：状态已是 rejected → 409 proposal_rejected（不是 repository 返 null 误报的 404）。
+  await assert.rejects(
+    () =>
+      service.review({
+        proposalId: created.id,
+        actor: { actor_kind: "human", actor_user_id: userId },
+        decision: "request_changes",
+        reasonMd: "再打回一次。"
+      }),
+    (error: unknown) =>
+      error instanceof ProposalServiceError && error.status === 409 && error.code === "proposal_rejected"
+  );
+});
+
 test("proposal service blocks merge when the same target was already accepted with a different file hash", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });

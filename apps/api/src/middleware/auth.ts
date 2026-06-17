@@ -289,7 +289,11 @@ export async function resolveCurrentClientDevice(c: Context, deps: AuthDependenc
     throw new HTTPException(403, { message: "local client required" });
   }
 
-  await deps.devices.touchLastSeen(device.id, (deps.now ?? (() => new Date()))());
+  // findings[#low]：与 resolveUserFromClientToken 一致——TOUCH_DEVICE_ON_AUTH=false 时
+  // 不该每个 require-local-client 请求都写一笔 lastSeen（写放大）。
+  if (getAuthSettings(deps).auth.touchDeviceOnAuth) {
+    await deps.devices.touchLastSeen(device.id, (deps.now ?? (() => new Date()))());
+  }
   return device;
 }
 

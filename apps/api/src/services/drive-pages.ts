@@ -288,11 +288,14 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
       .filter((accepted): accepted is AcceptedDeliverableVM & { drive_version_id: string } => !!accepted.drive_version_id)
       .map((accepted) => [accepted.drive_version_id, accepted])
   );
-  const acceptedByItemId = new Map(
-    acceptedDeliverables
-      .filter((accepted): accepted is AcceptedDeliverableVM & { drive_item_id: string } => !!accepted.drive_item_id)
-      .map((accepted) => [accepted.drive_item_id, accepted])
-  );
+  // findings[#low]：同一 drive_item_id 可能有多条已采纳交付（多版本）。acceptedDeliverables 是
+  // newest-first，而 new Map(entries) 是 last-wins → 会留下最旧的一条。改 first-wins 保留最新。
+  const acceptedByItemId = new Map<string, AcceptedDeliverableVM & { drive_item_id: string }>();
+  for (const accepted of acceptedDeliverables) {
+    if (accepted.drive_item_id && !acceptedByItemId.has(accepted.drive_item_id)) {
+      acceptedByItemId.set(accepted.drive_item_id, accepted as AcceptedDeliverableVM & { drive_item_id: string });
+    }
+  }
   const versionById = new Map(rows.versions.map((version) => [version.id, version]));
   const currentVersionIdByItemId = new Map(rows.items.map((item) => [item.id, item.currentVersionId]));
   const versionVms = rows.versions.map((version) =>

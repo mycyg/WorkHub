@@ -470,6 +470,68 @@ test("findings[#11] malformed LLM JSON falls back to deterministic diff3 candida
   assert.equal(llmSupplement, undefined);
 });
 
+test("findings: an LLM candidate cannot clobber a key already resolved by deterministic diff3", async () => {
+  const deterministicKey = "delivery:/outputs/report.md";
+  const llmKey = "delivery:/outputs/notes.md";
+  // LLM 回带了对 deterministicKey 的候选（幻觉/回声）——必须被丢弃，不能覆盖已验证的 diff3 候选。
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({
+      candidates: [
+        {
+          conflict_key: deterministicKey,
+          rationale_md: "LLM 越界想改确定性已解决的冲突。",
+          merged_value: { merged_text: "# Report\n\nLLM CLOBBER.\n\nRisks.\n" },
+          recommend: true
+        },
+        {
+          conflict_key: llmKey,
+          rationale_md: "重叠冲突的正常融合。",
+          merged_value: { merged_text: "A\nB merged\nC\n" },
+          recommend: true
+        }
+      ]
+    }))
+  });
+
+  const notesConflict: ProposalMergeConflict = {
+    ...conflict(),
+    target_key: llmKey,
+    target_path: "/outputs/notes.md"
+  };
+
+  const result = await generator.generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [conflict(), notesConflict],
+    contentContexts: {
+      [deterministicKey]: {
+        conflict_key: deterministicKey,
+        target_kind: "text_doc",
+        target_path: "/outputs/report.md",
+        base: { text: "# Report\n\nSummary.\n\nRisks.\n", bytes: 27, truncated: false, ref: "v1" },
+        current: { text: "# Report\n\nSummary updated by owner.\n\nRisks.\n", bytes: 44, truncated: false, ref: "v2" },
+        incoming: { text: "# Report\n\nSummary.\n\nRisks.\n\nNew evidence.\n", bytes: 42, truncated: false, ref: "v3" }
+      },
+      [llmKey]: {
+        conflict_key: llmKey,
+        target_kind: "text_doc",
+        target_path: "/outputs/notes.md",
+        base: { text: "A\nB\nC\n", bytes: 6, truncated: false, ref: "v1" },
+        current: { text: "A\nB owner\nC\n", bytes: 12, truncated: false, ref: "v2" },
+        incoming: { text: "A\nB incoming\nC\n", bytes: 15, truncated: false, ref: "v3" }
+      }
+    }
+  });
+
+  // deterministicKey 只保留 diff3 候选，绝无 LLM 候选混入。
+  const deterministic = result.find((supplement) => supplement.conflictKey === deterministicKey);
+  assert.ok(deterministic, "deterministic diff3 supplement must survive");
+  assert.equal(deterministic?.candidates.every((candidate) => candidate.source === "diff3"), true);
+  assert.equal(deterministic?.candidates.some((candidate) => candidate.source === "llm"), false);
+});
+
 test("LLM merge mediator keeps overlapping text changes on the LLM path", async () => {
   let prompt = "";
   const generator = createLlmMergeFusionCandidateGenerator({

@@ -125,7 +125,8 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
       const content = await readStoredDeliverable(file.storagePath);
       return c.body(content, 200, {
         "Content-Type": file.mime ?? "application/octet-stream",
-        "Content-Length": String(file.sizeBytes),
+        // findings[#low]：Content-Length 取实际发出的字节数，而不是可能过期/截断的 DB sizeBytes。
+        "Content-Length": String(content.byteLength),
         "Content-Disposition": contentDisposition(file.filename)
       });
     } catch (error) {

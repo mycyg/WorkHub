@@ -42,9 +42,14 @@ function toTeamSkillVM(row: TeamSkillRow): TeamSkillVM {
     version: row.version,
     source_kind: row.sourceKind,
     created_by_kind: row.createdByKind,
-    ...(row.confidenceScore !== null && row.confidenceScore !== undefined
-      ? { confidence_score: Number(row.confidenceScore) }
-      : {}),
+    // findings[#low]：confidenceScore 是 doublePrecision，越界/NaN 会撞 min(0).max(1) schema
+    // 把整页 500。夹紧到 [0,1]，非有限值直接跳过该字段而不是毒化整页。
+    ...(() => {
+      if (row.confidenceScore === null || row.confidenceScore === undefined) return {};
+      const score = Number(row.confidenceScore);
+      if (!Number.isFinite(score)) return {};
+      return { confidence_score: Math.min(1, Math.max(0, score)) };
+    })(),
     sample_count: row.sampleCount,
     updated_at: toIso(row.updatedAt),
     ...(provenance ? { provenance } : {})

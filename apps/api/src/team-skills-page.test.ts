@@ -47,6 +47,19 @@ test("buildTeamSkillsPage maps active skills, sorts by key, and totals correctly
   assert.equal(page.empty_state, undefined);
 });
 
+test("findings: out-of-range / non-finite confidence is clamped/skipped, not 500ing the page", () => {
+  // 越界值夹紧到 [0,1]，不抛 InternalContractError。
+  const over = buildTeamSkillsPage({ skills: [row({ skillKey: "over", confidenceScore: 1.7 })] });
+  assert.equal(over.skills[0]?.confidence_score, 1);
+
+  const under = buildTeamSkillsPage({ skills: [row({ skillKey: "under", confidenceScore: -0.4 })] });
+  assert.equal(under.skills[0]?.confidence_score, 0);
+
+  // NaN / 非有限值：跳过该字段而不是毒化整页。
+  const nan = buildTeamSkillsPage({ skills: [row({ skillKey: "nan", confidenceScore: Number.NaN })] });
+  assert.equal(nan.skills[0]?.confidence_score, undefined);
+});
+
 test("buildTeamSkillsPage surfaces K2 refinement provenance from samplesJson", () => {
   const page = buildTeamSkillsPage({
     skills: [

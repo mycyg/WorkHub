@@ -876,7 +876,10 @@ export function createLlmMergeFusionCandidateGenerator(options: {
           const byConflict = new Map(input.conflicts.map((conflict) => [conflict.target_key, conflict]));
           for (const raw of parsed.candidates) {
             const conflict = byConflict.get(raw.conflict_key);
-            if (!conflict || !supportedFusionTargetKinds.has(conflict.target_kind)) {
+            // findings[#low]：LLM 响应可能回带一个已被确定性 diff3 解决的 conflict_key
+            // （byConflict 查的是全部 conflict，不止 eligible）。丢弃它，别让 last-writer 覆盖
+            // 已验证的确定性候选。
+            if (!conflict || deterministicKeys.has(raw.conflict_key) || !supportedFusionTargetKinds.has(conflict.target_kind)) {
               continue;
             }
             if (hasConflictMarkers(raw.rationale_md) || hasConflictMarkers(raw.merged_value)) {

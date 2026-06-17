@@ -289,6 +289,29 @@ test("hard and soft local-client gates keep their old distinction", async () => 
   assert.equal(softBadToken.status, 403);
 });
 
+test("findings: require-local-client honors TOUCH_DEVICE_ON_AUTH=false (no write amplification)", async () => {
+  const alice = user();
+  const off = deps([alice], [device()], settings({ TOUCH_DEVICE_ON_AUTH: "false" }));
+  const offRepo = off.devices as MemoryDevices;
+  const offApp = withErrors(new Hono<AuthEnv>());
+  offApp.get("/hard", createRequireLocalClientMiddleware(off), (c) => c.json({ ok: true }));
+  const cookieOff = await signedCookie(alice.cookieToken, settings({ TOUCH_DEVICE_ON_AUTH: "false" }));
+  const offRes = await offApp.request("/hard", {
+    headers: { Cookie: cookieOff, [LOCAL_CLIENT_HEADER]: "client-token-alice" }
+  });
+  assert.equal(offRes.status, 200);
+  assert.deepEqual(offRepo.touched, []);
+
+  // 默认（开）仍每次刷新 lastSeen。
+  const on = deps([alice], [device()], settings());
+  const onRepo = on.devices as MemoryDevices;
+  const onApp = withErrors(new Hono<AuthEnv>());
+  onApp.get("/hard", createRequireLocalClientMiddleware(on), (c) => c.json({ ok: true }));
+  const cookieOn = await signedCookie(alice.cookieToken, settings());
+  await onApp.request("/hard", { headers: { Cookie: cookieOn, [LOCAL_CLIENT_HEADER]: "client-token-alice" } });
+  assert.equal(onRepo.touched.length >= 1, true);
+});
+
 test("findings: current-user gate fails closed on a present-but-invalid client token (no cookie fallback)", async () => {
   const alice = user();
   const runtimeSettings = settings();

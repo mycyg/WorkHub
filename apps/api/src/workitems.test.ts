@@ -227,6 +227,37 @@ test("accepted deliverable routes download and preview text without exposing sto
   }
 });
 
+test("findings: download Content-Length comes from the real bytes, not a stale DB sizeBytes", async () => {
+  const runtimeSettings = settings();
+  const dir = await mkdtemp(join(tmpdir(), "workhub-deliverable-"));
+  const content = "five!"; // 5 bytes
+  const storagePath = join(dir, "result.md");
+  await writeFile(storagePath, content, "utf8");
+  try {
+    const app = withErrors(new Hono<AuthEnv>());
+    app.route("/api", createWorkItemRoutes({
+      auth: authDeps(runtimeSettings),
+      workItems: workItemServiceFor({
+        file: {
+          id: "accepted-1",
+          filename: "result.md",
+          mime: "text/markdown",
+          sizeBytes: 999, // 故意与真实字节数不一致
+          storagePath
+        }
+      })
+    }));
+    const headers = { Cookie: await cookie(runtimeSettings) };
+    const download = await app.request("/api/workitems/work-1/deliverables/accepted-1/download", { headers });
+    assert.equal(download.status, 200);
+    // header 取实际发出的字节数（5），不是过期的 DB sizeBytes（999）。
+    assert.equal(download.headers.get("content-length"), String(Buffer.byteLength(content)));
+    assert.equal(await download.text(), content);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("accepted deliverable preview rejects non-text files while download remains available", async () => {
   const runtimeSettings = settings();
   const dir = await mkdtemp(join(tmpdir(), "workhub-deliverable-"));

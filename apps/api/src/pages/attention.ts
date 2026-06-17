@@ -17,12 +17,15 @@ function toBackgroundRun(
       : run.status === "failed"
         ? "failed"
         : run.status;
+  // findings[#low]：?? 只挡 null/undefined——空串 blocker 会让 preview_text='' 撞上
+  // schema 的 .min(1)、把整页打成 500。取第一个非空 blocker，否则回退本地化文案。
+  const blocker = run.handoff?.blockers.find((entry) => entry.length > 0);
   return {
     run_id: run.run_id,
     work_item_id: run.work_item_id,
     title: run.title,
     state,
-    preview_text: run.handoff?.blockers[0] ?? pageT(locale, run.status === "running" ? "attention.running" : "attention.queued")
+    preview_text: blocker ?? pageT(locale, run.status === "running" ? "attention.running" : "attention.queued")
   };
 }
 

@@ -1620,6 +1620,10 @@ export function createInMemoryProposalService(options: {
       if (proposal.status === "merged") {
         throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
       }
+      // findings[#low]：与真库 review 对齐——已打回的申请不能再被审查（否则内存夹具会"复活"它）。
+      if (proposal.status === "rejected") {
+        throw new ProposalServiceError(409, "proposal_rejected", "这份变更申请已经被打回，不能采纳。");
+      }
 
       const at = now().toISOString();
       const reviewBase = {
@@ -1853,6 +1857,11 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const proposal = await requireProposal(input.proposalId);
       if (proposal.status === "merged") {
         throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
+      }
+      // findings[#low]：已打回的申请再次审查应是 409 proposal_rejected，而不是 repository.review 返回
+      // null 后误报的 404 not_found（与 merge() 的 rejected 守卫一致）。
+      if (proposal.status === "rejected") {
+        throw new ProposalServiceError(409, "proposal_rejected", "这份变更申请已经被打回，不能采纳。");
       }
 
       const at = now();

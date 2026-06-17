@@ -246,3 +246,27 @@ test("Page VM route builders localize remaining generated labels through locale"
   assert.equal(session.question.options[0]?.label, "Document / plan draft");
   assert.equal(session.question.body, "Keep this user text untranslated.");
 });
+
+test("findings: an empty-string blocker falls back to localized copy instead of 500ing the inbox", () => {
+  const attention = buildAttentionHomePage({
+    locale: "en-US",
+    backgroundRuns: [
+      runRecord({
+        handoff: { done: [], remaining: [], next_steps: [], blockers: [""], artifacts: [], budget_hit: "none" }
+      })
+    ]
+  });
+  // 空串 blocker 不再让 preview_text='' 撞 .min(1) → 回退到 running 文案。
+  assert.equal(attention.background_runs[0]?.preview_text, "AI is working on this item.");
+
+  // 第一个非空 blocker 仍被优先采用。
+  const withBlocker = buildAttentionHomePage({
+    locale: "en-US",
+    backgroundRuns: [
+      runRecord({
+        handoff: { done: [], remaining: [], next_steps: [], blockers: ["", "budget exhausted"], artifacts: [], budget_hit: "none" }
+      })
+    ]
+  });
+  assert.equal(withBlocker.background_runs[0]?.preview_text, "budget exhausted");
+});
