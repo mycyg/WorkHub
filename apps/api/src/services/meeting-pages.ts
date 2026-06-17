@@ -148,7 +148,11 @@ function buildInsightVm(input: {
 }): MeetingInsightVM {
   const reason = compactText(input.insight.confidenceReason, 420) ?? fallbackReason(input.locale);
   const status = insightStatus(input.insight.status);
-  const evidenceExcerpt = compactText(input.meeting.minutesMd ?? input.meeting.transcriptText, 260) ?? input.insight.description;
+  // findings[#44]：原 `?? input.insight.description` 回退是未截断的原始描述，会越过 excerpt 的 max(300) 契约、
+  // 把整张 meetings 页 422。回退也走 compactText 截断到 260（描述也空时给空串，excerpt 可选且无下限）。
+  const evidenceExcerpt = compactText(input.meeting.minutesMd ?? input.meeting.transcriptText, 260)
+    ?? compactText(input.insight.description, 260)
+    ?? "";
   const canCreateDraft = input.canManage && status === "pending" && Boolean(compactText(input.insight.confidenceReason));
   return {
     id: input.insight.id,
