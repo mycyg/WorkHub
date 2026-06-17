@@ -320,7 +320,12 @@ function addDays(date: Date, days: number) {
 
 function parseDateParam(value: string | undefined, fallback: Date) {
   if (value && /^\d{4}-\d{2}-\d{2}$/u.test(value)) {
-    return startOfUtcDay(new Date(`${value}T00:00:00.000Z`));
+    // findings[#20]：正则只验形状，"2026-13-45"/"2026-02-30" 等日历上非法的值仍匹配，new Date 得 Invalid Date，
+    // 后续 dateKey().toISOString() 抛 RangeError → 500。补「可解析 + 往返等于原串」校验，非法日期回退到 fallback。
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value) {
+      return startOfUtcDay(parsed);
+    }
   }
   return startOfUtcDay(fallback);
 }
