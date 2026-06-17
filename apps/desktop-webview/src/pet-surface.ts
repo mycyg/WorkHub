@@ -832,7 +832,9 @@ export async function bootDesktopPetSurface(
     const subscription = subscribeDesktopCuuAgentRunStream({
       client,
       run: result.agentRun,
-      locale,
+      get locale() {
+        return locale;
+      },
       onCard(card, message) {
         setCard(card, message);
       },
@@ -1107,7 +1109,10 @@ export async function bootDesktopPetSurface(
       return;
     }
     event.preventDefault();
-    if (action.kind === "approval-response" && action.requiresReason && action.decision === "deny") {
+    // findings[30]：reason 收集触发要与 approvalDecisionFromAction 的 deny 判定一致（关键词集 OR requiresReason），
+    // 而不是只看 requiresReason 标志——否则一个 requiresReason=false 的 deny 会跳过 reason 提示，到 /respond 时
+    // 因缺 reason 在客户端抛错。凡 deny 一律先走 reason 提示。
+    if (action.kind === "approval-response" && action.decision === "deny") {
       pendingAction = action;
       statusText = cuuT(locale, "pet.reasonRequired");
       render();
@@ -1172,7 +1177,9 @@ export async function bootDesktopPetSurface(
     notify(notice) {
       setCard(notice.card);
     },
-    locale
+    get locale() {
+      return locale;
+    }
   });
   let samplingCursor = false;
   if (desktopPetQaScenarioStartsRunApiFlow(qaScenario)) {

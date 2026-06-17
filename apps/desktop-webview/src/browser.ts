@@ -593,6 +593,18 @@ async function boot() {
       }
     });
     triggerLiveGoldPathForRoute(window.location.hash.slice(1));
+    // findings[29]：浏览器后退/前进(hashchange)也要刷新 live 详情面板。懒加载面板已经过 activateRoute
+    // 接上 hashchange(M31)，但 proposal / gold-path live 详情此前只在 click + 初始 boot 触发——back/forward
+    // 会停在陈旧或从未加载的面板上。这里补一个 hashchange 监听，按当前 hash 复跑两个 live 详情加载器
+    // (二者对空/不匹配路由都是 no-op，重渲是幂等纯 swap，失败保留 fixture)。
+    window.addEventListener("hashchange", () => {
+      const hashRoute = window.location.hash.slice(1);
+      const proposalMatch = /^\/proposals\/([^/?#]+)/u.exec(hashRoute);
+      if (proposalMatch?.[1]) {
+        void loadLiveProposal(proposalMatch[1]);
+      }
+      triggerLiveGoldPathForRoute(hashRoute);
+    });
     // R7 P4:桌面专属「团队」「项目」页。共享 gold-path surface 无 team/projects page_vm,
     // 故经 mountLazyDesktopPanel 在壳里注入桌面 only 导航项+面板,数据懒加载(首次进入才拉)。
     // 后端零改动:团队日历走 GET /api/pages/calendar、项目清单走 GET /api/projects(均已实现)。

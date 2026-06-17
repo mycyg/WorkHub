@@ -267,8 +267,14 @@ export function createDesktopPetPointerSensor(
     if (event.relatedTarget instanceof Node && root.contains(event.relatedTarget)) {
       return;
     }
+    // findings[32]：拖拽中指针离开窗口也要落盘窗位——否则这次拖动的新位置丢失（pointerup 才存，但指针已离开不会触发）。
+    // 必须在 update() 重置 state 之前读取 wasDragging。leave 的 cursor_near/hovered 仍为 false（与 pointerup 不同）。
+    const wasDragging = state.dragging;
     update({ cursor_near: false, hovered: false, dragging: false, look_x: 0, look_y: 0, avoidance_x: 0, avoidance_y: 0, hover_avoidance: "none" });
     interact("release");
+    if (wasDragging) {
+      void input.bridge?.savePosition?.();
+    }
   };
   const onPointerMove = (event: PointerEvent) => {
     update(pointerPatchFromEvent(root, event, { cursor_near: true }));

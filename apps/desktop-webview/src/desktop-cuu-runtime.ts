@@ -727,7 +727,9 @@ export async function bindDesktopShellCuuRuntime(input: {
   };
   const bridge = createDesktopShellEventBridge({
     ...(input.now ? { now: input.now } : {}),
-    ...(input.locale ? { locale: input.locale } : {}),
+    get locale() {
+      return input.locale;
+    },
     onCuuCard(card) {
       emitCard(card);
     },

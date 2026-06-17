@@ -229,6 +229,41 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   assert.deepEqual(stopped, ["push-event", "sse-status", "system-notification"]);
 });
 
+test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const decisions: CuuControllerDecision[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  let liveLocale: "zh-CN" | "en-US" = "zh-CN";
+  await bindDesktopShellCuuRuntime({
+    listen,
+    now: () => new Date("2026-06-05T01:00:00.000Z"),
+    notify: () => {},
+    onDecision: (decision) => decisions.push(decision),
+    // Mirrors pet-surface.ts threading a live locale getter so the bridge
+    // resolves the *current* locale at card-build time, not boot time.
+    get locale() {
+      return liveLocale;
+    }
+  });
+
+  // First SSE-closed card (distinct id per state) renders in the boot locale.
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "closed" }
+  });
+  assert.equal(decisions[0]?.card?.title, "WorkHub 连接断开了");
+
+  // User switches language; a newly arriving SSE-retrying card must localize live.
+  liveLocale = "en-US";
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
+  });
+  assert.equal(decisions[1]?.card?.title, "Connection is unstable");
+});
+
 test("desktop Cuu runtime respects do-not-disturb controller decisions", async () => {
   const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
   const notices: DesktopCuuNotice[] = [];
