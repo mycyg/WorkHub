@@ -38,7 +38,7 @@ async function recordUsageSafely(sink: UsageSink, record: UsageRecord) {
   }
 }
 
-function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, response: LlmCreateResponse, source: LlmCreateParams["source"]): UsageRecord {
+function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, response: LlmCreateResponse, source: LlmCreateParams["source"], seq: LlmCreateParams["seq"]): UsageRecord {
   const usage = usageFromResponse(response);
   const input: BuildUsageRecordInput = {
     provider: route.provider.name,
@@ -47,6 +47,7 @@ function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, resp
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     source: source ?? "agent_step",
+    ...(seq !== undefined ? { seq } : {}),
     costTier: {
       inputCnyPerMtok: route.model.costInputCnyPerMtok,
       outputCnyPerMtok: route.model.costOutputCnyPerMtok
@@ -75,7 +76,8 @@ class MeasuredStream implements LlmStream {
     private readonly route: ProviderRoute,
     private readonly actor: LlmActor | undefined,
     private readonly sink: UsageSink,
-    private readonly source: LlmCreateParams["source"]
+    private readonly source: LlmCreateParams["source"],
+    private readonly seq: LlmCreateParams["seq"]
   ) {}
 
   [Symbol.asyncIterator](): AsyncIterator<LlmStreamEvent> {
@@ -85,7 +87,7 @@ class MeasuredStream implements LlmStream {
   async getFinalMessage() {
     const final = await this.inner.getFinalMessage();
     if (!this.usageRecord) {
-      this.usageRecord = makeUsageRecord(this.route, this.actor, final, this.source);
+      this.usageRecord = makeUsageRecord(this.route, this.actor, final, this.source, this.seq);
       await recordUsageSafely(this.sink, this.usageRecord);
     }
     return { ...final, usageRecord: this.usageRecord };
@@ -100,13 +102,13 @@ export class MeasuredLlmClient {
   public readonly messages = {
     create: async (params: LlmCreateParams) => {
       const response = await this.transport.create({ ...params, model: this.model });
-      const usageRecord = makeUsageRecord(this.route, this.actor, response, params.source);
+      const usageRecord = makeUsageRecord(this.route, this.actor, response, params.source, params.seq);
       await recordUsageSafely(this.usageSink, usageRecord);
       return { ...response, usageRecord };
     },
     stream: async (params: LlmCreateParams) => {
       const stream = await this.transport.stream({ ...params, model: this.model });
-      return new MeasuredStream(stream, this.route, this.actor, this.usageSink, params.source);
+      return new MeasuredStream(stream, this.route, this.actor, this.usageSink, params.source, params.seq);
     }
   };
 

@@ -87,6 +87,10 @@ export type UsageRecord = {
   model: string;
   task: string;
   actorId?: string;
+  // findings[19]：每次调用的单调序号（agent 循环的步号）。两次真正不同的调用即便 token 数与毫秒
+  // 时间戳完全相同，也因 seq 不同而产生不同的 usageRecordId，不再被去重误并、少记成本/token。
+  // 同一次调用 seq 固定 → 重复落账仍幂等。可选：非 agent_step（如 review，每 run 一次）无需 seq。
+  seq?: number;
   inputTokens: number;
   outputTokens: number;
   estimatedCostCny: string;

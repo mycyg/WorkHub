@@ -39,6 +39,8 @@ export type LlmCreateParams = {
   messages: LlmMessage[];
   tools?: unknown[];
   source?: UsageSource;
+  // findings[19]：调用序号（agent 步号），透传给用量记账作为去重消歧（同 run 内不同步即便 token 相同也不被误并）。
+  seq?: number;
 };
 
 export type LlmCreateResponse = {

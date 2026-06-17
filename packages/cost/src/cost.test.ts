@@ -182,6 +182,38 @@ test("cost ledger reconciles usage into scoped entries and budget snapshots", as
   assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "workitem" && snapshot.period === "run")?.tokenIn, 0);
 });
 
+test("findings[19] distinct calls with identical tokens in the same ms are not deduped when seq differs", async () => {
+  const base = {
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "run-1",
+    workItemId: "workitem-1",
+    userId: "user-1",
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date("2026-06-05T00:00:00.000Z")
+  };
+
+  // 两次真正不同的调用（不同步号），token / 成本 / 毫秒全相同——seq 区分，二者都必须计入，不再被误并少记。
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  await ledger.recordUsage(buildUsageRecord({ ...base, seq: 1 }));
+  await ledger.recordUsage(buildUsageRecord({ ...base, seq: 2 }));
+  assert.equal(ledger.records.length, 2);
+  const userTokens = ledger.entries
+    .filter((entry) => entry.scope.kind === "user")
+    .reduce((sum, entry) => sum + entry.tokenIn, 0);
+  assert.equal(userTokens, 2000);
+
+  // 同一次调用被重复落账（同 seq）仍幂等去重——不会因加了 seq 而把重试/双写双计。
+  const dupLedger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  const once = buildUsageRecord({ ...base, seq: 3 });
+  await dupLedger.recordUsage(once);
+  await dupLedger.recordUsage(once);
+  assert.equal(dupLedger.records.length, 1);
+});
+
 test("eval usage is reconciled separately from user and team quota", async () => {
   const ledger = createMemoryCostLedgerStore({ teamId: "team-1", evalSuite: "nightly" });
   await ledger.recordUsage(buildUsageRecord({

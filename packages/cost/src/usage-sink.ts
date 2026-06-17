@@ -13,6 +13,7 @@ export type BuildUsageRecordInput = {
   model: string;
   task: string;
   actorId?: string;
+  seq?: number;
   inputTokens: number;
   outputTokens: number;
   source?: UsageSource;
@@ -54,6 +55,10 @@ export function buildUsageRecord(input: BuildUsageRecordInput): UsageRecord {
   }
   if (input.actorId) {
     record.actorId = input.actorId;
+  }
+  // findings[19]：把调用序号带上记录，进入去重键消歧（见 usageRecordId）。
+  if (input.seq !== undefined) {
+    record.seq = input.seq;
   }
   return record;
 }

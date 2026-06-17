@@ -128,7 +128,9 @@ async function callModel(input: AgentLoopInput, params: {
     messages: params.messages,
     tools: params.tools,
     maxTokens: params.maxTokens,
-    source: "agent_step" as const
+    source: "agent_step" as const,
+    // findings[19]：把单调步号带进用量记账去重键——同 run 内两步即便 token/毫秒相同也不被误并、少记成本。
+    seq: params.stepNo
   };
   const stream = input.client.messages.stream;
   if (!stream) {

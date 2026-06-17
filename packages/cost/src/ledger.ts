@@ -52,8 +52,9 @@ export function usageToLedgerEntry(
 }
 
 export function usageRecordId(usage: UsageRecord) {
-  // L#68：把 token/成本计入去重键（id 列 varchar(512)，故不加更长的 actorId）。仍对"同一事件被重复
-  // 记账"幂等（同内容→同 id），但两次真正不同的调用即便落在同一毫秒，只要 token/成本不同就不再被误并、少记成本。
+  // L#68 + findings[19]：去重键里既含 token/成本，又含每次调用的单调序号 seq（agent 步号）。
+  // 仍对"同一事件被重复记账"幂等（同内容 + 同 seq→同 id），但两次真正不同的调用即便 token/成本/毫秒
+  // 完全相同，也因 seq 不同而不再被误并、少记成本。无 seq 的记录（如每 run 一次的 review）回退原行为。
   return [
     usage.runId ?? "no-run",
     usage.workItemId ?? "no-workitem",
@@ -62,6 +63,7 @@ export function usageRecordId(usage: UsageRecord) {
     usage.model,
     usage.task,
     usage.source,
+    usage.seq ?? "no-seq",
     usage.inputTokens,
     usage.outputTokens,
     usage.estimatedCostCny,
