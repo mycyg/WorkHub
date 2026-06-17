@@ -1143,6 +1143,10 @@ function showOnboardingScreen(
   }
   clearReadyRouteBindings();
   liveRuntime?.closeAllLiveEventSources();
+  // findings[#low]：live runtime 单例创建时一次性捕获 locale。登出→切语言→重登后，
+  // 旧 runtime 的 onRefresh/onFatal 闭包仍绑旧 locale。登出回 onboarding 时丢弃它，
+  // 让下次 bindLiveRouteStreams 用当前 locale 重建（liveRuntime ??= ...）。
+  liveRuntime = undefined;
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
   currentIdentity = undefined;
