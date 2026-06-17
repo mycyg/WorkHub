@@ -16,13 +16,26 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 
+// 畸形 JSON 体回 400（与 auth/workitems 路由同款），空体按 {} 交 schema 报缺字段。
+async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
+  const text = await c.req.text();
+  if (!text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HTTPException(400, { message: "客户端注册请求不是有效的 JSON。" });
+  }
+}
+
 export function createClientDeviceRoutes(source: AuthDependencySource = getDefaultAuthDependencies) {
   const routes = new Hono<AuthEnv>();
 
   routes.post("/register", async (c) => {
     const deps = resolveAuthDependencies(source);
     const user = await resolveCurrentUser(c, deps);
-    const payload = clientDeviceRegisterRequestSchema.parse(await c.req.json());
+    const payload = clientDeviceRegisterRequestSchema.parse(await readJsonBody(c));
     const token = makeClientToken();
     const device = await deps.devices.createClientDevice({
       userId: user.id,

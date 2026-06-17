@@ -26,6 +26,20 @@ import {
   type AdminClaimThrottle
 } from "../middleware/admin-claim-throttle.js";
 
+// 与 workitems/knowledge 路由同款：畸形 JSON 体应回 400 而非冒泡成 500。
+// 空体按 {} 处理，交由各请求 schema 报缺字段（仍是 400）。
+async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
+  const text = await c.req.text();
+  if (!text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new HTTPException(400, { message: "认证请求不是有效的 JSON。" });
+  }
+}
+
 export function createAuthRoutes(
   source: AuthDependencySource = getDefaultAuthDependencies,
   options: { adminClaimThrottle?: AdminClaimThrottle } = {}
@@ -37,7 +51,7 @@ export function createAuthRoutes(
 
   routes.post("/identify", async (c) => {
     const deps = resolveAuthDependencies(source);
-    const payload = identifyRequestSchema.parse(await c.req.json());
+    const payload = identifyRequestSchema.parse(await readJsonBody(c));
     const nickname = validateNickname(payload.nickname);
     const current = await resolveOptionalCurrentUser(c, deps);
     let { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
@@ -115,7 +129,7 @@ export function createAuthRoutes(
   routes.patch("/preferences", async (c) => {
     const deps = resolveAuthDependencies(source);
     const user = await resolveCurrentUser(c, deps);
-    const payload = updateUserPreferencesRequestSchema.parse(await c.req.json());
+    const payload = updateUserPreferencesRequestSchema.parse(await readJsonBody(c));
     if (!deps.users.updatePreferredLocale) {
       throw new HTTPException(501, { message: "user preferences are not available in this runtime" });
     }

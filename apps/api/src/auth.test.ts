@@ -420,6 +420,19 @@ test("registering without a secret stays a regular user", async () => {
   assert.equal(body.is_admin, false);
 });
 
+test("findings: malformed JSON body to /identify is a 400, not a 500", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings())));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    body: "{not valid json",
+    headers: { "Content-Type": "application/json" }
+  });
+
+  assert.equal(response.status, 400);
+});
+
 test("identity exposes and updates the bilingual locale preference", async () => {
   const alice = user();
   const runtimeSettings = settings();
