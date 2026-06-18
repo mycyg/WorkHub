@@ -124,14 +124,14 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
 
   routes.post("/:id/respond", createCurrentUserMiddleware(authSource), async (c) => {
     await assertCanReadApproval(c.req.param("id"), c.var.actor);
-    const payload = respondApprovalRequestSchema.parse(await c.req.json());
+    const payload = respondApprovalRequestSchema.parse(await c.req.json().catch(() => ({})));
     const data = await service.respond(c.req.param("id"), c.var.actor, payload);
     return c.json({ ok: true, data });
   });
 
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
     await assertCanReadApproval(c.req.param("id"), c.var.actor);
-    const payload = delegateApprovalRequestSchema.parse(await c.req.json());
+    const payload = delegateApprovalRequestSchema.parse(await c.req.json().catch(() => ({})));
     const data = await service.delegate(c.req.param("id"), c.var.actor, payload.to_user_id);
     return c.json({ ok: true, data });
   });
@@ -145,7 +145,7 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
 
   routes.post("/:id/comments", createCurrentUserMiddleware(authSource), async (c) => {
     await assertCanReadApproval(c.req.param("id"), c.var.actor);
-    const payload = addApprovalCommentRequestSchema.parse(await c.req.json());
+    const payload = addApprovalCommentRequestSchema.parse(await c.req.json().catch(() => ({})));
     const data = await service.addComment(c.req.param("id"), c.var.actor, payload.body);
     return c.json({ ok: true, data });
   });

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
 
 import {
   getSharedDatabaseClient,
@@ -64,6 +65,16 @@ function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
+// 路由 uuid 形参在到达 DB（uuid 列）前先校验。非 uuid 串原本直达 PG 查询 → 22P02 invalid uuid 抛未捕获
+// 500 + 误报 unhandled_error；非法即抛与「合法但不存在」同样的 404，攻击者无法据此区分存在性。
+const uuidParamSchema = z.uuid();
+function requireUuidParam(value: string): string {
+  if (!uuidParamSchema.safeParse(value).success) {
+    throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
+  }
+  return value;
 }
 
 export type ProposalReplayAuditReader = {
@@ -176,7 +187,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   });
 
   routes.get("/agent-runs/:id", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await queue.get(c.req.param("id"));
+    const data = await queue.get(requireUuidParam(c.req.param("id")));
     if (!data) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
@@ -187,7 +198,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   routes.get("/agent-runs/:id/trace", createCurrentUserMiddleware(authSource), async (c) => {
     const afterRaw = c.req.query("after");
     const after = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
-    const run = await queue.get(c.req.param("id"));
+    const run = await queue.get(requireUuidParam(c.req.param("id")));
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
@@ -197,7 +208,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   });
 
   routes.post("/agent-runs/:id/abort", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await queue.abort(c.req.param("id"), {
+    const data = await queue.abort(requireUuidParam(c.req.param("id")), {
       id: c.var.actor.id,
       isAdmin: c.var.actor.isAdmin
     });
@@ -205,7 +216,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   });
 
   routes.get("/agent-runs/:id/handoff", createCurrentUserMiddleware(authSource), async (c) => {
-    const run = await queue.get(c.req.param("id"));
+    const run = await queue.get(requireUuidParam(c.req.param("id")));
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
@@ -215,7 +226,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
 
   routes.get("/agent-runs/:id/replay", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    const run = await queue.get(c.req.param("id"));
+    const run = await queue.get(requireUuidParam(c.req.param("id")));
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }

@@ -76,7 +76,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
     const scopeKind = scopeKindSchema.parse(c.req.param("scope"));
     const policyId = c.req.param("id");
-    const payload = budgetPolicyUpdateSchema.parse(await c.req.json());
+    const payload = budgetPolicyUpdateSchema.parse(await c.req.json().catch(() => ({})));
     const before = (await policyStore.listPolicies(settings)).find((candidate) =>
       candidate.scopeKind === scopeKind && candidate.id === policyId
     );
