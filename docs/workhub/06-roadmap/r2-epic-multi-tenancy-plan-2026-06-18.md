@@ -1,0 +1,108 @@
+# R2 Epic 计划：多租户隔离强制
+
+- status: **planned（待用户拍板 open questions 后实施）**
+- created: 2026-06-18
+- 来源：2026-06-17 第二轮全量审查的三大「团队就绪地基」之一；用户 2026-06-18 拍板 plan-first 实施。
+- 设计依据：design workflow `wf_3b23a675` 在 HEAD 逐文件深读产出（证据带 file:line）。
+
+## 概要
+
+Today WorkHub is structurally multi-tenant (orgs/workspaces tables + workspace_id columns on most tables) but enforcement is entirely inert: there is no user↔org/workspace membership model, the actor's tenant is a hardcoded constant from config, and the scope checks that exist (scopeMatches/projectScopeMatches/policyAppliesToActor) only pass because every actor and every record carry the same default UUID. This epic adds a real membership model, derives actor tenant from the authenticated user, and systematically adds tenant predicates to cross-tenant-reachable queries — staged so the current single-default-workspace pilot keeps working unchanged.
+
+## 现状（基于当前代码，带证据）
+
+- No membership model exists. packages/db/src/schema/core.ts defines orgs (line 71) and workspaces (line 87), but grep for 'member'/'membership' across packages/db/src/schema/ and packages/db/migrations/ returns ZERO hits. There is no user↔org or user↔workspace join table; users (core.ts:47) has no orgId/workspaceId column.
+- Actor tenant is a hardcoded constant, not derived from the user. createHumanActor (apps/api/src/middleware/auth.ts:177-187), createAiActor (auth.ts:189-202) and createSystemActor (auth.ts:204-217) all set orgId/workspaceId from runtimeSettings.auth.defaultOrgId / defaultWorkspaceId.
+- Those defaults are fixed UUID literals: packages/config/src/auth.ts:6-7 (defaultOrgId '00000000-0000-4000-8000-000000000001', defaultWorkspaceId '...0002'), overridable only by env DEFAULT_ORG_ID/DEFAULT_WORKSPACE_ID (packages/config/src/env.ts:63-64,214-215).
+- The user-resolution path never reads tenant: createUserRepository (packages/db/src/repositories/users.ts:36+) exposes only findActiveById/findActiveByCookieToken/findActiveByNickname — no org/workspace lookup. createCurrentUserMiddleware (auth.ts:326-334) sets actor purely from the user row + the constant.
+- 'Tenant-isolation inert' cluster: the permission layer DOES compare tenant, so it is correct code that is simply never exercised. policyAppliesToActor (packages/permissions/src/evaluate.ts:56-69) gates org/workspace policies on actor.orgId/workspaceId; scopeMatches (packages/permissions/src/resource-permissions.ts:32-43) and projectScopeMatches (resource-permissions.ts:49-57) compare record.workspaceId/orgId vs actor's. Because every actor and every project share the one constant, these comparisons are always true today — pure no-ops until a second tenant exists.
+- Repositories with ZERO tenant predicate (grep count of workspaceId/orgId = 0): notifications, schedule-notify, proposals, cost-ledger, approval-requests, agent-runs, confidence, project-health, pilot-metrics, devices, users. These rely entirely on a narrower key (userId / projectId / workItemId / status) with no org/workspace fence.
+- Repositories that DO scope by workspace already (the pattern to copy): projects.ts:67 (listForWorkspace), drive.ts:176 + meetings.ts:94 (findProject: default-project pick is fenced to actor workspace — comment cites 'M8: B 工作区成员永远落到别人最老的项目'), team-skill.ts (36 refs, workspace-keyed throughout), audit.ts (createAuditLog takes orgId/workspaceId), budget-policies.ts, user-memory.ts, permission-policies.ts.
+- Cross-tenant read happens via 'fetch project/work-item by explicit id, then app-level canView' — e.g. drive.ts:170-173 findProject 'displayId → 按 id 查（上层再做 canView 鉴权）'. canViewProjectDrive (resource-permissions.ts:63-80) then calls projectScopeMatches. So the ONLY thing that would stop B-tenant reading A-tenant's project-by-id is projectScopeMatches — which is inert because actor.workspaceId is constant. This is the highest-risk leak surface (H2/H3 class).
+- work_items.workspaceId IS populated on new rows: services/work-items.ts:773 and :884 pass workspaceId: project.workspaceId into createWorkItem (set at work-items.ts:423). So newly-created work items are tenant-tagged; legacy rows and the column being nullable+set-null (core.ts:193) mean some rows can be NULL.
+- Many tenant-bearing columns are nullable with onDelete:set-null (tenantColumns() in core.ts:42-45 used by agent_runs, budget_policies, permission_policies; work_items.workspaceId core.ts:193). A naive 'WHERE workspace_id = $actor' predicate would silently drop NULL-tagged legacy rows — must be handled in rollout.
+- The shared AI work queue is global by design: agent-runs claimNextQueued (packages/db/src/repositories/agent-runs.ts:376-381) claims by status only, no tenant filter; pages.ts:190 filters listActive() by actor.isAdmin || run.actor_id===actor.id (user-level, not tenant). Fine for single worker pool but becomes a tenant concern if workers are ever shared across orgs.
+- Cost dashboard already fail-closes per-user scope (apps/api/src/routes/pages.ts:362-380: non-admin reads only own user-scope ledger, never team/all), but team-skills page reads the hardcoded constant directly: pages.ts:394 'const workspaceId = settings.auth.defaultWorkspaceId' instead of actor.workspaceId.
+- Migrations are sequential SQL + journal (packages/db/migrations, latest 0021_soft_delete_and_current_unique; meta/_journal.json idx 21). 0015_backfill_project_id.sql is the precedent for a data-backfill migration. CLAUDE.md notes a known snapshot-regen gap in the chain.
+- Real-PG test gates run as tsx smokes in CI: apps/api/src/qa/r1-pg-agent-run-smoke.ts and r2-pg-redis-smoke.ts (package.json qa:r1-pg-smoke / qa:r2-pg-redis-smoke). Unit tests run via node --test (e.g. packages/permissions/src/permissions.test.ts, apps/api/src/projects.test.ts).
+
+## 目标架构
+
+A user belongs to one or more workspaces (each workspace belongs to exactly one org) through an explicit membership table. On authentication, the actor's tenant is derived from membership, not from a constant. Every cross-tenant-reachable query carries a workspace (and where relevant org) predicate, and the existing app-level scope checks (scopeMatches/projectScopeMatches/policyAppliesToActor) become live because actor.workspaceId now varies per user.
+
+Membership model: new table workspace_memberships(id, workspace_id→workspaces, user_id→users, role varchar (member|admin|owner), default_workspace boolean, created/updated, soft-delete) with unique(workspace_id,user_id) WHERE deleted_at IS NULL. Org membership is derived (workspace.org_id) for now — no separate org_memberships table unless cross-workspace org admin is needed (open question). A user's 'active workspace' is resolved as: explicit request header/cookie override (validated against membership) → user's default_workspace membership → single membership. The current single default workspace is represented as exactly one membership row per existing user pointing at defaultWorkspaceId, so behavior is unchanged.
+
+Actor derivation: AuthActor keeps orgId/workspaceId (auth.ts:26-34) but they are filled from a TenantResolver that reads workspace_memberships for the user and the resolved active workspace's org_id. A membership cache keyed by userId avoids a DB round-trip per request. AI and system actors inherit tenant from the originating work_item/agent_run (agent_runs already has tenantColumns at core.ts:925) rather than the constant; for background jobs with no work-item context, fall back to the run's stored org/workspace.
+
+Query enforcement: introduce a small set of reusable Drizzle helpers (e.g. tenantPredicate(table, actor) returning a SQL fragment that is 'workspace_id = $ws OR workspace_id IS NULL' during transition, tightening to 'workspace_id = $ws' after backfill). For tables without their own workspace_id, enforce via the join to projects/work_items (which carry it). The default-project-pick paths in drive.ts/meetings.ts already scope correctly and become the template. Read-by-explicit-id paths keep delegating to canView* but those now actually discriminate because actor.workspaceId varies.
+
+Defense in depth: keep the application-layer scope checks AND add DB-level predicates so a missed app check still cannot leak across tenants. Optionally (later) Postgres RLS keyed on a per-connection app.current_workspace GUC, but that is out of scope for the first epic given the shared-pool architecture.
+
+## 数据库迁移（新表/列/索引）
+
+- NEW migration 00xx_workspace_memberships.sql: create table workspace_memberships(id uuid pk, workspace_id uuid not null references workspaces(id) on delete cascade, user_id uuid not null references users(id) on delete cascade, role varchar(16) not null default 'member', default_workspace boolean not null default false, deleted_at timestamptz, created_at/updated_at timestamptz not null default now()). Indexes: index on user_id; index on workspace_id; unique(workspace_id,user_id) WHERE deleted_at IS NULL; partial unique(user_id) WHERE default_workspace AND deleted_at IS NULL (one default per user). Add to packages/db/src/schema/core.ts and to workHubTables map (core.ts:1299).
+- NEW migration 00xx_seed_default_memberships.sql (data backfill, precedent 0015): for every existing non-deleted user, INSERT a membership row (default_workspace=true, role from users.is_admin → 'owner'/'member') pointing at the configured defaultWorkspaceId, ON CONFLICT DO NOTHING. Idempotent so re-runs are safe.
+- NEW migration 00xx_backfill_workspace_id.sql: backfill NULL tenant columns on rows reachable cross-tenant — UPDATE work_items SET workspace_id = projects.workspace_id FROM projects WHERE work_items.project_id=projects.id AND work_items.workspace_id IS NULL; same shape for any other table where a workspace_id was added. Run BEFORE tightening predicates from 'IS NULL OR =' to strict '='.
+- OPTIONAL later migrations to add workspace_id columns (denormalized for query performance/RLS) to high-traffic cross-tenant tables that today only have projectId/userId: notifications, schedule_events, approval_requests, cost_ledger_entries already has team_id (workspaces) so may be sufficient. Each addition is nullable + indexed first, backfilled via join, then made the predicate source. Defer columns that can be cheaply enforced via an existing join.
+- Address the known snapshot-regen gap: regenerate the Drizzle snapshot chain for the new table or follow the repo's established manual-snapshot workaround so audit:migrations / drizzle-kit stays consistent (CLAUDE.md flags this gap explicitly).
+
+## 实施阶段（可独立交付，每阶段带测试门）
+
+### Phase 1：Phase 1 — Membership schema + seed (no behavior change)
+
+Add workspace_memberships table to packages/db/src/schema/core.ts (+ workHubTables map at core.ts:1299) and the membership migration. Add a data-backfill migration seeding one default membership per existing user against defaultWorkspaceId. Add a memberships repository (createWorkspaceMembershipRepository) with listForUser(userId), findActiveForUser+workspace, resolveDefaultWorkspace(userId). Do NOT wire it into auth yet. This is pure additive schema, so every existing query and the constant-based actor keep working unchanged.
+
+- **涉及文件**：packages/db/src/schema/core.ts, packages/db/migrations/00xx_workspace_memberships.sql, packages/db/migrations/00xx_seed_default_memberships.sql, packages/db/migrations/meta/_journal.json, packages/db/src/repositories/memberships.ts, packages/db/src/repositories/index.ts
+- **测试门**：node --test unit on the new repo (CRUD + one-default-per-user partial-unique + soft-delete frees the unique). A real-PG assertion added to apps/api/src/qa/r1-pg-agent-run-smoke.ts (or a new tenancy smoke) that after migration every existing user has exactly one active default membership pointing at defaultWorkspaceId, and the partial unique rejects a second default.
+
+### Phase 2：Phase 2 — Derive actor tenant from membership (constant as fallback)
+
+Introduce a TenantResolver used by createHumanActor: resolve active workspace from membership (request override validated against membership → default_workspace → sole membership), fill orgId from workspace.org_id; if the user has no membership row, fall back to defaultOrg/defaultWorkspace so nothing breaks during rollout. Cache memberships per userId. Update createAiActor/createSystemActor to take tenant from the originating work_item/agent_run instead of the constant. Keep the constant only as the documented single-tenant fallback. Because seeded memberships all point at defaultWorkspaceId, resolved actor tenant equals today's constant for every current user — zero observable change.
+
+- **涉及文件**：apps/api/src/middleware/auth.ts, apps/api/src/services/tenant-resolver.ts, packages/config/src/auth.ts, apps/api/src/auth.test.ts
+- **测试门**：node --test: actor for a user with a default membership resolves to that workspace's org/workspace; user with no membership falls back to the constant; user with two memberships + override header resolves the requested one and REJECTS an override for a workspace they don't belong to. Real-PG smoke: seed two workspaces + a user member of only workspace A, assert resolved actor.workspaceId=A and an override to B is denied.
+
+### Phase 3：Phase 3 — Activate inert scope checks + close the by-id leak (highest risk)
+
+With actor.workspaceId now varying, the existing checks become live. Audit and tighten the read-by-explicit-id paths that today trust canView*: ensure canViewProjectDrive/canViewWorkItemRecord are actually invoked on every project/work-item/drive/meeting fetch-by-id, and that scope is passed (the ResourceScope built from actor — see services/drive-pages.ts:429, approvals.ts:398-399 for existing construction). Fix team-skills page reading the constant (apps/api/src/routes/pages.ts:394 → use actor.workspaceId). Add a DB-level workspace predicate on the default-project-pick and any cross-project enumeration as defense-in-depth (drive.ts/meetings.ts findProject already do this; replicate for projects.listForWorkspace consumers).
+
+- **涉及文件**：apps/api/src/routes/pages.ts, packages/permissions/src/resource-permissions.ts, apps/api/src/services/drive-pages.ts, apps/api/src/services/meeting-pages.ts, apps/api/src/services/work-items.ts, apps/api/src/services/projects.ts, packages/permissions/src/permissions.test.ts
+- **测试门**：node --test in permissions.test.ts: a user in workspace B is denied canViewProjectDrive/canViewWorkItemRecord for a project/work-item in workspace A (these currently pass-through). Real-PG cross-tenant smoke: seed workspace A project P_A and workspace B user U_B; assert U_B fetching P_A by id (drive/meetings/work-item detail) gets denied, and U_B's project list excludes P_A.
+
+### Phase 4：Phase 4 — Tenant predicates on the zero-predicate repos
+
+Add tenant fences to the repos with no predicate today, prioritizing cross-tenant-reachable reads: cost-ledger team/all queries (already user-scoped for non-admin at pages.ts:362-380 — extend the team-scope path to fence by actor workspace via cost_ledger_entries.team_id), approval-requests listing (join work_items.workspace_id), schedule-notify and notifications enumeration (fence via project/work-item join or, if added, a workspace_id column), proposals/confidence (via work_items join). Use a shared tenantPredicate helper. During transition the predicate is 'workspace_id = $ws OR workspace_id IS NULL'; after Phase 5 backfill it tightens to strict equality. Leave the global AI worker queue (agent-runs claimNextQueued) as-is but document it as intentionally cross-tenant (single worker pool).
+
+- **涉及文件**：packages/db/src/repositories/cost-ledger.ts, packages/db/src/repositories/approval-requests.ts, packages/db/src/repositories/schedule-notify.ts, packages/db/src/repositories/notifications.ts, packages/db/src/repositories/proposals.ts, packages/db/src/repositories/confidence.ts, apps/api/src/routes/pages.ts
+- **测试门**：node --test per repo: each list/sum query returns only rows for the passed workspace (and, transitionally, NULL-tagged rows). Real-PG smoke extension: two workspaces each with notifications/approvals/schedule/cost rows; assert each repo query for workspace A excludes workspace B's rows and the cost total for A excludes B's spend.
+
+### Phase 5：Phase 5 — Backfill NULL tenants and tighten to strict equality
+
+Run the backfill migration to populate NULL workspace_id on cross-tenant tables (work_items via project join, plus any columns added in Phase 4). Then flip the tenantPredicate from 'OR IS NULL' to strict '= $ws' and make work_items.workspaceId (and any new workspace_id columns) NOT NULL where safe. This is the step that removes the last cross-tenant exposure (a row with NULL tenant is reachable by everyone). Sequenced last so it only runs once data is guaranteed tagged.
+
+- **涉及文件**：packages/db/migrations/00xx_backfill_workspace_id.sql, packages/db/migrations/meta/_journal.json, packages/db/src/repositories/work-items.ts, packages/db/src/schema/core.ts
+- **测试门**：Real-PG smoke: after backfill, assert no cross-tenant-reachable table has NULL workspace_id; insert a deliberately NULL-tagged row pre-backfill and confirm it is tagged post-migration; assert the strict predicate now excludes a manually NULL-set row (no silent global visibility). Full CI: pnpm verify + qa:r1-pg-smoke + qa:r2-pg-redis-smoke green.
+
+## 风险
+
+- NULL tenant columns are a silent leak vector: a transitional 'workspace_id = $ws OR IS NULL' predicate keeps legacy rows visible to ALL tenants until Phase 5 backfill. If a second tenant is onboarded before Phase 5 completes, those NULL rows leak. Mitigation: do not onboard a second real tenant until Phase 5 lands; gate it in open_questions.
+- Activating scopeMatches/projectScopeMatches (Phase 3) can over-restrict and break the current pilot if any actor resolves to a different workspace than the data — e.g. AI/system actors that previously used the constant. Must verify createAiActor/createSystemActor inherit the work-item's tenant, not a stale constant.
+- The shared agent_runs queue (claimNextQueued, no tenant filter) is intentionally global; if workers ever serve multiple orgs this becomes a cross-tenant compute/cost mixing issue. Out of scope here but should be documented, not silently left.
+- Per-request membership lookup adds DB load on the hot auth path; an un-invalidated membership cache can grant access to a just-removed user. Need explicit cache-invalidation on membership change.
+- Drizzle snapshot-regen gap (per CLAUDE.md): adding workspace_memberships and new columns must keep the snapshot chain / audit:migrations gate green, or main goes red. Follow the repo's established manual-snapshot workaround.
+- Cost attribution: cost_ledger_entries.team_id references workspaces but many entries are user/workitem-scoped; fencing cost by workspace must use the right scope_kind or it will under/over-count a tenant's spend.
+- Override-header for active workspace (multi-membership users) is an authorization surface: if not validated against membership it becomes a tenant-switching bypass. Must fail-closed.
+
+## 向后兼容（滚动迁移期不破现有流程）
+
+"The pilot runs as a single default workspace (defaultWorkspaceId in config/auth.ts:7). Compatibility is preserved by: (1) Phase 1 seeds exactly one default membership per existing user pointing at defaultWorkspaceId, so Phase 2's resolver yields the same orgId/workspaceId the constant produced — actor identity is byte-identical for current users. (2) The constant remains as the explicit fallback when a user has no membership row, so any path that bypasses the seed still works. (3) Tenant predicates are introduced transitionally as 'workspace_id = $ws OR IS NULL' so legacy/untagged rows stay visible until the Phase 5 backfill tags them; only then do predicates tighten. (4) Single-tenant nickname/cookie login flow is untouched — no change to users table auth columns or resolveCurrentUser. (5) The global AI worker queue stays global. Net: with one workspace and one membership-per-user, every observable behavior is unchanged; the machinery only starts discriminating once a genuine second workspace+membership exists."
+
+## 待决策（Open Questions — 实施前/中需用户拍板）
+
+1. Org-level membership: is a separate org_memberships table needed, or is org membership always derived from workspace membership (a user is in an org iff they're in one of its workspaces)? Affects whether org-scoped admins exist independent of any workspace.
+2. Multi-workspace users: do we need a UI/API to switch active workspace this epic (override header/cookie), or is one-workspace-per-user sufficient for the foreseeable pilots? Determines how much of Phase 2's resolver is built now.
+3. Should we add denormalized workspace_id columns to notifications/schedule_events/approval_requests for direct predicates + future RLS, or enforce purely via joins to projects/work_items? Trade-off: write-time tagging + index cost vs. join cost on every read.
+4. Is Postgres RLS (per-connection workspace GUC) in scope, or is application-layer + repository-layer enforcement sufficient given the shared connection pool? RLS would need connection-affinity work.
+5. AI/system actor tenant for background jobs with no work-item context (e.g. nightly curation, eval suites): inherit from what? Per-workspace nightly runs, or a system tenant that legitimately spans workspaces?
+6. Hard cutover gate: can we guarantee no second real tenant is onboarded until Phase 5 backfill + strict predicates land, or do we need a feature flag that hard-fails reads of NULL-tenant rows earlier?
+7. Cost isolation expectation: should a tenant's cost dashboard ever include cross-workspace (org-level) spend for org admins, or is workspace the hard boundary for all cost queries?
