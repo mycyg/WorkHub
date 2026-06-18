@@ -485,7 +485,7 @@ updated: 2026-06-17
 
 源数据 `reference/audit2/defer-needs-user.json`（gitignored，逐项 `still_open`/`disposition`/`resolution` 标记）。本轮按「先把有明确、保语义/标准模式正解的修掉，再把判断/产品/设计类归类待拍板」推进。
 
-### ✅ 已修并全 CI 绿（10）
+### ✅ 已修并全 CI 绿（11）
 - **#3** calendar `week_count` 改数不同 ISO 周（原恒等 block_count，无生产消费方，纯诚实化）。
 - **#2** merge-fusion `text_patch_preview` 二次应用去冗余 LCS 重算（幂等守卫，两消费方均绿）。
 - **#15** `listConflictsByWorkItem` 批量预取 current-accepted（O(p×c) N+1 → 1 查询，语义保留）。
@@ -494,6 +494,7 @@ updated: 2026-06-17
 - **#34** `revertFileSnapshot` 原子 temp-and-swap（消除 clear-before-copy 破坏性数据丢失窗口）。
 - **#5** 软删用户收件人过滤接线（`bd8e0ef9`）：可选 `resolveUserRefs` 依赖 + `UserRepository.findRefsByIds`（含软删者的批量查询）填 `context.usersById`，让原本死掉的 `userIsActive` 真把已停用收件人剔出里程碑通知；可选依赖=单测零涟漪；含 events 丢弃用例 + resolver 单测 + r2-pg-redis-smoke 真库断言。
 - **#11** AI 融合稿候选采纳撞底稿时回 `rebase_required`（`ae59b63e`）：`applyMergeProposalCandidate` 此前不取 `branches.baseSnapshotId`→两 CAS 防线只裸抛 `StaleBaseError`，服务层也只接 stale_base→融合稿采纳永远走不到「对一下底稿再采纳」可恢复卡片。改成与 `merge()` 完全同口径（join branches 取 baseSnapshotId，有快照→`RebaseRequiredError`，服务 catch 走 `runRebase`+卡片）。新 rebase_required 单测；新 branches join 已被 r1-pg-agent-run-smoke 的 4 处真库 applyMergeCandidate 验证。
+- **#35** 内存队列并发 drain 双执行（`ff9dc405`）：`queuedRun()` 非持久化分支找到 queued run 却不认领,状态翻 running 在 executeRun 里(几个 await 之后)才发生;routes 用 `void drainAutoRunQueue` 非阻塞触发,两个并发 runNext/drain 可都领到同一 run 各跑一遍(双执行)。生产靠 `claimNextQueued`(FOR UPDATE SKIP LOCKED)避免,内存分支无对应。改为在内存分支同步认领(返回前 updateRun 翻 running,find→set 无 await→单线程原子);executeRun running 分支按既有 resume 语义接住(fresh run trace 空=等价新跑)。agent-runs.test 加并发 runNext 门:恰一领+执行,客户端工厂只调一次(对旧无认领码会失败)已验真。
 - **#6** recoverExpiredClaims 用 trace-less 记录覆盖内存富执行轨迹（`18227d93`）：`runs.set(id, run)` 无条件覆盖；生产 requeueExpiredClaims 回的记录 `steps:[]`，若 run 租约在执行中失效被扫到，仍在跑的 executeRun（逐步读 `runs.get(id).trace` 追加）会被截断、再经 replaceTrace 把 DB 也写短（真丢数据）。naive persistedRunIsFresher 修不了（恢复记录 updated_at 最新必赢）。改为保留更富的内存 trace（`live.trace.length > run.trace.length ? {...run, trace: live.trace} : run`），只采纳恢复记录的状态/重排字段。agent-runs.test.ts 回归门（对旧覆盖码会失败）已验真。
 - **#21** 文件夹软删 vs 并发子项上传/恢复的孤儿竞态（`75ec22d3`）：`uploadFile`/`restoreDeletedItem` 此前读父文件夹活跃态**不加行锁**（`softDeleteItem` 已 `FOR UPDATE` 锁父），并发可经 MVCC 交错把活跃子项遗留在已删父下。给两处父校验 SELECT 加 `.for("update")`→三方都在父行锁上串行化（删父先赢→上传报 parent_deleted；上传先赢→删父报 folder_not_empty）；单资源锁无死锁、非并发行为不变。r2-pg-redis-smoke 加并发 `Promise.allSettled`（upload‖softDelete 同一文件夹）真库门：恰一胜（无锁会是 2=孤儿）+ 输者走被锁路径回退码——CI 真 PG 已绿。
 
@@ -502,17 +503,17 @@ updated: 2026-06-17
 - **#39** lost-update CAS 实仍保留 scope + `isNull(supersededAt)` 守卫（原 finding 过度描述）；残留 sha-less target 已被序列化 apply 覆盖。
 - **#31** evidence-bubble href-less action 在 HEAD 实渲染带 `data-cuu-action-id` 的 `<a href=#>`（非裸 span），且为未用路径，无生产触发。
 
-### ⏳ 余 38 项分类（需拍板 / 深度重写 / 客户端 / 工具链）
+### ⏳ 余 37 项分类（需拍板 / 深度重写 / 客户端 / 工具链）
 
 **A. 需产品/UX/设计拍板（17）**——可观测行为或契约变更、或「该不该存在/删除」类，需用户产品意图，不宜在自动循环里替你拍：
 #0 成本卡 disabled-team-policy 显隐；#9 `confirm` 字段（接线还是删，删需多文件协调）；#10 预留事件枚举保留还是删；#16 blocked 候选呈现（隐藏/标记）；#26 `complete` vs `dismiss` 是否应有不同终态；#36 pm-mode 执行器行为定义（真特征需 spec，已确认是真接线的特性、非可删）；#37 成本聚合口径；#38 conflict-range 形状（被 override CAS 精确匹配 + LLM prompt，客户端可观测契约）；#42 replay AgentStep VM id 跨 cache/DB 一致化（客户端 keying 契约，无 seam 测）；#47 merge 强置 `status='merged'` 语义；#48+#41 work-item read-authz 双模型统一 + 死权限门；#49/#12/#40 评审/合并/委派授权（four-eyes？submitter 自批？）；#23 meeting insight 全局 cap（去 cap vs 加聚合 COUNT）；#25 指向已删/不可见 work-item 的通知是否对本人收件箱保留。
 
-**B. 多层/核心路径深度重写（6，宜 fresh-context 专注做，非产品决策）**——方向清楚但跨层/触核心路径，depth 下风险高（#5/#11/#21/#6 已落地，移入已修）：
-#43 model 调用无 abort/timeout（穿 AbortController 进 callModel/provider fetch/SSE reader，核心 LLM 路径，high）；#19/#20 agent loop reviewDeliverable 无超时 / compaction 阈值键于累计 token（**已分析：触观测行为+核心循环，audit 标注需架构拍板**）；#35 内存队列并发双执行（仅 dev/test 路径，生产 claimNextQueued 已 FOR UPDATE SKIP LOCKED 安全，价值低）；#1/#22/#24 操作+审计日志非原子（需跨抽象仓库穿一个 db.transaction，基础设施改，宜单独 PR）。
+**B. 多层/核心路径深度重写（5，宜 fresh-context 专注做，非产品决策）**——方向清楚但跨层/触核心路径，depth 下风险高（#5/#11/#21/#6/#35 已落地，移入已修；**B 类清晰可机械修的已全部做完**）：
+#43 model 调用无 abort/timeout（穿 AbortController 进 callModel/provider fetch/SSE reader，核心 LLM 路径，high-risk，宜单独 PR）；#19/#20 agent loop reviewDeliverable 无超时 / compaction 阈值键于累计 token（**audit 标注需架构拍板：触观测行为+核心循环**）；#1/#22/#24 操作+审计日志非原子（需跨抽象仓库穿一个 db.transaction，基础设施改，宜单独 PR）。
 
 **C. 客户端/Tauri/desktop（9，需视觉/手动验证，关联待办「桌宠动作截图审查」）**：
 #7 Restore-Cuu 重置透明度；#8 PetWindowRuntimeState 中毒 mutex；#17 post-run clarity 卡片闪烁盖住用户输入；#18 desktop 持久化整个 CuuCard；#32 pet-window 命令 TOCTOU；#33 deep-link 路由校验器分叉；#45 CuuController dismiss/clearBadges 队列竞态；#46 CSP 禁用(csp:null)；#50 desktop fetch-EventSource 不重连。
 
 **D. 工具链（2）**：#30 CI 无 drizzle snapshot/journal parity 检查；#44 drizzle snapshot 链冻结于 0015（0016–0026 手写无 snapshot）。
 
-> **下一步建议**：A 类需用户逐条或批量拍板（尤其授权模型 #48/#49、pm-mode #36）；B 类宜各自单独 fresh-context PR 专注做（每个带 PG-smoke/单测）；C 类并入桌宠视觉验证一轮；D 类是 CI 加固。无明确正解前不在自动循环里硬猜，避免回归绿库（曾因把 #36 误当 drift 差点删掉真 pm-mode 特性）。
+> **下一步建议（2026-06-18 续更）**：**B 类里清晰、可机械修、有明确正解的 5 项已全部落地（#5/#11/#21/#6/#35，各带回归门 + CI 绿）**；B 类余 5 项均为 high-risk 核心路径（#43 LLM abort）/ audit 标注需架构拍板（#19/#20）/ 跨抽象仓库事务的基础设施改（#1/#22/#24），宜各自单独 fresh-context PR 专注做，不在自动循环里硬碰（避免在 depth 下回归绿库——曾因把 #36 误当 drift 差点删掉真 pm-mode 特性）。**最高价值杠杆已转向 A 类 17 项需用户产品拍板**（尤其授权模型 #48/#49、pm-mode #36 行为定义）；C 类并入桌宠视觉验证一轮；D 类是 CI 加固。
