@@ -2117,6 +2117,40 @@ test("R2 audit#6: recoverExpiredClaims preserves a richer in-memory trace instea
   assert.equal(afterRecover?.trace.length, richTraceLength, "recoverExpiredClaims must preserve the richer in-memory trace");
 });
 
+test("R2 audit#35: concurrent runNext drains claim a queued run exactly once (no in-memory double-execute)", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-audit35-work-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-audit35-snap-"));
+  const snapshots = new MemorySnapshots();
+  let clientFactoryCalls = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000071",
+    workdir: () => workdir,
+    client: () => {
+      clientFactoryCalls += 1;
+      return executableAgentClient();
+    },
+    snapshotRoot,
+    snapshotId: () => "40000000-0000-4000-8000-000000000072",
+    snapshots,
+    auditLogs: new MemoryAuditLogs(),
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  await queue.enqueue({ workItemId, actorId: userId, title: "Concurrent-drain run" });
+  // 两个并发 drain/runNext 同时来抢这唯一一个 queued run（模拟 routes 里 void drainAutoRunQueue 的并发触发）。
+  const results = await Promise.all([queue.runNext(), queue.runNext()]);
+
+  // 恰好一个 runNext 领到并执行了该 run,另一个领空返回 null。无同步认领时两者都会执行 → 双执行(len 2 / 工厂 2)。
+  assert.equal(results.filter(Boolean).length, 1, "exactly one concurrent runNext may claim+execute the queued run");
+  assert.equal(clientFactoryCalls, 1, "the run must be executed exactly once (no double-execute)");
+});
+
 test("agent run queue dead-letters a run that keeps crashing past the recover-attempt cap", async () => {
   // poison run（每次都崩）不该被无限重排：超过 maxRecoverAttempts 即转死信 failed，且打专门的审计动作。
   const runtimeSettings = settings();

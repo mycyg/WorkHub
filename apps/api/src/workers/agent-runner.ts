@@ -448,7 +448,11 @@ export function createInMemoryAgentRunQueue(options: {
     }
     const inMemory = [...runs.values()].find((run) => run.status === "queued");
     if (inMemory) {
-      return inMemory;
+      // R2 audit#35：内存队列同步认领——返回前即把状态翻成 running,关闭「两个并发 drain/runNext 同时读到
+      // 同一 queued run、各自在 executeRun 翻状态前就领走」的双执行窗口。find→updateRun 间无 await,单线程下
+      // 原子(对应生产 persistence 路径的 claimNextQueued FOR UPDATE SKIP LOCKED)。executeRun 的 running 分支
+      // 按既有 resume 语义接住:fresh run 的 trace 为空 → 等价于新跑,不会误当断点续跑。
+      return updateRun({ ...inMemory, status: "running", updated_at: now().toISOString() });
     }
     const persisted = await persistence?.listActive();
     return persisted?.find((run) => run.status === "queued") ?? null;
