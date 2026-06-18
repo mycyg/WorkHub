@@ -35,6 +35,11 @@ export function writeEventStream(
 
     output.onAbort(() => {
       aborted = true;
+      // findings[#perf]：断线时只翻 aborted 旗标不够——循环此刻正 `await raceHeartbeat(pending, ...)`
+      // 阻塞在订阅的 next() 上，要等到下一次心跳（最长 heartbeatMs）才醒来跑 finally，期间订阅+presence 槽位泄漏。
+      // 主动 close() 订阅：它把停泊的 waiter 立即以 {done:true} 兑现 → race 即刻返回 → while 退出 → finally
+      // （取消订阅 + 释放 presence）在断线当下就跑。close 幂等，finally 里的 unsubscribe 再 close 是 no-op。
+      void subscription?.close();
     });
 
     try {

@@ -833,7 +833,15 @@ test("stream identity resolves without a request-scoped DB session concept", asy
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { id: alice.id, nickname: alice.nickname, isAdmin: false });
+  // findings[#tenancy]：StreamUser 现携带认证身份解析出的租户（用于按工作区隔离全局流）。
+  // 无成员仓库 → 回退单租户默认 org/workspace，与今天行为等价。
+  assert.deepEqual(await response.json(), {
+    id: alice.id,
+    nickname: alice.nickname,
+    isAdmin: false,
+    orgId: "00000000-0000-4000-8000-000000000001",
+    workspaceId: "00000000-0000-4000-8000-000000000002"
+  });
 });
 
 test("AI actor construction is first-class and never touches cookie auth", () => {

@@ -27,11 +27,14 @@ import { createInMemoryAgentRunQueue } from "./workers/agent-runner.js";
 const now = new Date("2026-06-05T00:00:00.000Z");
 
 test("topic authorization derives user streams from identity and rejects unregistered private topics", async () => {
-  const user = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice", isAdmin: false };
+  // findings[#tenancy]：全局流按工作区隔离后，admin 解析到 `all:<workspaceId>`（不再裸 'all'）——
+  // 故 StreamUser 携带租户。两人在同一默认工作区，全局话题相同。
+  const workspaceId = "00000000-0000-4000-8000-000000000002";
+  const user = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice", isAdmin: false, orgId: "00000000-0000-4000-8000-000000000001", workspaceId };
   const admin = { ...user, id: "10000000-0000-4000-8000-000000000002", nickname: "admin", isAdmin: true };
 
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "all" }));
-  assert.equal(await resolveAuthorizedTopic(admin, { kind: "all" }), "all");
+  assert.equal(await resolveAuthorizedTopic(admin, { kind: "all" }), `all:${workspaceId}`);
   assert.equal(await resolveAuthorizedTopic(user, { kind: "me" }), `user:${user.id}`);
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "run", id: "r1" }));
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "session", id: "s1" }));

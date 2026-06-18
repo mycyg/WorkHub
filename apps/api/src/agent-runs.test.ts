@@ -1589,9 +1589,11 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(decisions.escalationRows[0]?.trigger, "user_forbidden");
   assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "work_item");
   assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+  // findings[#tenancy]：全局 escalation 发到按工作区隔离的话题 `all:<workspaceId>`（不再裸 'all'），
+  // 与订阅侧对齐。单租户下解析到默认工作区。
   assert.deepEqual(events.map((event) => [event.topic, event.type]), [
     [`workitem:${workItemId}`, "escalation.opened"],
-    ["all", "escalation.opened"]
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"]
   ]);
   assert.equal(workItems.rows.get(workItemId)?.status, "pm_mode");
   assert.equal(workItems.rows.get(workItemId)?.mode, "pm");

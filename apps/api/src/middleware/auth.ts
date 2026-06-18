@@ -50,6 +50,10 @@ export type StreamUser = {
   id: string;
   nickname: string;
   isAdmin: boolean;
+  // findings[#tenancy]：流订阅要按真实工作区隔离全局 'all' 话题，故携带认证身份解析出的租户，
+  // 不再硬编码 'stream'。单租户下解析结果 == default{Org,Workspace}Id，行为等价。
+  orgId: string;
+  workspaceId: string;
 };
 
 export type AuthVariables = {
@@ -459,11 +463,24 @@ export async function resolveOptionalLocalClient(c: Context, deps: AuthDependenc
   return resolveCurrentClientDevice(c, deps, user);
 }
 
+async function toStreamUser(deps: AuthDependencies, user: UserAuthRow): Promise<StreamUser> {
+  // 从成员关系派生真实工作区（无成员行则回退单租户常量 defaultWorkspaceId）——与 human actor 同源，
+  // 全局流话题据此隔离 (`all:<workspaceId>`)。
+  const actor = await resolveHumanActor(deps, user);
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    isAdmin: user.isAdmin,
+    orgId: actor.orgId,
+    workspaceId: actor.workspaceId
+  };
+}
+
 export async function resolveStreamUser(c: Context, deps: AuthDependencies): Promise<StreamUser> {
   const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);
-    return { id: byToken.user.id, nickname: byToken.user.nickname, isAdmin: byToken.user.isAdmin };
+    return toStreamUser(deps, byToken.user);
   }
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));
@@ -472,7 +489,7 @@ export async function resolveStreamUser(c: Context, deps: AuthDependencies): Pro
     const user = await resolveUserFromCookie(deps, cookieToken, now);
     if (user) {
       await deps.touchUser?.(user.id);
-      return { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin };
+      return toStreamUser(deps, user);
     }
   }
 

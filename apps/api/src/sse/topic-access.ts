@@ -27,7 +27,9 @@ export async function resolveAuthorizedTopic(
   switch (request.kind) {
     case "all":
       if (user.isAdmin) {
-        return topics.all().topic;
+        // findings[#tenancy]：全局流按认证用户的工作区隔离——admin 只收自己工作区的全局事件，
+        // 不再让 B 工作区 admin 看到 A 工作区的 escalation 等全局事件（跨租户泄漏）。
+        return topics.all(user.workspaceId).topic;
       }
       throw new HTTPException(403, { message: "cannot stream global events" });
     case "me":

@@ -36,15 +36,16 @@ export type PushRoutesDependencies = {
   stream?: WriteEventStreamOptions;
 };
 
-function streamActor(user: { id: string; nickname: string; isAdmin: boolean }): AuthActor {
+function streamActor(user: { id: string; nickname: string; isAdmin: boolean; orgId: string; workspaceId: string }): AuthActor {
   return {
     kind: "human",
     id: user.id,
     label: user.nickname,
     userId: user.id,
     isAdmin: user.isAdmin,
-    orgId: "stream",
-    workspaceId: "stream"
+    // findings[#tenancy]：用认证身份解析出的真实租户，不再硬编码 'stream'。
+    orgId: user.orgId,
+    workspaceId: user.workspaceId
   };
 }
 
