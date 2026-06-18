@@ -531,7 +531,18 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
       if (source.status === "dismissed") {
         throw new MeetingPageServiceError(409, "这条会议洞察已经被忽略，不能生成变更提议。", "meeting_insight_dismissed");
       }
-      if (initialPage.latest_proposal?.proposal_id ?? source.proposal_id) {
+      const existingProposalId = initialPage.latest_proposal?.proposal_id ?? source.proposal_id;
+      if (existingProposalId) {
+        // findings[#22/#24 后继]：提议已存在，但 draft→proposal 的跨服务 audit 写入可能在上次部分失败
+        //（会议侧无 operation 表、insight 无独立 proposal_created 态，故 source 不携带「audit 已写」信号）。
+        // self-heal：调用（已幂等的）recordDraftProposal 把残留 audit 补完——已写则安全 no-op，再返回。
+        await deps.repo.recordDraftProposal({
+          actorKind: input.actor.kind,
+          actorUserId,
+          workItemId: input.workItemId,
+          proposalId: existingProposalId,
+          at: deps.now?.() ?? new Date()
+        });
         return initialPage;
       }
 

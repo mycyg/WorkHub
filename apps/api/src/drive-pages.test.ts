@@ -788,6 +788,112 @@ test("drive page service treats deterministic proposal conflicts as idempotent",
   assert.equal(result.source_context?.proposal_id, recordedProposalId);
 });
 
+// findings[#22/#24 后继]：draft→proposal 跨服务写入幂等 + self-heal 回归。
+// 用一个有状态的假仓库忠实建模「现已幂等」的 recordDraftProposal：评论已是 proposal_created 且
+// 已有指向同一 proposalId 的 draft_to_proposal operation → 直接返回既有行，不再追加 operation/audit。
+// 据此证明：重复调用只产生一套 operation/audit；service 在残留态(draft_created)下会 self-heal。
+class StatefulDriveRecorder {
+  comment = rows().comments[0]!;
+  operations: Array<{ workItemId: string; proposalId: string }> = [];
+  auditRows: Array<{ proposalId: string; action: string }> = [];
+
+  constructor() {
+    // 残留态：评论已建草稿但仍停在 draft_created，draft_to_proposal 从未落盘。
+    this.comment = { ...this.comment, status: "draft_created", draftWorkItemId: workItemId };
+  }
+
+  async recordDraftProposal(input: { workItemId: string; proposalId: string }) {
+    const alreadyDone =
+      this.comment.status === "proposal_created" &&
+      this.operations.some((op) => op.workItemId === input.workItemId && op.proposalId === input.proposalId);
+    if (alreadyDone) {
+      // 幂等 no-op：不追加 operation/audit，返回既有行。
+      return { comment: this.comment, operation: rows().operations[0]! };
+    }
+    this.comment = { ...this.comment, status: "proposal_created" };
+    this.operations.push({ workItemId: input.workItemId, proposalId: input.proposalId });
+    this.auditRows.push({ proposalId: input.proposalId, action: "proposal.created_from_drive_draft" });
+    this.auditRows.push({ proposalId: input.proposalId, action: "drive.comment.proposal_created" });
+    return { comment: this.comment, operation: rows().operations[0]! };
+  }
+}
+
+test("drive draftToProposal self-heals a residual draft_created state and is idempotent across re-runs", async () => {
+  const recorder = new StatefulDriveRecorder();
+  // 提议已存在（上次 createFromManifest 已成功），但评论仍停在 draft_created——典型部分失败残留。
+  const residual = workItemDetail({
+    source_context: {
+      source_type: "drive_comment",
+      project_id: projectId,
+      comment_id: "91000000-0000-4000-8000-000000000012",
+      folder_id: folderId,
+      folder_path: "/复盘包",
+      author_label: "PM",
+      body: "把这条评论转成后续行动草稿。",
+      status: "draft_created",
+      created_at: now.toISOString(),
+      proposal_id: proposalId,
+      proposal_href: `/proposals/${proposalId}`,
+      proposal_status: "opened"
+    },
+    actions: {}
+  });
+  let createFromManifestCalls = 0;
+  const service = createDrivePageService({
+    repo: {
+      async readPage() {
+        return rows();
+      },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal(input) {
+        return recorder.recordDraftProposal({ workItemId: input.workItemId, proposalId: input.proposalId });
+      }
+    },
+    proposals: {
+      async createFromManifest() {
+        createFromManifestCalls += 1;
+        throw new Error("must not create a new proposal when one already exists");
+      },
+      async get() {
+        return null;
+      }
+    },
+    workItems: {
+      async detailPage() {
+        return residual;
+      }
+    },
+    now: () => now
+  });
+
+  await service.draftToProposal({ actor: actor(), workItemId });
+  // self-heal 跑了一次：补齐 1 套 operation + 2 条 audit；从不调用 createFromManifest。
+  assert.equal(createFromManifestCalls, 0);
+  assert.equal(recorder.operations.length, 1);
+  assert.equal(recorder.auditRows.length, 2);
+  assert.equal(recorder.comment.status, "proposal_created");
+
+  // 第二次调用必须是安全 no-op——operation/audit 计数不变，绝不重复 insert。
+  await service.draftToProposal({ actor: actor(), workItemId });
+  assert.equal(recorder.operations.length, 1);
+  assert.equal(recorder.auditRows.length, 2);
+});
+
+test("drive recordDraftProposal stays idempotent when called twice with the same proposal", async () => {
+  // 直接对「已幂等」的仓库契约施压：两次 recordDraftProposal 只留一套 operation/audit。
+  const recorder = new StatefulDriveRecorder();
+  const first = await recorder.recordDraftProposal({ workItemId, proposalId });
+  const second = await recorder.recordDraftProposal({ workItemId, proposalId });
+
+  assert.equal(first.comment.status, "proposal_created");
+  assert.equal(second.comment.status, "proposal_created");
+  assert.equal(recorder.operations.length, 1);
+  assert.equal(recorder.auditRows.length, 2);
+});
+
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
   return {
     id: userId,

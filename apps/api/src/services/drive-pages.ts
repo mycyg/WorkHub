@@ -697,7 +697,25 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       if (source.status === "dismissed") {
         throw new DrivePageServiceError(409, "这条网盘评论已经被忽略，不能生成变更提议。", "drive_comment_dismissed");
       }
-      if (initialPage.latest_proposal?.proposal_id ?? source.proposal_id) {
+      const existingProposalId = initialPage.latest_proposal?.proposal_id ?? source.proposal_id;
+      if (existingProposalId) {
+        // findings[#22/#24 后继]：提议已存在，但 draft→proposal 的跨服务写入可能在上次部分失败——
+        // 评论仍停在 draft_created、draft_to_proposal operation/audit 从未落盘。这里 self-heal：
+        // 重新调用（已幂等的）recordDraftProposal 把残留状态补完，再返回，而不是直接返回半成品。
+        if (source.status !== "proposal_created") {
+          await deps.repo.recordDraftProposal({
+            actorKind: input.actor.kind,
+            actorUserId,
+            workItemId: input.workItemId,
+            proposalId: existingProposalId,
+            at: deps.now?.() ?? new Date()
+          });
+          return workItemService().detailPage({
+            workItemId: input.workItemId,
+            actor: input.actor,
+            ...(input.locale ? { locale: input.locale } : {})
+          });
+        }
         return initialPage;
       }
 

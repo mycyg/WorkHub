@@ -446,6 +446,28 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
         if (!project) {
           return;
         }
+        // findings[#22/#24 后继]：跨服务 draft→proposal 写入非原子且非幂等——并发/重试会重复写 audit 行；
+        // 部分失败又被 service 早返回掩盖。会议侧无 operation 表（recordDraftProposal 只写 audit），
+        // 因此在事务内查是否已存在指向同一 proposalId 的 proposal.created_from_meeting_draft audit 行：
+        // 已存在 → 直接返回既有 insight/meeting，绝不重复 insert。首次路径不变；重跑成安全 no-op。
+        const existingAudit = await tx
+          .select({ id: auditLogs.id })
+          .from(auditLogs)
+          .where(and(
+            eq(auditLogs.entityType, "proposal"),
+            eq(auditLogs.entityId, input.proposalId),
+            eq(auditLogs.action, "proposal.created_from_meeting_draft")
+          ))
+          .limit(1);
+        if (existingAudit[0]) {
+          result = {
+            insight: source.insight,
+            meeting: source.meeting,
+            workItem: null,
+            created: false
+          };
+          return;
+        }
         const detailJson = {
           meeting_id: source.meeting.id,
           insight_id: source.insight.id,

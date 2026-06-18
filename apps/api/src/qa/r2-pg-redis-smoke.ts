@@ -23,6 +23,7 @@ import {
   generateSessionToken,
   hashSessionToken,
   orgs,
+  projectDriveComments,
   projectDriveItems,
   projects,
   runMigrations,
@@ -269,6 +270,69 @@ async function main() {
         loserCode === "drive_parent_deleted" || loserCode === "drive_folder_not_empty",
         `parent-folder race loser must reject through the locked path, got code=${String(loserCode)}`
       );
+    }
+
+    // findings[#22/#24 后继]：draft→proposal 跨服务写入幂等——并发/重试不得写重复 operation/audit。
+    // 真库验证 recordDraftProposal 的幂等闸：种一条已建草稿的评论，用同一 proposalId 调两次，
+    // 断言恰好留一条 draft_to_proposal operation + 一套 proposal/comment audit（而非两套）。
+    {
+      const drive = createDriveRepository(db);
+      const draftWorkItemId = randomUUID();
+      const draftCommentId = randomUUID();
+      const draftProposalId = randomUUID();
+      const nowAt = new Date();
+      await db.insert(workItems).values({
+        id: draftWorkItemId,
+        code: `R2R-DP-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
+        projectId: defaultSeedIds.projectId,
+        workspaceId: settings.auth.defaultWorkspaceId,
+        submitterUserId: raceA.user.id,
+        title: "Drive draft→proposal idempotency smoke",
+        rawDescription: "Seed a drive-comment draft to exercise recordDraftProposal idempotency.",
+        summaryMd: "Drive draft→proposal idempotency smoke.",
+        status: "ai_clarifying",
+        mode: "worker"
+      });
+      await db.insert(projectDriveComments).values({
+        id: draftCommentId,
+        projectId: defaultSeedIds.projectId,
+        folderId: null,
+        authorUserId: raceA.user.id,
+        authorNickname: "smoke",
+        body: "Turn this drive comment into a proposal draft.",
+        status: "draft_created",
+        draftWorkItemId,
+        createdAt: nowAt,
+        updatedAt: nowAt
+      });
+
+      const recordInput = {
+        actorKind: "human" as const,
+        actorUserId: raceA.user.id,
+        workItemId: draftWorkItemId,
+        proposalId: draftProposalId
+      };
+      const firstRecord = await drive.recordDraftProposal(recordInput);
+      assert.equal(firstRecord?.comment.status, "proposal_created", "first recordDraftProposal flips the comment to proposal_created");
+      // 第二次（模拟并发/重试或 service self-heal 再调）必须是安全 no-op。
+      const secondRecord = await drive.recordDraftProposal(recordInput);
+      assert.equal(secondRecord?.comment.status, "proposal_created", "idempotent re-run still returns the proposal_created comment");
+
+      // readPage 暴露真库 operations——据此断言 draft_to_proposal 只落了一条（而非每次调用各一条）。
+      // operation 与两条 audit 同处幂等闸之后的同一代码块顺序执行：operation 不重复 ⇒ audit 也不重复。
+      const driveAfter = await drive.readPage({
+        projectId: defaultSeedIds.projectId,
+        operationLimit: 100
+      });
+      const matchingOps = driveAfter.operations.filter((op) => {
+        const payload = op.payloadJson as Record<string, unknown>;
+        return op.opType === "draft_to_proposal"
+          && payload.work_item_id === draftWorkItemId
+          && payload.proposal_id === draftProposalId;
+      });
+      assert.equal(matchingOps.length, 1, "recordDraftProposal must write exactly ONE draft_to_proposal operation, not duplicate on re-run");
+      const reloadedComment = driveAfter.comments.find((comment) => comment.id === draftCommentId);
+      assert.equal(reloadedComment?.status, "proposal_created", "the seeded comment is left at proposal_created (residual draft_created healed)");
     }
 
     // R2 auth epic：凭据 + 会话 DB 层真 PG 往返（2a/3a 仓库此前仅假数据单测，这里首次过真 Postgres + citext）。

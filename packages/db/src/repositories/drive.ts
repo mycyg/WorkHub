@@ -815,6 +815,30 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         if (!project) {
           return;
         }
+        // findings[#22/#24 后继]：跨服务 draft→proposal 写入非原子且非幂等——并发/重试会写重复的
+        // draft_to_proposal operation + audit 行；部分失败又让 service 早返回，把评论卡在 draft_created。
+        // 在事务内做幂等闸：若这条评论的 draft→proposal 已落地（评论已 proposal_created 且已存在指向同一
+        // proposalId 的 draft_to_proposal operation），直接返回既有行，绝不重复 insert operation/audit。
+        // 首次路径保持不变；重跑成为安全 no-op（self-heal 与 'proposal_already_exists' 重跑都因此安全）。
+        if (comment.status === "proposal_created") {
+          const existingOps = await tx
+            .select()
+            .from(projectDriveOperations)
+            .where(and(
+              eq(projectDriveOperations.projectId, comment.projectId),
+              eq(projectDriveOperations.opType, "draft_to_proposal")
+            ))
+            .orderBy(desc(projectDriveOperations.createdAt))
+            .limit(50);
+          const existingOperation = existingOps.find((op) => {
+            const payload = op.payloadJson as Record<string, unknown>;
+            return payload.work_item_id === input.workItemId && payload.proposal_id === input.proposalId;
+          });
+          if (existingOperation) {
+            result = { comment, operation: existingOperation };
+            return;
+          }
+        }
         const updatedComments = await tx
           .update(projectDriveComments)
           .set({
