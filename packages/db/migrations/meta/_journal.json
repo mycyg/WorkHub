@@ -155,6 +155,13 @@
       "when": 1781511633742,
       "tag": "0021_soft_delete_and_current_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781511733742,
+      "tag": "0022_budget_reservations",
+      "breakpoints": true
     }
   ]
 }

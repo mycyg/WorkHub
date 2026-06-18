@@ -1062,6 +1062,43 @@ export const costLedgerEntries = pgTable(
   ]
 );
 
+// R2 epic(原子预算)：IN-FLIGHT（已授权未结算）预留的唯一真相源；cost_ledger_entries 仍是 SETTLED 真相源。
+// 并发起跑要满足 committed(ledger) + reserved_outstanding(本表 active 行 est-actual) + 本 run 估算 <= cap。
+// scope 列与 cost_ledger_entries 对齐，复用同一 scope helper 与 period_bucket 键。
+export const budgetReservations = pgTable(
+  "budget_reservations",
+  {
+    id: id(),
+    runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "cascade" }).notNull(),
+    scopeKind: varchar("scope_kind", { length: 16 }).notNull(),
+    scopeId: varchar("scope_id", { length: 128 }).notNull(),
+    period: varchar("period", { length: 16 }).notNull(),
+    periodBucket: varchar("period_bucket", { length: 16 }).notNull(),
+    estTokens: integer("est_tokens").notNull().default(0),
+    estCostCny: numeric("est_cost_cny", { precision: 12, scale: 6 }).notNull().default("0"),
+    actualTokens: integer("actual_tokens").notNull().default(0),
+    actualCostCny: numeric("actual_cost_cny", { precision: 12, scale: 6 }).notNull().default("0"),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    leaseExpiresAt: timestampTz("lease_expires_at"),
+    ...timestamps()
+  },
+  (table) => [
+    // 每 run 每 (scope,bucket) 至多一条 active 预留 → reserve 在重试下幂等（onConflictDoNothing）。
+    uniqueIndex("budget_reservations_run_scope_active_uq")
+      .on(table.runId, table.scopeKind, table.scopeId, table.periodBucket)
+      .where(sql`${table.status} = 'active'`),
+    // outstanding SUM(est-actual) 读取按 (scope,bucket) 索引，不扫 settled/expired 行。
+    index("budget_reservations_scope_bucket_active_idx")
+      .on(table.scopeKind, table.scopeId, table.periodBucket)
+      .where(sql`${table.status} = 'active'`),
+    // 租约过期清扫。
+    index("budget_reservations_lease_idx")
+      .on(table.status, table.leaseExpiresAt)
+      .where(sql`${table.status} = 'active'`),
+    index("budget_reservations_run_id_idx").on(table.runId)
+  ]
+);
+
 export const budgetPolicies = pgTable(
   "budget_policies",
   {
