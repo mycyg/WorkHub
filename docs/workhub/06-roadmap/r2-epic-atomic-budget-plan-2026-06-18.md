@@ -91,3 +91,21 @@ Add reserved_outstanding into the usage surfaced by /api/cost/usage and /api/pag
 5. Where does reserve+run-insert atomicity live — do the agent_runs insert inside the reservation transaction (tighter, couples two repos) or reserve-then-compensate-on-409 (looser, needs a release path)? Recommend reserve-first + compensate; confirm.
 6. Should the per-run (pcost-workitem-run-v0) cap participate in reservations at all, or stay purely runtime-enforced as today (constrainRunBudget/checkLoopBudget)? It is per-work-item so the existing unique index already serializes it; recommend leaving it runtime-only.
 7. Is r1-pg-agent-run-smoke the right home for the concurrency gate, or should pilot-stack-smoke (the real-PG behavior gate per MEMORY) also assert it end-to-end through the HTTP enqueue path?
+
+## 实施进度与决策（2026-06-18 起，loop 推进）
+
+**Phase 1 已完成、全 7 CI job 绿**：
+- `735f0772` schema + 手写迁移 `0022_budget_reservations.sql`（+journal idx:22），PG smoke 应用成功。
+- `f96510aa` `packages/cost/src/reservation.ts` 纯逻辑（`outstandingForBucket` Σmax(0,est-actual) + `decideReservation` committed+outstanding+est<=cap，cost 用整数 micro-CNY 比较）+ 9 单测。
+- `c6c7621a` `packages/db/src/repositories/budget-reservations.ts`：`reserve`/`reconcile`/`releaseExpired`/`refreshLease`/`outstandingForScopes`。
+
+**Open questions 的实施取向（工程决策，已据现状定；用户如有异议可改）**：
+1. **锁原语 = advisory-lock**（非 counter-row）：复用现有 `pg_advisory_xact_lock(hashtext(...))` 模式（team-skill/proposals 已用），不引第二张表；锁内读 outstanding + 插入串行化掉并发"起跑"的 TOCTOU。
+2. **估算 = full-cap-then-reconcile**：预留按本 run 的 per-run cap（decision.runBudget.maxTokens/maxCostCny），终态 reconcile 写实际、释放未用持有量。保守正确。
+3. **预留范围 = 所有受限 day/month scope**（user/day、team/day、team/month）原子预留；稳定顺序加锁避免互锁。
+4. **预留租约 TTL = leaseMs*(maxRecoverAttempts+1)**，让可恢复 run 保住其持有，崩溃 run 由 `releaseExpired` 释放。
+5. **reserve 与 run 插入的原子性 = create-run→reserve→compensate**：因 `reservations.run_id` 有 FK NOT NULL，必须先建 run 行再预留；reserve 拒绝则补偿（标记/删除刚建的 queued run）+ 抛与现状一致的 402 budget_exhausted。
+6. **per-run cap 仍仅运行时强制**（不进预留）：它按 work-item，现有 work_item active 唯一索引已串行化。
+7. **并发门测在 r1-pg-agent-run-smoke**（真 PG）：两个不同 work-item 在超额团队并发入队 → 恰一个成功、另一个 402；reconcile 释放后后续入队又可成功；崩溃租约 releaseExpired 释放。
+
+**Phase 2（下一刀，最大/最关键）**：把 reserve 接进 enqueue（拒绝→同 402）、reconcile 进 run 终态、releaseExpired 进认领恢复、refreshLease 进心跳；getDefaultAgentRunQueue 注入真 reservationRepo，内存队列默认内存预留 store 使单测不受影响；翻红→绿并发门。须整体落地（只接 reserve 不接 reconcile/release 会永久占额）。
