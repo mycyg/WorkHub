@@ -49,6 +49,8 @@ export function getDefaultTeamSkillContextProvider(): TeamSkillContextProvider {
       if (team.length === 0) {
         return undefined;
       }
+      // findings[#3]：团队技能是 AI 夜间自蒸馏出来的，不是出厂权威技能。给目录每行打 [团队自蒸馏] 出处标签，
+      // 让工人把它当作「库/工具用法的参考」而非可信指令——softening 在 system prompt 的技能纪律里说明。
       const catalogAppendix = formatSkillCatalog(
         team.map((row) => ({
           id: row.skillKey,
@@ -56,7 +58,10 @@ export function getDefaultTeamSkillContextProvider(): TeamSkillContextProvider {
           description: row.whenToUse,
           whenToUse: row.whenToUse
         }))
-      );
+      )
+        .split("\n")
+        .map((line) => (line.startsWith("- ") ? `- [团队自蒸馏]${line.slice(1)}` : line))
+        .join("\n");
       const contentByKey: TeamSkillContentMap = {};
       for (const row of team) {
         contentByKey[row.skillKey] = row.contentMd;
