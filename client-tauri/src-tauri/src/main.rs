@@ -1013,7 +1013,12 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
         .map_err(|error| format!("failed to read startup deep-link URLs: {error}"))?;
     if let Some(urls) = start_urls {
         for url in urls {
-            handle_deep_link_url(&app_handle, url.as_str())?;
+            // A malformed cold-start deep link must never brick launch: log and
+            // continue, mirroring the runtime on_open_url handler below rather
+            // than propagating with `?` and aborting the whole app setup.
+            if let Err(error) = handle_deep_link_url(&app_handle, url.as_str()) {
+                eprintln!("failed to handle startup deep link {url}: {error}");
+            }
         }
     }
 

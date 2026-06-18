@@ -138,12 +138,33 @@ async fn pump_sse_response(
     locale: WorkHubLocale,
 ) -> Result<(), String> {
     let mut buffer = ShellSseFrameBuffer::default();
+    // Buffer raw bytes, not decoded strings: a single TCP chunk can split a
+    // multibyte UTF-8 sequence (e.g. CJK) across its boundary, so decoding each
+    // chunk individually would corrupt it. We only decode the bytes that belong
+    // to complete SSE frames — delimited by the ASCII `\n\n` byte sequence — and
+    // hand those decoded frames to the existing frame buffer, which preserves
+    // the `\r\n` normalization and event/data semantics.
+    let mut pending = Vec::<u8>::new();
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("SSE stream read failed: {error}"))?;
-        let text = String::from_utf8_lossy(&chunk);
-        for frame in buffer.push_chunk(&text) {
+        pending.extend_from_slice(&chunk);
+
+        // Neither `\n` (0x0A) nor `\r` (0x0D) ever appears inside a multibyte
+        // UTF-8 sequence (lead/continuation bytes are all >= 0x80), so splitting
+        // on the SSE blank-line frame boundary at the byte level can never
+        // bisect a character. We forward each complete frame (separator
+        // included) to the existing buffer, which keeps the `\r\n`/`\r`
+        // normalization and event/data parsing.
+        let mut frames = Vec::new();
+        while let Some(end) = find_frame_boundary_end(&pending) {
+            let frame_bytes: Vec<u8> = pending.drain(..end).collect();
+            let frame_text = String::from_utf8_lossy(&frame_bytes);
+            frames.extend(buffer.push_chunk(&frame_text));
+        }
+
+        for frame in frames {
             let payload = push_payload_from_frame(subscription, frame);
             app.emit(&subscription.event_channel, payload.clone())
                 .map_err(|error| format!("failed to emit push-event: {error}"))?;
@@ -164,6 +185,34 @@ async fn pump_sse_response(
     }
 
     Err("SSE stream ended".to_string())
+}
+
+/// Returns the exclusive end index (one past the last separator byte) of the
+/// first complete SSE frame in `bytes`, or `None` if no blank-line separator
+/// has arrived yet. SSE separates events with a blank line, which may be encoded
+/// as `\n\n`, `\r\n\r\n`, or `\r\r`; we recognize all three so that frames flush
+/// regardless of the daemon's line endings.
+fn find_frame_boundary_end(bytes: &[u8]) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    let mut consider = |end: Option<usize>| {
+        if let Some(end) = end {
+            best = Some(match best {
+                Some(current) => current.min(end),
+                None => end,
+            });
+        }
+    };
+
+    consider(find_subsequence(bytes, b"\r\n\r\n").map(|index| index + 4));
+    consider(find_subsequence(bytes, b"\n\n").map(|index| index + 2));
+    consider(find_subsequence(bytes, b"\r\r").map(|index| index + 2));
+    best
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn should_deliver_system_notification(
@@ -191,9 +240,68 @@ fn emit_sse_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sse::ParsedSseFrame;
 
     #[test]
     fn default_reconnect_delay_is_small_enough_for_desktop_feedback() {
         assert_eq!(DEFAULT_SSE_RECONNECT_DELAY_MS, 5_000);
+    }
+
+    #[test]
+    fn frame_boundary_end_recognizes_every_blank_line_encoding() {
+        assert_eq!(find_frame_boundary_end(b"event: x\n"), None);
+        assert_eq!(find_frame_boundary_end(b"data: a\n\nrest"), Some(9));
+        assert_eq!(find_frame_boundary_end(b"data: a\r\n\r\nrest"), Some(11));
+        assert_eq!(find_frame_boundary_end(b"data: a\r\rrest"), Some(9));
+    }
+
+    // Drives the exact byte-pump logic from `pump_sse_response`: bytes are
+    // buffered, complete frames are sliced off the `\n\n` boundary, and only
+    // those complete frames are decoded. This is the regression for a multibyte
+    // UTF-8 sequence (here the CJK 你好) split across two network chunks.
+    fn pump_bytes(chunks: &[&[u8]]) -> Vec<ParsedSseFrame> {
+        let mut buffer = ShellSseFrameBuffer::default();
+        let mut pending = Vec::<u8>::new();
+        let mut frames = Vec::new();
+        for chunk in chunks {
+            pending.extend_from_slice(chunk);
+            while let Some(end) = find_frame_boundary_end(&pending) {
+                let frame_bytes: Vec<u8> = pending.drain(..end).collect();
+                let frame_text = String::from_utf8_lossy(&frame_bytes);
+                frames.extend(buffer.push_chunk(&frame_text));
+            }
+        }
+        frames
+    }
+
+    #[test]
+    fn byte_pump_preserves_multibyte_utf8_split_across_chunks() {
+        // "你好" is 6 UTF-8 bytes: E4 BD A0 E5 A5 BD. Split the second
+        // character across the chunk boundary; per-chunk String decoding would
+        // have corrupted it into replacement characters.
+        let full = "event: notification.created\ndata: {\"text\":\"你好\"}\n\n";
+        let bytes = full.as_bytes();
+        let split = bytes.iter().position(|&b| b == 0xE5).unwrap() + 1;
+        let frames = pump_bytes(&[&bytes[..split], &bytes[split..]]);
+
+        assert_eq!(
+            frames,
+            vec![ParsedSseFrame {
+                event: "notification.created".to_string(),
+                data: "{\"text\":\"你好\"}".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn byte_pump_holds_partial_frames_until_the_blank_line_arrives() {
+        assert!(pump_bytes(&[b"event: x\n"]).is_empty());
+        assert_eq!(
+            pump_bytes(&[b"event: x\n", b"data: 1\n\n"]),
+            vec![ParsedSseFrame {
+                event: "x".to_string(),
+                data: "1".to_string(),
+            }]
+        );
     }
 }
