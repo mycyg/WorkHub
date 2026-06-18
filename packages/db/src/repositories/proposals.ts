@@ -241,6 +241,26 @@ export class ProposalRepositoryMergeConflictError extends Error {
   }
 }
 
+export class ProposalRepositoryConflictError extends Error {
+  constructor(
+    public readonly code: "proposal_already_exists",
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+// findings[#low]：service 层 findById 预检与 createFromManifest 插入之间存在 TOCTOU——并发同
+// proposal_id 时输者撞 proposals_pkey / proposals_branch_round_uq 唯一约束抛裸 23505 冒泡成 500。
+// 在仓库层翻译成 proposal_already_exists（service 映射 409），其余错误原样抛出（镜像 drive.ts）。
+export function isProposalsUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object" || (error as { code?: string }).code !== "23505") {
+    return false;
+  }
+  const constraint = (error as { constraint?: string }).constraint;
+  return constraint === "proposals_pkey" || constraint === "proposals_branch_round_uq";
+}
+
 export class ProposalRepositoryInvalidMergeProposalCandidateError extends Error {
   public readonly code = "invalid_merge_proposal_candidate";
 
@@ -1563,7 +1583,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         }
       };
 
-      await db.transaction(async (tx) => {
+      try {
+        await db.transaction(async (tx) => {
         const workItemRows = await tx
           .select()
           .from(workItems)
@@ -1633,7 +1654,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           .update(branches)
           .set({ status: "proposed", updatedAt: at })
           .where(eq(branches.id, branchId));
-      });
+        });
+      } catch (error) {
+        if (isProposalsUniqueViolation(error)) {
+          throw new ProposalRepositoryConflictError("proposal_already_exists", "这份变更申请已经存在。");
+        }
+        throw error;
+      }
 
       const stored = await readStoredProposal(db, proposalId);
       if (!stored) {

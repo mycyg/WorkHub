@@ -29,6 +29,7 @@ import {
   type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
+  ProposalRepositoryConflictError,
   type ProposalRepository,
   UserAuthRow as DbUserAuthRow,
   UserRepository as DbUserRepository
@@ -1264,6 +1265,27 @@ test("proposal routes require work item access before read and write operations"
   assert.equal(merge.status, 403);
   assert.equal(reviewBadBody.status, 403);
   assert.equal(mergeBadBody.status, 403);
+});
+
+test("findings: a concurrent same-id insert (repo conflict) maps to 409 proposal_already_exists, not 500", async () => {
+  const repository = new MemoryProposalRepository();
+  // 模拟并发输者：findById 预检通过（新 id），但插入撞唯一约束 → 仓库抛 ProposalRepositoryConflictError。
+  repository.createFromManifest = async () => {
+    throw new ProposalRepositoryConflictError("proposal_already_exists", "这份变更申请已经存在。");
+  };
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = manifest(1);
+
+  await assert.rejects(
+    () =>
+      service.createFromManifest({
+        workItemId: itemManifest.work_item_id,
+        manifest: itemManifest,
+        actor: { actor_kind: "ai", label: "WorkHub AI" }
+      }),
+    (error: unknown) =>
+      error instanceof ProposalServiceError && error.status === 409 && error.code === "proposal_already_exists"
+  );
 });
 
 test("DB-backed proposal service maps repository rows into the public proposal contract", async () => {

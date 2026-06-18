@@ -31,6 +31,7 @@ import { readSnapshotFile } from "@workhub/audit";
 import {
   getSharedDatabaseClient,
   createProposalRepository,
+  ProposalRepositoryConflictError,
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
   ProposalRepositoryMergeProposalNotChosenError,
@@ -1792,17 +1793,27 @@ export function createDbProposalService(repository: ProposalRepository, options:
         workItemId: input.workItemId,
         createdAt
       });
-      const rows = await repository.createFromManifest({
-        proposalId,
-        branchId,
-        workItemId: input.workItemId,
-        manifest,
-        actor: actorToRepository(input.actor),
-        title: input.title ?? manifest.title,
-        ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
-        ...(input.confidenceId ? { confidenceId: input.confidenceId } : {}),
-        at
-      });
+      // findings[#low]：findById 预检与插入间的并发同 proposal_id 竞态——仓库层把 23505
+      // 翻译成 ProposalRepositoryConflictError，这里映射成与预检一致的 409，而非裸 500。
+      let rows;
+      try {
+        rows = await repository.createFromManifest({
+          proposalId,
+          branchId,
+          workItemId: input.workItemId,
+          manifest,
+          actor: actorToRepository(input.actor),
+          title: input.title ?? manifest.title,
+          ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
+          ...(input.confidenceId ? { confidenceId: input.confidenceId } : {}),
+          at
+        });
+      } catch (error) {
+        if (error instanceof ProposalRepositoryConflictError) {
+          throw new ProposalServiceError(409, error.code, "这份变更申请已经存在。");
+        }
+        throw error;
+      }
       return storedRowsToProposal(rows);
     },
 
