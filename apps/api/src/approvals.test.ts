@@ -25,8 +25,10 @@ import type {
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import {
   ApprovalServiceError,
-  createApprovalService
+  createApprovalService,
+  parseMentions
 } from "./services/approvals.js";
+import type { NotificationService } from "./services/notifications.js";
 import type { StoredProposal } from "./services/proposals.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
@@ -1072,4 +1074,117 @@ test("W2 approval comment routes: GET/POST behind read gate, 422 on empty body, 
   }));
   const forbidden = await deniedApp.request(`/api/approvals/${seeded.id}/comments`, { headers });
   assert.equal(forbidden.status, 403);
+});
+
+test("parseMentions extracts @nicknames, dedupes, and ignores bare @", () => {
+  assert.deepEqual(parseMentions("hi @alice and @bob"), ["alice", "bob"]);
+  assert.deepEqual(parseMentions("@alice @alice @李梅"), ["alice", "李梅"]);
+  // 裸 @ 和邮箱里的 @ 都不算 mention（@ 前是字母）。
+  assert.deepEqual(parseMentions("no mentions here, just an @ and email a@b.com"), []);
+});
+
+test("W2 approval comment @mentions notify active mentioned users, not the author, not unknown, deduped", async () => {
+  const approvals = new MemoryApprovals();
+  const aliceId = "10000000-0000-4000-8000-00000000a11c3";
+  const bobId = "10000000-0000-4000-8000-00000000b0b00";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "proposal.review.weekly",
+    workItemId: "50000000-0000-4000-8000-0000000000c4",
+    routedToUserId: approverId
+  });
+
+  const usersByNickname: Record<string, UserAuthRow | null> = {
+    alice: user({ id: aliceId, nickname: "alice", cookieToken: "cookie-a" }),
+    bob: user({ id: bobId, nickname: "bob", cookieToken: "cookie-b" }),
+    // 作者本人——被点名也不该收到自己的通知。
+    approver: user({ id: approverId, nickname: "approver", cookieToken: "cookie-approver" })
+  };
+
+  const mentionNotifications: { userId: string; type: string; dedupeKey: string; targetUrl?: string }[] = [];
+
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    users: {
+      findActiveById: async (id) => Object.values(usersByNickname).find((candidate) => candidate?.id === id) ?? null,
+      findActiveByNickname: async (nickname) => usersByNickname[nickname] ?? null
+    },
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000c7",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    notifications: {
+      createMentionNotification: async (input) => {
+        mentionNotifications.push({ userId: input.userId, type: "comment.mention", dedupeKey: input.dedupeKey, ...(input.targetUrl ? { targetUrl: input.targetUrl } : {}) });
+        return {} as Awaited<ReturnType<NotificationService["createMentionNotification"]>>;
+      }
+    },
+    now: () => now
+  });
+
+  // 作者是 approver；点名 alice（两次，应去重）、bob、自己（approver）、未知 nobody。
+  await service.addComment(seeded.id, actor, "辛苦 @alice @alice 和 @bob 看一下，@approver @nobody");
+
+  const notifiedIds = mentionNotifications.map((entry) => entry.userId).sort();
+  assert.deepEqual(notifiedIds, [aliceId, bobId].sort());
+  // 去重：alice 只收到一条。
+  assert.equal(mentionNotifications.filter((entry) => entry.userId === aliceId).length, 1);
+  // 作者本人不在收件人里。
+  assert.equal(mentionNotifications.some((entry) => entry.userId === approverId), false);
+  // 类型 + 指向工作项的 targetUrl + 每收件人唯一 dedupeKey。
+  assert.ok(mentionNotifications.every((entry) => entry.type === "comment.mention"));
+  assert.ok(mentionNotifications.every((entry) => entry.targetUrl === `/workitems/${seeded.workItemId}`));
+  assert.equal(new Set(mentionNotifications.map((entry) => entry.dedupeKey)).size, mentionNotifications.length);
+});
+
+test("W2 approval comment mention notify failure does not fail the comment write", async () => {
+  const approvals = new MemoryApprovals();
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "proposal.review.weekly",
+    workItemId: "50000000-0000-4000-8000-0000000000c5",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    users: {
+      findActiveById: async () => null,
+      findActiveByNickname: async () => user({ id: "10000000-0000-4000-8000-00000000a11c3", nickname: "alice" })
+    },
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000c8",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    notifications: {
+      createMentionNotification: async () => {
+        throw new Error("notification backend down");
+      }
+    },
+    now: () => now
+  });
+
+  const created = await service.addComment(seeded.id, actor, "看一下 @alice");
+  assert.equal(created.body, "看一下 @alice");
 });

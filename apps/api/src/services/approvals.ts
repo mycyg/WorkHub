@@ -48,7 +48,26 @@ import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import {
+  createNotificationService,
+  type NotificationService
+} from "./notifications.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "./proposals.js";
+
+// @mentions：从评论正文里抽出 @<昵称> token。昵称字符集与 users.nickname 一致（Unicode 字母/数字/下划线，
+// 含 CJK——`\p{L}` 覆盖中文），以空白或标点收尾。要求 @ 前不是字母/数字/下划线，避免把邮箱 a@b.com 误当
+// mention。去重后返回（保持出现顺序）；未知昵称由调用方在解析阶段丢弃。
+export function parseMentions(text: string): string[] {
+  const matches = text.matchAll(/(?<![\p{L}\p{N}_])@([\p{L}\p{N}_]+)/gu);
+  const seen = new Set<string>();
+  for (const match of matches) {
+    const nickname = match[1];
+    if (nickname) {
+      seen.add(nickname);
+    }
+  }
+  return [...seen];
+}
 
 export class ApprovalServiceError extends Error {
   constructor(
@@ -90,13 +109,16 @@ export type ApprovalServiceDependencies = {
   policies: PermissionPolicyRepository;
   auditLogs: AuditLogRepository;
   // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
-  users?: Pick<UserRepository, "findActiveById">;
+  // findActiveByNickname 供 @mentions 解析被点名用户，本身也是可选——旧夹具只给 findActiveById 时不解析 mention。
+  users?: Pick<UserRepository, "findActiveById"> & Partial<Pick<UserRepository, "findActiveByNickname">>;
   // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
   // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
   workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
   // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
+  // @mentions：评论里 @某人时发通知。缺省时退化为不发 mention 通知（旧测试夹具）。
+  notifications?: Pick<NotificationService, "createMentionNotification">;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -123,6 +145,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     workItems: createWorkItemRepository(defaultDbClient.db),
     proposals: getDefaultProposalService(),
     approvalComments: createApprovalCommentRepository(defaultDbClient.db),
+    notifications: createNotificationService(),
     bus: getDefaultPushBus()
   };
 }
@@ -430,6 +453,51 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
     });
   }
 
+  // @mentions：解析评论正文里的 @昵称 → 活跃用户，给被点名者（排除作者本人、去重）发通知。
+  // 整体 best-effort：任何一步失败都吞掉并 warn，绝不让评论写入连带失败（与其它 notify 路径一致）。
+  async function notifyCommentMentions(input: {
+    approval: ApprovalRequestRow;
+    body: string;
+    authorUserId: string;
+    authorLabel: string;
+    commentId: string;
+  }) {
+    if (!deps.notifications || !deps.users?.findActiveByNickname) {
+      return;
+    }
+    try {
+      const nicknames = parseMentions(input.body);
+      if (nicknames.length === 0) {
+        return;
+      }
+      const findByNickname = deps.users.findActiveByNickname.bind(deps.users);
+      const resolved = await Promise.all(nicknames.map((nickname) => findByNickname(nickname)));
+      const notifiedUserIds = new Set<string>();
+      const workItemId = input.approval.workItemId ?? undefined;
+      const targetUrl = workItemId ? `/workitems/${workItemId}` : `/approvals/${input.approval.id}`;
+      for (const target of resolved) {
+        // 只通知能解析到的活跃用户（findActiveByNickname 已过滤 deletedAt）；
+        // 排除作者本人，并按 userId 去重（同名两次或多个未知昵称只发一条）。
+        if (!target || target.id === input.authorUserId || notifiedUserIds.has(target.id)) {
+          continue;
+        }
+        notifiedUserIds.add(target.id);
+        await deps.notifications.createMentionNotification({
+          userId: target.id,
+          severity: "normal",
+          title: `${input.authorLabel} 在评论里提到了你`,
+          body: input.body.trim().slice(0, 160),
+          targetUrl,
+          ...(workItemId ? { workItemId } : {}),
+          // 同一条评论对同一个人只产生一条通知（重复提交/重试幂等）。
+          dedupeKey: `comment-mention:${input.commentId}:${target.id}`
+        });
+      }
+    } catch (error) {
+      console.warn("[approvals] failed to notify comment mentions", error);
+    }
+  }
+
   async function publishAsk(row: ApprovalRequestRow, attention: AttentionItem) {
     await publishIfAvailable(deps.bus, row.routedToUserId ? topics.user(row.routedToUserId).topic : undefined, eventTypes.permissionAsk, {
       approval_id: row.id,
@@ -710,6 +778,14 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           ...(actor.userId ? { userId: actor.userId } : {})
         },
         detail: { approval_id: id, comment_id: created.id }
+      });
+      // @mentions：best-effort 给被点名的活跃用户发通知（失败不影响评论写入）。
+      await notifyCommentMentions({
+        approval,
+        body,
+        authorUserId: approverId(actor),
+        authorLabel: actorNickname(actor),
+        commentId: created.id
       });
       return toApprovalCommentVm(created);
     },

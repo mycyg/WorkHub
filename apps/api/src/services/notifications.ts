@@ -162,6 +162,39 @@ export function createNotificationService(
       return toNotificationResponse(await flushDraft(draft));
     },
 
+    // @mentions：评论里 @某人时给被点名的活跃用户发一条通知。与 flushDraft 同一条写入路径
+    // （createOrUpdateNotification + bus 复活推送），但 workItemId/targetUrl 是可选的——审批/网盘
+    // 评论不一定挂在工作项上，而 NotificationDraft 的 workItemId 是必填，故走仓库的可选字段。
+    async createMentionNotification(input: {
+      userId: string;
+      title: string;
+      body: string;
+      severity?: NotificationDraft["severity"];
+      targetUrl?: string;
+      workItemId?: string;
+      projectId?: string;
+      dedupeKey: string;
+    }) {
+      const result = await deps.notifications.createOrUpdateNotification(
+        {
+          userId: input.userId,
+          type: "comment.mention",
+          severity: input.severity ?? "normal",
+          title: input.title,
+          body: input.body,
+          dedupeKey: input.dedupeKey,
+          ...(input.targetUrl ? { targetUrl: input.targetUrl } : {}),
+          ...(input.workItemId ? { workItemId: input.workItemId } : {}),
+          ...(input.projectId ? { projectId: input.projectId } : {})
+        },
+        now()
+      );
+      if (result.resurfaced) {
+        await publishNotification(deps.bus, result.notification);
+      }
+      return toNotificationResponse(result.notification);
+    },
+
     async listForUser(userId: string): Promise<NotificationList> {
       const rows = await deps.notifications.listForUser(userId);
       const items = rows.map(toNotificationResponse);
