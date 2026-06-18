@@ -43,6 +43,21 @@ test("CORS preflight allows the desktop client token headers (cross-origin deskt
   assert.ok(allowHeaders.includes("x-workhub-client-token"));
 });
 
+test("R2 audit#28: CORS wildcard dev mode reflects loopback/tauri but not arbitrary internet origins", async () => {
+  // 默认 CORS_ALLOW_ORIGINS='*'：本机回环 origin 仍被反射放行（dev web）。
+  const loopback = await app.request("/api/sessions", {
+    method: "OPTIONS",
+    headers: { Origin: "http://localhost:5173", "Access-Control-Request-Method": "POST" }
+  });
+  assert.equal(loopback.headers.get("Access-Control-Allow-Origin"), "http://localhost:5173");
+  // 任意互联网 origin 不再被反射——携带凭据的跨源读被挡（开发者浏览恶意站点也读不到 localhost daemon）。
+  const arbitrary = await app.request("/api/sessions", {
+    method: "OPTIONS",
+    headers: { Origin: "https://evil.example.com", "Access-Control-Request-Method": "POST" }
+  });
+  assert.notEqual(arbitrary.headers.get("Access-Control-Allow-Origin"), "https://evil.example.com");
+});
+
 test("GET /api/openapi.json exposes the headless daemon contract seed", async () => {
   const response = await app.request("/api/openapi.json");
 

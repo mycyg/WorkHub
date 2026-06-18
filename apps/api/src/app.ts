@@ -49,11 +49,18 @@ export const app = new Hono();
 app.use("*", createRequestLogMiddleware(logger));
 
 // CORS：此前 CORS_ALLOW_ORIGINS 被解析+生产校验却从未挂载（死配置）。挂上 hono/cors，由 settings 驱动。
-// 凭据走 cookie，故不能用通配 origin——用 "*" 时反射请求 origin（等效放行且兼容 credentials）；
-// 否则只放行白名单。生产已禁止 "*"（validateRuntimeConfig）。
+// 凭据走 cookie，故不能用通配 origin——用 "*" 时按白名单反射；否则只放行配置白名单。生产已禁止 "*"（validateRuntimeConfig）。
+// R2 audit#28：'*'(dev 默认)此前反射任意请求 origin + credentials:true——开发者浏览恶意站点即可携带 cookie 跨源读
+// localhost daemon。改为通配模式下**只反射本机回环 + 桌面 tauri 源**，杜绝任意 origin 反射；无 Origin(同源/非浏览器)保持放行。
 const corsAllowOrigins = settings.auth.corsAllowOrigins;
+const isDevReflectableOrigin = (origin: string): boolean =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u.test(origin) ||
+  origin === "tauri://localhost" ||
+  /^https?:\/\/tauri\.localhost(:\d+)?$/u.test(origin);
 app.use("/api/*", cors({
-  origin: corsAllowOrigins.includes("*") ? (origin) => origin || "*" : corsAllowOrigins,
+  origin: corsAllowOrigins.includes("*")
+    ? (origin) => (!origin ? "*" : isDevReflectableOrigin(origin) ? origin : null)
+    : corsAllowOrigins,
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   // 桌面 webview 从 tauri://localhost 跨源调 daemon，且每个认证请求都带这两个自定义令牌头
