@@ -42,6 +42,7 @@ export const cuuR3SmokeOwner: UserAuthRow = {
   availabilityUpdatedAt: null,
   isAdmin: true,
   deletedAt: null,
+  deletedByUserId: null,
   createdAt: cuuR3SmokeNow,
   updatedAt: cuuR3SmokeNow
 };

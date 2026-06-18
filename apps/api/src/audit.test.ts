@@ -52,6 +52,7 @@ function user(): UserAuthRow {
     availabilityUpdatedAt: null,
     isAdmin: userIsAdmin,
     deletedAt: null,
+    deletedByUserId: null,
     createdAt: now,
     updatedAt: now
   };

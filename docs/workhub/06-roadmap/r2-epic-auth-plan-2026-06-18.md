@@ -1,6 +1,6 @@
 # R2 Epic 计划：真认证（密码 + 可插拔 OIDC）
 
-- status: **planned（待用户拍板 open questions 后实施）**
+- status: **in-progress（用户已拍板关键 open questions；Phase 1 schema 地基已落、全 CI 绿）**
 - created: 2026-06-18
 - 来源：2026-06-17 第二轮全量审查的三大「团队就绪地基」之一；用户 2026-06-18 拍板 plan-first 实施。
 - 设计依据：design workflow `wf_3b23a675` 在 HEAD 逐文件深读产出（证据带 file:line）。
@@ -122,3 +122,30 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 7. Password reset / forgot-password flow: in scope for this epic, or deferred? It depends on the email-delivery decision.
 8. Multi-worker/multi-instance deployment target: the admin-claim-throttle and any login rate-limiter are in-process only today. Does the pilot stay single-process (LAN) or do we need Redis-backed throttling now?
 9. Should existing nickname-only accounts be force-migrated to passwords at Phase-5 cutover (blocking login until they set one), or grandfathered in hybrid mode indefinitely?
+
+## 用户已拍板（2026-06-18）—— 上面 open questions 的部分定论
+
+- **#1 邮件验证 / #6 邮件投递 / #7 密码重置**：**out-of-band 链接，无 SMTP**。email 存但不验证（trust-on-first-use），邀请/重置链接由管理员手动分发；不引入邮件发送集成。
+- **#3 OIDC 范围**：**password-first**——先做密码+会话+生命周期；OIDC 抽象层落地但首版接 **0 个 provider**。
+- **#8 部署形态**：**暂单 API 进程**（LAN pilot），登录限流/admin-claim-throttle 维持 in-process，不强制 Redis 化。
+- **#4 身份主键**：保留 **nickname 作 display + email 登录**（additive，不迁主键），避免触动大量 nickname-denormalized 列。
+- **#5 会话生命周期**：**绝对过期 + 滑动过期双控**（schema 已含 `absolute_expires_at` + `idle_expires_at`），具体时长在会话仓库阶段定。
+- **#2 OIDC 账号关联 / #9 强制迁移**：留待 OIDC（Phase 4）/ 切换（Phase 5）阶段实施前再定。
+
+## 进展（2026-06-18）
+
+### ✅ Phase 1（安全 schema 地基）已完成、全 7 CI 绿 —— 纯 schema/迁移门，零运行时行为变化
+
+与原子预算 epic 同范式：先落「不接线」的安全数据底座，typecheck/迁移门把关，中间件仍走 nickname `cookieToken`，无任何请求路径行为变化。
+
+- **新表 `user_credentials`**（`packages/db/src/schema/core.ts`）：每用户至多一份口令记录（`user_id` unique）；`password_hash`（argon2id PHC 串，可空=仅 OIDC/未设密码）、`password_algo`（便于将来无停机轮换哈希算法）、`email_verified_at`（out-of-band trust-on-first-use，可空）、`failed_attempts`/`locked_until`（登录锁定地基）。**`email` 用 citext**——大小写不敏感唯一与等值匹配，免应用层处处 `LOWER()`；drizzle 侧声明 `varchar` 即可（citext 与 text 兼容，`eq()` 生成的 `email = $1` 天然大小写不敏感）。
+- **新表 `sessions`**：服务端会话替代单 `cookieToken`。`token_hash`=sha256(session secret)（绝不存明文，唯一索引）；`auth_method`（password|oidc|nickname）+ `oidc_provider`；`absolute_expires_at`（硬上限）+ `idle_expires_at`（滑动，partial 过期清扫索引仅扫未撤销行）；`revoked_at` 墓碑用于登出/停用批量撤销；`ip_hash`/`user_agent` 可选审计。
+- **`users` 加列 `deleted_by_user_id`**（自引用 set null，与其余 soft-delete 表 `softDeleteColumns()` 约定一致）——offboard/停用审计地基。
+- **手写迁移 `0023_auth_credentials_sessions.sql`** + journal idx:23：`CREATE EXTENSION IF NOT EXISTS citext`（官方 postgres 镜像含此 contrib）+ 两表 + 全部索引 + `ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_by_user_id`。`pnpm audit:migrations` 通过（不污染 snapshot 链，止于 0015）。
+- **测试**：`packages/db/src/schema.test.ts` 加两条——断言两表列契约 + 读 0023 迁移文件断言 citext/唯一索引/partial index/users ALTER 落实（mirror 既有 drive-tables 迁移内容测）。新 nullable 必填列 `deletedByUserId` 触发 13 处测试 user 假数据补 `deletedByUserId: null`（userMemories 行不受影响——该表只有 `deletedAt` 无 `deletedByUserId`）。
+- **验证齐绿**：`pnpm -r typecheck`（16 包）、`pnpm audit:migrations`、`@workhub/db` 24 测、`@workhub/api` 246 测全过；PG smoke 在 CI 应用 0023 迁移。
+- **registry 决策**：`workHubTables`（schema.test.ts 的 F02 count gate=50）保持不变——遵循原子预算 epic 把 `budget_reservations` 留在 registry 外的先例，新运营表只 `export const` 不进 F02「计划图」清单，不动 count gate。
+
+### ⏭️ 下一刀（拆分独立的高风险 slice）= SessionRepository + AUTH_MODE 中间件改造
+
+设计原 Phase 0 把会话表与中间件 cookie 互换捆在一起；本实施**刻意拆开**：schema 已先行（本刀），接下来单独做 `SessionRepository` + `resolveCurrentUser`/`resolveStreamUser`/`issueUserCookie`（auth.ts:116-324，每请求 + SSE 流都过）的 AUTH_MODE 旗标改造，`AUTH_MODE='nickname'` 默认下行为逐字节不变（cookie 仍载 `cookieToken`），把最高爆炸半径的会话互换隔离为可单独 review/回滚的一刀。之后再依设计推进密码注册/登录、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。

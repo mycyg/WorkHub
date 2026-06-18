@@ -44,6 +44,7 @@ function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
     availabilityUpdatedAt: null,
     isAdmin: false,
     deletedAt: null,
+    deletedByUserId: null,
     createdAt: now,
     updatedAt: now,
     ...partial

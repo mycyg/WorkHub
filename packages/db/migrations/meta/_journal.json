@@ -162,6 +162,13 @@
       "when": 1781511733742,
       "tag": "0022_budget_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781511833742,
+      "tag": "0023_auth_credentials_sessions",
+      "breakpoints": true
     }
   ]
 }

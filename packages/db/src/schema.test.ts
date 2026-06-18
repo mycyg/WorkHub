@@ -19,7 +19,10 @@ import {
   projectDriveOperations,
   projectDriveVersions,
   proposals,
+  sessions,
   usageRecords,
+  userCredentials,
+  users,
   workHubTables,
   workItems
 } from "./index.js";
@@ -167,6 +170,43 @@ test("budget policy persistence fields support P-COST overrides and audit", () =
   assert.equal(budgetPolicies.version.name, "version");
   assert.equal(budgetPolicies.workspaceId.name, "workspace_id");
   assert.equal(budgetPolicies.updatedByUserId.name, "updated_by_user_id");
+});
+
+test("R2 auth foundation: credential + session tables expose the password/session contract", () => {
+  assert.equal(getTableName(userCredentials), "user_credentials");
+  assert.equal(userCredentials.userId.name, "user_id");
+  assert.equal(userCredentials.email.name, "email");
+  assert.equal(userCredentials.passwordHash.name, "password_hash");
+  assert.equal(userCredentials.passwordAlgo.name, "password_algo");
+  assert.equal(userCredentials.emailVerifiedAt.name, "email_verified_at");
+  assert.equal(userCredentials.failedAttempts.name, "failed_attempts");
+  assert.equal(userCredentials.lockedUntil.name, "locked_until");
+
+  assert.equal(getTableName(sessions), "sessions");
+  assert.equal(sessions.userId.name, "user_id");
+  assert.equal(sessions.tokenHash.name, "token_hash");
+  assert.equal(sessions.authMethod.name, "auth_method");
+  assert.equal(sessions.oidcProvider.name, "oidc_provider");
+  assert.equal(sessions.absoluteExpiresAt.name, "absolute_expires_at");
+  assert.equal(sessions.idleExpiresAt.name, "idle_expires_at");
+  assert.equal(sessions.revokedAt.name, "revoked_at");
+
+  // offboard 审计列加在 users 上（自引用 set null）。
+  assert.equal(users.deletedByUserId.name, "deleted_by_user_id");
+});
+
+test("migration 0023 provisions citext email, session token uniqueness, and the users offboard column", () => {
+  const migration = readFileSync(
+    join(process.cwd(), "migrations", "0023_auth_credentials_sessions.sql"),
+    "utf8"
+  );
+  assert.match(migration, /CREATE EXTENSION IF NOT EXISTS citext/u);
+  assert.match(migration, /"email" citext NOT NULL/u);
+  assert.match(migration, /user_credentials_email_uq/u);
+  assert.match(migration, /sessions_token_hash_uq/u);
+  // partial index：仅未撤销会话进过期清扫索引。
+  assert.match(migration, /sessions_idle_expires_idx[\s\S]*WHERE "revoked_at" IS NULL/u);
+  assert.match(migration, /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "deleted_by_user_id"/u);
 });
 
 test("enum drift is closed in the shared contract package", () => {

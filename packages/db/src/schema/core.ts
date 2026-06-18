@@ -56,6 +56,8 @@ export const users = pgTable(
     availabilityUpdatedAt: timestampTz("availability_updated_at"),
     isAdmin: boolean("is_admin").notNull().default(false),
     deletedAt: timestampTz("deleted_at"),
+    // R2 auth epic：记录是谁停用/离职了该账号（与 softDeleteColumns() 约定一致）。自引用 set null。
+    deletedByUserId: uuid("deleted_by_user_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
     ...timestamps()
   },
   (table) => [
@@ -65,6 +67,53 @@ export const users = pgTable(
     uniqueIndex("users_cookie_token_uq").on(table.cookieToken).where(sql`${table.deletedAt} is null`),
     index("users_is_admin_idx").on(table.isAdmin),
     index("users_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
+// R2 auth epic（密码+会话基线，password-first）：以下两表是认证安全基础。纯 schema/迁移门，
+// 首版不接线（中间件仍走 nickname cookieToken），引入会话与口令存储，为后续 AUTH_MODE 切换铺路。
+// email 用 citext 列（迁移 CREATE EXTENSION citext）——drizzle 侧声明 varchar 即可：citext 与 text 兼容，
+// eq() 生成的 `email = $1` 在 citext 列上天然大小写不敏感，免自定义类型 / 免 LOWER() 函数索引。
+export const userCredentials = pgTable(
+  "user_credentials",
+  {
+    id: id(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    email: varchar("email", { length: 320 }).notNull(), // DB 列为 citext（大小写不敏感唯一）
+    passwordHash: varchar("password_hash", { length: 256 }), // argon2id PHC 串；null=仅 OIDC/未设密码
+    passwordAlgo: varchar("password_algo", { length: 32 }), // 例 "argon2id"，便于将来无停机轮换哈希算法
+    emailVerifiedAt: timestampTz("email_verified_at"), // out-of-band：trust-on-first-use，可空
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestampTz("locked_until"),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("user_credentials_user_id_uq").on(table.userId), // 每用户至多一份口令记录
+    uniqueIndex("user_credentials_email_uq").on(table.email) // 登录用 email 查找；citext 唯一=大小写不敏感唯一
+  ]
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: id(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(), // sha256(session secret)，不存明文
+    authMethod: varchar("auth_method", { length: 16 }).notNull().default("password"), // password|oidc|nickname
+    oidcProvider: varchar("oidc_provider", { length: 64 }), // OIDC 登录时记录 provider id（首版接 0 个）
+    ipHash: varchar("ip_hash", { length: 128 }), // 可选审计：sha256(ip)
+    userAgent: varchar("user_agent", { length: 256 }),
+    absoluteExpiresAt: timestampTz("absolute_expires_at").notNull(), // 绝对过期（硬上限，到点强制重登）
+    idleExpiresAt: timestampTz("idle_expires_at").notNull(), // 滑动过期（每次活动续期）
+    lastSeenAt: timestampTz("last_seen_at"),
+    revokedAt: timestampTz("revoked_at"), // 登出/停用置墓碑
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("sessions_token_hash_uq").on(table.tokenHash),
+    index("sessions_user_id_idx").on(table.userId), // 按用户列会话 + 停用时批量 revoke
+    // 过期清扫：仅扫未撤销行（partial index，墓碑行不进索引）。
+    index("sessions_idle_expires_idx").on(table.idleExpiresAt).where(sql`${table.revokedAt} is null`)
   ]
 );
 
