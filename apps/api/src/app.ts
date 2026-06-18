@@ -41,12 +41,49 @@ import { InternalContractError } from "./pages/output-contract.js";
 import { LOCAL_CLIENT_HEADER } from "./middleware/auth.js";
 import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
 import { createRequestLogMiddleware, createStructuredLogger } from "./logging.js";
+import { checkReadiness } from "./readiness.js";
 
 export const logger = createStructuredLogger({ format: settings.logFormat });
 
 export const app = new Hono();
 
 app.use("*", createRequestLogMiddleware(logger));
+
+// 请求体大小上限（抗大负载 DoS）：仅对带体方法（POST/PUT/PATCH）按 Content-Length 早拒，超限回 413。
+// 1 MB 默认对 JSON API 足够宽裕；可经 MAX_REQUEST_BODY_BYTES 调整（无效/非正值回退默认）。
+// 注意：仅看头部声明，不缓冲/不测量流——缺 Content-Length 时放行（chunked/流式由下游各自把关）。
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 1_048_576; // 1 MiB
+function resolveMaxRequestBodyBytes(): number {
+  const raw = process.env.MAX_REQUEST_BODY_BYTES;
+  if (!raw) {
+    return DEFAULT_MAX_REQUEST_BODY_BYTES;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_REQUEST_BODY_BYTES;
+}
+const MAX_REQUEST_BODY_BYTES = resolveMaxRequestBodyBytes();
+const BODY_BEARING_METHODS = new Set(["POST", "PUT", "PATCH"]);
+app.use("*", async (c, next) => {
+  if (BODY_BEARING_METHODS.has(c.req.method)) {
+    const declared = c.req.header("content-length");
+    if (declared) {
+      const length = Number.parseInt(declared, 10);
+      if (Number.isFinite(length) && length > MAX_REQUEST_BODY_BYTES) {
+        return c.json(
+          {
+            ok: false,
+            error: {
+              code: "payload_too_large",
+              message: `Request body exceeds the ${MAX_REQUEST_BODY_BYTES}-byte limit.`
+            }
+          },
+          413
+        );
+      }
+    }
+  }
+  await next();
+});
 
 // 安全响应头（纵深防御）：在所有响应上钉死浏览器侧的几道防线，紧跟请求日志、早于路由。
 // - X-Content-Type-Options: nosniff —— 禁 MIME 嗅探，挡内容类型混淆。
@@ -127,6 +164,14 @@ app.get("/api/health", (c) =>
     port: settings.port
   })
 );
+
+// 深度就绪探针（编排器 readiness probe 用）：与 /api/health 的存活探针分离——liveness 不依赖任何外部依赖，
+// readiness 真打 DB（SELECT 1）+ Redis（若 BROKER_BACKEND=redis）。每项检查带超时与 try/catch，绝不挂死；
+// 全通过回 200 {ready:true,...}，任一依赖故障回 503 {ready:false,...}。单测不调用此端点，DB 不在时返回 503 也无碍。
+app.get("/api/ready", async (c) => {
+  const result = await checkReadiness(settings);
+  return c.json(result, result.ready ? 200 : 503);
+});
 
 app.get("/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.get("/api/openapi.json", (c) => c.json(getOpenApiDocument()));

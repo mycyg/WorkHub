@@ -11,6 +11,7 @@ import app from "./app.js";
 // 公开路由白名单（逐条理由）：
 // - GET /                  应用外壳/API banner（无用户数据）
 // - GET /api/health        存活探针
+// - GET /api/ready         深度就绪探针（编排器 probe 调用，不鉴权；只回依赖健康布尔，无用户数据）
 // - GET /openapi.json, /api/openapi.json  契约种子（无用户数据）
 // - POST /api/auth/identify 注册/登入入口本身
 // - POST /api/auth/register, /api/auth/login 密码注册/登录入口本身（AUTH_MODE!='nickname' 时启用；
@@ -21,6 +22,7 @@ import app from "./app.js";
 const PUBLIC_ROUTES = new Set<string>([
   "GET /",
   "GET /api/health",
+  "GET /api/ready",
   "GET /openapi.json",
   "GET /api/openapi.json",
   "POST /api/auth/identify",

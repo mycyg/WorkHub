@@ -249,6 +249,37 @@ jobs:
           path: pilot-stack-logs.txt
           retention-days: 7
 
+  # 安全顾问门（非阻断）：只上报、绝不让 main 变红。pnpm audit 报已知 CVE，外加对已提交私钥的粗扫。
+  # continue-on-error: true 在 job 级别兜底；各步骤再加 `|| true`，双保险——预存的依赖告警不会把必需 job 拖红。
+  security-advisory:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency CVE audit (advisory)
+        run: pnpm audit --audit-level high || true
+      - name: Secret scan for committed private keys (advisory)
+        run: |
+          # 只对已跟踪文件扫明显的私钥头；命中即提示，但 `|| true` 保证不阻断。
+          if git grep -nI -e "-----BEGIN RSA PRIVATE KEY-----" \
+                          -e "-----BEGIN OPENSSH PRIVATE KEY-----" \
+                          -e "-----BEGIN DSA PRIVATE KEY-----" \
+                          -e "-----BEGIN EC PRIVATE KEY-----" \
+                          -e "-----BEGIN PGP PRIVATE KEY BLOCK-----" \
+                          -- . ':(exclude)SECURITY.md' ':(exclude).github/workflows/verify.yml'; then
+            echo "::warning::Possible committed private key detected — please review (advisory, non-blocking)."
+          else
+            echo "No obvious committed private keys found."
+          fi || true
+
   migration-placeholder:
     runs-on: ubuntu-latest
     steps:
