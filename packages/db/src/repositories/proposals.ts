@@ -1847,14 +1847,37 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             eq(proposals.status, "reviewed")
           ))
           .orderBy(desc(proposals.createdAt));
+        const first = proposalRows[0];
+        if (!first) {
+          return;
+        }
+        // R2 audit#15：批量预取当前已采纳态，消除 O(proposals×changes) 的 readCurrentAccepted N+1。
+        // 同一 workItem 的所有 reviewed 提议 join 自同一 work item → projectId/workItemId 统一，scope 一致、
+        // 仅 targetKey 变化。语义完全保留：同 scope(projectId 否则 workItemId 回落) + supersededAt IS NULL +
+        // 按 targetKey 取 createdAt 最新（DESC 下 Map first-wins，与原 limit(1) 等价）。
+        const targetKeys = [
+          ...new Set(proposalRows.flatMap((proposal) => proposal.diffManifest.changes.map((change) => targetKey(change))))
+        ];
+        const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow>();
+        if (targetKeys.length > 0) {
+          const scope = first.projectId
+            ? eq(acceptedDeliverableChanges.projectId, first.projectId)
+            : eq(acceptedDeliverableChanges.workItemId, workItemId);
+          const acceptedRows = await tx
+            .select()
+            .from(acceptedDeliverableChanges)
+            .where(and(scope, inArray(acceptedDeliverableChanges.targetKey, targetKeys), isNull(acceptedDeliverableChanges.supersededAt)))
+            .orderBy(desc(acceptedDeliverableChanges.createdAt));
+          for (const row of acceptedRows) {
+            if (!currentByTargetKey.has(row.targetKey)) {
+              currentByTargetKey.set(row.targetKey, row); // DESC → 首见即最新，等价 readCurrentAccepted 的 limit(1)
+            }
+          }
+        }
         for (const proposal of proposalRows) {
           for (const change of proposal.diffManifest.changes) {
             const key = targetKey(change);
-            const current = await readCurrentAccepted(tx, {
-              projectId: proposal.projectId,
-              workItemId: proposal.workItemId,
-              targetKey: key
-            });
+            const current = currentByTargetKey.get(key) ?? null;
             if (!current) {
               continue;
             }
