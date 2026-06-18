@@ -298,7 +298,45 @@ function truncateForContext(content: string, maxChars: number) {
   const headChars = Math.floor(maxChars * 0.75);
   const tailChars = Math.floor(maxChars * 0.15);
   const omitted = content.length - headChars - tailChars;
-  return `${content.slice(0, headChars)}\n…[已截断 ${omitted} 字符，完整内容见 trace]\n${content.slice(content.length - tailChars)}`;
+  // findings[#高]：trace 并不保存被截断的完整内容，旧文案「完整内容见 trace」是误导。
+  // 改为给模型一条真实可行的恢复路径：要完整内容就重读该文件或用 run_command 抽取。
+  return `${content.slice(0, headChars)}\n…[已截断 ${omitted} 字符，中段省略；需要完整内容请重读该文件或用 run_command 抽取]\n${content.slice(content.length - tailChars)}`;
+}
+
+/**
+ * findings[#6]：压缩时不能把工具结果整块丢掉——否则模型只看到「step N: write_file(...) -> ok」
+ * 却不知道写到了哪、产出多大，被迫重做已完成的工作。给每个工具结果附一段短「结果摘要」：
+ * 优先从结构化 data 抽关键字段（路径 / 字节 / 行 / 文件数 / 退出码），再补 content 的首尾摘录。
+ */
+function toolResultDigest(result: { content: string; data?: unknown } | undefined): string {
+  if (!result) {
+    return "";
+  }
+  const hints: string[] = [];
+  if (result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+    const data = result.data as Record<string, unknown>;
+    if (typeof data.path === "string") {
+      hints.push(`path=${data.path}`);
+    }
+    if (typeof data.bytes === "number") {
+      hints.push(`bytes=${data.bytes}`);
+    }
+    if (Array.isArray(data.files)) {
+      hints.push(`files=${data.files.length}`);
+    }
+    if (typeof data.exitCode === "number") {
+      hints.push(`exit=${data.exitCode}`);
+    }
+  }
+  // content 首尾摘录（head+tail，与 truncateForContext 同口径），别只取头部漏掉结尾结论。
+  const content = result.content.trim();
+  const snippet = content.length > 200
+    ? `${content.slice(0, 140).replace(/\s+/gu, " ")}…${content.slice(content.length - 40).replace(/\s+/gu, " ")}`
+    : content.replace(/\s+/gu, " ");
+  if (snippet) {
+    hints.push(snippet);
+  }
+  return hints.join(" ");
 }
 
 function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
@@ -317,11 +355,20 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
       const call = step.toolCalls[index]!;
       const result = step.toolResults[index];
       const outcome = result ? (result.isError ? "error" : "ok") : "pending";
-      lines.push(`step ${step.index}: ${call.name}(${previewUnknown(call.input, 80)}) -> ${outcome}`);
+      // findings[#6]：带上结果摘要（路径/字节/行数/首尾摘录），让模型知道这步到底产出了什么，不重做已完成工作。
+      const digest = toolResultDigest(result);
+      const tail = digest ? `: ${digest.slice(0, 200)}` : "";
+      lines.push(`step ${step.index}: ${call.name}(${previewUnknown(call.input, 80)}) -> ${outcome}${tail}`);
     }
   }
   const summary = lines.join("\n");
-  return summary.length > maxChars ? `${summary.slice(0, maxChars)}\n…[摘要已截断]` : summary;
+  // findings[#6]：摘要本身超长时也用 head+tail 截断（与 truncateForContext 同口径），保留尾部最新进度而非只剩开头。
+  if (summary.length <= maxChars) {
+    return summary;
+  }
+  const headChars = Math.floor(maxChars * 0.7);
+  const tailChars = Math.floor(maxChars * 0.2);
+  return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
 }
 
 function blockType(block: unknown): string | undefined {

@@ -465,7 +465,7 @@ test("AgentLoop truncates oversized tool results in the conversation context", a
   const toolResult = blocks.find((block) => block.type === "tool_result");
   assert.ok(toolResult);
   assert.equal(toolResult.content.length < 700, true);
-  assert.equal(toolResult.content.includes("完整内容见 trace"), true);
+  assert.equal(toolResult.content.includes("需要完整内容请重读该文件或用 run_command 抽取"), true);
 });
 
 test("AgentLoop retries transient provider errors with backoff and then succeeds", async () => {
